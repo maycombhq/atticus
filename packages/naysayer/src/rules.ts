@@ -2,7 +2,13 @@ import { readdir, readFile } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
-import { ChecklistPack, type ChecklistRule } from "@maycombhq/core";
+import {
+  ChecklistPack,
+  questionOfLens,
+  type ChecklistRule,
+  type CriticQuestion,
+} from "@maycombhq/core";
+import { explicitQuestion, questionOfRule } from "./questions.js";
 
 /**
  * Rule layering. Three layers, in this order of precedence:
@@ -13,7 +19,7 @@ import { ChecklistPack, type ChecklistRule } from "@maycombhq/core";
  *   plus the rules a chosen integration pattern adds.
  * - team: team packs, which may add rules or tighten any rule, and never drop or loosen one.
  *
- * `tightens: X` replaces X with a stricter version (same check, same lens, severity and scope
+ * `tightens: X` replaces X with a stricter version (same check, same question, severity and scope
  * at least as strict, no needs dropped, never made waivable). `extends: X` adds a new rule
  * that inherits X's check parameters and needs. A pack that drops or loosens a constitution
  * rule is refused as a whole and reported; so is a team pack that declares non-team rules.
@@ -36,6 +42,11 @@ export interface EffectiveRule extends ChecklistRule {
   file: string;
   /** Rule ids this one replaced by tightening. */
   replaces: string[];
+  /**
+   * The question the rule answers (ADR 0124 addendum, Part 4), resolved when the rules are
+   * layered and the checks are known. A tightening with no question of its own keeps its base's.
+   */
+  asks?: CriticQuestion;
 }
 
 export interface RefusedPack {
@@ -70,8 +81,12 @@ export function loosenings(base: ChecklistRule, next: ChecklistRule): string[] {
   if (next.waivable && !base.waivable && base.severity === "blocking")
     out.push("it makes the rule waivable");
   if (base.evidenceRequired && !next.evidenceRequired) out.push("it stops requiring evidence");
-  if (next.lens !== base.lens)
-    out.push(`it moves the rule from the ${base.lens} lens to ${next.lens}`);
+  // A rule keeps its question (ADR 0124 addendum, Part 4). A tightening written with an old role
+  // lens says the same as before when it names the base's lens or one that maps to its question.
+  const was = questionOfRule(base);
+  const own = explicitQuestion(next);
+  if (own ? own !== was : next.lens !== base.lens && questionOfLens(next.lens) !== was)
+    out.push(`it moves the rule from the ${was} question to ${own ?? questionOfLens(next.lens)}`);
   const missing = base.appliesTo.artifacts.filter((a) => !next.appliesTo.artifacts.includes(a));
   if (missing.length) out.push(`it no longer looks at ${missing.join(", ")}`);
   const bt = base.appliesTo.changeTypes;
@@ -304,6 +319,8 @@ export function layerRules(sources: PackSource[]): LayeredRules {
       active.delete(base.id);
       const eff: EffectiveRule = {
         ...rule,
+        // A tightening that names no question of its own keeps the question of the rule it tightens.
+        ...(explicitQuestion(rule) ? {} : { asks: questionOfRule(base) }),
         effectiveLayer: strictestLayer(base.effectiveLayer, rule.layer),
         waivable:
           rule.waivable && strictestLayer(base.effectiveLayer, rule.layer) !== "constitution",

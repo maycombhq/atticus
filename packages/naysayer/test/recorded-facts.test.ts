@@ -66,7 +66,7 @@ describe("facts a person recorded reach the later gates' lenses (W2)", () => {
         return "findings: []\n";
       }),
     });
-    const p = prompts.find((x) => x.includes("business lens"))!;
+    const p = prompts.find((x) => x.includes("complete lens"))!;
     expect(p).toContain("recorded-by-people");
     expect(p).toContain(FACT);
     expect(p).toContain("ari");
@@ -85,7 +85,7 @@ describe("facts a person recorded reach the later gates' lenses (W2)", () => {
         return "findings: []\n";
       }),
     });
-    const p = prompts.find((x) => x.includes("business lens"))!;
+    const p = prompts.find((x) => x.includes("complete lens"))!;
     expect(p).not.toContain("recorded-by-people");
   });
 });

@@ -1,0 +1,11 @@
+# Contract C5 agent definition (fixture). The critic's ship lens (ADR 0124 addendum, Part 4): can the
+# change ship? It takes over the delivery and release lenses. Run in a fresh session.
+schemaVersion: 1
+id: ship-critic
+role: delivery-lead
+description: Reviews rollout, rollback, task order, service-desk requests and lead times for anything that would stall delivery or break in production.
+inputs: [design, data, tasks, snow, catalog-slice, checklist]
+outputArtifact: findings
+checklist: forge-architecture
+tokenBudget: 60000
+allowedRuntimes: [hand-off, mock, replay]

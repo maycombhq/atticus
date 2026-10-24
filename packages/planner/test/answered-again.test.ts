@@ -25,7 +25,7 @@ import { featureStage } from "../src/index.js";
  * A person's answer, read for the rest of the change (ADR 0115 and 0117 addenda, 2026-10-24),
  * from a live run retold on the Forge estate: the change "pin an order note". A person answers
  * which notes can be pinned. The next draft must not ask it again in other words, and the
- * critic's business lens must not block the draft for following the answer. In each mode the
+ * critic's complete lens must not block the draft for following the answer. In each mode the
  * code path differs: hand-off (the drafter's own reading, or a hand-back to the drafter), and a
  * runtime that calls a model directly (model, headless Claude Code: the answered-by judge).
  */
@@ -102,7 +102,7 @@ const REASKED_SAME_AS = (id: string) =>
   );
 const SETTLED = placement("questions: []\n");
 
-/** The business lens: once it was given the answer, it reports the narrowing linked to it. */
+/** The complete lens: once it was given the answer, it reports the narrowing linked to it. */
 const lensAnswer = (prompt: string, id: string | undefined) =>
   id && prompt.includes(S.answer.text)
     ? `findings:
@@ -128,7 +128,7 @@ const judgeYes = `judgments:
 /** Every AI step of the scenario, by its prompt: the drafter, the critic's lens, the judge. */
 function respond(prompt: string, drafts: string[], id: () => string | undefined): string {
   if (prompt.includes("# Feature placer")) return drafts.shift() ?? SETTLED;
-  if (prompt.includes("Critic: business lens")) return lensAnswer(prompt, id());
+  if (prompt.includes("Critic: the complete lens")) return lensAnswer(prompt, id());
   if (prompt.includes("A person already answered the existing question")) return judgeYes;
   return "findings: []\n";
 }
@@ -218,7 +218,7 @@ describe("a person's answer, read for the rest of the change", () => {
       return { step, done: (run: string) => rt().done(run), prompt, root };
     }
 
-    /** Draft, then the business lens, until the stage stops waiting. */
+    /** Draft, then the complete lens, until the stage stops waiting. */
     async function drive(h: ReturnType<typeof handoff>, drafts: string[], id: string | undefined) {
       const root = h.root;
       let r = await h.step();

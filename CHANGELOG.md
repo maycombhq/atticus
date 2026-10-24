@@ -4,6 +4,13 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### The critic asks four questions (ADR 0124 addendum, Part 4)
+
+- **Four questions instead of seven lenses.** The critic asks every draft: is it true to the code, is it complete, is it safe to build, can it ship. Each rule and check answers one of them (a rule may say which with `question`), and one AI lens per question reviews what the rules can't, in a fresh session, bound to evidence as before. Findings carry the question as their lens.
+- **Code answers more before a model is asked.** Four new constitution checks: a synchronous call with no timeout, an entry another system calls with no auth fact (asked of its owner when unknown, blocking when the catalog says none), a change to an operation other consumers call that the change doesn't plan for (retired breaks them; a change is the `breaking` judgment, asked of a person when nobody has made it), and a table written with no rollback step in design.md.
+- **Org packs written for the old lenses keep working.** Business, story, UX and code-and-test rules ask the complete question; architecture rules ask true; delivery and release rules ask ship. Change types keep their lens lists, `--lens` takes an old name, and old lens agents are combined into the question's agent, as strict as they were. Define `<question>-critic` (true-critic, complete-critic, safe-critic, ship-critic) to set a lens's agent yourself.
+- **Service-desk drafts are a manual step.** The constitution no longer blocks on snow.md: `atticus plan` drafts each request the change triggers and `atticus release plan` lists them, with their missing fields, for a person to file.
+
 ### Your assistant reads a repo into facts, at any tier (ADR 0124, A3a)
 
 - **`/atticus-map <repo>`** is the reading protocol for an assistant that opens files and runs commands itself (Claude Code, Cursor, Copilot agent mode, Gemini CLI, Windsurf, AGENTS.md tools), generated for each one and for the Claude Code plugin. Outline the repo, read whole only the files that hold facts, write one cited fact per line to the facts file (the field list is generated from the facts schema), keep secrets out (`source: env:NAME`), ask what the code can't settle, then loop on `atticus verify` until it passes.

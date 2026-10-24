@@ -61,3 +61,15 @@ export async function write(root: string, rel: string, text: string): Promise<vo
   await mkdir(dirname(p), { recursive: true });
   await writeFile(p, text);
 }
+
+/**
+ * Bring back the Ledger team's ux-states-complete rule, retired with the four questions (ADR 0124
+ * addendum, Part 4), as an org that keeps it would: the complete lens then reads ux.md under it.
+ * The lens-output tests use it for a rule whose artifact is short and well known.
+ */
+export async function keepUxStatesRule(root: string): Promise<void> {
+  const p = join(root, "org-pack/teams/team-ledger/checklists/ledger-team.yaml");
+  const text = await readFile(p, "utf8");
+  if (!text.includes("    status: retired")) throw new Error("ux-states-complete isn't retired");
+  await writeFile(p, text.replace("    status: retired", "    status: active"));
+}

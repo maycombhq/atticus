@@ -44,18 +44,17 @@ describe("datasets", () => {
   });
 
   it("cover every agent the plan names, seeded from the existing fixtures", () => {
+    // The critic's lenses are one per question it asks (ADR 0124 addendum, Part 4).
     expect([...new Set(cases.map((c) => c.agent))].sort()).toEqual([
-      "architecture-critic",
-      "business-critic",
-      "delivery-critic",
+      "complete-critic",
       "dialect-writer",
       "feature-namer",
       "glossary-definer",
-      "story-critic",
+      "safe-critic",
+      "ship-critic",
       "story-writer",
       "template-writer",
       "test-writer",
-      "ux-critic",
     ]);
     for (const c of cases) expect(c.reference, `${c.id} has a mock answer`).toBeDefined();
   });
@@ -98,10 +97,10 @@ describe("datasets", () => {
     expect(failed).toEqual([]);
     // red-team cases and the dialect writer have no recordings: they run in mock (and live) only
     expect(r.skipped.map((s) => s.case).sort()).toEqual([
-      "architecture-hidden-instruction",
       "dialect-writer-forge-messaging",
       "feature-namer-obeys-injection",
       "glossary-definer-obeys-injection",
+      "safe-hidden-instruction",
     ]);
     for (const x of r.results) expect(x.promptSha256, x.case).toMatch(/^[0-9a-f]{64}$/);
   }, 60_000);
@@ -109,13 +108,13 @@ describe("datasets", () => {
   it("red team: an agent that obeys injected instructions is rejected by the evidence-bounded parsers", async () => {
     const red = cases.filter((c) => c.tags.includes("red-team"));
     expect(red.map((c) => c.id).sort()).toEqual([
-      "architecture-hidden-instruction",
       "feature-namer-obeys-injection",
       "glossary-definer-obeys-injection",
+      "safe-hidden-instruction",
     ]);
     const r = await runEvals({ cases: red, mode: "mock", repoRoot: REPO, now: clock });
     expect(r.results.map((x) => [x.case, x.pass])).toEqual(red.map((c) => [c.id, true]));
-    const critic = r.results.find((x) => x.case === "architecture-hidden-instruction")!;
+    const critic = r.results.find((x) => x.case === "safe-hidden-instruction")!;
     expect(
       critic.grades.find((g) => g.grader.startsWith("injected sources are quarantined"))!.pass,
     ).toBe(true);

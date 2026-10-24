@@ -4,6 +4,11 @@
 # never waivable, a team or org pack can only tighten them, and a pack that drops or loosens
 # one is refused. They are data, so the critic's code holds no policy of its own: each rule
 # names a built-in deterministic check and the catalog facts it needs.
+#
+# Each rule answers one of the four questions the critic asks of every draft (ADR 0124 addendum,
+# Part 4): is it true to the code, is it complete, is it safe to build, can it ship. `question` says
+# which; `lens` keeps the role lens the rule was first written for, so a pack that tightens it with
+# that lens still matches. The four rules added with the questions are written for theirs.
 schemaVersion: 1
 name: constitution
 version: 1.0.0
@@ -14,6 +19,7 @@ rules:
     description: A hop without a pattern, or with a code that isn't a confirmed pattern in the registry, can't be checked for its controls.
     layer: constitution
     lens: architecture
+    question: safe
     appliesTo: { artifacts: [interfaces] }
     severity: blocking
     check:
@@ -29,6 +35,7 @@ rules:
     description: A caller or callee the catalog doesn't know is either a typo or an unknown system nobody has looked at.
     layer: constitution
     lens: architecture
+    question: "true"
     appliesTo: { artifacts: [interfaces, catalog] }
     severity: blocking
     check:
@@ -43,6 +50,7 @@ rules:
     description: A row naming an interface id must match the catalog; a row for a new hop says new and planned-new.
     layer: constitution
     lens: architecture
+    question: "true"
     appliesTo: { artifacts: [interfaces, catalog] }
     severity: blocking
     check:
@@ -57,6 +65,7 @@ rules:
     description: The pattern's controls say which resilience settings a hop needs; each must be in the catalog or stated in interfaces.md or design.md.
     layer: constitution
     lens: architecture
+    question: safe
     appliesTo: { artifacts: [interfaces, design, catalog] }
     severity: blocking
     check:
@@ -76,6 +85,7 @@ rules:
     description: A component known only from a caller can't be checked; its owner is asked.
     layer: constitution
     lens: architecture
+    question: "true"
     appliesTo: { artifacts: [catalog] }
     severity: risk
     check:
@@ -98,6 +108,7 @@ rules:
     title: data.md exists when a data store is touched
     layer: constitution
     lens: architecture
+    question: complete
     appliesTo: { artifacts: [data, catalog] }
     severity: blocking
     check:
@@ -111,6 +122,7 @@ rules:
     title: Every data change names its migration
     layer: constitution
     lens: architecture
+    question: ship
     appliesTo: { artifacts: [data] }
     severity: blocking
     check:
@@ -124,6 +136,7 @@ rules:
     title: Every new column is classified, and personal data is classified as personal
     layer: constitution
     lens: architecture
+    question: safe
     appliesTo: { artifacts: [data] }
     severity: blocking
     check:
@@ -137,6 +150,7 @@ rules:
     title: Every new table says how long its rows are kept
     layer: constitution
     lens: architecture
+    question: safe
     appliesTo: { artifacts: [data, catalog] }
     severity: blocking
     check:
@@ -154,6 +168,7 @@ rules:
     title: Every story has acceptance criteria
     layer: constitution
     lens: story
+    question: complete
     appliesTo: { artifacts: [stories] }
     severity: blocking
     check:
@@ -167,6 +182,7 @@ rules:
     title: Every requirement has a scenario
     layer: constitution
     lens: business
+    question: complete
     appliesTo: { artifacts: [specs] }
     severity: blocking
     check:
@@ -176,11 +192,16 @@ rules:
     source: Atticus constitution
     needs: []
 
+  # Retired with the four questions (ADR 0124 addendum, Part 4): a service-desk request is a
+  # person's manual step. atticus plan drafts snow.md from the triggers this check reads, and
+  # atticus release plan lists each draft as a request to file, with its required fields still
+  # missing. The check stays for an org pack that wants it as a rule of its own.
   - id: constitution.snow-drafts-present
     title: A service-desk draft exists for each firewall or gateway change
     description: Request templates in the org pack say which catalog changes need a request; each needs a draft in snow.md with its required fields filled.
     layer: constitution
     lens: release
+    question: ship
     appliesTo: { artifacts: [snow, interfaces] }
     severity: blocking
     check:
@@ -189,12 +210,14 @@ rules:
     waivable: false
     source: Atticus constitution
     needs: []
+    status: retired
 
   - id: constitution.no-embedded-instructions
     title: Artifacts hold no instructions aimed at AI agents
     description: Ingested content is data, never instructions; text that tries to steer a reviewer or an agent is removed before review.
     layer: constitution
     lens: delivery
+    question: safe
     appliesTo:
       {
         artifacts:
@@ -204,6 +227,68 @@ rules:
     check:
       type: deterministic
       check: no-embedded-instructions
+    waivable: false
+    source: Atticus constitution
+    needs: []
+
+  # ---- added with the four questions (ADR 0124 addendum, Part 4): code answers what code can.
+
+  - id: constitution.call-timeout-stated
+    title: Every synchronous call the change plans has a timeout
+    description: A call with no timeout waits as long as the callee does. The fact is a timeout Setting for the caller and callee in the catalog, or a timeout stated for the call in interfaces.md or design.md; a pattern that requires more is the resilience rule's.
+    layer: constitution
+    lens: safe
+    question: safe
+    appliesTo: { artifacts: [interfaces, design, catalog] }
+    severity: risk
+    check:
+      type: deterministic
+      check: call-timeout-stated
+    waivable: false
+    source: Atticus constitution
+    needs: []
+
+  - id: constitution.public-entry-auth
+    title: Every entry another system calls says how it authenticates
+    description: An entry point the change adds or changes that another system or the gateway calls needs an auth fact (the Endpoint's or the Interface's auth, or a gateway route that checks scopes). None known is asked of the owner; none at all blocks.
+    layer: constitution
+    lens: safe
+    question: safe
+    appliesTo: { artifacts: [interfaces, catalog] }
+    severity: blocking
+    check:
+      type: deterministic
+      check: public-entry-auth
+    waivable: false
+    source: Atticus constitution
+    needs: []
+
+  - id: constitution.breaking-delta-consumers
+    title: A breaking change to an operation plans for every consumer the catalog knows
+    description: A retired operation breaks its callers; a changed one breaks them when a caller must change (a judgment, ADR 0117, asked of a person when nobody has made it). Each consumer the catalog knows and the change doesn't plan for is named.
+    layer: constitution
+    lens: safe
+    question: safe
+    appliesTo: { artifacts: [interfaces, catalog] }
+    severity: blocking
+    check:
+      type: deterministic
+      check: breaking-delta-consumers
+    waivable: false
+    source: Atticus constitution
+    needs: []
+
+  - id: constitution.store-write-rollback
+    title: Every store write has a rollback step
+    description: A table the change writes or alters (data.md, or a write step of a target flow) is named, or its migration is, under the rollback heading of design.md.
+    layer: constitution
+    lens: ship
+    question: ship
+    appliesTo: { artifacts: [data, design, catalog] }
+    severity: risk
+    check:
+      type: deterministic
+      check: store-write-rollback
     waivable: false
     source: Atticus constitution
     needs: []

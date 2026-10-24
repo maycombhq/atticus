@@ -54,6 +54,7 @@ function subjectEvidence(ctx: CriticContext, id: string): Evidence[] {
 
 export const observabilityPresent: DeterministicCheckDef = {
   id: "observability-present",
+  question: "ship",
   description:
     "Touched components have the observability assets the rule asks for (alerts, dashboards); unknown ones are asked about.",
   params: z.strictObject({ assetKinds: z.array(z.string()).min(1) }),
@@ -123,6 +124,7 @@ function gapsFor(ctx: CriticContext): KnowledgeGap[] {
 
 export const knowledgeCheck: DeterministicCheckDef = {
   id: "knowledge-check",
+  question: "true",
   description:
     "Runs one of the catalog's knowledge checks (@maycombhq/knowledge) and keeps the gaps about what the change touches.",
   params: z.strictObject({ check: z.string() }),
@@ -188,6 +190,7 @@ export function scopeIds(ctx: CriticContext, scope: z.infer<typeof Scope>): stri
 
 export const factKnown: DeterministicCheckDef = {
   id: "fact-known",
+  question: "complete",
   description:
     "A catalog fact of one kind (optionally with given field values) exists for each touched record in scope; when it doesn't, the owner is asked.",
   params: z.strictObject({
@@ -248,6 +251,7 @@ export const factKnown: DeterministicCheckDef = {
 
 export const vendorOperationKnown: DeterministicCheckDef = {
   id: "vendor-operation-known",
+  question: "true",
   description:
     "Each new or changed call to a vendor uses an operation in the vendor's published spec (as read into the catalog).",
   params: z.strictObject({}),
@@ -307,6 +311,7 @@ interface Need {
 
 export const snowDraftsPresent: DeterministicCheckDef = {
   id: "snow-drafts-present",
+  question: "ship",
   description:
     "Each catalog change that triggers an org-pack service-desk template (and each template it also needs) has a draft in snow.md with its required fields filled.",
   params: z.strictObject({}),

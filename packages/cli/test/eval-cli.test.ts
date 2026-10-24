@@ -81,7 +81,8 @@ describe("atticus eval", () => {
       expect(await evalRun(root, { mode: "mock" }, c.io, { now: clock })).toBe(0);
       expect(c.err).toEqual([]);
       expect(c.out[0]).toMatch(/^Eval run eval-\d{14}-mock \(mock, 1 run per case\):$/);
-      expect(c.out).toContain("feature-namer        2      2       2     100%");
+      // The column is as wide as the longest agent name, which the four questions shortened.
+      expect(c.out.some((l) => /^feature-namer\s+2\s+2\s+2\s+100%$/.test(l))).toBe(true);
       expect(c.out.at(-1)).toMatch(/^Saved \.evals\/runs\/eval-\d{14}-mock\/report\.json\.$/);
       c = capture();
       expect(await evalRun(root, { mode: "replay", json: true }, c.io, { now: clock })).toBe(0);
@@ -169,9 +170,7 @@ describe("atticus eval", () => {
     expect(await evalRun(root, { runs: 0 }, c.io)).toBe(2);
     c = capture();
     expect(await evalRun(root, { agent: "nobody" }, c.io)).toBe(2);
-    expect(c.err[0]).toMatch(
-      /^No eval cases for nobody\. Agents with cases: architecture-critic, /,
-    );
+    expect(c.err[0]).toMatch(/^No eval cases for nobody\. Agents with cases: complete-critic, /);
   });
 });
 

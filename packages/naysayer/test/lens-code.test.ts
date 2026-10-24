@@ -88,7 +88,7 @@ const lensAnswer = (
 function lensModel(text: string, prompts: string[] = []) {
   return new MockRuntime((r: AiRequest) => {
     prompts.push(r.pack.prompt);
-    return r.agent.id === "business-critic" ? text : "findings: []\n";
+    return r.agent.id === "complete-critic" ? text : "findings: []\n";
   });
 }
 
@@ -116,7 +116,7 @@ describe("the lenses look in the code before raising an absence (W1)", () => {
       now: NOW,
       runtime: lensModel(lensAnswer(line, quote), prompts),
     });
-    const p = prompts.find((x) => x.includes("business lens"))!;
+    const p = prompts.find((x) => x.includes("complete lens"))!;
     expect(p).toContain("workspace/forge-ledger");
     expect(p).toContain("Before you report that something doesn't exist");
     expect(p).toContain("absent:");
@@ -130,15 +130,15 @@ describe("the lenses look in the code before raising an absence (W1)", () => {
       now: NOW,
       runtime: lensModel(lensAnswer(line, quote), prompts),
     });
-    const p = prompts.find((x) => x.includes("business lens"))!;
+    const p = prompts.find((x) => x.includes("complete lens"))!;
     expect(p).not.toContain("Before you report that something doesn't exist");
     expect(p).not.toContain("absent:");
   });
 
   it("offers a lens the same read-only tools the drafter has, in model mode", async () => {
     const { root: r, line, quote } = await root();
-    // The Forge business lens runs where its agent allows: here, on the model runtime too.
-    const agentFile = join(r, "org-pack/agents/business-critic.yaml");
+    // The Forge complete lens runs where its agent allows: here, on the model runtime too.
+    const agentFile = join(r, "org-pack/agents/complete-critic.yaml");
     await writeFile(
       agentFile,
       (await readFile(agentFile, "utf8")).replace(
@@ -149,7 +149,7 @@ describe("the lenses look in the code before raising an absence (W1)", () => {
     const asked: string[] = [];
     const provider = new MockModelProvider(
       "mock-model",
-      (prompt) => (prompt.includes("business lens") ? lensAnswer(line, quote) : "findings: []\n"),
+      (prompt) => (prompt.includes("complete lens") ? lensAnswer(line, quote) : "findings: []\n"),
       () => ({}),
     );
     const runtime = new ModelRuntime(provider, {
@@ -164,7 +164,7 @@ describe("the lenses look in the code before raising an absence (W1)", () => {
       },
     });
     await runCritic(r, CHANGE, { gate: "plan", now: NOW, runtime });
-    expect(asked).toContain("business-critic");
+    expect(asked).toContain("complete-critic");
     expect(provider.chats.some((c) => c.tools.some((t) => t.name === "grep"))).toBe(true);
   });
 
@@ -238,11 +238,11 @@ describe("the lenses look in the code before raising an absence (W1)", () => {
     );
     const rt = new HandoffRuntime({ root: r, validate: async () => [], now: () => new Date(NOW) });
     const res = await runCritic(r, CHANGE, { gate: "plan", now: NOW, runtime: rt });
-    const lens = res.lenses.find((l) => l.lens === "business" && l.state === "waiting")!;
+    const lens = res.lenses.find((l) => l.lens === "complete" && l.state === "waiting")!;
     const prompt = await readFile(join(r, ".runs", CHANGE, lens.runId!, "prompt.md"), "utf8");
     expect(prompt).toContain("workspace/forge-ledger");
     await writeFile(
-      join(r, ".runs", CHANGE, lens.runId!, "findings-business.yaml"),
+      join(r, ".runs", CHANGE, lens.runId!, "findings-complete.yaml"),
       lensAnswer(line, quote, { absent: ["TransferLimitGuard"] }),
     );
     await completeLensRun(r, await rt.done(lens.runId!), { now: NOW });

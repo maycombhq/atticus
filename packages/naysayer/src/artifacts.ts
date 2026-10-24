@@ -1,5 +1,6 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { parse } from "yaml";
 import { clean, parseDoc, sectionLines, sectionMatching, tableWith, type Doc } from "./doc.js";
 
 /**
@@ -25,7 +26,15 @@ export interface ChangeFiles {
   dir: string;
   /** Change-folder-relative path → document, in path order. */
   docs: Map<string, Doc>;
+  /**
+   * The target flows a stage drafted (`target-flows/<flow>.yaml`, ADR 0087), as text: not
+   * artifacts a lens reviews, but the store writes the ship question's check reads.
+   */
+  flows?: Doc[];
 }
+
+/** Where a stage writes its target flows in the change folder. */
+const FLOW_FILE = /^target-flows\/[^/]+\.ya?ml$/;
 
 /** Which artifact a change-folder file belongs to, or undefined for anything else. */
 export function artifactOf(rel: string): ArtifactName | undefined {
@@ -55,11 +64,76 @@ async function walk(dir: string, rel = ""): Promise<string[]> {
 
 export async function readChangeFiles(dir: string): Promise<ChangeFiles> {
   const docs = new Map<string, Doc>();
+  const flows: Doc[] = [];
   for (const rel of (await walk(dir)).sort()) {
+    if (FLOW_FILE.test(rel)) flows.push(parseDoc(rel, await readFile(join(dir, rel), "utf8")));
     if (!artifactOf(rel)) continue;
     docs.set(rel, parseDoc(rel, await readFile(join(dir, rel), "utf8")));
   }
-  return { dir, docs };
+  return { dir, docs, flows };
+}
+
+export interface StoreWrite {
+  /** The table as the change names it: `<store>.<table>`. */
+  table: string;
+  /** Its name alone, as a rollback line may name it. */
+  name: string;
+  /** The migration file named for it, when there is one. */
+  migration?: string;
+  /** Where the write is: data.md's row, or the target flow's step. */
+  artifact: string;
+  line: number;
+}
+
+/**
+ * The store writes a change makes: each row of data.md's Changes table that changes something,
+ * and each write step a target flow adds or changes (`kind: write` with `store.table`).
+ */
+export function readStoreWrites(files: ChangeFiles): StoreWrite[] {
+  const out: StoreWrite[] = [];
+  for (const r of readDataChanges(files)) {
+    if (/^\s*no (data )?change/i.test(r.change)) continue;
+    const m = r.migration.trim();
+    out.push({
+      table: `${r.store}.${r.table}`,
+      name: r.table,
+      ...(m && !/^(-|—|none|n\/a|tbd|todo)$/i.test(m) ? { migration: m } : {}),
+      artifact: "data.md",
+      line: r.line,
+    });
+  }
+  for (const doc of files.flows ?? []) {
+    let data: unknown;
+    try {
+      data = parse(doc.raw);
+    } catch {
+      continue;
+    }
+    const steps = (data as { steps?: unknown } | null)?.steps;
+    if (!Array.isArray(steps)) continue;
+    let from = 0;
+    for (const s of steps as Record<string, unknown>[]) {
+      if (s?.kind !== "write" || (s.op !== "add" && s.op !== "change")) continue;
+      const store = s.store as { table?: unknown; migration?: unknown } | undefined;
+      if (typeof store?.table !== "string" || !store.table) continue;
+      const table = store.table;
+      // The step's own line: where its table is written, after the write steps before it.
+      const at = doc.rawLines.findIndex(
+        (l, i) => i >= from && /\btable:/.test(l) && l.includes(table),
+      );
+      if (at >= 0) from = at + 1;
+      out.push({
+        table,
+        name: table.split(".").pop()!,
+        ...(typeof store.migration === "string" && store.migration
+          ? { migration: store.migration }
+          : {}),
+        artifact: doc.path,
+        line: at + 1 || 1,
+      });
+    }
+  }
+  return out;
 }
 
 export function filesOf(files: ChangeFiles, artifact: ArtifactName): Doc[] {

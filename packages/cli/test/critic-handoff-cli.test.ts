@@ -91,25 +91,20 @@ describe("atticus critic --mode hand-off", () => {
     expect(code).toBe(1);
     expect(c.err).toEqual([]);
     const waiting = (await readdir(join(r, ".runs", CHANGE))).sort();
-    expect(waiting.length).toBe(5);
-    expect(c.out.filter((l) => /^\w+ lens waiting: /.test(l)).length).toBe(5);
+    // One lens per question the plan gate's AI rules ask (ADR 0124 addendum, Part 4).
+    expect(waiting.length).toBe(3);
+    expect(c.out.filter((l) => /^\w+ lens waiting: /.test(l)).length).toBe(3);
     expect(c.out.join("\n")).not.toMatch(/lens failed/);
     expect(c.out.join("\n")).not.toMatch(/the run ended waiting/);
     for (const id of waiting) expect(c.out.join("\n")).toContain(`atticus handoff done ${id}`);
     expect(c.out.at(-1)).toBe(
-      "The plan gate is not decided: 5 AI lenses are with your assistant. Run atticus handoff done <run> for each, then look at the findings again.",
+      "The plan gate is not decided: 3 AI lenses are with your assistant. Run atticus handoff done <run> for each, then look at the findings again.",
     );
 
     const s = await start(await root());
     expect(s.code).toBe(1);
     expect(s.j.mayProceed).toBe(false);
-    expect(s.waiting.map((l) => l.lens)).toEqual([
-      "business",
-      "architecture",
-      "story",
-      "ux",
-      "delivery",
-    ]);
+    expect(s.waiting.map((l) => l.lens)).toEqual(["complete", "safe", "ship"]);
     expect(s.waiting.every((l) => /^run-/.test(l.runId ?? ""))).toBe(true);
   });
 
@@ -122,7 +117,7 @@ describe("atticus critic --mode hand-off", () => {
     expect(await handoffDone(r, first!.runId!, c.io, { now: () => new Date(LATER) })).toBe(0);
     expect(c.err).toEqual([]);
     expect(c.out[0]).toMatch(
-      /^The business lens of round 1 at the plan gate raised \d+ findings?\.$/,
+      /^The complete lens of round 1 at the plan gate raised \d+ findings?\.$/,
     );
     expect(c.out.at(-1)).toBe(
       `${rest.length} AI lenses are still with your assistant: ${rest.map((l) => `${l.lens} (atticus handoff done ${l.runId})`).join(", ")}.`,
@@ -138,7 +133,7 @@ describe("atticus critic --mode hand-off", () => {
       last = capture();
       expect(await handoffDone(r, l.runId!, last.io, { now: () => new Date(LATER) })).toBe(0);
     }
-    expect(last.out.at(-1)).toMatch(/^The plan gate is closed: 14 blocking, 13 open gaps?\./);
+    expect(last.out.at(-1)).toMatch(/^The plan gate is closed: 12 blocking, 14 open gaps?\./);
     // Same verdict as the replay run: a new critic call (round 2) is not needed to read it.
     const again = capture();
     const { findings } = await import("../src/critic-commands.js");
@@ -148,13 +143,13 @@ describe("atticus critic --mode hand-off", () => {
       open: { blocking: number };
     }[];
     expect(g[0]).toMatchObject({ mayProceed: false });
-    expect(g[0]!.open.blocking).toBe(14);
+    expect(g[0]!.open.blocking).toBe(12);
   });
 
   it("drops what the lens cannot back with a quote on the line it cites, and says so", async () => {
     const r = await root();
     const { waiting } = await start(r);
-    const l = waiting.find((x) => x.lens === "architecture")!;
+    const l = waiting.find((x) => x.lens === "safe")!;
     await write(
       r,
       l.runId!,
@@ -163,7 +158,7 @@ describe("atticus critic --mode hand-off", () => {
     );
     const c = capture();
     expect(await handoffDone(r, l.runId!, c.io, { now: () => new Date(LATER) })).toBe(0);
-    expect(c.out[0]).toBe("The architecture lens of round 1 at the plan gate raised 0 findings.");
+    expect(c.out[0]).toBe("The safe lens of round 1 at the plan gate raised 0 findings.");
     expect(c.err).toEqual([
       "Discarded: it names rule not-a-rule, which this lens wasn't asked to apply",
     ]);
@@ -176,11 +171,11 @@ describe("atticus critic --mode hand-off", () => {
     await write(r, l.runId!, l.lens, "findings: [unclosed\n");
     let c = capture();
     expect(await handoffDone(r, l.runId!, c.io)).toBe(1);
-    expect(c.err[0]).toMatch(/^findings-business.yaml isn't YAML: /);
+    expect(c.err[0]).toMatch(/^findings-complete.yaml isn't YAML: /);
     await write(r, l.runId!, l.lens, "findings: []\n");
     c = capture();
     expect(await handoffDone(r, l.runId!, c.io, { now: () => new Date(LATER) })).toBe(0);
-    expect(c.out[0]).toBe("The business lens of round 1 at the plan gate raised 0 findings.");
+    expect(c.out[0]).toBe("The complete lens of round 1 at the plan gate raised 0 findings.");
   });
 
   it("an empty answer or a refusal isn't a review: it is refused, and the lens is still waiting", async () => {
@@ -190,7 +185,7 @@ describe("atticus critic --mode hand-off", () => {
     await write(r, a!.runId!, a!.lens, "");
     let c = capture();
     expect(await handoffDone(r, a!.runId!, c.io)).toBe(1);
-    expect(c.err[0]).toContain("findings-business.yaml: the output has no findings list");
+    expect(c.err[0]).toContain("findings-complete.yaml: the output has no findings list");
     await write(r, b!.runId!, b!.lens, "I'm sorry, but I can't help with that.\n");
     c = capture();
     expect(await handoffDone(r, b!.runId!, c.io)).toBe(1);
@@ -226,7 +221,7 @@ describe("atticus critic --mode hand-off", () => {
       c.out.filter((l) => /^The \w+ lens of round 1 at the plan gate raised/.test(l)).length,
     ).toBe(2);
     expect(c.out.at(-1)).toMatch(
-      /^The plan gate is not decided: 3 AI lenses are with your assistant\./,
+      /^The plan gate is not decided: 1 AI lens is with your assistant\./,
     );
     // Run again with the rest in: the gate is decided.
     for (const l of waiting.slice(2)) await write(r, l.runId!, l.lens, await recordedAnswer(r, l));
@@ -234,7 +229,7 @@ describe("atticus critic --mode hand-off", () => {
     expect(
       await critic(r, CHANGE, { gate: "plan", resume: true }, d.io, { env: {}, now: LATER }),
     ).toBe(1);
-    expect(d.out.at(-1)).toMatch(/^The plan gate is closed: 14 blocking, 13 open gaps?\./);
+    expect(d.out.at(-1)).toMatch(/^The plan gate is closed: 12 blocking, 14 open gaps?\./);
     // Nothing left to resume.
     const e = capture();
     expect(
@@ -282,7 +277,7 @@ describe("completionOf and the hand-off runs it routes", () => {
     const { waiting } = await start(r);
     const rt = new HandoffRuntime({ root: r, validate: async () => [] });
     const run = await rt.result(waiting[0]!.runId!);
-    expect(run.request).toMatchObject({ outputPath: "findings-business.yaml", outputIn: "run" });
+    expect(run.request).toMatchObject({ outputPath: "findings-complete.yaml", outputIn: "run" });
     expect(await readdir(changesDirOf(r))).toEqual([CHANGE]);
   });
 });
@@ -302,7 +297,7 @@ describe("with AI off in the org pack (ADR 0046)", () => {
     expect(s.j.lenses.every((l) => l.state === "skipped")).toBe(true);
     expect(
       s.j.lenses.filter((l) => /AI is off here/.test(l.reason ?? "")).map((l) => l.lens),
-    ).toEqual(["business", "architecture", "story", "ux", "delivery"]);
+    ).toEqual(["complete", "safe", "ship"]);
     await expect(readdir(join(r, ".runs"))).rejects.toThrow();
   });
 
@@ -353,9 +348,10 @@ describe("atticus critic <change> --handoff --json (ADR 0106 addendum)", () => {
       expect(await main(s.j.doneArgs!, capture().io, { quiet: true })).toBe(0);
       s = await step(s.j.resumeArgs!);
     }
-    expect(offered).toEqual(["business", "architecture", "story", "ux", "delivery"]);
+    // One lens per question, in the questions' order (ADR 0124 addendum, Part 4).
+    expect(offered).toEqual(["complete", "safe", "ship"]);
     expect(s.j.state).toBe("stopped");
-    expect(s.j.messages?.at(-1)).toMatch(/^The plan gate is closed: 14 blocking/);
+    expect(s.j.messages?.at(-1)).toMatch(/^The plan gate is closed: 12 blocking/);
   });
 
   it("counts as an AI step, and critic stats doesn't", async () => {

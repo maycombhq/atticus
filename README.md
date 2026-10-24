@@ -11,7 +11,7 @@ Atticus is an open-source, configurable framework for teams whose systems span m
 - **Catalog from code.** Parsers read code, gateway config, event configs, infrastructure, migrations and pipelines into a catalog of who calls whom, what data lives where, and how everything runs. Every fact records its source, commit and confidence.
 - **Impact and reconcile.** Ask what a change to an API, table or column will break, and check architects' diagrams against what the code really does.
 - **Changes across repos.** One change, many repos: ordering, a branch and PR per repo, tickets, release plan.
-- **A critic with evidence.** Seven review lenses (business, architecture, story, UX, delivery, code and test, release). Findings carry evidence and a suggested fix; when Atticus lacks a fact it says so instead of passing silently.
+- **A critic with evidence.** Four questions of every draft: is it true to the code, is it complete, is it safe to build, can it ship. Code answers what code can, then one AI lens per question reads the rest. Findings carry evidence and a suggested fix; when Atticus lacks a fact it says so instead of passing silently.
 - **Every role.** Screens for product owners, analysts, architects, developers, testers, delivery leads and more, not just an editor.
 - **Configurable.** Everything organisation-specific lives in an org pack: dialects for house frameworks, change types, roles, checklists, integration patterns, templates and AI policy.
 - **Adopts what you have.** Runs on top of an existing AI metarepo or OpenSpec repo without moving anything, and absorbs other teams' repos and wikis.

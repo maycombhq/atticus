@@ -23,17 +23,21 @@ describe("the starter review checklist", () => {
     expect(text).toContain("Change it through a");
     const pack = ChecklistPack.parse(parse(text));
     expect(pack.name).toBe("review");
-    expect(pack.rules.map((r) => [r.id, r.lens, r.appliesTo.artifacts, r.severity])).toEqual([
-      ["review.brief-outcomes-placed", "business", ["brief"], "blocking"],
-      ["review.changed-flow-not-read", "architecture", ["brief"], "blocking"],
-      ["review.assumed-capability-named", "architecture", ["brief"], "blocking"],
-      ["review.outcome-has-target-steps", "architecture", ["design"], "blocking"],
-      ["review.shown-data-has-a-source", "architecture", ["design", "data"], "blocking"],
-      ["review.new-column-complete", "architecture", ["data", "design"], "blocking"],
-      ["review.hop-pattern-fits", "architecture", ["interfaces", "design"], "risk"],
-      ["review.outcome-has-story", "story", ["stories"], "blocking"],
-      ["review.criteria-testable", "story", ["stories"], "risk"],
-      ["review.requests-raised-in-time", "delivery", ["tasks"], "risk"],
+    // Each rule's question (ADR 0124 addendum, Part 4) picks the lens that applies it; its role
+    // lens still picks the change types it applies to.
+    expect(
+      pack.rules.map((r) => [r.id, r.lens, r.question, r.appliesTo.artifacts, r.severity]),
+    ).toEqual([
+      ["review.brief-outcomes-placed", "business", "complete", ["brief"], "blocking"],
+      ["review.changed-flow-not-read", "architecture", "true", ["brief"], "blocking"],
+      ["review.assumed-capability-named", "architecture", "true", ["brief"], "blocking"],
+      ["review.outcome-has-target-steps", "architecture", "complete", ["design"], "blocking"],
+      ["review.shown-data-has-a-source", "architecture", "true", ["design", "data"], "blocking"],
+      ["review.new-column-complete", "architecture", "safe", ["data", "design"], "blocking"],
+      ["review.hop-pattern-fits", "architecture", "safe", ["interfaces", "design"], "risk"],
+      ["review.outcome-has-story", "story", "complete", ["stories"], "blocking"],
+      ["review.criteria-testable", "story", "complete", ["stories"], "risk"],
+      ["review.requests-raised-in-time", "delivery", "ship", ["tasks"], "risk"],
     ]);
     for (const r of pack.rules) {
       // Configuration, not the constitution: an org can waive a blocking rule, or change it.

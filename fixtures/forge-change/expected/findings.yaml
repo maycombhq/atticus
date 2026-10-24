@@ -6,6 +6,11 @@
 #   ai            - layer 2, a recorded AI lens answer (recordings/). Only judgement calls.
 # A finding matches an entry when its rule, severity and kind match, and its artifact and
 # line (or record) match when the entry gives them.
+#
+# Re-baselined for the critic's four questions (ADR 0124 addendum, Part 4, 2026-10-24): the seven
+# role lenses became four question lenses (true, complete, safe, ship) and the constitution gained
+# the code checks of the four questions. What retired is listed under retired, with why; every
+# other seeded blocking issue is still caught, by the same layer. New entries say "(Part 4)".
 change: add-transfer-limit
 gate: plan
 
@@ -91,22 +96,6 @@ seeded:
     artifact: stories/s3-audit-refusals.md
     line: 10
     what: Story s3 tells AI critics to ignore their rules; ingested content is data, never instructions.
-  - id: b11-no-firewall-draft
-    kind: issue
-    severity: blocking
-    layer: deterministic
-    rule: constitution.snow-drafts-present
-    artifact: snow.md
-    line: 1
-    what: The new gateway proxy gw-northwind-v2 also needs a firewall rule request; snow.md has no draft.
-  - id: b12-gateway-draft-incomplete
-    kind: issue
-    severity: blocking
-    layer: deterministic
-    rule: constitution.snow-drafts-present
-    artifact: snow.md
-    line: 9
-    what: The gateway proxy draft leaves the required Target field empty.
   - id: b13-concurrent-transfers
     kind: issue
     severity: blocking
@@ -218,6 +207,14 @@ seeded:
     rule: brief-questions-answered
     artifact: specs/transfer-limits/spec.md
     what: Nothing says what happens to a transfer when the velocity check flags it or doesn't answer (judgement).
+  - id: g14-audit-entry-auth-unknown
+    kind: knowledge-gap
+    severity: gap
+    layer: deterministic
+    rule: constitution.public-entry-auth
+    artifact: interfaces.md
+    line: 8
+    what: portal-bff calls audit-svc's POST /audit/events from another system, and nothing records how audit-svc authenticates its callers (Part 4, is it safe).
 
 # Not seeded problems, but findings the critic must also raise (risks). Any finding not listed
 # here or above fails the golden test, so noise can't creep in unnoticed.
@@ -241,13 +238,6 @@ alsoExpected:
     rule: design-has-rollback
     artifact: design.md
     line: 25
-  - id: r04-limit-error-state
-    kind: issue
-    severity: risk
-    layer: ai
-    rule: ux-states-complete
-    artifact: ux.md
-    line: 3
   - id: r05-requests-not-sequenced
     kind: issue
     severity: risk
@@ -255,3 +245,51 @@ alsoExpected:
     rule: tasks-sequenced-for-lead-times
     artifact: tasks.md
     line: 7
+  - id: r06-audit-call-no-timeout
+    kind: issue
+    severity: risk
+    layer: deterministic
+    rule: constitution.call-timeout-stated
+    artifact: interfaces.md
+    line: 8
+    what: The changed portal-bff call to audit-svc is synchronous and states no timeout; no pattern names one for it (Part 4, is it safe).
+  - id: r07-account-write-no-rollback
+    kind: issue
+    severity: risk
+    layer: deterministic
+    rule: constitution.store-write-rollback
+    artifact: data.md
+    line: 7
+    what: The rollback section names neither ledger-db.account nor V3__add_daily_limit.sql (Part 4, can it ship).
+  - id: r08-limit-change-write-no-rollback
+    kind: issue
+    severity: risk
+    layer: deterministic
+    rule: constitution.store-write-rollback
+    artifact: data.md
+    line: 8
+    what: The rollback section says nothing about the new table limit_change (Part 4, can it ship).
+  - id: r09-proxy-request-no-fallback
+    kind: issue
+    severity: risk
+    layer: ai
+    rule: release-plan-complete
+    artifact: snow.md
+    line: 12
+    what: snow.md now reaches the ship lens (its service-desk check retired); nothing says what the release does if the gateway proxy request isn't done in time (Part 4, can it ship; judgement).
+
+# Retired with the four questions (ADR 0124 addendum, Part 4). The critic must not raise these any
+# more; each line says why. The golden tests check that none of them comes back.
+retired:
+  - id: b11-no-firewall-draft
+    rule: constitution.snow-drafts-present
+    artifact: snow.md
+    why: Service-desk requests are a manual step now, and the constitution rule is retired. atticus plan drafts snow.md from the triggers the check read (the firewall rule for gw-northwind-v2 included, its unknown fields left empty and listed), and atticus release plan lists each draft as a request a person files. The critic no longer checks a hand-written snow.md.
+  - id: b12-gateway-draft-incomplete
+    rule: constitution.snow-drafts-present
+    artifact: snow.md
+    why: The same retirement. The gateway proxy request's empty Target field shows in atticus release plan as a missing required field of the request, for the person filing it.
+  - id: r04-limit-error-state
+    rule: ux-states-complete
+    artifact: ux.md
+    why: The UX lens is gone. The Ledger team's ux-states-complete rule is retired; a screen state the specs imply is one of the things the complete lens looks for under the change's other rules.

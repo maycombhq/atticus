@@ -439,16 +439,19 @@ describe("the critic's AI lenses in hand-off mode (ADR 0115)", () => {
     await writeFile(out(draft1, "feature-answer.yaml"), PLACED);
     await rt().done(draft1);
 
-    // It passes the rules, so the business lens is handed off: the draft and the estate with it.
+    // It passes the rules, so the first question's lens is handed off: the draft and the estate
+    // with it. The fixture's rules are written for the old architecture and business lenses; they
+    // ask whether the draft is true to the code and whether it is complete (ADR 0124 addendum,
+    // Part 4), and the lenses go out in the questions' order.
     const second = await step(draft1);
     expect(second.state).toBe("waiting");
-    expect(second.waiting).toMatchObject({ lens: "business" });
-    const business = second.waiting!.runId;
-    expect((await runJson(root, business)).request).toMatchObject({
-      outputPath: "findings-business.yaml",
+    expect(second.waiting).toMatchObject({ lens: "true" });
+    const truth = second.waiting!.runId;
+    expect((await runJson(root, truth)).request).toMatchObject({
+      outputPath: "findings-true.yaml",
       outputIn: "run",
     });
-    const prompt = await readFile(join(root, ".runs", CHANGE, business, "prompt.md"), "utf8");
+    const prompt = await readFile(join(root, ".runs", CHANGE, truth, "prompt.md"), "utf8");
     expect(prompt).toContain(
       "Review the draft against the estate and the brief, including what the draft left out",
     );
@@ -456,22 +459,13 @@ describe("the critic's AI lenses in hand-off mode (ADR 0115)", () => {
     expect(prompt).toContain("flow forge-orders.place-order (repo forge-orders");
     // The round waits for both lenses; the rules ran.
     expect((await roundMeta(root, 1)).lenses.map((l) => [l.lens, l.state])).toEqual([
-      ["business", "waiting"],
-      ["architecture", "waiting"],
+      ["true", "waiting"],
+      ["complete", "waiting"],
     ]);
 
-    // The business lens finds nothing; the architecture lens is next.
-    await writeFile(out(business, "findings-business.yaml"), "findings: []\n");
-    await rt().done(business);
-    const third = await step(business);
-    expect(third.state).toBe("waiting");
-    expect(third.waiting).toMatchObject({ lens: "architecture" });
-    const architecture = third.waiting!.runId;
-    expect(third.drafts).toBe(0);
-
-    // The architecture lens finds what no rule can: the screen changes how stock is reserved.
+    // The true lens finds what no rule can: the screen changes how stock is reserved.
     await writeFile(
-      out(architecture, "findings-architecture.yaml"),
+      out(truth, "findings-true.yaml"),
       `findings:
   - rule: flow-use-matches-estate
     artifact: feature.md
@@ -482,8 +476,16 @@ describe("the critic's AI lenses in hand-off mode (ADR 0115)", () => {
       - { path: feature.md, quote: "Flow forge-stock.reserve-stock (read)" }
 `,
     );
-    await rt().done(architecture);
-    const fourth = await step(architecture);
+    await rt().done(truth);
+    // The complete lens is next; its finding waits until every lens is in.
+    const third = await step(truth);
+    expect(third.state).toBe("waiting");
+    expect(third.waiting).toMatchObject({ lens: "complete" });
+    const complete = third.waiting!.runId;
+    expect(third.drafts).toBe(0);
+    await writeFile(out(complete, "findings-complete.yaml"), "findings: []\n");
+    await rt().done(complete);
+    const fourth = await step(complete);
     // The finding goes back to the next draft, as a rule's finding does.
     expect(fourth.state).toBe("waiting");
     expect(fourth.waiting!.lens).toBeUndefined();
@@ -494,8 +496,8 @@ describe("the critic's AI lenses in hand-off mode (ADR 0115)", () => {
     );
     // The round records both lenses as run, and the finding.
     expect((await roundMeta(root, 1)).lenses.map((l) => [l.lens, l.state])).toEqual([
-      ["business", "ran"],
-      ["architecture", "ran"],
+      ["true", "ran"],
+      ["complete", "ran"],
     ]);
     expect((await roundMeta(root, 1)).lenses[0]!.artifacts).toContain("feature.md");
 
@@ -514,7 +516,7 @@ describe("the critic's AI lenses in hand-off mode (ADR 0115)", () => {
       await rt().done(id);
       r = await step(id);
     }
-    expect(lenses).toEqual(["business", "architecture"]);
+    expect(lenses).toEqual(["true", "complete"]);
     expect(r.state).toBe("done");
     expect(r.iteration).toBe(2);
     expect((await roundMeta(root, 2)).lenses.every((l) => l.state === "ran")).toBe(true);
@@ -545,10 +547,10 @@ describe("the critic's AI lenses in hand-off mode (ADR 0115)", () => {
     // Resumed before handoff done: the same lens again.
     const again = await featureStage(root, CHANGE, { runtime: rt(), now: NOW, resume: lens });
     expect(again.state).toBe("waiting");
-    expect(again.waiting).toEqual({ runId: lens, lens: "business" });
+    expect(again.waiting).toEqual({ runId: lens, lens: "true" });
     // Run without --resume: still waiting on it.
     const plain = await featureStage(root, CHANGE, { runtime: rt(), now: NOW });
-    expect(plain.waiting).toEqual({ runId: lens, lens: "business" });
+    expect(plain.waiting).toEqual({ runId: lens, lens: "true" });
   });
 
   it("a draft that fails the stage's checks isn't sent to the lenses", async () => {
@@ -967,28 +969,31 @@ describe("the starter review at each stage (ADR 0120)", () => {
     expect((await featureStage(root, CHANGE, { runtime: rt([PLACED]), now: NOW })).state).toBe(
       "done",
     );
-    expect(lenses.map((l) => l.lens)).toEqual(["business", "architecture"]);
-    expect(lenses[0]!.prompt).toContain("review.brief-outcomes-placed");
-    expect(lenses[1]!.prompt).toContain("review.assumed-capability-named");
+    // One lens per question the starter rules ask (ADR 0124 addendum, Part 4), in order.
+    expect(lenses.map((l) => l.lens)).toEqual(["true", "complete"]);
+    expect(lenses[0]!.prompt).toContain("review.assumed-capability-named");
+    expect(lenses[1]!.prompt).toContain("review.brief-outcomes-placed");
     for (const l of lenses) expect(l.prompt, l.lens).toMatch(brief);
 
     lenses = [];
     expect((await architectureStage(root, CHANGE, { runtime: rt([DELTAS]), now: NOW })).state).toBe(
       "done",
     );
-    expect(lenses.map((l) => l.lens)).toEqual(["business", "architecture"]);
-    expect(lenses[1]!.prompt).toContain("review.shown-data-has-a-source");
+    expect(lenses.map((l) => l.lens)).toEqual(["true", "complete", "safe"]);
+    expect(lenses[0]!.prompt).toContain("review.shown-data-has-a-source");
+    expect(lenses[1]!.prompt).toContain("review.outcome-has-target-steps");
+    expect(lenses[2]!.prompt).toContain("review.new-column-complete");
 
     lenses = [];
     expect((await storiesStage(root, CHANGE, { runtime: rt([STORIES]), now: NOW })).state).toBe(
       "done",
     );
-    expect(lenses.map((l) => l.lens)).toEqual(["business", "architecture", "story", "delivery"]);
-    const story = lenses.find((l) => l.lens === "story")!.prompt;
-    expect(story).toContain("review.outcome-has-story");
-    // The story lens's rules read the stories only; it judges them against the brief all the same.
-    expect(story).toMatch(brief);
-    expect(lenses.find((l) => l.lens === "delivery")!.prompt).toMatch(/id="needs\.yaml"/);
+    expect(lenses.map((l) => l.lens)).toEqual(["true", "complete", "safe", "ship"]);
+    const complete = lenses.find((l) => l.lens === "complete")!.prompt;
+    expect(complete).toContain("review.outcome-has-story");
+    // The story rules read the stories only; the lens judges them against the brief all the same.
+    expect(complete).toMatch(brief);
+    expect(lenses.find((l) => l.lens === "ship")!.prompt).toMatch(/id="needs\.yaml"/);
   });
 });
 

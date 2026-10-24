@@ -19,7 +19,10 @@ import {
 import { changeAnswers } from "./answers.js";
 import { recordedFacts } from "./recorded.js";
 import { readChangeFiles } from "./artifacts.js";
+import { checkRegistry } from "./checks/index.js";
 import { buildContext, type CriticContext, type GateDef } from "./context.js";
+import type { DeterministicCheckDef } from "./hits.js";
+import { questionOfRule, typeTakes } from "./questions.js";
 import { CriticError } from "./errors.js";
 import {
   askedElsewhere,
@@ -105,8 +108,8 @@ function notApplicable(ctx: CriticContext, r: EffectiveRule): string | undefined
   if (r.status !== "active") return `status ${r.status}`;
   if (r.appliesTo.changeTypes.length && !r.appliesTo.changeTypes.includes(ctx.type.id))
     return `it applies to ${r.appliesTo.changeTypes.join(", ")}, not ${ctx.type.id}`;
-  if (ctx.type.lenses.length && !ctx.type.lenses.includes(r.lens))
-    return `change type ${ctx.type.id} doesn't use the ${r.lens} lens`;
+  if (!typeTakes(ctx.type.lenses, r))
+    return `change type ${ctx.type.id} doesn't ask the ${questionOfRule(r)} question (lens ${r.lens})`;
   if (!r.appliesTo.artifacts.some((a) => ctx.isDue(a)))
     return `its artifacts (${r.appliesTo.artifacts.join(", ")}) aren't due at the ${ctx.gate.id} gate`;
   return undefined;
@@ -164,6 +167,7 @@ export async function prepareLayers(
   g: GateChoice,
   now: string,
   teamPacks: string[],
+  checks: DeterministicCheckDef[] = [],
 ): Promise<Layers> {
   const { lifecycle, change, type, gate } = g;
   const footprint = await changeFootprint(lifecycle, change);
@@ -177,6 +181,9 @@ export async function prepareLayers(
   const { sources, problems } = await ruleSources(ctx, teamPacks);
   const layered = layerRules(sources);
   problems.push(...layered.problems);
+  // Each rule's question, with the plugin checks known (ADR 0124 addendum, Part 4).
+  const registry = checkRegistry(checks);
+  for (const r of layered.rules) r.asks = questionOfRule(r, registry);
   const skipped: { rule: string; reason: string }[] = [];
   const applicable: EffectiveRule[] = [];
   for (const r of layered.rules) {

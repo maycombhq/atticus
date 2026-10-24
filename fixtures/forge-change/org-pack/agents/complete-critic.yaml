@@ -1,0 +1,12 @@
+# Contract C5 agent definition (fixture). The critic's complete lens (ADR 0124 addendum, Part 4): is
+# the change complete? It takes over the business, story, UX and code-and-test lenses. Run in a
+# fresh session.
+schemaVersion: 1
+id: complete-critic
+role: product-owner
+description: Reviews the brief, proposal, specs, UX, stories and tasks for what the brief implies and the draft leaves out, and the error paths nobody wrote.
+inputs: [brief, proposal, specs, ux, stories, tasks, repo-code, catalog-slice, checklist]
+outputArtifact: findings
+checklist: forge-architecture
+tokenBudget: 80000
+allowedRuntimes: [hand-off, mock, replay]

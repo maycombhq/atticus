@@ -64,9 +64,10 @@ describe("M3 exit: the story bar on the fixture's eval set", () => {
       const before = await atticus(e.root, "plan", "bar", CHANGE, "--eval", ev);
       expect(before.out[0]).toMatch(/; 2 of 13 gaps covered; /);
       expect(before.code).toBe(1);
-      // The critic's plan-gate round raises the other eleven as knowledge gaps.
+      // The critic's plan-gate round raises the other eleven as knowledge gaps, and one more the
+      // four questions added (g14, the audit entry's auth), which no story covers either.
       const c = await atticus(e.root, "critic", CHANGE, "--gate", "plan");
-      expect(c.out[0]).toMatch(/: \d+ blocking, 11 gaps, /);
+      expect(c.out[0]).toMatch(/: \d+ blocking, 12 gaps, /);
       const r = await atticus(e.root, "plan", "bar", CHANGE, "--eval", ev);
       expect(r.out[0]).toBe(
         "5 of 5 stories are ready (100%, the bar is 90%); 13 of 13 gaps covered; 0 invented names.",

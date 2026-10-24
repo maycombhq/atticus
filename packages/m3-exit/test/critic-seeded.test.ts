@@ -21,7 +21,9 @@ import {
  * M3 exit: "the critic catches every seeded blocking issue, including data-design, runtime and
  * knowledge gaps, and at least 90% of seeded gaps". Measured on the hand-written fixture change
  * fixtures/forge-change at the plan gate, round 1, against expected/findings.yaml, exactly as
- * that file defines a match. Run through the CLI.
+ * that file defines a match. Run through the CLI. The fixture was re-baselined for the critic's
+ * four questions (ADR 0124 addendum, Part 4): two service-desk blocks and a UX risk retired, and the
+ * code checks of the four questions added a gap and three risks; see its README.
  */
 
 interface Seeded {
@@ -42,6 +44,7 @@ async function expectedFindings() {
     gate: string;
     seeded: Seeded[];
     alsoExpected: Seeded[];
+    retired: { id: string; rule: string; artifact: string }[];
   };
 }
 
@@ -104,7 +107,7 @@ describe("M3 exit: the critic on the seeded fixture change (plan gate, round 1)"
   });
 
   it(
-    "atticus critic catches every seeded problem the deterministic layer owns: 12 blocking (data design, runtime, architecture, stories, service desk) and 11 knowledge gaps",
+    "atticus critic catches every seeded problem the deterministic layer owns: 10 blocking (data design, runtime, architecture, stories) and 12 knowledge gaps",
     async () => {
       const e = await seededEstate();
       made.push(e);
@@ -116,8 +119,8 @@ describe("M3 exit: the critic on the seeded fixture change (plan gate, round 1)"
       const s = score(det, found);
       expect(s.blocking.missed).toEqual([]);
       expect(s.gaps.missed).toEqual([]);
-      expect(s.blocking.caught).toHaveLength(12);
-      expect(s.gaps.caught).toHaveLength(11);
+      expect(s.blocking.caught).toHaveLength(10);
+      expect(s.gaps.caught).toHaveLength(12);
       // The three kinds the exit names: data design, runtime, knowledge gaps.
       expect(s.blocking.caught).toEqual(
         expect.arrayContaining([
@@ -135,7 +138,7 @@ describe("M3 exit: the critic on the seeded fixture change (plan gate, round 1)"
   );
 
   it(
-    "critic-ai-wiring: atticus critic --mode replay runs the AI lenses, so the CLI alone catches 14 of 14 blocking and 13 of 13 gaps",
+    "critic-ai-wiring: atticus critic --mode replay runs the AI lenses, so the CLI alone catches 12 of 12 blocking and 14 of 14 gaps",
     async () => {
       const e = await seededEstate();
       made.push(e);
@@ -156,7 +159,7 @@ describe("M3 exit: the critic on the seeded fixture change (plan gate, round 1)"
   );
 
   it(
-    "with the recorded-replay runtime the critic command catches 14 of 14 seeded blocking issues and 13 of 13 seeded gaps (100%), each in the layer the fixture names, and nothing unlisted",
+    "with the recorded-replay runtime the critic command catches 12 of 12 seeded blocking issues and 14 of 14 seeded gaps (100%), each in the layer the fixture names, and nothing unlisted or retired",
     async () => {
       const e = await seededEstate();
       made.push(e);
@@ -175,12 +178,12 @@ describe("M3 exit: the critic on the seeded fixture change (plan gate, round 1)"
         lenses: { lens: string; state: string }[];
       };
       expect(res.round).toBe(1);
-      expect(res.open).toMatchObject({ blocking: 14, gaps: 13 });
+      expect(res.open).toMatchObject({ blocking: 12, gaps: 14 });
       expect(res.lenses.filter((l) => l.state === "failed")).toEqual([]);
       const found = await roundFindings(e.root, "plan", 1);
       const s = score(ex.seeded, found);
       expect(s.blocking.missed).toEqual([]);
-      expect(s.blocking.caught).toHaveLength(14);
+      expect(s.blocking.caught).toHaveLength(12);
       expect(s.gaps.missed).toEqual([]);
       expect(rate(s.gaps)).toBe(1);
       // Each seeded problem was caught by the layer the fixture names.
@@ -194,6 +197,9 @@ describe("M3 exit: the critic on the seeded fixture change (plan gate, round 1)"
       expect(found.filter((f) => !listed.some((x) => matches(x, f))).map((f) => f.summary)).toEqual(
         [],
       );
+      // What the four questions retired stays retired.
+      for (const x of ex.retired)
+        expect(found.filter((f) => f.rule === x.rule && f.artifact === x.artifact)).toEqual([]);
     },
     T,
   );

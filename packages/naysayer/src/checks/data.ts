@@ -57,6 +57,7 @@ function touchedStores(ctx: CriticContext): { stores: string[]; evidence: Eviden
 
 export const dataDocPresent: DeterministicCheckDef = {
   id: "data-doc-present",
+  question: "complete",
   description: "When the change touches a data store, data.md exists and is filled in.",
   params: z.strictObject({}),
   run(ctx) {
@@ -87,6 +88,7 @@ const NO_MIGRATION = /^(|-|—|none|n\/a|tbd|todo)$/i;
 
 export const dataMigrationNamed: DeterministicCheckDef = {
   id: "data-migration-named",
+  question: "ship",
   description: "Every row in data.md's Changes table names the migration that makes it.",
   params: z.strictObject({}),
   run(ctx) {
@@ -139,6 +141,7 @@ export function personalItems(ctx: CriticContext): JudgeItem[] {
 
 export const dataColumnsClassified: DeterministicCheckDef = {
   id: "data-columns-classified",
+  question: "safe",
   description:
     "Every new column has a classification in data.md; columns judged to hold personal data are classified as personal by name, and a person is asked of those no one has judged.",
   params: z.strictObject({ personalHints: z.array(z.string()).optional() }),
@@ -246,6 +249,7 @@ const RETENTION =
 
 export const dataRetentionStated: DeterministicCheckDef = {
   id: "data-retention-stated",
+  question: "safe",
   description: "Every new table says how long its rows are kept.",
   params: z.strictObject({}),
   run(ctx) {

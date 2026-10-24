@@ -68,7 +68,8 @@ describe("atticus critic --mode", () => {
       open: { blocking: number; gaps: number };
       lenses: { lens: string; state: string }[];
     };
-    expect(j.open).toMatchObject({ blocking: 14, gaps: 13 });
+    // The fixture re-baselined for the four questions (ADR 0124 addendum, Part 4).
+    expect(j.open).toMatchObject({ blocking: 12, gaps: 14 });
     expect(j.lenses.filter((l) => l.state === "ran").length).toBeGreaterThan(0);
   });
 
@@ -148,7 +149,7 @@ describe("atticus critic", () => {
     c = capture();
     expect(await critic(r, CHANGE, { lens: "vibes" }, c.io)).toBe(2);
     expect(c.err).toEqual([
-      "Unknown lens vibes. Use one of: business, architecture, story, ux, delivery, code-and-test, release.",
+      "Unknown lens vibes. Use one of: true, complete, safe, ship (an old lens name, business, architecture, story, ux, delivery, code-and-test, release, asks the question that took it over).",
     ]);
     c = capture();
     expect(await critic(r, CHANGE, { gate: "nowhere" }, c.io)).toBe(2);
@@ -157,7 +158,7 @@ describe("atticus critic", () => {
     c = capture();
     expect(await critic(r, CHANGE, {}, c.io, { runtime: await replay(), now: NOW })).toBe(1);
     expect(c.out[0]).toBe(
-      "Critic round 1 of 2 at the plan gate for add-transfer-limit: 14 blocking, 13 gaps, 5 risks, 0 ideas.",
+      "Critic round 1 of 2 at the plan gate for add-transfer-limit: 12 blocking, 14 gaps, 8 risks, 0 ideas.",
     );
     expect(c.out[1]).toMatch(/^SEVERITY\s+LAYER\s+ID\s+WHERE\s+SUMMARY$/);
     expect(
@@ -170,17 +171,17 @@ describe("atticus critic", () => {
     expect(
       c.out.some((l) => /^blocking\s+AI\s+design-concurrency-handled-design-l29\s/.test(l)),
     ).toBe(true);
-    expect(c.out).toContain(
-      "release lens skipped: no AI rule of this lens has an artifact that passed layer 1",
-    );
+    // snow.md passed layer 1 (its service-desk check retired), so the ship lens read it.
+    expect(c.out.some((l) => /^risk\s+AI\s+release-plan-complete-snow-l12\s/.test(l))).toBe(true);
+    expect(c.out.some((l) => / lens (skipped|failed): /.test(l))).toBe(false);
     expect(c.out.at(-1)).toBe(
-      "The plan gate is closed: 14 blocking, 13 open gaps. Act on each with atticus finding <id> <action>.",
+      "The plan gate is closed: 12 blocking, 14 open gaps. Act on each with atticus finding <id> <action>.",
     );
 
     c = capture();
     expect(await findings(r, CHANGE, {}, c.io)).toBe(0);
     expect(c.out[0]).toBe("plan gate, round 1:");
-    expect(c.out.length).toBe(2 + 32 + 1);
+    expect(c.out.length).toBe(2 + 34 + 1);
 
     c = capture();
     expect(
@@ -258,7 +259,8 @@ describe("atticus critic", () => {
     };
     expect(j.round).toBe(1);
     expect(j.mayProceed).toBe(false);
-    expect(new Set(j.findings.map((f) => f.lens))).toEqual(new Set(["story"]));
+    // An old lens's name asks the question that took it over.
+    expect(new Set(j.findings.map((f) => f.lens))).toEqual(new Set(["complete"]));
     c = capture();
     await critic(r, CHANGE, {}, c.io, { now: NOW });
     c = capture();

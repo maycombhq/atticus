@@ -89,11 +89,11 @@ const finding = (line: number, quote: string, link?: { id: string; quote: string
     ],
   });
 
-/** A model that reports the narrowing from the business lens only, and nothing elsewhere. */
+/** A model that reports the narrowing from the complete lens only (the old business lens's rules ask it), and nothing elsewhere. */
 function lensModel(text: string, prompts: string[] = []) {
   return new MockRuntime((r: AiRequest) => {
     prompts.push(r.pack.prompt);
-    return r.agent.id === "business-critic" ? text : "findings: []\n";
+    return r.agent.id === "complete-critic" ? text : "findings: []\n";
   });
 }
 
@@ -127,7 +127,7 @@ describe("the critic reads the answers people gave for the change (ADR 0115 adde
         prompts,
       ),
     });
-    const business = prompts.find((p) => p.includes("business lens"))!;
+    const business = prompts.find((p) => p.includes("complete lens"))!;
     expect(business).toContain("answers-on-file");
     expect(business).toContain(ANSWER);
     expect(business).toContain(
@@ -173,11 +173,11 @@ describe("the critic reads the answers people gave for the change (ADR 0115 adde
     const { root: r, id, line, briefLine } = await root();
     const rt = new HandoffRuntime({ root: r, validate: async () => [], now: () => new Date(NOW) });
     const res = await runCritic(r, CHANGE, { gate: "plan", now: NOW, runtime: rt });
-    const lens = res.lenses.find((l) => l.lens === "business" && l.state === "waiting")!;
+    const lens = res.lenses.find((l) => l.lens === "complete" && l.state === "waiting")!;
     const prompt = await readFile(join(r, ".runs", CHANGE, lens.runId!, "prompt.md"), "utf8");
     expect(prompt).toContain(ANSWER);
     await writeFile(
-      join(r, ".runs", CHANGE, lens.runId!, "findings-business.yaml"),
+      join(r, ".runs", CHANGE, lens.runId!, "findings-complete.yaml"),
       finding(line, briefLine.slice(0, 40), { id, quote: "Portal transfers only" }),
     );
     await completeLensRun(r, await rt.done(lens.runId!), { now: NOW });

@@ -3,9 +3,15 @@ import { z } from "zod";
 import {
   AgentDefinition,
   changesRelOf,
+  isCriticQuestion,
+  LEGACY_LENSES,
   Lens,
+  lensCovers,
+  questionOfLens,
   toCanonicalYaml,
   type CatalogRecord,
+  type CriticQuestion,
+  type LegacyLens,
   type RunSummary,
 } from "@maycombhq/core";
 import {
@@ -27,9 +33,11 @@ import { headingAt, type Doc } from "./doc.js";
 import { sentence, type Hit } from "./hits.js";
 import type { RuledHit } from "./findings.js";
 import type { EffectiveRule } from "./rules.js";
+import { QUESTION_ROLES, QUESTION_TEXT, QUESTIONS, questionOfRule } from "./questions.js";
 
 /**
- * Layer 2: AI lenses. One run per lens, in a fresh session, with a context pack (contract C5)
+ * Layer 2: AI lenses. One run per question the critic asks (ADR 0124 addendum, Part 4: is it
+ * true to the code, complete, safe to build, can it ship), in a fresh session, with a context pack (contract C5)
  * holding Atticus's instructions and the rules as trusted text and everything else (the
  * artifacts that passed layer 1, the catalog slice) wrapped as data. The output is parsed and
  * checked: a finding must name a rule it was asked to apply and an artifact it was given, and
@@ -62,7 +70,26 @@ export interface Discarded {
   summary?: string;
 }
 
-const DEFAULT_ROLES: Record<LensName, string> = {
+/** Every input a critic lens can read: the change's artifacts, the catalog slice and the pack. */
+const ALL_INPUTS = [
+  "brief",
+  "proposal",
+  "specs",
+  "interfaces",
+  "mappings",
+  "data",
+  "design",
+  "ux",
+  "stories",
+  "tasks",
+  "snow",
+  "catalog-slice",
+  "patterns",
+  "checklist",
+] as const;
+
+/** Who an old lens's default agent worked for (the spec hand-up still asks for code-and-test). */
+const LEGACY_ROLES: Record<LegacyLens, string> = {
   business: "product-owner",
   architecture: "architect",
   story: "business-analyst",
@@ -72,37 +99,106 @@ const DEFAULT_ROLES: Record<LensName, string> = {
   release: "delivery-lead",
 };
 
-/** The agent for a lens: `<lens>-critic` from the org pack, or a built-in default. */
+const LENS_DESCRIPTION: Record<CriticQuestion, string> = {
+  true: "The critic's true lens: is the change true to the code? Looks for a draft that contradicts how the code and the estate behave.",
+  complete:
+    "The critic's complete lens: is the change complete? Looks for what the brief implies and the draft leaves out, and the error paths nobody wrote.",
+  safe: "The critic's safe lens: is the change safe to build? Security, privacy and integrity reasoning no rule can check.",
+  ship: "The critic's ship lens: can the change ship? Operability, rollout and rollback, and the lead times delivery waits on.",
+};
+
+/**
+ * The agent for a question's lens. The org pack's own `<question>-critic` when it has one. Else,
+ * when the org pack still defines agents for the old role lenses that reviewed this question
+ * (`architecture-critic` for true and safe, say), one agent made of them, as strict as they
+ * were: what any of them read, only the runtimes all of them allow, the largest budget. Else the
+ * built-in default. Throws when the old agents allow no runtime in common: the org pack decides.
+ *
+ * Asked by an old lens's name (the spec hand-up's code-and-test review of a task, which isn't a
+ * gate lens), it is that lens's agent as before: the org pack's `<lens>-critic`, else a default.
+ */
 export function lensAgent(ctx: CriticContext, lens: LensName): AgentDefinition {
-  const own = ctx.lifecycle.orgPack.agents.find((a) => a.id === `${lens}-critic`);
+  const agents = ctx.lifecycle.orgPack.agents;
+  if (!isCriticQuestion(lens)) {
+    const named = agents.find((a) => a.id === `${lens}-critic`);
+    if (named) return named;
+    return AgentDefinition.parse({
+      schemaVersion: 1,
+      id: `${lens}-critic`,
+      role: LEGACY_ROLES[lens],
+      description: `The critic's ${lens} lens: looks for reasons the change's artifacts are wrong.`,
+      inputs: [...ALL_INPUTS],
+      outputArtifact: "findings",
+      checklist: "constitution",
+      tokenBudget: ctx.lifecycle.orgPack.runtime.budgets.defaultTokens,
+      allowedRuntimes: ["hand-off", "model", "headless-claude-code", "mock", "replay"],
+    });
+  }
+  const q = lens;
+  const own = agents.find((a) => a.id === `${q}-critic`);
   if (own) return own;
+  const legacy = LEGACY_LENSES.filter((l) => lensCovers(l).includes(q))
+    .map((l) => agents.find((a) => a.id === `${l}-critic`))
+    .filter((a): a is AgentDefinition => a !== undefined);
+  if (legacy.length) {
+    const runtimes = legacy[0]!.allowedRuntimes.filter((r) =>
+      legacy.every((a) => a.allowedRuntimes.includes(r)),
+    );
+    if (runtimes.length === 0)
+      throw new Error(
+        `The org pack's old lens agents ${legacy.map((a) => a.id).join(", ")} allow no runtime in common, so the ${q} lens can't run; define ${q}-critic in org-pack/agents/.`,
+      );
+    return AgentDefinition.parse({
+      schemaVersion: 1,
+      id: `${q}-critic`,
+      role: QUESTION_ROLES[q],
+      description: `${LENS_DESCRIPTION[q]} Made from the org pack's ${
+        legacy.length > 1
+          ? `${legacy
+              .slice(0, -1)
+              .map((a) => a.id)
+              .join(", ")} and ${legacy.at(-1)!.id}`
+          : legacy[0]!.id
+      }.`,
+      inputs: [
+        ...ALL_INPUTS.filter((i) => legacy.some((a) => (a.inputs as string[]).includes(i))),
+        ...new Set(
+          legacy
+            .flatMap((a) => a.inputs)
+            .filter((i) => !(ALL_INPUTS as readonly string[]).includes(i)),
+        ),
+      ],
+      outputArtifact: "findings",
+      checklist: legacy[0]!.checklist ?? "constitution",
+      tokenBudget: Math.max(...legacy.map((a) => a.tokenBudget)),
+      allowedRuntimes: runtimes,
+    });
+  }
   return AgentDefinition.parse({
     schemaVersion: 1,
-    id: `${lens}-critic`,
-    role: DEFAULT_ROLES[lens],
-    description: `The critic's ${lens} lens: looks for reasons the change's artifacts are wrong.`,
-    inputs: [
-      "brief",
-      "proposal",
-      "specs",
-      "interfaces",
-      "mappings",
-      "data",
-      "design",
-      "ux",
-      "stories",
-      "tasks",
-      "snow",
-      "catalog-slice",
-      "patterns",
-      "checklist",
-    ],
+    id: `${q}-critic`,
+    role: QUESTION_ROLES[q],
+    description: LENS_DESCRIPTION[q],
+    inputs: [...ALL_INPUTS],
     outputArtifact: "findings",
     checklist: "constitution",
     tokenBudget: ctx.lifecycle.orgPack.runtime.budgets.defaultTokens,
     allowedRuntimes: ["hand-off", "model", "headless-claude-code", "mock", "replay"],
   });
 }
+
+/**
+ * What each lens looks for (ADR 0124 addendum, Part 4). The seven role lenses' concerns fold into
+ * the four questions: the architecture and code reviews into true and safe, business, story, UX
+ * and tests into complete, delivery and release into ship.
+ */
+const LOOK_FOR: Record<CriticQuestion, string> = {
+  true: "Look for a draft or an artifact that contradicts how the code and the estate actually behave: a flow marked only read whose steps the change must alter, a capability the draft takes for granted that nothing in the estate does, a value a step returns or shows that no step gives, a design that relies on a call, a field or a check the code doesn't have.",
+  complete:
+    "Look for what the draft leaves out: an outcome or requirement the brief implies that nothing delivers, an open question no artifact answers, an error path nobody wrote (a partner that doesn't answer, a refusal, a timeout), a screen state the specs imply (loading, empty, error), a story with no requirement behind it, a criterion a tester couldn't turn into a test, a scenario no test covers.",
+  safe: "Reason about security, privacy and integrity where the deterministic rules can't: who may call a new or changed entry and what it may see or change, personal data that crosses a boundary, lands in a log or is kept longer than it needs, a hop whose pattern's controls don't fit what it carries, two requests racing over the same record, a partner's failure that leaves data half written.",
+  ship: "Think about operability and delivery: what breaks at 3 a.m. and how anyone would know (the alert, the dashboard, the log line to watch), the order things deploy in and how each step is rolled back, data written between a deployment and its rollback, the requests, approvals and lead times the work waits on, a migration that must run before the code that needs it.",
+};
 
 const OUTPUT_FORMAT = `Report each problem as a finding, in YAML, and write nothing else:
 
@@ -151,10 +247,13 @@ function instructions(
   review?: StageReview,
   repos: readonly CodeRepo[] = [],
 ): string {
+  const q = questionOfLens(lens);
   return [
-    `# Critic: ${lens} lens`,
+    `# Critic: the ${q} lens (${QUESTION_TEXT[q]})`,
     "",
-    `You are the ${lens} lens of the Atticus critic, reviewing change ${ctx.change.id} (${ctx.change.title}, a ${ctx.type.name.toLowerCase()}) in a fresh session. Look for reasons the artifacts are wrong. Apply only the rules listed below and report nothing else; the deterministic checks have already run, so don't repeat what a rule of theirs would catch.`,
+    `You are the ${q} lens of the Atticus critic, reviewing change ${ctx.change.id} (${ctx.change.title}, a ${ctx.type.name.toLowerCase()}) in a fresh session. You ask one question of it: ${QUESTION_TEXT[q]} Look for reasons the artifacts are wrong. Apply only the rules listed below and report nothing else; each asks part of your question. The deterministic checks have already run, so don't repeat what a rule of theirs would catch.`,
+    "",
+    LOOK_FOR[q],
     "",
     ...(review
       ? [
@@ -427,7 +526,12 @@ export function parseLensOutput(
         evidence,
         ...(f.kind === "knowledge-gap"
           ? {
-              question: { text: f.question!.text, owner: f.question!.owner ?? DEFAULT_ROLES[lens] },
+              question: {
+                text: f.question!.text,
+                owner:
+                  f.question!.owner ??
+                  (isCriticQuestion(lens) ? QUESTION_ROLES[lens] : LEGACY_ROLES[lens]),
+              },
             }
           : {}),
         ...(answered ? { answered } : {}),
@@ -460,7 +564,8 @@ export interface LensOptions {
   runtime?: AiRuntime;
   /** A stage's draft to review with the artifacts, when nothing failed layer 1. */
   review?: StageReview;
-  lenses: LensName[];
+  /** The questions whose lenses run (ADR 0124 addendum, Part 4). */
+  lenses: CriticQuestion[];
   /** Artifacts with a blocking layer-1 finding: they stay out of layer 2. */
   failed: Set<string>;
   maxClassification?: string;
@@ -525,11 +630,25 @@ export async function runLenses(
   const skipped: { rule: string; reason: string }[] = [];
   // The repos' clones a lens may search before it says something is missing (W1).
   const repos = codeRepos(ctx.root);
-  for (const lens of Lens.options) {
+  // One lens per question, whatever lens its rules were written with (ADR 0124 addendum, Part 4).
+  for (const lens of QUESTIONS) {
     if (!o.lenses.includes(lens)) continue;
-    const lensRules = rules.filter((r) => r.lens === lens && r.check.type === "ai");
+    const lensRules = rules.filter((r) => questionOfRule(r) === lens && r.check.type === "ai");
     if (lensRules.length === 0) continue;
-    const agent = lensAgent(ctx, lens);
+    let agent: AgentDefinition;
+    try {
+      agent = lensAgent(ctx, lens);
+    } catch (e) {
+      runs.push({
+        lens,
+        agent: `${lens}-critic`,
+        rules: lensRules.map((r) => r.id),
+        artifacts: [],
+        state: "failed",
+        reason: (e as Error).message,
+      });
+      continue;
+    }
     const sent: EffectiveRule[] = [];
     const docs = new Map<string, Doc>();
     for (const r of lensRules) {
@@ -692,7 +811,7 @@ export async function runLenses(
       const seen = new Set(o.quarantined.map((q) => `${q.source}|${q.sha256}`));
       for (const q of quarantined) if (!seen.has(`${q.source}|${q.sha256}`)) o.quarantined.push(q);
       hits.push(
-        ...quarantineHits(lens, DEFAULT_ROLES[lens], quarantined, (source) => docs.has(source)),
+        ...quarantineHits(lens, QUESTION_ROLES[lens], quarantined, (source) => docs.has(source)),
       );
     }
     const out = leftOut(pack, docs.keys());
