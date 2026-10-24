@@ -27,6 +27,7 @@
     "@maycombhq/core": "workspace:*",
     "@maycombhq/diagrams": "workspace:*",
     "@maycombhq/embed": "workspace:*",
+    "@maycombhq/embed-model": "workspace:*",
     "@maycombhq/evals": "workspace:*",
     "@maycombhq/executors": "workspace:*",
     "@maycombhq/extractors": "workspace:*",

@@ -16,3 +16,7 @@ coverage/
 
 # Local AI session worktrees
 /.claude/worktrees/
+
+# Pinned model and runtime downloads (ADR 0116 addendum); never committed
+/.cache/
+*.onnx

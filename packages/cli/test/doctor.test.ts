@@ -219,30 +219,45 @@ describe("atticus doctor", () => {
     expect(JSON.stringify(set)).not.toContain("sk-secret-value");
   });
 
-  it("says when the default embedding model isn't installed and search is by words and names; warns when runtime.yaml names one it can't use (ADR 0116 addendum)", async () => {
-    // The default is the bundled model; this checkout doesn't carry it: a note, not a failure.
-    const dflt = byId(await doctorChecks(root, healthy()), "embeddings");
-    expect(dflt.status).toBe("ok");
-    expect(dflt.detail).toMatch(
-      /@maycombhq\/embed-model\) isn't installed, so the context engine searches by words and names only/,
+  it("reports the embedding model: off for the test suites, never a failure by default, a warning when runtime.yaml names one it can't use (ADR 0116 addenda)", async () => {
+    // The test suites run with ATTICUS_EMBEDDINGS=off (vitest.shared.mjs): a note that says so.
+    const env = byId(await doctorChecks(root, healthy()), "embeddings");
+    expect(env.status).toBe("ok");
+    expect(env.detail).toMatch(
+      /^off \(ATTICUS_EMBEDDINGS is off for this process\); the context engine searches by words and names only/,
     );
-    const own = await mkdtemp(join(tmpdir(), "atticus-doctor-embed-"));
-    await cp(join(FIXTURES, "forge/metarepo"), own, { recursive: true });
-    const rt = (model: string) =>
-      writeFile(
-        join(own, "org-pack/runtime.yaml"),
-        [
-          "schemaVersion: 1",
-          "assistants: { allowed: [copilot], default: copilot }",
-          `retrieval: { embeddings: { model: ${model} } }`,
-        ].join("\n"),
+    const was = process.env.ATTICUS_EMBEDDINGS;
+    delete process.env.ATTICUS_EMBEDDINGS;
+    try {
+      // The default is the model installed with Atticus. A checkout has it only after
+      // pnpm model:fetch: either way it is never a failure, and a missing one says so.
+      const dflt = byId(await doctorChecks(root, healthy()), "embeddings");
+      expect(dflt.status).not.toBe("fail");
+      expect(dflt.detail).toMatch(
+        /all-minilm-l6-v2@|so the context engine searches by words and names only/,
       );
-    await rt("bundled");
-    expect(byId(await doctorChecks(own, healthy()), "embeddings").status).toBe("warn");
-    await rt("off");
-    const off = byId(await doctorChecks(own, healthy()), "embeddings");
-    expect(off).toMatchObject({ status: "ok" });
-    expect(off.detail).toMatch(/^off/);
+      const own = await mkdtemp(join(tmpdir(), "atticus-doctor-embed-"));
+      await cp(join(FIXTURES, "forge/metarepo"), own, { recursive: true });
+      const rt = (model: string) =>
+        writeFile(
+          join(own, "org-pack/runtime.yaml"),
+          [
+            "schemaVersion: 1",
+            "assistants: { allowed: [copilot], default: copilot }",
+            `retrieval: { embeddings: { model: ${model} } }`,
+          ].join("\n"),
+        );
+      await rt("models/none");
+      const named = byId(await doctorChecks(own, healthy()), "embeddings");
+      expect(named.status).toBe("warn");
+      expect(named.detail).toMatch(/so the context engine searches by words and names only/);
+      await rt("off");
+      const off = byId(await doctorChecks(own, healthy()), "embeddings");
+      expect(off).toMatchObject({ status: "ok" });
+      expect(off.detail).toMatch(/^off/);
+    } finally {
+      if (was !== undefined) process.env.ATTICUS_EMBEDDINGS = was;
+    }
   });
 
   it("puts the machine first on the setup checklist", async () => {

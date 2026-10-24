@@ -1,0 +1,29 @@
+{
+  "name": "@maycombhq/onnxruntime-win32-x64",
+  "version": "1.30.0",
+  "description": "onnxruntime-node 1.30.0's CPU build for win32-x64, repackaged for Atticus's local embedding model (ADR 0116): no install script, nothing downloaded, no DirectML.",
+  "license": "MIT",
+  "os": [
+    "win32"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "main": "./dist/index.js",
+  "files": [
+    "dist",
+    "bin",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "prepack": "node ../../scripts/model/fetch.mjs ."
+  },
+  "dependencies": {
+    "onnxruntime-common": "1.30.0"
+  },
+  "atticusRepackaged": {
+    "from": "onnxruntime-node@1.30.0",
+    "platform": "win32-x64"
+  }
+}

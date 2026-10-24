@@ -4,6 +4,7 @@
 // Linux, SHA256SUMS, a CycloneDX SBOM and the third-party licences. Node.js itself is not
 // inside: organisations install it through their own software catalogue (22.13 or later).
 // Build first: pnpm turbo run build.
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   cpSync,
@@ -12,6 +13,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  rmSync,
   writeFileSync,
 } from "node:fs";
 import { join, relative, sep } from "node:path";
@@ -25,7 +27,6 @@ import {
   removeDeploy,
   REPO,
 } from "./inventory.mjs";
-import { addEmbeddingModel } from "./embedding-model.mjs";
 
 const { zip } = await import(pathToFileURL(join(REPO, "packages/core/dist/index.js")).href);
 const VERSION = JSON.parse(readFileSync(join(REPO, "packages/cli/package.json"), "utf8")).version;
@@ -43,21 +44,33 @@ if (!built.includes(`"${VERSION}"`)) {
   );
   process.exit(1);
 }
+// ---- the local embedding model (ADR 0116 addendum): the packages npm installs with the CLI,
+// @maycombhq/embed-model and this platform's @maycombhq/onnxruntime-<platform> with the WASM
+// fallback, filled with their pinned files first (from the cache; the only download is the
+// first fill, at build time). Other platforms' runtime packages are left out of this bundle.
+execFileSync(process.execPath, [join(REPO, "scripts/model/fetch.mjs"), "--this-platform"], {
+  stdio: "inherit",
+});
 const dir = deploy();
+const scoped = join(dir, "node_modules", "@maycombhq");
+const here = `onnxruntime-${process.platform}-${process.arch}`;
+for (const p of readdirSync(scoped))
+  if (/^onnxruntime-(win32|linux|darwin)-/.test(p) && p !== here)
+    rmSync(join(scoped, p), { recursive: true, force: true });
+for (const f of [
+  "embed-model/model.onnx",
+  `${here}/dist/index.js`,
+  "onnxruntime-wasm/dist/ort.wasm.min.mjs",
+])
+  if (!existsSync(join(scoped, ...f.split("/")))) {
+    console.error(
+      `The bundle is missing @maycombhq/${f}: run node scripts/model/fetch.mjs --this-platform.`,
+    );
+    process.exit(1);
+  }
 for (const f of ["forge", "forge-change"])
   cpSync(join(REPO, "fixtures", f), join(dir, "fixtures", f), { recursive: true });
 cpSync(join(REPO, "LICENSE"), join(dir, "LICENSE"));
-
-// ---- the local embedding model (ADR 0116), when the bank approved it and it is given here
-// ATTICUS_BUNDLE_MODEL: a model folder (atticus-model.yaml, model.onnx, tokenizer.json, LICENSE);
-// ATTICUS_BUNDLE_ORT: a folder whose node_modules holds onnxruntime-node (and -web) 1.30.0.
-// Neither is in the repo or the lockfile; nothing is downloaded here.
-const model = addEmbeddingModel(dir, {
-  model: process.env.ATTICUS_BUNDLE_MODEL,
-  ort: process.env.ATTICUS_BUNDLE_ORT,
-  platform: process.env.ATTICUS_BUNDLE_PLATFORM ?? `${process.platform}-${process.arch}`,
-});
-if (model) console.log(model);
 
 // ---- licences and the SBOM
 const items = inventory(dir);

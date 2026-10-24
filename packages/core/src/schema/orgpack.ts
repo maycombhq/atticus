@@ -559,10 +559,10 @@ export const Autonomy = z.enum(["plan-only", "draft", "draft-and-pr"]);
 
 /**
  * runtime.yaml's `retrieval` section (ADR 0116, defaults changed in its addendum):
- * - embeddings.model: `bundled` (the default: the model the offline bundle carries,
- *   @maycombhq/embed-model, all-MiniLM-L6-v2), `off`, or a folder with `atticus-model.yaml`
- *   (relative to the org pack); embeddings.runtime: a folder whose node_modules holds
- *   onnxruntime-node, when it isn't beside Atticus. Where the model or onnxruntime isn't
+ * - embeddings.model: `bundled` (the default: the model installed with Atticus as the npm
+ *   package @maycombhq/embed-model, all-MiniLM-L6-v2), `off`, or a folder with
+ *   `atticus-model.yaml` (relative to the org pack); embeddings.runtime: a folder whose
+ *   node_modules holds the onnxruntime packages, when they aren't beside Atticus. Where the model or onnxruntime isn't
  *   installed, the engine searches by words and names and says so. Nothing is ever downloaded.
  * - expansion (on by default): one model call before a step's selection that names what the
  *   input is about and the names it uses (the step's gaps come from it).

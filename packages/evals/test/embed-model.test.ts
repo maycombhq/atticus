@@ -2,7 +2,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { cosine, vectorFromText } from "@maycombhq/ai";
-import { OnnxEmbedder } from "@maycombhq/embed";
+import { installedModelDir, OnnxEmbedder } from "@maycombhq/embed";
 import { recordedVectors, recordRetrievalVectors } from "../src/index.js";
 
 // ADR 0116: the golden vectors the eval replays are what the real model gives on this machine.
@@ -10,7 +10,9 @@ import { recordedVectors, recordRetrievalVectors } from "../src/index.js";
 // node_modules holds onnxruntime-node), since the model file isn't in the repo; never in CI.
 
 const FX = join(dirname(fileURLToPath(import.meta.url)), "../../../fixtures");
-const MODEL = process.env.ATTICUS_EMBED_MODEL;
+// The model folder: ATTICUS_EMBED_MODEL, else the installed @maycombhq/embed-model when its files
+// are there (pnpm model:fetch); in CI, where they are not, these tests are skipped.
+const MODEL = process.env.ATTICUS_EMBED_MODEL ?? installedModelDir();
 const ORT = process.env.ATTICUS_ORT_DIR;
 
 describe.skipIf(!MODEL)("the recorded vectors (opt-in: ATTICUS_EMBED_MODEL)", () => {

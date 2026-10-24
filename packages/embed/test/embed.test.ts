@@ -8,6 +8,7 @@ import { parse } from "yaml";
 import {
   embedderFor,
   embeddingState,
+  installedModelDir,
   encode,
   OnnxEmbedder,
   readModelManifest,
@@ -87,45 +88,59 @@ describe("the model folder", () => {
     await expect(bad.embed(["x"], "query")).rejects.toThrow(/its manifest names/);
   });
 
-  it("is the bundled model by default (ADR 0116 addendum), off where runtime.yaml says so; a folder that isn't there, or no bundled model, says why", async () => {
+  it("is the installed model unless runtime.yaml says otherwise; off by ATTICUS_EMBEDDINGS; a folder that isn't there says why", async () => {
     const root = await mkdtemp(join(tmpdir(), "atticus-embed-root-"));
     await mkdir(join(root, "org-pack"), { recursive: true });
-    // No runtime.yaml, or one without the section: the default, bundled. This checkout doesn't
-    // carry the model, so there is no embedder and the state says why; nothing is downloaded.
-    const none = await embedderFor(root);
-    expect(none.embedder).toBeUndefined();
-    expect(none.state).toMatchObject({ setting: "bundled", configured: false });
-    expect(none.state.problem).toMatch(/@maycombhq\/embed-model\) isn't installed/);
-    await writeFile(
-      join(root, "org-pack/runtime.yaml"),
-      `schemaVersion: 1\nassistants: { allowed: [copilot], default: copilot }\nretrieval: {}\n`,
-    );
-    expect(await embeddingState(root)).toMatchObject({ setting: "bundled", configured: false });
-    const runtime = (model: string) =>
-      writeFile(
-        join(root, "org-pack/runtime.yaml"),
-        `schemaVersion: 1\nassistants: { allowed: [copilot], default: copilot }\nretrieval:\n  embeddings: { model: ${JSON.stringify(model)} }\n`,
-      );
-    await runtime("off");
-    expect(await embeddingState(root)).toMatchObject({ setting: "off", configured: true });
-    await runtime("models/none");
-    expect((await embeddingState(root)).problem).toMatch(/atticus-model.yaml/);
-    await runtime("bundled");
-    expect((await embeddingState(root)).problem).toMatch(
-      /@maycombhq\/embed-model\) isn't installed/,
-    );
-    const dir = await modelDir(MANIFEST());
-    await runtime(dir);
+    // The test suites run with ATTICUS_EMBEDDINGS=off (vitest.shared.mjs).
     expect(await embeddingState(root)).toMatchObject({
-      setting: dir,
-      dir,
-      id: "tiny-model@2c26b46b68ff",
-      licence: "Apache-2.0",
+      setting: "off",
+      problem: "ATTICUS_EMBEDDINGS is off for this process",
     });
+    const was = process.env.ATTICUS_EMBEDDINGS;
+    delete process.env.ATTICUS_EMBEDDINGS;
+    try {
+      // No retrieval section: the model installed with Atticus (@maycombhq/embed-model). Its
+      // files are only there once fetched (pnpm model:fetch, or in the published package).
+      const def = await embeddingState(root);
+      expect(def).toMatchObject({ setting: "bundled", configured: false });
+      expect(def.dir?.replace(/\\/g, "/")).toMatch(/embed-model$/);
+      // An empty section reads the same: retrievalOf fills in the defaults.
+      await writeFile(
+        join(root, "org-pack/runtime.yaml"),
+        `schemaVersion: 1\nassistants: { allowed: [copilot], default: copilot }\nretrieval: {}\n`,
+      );
+      expect(await embeddingState(root)).toMatchObject({ setting: "bundled", configured: false });
+      const runtime = (model: string) =>
+        writeFile(
+          join(root, "org-pack/runtime.yaml"),
+          `schemaVersion: 1\nassistants: { allowed: [copilot], default: copilot }\nretrieval:\n  embeddings: { model: ${JSON.stringify(model)} }\n`,
+        );
+      await runtime("off");
+      expect(await embeddingState(root)).toMatchObject({ setting: "off", configured: true });
+      await runtime("models/none");
+      expect((await embeddingState(root)).problem).toMatch(/atticus-model.yaml/);
+      const dir = await modelDir(MANIFEST());
+      await runtime(dir);
+      expect(await embeddingState(root)).toMatchObject({
+        setting: dir,
+        dir,
+        id: "tiny-model@2c26b46b68ff",
+        licence: "Apache-2.0",
+      });
+      // The embedder loads its runtime on first use, so making it never throws; the index
+      // catches a model that can't run (packages/index meaning tests).
+      const opened = await embedderFor(root);
+      expect(opened.embedder?.id).toBe("tiny-model@2c26b46b68ff");
+      expect(opened.state.problem).toBeUndefined();
+    } finally {
+      if (was === undefined) delete process.env.ATTICUS_EMBEDDINGS;
+      else process.env.ATTICUS_EMBEDDINGS = was;
+    }
   });
 });
-
-const MODEL = process.env.ATTICUS_EMBED_MODEL;
+// The model folder: ATTICUS_EMBED_MODEL, else the installed @maycombhq/embed-model when its files
+// are there (pnpm model:fetch); in CI, where they are not, these tests are skipped.
+const MODEL = process.env.ATTICUS_EMBED_MODEL ?? installedModelDir();
 const ORT = process.env.ATTICUS_ORT_DIR;
 
 describe.skipIf(!MODEL)("a real model on this machine (opt-in: ATTICUS_EMBED_MODEL)", () => {

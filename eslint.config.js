@@ -5,6 +5,8 @@ export default tseslint.config(
   {
     ignores: [
       "**/dist/**",
+      // Pinned downloads (ADR 0116 addendum).
+      ".cache/**",
       "**/dist-test/**",
       // Gradle's output for the IntelliJ plugin (ADR 0099).
       "packages/intellij/build/**",
