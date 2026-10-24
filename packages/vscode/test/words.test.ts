@@ -6,6 +6,7 @@ import {
   modelPickRows,
   modelSetting,
   optionHint,
+  pastChangeRows,
   startupNotice,
   statusText,
   stepTitle,
@@ -192,6 +193,33 @@ describe("which model a step runs on (ADR 0121)", () => {
     expect(modelPickItem({ vendor: "copilot", family: "gpt-4o", name: "GPT-4o" })).toEqual({
       label: "GPT-4o",
       description: "copilot/gpt-4o",
+    });
+  });
+});
+
+describe("start from an earlier change (WP7.6)", () => {
+  it("offers nothing first, then each archived change with when it was archived and what it asked", () => {
+    expect(pastChangeRows({ how: "words", changes: [] })).toBeUndefined();
+    const rows = pastChangeRows({
+      how: "meaning",
+      changes: [
+        {
+          id: "2026-05-12-raise-transfer-limit",
+          change: "raise-transfer-limit",
+          title: "Raise the daily transfer limit for business accounts",
+          archived: "2026-05-12",
+          summary: "Business customers hit the daily transfer limit.",
+          file: "openspec/changes/archive/2026-05-12-raise-transfer-limit/brief.md",
+          score: 0.81,
+        },
+      ],
+    })!;
+    expect(rows[0]).toMatchObject({ label: "Start from nothing", value: "" });
+    expect(rows[1]).toEqual({
+      label: "Raise the daily transfer limit for business accounts",
+      description: "archived 2026-05-12",
+      detail: "Business customers hit the daily transfer limit.",
+      value: "2026-05-12-raise-transfer-limit",
     });
   });
 });

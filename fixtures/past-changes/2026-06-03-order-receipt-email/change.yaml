@@ -1,0 +1,16 @@
+schemaVersion: 1
+id: order-receipt-email
+title: Email a receipt when an order is placed
+type: small-change
+template: small-change
+state: done
+createdAt: 2026-05-20T09:00:00Z
+createdBy: sam
+systems:
+  - forge
+history:
+  - from: draft
+    to: plan
+    at: 2026-05-20T09:00:00Z
+    by: sam
+    reason: Created from the small-change template

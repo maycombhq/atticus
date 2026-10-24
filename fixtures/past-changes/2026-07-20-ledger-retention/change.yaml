@@ -1,0 +1,16 @@
+schemaVersion: 1
+id: ledger-retention
+title: Keep ledger entries for seven years
+type: small-change
+template: small-change
+state: done
+createdAt: 2026-07-01T09:00:00Z
+createdBy: kim
+systems:
+  - forge
+history:
+  - from: draft
+    to: plan
+    at: 2026-07-01T09:00:00Z
+    by: kim
+    reason: Created from the small-change template

@@ -1007,6 +1007,38 @@ export const NewChangeRequest = z.strictObject({
   owners: z.record(z.string(), z.array(z.string()).min(1)).optional(),
   systems: z.array(z.string()).optional(),
   template: z.string().optional(),
+  /** WP7.6: an archived change to start from (its folder or its id), attached as an example. */
+  like: z.string().min(1).optional(),
+});
+
+/** WP7.6: an archived change near a new brief. */
+export const PastChange = z.object({
+  /** The archive folder's name, <date>-<id>. */
+  id: z.string(),
+  change: z.string(),
+  title: z.string(),
+  archived: z.string().optional(),
+  summary: z.string(),
+  file: z.string(),
+  /** cos for meaning, the words' score for words. */
+  score: z.number(),
+});
+
+/** WP7.6: the archived changes nearest a new brief, by meaning or, where that is off, by words. */
+export const SimilarChanges = z.object({
+  how: z.enum(["meaning", "words"]),
+  note: z.string().optional(),
+  changes: z.array(PastChange),
+});
+export type SimilarChangesT = z.infer<typeof SimilarChanges>;
+
+/** WP7.6: attach an archived change to a change as an example its steps read (ADR 0113). */
+export const AttachPastChangeRequest = z.strictObject({ like: z.string().min(1) });
+export const AttachPastChangeResult = z.object({
+  /** The archive folder attached. */
+  like: z.string(),
+  /** Where it went in the change: inputs/like-<id>.md. */
+  file: z.string(),
 });
 
 /** ADR 0113: a file attached to a change, as inputs/index.yaml lists it. */
@@ -2126,6 +2158,29 @@ const OPS: Record<string, Record<string, Op>> = {
       errors: [404],
     },
   },
+  "/api/past-changes": {
+    get: {
+      id: "listPastChanges",
+      summary:
+        "The archived changes nearest a new change's title or brief, by meaning where the embedding model is on and by words where it isn't, to start from one (WP7.6)",
+      tag: "changes",
+      params: [q("text"), q("change"), q("limit", { type: "integer" })],
+      ok: { status: 200, schema: "SimilarChanges", description: "OK" },
+      errors: [400, 404],
+    },
+  },
+  "/api/changes/{changeId}/like": {
+    post: {
+      id: "attachPastChange",
+      summary:
+        "Attach an archived change to a change as an example its steps read, as data (WP7.6)",
+      tag: "changes",
+      params: [p("changeId")],
+      body: AttachPastChangeRequest,
+      ok: { status: 201, schema: "AttachPastChangeResult", description: "Attached" },
+      errors: [400, 404, 422],
+    },
+  },
   "/api/changes/{changeId}/cockpit": {
     get: {
       id: "getChangeCockpit",
@@ -3147,6 +3202,8 @@ export function openApiDocument(): Record<string, unknown> {
     RepoBranchesList,
     BranchCompare,
     ChangeCockpit,
+    SimilarChanges,
+    AttachPastChangeResult,
     QuestionEvidenceList,
     PromoteResult,
     ChangeConformance,

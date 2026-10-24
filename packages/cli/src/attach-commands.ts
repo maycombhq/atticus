@@ -134,9 +134,44 @@ export async function changeAttachCli(
   root: string,
   change: string | undefined,
   paths: string[],
-  o: { by: string; json?: boolean; now?: Date; replaces?: string; promote?: string },
+  o: {
+    by: string;
+    json?: boolean;
+    now?: Date;
+    replaces?: string;
+    promote?: string;
+    /** WP7.6: an archived change to attach as an example, by its folder or its id. */
+    like?: string;
+  },
   io: Output,
 ): Promise<number> {
+  if (change && o.like) {
+    if (paths.length) {
+      io.err(
+        "--like names an archived change, attached on its own: atticus change attach add-refund-window --like raise-transfer-limit",
+      );
+      return 2;
+    }
+    const { attachPastChange, findPastChange } = await import("./similar-changes.js");
+    const folder = await findPastChange(root, o.like);
+    if (!folder) {
+      io.err(
+        `There is no archived change ${o.like}: atticus change similar "<what it is about>" lists them.`,
+      );
+      return 1;
+    }
+    try {
+      const name = await attachPastChange(root, change, folder, o.by, o.now);
+      io.out(`Attached ${folder} as inputs/${name}: the change's steps read it as an example.`);
+      return 0;
+    } catch (e) {
+      if (e instanceof AttachError) {
+        io.err(e.message);
+        return 1;
+      }
+      throw e;
+    }
+  }
   // ADR 0122: --promote copies an attached file into general knowledge.
   if (change && o.promote) {
     if (paths.length) {

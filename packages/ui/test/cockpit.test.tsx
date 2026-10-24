@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { Api } from "@maycombhq/core";
 import { COPY } from "../src/copy.js";
 import { screenOf, tabsOf } from "../src/app/screens.js";
-import { CockpitView, stageMark } from "../src/screens/work/Cockpit.js";
+import { CockpitView, PastChangesView, stageMark } from "../src/screens/work/Cockpit.js";
 
 /** The change cockpit (WP7.1): one change at a glance, the first of its pages. */
 
@@ -88,5 +88,39 @@ describe("watching a change from its cockpit (WP7.5)", () => {
     const on = renderToStaticMarkup(<WatchButton change="add-transfer-limit" watching />);
     expect(on).toContain(esc(C.unwatch));
     expect(on).toContain('aria-pressed="true"');
+  });
+});
+
+describe("earlier changes like this one (WP7.6)", () => {
+  const PAST: Api.SimilarChangesT = {
+    how: "words",
+    note: "similarity in meaning is off here",
+    changes: [
+      {
+        id: "2026-05-12-raise-transfer-limit",
+        change: "raise-transfer-limit",
+        title: "Raise the daily transfer limit for business accounts",
+        archived: "2026-05-12",
+        summary: "Business customers hit the daily transfer limit when paying suppliers.",
+        file: "openspec/changes/archive/2026-05-12-raise-transfer-limit/brief.md",
+        score: 3.2,
+      },
+    ],
+  };
+
+  it("lists each with when it was archived and what it asked, says how they were found, and offers to use one", () => {
+    const out = renderToStaticMarkup(<PastChangesView r={PAST} onUse={() => undefined} />);
+    expect(out).toContain(esc(C.like.title));
+    expect(out).toContain(esc(PAST.changes[0]!.title));
+    expect(out).toContain(esc(C.like.archived("2026-05-12")));
+    expect(out).toContain(esc(PAST.changes[0]!.summary));
+    expect(out).toContain(esc(C.like.byWords("similarity in meaning is off here")));
+    expect(out).toContain(esc(C.like.use));
+  });
+
+  it("says when none is near", () => {
+    const out = renderToStaticMarkup(<PastChangesView r={{ how: "meaning", changes: [] }} />);
+    expect(out).toContain(esc(C.like.none));
+    expect(out).not.toContain(esc(C.like.use));
   });
 });

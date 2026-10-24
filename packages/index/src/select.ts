@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { identifierWords } from "@maycombhq/core";
 import type { CatalogIndex } from "./catalog-index.js";
-import { endpointName, foldName } from "./sources.js";
+import { ASKED_ONLY_KINDS, endpointName, foldName } from "./sources.js";
 import { namesIn } from "./store.js";
 
 /**
@@ -74,6 +74,8 @@ export function searchIndex(ix: CatalogIndex, text: string, o: SearchOptions = {
   if (!words.length) return [];
   const match = words.map((w) => `"${w}"`).join(" OR ");
   const kinds = o.kinds?.length ? o.kinds : undefined;
+  // WP7.6: archived changes only when asked for by kind.
+  const askedOnly = kinds ? [] : [...ASKED_ONLY_KINDS];
   // ADR 0116: the words of a node's identifiers weigh 6, below its names (10) and ids (8).
   const wordsWeight = o.split === false ? 0 : 6;
   const rows = prep(
@@ -81,9 +83,11 @@ export function searchIndex(ix: CatalogIndex, text: string, o: SearchOptions = {
     `SELECT f.key AS key, n.kind AS kind, n.id AS id, n.name AS name, n.file AS file,
               bm25(fts, 0.0, 10.0, 8.0, 1.0, ${wordsWeight.toFixed(1)}) AS rank
        FROM fts f JOIN nodes n ON n.key = f.key
-       WHERE fts MATCH ?${kinds ? ` AND n.kind IN (${kinds.map(() => "?").join(", ")})` : ""}
+       WHERE fts MATCH ?${kinds ? ` AND n.kind IN (${kinds.map(() => "?").join(", ")})` : ""}${
+         askedOnly.length ? ` AND n.kind NOT IN (${askedOnly.map(() => "?").join(", ")})` : ""
+       }
        ORDER BY rank, f.key LIMIT ?`,
-  ).all(match, ...(kinds ?? []), o.limit ?? 20) as (Omit<SearchHit, "score"> & {
+  ).all(match, ...(kinds ?? []), ...askedOnly, o.limit ?? 20) as (Omit<SearchHit, "score"> & {
     rank: number;
   })[];
   return rows.map(({ rank, ...r }) => ({ ...r, score: round(-rank) }));

@@ -114,6 +114,8 @@ export async function changeNew(
     by?: string;
     owners?: string[];
     systems?: string[];
+    /** WP7.6: an archived change to start from, by its folder or its id. */
+    like?: string;
   },
   io: Output,
   deps: ChangeDeps = {},
@@ -141,6 +143,17 @@ export async function changeNew(
     io.err(owners);
     return 2;
   }
+  let like: string | undefined;
+  if (o.like) {
+    const { findPastChange } = await import("./similar-changes.js");
+    like = await findPastChange(root, o.like);
+    if (!like) {
+      io.err(
+        `There is no archived change ${o.like}: atticus change similar "<what it is about>" lists them.`,
+      );
+      return 1;
+    }
+  }
   try {
     const c = await newChange(root, {
       title: o.title,
@@ -153,6 +166,19 @@ export async function changeNew(
       ...(deps.now ? { now: deps.now } : {}),
     });
     io.out(`Created ${c.id} (${c.type}, from the ${c.template} template). It is in ${c.state}.`);
+    if (like) {
+      const { attachPastChange } = await import("./similar-changes.js");
+      const name = await attachPastChange(
+        root,
+        c.id,
+        like,
+        o.by,
+        deps.now ? new Date(deps.now) : new Date(),
+      );
+      io.out(
+        `It starts from ${like}: attached as inputs/${name}, which its steps read as an example.`,
+      );
+    }
     io.out(`Write the brief: ${changesRelOf(root)}/${c.id}/brief.md`);
     return 0;
   } catch (e) {

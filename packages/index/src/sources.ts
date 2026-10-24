@@ -199,6 +199,17 @@ export async function listSources(root: string): Promise<SourceFile[]> {
       for (const f of files) if (await stat(f).catch(() => undefined)) exist.push(f);
       add("change")(exist);
     }
+    // WP7.6: each archived change by its brief (its proposal where it has none), a PastChange
+    // found only when asked for by kind, so a new change can start from the one most like it.
+    const archive = join(dir, "archive");
+    for (const d of await readdir(archive, { withFileTypes: true }).catch(() => [])) {
+      if (!d.isDirectory()) continue;
+      for (const f of ["brief.md", "proposal.md"])
+        if (await stat(join(archive, d.name, f)).catch(() => undefined)) {
+          add("change")([join(archive, d.name, f)]);
+          break;
+        }
+    }
   }
   {
     const files: string[] = [];
@@ -512,10 +523,40 @@ function flowNodes(text: string, file: string): FileRead {
   };
 }
 
+/** Kinds a search or a similarity leaves out unless they are asked for by kind (WP7.6). */
+export const ASKED_ONLY_KINDS = new Set(["PastChange"]);
+
 function changeNodes(path: string, text: string): FileRead {
   // <changes>/<id>/<file>
   const parts = path.split("/");
   const fileName = parts.slice(-1)[0]!;
+  if (parts.at(-3) === "archive") {
+    // <changes>/archive/<date>-<id>/brief.md: an archived change, by its words only (no links,
+    // no names), so it never enters a step's context or a name's resolution.
+    const id = parts.at(-2)!;
+    const title = /^#\s+(.+)$/m.exec(text)?.[1]?.trim() ?? id;
+    return {
+      nodes: [
+        {
+          key: `change:PastChange:${id}`,
+          kind: "PastChange",
+          id,
+          grp: "change",
+          name: title,
+          file: path,
+          verified: false,
+          line: `archived change ${id} "${title}" [${path}]`,
+          detail: `${path}:\n${text}`,
+          names: title,
+          ids: idWords(id),
+          body: text.slice(0, 20000),
+          mentions: false,
+        },
+      ],
+      names: [],
+      links: [],
+    };
+  }
   const inTargets = parts.at(-2) === "target-flows";
   const inInputs = parts.at(-2) === "read" && parts.at(-3) === "inputs";
   const change = inTargets ? parts.at(-3)! : inInputs ? parts.at(-4)! : parts.at(-2)!;

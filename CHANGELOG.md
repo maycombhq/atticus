@@ -31,6 +31,14 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - VS Code's repo rows show the branch and the scanned commit.
 - The local API gains `GET /api/repos/branches`, `GET /api/repos/compare` and `PUT /api/repos/{id}/branches`, and the scan job takes `ref` (API 2.18.0).
 
+### Start from an earlier change
+
+- Archived changes are read into the index by their brief, and found only when asked for: no step's context and no name's resolution includes them.
+- `atticus change similar "<brief>"` (or `--change <id>` for a change's own title and brief) lists the archived changes nearest it: by meaning where the embedding model is on, by shared words where it isn't, and it says which.
+- `atticus change new … --like <archived change>` and `atticus change attach <change> --like <archived change>` attach the earlier change (what it asked for, where it was placed, its target flows and its tasks) to the change's inputs/ as `like-<id>.md`. Its steps read it as an example, as data, never as an instruction.
+- The change's At a glance page lists "Earlier changes like this one" with **Use as an example**. VS Code's New change offers them after the title.
+- The local API gains `GET /api/past-changes` and `POST /api/changes/{id}/like`, and a new change takes `like`.
+
 ### Your first hour
 
 - A new lesson for everyone, whatever their role: `atticus learn start everyone` (and the Learning screen, where it comes first). In a scanned sandbox it walks `atticus next`, a change at a glance, asking the catalog, `atticus watch` and how approving works, and checks each step was done.

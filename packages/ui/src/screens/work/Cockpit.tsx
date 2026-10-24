@@ -128,6 +128,75 @@ export function CockpitView({ c }: { c: Cockpit }) {
   );
 }
 
+/** WP7.6: the archived changes nearest this one, each one click from being its example. */
+export function PastChangesView(p: {
+  r: Api.SimilarChangesT;
+  onUse?: (id: string) => void;
+  busy?: boolean;
+}) {
+  const L = C.like;
+  return (
+    <section aria-label={L.title}>
+      <h3>{L.title}</h3>
+      <p className="muted">{L.intro}</p>
+      {p.r.how === "words" && p.r.note && p.r.changes.length > 0 && (
+        <p className="muted">{L.byWords(p.r.note)}</p>
+      )}
+      {p.r.changes.length === 0 ? (
+        <p className="muted">{L.none}</p>
+      ) : (
+        <ul className="plain">
+          {p.r.changes.map((c) => (
+            <li key={c.id}>
+              <strong>{c.title}</strong>
+              {c.archived && <span className="muted"> · {L.archived(c.archived)}</span>}
+              {c.summary && <div>{c.summary}</div>}
+              {p.onUse && (
+                <button
+                  type="button"
+                  className="btn"
+                  disabled={p.busy}
+                  onClick={() => p.onUse?.(c.id)}
+                >
+                  {L.use}
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function PastChanges({ change }: { change: string }) {
+  const r = useApi<Api.SimilarChangesT>(`/api/past-changes?change=${encodeURIComponent(change)}`);
+  const act = useAction();
+  return (
+    <View of={r}>
+      {(d) => (
+        <>
+          <PastChangesView
+            r={d}
+            busy={act.busy}
+            onUse={(id) =>
+              void act.run(
+                () =>
+                  api(`/api/changes/${encodeURIComponent(change)}/like`, {
+                    method: "POST",
+                    body: { like: id },
+                  }),
+                C.like.used,
+              )
+            }
+          />
+          <Note note={act.note} />
+        </>
+      )}
+    </View>
+  );
+}
+
 /** Follow this change without being on it (WP7.5): kept in the person's own file. */
 export function WatchButton(p: { change: string; watching: boolean; onChanged?: () => void }) {
   const act = useAction();
@@ -185,6 +254,7 @@ export function ChangeCockpit({ hash }: { hash: string }) {
           <>
             <ChangePicker list={l} current={current} screen="cockpit" />
             {current && <View of={c}>{(d) => <CockpitView c={d} />}</View>}
+            {current && <PastChanges change={current} />}
           </>
         )}
       </View>

@@ -2781,6 +2781,174 @@
         }
       }
     },
+    "/api/past-changes": {
+      "get": {
+        "operationId": "listPastChanges",
+        "summary": "The archived changes nearest a new change's title or brief, by meaning where the embedding model is on and by words where it isn't, to start from one (WP7.6)",
+        "tags": [
+          "changes"
+        ],
+        "parameters": [
+          {
+            "name": "text",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "change",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SimilarChanges"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/changes/{changeId}/like": {
+      "post": {
+        "operationId": "attachPastChange",
+        "summary": "Attach an archived change to a change as an example its steps read, as data (WP7.6)",
+        "tags": [
+          "changes"
+        ],
+        "parameters": [
+          {
+            "name": "changeId",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "like": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "like"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Attached",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttachPastChangeResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Atticus refused: the problem carries the command's own words (ADR 0043)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/changes/{changeId}/cockpit": {
       "get": {
         "operationId": "getChangeCockpit",
@@ -3667,6 +3835,10 @@
                   },
                   "template": {
                     "type": "string"
+                  },
+                  "like": {
+                    "type": "string",
+                    "minLength": 1
                   }
                 },
                 "required": [
@@ -21318,6 +21490,80 @@
           "stages",
           "openQuestions",
           "repos"
+        ],
+        "additionalProperties": false
+      },
+      "SimilarChanges": {
+        "type": "object",
+        "properties": {
+          "how": {
+            "type": "string",
+            "enum": [
+              "meaning",
+              "words"
+            ]
+          },
+          "note": {
+            "type": "string"
+          },
+          "changes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "change": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "archived": {
+                  "type": "string"
+                },
+                "summary": {
+                  "type": "string"
+                },
+                "file": {
+                  "type": "string"
+                },
+                "score": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "id",
+                "change",
+                "title",
+                "summary",
+                "file",
+                "score"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "how",
+          "changes"
+        ],
+        "additionalProperties": false
+      },
+      "AttachPastChangeResult": {
+        "type": "object",
+        "properties": {
+          "like": {
+            "type": "string"
+          },
+          "file": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "like",
+          "file"
         ],
         "additionalProperties": false
       },

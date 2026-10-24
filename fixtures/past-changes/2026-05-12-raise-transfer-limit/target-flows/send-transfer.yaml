@@ -1,0 +1,4 @@
+flow: send-transfer
+steps:
+  - id: check-daily-total
+    says: The day's total plus this transfer is checked against the account type's limit.

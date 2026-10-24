@@ -50,7 +50,42 @@ export const WORDS = {
   modelNone:
     "VS Code offers no language models: sign in to Copilot, or add an extension that offers one.",
   modelPicked: (what: string) => `Atticus's AI steps now run on ${what}.`,
+  startFromPick: "Start from an earlier change? Its steps read it as an example.",
+  startFromNothing: "Start from nothing",
+  startFromNothingDetail: "Write the brief from scratch.",
+  findingSimilar: "Looking for earlier changes like it…",
 };
+
+/** WP7.6: an archived change near a new one, as `atticus change similar --json` gives it. */
+export interface SimilarChangesView {
+  how: "meaning" | "words";
+  note?: string;
+  changes: {
+    id: string;
+    change: string;
+    title: string;
+    archived?: string;
+    summary: string;
+    file: string;
+    score: number;
+  }[];
+}
+
+/** The rows of "Start from an earlier change?": nothing first; undefined when none is near. */
+export function pastChangeRows(
+  r: SimilarChangesView,
+): { label: string; description?: string; detail?: string; value: string }[] | undefined {
+  if (!r.changes.length) return undefined;
+  return [
+    { label: WORDS.startFromNothing, detail: WORDS.startFromNothingDetail, value: "" },
+    ...r.changes.map((c) => ({
+      label: c.title,
+      description: c.archived ? `archived ${c.archived}` : c.id,
+      ...(c.summary ? { detail: c.summary } : {}),
+      value: c.id,
+    })),
+  ];
+}
 
 /**
  * Which model a step runs on (ADR 0121 item 5), from the setting atticus.model: `vendor/family`

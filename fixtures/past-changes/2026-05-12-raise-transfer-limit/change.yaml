@@ -1,0 +1,16 @@
+schemaVersion: 1
+id: raise-transfer-limit
+title: Raise the daily transfer limit for business accounts
+type: small-change
+template: small-change
+state: done
+createdAt: 2026-04-28T09:00:00Z
+createdBy: pat
+systems:
+  - forge
+history:
+  - from: draft
+    to: plan
+    at: 2026-04-28T09:00:00Z
+    by: pat
+    reason: Created from the small-change template

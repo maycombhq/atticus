@@ -244,6 +244,7 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
               owners,
               ...(b.systems ? { systems: b.systems } : {}),
               ...(b.template ? { template: b.template } : {}),
+              ...(b.like ? { like: b.like } : {}),
             },
             io,
             changeDeps,

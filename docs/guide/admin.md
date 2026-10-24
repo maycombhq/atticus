@@ -266,17 +266,18 @@ Every write to a shared outside system (the Git host, the work tracker, the serv
 
 ## Day to day
 
-| Task                                   | How                                                                                                   |
-| -------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| Keep the catalog current               | `atticus scan` (incremental; `--full` ignores the cache). One scan runs at a time per metarepo        |
-| Bring in documents                     | `atticus intake add <files>`, then decide what needs a person: `atticus triage`, or the Intake screen |
-| Give one change its documents          | `atticus change attach <change> <files...>`, or Attach a file on the change's page (ADR 0113)         |
-| Start a task with its context          | `/atticus-task <change> <task>` in Copilot or Claude Code, or `atticus task context <change> <task>`  |
-| Answer owner questions                 | `atticus questions`, or the questions on the Ecosystem map                                            |
-| Check the pipeline matches the catalog | `atticus ci snippet <github\|azure\|gitlab\|jenkins>` adds the drift check to a repo's pipeline       |
-| Watch AI quality                       | `atticus eval report`, or the AI quality screen                                                       |
-| Look for planted instructions          | `atticus defences scan`                                                                               |
-| See what waits on you                  | Home, or `atticus digest --as <you>`                                                                  |
+| Task                                   | How                                                                                                                                                              |
+| -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Keep the catalog current               | `atticus scan` (incremental; `--full` ignores the cache). One scan runs at a time per metarepo                                                                   |
+| Bring in documents                     | `atticus intake add <files>`, then decide what needs a person: `atticus triage`, or the Intake screen                                                            |
+| Give one change its documents          | `atticus change attach <change> <files...>`, or Attach a file on the change's page (ADR 0113)                                                                    |
+| Start from an earlier change           | `atticus change similar "<brief>"`, then `change new --like <archived>` or `change attach <change> --like <archived>`; on the app, the change's At a glance page |
+| Start a task with its context          | `/atticus-task <change> <task>` in Copilot or Claude Code, or `atticus task context <change> <task>`                                                             |
+| Answer owner questions                 | `atticus questions`, or the questions on the Ecosystem map                                                                                                       |
+| Check the pipeline matches the catalog | `atticus ci snippet <github\|azure\|gitlab\|jenkins>` adds the drift check to a repo's pipeline                                                                  |
+| Watch AI quality                       | `atticus eval report`, or the AI quality screen                                                                                                                  |
+| Look for planted instructions          | `atticus defences scan`                                                                                                                                          |
+| See what waits on you                  | Home, or `atticus digest --as <you>`                                                                                                                             |
 
 ## Logs, problems and support
 

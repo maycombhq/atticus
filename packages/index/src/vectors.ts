@@ -1,6 +1,7 @@
 import { identifierWords } from "@maycombhq/core";
 import { dotInt8, textSha, type Embedder, type EmbedKind, type QuantVector } from "@maycombhq/ai";
 import type { Db } from "./db.js";
+import { ASKED_ONLY_KINDS } from "./sources.js";
 
 /**
  * Vectors for "similar in meaning" (ADR 0116), in their own file beside the index
@@ -187,7 +188,7 @@ export function nearest(
   const kinds = o.kinds?.length ? new Set(o.kinds) : undefined;
   const out: { key: string; cos: number }[] = [];
   for (let i = 0; i < m.keys.length; i++) {
-    if (kinds && !kinds.has(m.kinds[i]!)) continue;
+    if (kinds ? !kinds.has(m.kinds[i]!) : ASKED_ONLY_KINDS.has(m.kinds[i]!)) continue;
     if (o.exclude?.has(m.keys[i]!)) continue;
     let best = -Infinity;
     for (const qv of queries) {

@@ -2266,6 +2266,17 @@ export const COPY = {
     unwatch: "Stop watching",
     watched: "You watch it: your digest says how it is doing.",
     unwatched: "You no longer watch it.",
+    /** WP7.6: start from a similar change. */
+    like: {
+      title: "Earlier changes like this one",
+      intro:
+        "Archived changes whose brief is nearest this one's. One you pick is attached to this change as an example its steps read, as data.",
+      byWords: (note: string) => `By shared words, since ${note}.`,
+      none: "No archived change is near this one yet.",
+      archived: (date: string) => `archived ${date}`,
+      use: "Use as an example",
+      used: "Attached to this change (Files attached): its steps read it as an example.",
+    },
   },
   /** ADR 0123: Set up › Repos, each repo's branches. */
   repos: {

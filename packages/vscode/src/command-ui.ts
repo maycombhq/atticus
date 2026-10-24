@@ -45,7 +45,14 @@ import { readKnowledgeList } from "./knowledge-read";
 import { pickLoading } from "./pick";
 import type { StepEnd } from "./runner";
 import { discoveredFrom, freeFolder, isMetarepoName } from "./start";
-import { optionHint, startupNotice, WORDS, type StartupItem } from "./words";
+import {
+  optionHint,
+  pastChangeRows,
+  startupNotice,
+  WORDS,
+  type SimilarChangesView,
+  type StartupItem,
+} from "./words";
 
 /**
  * Every Atticus command in VS Code (ADR 0096). The list comes from `atticus commands --json`, so
@@ -961,7 +968,29 @@ export class CommandUi {
         ignoreFocusOut: true,
       }));
     if (!t?.trim()) return;
-    await this.pickAndRun(root, "change new", { args: [t.trim()] });
+    // WP7.6: an archived change near this one, offered as an example its steps read.
+    const like = await this.pickPastChange(root, t.trim());
+    if (like === null) return;
+    await this.pickAndRun(root, "change new", {
+      args: [t.trim()],
+      ...(like ? { flags: { "--like": like } } : {}),
+    });
+  }
+
+  /** The archived change to start from: "" for none, null when the person pressed Escape. */
+  private async pickPastChange(root: string, title: string): Promise<string | null> {
+    const r = await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Window, title: WORDS.findingSimilar },
+      () => this.svc.cli(root)(["change", "similar", title, "--json", "--root", root]),
+    );
+    let rows;
+    try {
+      rows = r.code === 0 ? pastChangeRows(JSON.parse(r.stdout) as SimilarChangesView) : undefined;
+    } catch {
+      rows = undefined;
+    }
+    if (!rows) return "";
+    return (await this.quick(WORDS.startFromPick, rows, "")) ?? null;
   }
 
   private async afterNewChange(root: string, p: Printed) {
