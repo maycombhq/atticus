@@ -3,7 +3,7 @@ import { readdir, readFile, realpath, stat } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { RecordId, specsRelOf, stateDirOf, type ToolDefinition } from "@maycombhq/core";
 import type { CatalogIndex } from "./catalog-index.js";
-import type { GraphNodeRow } from "./select.js";
+import { fuse, type GraphNodeRow } from "./select.js";
 
 /**
  * The context tools (ADR 0107 addendum, point 4): read-only tools a step's model may call
@@ -30,6 +30,7 @@ export const CONTEXT_TOOL_NAMES = [
   "grep",
   "files",
   "outline",
+  "similar",
 ] as const;
 export type ContextToolName = (typeof CONTEXT_TOOL_NAMES)[number];
 
@@ -62,11 +63,17 @@ export const CONTEXT_TOOLS: ToolDefinition[] = [
   {
     name: "search",
     description:
-      "Search everything Atticus knows by words: catalog records, knowledge items, flows and their steps, changes, answered questions and wiki sections. Names and ids rank first. Each hit gives its kind, id, name and the file it was read from.",
+      "Search everything Atticus knows by words and meaning: catalog records, knowledge items, flows and their steps, changes, answered questions, wiki sections and documents. Names and ids rank first; with a local embedding model, what is similar in meaning ranks too. Each hit gives its kind, id, name and the file it was read from.",
     inputSchema: {
       type: "object",
       properties: {
         text: { type: "string", description: "The words to look for." },
+        by: {
+          type: "string",
+          enum: ["words", "meaning", "both"],
+          description:
+            "words: the words and the names they are made of; meaning: similar in meaning (needs the local model); both (the default).",
+        },
         kinds: {
           type: "array",
           items: { type: "string" },
@@ -184,6 +191,21 @@ export const CONTEXT_TOOLS: ToolDefinition[] = [
       additionalProperties: false,
     },
   },
+  {
+    name: "similar",
+    description:
+      "What is nearest one id in meaning, by the local embedding model: records, items, sections and documents that read alike. A hint where to look, never a link or a fact: show one to read it.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string" },
+        kinds: { type: "array", items: { type: "string" }, description: "Only these kinds." },
+        limit: { type: "integer", minimum: 1, maximum: CONTEXT_TOOL_BOUNDS.searchLimit },
+      },
+      required: ["id"],
+      additionalProperties: false,
+    },
+  },
 ];
 
 /** One declaration of a file, as a reader gives it (packages/extractors `declarationOutline`). */
@@ -248,6 +270,8 @@ export async function runContextTool(
       return walkTool(ix, input);
     case "show_code":
       return showCodeTool(ix, root, input, o);
+    case "similar":
+      return similarTool(ix, input);
     case "grep":
     case "files":
     case "outline":
@@ -259,16 +283,77 @@ export async function runContextTool(
   }
 }
 
-function searchTool(ix: CatalogIndex, input: Record<string, unknown>): string {
+/** A node's line for a tool, by key. */
+function hitLine(ix: CatalogIndex, key: string, extra = ""): string | undefined {
+  const r = ix.db.prepare("SELECT kind, id, name, file FROM nodes WHERE key = ?").get(key) as
+    { kind: string; id: string; name: string; file: string } | undefined;
+  return r ? `- ${r.kind} ${r.id}: ${r.name}${extra} [${r.file}]` : undefined;
+}
+
+async function searchTool(ix: CatalogIndex, input: Record<string, unknown>): Promise<string> {
   const text = str(input.text);
   if (!text) throw new ContextToolError("search needs text: the words to look for.");
   const kinds = strs(input.kinds);
   const limit = int(input.limit, 1, CONTEXT_TOOL_BOUNDS.searchLimit, 10);
-  const hits = ix.search(text, { limit, ...(kinds?.length ? { kinds } : {}) });
-  if (!hits.length) return `Nothing in the index matches "${text}".`;
+  const by = input.by === "words" || input.by === "meaning" ? input.by : "both";
+  if (input.by !== undefined && !["words", "meaning", "both"].includes(String(input.by)))
+    throw new ContextToolError("search's by is words, meaning or both.");
+  const k = { limit, ...(kinds?.length ? { kinds } : {}) };
+  const words = by === "meaning" ? [] : ix.search(text, k);
+  let near: { key: string; cos: number }[] = [];
+  let off: string | undefined;
+  if (by !== "words") {
+    await ix.prepare(text);
+    const s = ix.similar(text, k);
+    if ("off" in s) off = s.off;
+    else near = s.hits;
+  }
+  if (by === "meaning" && off) return `Similar in meaning is off: ${off}. Search by words instead.`;
+  const cos = new Map(near.map((h) => [h.key, h.cos]));
+  const keys = near.length
+    ? [
+        ...fuse([
+          { name: "words", keys: words.map((h) => h.key) },
+          { name: "meaning", keys: near.map((h) => h.key) },
+        ]),
+      ]
+        .sort((a, b) => b[1].score - a[1].score || (a[0] < b[0] ? -1 : 1))
+        .map(([key]) => key)
+        .slice(0, limit)
+    : words.map((h) => h.key);
+  const lines = keys
+    .map((key) =>
+      hitLine(
+        ix,
+        key,
+        cos.has(key) ? ` (similar in meaning, cos ${cos.get(key)!.toFixed(2)})` : "",
+      ),
+    )
+    .filter((l): l is string => !!l);
+  const note = off && by === "both" ? [`(Similar in meaning is off: ${off}.)`] : [];
+  if (!lines.length) return [`Nothing in the index matches "${text}".`, ...note].join("\n");
   return [
-    `${hits.length} hit${hits.length === 1 ? "" : "s"} for "${text}", best first:`,
-    ...hits.map((h) => `- ${h.kind} ${h.id}: ${h.name} [${h.file}]`),
+    `${lines.length} hit${lines.length === 1 ? "" : "s"} for "${text}", best first:`,
+    ...lines,
+    ...note,
+    "Show one in full with show and its id.",
+  ].join("\n");
+}
+
+function similarTool(ix: CatalogIndex, input: Record<string, unknown>): string {
+  const id = str(input.id);
+  if (!id) throw new ContextToolError("similar needs an id.");
+  const kinds = strs(input.kinds);
+  const limit = int(input.limit, 1, CONTEXT_TOOL_BOUNDS.searchLimit, 10);
+  const node = nodesOf(ix, id)[0]!;
+  const s = ix.similar({ key: node.key }, { limit, ...(kinds?.length ? { kinds } : {}) });
+  if ("off" in s) return `Similar in meaning is off: ${s.off}.`;
+  if (!s.hits.length) return `Nothing reads like ${id}.`;
+  return [
+    `Nearest ${id} in meaning (a hint where to look, not a link or a fact):`,
+    ...s.hits
+      .map((h) => hitLine(ix, h.key, ` (cos ${h.cos.toFixed(2)})`))
+      .filter((l): l is string => !!l),
     "Show one in full with show and its id.",
   ].join("\n");
 }

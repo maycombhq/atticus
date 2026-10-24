@@ -77,6 +77,26 @@ export async function runShowCli(
     }
     if (t.tools.stopped) io.out(`A cap stopped the tools: ${t.tools.stopped}.`);
   }
+  // ADR 0116: how the run's context was retrieved, when a model helped.
+  const ex = t.retrieval?.expansion;
+  if (ex) {
+    io.out(
+      `The model read the input first${ex.run ? ` (run ${ex.run})` : ""}${ex.cached ? " (a kept answer)" : ""}: search terms ${ex.terms.join("; ") || "none"}.`,
+    );
+    for (const n of ex.names)
+      io.out(
+        `  ${n.name}: ${n.id ? `the index's ${n.id}` : n.new ? "new in this change" : "nothing in the index"} ("${n.quote}")`,
+      );
+    for (const d of ex.dropped) io.out(`  Left out: ${d.name}, ${d.why}.`);
+  }
+  const rr = t.retrieval?.rerank;
+  if (rr)
+    io.out(
+      rr.used
+        ? `The model ordered ${plural(rr.shown, "candidate")}${rr.run ? ` (run ${rr.run})` : ""}${rr.cached ? " (a kept answer)" : ""}: kept ${rr.order.join(", ") || "none"}; judged not needed: ${rr.dropped.join(", ") || "none"}.`
+        : `The model's order of ${plural(rr.shown, "candidate")} named one it wasn't shown, so the engine's order stood.`,
+    );
+  if (t.retrieval?.meaning) io.out(`Meaning: ${t.retrieval.meaning}.`);
   for (const h of t.handedBack) {
     io.out(`Handed back after round ${h.attempt}:`);
     for (const p of h.problems) io.out(`  - ${p}`);

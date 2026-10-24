@@ -117,6 +117,21 @@ export function contextOutline(root: string, repo: string, path: string, io: Out
   return runFor(root, "outline", { repo, path }, io);
 }
 
+/** atticus context similar <id>: what reads like an id, by the local model (ADR 0116); a hint. */
+export function contextSimilar(
+  root: string,
+  id: string,
+  o: { kinds?: string[]; limit?: number },
+  io: Output,
+): Promise<number> {
+  return runFor(
+    root,
+    "similar",
+    { id, ...(o.kinds?.length ? { kinds: o.kinds } : {}), ...(o.limit ? { limit: o.limit } : {}) },
+    io,
+  );
+}
+
 /** atticus context tools [--json]: the tools, their input schemas and the caps. */
 export function contextTools(o: { json?: boolean }, io: Output): number {
   if (o.json) {

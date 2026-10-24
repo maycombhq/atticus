@@ -21,7 +21,11 @@
     "test": "vitest run --config ../../vitest.shared.mjs --fsModuleCachePath=node_modules/.vitest-cache --testTimeout=30000 --hookTimeout=60000"
   },
   "dependencies": {
+    "@maycombhq/ai": "workspace:*",
     "@maycombhq/core": "workspace:*",
+    "@maycombhq/embed": "workspace:*",
+    "@maycombhq/ingestors": "workspace:*",
+    "@maycombhq/intake": "workspace:*",
     "yaml": "^2.9.1"
   }
 }

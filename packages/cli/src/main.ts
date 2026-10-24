@@ -399,12 +399,13 @@ Usage:
   atticus repo-type new <id> --from <repo> [--force]   Draft a repo type from a repo (its build files, dependencies, markers, folders) for you to edit
   atticus scan review <repo>           What the last scan couldn't read: your assistant gives a verdict on each gap and a rule for code it can read; checked [--gaps] [--attempts 3]
   atticus query "<query>"              Find records, e.g. "kind:interface via:gateway -has:pattern"
-  atticus query "<words>" --search     Search everything the index holds (records, knowledge items, flows, changes, answered questions, wiki sections), names and ids first [--kind k,k] [--limit n] [--json]
+  atticus query "<words>" --search     Search everything the index holds (records, knowledge items, flows, changes, answered questions, wiki sections, documents), names and ids first [--by words|meaning|both] [--kind k,k] [--limit n] [--json]
           [--limit n] [--json]         (see docs/query-language.md)
   atticus context show <id>            One record, flow, step, knowledge item, change, answered question or wiki section in full, with its file
   atticus context walk <id> [--hops 1] [--kind k,k] [--limit n]  The links from one id, how each was made, at most two hops
   atticus context code <id> [--around 6]  The code a fact cites, a few lines around each cited line, from the workspace checkout
           [--repo r --path p --line n]  (or one line a fact cites)
+  atticus context similar <id> [--kind k,k] [--limit n]  What reads like one id, by the local embedding model: a hint where to look, never a link
   atticus context grep "<pattern>" [--regex] [--ignore-case] [--repo r] [--paths glob] [--limit n]  The lines of the workspace clones that match, each repo:path:line; .gitignore'd files skipped
   atticus context files "<glob>" [--repo r] [--limit n]  The clones' files whose paths match a glob
   atticus context outline <repo> <path>  A file's declarations with their annotations, from its syntax tree; a document's headings
@@ -422,6 +423,7 @@ Usage:
   atticus site build <dir> [--title t]  The read-only catalog site as static files (only systems open to everyone)
           [--depth n] [--json]
   atticus index rebuild                Rebuild the local index from the catalog files
+  atticus index embed                  Give every node of the index its vector from the local embedding model (similar in meaning stays off until then)
   atticus reconcile [diagram...]       Compare draw.io diagrams with the catalog (default: inputs/diagrams)
           [--json]
   atticus sources add <type> <location>  Print the sources.yaml entry for a wiki (git, markdown-folder, ado-wiki, ...), or write it [--save]
@@ -1466,8 +1468,23 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
         io,
       );
     }
+    if (command === "similar") {
+      if (!target) {
+        io.err("Usage: atticus context similar <id> [--kind k,k] [--limit n]");
+        return 2;
+      }
+      return m.contextSimilar(
+        root,
+        target,
+        {
+          ...(csv(values.kind) ? { kinds: csv(values.kind)! } : {}),
+          ...(num(values.limit) ? { limit: num(values.limit)! } : {}),
+        },
+        io,
+      );
+    }
     io.err(
-      `context takes show, walk, code, grep, files, outline, tools or call; not ${command ?? "nothing"}.`,
+      `context takes show, walk, code, grep, files, outline, similar, tools or call; not ${command ?? "nothing"}.`,
     );
     return 2;
   }
@@ -1484,6 +1501,7 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
           json: values.json === true,
           ...(num(values.limit) ? { limit: num(values.limit)! } : {}),
           ...(typeof values.kind === "string" ? { kind: values.kind } : {}),
+          ...(typeof values.by === "string" ? { by: values.by } : {}),
         },
         io,
       );
@@ -1507,6 +1525,8 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
     );
   }
   if (group === "index" && command === "rebuild") return indexRebuild(root, io);
+  if (group === "index" && command === "embed")
+    return (await import("./index-commands.js")).indexEmbed(root, io);
   if (group === "alias") {
     const target = positionals[2];
     if (!command || !target) {

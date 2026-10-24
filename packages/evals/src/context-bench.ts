@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { cp, mkdir, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -9,12 +9,24 @@ import {
   orgPackDirOf,
   parseRecord,
   recordPath,
+  memoryJudgments,
   serializeRecord,
+  zip,
   type CatalogRecord,
 } from "@maycombhq/core";
 import {
+  openIndex,
+  type CatalogIndex,
+  type ContextInput,
+  type ContextSelection,
+  type SelectOptions,
+} from "@maycombhq/index";
+import {
   MockModelProvider,
   MockRuntime,
+  RecordedEmbedder,
+  type Embedder,
+  type RecordedVectors,
   ModelRuntime,
   type AiRequest,
   type AiRuntime,
@@ -24,6 +36,8 @@ import {
   architectureStage,
   contextToolsFor,
   endpointKey,
+  expandFor,
+  expansionInput,
   featureStage,
   findNeeds,
   loadEstate,
@@ -613,4 +627,479 @@ export function renderContextTable(rows: ContextRow[]): string {
     "",
   ];
   return lines.join("\n");
+}
+
+// ---------------------------------------------------------------- retrieval cases (ADR 0116)
+
+/**
+ * The harder cases (ADR 0116, fixtures/retrieval): about sixty inputs a step could get, run
+ * straight through `selectContext` on two roots, in each retrieval mode, at a normal and a
+ * tight budget. A case names what its context must hold: record or node ids, or a sentence
+ * (a document's or a wiki section's words) that must be in what is sent. The groups: words of a
+ * camelCase name, paraphrase, a glossary synonym, two links from what is named, similar records
+ * of other systems, a fact only in a document, a sentence deep in a long wiki section, exact
+ * names, and inputs nothing answers.
+ *
+ * - **recall**: the share of what the case needs that the context holds (in full or in one line);
+ * - **precision**: the share of what was picked that the case needs;
+ * - **MRR**: 1 / the rank of the first needed pick (0 when none is picked);
+ * - **tokens**: what the selection takes.
+ *
+ * A mode is a step's default only where its recall is at least the lexical engine's on every
+ * case and budget.
+ */
+
+/**
+ * The modes: "words" (the words only: no identifier words, no synonyms), "+split" (an
+ * identifier's words too), "lexical" (and the other names of what the input names: the engine
+ * with no model), then the model's expansion, its rerank, and a local embedding model's
+ * similarity, each on top of the lexical engine.
+ */
+export type RetrievalMode =
+  "words" | "+split" | "lexical" | "+expansion" | "+rerank" | "+embeddings";
+export const RETRIEVAL_MODES: RetrievalMode[] = [
+  "words",
+  "+split",
+  "lexical",
+  "+expansion",
+  "+rerank",
+  "+embeddings",
+];
+
+/** The modes that are layers of the lexical engine, measured to show what each adds. */
+const LAYERS: RetrievalMode[] = ["words", "+split"];
+
+export type RetrievalGroup =
+  | "identifier"
+  | "paraphrase"
+  | "synonym"
+  | "multi-hop"
+  | "distractor"
+  | "document"
+  | "long-wiki"
+  | "exact"
+  | "no-answer";
+
+export interface RetrievalCase {
+  id: string;
+  group: RetrievalGroup;
+  root: "forge" | "shop";
+  title?: string;
+  text: string;
+  /** Ids, or a sentence that must be in the context. */
+  needed: (string | { text: string })[];
+}
+
+export interface RetrievalRow {
+  case: string;
+  group: RetrievalGroup;
+  mode: RetrievalMode;
+  budget: "normal" | "tight";
+  needed: number;
+  found: number;
+  recall: number;
+  precision: number;
+  mrr: number;
+  /** What the selection took. */
+  tokens: number;
+  picked: number;
+  /** The rank (from 1) of the first needed pick, or 0. */
+  rank: number;
+  missing: string[];
+}
+
+/** The budgets: a step's usual room for context, and a tight one. */
+export const RETRIEVAL_BUDGETS = { normal: 3000, tight: 600 } as const;
+
+const needleOf = (n: string | { text: string }) => (typeof n === "string" ? n : n.text);
+const fold = (s: string) => s.replace(/\s+/g, " ").toLowerCase();
+
+export function readRetrievalCases(fx: string): RetrievalCase[] {
+  return parse(readFileSync(join(fx, "retrieval/cases.yaml"), "utf8")) as RetrievalCase[];
+}
+
+/** The forge root: the scan's catalog, the retrieval extras, distractors, the wiki and a document. */
+export async function retrievalForgeRoot(fx: string, root: string): Promise<string> {
+  await cp(join(fx, "forge/metarepo/org-pack"), join(root, "org-pack"), { recursive: true });
+  await writeRecords(root, "catalog/generated", join(fx, "forge/expected/scan.yaml"));
+  await writeRecords(root, "catalog/generated", join(fx, "retrieval/catalog-extra.yaml"));
+  await writeRecords(root, "catalog/generated", join(fx, "retrieval/distractors.yaml"));
+  await writeRecords(root, "catalog/curated", join(fx, "retrieval/curated.yaml"));
+  await cp(join(fx, "retrieval/knowledge"), join(root, "knowledge"), { recursive: true });
+  const parts: { name: string; data: Uint8Array }[] = [];
+  const walk = async (d: string, rel: string): Promise<void> => {
+    for (const e of await readdir(d, { withFileTypes: true })) {
+      const f = join(d, e.name);
+      if (e.isDirectory()) await walk(f, `${rel}${e.name}/`);
+      else parts.push({ name: `${rel}${e.name}`, data: await readFile(f) });
+    }
+  };
+  await walk(join(fx, "retrieval/documents/settlement-runbook-docx"), "");
+  parts.sort((a, b) => (a.name < b.name ? -1 : 1));
+  await mkdir(join(root, "inputs/documents"), { recursive: true });
+  await writeFile(
+    join(root, "inputs/documents/settlement-runbook.docx"),
+    zip(parts, new Date(2026, 8, 15, 12, 0, 0)),
+  );
+  return root;
+}
+
+/** The shop root: fixtures/stages with fixtures/context laid over it, as the index tests have it. */
+export async function retrievalShopRoot(fx: string, root: string): Promise<string> {
+  const plain = async (dir: string, file: string) => {
+    for (const r of parse(readFileSync(file, "utf8")) as unknown[]) {
+      const p = parseRecord(r);
+      if (!p.ok) throw new Error(`bad fixture record in ${file}`);
+      const f = join(root, dir, recordPath(p.record));
+      await mkdir(dirname(f), { recursive: true });
+      await writeFile(f, serializeRecord(p.record));
+    }
+  };
+  await mkdir(join(root, "org-pack"), { recursive: true });
+  await writeRecords(root, "catalog/generated", join(fx, "specs/catalog.yaml"));
+  await writeRecords(root, "catalog/generated", join(fx, "stages/catalog-extra.yaml"));
+  await plain("knowledge/items", join(fx, "stages/knowledge.yaml"));
+  await plain("knowledge/items", join(fx, "context/knowledge.yaml"));
+  await cp(join(fx, "stages/specs"), join(root, "specs"), { recursive: true });
+  await cp(join(fx, "context/org-pack"), join(root, "org-pack"), { recursive: true });
+  await cp(join(fx, "context/knowledge"), join(root, "knowledge"), { recursive: true });
+  await cp(join(fx, "context/questions"), join(root, "questions"), { recursive: true });
+  return root;
+}
+
+/** How a mode selects: the index it opens, and the input and options it selects with. */
+export interface RetrievalModeRun {
+  open(root: string): Promise<CatalogIndex>;
+  input?(c: RetrievalCase, ix: CatalogIndex, root: string): Promise<ContextInput> | ContextInput;
+  options?(c: RetrievalCase): Partial<SelectOptions>;
+}
+
+/** The modes built so far; a mode without a run is listed as not built. */
+export type RetrievalModes = Partial<Record<RetrievalMode, RetrievalModeRun>>;
+
+/** The local embedding model the eval replays (fixtures/retrieval/vectors/<name>.json). */
+export const RETRIEVAL_MODEL = "all-minilm-l6-v2";
+
+/** Another model measured on the same cases, said in a note (the bank may prefer its provenance). */
+export const RETRIEVAL_ALTERNATIVES = ["snowflake-arctic-embed-xs"];
+
+/** The vectors a model gave the retrieval cases' texts, when they were recorded. */
+export function recordedVectors(fx: string, model = RETRIEVAL_MODEL): RecordedVectors | undefined {
+  const f = join(fx, "retrieval/vectors", `${model}.json`);
+  return existsSync(f) ? (JSON.parse(readFileSync(f, "utf8")) as RecordedVectors) : undefined;
+}
+
+export function defaultRetrievalModes(fx?: string): RetrievalModes {
+  const open = (root: string) => openIndex(root, { embeddings: "off" });
+  const vectors = fx ? recordedVectors(fx) : undefined;
+  return {
+    words: { open, options: () => ({ lexical: { split: false, synonyms: false } }) },
+    "+split": { open, options: () => ({ lexical: { split: true, synonyms: false } }) },
+    lexical: { open },
+    ...(fx && existsSync(join(fx, "retrieval/recorded/expansions.yaml"))
+      ? { "+expansion": { open, input: expansionInputFor(fx) } }
+      : {}),
+    ...(vectors
+      ? {
+          "+embeddings": {
+            open: (root: string) =>
+              openIndex(root, {
+                embeddings: new RecordedEmbedder(vectors),
+                embedOnOpen: Number.MAX_SAFE_INTEGER,
+              }),
+          },
+        }
+      : {}),
+  };
+}
+
+/**
+ * The +expansion mode's input (ADR 0116): each case's recorded expansion answer, replayed through
+ * the planner's real expansion step (its prompt, its checks against the input and the index), by a
+ * mock runtime that answers with the recording. A judgment store in memory, so nothing is kept.
+ */
+export function expansionInputFor(fx: string): NonNullable<RetrievalModeRun["input"]> {
+  const recorded = parse(
+    readFileSync(join(fx, "retrieval/recorded/expansions.yaml"), "utf8"),
+  ) as Record<string, unknown>;
+  return async (c, _ix, root) => {
+    const base: ContextInput = { text: c.text, ...(c.title ? { title: c.title } : {}) };
+    const answer = recorded[c.id];
+    if (!answer) return base;
+    const r = await expandFor(root, c.root, base, {
+      runtime: new MockRuntime(() => stringify(answer), { now: () => NOW }),
+      now: NOW,
+      store: memoryJudgments(),
+      levels: ["public", "internal", "confidential", "restricted"],
+      step: `retrieval case ${c.id}`,
+    });
+    return "expansion" in r ? { ...base, expansion: expansionInput(r.expansion) } : base;
+  };
+}
+
+/**
+ * Record the vectors a real model gives every node of the retrieval roots and every input's
+ * pieces (`pnpm --filter @maycombhq/evals eval:embed`, with the model on disk; never in CI).
+ */
+export async function recordRetrievalVectors(
+  fx: string,
+  embedder: Embedder,
+): Promise<RecordedVectors> {
+  const parent = await mkdtemp(join(tmpdir(), "atticus-retrieval-vectors-"));
+  const roots = {
+    forge: await retrievalForgeRoot(fx, join(parent, "forge")),
+    shop: await retrievalShopRoot(fx, join(parent, "shop")),
+  };
+  const out: RecordedVectors = {
+    model: embedder.id,
+    dim: embedder.dim,
+    maxTokens: embedder.maxTokens,
+    ...(embedder.floor !== undefined ? { floor: embedder.floor } : {}),
+    document: {},
+    query: {},
+  };
+  for (const [name, root] of Object.entries(roots)) {
+    const ix = await openIndex(root, {
+      embeddings: embedder,
+      embedOnOpen: Number.MAX_SAFE_INTEGER,
+    });
+    try {
+      for (const c of readRetrievalCases(fx).filter((x) => x.root === name))
+        await ix.prepare({ text: c.text, ...(c.title ? { title: c.title } : {}) });
+      const rows = ix.db
+        .prepare("SELECT kind, text_sha AS sha, scale, q FROM vec.vectors WHERE model = ?")
+        .all(embedder.id) as {
+        kind: "document" | "query";
+        sha: string;
+        scale: number;
+        q: Uint8Array;
+      }[];
+      for (const r of rows)
+        out[r.kind][r.sha] = {
+          q: Buffer.from(r.q.buffer, r.q.byteOffset, r.q.byteLength).toString("base64"),
+          scale: r.scale,
+        };
+    } finally {
+      ix.close();
+    }
+  }
+  const sorted = (o: Record<string, { q: string; scale: number }>) =>
+    Object.fromEntries(Object.entries(o).sort((a, b) => (a[0] < b[0] ? -1 : 1)));
+  return { ...out, document: sorted(out.document), query: sorted(out.query) };
+}
+
+/** What each pick put in the context, in pick order: full detail, or its one line. */
+function pickTexts(s: ContextSelection): string[] {
+  const full = s.sources.filter((x) => x.id !== "ctx-lines").map((x) => x.text);
+  const lines = (s.sources.find((x) => x.id === "ctx-lines")?.text ?? "").split("\n").slice(1);
+  let fi = 0;
+  let li = 0;
+  return s.picked.map((p) => (p.level === "full" ? (full[fi++] ?? "") : (lines[li++] ?? "")));
+}
+
+export function scoreSelection(
+  c: RetrievalCase,
+  s: ContextSelection,
+): Omit<RetrievalRow, "case" | "group" | "mode" | "budget"> {
+  const texts = pickTexts(s);
+  const hits = (n: string | { text: string }, i: number) =>
+    typeof n === "string"
+      ? s.picked[i]!.id === n || s.picked[i]!.id.startsWith(`${n}#`)
+      : fold(texts[i]!).includes(fold(n.text));
+  const foundAt = c.needed.map((n) => s.picked.findIndex((_, i) => hits(n, i)));
+  const found = foundAt.filter((i) => i >= 0).length;
+  const usefulPicks = s.picked.filter((_, i) => c.needed.some((n) => hits(n, i))).length;
+  const first = Math.min(...foundAt.filter((i) => i >= 0).map((i) => i + 1), Infinity);
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+  return {
+    needed: c.needed.length,
+    found,
+    recall: c.needed.length ? r2(found / c.needed.length) : 1,
+    precision: s.picked.length ? r2(usefulPicks / s.picked.length) : c.needed.length ? 0 : 1,
+    mrr: Number.isFinite(first) ? r2(1 / first) : 0,
+    tokens: s.tokens,
+    picked: s.picked.length,
+    rank: Number.isFinite(first) ? first : 0,
+    missing: c.needed.filter((_, i) => foundAt[i]! < 0).map(needleOf),
+  };
+}
+
+export interface RetrievalBenchOptions {
+  fixtures: string;
+  /** The modes to run. Default: the ones built (defaultRetrievalModes). */
+  modes?: RetrievalModes;
+  /** Only these cases. */
+  cases?: string[];
+}
+
+export async function runRetrievalBench(o: RetrievalBenchOptions): Promise<RetrievalRow[]> {
+  const fx = o.fixtures;
+  const parent = await mkdtemp(join(tmpdir(), "atticus-retrieval-eval-"));
+  const roots = {
+    forge: await retrievalForgeRoot(fx, join(parent, "forge")),
+    shop: await retrievalShopRoot(fx, join(parent, "shop")),
+  };
+  const cases = readRetrievalCases(fx).filter((c) => !o.cases || o.cases.includes(c.id));
+  const modes = o.modes ?? defaultRetrievalModes(fx);
+  const rows: RetrievalRow[] = [];
+  for (const mode of RETRIEVAL_MODES) {
+    const m = modes[mode];
+    if (!m) continue;
+    const open = new Map<string, CatalogIndex>();
+    try {
+      for (const c of cases) {
+        let ix = open.get(c.root);
+        if (!ix) open.set(c.root, (ix = await m.open(roots[c.root])));
+        const input: ContextInput = m.input
+          ? await m.input(c, ix, roots[c.root])
+          : { text: c.text, ...(c.title ? { title: c.title } : {}) };
+        await ix.prepare(input);
+        for (const budget of ["normal", "tight"] as const) {
+          const s = ix.selectContext(input, {
+            budget: RETRIEVAL_BUDGETS[budget],
+            ...(m.options?.(c) ?? {}),
+          });
+          rows.push({ case: c.id, group: c.group, mode, budget, ...scoreSelection(c, s) });
+        }
+      }
+    } finally {
+      for (const ix of open.values()) ix.close();
+    }
+  }
+  return rows;
+}
+
+/** Per mode, whether its recall is at least the lexical engine's on every case and budget. */
+export function retrievalSwitches(rows: RetrievalRow[]): Partial<Record<RetrievalMode, boolean>> {
+  const out: Partial<Record<RetrievalMode, boolean>> = {};
+  const lexical = new Map(
+    rows.filter((r) => r.mode === "lexical").map((r) => [`${r.case}|${r.budget}`, r.recall]),
+  );
+  for (const r of rows.filter((x) => x.mode !== "lexical" && !LAYERS.includes(x.mode)))
+    out[r.mode] = (out[r.mode] ?? true) && r.recall >= (lexical.get(`${r.case}|${r.budget}`) ?? 0);
+  return out;
+}
+
+const avg = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
+
+/** The retrieval cases as Markdown: per group and mode, then per case. */
+export function renderRetrievalTable(rows: RetrievalRow[], notes: string[] = []): string {
+  const built = RETRIEVAL_MODES.filter((m) => rows.some((r) => r.mode === m));
+  const notBuilt = RETRIEVAL_MODES.filter((m) => !built.includes(m));
+  const groups = [...new Set(rows.map((r) => r.group))];
+  const sw = retrievalSwitches(rows);
+  const cell = (rs: RetrievalRow[]) => {
+    const answered = rs.filter((r) => r.needed > 0);
+    return answered.length
+      ? `${avg(answered.map((r) => r.recall)).toFixed(2)} / ${avg(answered.map((r) => r.precision)).toFixed(2)} / ${avg(answered.map((r) => r.mrr)).toFixed(2)}`
+      : `${avg(rs.map((r) => r.picked)).toFixed(1)} picked`;
+  };
+  const lines = [
+    "## Retrieval cases (ADR 0116)",
+    "",
+    `${new Set(rows.map((r) => r.case)).size} inputs from \`fixtures/retrieval/cases.yaml\`, run straight through \`selectContext\` on two roots: the Forge scan with 208 look-alike records of eight other systems, three glossary terms and their curated aliases, a long wiki page and a Word runbook in \`inputs/\`; and the shop with its wiki and knowledge items. Budgets: ${RETRIEVAL_BUDGETS.normal} tokens (normal) and ${RETRIEVAL_BUDGETS.tight} (tight). Each cell is recall / precision / MRR, averaged over the group's cases; for inputs nothing answers it is how many records were picked anyway.`,
+    "",
+    ...notes,
+    ...(notes.length ? [""] : []),
+    `| Group | Cases | ${built.flatMap((m) => [`${m} normal`, `${m} tight`]).join(" | ")} |`,
+    `| --- | --- | ${built.flatMap(() => ["---", "---"]).join(" | ")} |`,
+    ...[...groups, "all"].map((g) => {
+      const rs = rows.filter((r) => g === "all" || r.group === g);
+      const n = new Set(rs.filter((r) => g !== "all" || r.needed > 0).map((r) => r.case)).size;
+      return `| ${g} | ${n} | ${built
+        .flatMap((m) =>
+          (["normal", "tight"] as const).map((b) =>
+            cell(rs.filter((r) => r.mode === m && r.budget === b && (g !== "all" || r.needed > 0))),
+          ),
+        )
+        .join(" | ")} |`;
+    }),
+    "",
+    ...(notBuilt.length ? [`Not measured here: ${notBuilt.join(", ")}.`, ""] : []),
+    "A mode becomes a step's default only where its recall is at least the lexical engine's on every case and budget:",
+    "",
+    ...built
+      .filter((m) => m !== "lexical" && !LAYERS.includes(m))
+      .map(
+        (m) =>
+          `- ${m}: ${sw[m] ? "recall holds on every case" : "recall drops on some case, so it stays off"}`,
+      ),
+    ...(built.every((m) => m === "lexical" || LAYERS.includes(m))
+      ? ["- only the lexical engine is built"]
+      : []),
+    "",
+    "### Per case (normal budget): the rank of the first needed pick, 0 when it isn't picked",
+    "",
+    `| Case | Group | ${built.join(" | ")} | Missing (lexical) |`,
+    `| --- | --- | ${built.map(() => "---").join(" | ")} | --- |`,
+    ...[...new Set(rows.map((r) => r.case))].map((id) => {
+      const rs = rows.filter((r) => r.case === id && r.budget === "normal");
+      const first = rs.find((r) => r.mode === "lexical");
+      return `| ${id} | ${rs[0]!.group} | ${built
+        .map((m) => {
+          const r = rs.find((x) => x.mode === m);
+          return r ? (r.needed ? String(r.rank) : `${r.picked} picked`) : "-";
+        })
+        .join(" | ")} | ${first?.missing.join(", ") || "none"} |`;
+    }),
+    "",
+  ];
+  return lines.join("\n");
+}
+
+/** Both halves of the eval, as docs/evidence/context-eval.md has them. */
+export interface ContextEval {
+  steps: ContextRow[];
+  retrieval: RetrievalRow[];
+  /** Said above the retrieval table: what each mode replays. */
+  notes: string[];
+}
+
+export async function runContextEval(fixtures: string): Promise<ContextEval> {
+  const steps = await runContextBench({ fixtures });
+  const retrieval = await runRetrievalBench({ fixtures });
+  const summary = (rows: RetrievalRow[], budget: string) => {
+    const rs = rows.filter((r) => r.budget === budget && r.needed > 0);
+    return `${avg(rs.map((r) => r.recall)).toFixed(2)} / ${avg(rs.map((r) => r.precision)).toFixed(2)} / ${avg(rs.map((r) => r.mrr)).toFixed(2)}`;
+  };
+  const notes = [
+    "Before ADR 0116 (the engine of ADR 0107 point 3: BM25 sums, whole wiki sections, no documents; measured at commit 464b758), all answered cases scored 0.72 / 0.03 / 0.28 at the normal budget and 0.49 / 0.06 / 0.27 at the tight one.",
+  ];
+  if (retrieval.some((r) => r.mode === "+expansion"))
+    notes.push(
+      "+expansion replays stand-in answers of the expander written by hand from each input and the estate's names (fixtures/retrieval/recorded/expansions.yaml), through the planner's real expansion step and its checks. They are not Copilot's: an optimistic upper bound until answers are recorded at the GPT-4o mini floor, so the expansion stays off by default (runtime.yaml retrieval.expansion) whatever this table says.",
+    );
+  notes.push(
+    "+rerank is built and tested (the planner's rerank step, its checks, the fit in the model's order) but not measured here: a rerank's answer depends on the candidates each case shows, and no model's answers are recorded for them. It stays off by default (retrieval.rerank).",
+  );
+  const v = recordedVectors(fixtures);
+  if (v)
+    notes.push(
+      `+embeddings replays the vectors ${v.model} gave every node and input (fixtures/retrieval/vectors, recorded on the CPU with onnxruntime-node; similarity floor ${v.floor ?? "default"}).`,
+    );
+  for (const alt of RETRIEVAL_ALTERNATIVES) {
+    const av = recordedVectors(fixtures, alt);
+    if (!av) continue;
+    const rows = await runRetrievalBench({
+      fixtures,
+      modes: {
+        "+embeddings": {
+          open: (root) =>
+            openIndex(root, {
+              embeddings: new RecordedEmbedder(av),
+              embedOnOpen: Number.MAX_SAFE_INTEGER,
+            }),
+        },
+      },
+    });
+    const none = rows.filter((r) => r.needed === 0 && r.budget === "normal");
+    notes.push(
+      `The other model measured, ${av.model} (floor ${av.floor ?? "default"}), in place of ${v?.model ?? "it"}: all answered cases ${summary(rows, "normal")} normal, ${summary(rows, "tight")} tight; ${none.reduce((n, r) => n + r.picked, 0)} records picked for the inputs nothing answers.`,
+    );
+  }
+  return { steps, retrieval, notes };
+}
+
+export function renderContextEval(e: ContextEval): string {
+  return `${renderContextTable(e.steps)}\n${renderRetrievalTable(e.retrieval, e.notes)}`;
 }

@@ -247,6 +247,45 @@ export function RunDetail(p: { of: Loaded<Api.RunTranscript> & { reload?: () => 
               ))}
             </section>
           )}
+          {t.retrieval && (t.retrieval.expansion || t.retrieval.rerank || t.retrieval.meaning) && (
+            <section aria-labelledby="run-retrieval">
+              <h3 id="run-retrieval" className="hud runs-h">
+                {R.retrieval.title}
+              </h3>
+              {t.retrieval.expansion && (
+                <>
+                  <p className="muted" style={{ margin: 0 }}>
+                    {R.retrieval.expansion(t.retrieval.expansion.run, t.retrieval.expansion.cached)}{" "}
+                    {R.retrieval.terms(t.retrieval.expansion.terms.join("; "))}
+                  </p>
+                  <ul>
+                    {t.retrieval.expansion.names.map((n) => (
+                      <li key={`n:${n.name}`}>
+                        {R.retrieval.name(n.name, n.id, n.new === true, n.quote)}
+                      </li>
+                    ))}
+                    {t.retrieval.expansion.dropped.map((d) => (
+                      <li key={`d:${d.name}`}>{R.retrieval.dropped(d.name, d.why)}</li>
+                    ))}
+                  </ul>
+                </>
+              )}
+              {t.retrieval.rerank && (
+                <p className="muted">
+                  {t.retrieval.rerank.used
+                    ? R.retrieval.rerank(
+                        t.retrieval.rerank.shown,
+                        t.retrieval.rerank.order.join(", "),
+                        t.retrieval.rerank.dropped.join(", "),
+                      )
+                    : R.retrieval.rerankIgnored(t.retrieval.rerank.shown)}
+                </p>
+              )}
+              {t.retrieval.meaning && (
+                <p className="muted">{R.retrieval.meaning(t.retrieval.meaning)}</p>
+              )}
+            </section>
+          )}
           <section aria-labelledby="run-back">
             <h3 id="run-back" className="hud runs-h">
               {R.handedBack}

@@ -58,11 +58,20 @@ const assistant = (answer: string, seen: string[]) =>
   new MockRuntime(
     (req: AiRequest) => {
       if (req.agent.id.endsWith("-critic")) return "findings: []";
+      // ADR 0116: the model's reading of the input, when the step asks for it.
+      if (req.agent.id === "context-expander") return EXPANDED;
       seen.push(req.pack.prompt);
       return answer;
     },
     { now: () => NOW },
   );
+
+/** What a model reads the fraud check (with its new vendor) as: the name it found, quoted. */
+const EXPANDED = `terms: [fraud screen]
+names:
+  - { name: Northwind Pay, id: northwind-pay, quote: Northwind Pay }
+  - { name: Quillfeather Risk, quote: scored by Quillfeather Risk }
+`;
 
 const PLACED = `summary: Every new order is screened by Northwind Pay before stock is reserved.
 features:
@@ -179,7 +188,11 @@ describe("the context engine in the steps", () => {
       const { root, evidence } = await withGap();
       const seen: string[] = [];
       const answer = `${PLACED}gaps:\n  - { what: Quillfeather Risk scores the order, why: no flow calls it }\nrelies_on_gaps: [Quillfeather Risk]\n`;
-      const r = await featureStage(root, CHANGE, { runtime: assistant(answer, seen), now: NOW });
+      const r = await featureStage(root, CHANGE, {
+        runtime: assistant(answer, seen),
+        now: NOW,
+        context: { expand: true },
+      });
       expect(seen[0]).toContain(GAP_RULE);
       expect(seen[0]).toMatch(
         /origin="context-gaps">\nNames the change uses that nothing Atticus has read says anything about:\n- Quillfeather Risk/,
@@ -204,6 +217,7 @@ describe("the context engine in the steps", () => {
         runtime: assistant(answer, again),
         now: NOW,
         force: true,
+        context: { expand: true },
       });
       expect(r2.context?.gaps ?? []).toEqual([]);
       expect(again[0]).toMatch(
@@ -221,6 +235,7 @@ describe("the context engine in the steps", () => {
           [],
         ),
         now: NOW,
+        context: { expand: true },
       });
       expect(r.context?.gaps).toEqual([
         expect.objectContaining({ name: "Quillfeather Risk", state: "listed" }),
@@ -235,12 +250,14 @@ describe("the context engine in the steps", () => {
         runtime: assistant("needs: []\nnot_needed: []\nrelies_on_gaps: [quillfeather risk]\n", []),
         now: NOW,
         maxAttempts: 1,
+        context: { expand: true },
       });
       expect(r.status).toBe("done");
       expect(r.questions?.map((q) => q.question)).toEqual([gapQuestion("Quillfeather Risk")]);
       const f = await featureStage(root, CHANGE, {
         runtime: assistant(`${PLACED}relies_on_gaps: [Quillfeather Risk]\n`, []),
         now: NOW,
+        context: { expand: true },
       });
       expect(f.questions.map((q) => q.id)).toEqual(r.questions!.map((q) => q.id));
     });

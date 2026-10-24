@@ -282,6 +282,8 @@ describe("the step runner", { timeout: 120_000 }, () => {
       "grep",
       "files",
       "outline",
+      // ADR 0116: what reads like an id, by the local embedding model.
+      "similar",
     ]);
     // The second request carried the first call's result back as a tool result, wrapped as data.
     const back = model.requests[1]!.messages.at(-1)!;

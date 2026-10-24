@@ -17,3 +17,4 @@ export { NAMEABLE_KINDS, type UpdateResult } from "./store.js";
 export * from "./select.js";
 export * from "./tools.js";
 export * from "./gaps.js";
+export { nodeText, queryChunks, type MeaningState } from "./vectors.js";

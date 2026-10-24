@@ -159,6 +159,7 @@ export async function runTranscript(
     prompt: s.prompt,
     ...(answer !== undefined ? { answer } : {}),
     ...(s.run.tools ? { tools: s.run.tools } : {}),
+    ...(s.run.request.retrieval ? { retrieval: s.run.request.retrieval } : {}),
     handedBack: handedBack(s.prompt),
     rounds: rounds.map((x) => ({
       runId: x.runId,

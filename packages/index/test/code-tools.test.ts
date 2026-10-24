@@ -71,6 +71,7 @@ describe("the code tools (ADR 0118)", () => {
       "grep",
       "files",
       "outline",
+      "similar",
     ]);
     for (const t of CONTEXT_TOOLS.slice(4)) expect(t.inputSchema.type).toBe("object");
   });

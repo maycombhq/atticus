@@ -194,7 +194,11 @@ describe("search (ADR 0107 point 2)", () => {
 
 interface SelectCase {
   name: string;
-  input: { file?: string; text?: string };
+  input: {
+    file?: string;
+    text?: string;
+    expansion?: { terms: string[]; ids: string[]; unknown: string[] };
+  };
   kinds: string[];
   budget: number;
   must: string[];
@@ -214,7 +218,11 @@ describe("selectContext (ADR 0107 point 3)", () => {
         : c.input.text!;
       const title = /^#\s+(.+)$/m.exec(text)?.[1];
       const s = ix.selectContext(
-        { text, ...(title ? { title } : {}) },
+        {
+          text,
+          ...(title ? { title } : {}),
+          ...(c.input.expansion ? { expansion: c.input.expansion } : {}),
+        },
         { budget: c.budget, kinds: c.kinds },
       );
       const ids = s.picked.map((p) => p.id);
@@ -332,11 +340,13 @@ describe("selectContext (ADR 0107 point 3)", () => {
 
 describe("gaps (ADR 0107 point 5)", () => {
   const brief = `# Score orders with Quillfeather Risk\n\nSend each new order to Quillfeather Risk before stock is reserved.\n`;
+  // What a model read the brief as (ADR 0116): its names the index may not know.
+  const expansion = { terms: [], ids: [], unknown: ["Quillfeather Risk"] };
 
   it("a gap a person answered is known from then on, by that answer, with who and when", async () => {
     const root = await contextRoot();
     const before = await openIndex(root);
-    expect(before.selectContext({ text: brief }, { budget: 3000 }).unknown).toEqual([
+    expect(before.selectContext({ text: brief, expansion }, { budget: 3000 }).unknown).toEqual([
       "Quillfeather Risk",
     ]);
     before.close();
@@ -366,7 +376,7 @@ describe("gaps (ADR 0107 point 5)", () => {
       }),
     );
     const ix = await openIndex(root);
-    const s = ix.selectContext({ text: brief }, { budget: 3000 });
+    const s = ix.selectContext({ text: brief, expansion }, { budget: 3000 });
     expect(s.unknown).toEqual([]);
     const q = s.picked.find((p) => p.id === "q-a1b2c3d4e5f6");
     expect(q?.via).toBe("named in the input");

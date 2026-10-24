@@ -1,3 +1,5 @@
+import { identifierWords } from "@maycombhq/core";
+
 /**
  * Words in names and terms. Deterministic and deliberately small: the glossary reads
  * identifiers (paths, topics, tables, columns, schema fields) and short term names, not prose.
@@ -50,15 +52,7 @@ export const QUALIFIERS = new Set([
 ]);
 
 /** Split an identifier into lower-case words: camelCase, snake_case, kebab-case, dots and slashes. */
-export function splitWords(s: string): string[] {
-  return s
-    .replace(/\{[^}]*\}/g, " ")
-    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
-    .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
-    .toLowerCase()
-    .split(/[^a-z0-9]+/)
-    .filter(Boolean);
-}
+export const splitWords = (s: string): string[] => identifierWords(s);
 
 /** A plural noun's singular, by plain English rules (accounts, entries, statuses, addresses). */
 export function singular(w: string): string {

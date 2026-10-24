@@ -2422,6 +2422,21 @@ export const COPY = {
         `Round ${round}: ${name}, ${tokens} tokens back${refused ? ", refused" : ""}`,
       returned: (name: string) => `What ${name} gave back`,
     },
+    /** ADR 0116: how the run's context was retrieved, when a model helped. */
+    retrieval: {
+      title: "How the context was found",
+      expansion: (run: string | undefined, cached: boolean) =>
+        `The model read the input first${run ? ` (run ${run})` : ""}${cached ? ", an answer kept from before" : ""}.`,
+      terms: (terms: string) => `Search terms: ${terms || "none"}.`,
+      name: (name: string, id: string | undefined, isNew: boolean, quote: string) =>
+        `${name}: ${id ? `the index's ${id}` : isNew ? "new in this change" : "nothing in the index"} ("${quote}")`,
+      dropped: (name: string, why: string) => `Left out: ${name}, ${why}.`,
+      rerank: (shown: number, kept: string, dropped: string) =>
+        `The model ordered ${shown} candidates. Kept, in its order: ${kept || "none"}. Judged not needed: ${dropped || "none"}.`,
+      rerankIgnored: (shown: number) =>
+        `The model's order of ${shown} candidates named one it wasn't shown, so the engine's order stood.`,
+      meaning: (note: string) => `Meaning: ${note}.`,
+    },
     rounds: "Rounds of this step",
     round: (n: number) => `Round ${n}`,
     thisRound: "(this one)",

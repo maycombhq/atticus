@@ -123,7 +123,7 @@ describe("atticus mcp (ADR 0104)", () => {
     expect(missing.result.content[0]!.text).toBe("task_context needs task.");
   });
 
-  it("searches the index by words through atticus query --search (ADR 0107)", async () => {
+  it("searches the index by words and meaning through atticus query --search (ADR 0107, 0116)", async () => {
     const calls: string[][] = [];
     const call = (args: Record<string, unknown>) =>
       handleMcp(
@@ -139,8 +139,8 @@ describe("atticus mcp (ADR 0104)", () => {
     await call({ text: "fraud screen" });
     await call({ text: "firewall", kind: "ProcessDefinition,WikiSection" });
     expect(calls).toEqual([
-      ["query", "fraud screen", "--search", "--json"],
-      ["query", "firewall", "--search", "--kind", "ProcessDefinition,WikiSection", "--json"],
+      ["query", "fraud screen", "--search", "--by", "both"],
+      ["query", "firewall", "--search", "--kind", "ProcessDefinition,WikiSection", "--by", "both"],
     ]);
   });
 

@@ -1,11 +1,25 @@
 import { mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { stateDirOf, type CatalogRecord, type RecordKind } from "@maycombhq/core";
+import { textSha, type Embedder, type QuantVector } from "@maycombhq/ai";
 import { openDb, type Db } from "./db.js";
+import {
+  attachVectors,
+  cachedQuery,
+  embedMissing,
+  loadMatrix,
+  meaningState,
+  nearest,
+  queryChunks,
+  queryVectors,
+  type Matrix,
+  type MeaningState,
+} from "./vectors.js";
 import { compileQuery, parseQuery } from "./query.js";
 import { listSources } from "./sources.js";
 import { ensureSchema, updateIndex, type IndexProblem, type UpdateResult } from "./store.js";
 import {
+  MEANING_FLOOR,
   linksOf,
   nodesById,
   searchIndex,
@@ -27,6 +41,31 @@ export interface OpenOptions {
   file?: string;
   /** Rebuild even when the files look unchanged. */
   rebuild?: boolean;
+  /**
+   * The embedding model for "similar in meaning" (ADR 0116): "auto" (the default) reads
+   * runtime.yaml's retrieval.embeddings (off unless set), "off", or an embedder (tests, the eval).
+   */
+  embeddings?: "auto" | "off" | Embedder;
+  /**
+   * At most this many nodes without a vector are embedded on opening (default 200, a few seconds):
+   * a step keeps an index's vectors up to date; a first build of a big estate is
+   * `atticus index embed`. Until every node has one, similarity stays off and says so.
+   */
+  embedOnOpen?: number;
+}
+
+/** The vectors file beside an index file. */
+const vectorsFileOf = (file: string) => join(dirname(file), "vectors.sqlite");
+
+async function embedderOf(
+  root: string,
+  setting: OpenOptions["embeddings"],
+): Promise<{ embedder?: Embedder; why?: string }> {
+  if (setting === "off") return { why: "turned off for this command" };
+  if (setting && setting !== "auto") return { embedder: setting };
+  const { embedderFor } = await import("@maycombhq/embed");
+  const r = await embedderFor(root);
+  return r.embedder ? { embedder: r.embedder } : { why: r.state.problem ?? "no embedding model" };
 }
 
 /**
@@ -44,7 +83,14 @@ export async function openIndex(root: string, o: OpenOptions = {}): Promise<Cata
     const fresh = ensureSchema(db, o.rebuild === true);
     const u = await updateIndex(db, root, files, { force: fresh });
     const rebuilt = fresh || u.changed.length > 0 || u.removed.length > 0;
-    return new CatalogIndex(db, file, u.problems, rebuilt, u);
+    attachVectors(db, vectorsFileOf(file));
+    const e = await embedderOf(root, o.embeddings);
+    const ix = new CatalogIndex(db, file, u.problems, rebuilt, u, e.embedder, e.why);
+    if (e.embedder && (o.embedOnOpen ?? 200) > 0)
+      await ix.embed({ max: o.embedOnOpen ?? 200 }).catch((err: Error) => {
+        ix.meaningProblem = `the embedding model couldn't run: ${err.message.split("\n")[0]}`;
+      });
+    return ix;
   } catch (e) {
     db.close();
     throw e;
@@ -71,10 +117,111 @@ export class CatalogIndex {
     readonly rebuilt: boolean,
     /** What this open read again: the files changed and removed. */
     readonly update?: UpdateResult,
+    /** The embedding model for "similar in meaning" (ADR 0116), when there is one. */
+    readonly embedder?: Embedder,
+    /** Why there is none. */
+    private readonly noEmbedder?: string,
   ) {}
+
+  /** Set when the model is configured but couldn't run. */
+  meaningProblem?: string;
+  private matrix?: Matrix;
 
   close(): void {
     this.db.close();
+  }
+
+  /** Whether "similar in meaning" is on: a model, and a vector for every node (ADR 0116). */
+  meaning(): MeaningState {
+    if (this.meaningProblem)
+      return { ...meaningState(this.db, undefined, this.meaningProblem), model: this.embedder?.id };
+    return meaningState(this.db, this.embedder, this.noEmbedder);
+  }
+
+  /** Embed the nodes that have no vector yet (all, or at most `max`). */
+  async embed(
+    o: { max?: number; progress?: (done: number, of: number) => void } = {},
+  ): Promise<number> {
+    if (!this.embedder) return 0;
+    const n = await embedMissing(this.db, this.embedder, o);
+    if (n) this.matrix = undefined;
+    return n;
+  }
+
+  /** Embed what an input will be compared by (its title and paragraphs), so a selection can. */
+  async prepare(input: ContextInput | string): Promise<void> {
+    if (!this.embedder || this.meaningProblem || !this.meaning().on) return;
+    const i = typeof input === "string" ? { text: input } : input;
+    await queryVectors(this.db, this.embedder, queryChunks(i)).catch((err: Error) => {
+      this.meaningProblem = `the embedding model couldn't run: ${err.message.split("\n")[0]}`;
+    });
+  }
+
+  /**
+   * The nodes nearest an input in meaning, best first: a ranking, never a link (ADR 0116).
+   * Undefined, with why, when similarity is off or the input wasn't prepared.
+   */
+  similar(
+    input: ContextInput | string | { key: string },
+    o: { kinds?: string[]; limit?: number; floor?: number } = {},
+  ): { hits: { key: string; cos: number }[] } | { off: string } {
+    const state = this.meaning();
+    if (!state.on || !this.embedder) return { off: state.note };
+    let queries: QuantVector[];
+    let exclude: Set<string> | undefined;
+    if (typeof input === "object" && "key" in input) {
+      this.matrix ??= loadMatrix(this.db, this.embedder.id);
+      const at = this.matrix.keys.indexOf(input.key);
+      if (at < 0) return { off: `${input.key} has no vector` };
+      const d = this.matrix.dim;
+      queries = [
+        { q: this.matrix.q.subarray(at * d, (at + 1) * d), scale: this.matrix.scales[at]! },
+      ];
+      exclude = new Set([input.key]);
+    } else {
+      const i = typeof input === "string" ? { text: input } : input;
+      const chunks = queryChunks(i);
+      const vs = chunks.map((c) => cachedQuery(this.db, this.embedder!.id, textSha(c)));
+      if (!chunks.length) return { hits: [] };
+      if (vs.some((v) => !v)) return { off: "the input wasn't embedded (prepare it first)" };
+      queries = vs as QuantVector[];
+    }
+    this.matrix ??= loadMatrix(this.db, this.embedder.id);
+    return {
+      hits: nearest(this.matrix, queries, {
+        floor: o.floor ?? this.embedder.floor ?? MEANING_FLOOR,
+        limit: o.limit ?? 30,
+        ...(o.kinds ? { kinds: o.kinds } : {}),
+        ...(exclude ? { exclude } : {}),
+      }),
+    };
+  }
+
+  /**
+   * The estate's names (ADR 0116): each id of these kinds with every name and alias it goes by,
+   * in id order, for a model to map an input's names to (the expansion's digest).
+   */
+  names(kinds: string[]): { id: string; kind: string; names: string[] }[] {
+    const rows = this.db
+      .prepare(
+        `SELECT DISTINCT d.id AS id, d.kind AS kind, n.name AS name FROM nodes d JOIN names n ON n.id = d.id
+         WHERE d.kind IN (${kinds.map(() => "?").join(", ")}) ORDER BY d.id, d.kind, n.name`,
+      )
+      .all(...kinds) as { id: string; kind: string; name: string }[];
+    const out = new Map<string, { id: string; kind: string; names: string[] }>();
+    for (const r of rows) {
+      const k = `${r.kind}|${r.id}`;
+      const e = out.get(k) ?? { id: r.id, kind: r.kind, names: [] };
+      if (r.name !== r.id && !e.names.includes(r.name)) e.names.push(r.name);
+      out.set(k, e);
+    }
+    return [...out.values()];
+  }
+
+  /** selectContext, with the input embedded first when similarity is on (ADR 0116). */
+  async select(input: ContextInput | string, o: SelectOptions): Promise<ContextSelection> {
+    await this.prepare(input);
+    return selectContext(this, input, o);
   }
 
   /**

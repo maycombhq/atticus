@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:p><w:pPr><w:pStyle w:val="Title"/></w:pPr><w:r><w:t>Settlement runbook</w:t></w:r></w:p>
+    <w:p><w:r><w:t>For the ledger team's on-duty engineer. Invented for the Forge fixtures.</w:t></w:r></w:p>
+    <w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Cut-off times</w:t></w:r></w:p>
+    <w:p><w:r><w:t>Transfers received after 16:30 are settled on the next business day.</w:t></w:r></w:p>
+    <w:p><w:r><w:t>Saturday and Sunday are not business days; neither are the bank holidays in the operations calendar.</w:t></w:r></w:p>
+    <w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Duplicate payments</w:t></w:r></w:p>
+    <w:p><w:r><w:t>When a customer reports being charged twice, compare the idempotency keys of the two payments before refunding: the same key means Northwind Pay received one payment and the second line is a display fault in the portal.</w:t></w:r></w:p>
+    <w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Freezing an account</w:t></w:r></w:p>
+    <w:p><w:r><w:t>Only the fraud desk may freeze an account. A frozen account still receives incoming transfers but refuses every outgoing one until the desk lifts the freeze.</w:t></w:r></w:p>
+    <w:sectPr/>
+  </w:body>
+</w:document>

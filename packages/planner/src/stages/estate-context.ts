@@ -1,8 +1,10 @@
 import type { SourceInput } from "@maycombhq/ai";
-import type { ContextInput, GraphNodeRow } from "@maycombhq/index";
+import type { RunRetrieval, RunSummary } from "@maycombhq/core";
+import type { ContextInput, GraphNodeRow, SelectOptions } from "@maycombhq/index";
 import {
   oneSource,
   reportOf,
+  retrieve,
   roomFor,
   selectFor,
   sourceTokens,
@@ -10,6 +12,7 @@ import {
   type ContextOptions,
   type ContextReport,
   type ContextStep,
+  type RetrievalAi,
 } from "../engine.js";
 import { gapContext } from "../gaps.js";
 import { ESTATE_HEADING, ESTATE_KINDS, estateLine, type Estate } from "./estate.js";
@@ -24,6 +27,10 @@ import { ESTATE_HEADING, ESTATE_KINDS, estateLine, type Estate } from "./estate.
 export interface EstateContext {
   sources: SourceInput[];
   report: ContextReport;
+  /** How the context was retrieved, for the step's run record (ADR 0116). */
+  retrieval?: RunRetrieval;
+  /** Whether the run the step was resumed with was the expansion's or the rerank's. */
+  consumed?: boolean;
 }
 
 export interface KnowledgeLines {
@@ -54,8 +61,15 @@ export async function estateContext(
     knowledge?: KnowledgeLines;
     /** The change: its gaps are found in its files, and its answered gaps go in the pack. */
     change?: string;
+    /** The step's model, for the expansion and rerank (ADR 0116), when they are on. */
+    ai?: RetrievalAi;
   },
-): Promise<EstateContext | { note: string } | undefined> {
+): Promise<
+  | EstateContext
+  | { note: string; consumed?: boolean }
+  | { waiting: { runId: string }; summary: RunSummary }
+  | undefined
+> {
   if (!useEngine(step, o.context)) return undefined;
   const room = roomFor(o.budget, o.others, o.context);
   const e = o.estate;
@@ -71,23 +85,46 @@ export async function estateContext(
     }
     return estateLine(e, n.kind, n.id);
   };
-  const select = (budget: number) =>
-    selectFor(root, input, {
+  const selectAt = (budget: number) => (inp: ContextInput, order?: SelectOptions["order"]) =>
+    selectFor(root, inp, {
       budget,
+      ...(order ? { order } : {}),
       kinds,
       groups: [...(e ? ["catalog", "flow"] : []), ...(o.knowledge ? ["knowledge"] : [])],
       exclude: o.exclude ?? [],
       render: (n, level) => render(n, level) ?? `${n.kind} ${n.id}`,
     });
-  let got = await select(room);
-  if (!got.selection) return got.note ? { note: got.note } : undefined;
+  // ADR 0116: the model's expansion (and, at the final room, its rerank) where they are on; either
+  // may be a hand-off the step waits on. The first selection finds the gaps; the expansion is
+  // kept, so the second asks the model nothing new about it.
+  const first = await retrieve(
+    root,
+    o.change ?? "",
+    input,
+    selectAt(room),
+    { ...o.context, rerank: false },
+    o.ai,
+  );
+  if ("waiting" in first) return first;
+  if (!first.selection)
+    return first.note ? { note: first.note, consumed: first.consumed } : undefined;
   // What neither the wikis nor the repos say (ADR 0107 point 5): listed, never guessed. The gaps
   // and the answers people gave take their room from the selection, not from the step's input.
-  const g = o.change ? await gapContext(root, o.change, got.selection.unknown) : undefined;
+  const g = o.change ? await gapContext(root, o.change, first.selection.unknown) : undefined;
   const less = g ? sourceTokens(g.sources) : 0;
-  if (less) got = await select(Math.max(0, room - less));
-  if (!got.selection) return got.note ? { note: got.note } : undefined;
-  const s = got.selection;
+  const final = await retrieve(
+    root,
+    o.change ?? "",
+    first.input,
+    selectAt(Math.max(0, room - less)),
+    { ...o.context, expand: false },
+    o.ai && { ...o.ai, ...(first.consumed ? { resume: undefined } : {}) },
+  );
+  if ("waiting" in final) return final;
+  if (first.retrieval.expansion) final.retrieval.expansion = first.retrieval.expansion;
+  const consumed = first.consumed || final.consumed;
+  if (!final.selection) return final.note ? { note: final.note, consumed } : undefined;
+  const s = final.selection;
   const sources: SourceInput[] = [];
   const isKnowledge = (k: string) => !!o.knowledge?.kinds.includes(k);
   if (e)
@@ -119,5 +156,7 @@ export async function estateContext(
     report.gaps = g.gaps;
     sources.push(...g.sources);
   }
-  return { sources, report };
+  if (final.retrieval.expansion || final.retrieval.rerank) report.retrieval = final.retrieval;
+  if (final.note) report.note = final.note;
+  return { sources, report, retrieval: final.retrieval, consumed };
 }

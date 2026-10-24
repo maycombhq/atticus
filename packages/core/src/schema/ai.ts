@@ -108,10 +108,51 @@ export const RunState = z.enum([
 export type RunState = z.infer<typeof RunState>;
 
 /**
- * The run record's own version (ADR 0107 addendum): 2 adds the tools a run's model called.
- * A version 1 record is read through `migrateRunSummary`, which gives it no tool calls.
+ * The run record's own version: 2 adds the tools a run's model called (ADR 0107 addendum); 3 how
+ * its context was retrieved (ADR 0116): the model's expansion of the input and its order of the
+ * candidates. A version 1 or 2 record is read through `migrateRunSummary`, with neither.
  */
-export const RUN_SCHEMA_VERSION = 2 as const;
+export const RUN_SCHEMA_VERSION = 3 as const;
+
+/**
+ * How a run's context was retrieved (ADR 0116), when a model helped: what it read the input as
+ * (search terms, the names it found, each mapped to an id the index has or said new, with the
+ * input's words it took each from, and what the checks dropped) and its order of the candidates
+ * (the ones it was shown, the ones it kept in its order, the ones it dropped). Each names the run
+ * that answered, or says it came from the store of earlier answers. Data, never instructions.
+ */
+export const RunRetrieval = z.strictObject({
+  expansion: z
+    .strictObject({
+      run: z.string().min(1).optional(),
+      cached: z.boolean(),
+      terms: z.array(z.string()),
+      names: z.array(
+        z.strictObject({
+          name: z.string().min(1),
+          id: z.string().min(1).optional(),
+          new: z.boolean().optional(),
+          quote: z.string(),
+        }),
+      ),
+      dropped: z.array(z.strictObject({ name: z.string(), why: z.string() })).default([]),
+    })
+    .optional(),
+  rerank: z
+    .strictObject({
+      run: z.string().min(1).optional(),
+      cached: z.boolean(),
+      shown: z.number().int().min(0),
+      order: z.array(z.string()),
+      dropped: z.array(z.string()),
+      /** false: the answer named a candidate it wasn't shown (or one twice), so it was ignored. */
+      used: z.boolean(),
+    })
+    .optional(),
+  /** Whether similarity in meaning ranked too, or why not. */
+  meaning: z.string().optional(),
+});
+export type RunRetrieval = z.infer<typeof RunRetrieval>;
 
 /** A read-only tool a step's model may call beside its pack (ADR 0107 point 4). */
 export const ToolDefinition = z.strictObject({
@@ -169,17 +210,21 @@ export const RunSummary = z.strictObject({
   attempt: z.number().int().positive().default(1),
   /** The tools the run's model was offered and what it called (version 2). */
   tools: RunTools.optional(),
+  /** How the run's context was retrieved, when a model helped (version 3, ADR 0116). */
+  retrieval: RunRetrieval.optional(),
 });
 export type RunSummary = z.infer<typeof RunSummary>;
 
 /**
- * A stored run record at the current version: version 1 (before tools) reads as version 2
- * with no tools; anything else is returned as it is, for the schema to judge.
+ * A stored run record at the current version: version 1 (before tools) and 2 (before retrieval)
+ * read as version 3 with neither; anything else is returned as it is, for the schema to judge.
  */
 export function migrateRunSummary(raw: unknown): unknown {
   if (typeof raw !== "object" || raw === null) return raw;
   const r = raw as Record<string, unknown>;
-  return r.schemaVersion === 1 ? { ...r, schemaVersion: RUN_SCHEMA_VERSION } : raw;
+  return r.schemaVersion === 1 || r.schemaVersion === 2
+    ? { ...r, schemaVersion: RUN_SCHEMA_VERSION }
+    : raw;
 }
 
 /** Read a stored run record of any version (ADR 0107 addendum). */

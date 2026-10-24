@@ -1,0 +1,12 @@
+# identifierWords (packages/core): an identifier → the words it is made of. Written by hand.
+- { in: renamedAt, words: [renamed, at] }
+- { in: dailyLimitAmount, words: [daily, limit, amount] }
+- { in: AccountHolderName, words: [account, holder, name] }
+- { in: HTTPServer, words: [http, server] }
+- { in: parseHTTPResponseCode, words: [parse, http, response, code] }
+- { in: holder_name, words: [holder, name] }
+- { in: ledger-read-timeout, words: [ledger, read, timeout] }
+- { in: v2Payments, words: [v2, payments] }
+- { in: ledger.client.read-timeout, words: [ledger, client, read, timeout] }
+- { in: "/accounts/{id}/balance", words: [accounts, balance] }
+- { in: account, words: [account] }

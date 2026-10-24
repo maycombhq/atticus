@@ -20,6 +20,9 @@ import {
   type StageOptions,
   type StageResult,
   type StageSpec,
+  retrievalWaiting,
+  stageRetrievalAi,
+  withoutResume,
 } from "./loop.js";
 import { FLOW_DELTA_SCHEMA_VERSION, FlowDelta, type FeaturePlacement } from "./schema.js";
 import { z } from "zod";
@@ -1023,6 +1026,7 @@ export async function architectureStage(
       ...(o.context ? { context: o.context } : {}),
       exclude: [change.id],
       change: change.id,
+      ai: stageRetrievalAi(ctx, o, `change architecture ${change.id}`),
       origin: "atticus change architecture (context engine)",
       priority: 80,
       knowledge: {
@@ -1037,6 +1041,8 @@ export async function architectureStage(
       },
     },
   );
+  if (selected && "waiting" in selected)
+    return retrievalWaiting(change.id, "architecture", selected);
   let context: ContextReport = wholeLists();
   if (selected && "sources" in selected) {
     sources.push(...selected.sources);
@@ -1087,7 +1093,17 @@ export async function architectureStage(
     write: (answer) => writeTargetFlows(dir, answer, estate),
     current: () => readTargetFlows(dir),
   };
-  const res = await runStageLoop(root, change.id, spec, o);
+  const retrieved = selected && "sources" in selected ? selected : undefined;
+  if (retrieved?.retrieval && (retrieved.retrieval.expansion || retrieved.retrieval.rerank))
+    spec.retrieval = retrieved.retrieval;
+  const res = await runStageLoop(
+    root,
+    change.id,
+    spec,
+    retrieved?.consumed || (selected && "consumed" in selected && selected.consumed)
+      ? withoutResume(o)
+      : o,
+  );
   res.context = context;
   if (!approved)
     res.notes.unshift(

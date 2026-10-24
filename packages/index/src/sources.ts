@@ -28,7 +28,15 @@ import {
 
 /** Where a file comes from. */
 export type SourceKind =
-  "catalog" | "knowledge" | "review" | "flow" | "change" | "question" | "wiki" | "profile";
+  | "catalog"
+  | "knowledge"
+  | "review"
+  | "flow"
+  | "change"
+  | "question"
+  | "wiki"
+  | "profile"
+  | "document";
 
 export interface SourceFile {
   /** Root-relative, forward slashes. */
@@ -220,6 +228,12 @@ export async function listSources(root: string): Promise<SourceFile[]> {
     await walk(join(orgPackDirOf(root), "profiles"), (n) => n === "profile.yaml", files);
     add("profile")(files);
   }
+  {
+    // ADR 0116: the documents dropped into inputs/ that the document ingestor reads.
+    const files: string[] = [];
+    await walk(join(root, "inputs"), (n) => DOCUMENT_EXTENSIONS.test(n), files);
+    add("document")(files);
+  }
   const out: SourceFile[] = [];
   const seen = new Set<string>();
   for (const f of found) {
@@ -235,7 +249,7 @@ export async function listSources(root: string): Promise<SourceFile[]> {
 
 /** A short label for a record: its name or title, else what it is about, else its id. */
 export function labelOf(r: Record<string, unknown>): string {
-  for (const f of ["name", "title", "pathOrTopic", "key", "raw"])
+  for (const f of ["name", "title", "term", "pathOrTopic", "key", "raw"])
     if (typeof r[f] === "string" && r[f]) return r[f] as string;
   if (r.kind === "Interface")
     return `${String(r.from)} → ${String(r.to)}${r.method ? ` ${String(r.method)}` : ""} ${String(r.normalizedPath ?? "")}`.trim();
@@ -319,14 +333,20 @@ function recordNode(
   const links: LinkRow[] = [];
   for (const ref of recordReferences(r))
     links.push({ from: key, to: ref.id, by: "id", type: "ref", how: `field:${ref.field}` });
+  // ADR 0116: a glossary term is known by its term, and defines the columns and fields it lists.
+  if (r.kind === "GlossaryTerm") {
+    if (str(x.term) && foldName(String(x.term)) !== foldName(r.id))
+      names.push({ name: foldName(String(x.term)), id: r.id, kind: r.kind, how: `name:${grp}` });
+    for (const f of arr(x.fields))
+      if (typeof f === "string")
+        links.push({ from: key, to: f, by: "id", type: "defines", how: "field:fields" });
+  }
   // A curated alias: a name people use for a catalog id.
-  if (r.kind === "CuratedDecision" && x.action === "alias" && typeof x.value === "string")
-    names.push({
-      name: foldName(x.value),
-      id: String(x.target),
-      kind: "",
-      how: "alias:curated",
-    });
+  // A curated alias: a name people use for a catalog id, or a list of them.
+  if (r.kind === "CuratedDecision" && x.action === "alias")
+    for (const v of typeof x.value === "string" ? [x.value] : arr(x.value))
+      if (typeof v === "string" && v.trim())
+        names.push({ name: foldName(v), id: String(x.target), kind: "", how: "alias:curated" });
   if (grp === "knowledge") {
     // What an item says it is about, by its own fields.
     for (const s of arr(x.systems))
@@ -724,36 +744,178 @@ function wikiNodes(root: string, path: string, text: string): FileRead {
   const date = rest[1]!;
   const page = rest.slice(2).join("/");
   const lines = text.replace(/\r\n/g, "\n").split("\n");
-  const sections: { heading: string; line: number; text: string[] }[] = [
-    { heading: "", line: 1, text: [] },
+  const sections: { heading: string; level: number; line: number; text: string[] }[] = [
+    { heading: "", level: 0, line: 1, text: [] },
   ];
   lines.forEach((l, i) => {
-    const m = /^#{1,6}\s+(.+?)\s*#*\s*$/.exec(l);
-    if (m) sections.push({ heading: m[1]!, line: i + 1, text: [] });
+    const m = /^(#{1,6})\s+(.+?)\s*#*\s*$/.exec(l);
+    if (m) sections.push({ heading: m[2]!, level: m[1]!.length, line: i + 1, text: [] });
     else sections.at(-1)!.text.push(l);
   });
   const out: FileRead = { nodes: [], names: [], links: [] };
   const used = new Set<string>();
+  // ADR 0116: a section is named by its heading path (page title › parent › heading).
+  const stack: string[] = [];
   for (const s of sections) {
-    const body = s.text.join("\n").trim();
-    if (!body) continue;
+    if (s.level > 0) {
+      stack.length = s.level - 1;
+      while (stack.length < s.level - 1) stack.push("");
+      stack.push(s.heading);
+    }
+    const path_ = stack.filter(Boolean).join(" › ");
+    const paras: { line: number; text: string }[] = [];
+    let at = s.level > 0 ? s.line + 1 : 1;
+    let cur: { line: number; text: string[] } | undefined;
+    for (const l of s.text) {
+      if (l.trim()) (cur ??= { line: at, text: [] }).text.push(l);
+      else if (cur) {
+        paras.push({ line: cur.line, text: cur.text.join("\n") });
+        cur = undefined;
+      }
+      at++;
+    }
+    if (cur) paras.push({ line: cur.line, text: cur.text.join("\n") });
+    if (!paras.length) continue;
     const id = sectionId(source, page, s.heading);
     if (used.has(id)) continue;
     used.add(id);
-    out.nodes.push({
-      key: `wiki:WikiSection:${id}`,
-      kind: "WikiSection",
-      id,
-      grp: "wiki",
-      name: s.heading || page,
-      file: path,
-      verified: false,
-      line: `wiki ${source}/${page}${s.heading ? ` § ${s.heading}` : ""} (snapshot ${date}) [${path}:${s.line}]`,
-      detail: `${source}/${page}${s.heading ? ` § ${s.heading}` : ""}, snapshot ${date} (${path}:${s.line}):\n${body}`,
-      names: s.heading,
-      ids: idWords(page),
-      body,
-      mentions: true,
+    const parts = partsOf(paras);
+    parts.forEach((p, i) => {
+      const pid = i === 0 ? id : `${id}#${i + 1}`;
+      const line = i === 0 ? s.line : p.line;
+      const of = parts.length > 1 ? ` (part ${i + 1} of ${parts.length})` : "";
+      const name = path_ || page;
+      out.nodes.push({
+        key: `wiki:WikiSection:${pid}`,
+        kind: "WikiSection",
+        id: pid,
+        grp: "wiki",
+        name,
+        file: path,
+        verified: false,
+        line: `wiki ${source}/${page}${path_ ? ` § ${path_}` : ""}${of} (snapshot ${date}) [${path}:${line}]`,
+        detail: `${source}/${page}${path_ ? ` › ${path_}` : ""}${of}, snapshot ${date} (${path}:${line}):\n${p.text}`,
+        names: path_,
+        ids: idWords(page),
+        body: p.text,
+        mentions: true,
+      });
+      if (i > 0)
+        out.links.push({
+          from: `wiki:WikiSection:${pid}`,
+          to: id,
+          by: "id",
+          type: "part-of",
+          how: `part ${i + 1}`,
+        });
+    });
+  }
+  return out;
+}
+
+/** A part of a long section is about this many characters (≈ 400 tokens), cut at paragraphs. */
+export const PART_CHARS = 1600;
+
+/**
+ * A section's paragraphs as parts (ADR 0116): a section over PART_CHARS is cut at paragraph
+ * boundaries, each part starting at its first paragraph's line, so a citation stays exact. A
+ * paragraph longer than a part is a part of its own, never cut inside.
+ */
+export function partsOf(paras: { line: number; text: string }[]): { line: number; text: string }[] {
+  const parts: { line: number; text: string }[] = [];
+  for (const p of paras) {
+    const last = parts.at(-1);
+    if (last && last.text.length + 2 + p.text.length <= PART_CHARS)
+      last.text = `${last.text}\n\n${p.text}`;
+    else parts.push({ line: p.line, text: p.text });
+  }
+  return parts;
+}
+
+/** The document formats the index reads from inputs/ (ADR 0116), by extension. */
+export const DOCUMENT_EXTENSIONS = /\.(docx|pptx|xlsx|pdf|md|markdown|html?|txt)$/i;
+
+/**
+ * An ingested document (ADR 0116): a file under inputs/ that the document ingestor reads, one
+ * node per section (group document), named by its heading path and cited by file and section,
+ * page or line, cut into parts like a wiki section. Screened first with the ingested-content
+ * defences: a document that hides instructions is kept out, as intake keeps it out of every AI
+ * step, until a person decides. Read lazily: the ingestors load only when there is a document.
+ */
+export async function documentNodes(path: string, bytes: Uint8Array): Promise<FileRead> {
+  const out: FileRead = { nodes: [], names: [], links: [] };
+  const [{ readDocument }, { screenFile }] = await Promise.all([
+    import("@maycombhq/ingestors"),
+    import("@maycombhq/intake"),
+  ]);
+  const screen = screenFile(path, bytes);
+  if (screen.problem) return { ...out, problem: screen.problem };
+  if (screen.screening && (screen.screening.risk === "medium" || screen.screening.risk === "high"))
+    return {
+      ...out,
+      problem: `kept out of the index: the ingested-content defences found ${screen.screening.risk} risk (${screen.screening.reason})`,
+    };
+  let read: ReturnType<typeof readDocument>;
+  try {
+    read = readDocument(path, bytes);
+  } catch (e) {
+    return { ...out, problem: (e as Error).message };
+  }
+  const title = read.text.title;
+  const stack: string[] = [];
+  const used = new Set<string>();
+  for (const s of read.text.sections) {
+    if (s.level > 0) {
+      stack.length = s.level - 1;
+      while (stack.length < s.level - 1) stack.push("");
+      stack.push(s.heading);
+    }
+    const heading = s.heading || title;
+    const trail = [title, ...stack.filter(Boolean)].filter(
+      (h, i, all) => h && all.indexOf(h) === i,
+    );
+    const name = (s.level > 0 ? trail : [heading]).join(" › ");
+    const paras = s.text
+      .split(/\n/)
+      .map((t, i) => ({ line: (s.line ?? 0) + i + 1, text: t.trim() }))
+      .filter((p) => p.text);
+    if (!paras.length) continue;
+    const id = `${path}#${heading}`;
+    if (used.has(id)) continue;
+    used.add(id);
+    const parts = partsOf(paras);
+    parts.forEach((p, i) => {
+      const pid = i === 0 ? id : `${id}#${i + 1}`;
+      const of = parts.length > 1 ? ` (part ${i + 1} of ${parts.length})` : "";
+      const where = s.page
+        ? `, page ${s.page}`
+        : s.line !== undefined
+          ? `, line ${i === 0 ? s.line : p.line}`
+          : "";
+      const cite = `${path} § ${heading}${where}`;
+      out.nodes.push({
+        key: `document:DocumentSection:${pid}`,
+        kind: "DocumentSection",
+        id: pid,
+        grp: "document",
+        name,
+        file: path,
+        verified: false,
+        line: `document ${path} § ${name}${of} [${cite}]`,
+        detail: `${path} › ${name}${of} (${cite}):\n${p.text}`,
+        names: name,
+        ids: idWords(path),
+        body: p.text,
+        mentions: true,
+      });
+      if (i > 0)
+        out.links.push({
+          from: `document:DocumentSection:${pid}`,
+          to: id,
+          by: "id",
+          type: "part-of",
+          how: `part ${i + 1}`,
+        });
     });
   }
   return out;
@@ -852,5 +1014,8 @@ export function readSource(root: string, f: SourceFile, text: string): FileRead 
       return wikiNodes(root, f.path, text);
     case "profile":
       return profileNodes(f.path, text);
+    case "document":
+      // Read from its bytes by documentNodes (store.ts); never as text here.
+      return { nodes: [], names: [], links: [] };
   }
 }

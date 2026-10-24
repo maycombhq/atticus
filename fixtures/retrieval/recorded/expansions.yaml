@@ -1,0 +1,191 @@
+# Stand-in answers of the context expander (ADR 0116) for the retrieval cases, replayed by the
+# eval's +expansion mode through the planner's real expansion step (its checks included).
+#
+# NOT Copilot output. Written by hand (by Claude, for this eval) from each case's input and the
+# estate's names and aliases the expander is given (systems, components, stores, tables, glossary
+# terms, items: never the columns or a case's answer), the way a capable model might answer.
+# They are an optimistic stand-in until real answers are recorded from Copilot at the GPT-4o mini
+# floor (record them with `atticus change ... --handoff` and copy each run's expansion.yaml here).
+forge-show-renamed-time:
+  terms: [renamed time, rename date, account last renamed, updated at]
+  names: [{ name: Portal, id: portal, quote: Portal customers }]
+forge-renamed-timestamp:
+  terms: [renamed time, rename date, account renamed]
+  names: []
+forge-closed-at:
+  terms: [closed date, account closed, closing time]
+  names: []
+forge-daily-limit-amount:
+  terms: [daily limit, limit amount, ledger account]
+  names: [{ name: ledger, id: ledger, quote: ledger account }]
+forge-spending-cap:
+  terms: [daily limit, transfer limit, maximum per day]
+  names: []
+forge-card-issuer:
+  terms: [payment vendor, card payments, payment provider]
+  names: []
+forge-most-per-day:
+  terms: [daily limit, transfer limit, maximum amount per day]
+  names: []
+forge-move-money:
+  terms: [transfer, post transfer, payment between accounts]
+  names: []
+forge-money-left:
+  terms: [account balance, get balance, available funds]
+  names: []
+forge-owner-name:
+  terms: [account holder, owner name, customer name]
+  names: []
+forge-booking-hit:
+  terms: [posting date, booking time, ledger entry]
+  names: [{ name: ledger, id: ledger, quote: hit the ledger }]
+forge-page-someone:
+  terms: [alert, error rate, on-call]
+  names: [{ name: ledger, id: ledger, quote: the ledger keeps failing }]
+forge-wait-answer:
+  terms: [read timeout, client timeout, ledger client]
+  names: [{ name: portal, id: portal, quote: the portal waits }, { name: ledger, id: ledger, quote: from the ledger }]
+forge-schema-changes:
+  terms: [migration, flyway, database migration]
+  names: [{ name: ledger, id: ledger, quote: for the ledger }]
+forge-permissions:
+  terms: [oauth scopes, access grant, gateway authorization]
+  names: [{ name: ledger, id: ledger, quote: call the ledger }]
+forge-who-did-what:
+  terms: [audit, audit log, audit events]
+  names: []
+forge-overnight-batch:
+  terms: [reports job, daily batch, daily entries]
+  names: []
+forge-friendly-label:
+  terms: [nickname, account name, display name]
+  names: []
+forge-withdrawal-ceiling:
+  terms: [daily limit, withdrawal limit]
+  names: [{ name: withdrawal ceiling, id: term.daily-limit, quote: withdrawal ceiling }]
+forge-beneficial-owner:
+  terms: [account holder, owner]
+  names: [{ name: beneficial owner, id: term.account-holder, quote: beneficial owner }]
+forge-booking-date:
+  terms: [posting date, booking time, ledger entry]
+  names: [{ name: booking date, id: term.posting-date, quote: booking date }]
+forge-who-calls-nwp:
+  terms: [interface, outbound call, payment vendor]
+  names: [{ name: Northwind Pay, id: northwind-pay, quote: talk to Northwind Pay }]
+forge-reports-feed:
+  terms: [transfers completed, transfer event, topic]
+  names: [{ name: reports-job, id: reports-job, quote: The reports-job wants }]
+forge-balance-route:
+  terms: [gateway route, balance endpoint, proxy]
+  names: [{ name: portal-bff, id: portal-bff, quote: the portal-bff balance call }]
+forge-ledger-migrations:
+  terms: [migration, flyway, database migration]
+  names: [{ name: ledger-api, id: ledger-api, quote: The ledger-api team }]
+forge-account-shut:
+  terms: [closed date, account closed]
+  names: [{ name: ledger, id: ledger, quote: a ledger account }]
+forge-ledger-connect:
+  terms: [connect timeout, ledger client]
+  names: [{ name: portal, id: portal, quote: the portal's connect timeout }]
+forge-portal-balance:
+  terms: [get balance, balance api]
+  names: [{ name: portal, id: portal, quote: the portal serves }]
+forge-account-number:
+  terms: [account number]
+  names: [{ name: ledger, id: ledger, quote: a ledger account }]
+forge-ledger-nickname:
+  terms: [nickname, account name]
+  names: [{ name: ledger, id: ledger, quote: a ledger account }]
+forge-late-transfer:
+  terms: [cut-off time, settlement, late transfer]
+  names: []
+forge-charged-twice:
+  terms: [duplicate payment, double charge, refund]
+  names: []
+forge-weekend-settlement:
+  terms: [business days, settlement, weekend]
+  names: []
+forge-frozen-account:
+  terms: [freeze account, frozen account, outgoing transfers]
+  names: []
+forge-unmatched-entries:
+  terms: [reconciliation, unmatched entries, month end]
+  names: [{ name: ledger, id: ledger, quote: ledger entries }]
+forge-vendor-retry:
+  terms: [retries, timeout, payment vendor retry]
+  names: []
+forge-vendor-maintenance:
+  terms: [maintenance window, downtime, payment provider]
+  names: []
+forge-back-dated:
+  terms: [closed month, back-dated entry, correction]
+  names: []
+forge-off-by-a-cent:
+  terms: [rounding, currency conversion, reconciliation]
+  names: []
+forge-post-transfers:
+  terms: [transfer limit, daily limit, post transfer]
+  names: []
+forge-get-balance-id:
+  terms: [balance, currency]
+  names: [{ name: ledger-api.get-balance, id: ledger-api.get-balance, quote: ledger-api.get-balance }]
+forge-nwp-name:
+  terms: [payment api, payments]
+  names: [{ name: Northwind Pay, id: northwind-pay, quote: Northwind Pay changes }]
+forge-ledger-platform:
+  terms: [region, deployment]
+  names: [{ name: Ledger Platform, id: ledger, quote: The Ledger Platform }]
+forge-topic-name:
+  terms: [consumers, transfers completed]
+  names: [{ name: topic.transfers-completed, id: topic.transfers-completed, quote: topic.transfers-completed }]
+forge-entry-table:
+  terms: [ledger entry, add column]
+  names: [{ name: ledger-db.entry, id: ledger-db.entry, quote: ledger-db.entry }]
+forge-none-button:
+  terms: [login button colour, ui theme]
+  names: []
+forge-none-mortgage:
+  terms: [mortgage, property valuation]
+  names: []
+forge-none-canteen:
+  terms: [canteen, lunch menu]
+  names: []
+shop-open-port:
+  terms: [firewall rule, network request]
+  names: []
+shop-new-supplier:
+  terms: [vendor onboarding, supplier onboarding]
+  names: []
+shop-queue-subject:
+  terms: [broker topic, new topic request]
+  names: []
+shop-hold-inventory:
+  terms: [stock reservation, reserve stock]
+  names: []
+shop-shopper-buys:
+  terms: [place order, ordering]
+  names: []
+shop-cancel-purchase:
+  terms: [cancel order, delete order]
+  names: []
+shop-how-many:
+  terms: [quantity, order quantity]
+  names: []
+shop-when-made:
+  terms: [created at, order date]
+  names: []
+shop-full-card-number:
+  terms: [card number, card token, card data]
+  names: []
+shop-fraud-score:
+  terms: [fraud screen, fraud score]
+  names: []
+shop-nwp-alias:
+  terms: [order total, payment]
+  names: [{ name: NWP, id: northwind-pay, quote: NWP wants }]
+shop-stock-reservation:
+  terms: [stock reservation]
+  names: []
+shop-none-parking:
+  terms: [parking permit, staff parking]
+  names: []

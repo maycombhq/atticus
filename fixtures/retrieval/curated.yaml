@@ -1,0 +1,29 @@
+# Curated decisions for the retrieval cases: the other names people use for a glossary term
+# (packages/glossary reads alias decisions that target a term id). Invented.
+- kind: CuratedDecision
+  id: cd-alias-daily-limit
+  confidence: asserted
+  target: term.daily-limit
+  action: alias
+  value: [withdrawal ceiling]
+  reason: Branch staff call it the withdrawal ceiling.
+  by: dana.okafor
+  at: "2026-10-01T09:00:00Z"
+- kind: CuratedDecision
+  id: cd-alias-account-holder
+  confidence: asserted
+  target: term.account-holder
+  action: alias
+  value: [beneficial owner]
+  reason: Compliance's word for the holder.
+  by: dana.okafor
+  at: "2026-10-01T09:00:00Z"
+- kind: CuratedDecision
+  id: cd-alias-posting-date
+  confidence: asserted
+  target: term.posting-date
+  action: alias
+  value: [booking date]
+  reason: Finance says booking date.
+  by: dana.okafor
+  at: "2026-10-01T09:00:00Z"

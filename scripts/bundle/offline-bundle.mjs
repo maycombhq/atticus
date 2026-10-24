@@ -16,7 +16,16 @@ import {
 } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { pathToFileURL } from "node:url";
-import { cyclonedx, deploy, inventory, licenceAllowed, removeDeploy, REPO } from "./inventory.mjs";
+import {
+  cyclonedx,
+  deploy,
+  forbiddenFiles,
+  inventory,
+  licenceAllowed,
+  removeDeploy,
+  REPO,
+} from "./inventory.mjs";
+import { addEmbeddingModel } from "./embedding-model.mjs";
 
 const { zip } = await import(pathToFileURL(join(REPO, "packages/core/dist/index.js")).href);
 const VERSION = JSON.parse(readFileSync(join(REPO, "packages/cli/package.json"), "utf8")).version;
@@ -39,9 +48,24 @@ for (const f of ["forge", "forge-change"])
   cpSync(join(REPO, "fixtures", f), join(dir, "fixtures", f), { recursive: true });
 cpSync(join(REPO, "LICENSE"), join(dir, "LICENSE"));
 
+// ---- the local embedding model (ADR 0116), when the bank approved it and it is given here
+// ATTICUS_BUNDLE_MODEL: a model folder (atticus-model.yaml, model.onnx, tokenizer.json, LICENSE);
+// ATTICUS_BUNDLE_ORT: a folder whose node_modules holds onnxruntime-node (and -web) 1.30.0.
+// Neither is in the repo or the lockfile; nothing is downloaded here.
+const model = addEmbeddingModel(dir, {
+  model: process.env.ATTICUS_BUNDLE_MODEL,
+  ort: process.env.ATTICUS_BUNDLE_ORT,
+  platform: process.env.ATTICUS_BUNDLE_PLATFORM ?? `${process.platform}-${process.arch}`,
+});
+if (model) console.log(model);
+
 // ---- licences and the SBOM
 const items = inventory(dir);
 const bad = items.filter((i) => !i.own && !licenceAllowed(i.licence));
+for (const f of forbiddenFiles(dir)) {
+  console.error(`${f.file}: ${f.why}`);
+  process.exit(1);
+}
 if (bad.length) {
   for (const i of bad) console.error(`${i.name}@${i.version}: ${i.licence ?? "no licence"}`);
   process.exit(1);

@@ -1,0 +1,620 @@
+# Token ids from each model's own tokenizer (transformers.js 4.3.1 on its tokenizer.json), for
+# the in-house WordPiece tokenizer's golden test (packages/embed). Written once by a script.
+snowflake-arctic-embed-xs:
+  - text: the renamed timestamp
+    ids:
+      - 101
+      - 1996
+      - 4096
+      - 2335
+      - 15464
+      - 2361
+      - 102
+  - text: Portal customers can rename an account; show when it was last renamed.
+    ids:
+      - 101
+      - 9445
+      - 6304
+      - 2064
+      - 14916
+      - 14074
+      - 2019
+      - 4070
+      - 1025
+      - 2265
+      - 2043
+      - 2009
+      - 2001
+      - 2197
+      - 4096
+      - 1012
+      - 102
+  - text: "Column: renamed at. ledger db account renamedat. table ledger-db.account
+      type timestamp"
+    ids:
+      - 101
+      - 5930
+      - 1024
+      - 4096
+      - 2012
+      - 1012
+      - 27106
+      - 16962
+      - 4070
+      - 4096
+      - 4017
+      - 1012
+      - 2795
+      - 27106
+      - 1011
+      - 16962
+      - 1012
+      - 4070
+      - 2828
+      - 2335
+      - 15464
+      - 2361
+      - 102
+  - text: POST /transfers with an Idempotency-Key header
+    ids:
+      - 101
+      - 2695
+      - 1013
+      - 15210
+      - 2007
+      - 2019
+      - 8909
+      - 6633
+      - 11008
+      - 11916
+      - 1011
+      - 3145
+      - 20346
+      - 102
+  - text: dailyLimitAmount numeric(18,2) NOT NULL
+    ids:
+      - 101
+      - 3679
+      - 17960
+      - 6590
+      - 20048
+      - 16371
+      - 25531
+      - 1006
+      - 2324
+      - 1010
+      - 1016
+      - 1007
+      - 2025
+      - 19701
+      - 102
+  - text: Café crème déjà vu — naïve résumé
+    ids:
+      - 101
+      - 7668
+      - 13675
+      - 21382
+      - 2139
+      - 3900
+      - 24728
+      - 1517
+      - 15743
+      - 13746
+      - 102
+  - text: Straße, Ærøskøbing, Ångström
+    ids:
+      - 101
+      - 2358
+      - 27807
+      - 1010
+      - 1097
+      - 2099
+      - 16415
+      - 6711
+      - 16415
+      - 10472
+      - 1010
+      - 17076
+      - 15687
+      - 102
+  - text: 日本語のテキストと English mixed
+    ids:
+      - 101
+      - 1864
+      - 1876
+      - 1950
+      - 1671
+      - 30239
+      - 30227
+      - 30233
+      - 30240
+      - 30192
+      - 2394
+      - 3816
+      - 102
+  - text: "e-mail: ops@forge.example (on-call), 24/7!!"
+    ids:
+      - 101
+      - 1041
+      - 1011
+      - 5653
+      - 1024
+      - 23092
+      - 1030
+      - 15681
+      - 1012
+      - 2742
+      - 1006
+      - 2006
+      - 1011
+      - 2655
+      - 1007
+      - 1010
+      - 2484
+      - 1013
+      - 1021
+      - 999
+      - 999
+      - 102
+  - text: supercalifragilisticexpialidocious antidisestablishmentarianism
+    ids:
+      - 101
+      - 3565
+      - 9289
+      - 10128
+      - 29181
+      - 24411
+      - 4588
+      - 10288
+      - 19312
+      - 21273
+      - 10085
+      - 6313
+      - 3424
+      - 10521
+      - 4355
+      - 7875
+      - 13602
+      - 3672
+      - 12199
+      - 2964
+      - 102
+  - text: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    ids:
+      - 101
+      - 100
+      - 102
+  - text: "tab\tseparated\nnew line\r\ncarriage"
+    ids:
+      - 101
+      - 21628
+      - 5459
+      - 2047
+      - 2240
+      - 9118
+      - 102
+  - text: Ledger operations › Month end › Reconciliation
+    ids:
+      - 101
+      - 27106
+      - 3136
+      - 1533
+      - 3204
+      - 2203
+      - 1533
+      - 16088
+      - 102
+  - text: Unmatched entries older than five days are moved to the suspense account
+      and the reconciliation desk is paged.
+    ids:
+      - 101
+      - 4895
+      - 18900
+      - 7690
+      - 10445
+      - 3080
+      - 2084
+      - 2274
+      - 2420
+      - 2024
+      - 2333
+      - 2000
+      - 1996
+      - 23873
+      - 4070
+      - 1998
+      - 1996
+      - 16088
+      - 4624
+      - 2003
+      - 3931
+      - 2094
+      - 1012
+      - 102
+  - text: Northwind Pay's API isn't up between 01:00 and 03:00.
+    ids:
+      - 101
+      - 2167
+      - 11101
+      - 3477
+      - 1005
+      - 1055
+      - 17928
+      - 3475
+      - 1005
+      - 1056
+      - 2039
+      - 2090
+      - 5890
+      - 1024
+      - 4002
+      - 1998
+      - 6021
+      - 1024
+      - 4002
+      - 1012
+      - 102
+  - text: v2Payments HTTPServer parseHTTPResponseCode
+    ids:
+      - 101
+      - 1058
+      - 2475
+      - 4502
+      - 25219
+      - 7666
+      - 16770
+      - 2121
+      - 6299
+      - 11968
+      - 3366
+      - 11039
+      - 25856
+      - 6072
+      - 26029
+      - 3366
+      - 16044
+      - 102
+  - text: ""
+    ids:
+      - 101
+      - 102
+  - text: "   "
+    ids:
+      - 101
+      - 102
+  - text: 100% of £5,000.50 → €
+    ids:
+      - 101
+      - 2531
+      - 1003
+      - 1997
+      - 27813
+      - 1010
+      - 2199
+      - 1012
+      - 2753
+      - 1585
+      - 1574
+      - 102
+  - text: emoji 😀 and zero​width
+    ids:
+      - 101
+      - 7861
+      - 29147
+      - 2072
+      - 100
+      - 1998
+      - 5717
+      - 9148
+      - 11927
+      - 2232
+      - 102
+all-minilm-l6-v2:
+  - text: the renamed timestamp
+    ids:
+      - 101
+      - 1996
+      - 4096
+      - 2335
+      - 15464
+      - 2361
+      - 102
+  - text: Portal customers can rename an account; show when it was last renamed.
+    ids:
+      - 101
+      - 9445
+      - 6304
+      - 2064
+      - 14916
+      - 14074
+      - 2019
+      - 4070
+      - 1025
+      - 2265
+      - 2043
+      - 2009
+      - 2001
+      - 2197
+      - 4096
+      - 1012
+      - 102
+  - text: "Column: renamed at. ledger db account renamedat. table ledger-db.account
+      type timestamp"
+    ids:
+      - 101
+      - 5930
+      - 1024
+      - 4096
+      - 2012
+      - 1012
+      - 27106
+      - 16962
+      - 4070
+      - 4096
+      - 4017
+      - 1012
+      - 2795
+      - 27106
+      - 1011
+      - 16962
+      - 1012
+      - 4070
+      - 2828
+      - 2335
+      - 15464
+      - 2361
+      - 102
+  - text: POST /transfers with an Idempotency-Key header
+    ids:
+      - 101
+      - 2695
+      - 1013
+      - 15210
+      - 2007
+      - 2019
+      - 8909
+      - 6633
+      - 11008
+      - 11916
+      - 1011
+      - 3145
+      - 20346
+      - 102
+  - text: dailyLimitAmount numeric(18,2) NOT NULL
+    ids:
+      - 101
+      - 3679
+      - 17960
+      - 6590
+      - 20048
+      - 16371
+      - 25531
+      - 1006
+      - 2324
+      - 1010
+      - 1016
+      - 1007
+      - 2025
+      - 19701
+      - 102
+  - text: Café crème déjà vu — naïve résumé
+    ids:
+      - 101
+      - 7668
+      - 13675
+      - 21382
+      - 2139
+      - 3900
+      - 24728
+      - 1517
+      - 15743
+      - 13746
+      - 102
+  - text: Straße, Ærøskøbing, Ångström
+    ids:
+      - 101
+      - 2358
+      - 27807
+      - 1010
+      - 1097
+      - 2099
+      - 16415
+      - 6711
+      - 16415
+      - 10472
+      - 1010
+      - 17076
+      - 15687
+      - 102
+  - text: 日本語のテキストと English mixed
+    ids:
+      - 101
+      - 1864
+      - 1876
+      - 1950
+      - 1671
+      - 30239
+      - 30227
+      - 30233
+      - 30240
+      - 30192
+      - 2394
+      - 3816
+      - 102
+  - text: "e-mail: ops@forge.example (on-call), 24/7!!"
+    ids:
+      - 101
+      - 1041
+      - 1011
+      - 5653
+      - 1024
+      - 23092
+      - 1030
+      - 15681
+      - 1012
+      - 2742
+      - 1006
+      - 2006
+      - 1011
+      - 2655
+      - 1007
+      - 1010
+      - 2484
+      - 1013
+      - 1021
+      - 999
+      - 999
+      - 102
+  - text: supercalifragilisticexpialidocious antidisestablishmentarianism
+    ids:
+      - 101
+      - 3565
+      - 9289
+      - 10128
+      - 29181
+      - 24411
+      - 4588
+      - 10288
+      - 19312
+      - 21273
+      - 10085
+      - 6313
+      - 3424
+      - 10521
+      - 4355
+      - 7875
+      - 13602
+      - 3672
+      - 12199
+      - 2964
+      - 102
+  - text: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    ids:
+      - 101
+      - 100
+      - 102
+  - text: "tab\tseparated\nnew line\r\ncarriage"
+    ids:
+      - 101
+      - 21628
+      - 5459
+      - 2047
+      - 2240
+      - 9118
+      - 102
+  - text: Ledger operations › Month end › Reconciliation
+    ids:
+      - 101
+      - 27106
+      - 3136
+      - 1533
+      - 3204
+      - 2203
+      - 1533
+      - 16088
+      - 102
+  - text: Unmatched entries older than five days are moved to the suspense account
+      and the reconciliation desk is paged.
+    ids:
+      - 101
+      - 4895
+      - 18900
+      - 7690
+      - 10445
+      - 3080
+      - 2084
+      - 2274
+      - 2420
+      - 2024
+      - 2333
+      - 2000
+      - 1996
+      - 23873
+      - 4070
+      - 1998
+      - 1996
+      - 16088
+      - 4624
+      - 2003
+      - 3931
+      - 2094
+      - 1012
+      - 102
+  - text: Northwind Pay's API isn't up between 01:00 and 03:00.
+    ids:
+      - 101
+      - 2167
+      - 11101
+      - 3477
+      - 1005
+      - 1055
+      - 17928
+      - 3475
+      - 1005
+      - 1056
+      - 2039
+      - 2090
+      - 5890
+      - 1024
+      - 4002
+      - 1998
+      - 6021
+      - 1024
+      - 4002
+      - 1012
+      - 102
+  - text: v2Payments HTTPServer parseHTTPResponseCode
+    ids:
+      - 101
+      - 1058
+      - 2475
+      - 4502
+      - 25219
+      - 7666
+      - 16770
+      - 2121
+      - 6299
+      - 11968
+      - 3366
+      - 11039
+      - 25856
+      - 6072
+      - 26029
+      - 3366
+      - 16044
+      - 102
+  - text: ""
+    ids:
+      - 101
+      - 102
+  - text: "   "
+    ids:
+      - 101
+      - 102
+  - text: 100% of £5,000.50 → €
+    ids:
+      - 101
+      - 2531
+      - 1003
+      - 1997
+      - 27813
+      - 1010
+      - 2199
+      - 1012
+      - 2753
+      - 1585
+      - 1574
+      - 102
+  - text: emoji 😀 and zero​width
+    ids:
+      - 101
+      - 7861
+      - 29147
+      - 2072
+      - 100
+      - 1998
+      - 5717
+      - 9148
+      - 11927
+      - 2232
+      - 102

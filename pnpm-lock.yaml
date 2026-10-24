@@ -215,6 +215,9 @@ importers:
       '@maycombhq/diagrams':
         specifier: workspace:*
         version: link:../diagrams
+      '@maycombhq/embed':
+        specifier: workspace:*
+        version: link:../embed
       '@maycombhq/evals':
         specifier: workspace:*
         version: link:../evals
@@ -350,6 +353,21 @@ importers:
         specifier: ^2.9.1
         version: 2.9.1
 
+  packages/embed:
+    dependencies:
+      '@maycombhq/ai':
+        specifier: workspace:*
+        version: link:../ai
+      '@maycombhq/core':
+        specifier: workspace:*
+        version: link:../core
+      yaml:
+        specifier: ^2.9.1
+        version: 2.9.1
+      zod:
+        specifier: ^4.6.0
+        version: 4.6.7
+
   packages/evals:
     dependencies:
       '@maycombhq/ai':
@@ -367,6 +385,9 @@ importers:
       '@maycombhq/glossary':
         specifier: workspace:*
         version: link:../glossary
+      '@maycombhq/index':
+        specifier: workspace:*
+        version: link:../index
       '@maycombhq/knowledge':
         specifier: workspace:*
         version: link:../knowledge
@@ -388,6 +409,10 @@ importers:
       zod:
         specifier: ^4.6.0
         version: 4.6.7
+    devDependencies:
+      '@maycombhq/embed':
+        specifier: workspace:*
+        version: link:../embed
 
   packages/executors:
     dependencies:
@@ -514,9 +539,21 @@ importers:
 
   packages/index:
     dependencies:
+      '@maycombhq/ai':
+        specifier: workspace:*
+        version: link:../ai
       '@maycombhq/core':
         specifier: workspace:*
         version: link:../core
+      '@maycombhq/embed':
+        specifier: workspace:*
+        version: link:../embed
+      '@maycombhq/ingestors':
+        specifier: workspace:*
+        version: link:../ingestors
+      '@maycombhq/intake':
+        specifier: workspace:*
+        version: link:../intake
       yaml:
         specifier: ^2.9.1
         version: 2.9.1

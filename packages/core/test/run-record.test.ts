@@ -22,21 +22,31 @@ const V1 = {
   attempt: 1,
 };
 
-describe("the run record, version 2", () => {
-  it("reads a version 1 record as version 2 with no tools", () => {
-    expect(RUN_SCHEMA_VERSION).toBe(2);
+describe("the run record, version 3", () => {
+  it("reads a version 1 record as version 3 with no tools and no retrieval", () => {
+    expect(RUN_SCHEMA_VERSION).toBe(3);
     expect(RunSummary.safeParse(V1).success).toBe(false);
     const r = readRunSummary(V1);
     expect(r.success).toBe(true);
-    expect(r.data?.schemaVersion).toBe(2);
+    expect(r.data?.schemaVersion).toBe(3);
     expect(r.data?.tools).toBeUndefined();
+    expect(r.data?.retrieval).toBeUndefined();
+    // ADR 0116: a version 2 record reads as version 3 with no retrieval.
+    const v2 = readRunSummary({
+      ...V1,
+      schemaVersion: 2,
+      tools: { offered: ["search"], calls: [] },
+    });
+    expect(v2.success).toBe(true);
+    expect(v2.data?.schemaVersion).toBe(3);
+    expect(v2.data?.retrieval).toBeUndefined();
     expect(migrateRunSummary("not a record")).toBe("not a record");
   });
 
   it("keeps every tool call, what it returned, and the cap that stopped them", () => {
     const r = RunSummary.parse({
       ...V1,
-      schemaVersion: 2,
+      schemaVersion: 3,
       tools: {
         offered: ["search", "show", "walk", "show_code"],
         calls: [
@@ -62,6 +72,35 @@ describe("the run record, version 2", () => {
     });
     expect(r.tools?.calls).toHaveLength(2);
     expect(r.tools?.stopped).toBe("rounds");
+  });
+
+  it("keeps how the context was retrieved: the model's expansion and its order (ADR 0116)", () => {
+    const r = RunSummary.parse({
+      ...V1,
+      schemaVersion: 3,
+      retrieval: {
+        expansion: {
+          run: "run-20261020-0000",
+          cached: false,
+          terms: ["daily limit"],
+          names: [
+            { name: "Northwind Pay", id: "northwind-pay", quote: "pay through Northwind Pay" },
+            { name: "Quillfeather Risk", quote: "scored by Quillfeather Risk" },
+          ],
+          dropped: [{ name: "Ledger", why: "no id ledgr in the index" }],
+        },
+        rerank: {
+          cached: true,
+          shown: 40,
+          order: ["Column ledger-db.account.dailylimitamount"],
+          dropped: ["System savings"],
+          used: true,
+        },
+        meaning: "similar in meaning is off: retrieval.embeddings.model is off",
+      },
+    });
+    expect(r.retrieval?.expansion?.names).toHaveLength(2);
+    expect(r.retrieval?.rerank?.used).toBe(true);
   });
 
   it("names a tool in lower case with underscores", () => {
