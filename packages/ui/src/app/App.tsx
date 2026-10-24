@@ -130,6 +130,9 @@ function TopBar({ health }: { health?: Health }) {
       <button type="button" className="btn" onClick={replayTour} title={T.replayTheTour}>
         {T.help}
       </button>
+      <a className="btn" href="#/words" title={COPY.glossary.linkTitle}>
+        {COPY.glossary.link}
+      </a>
       <span className="hud" style={{ fontSize: 9.5, whiteSpace: "nowrap" }} aria-hidden="true">
         {T.ctrlK}
       </span>

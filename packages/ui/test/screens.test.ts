@@ -84,7 +84,7 @@ describe("the app's map: six sections, every page a tab (ADR 0119)", () => {
       "ai",
       "settings",
     ]);
-    expect(of("Atticus")).toEqual(["runs", "history", "evals", "learning"]);
+    expect(of("Atticus")).toEqual(["runs", "history", "evals", "learning", "words"]);
     const phase = (g: string) =>
       tabsOf("Changes")
         .filter((x) => x.group === g)
