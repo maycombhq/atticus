@@ -80,6 +80,11 @@ export interface ProjectOptions {
 export interface ProjectResult {
   records: CatalogRecord[];
   issues: FactIssue[];
+  /**
+   * The catalog id each fact became, by fact id, in id order (fields that became a Column or a
+   * Schema field are left out). A writer follows them through the catalog merge (ADR 0124, A3b).
+   */
+  ids: Record<string, string>;
 }
 
 type Entry = FactOf<"entry">;
@@ -380,10 +385,12 @@ export function projectFacts(input: readonly Fact[], opts: ProjectOptions = {}):
   for (const f of facts) {
     if (f.kind !== "deploy") continue;
     const component = componentOf(f);
+    const id = `${component}.${idPart(f.env ?? f.platform)}`;
+    catalogIdOf.set(f.id, id);
     out.push({
       kind: "Deployment",
       ...common(f),
-      id: `${component}.${idPart(f.env ?? f.platform)}`,
+      id,
       component,
       env: f.env ?? "default",
       platform: f.platform,
@@ -397,10 +404,12 @@ export function projectFacts(input: readonly Fact[], opts: ProjectOptions = {}):
   for (const f of facts) {
     if (f.kind !== "config") continue;
     const component = componentOf(f);
+    const id = `${component}.${slugify(f.key)}`;
+    catalogIdOf.set(f.id, id);
     out.push({
       kind: "Setting",
       ...common(f),
-      id: `${component}.${slugify(f.key)}`,
+      id,
       component,
       settingKind: f.settingKind,
       key: f.key,
@@ -411,6 +420,34 @@ export function projectFacts(input: readonly Fact[], opts: ProjectOptions = {}):
   }
 
   // ---- flow -> Flow
+  /** A call's request fields, by name. */
+  const sentBy = new Map<string, string[]>();
+  for (const f of facts)
+    if (
+      f.kind === "field" &&
+      (f.side ?? "request") === "request" &&
+      byId.get(f.owner)?.kind === "call"
+    )
+      sentBy.set(f.owner, [...(sentBy.get(f.owner) ?? []), f.name]);
+  /** The fields a step names through its ref: the field it checks or uses, or what a call-out sends. */
+  const dataOf = (kind: string, target: Fact | undefined) => {
+    if (target?.kind === "field") {
+      const slot =
+        kind === "validate"
+          ? "checks"
+          : kind === "respond"
+            ? "returns"
+            : kind === "call-out" || kind === "publish"
+              ? "sends"
+              : "reads";
+      return { [slot]: [target.name] };
+    }
+    if (target?.kind === "call" && (kind === "call-out" || kind === "publish")) {
+      const sends = sentBy.get(target.id);
+      return sends?.length ? { sends: [...sends].sort() } : undefined;
+    }
+    return undefined;
+  };
   for (const f of facts) {
     if (f.kind !== "flow") continue;
     if (dangling(f, f.entry, "entry")) continue;
@@ -438,10 +475,12 @@ export function projectFacts(input: readonly Fact[], opts: ProjectOptions = {}):
       const id = catalogIdOf.get(ref);
       return id ? [id] : [];
     };
+    const flowId = `${component}.${idPart(f.name)}`;
+    catalogIdOf.set(f.id, flowId);
     out.push({
       kind: "Flow",
       schemaVersion: 2 as const,
-      id: `${component}.${idPart(f.name)}`,
+      id: flowId,
       status: "current",
       confidence: confidenceOf(f),
       evidence: [],
@@ -469,12 +508,14 @@ export function projectFacts(input: readonly Fact[], opts: ProjectOptions = {}):
           target?.kind === "store"
             ? { store: { table: catalogIdOf.get(target.id)!, columns: target.columns ?? [] } }
             : {};
+        const data = dataOf(s.kind, target);
         const checkable = !(NEVER_CHECKED_STEPS as readonly string[]).includes(s.kind);
         return {
           kind: s.kind,
           what: s.what,
           refs: refsOf(s.ref),
           ...toOf,
+          ...(data ? { data } : {}),
           ...storeOf,
           evidence: [citeEvidence(f, s.cite, "code")],
           ...(f.verified === "line" && checkable ? { confirmedBy: "check" } : {}),
@@ -512,5 +553,7 @@ export function projectFacts(input: readonly Fact[], opts: ProjectOptions = {}):
     const kb = order.get(b.kind) ?? 99;
     return ka !== kb ? ka - kb : a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
   });
-  return { records: out, issues };
+  const ids: Record<string, string> = {};
+  for (const id of [...catalogIdOf.keys()].sort()) ids[id] = catalogIdOf.get(id)!;
+  return { records: out, issues, ids };
 }

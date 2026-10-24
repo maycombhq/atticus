@@ -80,6 +80,16 @@ export function factsDirOf(root: string): string {
   return join(root, ...factsRelOf(root).split("/"));
 }
 
+/** Where the map rendered from a repo's verified facts lives, with forward slashes (ADR 0124): `map`, or `.atticus/map` when adopted. */
+export function mapRelOf(root: string): string {
+  return isAdopted(root) ? ".atticus/map" : "map";
+}
+
+/** The map folder (ADR 0124): `<repo>/map.md`, `<repo>/flows/` and `<repo>/contracts/`, written by atticus map render. */
+export function mapDirOf(root: string): string {
+  return join(root, ...mapRelOf(root).split("/"));
+}
+
 /** Where judgments live (ADR 0117), relative to the root: `judgments`, or `.atticus/judgments` when adopted. */
 export function judgmentsRelOf(root: string): string {
   return isAdopted(root) ? ".atticus/judgments" : "judgments";

@@ -46,6 +46,7 @@ import { scanInputs, type ScanInputsResult } from "@maycombhq/intake";
 import { baseClonePath, checkoutState } from "@maycombhq/workspace";
 import { resolveFederatedLooseEnds } from "./federate-loose.js";
 import { readCatalog } from "./files.js";
+import { curatedDirOf, estateMergeInput, estateRepos } from "./merge-input.js";
 import {
   applyClients,
   applyPrefixes,
@@ -395,9 +396,7 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
     o.cache === null ? undefined : (o.cache ?? fsScanCache(join(stateDir, ".index", "scan-cache")));
   const scannedAt = o.scannedAt ?? new Date().toISOString();
 
-  const repos = op.profiles
-    .flatMap((p) => (p.repos?.repos ?? []).map((r) => ({ ...r, platform: p.platform })))
-    .filter((r) => !r.archived && (!o.repos || o.repos.includes(r.id)));
+  const repos = estateRepos(op, o.repos);
   const results: RepoScan[] = [];
   /** Each repo's structured files, to tell which no record cites. */
   const structuredOf = new Map<string, string[]>();
@@ -531,41 +530,15 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
     o.onProgress?.(++done, repos.length, r.id);
   }
 
-  const mergeInput = (records: CatalogRecord[]) => ({
-    records,
-    repos: repos.flatMap((r) => [
-      {
-        id: r.id,
-        type: r.type,
-        ...(r.component ? { component: r.component } : {}),
-        ...(r.system ? { system: r.system } : {}),
-        hosts: r.hosts,
-      },
-      // A module's hosts join calls to its own component (ADR 0057).
-      ...(modulesOf.get(r.id) ?? [])
-        .filter((m) => m.hosts.length > 0)
-        .map((m) => ({
-          id: r.id,
-          type: r.type,
-          component: m.component,
-          ...(r.system ? { system: r.system } : {}),
-          hosts: m.hosts,
-        })),
-    ]),
-    systems: op.profiles.flatMap((p) => p.profile?.systems ?? []),
-    patterns: op.patterns,
-    profilePath: op.profiles[0]
-      ? `org-pack/profiles/${op.profiles[0].platform}/profile.yaml`
-      : undefined,
-  });
+  const mergeInput = (records: CatalogRecord[]) =>
+    estateMergeInput(op, repos, records, (id) => modulesOf.get(id) ?? []);
   // What the org's pipeline templates and library steps do, on the pipelines using them (ADR 0062).
   const codeRecords = applyPipelineModels(
     results.flatMap((s) => s.records),
     frameworks,
   );
   let merged = mergeCatalog(mergeInput(codeRecords));
-  const curatedDir =
-    o.curatedDir ?? join(o.root, ...op.sources.layout.catalog.split("/"), "curated");
+  const curatedDir = o.curatedDir ?? curatedDirOf(o.root, op);
   const curated = await readCatalog(curatedDir);
   for (const p of curated.problems)
     problems.push({ source: `catalog/curated/${p.file}`, message: p.message });

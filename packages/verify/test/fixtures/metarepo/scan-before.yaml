@@ -1,0 +1,95 @@
+# What a reader scan of the two invented Forge repos read before the assistant's facts (ADR
+# 0124, A3b): raw records, merged by the tests as a scan merges them into catalog/generated.
+# forge-notify's records must come through a write of forge-ledger's facts unchanged; the
+# reader's forge-ledger records are replaced by the projected facts (DELETE /accounts/{id} is
+# one the facts don't have, so it goes); the notifier's call into the ledger keeps its caller.
+- kind: Component
+  id: notify-api
+  confidence: verified
+  system: messaging
+  repo: forge-notify
+  type: service
+  evidence:
+    - { source: code, repo: forge-notify, path: build.gradle, line: 1, commit: 9f8e7d6 }
+- kind: Endpoint
+  id: notify-api.post-notify
+  confidence: verified
+  component: notify-api
+  endpointType: rest
+  method: POST
+  pathOrTopic: /notify
+  normalizedPath: /notify
+  evidence:
+    - { source: code, repo: forge-notify, path: src/main/java/forge/notify/NotifyController.java, line: 12, commit: 9f8e7d6, side: callee }
+- kind: Unresolved
+  id: unresolved.notify-api.get-accounts
+  confidence: inferred
+  unresolvedKind: http-call
+  raw: GET http://ledger-api/accounts/{id}
+  owner: notify-api
+  evidence:
+    - { source: code, repo: forge-notify, path: src/main/java/forge/notify/LedgerClient.java, line: 20, commit: 9f8e7d6, side: caller }
+- kind: DataStore
+  id: notify-db
+  confidence: verified
+  storeType: relational
+  ownerComponent: notify-api
+  entitiesHeld: [outbox]
+  evidence:
+    - { source: migration, repo: forge-notify, path: src/main/resources/db/migration/V1__outbox.sql, line: 1, commit: 9f8e7d6 }
+- kind: Table
+  id: notify-db.outbox
+  confidence: verified
+  dataStore: notify-db
+  name: outbox
+  tableKind: table
+  ownerComponent: notify-api
+  writers: [notify-api]
+  evidence:
+    - { source: migration, repo: forge-notify, path: src/main/resources/db/migration/V1__outbox.sql, line: 1, commit: 9f8e7d6 }
+- kind: Component
+  id: ledger-api
+  confidence: verified
+  system: ledger
+  repo: forge-ledger
+  type: service
+  evidence:
+    - { source: code, repo: forge-ledger, path: pom.xml, line: 1, commit: 0123abc }
+- kind: Endpoint
+  id: ledger-api.get-account
+  confidence: verified
+  component: ledger-api
+  endpointType: rest
+  method: GET
+  pathOrTopic: /accounts/{accountId}
+  normalizedPath: /accounts/{}
+  evidence:
+    - { source: code, repo: forge-ledger, path: src/main/java/forge/ledger/AccountController.java, line: 18, commit: 0123abc, side: callee }
+- kind: Endpoint
+  id: ledger-api.delete-account
+  confidence: verified
+  component: ledger-api
+  endpointType: rest
+  method: DELETE
+  pathOrTopic: /accounts/{accountId}
+  normalizedPath: /accounts/{}
+  evidence:
+    - { source: code, repo: forge-ledger, path: src/main/java/forge/ledger/AccountController.java, line: 30, commit: 0123abc, side: callee }
+- kind: DataStore
+  id: ledger-db
+  confidence: verified
+  storeType: relational
+  ownerComponent: ledger-api
+  entitiesHeld: [account]
+  evidence:
+    - { source: migration, repo: forge-ledger, path: src/main/resources/db/migration/V1__create_account.sql, line: 1, commit: 0123abc }
+- kind: Table
+  id: ledger-db.account
+  confidence: verified
+  dataStore: ledger-db
+  name: account
+  tableKind: table
+  ownerComponent: ledger-api
+  readers: [ledger-api]
+  evidence:
+    - { source: migration, repo: forge-ledger, path: src/main/resources/db/migration/V1__create_account.sql, line: 1, commit: 0123abc }

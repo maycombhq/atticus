@@ -1,0 +1,18 @@
+{
+  "trust": {
+    "accepted": 17,
+    "rejected": 0,
+    "ratio": 0.917,
+    "unknown": 1,
+    "commit": "0123abc"
+  },
+  "questions": [
+    {
+      "id": "q-53bbda8a5c5f",
+      "question": "Which repo answers on notify.internal?",
+      "evidence": [
+        "src/main/java/forge/ledger/Notifier.java:9"
+      ]
+    }
+  ]
+}

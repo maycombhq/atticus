@@ -1,0 +1,17 @@
+# Two invented Forge repos: the ledger the facts are about, and a notifier whose records must
+# stay as they are when the ledger's facts are written into the catalog.
+schemaVersion: 1
+platform: forge
+repos:
+  - id: forge-ledger
+    url: https://git.forge.example/forge/forge-ledger.git
+    type: spring-boot
+    owner: team-ledger
+    component: ledger-api
+    system: ledger
+  - id: forge-notify
+    url: https://git.forge.example/forge/forge-notify.git
+    type: spring-boot
+    owner: team-notify
+    component: notify-api
+    system: messaging

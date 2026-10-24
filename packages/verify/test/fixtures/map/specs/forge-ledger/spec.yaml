@@ -1,0 +1,14 @@
+# The spec of forge-ledger (ADR 0079): one file per flow beside this one. Drafted by atticus spec draft, checked by atticus spec check.
+schemaVersion: 1
+repo: forge-ledger
+commit: 0123abc
+template: facts@1
+templateReviewed: false
+files:
+  src/main/java/forge/ledger/EntryController.java: ac9c2d83038db1db
+  src/main/java/forge/ledger/EntryRepository.java: b1b543e61ba1e604
+  src/main/java/forge/ledger/EntryRequest.java: fa526702c8cec6bb
+  src/main/java/forge/ledger/FxClient.java: 1f106cbd9bd8b3e2
+flows:
+  - ledger-api.post-a-ledger-entry
+questions: []

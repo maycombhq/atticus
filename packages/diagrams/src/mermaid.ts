@@ -158,8 +158,8 @@ function sequence(v: SequenceView): string {
   for (const s of v.steps)
     lines.push(
       s.kind === "message"
-        ? `  ${pid(s.from)}${s.async ? "-)" : "->>"}${pid(s.to)}: ${seqText(s.label + suffix(s.legend))}`
-        : `  Note over ${pid(s.over[0])},${pid(s.over[1])}: ${seqText(s.text)}`,
+        ? `  ${pid(s.from)}${s.reply ? "-->>" : s.async ? "-)" : "->>"}${pid(s.to)}: ${seqText(s.label + suffix(s.legend))}`
+        : `  Note over ${s.over.map(pid).join(",")}: ${seqText(s.text)}`,
     );
   return `${lines.join("\n")}\n`;
 }

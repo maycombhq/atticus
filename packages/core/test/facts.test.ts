@@ -1,9 +1,12 @@
-import { readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   FACT_KINDS,
   factsJsonSchemas,
+  mapDirOf,
+  mapRelOf,
   parseFacts,
   parseRecord,
   projectFacts,
@@ -231,5 +234,36 @@ describe("projectFacts: facts become C1 records, nothing downstream changes", ()
     const a = projectFacts(facts(), { system: "ledger" }).records;
     const b = projectFacts([...facts()].reverse(), { system: "ledger" }).records;
     expect(JSON.stringify(a)).toBe(JSON.stringify(b));
+  });
+
+  it("says which catalog id each fact became, so a writer can follow them through merge (A3b)", () => {
+    expect(out.ids["e-post-entry"]).toBe("ledger-api.post-accounts-accountid-entries");
+    expect(out.ids["c-notify"]).toBe("unresolved.c-notify");
+    expect(out.ids["s-entry-write"]).toBe("ledger-db.entry");
+    expect(out.ids["w-post-entry"]).toBe("ledger-api.post-a-ledger-entry");
+    expect(Object.keys(out.ids)).toEqual([...Object.keys(out.ids)].sort());
+  });
+
+  it("a flow step carries the fields its facts name: checked, sent, written (A3b)", () => {
+    const f = byKind("Flow")[0] as unknown as {
+      steps: { kind: string; data?: Record<string, string[]>; store?: { columns: string[] } }[];
+    };
+    expect(f.steps[0]!.data).toEqual({ checks: ["amount"] });
+    expect(f.steps[1]!.data).toEqual({ sends: ["pair"] });
+    expect(f.steps[2]!.store!.columns).toEqual(["id", "account_id", "amount"]);
+    expect(f.steps[3]!.data).toBeUndefined();
+  });
+});
+
+describe("where the map lives (ADR 0124, A3b)", () => {
+  it("is map/ in a metarepo and .atticus/map/ in a repo adopted in place", () => {
+    const meta = mkdtempSync(join(tmpdir(), "atticus-map-"));
+    mkdirSync(join(meta, "org-pack"));
+    expect(mapRelOf(meta)).toBe("map");
+    expect(mapDirOf(meta)).toBe(join(meta, "map"));
+    const adopted = mkdtempSync(join(tmpdir(), "atticus-map-"));
+    mkdirSync(join(adopted, ".atticus", "org-pack"), { recursive: true });
+    expect(mapRelOf(adopted)).toBe(".atticus/map");
+    expect(mapDirOf(adopted)).toBe(join(adopted, ".atticus", "map"));
   });
 });

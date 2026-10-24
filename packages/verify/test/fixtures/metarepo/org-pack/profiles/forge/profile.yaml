@@ -1,0 +1,8 @@
+schemaVersion: 1
+platform: forge
+name: Forge ledger estate (invented, for the map tests of ADR 0124)
+systems:
+  - { id: ledger, name: Ledger, boundary: product, owner: team-ledger, aliases: [] }
+  - { id: messaging, name: Messaging, boundary: product, owner: team-notify, aliases: [] }
+  - { id: northwind-fx, name: Northwind FX, boundary: vendor, aliases: [Northwind], tags: [saas] }
+environments: [dev, prod]

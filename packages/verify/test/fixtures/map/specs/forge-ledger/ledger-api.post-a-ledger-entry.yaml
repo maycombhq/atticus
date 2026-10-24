@@ -1,0 +1,93 @@
+schemaVersion: 2
+kind: Flow
+id: ledger-api.post-a-ledger-entry
+status: current
+confidence: verified
+component: ledger-api
+errors:
+  - evidence:
+      - by: assistant
+        commit: 0123abc
+        line: 27
+        path: src/main/java/forge/ledger/EntryController.java
+        repo: forge-ledger
+        source: code
+    then: 503 and nothing is written
+    when: the FX service is down
+evidence: []
+family: []
+name: Post a ledger entry
+steps:
+  - kind: validate
+    data:
+      checks:
+        - amount
+    evidence:
+      - by: assistant
+        commit: 0123abc
+        line: 7
+        path: src/main/java/forge/ledger/EntryRequest.java
+        repo: forge-ledger
+        source: code
+    refs:
+      - ledger-api.post-entry.request
+    what: the amount is present and positive
+  - kind: call-out
+    confirmedBy: check
+    data:
+      sends:
+        - pair
+    evidence:
+      - by: assistant
+        commit: 0123abc
+        line: 31
+        path: src/main/java/forge/ledger/FxClient.java
+        repo: forge-ledger
+        source: code
+    refs:
+      - if-0bb6f0b5cb457f7f
+    to:
+      component: northwind-fx
+      entry: GET /v1/rates/{pair}
+    what: fetch the FX rate for the currency pair
+  - kind: write
+    confirmedBy: check
+    evidence:
+      - by: assistant
+        commit: 0123abc
+        line: 8
+        path: src/main/java/forge/ledger/EntryRepository.java
+        repo: forge-ledger
+        source: code
+    refs:
+      - ledger-db.entry
+    store:
+      columns:
+        - id
+        - account_id
+        - amount
+      table: ledger-db.entry
+    what: insert the entry with the converted amount
+  - kind: respond
+    confirmedBy: check
+    evidence:
+      - by: assistant
+        commit: 0123abc
+        line: 30
+        path: src/main/java/forge/ledger/EntryController.java
+        repo: forge-ledger
+        source: code
+    refs: []
+    what: return 201 with the entry id
+template: facts@1
+trigger:
+  kind: endpoint
+  evidence:
+    - by: assistant
+      commit: 0123abc
+      line: 22
+      path: src/main/java/forge/ledger/EntryController.java
+      repo: forge-ledger
+      source: code
+  ref: ledger-api.post-entry
+  what: POST /accounts/{accountId}/entries

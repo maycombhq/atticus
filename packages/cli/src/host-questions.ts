@@ -37,7 +37,11 @@ const isDir = (p: string) =>
 export async function askHosts(
   root: string,
   records: readonly CatalogRecord[],
-  o: { command: string; now?: Date },
+  o: {
+    command: string;
+    now?: Date;
+    /** The command that reads the answer; default atticus scan. */ rerun?: string;
+  },
 ): Promise<HostQuestions & { lines: string[] }> {
   const repos = await loadRepos(root).catch(() => []);
   const dirs = new Map<string, string>();
@@ -60,7 +64,7 @@ export async function askHosts(
       step: HOSTS_STEP,
       repo,
       command: o.command,
-      rerun: HOSTS_RERUN,
+      rerun: o.rerun ?? HOSTS_RERUN,
       at,
     });
     raised.push(...r.raised);
@@ -74,7 +78,7 @@ export async function askHosts(
     );
   for (const q of open)
     lines.push(
-      `Still open: ${q.question} Answer it: atticus questions answer ${q.id} --option <n>, then ${HOSTS_RERUN}.`,
+      `Still open: ${q.question} Answer it: atticus questions answer ${q.id} --option <n>, then ${o.rerun ?? HOSTS_RERUN}.`,
     );
   return { raised, open, lines };
 }

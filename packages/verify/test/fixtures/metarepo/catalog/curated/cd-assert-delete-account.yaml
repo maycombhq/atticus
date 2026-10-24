@@ -1,0 +1,11 @@
+kind: CuratedDecision
+id: cd-assert-delete-account
+schemaVersion: 2
+status: current
+confidence: asserted
+target: ledger-api.delete-account
+action: assert
+value: { auth: oauth2 }
+reason: The reader missed the security filter on the delete route.
+by: dana.okafor
+at: "2026-10-19T09:00:00Z"
