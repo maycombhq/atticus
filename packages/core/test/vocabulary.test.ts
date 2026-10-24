@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   COMPONENT_TYPES,
+  SCHEMA_VERSION,
   STORE_TYPES,
   catalogJsonSchemas,
   deserializeRecord,
@@ -152,12 +153,12 @@ describe("ADR 0040 vocabulary", () => {
     expect(r.ok).toBe(true);
   });
 
-  it("version-1 files with the new values read as version 2", () => {
+  it("version-1 files with the new values read as the current version", () => {
     const r = parseRecord({
       ...endpoint("graphql", "QUERY", "Query.account"),
       schemaVersion: 1,
     });
-    expect(r.ok && r.record.schemaVersion).toBe(2);
+    expect(r.ok && r.record.schemaVersion).toBe(SCHEMA_VERSION);
   });
 
   it("shows the additions in the generated JSON Schema", () => {

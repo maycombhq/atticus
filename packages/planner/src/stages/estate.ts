@@ -251,6 +251,45 @@ export function columnsOf(e: Estate, table: string): Set<string> {
   );
 }
 
+/** A field of a catalog Schema record; `required` left out when nobody knows (ADR 0125). */
+export interface SchemaFieldOf {
+  name: string;
+  type?: string;
+  required?: boolean;
+}
+
+/**
+ * The fields of an endpoint's Schema on one side, as `projectFacts` names it
+ * (`<endpoint>.request`, `.response`, `.message`), in the record's order; none without one.
+ */
+export function schemaFieldsOf(
+  e: Estate,
+  endpoint: string,
+  side: "request" | "response" | "message",
+): SchemaFieldOf[] {
+  const s = e.byId.get(`${endpoint}.${side}`);
+  if (s?.kind !== "Schema") return [];
+  return s.fields.map((f) => ({
+    name: f.name,
+    ...(f.type !== undefined ? { type: f.type } : {}),
+    ...(f.required !== undefined ? { required: f.required } : {}),
+  }));
+}
+
+/** The Endpoint records an entry names ("POST /orders", or a topic), parameters folded. */
+export function endpointsFor(e: Estate, entry: string): string[] {
+  const k = endpointKey(entry);
+  return (e.records as Rec[])
+    .filter(
+      (r) =>
+        r.kind === "Endpoint" &&
+        str(r.pathOrTopic) !== undefined &&
+        endpointKey(`${str(r.method) ?? ""} ${str(r.pathOrTopic)}`.trim()) === k,
+    )
+    .map((r) => r.id)
+    .sort();
+}
+
 /** The system a component (or a system id itself) belongs to. */
 export function systemOf(e: Estate, id: string): string | undefined {
   const r = e.byId.get(id);

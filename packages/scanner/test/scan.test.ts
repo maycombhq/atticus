@@ -180,7 +180,7 @@ describe("catalog files and diff", () => {
       const w1 = await writeCatalog(dir, scan.records);
       expect(w1).toEqual({ written: scan.records.length, unchanged: 0, removed: 0 });
       expect(await readFile(join(dir, "interface/if-75b5e8d8aa780837.yaml"), "utf8")).toMatch(
-        /^schemaVersion: 2\nkind: Interface\nid: if-75b5e8d8aa780837\n/,
+        /^schemaVersion: 3\nkind: Interface\nid: if-75b5e8d8aa780837\n/,
       );
       await writeFile(join(dir, "system/old.yaml"), "x");
       const w2 = await writeCatalog(dir, scan.records);

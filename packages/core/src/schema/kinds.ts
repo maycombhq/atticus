@@ -167,6 +167,13 @@ export const Schema = record("Schema", {
       name: str(),
       type: z.string().optional(),
       classification: Classification.optional(),
+      /**
+       * Whether the request, response or message field must be present (ADR 0125, schema
+       * version 3): true, it must; false, it may be left out; left out, nobody knows. Never
+       * defaulted: an unknown is not an optional field. From an assistant's field fact, or an
+       * OpenAPI schema's `required` list.
+       */
+      required: z.boolean().optional(),
     }),
   ),
 });

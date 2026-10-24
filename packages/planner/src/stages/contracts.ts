@@ -1,4 +1,10 @@
-import { endpointKey, systemOf, type Estate } from "./estate.js";
+import {
+  endpointKey,
+  schemaFieldsOf,
+  systemOf,
+  type Estate,
+  type SchemaFieldOf,
+} from "./estate.js";
 import type { StageIssue } from "./loop.js";
 import type { DeltaStep, FlowDelta } from "./schema.js";
 
@@ -6,8 +12,9 @@ import type { DeltaStep, FlowDelta } from "./schema.js";
  * The contract deltas of a change's target flows, and who they break (ADR 0124 addendum B-arch).
  * A contract change is breaking when the facts say so: a field today's response returns is
  * gone, the entry reads a field in place of one it read, the entry or response step is removed,
- * the flow is removed, or a column the catalog has gets another type. The drafter may also mark
- * a step breaking (a field now required). Every breaking change lists its consumers, and those
+ * the flow is removed, a column the catalog has gets another type, or the entry requires a new
+ * request field or one the catalog has as optional (ADR 0125). The drafter may also mark a step
+ * breaking (a field whose meaning changes). Every breaking change lists its consumers, and those
  * are taken from the map: an Interface record's caller, a spec flow that calls the entry, the
  * trigger's caller, a table's readers and writers and the spec flows that store into it. A
  * consumer the map knows that the draft leaves out is handed back to the drafter.
@@ -91,6 +98,33 @@ export function tableConsumers(e: Estate, table: string, own?: string): string[]
   return sorted(out);
 }
 
+/**
+ * The request fields the catalog has for an endpoint (ADR 0125): its request Schema's, or its
+ * message Schema's for a topic, with `required` where the catalog knows it.
+ */
+export function requestFieldsOf(e: Estate, endpoint: string): SchemaFieldOf[] {
+  const request = schemaFieldsOf(e, endpoint, "request");
+  return request.length ? request : schemaFieldsOf(e, endpoint, "message");
+}
+
+/**
+ * Why an entry step's required fields break who calls it (ADR 0125): a field neither today's
+ * entry step reads nor the catalog's request Schema has is a new required field; one the
+ * catalog has with `required: false` is made required. A field the catalog already requires,
+ * or one it has with required unknown, or one today's flow reads that the catalog doesn't
+ * describe, says nothing: an unknown is never taken for optional.
+ */
+function requiredWhy(required: string[], reads: string[], have: SchemaFieldOf[]): string[] {
+  const known = new Map(have.map((f) => [leaf(f.name), f] as const));
+  const read = new Set(reads.map(leaf));
+  const added = required.filter((f) => !known.has(leaf(f)) && !read.has(leaf(f)));
+  const made = required.filter((f) => known.get(leaf(f))?.required === false);
+  return [
+    ...(added.length ? [`it requires a new field ${all(added)}`] : []),
+    ...(made.length ? [`it makes ${all(made)} required`] : []),
+  ];
+}
+
 /** A column type as compared: case and spaces folded, and the common spellings of one type. */
 function typeKey(t: string): string {
   const k = t.toLowerCase().replace(/\s+/g, "");
@@ -157,6 +191,8 @@ export function breakingChanges(deltas: FlowDelta[], e: Estate): BreakingChange[
     const today = e.flowById.get(d.flow)?.flow;
     if (!today) continue;
     const own = today.component;
+    const ref = today.trigger.ref;
+    const ep = ref && e.byId.get(ref)?.kind === "Endpoint" ? ref : undefined;
     // ---- the flow's own entry
     const why: string[] = [];
     if (d.change === "remove") why.push("the flow is removed");
@@ -179,12 +215,19 @@ export function breakingChanges(deltas: FlowDelta[], e: Estate): BreakingChange[
         if (gone.length && added.length)
           why.push(`its entry reads ${all(added)} in place of ${all(gone)}`);
       }
+      // ADR 0125: a new required request field, or one made required, against the catalog.
+      if (s.op !== "remove" && kind === "entry" && s.fields?.required?.length)
+        why.push(
+          ...requiredWhy(
+            s.fields.required,
+            was?.kind === "entry" ? (was.data?.reads ?? []) : [],
+            ep ? requestFieldsOf(e, ep) : [],
+          ),
+        );
       if (s.breaking && s.op !== "remove")
         why.push(`change ${i + 1} is marked breaking${s.why?.trim() ? `: ${bare(s.why)}` : ""}`);
     });
     if (why.length) {
-      const ref = today.trigger.ref;
-      const ep = ref && e.byId.get(ref)?.kind === "Endpoint" ? ref : undefined;
       out.push({
         kind: "endpoint",
         flow: d.flow,

@@ -152,6 +152,12 @@ export const DeltaFields = z.strictObject({
    * Optional and additive: the flow delta stays at version 2.
    */
   derived: z.record(z.string(), text()).optional(),
+  /**
+   * An entry step: the request fields it requires once the change is in (ADR 0125). A field
+   * neither today's entry nor the catalog has, or one the catalog has as optional, breaks who
+   * calls it. Optional and additive: the flow delta stays at version 2.
+   */
+  required: z.array(text()).optional(),
 });
 export type DeltaFields = z.infer<typeof DeltaFields>;
 
@@ -216,7 +222,8 @@ export const DeltaStep = z.strictObject({
   fields: DeltaFields.optional(),
   /**
    * The drafter says the step's change breaks who uses it today, where no field is dropped
-   * (ADR 0124 addendum B-arch): a field now required, or one whose meaning changes. On a step
+   * (ADR 0124 addendum B-arch): a field whose meaning changes (a field now required is said
+   * under the entry step's `fields.required`, ADR 0125). On a step
    * that stores into a table it is the table's change; on any other, the flow's entry's.
    */
   breaking: z.boolean().optional(),

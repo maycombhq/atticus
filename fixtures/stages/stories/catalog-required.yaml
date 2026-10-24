@@ -1,0 +1,15 @@
+# Added to the fraud check's catalog for the story's Interface changes (ADR 0125): the request
+# Schema of forge-orders' POST /orders, as projectFacts names it (<endpoint>.request). sku must
+# be sent; nothing says whether quantity must be. Invented, written by hand.
+- kind: Schema
+  schemaVersion: 3
+  id: forge-orders.post-orders.request
+  status: current
+  confidence: verified
+  evidence:
+    - { source: code, repo: forge-orders, path: src/main/java/forge/orders/OrderRequest.java, line: 5 }
+  format: other
+  ref: forge-orders.post-orders
+  fields:
+    - { name: sku, type: string, required: true }
+    - { name: quantity, type: int }

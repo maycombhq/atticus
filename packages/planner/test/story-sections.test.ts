@@ -18,6 +18,7 @@ import {
   storiesFromDeltas,
   storiesStage,
   StoriesAnswerSchema,
+  writeStories,
   type StageIssue,
 } from "../src/index.js";
 
@@ -384,6 +385,69 @@ function assistant(drafts: string[], seen: string[] = []) {
     { now: () => NOW },
   );
 }
+
+describe("the Interface changes show the catalog's required when the story doesn't say (ADR 0125)", () => {
+  /** The fraud check's answer, POST /orders also changing sku and quantity, with no required. */
+  const answer = (sku: Record<string, unknown> = {}) =>
+    edited((s) => {
+      const i = (s.interfaces as { entry: string; fields: Record<string, unknown>[] }[])[0]!;
+      i.fields.push(
+        { name: "sku", side: "request", type: "string", change: "changed", ...sku },
+        { name: "quantity", side: "request", type: "integer", change: "changed" },
+      );
+    });
+
+  async function written(a: ReturnType<typeof answer>) {
+    const root = await estateRoot();
+    const rows = parse(readFileSync(join(STORIES_FIX, "catalog-required.yaml"), "utf8"));
+    const extra = (rows as unknown[]).map((r) => {
+      const p = parseRecord(r);
+      if (!p.ok) throw new Error(`bad fixture record: ${JSON.stringify(p.issues)}`);
+      return p.record;
+    });
+    const estate = await loadEstate(root, [...records(), ...extra]);
+    const deltas = (parse(DELTAS) as { flows: unknown[] }).flows.map((d) =>
+      FlowDelta.parse({ schemaVersion: 2, ...(d as object) }),
+    );
+    const stories = storiesFromDeltas(deltas, estate);
+    await writeStories(root, CHANGE, stories, a, [], NOW, [], { estate });
+    return readFile(join(root, "openspec/changes", CHANGE, "stories/s1-place-order.md"), "utf8");
+  }
+
+  it("reads a field's required from the story, else the catalog's, else says it isn't said", async () => {
+    const a = answer();
+    const f = Array.isArray(a.stories[0]!.interfaces) ? a.stories[0]!.interfaces[0]!.fields : [];
+    expect(f.map((x) => [x.name, x.required])).toEqual([
+      ["cardToken", true],
+      ["sku", undefined],
+      ["quantity", undefined],
+    ]);
+    const story = await written(a);
+    expect(story).toContain(
+      "| cardToken | request | string | yes | none | added | required; 1 to 64 characters |",
+    );
+    // the catalog's request Schema of POST /orders says sku must be sent; nothing says of quantity
+    expect(story).toContain(
+      "| sku | request | string | yes (catalog) | none | changed | none given |",
+    );
+    expect(story).toContain(
+      "| quantity | request | integer | not said | none | changed | none given |",
+    );
+    // the task's prompt says the same
+    expect(story).toContain(
+      "POST /orders changes the request field sku (string, required, from the catalog)",
+    );
+    expect(story).toContain(
+      "POST /orders changes the request field quantity (integer, required not said)",
+    );
+  });
+
+  it("a required the story gives wins over the catalog's", async () => {
+    const story = await written(answer({ required: false }));
+    expect(story).toContain("| sku | request | string | no | none | changed | none given |");
+    expect(story).toContain("POST /orders changes the request field sku (string, optional)");
+  });
+});
 
 describe("the stories stage writes every section", () => {
   it("renders the story file with its sections, the tasks with files, tests and command, and the index's dependencies", async () => {

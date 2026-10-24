@@ -56,8 +56,10 @@ import {
   allowedValuesSource,
   columnsOf,
   endpointKey,
+  endpointsFor,
   estateIndex,
   loadEstate,
+  schemaFieldsOf,
   triggerEntry,
   type Estate,
 } from "./estate.js";
@@ -534,7 +536,8 @@ export const StoryInterfaceField = z.strictObject({
   name: Words,
   side: z.enum(["request", "response", "message"]),
   type: Words,
-  required: z.boolean(),
+  /** Left out, the story file shows the catalog's (ADR 0125), or says it isn't said. */
+  required: z.boolean().optional(),
   default: Words.optional(),
   change: Change,
   /** A request or message field an entry of this repo gains or changes: what it accepts. */
@@ -1641,6 +1644,25 @@ export interface StoryFileExtras {
   /** The test kinds the test strategy asks of this change. */
   testKinds?: string[];
   requests?: RequestTask[];
+  /** The estate, for a field's required the story leaves out (ADR 0125). */
+  estate?: Estate;
+}
+
+/**
+ * Whether an interface field is required: the story's word, else the catalog's for that entry,
+ * side and field (ADR 0125), else unknown. Endpoints the entry names that disagree are unknown.
+ */
+function requiredOf(
+  e: Estate | undefined,
+  entry: string,
+  f: { name: string; side: "request" | "response" | "message"; required?: boolean },
+): { required?: boolean; from: "story" | "catalog" } {
+  if (f.required !== undefined) return { required: f.required, from: "story" };
+  const said = new Set<boolean>();
+  for (const id of e ? endpointsFor(e, entry) : [])
+    for (const x of schemaFieldsOf(e!, id, f.side))
+      if (foldName(x.name) === foldName(f.name) && x.required !== undefined) said.add(x.required);
+  return said.size === 1 ? { required: [...said][0]!, from: "catalog" } : { from: "catalog" };
 }
 
 type StoryWords = StoriesAnswer["stories"][number];
@@ -1678,7 +1700,7 @@ function columnRows(s: DeltaStory, w: StoryWords): (StoryDataChange & { task?: s
 }
 
 /** The interface fields and columns a task's fields are, one line each, for its prompt. */
-function contractOf(s: DeltaStory, w: StoryWords, t: DeltaTask): string[] {
+function contractOf(s: DeltaStory, w: StoryWords, t: DeltaTask, e?: Estate): string[] {
   const out: string[] = [];
   // A call's entry is the task's that makes the call; any other entry is the flow's own.
   const calls = new Set(s.tasks.flatMap((x) => (x.to ? [endpointKey(x.to.entry)] : [])));
@@ -1687,10 +1709,16 @@ function contractOf(s: DeltaStory, w: StoryWords, t: DeltaTask): string[] {
       ? endpointKey(t.to.entry) === endpointKey(entry) || !calls.has(endpointKey(entry))
       : !calls.has(endpointKey(entry));
   for (const i of (Array.isArray(w.interfaces) ? w.interfaces : []).filter((i) => mine(i.entry)))
-    for (const f of i.fields.filter((f) => t.fields.includes(f.name)))
+    for (const f of i.fields.filter((f) => t.fields.includes(f.name))) {
+      const r = requiredOf(e, i.entry, f);
+      const req =
+        r.required === undefined
+          ? "required not said"
+          : `${r.required ? "required" : "optional"}${r.from === "catalog" ? ", from the catalog" : ""}`;
       out.push(
-        `${i.entry} ${f.change === "removed" ? "loses" : f.change === "added" ? "gains" : "changes"} the ${f.side} field ${f.name} (${f.type}, ${f.required ? "required" : "optional"}${f.default ? `, default ${f.default}` : ""})${f.validation ? `. Validation: ${f.validation.replace(/[.\s]+$/, "")}` : ""}`,
+        `${i.entry} ${f.change === "removed" ? "loses" : f.change === "added" ? "gains" : "changes"} the ${f.side} field ${f.name} (${f.type}, ${req}${f.default ? `, default ${f.default}` : ""})${f.validation ? `. Validation: ${f.validation.replace(/[.\s]+$/, "")}` : ""}`,
       );
+    }
   for (const r of columnRows(s, w).filter((r) => r.task === t.id))
     out.push(
       `Column ${r.table}.${r.column}: ${r.type ?? "type not said"}, ${r.nullable === undefined ? "nullable not said" : r.nullable ? "nullable" : "not null"}${r.default ? `, default ${r.default}` : ""}${r.migration ? `, migration ${r.migration}` : ""}`,
@@ -1820,10 +1848,14 @@ function renderStoryFile(
         lines.push(
           "| Field | Side | Type | Required | Default | Change | Validation |",
           "| --- | --- | --- | --- | --- | --- | --- |",
-          ...i.fields.map(
-            (f) =>
-              `| ${cell(f.name)} | ${f.side} | ${cell(f.type)} | ${f.required ? "yes" : "no"} | ${cell(f.default ?? "none")} | ${f.change} | ${cell(f.validation ?? (f.side === "response" ? "none" : "none given"))} |`,
-          ),
+          ...i.fields.map((f) => {
+            const r = requiredOf(x.estate, i.entry, f);
+            const req =
+              r.required === undefined
+                ? "not said"
+                : `${r.required ? "yes" : "no"}${r.from === "catalog" ? " (catalog)" : ""}`;
+            return `| ${cell(f.name)} | ${f.side} | ${cell(f.type)} | ${req} | ${cell(f.default ?? "none")} | ${f.change} | ${cell(f.validation ?? (f.side === "response" ? "none" : "none given"))} |`;
+          }),
           "",
         );
     }
@@ -1951,7 +1983,7 @@ function renderStoryFile(
       "",
       "```text",
       taskPrompt(change, s, t, c, {
-        contract: contractOf(s, w, t),
+        contract: contractOf(s, w, t, x.estate),
         ...(tw?.tests?.length ? { tests: tw.tests } : {}),
         ...(command ? { command } : {}),
       }),
@@ -2468,7 +2500,7 @@ Rules:
         change: change.id,
         now,
       });
-      return writeStories(root, change.id, stories, a, requests, now, open, extras);
+      return writeStories(root, change.id, stories, a, requests, now, open, { ...extras, estate });
     },
     current: () => readStoriesAnswer(dir),
     locate: async (i) => (i.locateText ? locateInStories(dir, rel, i.locateText) : undefined),

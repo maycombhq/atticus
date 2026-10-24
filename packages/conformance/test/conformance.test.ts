@@ -96,7 +96,7 @@ describe("catalog", () => {
         "catalog.version",
         "fail",
         "generated/system/old.yaml",
-        "Written at schema version 1; the current version is 2 (run atticus catalog migrate).",
+        "Written at schema version 1; the current version is 3 (run atticus catalog migrate).",
       ],
       [
         "catalog.unique-id",

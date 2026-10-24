@@ -3,23 +3,25 @@ import { z } from "zod";
 /**
  * Current catalog schema version. Bumping it requires an ADR and a migration.
  * Version 2 (ADR 0031) added the Capability kind and changed no existing field.
+ * Version 3 (ADR 0125) added `required` on a Schema field, optional, and changed no other field.
  */
-export const SCHEMA_VERSION = 2 as const;
+export const SCHEMA_VERSION = 3 as const;
 
 /** Every catalog schema version a reader accepts, oldest first. */
-export const SUPPORTED_SCHEMA_VERSIONS = [1, 2] as const;
+export const SUPPORTED_SCHEMA_VERSIONS = [1, 2, 3] as const;
 
 /**
- * A record's schema version. Version-1 files differ from version 2 only in this number, so
- * they are read as they are and come back as version 2 in memory; writers always write the
- * current version, and `migrateCatalog` rewrites old files. The type stays `1 | 2` so code that
- * builds version-1 records in memory keeps compiling until it is updated.
+ * A record's schema version. Version-1 and version-2 files differ from version 3 only in this
+ * number (nothing they hold changed meaning), so they are read as they are and come back as
+ * version 3 in memory; writers always write the current version, and `migrateCatalog` rewrites
+ * old files. The type stays `1 | 2 | 3` so code that builds older records in memory keeps
+ * compiling until it is updated.
  */
 export const SchemaVersion = z
-  .union([z.literal(1), z.literal(2)], {
-    error: "schemaVersion must be 1 or 2 (version 1 files are read as version 2)",
+  .union([z.literal(1), z.literal(2), z.literal(3)], {
+    error: "schemaVersion must be 1, 2 or 3 (older files are read as version 3)",
   })
-  .overwrite((): 1 | 2 => SCHEMA_VERSION);
+  .overwrite((): 1 | 2 | 3 => SCHEMA_VERSION);
 
 /**
  * Stable record id. Lowercase slug, safe as a file name on Linux, macOS and Windows

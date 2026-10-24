@@ -5444,6 +5444,10 @@
             "schema": {
               "type": "string",
               "enum": [
+                "true",
+                "complete",
+                "safe",
+                "ship",
                 "business",
                 "architecture",
                 "story",
@@ -9282,6 +9286,10 @@
               {
                 "type": "number",
                 "const": 2
+              },
+              {
+                "type": "number",
+                "const": 3
               }
             ]
           },
@@ -9451,6 +9459,10 @@
               {
                 "type": "number",
                 "const": 2
+              },
+              {
+                "type": "number",
+                "const": 3
               }
             ]
           },
@@ -9619,6 +9631,10 @@
               {
                 "type": "number",
                 "const": 2
+              },
+              {
+                "type": "number",
+                "const": 3
               }
             ]
           },
@@ -9807,6 +9823,10 @@
               {
                 "type": "number",
                 "const": 2
+              },
+              {
+                "type": "number",
+                "const": 3
               }
             ]
           },
@@ -10064,6 +10084,10 @@
               {
                 "type": "number",
                 "const": 2
+              },
+              {
+                "type": "number",
+                "const": 3
               }
             ]
           },
@@ -10233,6 +10257,10 @@
               {
                 "type": "number",
                 "const": 2
+              },
+              {
+                "type": "number",
+                "const": 3
               }
             ]
           },
@@ -10368,6 +10396,9 @@
                 "classification": {
                   "type": "string",
                   "minLength": 1
+                },
+                "required": {
+                  "type": "boolean"
                 }
               },
               "required": [
@@ -10406,6 +10437,10 @@
               {
                 "type": "number",
                 "const": 2
+              },
+              {
+                "type": "number",
+                "const": 3
               }
             ]
           },
@@ -10555,6 +10590,10 @@
               {
                 "type": "number",
                 "const": 2
+              },
+              {
+                "type": "number",
+                "const": 3
               }
             ]
           },
@@ -10704,6 +10743,10 @@
               {
                 "type": "number",
                 "const": 2
+              },
+              {
+                "type": "number",
+                "const": 3
               }
             ]
           },
@@ -10886,6 +10929,10 @@
               {
                 "type": "number",
                 "const": 2
+              },
+              {
+                "type": "number",
+                "const": 3
               }
             ]
           },
@@ -11131,6 +11178,10 @@
               {
                 "type": "number",
                 "const": 2
+              },
+              {
+                "type": "number",
+                "const": 3
               }
             ]
           },
@@ -11310,6 +11361,10 @@
               {
                 "type": "number",
                 "const": 2
+              },
+              {
+                "type": "number",
+                "const": 3
               }
             ]
           },
@@ -11479,6 +11534,10 @@
               {
                 "type": "number",
                 "const": 2
+              },
+              {
+                "type": "number",
+                "const": 3
               }
             ]
           },
@@ -11696,6 +11755,10 @@
               {
                 "type": "number",
                 "const": 2
+              },
+              {
+                "type": "number",
+                "const": 3
               }
             ]
           },
@@ -11865,6 +11928,10 @@
               {
                 "type": "number",
                 "const": 2
+              },
+              {
+                "type": "number",
+                "const": 3
               }
             ]
           },
@@ -12021,6 +12088,10 @@
               {
                 "type": "number",
                 "const": 2
+              },
+              {
+                "type": "number",
+                "const": 3
               }
             ]
           },
@@ -12182,6 +12253,10 @@
               {
                 "type": "number",
                 "const": 2
+              },
+              {
+                "type": "number",
+                "const": 3
               }
             ]
           },
@@ -12339,6 +12414,10 @@
               {
                 "type": "number",
                 "const": 2
+              },
+              {
+                "type": "number",
+                "const": 3
               }
             ]
           },
@@ -12498,6 +12577,10 @@
               {
                 "type": "number",
                 "const": 2
+              },
+              {
+                "type": "number",
+                "const": 3
               }
             ]
           },
@@ -12649,6 +12732,10 @@
               {
                 "type": "number",
                 "const": 2
+              },
+              {
+                "type": "number",
+                "const": 3
               }
             ]
           },
@@ -12997,6 +13084,10 @@
               {
                 "type": "number",
                 "const": 2
+              },
+              {
+                "type": "number",
+                "const": 3
               }
             ]
           },
@@ -13342,6 +13433,10 @@
               {
                 "type": "number",
                 "const": 2
+              },
+              {
+                "type": "number",
+                "const": 3
               }
             ]
           },
@@ -13514,6 +13609,10 @@
               {
                 "type": "number",
                 "const": 2
+              },
+              {
+                "type": "number",
+                "const": 3
               }
             ]
           },
@@ -13842,6 +13941,10 @@
               {
                 "type": "number",
                 "const": 2
+              },
+              {
+                "type": "number",
+                "const": 3
               }
             ]
           },
@@ -14025,6 +14128,10 @@
               {
                 "type": "number",
                 "const": 2
+              },
+              {
+                "type": "number",
+                "const": 3
               }
             ]
           },
@@ -14203,6 +14310,10 @@
               {
                 "type": "number",
                 "const": 2
+              },
+              {
+                "type": "number",
+                "const": 3
               }
             ]
           },
@@ -14375,6 +14486,10 @@
               {
                 "type": "number",
                 "const": 2
+              },
+              {
+                "type": "number",
+                "const": 3
               }
             ]
           },
@@ -14669,6 +14784,10 @@
               {
                 "type": "number",
                 "const": 2
+              },
+              {
+                "type": "number",
+                "const": 3
               }
             ]
           },
@@ -14826,6 +14945,10 @@
               {
                 "type": "number",
                 "const": 2
+              },
+              {
+                "type": "number",
+                "const": 3
               }
             ]
           },
@@ -15118,6 +15241,10 @@
               {
                 "type": "number",
                 "const": 2
+              },
+              {
+                "type": "number",
+                "const": 3
               }
             ]
           },
@@ -16025,6 +16152,10 @@
               {
                 "type": "number",
                 "const": 2
+              },
+              {
+                "type": "number",
+                "const": 3
               }
             ]
           },
@@ -16167,6 +16298,10 @@
               {
                 "type": "number",
                 "const": 2
+              },
+              {
+                "type": "number",
+                "const": 3
               }
             ]
           },
@@ -22317,6 +22452,10 @@
           "lens": {
             "type": "string",
             "enum": [
+              "true",
+              "complete",
+              "safe",
+              "ship",
               "business",
               "architecture",
               "story",

@@ -10,6 +10,7 @@ import { parseRecord, recordPath, serializeRecord } from "@maycombhq/core";
 import { loadChangeContext } from "@maycombhq/changes";
 import {
   architectureStage,
+  breakingChanges,
   checkDeltas,
   checkStageDraft,
   dataChanges,
@@ -21,6 +22,7 @@ import {
   loadEstate,
   readTargetFlows,
   renderData,
+  requestFieldsOf,
   stageRuleKind,
   tableConsumers,
   type DeployStep,
@@ -43,7 +45,8 @@ const CHANGE = "hold-stock";
 const LEVELS = ["public", "internal", "confidential", "restricted"];
 const text = (name: string) => readFileSync(join(HOLD, "drafts", `${name}.yaml`), "utf8");
 
-async function holdRoot(): Promise<string> {
+/** The scenario's metarepo; `extra` names more catalog files under the scenario's folder. */
+async function holdRoot(extra: string[] = []): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "atticus-hold-stock-"));
   await mkdir(join(root, "org-pack"), { recursive: true });
   // Later rows replace earlier ones with the same id (this scenario's orders table has readers).
@@ -52,6 +55,7 @@ async function holdRoot(): Promise<string> {
     ...(parse(readFileSync(join(FIX, "stages/catalog-extra.yaml"), "utf8")) as unknown[]),
     ...(parse(readFileSync(join(FIX, "stages/pin-table/catalog.yaml"), "utf8")) as unknown[]),
     ...(parse(readFileSync(join(HOLD, "catalog.yaml"), "utf8")) as unknown[]),
+    ...extra.flatMap((f) => parse(readFileSync(join(HOLD, f), "utf8")) as unknown[]),
   ];
   for (const r of rows) {
     const p = parseRecord(r);
@@ -223,6 +227,75 @@ describe("every breaking contract change lists its consumers (check 2)", () => {
     expect(gone.map((i) => i.message)).toEqual([
       "Flow forge-orders.place-order changes POST /orders in a way that breaks who calls it today (the flow is removed), but doesn't list forge-web, which the map shows calling it. List every caller under consumers: [forge-web].",
     ]);
+  });
+
+  describe("a new required request field, or a field made required, breaks callers (ADR 0125)", () => {
+    /** place-order's entry step, requiring `required`, reading `reads` (today: sku, quantity). */
+    const requiring = (required: string[], reads = ["sku", "quantity"]) =>
+      FlowDelta.parse({
+        schemaVersion: 2,
+        flow: "forge-orders.place-order",
+        repo: "forge-orders",
+        change: "modify",
+        why: "Orders say more about themselves.",
+        steps: [{ op: "change", step: 1, kind: "entry", fields: { reads, required } }],
+      });
+    const why = async (d: FlowDelta, extra = ["required/catalog.yaml"]) =>
+      breakingChanges([d], await estate(await holdRoot(extra))).map((c) => [
+        c.name,
+        c.why,
+        c.consumers,
+      ]);
+
+    it("reads the request Schema's required from the catalog, an unknown left unknown", async () => {
+      const e = await estate(await holdRoot(["required/catalog.yaml"]));
+      expect(requestFieldsOf(e, "forge-orders.post-orders")).toEqual([
+        { name: "sku", type: "string", required: true },
+        { name: "quantity", type: "int", required: false },
+        { name: "giftNote", type: "string" },
+      ]);
+      expect(requestFieldsOf(e, "forge-stock.post-stock-reservations")).toEqual([]);
+    });
+
+    it("a field neither today's entry reads nor the catalog has, now required, is a new required field", async () => {
+      expect(await why(requiring(["sku", "shopId"], ["sku", "quantity", "shopId"]))).toEqual([
+        ["POST /orders", ["it requires a new field shopId"], ["forge-web"]],
+      ]);
+    });
+
+    it("a field the catalog has as optional, now required, is made required", async () => {
+      expect(await why(requiring(["sku", "quantity"]))).toEqual([
+        ["POST /orders", ["it makes quantity required"], ["forge-web"]],
+      ]);
+    });
+
+    it("a field the catalog already requires, or one nobody knows was optional, breaks nobody", async () => {
+      expect(await why(requiring(["sku"]))).toEqual([]);
+      // giftNote is in the catalog with required unknown: not taken for optional
+      expect(await why(requiring(["sku", "giftNote"], ["sku", "quantity", "giftNote"]))).toEqual(
+        [],
+      );
+    });
+
+    it("without a request Schema, today's flow says what the entry already takes", async () => {
+      // quantity is read today and nothing says it was optional: no finding
+      expect(await why(requiring(["quantity"]), [])).toEqual([]);
+      expect(await why(requiring(["shopId"], ["sku", "quantity", "shopId"]), [])).toEqual([
+        ["POST /orders", ["it requires a new field shopId"], ["forge-web"]],
+      ]);
+    });
+
+    it("hands back a draft that doesn't list the callers it breaks, saying why", async () => {
+      const got = (
+        await checks(
+          { flows: [requiring(["sku", "quantity", "shopId"], ["sku", "quantity", "shopId"])] },
+          await holdRoot(["required/catalog.yaml"]),
+        )
+      ).filter((i) => i.rule === "delta.consumer-missing");
+      expect(got.map((i) => i.message)).toEqual([
+        "Flow forge-orders.place-order changes POST /orders in a way that breaks who calls it today (it requires a new field shopId; it makes quantity required), but doesn't list forge-web, which the map shows calling it. List every caller under consumers: [forge-web].",
+      ]);
+    });
   });
 
   it("a breaking change to a flow whose trigger cites no endpoint is a note: the map can't name its callers", async () => {

@@ -1,4 +1,4 @@
-import { loadOrgPack, orgPackDirOf, type CatalogRecord } from "@maycombhq/core";
+import { loadOrgPack, orgPackDirOf, SCHEMA_VERSION, type CatalogRecord } from "@maycombhq/core";
 import { readServiceRequestExports } from "@maycombhq/intake";
 import { isIsoDay, subtractWorkingDays, weekdayOnOrBefore } from "./dates.js";
 import { loadJourneys, stepsOf, type JourneyStep, type PartyRole } from "./journeys.js";
@@ -339,7 +339,7 @@ export async function planJourney(
     const existing = view.get("Commitment", i.commitment);
     const blocks = [...new Set(successors.get(i.key)!.map((s) => keyToRef(s.key)))];
     commitments.push({
-      schemaVersion: 2,
+      schemaVersion: SCHEMA_VERSION,
       kind: "Commitment",
       id: i.commitment,
       status: "current",

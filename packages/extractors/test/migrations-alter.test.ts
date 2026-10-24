@@ -66,7 +66,7 @@ ALTER TABLE payout RENAME COLUMN a TO z;`);
     expect(s.runs.filter((r) => r.status === "failed")).toEqual([]);
     const want = (
       parse(readFileSync(join(FIX, "alter-migrations.expected.yaml"), "utf8")) as Rec[]
-    ).map((r) => ({ schemaVersion: 2, status: "current", ...r }));
+    ).map((r) => ({ schemaVersion: 3, status: "current", ...r }));
     const key = (l: Rec[]) =>
       [...l].sort((a, b) => `${a.kind}/${a.id}`.localeCompare(`${b.kind}/${b.id}`));
     const g = key(s.records.map(bare));

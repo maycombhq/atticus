@@ -93,8 +93,8 @@ flows:
         what: <one sentence: what the step does once the change is in>
         to: { component: <component or system id>, entry: <the HTTP method and the path, such as "GET /orders/{id}", or a topic>, new: <true when it doesn't exist yet> }   # call-out and publish only: a component, never a table
         store: { table: <table id>, columns: [<columns>], new: <true only on the step that creates the table>, types: { <each column it adds>: <database type> }, classification: { <each column it adds>: <classification> }, migration: <migration file, when it adds columns or a table or changes a column's type>, retention: <new tables: how long rows are kept>, consumers: [<when it gives a column another type: every component that reads or writes the table>], keys: { <a column it adds that references another table's row>: { references: <db>.<table>.<column>, onDelete: set-null | cascade | restrict | no-action } } }   # read, lookup and write: the table goes here, never under to
-        fields: { sends: [..], returns: [..], reads: [..], checks: [..], from: [..], to: [..], as: { <a field sent under another name>: <the column it is> }, derived: { <a field worked out from columns>: "<how, e.g. edited_at is not null>" } }   # field names as the code names them
-        breaking: <true only when it breaks who uses it though no field is dropped: a field now required, or one whose meaning changes>
+        fields: { sends: [..], returns: [..], reads: [..], checks: [..], from: [..], to: [..], as: { <a field sent under another name>: <the column it is> }, derived: { <a field worked out from columns>: "<how, e.g. edited_at is not null>" }, required: [<an entry step: the request fields it requires once the change is in>] }   # field names as the code names them
+        breaking: <true only when it breaks who uses it though no field is dropped or newly required: a field whose meaning changes>
         why: <one sentence>
 reads:
   - flow: <the flow id (from the specs, never an endpoint id) of a flow the change reads or relies on but doesn't change>

@@ -186,6 +186,37 @@ describe("projectFacts: facts become C1 records, nothing downstream changes", ()
     expect(ep.schemaRefs).toContain("ledger-api.post-accounts-accountid-entries.request");
   });
 
+  it("a field fact's required goes onto its Schema field; left out, it stays unknown (ADR 0125)", () => {
+    const schemas = byKind("Schema") as Record<string, unknown>[];
+    const s = schemas.find((x) => x.id === "ledger-api.post-accounts-accountid-entries.request")!;
+    // f-entry-amount says required: true; f-entry-currency says nothing
+    expect(s.fields).toEqual([
+      { name: "amount", type: "decimal", required: true },
+      { name: "currency", type: "string" },
+    ]);
+    expect(s.schemaVersion).toBe(3);
+    // false is kept as false, never dropped: it says the field may be left out
+    const memo = facts().map((f) =>
+      f.id === "f-entry-currency" && f.kind === "field" ? { ...f, required: false } : f,
+    );
+    const r = projectFacts(memo, { system: "ledger" }).records.find(
+      (x) => x.id === "ledger-api.post-accounts-accountid-entries.request",
+    ) as Record<string, unknown>;
+    expect(r.fields).toEqual([
+      { name: "amount", type: "decimal", required: true },
+      { name: "currency", type: "string", required: false },
+    ]);
+    const p = parseRecord(r);
+    expect(p.ok && p.record).toMatchObject({ fields: [{ required: true }, { required: false }] });
+    // a column fact's required is still the column's nullable, not a Schema field
+    const amount = byKind("Column").find((c) => c.id === "ledger-db.entry.amount") as Record<
+      string,
+      unknown
+    >;
+    expect(amount.nullable).toBe(false);
+    expect("required" in amount).toBe(false);
+  });
+
   it("deploy and config become Deployment and Setting; a secret's source is a reference, never a value", () => {
     const dep = byKind("Deployment") as Record<string, unknown>[];
     expect(dep).toHaveLength(1);

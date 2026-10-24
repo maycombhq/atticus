@@ -4,6 +4,22 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### A Schema field says whether it is required: catalog schema version 3 (ADR 0125)
+
+- **`required` on a Schema field** (C1): true, it must be sent; false, it may be left out; left out, nobody knows. Nothing ever takes an unknown for optional.
+  - An assistant's field fact fills it.
+  - No reader does yet.
+- **Catalog schema version 3.** Readers accept versions 1, 2 and 3; writers write 3.
+  - Run `atticus upgrade`, or `atticus catalog migrate`, once. Its new step `catalog-schema-v3` rewrites version-2 files, and only `schemaVersion` changes.
+  - `atticus upgrade --check` and conformance list the files still at version 2.
+- **A new required field breaks callers.** A target flow's entry step can list the request fields it requires (`fields.required`). The architecture stage counts it as breaking when either:
+  - the field is new to the entry: today's flow doesn't read it and the catalog doesn't have it;
+  - the catalog has it as optional.
+
+  A change that breaks callers must list them, as any other breaking change does.
+
+- **Stories show the catalog's required.** A field whose required the story writer leaves out shows the catalog's value, marked "(catalog)", in the Interface changes table and the task's prompt. When neither knows, it says "not said".
+
 ### The architecture stage checks who a change breaks and the order it deploys in (ADR 0124 addendum B-arch)
 
 - A change that breaks who uses an entry or a table today lists them: `consumers` on the target flow, or `store.consumers` on the step. Breaking means a field the response returns is gone, the entry reads one field in place of another, the entry, the response or the flow is removed, a column gets another type, or the step is marked `breaking`. The consumers come from the map (Interface records, the specs' calls, the table's readers and writers), and the architect sees them before its first draft. One the map knows that the draft leaves out goes back to the drafter.
