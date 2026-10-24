@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse, stringify } from "yaml";
+import { judgeStandIn } from "@maycombhq/ai";
 import { parseRecord, recordPath, serializeRecord } from "@maycombhq/core";
 
 export const HERE = dirname(fileURLToPath(import.meta.url));
@@ -62,3 +63,45 @@ export async function moveTo(root: string, states: string[], at = "2026-10-20T15
 }
 
 export const expected = (f: string) => readFileSync(join(EXPECTED, f), "utf8");
+
+/**
+ * A stand-in for the model the release views' judge asks (ADR 0117 addendum): it answers as a
+ * careful reviewer of the Forge change would, quoting the words that decide it. Hand-written
+ * for the fixture; never a configured runtime.
+ */
+export function forgeJudge() {
+  const said = (verdict: string, of: string, text: string) => ({
+    verdict,
+    quotes: [{ of, text }],
+  });
+  return judgeStandIn(
+    (it) => {
+      const t = it.texts;
+      if (t.notes !== undefined)
+        return t.notes.includes("LIMIT_EXCEEDED")
+          ? said("yes", "notes", "gains the LIMIT_EXCEEDED error (HTTP 422)")
+          : undefined;
+      if (t.sentence !== undefined) {
+        const step = it.facts.find((f) => f.startsWith("the step: ")) ?? "";
+        const yes =
+          (t.sentence.startsWith("To roll back ledger-api") &&
+            step === "the step: code in forge-ledger") ||
+          (t.sentence.startsWith("V3__add_daily_limit.sql is expand-only") &&
+            step === "the step: migration in forge-ledger") ||
+          (t.sentence.startsWith("Roll back the other repos") &&
+            step.startsWith("the step: code in forge-portal"));
+        return said(yes ? "yes" : "no", "sentence", t.sentence);
+      }
+      if (t.line !== undefined)
+        return said(t.line.includes("shared key") ? "yes" : "no", "line", t.line);
+      if (t.column !== undefined)
+        return said(
+          ["changed_by_email", "account_number"].includes(t.column) ? "yes" : "no",
+          "column",
+          t.column,
+        );
+      return undefined;
+    },
+    { now: () => new Date(NOW) },
+  );
+}

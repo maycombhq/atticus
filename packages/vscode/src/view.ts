@@ -116,6 +116,13 @@ export class AtticusView implements vscode.TreeDataProvider<Node> {
     } else nodes.push({ kind: "no-next" });
     // The setup checklist, until the catalog is accepted.
     if (setup?.steps?.length && !setup.baselined) nodes.push({ kind: "setup", steps: setup.steps });
+    // What runs a step (ADR 0121 item 6), above Open the app.
+    if (n.ok && n.value.runs)
+      nodes.push({
+        kind: "runs",
+        runs: n.value.runs,
+        model: vscode.workspace.getConfiguration("atticus").get<string>("model", ""),
+      });
     this.next = n.ok ? n.value.next : undefined;
     this.questions = q.ok ? q.value : `Couldn't read the questions: ${q.message}`;
     nodes.push({ kind: "app" });

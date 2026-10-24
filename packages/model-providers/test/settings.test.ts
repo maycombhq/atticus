@@ -88,9 +88,10 @@ describe("provider settings", () => {
       );
     expect(attempt).toThrow(RuntimeConfigError);
     expect(attempt).toThrow(
-      "The anthropic model provider reads its key from the environment variable ATTICUS_MISSING_KEY, which isn't set (or is empty). Set it in the environment that runs Atticus; the key never goes in runtime.yaml.",
+      "The anthropic model provider reads its key from ATTICUS_MISSING_KEY, which is set neither in the environment nor in this machine's credential store. Keep it there with atticus secret set ATTICUS_MISSING_KEY (or the AI tab's \"Set the key on this machine\"), or set the environment variable; the key never goes in runtime.yaml.",
     );
-    expect(() => readKey("x", "EMPTY", { EMPTY: "  " })).toThrow(/isn't set/);
+    const none = { get: () => undefined };
+    expect(() => readKey("x", "EMPTY", { EMPTY: "  " }, none)).toThrow(/set neither/);
   });
 
   it("refuses unknown settings, naming the ones it reads", () => {

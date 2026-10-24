@@ -1,8 +1,8 @@
 import { registerModelProvider, type ModelProviderFactory } from "@maycombhq/ai";
-import { AnthropicProvider } from "./anthropic.js";
-import { BedrockProvider } from "./bedrock.js";
+import { ANTHROPIC_SETTINGS, AnthropicProvider } from "./anthropic.js";
+import { BEDROCK_SETTINGS, BedrockProvider } from "./bedrock.js";
 import type { ProviderDeps } from "./common.js";
-import { OpenAiCompatibleProvider } from "./openai.js";
+import { OPENAI_SETTINGS, OpenAiCompatibleProvider } from "./openai.js";
 
 export * from "./anthropic.js";
 export * from "./bedrock.js";
@@ -22,12 +22,16 @@ export {
 export { copy } from "./messages.js";
 export * from "./network.js";
 export * from "./settings.js";
+export * from "./credentials.js";
+export * from "./plugin.js";
+export * from "./vertex-plugin.js";
 export * from "./sigv4.js";
 
 /**
  * The built-in model providers (ADR 0065), by runtime.yaml `adapters.model.type`:
  * `anthropic`, `openai-compatible`, `azure-openai` (openai-compatible with the Azure flavour)
- * and `bedrock`. `vertex` has no built-in provider yet.
+ * and `bedrock`. Vertex is a model-provider plugin Atticus ships (`atticus plugin add vertex`,
+ * ADR 0121 item 4), not a built-in.
  */
 export function builtInModelProviders(
   deps: ProviderDeps = {},
@@ -39,6 +43,17 @@ export function builtInModelProviders(
     bedrock: (s) => new BedrockProvider(s, deps),
   };
 }
+
+/**
+ * The settings each built-in provider accepts, by its type (ADR 0121): the app's AI tab shows one
+ * field for each. A key is never one: `keyEnv` names the variable that holds it.
+ */
+export const PROVIDER_SETTINGS: Record<string, readonly string[]> = {
+  anthropic: ANTHROPIC_SETTINGS,
+  "openai-compatible": OPENAI_SETTINGS,
+  "azure-openai": OPENAI_SETTINGS,
+  bedrock: BEDROCK_SETTINGS,
+};
 
 /** Register the built-in providers with the runtime factory (the CLI does this when it starts). */
 export function registerBuiltInModelProviders(deps: ProviderDeps = {}): void {

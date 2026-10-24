@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { PERSONAL_DATA_SPEC, personalItem, type JudgeItem } from "@maycombhq/ai";
 import { docOf, readDataChanges } from "../artifacts.js";
 import type { CriticContext } from "../context.js";
 import {
@@ -13,6 +14,7 @@ import {
   escapeRe,
   hasWord,
   lineEvidence,
+  questionOwner,
   recordEvidence,
   sentence,
   type DeterministicCheckDef,
@@ -111,38 +113,34 @@ export const dataMigrationNamed: DeterministicCheckDef = {
   },
 };
 
-const PERSONAL_PARTS = [
-  "email",
-  "mail",
-  "phone",
-  "mobile",
-  "name",
-  "firstname",
-  "lastname",
-  "surname",
-  "address",
-  "street",
-  "postcode",
-  "zip",
-  "birth",
-  "dob",
-  "ssn",
-  "passport",
-  "national",
-  "iban",
-  "ip",
-];
-
-/** Column names that look like personal data, by their parts (changed_by_email → email). */
-export function looksPersonal(column: string, hints: string[] = PERSONAL_PARTS): boolean {
-  const parts = column.toLowerCase().split(/[^a-z0-9]+/);
-  return parts.some((p) => hints.includes(p));
+/**
+ * The personal-data items of a change's new columns (ADR 0117 addendum): one per column, with
+ * whether data.md already classifies it as personal by name (a fact that settles it). Judged
+ * before the checks run, so the check reads the verdicts.
+ */
+export function personalItems(ctx: CriticContext): JudgeItem[] {
+  const doc = docOf(ctx.files, DATA);
+  if (!doc) return [];
+  const section = sectionMatching(doc, /classif/i);
+  const lines = section ? sectionLines(doc, section) : [];
+  const personalLine = (c: string) =>
+    lines.some((l) => hasWord(l.text, c) && ctx.personalClasses.some((p) => hasWord(l.text, p)));
+  return readDataChanges(ctx.files).flatMap((r) =>
+    r.newColumns.map((c) =>
+      personalItem({
+        column: c.name,
+        table: r.table,
+        type: c.type,
+        classifiedPersonal: personalLine(c.name),
+      }),
+    ),
+  );
 }
 
 export const dataColumnsClassified: DeterministicCheckDef = {
   id: "data-columns-classified",
   description:
-    "Every new column has a classification in data.md; columns that look like personal data are classified as personal by name.",
+    "Every new column has a classification in data.md; columns judged to hold personal data are classified as personal by name, and a person is asked of those no one has judged.",
   params: z.strictObject({ personalHints: z.array(z.string()).optional() }),
   run(ctx, p) {
     const doc = docOf(ctx.files, DATA);
@@ -160,11 +158,29 @@ export const dataColumnsClassified: DeterministicCheckDef = {
           hasWord(l.text, r.table) && hasTerm(l.text) && !names.some((n) => hasWord(l.text, n)),
       );
       const colLines = (c: string) => lines.filter((l) => hasWord(l.text, c) && hasTerm(l.text));
-      const personal = names.filter(
-        (c) =>
-          looksPersonal(c, p.personalHints as string[] | undefined) &&
-          !colLines(c).some((l) => hasTerm(l.text, ctx.personalClasses)),
-      );
+      // Personal data is a judgment (ADR 0117 addendum); an org's own hints are its rule, a
+      // fact it declared: a column whose name has one of them is personal.
+      const hints = ((p.personalHints as string[] | undefined) ?? []).map((h) => h.toLowerCase());
+      const byHint = (c: string) =>
+        c
+          .toLowerCase()
+          .split(/[^a-z0-9]+/)
+          .some((x) => hints.includes(x));
+      const typeOf = (c: string) => r.newColumns.find((x) => x.name === c)?.type;
+      const verdict = (c: string) =>
+        byHint(c)
+          ? "yes"
+          : ctx.judged(
+              PERSONAL_DATA_SPEC.kind,
+              personalItem({ column: c, table: r.table, type: typeOf(c) }).inputs,
+            );
+      const classifiedPersonal = (c: string) =>
+        colLines(c).some((l) => hasTerm(l.text, ctx.personalClasses));
+      const personal = names.filter((c) => !classifiedPersonal(c) && verdict(c) === "yes");
+      const unjudged = names.filter((c) => {
+        const v = verdict(c);
+        return !classifiedPersonal(c) && (v === undefined || v === "unsure");
+      });
       const unclassified = names.filter(
         (c) => !personal.includes(c) && colLines(c).length === 0 && tableLines.length === 0,
       );
@@ -186,6 +202,26 @@ export const dataColumnsClassified: DeterministicCheckDef = {
           },
           evidence: ev,
           key: `classify-personal|${r.line}`,
+        });
+      if (unjudged.length)
+        hits.push({
+          kind: "knowledge-gap",
+          artifact: DATA,
+          locator: rowLocator(doc, r.line, "classification"),
+          summary: sentence(
+            `No one has judged whether ${unjudged.join(", ")} in ${r.table} ${unjudged.length > 1 ? "hold" : "holds"} personal data.`,
+          ),
+          why: `Personal data needs its own classification (${ctx.personalClasses.join(", ")}). Whether a column holds it is a judgment about meaning; no model was asked (or it couldn't tell), so a person decides rather than a word list.`,
+          fix: {
+            text: `Classify each of ${unjudged.join(", ")} that holds personal data by name under "Backfill, classification and retention".`,
+          },
+          evidence: ev,
+          question: {
+            text: `Which of ${unjudged.join(", ")} in ${r.table} hold personal data?`,
+            owner: questionOwner(ctx, r.tableId),
+          },
+          subject: r.tableId,
+          key: `classify-personal-unjudged|${r.line}`,
         });
       if (unclassified.length)
         hits.push({

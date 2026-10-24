@@ -47,6 +47,15 @@ flows:
   - { id: forge-orders.place-order, how: changed, why: The screen runs before stock is reserved. }
 `;
 
+/**
+ * The context expander's answer for the brief (ADR 0116; on by default since its addendum, a
+ * hand-off round of its own before the draft): its terms, and the one name the brief uses.
+ */
+const EXPANSION = `terms: [fraud screen, place order, reserve stock]
+names:
+  - { name: Northwind Pay, id: northwind-pay, quote: screened by Northwind Pay }
+`;
+
 const io = () => {
   const out: string[] = [];
   const err: string[] = [];
@@ -82,6 +91,7 @@ describe("atticus change feature", () => {
       new MockRuntime(
         (req) => {
           if (req.agent.id.endsWith("-critic")) return "findings: []";
+          if (req.agent.id === "context-expander") return EXPANSION;
           prompts.push(req.pack.prompt);
           return PLACED;
         },
@@ -122,6 +132,7 @@ describe("atticus change feature", () => {
   });
 
   it("with --handoff prints only the prompt, the result file and the commands that finish it", async () => {
+    // The real default: the first round is the context expander's (ADR 0116 addendum).
     const root = await estate();
     const out: string[] = [];
     const code = await main(
@@ -133,7 +144,7 @@ describe("atticus change feature", () => {
     expect(out).toHaveLength(5);
     expect(out[0]).toMatch(/^Prompt: \.runs\/add-fraud-check\/run-[0-9a-z-]+\/prompt\.md$/);
     expect(out[1]).toMatch(
-      /^Result file: \.runs\/add-fraud-check\/run-[0-9a-z-]+\/feature-answer\.yaml$/,
+      /^Result file: \.runs\/add-fraud-check\/run-[0-9a-z-]+\/expansion\.yaml$/,
     );
     expect(out[4]).toMatch(
       /^ {2}atticus change feature add-fraud-check --root .+ --handoff --resume run-/,
@@ -165,7 +176,8 @@ describe("a stage run again while its hand-off waits (--handoff --json)", () => 
 });
 
 describe("atticus change feature --handoff --json with the critic's AI lenses (ADR 0115)", () => {
-  it("offers each lens after the draft, one hand-off at a time, and ends done", async () => {
+  it("offers the expansion, then the draft, then each lens, one hand-off at a time, and ends done", async () => {
+    // The real default (ADR 0116 addendum): the expansion is a round of its own, first.
     const root = await estate();
     await cp(join(FIXTURES, "stages/lenses/checklists"), join(root, "org-pack/checklists"), {
       recursive: true,
@@ -197,9 +209,13 @@ describe("atticus change feature --handoff --json with the critic's AI lenses (A
       return json((await run(h.resumeArgs)).out);
     };
 
-    const draft = json(
+    const expansion = json(
       (await run(["change", "feature", CHANGE, "--handoff", "--json", "--root", root])).out,
     );
+    expect(expansion.state).toBe("handoff");
+    expect(expansion.lens).toBeUndefined();
+    expect(expansion.resultFile).toMatch(/\/expansion\.yaml$/);
+    const draft = await answer(expansion, EXPANSION);
     expect(draft.state).toBe("handoff");
     expect(draft.lens).toBeUndefined();
     expect(draft.resultFile).toMatch(/feature-answer\.yaml$/);
@@ -273,6 +289,11 @@ describe("the starter review on a metarepo atticus init made (ADR 0120)", () => 
     const finish = async (argv: string[]) =>
       expect(await main(argv, quiet, { quiet: true }), argv.join(" ")).toBe(0);
     let h = await run(["change", "feature", CHANGE, "--handoff", "--json", "--root", root]);
+    // The context expander's round first (on by default, ADR 0116 addendum), then the draft.
+    expect(h.resultFile).toMatch(/\/expansion\.yaml$/);
+    await writeFile(join(root, h.resultFile), EXPANSION);
+    await finish(h.doneArgs);
+    h = await run(h.resumeArgs);
     expect(h.lens).toBeUndefined();
     await writeFile(join(root, h.resultFile), PLACED);
     await finish(h.doneArgs);
@@ -363,9 +384,14 @@ describe("a stage's --handoff --json offers its own run, named as data (M5, M6)"
     await cp(join(FIXTURES, "stages/lenses/checklists"), join(root, "org-pack/checklists"), {
       recursive: true,
     });
-    const draft = (
+    // The context expander's round first (on by default, ADR 0116 addendum), then the draft.
+    const expansion = (
       await run(root, ["change", "feature", CHANGE, "--handoff", "--json", "--root", root])
     ).j;
+    await writeFile(join(root, expansion.resultFile as string), EXPANSION);
+    await run(root, expansion.doneArgs as string[]);
+    const draft = (await run(root, expansion.resumeArgs as string[])).j;
+    expect(draft.resultFile as string).toMatch(/feature-answer\.yaml$/);
     await writeFile(join(root, draft.resultFile as string), PLACED);
     await run(root, draft.doneArgs as string[]);
     const lens = (await run(root, draft.resumeArgs as string[])).j;

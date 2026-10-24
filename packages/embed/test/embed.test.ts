@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import {
+  embedderFor,
   embeddingState,
   installedModelDir,
   encode,
@@ -101,15 +102,21 @@ describe("the model folder", () => {
       // No retrieval section: the model installed with Atticus (@maycombhq/embed-model). Its
       // files are only there once fetched (pnpm model:fetch, or in the published package).
       const def = await embeddingState(root);
-      expect(def.setting).toBe("bundled");
+      expect(def).toMatchObject({ setting: "bundled", configured: false });
       expect(def.dir?.replace(/\\/g, "/")).toMatch(/embed-model$/);
+      // An empty section reads the same: retrievalOf fills in the defaults.
+      await writeFile(
+        join(root, "org-pack/runtime.yaml"),
+        `schemaVersion: 1\nassistants: { allowed: [copilot], default: copilot }\nretrieval: {}\n`,
+      );
+      expect(await embeddingState(root)).toMatchObject({ setting: "bundled", configured: false });
       const runtime = (model: string) =>
         writeFile(
           join(root, "org-pack/runtime.yaml"),
           `schemaVersion: 1\nassistants: { allowed: [copilot], default: copilot }\nretrieval:\n  embeddings: { model: ${JSON.stringify(model)} }\n`,
         );
       await runtime("off");
-      expect(await embeddingState(root)).toMatchObject({ setting: "off" });
+      expect(await embeddingState(root)).toMatchObject({ setting: "off", configured: true });
       await runtime("models/none");
       expect((await embeddingState(root)).problem).toMatch(/atticus-model.yaml/);
       const dir = await modelDir(MANIFEST());
@@ -120,6 +127,11 @@ describe("the model folder", () => {
         id: "tiny-model@2c26b46b68ff",
         licence: "Apache-2.0",
       });
+      // The embedder loads its runtime on first use, so making it never throws; the index
+      // catches a model that can't run (packages/index meaning tests).
+      const opened = await embedderFor(root);
+      expect(opened.embedder?.id).toBe("tiny-model@2c26b46b68ff");
+      expect(opened.state.problem).toBeUndefined();
     } finally {
       if (was === undefined) delete process.env.ATTICUS_EMBEDDINGS;
       else process.env.ATTICUS_EMBEDDINGS = was;

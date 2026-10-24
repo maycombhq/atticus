@@ -16,6 +16,7 @@ import {
   type SyncResult,
 } from "@maycombhq/planner";
 import type { Output } from "./commands.js";
+import { judgingRuntime } from "./judging.js";
 import { table } from "./index-commands.js";
 
 /**
@@ -208,6 +209,7 @@ export async function storyBarCommand(
   changeId: string | undefined,
   o: { eval?: string; json?: boolean },
   io: Output,
+  deps: { runtime?: AiRuntime | null } = {},
 ): Promise<number> {
   if (!changeId) {
     io.err("Usage: atticus plan bar <change> [--eval <expected stories.yaml>] [--json]");
@@ -215,7 +217,11 @@ export async function storyBarCommand(
   }
   try {
     const ev = o.eval ? await readStoryEval(resolve(root, o.eval)) : undefined;
-    const r = await storyBar(root, changeId, ev ? { eval: ev } : {});
+    const runtime = await judgingRuntime(root, deps.runtime);
+    const r = await storyBar(root, changeId, {
+      ...(ev ? { eval: ev } : {}),
+      ...(runtime ? { runtime } : {}),
+    });
     if (o.json) {
       io.out(JSON.stringify(r, null, 2));
       return r.met ? 0 : 1;
@@ -231,6 +237,11 @@ export async function storyBarCommand(
     for (const g of r.gaps.filter((x) => !x.covered))
       io.out(`  Gap not covered: ${g.id}: ${g.what}`);
     for (const x of [...r.outline, ...r.regressions]) io.out(`  ${x}`);
+    const open = r.dor.filter((d) => d.notJudged?.length);
+    if (open.length)
+      io.out(
+        `  For a person: no one has judged which of the bar's checks ${open.length === 1 ? "this definition-of-ready item asks" : "these definition-of-ready items ask"} for (no model was asked), so ${open.length === 1 ? "it isn't" : "they aren't"} checked: ${open.map((d) => `"${d.item}"`).join(", ")}.`,
+      );
     io.out(r.met ? "The story bar is met." : "The story bar is not met.");
     return r.met ? 0 : 1;
   } catch (e) {

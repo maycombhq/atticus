@@ -11,6 +11,7 @@ import {
   architectureStage,
   criticFindingKind,
   criticRuleChecks,
+  EXPAND_AGENT,
   featureStage,
   PlannerError,
   stageRuleKind,
@@ -63,11 +64,13 @@ async function estateRoot(): Promise<string> {
 
 const dir = (root: string) => join(root, "openspec/changes", CHANGE);
 
+/** A mock assistant: the context expander (on by default) adds nothing; drafts in turn. */
 function assistant(drafts: string[], seen: string[] = []) {
   let n = 0;
   return new MockRuntime(
     (req: AiRequest) => {
       if (req.agent.id.endsWith("-critic")) return "findings: []";
+      if (req.agent.id === EXPAND_AGENT) return "terms: []\nnames: []\n";
       seen.push(req.pack.prompt);
       return drafts[Math.min(n++, drafts.length - 1)]!;
     },

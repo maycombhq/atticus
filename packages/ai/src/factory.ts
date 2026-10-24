@@ -9,6 +9,7 @@ import {
   runsDirOf,
   runsRelOf,
   RuntimeKind,
+  type ModelProviderPlugin,
   type OrgPack,
   type Recording,
   orgPackDirOf,
@@ -368,6 +369,52 @@ export function registerModelProvider(type: string, factory: ModelProviderFactor
   registered.set(type, factory);
 }
 
+/** An org pack's model-provider plugin (ADR 0121 item 4), as orgpack-load reads it. */
+export interface ModelProviderPluginRef {
+  manifest: ModelProviderPlugin;
+  dir: string;
+}
+
+/**
+ * Turns an org pack's model-provider plugin into a factory: reads its pinned entry file and runs
+ * it in the plugin sandbox. The command line registers it (it has the sandbox); without one, a
+ * plugin can't be loaded and model mode says so.
+ */
+export type ModelProviderPluginLoader = (
+  p: ModelProviderPluginRef,
+) => Promise<ModelProviderFactory>;
+
+let pluginLoader: ModelProviderPluginLoader | undefined;
+
+export function registerModelProviderPluginLoader(l: ModelProviderPluginLoader | undefined): void {
+  pluginLoader = l;
+}
+
+/**
+ * The factory for runtime.yaml's adapters.model.type: a registered provider, else the org pack's
+ * plugin of that id (plugins/model-providers/<id>/); undefined when there is neither.
+ */
+export async function providerFactoryFor(
+  op: { modelProviders?: readonly ModelProviderPluginRef[] },
+  type: string,
+): Promise<ModelProviderFactory | undefined> {
+  const made = registered.get(type);
+  if (made) return made;
+  const p = op.modelProviders?.find((x) => x.manifest.id === type);
+  if (!p) return undefined;
+  if (!pluginLoader)
+    throw new RuntimeConfigError(
+      `The org pack has a ${type} model-provider plugin, but this program can't load plugins: run the step with the atticus command line.`,
+    );
+  return pluginLoader(p);
+}
+
+/** A registered provider, built from runtime.yaml's settings; undefined for a type none registered. */
+export function makeModelProvider(type: string, settings: Settings): ModelProvider | undefined {
+  const make = registered.get(type);
+  return make ? make(settings) : undefined;
+}
+
 /** The registered model-provider types (for messages and checks). */
 export function registeredModelProviders(): string[] {
   return [...registered.keys()].sort();
@@ -425,7 +472,7 @@ const nonEmpty: HandoffOptions["validate"] = async (file, request) => {
  * allow, with a message that says what to change.
  */
 export async function createRuntime(
-  orgPack: Pick<OrgPack, "runtime">,
+  orgPack: Pick<OrgPack, "runtime"> & { modelProviders?: readonly ModelProviderPluginRef[] },
   o: CreateRuntimeOptions,
 ): Promise<AiRuntime> {
   const rt = orgPack.runtime;
@@ -455,7 +502,7 @@ export async function createRuntime(
         );
       const make =
         o.providers?.[cfg.type] ??
-        registered.get(cfg.type) ??
+        (await providerFactoryFor(orgPack, cfg.type)) ??
         (cfg.type === "mock"
           ? (s: Settings) =>
               new MockModelProvider(

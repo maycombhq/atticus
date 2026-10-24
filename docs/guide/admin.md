@@ -53,6 +53,22 @@ assistants: { allowed: [copilot, claude-code, cursor], default: copilot }
 
 They can be `copilot`, `claude-code`, `cursor`, `gemini-cli`, `windsurf` or `agents-md`. Use `agents-md` for Codex and any other tool that reads `AGENTS.md`. `atticus assistant-files` writes the same slash commands, instructions and skills for each allowed assistant, in the files that tool reads (ADR 0121). `atticus next` tells people to type the command in the default assistant, and `atticus doctor` looks for each one's program.
 
+In the app, **Set up › AI** sets all of this with a form: the assistants, the modes, and the model provider with its settings. Saving writes `runtime.yaml`; commit it in a pull request. **Test the provider** checks that the provider answers.
+
+### A model provider Atticus has no built-in for
+
+The built-in providers are Anthropic, OpenAI-compatible endpoints (with Azure OpenAI) and AWS Bedrock. For any other, such as Google Vertex AI or your organisation's own gateway, add a **model-provider plugin** in `org-pack/plugins/model-providers/<id>/` (ADR 0121):
+
+- `plugin.yaml` names the plugin, the settings it takes, the only hosts a request may go to, and how the key is sent (`bearer`, `x-api-key`, `header:<name>` or `none`).
+- `index.js` has two functions. `request` turns the prompt into a URL, headers and a body; `response` turns the provider's answer into text. They run in the plugin sandbox, with no network, files or clock. Atticus makes the call, over HTTPS to the named hosts only, through the same proxy and CA as every provider, and adds the key from `keyEnv` itself. The plugin never sees the key.
+- `test/<case>/` holds golden files: `request.json` with `expected-request.json`, and `answer.json` with `expected-answer.json`.
+
+Atticus ships one plugin, for Vertex: `atticus plugin add vertex` copies it into the org pack. It handles Anthropic's models (through `rawPredict`) and Google's (through `generateContent`). Its key is an OAuth access token, which lasts about an hour, so refresh it outside Atticus, for example in the job that starts the run.
+
+Review the code, run `atticus plugin test <id>`, then `atticus plugin pin <id>`, and commit the folder through a pull request. Model mode uses a plugin only while its `index.js` matches the pin. Then choose it on **Set up › AI** (it is listed as a plugin), or set `adapters.model.type: <id>`.
+
+What isn't built yet: a plugin can't call tools (tool calls need a built-in provider), and nothing refreshes a token for you.
+
 ### What AI may do here
 
 `runtime.yaml` holds one line for it:
@@ -82,7 +98,7 @@ adapters:
       keyEnv: ATTICUS_MODEL_KEY # the NAME of the variable holding the key
 ```
 
-**The key is never in runtime.yaml.** `keyEnv` names an environment variable; set that variable in the environment Atticus runs in (a user environment variable, or your secrets tooling). Atticus refuses a setting that looks like a key or token, and never prints a key: messages name the variable instead.
+**The key is never in runtime.yaml.** `keyEnv` names where the key is: an environment variable of that name in the environment Atticus runs in (a user environment variable, or your secrets tooling), or this machine's credential store under that name. Use `atticus secret set ATTICUS_MODEL_KEY` and pipe the key in, or the AI tab's "Set the key on this machine". The environment is read first. Atticus refuses a setting that looks like a key or token, and never prints a key: messages name the variable instead.
 
 Settings every provider reads:
 
@@ -200,6 +216,23 @@ It is your configuration, not the constitution. Change it through a pull request
 - **Add your own**: write another checklist file beside it, with `check: { type: ai, prompt: ... }` for a lens's judgment or a deterministic check. A gate in `gates.yaml` that names `checklists` runs only those packs; the defaults name none, so every pack runs.
 
 `atticus upgrade` adds the starter review to an older metarepo once, unless the org pack already has a `review.yaml` or any checklist with an AI rule; it never changes a checklist you wrote. `atticus init --from <pack>` copies your pack as it is, without the starter review.
+
+### How the steps find their context (retrieval)
+
+The steps that use the context engine (change needs, feature, architecture, plan stories) search the index for what their input is about. `runtime.yaml` `retrieval` sets how (ADR 0116 and its addendum). Leaving the section out, or writing `retrieval: {}`, gives the defaults:
+
+```yaml
+retrieval:
+  embeddings:
+    model: bundled # or off, or a model folder with atticus-model.yaml
+    # runtime: ../tools/onnx # a folder whose node_modules holds onnxruntime, if it isn't beside Atticus
+  expansion: true # your assistant first reads what the input is about
+  rerank: false # not measured yet
+```
+
+- **Search by meaning (`embeddings`).** `bundled` is all-MiniLM-L6-v2 (87 MB, Apache-2.0), which the offline bundle carries with onnxruntime. On the retrieval eval it found 0.96 of what a step needed, against 0.81 by words and names alone (`docs/evidence/context-eval.md`). It runs on the machine, on the CPU, and nothing is ever downloaded. Where the model or onnxruntime isn't installed (a checkout without the bundle, or a bank that hasn't approved them yet), the engine searches by words and names, never fails a step, and `atticus doctor` says so under "Embedding model". Set `model: off` to say your organisation doesn't use one. The model's training data needs your legal team's sign-off (ADR 0116 lists it); a model you name by folder is a one-line switch.
+- **The expansion.** One small call (a 6,000-token budget, within GPT-4o mini's reach) before a step's selection: your assistant reads the step's input and the estate's names and says what it is about in the estate's words, and every name it uses. Atticus checks each name against the input and each id against the index. The names the estate doesn't know become the step's gaps, so a vendor named only in a sentence is asked about. In hand-off mode it is one extra round per step (one prompt, then the step's own); its answer is kept in `judgments/expansion/`, so the same input with the same estate names is never asked again, and an answer that fails its check is left out with a note while the step goes on by words and names. `expansion: false` turns it off; then only names the input marks by their form (an endpoint, a name in backticks) are asked about.
+- **The rerank** orders the candidates when they don't fit the room. It is built but not measured, so it is off.
 
 ### Outside systems
 

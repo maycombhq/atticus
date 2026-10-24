@@ -1,5 +1,6 @@
 import { RuntimeConfigError, RuntimeError } from "@maycombhq/ai";
 import { copy } from "./messages.js";
+import { defaultKeyStore, type KeyStore } from "./credentials.js";
 
 /** runtime.yaml `adapters.model.settings`, as the factory hands it over. */
 export type RawSettings = Record<string, string | number | boolean | string[]>;
@@ -149,9 +150,17 @@ export class SettingsReader {
   }
 }
 
-/** The key from the environment variable named in keyEnv; refuses an unset or empty one. */
-export function readKey(provider: string, keyEnv: string, env: Env): string {
-  const v = env[keyEnv]?.trim();
+/**
+ * The key named in keyEnv: from the environment first, then from this machine's credential store
+ * (`atticus secret set`, ADR 0121); refuses one that is in neither.
+ */
+export function readKey(
+  provider: string,
+  keyEnv: string,
+  env: Env,
+  store: Pick<KeyStore, "get"> = defaultKeyStore(),
+): string {
+  const v = env[keyEnv]?.trim() || store.get(keyEnv)?.trim();
   if (!v) throw new ModelProviderConfigError(copy.keyEnvUnset(provider, keyEnv));
   return v;
 }

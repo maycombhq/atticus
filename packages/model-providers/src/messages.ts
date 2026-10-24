@@ -38,7 +38,7 @@ export const copy = {
   keyEnvName: (provider: string) =>
     `adapters.model.settings.keyEnv for the ${provider} model provider must be the name of an environment variable (letters, digits and _, for example ATTICUS_MODEL_KEY), not the key.`,
   keyEnvUnset: (provider: string, keyEnv: string) =>
-    `The ${provider} model provider reads its key from the environment variable ${keyEnv}, which isn't set (or is empty). Set it in the environment that runs Atticus; the key never goes in runtime.yaml.`,
+    `The ${provider} model provider reads its key from ${keyEnv}, which is set neither in the environment nor in this machine's credential store. Keep it there with atticus secret set ${keyEnv} (or the AI tab's "Set the key on this machine"), or set the environment variable; the key never goes in runtime.yaml.`,
   plainHttp: (provider: string, url: string) =>
     `The ${provider} model provider only calls https:// addresses (prompts carry your organisation's material), and ${url} isn't one. Plain http:// is accepted only for this machine (localhost or 127.0.0.1).`,
   awsUnset: (missing: readonly string[]) =>
@@ -82,4 +82,11 @@ export const copy = {
     `${w.provider} stopped the answer at the output limit (${max} tokens), so it is incomplete and Atticus doesn't use it. Raise adapters.model.settings.maxOutput, or make the step smaller.`,
   declined: (w: Where, reason: string) =>
     `${w.provider} declined to answer (${reason}). Nothing was written; a person can do this step, or hand it off.`,
+  // ---------------------------------------------------------------- plugins (ADR 0121 item 4)
+  pluginRefused: (id: string, why: string) =>
+    `The ${id} model-provider plugin built a request Atticus won't send: ${why}. Nothing was sent. Fix the plugin's request function, then review and pin it again (atticus plugin pin ${id}).`,
+  pluginFailed: (id: string, what: string, why: string) =>
+    `The ${id} model-provider plugin couldn't ${what}: ${why}`,
+  hostPart: (id: string, name: string) =>
+    `adapters.model.settings.${name} for the ${id} model provider goes into the host name, so it must be lowercase letters, digits and hyphens only.`,
 };

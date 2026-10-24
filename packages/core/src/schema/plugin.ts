@@ -66,6 +66,67 @@ export const ScannerPlugin = z.strictObject({
 });
 export type ScannerPlugin = z.infer<typeof ScannerPlugin>;
 
+export const MODEL_PROVIDER_PLUGIN_SCHEMA_VERSION = 1 as const;
+
+/** A host name, or a template of one with {setting} parts: no scheme, port or path. */
+const HostTemplate = z
+  .string()
+  .regex(
+    /^(?:[a-z0-9-]|\{[A-Za-z][A-Za-z0-9]*\})+(?:\.(?:[a-z0-9-]|\{[A-Za-z][A-Za-z0-9]*\})+)+$/,
+    "a host name such as llm.example.com, or {region}-llm.example.com: no scheme, port or path",
+  );
+
+/**
+ * A model-provider plugin (ADR 0121 item 4, C6): org-pack/plugins/model-providers/<id>/plugin.yaml,
+ * for a model provider Atticus has no built-in for (Vertex, a bank's own gateway). Its code is a
+ * translator, run in the plugin sandbox: `request` turns a prompt into a URL, headers and body,
+ * and `response` turns the answer into text. Atticus makes the call, over HTTPS to the hosts
+ * named here only, through the proxy and CA it uses for every provider, and adds the key from
+ * keyEnv itself: the plugin never sees it. runtime.yaml names it as adapters.model.type.
+ */
+export const ModelProviderPlugin = z.strictObject({
+  schemaVersion: z.literal(MODEL_PROVIDER_PLUGIN_SCHEMA_VERSION),
+  /** The plugin id: the folder's name, and adapters.model.type in runtime.yaml. */
+  id: RecordId,
+  version: z.string().regex(/^\d+\.\d+\.\d+(-[0-9a-z.-]+)?$/i, "a semver version, e.g. 1.0.0"),
+  description: z.string().min(1),
+  /** The plain JavaScript ES module whose default export has request and response. */
+  entry: EntryFile,
+  /** The settings it takes beyond every provider's (model, keyEnv, timeoutMs, ...). */
+  settings: z
+    .array(
+      z
+        .string()
+        .regex(/^[A-Za-z][A-Za-z0-9]*$/, "a setting name such as region")
+        .refine(
+          (n) => !/key|secret|token|password/i.test(n),
+          "a key is never a setting: name its variable in keyEnv",
+        ),
+    )
+    .default([]),
+  /** The only hosts a request may go to, over HTTPS; {setting} is filled from the settings. */
+  hosts: z.array(HostTemplate).min(1),
+  /** How Atticus sends the key from keyEnv: Authorization Bearer, x-api-key, a named header, or none. */
+  auth: z
+    .union([
+      z.enum(["bearer", "x-api-key", "none"]),
+      z.string().regex(/^header:[A-Za-z0-9-]+$/, "header:<name>"),
+    ])
+    .default("bearer"),
+  sha256: z
+    .string()
+    .regex(/^[0-9a-f]{64}$/, "a sha256 in lowercase hex; run atticus plugin pin")
+    .optional(),
+  /** Each translation is stopped after this time, and when its heap passes this size. */
+  limits: z
+    .strictObject({
+      timeoutMs: z.number().int().min(100).max(60_000).default(5000),
+      memoryMb: z.number().int().min(16).max(512).default(64),
+    })
+    .default({ timeoutMs: 5000, memoryMb: 64 }),
+});
+export type ModelProviderPlugin = z.infer<typeof ModelProviderPlugin>;
+
 /** A plugin's golden test: plugins/<id>/test/<case>/expected.yaml (records matched by id). */
 export const PluginExpected = z.strictObject({
   /** What the scan context says about the test repo; the repo is named after the case folder. */

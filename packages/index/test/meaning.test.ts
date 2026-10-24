@@ -1,4 +1,5 @@
-import { readFile, rename, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rename, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { HashEmbedder } from "@maycombhq/ai";
@@ -27,6 +28,41 @@ describe("similar in meaning (ADR 0116)", () => {
     const root = await retrievalRoot();
     const out = await runContextTool(ix, root, "similar", { id: "ledger-db.account" });
     expect(out).toMatch(/^Similar in meaning is off/);
+    ix.close();
+  });
+
+  it("a model folder without onnxruntime beside it: the open still works, by words and names, and says why", async () => {
+    // ADR 0116 addendum: a bank that hasn't approved onnxruntime gets lexical search, never a
+    // failed step. The tiny model folder is invented; onnxruntime isn't installed here.
+    const root = await retrievalRoot();
+    const model = await mkdtemp(join(tmpdir(), "atticus-model-"));
+    await writeFile(
+      join(model, "atticus-model.yaml"),
+      [
+        "schemaVersion: 1",
+        "name: tiny-model",
+        "dtype: fp32",
+        "sha256: 2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae",
+        "dim: 4",
+        "maxTokens: 16",
+        "pooling: mean",
+        "licence: Apache-2.0",
+        "source: invented for the tests",
+        "",
+      ].join("\n"),
+    );
+    await writeFile(join(model, "model.onnx"), "foo");
+    const rt = join(root, "org-pack/runtime.yaml");
+    await writeFile(
+      rt,
+      `${await readFile(rt, "utf8")}retrieval: { embeddings: { model: ${JSON.stringify(model)} } }\n`,
+    );
+    const ix = await openIndex(root);
+    expect(ix.meaning().on).toBe(false);
+    expect(ix.meaning().note).toMatch(/similar in meaning is off/);
+    const s = await ix.select({ text: "the renamed timestamp" }, { budget: 2000 });
+    expect(s.picked.length).toBeGreaterThan(0);
+    expect(s.picked.some((p) => /meaning/.test(p.via))).toBe(false);
     ix.close();
   });
 

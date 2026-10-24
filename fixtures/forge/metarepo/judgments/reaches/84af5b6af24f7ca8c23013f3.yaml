@@ -1,0 +1,17 @@
+# A judgment (ADR 0117): reaches, decided by avery. To override it, change verdict, set confirmedBy to { by: person, name: <your Git user> } and keep what it said under overrides; commit it for review.
+schemaVersion: 1
+kind: reaches
+key: 84af5b6af24f7ca8c23013f3
+verdict: gateway
+at: 2026-10-19T10:00:00Z
+confirmedBy:
+  by: person
+  name: avery
+inputs:
+  from: portal
+  sentence: The portal reads balances and creates transfers through the gateway.
+  to: ledger
+  v: 1
+quotes:
+  - of: sentence
+    text: through the gateway

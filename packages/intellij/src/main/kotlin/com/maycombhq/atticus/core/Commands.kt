@@ -182,6 +182,26 @@ object Commands {
     /** The AI step's deterministic half (`--handoff`): it writes the prompt for a model run elsewhere. */
     fun handoff(argv: List<String>): List<String> = if ("--handoff" in argv) argv else argv + "--handoff"
 
+    /**
+     * The step run on runtime.yaml's model (ADR 0121 item 5): IntelliJ's own way to run an AI
+     * step, since Copilot in IntelliJ offers plugins no model. Any hand-off or other mode is dropped.
+     */
+    fun withModel(argv: List<String>): List<String> {
+        val out = mutableListOf<String>()
+        var i = 0
+        while (i < argv.size) {
+            val a = argv[i]
+            when {
+                a == "--handoff" -> {}
+                a == "--mode" -> i++
+                a.startsWith("--mode=") -> {}
+                else -> out += a
+            }
+            i++
+        }
+        return out + listOf("--mode", "model")
+    }
+
     /** The command a typed line names (the longest that fits), and the words after it. */
     fun matchCommand(c: Catalog, line: String): Pair<CatalogCommand, List<String>>? {
         val words = Next.argsOf(line.trim().let { if (it.startsWith("atticus ")) it else "atticus $it" })

@@ -2,7 +2,8 @@ import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parse } from "yaml";
 import { z } from "zod";
-import type { RecordOf } from "@maycombhq/core";
+import { ASKS_CHECK_SPEC, settle, verdictOf, type AiRuntime, type JudgeItem } from "@maycombhq/ai";
+import { fileJudgments, type JudgmentStore, type RecordOf } from "@maycombhq/core";
 import {
   normalizePath,
   parseDoc,
@@ -19,9 +20,11 @@ import { coverage } from "./words.js";
  * 90% of stories pass the definition of ready with wording-only edits; no story names a
  * system, repo, interface or operation that is in neither the catalog nor the change's design.
  *
- * Definition of ready: the org pack's `testStrategy.definitionOfReady` items, each mapped to a
- * deterministic check by what it talks about (who and outcome, acceptance criteria, systems
- * and repos, dependencies, tests); an item no check covers is listed for a person. A failed
+ * Definition of ready: the org pack's `testStrategy.definitionOfReady` items, each mapped to the
+ * deterministic checks it asks for (who and outcome, acceptance criteria, systems and repos,
+ * dependencies, tests). Which checks an item asks for is a judgment (ADR 0117 addendum): an
+ * item in Atticus's default wording has the checks it was written with; another is judged once
+ * and kept; without a model to ask, its checks don't run and it is listed for a person. A failed
  * check is structural (the story isn't ready); the rubric (title length, placeholders, vague
  * outcomes) is wording only and never fails a story.
  */
@@ -52,7 +55,12 @@ export interface StoryBarResult {
   change: string;
   stories: StoryReport[];
   ready: { passed: number; total: number; rate: number; min: number };
-  dor: { item: string; checks: DorCheck[] }[];
+  dor: {
+    item: string;
+    checks: DorCheck[];
+    /** Checks no one has judged whether the item asks for (no model was asked): for a person. */
+    notJudged?: DorCheck[];
+  }[];
   gaps: GapReport[];
   invented: string[];
   /** Eval only: where the stories differ from the expected outline. */
@@ -211,16 +219,64 @@ const TEST_TYPES = new Set([
   "data-migration",
 ]);
 
-/** Which deterministic checks a definition-of-ready item asks for. */
-export function dorChecks(item: string): DorCheck[] {
-  const k = item.toLowerCase();
-  const out: DorCheck[] = [];
-  if (/\bwho\b|for whom|\buser\b|outcome|value|brief|trace/.test(k)) out.push("who", "traced");
-  if (/acceptance|given|criteria/.test(k)) out.push("criteria");
-  if (/system|repo/.test(k)) out.push("systems");
-  if (/depend/.test(k)) out.push("depends");
-  if (/\btest/.test(k)) out.push("tests");
-  return out;
+/** What each of the bar's checks tests in a story, in the words the judge reads. */
+export const DOR_CHECKS: Record<DorCheck, string> = {
+  who: 'the story has an "As a … I want … so that …" line: who it is for and what they gain',
+  traced: "the story traces to a line of the brief, the proposal or a spec",
+  criteria: "the story has acceptance criteria in Given/When/Then form",
+  systems: "the story names the systems and repos it touches",
+  depends: "the story has a Depends on section naming what it waits on",
+  tests: "the story names the kinds of test that prove it (unit, contract, integration and so on)",
+};
+
+/**
+ * The checks of Atticus's own default definition-of-ready items (DEFAULT_TEST_STRATEGY): Atticus
+ * wrote them with these checks, so they are known, not read.
+ */
+export const DEFAULT_DOR_CHECKS: Record<string, DorCheck[]> = {
+  "Who it is for and the outcome, traced to the brief": ["who", "traced"],
+  "Acceptance criteria in Given/When/Then form": ["criteria"],
+  "Systems and repos it touches": ["systems"],
+  "Dependencies named": ["depends"],
+};
+
+/** The asks-check items of a definition-of-ready item: one per check of the bar. */
+export function dorItems(item: string): { check: DorCheck; item: JudgeItem }[] {
+  const known = DEFAULT_DOR_CHECKS[item];
+  return (Object.keys(DOR_CHECKS) as DorCheck[]).map((check) => ({
+    check,
+    item: {
+      inputs: { v: 1, item, check, ...(known ? { known } : {}) },
+      texts: { item },
+      facts: [`the check: ${DOR_CHECKS[check]}`],
+    },
+  }));
+}
+
+/**
+ * Which checks each definition-of-ready item asks for (ADR 0117 addendum): the default items'
+ * known checks, a judgment on file, else the judge where the runtime calls a model. A check no
+ * one has judged is listed under notJudged, and doesn't run.
+ */
+export async function dorChecks(
+  items: readonly string[],
+  o: { runtime?: AiRuntime; store: JudgmentStore; change: string; now: Date },
+): Promise<StoryBarResult["dor"]> {
+  const pairs = items.map((item) => ({ item, checks: dorItems(item) }));
+  const results = await settle(
+    ASKS_CHECK_SPEC,
+    pairs.flatMap((p) => p.checks.map((c) => c.item)),
+    { runtime: o.runtime, store: o.store, change: o.change, now: o.now },
+  );
+  return pairs.map((p) => {
+    const v = (c: { item: JudgeItem }) =>
+      verdictOf(results, ASKS_CHECK_SPEC, c.item.inputs)?.verdict;
+    const checks = p.checks.filter((c) => v(c) === "yes").map((c) => c.check);
+    const open = p.checks
+      .filter((c) => v(c) === undefined || v(c) === "unsure")
+      .map((c) => c.check);
+    return { item: p.item, checks, ...(open.length ? { notJudged: open } : {}) };
+  });
 }
 
 interface Known {
@@ -419,12 +475,24 @@ const MIN_READY = 0.9;
 export async function storyBar(
   root: string,
   changeId: string,
-  o: { eval?: StoryEval } = {},
+  o: {
+    eval?: StoryEval;
+    /** The runtime the judge is asked through, when it calls a model directly. */
+    runtime?: AiRuntime;
+    /** Where judgments are kept. Default: the metarepo's judgments/. */
+    judgments?: JudgmentStore;
+    now?: Date;
+  } = {},
 ): Promise<StoryBarResult> {
   const ctx = await loadPlanContext(root, changeId, { requireApprovedDesign: false });
   const stories = await readStories(ctx.dir);
   const items = ctx.lifecycle.orgPack.testStrategy.definitionOfReady;
-  const dor = items.map((item) => ({ item, checks: dorChecks(item) }));
+  const dor = await dorChecks(items, {
+    ...(o.runtime ? { runtime: o.runtime } : {}),
+    store: o.judgments ?? fileJudgments(root),
+    change: ctx.change.id,
+    now: o.now ?? new Date(),
+  });
   const checks = new Set<DorCheck>(["who", "criteria", ...dor.flatMap((d) => d.checks)]);
   const known = knownNames(
     ctx,

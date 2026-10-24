@@ -4,7 +4,7 @@ import { parse } from "yaml";
 import { FrameworkModel } from "./schema/frameworks.js";
 import { ScanSettings } from "./schema/scan-settings.js";
 import { RepoType } from "./schema/repo-type.js";
-import { ScannerPlugin } from "./schema/plugin.js";
+import { ModelProviderPlugin, ScannerPlugin } from "./schema/plugin.js";
 import { SpecTemplate } from "./schema/spec.js";
 import type { z } from "zod";
 import {
@@ -63,6 +63,8 @@ export interface OrgPack {
   repoTypes: RepoType[];
   /** Scanner plugins (ADR 0080), from plugins/<id>/plugin.yaml, with their folders. */
   plugins: { manifest: ScannerPlugin; dir: string }[];
+  /** Model-provider plugins (ADR 0121 item 4): plugins/model-providers/<id>/plugin.yaml. */
+  modelProviders: { manifest: ModelProviderPlugin; dir: string }[];
   /** Spec templates (ADR 0079), from repo-types/<id>/spec-template.yaml; a type may have none. */
   specTemplates: SpecTemplate[];
   checklists: ChecklistPack[];
@@ -232,6 +234,22 @@ export async function loadOrgPack(dir: string): Promise<OrgPack> {
         message: `is ${v.id}; keep it in plugins/${v.id}/`,
       });
     else plugins.push({ manifest: v, dir: join(dir, "plugins", e.name) });
+  }
+  const modelProviders: OrgPack["modelProviders"] = [];
+  const mpRoot = join(dir, "plugins", "model-providers");
+  const mpDirs = await readdir(mpRoot, { withFileTypes: true }).catch(() => []);
+  for (const e of mpDirs.sort((a, b) => a.name.localeCompare(b.name))) {
+    const f = join(mpRoot, e.name, "plugin.yaml");
+    if (!e.isDirectory() || !(await exists(f))) continue;
+    const v = await load(f, ModelProviderPlugin);
+    if (!v) continue;
+    if (v.id !== e.name)
+      problems.push({
+        file: rel(f),
+        path: "id",
+        message: `is ${v.id}; keep it in plugins/model-providers/${v.id}/`,
+      });
+    else modelProviders.push({ manifest: v, dir: join(mpRoot, e.name) });
   }
   const checklists = await many("checklists", /\.ya?ml$/, ChecklistPack);
   const serviceRequests = await many("process/snow", /\.ya?ml$/, ServiceRequestTemplate);
@@ -487,6 +505,7 @@ export async function loadOrgPack(dir: string): Promise<OrgPack> {
     scanSettings,
     repoTypes,
     plugins,
+    modelProviders,
     specTemplates,
     checklists,
     skills,

@@ -8,6 +8,7 @@ import {
   KNOWLEDGE_KINDS,
   knowledgeKindOf,
   RecordId,
+  retrievalOf,
   type OrgPack,
   type Question,
   type RunRetrieval,
@@ -557,8 +558,8 @@ export async function findNeeds(
       now,
       levels,
       settings: {
-        expansion: o.orgPack?.runtime.retrieval?.expansion ?? false,
-        rerank: o.orgPack?.runtime.retrieval?.rerank ?? false,
+        expansion: retrievalOf(o.orgPack?.runtime).expansion,
+        rerank: retrievalOf(o.orgPack?.runtime).rerank,
       },
       step: `change needs ${change}`,
     };
@@ -608,10 +609,13 @@ export async function findNeeds(
           classification: "internal",
           priority: 1,
         });
+      // The first round's note too: an expansion that was left out says why (ADR 0116 addendum).
+      const notes = [...new Set([first.note, final.note].filter((n): n is string => !!n))];
       context = {
         ...reportOf(got.selection!, room),
         gaps: g.gaps,
         ...(retrieval ? { retrieval } : {}),
+        ...(notes.length ? { note: notes.join("; ") } : {}),
       };
     } else {
       sources.push(...whole);

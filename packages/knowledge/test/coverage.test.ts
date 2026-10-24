@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Api } from "@maycombhq/core";
 import { coverage, COVERAGE_AREAS, mapFacts, syncSources, toApiCoverage } from "../src/index.js";
-import { FORGE_ROOT, forgePack, forgeRecords, forgeSystems } from "./helpers.js";
+import { FORGE_ROOT, forgePack, forgeReaches, forgeRecords, forgeSystems } from "./helpers.js";
 
 describe("coverage of the expected Forge catalog", () => {
   it("defines seven areas from record kinds", () => {
@@ -60,7 +60,7 @@ describe("coverage of the expected Forge catalog", () => {
     const op = await forgePack();
     const records = forgeRecords();
     const { pages } = await syncSources({ root: FORGE_ROOT, orgPack: op, records });
-    const facts = mapFacts({ pages, records, systems: forgeSystems(op) });
+    const facts = mapFacts({ pages, records, systems: forgeSystems(op), reaches: forgeReaches });
     const res = coverage({
       records,
       documents: facts.documentOnlyFacts.map((f) => f.record),

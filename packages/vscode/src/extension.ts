@@ -31,6 +31,7 @@ import { copilotSetup, describeEnd, endActions, endFiles } from "./describe";
 import { aiProgressTitle, runProgressTitle } from "./feedback";
 import { pickLoading } from "./pick";
 import { statusText, stepTitle, WORDS } from "./words";
+import { chooseModel } from "./vscode-model";
 import type { StepEnd } from "./runner";
 import { checkRunStep, runEndMessage, runProgressMessage, runRefusedMessage } from "./run-step";
 import type * as Api from "./api-types";
@@ -234,8 +235,7 @@ ${view.next.why}`
     else if (pick === "Set up Copilot")
       // VS Code's own Copilot setup: sign in, or turn it on.
       await vscode.commands.executeCommand("atticus.installCopilot");
-    else if (pick === "Pick a model")
-      await vscode.commands.executeCommand("workbench.action.openSettings", "atticus.model");
+    else if (pick === "Pick the model") await vscode.commands.executeCommand("atticus.pickModel");
     else if (pick === "Show details") svc.log.show(true);
     else {
       const f = files.find((x) => x.title === pick);
@@ -567,6 +567,8 @@ ${view.next.why}`
     // A new atticus.path: look for the command line again, so the welcome goes or comes at once.
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration("atticus.path")) void updateContext().then(refreshAll);
+      // A model picked: the Next view's "in VS Code" says the new one.
+      else if (e.affectsConfiguration("atticus.model")) refreshAll();
     }),
   );
   reg("atticus.checkHealth", async () => {
@@ -762,6 +764,8 @@ ${view.next.why}`
     const s = copilotSetup(await vscode.commands.getCommands(true));
     return vscode.commands.executeCommand(s.command, ...s.args);
   });
+  // ADR 0121: every model VS Code offers, or runtime.yaml's, written to atticus.model.
+  reg("atticus.pickModel", () => chooseModel());
   // The everyday ones, one click from the sidebar's title bars.
   const shortcut: [string, string][] = [
     ["atticus.scanAll", "scan"],

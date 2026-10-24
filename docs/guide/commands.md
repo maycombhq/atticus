@@ -44,6 +44,7 @@ Usage:
   atticus setup [--json]               The setup checklist until the catalog is accepted, with a fix for each step
   atticus baseline                     Accept the as-is catalog as the baseline [--note text] [--site dir]
   atticus doctor [--json]              Check this machine: Node, Git, OpenSpec, proxy, TLS, disk, port, assistant
+  atticus secret set|check|forget <name>  Keep a model provider's key in this machine's credential store under the name runtime.yaml gives as keyEnv; read from stdin, never printed
   atticus upgrade [--check|--dry-run]  Bring the metarepo's files up to this version (backs them up first)
   atticus support bundle               Collect versions, checks, counts and the redacted log in a zip [--out f]
   atticus digest                       What waits on you: hand-offs to revise, blocking findings [--channel c] [--send] [--json]
@@ -92,7 +93,8 @@ Usage:
   atticus dialect run <name> <repo>    Show the records a dialect produces from one repo [--json]
   atticus dialect kit [dir]            Export the dialect build kit for an assistant
   atticus dialect tree <file> [--language l]   Print a file's syntax tree, for syntax matches
-  atticus plugin test|pin <id>         Run a scanner plugin against its golden files, sandboxed; or pin its entry file's sha256
+  atticus plugin test|pin <id>         Run a scanner or model-provider plugin against its golden files, sandboxed; or pin its entry file's sha256
+  atticus plugin add <id>              Copy a model-provider plugin Atticus ships (vertex) into the org pack, to review and pin
   atticus onboard <repo> [--name n] [--attempts 3] [--mode m]   Your assistant drafts a dialect for a repo Atticus can't read; checked, kept as a proposal
   atticus onboard check <name> --repo <repo>   Check a proposal (drafted, handed off or hand-written)
   atticus onboard eval <dir> [--mode m] [--json]   Score the assistant's drafts against reference dialects

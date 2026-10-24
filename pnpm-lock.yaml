@@ -424,6 +424,9 @@ importers:
       '@maycombhq/planner':
         specifier: workspace:*
         version: link:../planner
+      '@maycombhq/release':
+        specifier: workspace:*
+        version: link:../release
       '@maycombhq/testgen':
         specifier: workspace:*
         version: link:../testgen
@@ -908,6 +911,9 @@ importers:
       '@maycombhq/adapters':
         specifier: workspace:*
         version: link:../adapters
+      '@maycombhq/ai':
+        specifier: workspace:*
+        version: link:../ai
       '@maycombhq/changes':
         specifier: workspace:*
         version: link:../changes

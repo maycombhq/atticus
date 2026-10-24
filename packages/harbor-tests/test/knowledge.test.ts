@@ -27,6 +27,19 @@ import {
 
 const inputs = expectedFile<ExpectedInputs>("inputs.yaml");
 const seeded = expectedFile<Discrepancy[]>("discrepancies.yaml");
+/**
+ * How the Harbor wiki's sentences say one system reaches another, as a careful reader judges
+ * them (ADR 0117 addendum, the reaches judgment): hand-written verdicts standing in for a
+ * model's. A sentence not listed says none of it.
+ */
+const HARBOR_READS: Record<string, string> = {
+  "The Orders Service calls the Payments Service through the gateway.": "gateway",
+  "Payments Service calls Tidewater Payments directly.": "direct",
+  "The warehouse pipeline loads orders through the Orders API.": "api-only",
+};
+const harborReaches = (it: { texts: Record<string, string> }) =>
+  HARBOR_READS[it.texts.sentence ?? ""] ?? "none";
+
 /** Wiki paths are relative to the metarepo root; inputs.yaml writes them relative to fixtures/harbor. */
 const fromHarbor = (doc: string) => `../${doc}`;
 
@@ -34,7 +47,12 @@ async function facts() {
   const op = await harborPack();
   const records = harborRecords();
   const { pages } = await syncSources({ root: HARBOR_ROOT, orgPack: op, records });
-  return { op, records, pages, res: mapFacts({ pages, records, systems: harborSystems(op) }) };
+  return {
+    op,
+    records,
+    pages,
+    res: mapFacts({ pages, records, systems: harborSystems(op), reaches: harborReaches }),
+  };
 }
 
 describe("the Harbor wiki against the catalog", () => {

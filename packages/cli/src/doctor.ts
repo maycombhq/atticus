@@ -413,22 +413,35 @@ export async function doctorChecks(root: string, deps: DoctorDeps = {}): Promise
     });
   }
 
-  // ADR 0116: the local embedding model for "similar in meaning", installed with Atticus.
+  // ADR 0116 and its addendum: the local embedding model for "similar in meaning", the one installed
+  // with Atticus by default. Where it or onnxruntime isn't installed, the context engine searches by
+  // words and names, never fails a step and downloads nothing; this says so. A default that
+  // isn't installed is a note; a model runtime.yaml names that can't be used is a warning.
   {
     const { embeddingState, runtimeAvailable } = await import("@maycombhq/embed");
     const e = await embeddingState(root);
     const ort = e.setting === "off" ? undefined : await runtimeAvailable(root);
+    const lexical = "the context engine searches by words and names only";
     out.push({
       id: "embeddings",
       label: "Embedding model",
-      status: e.setting === "off" ? "ok" : e.problem || !ort ? "warn" : "ok",
+      status:
+        e.setting === "off"
+          ? "ok"
+          : e.problem
+            ? e.configured
+              ? "warn"
+              : "ok"
+            : ort
+              ? "ok"
+              : "warn",
       detail:
         e.setting === "off"
-          ? `off (${e.problem ?? "runtime.yaml retrieval.embeddings"}); the context engine searches by words and names`
+          ? `off (${e.problem ?? "runtime.yaml retrieval.embeddings"}); ${lexical}`
           : e.problem
-            ? e.problem
-            : `${e.id} (${((e.bytes ?? 0) / 1024 / 1024).toFixed(0)} MB, ${e.licence}) in ${e.dir}; runtime: ${ort ?? "none found"}`,
-      fix: "The model comes with Atticus (@maycombhq/embed-model, installed with @maycombhq/cli). Reinstall Atticus from your npm mirror or the offline bundle; in a checkout of Atticus run pnpm model:fetch; or point retrieval.embeddings.model at a model folder. Until then the context engine searches by words and names only.",
+            ? `${e.problem}, so ${lexical}`
+            : `${e.id} (${((e.bytes ?? 0) / 1024 / 1024).toFixed(0)} MB, ${e.licence}) in ${e.dir}; runtime: ${ort ?? `none found, so ${lexical}`}`,
+      fix: "The model comes with Atticus (@maycombhq/embed-model and its onnxruntime packages, installed with @maycombhq/cli). Reinstall Atticus from your npm mirror or the offline bundle; in a checkout of Atticus run pnpm model:fetch; or point retrieval.embeddings.model at a model folder. Set it to off to say the organisation doesn't use one. Nothing is ever downloaded.",
     });
   }
   const live = Object.entries(rt.adapters).filter(

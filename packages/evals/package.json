@@ -33,6 +33,7 @@
     "@maycombhq/knowledge": "workspace:*",
     "@maycombhq/naysayer": "workspace:*",
     "@maycombhq/planner": "workspace:*",
+    "@maycombhq/release": "workspace:*",
     "@maycombhq/testgen": "workspace:*",
     "@maycombhq/workspace": "workspace:*",
     "yaml": "^2.9.1",

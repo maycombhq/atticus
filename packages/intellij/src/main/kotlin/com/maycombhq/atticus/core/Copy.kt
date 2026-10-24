@@ -103,6 +103,12 @@ object Copy {
     fun copy(what: String) = "Copy $what"
 
     const val RUN_HANDOFF = "Run its hand-off in a console instead"
+
+    /** ADR 0121 item 5: the step run by Atticus on runtime.yaml's model, in a console here. */
+    const val RUN_MODEL = "Run it on Atticus's configured model"
+
+    /** ADR 0121 item 6: what runs a step here, in one line. */
+    fun howStepsRun(runs: String) = "How AI steps run here: $runs"
     const val COPIED = "Copied."
 
     // Shared writes

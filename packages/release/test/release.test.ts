@@ -3,6 +3,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
+import { HandoffRuntime } from "@maycombhq/ai";
 import {
   deploymentPlan,
   evidencePack,
@@ -18,7 +19,16 @@ import {
   writeEvidencePack,
   ReleaseError,
 } from "../src/index.js";
-import { EXPECTED, ID, NOW, changeDir, expected, forgeRoot, moveTo } from "./helpers.js";
+import {
+  EXPECTED,
+  ID,
+  NOW,
+  changeDir,
+  expected,
+  forgeJudge,
+  forgeRoot,
+  moveTo,
+} from "./helpers.js";
 
 /** Compare a generated document with its golden file (UPDATE_GOLDEN=1 rewrites it after a review). */
 function golden(name: string, text: string) {
@@ -27,7 +37,8 @@ function golden(name: string, text: string) {
   expect(text).toBe(expected(name));
 }
 
-const plain = async () => loadRelease(await forgeRoot(), ID, { now: NOW });
+const plain = async () =>
+  loadRelease(await forgeRoot(), ID, { now: NOW, runtime: forgeJudge().runtime });
 
 describe("deployment plan", () => {
   it("orders the seeded change's repos from its dependencies, as worked out by hand", async () => {
@@ -113,7 +124,9 @@ describe("deployment plan", () => {
 
   it("reads rollback steps and the release sections from design.md, and shows the release lens's open findings", async () => {
     const root = await forgeRoot({ released: true });
-    const p = await deploymentPlan(await loadRelease(root, ID, { now: NOW }));
+    const p = await deploymentPlan(
+      await loadRelease(root, ID, { now: NOW, runtime: forgeJudge().runtime }),
+    );
     const by = (repo: string, kind = "code") =>
       p.steps.find((s) => s.repo === repo && s.kind === kind)!;
     expect(by("forge-ledger", "migration").rollback).toEqual({
@@ -167,7 +180,9 @@ describe("forecast", () => {
 
   it("uses the initiative's critical path and target when the change belongs to one", async () => {
     const root = await forgeRoot({ initiative: true });
-    const f = await releaseForecast(await loadRelease(root, ID, { now: NOW }));
+    const f = await releaseForecast(
+      await loadRelease(root, ID, { now: NOW, runtime: forgeJudge().runtime }),
+    );
     // gateway 10-21 + 5 = 10-28; build + 10 = 11-11; release-ready + 3 = 11-16, due 11-12
     expect(f).toMatchObject({
       ready: "2026-11-16",
@@ -192,7 +207,9 @@ describe("forecast", () => {
   it("says released once the change is released", async () => {
     const root = await forgeRoot();
     await moveTo(root, ["build", "qa", "release-ready", "released"]);
-    const f = await releaseForecast(await loadRelease(root, ID, { now: NOW }));
+    const f = await releaseForecast(
+      await loadRelease(root, ID, { now: NOW, runtime: forgeJudge().runtime }),
+    );
     expect(f).toMatchObject({ status: "released", ready: "2026-10-20", basis: "released" });
   });
 });
@@ -215,7 +232,7 @@ describe("release notes", () => {
     const n = await releaseNotes(await plain(), "technical");
     golden("notes-technical.md", n.markdown);
     expect(n.api.map((a) => [a.operation, a.change, a.breaking])).toEqual([
-      ["POST /transfers", "modify", "check"],
+      ["POST /transfers", "modify", "yes"],
       ["GET /accounts/{id}/limit", "new", "no"],
       ["POST /v2/velocity-checks", "new", "no"],
       ["POST /audit/events", "modify", "check"],
@@ -225,7 +242,10 @@ describe("release notes", () => {
 
   it("lists waived findings as known limitations", async () => {
     const root = await forgeRoot({ released: true });
-    const n = await releaseNotes(await loadRelease(root, ID, { now: NOW }), "business");
+    const n = await releaseNotes(
+      await loadRelease(root, ID, { now: NOW, runtime: forgeJudge().runtime }),
+      "business",
+    );
     expect(n.limitations).toEqual([
       {
         summary: "POST /audit/events has no integration pattern.",
@@ -257,6 +277,7 @@ describe("security review draft", () => {
       field: "ledger-db.limit_change.changed_by_email",
       classification: "internal",
       classificationSource: "data.md:13",
+      personal: "yes",
       personalLooking: true,
       source: "data.md:8",
     });
@@ -283,7 +304,9 @@ describe("security review draft", () => {
         "enabledOptional: [data-architect, sre, security-reviewer]",
       ),
     );
-    const s = await securityReview(await loadRelease(root, ID, { now: NOW }));
+    const s = await securityReview(
+      await loadRelease(root, ID, { now: NOW, runtime: forgeJudge().runtime }),
+    );
     expect(s.signOff).not.toHaveProperty("role");
     expect(s.gaps.join("\n")).not.toContain("security-reviewer");
     expect(s.markdown).not.toContain("security-reviewer");
@@ -294,7 +317,9 @@ describe("evidence pack", () => {
   it("collects everything an approval board needs, each item with its source", async () => {
     const root = await forgeRoot({ released: true });
     await moveTo(root, ["build", "qa", "release-ready", "released"]);
-    const e = await evidencePack(await loadRelease(root, ID, { now: NOW }));
+    const e = await evidencePack(
+      await loadRelease(root, ID, { now: NOW, runtime: forgeJudge().runtime }),
+    );
     golden("evidence.md", e.markdown);
     expect(e.files.map((f) => f.path)).toContain("review/design/1/f-audit-no-pattern.yaml");
     expect(e.files.every((f) => /^[0-9a-f]{64}$/.test(f.sha256))).toBe(true);
@@ -302,7 +327,7 @@ describe("evidence pack", () => {
 
   it("writes the pack to a folder with a manifest and a copy of every file", async () => {
     const root = await forgeRoot();
-    const ctx = await loadRelease(root, ID, { now: NOW });
+    const ctx = await loadRelease(root, ID, { now: NOW, runtime: forgeJudge().runtime });
     const out = join(root, "pack");
     const written = await writeEvidencePack(ctx, out);
     expect(written.slice(0, 2)).toEqual(["evidence.md", "manifest.json"]);
@@ -356,7 +381,7 @@ describe("outcomes", () => {
   it("records values after release in review/outcomes.yaml, as the person who measured", async () => {
     const root = await forgeRoot();
     await moveTo(root, ["build", "qa", "release-ready", "released"]);
-    const ctx = await loadRelease(root, ID, { now: NOW });
+    const ctx = await loadRelease(root, ID, { now: NOW, runtime: forgeJudge().runtime });
     const r = await recordOutcome(ctx, {
       measure: "support-reversals-for-drained-accounts-drop-to-zero",
       value: "0 reversals in October",
@@ -372,7 +397,9 @@ describe("outcomes", () => {
     expect(await readFile(join(changeDir(root), "review/outcomes.yaml"), "utf8")).toBe(
       expected("outcomes.yaml"),
     );
-    const v = await outcomesView(await loadRelease(root, ID, { now: NOW }));
+    const v = await outcomesView(
+      await loadRelease(root, ID, { now: NOW, runtime: forgeJudge().runtime }),
+    );
     expect(v.canRecord).toBe(true);
     expect(v.measures[1]!.latest).toEqual({
       value: "0 reversals",
@@ -388,8 +415,108 @@ describe("outcomes", () => {
 
 describe("loading", () => {
   it("says there is no such change", async () => {
-    await expect(loadRelease(await forgeRoot(), "nope", { now: NOW })).rejects.toThrow(
-      "There is no change nope.",
+    await expect(
+      loadRelease(await forgeRoot(), "nope", { now: NOW, runtime: forgeJudge().runtime }),
+    ).rejects.toThrow("There is no change nope.");
+  });
+});
+
+describe("judgments of meaning (ADR 0117 addendum)", () => {
+  it("asks the judge once, keeps its verdicts in judgments/, and reads them back without a model", async () => {
+    const root = await forgeRoot({ released: true });
+    const judge = forgeJudge();
+    const first = await loadRelease(root, ID, { now: NOW, runtime: judge.runtime });
+    const n = await releaseNotes(first, "technical");
+    const p = await deploymentPlan(first);
+    const s = await securityReview(first);
+    const calls = judge.calls();
+    expect(calls).toBeGreaterThan(0);
+    // Each prompt is the judge's closed question, the texts wrapped as data.
+    expect(judge.prompts[0]).toContain("Answer with one of these words, nothing else:");
+    expect(n.api.find((a) => a.operation === "POST /transfers")).toMatchObject({
+      breaking: "yes",
+      judgedBy: "model",
+    });
+    // A judge that couldn't tell is not a guess: a person checks.
+    expect(n.api.find((a) => a.operation === "POST /audit/events")).toMatchObject({
+      breaking: "check",
+      why: expect.stringMatching(/^A judge couldn't tell whether callers must change/),
+    });
+    // The catalog's change kind settles a new operation: the veto, never sent.
+    expect(n.api.find((a) => a.operation === "GET /accounts/{id}/limit")).toMatchObject({
+      breaking: "no",
+      judgedBy: "catalog",
+    });
+    // "restore", "undo" or "roll back" are not the test: the judge read the sentences.
+    const ledger = p.steps.find((x) => x.repo === "forge-ledger" && x.kind === "code")!;
+    expect(ledger.rollback.source).toBe("design.md:12");
+    expect(s.secrets.map((x) => x.source)).toContain("mappings.md:18");
+    // The fixture's embedded instruction is kept out of the judge's prompt by the defences
+    // (ingested content is data), so that one line is left for a person.
+    expect(s.secretsNotJudged).toEqual(["stories/s3-audit-refusals.md:10"]);
+    expect(existsSync(join(root, "judgments", "breaking"))).toBe(true);
+
+    // Without a model: the same views from the judgments on file, and no prompt sent.
+    const again = await loadRelease(root, ID, { now: NOW });
+    expect((await releaseNotes(again, "technical")).api.map((a) => a.breaking)).toEqual(
+      n.api.map((a) => a.breaking),
     );
+    expect((await deploymentPlan(again)).steps.map((x) => x.rollback)).toEqual(
+      p.steps.map((x) => x.rollback),
+    );
+    expect((await securityReview(again)).markdown).toBe(s.markdown);
+    expect(judge.calls()).toBe(calls);
+  });
+
+  it("with the hand-off runtime spends no prompt, and shows a person what no one has judged", async () => {
+    const root = await forgeRoot({ released: true });
+    const runtime = new HandoffRuntime({
+      root,
+      validate: async () => [],
+      now: () => new Date(NOW),
+    });
+    const ctx = await loadRelease(root, ID, { now: NOW, runtime });
+    const n = await releaseNotes(ctx, "technical");
+    const p = await deploymentPlan(ctx);
+    const s = await securityReview(ctx);
+    expect(existsSync(join(root, ".runs"))).toBe(false);
+    // Never the old regex's answer: "check", for a person, with why.
+    expect(n.api.find((a) => a.operation === "POST /transfers")).toMatchObject({
+      breaking: "check",
+      judgedBy: "not judged",
+      why: expect.stringMatching(/^Not judged: no model was asked whether callers must change/),
+    });
+    expect(n.markdown).toContain("| check (not judged) |");
+    // A fact still settles what it can: a new operation has no caller to break.
+    expect(n.api.find((a) => a.operation === "GET /accounts/{id}/limit")!.breaking).toBe("no");
+    expect(
+      p.steps.find((x) => x.repo === "forge-ledger" && x.kind === "code")!.rollback.gap,
+    ).toMatch(
+      /^No rollback step judged for forge-ledger yet: .* no model was asked, so a person checks .*design\.md:12/,
+    );
+    expect(s.fields.every((f) => f.personal === "not judged")).toBe(true);
+    expect(s.gaps.join("\n")).toMatch(/^Not judged whether ledger-db\.account\.daily_limit, /m);
+    expect(s.secretsNotJudged.length).toBeGreaterThan(0);
+    expect(s.markdown).toMatch(/_Not judged: \d+ lines of the change weren't read for secrets/);
+    expect(s.markdown).not.toContain("_No credential or secret is named or implied._");
+  });
+
+  it("keeps a token written in a known format a fact, and never shows it", async () => {
+    const root = await forgeRoot();
+    const file = join(changeDir(root), "design.md");
+    await writeFile(
+      file,
+      `${await readFile(file, "utf8")}\nThe sandbox key AKIAABCDEFGHIJKLMNOP is for the contract tests.\n`,
+    );
+    const s = await securityReview(await loadRelease(root, ID, { now: NOW }));
+    const line = (await readFile(file, "utf8")).split("\n").length - 1;
+    expect(s.secrets).toContainEqual({
+      what: "a cloud access key, written in the change (not shown here)",
+      source: `design.md:${line}`,
+    });
+    expect(s.gaps).toContain(
+      `design.md:${line} holds what looks like a cloud access key: take it out of the change folder and rotate it.`,
+    );
+    expect(s.markdown).not.toContain("AKIAABCDEFGHIJKLMNOP");
   });
 });

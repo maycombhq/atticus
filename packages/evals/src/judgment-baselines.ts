@@ -3,7 +3,10 @@
  * against the new judgments on the same cases. No step uses these; they were deleted from the
  * code they lived in (core questions.ts sameQuestion, planner stories.ts namesField and
  * suggestRequests, knowledge grounding.ts STANCE_WORDS and the token-anywhere lead time and date
- * rules, planner gaps.ts reliedOn). Copied as they were, so the comparison is fair.
+ * rules, planner gaps.ts reliedOn; and, for the ADR 0117 addendum, release notes.ts breakingOf,
+ * plan.ts ROLLBACK, security.ts SECRET_WORDS, naysayer looksPersonal, planner bar.ts dorChecks
+ * and knowledge facts.ts VIA_GATEWAY, VIA_DIRECT and DATA_VIA_API). Copied as they were, so the
+ * comparison is fair.
  */
 import { contentWords } from "@maycombhq/planner";
 
@@ -265,3 +268,96 @@ export function oldApplies(step: OldStep, p: { title: string; appliesWhen: strin
 
 export const oldReliesOn = (gap: string, answer: string) =>
   answer.toLowerCase().replace(/\s+/g, " ").includes(gap.toLowerCase().replace(/\s+/g, " "));
+
+// ---- the ADR 0117 addendum's replaced rules, as they were
+
+// release/src/notes.ts breakingOf: "yes", "no" or "check" (check counts as not yes)
+const OLD_BREAKING =
+  /\b(remov(e|es|ed|ing)|renam(e|es|ed|ing)|no longer|now required|becomes required|drop(s|ped)?|retir(e|es|ed))\b/i;
+const OLD_NEW_ERROR = /\b(error|status|http \d{3}|\d{3}\))/i;
+const OLD_ADDITIVE = /\b(gains?|adds?|new optional|optional)\b/i;
+export function oldBreaking(change: string, notes: string): "yes" | "no" | "check" {
+  if (change === "planned-retire") return "yes";
+  if (change === "planned-new") return "no";
+  if (OLD_BREAKING.test(notes)) return "yes";
+  if (OLD_NEW_ERROR.test(notes)) return "check";
+  if (OLD_ADDITIVE.test(notes)) return "no";
+  return "check";
+}
+
+// release/src/plan.ts ROLLBACK and rollbackOf, for one sentence and one step
+const OLD_ROLLBACK =
+  /\b(roll(?:ed|ing)?[ -]?back|revert(?:ed|ing)?|back[ -]?out|undo|down[ -]?migration|restore)\b/i;
+const oldHasWord = (text: string, word: string) =>
+  new RegExp(
+    `(^|[^A-Za-z0-9_-])${word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}($|[^A-Za-z0-9_-])`,
+    "i",
+  ).test(text);
+export function oldUndoes(
+  sentence: string,
+  step: { kind: string; names: string[] },
+  others: string[],
+): boolean {
+  if (!OLD_ROLLBACK.test(sentence)) return false;
+  if (step.names.some((n) => oldHasWord(sentence, n))) return true;
+  if (others.some((n) => oldHasWord(sentence, n))) return false;
+  const dataWords = /migration|schema|column|table/i.test(sentence);
+  return step.kind === "migration" ? dataWords : step.kind === "code" ? !dataWords : false;
+}
+
+// release/src/security.ts SECRET_WORDS
+const OLD_SECRET_WORDS =
+  /\b(secret|shared key|api key|private key|certificate|credential|password|token|vault|keystore|signing key)s?\b/i;
+export const oldNamesSecret = (line: string) => OLD_SECRET_WORDS.test(line);
+
+// naysayer/src/checks/data.ts looksPersonal (and PERSONAL_PARTS)
+const OLD_PERSONAL_PARTS = [
+  "email",
+  "mail",
+  "phone",
+  "mobile",
+  "name",
+  "firstname",
+  "lastname",
+  "surname",
+  "address",
+  "street",
+  "postcode",
+  "zip",
+  "birth",
+  "dob",
+  "ssn",
+  "passport",
+  "national",
+  "iban",
+  "ip",
+];
+export const oldLooksPersonal = (column: string) =>
+  column
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .some((p) => OLD_PERSONAL_PARTS.includes(p));
+
+// planner/src/bar.ts dorChecks
+export function oldDorChecks(item: string): string[] {
+  const k = item.toLowerCase();
+  const out: string[] = [];
+  if (/\bwho\b|for whom|\buser\b|outcome|value|brief|trace/.test(k)) out.push("who", "traced");
+  if (/acceptance|given|criteria/.test(k)) out.push("criteria");
+  if (/system|repo/.test(k)) out.push("systems");
+  if (/depend/.test(k)) out.push("depends");
+  if (/\btest/.test(k)) out.push("tests");
+  return out;
+}
+
+// knowledge/src/facts.ts DATA_VIA_API, VIA_GATEWAY and VIA_DIRECT, in the order mapFacts read them
+const OLD_DATA_VIA_API =
+  /\b(?:reads?|quer(?:y|ies)|fetch(?:es)?|gets?|loads?)\b\s+(.*?)\s*\bthrough the\s+(.+?)\s+API\b/i;
+const OLD_VIA_GATEWAY = /\b(?:through|via) the (?:api )?gateway\b/i;
+const OLD_VIA_DIRECT = /\bdirect(?:ly)?\b/i;
+export function oldReaches(sentence: string): "gateway" | "direct" | "api-only" | "none" {
+  if (OLD_DATA_VIA_API.test(sentence)) return "api-only";
+  if (OLD_VIA_GATEWAY.test(sentence)) return "gateway";
+  if (OLD_VIA_DIRECT.test(sentence)) return "direct";
+  return "none";
+}
