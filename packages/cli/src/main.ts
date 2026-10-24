@@ -1316,7 +1316,9 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
     const text = (x: unknown) => (typeof x === "string" ? x : undefined);
     const { verifyCommand } = await import("./verify-commands.js");
     return verifyCommand(
-      root,
+      // The first reading took --write's next word as its value, so a --root right after it
+      // was lost; this reading has --write as a switch.
+      text(v.values.root) ? resolve(text(v.values.root)!) : root,
       repo,
       {
         ...(text(v.values.dir) ? { dir: resolve(text(v.values.dir)!) } : {}),

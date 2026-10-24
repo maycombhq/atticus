@@ -190,6 +190,27 @@ describe("atticus verify <repo> --write (ADR 0124, A3b)", () => {
     expect(existsSync(join(root, "map"))).toBe(false);
   });
 
+  it("leaves out a flow that isn't a valid Flow, says why, and writes everything else", async () => {
+    // A call-out step that names no call: the verifier keeps the fact (its line holds), but a
+    // Flow's call-out names where it goes, so the flow can't be written (B-stories-bench run).
+    const facts = readFileSync(join(VERIFY, "forge-ledger.facts.jsonl"), "utf8").replace(
+      '"ref":"c-fx-rate",',
+      "",
+    );
+    const root = await metarepo(facts);
+    const o = io();
+    expect(await write(root, o), o.err.join("\n")).toBe(0);
+    expect(o.err.join("\n")).toMatch(
+      /The flow ledger-api\.post-a-ledger-entry isn't written to specs\/forge-ledger\/: steps\.1\.to: a call-out names where it goes/,
+    );
+    expect(o.out.join("\n")).toMatch(/Wrote the catalog/);
+    expect(o.out.join("\n")).toMatch(/Flows: none\./);
+    expect(
+      existsSync(join(root, "specs", "forge-ledger", "ledger-api.post-a-ledger-entry.yaml")),
+    ).toBe(false);
+    expect(existsSync(join(root, "map", "forge-ledger", "map.md"))).toBe(true);
+  });
+
   it("without --write, only checks: the catalog and the map aren't touched", async () => {
     const root = await metarepo();
     const before = files(join(root, "catalog", "generated"));
@@ -281,6 +302,17 @@ describe("the command line", () => {
     const r = io();
     expect(await main(["map", "render", "forge-ledger", "--root", root, "--json"], r.io)).toBe(0);
     expect(JSON.parse(r.out.join("\n")).files).toContain("map/forge-ledger/map.md");
+  });
+
+  it("reads --root right after --write (B-stories-bench run: it was taken as --write's value)", async () => {
+    const root = await metarepo();
+    const dir = join(root, "workspace", "forge-ledger");
+    const o = io();
+    const args = ["verify", "forge-ledger", "--write", "--root", root];
+    expect(await main([...args, "--commit", "0123abc", "--dir", dir], o.io), o.err.join("\n")).toBe(
+      0,
+    );
+    expect(o.out.join("\n")).toMatch(/Wrote the catalog for forge-ledger/);
   });
 });
 
