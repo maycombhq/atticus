@@ -4,6 +4,13 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### More judgments by the model, checked by facts (ADR 0117 addendum)
+
+- Six more word rules are gone, each now a closed question to the judge with a fact that settles what it can first, kept in `judgments/<kind>/`: whether an API change breaks callers (release notes; a new or retired operation is settled by its change kind), which sentences say how a deployment step is undone (deployment plan; a sentence naming another step is about that step), which lines name a secret (security review; a token in a known format stays a fact, is listed as a gap and is never shown), whether a new column holds personal data (the critic and the security review; `looksPersonal` and its word list are deleted, an org's `personalHints` still apply), which of the readiness bar's checks a definition-of-ready item asks for (Atticus's default items keep their checks), and how a wiki sentence says one system reaches another (`atticus sources sync`; `judgeFacts`).
+- The judge is asked only where runtime.yaml's runtime calls a model directly. With the hand-off runtime nothing is asked and nothing is guessed: the release notes say `check (not judged)`, the plan says which lines a person reads for a rollback, the review lists the fields and lines not judged, the critic asks the table's owner which columns hold personal data (a knowledge gap), the bar lists the items it couldn't check, and `sources sync` prints the sentences no one has judged.
+- `fixtures/judgments/` gains the failing cases of each rule, both ways; the judgment bench scores them: the old rules got 30 of 67 right, the judge 67 of 67, the hand-off said yes wrongly in none.
+- The release notes' table says who settled "Breaking" (its change kind, a model, a person, or not judged); the security review's "Looks personal" column is "Personal data" (yes, no, unsure or not judged).
+
 ### Retrieval by meaning in the context engine (ADR 0116)
 
 - A harder eval: 61 retrieval cases in `fixtures/retrieval` (identifier words, paraphrases, glossary synonyms, two links away, 208 look-alike records, facts only in a Word document, a sentence deep in a long wiki section, exact names, inputs nothing answers), scored by recall, precision, MRR and tokens at a normal and a tight budget in each mode. `pnpm --filter @maycombhq/evals eval:context` writes `docs/evidence/context-eval.md`. All answered cases: 0.72 recall before, 0.81 now without a model, 0.96 with the local model's recorded vectors.
