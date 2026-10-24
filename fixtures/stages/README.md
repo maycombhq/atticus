@@ -28,4 +28,13 @@ and `scenario.yaml`: the question a person answers, the same question asked agai
 words, one the answer leaves open, and the lens finding about the narrowing the person chose. The
 tests copy it in themselves.
 
+`pin-table/` is the new-table scenario (ADR 0087, 0111 and 0115 addenda, 2026-10-24). It holds
+the change `pin-order-note` with its feature placed: two new flows in `forge-orders` that use one
+new table, `forge-orders-db.order_pin`. `catalog.yaml` adds forge-orders-db's three Flyway
+migrations. `drafts/` holds the architecture answers: `live.yaml` as a live run wrote it (every
+flow change marks the table new and restates part of it); `undecided.yaml`, with retention and
+two classifications left to a person; `sends-extra.yaml` and `sends-extra-no-retention.yaml`, with
+a field sent and never stored; and `answered.yaml`, which is right. `expected/live-findings.yaml`
+holds the findings the checks give `live.yaml`. The tests copy it in themselves.
+
 Everything here is invented.

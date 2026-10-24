@@ -211,6 +211,34 @@ describe("the feature stage", () => {
     expect(loop.state).toBe("done");
   });
 
+  // P1: a person's edit of a stage's file is that stage's draft, in every stage.
+  it("checks a person's edit of feature.yaml as their draft and stops on what fails, never drafting over it", async () => {
+    const root = await estateRoot();
+    expect(
+      (await featureStage(root, CHANGE, { runtime: assistant([PLACED]), now: NOW })).state,
+    ).toBe("done");
+    const f = join(dir(root), "feature.yaml");
+    const theirs = (await readFile(f, "utf8")).replace(
+      "forge-stock.reserve-stock",
+      "forge-stock.hold-stock",
+    );
+    await writeFile(f, theirs);
+    const prompts: string[] = [];
+    const e = await featureStage(root, CHANGE, {
+      runtime: assistant([PLACED], prompts),
+      now: NOW,
+    }).then(
+      () => undefined,
+      (x: Error) => x,
+    );
+    expect(prompts).toEqual([]);
+    expect(e?.message).toContain(
+      `The feature stage checked your edit of openspec/changes/${CHANGE}/feature.yaml as its draft`,
+    );
+    expect(e?.message).toContain("forge-stock.hold-stock");
+    expect(await readFile(f, "utf8")).toBe(theirs);
+  });
+
   it("turns a finding that comes back unchanged twice into a question, and stops", async () => {
     const root = await estateRoot();
     const bad = PLACED.replace("cap-ordering", "cap-checkout");
@@ -1168,7 +1196,7 @@ describe("the values a write step adds, checked against the catalog and the org 
     });
     expect(got).toContainEqual([
       "delta.bad-classification",
-      "Change 1 to forge-orders.place-order classifies column fraud_verdict as nullable, which isn't one of the org pack's levels: public, internal, confidential or restricted.",
+      "Change 1 to forge-orders.place-order classifies column fraud_verdict as nullable, which isn't one of the org pack's levels: public, internal, confidential or restricted. Write one of those words exactly.",
     ]);
   });
 
@@ -1181,7 +1209,7 @@ describe("the values a write step adds, checked against the catalog and the org 
     });
     expect(got).toContainEqual([
       "delta.bad-migration",
-      "Change 1 to forge-orders.place-order names the migration add_fraud_verdict_to_orders, which isn't how forge-orders-db's migrations are named (Flyway, the newest V3): name the file V4__add_fraud_verdict_to_orders.sql.",
+      "Change 1 to forge-orders.place-order names the migration add_fraud_verdict_to_orders, which isn't how forge-orders-db's migrations are named (Flyway, the newest V3): name the file V4__add_fraud_verdict_to_orders.sql, in src/main/resources/db/migration.",
     ]);
     const ok = await messages({
       columns: ["fraud_verdict"],

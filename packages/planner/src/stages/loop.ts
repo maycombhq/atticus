@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { copyFile, mkdir, readdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { parse } from "yaml";
 import {
@@ -133,6 +133,10 @@ export interface StageSpec<A> {
   write(answer: A): Promise<string[]>;
   /** The stage's result as it is in the change folder now, for a rerun with nothing to draft. */
   current(): Promise<A | undefined>;
+  /** What in the stage's files doesn't read, as "path: problem" (a file current() left out). */
+  currentProblems?(): Promise<string[]>;
+  /** Where in the stage's files a finding is, as metarepo path:line, when it can be pointed at. */
+  locate?(issue: StageIssue): Promise<string | undefined>;
   /** The questions the assistant raised in its answer. */
   questions?(answer: A): QuestionDraft[];
   /**
@@ -187,6 +191,14 @@ export interface StageResult<A> {
   runs: RunSummary[];
   /** What the stage sent as context: selected (and what was left out), or the whole lists (ADR 0107). */
   context?: ContextReport;
+  /**
+   * A stop for questions that also ended on drafting findings the assistant kept getting wrong:
+   * those findings, and the file a person may fix instead. One stop, one end report (stageEnd).
+   */
+  stopped?: {
+    source: string;
+    findings: { rule: string; message: string; evidence?: string }[];
+  };
 }
 
 const loopRel = (stage: Stage) => `stage/${stage}.yaml`;
@@ -350,6 +362,9 @@ export async function runStageLoop<A>(
     (await Promise.all(ids.map((id) => readQuestion(root, id).catch(() => undefined)))).filter(
       (q): q is Question => !!q,
     );
+  // The drafting findings the last draft stopped on, while questions are open too (A2).
+  const stoppedOn = () =>
+    loop.findings.filter((f) => f.stoppedAt === loop.iteration && f.kind === "drafting");
   const result = async (
     state: StageResult<A>["state"],
     extra: Partial<StageResult<A>> = {},
@@ -367,6 +382,18 @@ export async function runStageLoop<A>(
       notes,
       runs,
       ...(state === "done" ? { pr: stagePr(change.id) } : {}),
+      ...(state === "questions" && stoppedOn().length
+        ? {
+            stopped: {
+              source: `${rel}/${spec.source}`,
+              findings: stoppedOn().map((f) => ({
+                rule: f.rule,
+                message: f.message,
+                ...(f.evidence ? { evidence: f.evidence } : {}),
+              })),
+            },
+          }
+        : {}),
       ...extra,
     };
   };
@@ -374,7 +401,13 @@ export async function runStageLoop<A>(
   // A critic round waiting for its AI lenses: the stage waits for the first one (ADR 0115).
   const handedToLens = async (
     w: LensWait,
-    draft: { draft?: string; files: string[]; issues: StageIssue[]; questions?: QuestionDraft[] },
+    draft: {
+      draft?: string;
+      by?: "person";
+      files: string[];
+      issues: StageIssue[];
+      questions?: QuestionDraft[];
+    },
     extra: Partial<StageResult<A>> = {},
   ): Promise<StageResult<A>> => {
     loop.review = { gate: w.gate, round: w.round, ...draft };
@@ -398,6 +431,38 @@ export async function runStageLoop<A>(
     loop.updatedAt = at;
     await writeLoop(dir, loop);
     throw new PlannerError("stopped", [message, ...lines].join("\n"), lines);
+  };
+
+  // Every write of the stage's files keeps their hashes, so a person's edit is a fact (P1).
+  const write = async (a: A): Promise<string[]> => {
+    const files = await spec.write(a);
+    loop.written = await hashFiles(dir, [
+      ...new Set([...files, ...(await sourceFiles(dir, spec.source))]),
+    ]);
+    return files;
+  };
+  // A stop on a person's own draft: what still fails, with file and line; never drafted over.
+  const personStop = async (
+    edited: string[],
+    kept: string,
+    failing: StageIssue[],
+    problems: string[],
+    by: "check" | "critic",
+  ): Promise<never> => {
+    const lines: string[] = [];
+    for (const p of problems) lines.push(`  - ${p}`);
+    for (const i of failing) {
+      const where = (await spec.locate?.(i)) ?? i.evidence ?? `${rel}/${spec.source}`;
+      lines.push(`  - ${i.message} (rule ${i.rule.replace(/^critic:/, "")}; at ${where})`);
+    }
+    const n = failing.length + problems.length;
+    lines.push(
+      `Fix ${n === 1 ? "it" : "them"} in your files and run ${rerunOf(spec.stage, change.id)} again: Atticus checks your files again and never drafts over them. A copy of your files as they are now is in ${kept}. To have your assistant draft again from your edited files instead, run ${rerunOf(spec.stage, change.id)} --force; it starts from your files.`,
+    );
+    return stopNow(
+      `The ${spec.stage} stage checked your edit of ${edited.map((f) => `${rel}/${f}`).join(", ")} as its draft${by === "critic" ? ", and the critic found" : ", and found"} ${n === 1 ? "a problem" : `${n} problems`}; it stopped rather than draft over your work.`,
+      lines,
+    );
   };
 
   let carried: string | undefined;
@@ -458,8 +523,84 @@ export async function runStageLoop<A>(
       );
   }
 
-  // Issues to hand back with the next draft.
-  let issues: StageIssue[] = [];
+  // ---- a person's edit of the stage's files (P1). Which files differ from what Atticus last
+  // wrote is a fact (their hashes). The person's version is the stage's answer: it is checked
+  // and reviewed as their draft, and never drafted over unless they ask (--force) or answered a
+  // question since, and then the assistant starts from their files. A copy is kept first.
+  let personDraft: string | undefined;
+  const unreadAnswers = (await questionsOf(loop.questions)).filter(
+    (q) => q.state === "answered" && !loop.read.includes(q.id),
+  );
+  const edited =
+    !o.resume && !carried && loop.state !== "waiting" && loop.iteration > 0
+      ? await editedFiles(dir, loop, spec.source)
+      : [];
+  if (edited.length) {
+    const kept = await keepFiles(dir, rel, spec.stage, loop.iteration + 1, edited);
+    if (o.force || unreadAnswers.length) {
+      personDraft = await draftText(dir, edited);
+      (loop.byPerson ??= []).push({
+        iteration: loop.iteration + 1,
+        at,
+        files: edited,
+        kept,
+        how: "redrafted",
+      });
+      notes.push(
+        `A person edited ${edited.join(", ")}; a copy is in ${kept}, and your assistant drafts again from those files${o.force ? " (--force)" : ", with the answers"}.`,
+      );
+    } else {
+      loop.iteration++;
+      (loop.byPerson ??= []).push({
+        iteration: loop.iteration,
+        at,
+        files: edited,
+        kept,
+        how: "checked",
+      });
+      const cur = await spec.current();
+      const problems = (await spec.currentProblems?.()) ?? [];
+      if (cur === undefined && !problems.length)
+        problems.push(`${spec.source}: nothing in it reads`);
+      const failing = cur === undefined ? [] : (await spec.check(cur)).filter((i) => i.blocking);
+      if (cur === undefined || problems.length || failing.length)
+        await personStop(edited, kept, failing, problems, "check");
+      notes.push(
+        `Checked your edit of ${edited.join(", ")} as the ${spec.stage} stage's draft (a copy is in ${kept}).`,
+      );
+      const files = await write(cur!);
+      const c = await criticRound(root, ctx, change, spec, o, loop, notes, kindOf, {
+        files,
+        sources: spec.sources,
+      });
+      if (c.stop) await stopNow(c.stop.message, c.stop.lines);
+      if (c.waiting)
+        return handedToLens(
+          c.waiting,
+          { by: "person", files, issues: [] },
+          { files, answer: cur! },
+        );
+      const blocking = c.issues.filter((i) => i.blocking);
+      if (blocking.length) await personStop(edited, kept, blocking, [], "critic");
+      loop.state = "done";
+      loop.updatedAt = at;
+      await writeLoop(dir, loop);
+      return result("done", { files, answer: cur! });
+    }
+  }
+
+  // Issues to hand back with the next draft. A stop for questions that also ended on drafting
+  // findings hands those back with the answers, so the next draft fixes them too (A2).
+  let issues: StageIssue[] =
+    !o.resume && loop.state === "questions"
+      ? stoppedOn().map((f) => ({
+          rule: f.rule,
+          target: f.target,
+          ...(f.evidence ? { evidence: f.evidence } : {}),
+          message: f.message,
+          blocking: true,
+        }))
+      : [];
   // Nothing new to draft: a person's answers all read, the result on file, no --force. Check it
   // again without AI; draft only if the check finds something.
   const answers = await questionsOf(loop.questions);
@@ -492,7 +633,7 @@ export async function runStageLoop<A>(
     if (cur !== undefined) {
       issues = (await spec.check(cur)).filter((i) => i.blocking);
       if (issues.length === 0) {
-        const files = await spec.write(cur);
+        const files = await write(cur);
         const c = await criticRound(root, ctx, change, spec, o, loop, notes, kindOf, {
           files,
           sources: spec.sources,
@@ -557,6 +698,12 @@ export async function runStageLoop<A>(
         ]);
         await stopNow(stop.message, stop.lines);
       }
+      // A person's draft the lenses blocked goes back to that person, never to a redraft (P1).
+      const blockingLens = [...review.issues, ...lenses.issues].filter((i) => i.blocking);
+      if (review.by === "person" && blockingLens.length) {
+        const mine = loop.byPerson?.at(-1);
+        await personStop(mine?.files ?? review.files, mine?.kept ?? "", blockingLens, [], "critic");
+      }
       delete loop.review;
       delete loop.run;
       answered = (await questionsOf(loop.questions)).filter((q) => q.state === "answered");
@@ -576,10 +723,31 @@ export async function runStageLoop<A>(
           id: "instructions",
           kind: "instruction",
           origin: "atticus",
-          text: instructionsWith(spec.instructions, fix, answered),
+          text: [
+            instructionsWith(spec.instructions, fix, answered),
+            ...(personDraft
+              ? [
+                  "",
+                  `A person edited the stage's files; the "${PERSON_DRAFT}" data block holds them as they are now. Start from them: keep every change the person made, and change only what the problems and answers need.`,
+                ]
+              : []),
+          ].join("\n"),
           classification: "public",
           trusted: true,
         },
+        // A person's edited files, given as the current draft (P1): data, never instructions.
+        ...(personDraft
+          ? [
+              {
+                id: PERSON_DRAFT,
+                kind: "artifact" as const,
+                origin: "the stage's files as a person edited them",
+                text: personDraft,
+                classification: "internal",
+                priority: 990,
+              },
+            ]
+          : []),
         // What the last draft got wrong and what people answered quote model-written and
         // ingested text, so they go as data, screened by the defences, never as instructions.
         ...(back
@@ -647,6 +815,7 @@ export async function runStageLoop<A>(
       }
       delete loop.run;
       drafts++;
+      personDraft = undefined;
       loop.iteration++;
       loop.read = [...new Set([...loop.read, ...answered.map((q) => q.id)])].sort();
 
@@ -665,7 +834,7 @@ export async function runStageLoop<A>(
         answer = p.answer;
         if (answer !== undefined) {
           found.push(...(await spec.check(answer)));
-          files = await spec.write(answer);
+          files = await write(answer);
         }
       }
       // ---- the critic, on each draft that passes the stage's own checks: its rules and its AI
@@ -867,8 +1036,9 @@ export async function runStageLoop<A>(
     if (toStop.length) {
       for (const f of toStop) f.stoppedAt = n;
       const stop = stopMessage(spec, rel, n, toStop, rerunOf(spec.stage, change.id));
-      if (open.length) notes.push(stop.message, ...stop.lines);
-      else {
+      // With questions open too, the stop is one end report (stageEnd): the questions first,
+      // then these findings, which the next draft is handed with the answers.
+      if (!open.length) {
         loop.state = "stopped";
         await writeLoop(dir, loop);
         throw new PlannerError("stopped", [stop.message, ...stop.lines].join("\n"), stop.lines);
@@ -931,10 +1101,139 @@ export function stopMessage(
   };
 }
 
+const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
+const STAGE_NAMES: Record<Stage, string> = {
+  feature: "feature",
+  architecture: "architecture",
+  stories: "stories",
+  small: "fast path",
+};
+
+/**
+ * The one end report of a stage that stopped for a person (A2): its questions, and the drafting
+ * findings it also stopped on, in that order, with one next step. Open questions come first
+ * because a person's answers change the next draft; the drafting findings go to the assistant
+ * with those answers, or a person fixes the stage's file instead. Empty unless state is
+ * questions.
+ */
+export function stageEnd(r: StageResult<unknown>, rerun: string): string[] {
+  if (r.state !== "questions") return [];
+  const problems = r.stopped?.findings ?? [];
+  const out = [
+    `The ${STAGE_NAMES[r.stage]} stage stopped after ${plural(r.iteration, "draft")}: ${plural(r.questions.length, "question")} for a person to answer${problems.length ? `, and ${plural(problems.length, "problem")} your assistant kept getting wrong` : ""}.`,
+    ...r.questions.map((q) => `  ${q.id}: ${q.question}`),
+    `Answer each with atticus questions answer <id> --option <n> (or --text "..."), or with /atticus-answer.`,
+  ];
+  if (problems.length)
+    out.push(
+      `What your assistant kept getting wrong (not questions for a person):`,
+      ...problems.map(
+        (f) =>
+          `  - ${f.message} (rule ${f.rule.replace(/^critic:/, "")}; in ${f.evidence ?? r.stopped!.source})`,
+      ),
+      `Answer the questions first, then run ${rerun} again: the next draft gets your answers and the problems above. To fix the problems yourself instead, edit ${r.stopped!.source}; Atticus checks your fix before it drafts again.`,
+    );
+  else out.push(`Then run ${rerun} again.`);
+  return out;
+}
+
 export function rerunOf(stage: Stage, change: string): string {
   return stage === "stories"
     ? `atticus plan stories ${change}`
     : `atticus change ${stage} ${change}`;
+}
+
+/** The data block that carries a person's edited files when the assistant drafts from them. */
+export const PERSON_DRAFT = "current-draft";
+
+const sha = (b: Buffer | string) => createHash("sha256").update(b).digest("hex");
+
+/** The files under a stage's source (a folder, "target-flows/", or one file), change-folder relative. */
+async function sourceFiles(dir: string, source: string): Promise<string[]> {
+  if (!source.endsWith("/"))
+    return (await stat(join(dir, source)).then(
+      (s) => s.isFile(),
+      () => false,
+    ))
+      ? [source]
+      : [];
+  const sub = source.replace(/\/$/, "");
+  return (await readdir(join(dir, sub)).catch(() => [] as string[]))
+    .filter((f) => !f.startsWith("."))
+    .sort()
+    .map((f) => `${sub}/${f}`);
+}
+
+/** The sha-256 of each file as it is now; a missing file is left out. */
+async function hashFiles(dir: string, files: string[]): Promise<Record<string, string>> {
+  const out: Record<string, string> = {};
+  for (const f of [...files].sort()) {
+    const b = await readFile(join(dir, ...f.split("/"))).catch(() => undefined);
+    if (b) out[f] = sha(b);
+  }
+  return out;
+}
+
+/**
+ * The stage's files a person changed since Atticus wrote them (P1): a file whose hash differs,
+ * one Atticus wrote that is gone, and one under the stage's source it didn't write. A loop file
+ * from before the hashes were kept has none: then a source file changed after the loop file was
+ * last written is a person's edit (the loop file is written after the stage's files, always).
+ */
+async function editedFiles(dir: string, loop: StageLoop, source: string): Promise<string[]> {
+  const on = await sourceFiles(dir, source);
+  if (loop.written) {
+    const now = await hashFiles(dir, [...new Set([...Object.keys(loop.written), ...on])]);
+    const out = new Set<string>();
+    for (const [f, h] of Object.entries(loop.written)) if (now[f] !== h) out.add(f);
+    for (const f of on) if (!(f in loop.written)) out.add(f);
+    return [...out].sort();
+  }
+  const since = await stat(join(dir, loopRel(loop.stage))).then(
+    (s) => s.mtimeMs,
+    () => undefined,
+  );
+  if (since === undefined) return [];
+  const out: string[] = [];
+  for (const f of on) {
+    const m = await stat(join(dir, ...f.split("/"))).then(
+      (s) => s.mtimeMs,
+      () => 0,
+    );
+    if (m > since + 1000) out.push(f);
+  }
+  return out;
+}
+
+/** Copy a person's edited files before anything is written: stage/<stage>-by-person/<n>/. */
+async function keepFiles(
+  dir: string,
+  rel: string,
+  stage: Stage,
+  n: number,
+  files: string[],
+): Promise<string> {
+  const to = `stage/${stage}-by-person/${n}`;
+  for (const f of files) {
+    const from = join(dir, ...f.split("/"));
+    const dest = join(dir, ...to.split("/"), ...f.split("/"));
+    await mkdir(join(dest, ".."), { recursive: true });
+    await copyFile(from, dest).catch(() => undefined);
+  }
+  return `${rel}/${to}/`;
+}
+
+/** A person's edited files as one text, each under its own path, for the next draft to start from. */
+async function draftText(dir: string, files: string[]): Promise<string> {
+  const out: string[] = [];
+  for (const f of files) {
+    const t = await readFile(join(dir, ...f.split("/")), "utf8").catch(() => undefined);
+    out.push(
+      `# ${f}${t === undefined ? " (deleted by the person)" : ""}`,
+      ...(t === undefined ? [] : [t.replace(/\r\n/g, "\n")]),
+    );
+  }
+  return out.join("\n");
 }
 
 /** The data block that carries what the last draft got wrong and what people answered. */

@@ -171,6 +171,10 @@ export interface ContextReport {
   unknown: string[];
   /** The unknown names as the step's gaps: where the change names them, and the question each became (ADR 0107 point 5). */
   gaps?: ContextGap[];
+  /** Unknown names a repo's code names, with the line: not gaps (ADR 0116 addendum, ADR 0118). */
+  inCode?: { name: string; at: string }[];
+  /** The repos whose code was searched for the unknown names. */
+  searched?: string[];
   version?: string;
   /** Whether similarity in meaning ranked too, or why not (ADR 0116). */
   meaning?: string;

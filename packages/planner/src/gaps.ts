@@ -11,7 +11,7 @@ import {
   type QuestionDraft,
 } from "@maycombhq/core";
 import { parse } from "yaml";
-import { GAP_STEP, gapNameOf, gapQuestion } from "@maycombhq/index";
+import { GAP_STEP, gapNameOf, gapQuestion, namesInCode } from "@maycombhq/index";
 import { unfence } from "./stages/answer.js";
 
 /**
@@ -86,18 +86,69 @@ export async function gapsOf(
   return out;
 }
 
+/** A name the change uses that a repo's code names: not a gap, and where the code names it. */
+export interface NameInCode {
+  name: string;
+  /** repo:path:line of the first line that names it, as a whole word. */
+  at: string;
+}
+
 /**
  * The gap sources and the answered gaps for a change's selection, with the tokens they take,
- * so the step can give the selection that much less room.
+ * so the step can give the selection that much less room. A name the index doesn't know that a
+ * repo in the workspace names in its code is no gap (ADR 0116 addendum, ADR 0118): it is listed
+ * with its line, so the model reads it there. Only a name found in neither is a gap.
  */
 export async function gapContext(
   root: string,
   change: string,
   unknown: string[],
-): Promise<{ gaps: ContextGap[]; sources: SourceInput[] }> {
-  const gaps = await gapsOf(root, change, unknown);
+): Promise<{
+  gaps: ContextGap[];
+  inCode: NameInCode[];
+  searched: string[];
+  sources: SourceInput[];
+}> {
+  const none = { found: new Map<string, string>(), repos: [] as string[] };
+  const code = unknown.length ? await namesInCode(root, unknown).catch(() => none) : none;
+  const inCode = [...code.found]
+    .map(([name, at]) => ({ name, at }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const gaps = await gapsOf(
+    root,
+    change,
+    unknown.filter((n) => !code.found.has(n)),
+  );
   const answers = await gapAnswers(root, change);
-  return { gaps, sources: [...gapSources(gaps), ...(answers.source ? [answers.source] : [])] };
+  return {
+    gaps,
+    inCode,
+    searched: code.repos,
+    sources: [
+      ...gapSources(gaps, code.repos),
+      ...inCodeSources(inCode),
+      ...(answers.source ? [answers.source] : []),
+    ],
+  };
+}
+
+/** The names the code has, as data for the model: where to read each (show_code, grep). */
+export function inCodeSources(inCode: NameInCode[]): SourceInput[] {
+  if (!inCode.length) return [];
+  return [
+    {
+      id: "names-in-code",
+      kind: "document",
+      origin: "atticus (a search of the workspace's code, ADR 0118)",
+      text: [
+        "Names the change uses that the repos' code names, though the catalog has no record of them (classes, fields and the like); read them there:",
+        ...inCode.slice(0, 20).map((n) => `- ${n.name}: ${n.at}`),
+        ...(inCode.length > 20 ? [`- and ${inCode.length - 20} more`] : []),
+      ].join("\n"),
+      classification: "internal",
+      priority: 60,
+    },
+  ];
 }
 
 /** Said to the model when the step has gaps: list them, never guess. Atticus's own words. */
@@ -105,7 +156,7 @@ export const GAP_RULE =
   "The names in context-gaps are gaps: nothing Atticus has read says what they are. Never guess a fact about one. When your answer needs a fact about one, list it, as it is listed, under relies_on_gaps: [<name>, ...] at the top level of your answer, and Atticus asks a person. A gap you leave out or only mention is not asked.";
 
 /** The gaps as the model reads them (data: the names come from the change) and the rule. */
-export function gapSources(gaps: ContextGap[]): SourceInput[] {
+export function gapSources(gaps: ContextGap[], searched?: string[]): SourceInput[] {
   if (!gaps.length) return [];
   return [
     {
@@ -121,7 +172,11 @@ export function gapSources(gaps: ContextGap[]): SourceInput[] {
       kind: "document",
       origin: "context-gaps",
       text: [
-        "Names the change uses that nothing Atticus has read says anything about:",
+        searched === undefined
+          ? "Names the change uses that nothing Atticus has read says anything about:"
+          : searched.length
+            ? `Names the change uses that neither the catalog, the knowledge, the specs nor the code of the workspace's repos (${searched.join(", ")}) has:`
+            : "Names the change uses that neither the catalog, the knowledge nor the specs has (no repo is cloned in the workspace, so no code was searched):",
         ...gaps.map((g) => `- ${g.name}${g.evidence ? ` (${g.evidence})` : ""}`),
       ].join("\n"),
       classification: "internal",

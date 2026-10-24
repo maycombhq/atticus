@@ -1,0 +1,36 @@
+# Added to ../../specs/catalog.yaml and ../catalog-extra.yaml for the new-table scenario: the
+# three Flyway migrations forge-orders-db has today, so the architecture prompt can show how a
+# migration is named there and which name is next. Invented, written by hand.
+- kind: Migration
+  schemaVersion: 2
+  id: forge-orders-db.v1
+  status: current
+  confidence: verified
+  evidence: [{ source: migration, repo: forge-orders, path: src/main/resources/db/migration/V1__create_orders.sql, line: 1 }]
+  dataStore: forge-orders-db
+  file: src/main/resources/db/migration/V1__create_orders.sql
+  operations: [create table orders]
+  tool: flyway
+  version: "1"
+- kind: Migration
+  schemaVersion: 2
+  id: forge-orders-db.v2
+  status: current
+  confidence: verified
+  evidence: [{ source: migration, repo: forge-orders, path: src/main/resources/db/migration/V2__add_quantity.sql, line: 1 }]
+  dataStore: forge-orders-db
+  file: src/main/resources/db/migration/V2__add_quantity.sql
+  operations: [alter table orders add column quantity]
+  tool: flyway
+  version: "2"
+- kind: Migration
+  schemaVersion: 2
+  id: forge-orders-db.v3
+  status: current
+  confidence: verified
+  evidence: [{ source: migration, repo: forge-orders, path: src/main/resources/db/migration/V3__add_sku.sql, line: 1 }]
+  dataStore: forge-orders-db
+  file: src/main/resources/db/migration/V3__add_sku.sql
+  operations: [alter table orders add column sku]
+  tool: flyway
+  version: "3"

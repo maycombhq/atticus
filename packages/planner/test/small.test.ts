@@ -73,6 +73,13 @@ describe("the fast path (atticus change small)", () => {
     expect(seen[0]!.pack.prompt).toContain("Return when an order was placed");
     // Today's flow went in with its steps numbered, so the step numbers can be checked.
     expect(seen[0]!.pack.prompt).toContain("flow forge-orders.place-order (repo forge-orders");
+    // A1: the store rules and facts go in the fast path's prompt too, from the first draft.
+    expect(seen[0]!.pack.prompt).toContain(
+      "Classify each column a step adds as one of the org pack's levels, written exactly: public, internal, confidential or restricted.",
+    );
+    expect(seen[0]!.pack.prompt).toContain(
+      "The data stores the change may write, from the catalog:",
+    );
     // Every file the three stages write is there, so the checks and the change diagram work.
     const d = dir(root);
     expect(parse(await readFile(join(d, "feature.yaml"), "utf8"))).toMatchObject({

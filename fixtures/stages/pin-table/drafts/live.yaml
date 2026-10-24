@@ -1,0 +1,53 @@
+# The first draft as a live run wrote it, retold on Forge: every flow change that touches the
+# new table marks it new: true and restates part of it; the creating step classifies with the
+# org pack's levels but leaves one column without a type, names its migration in words, keeps no
+# retention and sends a field it stores nowhere; and a delta for a flow that isn't in the specs
+# classifies a column as "personal", which isn't one of the org pack's levels.
+flows:
+  - flow: forge-orders.pin-note
+    repo: forge-orders
+    change: new
+    name: Pin a note
+    trigger: { kind: endpoint, what: A shopper pins a note of an order, entry: "PUT /orders/{orderId}/pin" }
+    why: A shopper pins one note to the top of the order's notes.
+    steps:
+      - op: add
+        after: 0
+        kind: entry
+        what: OrderController receives the note to pin
+        fields: { reads: [orderId, noteId] }
+      - op: add
+        after: 1
+        kind: write
+        what: The pin is saved
+        store: { table: forge-orders-db.order_pin, columns: [order_id, note_id, pinned_by], new: true, types: { order_id: BIGINT, note_id: BIGINT }, classification: { order_id: internal, note_id: internal, pinned_by: internal }, migration: a new migration creating order_pin }
+        fields: { sends: [orderId, noteId, pinnedBy, pinnedAt] }
+  - flow: forge-orders.unpin-note
+    repo: forge-orders
+    change: new
+    name: Unpin a note
+    trigger: { kind: endpoint, what: A shopper unpins the note of an order, entry: "DELETE /orders/{orderId}/pin" }
+    why: A shopper unpins the pinned note.
+    steps:
+      - op: add
+        after: 0
+        kind: entry
+        what: OrderController receives the unpin
+        fields: { reads: [orderId] }
+      - op: add
+        after: 1
+        kind: write
+        what: The order's pin is deleted
+        store: { table: forge-orders-db.order_pin, columns: [order_id, note_id], new: true }
+        fields: { checks: [orderId] }
+  - flow: forge-orders.open-order
+    repo: forge-orders
+    change: modify
+    why: Opening an order shows its pinned note first.
+    steps:
+      - op: add
+        after: 1
+        kind: read
+        what: The order's pin is read
+        store: { table: forge-orders-db.order_pin, columns: [note_id, pinned_by], new: true, classification: { pinned_by: personal } }
+        fields: { reads: [noteId] }

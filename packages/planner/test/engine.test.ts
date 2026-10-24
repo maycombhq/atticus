@@ -195,7 +195,7 @@ describe("the context engine in the steps", () => {
       });
       expect(seen[0]).toContain(GAP_RULE);
       expect(seen[0]).toMatch(
-        /origin="context-gaps">\nNames the change uses that nothing Atticus has read says anything about:\n- Quillfeather Risk/,
+        /origin="context-gaps">\nNames the change uses that neither the catalog, the knowledge nor the specs has \(no repo is cloned in the workspace, so no code was searched\):\n- Quillfeather Risk/,
       );
       const gap = r.context?.gaps?.find((g) => g.name === "Quillfeather Risk");
       expect(gap).toMatchObject({ evidence, state: "asked" });

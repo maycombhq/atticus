@@ -1,0 +1,11 @@
+# The blocking findings checkDeltas gives drafts/live.yaml, as rule and target, in order. One
+# finding a step for a value written wrong where it is written; then one finding a table for
+# what belongs to the table (who creates it, its types, its retention), however many flow
+# changes touch it.
+- [delta.sent-not-stored, "forge-orders.pin-note#2:pinnedAt"]
+- [delta.bad-migration, "forge-orders.pin-note#2"]
+- [delta.unknown-flow, forge-orders.open-order]
+- [delta.bad-classification, "forge-orders.open-order#1:pinned_by"]
+- [delta.table-new-twice, forge-orders-db.order_pin]
+- [delta.no-type, forge-orders-db.order_pin]
+- [delta.no-retention, forge-orders-db.order_pin]

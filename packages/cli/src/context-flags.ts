@@ -40,8 +40,14 @@ export function contextLines(c: ContextReport | undefined): string[] {
   if (gaps.length) {
     // ADR 0107 point 5: what neither the wikis nor the repos say, listed; a gap the answer
     // relied on is a question to a person.
+    const where =
+      c.searched === undefined
+        ? "nothing Atticus has read says anything about"
+        : c.searched.length
+          ? `neither the catalog, the knowledge, the specs nor the code of ${c.searched.join(", ")} has`
+          : "neither the catalog, the knowledge nor the specs has (no repo is cloned, so no code was searched)";
     lines.push(
-      `Gaps: names the change uses that nothing Atticus has read says anything about: ${gaps
+      `Gaps: names the change uses that ${where}: ${gaps
         .map((g) => `${g.name}${g.evidence ? ` (${g.evidence})` : ""}`)
         .join(", ")}.`,
     );
@@ -51,7 +57,16 @@ export function contextLines(c: ContextReport | undefined): string[] {
           ? `  ${g.name}: answered (question ${g.question}).`
           : `  ${g.name}: the answer relies on it, so it is a question to a person, not a guess: atticus questions answer ${g.question}`,
       );
-  } else if (c.unknown.length)
+  }
+  // ADR 0118: names the code has aren't gaps; the model reads them there.
+  if (c.inCode?.length)
+    lines.push(
+      `In the code, not gaps: ${c.inCode
+        .slice(0, 10)
+        .map((n) => `${n.name} (${n.at})`)
+        .join(", ")}${c.inCode.length > 10 ? ` and ${c.inCode.length - 10} more` : ""}.`,
+    );
+  if (!gaps.length && !c.inCode?.length && c.unknown.length)
     lines.push(`Names the change uses that nothing in the index has: ${c.unknown.join(", ")}.`);
   return lines;
 }

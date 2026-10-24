@@ -63,3 +63,11 @@ A live run on a real metarepo (headless Claude Code) found the critic blocking a
 6. **A draft's questions wait with it while its lenses are handed off.** In hand-off mode the stage writes the draft, hands its lenses off and reads the draft back from its files once they are in; `feature.yaml` keeps no questions, so the drafter's questions were lost and never raised. The waiting review now keeps them (`review.questions` in `stage/<stage>.yaml`, optional) and raises them when the lenses are in.
 
 No contract shape changes beyond additions: the C3 finding's optional `answered`; `CriticContext.answers` (C4's check context gains a reader); `GateStatus.checkRoundsRun`; the lens output format's optional `answered`; `stage/<stage>.yaml`'s optional `review.questions` and `handedBack`.
+
+## Addendum (2026-10-24): one question for each table
+
+A live run of the architecture stage raised the same question four times: "This came back after a draft had fixed it: Change N to <flow> adds table <db>.chat-pin without saying how long its rows are kept: give store.retention". There was one for each flow change that touched the table. It also raised two classification questions for two columns of one table. Retention belongs to the table, not to a flow change. The check targeted each step (`flow#n`), and the loop raises one question per finding fingerprint, so one table became four questions.
+
+- A question about a property of a record is raised once for the record. Its finding's target is the record id: the table for its retention, and the table with the columns for its classification. Grouping by record id is a fact, so the fingerprint is the same whichever flow change and draft it comes from. The answer applies to the table's definition, the one step that creates it (ADR 0111 addendum), so it applies to every change that adds the table.
+- The classification question lists the columns: "How are the new columns note_id and order_id of forge-orders-db.order_pin classified?" The choices are the org pack's levels for all of them, and a person writes a mix as text.
+- A retention that flipped (it was gone, came back, and is gone again) asks the check's own plain question once for the table: "How long are the rows of the new table forge-orders-db.order_pin kept?". It no longer asks "This came back after a draft had fixed it: …" once for each occurrence.
