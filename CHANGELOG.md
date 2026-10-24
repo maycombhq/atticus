@@ -4,6 +4,18 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### Any assistant (ADR 0121, first part)
+
+- `runtime.yaml` may now allow `cursor`, `gemini-cli`, `windsurf` and `agents-md` (Codex and any tool that reads `AGENTS.md`) beside `copilot` and `claude-code`. `atticus assistant-files` writes the same slash commands, instructions and skills for each one, in its own files:
+  - Cursor: `.cursor/commands/` and an always-applied rule.
+  - Gemini CLI: `.gemini/commands/*.toml` and `GEMINI.md`.
+  - Windsurf: `.windsurf/workflows/` and a rule.
+  - AGENTS.md: an `AGENTS.md` section listing each command and the file to follow, in `.atticus/prompts/`.
+- Every v1 `runtime.yaml` stays valid as it is.
+- `atticus next` says where to type the slash command, from the default assistant ("In Cursor's chat: /atticus-feature …").
+- Outside a metarepo, `atticus next` now says the folder isn't one and how to make or open one, instead of suggesting a step.
+- `doctor` looks for each allowed assistant's program.
+
 ### The critic's lenses run on headless Claude Code (ADR 0115 addendum)
 
 - A feature stage run with `--mode headless-claude-code` no longer stops because its lenses may not run there. The built-in lens agents allow headless Claude Code, and each lens runs in its own run folder, so the only file it can write is its findings, never the draft it reviews. Found by a run on a real metarepo.

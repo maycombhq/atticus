@@ -1,5 +1,5 @@
-import { stringify } from "yaml";
-import type { AgentDefinition, BuildEngine, OrgPack } from "@maycombhq/core";
+import type { AgentDefinition, AssistantId, BuildEngine, OrgPack } from "@maycombhq/core";
+import { ASSISTANT_FORMATS } from "./assistants.js";
 import {
   atticusTaskCommand,
   specKitCommands,
@@ -11,7 +11,7 @@ import { specifyFiles } from "./specify.js";
 import { stepCommands } from "./steps.js";
 
 /**
- * One skill source, two assistants. From the org pack's skills (`process/skills/*`, C6
+ * One skill source, every assistant (ADR 0121; before it, two). From the org pack's skills (`process/skills/*`, C6
  * SkillMeta), agents (C5) and commands (`process/commands/*.md`), render the files each
  * assistant reads natively:
  *
@@ -25,7 +25,8 @@ import { stepCommands } from "./steps.js";
  * input (sorted, no clock), so regenerating is idempotent.
  */
 
-export type Assistant = "claude-code" | "copilot";
+/** An assistant runtime.yaml may allow (ADR 0121); its files are in ASSISTANT_FORMATS. */
+export type Assistant = AssistantId;
 
 export type Profile =
   { kind: "metarepo" } | { kind: "repo"; repo: string; repoType: string; engine: BuildEngine };
@@ -56,42 +57,18 @@ export interface RenderedFile {
   style: CommentStyle;
 }
 
-const fm = (data: Record<string, unknown>) =>
-  `---\n${stringify(data, { lineWidth: 0 }).trimEnd()}\n---\n`;
-
-const ARGS: Record<Assistant, string> = { "claude-code": "$ARGUMENTS", copilot: "${input:args}" };
-
-/** A slash command as Claude Code reads it: front matter, then the body with $ARGUMENTS. */
-export function claudeCommandContent(c: CommandDef): string {
-  return (
-    fm({
-      description: c.description,
-      ...(c.argumentHint ? { "argument-hint": c.argumentHint } : {}),
-    }) + `\n${c.body.replaceAll("{{ARGS}}", ARGS["claude-code"]).trimEnd()}\n`
-  );
-}
-
+/** Each allowed assistant's file for one slash command. */
 function commandFiles(c: CommandDef, a: Assistant[]): RenderedFile[] {
-  const out: RenderedFile[] = [];
-  if (a.includes("claude-code"))
-    out.push({
-      path: `.claude/commands/${c.name}.md`,
+  return a.map((id) => {
+    const f = ASSISTANT_FORMATS[id];
+    return {
+      path: f.commandPath(c.name),
       source: c.source,
-      mode: "file",
-      style: "html",
-      content: claudeCommandContent(c),
-    });
-  if (a.includes("copilot"))
-    out.push({
-      path: `.github/prompts/${c.name}.prompt.md`,
-      source: c.source,
-      mode: "file",
-      style: "html",
-      content:
-        fm({ description: c.description, agent: "agent" }) +
-        `\n${c.body.replaceAll("{{ARGS}}", ARGS.copilot).trimEnd()}\n`,
-    });
-  return out;
+      mode: "file" as const,
+      style: f.commandStyle,
+      content: f.command(c),
+    };
+  });
 }
 
 function agentBody(a: AgentDefinition): string {
@@ -186,42 +163,18 @@ export function renderAssistantFiles(input: RenderInput): RenderedFile[] {
   for (const s of skills) {
     const source = `org-pack/process/skills/${s.id}/SKILL.md`;
     const body = `${s.body.trim()}\n\nSource: ${s.source} (owner ${s.owner}).\n`;
-    if (assistants.includes("claude-code"))
-      out.push({
-        path: `.claude/skills/${s.id}/SKILL.md`,
-        source,
-        mode: "file",
-        style: "html",
-        content: fm({ name: s.id, description: s.description }) + `\n# ${s.name}\n\n${body}`,
-      });
-    if (assistants.includes("copilot"))
-      out.push({
-        path: `.github/instructions/${s.id}.instructions.md`,
-        source,
-        mode: "file",
-        style: "html",
-        content: fm({ description: s.description, applyTo: "**" }) + `\n# ${s.name}\n\n${body}`,
-      });
+    for (const id of assistants) {
+      const f = ASSISTANT_FORMATS[id].skill?.(s, body);
+      if (f) out.push({ ...f, source, mode: "file", style: "html" });
+    }
   }
 
   for (const a of agents) {
     const source = `org-pack/agents/${a.id}.yaml`;
-    if (assistants.includes("claude-code"))
-      out.push({
-        path: `.claude/agents/${a.id}.md`,
-        source,
-        mode: "file",
-        style: "html",
-        content: fm({ name: a.id, description: a.description }) + `\n${agentBody(a)}\n`,
-      });
-    if (assistants.includes("copilot"))
-      out.push({
-        path: `.github/agents/${a.id}.agent.md`,
-        source,
-        mode: "file",
-        style: "html",
-        content: fm({ name: a.id, description: a.description }) + `\n${agentBody(a)}\n`,
-      });
+    for (const id of assistants) {
+      const f = ASSISTANT_FORMATS[id].agent?.(a, agentBody(a));
+      if (f) out.push({ ...f, source, mode: "file", style: "html" });
+    }
   }
 
   if (p.kind === "repo" && p.engine === "speckit")
@@ -240,21 +193,17 @@ export function renderAssistantFiles(input: RenderInput): RenderedFile[] {
     commands.map((c) => c.name),
   );
   const sectionSource = "org-pack (skills, agents and commands)";
-  if (assistants.includes("claude-code"))
-    out.push({
-      path: "CLAUDE.md",
-      source: sectionSource,
-      mode: "section",
-      style: "html",
-      content: section,
-    });
-  if (assistants.includes("copilot"))
-    out.push({
-      path: ".github/copilot-instructions.md",
-      source: sectionSource,
-      mode: "section",
-      style: "html",
-      content: section,
-    });
+  const names = commands.map((c) => c.name);
+  for (const id of assistants) {
+    const i = ASSISTANT_FORMATS[id].instructions;
+    if (i)
+      out.push({
+        path: i.path,
+        source: sectionSource,
+        mode: i.mode,
+        style: "html",
+        content: i.content(section, names),
+      });
+  }
   return out.sort((a, b) => a.path.localeCompare(b.path));
 }

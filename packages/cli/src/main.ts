@@ -520,7 +520,7 @@ Usage:
   atticus spec hand-down <change> <task>  Create the task's Spec Kit feature in its repo [--force]
   atticus spec hand-up <change> <task>  Read the Spec Kit feature back at the PR [--pr n --pr-url url]
   atticus drift <change> [--json]      Compare design, repo plans and code
-  atticus assistant-files [--repo id [--change id]] [--force] [--check]  Generate Copilot and Claude Code files
+  atticus assistant-files [--repo id [--change id]] [--force] [--check]  Generate the slash commands, instructions and skills for each assistant runtime.yaml allows (Copilot, Claude Code, Cursor, Gemini CLI, Windsurf, AGENTS.md)
   atticus feature suggest-names [--mode m]  Ask AI to propose names for detected features
   atticus plan stories <change>        Write stories, stories.md and tasks.md from the approved design [--force] [--mode m] [--draft: before approval] [--context-tokens n] [--whole-context] [--max-tokens n]
   atticus change needs <change>        Your assistant says what the change needs from the organisation (requests and processes to raise, standards to follow, teams and vendors to involve), for the change, a feature, flow, story or task; each checked against the change's own words [--mode m] [--resume run] [--context-tokens n] [--whole-context] [--max-tokens n]

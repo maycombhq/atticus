@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { access, constants, mkdir, readFile, rm, statfs, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { delimiter, join } from "node:path";
-import { generateAssistantFiles } from "@maycombhq/assistant-files";
+import { ASSISTANT_FORMATS, generateAssistantFiles } from "@maycombhq/assistant-files";
 import { DEFAULT_PORT, loadOrgPack, orgPackDirOf, readLock } from "@maycombhq/core";
 import { createOpenSpec, isSupportedVersion, OPENSPEC_PINNED } from "@maycombhq/openspec-adapter";
 import { createGit, type GitRunner } from "@maycombhq/workspace";
@@ -96,13 +96,19 @@ function defaultOnPath(env: NodeJS.ProcessEnv, platform: NodeJS.Platform) {
 const envName = (env: NodeJS.ProcessEnv, ...names: string[]) =>
   names.find((n) => env[n] !== undefined && env[n] !== "");
 
-const PROGRAMS: Record<string, { programs: string[]; name: string }> = {
-  copilot: {
-    programs: ["code", "idea", "idea64"],
-    name: "VS Code or IntelliJ (Copilot runs in them)",
-  },
-  "claude-code": { programs: ["claude"], name: "Claude Code (claude)" },
-};
+/** Each assistant's program on PATH, from the registry (ADR 0121); Copilot runs in an editor. */
+const PROGRAMS: Record<string, { programs: string[]; name: string }> = Object.fromEntries(
+  Object.entries(ASSISTANT_FORMATS).map(([id, f]) => [
+    id,
+    {
+      programs: f.programs,
+      name:
+        id === "copilot"
+          ? "VS Code or IntelliJ (Copilot runs in them)"
+          : `${f.name} (${f.programs.join(" or ")})`,
+    },
+  ]),
+);
 const EDITORS: Record<string, string[]> = {
   vscode: ["code"],
   intellij: ["idea", "idea64"],

@@ -20,6 +20,7 @@ import { readChangeFiles } from "@maycombhq/naysayer";
 import { readChangeTasks } from "@maycombhq/speckit";
 import type { Output } from "./commands.js";
 import { onboardingView } from "./ui-api-onboarding.js";
+import { ASSISTANT_FORMATS } from "@maycombhq/assistant-files";
 
 /**
  * atticus next [--all] [--json] (ADR 0086, plan principle 8): the next step to take, worked out
@@ -567,6 +568,13 @@ export async function nextCommand(
   o: { json?: boolean; all?: boolean },
   io: Output,
 ): Promise<number> {
+  // Outside a metarepo, there is no next step to read: say how to make or open one (ADR 0119).
+  if (!existsSync(join(root, "org-pack")) && !existsSync(join(root, ".atticus", "org-pack"))) {
+    io.err(
+      `${root} isn't an Atticus metarepo. Make one with atticus init <folder>, use Atticus in an existing repo with atticus adopt <path>, or open the folder of one you have.`,
+    );
+    return 2;
+  }
   const state = await readNextState(root);
   const steps = nextSteps(state);
   if (o.json) {
@@ -574,9 +582,13 @@ export async function nextCommand(
     return 0;
   }
   for (const p of state.problems) io.err(`Couldn't read ${p.file}: ${p.message}`);
+  // Where to type it: the default assistant runtime.yaml names (ADR 0121).
+  const typeIn = await loadOrgPack(orgPackDirOf(root))
+    .then((op) => ASSISTANT_FORMATS[op.runtime.assistants.default].typeIn)
+    .catch(() => ASSISTANT_FORMATS.copilot.typeIn);
   const slashLine = (x: NextStep) =>
     x.slash
-      ? `In Copilot Chat${x.where && x.where !== METAREPO ? ` in ${x.where}` : ""}: ${x.slash}`
+      ? `In ${typeIn}${x.where && x.where !== METAREPO ? ` in ${x.where}` : ""}: ${x.slash}`
       : undefined;
   if (!o.all) {
     const n = steps[0]!;
