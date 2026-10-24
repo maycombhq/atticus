@@ -263,6 +263,28 @@ export const StageLoop = z.strictObject({
   /** The critic rounds the loop ran, newest last. */
   critic: z.array(z.strictObject({ gate: text(), round: z.number().int().positive() })).default([]),
   /**
+   * What Atticus last wrote, by change-folder path: the sha-256 of each file (ADR 0087 addendum,
+   * 2026-10-24). A file that differs, or one under the stage's source that isn't listed, is a
+   * person's edit: their version is the stage's answer, and it is never drafted over.
+   */
+  written: z.record(z.string(), z.string()).optional(),
+  /**
+   * The drafts that were a person's: the iteration, when, the files they edited and where
+   * Atticus kept a copy of them before writing anything. Who wrote each draft, for provenance.
+   */
+  byPerson: z
+    .array(
+      z.strictObject({
+        iteration: z.number().int().positive(),
+        at: z.string(),
+        files: z.array(z.string()),
+        kept: z.string(),
+        /** checked: their version was checked as the stage's draft; redrafted: the assistant drafted again from it (--force, or with answers). */
+        how: z.enum(["checked", "redrafted"]),
+      }),
+    )
+    .optional(),
+  /**
    * A draft whose critic round is waiting for its AI lenses, handed off one at a time (ADR
    * 0115): the round, the draft's run and files, and what the stage's checks and the critic's
    * rules found in it, which join the lenses' findings once every lens is in.
@@ -272,6 +294,8 @@ export const StageLoop = z.strictObject({
       gate: text(),
       round: z.number().int().positive(),
       draft: z.string().optional(),
+      /** person: the draft under review is a person's edit, so a blocking finding stops for them. */
+      by: z.enum(["person"]).optional(),
       files: z.array(z.string()).default([]),
       /**
        * The questions the draft raised (ADR 0117 addendum, 2026-10-24): the stage's file doesn't

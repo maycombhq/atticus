@@ -1,0 +1,10 @@
+terms:
+  - place order
+  - fraud screen
+names:
+  - name: OrderController
+    quote: OrderController.place receives the new order
+  - name: NewOrder
+    quote: NewOrder.sku
+  - name: Northwind Pay
+    quote: screened by Northwind Pay

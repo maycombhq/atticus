@@ -9,6 +9,7 @@ import {
   architectureStage,
   featureStage,
   smallStage,
+  stageEnd,
   storiesStage,
   TARGET_DIR,
   type Stage,
@@ -85,13 +86,8 @@ function printStage(
     return 1;
   }
   if (r.state === "questions") {
-    io.out(
-      `The ${NAMES[r.stage]} stage stopped for a person after ${plural(r.iteration, "draft")}: ${plural(r.questions.length, "question")} to answer.`,
-    );
-    for (const q of r.questions) io.out(`  ${q.id}: ${q.question}`);
-    io.out(
-      `Answer each with atticus questions answer <id> --option <n> (or --text "..."), or with /atticus-answer; then run ${rerun} again.`,
-    );
+    // One stop, one message: the questions, then what the assistant kept getting wrong (A2).
+    for (const l of stageEnd(r, rerun)) io.out(l);
     return 1;
   }
   io.out(

@@ -154,6 +154,8 @@ export async function estateContext(
   const report = reportOf(s, room);
   if (g) {
     report.gaps = g.gaps;
+    if (g.inCode.length) report.inCode = g.inCode;
+    if (g.gaps.length || g.inCode.length) report.searched = g.searched;
     sources.push(...g.sources);
   }
   if (final.retrieval.expansion || final.retrieval.rerank) report.retrieval = final.retrieval;

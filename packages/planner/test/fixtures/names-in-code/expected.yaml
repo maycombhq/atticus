@@ -1,0 +1,11 @@
+# What the architecture step reports for the expansion in expansion.yaml.
+gaps:
+  - name: Northwind Pay
+    evidence: openspec/changes/add-fraud-check/brief.md:9
+    state: listed
+inCode:
+  - name: NewOrder
+    at: forge-orders:src/main/java/forge/orders/OrderController.java:10
+  - name: OrderController
+    at: forge-orders:src/main/java/forge/orders/OrderController.java:5
+searched: [forge-orders]

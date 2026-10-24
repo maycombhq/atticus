@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { MockRuntime } from "@maycombhq/ai";
 import { parseRecord, recordPath, serializeRecord } from "@maycombhq/core";
+import { EXPAND_AGENT } from "@maycombhq/planner";
 import { main } from "../src/main.js";
 import { stageCli } from "../src/stage-commands.js";
 
@@ -406,6 +407,48 @@ describe("a stage's --handoff --json offers its own run, named as data (M5, M6)"
       lens: "business",
       stillWaiting: true,
     });
+  });
+});
+
+describe("a stage that stops for questions and on drafting findings (A2)", () => {
+  it("prints one end report: the questions first, then what the assistant kept getting wrong", async () => {
+    const PIN = join(FIXTURES, "stages/pin-table");
+    const root = await estate();
+    for (const r of parse(readFileSync(join(PIN, "catalog.yaml"), "utf8")) as unknown[]) {
+      const p = parseRecord(r);
+      if (!p.ok) throw new Error("bad fixture record");
+      const f = join(root, "catalog/generated", recordPath(p.record));
+      await mkdir(dirname(f), { recursive: true });
+      await writeFile(f, serializeRecord(p.record));
+    }
+    await cp(join(PIN, "pin-order-note"), join(root, "openspec/changes/pin-order-note"), {
+      recursive: true,
+    });
+    const drafts = ["sends-extra-no-retention", "sends-extra", "sends-extra-no-retention"].map(
+      (d) => readFileSync(join(PIN, "drafts", `${d}.yaml`), "utf8"),
+    );
+    let n = 0;
+    const mock = new MockRuntime(
+      (req) =>
+        req.agent.id.endsWith("-critic")
+          ? "findings: []"
+          : req.agent.id === EXPAND_AGENT
+            ? "terms: []\nnames: []\n"
+            : drafts[Math.min(n++, 2)]!,
+      { now: () => NOW },
+    );
+    const o = io();
+    const code = await stageCli(root, ["change", "architecture", "pin-order-note"], {}, o.io, {
+      runtime: mock,
+      now: NOW,
+    });
+    expect(code).toBe(1);
+    const text = o.out.join("\n");
+    expect(text.match(/stopped/g)).toHaveLength(1);
+    expect(text).toContain(
+      "The architecture stage stopped after 3 drafts: 1 question for a person to answer, and 1 problem your assistant kept getting wrong.",
+    );
+    expect(text.indexOf("How long are the rows")).toBeLessThan(text.indexOf("pinnedAt"));
   });
 });
 

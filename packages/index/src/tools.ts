@@ -667,6 +667,68 @@ export function pointersIn(name: string, output: string): string[] {
   return out;
 }
 
+/**
+ * Where the workspace's code names each of these names (ADR 0118's code search, used as a fact
+ * check by the context gaps, ADR 0116 addendum): the first line, as repo:path:line, that holds
+ * the name as a whole word (no letter, digit or underscore just before or after it). One walk
+ * over every clone, with grep's guards: .gitignore and .git skipped, no binary, files and bytes
+ * capped. A name found is in the code; what it is, the model reads there.
+ */
+export async function namesInCode(
+  root: string,
+  names: string[],
+  o: ContextToolOptions = {},
+): Promise<{ found: Map<string, string>; repos: string[]; cut: boolean }> {
+  const B = CONTEXT_TOOL_BOUNDS;
+  const found = new Map<string, string>();
+  const want = [...new Set(names.filter((n) => n.trim().length >= 2))];
+  const ids = o.repos ? o.repos() : workspaceRepos(root);
+  const repos: { repo: string; dir: string }[] = [];
+  for (const r of ids) {
+    const dir = (o.codeDir ?? ((x) => defaultCodeDir(root, x)))(r);
+    if (dir && RecordId.safeParse(r).success) repos.push({ repo: r, dir });
+  }
+  const word = /[A-Za-z0-9_]/;
+  const has = (line: string, n: string) => {
+    for (let at = line.indexOf(n); at >= 0; at = line.indexOf(n, at + 1)) {
+      const before = at > 0 ? line[at - 1]! : "";
+      const after = line[at + n.length] ?? "";
+      if (!word.test(before) && !word.test(after)) return true;
+    }
+    return false;
+  };
+  let read = 0;
+  let bytes = 0;
+  let cut = false;
+  for (const { repo, dir } of repos) {
+    if (found.size === want.length) break;
+    const walked = await walkClone(dir, B.walkFiles - read, async (p) => {
+      const buf = await readFile(join(dir, ...p.split("/"))).catch(() => undefined);
+      if (!buf || buf.length > B.codeFileBytes) return;
+      if (buf.subarray(0, 8000).includes(0)) return;
+      bytes += buf.length;
+      if (bytes > B.grepBytes) {
+        cut = true;
+        return false;
+      }
+      read++;
+      const open = want.filter((n) => !found.has(n));
+      const text = buf.toString("utf8");
+      if (!open.some((n) => text.includes(n))) return;
+      const lines = text.split(/\r?\n/);
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i]!.slice(0, 2000);
+        for (const n of open)
+          if (!found.has(n) && has(line, n)) found.set(n, `${repo}:${p}:${i + 1}`);
+      }
+      if (found.size === want.length) return false;
+    });
+    if (walked.cut) cut = true;
+    if (cut) break;
+  }
+  return { found, repos: repos.map((r) => r.repo), cut };
+}
+
 /** Every clone under workspace/ (and .atticus/workspace/), by repo id. */
 export function workspaceRepos(root: string): string[] {
   const out = new Set<string>();

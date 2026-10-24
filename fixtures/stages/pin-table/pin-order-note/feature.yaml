@@ -1,0 +1,17 @@
+# The feature placed against the estate (ADR 0087): two new flows in forge-orders.
+schemaVersion: 1
+change: pin-order-note
+entry: brief
+summary: A shopper pins one note to the top of an order's notes, and unpins it again.
+features: []
+flows: []
+newFlows:
+  - name: Pin a note
+    repo: forge-orders
+    why: Pinning a note is new.
+  - name: Unpin a note
+    repo: forge-orders
+    why: Unpinning a note is new.
+gaps: []
+conflicts: []
+questions: []
