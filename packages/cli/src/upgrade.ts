@@ -231,12 +231,14 @@ export interface UpgradeCheck {
 const newerThan = (a: string, b: string) => !versionAtLeast(b, a.replace(/-.*$/, ""));
 
 export async function upgradeCheck(root: string, version = VERSION): Promise<UpgradeCheck> {
-  const stamp = await readStamp(root);
-  const pending = [];
-  for (const m of MIGRATIONS) {
-    const files = await m.pending(root);
-    if (files.length) pending.push({ id: m.id, summary: m.summary, files });
-  }
+  // Each migration's dry run only reads, so they run at once; the list keeps MIGRATIONS' order.
+  const [stamp, found] = await Promise.all([
+    readStamp(root),
+    Promise.all(MIGRATIONS.map(async (m) => ({ m, files: await m.pending(root) }))),
+  ]);
+  const pending = found
+    .filter((x) => x.files.length)
+    .map(({ m, files }) => ({ id: m.id, summary: m.summary, files }));
   return {
     atticus: version,
     ...(stamp ? { stamp } : {}),

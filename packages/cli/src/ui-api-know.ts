@@ -146,7 +146,7 @@ export function uiKnowRoutes(r: Router, ctx: ServerContext): Router {
     })
     .add("GET", "/api/setup", async () => ({
       status: 200,
-      body: await setupSteps(ctx.root, { doctor: await machine() }),
+      body: await setupSteps(ctx.root, { doctor: machine() }),
     }))
     .add("GET", "/api/doctor", async ({ query }) => {
       const checks = await machine(query.get("fresh") === "1");

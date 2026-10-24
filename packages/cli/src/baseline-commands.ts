@@ -57,26 +57,32 @@ async function countFiles(dir: string): Promise<number> {
 
 export async function setupSteps(
   root: string,
-  o: { doctor?: DoctorCheck[] } = {},
+  o: { doctor?: DoctorCheck[] | Promise<DoctorCheck[]> } = {},
 ): Promise<{ steps: SetupStep[]; baselined: boolean }> {
-  const doctor = o.doctor ?? (await doctorChecks(root));
-  const failing = doctor.filter((c) => c.status === "fail");
-  const op = await loadOrgPack(orgPackDirOf(root));
-  const repos = await loadRepos(root).catch(() => []);
-  let cloned = 0;
-  for (const r of repos)
-    if (
-      await stat(join(baseClonePath(root, r.id), ".git")).then(
-        () => true,
-        () => false,
+  // Every part only reads, so they are read at once (the machine's checks take the longest).
+  const clonedOf = async (repos: { id: string }[]) =>
+    (
+      await Promise.all(
+        repos.map((r) =>
+          stat(join(baseClonePath(root, r.id), ".git")).then(
+            () => true,
+            () => false,
+          ),
+        ),
       )
-    )
-      cloned += 1;
-  const records = await catalogRecords(root);
+    ).filter(Boolean).length;
+  const [doctor, op, repos, records, inputs, baseline] = await Promise.all([
+    o.doctor ?? doctorChecks(root),
+    loadOrgPack(orgPackDirOf(root)),
+    loadRepos(root).catch(() => []),
+    catalogRecords(root),
+    countFiles(inputsDirOf(root)),
+    readBaseline(root),
+  ]);
+  const failing = doctor.filter((c) => c.status === "fail");
+  const cloned = await clonedOf(repos);
   const generated = records.filter((r) => r.evidence.some((e) => e.source !== "manual")).length;
-  const inputs = await countFiles(inputsDirOf(root));
   const wikis = op.sources.wikis.length;
-  const baseline = await readBaseline(root);
   const steps: SetupStep[] = [
     {
       id: "machine",

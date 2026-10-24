@@ -120,6 +120,21 @@ export async function doctorChecks(root: string, deps: DoctorDeps = {}): Promise
   const git = deps.git ?? createGit({ timeoutMs: 15_000 });
   const onPath = deps.onPath ?? defaultOnPath(env, platform);
   const out: DoctorCheck[] = [];
+  // The slow checks (a program to start, every migration's dry run) start now and are read in
+  // their place below: the report's order stays the same, the waits overlap.
+  const openspecVersion =
+    deps.openspecVersion ??
+    (async () => {
+      try {
+        return await createOpenSpec({ root }).version();
+      } catch {
+        return undefined;
+      }
+    });
+  const openspecSoon = openspecVersion();
+  const upgradeSoon = upgradeCheck(root);
+  // Read below; marked handled here so a check that throws first leaves no stray rejection.
+  upgradeSoon.catch(() => undefined);
 
   // ---- Node
   const node = deps.nodeVersion ?? process.versions.node;
@@ -185,16 +200,7 @@ export async function doctorChecks(root: string, deps: DoctorDeps = {}): Promise
   }
 
   // ---- OpenSpec
-  const openspecVersion =
-    deps.openspecVersion ??
-    (async () => {
-      try {
-        return await createOpenSpec({ root }).version();
-      } catch {
-        return undefined;
-      }
-    });
-  const osv = await openspecVersion();
+  const osv = await openspecSoon;
   out.push({
     id: "openspec",
     label: "OpenSpec CLI",
@@ -297,7 +303,7 @@ export async function doctorChecks(root: string, deps: DoctorDeps = {}): Promise
     fix: "Run atticus scan again: it brings the catalog up to date (every file it writes is whole).",
   });
 
-  const up = await upgradeCheck(root);
+  const up = await upgradeSoon;
   out.push({
     id: "upgrade",
     label: "Metarepo version",
