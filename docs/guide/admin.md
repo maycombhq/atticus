@@ -37,11 +37,21 @@ Everything a team might want to change is in `org-pack/`: configuration and rule
 | `profiles/<platform>/`                    | The platform profile and `repos.manifest.yaml`                                                                                                                                            |
 | `dialects/`                               | Rules that teach the scanner a house framework (`atticus dialect new`)                                                                                                                    |
 | `frameworks/`                             | What a house framework means: its annotations, wrapper clients, service ids, constants, calls and routes in any language, and tests that must pass before a scan uses it (ADR 0054, 0055) |
-| `patterns/`, `checklists/`                | Integration patterns and the critic's checklists                                                                                                                                          |
+| `patterns/`, `checklists/`                | Integration patterns and the critic's checklists, starting with the starter review (`checklists/review.yaml`)                                                                             |
 | `process/`                                | Change templates, service-desk request templates, procedures and skills                                                                                                                   |
 | `agents/`                                 | AI agent definitions the critic and planners use                                                                                                                                          |
 
 A secret never goes in the org pack: Atticus refuses keys that look like one. Credentials come from the OS credential manager, Git's own helper or the plugins.
+
+### Which assistants
+
+`runtime.yaml` lists the assistants your people use:
+
+```yaml
+assistants: { allowed: [copilot, claude-code, cursor], default: copilot }
+```
+
+They can be `copilot`, `claude-code`, `cursor`, `gemini-cli`, `windsurf` or `agents-md`. Use `agents-md` for Codex and any other tool that reads `AGENTS.md`. `atticus assistant-files` writes the same slash commands, instructions and skills for each allowed assistant, in the files that tool reads (ADR 0121). `atticus next` tells people to type the command in the default assistant, and `atticus doctor` looks for each one's program.
 
 ### What AI may do here
 
@@ -162,6 +172,34 @@ types:
 ```
 
 A small type has at most one phase before build, so its plan is one hand-off PR; the gates it keeps are the gates of its phases, and `fastGate: <gate id>` picks the one whose critic reviews the step (by default the gate of its last phase before build). A brief that says `Size: standard` takes the full path whatever the type. A version 1 file still reads, every type standard; `atticus upgrade` moves it to version 2 without changing what any type does. The built-in types include `small-change`.
+
+### The starter review (the critic's AI rules)
+
+The critic's AI lenses review every draft a stage writes, with Copilot too, but only where the org pack has AI rules for that gate and lens (ADR 0115). The built-in constitution has deterministic rules only, so `atticus init` and `atticus adopt` write a starter review into `org-pack/checklists/review.yaml` (ADR 0120): ten AI rules, each a prompt in plain words that asks a lens to judge the draft's meaning against the estate and the brief.
+
+| Gate   | Lens         | The rule asks                                                                                           | Severity |
+| ------ | ------------ | ------------------------------------------------------------------------------------------------------- | -------- |
+| define | business     | Is every outcome the brief states placed?                                                               | blocking |
+| define | architecture | Is a flow the change alters marked only read?                                                           | blocking |
+| define | architecture | Is a capability the brief assumes, but nothing in the estate does, named as a gap?                      | blocking |
+| design | architecture | Does every outcome have the target-flow steps that deliver it?                                          | blocking |
+| design | architecture | Does data a step returns or shows come from somewhere?                                                  | blocking |
+| design | architecture | Does a new column have its classification and migration, and does the classification fit what it holds? | blocking |
+| design | architecture | Does each hop's approved pattern fit what the hop does?                                                 | risk     |
+| plan   | story        | Does each outcome have a story?                                                                         | blocking |
+| plan   | story        | Is each criterion testable, naming the data it checks?                                                  | risk     |
+| plan   | delivery     | Are requests and approvals raised before the phase that needs them?                                     | risk     |
+
+The gate is where a rule's artifacts are first due (brief at define; design, data and interfaces at design; stories and tasks at plan). A rule runs again at each later gate, and only for change types whose lenses include its lens. Every finding quotes the line it cites, like any lens finding.
+
+It is your configuration, not the constitution. Change it through a pull request like any other checklist:
+
+- **Change a rule**: edit its `prompt`, `title` or `severity`. A blocking rule is waivable; set `waivable: false` to stop that. Only blocking rules can be waivable.
+- **Turn one rule off**: set `status: retired` on it, or delete it.
+- **Turn the starter review off**: delete `review.yaml`. `atticus upgrade` won't add it back.
+- **Add your own**: write another checklist file beside it, with `check: { type: ai, prompt: ... }` for a lens's judgment or a deterministic check. A gate in `gates.yaml` that names `checklists` runs only those packs; the defaults name none, so every pack runs.
+
+`atticus upgrade` adds the starter review to an older metarepo once, unless the org pack already has a `review.yaml` or any checklist with an AI rule; it never changes a checklist you wrote. `atticus init --from <pack>` copies your pack as it is, without the starter review.
 
 ### Outside systems
 

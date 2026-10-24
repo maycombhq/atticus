@@ -4,6 +4,29 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### Any assistant (ADR 0121, first part)
+
+- `runtime.yaml` may now allow `cursor`, `gemini-cli`, `windsurf` and `agents-md` (Codex and any tool that reads `AGENTS.md`) beside `copilot` and `claude-code`. `atticus assistant-files` writes the same slash commands, instructions and skills for each one, in its own files:
+  - Cursor: `.cursor/commands/` and an always-applied rule.
+  - Gemini CLI: `.gemini/commands/*.toml` and `GEMINI.md`.
+  - Windsurf: `.windsurf/workflows/` and a rule.
+  - AGENTS.md: an `AGENTS.md` section listing each command and the file to follow, in `.atticus/prompts/`.
+- Every v1 `runtime.yaml` stays valid as it is.
+- `atticus next` says where to type the slash command, from the default assistant ("In Cursor's chat: /atticus-feature …").
+- Outside a metarepo, `atticus next` now says the folder isn't one and how to make or open one, instead of suggesting a step.
+- `doctor` looks for each allowed assistant's program.
+- A critic lens on headless Claude Code runs in an empty folder of its own under the system's temp folder, not in its run folder: outside the metarepo, and a short path. Windows can't start a program in a folder over 260 characters, and a run folder under a deep metarepo can pass that; a real run hit it. Its findings are kept in the run folder. When Windows still can't start Claude Code in a long folder, the message says so instead of blaming PATH.
+- Running headless Claude Code no longer stops the command line on a pipe error (`ENOTCONN` on Windows): an error on the process or any of its streams fails that run with its reason (`collectChild`).
+
+### The critic's lenses run on headless Claude Code (ADR 0115 addendum)
+
+- A feature stage run with `--mode headless-claude-code` no longer stops because its lenses may not run there. The built-in lens agents allow headless Claude Code, and each lens runs in its own run folder, so the only file it can write is its findings, never the draft it reviews. Found by a run on a real metarepo.
+- An org pack's own lens agents keep the runtimes they list; a stage that can't run them stops and names the agent and its allowed runtimes.
+- A lens answer that doesn't read (a value with ": " left unquoted, say) goes back to that lens once in the same round, with why and its earlier answer as data, before the lens counts as failed. In hand-off mode `handoff done` already offers it again.
+- A critic round in which every lens failed to start (Claude Code missing, a timeout, an outage) no longer counts toward the gate's round limit: it reviewed nothing.
+- A done architecture stage of a change in build or later stays done when a rescan moves today's flow: the change's own code moved it. It says so in a note; before build, it drafts again as before.
+- The VS Code chat records the change a request ran on in the prompt history (`history add --change`), once the participant has resolved it. A prompt is written as soon as its change is known, not when the step ends.
+
 ### Retrieval by meaning in the context engine (ADR 0116)
 
 - A harder eval: 61 retrieval cases in `fixtures/retrieval` (identifier words, paraphrases, glossary synonyms, two links away, 208 look-alike records, facts only in a Word document, a sentence deep in a long wiki section, exact names, inputs nothing answers), scored by recall, precision, MRR and tokens at a normal and a tight budget in each mode. `pnpm --filter @maycombhq/evals eval:context` writes `docs/evidence/context-eval.md`. All answered cases: 0.72 recall before, 0.81 now without a model, 0.96 with the local model's recorded vectors.
@@ -11,6 +34,7 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - A local embedding model, off unless `runtime.yaml` turns it on (`retrieval.embeddings.model: bundled` or a model folder): `@maycombhq/embed` runs an fp32 ONNX model on the CPU with onnxruntime-node (WASM fallback), vectors kept in `.index/vectors.sqlite` by model and text hash as int8, scored by an integer dot product. "Similar in meaning" ranks only once every node has a vector, and the selection says how far it is. `atticus index embed`; `atticus query --search --by words|meaning|both`; `atticus context similar <id>` and the `similar` tool (the MCP server too); `atticus doctor` reports the model. Similarity never makes a link, a name, a gap closed or a fact. The model file is not in the repo: the offline bundle carries it (`ATTICUS_BUNDLE_MODEL`, `ATTICUS_BUNDLE_ORT`) with its sha256, licence and an SBOM entry, without DirectML; the bank approves shipping it.
 - The model's expansion of a step's input and its rerank of the candidates (planner `expand.ts`, `rerank.ts`), each one small call, checked (ids the index has, the input's own words, only candidates it was shown), kept in `judgments/` and shown in the run record (version 3, `retrieval`; versions 1 and 2 still read), `atticus runs show`, the transcript (API 2.15.0) and the Model runs screen. In hand-off mode each is a hand-off of its own. Both off by default (`retrieval.expansion`, `retrieval.rerank`): the eval's expansion answers are stand-ins, not Copilot's.
 - The gaps' word lists (small words, verbs, Given/When/Then words, Title Case lines) are gone: with the expansion on, the model names what the input uses and the index checks it lacks each; with it off, only names in backticks and endpoints are asked about.
+
 ### One experience on every surface: state that tells the truth (ADR 0119)
 
 - The local server follows the metarepo's files: what an assistant, the CLI or a person writes (a change's files, specs, questions, knowledge, the catalog, proposals, inputs, model runs, the prompt history) reaches the app as a `file.changed` live event within about a second. The app in a browser and in IntelliJ's panel now updates as VS Code's does, without a reload. It never follows the base clones, the index or Git. `startServer({ watch: false })` turns it off.
@@ -20,6 +44,8 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - VS Code: a failed read of a change's tasks says so instead of "no tasks"; lenses that can't be read and a startup check that fails say why in the output. Its app panel also follows proposals, inputs, the model runs and the prompt history.
 - `atticus ui` prints the session token only when an editor started it (`--embed`, `--parent`) or with the new `--show-token`.
 - The command line refuses a flag no command knows, with the nearest one and exit 2, running nothing: `--aprove` says "Did you mean --approve?". Every flag the help names, the editors pass and the slash commands use is known.
+- The app's server keeps the catalog it read in memory while it runs and reads the files again on any change its watcher hears, its own writes or a scan (`keepCatalogsInMemory`, `forgetCatalogs` in `@maycombhq/scanner`); it reads the catalog as it starts. On a real metarepo of 1,537 records, a change's page went from 7 s to about 1 s, Home from 10 s to under 3 s, the Overview from 2.7 s to 0.5 s. A one-shot command reads the files as before.
+- From a real run on a metarepo: `atticus change new` without `--type` lists the change types the org pack has; `atticus help change new` shows its options (`--template`, `--id`, `--owner`, `--system`), which the help had under `change draft`; `doctor` says when AI steps may also run in headless Claude Code; the Changes list's tab is "All changes" (or "This change" on a change), and Knowledge's first tab "Knowledge items", so no breadcrumb repeats itself.
 - The app's menu is six sections, in the order a person uses them: Home (Waiting on you, and the Overview that was the Dashboard), Changes, Knowledge, Estate, Set up and Atticus. Each page is a tab of its section, shown above it with where you are; a change's pages are grouped by phase (Define, Design, Plan, Build, Release), and moving between them keeps the change. More is gone. Every address still opens its page; an unknown one opens Home. "Knowledge explorer" is now "Search the catalog" (it searches the catalog), "To-do and manual steps" is "Manual steps", "Dashboard" is "Overview".
 - VS Code: Open on the Architecture canvas, the Change diagram and the Estimate pick the repo or change from a list instead of asking for a typed id. When a window opens, what it found (Copilot not set up, an upgrade to run, what `doctor` says) is one notice with Show all, Upgrade or Set up Copilot, and Don't show again, which holds until the set changes; before, up to three toasts each time. Messages say what happened in words instead of "It exited 2", and a command's result starts with what it said, not the command line (that goes in the output). After an answer, Run the next step is one click. A second practice metarepo gets a folder of its own.
 - One set of slash commands on every surface: `metarepoCommands()` in `@maycombhq/assistant-files` is the one list; the app's Help, the Claude Code plugin's README (now generated from it), the roles guide and IntelliJ are tested against it, so a command missing from any of them fails the build. New: `/atticus-draft <change>` (proposal, spec and interfaces), `/atticus-knowledge-ask <question>`, and `/atticus-critic <change>` now runs the critic's AI lenses one at a time with `--handoff` instead of describing files the change no longer has. `/atticus-snow` and `/atticus-release` run `atticus plan snow`, `change status` and `release plan`; `/atticus-plan` is the old name of `/atticus-stories`, kept for one version. The app's list gains `/atticus-small`, `/atticus-attach`, `/atticus-draft` and `/atticus-knowledge-ask`.
@@ -68,6 +94,13 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - A step's answer lists the gaps it relies on (`relies_on_gaps`); a gap it only mentions is not asked.
 - `atticus knowledge ask` meets "process" with "processes"; testgen no longer reads a `javascript-spa` repo as Java.
 - The evals score each replaced judgment against the rule it replaced, on `fixtures/judgments/` (the audit's failing examples among them).
+
+### A starter review every metarepo gets (ADR 0120)
+
+- `atticus init` and `atticus adopt` write `org-pack/checklists/review.yaml`: ten AI rules for the critic's business, architecture, story and delivery lenses, each a plain-words prompt that judges a draft's meaning against the estate and the brief and quotes the line it cites. Define: every outcome is placed; a flow the change alters isn't marked only read; a capability the brief assumes that nothing in the estate does is named as a gap. Design: every outcome has its target-flow steps; data a step returns or shows comes from somewhere; a new column has its classification and migration; each hop's pattern fits it. Plan: each outcome has a story; criteria are testable and name their data; requests are raised in time. With the default gates and change types, a new metarepo's drafts are now reviewed by a model, with Copilot too.
+- It is the organisation's configuration, not the constitution: change, waive, retire or delete its rules, or delete the file to turn it off. `init --from <pack>` doesn't add it.
+- `atticus upgrade` adds it once to a metarepo whose org pack has no AI review of its own, with the checklists README beside it, backed up first; it leaves a `review.yaml` or any checklist with an AI rule alone, and doesn't add it back once deleted.
+- In a stage's review, the change's brief now goes to every lens with the draft, so a lens whose rules read other artifacts (the story lens) still judges against the brief.
 
 ### What a live run with Copilot found (ADR 0111 addendum)
 

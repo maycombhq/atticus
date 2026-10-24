@@ -1,0 +1,187 @@
+# Built-in default written out by Atticus: the starter review (ADR 0120). Change it through a
+# pull request; delete the file to turn the starter review off (atticus upgrade won't add it back).
+#
+# These are AI rules: the critic's lenses apply them to every draft a stage writes (ADR 0115) and
+# at each gate's critic round, judging what the draft means against the estate and the brief.
+# This is the organisation's configuration, not the constitution: change a prompt or a severity,
+# make a blocking rule not waivable, retire a rule (status: retired) or delete it, and add your own.
+# A rule runs from the first gate where its artifacts are due (brief: define; design, data and
+# interfaces: design; stories and tasks: plan), and again at each later gate. Contract C3.
+schemaVersion: 1
+name: review
+version: 1.0.0
+description: The starter review. AI rules for the business, architecture, story and delivery lenses, from the define gate to the plan gate.
+rules:
+  # ---- define: the feature placement, against the brief and the estate
+  - id: review.brief-outcomes-placed
+    title: Every outcome the brief states is placed
+    lens: business
+    layer: org
+    appliesTo: { artifacts: [brief] }
+    severity: blocking
+    check:
+      type: ai
+      prompt: >-
+        List each outcome the brief states: what the change must achieve, and for whom. For each
+        one, find where the draft under review delivers it: the feature placement (feature.md and
+        feature.yaml) at the define gate, the target flows at design, the stories at plan. Report
+        each outcome the draft leaves out or delivers only in part, citing the brief's line for
+        that outcome and quoting it. Don't report what the brief puts out of scope.
+    waivable: true
+    source: Atticus starter review
+
+  - id: review.changed-flow-not-read
+    title: A flow the change alters isn't marked only read
+    lens: architecture
+    layer: org
+    appliesTo: { artifacts: [brief] }
+    severity: blocking
+    check:
+      type: ai
+      prompt: >-
+        For each flow the draft marks as only read, check against the estate and the brief whether
+        the change has to alter that flow's steps: a new step, a step that now sends, stores or
+        checks something new, or a step that must behave differently. Report each such flow,
+        citing and quoting the line that marks it read, and name the step that has to change. A
+        flow the change uses exactly as it is today is rightly marked read.
+    waivable: true
+    source: Atticus starter review
+
+  - id: review.assumed-capability-named
+    title: A capability the brief assumes but nothing in the estate does is named as a gap
+    lens: architecture
+    layer: org
+    appliesTo: { artifacts: [brief] }
+    severity: blocking
+    check:
+      type: ai
+      prompt: >-
+        Find each thing the brief takes for granted the systems already do, such as sending
+        notifications, keeping a new kind of record or calling an outside service. Look in the
+        estate for a flow, component or interface that does it today. When nothing in the estate
+        does it and the draft treats it as already there, instead of adding it as new work or
+        asking about it, report it, citing and quoting the line of the brief or the draft that
+        assumes it. Use kind knowledge-gap when only a person can say whether it exists.
+    waivable: true
+    source: Atticus starter review
+
+  # ---- design: the target flows and the data changes
+  - id: review.outcome-has-target-steps
+    title: Every outcome has the target-flow steps that deliver it
+    lens: architecture
+    layer: org
+    appliesTo: { artifacts: [design] }
+    severity: blocking
+    check:
+      type: ai
+      prompt: >-
+        For each outcome the brief states, find the steps of the target flows (the design and the
+        target-flows files) that deliver it. Report an outcome no step delivers, or one whose steps
+        stop short because it needs a check, a stored value or a reply that no step has, citing and
+        quoting the brief's line for that outcome. If no brief is among the documents, report
+        nothing for this rule.
+    waivable: true
+    source: Atticus starter review
+
+  - id: review.shown-data-has-a-source
+    title: Data a step returns or shows comes from somewhere
+    lens: architecture
+    layer: org
+    appliesTo: { artifacts: [design, data] }
+    severity: blocking
+    check:
+      type: ai
+      prompt: >-
+        For each value a step of the target flows returns, shows to a person or sends on, find
+        where it comes from: a step that receives it, reads it from or writes it to a table, gets
+        it from another call, or works it out. Report a value that nothing in the target flows or
+        the estate gives, citing and quoting the step that returns or shows it, and say which step
+        would have to give it.
+    waivable: true
+    source: Atticus starter review
+
+  - id: review.new-column-complete
+    title: A new column has its classification and its migration
+    lens: architecture
+    layer: org
+    appliesTo: { artifacts: [data, design] }
+    severity: blocking
+    check:
+      type: ai
+      prompt: >-
+        For each new or changed column in the data changes or the target flows, check that it has
+        a data classification and a migration that adds or changes it, and that the classification
+        fits what the column holds: a name, a contact detail, an account number or anything else
+        about a person is never public. Report a column that lacks either, or whose classification
+        understates what it holds, citing and quoting the column's line.
+    waivable: true
+    source: Atticus starter review
+
+  - id: review.hop-pattern-fits
+    title: Each integration hop follows an approved pattern that fits it
+    lens: architecture
+    layer: org
+    appliesTo: { artifacts: [interfaces, design] }
+    severity: risk
+    check:
+      type: ai
+      prompt: >-
+        For each call, message or file transfer between systems that the change adds or changes,
+        check that the approved integration pattern it names fits what the hop does: a hop the
+        caller must not wait on isn't a synchronous call, a hop that must not be lost isn't fire
+        and forget, and a hop that carries personal data uses a pattern whose controls allow it.
+        Report a hop whose pattern doesn't fit, citing and quoting the hop's line and saying which
+        approved pattern would.
+    waivable: false
+    source: Atticus starter review
+
+  # ---- plan: the stories, their criteria and the requests
+  - id: review.outcome-has-story
+    title: Each outcome has a story
+    lens: story
+    layer: org
+    appliesTo: { artifacts: [stories] }
+    severity: blocking
+    check:
+      type: ai
+      prompt: >-
+        For each outcome the brief states, find the story or stories that deliver it. Report an
+        outcome no story delivers, citing and quoting the brief's line for that outcome. If no
+        brief is among the documents, report nothing for this rule.
+    waivable: true
+    source: Atticus starter review
+
+  - id: review.criteria-testable
+    title: Each story's criteria are testable and name the data they check
+    lens: story
+    layer: org
+    appliesTo: { artifacts: [stories] }
+    severity: risk
+    check:
+      type: ai
+      prompt: >-
+        Read each acceptance criterion of each story and task. Report a criterion a tester couldn't
+        turn into a test: one without a situation, an action and a result, or one whose result is a
+        vague word such as works, correctly, quickly or easily. Report also a criterion that doesn't
+        name the data it checks: the field, record, message or value whose state shows it passed.
+        Cite and quote the criterion's line.
+    waivable: false
+    source: Atticus starter review
+
+  - id: review.requests-raised-in-time
+    title: Requests and approvals are raised before the phase that needs them
+    lens: delivery
+    layer: org
+    appliesTo: { artifacts: [tasks] }
+    severity: risk
+    check:
+      type: ai
+      prompt: >-
+        Read what the change needs from outside the team: the needs, and the request tasks in the
+        tasks and requests files, such as service-desk requests, access, approvals and sign-offs,
+        each with its lead time. For each one, check that a task raises it before the phase or the
+        task that depends on it, early enough for its lead time. Report a need no task raises, or
+        one raised too late for the work that waits on it, citing and quoting the line of the need
+        or the task.
+    waivable: false
+    source: Atticus starter review

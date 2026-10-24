@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -317,6 +318,55 @@ describe("headless Claude Code", () => {
     expect(file).toBe(i.prompt);
     expect(file).toContain("Do task 1.2.");
     expect(file).not.toContain("atticus handoff done");
+  });
+
+  it("runs a reviewer in a short folder of its own, so the only file it can write is its findings", async () => {
+    const root = await tmp();
+    const seen: HeadlessInvocation[] = [];
+    const lens = AgentDefinition.parse({
+      ...agent,
+      id: "business-critic",
+      outputArtifact: "findings",
+      checklist: "constitution",
+    });
+    const r = await createRuntime(cfg, {
+      root,
+      now,
+      headless: {
+        runner: async (i) => {
+          seen.push(i);
+          // Claude Code writes the findings where its working folder is.
+          await writeFile(join(i.cwd, "findings.yaml"), "findings: []\n", "utf8");
+          return {
+            exitCode: 0,
+            stdout: JSON.stringify({ result: "Wrote findings.yaml", is_error: false }),
+            stderr: "",
+          };
+        },
+        // The step's own invocation would put it at the root, where it could edit the draft.
+        invocation: () => ({ cwd: root, permissionMode: "acceptEdits" }),
+      },
+    });
+    const prepared = await r.prepare({
+      ...request(),
+      agent: lens,
+      outputPath: "findings.yaml",
+      outputIn: "run",
+    });
+    const run = await r.run(prepared.runId);
+    expect(run.state).toBe("validated");
+    expect(run.output).toBe("findings: []\n");
+    const dir = join(root, ".runs/add-transfer-limit", prepared.runId);
+    // Outside the metarepo, under the system's temp folder: a short path Windows can start a
+    // program in (a run folder under a deep metarepo can pass 260 characters), and nothing of
+    // the metarepo's to edit. The findings are kept in the run folder; the folder is removed.
+    const cwd = seen[0]!.cwd;
+    expect(cwd.startsWith(tmpdir())).toBe(true);
+    expect(cwd.startsWith(root)).toBe(false);
+    expect(await readFile(join(dir, "findings.yaml"), "utf8")).toBe("findings: []\n");
+    expect(existsSync(cwd)).toBe(false);
+    expect(seen[0]!.prompt).toContain("Write the result to findings.yaml.");
+    expect(seen[0]!.prompt).not.toContain(".runs/add-transfer-limit");
   });
 
   it("fails the run on a non-zero exit, an error result or output that isn't JSON", async () => {

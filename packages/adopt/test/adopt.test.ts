@@ -52,6 +52,8 @@ describe("adopt in place", () => {
     ]);
     // Every file written is under .atticus/; no file of the repo changed.
     expect(r.written.every((f) => f.startsWith(".atticus/"))).toBe(true);
+    // ADR 0120: the starter review comes with the written-out defaults.
+    expect(r.written).toContain(".atticus/org-pack/checklists/review.yaml");
     const now = await hashTree(dir, { skipPaths: [".atticus"] });
     expect(now).toEqual(before);
     // Commands resolve the adopted layout through --root.

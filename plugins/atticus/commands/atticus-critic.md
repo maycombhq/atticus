@@ -9,7 +9,7 @@ Review the change $ARGUMENTS with the critic: Atticus runs the rule checks itsel
 2. Read the prompt file and do the work it describes, here in this chat. Write your result to the result file it names, in the format the prompt asks for. Change no other file.
 3. Run the first finishing command it printed, `atticus handoff done <run>`. It checks that the result file is there and reads.
 4. Run the second finishing command it printed: the same step with `--resume <run>`. Atticus checks your result against the code. If it prints a new prompt file, the check found problems: go back to step 2 with the new prompt.
-5. Each resume offers the next lens until none is left. Constitution findings can't be waived; tell the person which findings block and what fixes each.
+5. Each resume offers the next lens until none is left. The rules come from the constitution and `org-pack/checklists/*.yaml`; every finding names its rule. Constitution findings can't be waived; tell the person which findings block and what fixes each.
 
 If a command says it raised a question for a person, or that questions are still waiting for an answer, stop there. Show each question and its options, and say the person answers it with `/atticus-answer` or `atticus questions answer <id> --option <n>`. Never answer a question yourself.
 

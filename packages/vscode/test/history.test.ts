@@ -95,6 +95,32 @@ describe("an @atticus request in the history", () => {
     ]);
   });
 
+  it("records the change the request ran on, as soon as it is known, before the reply ends", async () => {
+    const calls: string[][] = [];
+    const cli: Cli = async (args) => {
+      calls.push(args);
+      return { code: 0, stdout: "", stderr: "", cancelled: false };
+    };
+    let reply: (text: string) => void = () => undefined;
+    let ranOn: (change: string | undefined) => void = () => undefined;
+    const done = recordChat(cli, "C:/forge-meta", {
+      session: "vscode-20261023091500-7a7a7a",
+      command: "/stories",
+      prompt: "@atticus /stories add-transfer-limit",
+      response: new Promise((r) => (reply = r)),
+      change: new Promise((r) => (ranOn = r)),
+    });
+    ranOn("add-transfer-limit");
+    await new Promise((r) => setTimeout(r, 0));
+    // The prompt is in while the step still runs.
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toContain("prompt");
+    reply("**Done: 4 stories written.**");
+    await done;
+    for (const c of calls)
+      expect(c.slice(-4)).toEqual(["--change", "add-transfer-limit", "--root", "C:/forge-meta"]);
+  });
+
   it("records nothing empty, and never fails the chat when the command line can't", async () => {
     const calls: string[][] = [];
     const cli: Cli = async (args) => {

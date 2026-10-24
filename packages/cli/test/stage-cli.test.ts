@@ -242,6 +242,72 @@ describe("atticus change feature --handoff --json with the critic's AI lenses (A
   });
 });
 
+describe("the starter review on a metarepo atticus init made (ADR 0120)", () => {
+  it("hands off the starter review's lenses after a draft that passes the rules", async () => {
+    const base = await mkdtemp(join(tmpdir(), "atticus-starter-review-"));
+    const root = join(base, "forge-meta");
+    const quiet = { out: () => undefined, err: () => undefined };
+    expect(
+      await main(["init", root, "--platform", "forge", "--owner", "pat"], quiet, { quiet: true }),
+    ).toBe(0);
+    // The estate and the change, laid over what init wrote.
+    const from = await estate();
+    await cp(join(from, "catalog"), join(root, "catalog"), { recursive: true });
+    await cp(join(from, "specs"), join(root, "specs"), { recursive: true });
+    await cp(join(from, "openspec/changes"), join(root, "openspec/changes"), { recursive: true });
+
+    const run = async (argv: string[]) => {
+      const out: string[] = [];
+      const code = await main(argv, { out: (l) => out.push(l), err: () => {} }, { quiet: true });
+      expect(code, argv.join(" ")).toBe(0);
+      return JSON.parse(out.join("\n")) as {
+        state: string;
+        runId: string;
+        lens?: string;
+        resultFile: string;
+        promptFile: string;
+        doneArgs: string[];
+        resumeArgs: string[];
+      };
+    };
+    const finish = async (argv: string[]) =>
+      expect(await main(argv, quiet, { quiet: true }), argv.join(" ")).toBe(0);
+    let h = await run(["change", "feature", CHANGE, "--handoff", "--json", "--root", root]);
+    expect(h.lens).toBeUndefined();
+    await writeFile(join(root, h.resultFile), PLACED);
+    await finish(h.doneArgs);
+    h = await run(h.resumeArgs);
+
+    // No checklist was added by hand: the starter review's lenses come one at a time.
+    const offered: string[] = [];
+    while (h.state === "handoff" && h.lens) {
+      offered.push(h.lens);
+      const prompt = await readFile(join(root, h.promptFile), "utf8");
+      if (h.lens === "business") expect(prompt).toContain("review.brief-outcomes-placed");
+      if (h.lens === "architecture") {
+        expect(prompt).toContain("review.changed-flow-not-read");
+        expect(prompt).toContain("review.assumed-capability-named");
+      }
+      await writeFile(join(root, h.resultFile), "findings: []\n");
+      await finish(h.doneArgs);
+      h = await run(h.resumeArgs);
+    }
+    expect(offered).toEqual(["business", "architecture"]);
+    expect(h.state).toBe("done");
+    const round = parse(
+      await readFile(
+        join(root, "openspec/changes", CHANGE, "review/define/1/meta/round.yaml"),
+        "utf8",
+      ),
+    ) as { lenses: { lens: string; state: string; rules: string[] }[] };
+    expect(round.lenses.map((l) => [l.lens, l.state, l.rules])).toEqual([
+      ["business", "ran", ["review.brief-outcomes-placed"]],
+      ["architecture", "ran", ["review.changed-flow-not-read", "review.assumed-capability-named"]],
+    ]);
+    // init, then a draft and two lenses, each a command of its own.
+  }, 180_000);
+});
+
 describe("a stage's --handoff --json offers its own run, named as data (M5, M6)", () => {
   const run = async (root: string, argv: string[]) => {
     const out: string[] = [];

@@ -16,6 +16,12 @@ export type LiveEvent = { type: string } & Record<string, unknown>;
 
 export class EventHub {
   private sockets = new Set<Socket>();
+  private listeners = new Set<(e: LiveEvent) => void>();
+  /** Hear every event in this process too (ADR 0119: a reader that keeps files in memory). */
+  listen(fn: (e: LiveEvent) => void): () => void {
+    this.listeners.add(fn);
+    return () => this.listeners.delete(fn);
+  }
   add(s: Socket) {
     this.sockets.add(s);
   }
@@ -26,6 +32,7 @@ export class EventHub {
     return this.sockets.size;
   }
   publish(e: LiveEvent) {
+    for (const fn of this.listeners) fn(e);
     const text = JSON.stringify(e);
     for (const s of this.sockets) s.send(text);
   }

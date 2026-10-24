@@ -231,7 +231,7 @@ export function RunStepView(p: {
           </button>
         )}
         <span id={`${id}-why`} className="muted" style={{ fontSize: 12 }}>
-          {running ? (p.onCancel ? T.cancelHint : T.busy) : hint}
+          {running ? T.busy : hint}
         </span>
       </div>
       <div aria-live="polite" className="runstep-live">

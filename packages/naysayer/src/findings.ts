@@ -208,6 +208,23 @@ export async function roundsOf(root: string, change: string, gate: string): Prom
   }
 }
 
+/**
+ * The rounds that count toward a gate's round limit: every round but one in which no lens
+ * reviewed, where each AI lens it was due failed (Claude Code missing, a timeout, a provider
+ * outage). Its layer-1 findings run again identically and for free, so such a round used up no
+ * review. A round with no AI lens due counts as before.
+ */
+export async function countedRounds(root: string, change: string, gate: string): Promise<number[]> {
+  const out: number[] = [];
+  for (const n of await roundsOf(root, change, gate)) {
+    const m = await readRoundMeta(root, change, gate, n);
+    const due = (m?.lenses ?? []).filter((l) => l.state !== "skipped");
+    const nothingReviewed = due.length > 0 && due.every((l) => l.state === "failed");
+    if (!nothingReviewed) out.push(n);
+  }
+  return out;
+}
+
 /** Gates that have a review folder. */
 export async function reviewedGates(root: string, change: string): Promise<string[]> {
   try {

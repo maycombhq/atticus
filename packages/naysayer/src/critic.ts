@@ -9,7 +9,7 @@ import { parseDoc, type Doc } from "./doc.js";
 import { artifactOf } from "./artifacts.js";
 import { checkRegistry } from "./checks/index.js";
 import { CriticError } from "./errors.js";
-import { markNeedHit, mergeHits, roundsOf, type RuledHit } from "./findings.js";
+import { countedRounds, markNeedHit, mergeHits, roundsOf, type RuledHit } from "./findings.js";
 import { gateStatusOf, maxRoundsOf, type GateStatus } from "./gates.js";
 import type { DeterministicCheckDef } from "./hits.js";
 import { criticModel, type ModelChoice } from "./model.js";
@@ -97,7 +97,7 @@ export async function runCritic(
   const rounds = await roundsOf(root, change.id, gate.id);
   const round = (rounds.at(-1) ?? 0) + 1;
   const max = maxRoundsOf(lifecycle, gate.id);
-  if (max !== undefined && round > max)
+  if (max !== undefined && (await countedRounds(root, change.id, gate.id)).length >= max)
     throw new CriticError(
       "round-limit",
       `The ${gate.id} gate has had ${max} critic round${max > 1 ? "s" : ""}, the most it allows. A person decides now: fix and dismiss, waive (stage owner), or return the change.`,

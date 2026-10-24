@@ -24,7 +24,7 @@ The lenses also didn't see the draft. The critic reads the change folder's artif
 - With Copilot, every draft that passes the rules is reviewed by a model before the next draft or the stage's PR. The loop is AI → deterministic → AI again.
 - Each lens is one more prompt per draft. With the default feature type and an org pack with AI rules at every lens, that is up to six. Each lens prompt carries the draft and the estate, so it is bigger than a critic lens's prompt on artifacts alone.
 - No contract changes: the C3 finding and the round meta keep their shapes (a lens's `artifacts` may now name a draft file), C5 is unchanged, and `stage/<stage>.yaml` gains an optional field (no version bump). The `--handoff --json` output gains an optional field.
-- Not built: a lens that judges a draft without an AI rule in the org pack (the built-in constitution has only deterministic rules, so a pack with no AI rule gets no lens review), and the IntelliJ plugin, which runs no hand-off loop of its own.
+- Not built: a lens that judges a draft without an AI rule in the org pack (the built-in constitution has only deterministic rules, so a pack with no AI rule gets no lens review; changed by ADR 0120: every new metarepo gets a starter review of AI rules), and the IntelliJ plugin, which runs no hand-off loop of its own.
 
 ## Addendum (2026-10-23): what an adversarial review found
 
@@ -37,5 +37,7 @@ An adversarial review of the loop found these failures. The fixes keep the decis
 5. **Data, not instructions.** The last draft's findings and the answers people gave go in an untrusted `hand-backs` source. The trusted instructions only point to it.
 6. **The text a lens saw.** The draft is copied into the lens run's folder (`draft/`) at the hand-off, and `completeLensRun` checks quotes against that copy.
 7. **Checked again once merged.** `StageSpec.check(answer, { onFile })`: a done stage's result is checked again with `onFile`. A migration the catalog now has under the same file name, and a table or entry the delta marked new, are the change's own.
+8. **Lenses run headless too, read-only.** Failing closed made a lens that may not run on headless Claude Code stop every headless stage. The built-in lens agents now allow `headless-claude-code`, and a reviewer (an agent whose output is findings, kept in its run) runs in its run folder whatever the step's invocation says, so with `--permission-prompts none` the only file it can write is its findings, never the draft. An org pack's own lens agents keep the runtimes they list.
+9. **A round no lens reviewed uses up no round.** A round in which every AI lens it was due failed (Claude Code missing, a timeout, a provider outage) doesn't count toward `maxAuthorRounds` (`countedRounds`). Its layer-1 findings run again identically and for free. Before this, two failed starts used up a gate's two rounds and left the change with a person, though nothing was reviewed (found on a real metarepo).
 
 No contract shape changes: `ReasonCode` gains `lens-failed`, and the `--handoff --json` end object may carry `pagesLeft`.

@@ -509,6 +509,9 @@ export const COPY = {
     /** The tabs of a section, and where you are. */
     tabs: (section: string) => `${section} pages`,
     youAreHere: "You are here",
+    /** The Changes list's tab: every change, or the one open. */
+    allChanges: "All changes",
+    thisChange: "This change",
     ofChange: (id: string) => `change ${id}`,
     /** The pages, by screen id. */
     screens: {

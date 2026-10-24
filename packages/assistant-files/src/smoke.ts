@@ -1,5 +1,6 @@
 import { parse } from "yaml";
 import { parseHeader, findSection, sha256 } from "./header.js";
+import { ASSISTANT_FORMATS } from "./assistants.js";
 
 /**
  * Structural smoke checks on generated assistant files, the part of "do these work in the
@@ -51,6 +52,14 @@ const REQUIRED: [RegExp, string[]][] = [
 ];
 
 /** Commands each assistant can run, from the files present. */
+/** Files a person shares, where only Atticus's marked section is its own: from the registry (ADR 0121). */
+const SECTION_FILES = new Set(
+  Object.values(ASSISTANT_FORMATS)
+    .map((a) => a.instructions)
+    .filter((i) => i?.mode === "section")
+    .map((i) => i!.path),
+);
+
 function commandsOf(paths: string[]) {
   const claude = new Set<string>();
   const copilot = new Set<string>();
@@ -75,7 +84,7 @@ export function smokeCheck(files: { path: string; content: string }[]): SmokePro
     const add = (message: string) => out.push({ path: f.path, message });
 
     const section = findSection(text);
-    if (f.path === "CLAUDE.md" || f.path === ".github/copilot-instructions.md") {
+    if (SECTION_FILES.has(f.path)) {
       if (!section) add("has no Atticus section");
       else if (sha256(section.inner) !== section.hash)
         add("its Atticus section was edited by hand");

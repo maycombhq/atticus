@@ -231,6 +231,11 @@ describe("a section's tabs (ADR 0119)", () => {
     expect(out).toContain('href="#/estimate?change=add-fraud-check" aria-current="page"');
     expect(out).toContain('href="#/brief?change=add-fraud-check"');
     expect(out).toContain('href="#/changes/add-fraud-check"');
+    // The list's tab doesn't repeat the section's name.
+    expect(out).toContain(">This change</a>");
+    expect(out).not.toContain(">Changes</a>");
+    const list = html(<SectionTabs current={screenOf("#/changes")} hash="#/changes" />);
+    expect(list).toContain(">All changes</a>");
   });
 
   it("marks Waiting on you while Questions, a part of it, is shown", () => {

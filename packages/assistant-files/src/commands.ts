@@ -90,7 +90,7 @@ ${DATA}`,
 
 1. Run \`atticus change status {{ARGS}}\` and \`atticus release plan {{ARGS}}\` in a terminal in this workspace.
 2. Report ready or not ready with every reason from what they printed: open blocking findings, open questions, requests not raised, repos without a merged pull request, the deploy order and the rollback for each step.
-3. Name who must act on each reason. Nobody who wrote an artifact of this change can approve its release, and the release is approved by merging its hand-off pull request: never merge it yourself.
+3. Name who must act on each reason; the release gate's approvers and checks are in \`org-pack/gates.yaml\`. Nobody who wrote an artifact of this change can approve its release, and the release is approved by merging its hand-off pull request: never merge it yourself.
 
 ${DATA}`,
     },

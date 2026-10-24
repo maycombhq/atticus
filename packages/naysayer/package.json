@@ -14,7 +14,8 @@
   },
   "files": [
     "dist",
-    "constitution"
+    "constitution",
+    "starter"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
