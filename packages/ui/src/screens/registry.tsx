@@ -8,6 +8,7 @@ import { KNOW_SCREENS } from "./know/index.js";
 import { KNOWLEDGE_SCREENS } from "./knowledge/index.js";
 import { RUN_SCREENS } from "./run/index.js";
 import { History } from "./history/History.js";
+import { Words } from "./run/Words.js";
 import { Runs } from "./runs/Runs.js";
 import { ChangeDiagram } from "./work/ChangeDiagram.js";
 import { Conformance } from "./work/Conformance.js";
@@ -47,4 +48,5 @@ export const SCREEN_COMPONENTS: Record<string, Screen> = {
   estimate: Estimate,
   cockpit: ChangeCockpit,
   conformance: Conformance,
+  words: Words,
 };

@@ -47,6 +47,34 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - VS Code's repo rows show the branch and the scanned commit.
 - The local API gains `GET /api/repos/branches`, `GET /api/repos/compare` and `PUT /api/repos/{id}/branches`, and the scan job takes `ref` (API 2.18.0).
 
+### VS Code runs a next step without a terminal
+
+- A next step that is a command now runs as Run a command runs it: with progress and Cancel, what it printed in a notice, the dry run and a person's yes for a shared write, and the views read again when it ends. Only a server (`atticus ui`, a stub) opens a terminal. Not yet tried in a live VS Code.
+
+### The hand-off PR says what changed since the last round
+
+- The PR body gains **Since the last round**: for each reviewed gate, its newest critic round against the one before (which findings closed, which are new, how many stay open), or that it is the first round.
+
+### What the words mean
+
+- Twenty of Atticus's own words (metarepo, org pack, hand-off, gate, lens, critic, target flow, dialect, base clone, service desk and the rest), each in one plain sentence: on a new page, **Atticus › What the words mean**, with a **Words** link beside Help, and from `atticus explain <word>` (a word Atticus knows, before a command of the same name).
+- The app and the command line hold the same list; a test fails when they differ.
+- Not built yet: a word underlined with its sentence where a screen first uses it.
+
+### Every step prompt checks first
+
+- Each step's slash command (`/atticus-survey` to `/atticus-next`) starts by running `atticus assistant-files --check`. When the command line isn't installed, the folder isn't a metarepo, or the prompt files are out of date, the assistant says exactly that and stops. The zero-install commands (`/atticus-ask`, `/atticus-impact` and the rest) read committed files only and need no check.
+- `atticus assistant-files` outside a metarepo says so, the same way `atticus next` does, instead of listing the files it would write.
+
+### One question at a time
+
+- `atticus questions show <id> [--json]` shows one question on file with its options, evidence and answer. A subcommand `questions` hasn't (`questions shwo`) is refused with the three it has, instead of listing the knowledge gaps.
+- Answering a stage's question says it was answered "for this change, <id>", not "for this repo".
+
+### Ask through MCP
+
+- The MCP server gains `ask` (a plain question read as a catalog query or an impact walk, as `atticus ask` does, saying the query it ran) and `knowledge_ask` (the knowledge items that may answer a question, by words and meaning, each with its quote and page; the assistant answers only from them and cites each, or says none answers). Both are read-only, like every tool.
+
 ### The tour and focus
 
 - The first-run tour has five steps: home, asking, one change at a glance, running a step in your assistant (`/atticus-next`), and approving by pull request. It takes focus when it opens, keeps Tab inside it, and gives focus back when it closes.

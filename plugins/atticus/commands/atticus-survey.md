@@ -3,6 +3,8 @@ description: Draft a repo's scan settings with your assistant; Atticus checks th
 argument-hint: "[repo]"
 ---
 
+Before anything else, run `atticus assistant-files --check` in a terminal in this workspace. If the `atticus` command isn't found, tell the person Atticus's command line isn't installed here (its install guide says how, offline) and stop. If it says this folder isn't an Atticus metarepo, or that the assistant files are out of date, tell the person exactly what it said and stop.
+
 Survey the repo $ARGUMENTS: read it and draft its scan settings (the folders the scanner leaves out, the path prefixes it adds, the base URLs of the calls it makes). Atticus checks every entry against the code before it writes the settings file.
 
 1. Run `atticus scan survey $ARGUMENTS --handoff` in a terminal in this workspace. It prints the prompt file, the result file, and the two commands that finish the step. If it prints no prompt file, there was nothing for you to write: say what it printed and go on.

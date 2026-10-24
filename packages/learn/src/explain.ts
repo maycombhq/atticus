@@ -13,6 +13,7 @@ import {
 } from "@maycombhq/core";
 import { readCatalog } from "@maycombhq/scanner";
 import { commandNamed } from "./commands.js";
+import { termNamed } from "./glossary.js";
 
 /**
  * Explain anything in plain words: a catalog record, a critic finding, a change, or a
@@ -24,7 +25,7 @@ import { commandNamed } from "./commands.js";
 
 export interface Explanation {
   subject: string;
-  kind: "record" | "finding" | "change" | "command" | "unknown";
+  kind: "record" | "finding" | "change" | "term" | "command" | "unknown";
   title: string;
   /** Plain sentences. */
   lines: string[];
@@ -335,6 +336,18 @@ export async function explain(
         seeAlso: [`atticus finding ${x.change} ${x.id} <action>`, `atticus explain ${x.rule}`],
       };
     }
+  }
+  if (!out) {
+    // WP5.1: one of Atticus's own words, before a command of the same name.
+    const t = termNamed(s);
+    if (t)
+      out = {
+        subject: s,
+        kind: "term",
+        title: t.term,
+        lines: [t.says],
+        seeAlso: commandNamed(s) ? [`atticus explain "atticus ${s}"`] : [],
+      };
   }
   if (!out) {
     const c = commandNamed(s);

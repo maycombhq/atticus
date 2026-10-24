@@ -21,6 +21,7 @@ import { readChangeTasks } from "@maycombhq/speckit";
 import type { Output } from "./commands.js";
 import { onboardingView } from "./ui-api-onboarding.js";
 import { ASSISTANT_FORMATS, whatRunsWhere } from "@maycombhq/assistant-files";
+import { isMetarepo, notMetarepo } from "./metarepo-guard.js";
 
 /**
  * atticus next [--all] [--json] (ADR 0086, plan principle 8): the next step to take, worked out
@@ -570,10 +571,8 @@ export async function nextCommand(
   io: Output,
 ): Promise<number> {
   // Outside a metarepo, there is no next step to read: say how to make or open one (ADR 0119).
-  if (!existsSync(join(root, "org-pack")) && !existsSync(join(root, ".atticus", "org-pack"))) {
-    io.err(
-      `${root} isn't an Atticus metarepo. Make one with atticus init <folder>, use Atticus in an existing repo with atticus adopt <path>, or open the folder of one you have.`,
-    );
+  if (!isMetarepo(root)) {
+    io.err(notMetarepo(root));
     return 2;
   }
   const state = await readNextState(root);

@@ -376,6 +376,12 @@ export async function assistantFiles(
     io.err("--change goes with --repo: atticus assistant-files --repo <id> --change <id>");
     return 2;
   }
+  // WP3.4: an assistant's first check of a workspace says what this is, not what it would write.
+  const { isMetarepo, notMetarepo } = await import("./metarepo-guard.js");
+  if (!isMetarepo(root)) {
+    io.err(notMetarepo(root));
+    return 2;
+  }
   try {
     const r = await generateAssistantFiles(root, {
       ...(o.repo ? { repo: o.repo } : {}),

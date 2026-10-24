@@ -1017,18 +1017,8 @@ ${view.next.why}`
     const a = actionFor(n);
     if (a.kind === "ai") return runAi(a.args, a.spec);
     if (a.kind === "answer") return vscode.commands.executeCommand("atticus.answerQuestion");
-    if (a.kind === "run") {
-      const t = inTerminal(root, "Atticus", [...a.args, "--root", root]);
-      // The view reads the files again once the command ends.
-      const sub = vscode.window.onDidCloseTerminal((c) => {
-        if (c === t) {
-          sub.dispose();
-          svc.fireChanged();
-        }
-      });
-      context.subscriptions.push(sub);
-      return;
-    }
+    // WP4.2: one runner, with progress and Cancel, not a terminal.
+    if (a.kind === "run") return commands.runLine(root, a.args);
     // A part to fill in: the screen that asks for it (ADR 0100).
     if (/<[^>]+>/.test(a.command) && (await commands.fillIn(root, a.command))) return;
     // A person's step: typed into a terminal, not run.

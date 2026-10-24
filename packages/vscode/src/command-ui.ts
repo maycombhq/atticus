@@ -13,6 +13,7 @@ import {
   commandsFor,
   howToRun,
   listFor,
+  lineOf,
   matchCommand,
   normaliseCatalog,
   optionsOf,
@@ -884,6 +885,31 @@ export class CommandUi {
       if (cmd.id === "change new" && p.code === 0) await this.afterNewChange(root, p);
       else this.showPrinted(argv, p);
     }
+    this.d.refreshAll();
+  }
+
+  /**
+   * A next step's command (WP4.2), run the way Run a command runs it: with progress and Cancel,
+   * what it printed in a notice, and the views read again after. A shared write gets its dry run
+   * and a person's yes; only a server opens a terminal.
+   */
+  async runLine(root: string, args: string[]): Promise<void> {
+    const m = matchCommand(await this.load(root), lineOf(args));
+    const how = m ? howToRun(m.command) : { mode: "run" as const };
+    if (how.mode === "ai") {
+      await this.d.runAi(args);
+      return;
+    }
+    if (how.mode === "terminal") {
+      this.d.inTerminal(root, `Atticus ${m!.command.id}`, [...args, "--root", root]);
+      return;
+    }
+    if (how.mode === "approve") {
+      const p = await this.approveAndRun(root, args, how.flag, {
+        optional: !m!.command.flags.some((f) => f.name === how.flag && f.required),
+      });
+      if (p) this.showPrinted(args, p);
+    } else this.showPrinted(args, await this.captured(root, args));
     this.d.refreshAll();
   }
 

@@ -67,5 +67,7 @@ export const SCREENS = [
   "runs",
   // ADR 0110: what people asked their assistant and what it answered.
   "history",
+  // WP5.1: Atticus's own words.
+  "words",
   "settings",
 ];

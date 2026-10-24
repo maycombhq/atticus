@@ -15,6 +15,7 @@ import {
   taskRun,
 } from "../src/run-commands.js";
 import { CHANGE, git, SPECKIT, speckitRoot, worktree } from "./run-helpers.js";
+import { notMetarepo } from "../src/metarepo-guard.js";
 
 const T = 120_000;
 const NOW = new Date("2026-10-21T09:00:00Z");
@@ -243,6 +244,16 @@ describe("atticus spec hand-up with a manual Git host", () => {
     },
     T,
   );
+});
+
+describe("atticus assistant-files outside a metarepo (WP3.4)", () => {
+  it("says the folder isn't a metarepo and how to make one, as atticus next does, and writes nothing", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "atticus-not-meta-"));
+    const c = capture();
+    expect(await assistantFiles(dir, { check: true }, c.io)).toBe(2);
+    expect(c.err.join("\n")).toBe(notMetarepo(dir));
+    expect(c.out).toEqual([]);
+  });
 });
 
 describe("atticus assistant-files", () => {

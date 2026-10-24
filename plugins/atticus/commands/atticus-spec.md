@@ -3,6 +3,8 @@ description: Write a repo's spec of flows with your assistant, looping until the
 argument-hint: "[repo]"
 ---
 
+Before anything else, run `atticus assistant-files --check` in a terminal in this workspace. If the `atticus` command isn't found, tell the person Atticus's command line isn't installed here (its install guide says how, offline) and stop. If it says this folder isn't an Atticus metarepo, or that the assistant files are out of date, tell the person exactly what it said and stop.
+
 Write the spec of the repo $ARGUMENTS: one flow per trigger, each step citing the file and line it comes from. Atticus checks each flow before it writes it; then the spec check runs the critic's rules. Loop until the check passes.
 
 1. Run `atticus spec draft $ARGUMENTS --handoff` in a terminal in this workspace. It prints the prompt file, the result file, and the two commands that finish the step. If it prints no prompt file, there was nothing for you to write: say what it printed and go on.
