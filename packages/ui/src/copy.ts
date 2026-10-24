@@ -1281,6 +1281,22 @@ export const COPY = {
   },
   commandCenter: {
     /** ADR 0121 item 6: what runs a step here, in one line, beside a link to change it. */
+    /** WP7.10: acting on several needs or manual steps at once. */
+    select: (title: string) => `Select ${title}`,
+    bulkTitle: "Act on the selected items",
+    selected: (n: number) => `${n} selected`,
+    bulkAction: "What to do",
+    bulkNeedDone: (n: number) => `Mark ${n} need${n === 1 ? "" : "s"} done`,
+    bulkNeedNot: (n: number) => `Mark ${n} need${n === 1 ? "" : "s"} not needed`,
+    bulkStepSkip: (n: number) => `Skip ${n} manual step${n === 1 ? "" : "s"}`,
+    bulkTicket: "The ticket or note, for all of them",
+    bulkWhy: "Why, for all of them",
+    bulkDo: (n: number) => `Do it for ${n}`,
+    bulkClear: "Clear the selection",
+    bulkDone: (ok: number, failed: number) =>
+      failed
+        ? `Done for ${ok}; ${failed} couldn't be changed: open each to see why.`
+        : `Done for ${ok}.`,
     howStepsRun: "How AI steps run:",
     howStepsRunChange: "Change in Set up › AI",
     howStepsRunCantRead: "Atticus couldn't read how AI steps run here (org-pack/runtime.yaml).",
