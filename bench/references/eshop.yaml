@@ -19,9 +19,10 @@ notes: >-
   left out. Blazor @page routes in WebApp and WebhookClient are listed as GET (HybridApp pages run inside the
   MAUI app, not over HTTP, so they are left out). Left out of serves: the dev-only /health and /alive
   endpoints and OpenAPI/Scalar routes from eShop.ServiceDefaults (shared by every service, only in
-  Development or when OpenApi config exists), and the 14 YARP mobile-bff routes in
-  src/eShop.AppHost/Extensions.cs:88-153, which match any method and only forward to the catalog, ordering
-  and identity routes already listed. Calls: the WebApp's typed HttpClients (catalog-api with api-version
+  Development or when OpenApi config exists). The 14 YARP mobile-bff routes in
+  src/eShop.AppHost/Extensions.cs:88-153 are the gateway's own entries (the product owner's decision of
+  2026-10-24: a gateway's routes count), with no method (they match any), each with the gateway's call to
+  its service at the path the service receives after WithTransformPathRemovePrefix. Calls: the WebApp's typed HttpClients (catalog-api with api-version
   2.0, ordering-api with 1.0), its gRPC Basket client and its MapForwarder for product images; the
   WebhookClient's client for webhooks-api; HybridApp and ClientApp REST calls go to mobile-bff (which
   forwards /api/catalog and /api/orders unchanged), and ClientApp's gRPC basket calls go straight to
@@ -458,6 +459,60 @@ serves:
       path: OrderStatusChangedToPaidIntegrationEvent,
       at: "src/Webhooks.API/Extensions/Extensions.cs:23",
     }
+  - { type: rest, path: "/catalog-api/api/catalog/items", at: "src/eShop.AppHost/Extensions.cs:97" }
+  - {
+      type: rest,
+      path: "/catalog-api/api/catalog/items/by",
+      at: "src/eShop.AppHost/Extensions.cs:101",
+    }
+  - {
+      type: rest,
+      path: "/catalog-api/api/catalog/items/{id}",
+      at: "src/eShop.AppHost/Extensions.cs:105",
+    }
+  - {
+      type: rest,
+      path: "/catalog-api/api/catalog/items/by/{name}",
+      at: "src/eShop.AppHost/Extensions.cs:109",
+    }
+  - {
+      type: rest,
+      path: "/catalog-api/api/catalog/items/withsemanticrelevance/{text}",
+      at: "src/eShop.AppHost/Extensions.cs:113",
+    }
+  - {
+      type: rest,
+      path: "/catalog-api/api/catalog/items/withsemanticrelevance",
+      at: "src/eShop.AppHost/Extensions.cs:117",
+    }
+  - {
+      type: rest,
+      path: "/catalog-api/api/catalog/items/type/{typeId}/brand/{brandId?}",
+      at: "src/eShop.AppHost/Extensions.cs:121",
+    }
+  - {
+      type: rest,
+      path: "/catalog-api/api/catalog/items/type/all/brand/{brandId?}",
+      at: "src/eShop.AppHost/Extensions.cs:125",
+    }
+  - {
+      type: rest,
+      path: "/catalog-api/api/catalog/catalogTypes",
+      at: "src/eShop.AppHost/Extensions.cs:129",
+    }
+  - {
+      type: rest,
+      path: "/catalog-api/api/catalog/catalogBrands",
+      at: "src/eShop.AppHost/Extensions.cs:133",
+    }
+  - {
+      type: rest,
+      path: "/catalog-api/api/catalog/items/{id}/pic",
+      at: "src/eShop.AppHost/Extensions.cs:137",
+    }
+  - { type: rest, path: "/api/catalog/{*any}", at: "src/eShop.AppHost/Extensions.cs:142" }
+  - { type: rest, path: "/api/orders/{*any}", at: "src/eShop.AppHost/Extensions.cs:146" }
+  - { type: rest, path: "/identity/{*any}", at: "src/eShop.AppHost/Extensions.cs:150" }
 calls:
   - {
       type: grpc,
@@ -749,6 +804,52 @@ calls:
       path: OrderPaymentFailedIntegrationEvent,
       at: "src/PaymentProcessor/IntegrationEvents/EventHandling/OrderStatusChangedToStockConfirmedIntegrationEventHandler.cs:27",
     }
+  - { path: "/api/catalog/items", to: catalog-api, at: "src/eShop.AppHost/Extensions.cs:97" }
+  - { path: "/api/catalog/items/by", to: catalog-api, at: "src/eShop.AppHost/Extensions.cs:101" }
+  - { path: "/api/catalog/items/{id}", to: catalog-api, at: "src/eShop.AppHost/Extensions.cs:105" }
+  - {
+      path: "/api/catalog/items/by/{name}",
+      to: catalog-api,
+      at: "src/eShop.AppHost/Extensions.cs:109",
+    }
+  - {
+      path: "/api/catalog/items/withsemanticrelevance/{text}",
+      to: catalog-api,
+      at: "src/eShop.AppHost/Extensions.cs:113",
+    }
+  - {
+      path: "/api/catalog/items/withsemanticrelevance",
+      to: catalog-api,
+      at: "src/eShop.AppHost/Extensions.cs:117",
+    }
+  - {
+      path: "/api/catalog/items/type/{typeId}/brand/{brandId?}",
+      to: catalog-api,
+      at: "src/eShop.AppHost/Extensions.cs:121",
+    }
+  - {
+      path: "/api/catalog/items/type/all/brand/{brandId?}",
+      to: catalog-api,
+      at: "src/eShop.AppHost/Extensions.cs:125",
+    }
+  - {
+      path: "/api/catalog/catalogTypes",
+      to: catalog-api,
+      at: "src/eShop.AppHost/Extensions.cs:129",
+    }
+  - {
+      path: "/api/catalog/catalogBrands",
+      to: catalog-api,
+      at: "src/eShop.AppHost/Extensions.cs:133",
+    }
+  - {
+      path: "/api/catalog/items/{id}/pic",
+      to: catalog-api,
+      at: "src/eShop.AppHost/Extensions.cs:137",
+    }
+  - { path: "/api/catalog/{*any}", to: catalog-api, at: "src/eShop.AppHost/Extensions.cs:142" }
+  - { path: "/api/orders/{*any}", to: ordering-api, at: "src/eShop.AppHost/Extensions.cs:146" }
+  - { path: "/{*any}", to: identity-api, at: "src/eShop.AppHost/Extensions.cs:150" }
 stores:
   - {
       table: Catalog,

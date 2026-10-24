@@ -131,18 +131,20 @@ Claude (Opus) as the reading assistant, one session per one or two repos, follow
 | spring-petclinic         |      25 |      0 |      0 |      100% |    100% |      100% / 96% |
 | spring-petclinic-rest    |      46 |      0 |      0 |      100% |    100% |       17% / 17% |
 | spring-petclinic-angular |      30 |      0 |      0 |      100% |    100% |         0% / 0% |
-| eshop                    |     120 |      2 |     34 |       78% |     98% |       82% / 34% |
+| eshop                    |     147 |      3 |     16 |       90% |     98% |       82% / 34% |
 | eshop-modernizing        |      48 |      7 |     16 |       75% |     87% |       75% / 16% |
 | microservices-demo       |      50 |      1 |     11 |       82% |     98% |       61% / 39% |
-| **Batch 1**              | **319** | **10** | **61** |   **84%** | **97%** |   **60% / 31%** |
+| **Batch 1**              | **346** | **11** | **43** |   **89%** | **97%** |   **60% / 31%** |
 
 With fields and config (the two references that cover them): spring-petclinic-rest 96% precision, 98% recall over every kind.
+
+eShop's reference gained its 14 YARP gateway routes and the gateway's calls on 2026-10-24 (the product owner's decision: a gateway's routes are its entries); the readers' 82% / 34% is against the reference before that.
 
 **This batch is tuned, not held out.** It was read twice: the first read found the protocol's and the verifier's gaps (paths built across lines, gRPC names, routes without a leading slash, conventional routes, config keys with `:`), those were fixed (ADR 0124 addendum A4), and the facts were revised under the fixed protocol. The protocol's rules are product semantics, never the references' answers, but they were shaped on these repos, so batch 2 (16 repos, read once with the protocol frozen) is the measure that counts.
 
 What the remaining wrong facts are, by count:
 
-1. **Scope the references leave out and the protocol keeps** (about 40 of 61): eShop's YARP gateway routes (the protocol records a gateway's routes as its entries; the reference leaves them out as pass-through), Blazor form posts, the dev-only health checks, a hosted background service as a batch job, microservices-demo's load generator requests, and eshop-modernizing's hilo sequences and Azure SDK calls (both since ruled out by the protocol, after these reads). Each is a decision, recorded here, not hidden.
+1. **Scope the references leave out and the protocol keeps** (most of the 43): Blazor form posts, the dev-only health checks, a hosted background service as a batch job, microservices-demo's load generator requests, and eshop-modernizing's hilo sequences and Azure SDK calls (both since ruled out by the protocol, after these reads). Each is a decision, recorded here, not hidden.
 2. **Modelling differences:** a docker-compose host counted as a deploy in eshop-modernizing (the protocol says compose is local running), an Azure AI Foundry resource as a deploy in eShop, Redis key patterns as stores.
 3. **Real misses:** two ASP.NET Identity tables used only by the library, the WebForms `.aspx` pages (since added to the protocol), and one call built from a runtime value.
 
