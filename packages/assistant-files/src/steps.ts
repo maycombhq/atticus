@@ -185,7 +185,7 @@ export function stepCommands(): CommandDef[] {
         "Review the change {{ARGS}} with the critic: Atticus runs the rule checks itself, then offers its AI lenses (architecture, security, data, the business view and those the org pack adds) one at a time. You answer each lens; Atticus checks every finding's quote and records it on the gate.",
         [
           ...handoff("atticus critic {{ARGS}}"),
-          "Each resume offers the next lens until none is left. Constitution findings can't be waived; tell the person which findings block and what fixes each.",
+          "Each resume offers the next lens until none is left. The rules come from the constitution and `org-pack/checklists/*.yaml`; every finding names its rule. Constitution findings can't be waived; tell the person which findings block and what fixes each.",
         ],
       ),
     ),
