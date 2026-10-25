@@ -249,7 +249,14 @@ describe("the chat command a next step runs as (Phase D)", () => {
   });
   it("names the @atticus step for each step it runs with the editor's model", () => {
     expect(chatQuery(step("atticus map forge-notes"))).toBe("@atticus /map forge-notes");
-    expect(chatQuery(step("atticus scan verify forge-notes"))).toBe("@atticus /verify forge-notes");
+    // ADR 0124: /verify checks the facts the assistant wrote; the old scan's check is /scanverify.
+    expect(chatQuery(step("atticus verify forge-notes"))).toBe("@atticus /verify forge-notes");
+    expect(chatQuery(step("atticus verify forge-notes --write"))).toBe(
+      "@atticus /verify forge-notes --write",
+    );
+    expect(chatQuery(step("atticus scan verify forge-notes"))).toBe(
+      "@atticus /scanverify forge-notes",
+    );
     expect(chatQuery(step("atticus change feature add-note-tags"))).toBe(
       "@atticus /feature add-note-tags",
     );

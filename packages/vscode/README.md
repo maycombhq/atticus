@@ -60,7 +60,7 @@ The steps, run with the editor's model:
 | --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
 | `@atticus /next`                  | The next step, from `atticus next`, with a button to run it                                                                         |
 | `@atticus /map <repo>`            | Read the repo, a batch of its files at a time, every fact citing its line and checked by `atticus verify` (`atticus map`, ADR 0124) |
-| `@atticus /verify <repo>`         | Compare the repo's code with its last scan (`atticus scan verify`)                                                                  |
+| `@atticus /verify <repo>`         | Check the repo's facts against its code, no model (`atticus verify`); `--write` puts them in the catalog                            |
 | `@atticus /feature <change>`      | The change's feature stage (`atticus change feature`)                                                                               |
 | `@atticus /architecture <change>` | The change's architecture stage (`atticus change architecture`)                                                                     |
 | `@atticus /stories <change>`      | The change's stories and tasks (`atticus plan stories`)                                                                             |
@@ -70,17 +70,18 @@ The steps, run with the editor's model:
 
 With `atticus.fullUi` on, also:
 
-| Command                           | What it does                                                                             |
-| --------------------------------- | ---------------------------------------------------------------------------------------- |
-| `@atticus /survey <repo>`         | Draft the repo's scan settings (`atticus scan survey`)                                   |
-| `@atticus /spec <repo>`           | Draft the repo's spec, then `atticus spec check`; draft again on findings, up to 3 times |
-| `@atticus /small <change>`        | A small change, brief to tasks in one step (`atticus change small`, ADR 0113)            |
-| `@atticus /diagram [repo] [flow]` | The repo on the Architecture canvas, or one of its flows, in the Atticus tab             |
-| `@atticus /changemap <change>`    | What the change touches, marked new, changed or retired                                  |
-| `@atticus /estimate <change>`     | The change's size and what drives it                                                     |
-| `@atticus /new <title>`           | Start a change: pick its type, then write its brief                                      |
-| `@atticus /run <command>`         | Any atticus command, with its dry run and your approval for a shared write               |
-| `@atticus /ask <question>`        | A plain question to the catalog (`atticus ask`); no model is used                        |
+| Command                           | What it does                                                                              |
+| --------------------------------- | ----------------------------------------------------------------------------------------- |
+| `@atticus /survey <repo>`         | Draft the repo's scan settings (`atticus scan survey`)                                    |
+| `@atticus /scanverify <repo>`     | Compare the repo's code with its last scan, for the older scanner (`atticus scan verify`) |
+| `@atticus /spec <repo>`           | Draft the repo's spec, then `atticus spec check`; draft again on findings, up to 3 times  |
+| `@atticus /small <change>`        | A small change, brief to tasks in one step (`atticus change small`, ADR 0113)             |
+| `@atticus /diagram [repo] [flow]` | The repo on the Architecture canvas, or one of its flows, in the Atticus tab              |
+| `@atticus /changemap <change>`    | What the change touches, marked new, changed or retired                                   |
+| `@atticus /estimate <change>`     | The change's size and what drives it                                                      |
+| `@atticus /new <title>`           | Start a change: pick its type, then write its brief                                       |
+| `@atticus /run <command>`         | Any atticus command, with its dry run and your approval for a shared write                |
+| `@atticus /ask <question>`        | A plain question to the catalog (`atticus ask`); no model is used                         |
 
 Without a repo or change, a step command takes the one `atticus next` names for that step. A read with `/map` takes as many rounds as it has batches (up to 50); a draft stops after eight.
 

@@ -1064,6 +1064,26 @@ ${view.next.why}`
     });
   }
 
+  // ADR 0124: check a repo's facts against its code (no model), and put them in the catalog.
+  reg("atticus.verify", async (target?: unknown) => {
+    const root = needRoot();
+    if (!root) return;
+    const t =
+      typeof target === "string"
+        ? target
+        : await commands.pickTarget(root, "repo", "Atticus: which repo's facts?");
+    if (!t?.trim()) return;
+    const how = await vscode.window.showQuickPick(
+      [
+        { label: "Check the facts", write: false },
+        { label: "Check them and put them in the catalog", write: true },
+      ],
+      { title: `Atticus: verify ${t.trim()}` },
+    );
+    if (!how) return;
+    inTerminal(root, "Atticus", ["verify", t.trim(), ...(how.write ? ["--write"] : [])]);
+  });
+
   reg("atticus.answerQuestion", async (id?: string, option?: number) => {
     const root = needRoot();
     if (!root) return;

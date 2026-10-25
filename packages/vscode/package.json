@@ -85,7 +85,12 @@
           },
           {
             "name": "verify",
-            "description": "Compare a repo's code with its last scan: /verify <repo>"
+            "description": "Check a repo's facts against its code, no model: /verify <repo> (--write puts them in the catalog)"
+          },
+          {
+            "name": "scanverify",
+            "description": "Compare a repo's code with its last scan (the older scanner): /scanverify <repo>",
+            "when": "config.atticus.fullUi"
           },
           {
             "name": "feature",
@@ -183,7 +188,12 @@
       },
       {
         "command": "atticus.verify",
-        "title": "Verify a repo's last scan",
+        "title": "Verify a repo's facts against its code",
+        "category": "Atticus"
+      },
+      {
+        "command": "atticus.scanverify",
+        "title": "Verify a repo's last scan (the older scanner)",
         "category": "Atticus"
       },
       {
@@ -1317,6 +1327,10 @@
         },
         {
           "command": "atticus.survey",
+          "when": "config.atticus.fullUi"
+        },
+        {
+          "command": "atticus.scanverify",
           "when": "config.atticus.fullUi"
         },
         {

@@ -116,7 +116,8 @@ export function actionFor(step: NextStep): NextAction {
 /** The chat commands and palette commands that run an AI step on a repo or a change. */
 export const STEP_COMMANDS = {
   survey: { args: (t: string) => ["scan", "survey", t], target: "repo" },
-  verify: { args: (t: string) => ["scan", "verify", t], target: "repo" },
+  // The old scan's check, an AI step; /verify (ADR 0124) checks the facts and runs no model.
+  scanverify: { args: (t: string) => ["scan", "verify", t], target: "repo" },
   spec: { args: (t: string) => ["spec", "draft", t], target: "repo" },
   feature: { args: (t: string) => ["change", "feature", t], target: "change" },
   architecture: { args: (t: string) => ["change", "architecture", t], target: "change" },
@@ -132,7 +133,7 @@ export type StepCommand = keyof typeof STEP_COMMANDS;
 /** The step command each AI step runs as, by its first two words. */
 const STEP_BY_WORDS: Record<string, StepCommand> = {
   "scan survey": "survey",
-  "scan verify": "verify",
+  "scan verify": "scanverify",
   "spec draft": "spec",
   "change feature": "feature",
   "change architecture": "architecture",
@@ -150,6 +151,9 @@ export function chatQuery(n: NextStep): string | undefined {
   const words = argsOf(n.command);
   if (words[0] === "task" && words[1] === "run" && words[2] && words[3])
     return `@atticus /task ${words[2]} ${words[3]}`;
+  // ADR 0124: checking the facts runs no model, but the chat runs it and shows what it found.
+  if (words[0] === "verify" && words[1] && !words[1].startsWith("-"))
+    return `@atticus /verify ${words[1]}${words.includes("--write") ? " --write" : ""}`;
   if (a.kind !== "ai") return undefined;
   // map <repo> and critic <change> name their target second; the others third.
   const one = a.args[0] === "map" || a.args[0] === "critic";

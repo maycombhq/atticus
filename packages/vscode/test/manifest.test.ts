@@ -42,7 +42,7 @@ describe("the extension's manifest and its code", () => {
   // The step commands are registered in a loop over STEP_COMMANDS.
   for (const s of [
     "survey",
-    "verify",
+    "scanverify",
     "spec",
     "feature",
     "architecture",

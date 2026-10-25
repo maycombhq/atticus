@@ -344,6 +344,47 @@ function participant(
       );
       return;
     }
+    if (cmd === "verify") {
+      // ADR 0124: check the facts the assistant wrote against the code; no model runs.
+      const words = argsOf(`atticus ${request.prompt}`);
+      const repo = words.find((w) => !w.startsWith("-"));
+      if (!repo) {
+        stream.markdown(
+          "Say the repo: /verify forge-notes (add --write to put the facts in the catalog)",
+        );
+        return;
+      }
+      const write = words.includes("--write");
+      stream.progress(`Checking ${repo}'s facts against its code...`);
+      const r = await svc.cli(root)(
+        ["verify", repo, ...(write ? ["--write"] : []), "--root", root],
+        token,
+      );
+      stream.markdown(
+        block(
+          [...r.stdout.trimEnd().split("\n"), ...r.stderr.trimEnd().split("\n")].filter(Boolean),
+        ),
+      );
+      if (r.code === 0 && !write)
+        stream.button({
+          command: "workbench.action.chat.open",
+          arguments: [{ query: `@atticus /verify ${repo} --write` }],
+          title: "Put the facts in the catalog",
+        });
+      else if (r.code !== 0)
+        stream.button({
+          command: "workbench.action.chat.open",
+          arguments: [{ query: `@atticus /map ${repo}` }],
+          title: "Send the rejected facts back to the assistant",
+        });
+      else
+        stream.button({
+          command: "workbench.action.chat.open",
+          arguments: [{ query: "@atticus /next" }],
+          title: "What's next?",
+        });
+      return;
+    }
     if (!(cmd in STEP_COMMANDS)) {
       stream.markdown(`@atticus has no /${cmd}.`);
       return;
