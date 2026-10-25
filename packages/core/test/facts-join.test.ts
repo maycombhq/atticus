@@ -179,6 +179,129 @@ describe("joinFacts: calls joined to the entries that serve them, across repos",
   });
 });
 
+/**
+ * The join fallback (ADR 0124 addendum C-join): one repo holds a single-page app and its API;
+ * the app's calls are relative, and the reader guessed a target (`notes-service`) that is no
+ * component of the estate. Invented Forge names.
+ */
+describe("joinFacts: a relative call whose target names nothing in the estate", () => {
+  const notes = (extra: Fact[] = []): JoinRepo => ({
+    repo: "forge-notes",
+    facts: [
+      call("forge-notes", "c-note", {
+        component: "forge-notes-web",
+        method: "GET",
+        path: "/api/notes/{id}",
+        to: "notes-service",
+      }),
+      call("forge-notes", "c-tags", {
+        component: "forge-notes-web",
+        method: "GET",
+        path: "/api/tags",
+        to: "notes-service",
+      }),
+      call("forge-notes", "c-save", {
+        component: "forge-notes-web",
+        method: "POST",
+        path: "/api/notes",
+      }),
+      entry("forge-notes", "e-note", { method: "GET", path: "/api/notes/{noteId}" }),
+      entry("forge-notes", "e-save", { method: "POST", path: "/api/notes" }),
+      ...extra,
+    ],
+  });
+  const archive: JoinRepo = {
+    repo: "forge-archive",
+    facts: [
+      entry("forge-archive", "e-note", { method: "GET", path: "/api/notes/{id}" }),
+      entry("forge-archive", "e-tags", { method: "GET", path: "/api/tags" }),
+    ],
+  };
+
+  it("joins the one entry of its own repo that serves it first, then of the estate, marked inferred", () => {
+    const out = joinFacts({ repos: [notes(), archive] });
+    expect(out.asks).toEqual([]);
+    expect(
+      out.joins.map((j) => [j.call.fact, `${j.entry.repo}/${j.entry.fact}`, j.how, j.inferred]),
+    ).toEqual([
+      ["c-note", "forge-notes/e-note", "path", { within: "repo", named: "notes-service" }],
+      ["c-save", "forge-notes/e-save", "path", { within: "repo" }],
+      ["c-tags", "forge-archive/e-tags", "path", { within: "estate", named: "notes-service" }],
+    ]);
+    // The API's component is the repo's: the app's calls join it, not themselves.
+    expect(out.joins[0]!.entry.component).toBe("forge-notes");
+  });
+
+  it("asks when two entries of its own repo could answer, never a guess", () => {
+    const out = joinFacts({
+      repos: [
+        notes([
+          entry("forge-notes", "e-note-admin", {
+            component: "forge-notes-admin",
+            method: "GET",
+            path: "/api/notes/{id}",
+          }),
+        ]),
+        archive,
+      ],
+    });
+    expect(out.joins.map((j) => j.call.fact)).toEqual(["c-save", "c-tags"]);
+    expect(out.asks).toMatchObject([
+      {
+        call: { fact: "c-note" },
+        reason: "ambiguous",
+        question: "Which repo or system answers GET /api/notes/{id}, which forge-notes-web calls?",
+        candidates: [
+          { repo: "forge-notes", fact: "e-note" },
+          { repo: "forge-notes", fact: "e-note-admin" },
+        ],
+      },
+    ]);
+  });
+
+  it("keeps a target the org pack lists as an outside system, and one with a host", () => {
+    const out = joinFacts({
+      repos: [
+        {
+          repo: "forge-notes",
+          facts: [
+            call("forge-notes", "c-pay", {
+              component: "forge-notes-web",
+              method: "GET",
+              path: "/api/tags",
+              to: "Northwind Pay",
+            }),
+            call("forge-notes", "c-host", {
+              component: "forge-notes-web",
+              method: "GET",
+              path: "/api/tags",
+              host: "tags.northwind.example",
+              to: "northwind-tags",
+            }),
+          ],
+        },
+        archive,
+      ],
+      outside: ["northwind-pay"],
+    });
+    expect(out.joins).toEqual([]);
+    expect(out.asks).toEqual([]);
+  });
+
+  it("makes an Interface for each join by path, citing both ends", () => {
+    const repos = [notes(), archive];
+    const records = joinRecords(joinFacts({ repos }), repos);
+    const ifaces = records.filter((r) => r.kind === "Interface");
+    expect(ifaces.map((r) => (r.kind === "Interface" ? `${r.from} -> ${r.to}` : ""))).toEqual(
+      expect.arrayContaining([
+        "forge-notes-web -> forge-notes",
+        "forge-notes-web -> forge-archive",
+      ]),
+    );
+    for (const r of ifaces) expect(r.evidence.map((e) => e.side)).toEqual(["caller", "callee"]);
+  });
+});
+
 describe("joinRecords: the joins as C1 records", () => {
   it("makes an Interface citing both ends and the config between, and a FieldMapping per crossing", () => {
     const repos = estate();

@@ -6,6 +6,9 @@ joins:
   - call: { repo: forge-customers, fact: c-open-account, component: customers-api, at: "src/main/java/forge/customers/LedgerClient.java:17" }
     entry: { repo: forge-ledger, fact: e-open-account, component: ledger-api, at: "src/main/proto/ledger.proto:6" }
     how: path
+    # No target named and no entry of its own repo serves it: the one of the estate (the join
+    # fallback, ADR 0124 addendum C-join), so its Interface is inferred.
+    inferred: { within: estate }
     callType: grpc
     path: forge.ledger.v1.Ledger/OpenAccount
     interface: if-fc58b23d49c7c652

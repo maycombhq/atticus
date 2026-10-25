@@ -88,7 +88,7 @@ describe("atticus next", () => {
       "schemaVersion: 1\nassistants: { allowed: [cursor, copilot], default: cursor }\n",
     );
     const r = await run(["next", "--root", root]);
-    expect(r.out[1]).toBe("In Cursor's chat: /atticus-survey forge-notes-ui");
+    expect(r.out[1]).toBe("In Cursor's chat: /atticus-map forge-notes");
     // The editors' Next view shows what runs the step, in one line (ADR 0121 item 6).
     const j = (await json(root)) as { runs?: string; modelMode?: boolean };
     expect(j.runs).toBe("Hand-off to Cursor");
@@ -118,21 +118,30 @@ describe("atticus next", () => {
     expect(all.out[2]).toBe('2. atticus change new "<title>" --type <type>');
   });
 
-  it("with a repo cloned but not surveyed, gives the survey and its slash command, then the scan", async () => {
+  it("with repos cloned but never read, has the assistant read each (/atticus-map), then verify --write: not a survey and a scan (ADR 0124)", async () => {
     const root = await metarepo({ clone: true });
     await rm(join(root, "org-pack", "scan", "forge-notes-ui.yaml"));
     const r = await run(["next", "--root", root]);
     expect(r.out.slice(0, 2)).toEqual([
-      "Next: atticus scan survey forge-notes-ui",
-      "In Copilot Chat: /atticus-survey forge-notes-ui",
+      "Next: atticus map forge-notes",
+      "In Copilot Chat: /atticus-map forge-notes",
     ]);
     const j = await json(root);
     expect(commands(j.steps)).toEqual([
-      ["atticus scan survey forge-notes-ui", "/atticus-survey forge-notes-ui"],
-      ["atticus scan", null],
+      ["atticus map forge-notes", "/atticus-map forge-notes"],
+      ["atticus map forge-notes-ui", "/atticus-map forge-notes-ui"],
       ['atticus change new "<title>" --type <type>', null],
     ]);
-    expect(j.steps[1]!.why).toBe("forge-notes, forge-notes-ui haven't been scanned yet.");
+    expect(j.steps[0]!.why).toBe(
+      "forge-notes isn't read yet: your assistant reads it and writes its facts, each citing its line, and atticus verify forge-notes checks them.",
+    );
+    // Read, not yet written into the catalog: verify --write is next.
+    await mkdir(join(root, "facts"), { recursive: true });
+    await writeFile(join(root, "facts", "forge-notes.jsonl"), "");
+    expect(commands((await json(root)).steps).slice(0, 2)).toEqual([
+      ["atticus verify forge-notes --write", null],
+      ["atticus map forge-notes-ui", "/atticus-map forge-notes-ui"],
+    ]);
   });
 
   it("after the scan: verify each repo, accept a proposal, answer the questions, then the specs", async () => {

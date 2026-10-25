@@ -2,9 +2,9 @@ import { readdir, realpath } from "node:fs/promises";
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import { parse, stringify } from "yaml";
 import { RepoManifest, type ManifestRepo } from "@maycombhq/core";
-import { fsRepo, memoryRepo, type RepoHandle } from "@maycombhq/sdk";
+import { DEFAULT_IGNORES, fsRepo, memoryRepo, type RepoHandle } from "@maycombhq/sdk";
 import { detectRepoType, type Detection } from "./detect.js";
-import { isDir, readText, slug, toPosix, writeNew } from "./files.js";
+import { exists, isDir, readText, slug, toPosix, writeNew } from "./files.js";
 import { resolveMetarepo, type MetarepoPaths } from "./layout.js";
 
 /**
@@ -127,6 +127,67 @@ const SKIP_FOLDERS = new Set([
 
 const SELF_IGNORE = [".git", "node_modules", ".atticus", "openspec", "specs", ".specify"];
 
+/**
+ * Below a folder: the hidden folders' names (`.claude`, `.github`), never looked inside, and the
+ * nested clones and worktrees (a `.git` folder or file), by path. node_modules and build output
+ * aren't walked.
+ */
+async function hiddenAndNested(dir: string): Promise<{ hidden: string[]; nested: string[] }> {
+  const hidden = new Set<string>();
+  const nested: string[] = [];
+  const walk = async (abs: string, rel: string) => {
+    let entries;
+    try {
+      entries = await readdir(abs, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      if (!e.isDirectory()) continue;
+      if (e.name.startsWith(".")) {
+        hidden.add(e.name);
+        continue;
+      }
+      if ((DEFAULT_IGNORES as readonly string[]).includes(e.name)) continue;
+      const sub = join(abs, e.name);
+      const path = rel ? `${rel}/${e.name}` : e.name;
+      if (await exists(join(sub, ".git"))) nested.push(path);
+      else await walk(sub, path);
+    }
+  };
+  await walk(dir, "");
+  return { hidden: [...hidden].sort(), nested: nested.sort() };
+}
+
+/**
+ * The folder as detection reads it: no file under a hidden folder, node_modules, or a nested
+ * clone or worktree, so an assistant's worktree under `.claude/` (and the test fixtures in it)
+ * never decides what a repo is.
+ */
+async function visibleRepo(
+  name: string,
+  dir: string,
+  ignore: readonly string[] = DEFAULT_IGNORES,
+): Promise<RepoHandle> {
+  const { hidden, nested } = await hiddenAndNested(dir);
+  const h = fsRepo(name, dir, "0000000", { ignore: [...new Set([...ignore, ...hidden])] });
+  const shown = (p: string) => {
+    const folders = p.split("/").slice(0, -1);
+    return (
+      !folders.some((s) => s.startsWith(".") || s === "node_modules") &&
+      !nested.some((n) => p.startsWith(`${n}/`))
+    );
+  };
+  return {
+    name: h.name,
+    commit: h.commit,
+    async *listFiles(globs) {
+      for await (const p of h.listFiles(globs)) if (shown(p)) yield p;
+    },
+    readText: (p) => h.readText(p),
+  };
+}
+
 async function localCandidates(dir: string): Promise<{
   repos: { dir: string; repo: RepoHandle; modules?: string[] }[];
   skipped: DiscoverResult["skipped"];
@@ -172,10 +233,20 @@ async function localCandidates(dir: string): Promise<{
     real.set(to, e.name);
     entries.push(e.name);
   }
+  // A folder that is itself a clone (or a worktree of one) is one repo (below).
+  const selfClone = await exists(join(dir, ".git"));
   for (const name of entries) {
     const sub = join(dir, name);
-    const repo = fsRepo(name, sub, "0000000");
+    const repo = await visibleRepo(name, sub);
     const isClone = await isDir(join(sub, ".git"));
+    // A worktree inside a clone is a checkout of the clone's own branches: not a module.
+    if (selfClone && !isClone && (await exists(join(sub, ".git")))) {
+      skipped.push({
+        path: name,
+        reason: "a git worktree (a checkout of another clone), not a repo",
+      });
+      continue;
+    }
     const det = await detectRepoType(repo);
     if (isClone) repos.push({ dir: sub, repo });
     else if (det.type !== "unknown" || det.component) builds.push(name);
@@ -184,22 +255,17 @@ async function localCandidates(dir: string): Promise<{
   skipped.sort((a, b) => (a.path < b.path ? -1 : 1));
   // A folder that is itself a clone is one repo: its subfolders that build are its modules,
   // and a clone inside it is a repo of its own (ADR 0057).
-  if (await isDir(join(dir, ".git"))) {
-    const nested = repos.map((r) => basename(r.dir));
-    const self = fsRepo(basename(resolve(dir)), dir, "0000000", {
-      ignore: [...SELF_IGNORE, ...nested],
-    });
+  if (selfClone) {
+    const self = await visibleRepo(basename(resolve(dir)), dir, SELF_IGNORE);
     return { repos: [{ dir, repo: self, modules: builds }, ...repos], skipped };
   }
   // Otherwise each subfolder that builds is a repo of its own (a folder of clones).
   for (const name of builds)
-    repos.push({ dir: join(dir, name), repo: fsRepo(name, join(dir, name), "0000000") });
+    repos.push({ dir: join(dir, name), repo: await visibleRepo(name, join(dir, name)) });
   repos.sort((a, b) => (basename(a.dir) < basename(b.dir) ? -1 : 1));
   // The folder itself is one repo when it has no repos inside but builds something.
   if (repos.length === 0) {
-    const self = fsRepo(basename(resolve(dir)), dir, "0000000", {
-      ignore: SELF_IGNORE,
-    });
+    const self = await visibleRepo(basename(resolve(dir)), dir, SELF_IGNORE);
     const det = await detectRepoType(self);
     if ((await isDir(join(dir, ".git"))) || det.type !== "unknown" || det.component)
       return { repos: [{ dir, repo: self }], skipped: [] };

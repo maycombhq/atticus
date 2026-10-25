@@ -32,12 +32,14 @@ import {
 import {
   catalogWithFacts,
   diffCatalogs,
+  diffIsEmpty,
   estateFacts,
   readCatalog,
   targetQuestionDrafts,
   targetsFromAnswers,
   TARGETS_STEP,
   writeCatalog,
+  type CatalogDiff,
 } from "@maycombhq/scanner";
 import { codeLinkerFor, renderMap, trustOf } from "@maycombhq/verify";
 import { baseClonePath, loadRepos } from "@maycombhq/workspace";
@@ -61,6 +63,40 @@ export interface WriteFactsResult {
   flows: string[];
   questions: string[];
   map: string[];
+  /** Every record the write added, changed or removed, and the counts by kind. */
+  changes: CatalogDiff & { byKind: Record<string, KindCount> };
+}
+
+/** How many records of a kind a write added, changed (fields or only evidence) and removed. */
+export interface KindCount {
+  added: number;
+  changed: number;
+  removed: number;
+}
+
+/** The counts of a catalog diff by record kind, kinds sorted. */
+export function countByKind(d: CatalogDiff): Record<string, KindCount> {
+  const out: Record<string, KindCount> = {};
+  const of = (k: string) => (out[k] ??= { added: 0, changed: 0, removed: 0 });
+  for (const r of d.added) of(r.kind).added++;
+  for (const r of [...d.changed, ...d.evidenceOnly]) of(r.kind).changed++;
+  for (const r of d.removed) of(r.kind).removed++;
+  return Object.fromEntries(Object.entries(out).sort(([a], [b]) => (a < b ? -1 : 1)));
+}
+
+/** "Column +4, Endpoint +1 ~1, Interface -1": a write's records in one line. */
+export function kindLine(byKind: Record<string, KindCount>): string {
+  const parts = Object.entries(byKind).map(([kind, c]) =>
+    [
+      kind,
+      c.added ? `+${c.added}` : "",
+      c.changed ? `~${c.changed}` : "",
+      c.removed ? `-${c.removed}` : "",
+    ]
+      .filter(Boolean)
+      .join(" "),
+  );
+  return parts.join(", ");
 }
 
 /**
@@ -73,7 +109,8 @@ export async function writeFactsIntoCatalog(
   root: string,
   repo: string,
   facts: readonly Fact[],
-  o: { dir: string; command: string; now?: Date },
+  /** verbose: list every record changed and flow written, not only the counts. */
+  o: { dir: string; command: string; now?: Date; verbose?: boolean },
   io: Output,
 ): Promise<WriteFactsResult | undefined> {
   let lock: Awaited<ReturnType<typeof acquireLock>>;
@@ -159,10 +196,19 @@ export async function writeFactsIntoCatalog(
     const at = (o.now ?? new Date()).toISOString();
     const hosts = await askHosts(root, result.records, { command: o.command, rerun, now: o.now });
     const loose = new Set(result.unresolved.map((u) => u.factId));
+    // A call whose target names nothing in the estate that two or more entries serve is asked
+    // too (the join fallback, ADR 0124 addendum C-join).
+    const ambiguous = new Set(
+      (result.join?.asks ?? [])
+        .filter((a) => a.reason === "ambiguous" && a.call.repo === repo)
+        .map((a) => a.call.fact),
+    );
+    const named = new Set(facts.filter((f) => f.kind === "call" && f.to).map((f) => f.id));
     const raised: Question[] = [...hosts.raised];
     const lines = [...hosts.lines];
     for (const t of targetQuestionDrafts(facts, result.records, op, result.join?.asks)) {
-      if (!loose.has(t.factId) || answered.some((q) => q.id === t.id)) continue;
+      if (!(loose.has(t.factId) || ambiguous.has(t.factId))) continue;
+      if (answered.some((q) => q.id === t.id)) continue;
       const r = await raiseQuestions(root, [t.draft], {
         step: TARGETS_STEP,
         repo,
@@ -173,20 +219,31 @@ export async function writeFactsIntoCatalog(
       for (const q of r.raised) {
         raised.push(q);
         lines.push(
-          `A call names no target: asked ${q.id}: ${q.question} Answer it: atticus questions answer ${q.id} --option <n>, then ${rerun}.`,
+          named.has(t.factId)
+            ? `A call names a target the estate doesn't have, and more than one entry serves it: asked ${q.id}: ${q.question} Answer it: atticus questions answer ${q.id} --option <n>, then ${rerun}.`
+            : `A call names no target: asked ${q.id}: ${q.question} Answer it: atticus questions answer ${q.id} --option <n>, then ${rerun}.`,
         );
       }
     }
 
+    // A few lines: counts by kind and the flows folder; every record and flow with --verbose
+    // (or --json), so a first write of hundreds of records stays readable.
+    const byKind = countByKind(diff);
     io.out(
       `Wrote the catalog for ${repo}: ${written.written} files written, ${written.removed} removed, ${written.unchanged} unchanged.`,
     );
-    for (const l of diffLines(diff).slice(0, 25)) io.out(`  ${l}`);
-    io.out(`Flows: ${flowPaths.length ? flowPaths.join(", ") : "none"}.`);
+    io.out(diffIsEmpty(diff) ? "  No catalog changes." : `  Records: ${kindLine(byKind)}.`);
+    if (o.verbose) for (const l of diffLines(diff).slice(1)) io.out(`    ${l}`);
+    const specsRel = specRelOf(root, repo);
+    io.out(`  Flows: ${flowPaths.length} in ${specsRel}/.`);
+    if (o.verbose) for (const p of flowPaths) io.out(`    ${p}`);
+    else if (!diffIsEmpty(diff) || flowPaths.length)
+      io.out(`  atticus verify ${repo} --write --verbose lists each record and flow.`);
     for (const p of result.curated.problems)
       io.out(`Curated decision ${p.decision} no longer applies: ${p.message}`);
     for (const p of result.projectionIssues) io.out(`  ${p.code}: ${p.message}`);
-    for (const l of joinLines(repo, result.join, estate.notes)) io.out(l);
+    for (const l of joinLines(repo, result.join, estate.notes, { verbose: o.verbose === true }))
+      io.out(l);
     for (const l of lines) io.out(l);
     const map = await renderRepoMap(root, repo, io);
     return {
@@ -194,6 +251,7 @@ export async function writeFactsIntoCatalog(
       flows: flowPaths,
       questions: raised.map((q) => q.id),
       map: map ?? [],
+      changes: { ...diff, byKind },
     };
   } finally {
     await lock.release();
@@ -205,6 +263,7 @@ export function joinLines(
   repo: string,
   join: FactsJoinResult | undefined,
   notes: readonly string[] = [],
+  o: { verbose?: boolean } = {},
 ): string[] {
   if (!join) return [...notes];
   const out = [...notes];
@@ -214,6 +273,29 @@ export function joinLines(
     out.push(
       `Joined across repos: ${mine.length} of ${repo}'s calls to the entries that serve them, ${into.length} calls of other repos into ${repo}, each citing both ends.`,
     );
+  // The join fallback (ADR 0124 addendum C-join): nobody named the callee, so it is inferred.
+  const guessed = join.joins.filter((j) => j.call.repo === repo && j.inferred);
+  if (guessed.length) {
+    const own = guessed.filter((j) => j.inferred!.within === "repo").length;
+    const where = [
+      own ? `${own} in ${repo} itself` : "",
+      guessed.length - own
+        ? `${guessed.length - own} in another repo${guessed.length - own === 1 ? "" : "s"}`
+        : "",
+    ]
+      .filter(Boolean)
+      .join(", ");
+    out.push(
+      `Joined by method and path, inferred: ${guessed.length} of ${repo}'s calls name no target the estate has, so each joined the one entry that serves it (${where}).`,
+    );
+    if (o.verbose)
+      for (const j of guessed) {
+        const what = j.method ? `${j.method} ${j.path}` : j.path;
+        const named = j.inferred!.named ? ` (named ${j.inferred!.named})` : "";
+        const there = j.entry.repo === repo ? "" : ` (${j.entry.repo})`;
+        out.push(`  ${j.call.at} ${what}${named} → ${j.entry.component}${there}`);
+      }
+  }
   for (const m of join.misses) out.push(`Not joined: ${m.message} (${m.call.at}).`);
   for (const g of join.gaps.slice(0, 10)) out.push(`Field gap: ${g.message}.`);
   return out;

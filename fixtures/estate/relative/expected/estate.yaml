@@ -1,0 +1,40 @@
+# What atticus estate join writes for fixtures/estate/relative (see ../README.md), by hand before
+# the code. The joins by path are inferred: the join's result and its output say so (this
+# file's schema has no field for it, so they are how: path).
+schemaVersion: 1
+joinedAt: 2026-10-21T12:00:00.000Z
+repos: [forge-archive, forge-notes]
+joins:
+  # The caller's own repo first: forge-archive serves the same path, but forge-notes is the repo.
+  - from: { repo: forge-notes, flow: forge-notes-web.open-note, step: 1, evidence: "web/src/notes/notes-api.ts:5" }
+    to:
+      repo: forge-notes
+      flow: forge-notes.get-note
+      trigger: forge-notes.get-note
+      evidence: "api/src/main/java/forge/notes/NoteController.java:14"
+    entry: "notes-service GET /api/notes/{id}"
+    how: path
+  # Nothing in forge-notes serves it: the one component of the estate that does.
+  - from: { repo: forge-notes, flow: forge-notes-web.open-note, step: 2, evidence: "web/src/notes/notes-api.ts:9" }
+    to:
+      repo: forge-archive
+      flow: forge-archive.list-tags
+      trigger: forge-archive.list-tags
+      evidence: "src/main/java/forge/archive/ArchiveController.java:18"
+    entry: "notes-service GET /api/tags"
+    how: path
+  # A loose end (no target named) joins the same way.
+  - from: { repo: forge-notes, flow: forge-notes-web.open-note, step: 4, evidence: "web/src/notes/notes-api.ts:17" }
+    to:
+      repo: forge-notes
+      flow: forge-notes.create-note
+      trigger: forge-notes.create-note
+      evidence: "api/src/main/java/forge/notes/NoteController.java:20"
+    entry: "unresolved.c-save-note POST /api/notes"
+    how: path
+unmatched:
+  # Two components serve it: asked, never guessed.
+  - from: { repo: forge-notes, flow: forge-notes-web.open-note, step: 3, evidence: "web/src/notes/notes-api.ts:13" }
+    entry: "notes-service GET /api/archive/{id}"
+    reason: no-target
+    message: "notes-service isn't a component in the catalog, and 2 components of forge-archive serve GET /api/archive/{id} (forge-archive, forge-archive-replica): a person says which"

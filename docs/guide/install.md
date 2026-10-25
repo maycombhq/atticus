@@ -45,6 +45,8 @@ atticus workspace sync                                   # base clones of every 
 atticus doctor                                           # each line [ok], [warn] or [FAIL], with what to do
 ```
 
+`atticus init` makes the folder a git repository (`git init`, branch `main`) when it isn't inside one, so the metarepo's changes go through pull requests; a folder already inside a repository is left as it is. `atticus repos discover` never looks inside hidden folders (an assistant's worktrees under `.claude/`), `node_modules` or a nested worktree.
+
 One repo instead of an estate: `atticus adopt <path>` writes only `.atticus/` in it (`atticus unadopt <path>` leaves it byte for byte as it was). To practise first: `atticus sandbox create ./practice`, then work in `practice/metarepo`.
 
 ## Minute 10: measure your assistant

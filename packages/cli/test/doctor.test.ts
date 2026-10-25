@@ -345,6 +345,38 @@ describe("atticus doctor", () => {
   });
 });
 
+describe("facts read (ADR 0124: Atticus 2 reads a repo with the assistant, not a scan)", () => {
+  it("says at which commit each repo's facts were read, or that it isn't read yet, and nothing of a scan", async () => {
+    const at = await mkdtemp(join(tmpdir(), "atticus-doctor-facts-"));
+    await cp(join(FIXTURES, "forge/metarepo"), at, { recursive: true });
+    await upgradeCommand(at, { by: "pat" }, { out: () => undefined, err: () => undefined });
+    await mkdir(join(at, "facts"), { recursive: true });
+    await writeFile(join(at, "facts", "forge-ledger.jsonl"), "");
+    await writeFile(
+      join(at, "facts", "forge-ledger.verify.yaml"),
+      "repo: forge-ledger\ncommit: 0123abcdef0123abcdef0123abcdef0123abcdef\naccepted: 0\n",
+    );
+    // Read, never verified.
+    await writeFile(join(at, "facts", "forge-portal-bff.jsonl"), "");
+    const checks = await doctorChecks(at, healthy());
+    expect(checks.find((c) => c.id === "last-scan")).toBeUndefined();
+    const c = byId(checks, "facts-read");
+    expect(c).toMatchObject({ label: "Facts read", status: "ok" });
+    expect(c.detail).toBe(
+      "forge-ledger at 0123abcdef01; forge-portal-bff read, not verified yet; not read yet: forge-events, forge-gateway, forge-infra, forge-portal-ui, forge-reports-job",
+    );
+    expect(c.fix).toBe(
+      "Read a repo with /atticus-map <repo> in your assistant (or atticus map <repo>), then atticus verify <repo> --write.",
+    );
+    // A metarepo that never read a repo says so, still ok: the machine is fine.
+    expect(byId(await doctorChecks(root, healthy()), "facts-read")).toMatchObject({
+      status: "ok",
+      detail:
+        "not read yet: forge-events, forge-gateway, forge-infra, forge-ledger, forge-portal-bff, forge-portal-ui, forge-reports-job",
+    });
+  });
+});
+
 describe("default branches (ADR 0123)", () => {
   it("warns when a repo is read from another branch than its remote's default, offline", async () => {
     const at = await mkdtemp(join(tmpdir(), "atticus-doctor-branches-"));

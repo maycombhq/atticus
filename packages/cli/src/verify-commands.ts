@@ -37,6 +37,8 @@ export interface VerifyCommandOptions {
    * (ADR 0124, A3b), only when nothing is rejected.
    */
   write?: boolean;
+  /** With --write: list every record changed and flow written, not only the counts. */
+  verbose?: boolean;
   json?: boolean;
   now?: () => Date;
   /** The git runner the diff since the facts' commit is read with (tests mock it). */
@@ -225,7 +227,7 @@ export async function verifyCommand(
     root,
     repo,
     report.accepted,
-    { dir, command: `atticus verify ${repo} --write` },
+    { dir, command: `atticus verify ${repo} --write`, verbose: o.verbose === true },
     io,
   );
   return written ? 0 : 1;

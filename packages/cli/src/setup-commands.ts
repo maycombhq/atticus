@@ -75,6 +75,9 @@ export async function initCommand(
       return r.problems.length ? 1 : 0;
     }
     io.out(`Created the ${o.name} metarepo in ${dir} (${plural(r.created.length, "file")}).`);
+    // A folder inside a repository is left as it is, and nothing is said.
+    if (r.git === "initialised") io.out(`Made ${dir} a git repository (git init, branch main).`);
+    if (r.gitNote) io.err(r.gitNote);
     io.out(
       r.openspec === "cli"
         ? "OpenSpec is set up with the org-flow schema."
@@ -85,8 +88,9 @@ export async function initCommand(
       io.err(`org-pack/${p.file}: ${p.path ? `${p.path}: ` : ""}${p.message}`);
     for (const q of r.questions) io.out(`Question: ${q}`);
     await tierAt(dir, io);
+    // Atticus 2 reads a repo with the assistant (/atticus-map) and writes it with verify --write.
     io.out(
-      "Next: atticus repos discover <folder of clones>, then atticus workspace sync and atticus scan.",
+      "Next: atticus repos discover <folder of clones> and atticus workspace sync, then read each repo: /atticus-map <repo> in your assistant (or atticus map <repo>), then atticus verify <repo> --write.",
     );
     return r.problems.length ? 1 : 0;
   } catch (e) {

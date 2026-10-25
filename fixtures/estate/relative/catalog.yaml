@@ -1,0 +1,104 @@
+# The catalog for fixtures/estate/relative (see README.md), written by hand. No Interface: the
+# app's calls named no component of the catalog, so the estate join made none.
+- kind: Component
+  schemaVersion: 2
+  id: forge-notes-web
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-notes, path: web/src/notes/notes-api.ts, line: 3 }]
+  system: forge
+  repo: forge-notes
+  type: spa
+- kind: Component
+  schemaVersion: 2
+  id: forge-notes
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-notes, path: api/src/main/java/forge/notes/NoteController.java, line: 8 }]
+  system: forge
+  repo: forge-notes
+  type: service
+- kind: Component
+  schemaVersion: 2
+  id: forge-archive
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-archive, path: src/main/java/forge/archive/ArchiveController.java, line: 7 }]
+  system: forge
+  repo: forge-archive
+  type: service
+- kind: Component
+  schemaVersion: 2
+  id: forge-archive-replica
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-archive, path: replica/src/main/java/forge/archive/ReplicaController.java, line: 7 }]
+  system: forge
+  repo: forge-archive
+  type: service
+- kind: Endpoint
+  schemaVersion: 2
+  id: forge-notes.get-note
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-notes, path: api/src/main/java/forge/notes/NoteController.java, line: 14 }]
+  component: forge-notes
+  endpointType: rest
+  method: GET
+  pathOrTopic: /api/notes/{noteId}
+  normalizedPath: /api/notes/{}
+- kind: Endpoint
+  schemaVersion: 2
+  id: forge-notes.create-note
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-notes, path: api/src/main/java/forge/notes/NoteController.java, line: 20 }]
+  component: forge-notes
+  endpointType: rest
+  method: POST
+  pathOrTopic: /api/notes
+  normalizedPath: /api/notes
+- kind: Endpoint
+  schemaVersion: 2
+  id: forge-archive.get-note
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-archive, path: src/main/java/forge/archive/ArchiveController.java, line: 12 }]
+  component: forge-archive
+  endpointType: rest
+  method: GET
+  pathOrTopic: /api/notes/{id}
+  normalizedPath: /api/notes/{}
+- kind: Endpoint
+  schemaVersion: 2
+  id: forge-archive.list-tags
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-archive, path: src/main/java/forge/archive/ArchiveController.java, line: 18 }]
+  component: forge-archive
+  endpointType: rest
+  method: GET
+  pathOrTopic: /api/tags
+  normalizedPath: /api/tags
+- kind: Endpoint
+  schemaVersion: 2
+  id: forge-archive.get-archived
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-archive, path: src/main/java/forge/archive/ArchiveController.java, line: 24 }]
+  component: forge-archive
+  endpointType: rest
+  method: GET
+  pathOrTopic: /api/archive/{id}
+  normalizedPath: /api/archive/{}
+- kind: Endpoint
+  schemaVersion: 2
+  id: forge-archive-replica.get-archived
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-archive, path: replica/src/main/java/forge/archive/ReplicaController.java, line: 12 }]
+  component: forge-archive-replica
+  endpointType: rest
+  method: GET
+  pathOrTopic: /api/archive/{id}
+  normalizedPath: /api/archive/{}

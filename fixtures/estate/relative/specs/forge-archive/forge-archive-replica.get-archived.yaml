@@ -1,0 +1,15 @@
+kind: Flow
+schemaVersion: 1
+id: forge-archive-replica.get-archived
+component: forge-archive-replica
+name: A client reads a note's archived versions from the replica
+template: facts@1
+trigger:
+  kind: endpoint
+  ref: forge-archive-replica.get-archived
+  what: GET /api/archive/{id} is called
+  evidence: [{ source: code, repo: forge-archive, path: replica/src/main/java/forge/archive/ReplicaController.java, line: 12 }]
+steps:
+  - kind: respond
+    what: The archived versions are returned
+    evidence: [{ source: code, repo: forge-archive, path: replica/src/main/java/forge/archive/ReplicaController.java, line: 13 }]

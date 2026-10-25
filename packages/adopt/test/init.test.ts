@@ -1,10 +1,11 @@
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { ChecklistPack, DEFAULT_GATES, loadOrgPack } from "@maycombhq/core";
 import { readPackFiles, starterReviewText } from "@maycombhq/naysayer";
+import type { GitRunner } from "@maycombhq/workspace";
 import { AdoptError, exists, init } from "../src/index.js";
 import { cleanup, tempDir } from "./helpers.js";
 
@@ -127,5 +128,68 @@ describe("init", () => {
     await expect(
       init(join(await tempDir(), "x"), { name: "Shop Platform", platform: "shop" }),
     ).rejects.toThrow(/lowercase slug/);
+  });
+});
+
+describe("init makes the metarepo a git repository", () => {
+  it("runs git init on main when the folder isn't inside a repository", async () => {
+    const root = join(await tempDir(), "forge-meta");
+    const r = await init(root, { name: "forge", platform: "forge", openspec: "folders" });
+    expect(r.git).toBe("initialised");
+    expect(await readFile(join(root, ".git", "HEAD"), "utf8")).toBe("ref: refs/heads/main\n");
+    // Git's own files aren't files the metarepo was made with.
+    expect(r.created.some((f) => f.startsWith(".git/"))).toBe(false);
+  });
+
+  it("leaves a folder inside a repository alone", async () => {
+    const outer = await tempDir();
+    const calls: string[][] = [];
+    const git: GitRunner = async (args) => {
+      calls.push(args);
+      return { stdout: "", stderr: "" };
+    };
+    await mkdir(join(outer, ".git"), { recursive: true });
+    const r = await init(join(outer, "meta"), {
+      name: "forge",
+      platform: "forge",
+      openspec: "folders",
+      git,
+    });
+    expect(r.git).toBe("inside");
+    expect(calls).toEqual([]);
+    expect(await exists(join(outer, "meta", ".git"))).toBe(false);
+  });
+
+  it("falls back to git init and a main HEAD on a git without -b, and says when git can't run", async () => {
+    const calls: string[][] = [];
+    const old: GitRunner = async (args) => {
+      calls.push(args);
+      if (args.includes("-b")) throw new Error("git init failed: unknown switch `b'");
+      return { stdout: "", stderr: "" };
+    };
+    const r = await init(join(await tempDir(), "old-git"), {
+      name: "forge",
+      platform: "forge",
+      openspec: "folders",
+      git: old,
+    });
+    expect(r.git).toBe("initialised");
+    expect(calls).toEqual([
+      ["init", "-b", "main"],
+      ["init"],
+      ["symbolic-ref", "HEAD", "refs/heads/main"],
+    ]);
+    const none = await init(join(await tempDir(), "no-git"), {
+      name: "forge",
+      platform: "forge",
+      openspec: "folders",
+      git: async () => {
+        throw new Error("spawn git ENOENT");
+      },
+    });
+    expect(none.git).toBe("unavailable");
+    expect(none.gitNote).toBe(
+      "git didn't run (spawn git ENOENT), so the folder isn't a git repository yet: run git init -b main in it.",
+    );
   });
 });

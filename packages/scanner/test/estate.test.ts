@@ -119,8 +119,132 @@ describe("joinEstate (ADR 0085)", () => {
       records: records(),
     });
     expect(r.unmatched).toMatchObject([
-      { reason: "no-target", message: "forge-loyalty isn't a component in the catalog" },
+      {
+        reason: "no-target",
+        message:
+          "forge-loyalty isn't a component in the catalog, and neither an Interface from forge-web nor an entry point of the estate serves GET /points",
+      },
     ]);
+    expect(r.inferred).toEqual([]);
+  });
+});
+
+// The join fallback (ADR 0124 addendum C-join): a call whose target the catalog doesn't have.
+const RELATIVE = join(ESTATE, "relative");
+const relative = () => ({
+  records: (parse(readFileSync(join(RELATIVE, "catalog.yaml"), "utf8")) as unknown[]).map((r) => {
+    const p = parseRecord(r);
+    if (!p.ok) throw new Error(JSON.stringify(p.issues));
+    return p.record;
+  }),
+  specs: ["forge-archive", "forge-notes"].map((repo) => ({
+    repo,
+    flows: readdirSync(join(RELATIVE, "specs", repo))
+      .sort()
+      .map((n) => {
+        const p = parseRecord(parse(readFileSync(join(RELATIVE, "specs", repo, n), "utf8")));
+        if (!p.ok || p.record.kind !== "Flow") throw new Error(`${n} isn't a flow`);
+        return p.record;
+      }),
+  })),
+});
+const expectedRelative = () =>
+  EstateJoins.parse(parse(readFileSync(join(RELATIVE, "expected", "estate.yaml"), "utf8")));
+
+describe("joinEstate: a target the catalog doesn't have (ADR 0124 addendum C-join)", () => {
+  it("joins by method and path to the one entry point that serves it, its own repo first, and asks when two could", async () => {
+    const r = await joinEstate(relative());
+    const want = expectedRelative();
+    expect(r.joins).toEqual(want.joins);
+    expect(r.unmatched).toEqual(want.unmatched);
+  });
+
+  it("marks each such join inferred and says why", async () => {
+    const r = await joinEstate(relative());
+    expect(r.inferred).toEqual([
+      {
+        from: { repo: "forge-notes", flow: "forge-notes-web.open-note", step: 1 },
+        named: "notes-service",
+        within: "repo",
+        message:
+          "forge-notes-web.open-note step 1 names notes-service, which isn't a component in the catalog: joined by method and path to forge-notes.get-note, the only entry point of its own repo (forge-notes) that serves GET /api/notes/{id}",
+      },
+      {
+        from: { repo: "forge-notes", flow: "forge-notes-web.open-note", step: 2 },
+        named: "notes-service",
+        within: "estate",
+        message:
+          "forge-notes-web.open-note step 2 names notes-service, which isn't a component in the catalog: joined by method and path to forge-archive.list-tags, the only entry point of the estate that serves GET /api/tags",
+      },
+      {
+        from: { repo: "forge-notes", flow: "forge-notes-web.open-note", step: 4 },
+        named: "unresolved.c-save-note",
+        within: "repo",
+        message:
+          "forge-notes-web.open-note step 4 names unresolved.c-save-note, which isn't a component in the catalog: joined by method and path to forge-notes.create-note, the only entry point of its own repo (forge-notes) that serves POST /api/notes",
+      },
+    ]);
+  });
+
+  it("gives what to ask a person when two components could answer, and joins the one a person names", async () => {
+    const r = await joinEstate(relative());
+    expect(r.asks).toEqual([
+      {
+        from: {
+          repo: "forge-notes",
+          flow: "forge-notes-web.open-note",
+          step: 3,
+          evidence: "web/src/notes/notes-api.ts:13",
+        },
+        caller: "forge-notes-web",
+        named: "notes-service",
+        what: "GET /api/archive/{id}",
+        candidates: ["forge-archive", "forge-archive-replica"],
+      },
+    ]);
+    const answered = await joinEstate({
+      ...relative(),
+      targets: { "forge-notes-web.open-note#3": "forge-archive-replica" },
+    });
+    expect(answered.asks).toEqual([]);
+    expect(answered.unmatched).toEqual([]);
+    expect(answered.joins.find((j) => j.from.step === 3)).toMatchObject({
+      to: { repo: "forge-archive", flow: "forge-archive-replica.get-archived" },
+      how: "path",
+    });
+    // A person named it: not inferred.
+    expect(answered.inferred.map((i) => i.from.step)).toEqual([1, 2, 4]);
+  });
+
+  it("joins through an Interface the estate join made from the caller, when there is one", async () => {
+    const o = relative();
+    const iface = parseRecord({
+      kind: "Interface",
+      schemaVersion: 2,
+      id: "if-ba3de1d9549a58e3",
+      status: "current",
+      confidence: "inferred",
+      evidence: [
+        { source: "code", repo: "forge-notes", path: "web/src/notes/notes-api.ts", line: 5 },
+      ],
+      from: "forge-notes-web",
+      to: "forge-archive",
+      endpoint: "forge-archive.get-note",
+      via: "direct",
+      method: "GET",
+      normalizedPath: "/api/notes/{}",
+      sync: "sync",
+      direction: "outbound",
+      conflicts: [],
+    });
+    if (!iface.ok) throw new Error(JSON.stringify(iface.issues));
+    const r = await joinEstate({ ...o, records: [...o.records, iface.record] });
+    // The Interface reaches forge-archive.get-note, which no flow starts at: said, not re-guessed.
+    expect(r.unmatched.find((u) => u.from.step === 1)).toMatchObject({
+      reason: "no-flow",
+      interface: "if-ba3de1d9549a58e3",
+      trigger: "forge-archive.get-note",
+    });
   });
 });
 

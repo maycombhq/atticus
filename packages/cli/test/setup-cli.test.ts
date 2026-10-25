@@ -67,6 +67,8 @@ describe("atticus init", () => {
     const dir = await temp("shop-meta");
     expect(await initCommand(dir, { name: "shop", platform: "shop" }, t.io)).toBe(0);
     expect(t.out[0]).toMatch(/^Created the shop metarepo in /);
+    // It wasn't inside a git repository: it is one now, on main.
+    expect(t.out[1]).toBe(`Made ${dir} a git repository (git init, branch main).`);
     expect(t.out).toContain("OpenSpec is set up with the org-flow schema.");
     // ADR 0124 §4: the tier the assistant reads a repo at, and where to see the first read's cost;
     // a new metarepo has no probe on file, so it is from runtime.yaml, with the command that
@@ -74,8 +76,9 @@ describe("atticus init", () => {
     expect(t.out.at(-2)).toMatch(
       /^Your assistant reads a repo at: agentic \(tier 1\), from runtime\.yaml: .*atticus probe measures it with your assistant\. atticus map <repo> --estimate/,
     );
+    // Atticus 2 reads a repo with the assistant (/atticus-map), not a scan.
     expect(t.out.at(-1)).toBe(
-      "Next: atticus repos discover <folder of clones>, then atticus workspace sync and atticus scan.",
+      "Next: atticus repos discover <folder of clones> and atticus workspace sync, then read each repo: /atticus-map <repo> in your assistant (or atticus map <repo>), then atticus verify <repo> --write.",
     );
     const again = io();
     expect(await initCommand(dir, { name: "shop", platform: "shop" }, again.io)).toBe(1);

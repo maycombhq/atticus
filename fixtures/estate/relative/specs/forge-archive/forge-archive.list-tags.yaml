@@ -1,0 +1,15 @@
+kind: Flow
+schemaVersion: 1
+id: forge-archive.list-tags
+component: forge-archive
+name: A client lists the tags
+template: facts@1
+trigger:
+  kind: endpoint
+  ref: forge-archive.list-tags
+  what: GET /api/tags is called
+  evidence: [{ source: code, repo: forge-archive, path: src/main/java/forge/archive/ArchiveController.java, line: 18 }]
+steps:
+  - kind: respond
+    what: The tags are returned
+    evidence: [{ source: code, repo: forge-archive, path: src/main/java/forge/archive/ArchiveController.java, line: 19 }]

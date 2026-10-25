@@ -50,7 +50,7 @@ import { resolveFederatedLooseEnds } from "./federate-loose.js";
 import { readCatalog } from "./files.js";
 import { curatedDirOf, estateMergeInput, estateRepos } from "./merge-input.js";
 import { factsForScan } from "./facts-scan.js";
-import { applyFactJoins, joinReposOf } from "./facts-catalog.js";
+import { applyFactJoins, joinReposOf, outsideSystems } from "./facts-catalog.js";
 import {
   applyClients,
   applyPrefixes,
@@ -564,6 +564,7 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
     const join = joinFacts({
       repos: joinRepos,
       targets: Object.fromEntries(factRepos.map((x) => [x.repo, x.targets])),
+      outside: outsideSystems(op),
     });
     codeRecords = applyFactJoins(codeRecords, join, joinRepos);
   }

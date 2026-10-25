@@ -9,7 +9,15 @@ import {
   readProbes,
   tierLine,
 } from "@maycombhq/assistant-files";
-import { DEFAULT_PORT, loadOrgPack, orgPackDirOf, readLock, retrievalOf } from "@maycombhq/core";
+import {
+  DEFAULT_PORT,
+  factsDirOf,
+  loadOrgPack,
+  orgPackDirOf,
+  readLock,
+  retrievalOf,
+} from "@maycombhq/core";
+import { parse } from "yaml";
 import { createOpenSpec, isSupportedVersion, OPENSPEC_PINNED } from "@maycombhq/openspec-adapter";
 import {
   baseClonePath,
@@ -71,6 +79,20 @@ async function defaultAssistantFiles(root: string): Promise<AssistantFilesState>
   const r = await generateAssistantFiles(root, { check: true });
   const of = (a: string) => r.results.filter((x) => x.action === a).map((x) => x.path);
   return { missing: of("created"), stale: of("updated"), edited: of("kept-edited") };
+}
+
+/** The commit a repo's facts were verified at (facts/<repo>.verify.yaml), if they were. */
+async function factsCommit(root: string, repo: string): Promise<string | undefined> {
+  const text = await readFile(join(factsDirOf(root), `${repo}.verify.yaml`), "utf8").catch(
+    () => undefined,
+  );
+  if (!text) return undefined;
+  try {
+    const commit = (parse(text) as { commit?: unknown } | null)?.commit;
+    return typeof commit === "string" && commit ? commit : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export const MIN_NODE = "22.13.0";
@@ -305,22 +327,46 @@ export async function doctorChecks(root: string, deps: DoctorDeps = {}): Promise
     fix: `Stop the other program, or start the app on another port: atticus ui --port 4322.`,
   });
 
-  const scan = await readLock(root, "scan");
+  // ADR 0124: Atticus 2 reads a repo with the assistant (/atticus-map) and writes its facts into
+  // the catalog with atticus verify --write (under the scan's lock), so this says what is read.
+  const manifest = await loadRepos(root).catch(() => []);
+  const lock = await readLock(root, "scan");
+  const read: string[] = [];
+  const unverified: string[] = [];
+  const unread: string[] = [];
+  for (const r of manifest.filter((x) => !x.archived).sort((a, b) => (a.id < b.id ? -1 : 1))) {
+    const commit = await factsCommit(root, r.id);
+    if (commit) read.push(`${r.id} at ${commit.slice(0, 12)}`);
+    else if (existsSync(join(factsDirOf(root), `${r.id}.jsonl`)))
+      unverified.push(`${r.id} read, not verified yet`);
+    else unread.push(r.id);
+  }
+  const facts = [
+    ...read,
+    ...unverified,
+    ...(unread.length ? [`not read yet: ${unread.join(", ")}`] : []),
+  ];
   out.push({
-    id: "last-scan",
-    label: "Last scan",
-    status: scan?.stale ? "warn" : "ok",
-    detail: scan
-      ? scan.stale
-        ? `the scan started ${scan.startedAt} stopped before it finished`
-        : `a scan is running (since ${scan.startedAt})`
-      : "finished",
-    fix: "Run atticus scan again: it brings the catalog up to date (every file it writes is whole).",
+    id: "facts-read",
+    label: "Facts read",
+    status: lock?.stale ? "warn" : "ok",
+    detail: [
+      lock
+        ? lock.stale
+          ? `the write started ${lock.startedAt} stopped before it finished`
+          : `a write is running (since ${lock.startedAt})`
+        : "",
+      facts.length ? facts.join("; ") : "no repo is listed yet",
+    ]
+      .filter(Boolean)
+      .join("; "),
+    fix: lock?.stale
+      ? "Run atticus verify <repo> --write again: every file it writes is whole."
+      : "Read a repo with /atticus-map <repo> in your assistant (or atticus map <repo>), then atticus verify <repo> --write.",
   });
 
   // ADR 0123: the branch each repo is read from, against the one its remote calls its default
   // (as the base clone last heard it at a sync: no network here).
-  const manifest = await loadRepos(root).catch(() => []);
   const differ: string[] = [];
   for (const r of manifest.filter((x) => !x.archived && !isInPlace(x.url))) {
     const remote = await remoteDefaultBranch(baseClonePath(root, r.id), git);

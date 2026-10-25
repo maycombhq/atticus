@@ -167,13 +167,15 @@ export function targetQuestionDrafts(
     .sort((a, b) => a.id.localeCompare(b.id));
   const out: { factId: string; id: string; repo: string; draft: QuestionDraft }[] = [];
   for (const f of [...facts].sort((a, b) => a.id.localeCompare(b.id))) {
-    if (!needsTarget(f, facts)) continue;
-    const q = targetQuestionFor(f)!;
-    const own = slugify(f.component ?? f.repo).replace(/\./g, "-");
-    const types = new Set(SERVES[f.callType] ?? []);
     const ask = asks?.find(
       (a) => a.reason === "ambiguous" && a.call.repo === f.repo && a.call.fact === f.id,
     );
+    // A call with no target, or one whose target names nothing in the estate that two or more
+    // entries could answer (the join fallback, ADR 0124 addendum C-join).
+    if (f.kind !== "call" || (!needsTarget(f, facts) && !ask)) continue;
+    const q = targetQuestionFor(f)!;
+    const own = slugify(f.component ?? f.repo).replace(/\./g, "-");
+    const types = new Set(SERVES[f.callType] ?? []);
     const servers = ask
       ? [...new Set(ask.candidates.map((c) => c.component))].sort()
       : [
@@ -238,7 +240,9 @@ export function targetsFromAnswers(
   const byId = new Map(questions.map((q) => [q.id, q]));
   const out: Record<string, string> = {};
   for (const f of [...facts].sort((a, b) => a.id.localeCompare(b.id))) {
-    if (f.kind !== "call" || f.to) continue;
+    // A call that names a target is asked only when the estate has no such target and two or
+    // more entries could answer it; its answer counts the same.
+    if (f.kind !== "call") continue;
     const q = targetQuestionFor(f);
     if (!q) continue;
     const asked = byId.get(questionId({ step: TARGETS_STEP, repo, ...q }));
@@ -382,6 +386,18 @@ export function factsRecords(input: {
 }
 
 /** The estate's repos as the join reads them (ADR 0124, C-join): the manifest's component, hosts and modules. */
+/**
+ * The outside systems a call's `to` may name (the org pack's vendors: id, name and aliases): a
+ * call naming one keeps it and is never joined by path (ADR 0124 addendum C-join).
+ */
+export function outsideSystems(op: OrgPack): string[] {
+  return op.profiles
+    .flatMap((p) => p.profile?.systems ?? [])
+    .filter((s) => s.boundary === "vendor")
+    .flatMap((s) => [s.id, s.name, ...s.aliases])
+    .sort();
+}
+
 export function joinReposOf(
   op: OrgPack,
   list: readonly { repo: string; facts: readonly Fact[] }[],
@@ -561,7 +577,11 @@ export function catalogWithFacts(input: FactsCatalogInput): FactsCatalogResult {
   if (input.estate) {
     const repos = joinReposOf(op, [{ repo, facts }, ...others], renames);
     join = joinAbout(
-      joinFacts({ repos, targets: { ...input.estateTargets, [repo]: input.targets ?? {} } }),
+      joinFacts({
+        repos,
+        targets: { ...input.estateTargets, [repo]: input.targets ?? {} },
+        outside: outsideSystems(op),
+      }),
       repo,
     );
     records0 = applyFactJoins(records0, join, repos);
@@ -747,6 +767,7 @@ export function estateFromFacts(input: {
         facts: factsRecords({ repo, facts, op: input.op, renames }).facts,
       })),
     ),
+    outside: outsideSystems(input.op),
   });
   return { records, specs, join, invalid };
 }

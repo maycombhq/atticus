@@ -11,6 +11,7 @@ import {
   type Fact,
   type FlowRecord,
   type OrgPack,
+  type Question,
 } from "@maycombhq/core";
 import {
   catalogWithFacts,
@@ -21,6 +22,8 @@ import {
   flattenEstateFlow,
   joinEstate,
   targetQuestionDrafts,
+  targetsFromAnswers,
+  TARGETS_STEP,
 } from "../src/index.js";
 
 /**
@@ -222,6 +225,90 @@ describe("catalogWithFacts with the estate: calls joined to the entries of the r
       "northwind-risk",
       "None of these",
     ]);
+  });
+});
+
+/**
+ * The join fallback (ADR 0124 addendum C-join): one repo, forge-notes, holds a single-page app
+ * (forge-notes-web) and its API (named after the repo). The app's calls are relative, and the
+ * reader guessed `notes-service` as their target, a name that is no component.
+ */
+describe("a repo holding an app and its API, the app's calls relative", () => {
+  const notes = (): Fact[] => {
+    const r = parseFacts(readFileSync(join(ESTATE, "relative", "forge-notes.jsonl"), "utf8"));
+    if (!r.ok) throw new Error(JSON.stringify(r.issues));
+    return r.facts;
+  };
+  const write = () =>
+    catalogWithFacts({
+      repo: "forge-notes",
+      facts: notes(),
+      existing: [],
+      op,
+      decisions: [],
+      estate: [],
+    });
+
+  it("joins the app's call to the API's entry in the same repo, inferred, and the estate join follows it", async () => {
+    const out = write();
+    expect(out.invalid).toEqual([]);
+    expect(out.join?.joins.map((j) => [j.call.fact, j.entry.fact, j.inferred])).toEqual([
+      ["c-note", "e-get-note", { within: "repo", named: "notes-service" }],
+    ]);
+    const iface = out.records.find(
+      (r) => r.kind === "Interface" && r.from === "forge-notes-web" && r.to === "forge-notes",
+    );
+    expect(iface).toMatchObject({ method: "GET", endpoint: "forge-notes.get-note" });
+    const open = out.flows.find((f) => f.name === "Open a note")!;
+    expect(open.steps[0]!.to).toMatchObject({ component: "forge-notes" });
+    const joined = await joinEstate({
+      specs: [{ repo: "forge-notes", flows: out.flows }],
+      records: out.records,
+    });
+    expect(joined.joins.map((j) => `${j.from.flow}#${j.from.step} -> ${j.to.flow}`)).toEqual([
+      `${open.id}#1 -> forge-notes.get-a-note`,
+    ]);
+  });
+
+  it("asks which component answers a call two of the repo's components serve, offering only those", () => {
+    const out = write();
+    expect(out.join?.asks.map((a) => `${a.call.fact} ${a.reason}`)).toEqual([
+      "c-archive ambiguous",
+    ]);
+    const q = targetQuestionDrafts(notes(), out.records, op, out.join?.asks).find(
+      (d) => d.factId === "c-archive",
+    )!;
+    expect(q.draft.question).toBe(
+      "Which repo or system answers GET /api/archive/{id}, which forge-notes-web calls?",
+    );
+    expect(q.draft.options.map((o) => o.label).slice(0, 2)).toEqual([
+      "forge-notes",
+      "forge-notes-replica",
+    ]);
+    // The answer joins it, though the call names a target of its own.
+    const answer = {
+      id: q.id,
+      state: "answered",
+      options: q.draft.options,
+      answer: { option: 2 },
+      askedBy: { step: TARGETS_STEP },
+    } as unknown as Question;
+    const targets = targetsFromAnswers("forge-notes", notes(), [answer]);
+    expect(targets).toEqual({ "c-archive": "forge-notes-replica" });
+    const again = catalogWithFacts({
+      repo: "forge-notes",
+      facts: notes(),
+      existing: [],
+      op,
+      decisions: [],
+      estate: [],
+      targets,
+    });
+    expect(again.join?.asks).toEqual([]);
+    expect(again.join?.joins.find((j) => j.call.fact === "c-archive")).toMatchObject({
+      how: "answer",
+      entry: { fact: "e-get-archive-replica" },
+    });
   });
 });
 

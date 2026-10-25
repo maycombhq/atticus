@@ -1,0 +1,30 @@
+kind: Flow
+schemaVersion: 1
+id: forge-notes-web.open-note
+component: forge-notes-web
+name: A person opens a note
+template: facts@1
+trigger:
+  kind: page
+  what: The note page loads
+  evidence: [{ source: code, repo: forge-notes, path: web/src/notes/NotePage.tsx, line: 9 }]
+steps:
+  - kind: call-out
+    what: GET /api/notes/{id} for the note
+    to: { component: notes-service, entry: "GET /api/notes/{id}" }
+    evidence: [{ source: code, repo: forge-notes, path: web/src/notes/notes-api.ts, line: 5 }]
+  - kind: call-out
+    what: GET /api/tags for the tags to offer
+    to: { component: notes-service, entry: "GET /api/tags" }
+    evidence: [{ source: code, repo: forge-notes, path: web/src/notes/notes-api.ts, line: 9 }]
+  - kind: call-out
+    what: GET /api/archive/{id} for the note's archived versions
+    to: { component: notes-service, entry: "GET /api/archive/{id}" }
+    evidence: [{ source: code, repo: forge-notes, path: web/src/notes/notes-api.ts, line: 13 }]
+  - kind: call-out
+    what: POST /api/notes when the person saves
+    to: { component: unresolved.c-save-note, entry: "POST /api/notes" }
+    evidence: [{ source: code, repo: forge-notes, path: web/src/notes/notes-api.ts, line: 17 }]
+  - kind: respond
+    what: The note is shown
+    evidence: [{ source: code, repo: forge-notes, path: web/src/notes/NotePage.tsx, line: 14 }]

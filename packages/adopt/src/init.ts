@@ -1,5 +1,5 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { loadOrgPack, RecordId, type OrgPackProblem } from "@maycombhq/core";
 import {
   createOpenSpec,
@@ -7,7 +7,7 @@ import {
   setDefaultSchema,
   writeOrgFlowSchema,
 } from "@maycombhq/openspec-adapter";
-import { ensureGitignore } from "@maycombhq/workspace";
+import { createGit, ensureGitignore, type GitRunner } from "@maycombhq/workspace";
 import { AdoptError } from "./errors.js";
 import { copyDir, exists, isDir, listFiles, writeNew } from "./files.js";
 import { ORG_PACK_DIR } from "./layout.js";
@@ -15,10 +15,12 @@ import { writeStartingPack } from "./orgpack-files.js";
 
 /**
  * `atticus init <name> --platform <pack>`: a new metarepo, ready for `repos discover`,
- * `workspace sync` and `scan`. The org pack comes from the built-in defaults (written out as
- * files) or is copied from a given pack; `openspec/` is set up with the bundled OpenSpec CLI
- * when it runs (it works offline), else as plain folders; both get the org-flow schema.
- * Nothing that exists is overwritten.
+ * `workspace sync` and reading each repo (`/atticus-map`, `atticus verify --write`). The org
+ * pack comes from the built-in defaults (written out as files) or is copied from a given pack;
+ * `openspec/` is set up with the bundled OpenSpec CLI when it runs (it works offline), else as
+ * plain folders; both get the org-flow schema. A folder not inside a git repository is made one
+ * (branch main), so its changes go through pull requests; one inside a repository is left as
+ * it is. Nothing that exists is overwritten.
  */
 
 export interface InitOptions {
@@ -32,6 +34,8 @@ export interface InitOptions {
   owner?: string;
   /** How to make openspec/: the OpenSpec CLI, plain folders, or the CLI with folders as fallback. */
   openspec?: "cli" | "folders" | "auto";
+  /** The git runner the repository is made with; default the git on PATH (tests mock it). */
+  git?: GitRunner;
 }
 
 export interface InitResult {
@@ -43,6 +47,31 @@ export interface InitResult {
   openspecNote?: string;
   problems: OrgPackProblem[];
   questions: string[];
+  /**
+   * `initialised`: the folder wasn't inside a git repository, so it was made one (branch main);
+   * `inside`: it is in one already, left as it is; `unavailable`: git didn't run.
+   */
+  git: "initialised" | "inside" | "unavailable";
+  /** Why git didn't run, and what to do, when it didn't. */
+  gitNote?: string;
+}
+
+/** Whether a folder is inside a git repository: it, or a folder above it, has `.git`. */
+async function insideRepo(dir: string): Promise<boolean> {
+  for (let d = resolve(dir); ; d = dirname(d)) {
+    if (await exists(join(d, ".git"))) return true;
+    if (dirname(d) === d) return false;
+  }
+}
+
+/** A repository on main; a git older than 2.28 (no -b) inits, then points HEAD at main. */
+async function makeRepo(dir: string, git: GitRunner): Promise<void> {
+  try {
+    await git(["init", "-b", "main"], dir);
+  } catch {
+    await git(["init"], dir);
+    await git(["symbolic-ref", "HEAD", "refs/heads/main"], dir);
+  }
 }
 
 const README = (name: string, platform: string) => `# ${name}
@@ -54,7 +83,7 @@ The Atticus metarepo for the ${platform} platform.
 - \`openspec/\`: changes (\`openspec/changes/<id>/\`) and the living specs.
 - \`workspace/\`, \`.index/\`, \`.runs/\`: local state, never committed.
 
-Next: \`atticus repos discover <folder of clones>\`, then \`atticus workspace sync\` and \`atticus scan\`.
+Next: \`atticus repos discover <folder of clones>\` and \`atticus workspace sync\`, then read each repo: \`/atticus-map <repo>\` in your assistant (or \`atticus map <repo>\`), then \`atticus verify <repo> --write\`.
 `;
 
 export async function init(dir: string, o: InitOptions): Promise<InitResult> {
@@ -82,6 +111,18 @@ export async function init(dir: string, o: InitOptions): Promise<InitResult> {
     throw new AdoptError("usage", `There is no org pack folder at ${o.packFrom}.`);
 
   await mkdir(dir, { recursive: true });
+  // A metarepo is a git repository: made one here unless it is inside one already.
+  let gitState: InitResult["git"] = "inside";
+  let gitNote: string | undefined;
+  if (!(await insideRepo(dir))) {
+    try {
+      await makeRepo(dir, o.git ?? createGit());
+      gitState = "initialised";
+    } catch (e) {
+      gitState = "unavailable";
+      gitNote = `git didn't run (${(e as Error).message.split("\n")[0]}), so the folder isn't a git repository yet: run git init -b main in it.`;
+    }
+  }
   const before = new Set(await listFiles(dir));
   const orgPack = join(dir, ORG_PACK_DIR);
   const questions: string[] = [];
@@ -161,5 +202,7 @@ export async function init(dir: string, o: InitOptions): Promise<InitResult> {
     ...(note ? { openspecNote: note } : {}),
     problems: op.problems,
     questions,
+    git: gitState,
+    ...(gitNote ? { gitNote } : {}),
   };
 }

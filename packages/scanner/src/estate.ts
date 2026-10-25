@@ -17,6 +17,10 @@ import { familyMismatches, fieldKey, pathScore, repoComponents } from "./spec-ch
  * matched to the flow its target starts, through the catalog's Interfaces (and their gateway
  * routes), or by method and normalised path on the target component when there is no
  * Interface. A join needs a citation at both ends: the caller's step and the callee's trigger.
+ * A step whose target the catalog doesn't have (a relative call's guessed name, or a loose end)
+ * joins the only entry point that serves its method and normalised path, of the caller's own
+ * repo first, then of the estate, and is said to be inferred; two or more is a question for a
+ * person (ADR 0124 addendum C-join, the join fallback).
  * Joined flows are then followed across repos (`estateFlow`), and a field along them from the
  * step that sends it to the column a write stores it in (`fieldLineage`).
  */
@@ -43,12 +47,56 @@ export interface JoinEstateInput {
    * (ADR 0088). A repo left out uses the default template.
    */
   templates?: Readonly<Record<string, SpecTemplate>>;
+  /**
+   * The component a person named for a call-out whose target the catalog doesn't have, by
+   * `<flow id>#<step>` (the answer to an `asks` question).
+   */
+  targets?: Readonly<Record<string, string>>;
+}
+
+/** Where a caller's step is: its repo, flow and step (1-based). */
+export interface EstateStepRef {
+  repo: string;
+  flow: string;
+  step: number;
+}
+
+/**
+ * A join made though the step names a target the catalog doesn't have (a relative call whose
+ * reader guessed a name, or a loose end): by method and path to the only entry point of the
+ * caller's own repo (`repo`), else of the estate (`estate`), that serves it, or through the
+ * Interface the estate join made from the caller (`interface`). ADR 0124 addendum C-join.
+ */
+export interface EstateInferred {
+  from: EstateStepRef;
+  /** The target the step names. */
+  named: string;
+  within: "repo" | "estate" | "interface";
+  message: string;
+}
+
+/** A call-out that two or more components could answer: a person says which, never a guess. */
+export interface EstateAsk {
+  from: EstateStepRef & { evidence?: string };
+  /** The caller's component. */
+  caller: string;
+  named: string;
+  /** METHOD /path as the step writes it. */
+  what: string;
+  /** The components that serve it, sorted. */
+  candidates: string[];
 }
 
 export interface JoinEstateResult {
   joins: EstateJoin[];
   unmatched: EstateUnmatched[];
+  /** The joins made though the step's target isn't in the catalog: each is inferred. */
+  inferred: EstateInferred[];
+  asks: EstateAsk[];
 }
+
+/** The key of a caller's step in `JoinEstateInput.targets`. */
+export const estateStepKey = (flow: string, step: number) => `${flow}#${step}`;
 
 const at = (e: EvidenceT | undefined) =>
   e?.path && e.line !== undefined ? `${e.path}:${e.line}` : undefined;
@@ -122,8 +170,34 @@ export async function joinEstate(o: JoinEstateInput): Promise<JoinEstateResult> 
     return wrong ? { wrong } : undefined;
   };
 
+  const isComponent = (id: string) => byId.get(id)?.kind === "Component";
+  const repoOfComponent = (id: string) => {
+    const c = byId.get(id);
+    return c?.kind === "Component" ? (c.repo ?? c.evidence.find((e) => e.repo)?.repo) : undefined;
+  };
+  /**
+   * The entry points that serve a method and path exactly (once normalised), of the components
+   * in scope (all when left out), the caller's own component aside.
+   */
+  const servingExactly = (
+    caller: string,
+    want: { method?: string; path: string },
+    scope?: Set<string>,
+  ) =>
+    endpoints
+      .filter(
+        (e) =>
+          e.component !== caller &&
+          (!scope || scope.has(e.component)) &&
+          sameMethod(want.method, e.method) &&
+          pathScore(want.path, e.normalizedPath ?? e.pathOrTopic) === 1000,
+      )
+      .sort((a, b) => a.id.localeCompare(b.id));
+
   const joins: EstateJoin[] = [];
   const unmatched: EstateUnmatched[] = [];
+  const inferred: EstateInferred[] = [];
+  const asks: EstateAsk[] = [];
   for (const { repo, flow } of flows) {
     const callers = repoComponents(o.records, repo);
     callers.add(flow.component);
@@ -135,26 +209,28 @@ export async function joinEstate(o: JoinEstateInput): Promise<JoinEstateResult> 
       const entry = `${s.to.component} ${s.to.entry}`;
       const miss = (u: Omit<EstateUnmatched, "from" | "entry">) =>
         unmatched.push({ from, entry, ...u });
-      const comp = byId.get(s.to.component);
+      // A person's answer names the target for a step whose own target isn't in the catalog.
+      const answer = o.targets?.[estateStepKey(flow.id, step)];
+      const name = answer ?? s.to.component;
+      const comp = byId.get(name);
+      const ofRepo = repoComponents(o.records, name);
       // A step written before its callee was read names the repo the call went to, or the
       // call's loose end (ADR 0124, C-join): an Interface the estate join made since, from the
-      // caller to a component of that repo (or to any, for a loose end), stands for it.
-      const reach =
-        comp?.kind === "Component"
-          ? new Set([s.to.component])
-          : repoComponents(o.records, s.to.component).size
-            ? repoComponents(o.records, s.to.component)
-            : s.to.component.startsWith("unresolved.") && !byId.has(s.to.component)
-              ? undefined
-              : new Set<string>();
-      if (reach?.size === 0) {
+      // caller to a component of that repo (or to any, for a loose end), stands for it. A name
+      // the catalog doesn't have (a relative call's guessed target) is read like a loose end,
+      // then joined by method and path (the join fallback); an outside System's name is kept.
+      const unknown = comp?.kind !== "Component" && ofRepo.size === 0;
+      if (unknown && (answer || comp?.kind === "System")) {
         miss({
           reason: "no-target",
-          message: `${s.to.component} isn't a component in the catalog`,
+          message: answer
+            ? `${answer}, which a person named for it, isn't a component in the catalog`
+            : `${name} isn't a component in the catalog`,
         });
         continue;
       }
-      const reaches = (to: string) => !reach || reach.has(to);
+      const reach = comp?.kind === "Component" ? new Set([name]) : unknown ? undefined : ofRepo;
+      const reaches = (to: string) => (reach ? reach.has(to) : isComponent(to));
       const named = byId.get(s.to.entry);
       const want =
         named?.kind === "Endpoint"
@@ -180,8 +256,16 @@ export async function joinEstate(o: JoinEstateInput): Promise<JoinEstateResult> 
       }
       let target: Endpoint | undefined;
       let how: EstateJoin["how"];
+      let guess: Omit<EstateInferred, "from" | "named"> | undefined;
+      const stepName = `${flow.id} step ${step}`;
+      const unnamed = `${stepName} names ${s.to.component}, which isn't a component in the catalog`;
       if (iface) {
         how = "interface";
+        if (unknown)
+          guess = {
+            within: "interface",
+            message: `${unnamed}: joined through ${iface.id}, the Interface from ${flow.component} that reaches ${s.to.entry}`,
+          };
         const e = iface.endpoint ? byId.get(iface.endpoint) : undefined;
         target =
           e?.kind === "Endpoint"
@@ -198,19 +282,59 @@ export async function joinEstate(o: JoinEstateInput): Promise<JoinEstateResult> 
       } else if (named?.kind === "Endpoint") {
         how = "endpoint";
         target = named;
+      } else if (unknown) {
+        // The join fallback: the only component of the caller's own repo that serves the
+        // method and path, else of the estate; two or more is a question, never a guess.
+        how = "path";
+        const own = repoComponents(o.records, repo);
+        let within: "repo" | "estate" = "repo";
+        let hits = servingExactly(flow.component, want, own);
+        if (hits.length === 0) {
+          within = "estate";
+          hits = servingExactly(flow.component, want);
+        }
+        const candidates = [...new Set(hits.map((e) => e.component))].sort();
+        if (candidates.length === 0) {
+          miss({
+            reason: "no-target",
+            message: `${s.to.component} isn't a component in the catalog, and neither an Interface from ${flow.component} nor an entry point of the estate serves ${s.to.entry}`,
+          });
+          continue;
+        }
+        if (candidates.length > 1) {
+          const repos = [...new Set(candidates.map(repoOfComponent))];
+          const of = repos.length === 1 && repos[0] ? repos[0] : "the estate";
+          miss({
+            reason: "no-target",
+            message: `${s.to.component} isn't a component in the catalog, and ${candidates.length} components of ${of} serve ${s.to.entry} (${candidates.join(", ")}): a person says which`,
+          });
+          asks.push({
+            from,
+            caller: flow.component,
+            named: s.to.component,
+            what: s.to.entry,
+            candidates,
+          });
+          continue;
+        }
+        target = hits[0]!;
+        guess = {
+          within,
+          message: `${unnamed}: joined by method and path to ${target.id}, the only entry point of ${within === "repo" ? `its own repo (${repo})` : "the estate"} that serves ${s.to.entry}`,
+        };
       } else if (comp?.kind !== "Component") {
         miss({
           reason: "no-target",
-          message: `${s.to.component} isn't a component in the catalog, and no Interface from ${flow.component} reaches ${s.to.entry}`,
+          message: `${name} isn't a component in the catalog, and no Interface from ${flow.component} reaches ${s.to.entry}`,
         });
         continue;
       } else {
         how = "path";
-        target = bestEndpoint(s.to.component, want.method, [want.path]);
+        target = bestEndpoint(name, want.method, [want.path]);
         if (!target) {
           miss({
             reason: "no-target",
-            message: `${s.to.component} has no entry point for ${s.to.entry}, and no Interface from ${flow.component} reaches it`,
+            message: `${name} has no entry point for ${s.to.entry}, and no Interface from ${flow.component} reaches it`,
           });
           continue;
         }
@@ -258,11 +382,18 @@ export async function joinEstate(o: JoinEstateInput): Promise<JoinEstateResult> 
         ...ifaceId,
         how,
       });
+      if (guess)
+        inferred.push({ from: { repo, flow: flow.id, step }, named: s.to.component, ...guess });
     }
   }
   const order = (a: { from: { flow: string; step: number } }, b: typeof a) =>
     a.from.flow.localeCompare(b.from.flow) || a.from.step - b.from.step;
-  return { joins: joins.sort(order), unmatched: unmatched.sort(order) };
+  return {
+    joins: joins.sort(order),
+    unmatched: unmatched.sort(order),
+    inferred: inferred.sort(order),
+    asks: asks.sort(order),
+  };
 }
 
 // ---------- end-to-end flows ----------

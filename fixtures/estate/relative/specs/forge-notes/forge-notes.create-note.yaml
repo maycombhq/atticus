@@ -1,0 +1,15 @@
+kind: Flow
+schemaVersion: 1
+id: forge-notes.create-note
+component: forge-notes
+name: A client saves a note
+template: facts@1
+trigger:
+  kind: endpoint
+  ref: forge-notes.create-note
+  what: POST /api/notes is called
+  evidence: [{ source: code, repo: forge-notes, path: api/src/main/java/forge/notes/NoteController.java, line: 20 }]
+steps:
+  - kind: respond
+    what: The note is saved and returned
+    evidence: [{ source: code, repo: forge-notes, path: api/src/main/java/forge/notes/NoteController.java, line: 23 }]

@@ -138,9 +138,10 @@ describe("lean batch prompts: the core and the topic rules a batch needs (ADR 01
   const GRPC = "A gRPC entry or call's `path`";
 
   it("leaves /atticus-map's rules as they were, byte for byte (tier 1)", () => {
-    // sha256 of FACT_RULES before the split: every rule, in the same words and order.
+    // sha256 of FACT_RULES: every rule, in the same words and order (since the split, one
+    // sentence added: what `to` is for a relative call, ADR 0124 addendum C-join).
     expect(createHash("sha256").update(FACT_RULES).digest("hex")).toBe(
-      "adcc5b1f6933ee4b1082b5d1e4f71312746a2aa4ddef81b0f7ac20b89433d422",
+      "e15d28c338aa39387c8d152d1dbc9396661830739cf772ec46f516e7e771abb8",
     );
     expect(FACT_RULES).toBe(factRulesFor());
     expect(mapCommand().body).toContain(FACT_RULES);

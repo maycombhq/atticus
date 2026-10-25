@@ -405,6 +405,7 @@ Usage:
           [--answer <file>]            With --copy: read the pasted answer back from a file (- for stdin)
   atticus verify <repo>                Check the facts your assistant wrote for a repo (/atticus-map) against its code: the claim on each cited line, the quote, references, secrets, coverage; raises the questions it wrote for a person; rejected facts go back to the assistant (ADR 0124) [--dir path] [--commit sha] [--routed a,b] [--json]
           [--write]                    When nothing is rejected: put the facts in the catalog, the flows in specs/<repo>/, ask about calls nothing joins, and render the map
+          [--verbose]                  With --write: list every record changed and flow written, not only the counts
   atticus map render <repo> [--json]   Render the repo's map from the catalog: map.md, a page per flow with its sequence diagram, an OpenAPI file per component, under map/<repo>/
   atticus spec draft <repo>            Your assistant writes the repo's flows, one per trigger, each step cited and checked [--attempts 3] [--resume run] [--force] [--mode m] [--max-tokens n]
   atticus spec check <repo> [--json]   Check the repo's flows against the catalog, the template and the code; confirms steps on their cited lines
@@ -1333,13 +1334,13 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
     const v = parseArgs({
       args: argv,
       allowPositionals: true,
-      options: { ...OPTIONS, write: { type: "boolean" } },
+      options: { ...OPTIONS, write: { type: "boolean" }, verbose: { type: "boolean" } },
       strict: false,
     });
     const repo = v.positionals[1];
     if (!repo) {
       io.err(
-        "Usage: atticus verify <repo> [--write] [--dir path] [--commit sha] [--routed a,b] [--json]",
+        "Usage: atticus verify <repo> [--write [--verbose]] [--dir path] [--commit sha] [--routed a,b] [--json]",
       );
       return 2;
     }
@@ -1362,6 +1363,7 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
             }
           : {}),
         write: v.values.write === true,
+        verbose: v.values.verbose === true,
         json: v.values.json === true,
       },
       io,

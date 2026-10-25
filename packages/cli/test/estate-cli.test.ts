@@ -14,7 +14,12 @@ import {
   RepoManifest,
   serializeRecord,
 } from "@maycombhq/core";
-import { estateFlowCommand, estateJoin, estateLineage } from "../src/estate-commands.js";
+import {
+  ESTATE_TARGETS_STEP,
+  estateFlowCommand,
+  estateJoin,
+  estateLineage,
+} from "../src/estate-commands.js";
 import { questionsFiles } from "../src/question-commands.js";
 
 const ESTATE = join(dirname(fileURLToPath(import.meta.url)), "../../../fixtures/estate");
@@ -254,6 +259,87 @@ describe("atticus estate join, flow and lineage (ADR 0085)", () => {
       "  1.2 write, stored forge-customers-db.owners.first_name: The owner is saved  [forge-customers:src/main/java/forge/customers/OwnerController.java:14]",
       "firstName is stored in forge-customers-db.owners.first_name.",
     ]);
+  });
+
+  it("joins a relative call whose target the catalog doesn't have by method and path, says each is inferred, and asks when two could answer (ADR 0124 addendum C-join)", async () => {
+    const REL = join(ESTATE, "relative");
+    const root = await mkdtemp(join(tmpdir(), "atticus-estate-relative-"));
+    for (const r of parse(await readFile(join(REL, "catalog.yaml"), "utf8")) as unknown[]) {
+      const p = parseRecord(r);
+      if (!p.ok) throw new Error(JSON.stringify(p.issues));
+      const file = join(root, "catalog", "generated", recordPath(p.record));
+      await mkdir(dirname(file), { recursive: true });
+      await writeFile(file, serializeRecord(p.record));
+    }
+    await cp(join(ESTATE, "org-pack"), join(root, "org-pack"), { recursive: true });
+    await cp(join(REL, "specs"), join(root, "specs"), { recursive: true });
+
+    const j = io();
+    expect(await estateJoin(root, { now: T }, j.io)).toBe(0);
+    expect(j.err).toEqual([]);
+    const asked = (await listQuestions(root, { step: ESTATE_TARGETS_STEP })).questions;
+    expect(asked).toHaveLength(1);
+    const q = asked[0]!;
+    expect(q.question).toBe(
+      "Which component answers GET /api/archive/{id}, which forge-notes-web calls?",
+    );
+    expect(q.evidence).toEqual(["web/src/notes/notes-api.ts:13"]);
+    expect(q.options.map((o) => o.label)).toEqual([
+      "forge-archive",
+      "forge-archive-replica",
+      "None of these",
+    ]);
+    expect(j.out).toEqual([
+      "Joined 3 of 4 call-outs across 2 repos (forge-archive, forge-notes); written to specs/estate.yaml.",
+      "  forge-notes-web.open-note step 1 → forge-notes.get-note (by method and path, inferred)",
+      "  forge-notes-web.open-note step 2 → forge-archive.list-tags (by method and path, inferred)",
+      "  forge-notes-web.open-note step 4 → forge-notes.create-note (by method and path, inferred)",
+      "1 call-out isn't joined:",
+      "  forge-notes-web.open-note step 3 (no target): notes-service isn't a component in the catalog, and 2 components of forge-archive serve GET /api/archive/{id} (forge-archive, forge-archive-replica): a person says which",
+      "Cited lines of forge-archive, forge-notes weren't checked: there is no clone of them here.",
+      "3 joins are inferred: their step names a target that isn't a component in the catalog (a relative call's guessed name, or none), so each joined the only entry point that serves its method and path, the caller's own repo first. When the repo is next read, a relative call leaves `to` out or names the component that serves it.",
+      `Two or more components answer a call-out: asked ${q.id}: ${q.question} Answer it: atticus questions answer ${q.id} --option <n>, then atticus estate join.`,
+      "Next: atticus estate flow <flow-id> follows a flow across repos.",
+    ]);
+    const written = EstateJoins.parse(
+      parse(await readFile(join(root, "specs", "estate.yaml"), "utf8")),
+    );
+    expect(written).toEqual(
+      EstateJoins.parse(parse(await readFile(join(REL, "expected", "estate.yaml"), "utf8"))),
+    );
+
+    // JSON says which joins are inferred, and the question.
+    const js = io();
+    expect(await estateJoin(root, { now: T, json: true }, js.io)).toBe(0);
+    const out = JSON.parse(js.out.join("\n")) as {
+      inferred: { from: { step: number }; within: string }[];
+      questions: string[];
+    };
+    expect(out.inferred.map((x) => [x.from.step, x.within])).toEqual([
+      [1, "repo"],
+      [2, "estate"],
+      [4, "repo"],
+    ]);
+    expect(out.questions).toEqual([q.id]);
+
+    // The answer joins it, and nothing more is asked.
+    expect(
+      await questionsFiles(
+        root,
+        ["questions", "answer", q.id, "--option", "2", "--by", "priya.nair"],
+        io().io,
+        { now: T },
+      ),
+    ).toBe(0);
+    const after = io();
+    expect(await estateJoin(root, { now: T }, after.io)).toBe(0);
+    expect(after.out[0]).toBe(
+      "Joined 4 of 4 call-outs across 2 repos (forge-archive, forge-notes); written to specs/estate.yaml.",
+    );
+    expect(after.out).toContain(
+      "  forge-notes-web.open-note step 3 → forge-archive-replica.get-archived (by method and path)",
+    );
+    expect(after.out.some((l) => l.includes("asked"))).toBe(false);
   });
 
   it("needs repo specs", async () => {

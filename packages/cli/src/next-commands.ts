@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { parse } from "yaml";
 import {
   changesDirOf,
+  factsDirOf,
   fastPathOf,
   listQuestions,
   proposalsDirOf,
@@ -64,6 +65,8 @@ export interface RepoState {
    * reader path (survey, scan, verify, spec draft and check) is not its way in (B-run2-fixes 7).
    */
   facts?: boolean;
+  /** Its assistant wrote its facts (facts/<repo>.jsonl), whether or not they are written yet. */
+  read?: boolean;
 }
 
 export interface NextState {
@@ -131,6 +134,7 @@ export async function readNextState(root: string): Promise<NextState> {
       checked: !!findings && findings.draftedAt === spec.header?.drafted?.at,
       findings: findings?.findings.filter((f) => !f.question).length ?? 0,
       ...(spec.header?.template.startsWith("facts@") ? { facts: true } : {}),
+      ...(existsSync(join(factsDirOf(root), `${r.id}.jsonl`)) ? { read: true } : {}),
     });
   }
   const open = await listQuestions(root, { state: "open" });
@@ -438,8 +442,30 @@ export function nextSteps(s: NextState): NextStep[] {
       command: "atticus workspace sync",
       why: `${plural(notCloned.length, "repo")} ${notCloned.length === 1 ? "isn't" : "aren't"} cloned yet: ${notCloned.map((r) => r.id).join(", ")}.`,
     });
-  // B-run2-fixes 7: a repo mapped from its verified facts skips the reader path.
-  const cloned = s.repos.filter((r) => r.cloned && !r.facts);
+  // B-run2-fixes 7: a repo mapped from its verified facts skips the reader path. ADR 0124: a
+  // repo neither read nor scanned is read by the assistant (/atticus-map) and its facts written
+  // with verify --write; the reader path (survey, scan, verify, spec) goes on only for a repo a
+  // scan already read.
+  const unread = s.repos.filter((r) => r.cloned && !r.facts && !r.scanned);
+  for (const r of unread)
+    out.push(
+      r.read
+        ? {
+            step: "write",
+            command: `atticus verify ${r.id} --write`,
+            why: `${r.id} is read: atticus verify ${r.id} --write checks its facts against the code, then puts them in the catalog and renders its map.`,
+            repo: r.id,
+          }
+        : {
+            step: "map",
+            command: `atticus map ${r.id}`,
+            slash: `/atticus-map ${r.id}`,
+            where: METAREPO,
+            why: `${r.id} isn't read yet: your assistant reads it and writes its facts, each citing its line, and atticus verify ${r.id} checks them.`,
+            repo: r.id,
+          },
+    );
+  const cloned = s.repos.filter((r) => r.cloned && !r.facts && r.scanned);
   for (const r of cloned.filter((x) => !x.settings))
     out.push({
       step: "survey",
@@ -449,16 +475,13 @@ export function nextSteps(s: NextState): NextStep[] {
       why: `${r.id} has no scan settings yet: your assistant reads it and drafts them, and Atticus checks each entry against the code.`,
       repo: r.id,
     });
-  const unscanned = cloned.filter((r) => !r.scanned);
-  if (unscanned.length || (cloned.length && s.catalogRecords === 0))
+  if (cloned.length && s.catalogRecords === 0)
     out.push({
       step: "scan",
       command: "atticus scan",
-      why: unscanned.length
-        ? `${unscanned.map((r) => r.id).join(", ")} ${unscanned.length === 1 ? "hasn't" : "haven't"} been scanned yet.`
-        : "The catalog is empty: scan the repos into it.",
+      why: "The catalog is empty: scan the repos into it.",
     });
-  const scanned = cloned.filter((r) => r.scanned);
+  const scanned = cloned;
   for (const r of scanned)
     if (r.verify === "none")
       out.push({

@@ -18,10 +18,11 @@ import {
   parseRecord,
   serializeRecord,
   type CatalogRecord,
+  type FactsJoinResult,
 } from "@maycombhq/core";
 import { estateRepos, mergeEstate, readCatalog, writeCatalog } from "@maycombhq/scanner";
 import { main } from "../src/main.js";
-import { mapRenderCommand } from "../src/map-render-commands.js";
+import { joinLines, mapRenderCommand } from "../src/map-render-commands.js";
 import { verifyCommand } from "../src/verify-commands.js";
 
 /**
@@ -99,6 +100,122 @@ function golden(rel: string, text: string) {
   }
   expect(text, rel).toBe(readFileSync(path, "utf8"));
 }
+
+describe("atticus verify <repo> --write says what it wrote in a few lines", () => {
+  it("counts the records by kind and the flows, and lists each only with --verbose", async () => {
+    const root = await metarepo();
+    const o = io();
+    expect(await write(root, o)).toBe(0);
+    const at = o.out.findIndex((l) => l.startsWith("Wrote the catalog for forge-ledger:"));
+    expect(at).toBeGreaterThanOrEqual(0);
+    const records = o.out[at + 1]!;
+    // One line of counts by kind: + added, ~ changed, - removed.
+    expect(records).toMatch(/^ {2}Records: [A-Z][A-Za-z]+ [+~-]\d+/);
+    expect(records).toContain("Column +");
+    expect(o.out[at + 2]).toBe("  Flows: 1 in specs/forge-ledger/.");
+    expect(o.out[at + 3]).toBe(
+      "  atticus verify forge-ledger --write --verbose lists each record and flow.",
+    );
+    // No record or flow file is listed one by one.
+    expect(o.out.filter((l) => /^ {2}[+~-] [A-Z]/.test(l))).toEqual([]);
+    expect(o.out.filter((l) => l.includes("specs/forge-ledger/ledger-api."))).toEqual([]);
+
+    const v = io();
+    const again = await metarepo();
+    expect(
+      await verifyCommand(
+        again,
+        "forge-ledger",
+        {
+          commit: "0123abc",
+          dir: join(again, "workspace", "forge-ledger"),
+          write: true,
+          verbose: true,
+        },
+        v.io,
+      ),
+    ).toBe(0);
+    expect(v.out.filter((l) => /^ {4}\+ Column\//.test(l)).length).toBeGreaterThan(0);
+    expect(v.out).toContain("    specs/forge-ledger/ledger-api.post-a-ledger-entry.yaml");
+    expect(v.out.some((l) => l.includes("--verbose lists"))).toBe(false);
+  });
+
+  it("gives the changes and the flows in full with --json", async () => {
+    const root = await metarepo();
+    const o = io();
+    expect(
+      await verifyCommand(
+        root,
+        "forge-ledger",
+        {
+          commit: "0123abc",
+          dir: join(root, "workspace", "forge-ledger"),
+          write: true,
+          json: true,
+        },
+        o.io,
+      ),
+    ).toBe(0);
+    const j = JSON.parse(o.out.join("\n")) as {
+      written: {
+        flows: string[];
+        changes: { added: { kind: string; id: string }[]; byKind: Record<string, unknown> };
+      };
+    };
+    expect(j.written.flows).toEqual(["specs/forge-ledger/ledger-api.post-a-ledger-entry.yaml"]);
+    expect(j.written.changes.added.some((r) => r.kind === "Column")).toBe(true);
+    expect(j.written.changes.byKind.Column).toMatchObject({ added: expect.any(Number) });
+  });
+});
+
+describe("joinLines: what the estate join did for a write", () => {
+  const end = (repo: string, fact: string, component: string, at: string) => ({
+    repo,
+    fact,
+    component,
+    at,
+  });
+  it("says how many calls were joined by method and path, inferred, and lists them with --verbose", () => {
+    const join = {
+      joins: [
+        {
+          call: end("forge-notes", "c-note", "forge-notes-web", "web/src/notes/notes-api.ts:5"),
+          entry: end("forge-notes", "e-get-note", "forge-notes", "api/NoteController.java:14"),
+          how: "path",
+          inferred: { within: "repo", named: "notes-service" },
+          callType: "rest",
+          method: "GET",
+          path: "/api/notes/{noteId}",
+          interface: "if-74464cae7902572b",
+        },
+        {
+          call: end("forge-notes", "c-tags", "forge-notes-web", "web/src/notes/notes-api.ts:9"),
+          entry: end("forge-archive", "e-tags", "forge-archive", "src/TagController.java:18"),
+          how: "path",
+          inferred: { within: "estate" },
+          callType: "rest",
+          method: "GET",
+          path: "/api/tags",
+          interface: "if-0000000000000001",
+        },
+      ],
+      asks: [],
+      misses: [],
+      lineage: [],
+      gaps: [],
+    } satisfies FactsJoinResult;
+    const head = [
+      "Joined across repos: 1 of forge-notes's calls to the entries that serve them, 0 calls of other repos into forge-notes, each citing both ends.",
+      "Joined by method and path, inferred: 2 of forge-notes's calls name no target the estate has, so each joined the one entry that serves it (1 in forge-notes itself, 1 in another repo).",
+    ];
+    expect(joinLines("forge-notes", join)).toEqual(head);
+    expect(joinLines("forge-notes", join, [], { verbose: true })).toEqual([
+      ...head,
+      "  web/src/notes/notes-api.ts:5 GET /api/notes/{noteId} (named notes-service) → forge-notes",
+      "  web/src/notes/notes-api.ts:9 GET /api/tags → forge-archive (forge-archive)",
+    ]);
+  });
+});
 
 describe("atticus verify <repo> --write (ADR 0124, A3b)", () => {
   it("writes the catalog, the flows and the map, as the golden files", async () => {

@@ -229,6 +229,39 @@ describe("reposDiscover from a folder of clones", () => {
     expect((await loadOrgPack(join(root, "org-pack"))).problems).toEqual([]);
   });
 
+  it("never looks inside hidden folders, node_modules or a nested worktree", async () => {
+    const root = await metarepo();
+    const src = join(await tempDir(), "forge-notes");
+    const put = async (path: string, text: string) => {
+      await mkdir(join(src, path, ".."), { recursive: true });
+      await writeFile(join(src, path), text, "utf8");
+    };
+    await put(".git/HEAD", "ref: refs/heads/main\n");
+    await put(
+      "web/package.json",
+      '{ "name": "forge-notes-web", "dependencies": { "react": "18.3.1" } }\n',
+    );
+    // An assistant's worktree of this clone, with a Spring test fixture in it: not this repo's.
+    await put(".claude/worktrees/agent-1/.git", "gitdir: ../../../.git/worktrees/agent-1\n");
+    await put(
+      ".claude/worktrees/agent-1/pom.xml",
+      "<project><parent><groupId>org.springframework.boot</groupId></parent><artifactId>fixture</artifactId></project>\n",
+    );
+    await put("node_modules/left-pad/package.json", '{ "name": "left-pad" }\n');
+    // A worktree that isn't hidden: a checkout of another branch, not a module.
+    await put("review-tree/.git", "gitdir: ../.git/worktrees/review-tree\n");
+    await put("review-tree/go.mod", "module example.com/review\n");
+
+    const r = await reposDiscover(root, { dir: src }, { dryRun: true });
+    expect(r.repos.map((x) => [x.entry.id, x.entry.type, x.entry.modules])).toEqual([
+      ["forge-notes", "frontend", [{ path: "web", component: "web", hosts: [] }]],
+    ]);
+    expect(r.repos[0]!.detection.signals).toEqual(["web/package.json"]);
+    expect(r.skipped).toEqual([
+      { path: "review-tree", reason: "a git worktree (a checkout of another clone), not a repo" },
+    ]);
+  });
+
   it("follows a link to a clone (B-run2-fixes 6), never a link back up its own folder, and a clone two links name once", async () => {
     const root = await metarepo();
     const base = await tempDir();

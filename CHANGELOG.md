@@ -4,6 +4,14 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### What a trial on one repo found, fixed (ADR 0124 addendum C-join, the fallback)
+
+- **A relative call joins the API that serves it.** A front end's `fetch("/api/...")` has no host, so the reader guessed a `to` the estate doesn't have, and `atticus join` joined none of its calls. Such a call (or one naming no target) now joins by method and path the one entry of its own repo that serves it, else the one of the estate, and is marked inferred: `atticus verify <repo> --write` says how many and where, `atticus join` prints "inferred" beside each. When two or more could answer, a person is asked which. A vendor the org pack lists keeps its name. `/atticus-map` now says to leave `to` out of a relative call, or name the component that serves it.
+- **`atticus verify <repo> --write` says what it wrote in a few lines**: counts by record kind (`+` added, `~` changed, `-` removed) and "N in specs/<repo>/". `--verbose` lists every record and flow; `--json` gives them all.
+- **`atticus init` makes the metarepo a git repository** (branch main) when the folder isn't inside one, and says so; a folder inside a repository is left alone. Its next step, and `atticus next` for a repo not read yet, say `/atticus-map <repo>` and `atticus verify <repo> --write`, not `atticus scan`.
+- **`atticus repos discover` skips hidden folders, `node_modules` and nested worktrees**, so an assistant's worktree under `.claude/` no longer decides what a repo is.
+- **`atticus doctor` says which repos' facts are read** (at which commit, or not read yet) instead of "Last scan".
+
 ### VS Code: /verify checks the facts
 
 - **`@atticus /verify <repo>` and _Atticus: Verify a repo's facts against its code_ run `atticus verify`** (ADR 0124), with no model: the chat shows what was rejected and offers `--write`, or sends the rejected facts back with `/map`. They ran the older scanner's `scan verify` with Copilot's model before. That check stays, as `/scanverify` and _Verify a repo's last scan_, behind `atticus.fullUi`.

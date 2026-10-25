@@ -14,10 +14,12 @@ import { hostHasPort, hostMatches, urlHostPort } from "./schema/workspace.js";
  * Which repo a call goes to is read, in order, from: a person's answer; the call's `to` (a
  * component, or a repo, of the estate); the host, or the base URL a config fact gives, that a
  * repo lists in the manifest (or a host whose first label is a component). A host nobody lists
- * is asked (`Which repo answers on <host>?`), never guessed, and a call whose `to` names
- * something outside the estate is left to that name. A call that names nothing joins the one
- * entry of the estate that serves that method and path (or gRPC/SOAP name) in the same shape;
- * two or more is a question. A publish joins every listener of its topic.
+ * is asked (`Which repo answers on <host>?`), never guessed, and a call whose `to` names an
+ * outside system (or names something outside the estate and has a host) is left to that name.
+ * A call with no host whose `to` names nothing in the estate (a relative call whose reader
+ * guessed a name), or that names nothing, joins the one entry of the caller's own repo that
+ * serves that method and path (or gRPC/SOAP name) in the same shape, else the one of the
+ * estate, marked inferred; two or more is a question. A publish joins every listener of its topic.
  *
  * Then the fields that cross: a caller's request fields to the callee entry's, the callee's
  * response fields back, a message's to the listener's, by name (last dotted part, case, `_`
@@ -61,6 +63,12 @@ export interface FactJoin {
   /** The config fact that gives the call's base URL, when one ties the call to the host. */
   tie?: FactEnd;
   how: JoinHow;
+  /**
+   * A join by path (the join fallback): nobody named the callee, so it is inferred. `within`
+   * says where the one entry that serves the call was found: the caller's own repo first, else
+   * the estate; `named` is the target the call gave, when it named one the estate doesn't have.
+   */
+  inferred?: { within: "repo" | "estate"; named?: string };
   callType: string;
   method?: string;
   /** The path, gRPC or SOAP name, or topic the entry serves, as the entry writes it. */
@@ -121,6 +129,11 @@ export interface JoinFactsInput {
   repos: readonly JoinRepo[];
   /** A person's answer naming the repo or component a call goes to: repo → call fact id → name. */
   targets?: Readonly<Record<string, Readonly<Record<string, string>>>>;
+  /**
+   * Outside systems (the org pack's vendors), by id: a call whose `to` names one keeps it and
+   * is never joined by path to an entry of the estate.
+   */
+  outside?: readonly string[];
 }
 
 type Entry = FactOf<"entry">;
@@ -288,6 +301,7 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
     declared.find((d) => hostHasPort(d.pattern) && hostMatches(d.pattern, h.host, h.port)) ??
     declared.find((d) => !hostHasPort(d.pattern) && hostMatches(d.pattern, h.host, h.port));
 
+  const outside = new Set((input.outside ?? []).map(factIdPart));
   const joins: FactJoin[] = [];
   const asks: FactJoinAsk[] = [];
   const misses: FactJoinMiss[] = [];
@@ -378,7 +392,7 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
       const comp = factIdPart(host.host.split(".")[0]!);
       scope = { scope: (e) => e.component === comp, target: comp };
       how = "host";
-    } else if (f.to) {
+    } else if (f.to && (host || outside.has(factIdPart(f.to)))) {
       continue; // a target outside the estate (a vendor, a cloud service): the call keeps it
     } else if (host) {
       const h = host.named ? `${host.host}:${host.named}` : host.host;
@@ -391,11 +405,23 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
       });
       continue;
     } else {
+      // The join fallback: no host, and a target that names nothing in the estate (a relative
+      // call's guessed name) or none. The one entry of the caller's own repo that serves it,
+      // else of the estate; two or more is a question.
       if (GENERIC.test(f.path)) continue;
       how = "path";
     }
 
-    const hits = serving(call, scope?.scope ?? (() => true), how === "path");
+    let within: "repo" | "estate" | undefined;
+    let hits: (Node & { fact: Entry })[];
+    if (how === "path") {
+      within = "repo";
+      hits = serving(call, (e) => e.repo === call.repo, true);
+      if (hits.length === 0) {
+        within = "estate";
+        hits = serving(call, () => true, true);
+      }
+    } else hits = serving(call, scope?.scope ?? (() => true), false);
     if (hits.length === 1) {
       const e = hits[0]!;
       joins.push({
@@ -403,6 +429,7 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
         entry: end(e),
         ...tie,
         how,
+        ...(within ? { inferred: { within, ...(f.to ? { named: f.to } : {}) } } : {}),
         callType: f.callType,
         ...(f.method || e.fact.method
           ? { method: (f.method ?? e.fact.method)!.toUpperCase() }

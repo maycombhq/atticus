@@ -1,0 +1,15 @@
+kind: Flow
+schemaVersion: 1
+id: forge-notes.get-note
+component: forge-notes
+name: A client reads a note
+template: facts@1
+trigger:
+  kind: endpoint
+  ref: forge-notes.get-note
+  what: GET /api/notes/{noteId} is called
+  evidence: [{ source: code, repo: forge-notes, path: api/src/main/java/forge/notes/NoteController.java, line: 14 }]
+steps:
+  - kind: respond
+    what: The note is returned
+    evidence: [{ source: code, repo: forge-notes, path: api/src/main/java/forge/notes/NoteController.java, line: 16 }]

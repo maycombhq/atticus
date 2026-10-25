@@ -156,7 +156,7 @@ export const FACT_RULE_PARTS: readonly (readonly RulePart[])[] = [
     },
     {
       when: ["backend", "frontend"],
-      text: "Don't leave a call relative because its base is elsewhere.",
+      text: 'Don\'t leave a call relative because its base is elsewhere. A call with no host (`fetch("/api/notes")`) leaves `to` out, or names the component that serves it when you know its id; never a guessed name.',
     },
     {
       when: ["backend", "frontend", "config"],
