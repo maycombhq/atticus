@@ -129,8 +129,8 @@ test("in an editor's panel (620 to 780 px wide) the menu stays beside the page",
     expect(main.x, route).toBeGreaterThanOrEqual(nav.x + nav.width - 1);
     expect(Math.abs(main.y - nav.y), route).toBeLessThan(2);
     expect(main.width, route).toBeGreaterThan(width - nav.width - 24);
-    const sideways = await page.evaluate(
-      () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
+    const sideways = await page.evaluate<boolean>(
+      "document.documentElement.scrollWidth > document.documentElement.clientWidth",
     );
     expect(sideways, `${route} scrolls sideways`).toBe(false);
   }
