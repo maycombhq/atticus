@@ -60,6 +60,22 @@ describe("atticus sources add", () => {
     expect(readFileSync(join(root, "org-pack/sources.yaml"), "utf8")).toBe(before);
   });
 
+  // B2 (the knowledge walk): the printed entry left out the owner and tags --save writes.
+  it("prints the owner and tags it was given, as --save writes them", async () => {
+    const root = await forgeRoot();
+    await mkdir(join(root, "docs/runbooks"), { recursive: true });
+    const c = capture();
+    expect(
+      await sourcesAdd(root, "markdown-folder", "docs/runbooks", c.io, {
+        owner: "team-platform",
+        kinds: ["platform-runbook"],
+      }),
+    ).toBe(0);
+    expect(c.out[1]).toBe(
+      '  - { id: runbooks, type: markdown-folder, location: "../docs/runbooks", owner: team-platform, tags: { kinds: [platform-runbook], frameworks: [] } }',
+    );
+  });
+
   it("refuses a missing folder, a wiki already listed, a bad URL and an unknown kind", async () => {
     const root = await forgeRoot();
     const missing = capture();

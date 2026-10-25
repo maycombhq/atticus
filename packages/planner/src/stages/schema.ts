@@ -432,6 +432,17 @@ export const StageLoop = z.strictObject({
             blocking: z.boolean(),
             repo: z.string().optional(),
             kind: z.enum(["decision", "drafting"]).optional(),
+            // The rest of a stage's issue (loop.ts StageIssue), kept for when the lenses are in:
+            // a judged doubt goes back once, then is asked with its options, citing its line.
+            options: z
+              .array(z.strictObject({ label: text(), means: text(), changes: text() }))
+              .optional(),
+            ask: z.string().optional(),
+            holdOnce: z.boolean().optional(),
+            locateText: z.string().optional(),
+            judged: z
+              .array(z.strictObject({ field: text(), criterion: text(), task: text() }))
+              .optional(),
           }),
         )
         .default([]),

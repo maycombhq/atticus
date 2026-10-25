@@ -112,6 +112,7 @@ export async function intakeAdd(root: string, files: string[], io: Output): Prom
   }
   let problems = false;
   let added = 0;
+  let documents = 0;
   const ALREADY = "it is already in inputs as ";
   // One at a time, in the order given, so each message names the file as it was typed.
   for (const f of files) {
@@ -137,9 +138,14 @@ export async function intakeAdd(root: string, files: string[], io: Output): Prom
       const reading = a.kind === "document" || a.kind === "image" ? ", needs reading" : "";
       io.out(`Added ${a.path} (${a.kind}${reading}).`);
       added++;
+      if (a.kind === "document") documents++;
     }
   }
   if (added > 0) io.out("Run atticus intake list to see what Atticus made of them.");
+  if (documents > 0)
+    io.out(
+      "To read the documents into knowledge every change can use: atticus sources sync --source inputs, then atticus knowledge scan --source inputs.",
+    );
   return problems ? 1 : 0;
 }
 

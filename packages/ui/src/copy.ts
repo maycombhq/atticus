@@ -676,9 +676,9 @@ export const COPY = {
   changeKnowledge: {
     title: "Knowledge that applies",
     intro:
-      "What the change's stages picked from the org's knowledge (patterns, standards, decisions, processes, vendors, terms, wiki and document sections), with why. Confirm what applies; exclude what doesn't, and no later stage picks it again.",
-    none: "No stage of this change has picked knowledge yet. Its stages write the list when they select context, starting with the feature stage:",
-    featureCommand: (id: string) => `atticus change feature ${id}`,
+      "What the change's stages picked from the org's knowledge, with why: the architecture stage picks patterns, standards and decisions, the stories stage processes and requests. Confirm what applies, and every later stage that takes its kind picks it; exclude what doesn't, and no later stage picks it again.",
+    none: "No stage of this change has picked knowledge yet. The feature stage picks none; the architecture stage is the first that does. Once the feature stage is done, run:",
+    architectureCommand: (id: string) => `atticus change architecture ${id}`,
     working: "Writing knowledge.yaml…",
     caption: "Knowledge that applies to this change",
     item: "Item",

@@ -279,6 +279,88 @@ describe("values tied to the quote (ADR 0111)", () => {
   });
 });
 
+// B2 (the knowledge walk): two sources with a page at the same path. The prompt tells the model
+// to write the page's path after the source id, so both are `integration-patterns.md`; the check
+// must find the page the quote is on, not the first source's page of that name.
+describe("two sources with a page at the same path", () => {
+  const TEAM_WIKI = join(HERE, "../../../fixtures/forge/inputs/wiki");
+  let two: Snapshot[];
+  beforeAll(async () => {
+    const r2 = await mkdtemp(join(tmpdir(), "atticus-knowledge-two-"));
+    await mkdir(join(r2, "org-pack"), { recursive: true });
+    const loc = (p: string) => JSON.stringify(p.split("\\").join("/"));
+    await writeFile(
+      join(r2, "org-pack", "sources.yaml"),
+      [
+        "schemaVersion: 1",
+        "wikis:",
+        `  - { id: team-wiki, type: markdown-folder, location: ${loc(TEAM_WIKI)} }`,
+        `  - { id: forge-wiki, type: markdown-folder, location: ${loc(WIKI)} }`,
+        "",
+      ].join("\n"),
+    );
+    const op2 = await loadOrgPack(join(r2, "org-pack"));
+    const sync = await syncSources({
+      root: r2,
+      orgPack: op2,
+      orgPackDir: join(r2, "org-pack"),
+      now: NOW,
+    });
+    await writeSnapshots({ root: r2, orgPack: op2, sync, takenAt: NOW });
+    two = [(await readSnapshot(r2, "team-wiki"))!, (await readSnapshot(r2, "forge-wiki"))!];
+  });
+  const answer = `items:
+  - kind: pattern
+    id: p4-vendor
+    title: Vendor through the partner gateway
+    applies_when: A Forge service calls a vendor's API or a vendor calls Forge.
+    source: { page: integration-patterns.md, section: "P4: Vendor through the partner gateway", quote: "Use this when a Forge service calls a vendor's API or a vendor calls Forge." }
+  - kind: pattern
+    id: hop-codes
+    title: Hop codes
+    applies_when: An architecture diagram is drawn.
+    source: { page: integration-patterns.md, section: Integration patterns, quote: "Every hop on an architecture diagram carries one of these codes." }
+  - kind: pattern
+    id: nowhere
+    title: Nowhere
+    applies_when: Never.
+    source: { page: integration-patterns.md, section: Integration patterns, quote: "Words neither page has." }
+`;
+
+  it("checks the quote on the page it is on, and keeps that page's source", async () => {
+    const r = await scanKnowledge(two, {
+      runtime: new MockRuntime(() => answer),
+      now: new Date(NOW),
+      maxAttempts: 1,
+    });
+    const quoteOf = (id: string) => r.items.find((i) => i.id === id)?.quote;
+    expect(quoteOf("p4-vendor")).toMatchObject({
+      source: "forge-wiki",
+      page: "integration-patterns.md",
+      section: "P4: Vendor through the partner gateway",
+    });
+    expect(quoteOf("hop-codes")).toMatchObject({ source: "team-wiki" });
+    expect(r.attempts[0]!.problems).toEqual([
+      "pattern nowhere: quote: integration-patterns.md is on team-wiki and forge-wiki, and the quote is on neither page: write the page as <source>/<page> (team-wiki/integration-patterns.md)",
+    ]);
+  });
+
+  it("tells the model to name the source when two sources share a page's path", async () => {
+    const prompts: string[] = [];
+    await scanKnowledge(two, {
+      runtime: new MockRuntime((q: AiRequest) => {
+        prompts.push(q.pack.prompt);
+        return answer;
+      }),
+      now: new Date(NOW),
+      maxAttempts: 1,
+    });
+    expect(prompts[0]).toContain(
+      "More than one source has a page at these paths, so write them as <source>/<page>: integration-patterns.md.",
+    );
+  });
+});
+
 describe("the knowledge scan", () => {
   const prompts: string[] = [];
   const runtime = new MockRuntime((r: AiRequest) => {

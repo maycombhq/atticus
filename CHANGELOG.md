@@ -4,6 +4,17 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### Org knowledge, walked end to end (B2)
+
+- **A guide:** `docs/guide/knowledge.md` covers adding a wiki, a document or an API guide, the snapshot, the scan, asking and searching, what applies to a change, and confirm or exclude.
+- **Two sources with a page at the same path** (a team wiki and the org wiki both with `integration-patterns.md`) no longer fail the knowledge scan. Each quote is checked on the page it is on. A quote on neither page says to write `<source>/<page>`, and the prompt asks for that form when sources share a path.
+- **Confirming an item now does something.** Every later stage that takes the item's kind selects it, so a near-miss you confirm reaches the next stage. Excluding still keeps an item out of every later stage, and that is now tested on a stage run.
+- **`atticus plan stories --handoff --resume` no longer crashes** with "Unrecognized key: locateText". The crash came when a judged doubt waited for the critic's lenses.
+- **A critic finding that cites a file by its metarepo path** (`openspec/changes/<id>/design.md`) is now kept. It was dropped as having no evidence.
+- **`atticus change knowledge` and the app's Knowledge that applies panel no longer send you to the feature stage**, which picks no knowledge. They name the architecture stage and say which kinds each stage picks. The list ends with how to confirm or exclude an item.
+- **`atticus sources add` prints the `--owner` and tags it was given**, as `--save` writes them.
+- **`atticus intake add` says how a document becomes knowledge:** `atticus sources sync --source inputs`, then `atticus knowledge scan`.
+
 ### A changed file invalidates only what cites it (A-incremental, ADR 0124 addendum A-incremental)
 
 - **A moved checkout is re-read, not read again whole.** When a repo's facts are of an earlier commit, `atticus map <repo> --estimate` compares that commit with HEAD (local `git diff --name-status -M`, renames followed) and lists three things. The facts that still hold, because every file they cite is unchanged: kept as they are. The facts that cite a file edited, renamed (with its new path) or deleted since: read again, then rewrite or drop. The changed source files, which are the only files to read. The token and batch estimate covers only those files. `--estimate --json` gains `reread` (and `notComparable` for a commit the clone doesn't have).

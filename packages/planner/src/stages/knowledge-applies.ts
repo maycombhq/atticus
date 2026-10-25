@@ -173,6 +173,22 @@ export async function excludedKnowledge(root: string, change: string): Promise<s
     .sort();
 }
 
+/**
+ * Ids a person confirmed: every later stage that takes their kind selects them, as if its input
+ * named them (B2: a near-miss a person promoted was listed as confirmed and never sent).
+ */
+export async function confirmedKnowledge(
+  root: string,
+  change: string,
+  kinds?: readonly string[],
+): Promise<string[]> {
+  const doc = await readKnowledgeApplies(root, change);
+  return (doc?.items ?? [])
+    .filter((i) => i.status === "confirmed" && (!kinds || kinds.includes(i.kind)))
+    .map((i) => i.id)
+    .sort();
+}
+
 /** The list for a hand-off PR or the app: what applies, and what nearly did. */
 export function knowledgeAppliesMarkdown(doc: KnowledgeApplies): string {
   const shown = doc.items.filter((i) => i.status !== "excluded");

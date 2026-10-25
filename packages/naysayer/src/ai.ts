@@ -402,7 +402,15 @@ export function parseLensOutput(
     return { hits: [], discarded: [{ lens, reason: read.problem }], malformed: read.problem };
   const list = read.list;
   const byRule = new Map(rules.map((r) => [r.id, r]));
-  const byPath = new Map(docs.map((d) => [d.path, d]));
+  // A file is named by its data block's id, or by the metarepo path its block's origin gives (B2:
+  // an assistant cites the path it read the file at, and the finding was dropped).
+  const changeRel = `${changesRelOf(ctx.root)}/${ctx.change.id}/`;
+  const byPath = new Map(
+    docs.flatMap((d) => [
+      [d.path, d],
+      [`${changeRel}${d.path}`, d],
+    ]),
+  );
   const hits: RuledHit[] = [];
   for (const raw of list) {
     const p = AiFinding.safeParse(raw);

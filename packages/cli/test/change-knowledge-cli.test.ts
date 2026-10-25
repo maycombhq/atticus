@@ -18,7 +18,9 @@ describe("atticus change knowledge <id> (ADR 0124, Part 5)", () => {
     mkdirSync(join(root, "openspec", "changes", "add-limit"), { recursive: true });
     const none = io();
     expect(await changeKnowledge(root, "add-limit", {}, none.io)).toBe(2);
-    expect(none.err[0]).toMatch(/atticus change feature add-limit/);
+    // B2: the feature stage picks no org knowledge, so the list starts at architecture.
+    expect(none.err[0]).toMatch(/atticus change architecture add-limit/);
+    expect(none.err[0]).toMatch(/the feature stage picks none/);
     await recordKnowledge(root, "add-limit", "feature", {
       engine: true,
       picked: [{ id: "pattern.a", kind: "Pattern", level: "full", score: 2, via: "named" }],
@@ -28,6 +30,10 @@ describe("atticus change knowledge <id> (ADR 0124, Part 5)", () => {
     const list = io();
     expect(await changeKnowledge(root, "add-limit", {}, list.io)).toBe(0);
     expect(list.out.join("\n")).toContain("Pattern pattern.a (suggested; feature; named)");
+    // B2: the list says how to act on it.
+    expect(list.out.at(-1)).toBe(
+      "Confirm or exclude an item: atticus change knowledge add-limit --confirm <id> (or --exclude <id>); an excluded one stays out of later stages.",
+    );
     const set = io();
     expect(
       await changeKnowledge(

@@ -13,7 +13,9 @@ import {
   featureStage,
   findNeeds,
   GAP_RULE,
+  readKnowledgeApplies,
   roomFor,
+  setKnowledgeStatus,
   storiesStage,
 } from "../src/index.js";
 
@@ -169,6 +171,44 @@ describe("the context engine in the steps", () => {
     expect(seen[0]).toContain('process vendor-onboarding "Vendor onboarding": applies when');
     expect(seen[0]).not.toContain("broker-topic-request");
     expect(r === undefined || r.context?.engine === true).toBe(true);
+  });
+
+  // B2 (the knowledge walk): what a person set in knowledge.yaml reaches the next stage. An
+  // excluded item stays out of its selection; a confirmed one (a near-miss promoted) goes in, as
+  // the list and the app say ("confirm one"), where the stage takes its kind.
+  it("stories: leaves out what a person excluded and sends what they confirmed", async () => {
+    const root = await shop({ placed: true, targets: true });
+    await writeFile(
+      join(root, "openspec/changes", CHANGE, "knowledge.yaml"),
+      [
+        "schemaVersion: 1",
+        `change: ${CHANGE}`,
+        "items:",
+        "  - { id: vendor-onboarding, kind: ProcessDefinition, status: excluded, stages: [architecture], score: 0.8 }",
+        "nearMisses:",
+        "  - { id: broker-topic-request, kind: ProcessDefinition, score: 0.05, stage: architecture }",
+        "",
+      ].join("\n"),
+    );
+    await setKnowledgeStatus(root, CHANGE, "broker-topic-request", "confirmed");
+    const seen: string[] = [];
+    await storiesStage(root, CHANGE, {
+      runtime: assistant("stories: []\nrequests: []\n", seen),
+      now: NOW,
+    }).catch(() => undefined);
+    expect(seen[0]).toContain(
+      'request firewall-rule-request "Network firewall rule": applies when',
+    );
+    expect(seen[0]).not.toContain("vendor-onboarding");
+    expect(seen[0]).toContain('request broker-topic-request "Broker topic": applies when');
+    const doc = (await readKnowledgeApplies(root, CHANGE))!;
+    expect(doc.items.find((i) => i.id === "vendor-onboarding")).toMatchObject({
+      status: "excluded",
+      stages: ["architecture"],
+    });
+    expect(doc.items.find((i) => i.id === "broker-topic-request")).toMatchObject({
+      status: "confirmed",
+    });
   });
 
   // ADR 0107 point 5: what neither the wikis nor the repos say.
