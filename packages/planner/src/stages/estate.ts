@@ -251,6 +251,15 @@ export function columnsOf(e: Estate, table: string): Set<string> {
   );
 }
 
+/**
+ * Whether a table is a key-pattern store (C1 `tableKind: key-pattern`: a cache or key-value
+ * store read and written by key): it has no columns and no migrations (B-fixes, problem 4).
+ */
+export function isKeyPattern(e: Estate, table: string): boolean {
+  const r = e.byId.get(table);
+  return r?.kind === "Table" && r.tableKind === "key-pattern";
+}
+
 /** A field of a catalog Schema record; `required` left out when nobody knows (ADR 0125). */
 export interface SchemaFieldOf {
   name: string;

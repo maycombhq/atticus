@@ -4,6 +4,16 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### What the stories bench run found, fixed (B-fixes)
+
+- **Two repos' components with one name stay two components.** When two repos of an estate both have a component called, say, `frontend`, each gets its repo's id in front (`fastapi-template-frontend`, `microservices-demo-frontend`), with its own endpoints and flows; before, they became one component owned by the repo written first. A component no other repo has keeps its id, so nothing changes for a catalog without such a pair. If yours has one, run `atticus verify <repo> --write` for both repos again (the new ids show in the map and `specs/`); a change already drafted on the old ids needs its architecture stage run again.
+- **`atticus verify` rejects a flow whose call-out step names no call** (`call-out-no-call`), with the step and what to name: the call fact it makes, or, for a call through a cloud SDK with no path, the config fact of the client's setting. Before, the flow passed verify and failed later at `--write`. `/atticus-map`'s rules say the same.
+- **A task names the files its change goes into**: where the fields and columns it adds or changes are declared, from the facts' citations (the request or response DTO and the OpenAPI spec, the table's schema file and entity, the migrations' folder). They are in the story file's "Files to touch", the task's prompt and `atticus task context`.
+- **The stories prompt carries the code the tasks cite**: each cited line with three lines either side, read from the repo's checkout under `workspace/`, within a fifth of the stage's token budget (what doesn't fit is counted). An assistant that can't open files can now write the auth, validation messages, error handling, tests and migrations from the code. With no checkout the prompt is as it was.
+- **A key-value or cache store (a key-pattern table) has no columns**: a read or write of one isn't asked to name a column, and what it holds is no new column needing a migration.
+- **data.md takes a new column's migration from the write that adds it**, not from a lookup before the write that names the column.
+- **`atticus bench stories` also scores error cases by entry**: an error case found on another task of the same endpoint, with the same field and rule, counts there (`errorsByEntry`), beside the strict figure by step, which stays.
+
 ### The stories bench scores the stories Atticus drafts (B-stories-bench)
 
 - **`atticus bench stories --change <change> --story <id>`** scores the stories the stories stage drafted for a change (give its id, or its folder) against the reference story in `bench/stories/<id>.yaml`: the change's stories become one bench story (each task a changed step with today's file and line, each criterion split into given, when and then, each error criterion an error case), scored as `--draft` scores a file. `--out <file>` keeps the converted draft.

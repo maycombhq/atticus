@@ -237,6 +237,9 @@ async function scoreAndReport(
   if (score.fields.missed.length) io.out(`  missed: ${score.fields.missed.join(", ")}`);
   io.out(row("Error cases", score.errors));
   for (const m of score.errors.missed) io.out(`  missed: ${m}`);
+  // B-fixes: the same error cases found on any task of the same entry, beside the strict figure.
+  io.out(row("  by entry", score.errorsByEntry));
+  for (const m of score.errorsByEntry.missed) io.out(`  missed: ${m}`);
   io.out(`${"Invented fields".padEnd(18)} ${score.invented.join(", ") || "none"}`);
   io.out(`${"Rubric sections".padEnd(18)} ${score.sections.present} of ${score.sections.total}`);
   if (score.sections.missing.length) io.out(`  missing: ${score.sections.missing.join(", ")}`);

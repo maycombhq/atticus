@@ -145,6 +145,44 @@ describe("verifyFacts: the claim on the cited line (ADR 0124)", () => {
   });
 });
 
+describe("a flow's call-out step names its call (B-fixes, problem 6)", () => {
+  /** w-post-entry with its call-out step (step 2) given another ref, or none. */
+  const withCallOutRef = (ref: string | undefined) =>
+    load("forge-ledger.facts.jsonl").map((f) => {
+      if (f.id !== "w-post-entry" || f.kind !== "flow") return f;
+      return {
+        ...f,
+        steps: f.steps.map((s) => {
+          if (s.kind !== "call-out" || s.ref !== "c-fx-rate") return s;
+          const { ref: _ref, ...rest } = s;
+          return ref === undefined ? rest : { ...rest, ref };
+        }),
+      } as Fact;
+    });
+  const verdict = async (facts: Fact[]) =>
+    (await verifyFacts({ facts, source: dirSource(repo), commit: "0123abc" })).rejected.find(
+      (x) => x.fact.id === "w-post-entry",
+    );
+
+  it("rejects a call-out step that names no fact, saying which step and what to name", async () => {
+    const r = await verdict(withCallOutRef(undefined));
+    expect(r?.code).toBe("call-out-no-call");
+    expect(r?.message).toMatch(/step 2/);
+    expect(r?.message).toMatch(/call fact/);
+    expect(r?.message).toMatch(/config fact/);
+  });
+
+  it("rejects a call-out step whose ref is a store or a field", async () => {
+    expect((await verdict(withCallOutRef("s-entry-write")))?.code).toBe("call-out-no-call");
+    expect((await verdict(withCallOutRef("f-entry-amount")))?.code).toBe("call-out-no-call");
+  });
+
+  it("takes a call-out step whose ref is a call fact, or a config fact (an SDK client with no path)", async () => {
+    expect(await verdict(withCallOutRef("c-fx-rate"))).toBeUndefined();
+    expect(await verdict(withCallOutRef("k-fx-base"))).toBeUndefined();
+  });
+});
+
 describe("a claim put together from several lines (ADR 0124 addendum A4)", () => {
   const src = memorySource({
     "src/environments/environment.ts":

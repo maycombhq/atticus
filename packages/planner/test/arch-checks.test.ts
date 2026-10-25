@@ -397,6 +397,127 @@ describe("every delta cites a fact (check 1)", () => {
   });
 });
 
+describe("a key-value store, and a lookup before the write (B-fixes, problem 4)", () => {
+  const ev = [{ source: "code", repo: "forge-orders", path: "src/cache/cart.ts", line: 12 }];
+  /** The hold-stock estate with a cache of carts kept by key (no columns, no migrations). */
+  async function withCache(): Promise<Estate> {
+    const e = await estate(await holdRoot());
+    const more = [
+      {
+        kind: "DataStore",
+        schemaVersion: 3,
+        id: "forge-orders-cache",
+        status: "current",
+        confidence: "verified",
+        storeType: "key-value",
+        ownerComponent: "forge-orders",
+        entitiesHeld: ["cart"],
+        evidence: ev,
+      },
+      {
+        kind: "Table",
+        schemaVersion: 3,
+        id: "forge-orders-cache.cart",
+        status: "current",
+        confidence: "verified",
+        dataStore: "forge-orders-cache",
+        name: "cart",
+        tableKind: "key-pattern",
+        readers: ["forge-orders"],
+        writers: ["forge-orders"],
+        evidence: ev,
+      },
+    ].map((r) => {
+      const p = parseRecord(r);
+      if (!p.ok) throw new Error(JSON.stringify(p.issues));
+      return p.record;
+    });
+    return estateOf([...e.records, ...more], e.flows);
+  }
+  /** The clean draft with steps added to forge-orders.place-order after its step 3. */
+  const withSteps = (...steps: object[]) => {
+    const d = draftOf("clean");
+    const f = d.flows[1]!;
+    d.flows[1] = FlowDelta.parse({
+      ...f,
+      steps: [...steps.map((s) => ({ op: "add", after: 3, ...s })), ...f.steps],
+    });
+    return d;
+  };
+
+  it("a read of a key-pattern store names no column, and isn't asked to", async () => {
+    const e = await withCache();
+    const d = withSteps({
+      kind: "read",
+      what: "The cart is read by the user's id",
+      store: { table: "forge-orders-cache.cart", columns: [] },
+    });
+    const got = checkDeltas(d.flows, e, await placement(await holdRoot()), [], { levels: LEVELS });
+    expect(got.filter((i) => i.target.includes("cart") || i.rule === "delta.no-columns")).toEqual(
+      [],
+    );
+  });
+
+  it("what a key-pattern store holds is no new column, and needs no migration", async () => {
+    const e = await withCache();
+    const d = withSteps(
+      {
+        kind: "read",
+        what: "The cart is read by the user's id",
+        store: { table: "forge-orders-cache.cart", columns: ["items"] },
+      },
+      {
+        kind: "write",
+        what: "The cart is stored back with the new item",
+        store: { table: "forge-orders-cache.cart", columns: ["items"] },
+      },
+    );
+    expect(dataChanges(d.flows, e).filter((r) => r.table === "forge-orders-cache.cart")).toEqual(
+      [],
+    );
+    const got = checkDeltas(d.flows, e, await placement(await holdRoot()), [], { levels: LEVELS });
+    expect(got.filter((i) => i.target.startsWith("forge-orders-cache"))).toEqual([]);
+    expect(renderData(d.flows, e) ?? "").not.toContain("forge-orders-cache");
+  });
+
+  it("data.md takes a new column's migration from the write, not a lookup before it", async () => {
+    const e = await estate(await holdRoot());
+    const d = withSteps({
+      kind: "lookup",
+      what: "No other order has the hold",
+      store: { table: "forge-orders-db.orders", columns: ["hold_id"] },
+    });
+    expect(dataChanges(d.flows, e)).toEqual([
+      expect.objectContaining({
+        table: "forge-orders-db.orders",
+        change: "new columns",
+        columns: ["hold_id"],
+        types: { hold_id: "VARCHAR(36)", quantity: "BIGINT" },
+        migration: "V4__add_hold_id.sql",
+      }),
+    ]);
+    expect(renderData(d.flows, e)).toContain("V4__add_hold_id.sql");
+  });
+
+  it("a lookup naming a column no write of the change adds is still a new column", async () => {
+    const e = await estate(await holdRoot());
+    const d = withSteps({
+      kind: "lookup",
+      what: "The order is found by its note",
+      store: {
+        table: "forge-orders-db.orders",
+        columns: ["note_ref"],
+        types: { note_ref: "VARCHAR(20)" },
+        migration: "V5__add_note_ref.sql",
+      },
+    });
+    expect(dataChanges(d.flows, e).map((r) => [r.columns, r.migration])).toEqual([
+      [["note_ref"], "V5__add_note_ref.sql"],
+      [["hold_id"], "V4__add_hold_id.sql"],
+    ]);
+  });
+});
+
 describe("the deploy order puts a callee before its caller and a migration before its code (check 4)", () => {
   it("an order that puts the caller first gets one finding a dependency it breaks", async () => {
     const got = await checks(draftOf("wrong-order"));

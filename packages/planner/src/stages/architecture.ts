@@ -13,6 +13,7 @@ import { parseYamlAs } from "./answer.js";
 import {
   allowedValuesSource,
   columnsOf,
+  isKeyPattern,
   endpointKey,
   estateIndex,
   loadEstate,
@@ -41,6 +42,7 @@ import {
   fieldNames,
   FLOW_DELTA_SCHEMA_VERSION,
   FlowDelta,
+  type DeltaStep,
   type FeaturePlacement,
 } from "./schema.js";
 import {
@@ -1097,9 +1099,12 @@ export function checkDeltas(
             `Change ${i + 1} to ${t} uses table ${table}, which the catalog doesn't have; use an id from the index, or new: true on the step that creates it.`,
             d.repo,
           );
+        // B-fixes: a key-pattern store (a cache or key-value store read by key) has no columns.
+        const byKey = isKeyPattern(e, table);
         if (
           (kind === "write" || kind === "read" || kind === "lookup") &&
-          s.store.columns.length === 0
+          s.store.columns.length === 0 &&
+          !byKey
         )
           issue(
             "delta.no-columns",
@@ -1142,11 +1147,12 @@ export function checkDeltas(
         }
         // What this step adds: a new table's columns on the step that creates it; a catalog
         // table's columns it hasn't, on a write.
+        // A key-pattern store adds no column: what it holds under a key needs no migration.
         const added = def
           ? defining
             ? s.store.columns
             : []
-          : reads
+          : reads || byKey
             ? []
             : s.store.columns.filter((c) => !have.has(c));
         // A column "added" that is one the table has in other casing (updatedAt for updated_at).
@@ -1169,7 +1175,7 @@ export function checkDeltas(
         // What a field is for is the model's to say, never guessed from its name: a field it
         // stores is a column, and a key the write matches rows by is under checks (or mapped
         // under from and to). Only a field the step says nothing about is handed back.
-        if (kind === "write") {
+        if (kind === "write" && !byKey) {
           const leaf = (f: string) => fold(f.split(".").at(-1)!);
           const said = new Set(
             [
@@ -1568,9 +1574,21 @@ export function dataChanges(deltas: FlowDelta[], e: Estate) {
     ...(store.retention ? { retention: store.retention } : {}),
     ...(store.keys && Object.keys(store.keys).length ? { keys: store.keys } : {}),
   });
+  /** A step's kind: its own, else today's step's it changes. */
+  const kindOf = (d: FlowDelta, s: DeltaStep) =>
+    s.kind ?? (s.step ? e.flowById.get(d.flow)?.flow.steps[s.step - 1]?.kind : undefined);
+  /** The columns each table's writes in this change name (B-fixes, problem 4). */
+  const written = new Map<string, Set<string>>();
+  for (const d of deltas)
+    for (const s of d.steps)
+      if (s.store && s.op !== "remove" && kindOf(d, s) === "write")
+        for (const c of s.store.columns)
+          written.set(s.store.table, (written.get(s.store.table) ?? new Set()).add(c));
   for (const d of deltas)
     for (const s of d.steps) {
       if (!s.store || s.op === "remove") continue;
+      // A key-pattern store has no columns and no migrations: what it holds is no data change.
+      if (isKeyPattern(e, s.store.table)) continue;
       const def = defs.get(s.store.table)?.[0];
       if (def) {
         if (!out.some((x) => x.table === def.store.table && x.change === "new table"))
@@ -1585,7 +1603,12 @@ export function dataChanges(deltas: FlowDelta[], e: Estate) {
       }
       const extra = extraOf(s.store);
       const have = columnsOf(e, s.store.table);
-      const add = s.store.columns.filter((c) => !have.has(c));
+      // A read or lookup naming a column a write of this change adds leaves it to the write,
+      // whose migration, types and classification data.md gives (B-fixes, problem 4).
+      const reads = kindOf(d, s) === "read" || kindOf(d, s) === "lookup";
+      const add = s.store.columns.filter(
+        (c) => !have.has(c) && !(reads && written.get(s.store!.table)?.has(c)),
+      );
       const ret = retypedColumns(e, s.store);
       const retyped = ret.length
         ? { retyped: Object.fromEntries(ret.map((r) => [r.column, { from: r.from, to: r.to }])) }

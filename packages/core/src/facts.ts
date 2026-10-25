@@ -571,7 +571,16 @@ export function projectFacts(input: readonly Fact[], opts: ProjectOptions = {}):
                   entry: [target.method?.toUpperCase(), target.path].filter(Boolean).join(" "),
                 },
               }
-            : {};
+            : s.kind === "call-out" && target?.kind === "config"
+              ? // B-fixes: a call through a cloud SDK with no path cites its client's setting:
+                // it goes to the setting's target when it names one, else to the setting.
+                {
+                  to: {
+                    component: target.target ? idPart(target.target) : catalogIdOf.get(target.id)!,
+                    entry: target.key,
+                  },
+                }
+              : {};
         const storeOf =
           (s.kind === "read" || s.kind === "lookup" || s.kind === "write") &&
           target?.kind === "store"

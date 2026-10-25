@@ -261,6 +261,33 @@ describe("projectFacts: facts become C1 records, nothing downstream changes", ()
     expect(f.template).toBe("facts@1");
   });
 
+  it("a call-out through an SDK client names its config fact, and goes to the setting's target (B-fixes)", () => {
+    const viaConfig = (ref: string, noTarget = false) =>
+      facts().map((x) =>
+        x.kind === "flow"
+          ? ({
+              ...x,
+              steps: x.steps.map((s) => (s.kind === "call-out" ? { ...s, ref } : s)),
+            } as Fact)
+          : x.kind === "config" && x.id === ref && noTarget
+            ? (({ target: _t, ...rest }) => rest as Fact)(x)
+            : x,
+      );
+    const stepOf = (fs: Fact[]) => {
+      const flow = projectFacts(fs, { system: "ledger" }).records.find((r) => r.kind === "Flow")!;
+      expect(parseRecord(flow).ok).toBe(true);
+      return (flow as unknown as { steps: { refs: string[]; to?: unknown }[] }).steps[1]!;
+    };
+    expect(stepOf(viaConfig("k-fx-base"))).toMatchObject({
+      refs: ["ledger-api.fx.client.base-url"],
+      to: { component: "northwind-fx", entry: "fx.client.base-url" },
+    });
+    // a client setting that names no target goes to the setting itself
+    expect(stepOf(viaConfig("k-fx-base", true))).toMatchObject({
+      to: { component: "ledger-api.fx.client.base-url", entry: "fx.client.base-url" },
+    });
+  });
+
   it("is deterministic: the same facts give the same records in the same order", () => {
     const a = projectFacts(facts(), { system: "ledger" }).records;
     const b = projectFacts([...facts()].reverse(), { system: "ledger" }).records;

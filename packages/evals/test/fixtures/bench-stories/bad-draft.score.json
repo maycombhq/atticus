@@ -38,6 +38,18 @@
     ],
     "coverage": 0
   },
+  "errorsByEntry": {
+    "found": 0,
+    "total": 5,
+    "missed": [
+      "ui-form: microchip format",
+      "api-contract: microchip format",
+      "api-duplicate: microchip unique",
+      "api-duplicate: (no field) not-found",
+      "db-column: microchip unique"
+    ],
+    "coverage": 0
+  },
   "invented": [
     "chipVendor",
     "implantDate",

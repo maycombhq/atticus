@@ -1,0 +1,6 @@
+schemaVersion: 1
+platform: forge
+name: Forge shop estate (invented, for two repos with a component of the same name)
+systems:
+  - { id: shop, name: Shop, boundary: product, owner: team-shop, aliases: [] }
+environments: [dev, prod]

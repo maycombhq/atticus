@@ -1,0 +1,14 @@
+# Two invented Forge repos, each with a front end it calls frontend (B-fixes, problem 1).
+schemaVersion: 1
+platform: forge
+repos:
+  - id: forge-shop
+    url: https://git.forge.example/forge/forge-shop.git
+    type: angular
+    owner: team-shop
+    system: shop
+  - id: forge-admin
+    url: https://git.forge.example/forge/forge-admin.git
+    type: spring-boot
+    owner: team-shop
+    system: shop
