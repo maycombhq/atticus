@@ -6,6 +6,7 @@ import { Architecture } from "../architecture/Architecture.js";
 import { NeedsPanel } from "../knowledge/Needs.js";
 import { ChangeInputs } from "../ChangeInputs.js";
 import { ChangeKnowledgePanel } from "./Knowledge.js";
+import { StageReviewPanel } from "./StageReview.js";
 import {
   architectureStep,
   pickChange,
@@ -186,6 +187,13 @@ export function StagePage(p: {
               <RunNextPanel step={stageStep(p.stage, c, ready)} />
             )}
             <div className="bento">
+              {/* ADR 0124 addendum D-app, B10: what the critic found, with options and comments. */}
+              {p.stage !== "tasks" && (
+                <StageReviewPanel
+                  change={c.id}
+                  stage={p.stage === "feature" ? "feature" : "stories"}
+                />
+              )}
               <Panel title={W.files} span={p.stage === "tasks" ? "span 4" : "1 / -1"}>
                 {p.detail ? (
                   <View of={p.detail}>{(d) => <FilesTable detail={d} stage={p.stage} />}</View>
@@ -294,11 +302,48 @@ export function ArchitectureStep({ list }: { list: Loaded<ChangeRow[]> }) {
   );
 }
 
+/**
+ * The Architecture tab's findings (B10): for the change its address names (?change=), what the
+ * critic found at the design gate, with options and comments; else a picker.
+ */
+export function ArchitectureReview({
+  list,
+  wanted,
+}: {
+  list: Loaded<ChangeRow[]>;
+  wanted: string | undefined;
+}) {
+  if (list.state !== "ready" || list.data.length === 0) return null;
+  const c = pickChange(list.data, wanted);
+  return (
+    <div className="bento" style={{ marginBottom: 12 }}>
+      {c ? (
+        <StageReviewPanel change={c.id} stage="architecture" />
+      ) : (
+        <Panel title={COPY.stageReview.title} span="1 / -1">
+          <p className="work-say" style={{ marginTop: 0 }}>
+            {COPY.stageReview.pickForArchitecture}
+          </p>
+          <ul className="stage-comments">
+            {list.data.map((x) => (
+              <li key={x.id}>
+                <a href={`#/architecture?change=${encodeURIComponent(x.id)}`}>{x.title}</a>{" "}
+                <span className="muted">{x.id}</span>
+              </li>
+            ))}
+          </ul>
+        </Panel>
+      )}
+    </div>
+  );
+}
+
 export function ArchitecturePage({ hash }: { hash: string }) {
   const list = useApi<ChangeRow[]>("/api/changes");
   return (
     <>
       <ArchitectureStep list={list} />
+      <ArchitectureReview list={list} wanted={queryParam(hash, "change")} />
       <Architecture hash={hash} />
     </>
   );

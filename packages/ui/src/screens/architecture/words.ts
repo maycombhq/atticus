@@ -79,6 +79,10 @@ export const WORDS = {
     "no-endpoint": "Endpoint not found",
     "not-in-catalog": "Not in the catalog",
     conflicts: "Sources disagree",
+    // ADR 0124 addendum D-app, F3: from the repos' facts.
+    unverified: "No fact verified from code",
+    question: "A question is open on it",
+    corrected: "A correction waits for atticus verify",
   } as Record<string, string>,
   edges: (n: number, hidden: number) =>
     `${n} link${n === 1 ? "" : "s"}${hidden ? `, ${hidden} implied link${hidden === 1 ? "" : "s"} hidden` : ""}`,

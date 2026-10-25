@@ -9,6 +9,7 @@ import {
   excludesOf,
   headOf,
   raiseReadQuestions,
+  readCorrections,
   writeVerifyFiles,
   type QuestionProblem,
 } from "./facts-files.js";
@@ -88,12 +89,17 @@ export async function verifyCommand(
   }
   const commit = o.commit ?? (await headOf(dir));
   const source = dirSource(dir);
+  // ADR 0124 addendum D-app: a person's corrections from the Map, applied on every run.
+  const corrections = await readCorrections(root, repo);
+  for (const b of corrections.bad)
+    io.err(`${rel}/${repo}.corrections.jsonl line ${b.line} isn't a correction: ${b.message}`);
   const report = await verifyFacts({
     facts: parsed.facts,
     source,
     ...(commit ? { commit } : {}),
     ...(o.routed ? { routed: o.routed } : {}),
     exclude: await excludesOf(root, repo),
+    corrections: corrections.corrections,
   });
 
   // ADR 0078: what the code can't settle, raised for a person.
@@ -148,6 +154,12 @@ export async function verifyCommand(
   io.out(
     `${repo}: ${report.accepted.length} facts kept, ${report.rejected.length} rejected; coverage ${pct}% (${report.coverage.read.length} read, ${report.coverage.unknown.length} unknown${report.coverage.excluded.length ? `, ${report.coverage.excluded.length} excluded` : ""}).`,
   );
+  const fixed = report.corrections.applied;
+  if (fixed.length)
+    io.out(
+      `${fixed.length} ${fixed.length === 1 ? "correction" : "corrections"} by a person applied (${rel}/${repo}.corrections.jsonl): ${fixed.map((a) => `${a.fact} ${a.action === "wrong" ? "left out as wrong" : "as corrected"}`).join(", ")}.`,
+    );
+  for (const s of report.corrections.stale) io.out(`  correction: ${s.message}`);
   for (const r of report.rejected.slice(0, 15)) io.out(`  ${r.code}: ${r.message}`);
   if (report.rejected.length > 15) io.out(`  ... and ${report.rejected.length - 15} more`);
   if (raised)

@@ -10,8 +10,10 @@ import {
   type Cite,
   type Claim,
   type Fact,
+  type FactCorrection,
 } from "@maycombhq/core";
 import { globToRegExp } from "@maycombhq/sdk";
+import { applyCorrections, type AppliedCorrection, type StaleCorrection } from "./corrections.js";
 import { pageRouteMatches } from "./pages.js";
 import { insideRepo, type FileSource } from "./source.js";
 
@@ -61,6 +63,8 @@ export interface VerifyReport {
   coverage: Coverage;
   /** Quotes stored with a secret value redacted. */
   redacted: number;
+  /** A person's corrections (ADR 0124 addendum D-app): applied, and those that met no fact. */
+  corrections: { applied: AppliedCorrection[]; stale: StaleCorrection[] };
 }
 
 export interface VerifyOptions {
@@ -72,6 +76,11 @@ export interface VerifyOptions {
   routed?: readonly string[];
   /** Accepted exclusion globs: generated code, vendored copies (ADR 0075 scan settings). */
   exclude?: readonly string[];
+  /**
+   * A person's corrections (`<repo>.corrections.jsonl`), applied before anything is checked: a
+   * fact marked wrong is left out, an edited one is the person's fact and is checked as any is.
+   */
+  corrections?: readonly FactCorrection[];
 }
 
 const SOURCE_EXT =
@@ -167,7 +176,8 @@ function refsOf(f: Fact): { field: string; id: string }[] {
 }
 
 export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
-  const facts = [...o.facts].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const corrected = applyCorrections(o.facts, o.corrections ?? []);
+  const facts = [...corrected.facts].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   const linesCache = new Map<string, string[] | undefined>();
   const linesOf = (path: string) => {
     if (!linesCache.has(path)) {
@@ -446,5 +456,6 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
     ),
     coverage: { read, unknown, excluded: excluded.sort(), ratio },
     redacted,
+    corrections: { applied: corrected.applied, stale: corrected.stale },
   };
 }

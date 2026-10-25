@@ -44,6 +44,8 @@ export const SCREENS = [
   "estimate?change=add-transfer-limit",
   "conformance?change=add-transfer-limit",
   "architecture",
+  // ADR 0124 addendum D-app, B10: the Architecture tab's findings for one change.
+  "architecture?change=add-transfer-limit",
   "reconcile",
   "contracts",
   "mappings?change=add-transfer-limit",

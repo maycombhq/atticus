@@ -1,10 +1,18 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useApi, useLiveEvents } from "../../api/client.js";
 import { FlowCanvas, type FlowViewData } from "../../app/flow.js";
 import { GraphView, type Graph } from "../../app/graph.js";
 import { Bar, CheckAgain, Donut, Panel, Ring, View } from "../../app/ui.js";
 import { Table, queryParam, setQueryParam, useView } from "./common.js";
 import { COPY } from "../../copy.js";
+import {
+  Citation,
+  EvidenceProvider,
+  GapMarks,
+  gapsOfEvidence,
+  reposOf,
+  useEvidence,
+} from "../../app/evidence.js";
 
 const T = COPY.design;
 
@@ -96,6 +104,23 @@ function ContractList({
   );
 }
 
+/**
+ * A contract's own gaps (ADR 0124 addendum D-app, F3): no fact verified from code on any of its
+ * lines, or an open question on one, from the repos' facts; a shape and words, never colour.
+ */
+function RecordGaps({ evidence }: { evidence: Evidence[] }) {
+  const ev = useEvidence();
+  const repos = reposOf(evidence).join(" ");
+  useEffect(() => {
+    for (const x of repos.split(" ").filter(Boolean)) ev?.need(x);
+  }, [repos, ev]);
+  const of = (repo: string) => {
+    const v = ev?.of(repo);
+    return v?.state === "ready" ? v.data : undefined;
+  };
+  return <GapMarks gaps={gapsOfEvidence(evidence, of, { bare: true })} />;
+}
+
 function ContractDetail({ r }: { r: Rec }) {
   const rec = useApi<Rec>(`/api/catalog/${r.kind}/${encodeURIComponent(r.id)}`);
   const imp = useApi<{ affected: { id: string; kind: string; owner?: string }[] }>(
@@ -110,6 +135,7 @@ function ContractDetail({ r }: { r: Rec }) {
               <div className="hud" style={{ fontSize: 10, marginBottom: 6 }}>
                 {T.evidence}
               </div>
+              <RecordGaps evidence={d.evidence ?? []} />
               {(d.evidence ?? []).length === 0 ? (
                 <p className="muted" style={{ margin: 0 }}>
                   {T.noEvidenceTreatIt}
@@ -120,11 +146,17 @@ function ContractDetail({ r }: { r: Rec }) {
                     <span className={`chip ${e.source === "code" ? "" : "warn"}`}>
                       {e.source.toUpperCase()}
                     </span>{" "}
-                    <span className="mono">
-                      {e.repo ? `${e.repo} · ` : ""}
-                      {e.path ?? ""}
-                      {e.line ? `:${e.line}` : ""}
-                    </span>
+                    {e.path && e.line ? (
+                      <>
+                        {e.repo && <span className="mono">{e.repo} · </span>}
+                        <Citation repo={e.repo} at={`${e.path}:${e.line}`} />
+                      </>
+                    ) : (
+                      <span className="mono">
+                        {e.repo ? `${e.repo} · ` : ""}
+                        {e.path ?? ""}
+                      </span>
+                    )}
                   </div>
                 ))
               )}
@@ -188,78 +220,80 @@ export function Contracts() {
       : 0;
   const total = iface.state === "ready" ? iface.data.items.length : 0;
   return (
-    <div className="bento">
-      <Panel title={T.contracts} span="span 4" rows="span 2">
-        <div
-          className="stack"
-          tabIndex={0}
-          role="region"
-          aria-label={T.contractsList}
-          style={{ gap: 14, maxHeight: 640, overflowY: "auto" }}
-        >
-          <ContractList
-            kind="Endpoint"
-            title={T.apis}
-            pick={setPicked}
-            {...(picked ? { picked: picked.id } : {})}
-          />
-          <ContractList
-            kind="Interface"
-            title={T.interfacesAndEvents}
-            pick={setPicked}
-            {...(picked ? { picked: picked.id } : {})}
-          />
-          <ContractList
-            kind="Table"
-            title={T.dataStores}
-            pick={setPicked}
-            {...(picked ? { picked: picked.id } : {})}
-          />
-          <p className="muted" style={{ margin: 0, fontSize: 11.5 }}>
-            {T.dataStoresComeFrom}
-          </p>
-        </div>
-      </Panel>
-      {picked ? (
-        <ContractDetail key={`${picked.kind}/${picked.id}`} r={picked} />
-      ) : (
-        <Panel title={T.pickAContract} span="span 5" rows="span 2">
-          <div className="state">{T.chooseAnApiAn}</div>
-        </Panel>
-      )}
-      <Panel title={T.contractMix} span="span 3" kind="dark">
-        <View of={kinds}>
-          {() => (
-            <Donut
-              title={T.contractsByKind}
-              parts={[
-                { label: "APIs", value: n("Endpoint"), color: "var(--accent)" },
-                { label: T.interfaces, value: n("Interface"), color: "var(--violet)" },
-                { label: T.tables, value: n("Table"), color: "var(--amber)" },
-              ]}
+    <EvidenceProvider>
+      <div className="bento">
+        <Panel title={T.contracts} span="span 4" rows="span 2">
+          <div
+            className="stack"
+            tabIndex={0}
+            role="region"
+            aria-label={T.contractsList}
+            style={{ gap: 14, maxHeight: 640, overflowY: "auto" }}
+          >
+            <ContractList
+              kind="Endpoint"
+              title={T.apis}
+              pick={setPicked}
+              {...(picked ? { picked: picked.id } : {})}
             />
-          )}
-        </View>
-      </Panel>
-      <Panel title={T.verifiedFromCode} span="span 3">
-        <View of={iface}>
-          {() => (
-            <div className="stack">
-              <Ring
-                value={verified}
-                max={Math.max(total, 1)}
-                size={64}
-                label={T.ofInterfacesVerifiedFrom(verified, total)}
+            <ContractList
+              kind="Interface"
+              title={T.interfacesAndEvents}
+              pick={setPicked}
+              {...(picked ? { picked: picked.id } : {})}
+            />
+            <ContractList
+              kind="Table"
+              title={T.dataStores}
+              pick={setPicked}
+              {...(picked ? { picked: picked.id } : {})}
+            />
+            <p className="muted" style={{ margin: 0, fontSize: 11.5 }}>
+              {T.dataStoresComeFrom}
+            </p>
+          </div>
+        </Panel>
+        {picked ? (
+          <ContractDetail key={`${picked.kind}/${picked.id}`} r={picked} />
+        ) : (
+          <Panel title={T.pickAContract} span="span 5" rows="span 2">
+            <div className="state">{T.chooseAnApiAn}</div>
+          </Panel>
+        )}
+        <Panel title={T.contractMix} span="span 3" kind="dark">
+          <View of={kinds}>
+            {() => (
+              <Donut
+                title={T.contractsByKind}
+                parts={[
+                  { label: "APIs", value: n("Endpoint"), color: "var(--accent)" },
+                  { label: T.interfaces, value: n("Interface"), color: "var(--violet)" },
+                  { label: T.tables, value: n("Table"), color: "var(--amber)" },
+                ]}
               />
-              <p className="muted" style={{ margin: 0, fontSize: 11.5 }}>
-                {T.aVendorSpecIs}
-              </p>
-              <a href="#/mappings">{T.fieldMappings}</a>
-            </div>
-          )}
-        </View>
-      </Panel>
-    </div>
+            )}
+          </View>
+        </Panel>
+        <Panel title={T.verifiedFromCode} span="span 3">
+          <View of={iface}>
+            {() => (
+              <div className="stack">
+                <Ring
+                  value={verified}
+                  max={Math.max(total, 1)}
+                  size={64}
+                  label={T.ofInterfacesVerifiedFrom(verified, total)}
+                />
+                <p className="muted" style={{ margin: 0, fontSize: 11.5 }}>
+                  {T.aVendorSpecIs}
+                </p>
+                <a href="#/mappings">{T.fieldMappings}</a>
+              </div>
+            )}
+          </View>
+        </Panel>
+      </div>
+    </EvidenceProvider>
   );
 }
 

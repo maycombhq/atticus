@@ -1,4 +1,5 @@
 import type { Api } from "@maycombhq/core";
+import { gapsOfEvidence, type FactsView } from "../../app/evidence-model.js";
 import { WORDS } from "./words.js";
 
 /**
@@ -125,6 +126,51 @@ const box = (n: Api.HierNodeT, o: Partial<CanvasBox> = {}): CanvasBox => ({
   inside: 0,
   ...o,
 });
+
+/** Kinds the code shows, so one with a record and nothing cited is unproven (F3). */
+const FROM_CODE = new Set([
+  "component",
+  "endpoint",
+  "topic",
+  "client",
+  "store",
+  "table",
+  "deployment",
+]);
+
+/**
+ * The views with what their evidence lacks added to each node's and edge's gaps (ADR 0124
+ * addendum D-app, F3): no fact verified from code, an open question, a correction waiting for
+ * atticus verify, from the repos' facts loaded so far. The canvas and the outline say them as
+ * they say every gap: a shape and words.
+ */
+export function withEvidenceGaps(views: Views, of: (repo: string) => FactsView | undefined): Views {
+  const add = <T extends { gaps: string[] }>(x: T, g: string[]): T =>
+    g.some((y) => !x.gaps.includes(y))
+      ? { ...x, gaps: [...x.gaps, ...g.filter((y) => !x.gaps.includes(y))] }
+      : x;
+  const node = (n: Api.HierNodeT) =>
+    add(n, gapsOfEvidence(n.evidence, of, { bare: !!n.record && FROM_CODE.has(n.kind) }));
+  const out: Views = new Map();
+  for (const [id, v] of views)
+    out.set(id, {
+      ...v,
+      node: node(v.node),
+      children: v.children.map(node),
+      outside: v.outside.map(node),
+      edges: v.edges.map((e) => add(e, gapsOfEvidence(e.evidence, of))),
+    });
+  return out;
+}
+
+/** The repos every loaded view's evidence is in. */
+export function evidenceRepos(views: Views): string[] {
+  const out = new Set<string>();
+  for (const v of views.values())
+    for (const x of [v.node, ...v.children, ...v.outside, ...v.edges])
+      for (const e of x.evidence) if (e.repo) out.add(e.repo);
+  return [...out].sort();
+}
 
 export const linkLabel = (count: number, type: string) =>
   count > 1 ? WORDS.edgeCount(count, type) : type;

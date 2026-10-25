@@ -1,0 +1,149 @@
+/* The Map's citations (ADR 0124 addendum D-app, F3): a button, a tooltip on hover and focus, and
+   the facts on the line with Correct this. A gap is a shape and words, with a dashed line under
+   the citation, never colour alone (WCAG 1.4.1). */
+
+.ev-wrap {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+}
+
+.ev-cite {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--line-2);
+  padding: 0 1px;
+  color: var(--text-2);
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.ev-cite:hover,
+.ev-cite:focus-visible {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+.ev-cite.gappy {
+  border-bottom: 1px dashed var(--amber);
+}
+
+.ev-tip {
+  display: none;
+  position: absolute;
+  z-index: 30;
+  left: 0;
+  top: 100%;
+  margin-top: 4px;
+  min-width: 260px;
+  max-width: min(480px, 80vw);
+  background: var(--box);
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  padding: 8px 10px;
+  box-shadow: var(--shadow);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: normal;
+}
+.ev-wrap:hover .ev-tip,
+.ev-wrap:focus-within .ev-tip {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ev-wrap.quiet .ev-tip,
+.ev-wrap.open .ev-tip {
+  display: none;
+}
+
+.ev-place {
+  font-size: 11.5px;
+  word-break: break-all;
+}
+.ev-say {
+  color: var(--text-2);
+  font-size: 12px;
+  margin: 0;
+}
+.ev-quote {
+  display: block;
+  background: var(--inset);
+  border-left: 2px solid var(--accent);
+  padding: 4px 6px;
+  font-size: 11.5px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.ev-fact {
+  display: block;
+  font-size: 12px;
+}
+.ev-corr {
+  color: var(--amber-text);
+}
+
+.ev-gaps {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.ev-gap {
+  font-size: 11px;
+  color: var(--amber-text);
+  white-space: nowrap;
+}
+.ev-gap.ev-question {
+  color: var(--violet-text);
+}
+
+.ev-details {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 10px;
+  background: var(--box);
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  min-width: 260px;
+  white-space: normal;
+}
+.ev-list {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12.5px;
+}
+.ev-list li {
+  margin-bottom: 6px;
+}
+.ev-correct {
+  margin-top: 8px;
+  gap: 8px;
+}
+.ev-correct input,
+.ev-correct textarea {
+  background: var(--input);
+  color: var(--text);
+  border: 1px solid var(--line-2);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font: 12.5px var(--mono);
+}
+.ev-choice {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.ev-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 8px;
+}

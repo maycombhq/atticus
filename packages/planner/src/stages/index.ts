@@ -20,3 +20,4 @@ export * from "./expand.js";
 export * from "./rerank.js";
 export * from "./questions-on-file.js";
 export * from "./check-draft.js";
+export * from "./comments.js";

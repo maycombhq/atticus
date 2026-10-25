@@ -97,6 +97,15 @@ async function write(root: string, q: Question): Promise<void> {
   );
 }
 
+/**
+ * Write a question as it is (a person's comment on a critic finding, ADR 0124 addendum D-app,
+ * is a question they answered as they asked it). Every other writer goes through
+ * `raiseQuestions` and `answerQuestion`.
+ */
+export async function writeQuestion(root: string, q: Question): Promise<void> {
+  await write(root, q);
+}
+
 /** Read one question, or undefined when there is no such file. Throws on a file that isn't valid. */
 export async function readQuestion(root: string, id: string): Promise<Question | undefined> {
   if (!QuestionId.safeParse(id).success) return undefined;

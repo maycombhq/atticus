@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Atticus local API",
-    "version": "2.22.0",
+    "version": "2.23.0",
     "description": "Served by `atticus ui` on 127.0.0.1. The UI only calls this API, and the API only reads and writes files in the metarepo.",
     "license": {
       "name": "Apache-2.0",
@@ -3453,6 +3453,176 @@
           },
           "401": {
             "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/facts/{repo}": {
+      "get": {
+        "operationId": "getRepoFacts",
+        "summary": "A repo's facts as the Map cites them: each with its line and quote, who made and checked it, the fields a person may correct and any correction on file; the open questions about the repo (ADR 0124)",
+        "tags": [
+          "workspace"
+        ],
+        "parameters": [
+          {
+            "name": "repo",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RepoFactsView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/facts/{repo}/corrections": {
+      "post": {
+        "operationId": "correctFact",
+        "summary": "Mark a fact wrong or correct its claim: a line in facts/<repo>.corrections.jsonl, which atticus verify applies every time it runs. Returns the git command that commits the file and the verify command",
+        "tags": [
+          "workspace"
+        ],
+        "parameters": [
+          {
+            "name": "repo",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "fact": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "action": {
+                    "type": "string",
+                    "enum": [
+                      "wrong",
+                      "edit"
+                    ]
+                  },
+                  "set": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  },
+                  "line": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 500
+                  }
+                },
+                "required": [
+                  "fact",
+                  "action"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Recorded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FactCorrectionResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Atticus refused: the problem carries the command's own words (ADR 0043)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -8879,6 +9049,203 @@
           },
           "404": {
             "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Atticus refused: the problem carries the command's own words (ADR 0043)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/changes/{changeId}/stages/{stage}": {
+      "get": {
+        "operationId": "getStageReview",
+        "summary": "A stage tab's critic findings (the latest round of its gate) with their options and comments, the stage's questions, and the command to run next (ADR 0087, ADR 0124)",
+        "tags": [
+          "changes"
+        ],
+        "parameters": [
+          {
+            "name": "changeId",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "stage",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "feature",
+                "architecture",
+                "stories"
+              ]
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StageReviewView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/changes/{changeId}/stages/{stage}/comments": {
+      "post": {
+        "operationId": "commentOnFinding",
+        "summary": "A person's comment on a finding: written as a question they answered (questions/), listed in the stage's loop file, so the stage's next run hands it to the drafter. Returns the git command and the stage's command",
+        "tags": [
+          "changes"
+        ],
+        "parameters": [
+          {
+            "name": "changeId",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "stage",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "feature",
+                "architecture",
+                "stories"
+              ]
+            },
+            "required": true
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "finding": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "gate": {
+                    "type": "string"
+                  },
+                  "text": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4000
+                  }
+                },
+                "required": [
+                  "finding",
+                  "text"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Written",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StageCommentResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict: the file changed since you read it, or the state doesn't allow this",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -25140,6 +25507,700 @@
           "knowledge",
           "file",
           "commit"
+        ],
+        "additionalProperties": false
+      },
+      "RepoFactsView": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string"
+          },
+          "file": {
+            "type": "string"
+          },
+          "present": {
+            "type": "boolean"
+          },
+          "commit": {
+            "type": "string"
+          },
+          "facts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "claim": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                },
+                "cite": {
+                  "type": "object",
+                  "properties": {
+                    "file": {
+                      "type": "string"
+                    },
+                    "line": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "value": {
+                      "type": "string"
+                    },
+                    "quote": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "file",
+                    "line",
+                    "value"
+                  ],
+                  "additionalProperties": false
+                },
+                "steps": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "file": {
+                        "type": "string"
+                      },
+                      "line": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "value": {
+                        "type": "string"
+                      },
+                      "quote": {
+                        "type": "string"
+                      },
+                      "what": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "file",
+                      "line",
+                      "value",
+                      "what"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "verified": {
+                  "type": "string",
+                  "enum": [
+                    "line",
+                    "sample",
+                    "person",
+                    "none"
+                  ]
+                },
+                "by": {
+                  "type": "string",
+                  "enum": [
+                    "assistant",
+                    "reader",
+                    "person"
+                  ]
+                },
+                "correction": {
+                  "type": "object",
+                  "properties": {
+                    "schemaVersion": {
+                      "type": "number",
+                      "const": 1
+                    },
+                    "fact": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120,
+                      "pattern": "^[a-z0-9][a-z0-9._-]*$"
+                    },
+                    "target": {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "entry",
+                            "call",
+                            "store",
+                            "field",
+                            "deploy",
+                            "config",
+                            "flow"
+                          ]
+                        },
+                        "file": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "line": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "value": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "file",
+                        "line",
+                        "value"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "action": {
+                      "type": "string",
+                      "enum": [
+                        "wrong",
+                        "edit"
+                      ]
+                    },
+                    "set": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "additionalProperties": {
+                        "type": "string"
+                      }
+                    },
+                    "line": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "reason": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 500
+                    },
+                    "by": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                    }
+                  },
+                  "required": [
+                    "schemaVersion",
+                    "fact",
+                    "target",
+                    "action",
+                    "by",
+                    "at"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "id",
+                "kind",
+                "label",
+                "claim",
+                "cite",
+                "verified",
+                "by"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "corrections": {
+            "type": "object",
+            "properties": {
+              "file": {
+                "type": "string"
+              },
+              "count": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "stale": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "file",
+              "count",
+              "stale"
+            ],
+            "additionalProperties": false
+          },
+          "questions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "question": {
+                  "type": "string"
+                },
+                "evidence": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "id",
+                "question",
+                "evidence"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "verify": {
+            "type": "string"
+          },
+          "problems": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "file": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "file",
+                "message"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "repo",
+          "file",
+          "present",
+          "facts",
+          "corrections",
+          "questions",
+          "verify",
+          "problems"
+        ],
+        "additionalProperties": false
+      },
+      "FactCorrectionResult": {
+        "type": "object",
+        "properties": {
+          "correction": {
+            "type": "object",
+            "properties": {
+              "schemaVersion": {
+                "type": "number",
+                "const": 1
+              },
+              "fact": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 120,
+                "pattern": "^[a-z0-9][a-z0-9._-]*$"
+              },
+              "target": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "entry",
+                      "call",
+                      "store",
+                      "field",
+                      "deploy",
+                      "config",
+                      "flow"
+                    ]
+                  },
+                  "file": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "line": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "value": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "kind",
+                  "file",
+                  "line",
+                  "value"
+                ],
+                "additionalProperties": false
+              },
+              "action": {
+                "type": "string",
+                "enum": [
+                  "wrong",
+                  "edit"
+                ]
+              },
+              "set": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              "line": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              },
+              "by": {
+                "type": "string",
+                "minLength": 1
+              },
+              "at": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+              }
+            },
+            "required": [
+              "schemaVersion",
+              "fact",
+              "target",
+              "action",
+              "by",
+              "at"
+            ],
+            "additionalProperties": false
+          },
+          "file": {
+            "type": "string"
+          },
+          "commit": {
+            "type": "string"
+          },
+          "verify": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "correction",
+          "file",
+          "commit",
+          "verify"
+        ],
+        "additionalProperties": false
+      },
+      "StageReviewView": {
+        "type": "object",
+        "properties": {
+          "change": {
+            "type": "string"
+          },
+          "stage": {
+            "type": "string",
+            "enum": [
+              "feature",
+              "architecture",
+              "stories"
+            ]
+          },
+          "gate": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "round": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "loop": {
+            "type": "object",
+            "properties": {
+              "file": {
+                "type": "string"
+              },
+              "present": {
+                "type": "boolean"
+              },
+              "state": {
+                "type": "string"
+              },
+              "iteration": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "file",
+              "present"
+            ],
+            "additionalProperties": false
+          },
+          "findings": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "finding": {
+                  "$ref": "#/components/schemas/Finding"
+                },
+                "file": {
+                  "type": "string"
+                },
+                "options": {
+                  "type": "object",
+                  "properties": {
+                    "fix": {
+                      "type": "string"
+                    },
+                    "apply": {
+                      "type": "boolean"
+                    },
+                    "dismiss": {
+                      "type": "boolean"
+                    },
+                    "waive": {
+                      "type": "boolean"
+                    },
+                    "ask": {
+                      "type": "object",
+                      "properties": {
+                        "text": {
+                          "type": "string"
+                        },
+                        "owner": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "text",
+                        "owner"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "fix",
+                    "apply",
+                    "dismiss",
+                    "waive"
+                  ],
+                  "additionalProperties": false
+                },
+                "comments": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "question": {
+                        "type": "string"
+                      },
+                      "text": {
+                        "type": "string"
+                      },
+                      "by": {
+                        "type": "string"
+                      },
+                      "at": {
+                        "type": "string"
+                      },
+                      "read": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "question",
+                      "text",
+                      "by",
+                      "at",
+                      "read"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "finding",
+                "file",
+                "options",
+                "comments"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "questions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Question"
+            }
+          },
+          "next": {
+            "type": "object",
+            "properties": {
+              "command": {
+                "type": "string"
+              },
+              "slash": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "command",
+              "slash"
+            ],
+            "additionalProperties": false
+          },
+          "problems": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "file": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "file",
+                "message"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "change",
+          "stage",
+          "gate",
+          "round",
+          "loop",
+          "findings",
+          "questions",
+          "next",
+          "problems"
+        ],
+        "additionalProperties": false
+      },
+      "StageCommentResult": {
+        "type": "object",
+        "properties": {
+          "comment": {
+            "type": "object",
+            "properties": {
+              "question": {
+                "type": "string"
+              },
+              "text": {
+                "type": "string"
+              },
+              "by": {
+                "type": "string"
+              },
+              "at": {
+                "type": "string"
+              },
+              "read": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "question",
+              "text",
+              "by",
+              "at",
+              "read"
+            ],
+            "additionalProperties": false
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "commit": {
+            "type": "string"
+          },
+          "next": {
+            "type": "object",
+            "properties": {
+              "command": {
+                "type": "string"
+              },
+              "slash": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "command",
+              "slash"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "comment",
+          "files",
+          "commit",
+          "next"
         ],
         "additionalProperties": false
       },

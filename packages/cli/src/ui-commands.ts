@@ -23,6 +23,8 @@ import { uiDocumentRoutes } from "./ui-api-documents.js";
 import { uiRepoRoutes } from "./ui-api-repos.js";
 import { uiCockpitRoutes } from "./ui-api-cockpit.js";
 import { uiTrustRoutes } from "./ui-api-trust.js";
+import { uiFactsRoutes } from "./ui-api-facts.js";
+import { uiStageRoutes } from "./ui-api-stages.js";
 
 /** Start the local server with the app and the write calls (ADR 0015, 0043). */
 export async function startUi(
@@ -65,14 +67,22 @@ export async function startUi(
       // ADR 0110: the prompts people sent their assistant and the responses they got.
       // ADR 0121: the AI tab, how AI runs here.
       // ADR 0122: general knowledge as files, in inputs/. ADR 0123: branches you can see.
-      // WP7.1: one change at a glance. ADR 0124: how far to trust each repo's map.
-      return uiTrustRoutes(
-        uiCockpitRoutes(
-          uiRepoRoutes(
-            uiDocumentRoutes(
-              uiAiRoutes(
-                uiHistoryRoutes(
-                  uiModelRunRoutes(uiKnowledgeRoutes(uiCiteRoutes(specs, ctx), ctx), ctx),
+      // WP7.1: one change at a glance. ADR 0124: how far to trust each repo's map; the Map's
+      // evidence and a person's correction of a fact (F3); a stage tab's findings and a comment
+      // on one (B10).
+      return uiStageRoutes(
+        uiFactsRoutes(
+          uiTrustRoutes(
+            uiCockpitRoutes(
+              uiRepoRoutes(
+                uiDocumentRoutes(
+                  uiAiRoutes(
+                    uiHistoryRoutes(
+                      uiModelRunRoutes(uiKnowledgeRoutes(uiCiteRoutes(specs, ctx), ctx), ctx),
+                      ctx,
+                    ),
+                    ctx,
+                  ),
                   ctx,
                 ),
                 ctx,

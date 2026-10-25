@@ -5,6 +5,7 @@ import { Panel, View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
 import { queryParam } from "../know/common.js";
 import { CopyButton } from "../run/shared.js";
+import { Citation, EvidenceProvider } from "../../app/evidence.js";
 import { sequence, targetSequence, type Lane, type Row, type Sequence } from "./model.js";
 import "./flows.css";
 
@@ -28,14 +29,12 @@ export const targetHref = (change: string, flow?: string) =>
 
 const kindWord = (k: string) => C.kinds[k] ?? k;
 
-/** A citation as its file name and line; the whole path is its title and its text for readers. */
-function Cite({ at }: { at: string }) {
-  const short = at.split("/").pop()!;
-  return (
-    <code title={at} aria-label={at}>
-      {short}
-    </code>
-  );
+/**
+ * A citation (ADR 0124 addendum D-app, F3): its file and line on a button; hover or focus shows
+ * the quote and who checked the fact, and pressing it opens Correct this. The repo is the flow's.
+ */
+function Cite({ at, repo }: { at: string; repo?: string | undefined }) {
+  return <Citation repo={repo} at={at} />;
 }
 
 function Confirmed({ by }: { by: string | undefined }) {
@@ -52,7 +51,17 @@ function Confirmed({ by }: { by: string | undefined }) {
   );
 }
 
-function Step({ r, lanes, now }: { r: Row; lanes: Lane[]; now: boolean }) {
+function Step({
+  r,
+  lanes,
+  now,
+  repo,
+}: {
+  r: Row;
+  lanes: Lane[];
+  now: boolean;
+  repo?: string | undefined;
+}) {
   // The step a link points at is scrolled to and marked.
   const ref = useRef<HTMLLIElement>(null);
   useEffect(() => {
@@ -123,7 +132,7 @@ function Step({ r, lanes, now }: { r: Row; lanes: Lane[]; now: boolean }) {
         )}
         {r.cite && (
           <p className="seq-cite">
-            <Cite at={r.cite} />
+            <Cite at={r.cite} repo={repo} />
             {r.more > 0 && <span> {C.more(r.more)}</span>}
           </p>
         )}
@@ -144,9 +153,12 @@ export function SequenceDiagram({
   name,
   current,
   hideErrors,
+  repo,
 }: {
   seq: Sequence;
   name?: string;
+  /** The repo the citations are in, so each shows its fact's quote (F3). */
+  repo?: string | undefined;
   /** A target flow lists no error paths of its own. */
   hideErrors?: boolean;
   /** The step a link points at (?step=), 0 for the start. */
@@ -181,7 +193,7 @@ export function SequenceDiagram({
         </div>
         <ol className="seq-steps" aria-label={C.diagram(name ?? T.thisFlow)}>
           {seq.rows.map((r) => (
-            <Step key={r.n} r={r} lanes={seq.lanes} now={r.n === current} />
+            <Step key={r.n} r={r} lanes={seq.lanes} now={r.n === current} repo={repo} />
           ))}
         </ol>
       </div>
@@ -191,7 +203,7 @@ export function SequenceDiagram({
           {seq.errors.map((e, i) => (
             <li key={i}>
               <span>{e.when}</span> <span aria-hidden="true">→</span> <strong>{e.then}</strong>
-              {e.cite && <Cite at={e.cite} />}
+              {e.cite && <Cite at={e.cite} repo={repo} />}
             </li>
           ))}
         </ul>
@@ -289,6 +301,7 @@ function FlowDetail({ repo, flow, step }: { repo: string; flow: string; step?: n
             <SequenceDiagram
               seq={seq}
               name={d.flow.name}
+              repo={repo}
               {...(step !== undefined ? { current: step } : {})}
             />
           </div>
@@ -407,7 +420,7 @@ function TargetDetail({ change, flow }: { change: string; flow: string }) {
                 {g}
               </p>
             ))}
-            <SequenceDiagram seq={seq} name={d.name} hideErrors />
+            <SequenceDiagram seq={seq} name={d.name} repo={d.repo} hideErrors />
           </div>
         );
       }}
@@ -470,48 +483,50 @@ export function Flows({ hash }: { hash: string }) {
   const stepParam = Number(queryParam(hash, "step"));
   const step = Number.isInteger(stepParam) && stepParam >= 0 ? stepParam : undefined;
   return (
-    <div className="stack">
-      <Panel title={C.title}>
-        <p className="muted" style={{ marginTop: 0 }}>
-          {C.intro}
-        </p>
-        <div className="row" style={{ gap: 16, flexWrap: "wrap" }}>
-          <ChangePicker list={changes} {...(change ? { change } : {})} />
-          {!change && (
-            <View of={list} empty={(d) => d.repos.length === 0} emptyText={C.noSpecs}>
-              {(d) => {
-                const repo = wanted ?? d.repos[0]!.repo;
-                return (
-                  <label className="row" style={{ gap: 8 }}>
-                    <span className="hud">{C.repo}</span>
-                    <select
-                      id="flow-repo"
-                      value={repo}
-                      onChange={(e) => (location.hash = flowHref(e.target.value))}
-                    >
-                      {d.repos.map((r) => (
-                        <option key={r.repo} value={r.repo}>
-                          {r.repo} ({r.flows})
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                );
-              }}
-            </View>
-          )}
-        </div>
-      </Panel>
-      {change && <ChangeFlows change={change} flow={flow} key={change} />}
-      {!change && list.state === "ready" && list.data.repos.length > 0 && (
-        <RepoFlows
-          repo={wanted ?? list.data.repos[0]!.repo}
-          flow={flow}
-          q={q}
-          step={step}
-          key={`${wanted}?${q}`}
-        />
-      )}
-    </div>
+    <EvidenceProvider>
+      <div className="stack">
+        <Panel title={C.title}>
+          <p className="muted" style={{ marginTop: 0 }}>
+            {C.intro}
+          </p>
+          <div className="row" style={{ gap: 16, flexWrap: "wrap" }}>
+            <ChangePicker list={changes} {...(change ? { change } : {})} />
+            {!change && (
+              <View of={list} empty={(d) => d.repos.length === 0} emptyText={C.noSpecs}>
+                {(d) => {
+                  const repo = wanted ?? d.repos[0]!.repo;
+                  return (
+                    <label className="row" style={{ gap: 8 }}>
+                      <span className="hud">{C.repo}</span>
+                      <select
+                        id="flow-repo"
+                        value={repo}
+                        onChange={(e) => (location.hash = flowHref(e.target.value))}
+                      >
+                        {d.repos.map((r) => (
+                          <option key={r.repo} value={r.repo}>
+                            {r.repo} ({r.flows})
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  );
+                }}
+              </View>
+            )}
+          </div>
+        </Panel>
+        {change && <ChangeFlows change={change} flow={flow} key={change} />}
+        {!change && list.state === "ready" && list.data.repos.length > 0 && (
+          <RepoFlows
+            repo={wanted ?? list.data.repos[0]!.repo}
+            flow={flow}
+            q={q}
+            step={step}
+            key={`${wanted}?${q}`}
+          />
+        )}
+      </div>
+    </EvidenceProvider>
   );
 }
