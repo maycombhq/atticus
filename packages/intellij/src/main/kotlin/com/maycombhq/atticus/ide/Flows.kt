@@ -257,7 +257,7 @@ class CommandFlow(private val project: Project) {
                     if (view?.modelMode == true) Notify.action(Copy.RUN_MODEL) { inConsole("model", Commands.withModel(argv)) } else null,
                     Notify.action(Copy.RUN_HANDOFF) { inConsole("hand-off", Commands.handoff(argv)) },
                 )
-            val text = (if (missing) Copy.noPromptFile(slash!!) else Copy.aiStep(slash)) + (view?.runs?.let { "<br>" + Copy.howStepsRun(it) } ?: "")
+            val text = (if (missing) Copy.noPromptFile(slash) else Copy.aiStep(slash)) + (view?.runs?.let { "<br>" + Copy.howStepsRun(it) } ?: "")
             Notify.show(project, text, NotificationType.INFORMATION, *actions.toTypedArray()).also { it.setTitle(Copy.AI_TITLE) }
         }
     }
@@ -486,7 +486,8 @@ class StartFlow(private val project: Project) {
         val argv = listOf("sandbox", "create", dir.toString())
         flow.captured(argv, parent) { r ->
             flow.said(argv, r)
-            if (r.ok) offerToOpen(dir.toString())
+            // The sandbox folder holds the repos and remotes; the metarepo is the folder it names.
+            if (r.ok) offerToOpen(Metarepo.sandboxMetarepo(r.stdout, dir.toString()))
         }
     }
 }

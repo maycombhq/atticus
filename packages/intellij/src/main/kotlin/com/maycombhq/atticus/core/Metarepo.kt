@@ -64,6 +64,14 @@ object Metarepo {
         return if (screen != null && Regex("^#/[\\w/?=&.%-]*$").matches(screen)) "$b/$screen" else b
     }
 
+    /**
+     * The metarepo `atticus sandbox create <dir>` made: the folder its "Its metarepo is …" line
+     * names, else `<dir>/metarepo` (the sandbox folder itself holds the repos beside it).
+     */
+    fun sandboxMetarepo(printed: String, dir: String): String =
+        Regex("Its metarepo is (.+?)\\. Run commands there").find(printed)?.groupValues?.get(1)?.trim()
+            ?: Path.of(dir, "metarepo").toString()
+
     /** The address `atticus ui` prints once it is ready; only an address on this machine. */
     fun appUrl(output: String): String? = Regex("Atticus is running at (http://127\\.0\\.0\\.1:\\d+)").find(output)?.groupValues?.get(1)
 }

@@ -8,6 +8,15 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 - **`fetch-model.mjs` (the embeddings plugin's fetch step) now downloads through the proxy `HTTPS_PROXY` names.** Node's fetch ignores `HTTPS_PROXY` on its own, so behind a corporate proxy every download failed with a bare "fetch failed". The script runs again with `NODE_USE_ENV_PROXY=1` (Node 22.21 and later honour it), and a failure now names the network error, the proxy (never its credentials) and, on an older Node, that it needs 22.21 or later; `--list` and `--from` remain the way round. Tried for real: the model, onnxruntime and their licences downloaded through a proxy in about ten seconds, every file matching its pin.
 
+### The IntelliJ plugin, run in IntelliJ IDEA (ADR 0099)
+
+- **It builds without an IDE on the machine.** The build downloads IntelliJ IDEA 2025.3.6, since IntelliJ IDEA Community isn't published on its own from 2025.3, and its JUnit tests run (all 64 pass).
+- **The Plugin Verifier finds it compatible with IntelliJ IDEA 2025.3.6 and 2026.2.3**, with no deprecated or experimental API left. `./gradlew verifyPlugin` downloads no Marketplace plugins, and `-Patticus.verifyIdes=<versions>` picks the IDEs to check.
+- **It was run in the IDE with a practice metarepo open.** The status bar, the tool window and its tabs, the app started and stopped with the IDE, the Waiting tab, the gutter's read, the actions, Next Step, Run a Command… and the settings page all worked. `./gradlew runIde -Patticus.openProject=<metarepo>` opens a folder, and `./gradlew runIdeForUiTests` adds JetBrains' Remote Robot server.
+- **Try a practice metarepo opens the metarepo,** not the sandbox folder around it.
+- **The path to `atticus` is found on Linux and macOS as on Windows** when its extension is written in another case (`atticus.cmd` for `.CMD`).
+- **The next step has the same words as in VS Code** for a small change, needs, the org pack's draft and checking knowledge, and a title for reading a repo (`map`) instead of its reason twice.
+
 ### What a knowledge scan of a docs folder hit, fixed (K-docs, ADR 0083 addendum K-docs, ADR 0127)
 
 - **`atticus knowledge scan` reads every page.** It used to put every page in one prompt, and the prompt silently dropped what didn't fit (76 of 103 pages) while recording those pages as read. Now it plans batches that fit the knowledge reader's prompt, from its budget or the model's limit, or `--batch-tokens`. A model or headless runtime reads batch after batch in one run. A hand-off hands one batch a run: it names the pages that wait, and after the resume says how many are left and to run the scan again. A page too big for the prompt on its own is named, with what to raise, and is never recorded as read.

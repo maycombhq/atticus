@@ -45,7 +45,7 @@ class AtticusConfigurable : BoundConfigurable("Atticus") {
         val s = AtticusSettings.get().state
         val path =
             TextFieldWithBrowseButton().apply {
-                addBrowseFolderListener(null, FileChooserDescriptorFactory.createSingleFileDescriptor())
+                addBrowseFolderListener(null, FileChooserDescriptorFactory.singleFile())
             }
         val result = JBLabel()
         return panel {

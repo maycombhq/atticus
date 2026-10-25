@@ -87,4 +87,17 @@ class MetarepoTest {
         // Only a screen of the app: anything else opens the app as it is.
         assertEquals("http://127.0.0.1:5123", Metarepo.screenUrl("http://127.0.0.1:5123", "javascript:alert(1)"))
     }
+
+    @Test
+    fun `a practice sandbox's metarepo is the folder it names, not the sandbox folder`() {
+        val dir = dir.resolve("atticus-practice.2").toString()
+        val printed =
+            """
+            Made a practice sandbox in $dir: 7 Forge repos and the seeded change add-transfer-limit.
+            Its metarepo is ${Path.of(dir, "metarepo")}. Run commands there (or add --root), starting with atticus learn.
+            """.trimIndent()
+        assertEquals(Path.of(dir, "metarepo").toString(), Metarepo.sandboxMetarepo(printed, dir))
+        // When the line isn't there (an older command line), its metarepo/ folder.
+        assertEquals(Path.of(dir, "metarepo").toString(), Metarepo.sandboxMetarepo("Made a practice sandbox.", dir))
+    }
 }
