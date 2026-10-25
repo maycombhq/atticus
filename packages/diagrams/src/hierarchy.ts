@@ -232,13 +232,46 @@ export function buildEstate(records: CatalogRecord[]): Estate {
     gaps: [],
     evidence: [],
     properties: {},
-    next: { command: "atticus scan", why: "Scan the repos again to refresh this picture." },
+    next: {
+      command: "atticus map <repo>",
+      why: "Read a repo again when its code has changed: your assistant writes its facts, then atticus verify <repo> --write puts them here.",
+    },
   });
 
-  const systems = new Map(all(records, "System").map((s) => [s.id, s]));
+  const systemRecords = new Map(all(records, "System").map((s) => [s.id, s]));
   const components = new Map(all(records, "Component").map((c) => [c.id, c]));
+  // A catalog read from facts (ADR 0124) has no System record: its components carry the system
+  // the manifest names, and its calls may name an outside system no component is (a model
+  // provider, a vendor). Both are drawn as systems (a real metarepo, 2026-10-25).
+  const named = new Set<string>();
+  for (const c of components.values()) if (!systemRecords.has(c.system)) named.add(c.system);
+  const outside = new Set<string>();
+  for (const i of all(records, "Interface"))
+    for (const end of [i.from, i.to])
+      if (!components.has(end) && !systemRecords.has(end) && !named.has(end)) outside.add(end);
+  const systems = new Set([...systemRecords.keys(), ...named, ...outside]);
+  for (const id of [...named, ...outside].sort())
+    add({
+      id: `system:${id}`,
+      kind: "system",
+      label: id,
+      parent: "estate",
+      state: "current",
+      gaps: [],
+      evidence: [],
+      properties: { boundary: outside.has(id) ? "outside" : "product" },
+      next: outside.has(id)
+        ? {
+            command: `atticus query "kind:interface to:${id}"`,
+            why: "List the calls made to it: it is outside the estate, named by the code that calls it.",
+          }
+        : {
+            command: `atticus query "system:${id}"`,
+            why: "List what the catalog holds of it: the manifest names it, and no System record says more yet.",
+          },
+    });
 
-  for (const s of systems.values())
+  for (const s of systemRecords.values())
     add({
       ...fromRecord(s, `system:${s.id}`, "system", s.name || s.id, "estate", {
         boundary: s.boundary,
@@ -254,7 +287,7 @@ export function buildEstate(records: CatalogRecord[]): Estate {
 
   // Repos: the first system (by id) that lists one owns it; else the system of a component in it.
   const repoSystem = new Map<string, string>();
-  for (const s of systems.values())
+  for (const s of systemRecords.values())
     for (const repo of s.repos) if (!repoSystem.has(repo)) repoSystem.set(repo, s.id);
   for (const c of components.values())
     if (c.repo && !repoSystem.has(c.repo)) repoSystem.set(c.repo, c.system);
@@ -274,8 +307,8 @@ export function buildEstate(records: CatalogRecord[]): Estate {
       evidence: mergeEvidence(ev),
       properties: { name: repo },
       next: {
-        command: `atticus scan review ${repo}`,
-        why: "See what the last scan couldn't read in this repo.",
+        command: `atticus map ${repo}`,
+        why: "Read the repo again when its code has changed; Map › Trust says how far its map is trusted now.",
       },
     });
   }

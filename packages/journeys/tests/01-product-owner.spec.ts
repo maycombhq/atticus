@@ -64,12 +64,12 @@ test("starts from the same home as everyone, as their Git user (ADR 0073)", asyn
     "href",
     "#/changes",
   );
-  // Home is one page: what needs you, then what is scanned and trusted and the changes in flight.
+  // Home is one page: what needs you, then what is read and trusted and the changes in flight.
   await open(page, app(), "home");
   await expect(page.getByRole("heading", { level: 1, name: "Home" })).toBeAttached();
   await expect(page.getByRole("heading", { level: 2, name: "Needs a person" })).toBeVisible();
   await expect(
-    page.getByRole("heading", { level: 2, name: "What is scanned and trusted" }),
+    page.getByRole("heading", { level: 2, name: "What is read and trusted" }),
   ).toBeVisible();
   await expect(page.getByRole("heading", { level: 2, name: "Changes in flight" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Open Map › Trust" })).toHaveAttribute(

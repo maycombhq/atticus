@@ -60,7 +60,7 @@ export function uiGraphRoutes(r: Router, ctx: ServerContext): Router {
       throw new HttpError(
         422,
         "Atticus can't show that yet",
-        "The catalog is empty: run atticus scan first.",
+        "The catalog is empty: read the repos first (atticus map <repo>, then atticus verify <repo> --write).",
         { notYet: true },
       );
     return buildEstate(records);

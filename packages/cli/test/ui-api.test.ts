@@ -313,3 +313,34 @@ describe("files attached to a change from the app (ADR 0113)", () => {
     expect(noContent.status).toBe(400);
   });
 });
+
+describe("a change on the stage path (ADR 0087; a real change, 2026-10-25)", () => {
+  it("lists the stages' artifacts first, and the change-draft ones only when they are there", async () => {
+    const id = "add-note-tags";
+    const made = await call("/api/changes", {
+      method: "POST",
+      body: { id, title: "Add note tags", type: "feature" },
+    });
+    expect(made.status).toBe(201);
+    const dir = join(root, "openspec/changes", id);
+    await mkdir(join(dir, "stage"), { recursive: true });
+    for (const stage of ["feature", "architecture", "stories"])
+      await writeFile(
+        join(dir, "stage", `${stage}.yaml`),
+        `schemaVersion: 1\nchange: ${id}\nstage: ${stage}\niteration: 1\nstate: done\nupdatedAt: "2026-10-24T09:00:00Z"\n`,
+      );
+    await writeFile(join(dir, "brief.md"), "# Add note tags\n\nA writer tags a note.\n");
+    await writeFile(join(dir, "design.md"), "# Design\n\nThe tags are saved with the note.\n");
+    await writeFile(join(dir, "stories.md"), "# Stories\n\n- Tag a note\n");
+    await writeFile(join(dir, "tasks.md"), "# Tasks\n\n## forge-ledger\n\n- [ ] 1.1 Save tags\n");
+    const d = Api.ChangeDetail.parse((await call(`/api/changes/${id}`)).body);
+    expect(d.artifacts.map((a) => a.artifact)).toEqual(["design", "stories", "tasks", "brief"]);
+    expect(d.artifacts.find((a) => a.artifact === "stories")?.status).toBe("done");
+  });
+
+  it("keeps every artifact of a change on the change-draft path", async () => {
+    const d = Api.ChangeDetail.parse((await call(`/api/changes/${ID}`)).body);
+    expect(d.artifacts.map((a) => a.artifact)).toContain("proposal");
+    expect(d.artifacts.map((a) => a.artifact)).toContain("snow");
+  });
+});

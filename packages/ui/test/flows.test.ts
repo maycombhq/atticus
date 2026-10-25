@@ -204,6 +204,29 @@ describe("a flow as a sequence of steps across lanes (ADR 0092)", () => {
     expect(s.gaps).toEqual(["Who calls this entry point isn't known yet."]);
   });
 
+  it("draws the flow the join says calls it as the caller lane (2026-10-25)", () => {
+    const flow: Flow = {
+      ...saveCustomer,
+      trigger: { kind: "endpoint", what: "POST /api/notes", evidence: [ev("src/N.java")] },
+    };
+    const calledBy = [
+      {
+        step: 1,
+        repo: "forge-studio",
+        flow: "web.write-a-note",
+        name: "Write a note",
+        how: "interface",
+      },
+    ];
+    const s = sequence(view(flow, { calledBy }));
+    expect(s.lanes[0]).toEqual({ id: "caller", label: "Write a note", kind: "caller" });
+    expect(s.gaps).toEqual([]);
+    const two = sequence(
+      view(flow, { calledBy: [...calledBy, { ...calledBy[0]!, flow: "web.edit-a-note" }] }),
+    );
+    expect(two.lanes[0]!.label).toBe("Write a note and 1 more");
+  });
+
   it("names the caller lane by what starts the flow, and cuts a long field list", () => {
     const job: Flow = {
       ...saveCustomer,

@@ -150,7 +150,9 @@ export async function featureList(
 ): Promise<number> {
   const l = await load(root, io);
   if (l.records.length === 0) {
-    io.err("The catalog is empty: run atticus scan first.");
+    io.err(
+      "The catalog is empty: read the repos first (atticus map <repo>, then atticus verify <repo> --write).",
+    );
     return 2;
   }
   const cov = featureCoverage(l.records);

@@ -542,7 +542,7 @@ export function WaitingList(p: {
 
 /**
  * Home: one page (the product owner, 2026-10-24). What needs you first (setup, the step to run
- * next, Waiting on you, Needs a person), then the estate (what is scanned and trusted) and the
+ * next, Waiting on you, Needs a person), then the estate (what is read and trusted) and the
  * changes in flight with the stage each is at, then the numbers, the gates, the map and the
  * findings. The Overview is merged in: its panels share Home's loads of /api/changes and
  * /api/questions, and add /api/onboarding and /api/trust.
@@ -654,7 +654,7 @@ export function CommandCenter() {
       </div>
       <HowStepsRun />
       <SetupChecklist />
-      <HomeNext onboarding={onboarding} changes={changes} questions={asked} />
+      <HomeNext onboarding={onboarding} changes={changes} questions={asked} trust={trust} />
       <div className="bento">
         <Panel title={T.waitingOnYou} span="1 / -1">
           <p className="muted" style={{ margin: "0 0 8px", fontSize: 12.5 }}>

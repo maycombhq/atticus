@@ -78,6 +78,16 @@ beforeAll(async () => {
     join(root, "facts/forge-ledger.verify.yaml"),
     report({ accepted: 2, rejected: 0, unknown: ["src/a.ts", "src/b.ts"], commit: "0123abc" }),
   );
+  // Its companions (a real metarepo, 2026-10-25): none is a repo's facts file.
+  await writeFile(
+    join(root, "facts/forge-ledger.questions.jsonl"),
+    '{"question":"Is notify.internal production?","evidence":["src/Notifier.java:9"]}\n',
+  );
+  await writeFile(
+    join(root, "facts/forge-ledger.reviewed.jsonl"),
+    '{"path":"src/Money.java","why":"a value class"}\n',
+  );
+  await writeFile(join(root, "facts/forge-ledger.corrections.jsonl"), "");
   await checkout("forge-ledger", SHA);
   for (const r of projectFacts(facts.facts).records) await write(r);
 
@@ -225,6 +235,8 @@ describe("GET /api/trust (ADR 0124)", () => {
     expect(v.problems).toEqual([
       expect.objectContaining({ file: "facts/forge-infra.verify.yaml" }),
     ]);
+    // A facts file's companions are no repo of their own, and nothing to complain about.
+    expect(v.repos.map((r) => r.repo).filter((r) => r.startsWith("forge-ledger."))).toEqual([]);
     // Manifest order, then a repo only the facts name.
     expect(v.repos.map((r) => r.repo).at(-1)).toBe("side-tool");
     expect(of("side-tool")).toMatchObject({ checkout: { present: false }, state: "unverified" });

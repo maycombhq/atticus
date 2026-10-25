@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
 import { parse, stringify } from "yaml";
 import { providerFactoryFor, type ModelProvider, type ModelProviderFactory } from "@maycombhq/ai";
-import { ASSISTANT_FORMATS, whatRunsWhere } from "@maycombhq/assistant-files";
+import { ASSISTANT_FORMATS, readProbes, whatRunsWhere } from "@maycombhq/assistant-files";
 import {
   ASSISTANTS,
   DEFAULT_RUNTIME,
@@ -74,7 +74,8 @@ export function uiAiRoutes(r: Router, ctx: ServerContext, deps: AiDeps = {}): Ro
         return {
           status: 200,
           body: {
-            runs: whatRunsWhere(rt),
+            // The assistant atticus probe measured here, when one was (ADR 0124 addendum A-probe).
+            runs: whatRunsWhere(rt, { probes: (await readProbes(root)).results }),
             ai: rt.ai,
             modes: rt.modes,
             assistants: ASSISTANTS.map((id) => ({

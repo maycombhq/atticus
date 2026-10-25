@@ -424,12 +424,36 @@ a:hover {
 }
 
 .main {
-  flex: 999 1 560px;
+  flex: 999 1 400px;
   min-width: 0;
   padding: 14px 18px 22px;
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+
+/* A panel's width (an editor's panel, 600 to 1000 px, 2026-10-25): the menu stays beside the
+   page, compact, instead of stacking above it and leaving the page a narrow column. */
+@media (max-width: 1000px) {
+  .nav {
+    flex-basis: 164px;
+    max-width: 176px;
+    padding: 12px 6px;
+  }
+  .nav a {
+    gap: 8px;
+    padding: 7px 8px;
+    font-size: 12.5px;
+  }
+  .main {
+    padding: 12px 12px 20px;
+  }
+}
+/* A phone's width: the menu wraps above the page and takes the whole width. */
+@media (max-width: 600px) {
+  .nav {
+    max-width: none;
+  }
 }
 
 .topbar {

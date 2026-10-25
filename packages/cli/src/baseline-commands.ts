@@ -10,7 +10,7 @@ import {
   orgPackDirOf,
   WORKSPACE_SCHEMA_VERSION,
 } from "@maycombhq/core";
-import { whatRunsWhere } from "@maycombhq/assistant-files";
+import { readProbes, whatRunsWhere } from "@maycombhq/assistant-files";
 import { buildSite } from "@maycombhq/site";
 import { baseClonePath, loadRepos } from "@maycombhq/workspace";
 import type { Output } from "./commands.js";
@@ -71,13 +71,14 @@ export async function setupSteps(
         ),
       )
     ).filter(Boolean).length;
-  const [doctor, op, repos, records, inputs, baseline] = await Promise.all([
+  const [doctor, op, repos, records, inputs, baseline, probes] = await Promise.all([
     o.doctor ?? doctorChecks(root),
     loadOrgPack(orgPackDirOf(root)),
     loadRepos(root).catch(() => []),
     catalogRecords(root),
     countFiles(inputsDirOf(root)),
     readBaseline(root),
+    readProbes(root).then((p) => p.results),
   ]);
   const failing = doctor.filter((c) => c.status === "fail");
   const cloned = await clonedOf(repos);
@@ -117,7 +118,7 @@ export async function setupSteps(
       id: "ai",
       label: "Choose how AI runs here",
       done: JSON.stringify(op.runtime) !== JSON.stringify(DEFAULT_RUNTIME),
-      detail: whatRunsWhere(op.runtime),
+      detail: whatRunsWhere(op.runtime, { probes }),
       fix: "Choose the assistants, the modes and the model provider on Set up › AI in the app (or in org-pack/runtime.yaml), and commit it through a pull request. As atticus init wrote it, steps are handed to Copilot, which needs nothing more.",
       optional: true,
     },
@@ -136,11 +137,13 @@ export async function setupSteps(
       fix: "Run atticus workspace sync (or Sync repos on the Scans screen); it clones what's missing.",
     },
     {
+      // ADR 0124: your assistant reads each repo and writes its facts; Atticus checks every one
+      // against its line and puts them in the catalog. The id stays: the app keys on it.
       id: "scan",
-      label: "The first scan is done",
+      label: "Every repo is read and verified",
       done: generated > 0,
-      detail: `${records.length} records in the catalog`,
-      fix: "Run atticus scan (or Scan now on the Scans screen). It reads files only: no network, no AI.",
+      detail: `${records.length} record${records.length === 1 ? "" : "s"} in the catalog`,
+      fix: "Read each repo: /atticus-map <repo> in your assistant (or atticus map <repo>), then atticus verify <repo> --write. Verify checks every fact against the line it cites and runs no model.",
     },
     {
       id: "knowledge",
@@ -202,7 +205,9 @@ export async function baselineCommand(
   }
   const records = await catalogRecords(root, io);
   if (records.length === 0) {
-    io.err("The catalog is empty: scan first (atticus scan), then walk the map and accept it.");
+    io.err(
+      "The catalog is empty: read the repos first (atticus map <repo>, then atticus verify <repo> --write), then walk the map and accept it.",
+    );
     return 1;
   }
   const kinds: Record<string, number> = {};

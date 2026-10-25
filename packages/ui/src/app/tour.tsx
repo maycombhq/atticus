@@ -7,7 +7,7 @@ const T = COPY.tour;
  * First-run tour: a few steps through Home (one page), the six entries, asking, Change's tabs
  * (All changes first) and the hand-off PR. It points only at the menu's six (`link`), never at a
  * page behind --full. It is the same for everyone (there are no roles, ADR 0073), opens once per
- * browser, can be skipped, and replays from Help.
+ * metarepo in a browser, can be skipped, and replays from Help.
  */
 
 interface Step {
@@ -42,35 +42,69 @@ export const TOUR: Step[] = [
 ];
 
 const KEY = "atticus.tour.done";
-const seen = (): boolean => {
+/** Where the tour is remembered as seen: per metarepo (its root), so each has its own. */
+const keyOf = (metarepo: string) => `${KEY}:${metarepo}`;
+
+type Store = Pick<Storage, "getItem" | "setItem">;
+const local = (): Store | undefined => {
   try {
-    return localStorage.getItem(KEY) === "1";
+    return localStorage;
+  } catch {
+    return undefined;
+  }
+};
+
+/** Whether the tour was skipped or finished for this metarepo in this browser. */
+export function tourSeen(metarepo: string, store: Store | undefined = local()): boolean {
+  try {
+    return store?.getItem(keyOf(metarepo)) === "1";
   } catch {
     return false;
   }
-};
-const remember = () => {
+}
+
+/** Remember the tour as seen for this metarepo; blocked storage only means it shows again. */
+export function rememberTour(metarepo: string, store: Store | undefined = local()): void {
   try {
-    localStorage.setItem(KEY, "1");
+    store?.setItem(keyOf(metarepo), "1");
   } catch {
     // Storage blocked: the tour simply shows again next time.
   }
-};
+}
 
 /** Ask the tour to open again (the Help menu does this). */
 export const replayTour = () => dispatchEvent(new Event("atticus:tour"));
 
-export function Tour() {
+/**
+ * The tour, for the metarepo the server serves (`/api/health`'s root): undefined while that
+ * loads (the tour waits, so it never flashes up over a page it then remembers it shouldn't), null
+ * when it couldn't be read. Skipped, finished, or left open while the person moves to another
+ * page, it stays closed for that metarepo (a real metarepo, 2026-10-25: it re-opened over pages).
+ */
+export function Tour({ metarepo }: { metarepo?: string | null }) {
   const [open, setOpen] = useState(false);
   const [i, setI] = useState(0);
+  const where = metarepo ?? "";
+  const remember = () => rememberTour(where);
 
   useEffect(() => {
+    if (metarepo === undefined) return;
     // Not on its own inside an editor's tab (ADR 0091): Help still starts it there.
-    if (!seen() && window.self === window.top) {
+    if (!tourSeen(metarepo ?? "") && window.self === window.top) {
       setI(0);
       setOpen(true);
     }
-  }, []);
+  }, [metarepo]);
+  // Moving to another page while it is open is moving on: it closes, and stays closed.
+  useEffect(() => {
+    if (!open) return;
+    const on = () => {
+      rememberTour(where);
+      setOpen(false);
+    };
+    addEventListener("hashchange", on);
+    return () => removeEventListener("hashchange", on);
+  }, [open, where]);
   useEffect(() => {
     const on = () => {
       setI(0);

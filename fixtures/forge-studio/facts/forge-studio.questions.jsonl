@@ -1,0 +1,1 @@
+{"question":"Is llm.vendor.example the production model provider, or a test stand-in?","options":[{"label":"Production","means":"it is the real provider","changes":"the call goes to it"},{"label":"Stand-in","means":"a test double","changes":"the call is left unresolved"}],"evidence":["api/src/main/java/forge/studio/SummaryClient.java:9"]}

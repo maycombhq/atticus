@@ -21,7 +21,7 @@ const T = COPY.dashboardExtra;
 
 /**
  * Home's overview: what was the Overview (plan 4.5), merged into Home by the product owner on
- * 2026-10-24. The one step to run next; what is onboarded, scanned and trusted; the changes in
+ * 2026-10-24. The one step to run next; what is onboarded, read and trusted; the changes in
  * flight, each with the stage it is at and its command; the slash commands. Read from the
  * onboarding view (ADR 0084), /api/trust, /api/changes and /api/questions, which Home loads once
  * for all its panels; it runs nothing.
@@ -35,7 +35,6 @@ export function CoverageView({ v }: { v: OnboardingData }) {
   const max = Math.max(p.listed, 1);
   const rings: [number, string][] = [
     [p.cloned, W.reposCloned],
-    [p.settings, W.reposSettings],
     [p.scanned, W.reposScanned],
   ];
   return (
@@ -164,11 +163,16 @@ export function HomeNext(p: {
   onboarding: Loaded<OnboardingData>;
   changes: Loaded<ChangeRow[]>;
   questions: Loaded<QuestionListView>;
+  /** Map › Trust: each repo's read step, the Atticus 2 way (ADR 0124). */
+  trust?: Loaded<Api.TrustViewT>;
 }) {
+  const trust = p.trust?.state === "ready" ? p.trust.data : undefined;
   return (
     <View of={together(p.onboarding, p.changes, p.questions)}>
       {(d) => (
-        <RunNextPanel step={dashboardStep(d.onboarding, d.questions.questions.length, d.changes)} />
+        <RunNextPanel
+          step={dashboardStep(d.onboarding, d.questions.questions.length, d.changes, trust)}
+        />
       )}
     </View>
   );
@@ -201,7 +205,7 @@ export function TrustSummary({ v }: { v: Api.TrustViewT }) {
   );
 }
 
-/** The estate (scanned and trusted) beside the changes in flight, each at its stage. */
+/** The estate (read and trusted) beside the changes in flight, each at its stage. */
 export function HomeEstate(p: {
   onboarding: Loaded<OnboardingData>;
   trust: Loaded<Api.TrustViewT>;

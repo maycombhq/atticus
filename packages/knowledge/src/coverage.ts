@@ -108,6 +108,19 @@ export function coverage(input: CoverageInput): CoverageResult {
   const boundary = new Map<string, string>();
   for (const s of profileSystems) boundary.set(s.id, s.boundary);
   for (const r of records) if (r.kind === "System") boundary.set(r.id, r.boundary);
+  // A catalog read from facts (ADR 0124) may have no System record: the systems the manifests
+  // name, and those its components carry, are counted as products; a system only a call names
+  // (a model provider, a vendor) is outside the estate (a real metarepo, 2026-10-25).
+  const product = (id: string | undefined) => {
+    if (id && !boundary.has(id)) boundary.set(id, "product");
+  };
+  for (const p of orgPack.profiles) for (const r of p.repos?.repos ?? []) product(r.system);
+  for (const r of records) if (r.kind === "Component") product(r.system);
+  const components = new Set(records.filter((r) => r.kind === "Component").map((r) => r.id));
+  for (const r of records)
+    if (r.kind === "Interface")
+      for (const end of [r.from, r.to])
+        if (!components.has(end) && !boundary.has(end)) boundary.set(end, "outside");
 
   const componentSystem = new Map<string, string>();
   const storeOwner = new Map<string, string>();
@@ -187,7 +200,7 @@ export function coverage(input: CoverageInput): CoverageResult {
     ...(input.now ? { now: input.now } : {}),
   });
   const systems: SystemCoverage[] = [...boundary.keys()].sort().map((system) => {
-    const vendor = boundary.get(system) === "vendor";
+    const vendor = boundary.get(system) === "vendor" || boundary.get(system) === "outside";
     const areas = COVERAGE_AREAS.filter((a) => !vendor || a.vendor).map((a) => {
       const slot = seen.get(system)?.get(a.area);
       const state: AreaState = slot?.code.length

@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { changesDirOf, changesRelOf } from "../src/index.js";
+import { changesDirOf, changesRelOf, factsFileOf } from "../src/index.js";
 
 function metarepo(orgPack: string, sources?: string): string {
   const root = mkdtempSync(join(tmpdir(), "atticus-metarepo-"));
@@ -33,5 +33,26 @@ describe("change folders through the layout", () => {
       "schemaVersion: 1\nlayout:\n  openspec: docs/openspec\n",
     );
     expect(changesRelOf(root)).toBe("docs/openspec/changes");
+  });
+});
+
+describe("the files in the facts folder (ADR 0124)", () => {
+  it("names the repo of a facts file, and tells its companions from it", () => {
+    expect(factsFileOf("forge-studio.jsonl")).toEqual({ repo: "forge-studio", facts: true });
+    for (const companion of [
+      "questions.jsonl",
+      "rejected.jsonl",
+      "reviewed.jsonl",
+      "corrections.jsonl",
+      "verify.yaml",
+    ])
+      expect(factsFileOf(`forge-studio.${companion}`)).toEqual({
+        repo: "forge-studio",
+        facts: false,
+      });
+    // A repo id may hold dots of its own.
+    expect(factsFileOf("forge.notes.jsonl")).toEqual({ repo: "forge.notes", facts: true });
+    expect(factsFileOf("README.md")).toBeUndefined();
+    expect(factsFileOf(".jsonl")).toBeUndefined();
   });
 });

@@ -1015,12 +1015,11 @@ export const COPY = {
     loading: "Loading",
     unreadable: "These files couldn't be read:",
     // Home's overview (the Overview, merged into Home on 2026-10-24)
-    estate: "What is scanned and trusted",
-    coverage: "Onboarded and scanned",
+    estate: "What is read and trusted",
+    coverage: "Onboarded and read",
     reposListed: "repos in the manifests",
     reposCloned: "cloned",
-    reposSettings: "with scan settings",
-    reposScanned: "scanned",
+    reposScanned: "in the catalog",
     records: "facts in the catalog",
     openOnboarding: "Open Onboarding",
     trustNone: "No repo is listed yet, so there is no map to trust.",
@@ -1046,11 +1045,11 @@ export const COPY = {
     stepPickNone:
       "There is no manifest yet. Propose one from a folder of clones or your Git host's organisation:",
     stepSync: "Clone the repos, or bring the clones up to date:",
-    stepSurvey: "Have your assistant read each repo and draft its scan settings:",
-    stepScan: "Scan every repo into the catalog:",
+    stepRead: "Have your assistant read each repo and write its facts, each citing its line:",
+    stepWrite: "Check the facts against the code and put them in the catalog:",
     stepAnswer: "Answer the questions the scan raised:",
     stepAnswerLink: "Open the Questions page",
-    stepReview: "Review what the scan couldn't read, repo by repo:",
+    stepTrust: "See how far to trust each repo's map, and the files not read yet:",
     done: "DONE",
     todo: "TO DO",
     repos: "Repos",
@@ -1064,8 +1063,8 @@ export const COPY = {
     notCloned: "NOT YET",
     settingsCol: "Scan settings",
     settingsMissing: "none yet",
-    lastScanCol: "Last scan",
-    notScanned: "not scanned",
+    lastScanCol: "In the catalog",
+    notScanned: "nothing yet",
     recordCount: (n: number) => `${n} fact${n === 1 ? "" : "s"}`,
     atCommit: (c: string) => `at ${c.slice(0, 7)}`,
     sources: "Knowledge sources",
@@ -1117,13 +1116,25 @@ export const COPY = {
     why: {
       discover: "There are no repos to work on until a manifest lists them.",
       sync: (n: number) => `${n} repo${n === 1 ? " isn't" : "s aren't"} cloned yet.`,
-      survey: (repo: string) =>
-        `${repo} has no scan settings yet. Your assistant reads it and drafts them; a check confirms them against the code.`,
-      scan: "The catalog doesn't have every cloned repo yet.",
+      /** ADR 0124: a repo read by the assistant and verified, by its state on Map › Trust. */
+      read: {
+        "not-read": (repo: string) =>
+          `${repo} isn't read yet: your assistant reads it and writes its facts, each citing its line, and atticus verify checks every one.`,
+        unverified: (repo: string) =>
+          `${repo}'s facts aren't verified yet: atticus verify checks each against the line it cites.`,
+        rejected: (repo: string) =>
+          `Some of ${repo}'s facts were rejected: your assistant fixes them from the rejected file, then verify runs again.`,
+        stale: (repo: string) =>
+          `${repo}'s facts are of another commit than its checkout: your assistant reads what changed again.`,
+        unwritten: (repo: string) =>
+          `${repo}'s facts are verified but not in the catalog yet: atticus verify --write puts them there.`,
+      },
+      write: (repo: string) =>
+        `When the read is done, atticus verify ${repo} --write checks the facts and puts them in the catalog.`,
       answer: (n: number) =>
         `${n} question${n === 1 ? " is" : "s are"} waiting. Answer on the Questions page; it shows the command to rerun.`,
-      review: (repo: string) =>
-        `Everything is scanned. Review what the scan couldn't read in ${repo}.`,
+      onboarded:
+        "Every repo is read and its facts verified. Map › Trust says how far to trust each repo's map; atticus next says what comes next.",
       change: (id: string, stage: string) => `${id} is at the ${stage} stage.`,
       newChange: "Everything is onboarded and no change is in flight. Start one.",
       feature:
@@ -1136,7 +1147,21 @@ export const COPY = {
       small:
         "A small change: your assistant places it, writes its target flows and words its stories in one step; Atticus runs every stage's checks and the critic at its gate.",
       later: "The change is past this stage; its status says what it needs now.",
-      refresh: "The diagram reads the catalog: scan again when the code has changed.",
+      refresh:
+        "The diagram is drawn from the catalog. When a repo's code has changed, your assistant reads it again and atticus verify --write puts its facts in the catalog.",
+      /** A stage tab whose own stage is done: the change waits on its gate (2026-10-25). */
+      stageDone: (stage: string, next: string) =>
+        `The ${stage} stage is done; the change now waits on its hand-off gate. ${next}`,
+      stageBlocked: (stage: string, reason: string) =>
+        `The ${stage} stage is done, but the gate can't be raised yet: ${reason}`,
+      stageUnderWay: (stage: string, state: string) =>
+        state === "questions"
+          ? `The ${stage} stage waits for answers to its questions; run it again once they are answered.`
+          : state === "waiting"
+            ? `The ${stage} stage is with your assistant: finish its hand-off, then run it again.`
+            : state === "stopped"
+              ? `The ${stage} stage stopped for a person to fix a file; run it again once it is fixed.`
+              : `The ${stage} stage is drafting; run it again to go on.`,
       critic: "Reviews the change's files against the checklists.",
       handoff: "Opens the stage's hand-off PR; merging it approves the stage.",
       questionsList: "Lists the open questions with their files.",
@@ -1154,7 +1179,9 @@ export const COPY = {
     recordedAs: (root: string | number, v: string | number, user: string | number) =>
       `${root}${v} · recorded as ${user}`,
     askAtticus: "Ask Atticus",
-    askWhatBreaksIf: "Ask: what breaks if ledger-db.account changes?",
+    /** The Ask box's example, from the person's own catalog (a real table or entry), else neutral. */
+    askWhatBreaksIf: (id: string) => `Ask: what breaks if ${id} changes?`,
+    askNeutral: "Ask: who calls a component, or what breaks if a table changes?",
     ask: "Ask",
     help: "Help",
     replayTheTour: "Replay the tour",
@@ -1208,11 +1235,11 @@ export const COPY = {
     steps: {
       home: {
         title: "Your home",
-        body: "Home is one page. First what needs a person across every change (changes in each phase, blocking findings, open needs, questions and manual steps) and the step to run next; then what is scanned and trusted, and each change in flight with the stage it is at. Beside it: Map, Change, Questions, Knowledge and Set up. Everyone sees the same screens; Ctrl+K jumps anywhere.",
+        body: "Home is one page. First what needs a person across every change (changes in each phase, blocking findings, open needs, questions and manual steps) and the step to run next; then what is read and trusted, and each change in flight with the stage it is at. Beside it: Map, Change, Questions, Knowledge and Set up. Everyone sees the same screens; Ctrl+K jumps anywhere.",
       },
       ask: {
         title: "Ask in plain words",
-        body: "Type a question such as “who calls ledger-api?” in the box at the top. Atticus answers from the catalog and always shows the query it ran.",
+        body: "Type a question such as “who calls <a component>?” or “what breaks if <a table> changes?” in the box at the top. Atticus answers from the catalog and always shows the query it ran.",
       },
       change: {
         title: "One change, a tab per stage",
@@ -1556,7 +1583,8 @@ export const COPY = {
     gatePipeline2: "Gate pipeline",
     interfacesInTheCatalog: "Interfaces in the catalog",
     interfaces: "Interfaces",
-    theCatalogIsEmpty: "The catalog is empty. Run a scan to map your repos.",
+    theCatalogIsEmpty:
+      "The catalog is empty. Read a repo first: atticus map <repo>, then atticus verify <repo> --write.",
     systemMap: "System map",
     explore: "Explore",
     loading: "Loading…",
@@ -1621,7 +1649,8 @@ export const COPY = {
     searchResults: "Search results",
     nothingMatchesTryFewer: "Nothing matches. Try fewer words.",
     results: "Results",
-    theCatalogIsEmpty: "The catalog is empty. Run a scan first.",
+    theCatalogIsEmpty:
+      "The catalog is empty. Read a repo first: atticus map <repo>, then atticus verify <repo> --write.",
     around: (focusId: string | number) => `Around ${focusId}`,
     theWholeEstate: "The whole estate",
   },
@@ -1715,11 +1744,12 @@ export const COPY = {
     view: "View",
     system: "System",
     drawnFromTheCatalog:
-      "Drawn from the catalog; rebuilt on every scan. Edits happen in draw.io and come back through the metarepo.",
+      "Drawn from the catalog; rebuilt whenever it changes. Edits happen in draw.io and come back through the metarepo.",
     generatedViews: "Generated views",
     nothingToDrawThe: (v: string | number) =>
       `Nothing to draw: the catalog has nothing for the ${v} view.`,
-    theCatalogIsEmpty: "The catalog is empty. Run a scan first.",
+    theCatalogIsEmpty:
+      "The catalog is empty. Read a repo first: atticus map <repo>, then atticus verify <repo> --write.",
     view2: (label: string | number) => `${label} view`,
     mermaidSource: "Mermaid source",
     nothingToDrawFor: "Nothing to draw for this view yet.",
@@ -1791,7 +1821,8 @@ export const COPY = {
     guideTo: (system: string | number) => `Guide to ${system}`,
     guide: (system: string | number) => `Guide · ${system}`,
     generatedFromTheCatalog: "Generated from the catalog",
-    theCatalogIsEmpty: "The catalog is empty. Run a scan from the Scans screen.",
+    theCatalogIsEmpty:
+      "The catalog is empty. Read a repo first: atticus map <repo>, then atticus verify <repo> --write.",
     around: (focus: string | number) => `Around ${focus}`,
     ecosystemMap: "Ecosystem map",
     showAll: "Show all",
@@ -1807,6 +1838,19 @@ export const COPY = {
     notExpected2: (system: string | number, name: string | number) =>
       `${system} · ${name}: not expected`,
     whatTheCatalogKnows: "What the catalog knows",
+    /** No System record yet (a catalog read from facts, ADR 0124): what each repo's facts say. */
+    factsByRepo: {
+      intro:
+        "No System record says more yet, so this is what each repo's verified facts say. Map › Trust says how far to trust them.",
+      caption: "Facts by repo",
+      repo: "Repo",
+      entries: "Entries",
+      tables: "Tables",
+      calls: "Calls",
+      flows: "Flows",
+      none: "No repo has facts yet: read one with atticus map <repo>, then atticus verify <repo> --write.",
+      cantRead: (repo: string) => `${repo}'s facts couldn't be read.`,
+    },
     ask: (owner: string | number) => ` · ask ${owner}`,
     ownerUnknown: " · owner unknown",
     questionsForOwners: "Questions for owners",
@@ -1821,7 +1865,7 @@ export const COPY = {
     whatBreaksIfThis: "What breaks if this changes",
     noOwnerRecordedFor: (v: string | number) => `No owner recorded for ${v}.`,
     fromTheLastScan:
-      "From the last scan. Atticus never connects to live systems, consoles or monitoring.",
+      "From the catalog. Atticus never connects to live systems, consoles or monitoring.",
     ownersToCall: "Owners to call",
     noAlertsDashboardsOr: "No alerts, dashboards or runbooks in the catalog for what it reaches.",
     whatWatchesIt: "What watches it",
@@ -1844,7 +1888,7 @@ export const COPY = {
     featuresByHowThey: "Features by how they were named",
     entryPoints: (v: string | number) => `${v} entry points`,
     features: "Features",
-    noFeaturesFoundYet: "No features found yet. Scan the repos first.",
+    noFeaturesFoundYet: "No features found yet. Read the repos first.",
     featuresFoundInCode: "Features found in code",
     pickAFeature: "Pick a feature.",
     noWorkItemsLinked: "NO WORK ITEMS LINKED",
@@ -2170,7 +2214,7 @@ export const COPY = {
     recordsPlannedForRetirement: "Records planned for retirement; check who still depends on them.",
     nothingIsPlannedFor: "Nothing is planned for retirement.",
     readOnlyBlastRadius:
-      "Read-only blast radius from the last scan. Atticus never connects to live systems, consoles or monitoring. ",
+      "Read-only blast radius from the catalog. Atticus never connects to live systems, consoles or monitoring. ",
     openTheImpactExplorer: "Open the impact explorer",
     incidentMode: "Incident mode",
   },
@@ -2438,7 +2482,7 @@ export const COPY = {
   systems: {
     title: "Systems",
     pick: "Which system",
-    empty: "No system in the catalog yet: scan the repos first.",
+    empty: "No system in the catalog yet: read the repos first.",
     openPage: "Open its page",
     inFlight: "Changes in flight in its repos",
     noChanges: "No change in flight touches its repos.",
@@ -2811,6 +2855,8 @@ export const COPY = {
   flowsModel: {
     whoCallsThisEntry: "Who calls this entry point isn't known yet.",
     callerNotKnown: "Caller not known",
+    /** The flows the join says call this one: the first's name, and how many more. */
+    calledByFlows: (first: string, more: number) => (more ? `${first} and ${more} more` : first),
     start: "Start",
   },
   /** ADR 0106: what Atticus asked a model and what it answered, run by run. */

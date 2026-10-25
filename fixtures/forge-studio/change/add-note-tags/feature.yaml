@@ -1,0 +1,14 @@
+# The feature placed against the estate (ADR 0087).
+schemaVersion: 1
+change: add-note-tags
+entry: brief
+summary: A writer tags a note so notes can be found by tag.
+features: []
+flows:
+  - id: forge-studio.create-a-note
+    why: The note is saved with its tags.
+    how: changed
+newFlows: []
+gaps: []
+conflicts: []
+questions: []

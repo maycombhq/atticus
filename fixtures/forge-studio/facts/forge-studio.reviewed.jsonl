@@ -1,0 +1,2 @@
+{"path":"api/src/main/java/forge/studio/Note.java","why":"a plain value class: no route, call, store, field or setting"}
+{"path":"web/src/app/notes/note.ts","why":"a type the service sends; it holds no fact of its own"}

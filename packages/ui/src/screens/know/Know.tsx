@@ -1,5 +1,6 @@
-import { useState, type FormEvent } from "react";
-import { api, useApi, useLiveEvents } from "../../api/client.js";
+import { useEffect, useState, type FormEvent } from "react";
+import type { Api } from "@maycombhq/core";
+import { api, useApi, useLiveEvents, type Loaded } from "../../api/client.js";
 import { GraphView, type Graph } from "../../app/graph.js";
 import { Bar, Donut, Panel, Ring, View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
@@ -76,10 +77,100 @@ export function SystemGuide({ system, link }: { system: string; link?: boolean }
   );
 }
 
+/** What one repo's facts say, counted: entry points, tables, calls and flows. */
+export interface RepoFactsCount {
+  repo: string;
+  entries: number;
+  tables: number;
+  calls: number;
+  flows: number;
+}
+
+export function countFacts(v: Api.RepoFactsViewT): RepoFactsCount {
+  const of = (k: string) => v.facts.filter((f) => f.kind === k);
+  const tables = new Set(of("store").map((f) => `${f.claim.store ?? ""}.${f.claim.name ?? ""}`));
+  return {
+    repo: v.repo,
+    entries: of("entry").length,
+    tables: tables.size,
+    calls: of("call").length,
+    flows: of("flow").length,
+  };
+}
+
+/** Each repo's facts (GET /api/trust, then GET /api/facts/<repo>), counted. */
+function useFactsByRepo(on: boolean): Loaded<RepoFactsCount[]> {
+  const trust = useApi<Api.TrustViewT>(on ? "/api/trust" : undefined);
+  const [counts, setCounts] = useState<Loaded<RepoFactsCount[]>>({ state: "loading" });
+  const repos =
+    trust.state === "ready"
+      ? trust.data.repos
+          .filter((r) => r.facts.present)
+          .map((r) => r.repo)
+          .join(" ")
+      : undefined;
+  const failed = trust.state === "error" ? trust.error : undefined;
+  useEffect(() => {
+    if (failed !== undefined) return setCounts({ state: "error", error: failed });
+    if (repos === undefined) return;
+    let live = true;
+    Promise.all(
+      repos
+        .split(" ")
+        .filter(Boolean)
+        .map((r) => api<Api.RepoFactsViewT>(`/api/facts/${encodeURIComponent(r)}`)),
+    ).then(
+      (vs) => live && setCounts({ state: "ready", data: vs.map(countFacts) }),
+      (e: unknown) =>
+        live && setCounts({ state: "error", error: e instanceof Error ? e.message : String(e) }),
+    );
+    return () => {
+      live = false;
+    };
+  }, [repos, failed]);
+  return counts;
+}
+
+/**
+ * What the catalog knows when no System record says (a catalog read from facts, ADR 0124; a
+ * real metarepo, 2026-10-25, said "No systems yet"): each repo's entries, tables, calls and flows.
+ */
+export function FactsByRepo({ of }: { of: Loaded<RepoFactsCount[]> }) {
+  const F = T.factsByRepo;
+  return (
+    <View of={of} empty={(c) => c.length === 0} emptyText={F.none}>
+      {(c) => (
+        <div className="stack" style={{ gap: 8 }}>
+          <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
+            {F.intro} <a href="#/trust">{COPY.work.openTrust}</a>
+          </p>
+          <Table
+            caption={F.caption}
+            rows={c}
+            rowKey={(r) => r.repo}
+            cols={[
+              { label: F.repo, cell: (r) => r.repo, mono: true },
+              { label: F.entries, cell: (r) => r.entries },
+              { label: F.tables, cell: (r) => r.tables },
+              { label: F.calls, cell: (r) => r.calls },
+              { label: F.flows, cell: (r) => r.flows },
+            ]}
+          />
+        </div>
+      )}
+    </View>
+  );
+}
+
 export function EcosystemMap() {
   const graph = useApi<Graph>("/api/graph");
   const cov = useView<Coverage>("coverage");
   const qs = useView<Questions>("questions");
+  const kinds = useApi<{ kind: string; count: number }[]>("/api/catalog/kinds");
+  // No System record: the facts say what the catalog knows, by repo.
+  const noSystems =
+    kinds.state === "ready" && !kinds.data.some((k) => k.kind === "System" && k.count > 0);
+  const byRepo = useFactsByRepo(noSystems);
   const [focus, setFocus] = useState<string | undefined>();
   return (
     <div className="bento">
@@ -150,102 +241,106 @@ export function EcosystemMap() {
         <SystemGuide system={focus} link />
       )}
       <Panel title={T.whatTheCatalogKnows} span="span 8">
-        <View of={cov} empty={(c) => c.systems.length === 0} emptyText={T.noSystemsYet}>
-          {(c) => {
-            const areas = [...new Set(c.systems.flatMap((x) => x.areas.map((a) => a.area)))];
-            // Positioned, so the hidden words in its cells scroll with it instead of widening the page.
-            return (
-              <div
-                style={{ overflowX: "auto", position: "relative" }}
-                tabIndex={0}
-                role="region"
-                aria-label={COPY.app.scrollTable(T.coverageBySystemAnd2)}
-              >
-                <table
-                  style={{
-                    borderCollapse: "separate",
-                    borderSpacing: 4,
-                    width: "100%",
-                    fontSize: 11,
-                  }}
+        {noSystems ? (
+          <FactsByRepo of={byRepo} />
+        ) : (
+          <View of={cov} empty={(c) => c.systems.length === 0} emptyText={T.noSystemsYet}>
+            {(c) => {
+              const areas = [...new Set(c.systems.flatMap((x) => x.areas.map((a) => a.area)))];
+              // Positioned, so the hidden words in its cells scroll with it instead of widening the page.
+              return (
+                <div
+                  style={{ overflowX: "auto", position: "relative" }}
+                  tabIndex={0}
+                  role="region"
+                  aria-label={COPY.app.scrollTable(T.coverageBySystemAnd2)}
                 >
-                  <caption className="sr">{T.coverageBySystemAnd}</caption>
-                  <thead>
-                    <tr>
-                      <th />
-                      {areas.map((a) => (
-                        <th
-                          key={a}
-                          className="hud"
-                          style={{ fontSize: 9.5, fontWeight: 400, textAlign: "center" }}
-                        >
-                          {a}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {c.systems.map((s) => (
-                      <tr key={s.system}>
-                        <th
-                          className="mono"
-                          style={{ textAlign: "left", fontWeight: 400, paddingRight: 8 }}
-                        >
-                          {s.system}
-                        </th>
-                        {areas.map((name) => {
-                          const a = s.areas.find((x) => x.area === name);
-                          if (!a)
+                  <table
+                    style={{
+                      borderCollapse: "separate",
+                      borderSpacing: 4,
+                      width: "100%",
+                      fontSize: 11,
+                    }}
+                  >
+                    <caption className="sr">{T.coverageBySystemAnd}</caption>
+                    <thead>
+                      <tr>
+                        <th />
+                        {areas.map((a) => (
+                          <th
+                            key={a}
+                            className="hud"
+                            style={{ fontSize: 9.5, fontWeight: 400, textAlign: "center" }}
+                          >
+                            {a}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {c.systems.map((s) => (
+                        <tr key={s.system}>
+                          <th
+                            className="mono"
+                            style={{ textAlign: "left", fontWeight: 400, paddingRight: 8 }}
+                          >
+                            {s.system}
+                          </th>
+                          {areas.map((name) => {
+                            const a = s.areas.find((x) => x.area === name);
+                            if (!a)
+                              return (
+                                <td key={name} title={T.notExpected2(s.system, name)}>
+                                  <span className="sr">{T.notExpected}</span>
+                                </td>
+                              );
+                            const cell = CELL[a.state] ?? CELL.unknown!;
                             return (
-                              <td key={name} title={T.notExpected2(s.system, name)}>
-                                <span className="sr">{T.notExpected}</span>
+                              <td
+                                key={a.area}
+                                title={`${s.system} · ${a.area}: ${cell.label}${a.records.length ? ` (${a.records.length})` : ""}`}
+                                style={{
+                                  background: cell.bg,
+                                  height: 26,
+                                  borderRadius: 4,
+                                  textAlign: "center",
+                                  border: "1px solid var(--cov-line)",
+                                }}
+                              >
+                                <span className="sr">{cell.label}</span>
+                                {a.records.length ? (
+                                  <span aria-hidden="true">{a.records.length}</span>
+                                ) : null}
                               </td>
                             );
-                          const cell = CELL[a.state] ?? CELL.unknown!;
-                          return (
-                            <td
-                              key={a.area}
-                              title={`${s.system} · ${a.area}: ${cell.label}${a.records.length ? ` (${a.records.length})` : ""}`}
-                              style={{
-                                background: cell.bg,
-                                height: 26,
-                                borderRadius: 4,
-                                textAlign: "center",
-                                border: "1px solid var(--cov-line)",
-                              }}
-                            >
-                              <span className="sr">{cell.label}</span>
-                              {a.records.length ? (
-                                <span aria-hidden="true">{a.records.length}</span>
-                              ) : null}
-                            </td>
-                          );
-                        })}
-                      </tr>
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <div className="row" style={{ gap: 14, marginTop: 8, flexWrap: "wrap" }}>
+                    {Object.entries(CELL).map(([k, v]) => (
+                      <span key={k} className="row" style={{ gap: 6, fontSize: 11.5 }}>
+                        <span
+                          aria-hidden="true"
+                          style={{
+                            width: 12,
+                            height: 12,
+                            borderRadius: 3,
+                            background: v.bg,
+                            display: "inline-block",
+                          }}
+                        />
+                        {v.label}
+                      </span>
                     ))}
-                  </tbody>
-                </table>
-                <div className="row" style={{ gap: 14, marginTop: 8, flexWrap: "wrap" }}>
-                  {Object.entries(CELL).map(([k, v]) => (
-                    <span key={k} className="row" style={{ gap: 6, fontSize: 11.5 }}>
-                      <span
-                        aria-hidden="true"
-                        style={{
-                          width: 12,
-                          height: 12,
-                          borderRadius: 3,
-                          background: v.bg,
-                          display: "inline-block",
-                        }}
-                      />
-                      {v.label}
-                    </span>
-                  ))}
+                  </div>
                 </div>
-              </div>
-            );
-          }}
-        </View>
+              );
+            }}
+          </View>
+        )}
       </Panel>
       <Panel
         title={T.questionsForOwners}

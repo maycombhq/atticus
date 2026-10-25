@@ -22,6 +22,7 @@ import {
   changeSize,
   changeStore,
   liveHandoff,
+  requiredArtifacts,
   loadChangeContext,
   type ChangeReport,
 } from "@maycombhq/changes";
@@ -128,8 +129,32 @@ async function changeDetail(root: string, id: string) {
   const artifacts = [];
   const blockedArtifacts = new Set(report.blockers.map((b) => b.artifact).filter(Boolean));
   const cctx = await loadChangeContext(root);
-  for (const a of report.type.artifacts as z.infer<typeof ChangeArtifact>[]) {
+  type Artifact = z.infer<typeof ChangeArtifact>;
+  // On the stage path (ADR 0087: a stage's loop has run), the stages' artifacts come first, in
+  // stage order, and the change-draft ones (proposal, specs, ...) only when they are there (a
+  // real change, 2026-10-25, listed every OpenSpec-era artifact as ready or blocked).
+  const onStages = (
+    await Promise.all(
+      cctx.policy.stages.map((s) =>
+        readFile(join(dir, ...s.loop.split("/"))).then(
+          () => true,
+          () => false,
+        ),
+      ),
+    )
+  ).some(Boolean);
+  const type = report.type.artifacts as Artifact[];
+  const ofStages = cctx.policy.stages
+    .flatMap((s) => s.artifacts)
+    .filter((a, i, all) => type.includes(a) && all.indexOf(a) === i);
+  const due = new Set<Artifact>();
+  for (const p of phases)
+    for (const a of requiredArtifacts(cctx, report.type, p, report.footprint)) due.add(a);
+  const order = onStages ? [...ofStages, ...type.filter((a) => !ofStages.includes(a))] : type;
+  for (const a of order) {
     const files = await artifactFiles(dir, a);
+    // A stage's artifact is listed when it is due (data.md only when the change touches data).
+    if (onStages && !files.length && !(ofStages.includes(a) && due.has(a))) continue;
     const at = phases.indexOf(artifactPhase(cctx, report.type, a));
     const done = files.length > 0 && !blockedArtifacts.has(a);
     artifacts.push({

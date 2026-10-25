@@ -20,6 +20,7 @@ import {
   impact,
   openIndex,
   QueryError,
+  askLookup,
   translate,
   type CatalogIndex,
 } from "@maycombhq/index";
@@ -156,11 +157,7 @@ export function apiRoutes(r: Router, ctx: Context): Router {
       return {
         status: 200,
         body: await withIndex(root, (ix) => {
-          const lookup = (w: string) => {
-            const r = ix.find(w)[0];
-            return r ? { id: r.id, kind: r.kind } : undefined;
-          };
-          const asked = translate(q, lookup);
+          const asked = translate(q, askLookup(ix));
           if (asked.action === "impact")
             return { question: q, ...asked, impact: impact(ix, asked.id, 4) };
           if (asked.action === "owner") {

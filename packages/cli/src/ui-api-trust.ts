@@ -4,6 +4,7 @@ import { parse } from "yaml";
 import {
   catalogDirOf,
   factsDirOf,
+  factsFileOf,
   factsRelOf,
   isAdopted,
   parseFacts,
@@ -135,12 +136,13 @@ export async function trustView(root: string): Promise<View> {
   } catch (e) {
     problems.push({ file: "org-pack/profiles", message: firstLine(e) });
   }
+  // A repo is named by its facts file or the verifier's report; the questions, rejected, reviewed
+  // and corrections files beside them are companions, never a repo of their own.
   const files = await readdir(dir).catch(() => [] as string[]);
   const named = new Set<string>();
   for (const f of files) {
-    if (f.endsWith(".rejected.jsonl")) continue;
-    const m = /^(.+)\.(jsonl|verify\.yaml)$/.exec(f);
-    if (m) named.add(m[1]!);
+    const of = factsFileOf(f);
+    if (of && (of.facts || f.endsWith(".verify.yaml"))) named.add(of.repo);
   }
   for (const id of [...named].sort()) if (!ids.includes(id)) ids.push(id);
 

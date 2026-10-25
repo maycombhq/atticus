@@ -51,7 +51,9 @@ export async function stubServe(
   if (o.catalog) {
     const { records, generated } = await loadCatalog(root, io);
     if (generated === 0) {
-      io.err("The catalog is empty: run atticus scan first.");
+      io.err(
+        "The catalog is empty: read the repos first (atticus map <repo>, then atticus verify <repo> --write).",
+      );
       return 1;
     }
     try {

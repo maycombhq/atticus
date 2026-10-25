@@ -55,7 +55,8 @@ export const WORDS = {
   focusHint: "Tables are clearer one at a time. Open one in focus to see who reads and writes it.",
   groupHint: "This view has more boxes than can be read at once. Open a part of it instead.",
   empty: "Nothing to show here in this lens.",
-  emptyEstate: "The catalog is empty. Run atticus scan, then come back.",
+  emptyEstate:
+    "The catalog is empty. Read a repo first (atticus map <repo>, then atticus verify <repo> --write), then come back.",
   properties: "Properties",
   kind: "Kind",
   stateLabel: "State",

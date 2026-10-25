@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { landingOf, SCREENS, SECTIONS } from "../src/app/screens.js";
-import { TOUR } from "../src/app/tour.js";
+import { rememberTour, TOUR, tourSeen } from "../src/app/tour.js";
 
 describe("first-run tour", () => {
   it("is one tour for everyone that starts at home and points only at screens that exist", () => {
@@ -26,10 +26,33 @@ describe("first-run tour", () => {
 
   it("says Home is one page, and names Change's tabs from All changes to Tasks", () => {
     expect(TOUR[0]!.body).toMatch(/what needs a person/);
-    expect(TOUR[0]!.body).toMatch(/scanned and trusted/);
+    expect(TOUR[0]!.body).toMatch(/read and trusted/);
     const change = TOUR.find((s) => s.title === "One change, a tab per stage")!;
     expect(change.target).toBe('.nav a[href="#/changes"]');
     expect(change.body).toMatch(/All changes.*At a glance.*feature.*architecture.*stories.*tasks/);
+  });
+
+  it("once skipped or finished, stays closed for that metarepo (2026-10-25)", () => {
+    const kept = new Map<string, string>();
+    const store = {
+      getItem: (k: string) => kept.get(k) ?? null,
+      setItem: (k: string, v: string) => void kept.set(k, v),
+    };
+    expect(tourSeen("/work/forge-studio", store)).toBe(false);
+    rememberTour("/work/forge-studio", store);
+    expect(tourSeen("/work/forge-studio", store)).toBe(true);
+    expect(tourSeen("/work/other-metarepo", store)).toBe(false);
+    // Blocked storage (a private window, a webview): never an error; the tour shows again.
+    const blocked = {
+      getItem: () => {
+        throw new Error("blocked");
+      },
+      setItem: () => {
+        throw new Error("blocked");
+      },
+    };
+    expect(() => rememberTour("/work/forge-studio", blocked)).not.toThrow();
+    expect(tourSeen("/work/forge-studio", blocked)).toBe(false);
   });
 
   it("says approving is the pull request, not a role (ADR 0073)", () => {
