@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import {
   assistantTier,
   mapBatchInstructions,
@@ -38,12 +38,16 @@ import {
 } from "@maycombhq/ai";
 import {
   dirSource,
+  exclusionYaml,
   FILE_KINDS,
   kindsOf,
   numberedSlice,
   onlyFiles,
   planBatches,
+  planParts,
+  proposeExclusions,
   rereadPlan,
+  SESSION_TOKENS,
   sameCommit,
   sliceText,
   staleMessage,
@@ -956,6 +960,18 @@ async function estimate(
         })
       : undefined;
   const plan = planned && planned.leastRoom >= MIN_ROOM ? planned : undefined;
+  // A big repo (ADR 0124 addendum A-big): folders of data to leave out, never written, and the
+  // parts to read it in when, with them left out, it is more than one session holds.
+  const files = whole.batches.flat().map((s) => ({ path: s.path, tokens: s.tokens }));
+  const proposed = reread
+    ? { proposals: [], before: whole.tokens, after: whole.tokens }
+    : proposeExclusions(files, c.source.list());
+  const left = proposed.proposals.map((p) => p.path.slice(0, -2));
+  const session = Math.max(SESSION_TOKENS, Math.floor(0.75 * (given ?? 0)));
+  const parts = planParts(
+    files.filter((f) => !left.some((d) => f.path.startsWith(d))),
+    session,
+  );
   const questions = (await listQuestions(root, { repo })).questions.filter(
     (q) => q.state !== "retired",
   );
@@ -976,6 +992,12 @@ async function estimate(
           maxTokensFrom: from ?? "example",
           batches: plan?.batches.length ?? null,
           order: whole.batches.flat().map((x) => x.path),
+          proposals: {
+            before: proposed.before,
+            after: proposed.after,
+            exclude: proposed.proposals,
+          },
+          parts: { session, parts },
           tier,
           questions: questions.map((q) => ({
             id: q.id,
@@ -1012,6 +1034,32 @@ async function estimate(
   io.out(
     `${plural(whole.files, "source file")}${reread ? " to read" : ""}, ${plural(whole.lines, "line")}, about ${whole.tokens} tokens${whole.excluded.length ? `; ${whole.excluded.length} excluded` : ""}${reread ? ` (the repo has ${plural(repoWhole!.files, "source file")}, about ${repoWhole!.tokens} tokens)` : ""}.`,
   );
+  if (proposed.proposals.length) {
+    const scan = relative(root, join(orgPackDirOf(root), "scan", `${repo}.yaml`)).replace(
+      /\\/g,
+      "/",
+    );
+    io.out(
+      `Folders that look like data, documentation or vendored code, not the product (${proposed.proposals.length}):`,
+    );
+    for (const p of proposed.proposals)
+      io.out(`  ${p.path} (about ${p.tokens} tokens, ${plural(p.files, "file")}): ${p.why}`);
+    io.out(
+      `To leave them out, a person adds these entries to the exclude: list of ${scan} in a pull request (Atticus never writes it):`,
+    );
+    io.out(exclusionYaml(proposed.proposals).trimEnd());
+    io.out(`With them left out: about ${proposed.after} tokens (now ${proposed.before}).`);
+  }
+  if (parts.length) {
+    io.out(
+      `About ${parts.reduce((n, p) => n + p.tokens, 0)} tokens${proposed.proposals.length ? " with those left out" : ""} is more than one session reads (${session} tokens): read it in ${parts.length} parts, one per session or sub-agent, as /atticus-map says:`,
+    );
+    parts.forEach((p, i) =>
+      io.out(
+        `  part ${i + 1} (about ${p.tokens} tokens, ${plural(p.files, "file")}): ${p.paths.join(", ")}`,
+      ),
+    );
+  }
   io.out(`Your assistant: ${tierWords(tier)}, ${tierSource(tier)}. ${tier.how}`);
   io.out(
     `Another agentic assistant (Claude Code, Cursor, Gemini CLI) reads it the same way: /atticus-map ${repo}; one without file tools gets batches with atticus map ${repo} --handoff --max-tokens <its limit>.`,

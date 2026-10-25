@@ -19,6 +19,7 @@ import {
 import { globToRegExp } from "@maycombhq/sdk";
 import { applyCorrections, type AppliedCorrection, type StaleCorrection } from "./corrections.js";
 import { derivedHolds, derivedNamesAt, type DeriveEnv, type DerivedName } from "./derived.js";
+import { isDataFile, isLocaleBundle } from "./not-product.js";
 import { pageRouteMatches } from "./pages.js";
 import { insideRepo, type FileSource } from "./source.js";
 
@@ -180,10 +181,14 @@ const NOT_PRODUCT = [
   /\.(resx|po|pot)$/i,
 ];
 
-/** Whether a repo file counts as source for coverage. */
-export function isSourceFile(path: string, firstLine = ""): boolean {
+/**
+ * Whether a repo file counts as source for coverage. Neither a locale bundle does nor, given its
+ * lines, a JSON or XML file big enough to be data (ADR 0124 addendum A-big).
+ */
+export function isSourceFile(path: string, firstLine = "", lines?: readonly string[]): boolean {
   if (isSecretPath(path) || LOCKFILE.test(path)) return false;
-  if (NOT_PRODUCT.some((re) => re.test(path))) return false;
+  if (NOT_PRODUCT.some((re) => re.test(path)) || isLocaleBundle(path)) return false;
+  if (lines && isDataFile(path, lines)) return false;
   if (quoteNotRequired(path, firstLine)) return false;
   return SOURCE_EXT.test(path) || SOURCE_NAME.test(path);
 }
@@ -586,8 +591,8 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
   const sources: string[] = [];
   const excluded: string[] = [];
   for (const p of o.source.list()) {
-    const first = (linesOf(p) ?? [""])[0] ?? "";
-    if (!isSourceFile(p, first)) continue;
+    const ls = linesOf(p) ?? [""];
+    if (!isSourceFile(p, ls[0] ?? "", ls)) continue;
     if (excludeRes.some((re) => re.test(p))) excluded.push(p);
     else sources.push(p);
   }

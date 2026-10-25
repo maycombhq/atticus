@@ -116,7 +116,13 @@ const PAGE_KINDS: readonly FileKind[] = ["frontend", "routes", "flows"];
 /** Code that could be either side. */
 const CODE_KINDS: readonly FileKind[] = ["frontend", ...BACKEND_KINDS];
 /** A structured file of no kind the paths say (YAML, JSON, XML): every topic but the code's. */
-const DATAFILE_KINDS: readonly FileKind[] = ["routes", "data", "deploy", "config", "protocols"];
+export const DATAFILE_KINDS: readonly FileKind[] = [
+  "routes",
+  "data",
+  "deploy",
+  "config",
+  "protocols",
+];
 
 /** Languages run on a server (or a mainframe). */
 const SERVER_CODE =
@@ -231,7 +237,8 @@ export function planBatches(source: FileSource, o: PlanOptions): BatchPlan {
   for (const p of source.list()) {
     const text = source.read(p);
     if (text === undefined) continue;
-    if (!isSourceFile(p, linesOf(text)[0] ?? "")) continue;
+    const ls = linesOf(text);
+    if (!isSourceFile(p, ls[0] ?? "", ls)) continue;
     if (excludeRes.some((re) => re.test(p))) {
       excluded.push(p);
       continue;

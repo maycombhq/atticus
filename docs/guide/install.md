@@ -66,6 +66,8 @@ Every tier writes the same facts file, each fact citing its file and line, and `
 
 Then, in the assistant: `/atticus-map <repo>`. It reads the repo, runs `atticus verify <repo>` after each pass and fixes what is rejected until everything passes, then shows you the questions it raised. Finish with `atticus verify <repo> --write`: the facts go into the catalog and the map is rendered under `map/<repo>/` for review in a pull request.
 
+For a big repo, run `atticus map <repo> --estimate` first: it proposes folders of data, docs or vendored code to leave out (an `exclude:` block to add to `org-pack/scan/<repo>.yaml` in a pull request), and, past what one session reads, the parts to read it in, one per session or sub-agent.
+
 **Copilot Chat without tools (tier 2: it reads and writes a file you give it, but runs nothing).**
 
 ```bash

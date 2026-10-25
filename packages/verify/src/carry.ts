@@ -67,7 +67,8 @@ export function rereadPlan(o: {
   const readable = [...status.keys()].filter((p) => {
     const text = o.source.read(p);
     if (text === undefined || !text.trim()) return false;
-    if (!isSourceFile(p, text.split(/\r?\n/, 1)[0] ?? "")) return false;
+    const ls = text.split(/\r?\n/);
+    if (!isSourceFile(p, ls[0] ?? "", ls)) return false;
     return !excludeRes.some((re) => re.test(p));
   });
   const files = readingOrder(readable).map((path) => ({

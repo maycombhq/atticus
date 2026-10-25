@@ -4,6 +4,12 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### A big repo's first read (A-big, ADR 0124 addendum A-big)
+
+- **Coverage and the estimate count less that isn't code.** Translation bundles under a locale folder (`i18n/`, `locales/`, `lang/`, `translations/`) and JSON or XML files over 2,000 lines or 200 KB are no longer source. Build, config, API and migration files count whatever their size.
+- **`atticus map <repo> --estimate` proposes what to leave out.** Folders that are mostly data or docs, or that hold a library's own LICENSE and no build file, are listed with their tokens, the tokens before and after, and a ready `exclude:` block for `org-pack/scan/<repo>.yaml`. Atticus never writes it: a person accepts it in a pull request.
+- **A repo bigger than one session is read in parts.** Over 150,000 tokens of source, the estimate proposes parts by folder, balanced by tokens, and `/atticus-map` reads one part per session or sub-agent into the same facts file, verifying after each.
+
 ### VS Code: /verify checks the facts
 
 - **`@atticus /verify <repo>` and _Atticus: Verify a repo's facts against its code_ run `atticus verify`** (ADR 0124), with no model: the chat shows what was rejected and offers `--write`, or sends the rejected facts back with `/map`. They ran the older scanner's `scan verify` with Copilot's model before. That check stays, as `/scanverify` and _Verify a repo's last scan_, behind `atticus.fullUi`.
