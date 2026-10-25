@@ -197,6 +197,18 @@ export async function verifyCommand(
       `Next: read the ${report.coverage.unknown.length} unknown files (listed in ${rel}/${repo}.verify.yaml), or exclude generated code in org-pack/scan/${repo}.yaml.`,
     );
   if (report.redacted) io.out(`${report.redacted} quotes had a secret value redacted.`);
+  // C-estate: a note, not a rejection, so the reader follows each listener and route with a flow.
+  const unfollowed = report.entriesNoFlowFollows;
+  if (unfollowed.length) {
+    io.out(
+      `${unfollowed.length} ${unfollowed.length === 1 ? "entry" : "entries"} no flow follows (a note, not a rejection; listed under entriesNoFlowFollows in ${rel}/${repo}.verify.yaml): write a flow for each that does real work.`,
+    );
+    for (const e of unfollowed.slice(0, 15)) {
+      const what = e.entryType === "rest" && e.method ? e.method : e.entryType;
+      io.out(`  ${what} ${e.path} (${e.id}, ${e.cite})`);
+    }
+    if (unfollowed.length > 15) io.out(`  ... and ${unfollowed.length - 15} more`);
+  }
   if (failed) {
     if (o.write) io.err(rejectedNote);
     return 1;

@@ -154,6 +154,30 @@ describe("the places a change goes into are facts (ADR 0124 addendum B-places)",
   });
 });
 
+describe("the estate fixes in the flow rule (ADR 0124 addendum C-estate)", () => {
+  const flow = FACT_RULES.split("\n").find((r) => r.startsWith("- A `flow` fact")) ?? "";
+
+  it("a publish step's ref is its event's call fact, and one without it is rejected", () => {
+    expect(flow).toContain("a publish's is the `event-topic` or `mq-queue` call it publishes");
+    expect(flow).toContain("a call-out or publish step without one is rejected");
+  });
+
+  it("an ORM's eager fetch, a cascade or a lazy load is a read step cited where it is declared", () => {
+    expect(flow).toContain(
+      "An ORM's eager fetch, cascade or lazy load the code triggers is a `read` step cited where it is declared.",
+    );
+  });
+
+  it("/atticus-map points the reader at the entries no flow follows", () => {
+    const b = mapCommand().body;
+    expect(b).toContain("`entriesNoFlowFollows`");
+    expect(b).toContain("write a flow for each that does real work");
+    expect(
+      claudeCodePluginFiles("0.0.0").find((f) => f.path === "commands/atticus-map.md")?.content,
+    ).toContain(flow);
+  });
+});
+
 describe("the capability probe: which tier this person's assistant reads at (ADR 0124 §4)", () => {
   const rt = (o: Record<string, unknown>) => Runtime.parse({ schemaVersion: 1, ...o });
 

@@ -155,6 +155,11 @@ export interface VerifySummary {
     applied: { fact: string; action: string; by: string }[];
     stale: { fact: string; why: string; message: string }[];
   };
+  /**
+   * A note, not a rejection (ADR 0124 addendum C-estate): the listeners and the rest or gRPC
+   * entries no flow starts, for the reader to follow with a flow each. Left out when none.
+   */
+  entriesNoFlowFollows?: VerifyReport["entriesNoFlowFollows"];
 }
 
 /**
@@ -220,6 +225,8 @@ export async function writeVerifyFiles(
       .sort((a, b) => (a[0] < b[0] ? -1 : 1))
       .map(([from, facts]) => ({ from, facts: facts.sort() }));
   }
+  if (report.entriesNoFlowFollows.length)
+    summary.entriesNoFlowFollows = report.entriesNoFlowFollows;
   await writeFile(join(dir, `${repo}.verify.yaml`), stringify(summary), "utf8");
   return summary;
 }

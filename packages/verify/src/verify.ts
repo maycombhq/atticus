@@ -43,6 +43,11 @@ export type RejectCode =
   /** A flow's call-out step whose ref is missing or names neither a call nor a config fact. */
   | "call-out-no-call"
   /**
+   * A flow's publish step whose ref is missing or isn't the `event-topic` or `mq-queue` call it
+   * publishes (ADR 0124 addendum C-estate).
+   */
+  | "publish-no-event"
+  /**
    * A fact of an earlier commit that cites a file edited, renamed or deleted since (ADR 0124
    * addendum A-incremental): a changed file invalidates what cites it, so it is read again.
    */
@@ -79,6 +84,47 @@ export interface VerifyReport {
   carried: { id: string; from: string }[];
   /** A person's corrections (ADR 0124 addendum D-app): applied, and those that met no fact. */
   corrections: { applied: AppliedCorrection[]; stale: StaleCorrection[] };
+  /**
+   * A note, not a rejection (ADR 0124 addendum C-estate): the listeners (`event-topic`,
+   * `mq-queue`) and the `rest` or `grpc` entries among the kept facts that no kept flow starts,
+   * so the reader writes a flow for each that does real work. In id order.
+   */
+  entriesNoFlowFollows: UnfollowedEntry[];
+}
+
+/** An entry no flow starts: its id, type, method and path, and where it is cited (`file:line`). */
+export interface UnfollowedEntry {
+  id: string;
+  entryType: string;
+  method?: string;
+  path: string;
+  cite: string;
+}
+
+/** The entry types a flow is asked for when none starts there: listeners, and rest and gRPC routes. */
+const FOLLOWED_TYPES: readonly string[] = ["event-topic", "mq-queue", "rest", "grpc"];
+
+/**
+ * The listeners and `rest` or `grpc` entries no flow of these facts starts (a flow's `entry`),
+ * in id order. Pure: `verifyFacts` runs it on the kept facts.
+ */
+export function entriesNoFlowFollows(facts: readonly Fact[]): UnfollowedEntry[] {
+  const started = new Set(facts.flatMap((f) => (f.kind === "flow" ? [f.entry] : [])));
+  return facts
+    .flatMap((f) =>
+      f.kind === "entry" && FOLLOWED_TYPES.includes(f.entryType) && !started.has(f.id)
+        ? [
+            {
+              id: f.id,
+              entryType: f.entryType,
+              ...(f.method ? { method: f.method } : {}),
+              path: f.path,
+              cite: `${f.cite.file}:${f.cite.line}`,
+            },
+          ]
+        : [],
+    )
+    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }
 
 /** The files changed since each earlier commit the facts name, keyed by that commit as the facts write it. */
@@ -445,6 +491,28 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
       `flow ${f.id} step ${i + 1} is a call-out that ${what} (${s.cite.file}:${s.cite.line}): give it ref, the id of the call fact it makes, or, for a call through a cloud SDK with no path, the config fact of the client's setting; or make it another kind of step if it calls nothing`,
     );
   }
+  // C-estate: a publish step names the event it publishes (the event-topic or mq-queue call
+  // fact), so the estate join can follow it to every listener of the topic.
+  for (const f of facts) {
+    if (rejected.has(f.id) || f.kind !== "flow") continue;
+    const i = f.steps.findIndex((s) => {
+      if (s.kind !== "publish") return false;
+      const to = s.ref === undefined ? undefined : byId.get(s.ref);
+      return to?.kind !== "call" || (to.callType !== "event-topic" && to.callType !== "mq-queue");
+    });
+    if (i < 0) continue;
+    const s = f.steps[i]!;
+    const to = s.ref === undefined ? undefined : byId.get(s.ref);
+    const what =
+      to === undefined
+        ? "names no fact"
+        : `names ${to.kind === "call" ? `a ${to.callType} call` : to.kind} ${s.ref}`;
+    reject(
+      f,
+      "publish-no-event",
+      `flow ${f.id} step ${i + 1} is a publish that ${what} (${s.cite.file}:${s.cite.line}): give it ref, the id of the event-topic or mq-queue call fact it publishes (write that call fact if there is none); or make it another kind of step if it publishes nothing`,
+    );
+  }
   for (let changed = true; changed;) {
     changed = false;
     for (const f of facts) {
@@ -531,5 +599,6 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
       carriedFrom.has(f.id) ? [{ id: f.id, from: carriedFrom.get(f.id)! }] : [],
     ),
     corrections: { applied: corrected.applied, stale: corrected.stale },
+    entriesNoFlowFollows: entriesNoFlowFollows(accepted),
   };
 }

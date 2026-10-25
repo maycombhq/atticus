@@ -1,5 +1,6 @@
 import type { CatalogRecord, FlowRecord } from "@maycombhq/core";
 import {
+  citedNear,
   referenceSegments,
   specFieldKey,
   specMatching,
@@ -22,6 +23,12 @@ import {
  * (its trigger cited within 3 lines of the reference's), the one of those matching the most
  * steps; when none matches a step, the flow of the trigger's repo that matches the most stands
  * in and is marked `best`. `strict` counts only flows started by the trigger rule.
+ *
+ * An error path and a branch are the same step (addendum C-estate): a drafted flow's `errors[]`
+ * entry stands in its flow's sequence where its cite falls (after the last step citing the same
+ * file at or before its line, else before the first step citing that file, else at the flow's
+ * end), and matches a reference `branch` step of its repo cited in the same file within 3 lines.
+ * `stepsOnly` is the figure without it: the drafted steps alone, as before.
  */
 
 /** Where a cited file is in the reference's terms: its repo and its path there. */
@@ -66,6 +73,8 @@ export interface EstateFlowScore {
   startBy?: "trigger" | "best";
   steps: number;
   stepsInOrder: number;
+  /** Steps in order matched by the drafted steps alone, no error path counted as a branch. */
+  stepsOnly: number;
   /** Reference steps not matched: "<n> <kind> <repo>". */
   missed: string[];
   crossings: CrossingScore[];
@@ -87,10 +96,13 @@ export interface EstateFlowsScore {
       stepsInOrder: number;
       crossingFields: { want: number; found: number };
     };
+    /** Steps in order without error paths matched as branches: all flows, and the trigger rule's only. */
+    stepsOnly: { stepsInOrder: number; strict: number };
   };
 }
 
 type Step = FlowRecord["steps"][number];
+type FlowErr = FlowRecord["errors"][number];
 interface Placed {
   repo: string;
   flow: FlowRecord;
@@ -102,6 +114,13 @@ interface At {
   n: number;
   step: Step;
 }
+/** A drafted error path in a flow's sequence, where its cite falls. */
+interface ErrAt {
+  repo: string;
+  flow: string;
+  error: FlowErr;
+}
+type Item = At | ErrAt;
 
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
@@ -122,6 +141,7 @@ export function scoreEstateFlows(ref: ReferenceFlows, input: EstateFlowsInput): 
   // ---- every flow and record in the reference's terms
   const flows = new Map<string, Placed>();
   const stepRepo = new Map<string, string>(); // flow#n -> repo
+  const errRepo = new Map<string, string>(); // flow!n -> repo
   for (const s of input.specs)
     for (const f of s.flows) {
       const home =
@@ -133,6 +153,10 @@ export function scoreEstateFlows(ref: ReferenceFlows, input: EstateFlowsInput): 
         trigger: { ...f.trigger, evidence: f.trigger.evidence.map((e) => placeEv(s.repo, e)) },
         steps: f.steps.map((x, i) => {
           stepRepo.set(`${f.id}#${i + 1}`, repoOf(s.repo, x.evidence) ?? home);
+          return { ...x, evidence: x.evidence.map((e) => placeEv(s.repo, e)) };
+        }),
+        errors: f.errors.map((x, i) => {
+          errRepo.set(`${f.id}!${i}`, repoOf(s.repo, x.evidence) ?? home);
           return { ...x, evidence: x.evidence.map((e) => placeEv(s.repo, e)) };
         }),
       };
@@ -154,28 +178,67 @@ export function scoreEstateFlows(ref: ReferenceFlows, input: EstateFlowsInput): 
   );
   const byId = new Map(records.map((r) => [r.id, r]));
 
+  /** Where each error path stands: the index of the step it goes before (the length: at the end). */
+  const errorSlots = (flow: FlowRecord): Map<number, ErrAt[]> => {
+    const slots = new Map<number, { line: number; k: number; at: ErrAt }[]>();
+    flow.errors.forEach((error, k) => {
+      const cite = error.evidence.find((e) => e.path && e.line !== undefined);
+      let slot = flow.steps.length;
+      if (cite) {
+        let after = -1;
+        let first = -1;
+        flow.steps.forEach((s, i) => {
+          const lines = s.evidence.flatMap((e) =>
+            e.path === cite.path && e.line !== undefined ? [e.line] : [],
+          );
+          if (!lines.length) return;
+          if (first < 0) first = i;
+          if (lines.some((l) => l <= cite.line!)) after = i;
+        });
+        slot = after >= 0 ? after + 1 : first >= 0 ? first : flow.steps.length;
+      }
+      const at: ErrAt = { repo: errRepo.get(`${flow.id}!${k}`)!, flow: flow.id, error };
+      slots.set(slot, [...(slots.get(slot) ?? []), { line: cite?.line ?? 0, k, at }]);
+    });
+    return new Map(
+      [...slots.entries()].map(([i, xs]) => [
+        i,
+        xs.sort((x, y) => x.line - y.line || x.k - y.k).map((x) => x.at),
+      ]),
+    );
+  };
+
   // ---- a flow followed through the joins
   const joinAt = new Map(input.joins.map((j) => [`${j.from.flow}#${j.from.step}`, j.to.flow]));
-  const expand = (id: string, path: string[]): At[] => {
+  const expand = (id: string, path: string[], errors: boolean): Item[] => {
     const f = flows.get(id);
     if (!f) return [];
-    return f.flow.steps.flatMap((step, i) => {
-      const here: At = { repo: stepRepo.get(`${id}#${i + 1}`)!, flow: id, n: i + 1, step };
-      const to = joinAt.get(`${id}#${i + 1}`);
-      return to && !path.includes(to) && path.length <= depth
-        ? [here, ...expand(to, [...path, to])]
-        : [here];
-    });
+    const slots = errors ? errorSlots(f.flow) : new Map<number, ErrAt[]>();
+    return [
+      ...f.flow.steps.flatMap((step, i): Item[] => {
+        const here: At = { repo: stepRepo.get(`${id}#${i + 1}`)!, flow: id, n: i + 1, step };
+        const to = joinAt.get(`${id}#${i + 1}`);
+        const before = slots.get(i) ?? [];
+        return to && !path.includes(to) && path.length <= depth
+          ? [...before, here, ...expand(to, [...path, to], errors)]
+          : [...before, here];
+      }),
+      ...(slots.get(f.flow.steps.length) ?? []),
+    ];
   };
-  const lcs = (a: readonly RefStepT[], b: readonly At[]) => {
-    const ok = (r: RefStepT, x: At) => r.repo === x.repo && m.stepMatch(r, x.step);
+  const lcs = (a: readonly RefStepT[], b: readonly Item[]) => {
+    const ok = (r: RefStepT, x: Item) =>
+      r.repo === x.repo &&
+      ("step" in x
+        ? m.stepMatch(r, x.step)
+        : r.kind === "branch" && citedNear(r.at, x.error.evidence));
     const t = Array.from({ length: a.length + 1 }, () => new Array<number>(b.length + 1).fill(0));
     for (let i = a.length - 1; i >= 0; i--)
       for (let j = b.length - 1; j >= 0; j--)
         t[i]![j] = ok(a[i]!, b[j]!)
           ? t[i + 1]![j + 1]! + 1
           : Math.max(t[i + 1]![j]!, t[i]![j + 1]!);
-    const pairs = new Map<number, At>();
+    const pairs = new Map<number, Item>();
     let i = 0;
     let j = 0;
     while (i < a.length && j < b.length) {
@@ -208,14 +271,27 @@ export function scoreEstateFlows(ref: ReferenceFlows, input: EstateFlowsInput): 
     return new Set(names.map(specFieldKey));
   };
 
-  const scored = ref.flows.map((rf): EstateFlowScore => scoreOne(rf));
-  function scoreOne(rf: RefFlowT): EstateFlowScore {
+  // The figure without error paths (the steps alone) is scored the same way, start and all.
+  const alone = ref.flows.map((rf) => scoreOne(rf, false));
+  const scored = ref.flows.map((rf, k): EstateFlowScore => {
+    const { flow, start, startBy, steps, stepsInOrder, missed, crossings } = scoreOne(rf, true);
+    return {
+      flow,
+      ...(start ? { start, startBy } : {}),
+      steps,
+      stepsInOrder,
+      stepsOnly: alone[k]!.stepsInOrder,
+      missed,
+      crossings,
+    };
+  });
+  function scoreOne(rf: RefFlowT, errors: boolean): Omit<EstateFlowScore, "stepsOnly"> {
     const [first] = referenceSegments(rf);
     /** The flow of these that matches the most steps (at least one), first in id order on a tie. */
     const most = (fs: readonly FlowRecord[]) => {
-      let best: { id: string; pairs: Map<number, At> } | undefined;
+      let best: { id: string; pairs: Map<number, Item> } | undefined;
       for (const f of fs) {
-        const p = lcs(rf.steps, expand(f.id, [f.id]));
+        const p = lcs(rf.steps, expand(f.id, [f.id], errors));
         if (p.size > (best?.pairs.size ?? 0)) best = { id: f.id, pairs: p };
       }
       return best;
@@ -226,7 +302,7 @@ export function scoreEstateFlows(ref: ReferenceFlows, input: EstateFlowsInput): 
     const found = byTrigger ?? most(byRepo.get(rf.trigger.repo) ?? []);
     const start = found?.id;
     const startBy: EstateFlowScore["startBy"] = byTrigger ? "trigger" : found ? "best" : undefined;
-    const pairs = found?.pairs ?? new Map<number, At>();
+    const pairs = found?.pairs ?? new Map<number, Item>();
     const crossings: CrossingScore[] = [];
     rf.steps.forEach((s, k) => {
       if (!s.to || s.to.repo === s.repo) return;
@@ -240,7 +316,7 @@ export function scoreEstateFlows(ref: ReferenceFlows, input: EstateFlowsInput): 
             if (!want.has(specFieldKey(f))) want.set(specFieldKey(f), f);
       }
       const x = pairs.get(k);
-      const known = x ? knownAt(x) : new Set<string>();
+      const known = x && "step" in x ? knownAt(x) : new Set<string>();
       const missed = [...want.entries()].filter(([key]) => !known.has(key)).map(([, f]) => f);
       crossings.push({ step: k + 1, want: want.size, found: want.size - missed.length, missed });
     });
@@ -262,6 +338,7 @@ export function scoreEstateFlows(ref: ReferenceFlows, input: EstateFlowsInput): 
     found: sum(fs, (x) => x.crossings.reduce((n, c) => n + c.found, 0)),
   });
   const strict = scored.filter((f) => f.startBy === "trigger");
+  const strictAlone = alone.filter((f) => f.startBy === "trigger");
   return {
     estate: ref.estate,
     flows: scored,
@@ -276,6 +353,10 @@ export function scoreEstateFlows(ref: ReferenceFlows, input: EstateFlowsInput): 
         steps: sum(scored, (f) => f.steps),
         stepsInOrder: sum(strict, (f) => f.stepsInOrder),
         crossingFields: fields(strict, scored),
+      },
+      stepsOnly: {
+        stepsInOrder: alone.reduce((n, x) => n + x.stepsInOrder, 0),
+        strict: strictAlone.reduce((n, x) => n + x.stepsInOrder, 0),
       },
     },
   };

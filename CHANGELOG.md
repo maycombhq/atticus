@@ -4,6 +4,13 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### The estate fixes: publishes name their event, entries without a flow are listed, errors match branches (C-estate, ADR 0124 addendum C-estate)
+
+- **`atticus verify` rejects a publish step that names no event.** A flow's `publish` step whose `ref` is missing, or isn't a call fact of `callType: event-topic` or `mq-queue`, is rejected as `publish-no-event` (a new reject code, additive like `call-out-no-call`), with the step, its line and what to name. The estate join follows a publish to its listeners only through that call.
+- **`atticus verify` lists the entries no flow follows.** Every listener (`event-topic`, `mq-queue` entry) and every `rest` or `grpc` entry that no flow starts is listed under `entriesNoFlowFollows` in `<repo>.verify.yaml` (left out when none) and in the printed summary, with its id and line. It is a note, not a rejection: the run still exits 0. `/atticus-map` asks the reader to write a flow for each that does real work.
+- **The reading protocol's flow rule** (`FACT_RULES`, `/atticus-map`, the batch prompt) says a publish's `ref` is the event's call, and that an ORM's eager fetch, cascade or lazy load the code triggers is a `read` step cited where it is declared. The Claude Code plugin is regenerated.
+- **The estate scorer matches an error path to a branch.** In `scoreEstateFlows`, a drafted flow's `errors[]` entry stands where its cite falls in the flow and matches a reference `branch` step of its repo cited in the same file within 3 lines. `stepsOnly` (per flow, and in the total with its strict figure) keeps the steps-alone figure. On the bench facts: petclinic 58 → 61 of 87 steps in order, eShop 54 → 55 of 163, microservices-demo 139 of 173 unchanged; fields at crossings unchanged.
+
 ### A changed file invalidates only what cites it (A-incremental, ADR 0124 addendum A-incremental)
 
 - **A moved checkout is re-read, not read again whole.** When a repo's facts are of an earlier commit, `atticus map <repo> --estimate` compares that commit with HEAD (local `git diff --name-status -M`, renames followed) and lists three things. The facts that still hold, because every file they cite is unchanged: kept as they are. The facts that cite a file edited, renamed (with its new path) or deleted since: read again, then rewrite or drop. The changed source files, which are the only files to read. The token and batch estimate covers only those files. `--estimate --json` gains `reread` (and `notComparable` for a commit the clone doesn't have).

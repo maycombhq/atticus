@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parseFacts, type Fact } from "@maycombhq/core";
-import { dirSource, memorySource, verifyFacts } from "../src/index.js";
+import { dirSource, entriesNoFlowFollows, memorySource, verifyFacts } from "../src/index.js";
 
 const fixtures = join(__dirname, "fixtures");
 const repo = join(fixtures, "repo");
@@ -180,6 +180,174 @@ describe("a flow's call-out step names its call (B-fixes, problem 6)", () => {
   it("takes a call-out step whose ref is a call fact, or a config fact (an SDK client with no path)", async () => {
     expect(await verdict(withCallOutRef("c-fx-rate"))).toBeUndefined();
     expect(await verdict(withCallOutRef("k-fx-base"))).toBeUndefined();
+  });
+});
+
+/**
+ * The estate fixes (ADR 0124 addendum C-estate): a publish step names the event it publishes, and
+ * the entries no flow starts are listed for the reader to follow.
+ */
+describe("a flow's publish step names its event, and the entries no flow follows are listed", () => {
+  const src = memorySource({
+    "src/OrderController.java": [
+      "public class OrderController {",
+      '  @PostMapping("/orders")',
+      "  public ResponseEntity<Order> place(@RequestBody Order o) {",
+      '    audit.post("http://audit.internal/audit", o);',
+      '    events.send("forge.orders.placed", o);',
+      "    return ResponseEntity.status(201).body(o);",
+      "  }",
+      '  @GetMapping("/orders/{id}")',
+      "  public Order get(@PathVariable String id) { return repo.find(id); }",
+      '  @Scheduled(cron = "0 0 * * * *")',
+      "  public void purge() { repo.purge(); }",
+      "}",
+      "",
+    ].join("\n"),
+    "src/OrderListener.java": [
+      "public class OrderListener {",
+      '  @KafkaListener(topics = "forge.orders.placed")',
+      "  public void on(Order o) { }",
+      "}",
+      "",
+    ].join("\n"),
+  });
+  const base = {
+    repo: "forge-orders",
+    commit: "0123abc",
+    component: "orders-api",
+    verified: "none" as const,
+    by: "assistant" as const,
+    conf: "declared" as const,
+  };
+  const at = (file: string, line: number, value: string) => ({
+    file: `src/${file}.java`,
+    line,
+    value,
+  });
+  const facts = (publishRef: string | undefined, eventType = "event-topic"): Fact[] => [
+    {
+      ...base,
+      kind: "entry",
+      id: "e-post-orders",
+      entryType: "rest",
+      method: "POST",
+      path: "/orders",
+      cite: at("OrderController", 2, "/orders"),
+    },
+    {
+      ...base,
+      kind: "entry",
+      id: "e-get-order",
+      entryType: "rest",
+      method: "GET",
+      path: "/orders/{id}",
+      cite: at("OrderController", 8, "/orders/{id}"),
+    },
+    {
+      ...base,
+      kind: "entry",
+      id: "e-purge",
+      entryType: "batch-job",
+      path: "purge",
+      cite: at("OrderController", 11, "purge"),
+    },
+    {
+      ...base,
+      kind: "entry",
+      id: "e-on-placed",
+      entryType: "event-topic",
+      path: "forge.orders.placed",
+      handler: "OrderListener.on",
+      cite: at("OrderListener", 2, "forge.orders.placed"),
+    },
+    {
+      ...base,
+      kind: "call",
+      id: "c-audit",
+      callType: "rest",
+      method: "POST",
+      path: "/audit",
+      host: "audit.internal",
+      cite: at("OrderController", 4, "/audit"),
+    },
+    {
+      ...base,
+      kind: "call",
+      id: "c-placed",
+      callType: eventType as "event-topic",
+      path: "forge.orders.placed",
+      cite: at("OrderController", 5, "forge.orders.placed"),
+    },
+    {
+      ...base,
+      kind: "flow",
+      id: "w-place",
+      name: "Place an order",
+      entry: "e-post-orders",
+      steps: [
+        {
+          kind: "call-out",
+          what: "the audit service is told",
+          ref: "c-audit",
+          cite: at("OrderController", 4, "/audit"),
+        },
+        {
+          kind: "publish",
+          what: "the order placed event is published",
+          ...(publishRef ? { ref: publishRef } : {}),
+          cite: at("OrderController", 5, "forge.orders.placed"),
+        },
+        { kind: "respond", what: "201", cite: at("OrderController", 6, "201") },
+      ],
+      errors: [],
+      cite: at("OrderController", 2, "/orders"),
+    },
+  ];
+  const run = (f: Fact[]) => verifyFacts({ facts: f, source: src, commit: "0123abc" });
+
+  it("takes a publish step whose ref is the event-topic or mq-queue call it publishes", async () => {
+    expect((await run(facts("c-placed"))).rejected).toEqual([]);
+    expect((await run(facts("c-placed", "mq-queue"))).rejected).toEqual([]);
+  });
+
+  it("rejects a publish step that names no fact, or a call that isn't an event, saying which step and what to name", async () => {
+    for (const ref of [undefined, "c-audit", "e-on-placed"]) {
+      const r = (await run(facts(ref))).rejected.find((x) => x.fact.id === "w-place");
+      expect(r?.code).toBe("publish-no-event");
+      expect(r?.message).toMatch(/step 2/);
+      expect(r?.message).toMatch(/event-topic/);
+      expect(r?.message).toMatch(/mq-queue/);
+      expect(r?.message).toMatch(/OrderController\.java:5/);
+    }
+  });
+
+  it("lists the listeners and the rest or gRPC entries no flow starts, a note and not a rejection", async () => {
+    const r = await run(facts("c-placed"));
+    expect(r.rejected).toEqual([]);
+    // The batch job isn't listed (only listeners and rest/grpc); e-post-orders has its flow.
+    expect(r.entriesNoFlowFollows).toEqual([
+      {
+        id: "e-get-order",
+        entryType: "rest",
+        method: "GET",
+        path: "/orders/{id}",
+        cite: "src/OrderController.java:8",
+      },
+      {
+        id: "e-on-placed",
+        entryType: "event-topic",
+        path: "forge.orders.placed",
+        cite: "src/OrderListener.java:2",
+      },
+    ]);
+  });
+
+  it("names the same entries from the facts alone (entriesNoFlowFollows)", () => {
+    expect(entriesNoFlowFollows(facts("c-placed")).map((e) => e.id)).toEqual([
+      "e-get-order",
+      "e-on-placed",
+    ]);
   });
 });
 

@@ -191,6 +191,8 @@ const near = (a: string, ev: readonly { path?: string; line?: number }[]) => {
     (e) => e.path === r.path && e.line !== undefined && Math.abs(e.line - r.line) <= NEAR,
   );
 };
+/** Whether evidence cites a reference's `path:line` in the same file within 3 lines (the step rule's window). */
+export const citedNear = near;
 
 /** "METHOD /path" as compared: method upper case, path normalised and lower case. */
 const entryOf = (s: string) => {

@@ -43,6 +43,7 @@ describe("scoreEstateFlows: reference flows against the estate the facts make", 
         startBy: "trigger",
         steps: 10,
         stepsInOrder: 9,
+        stepsOnly: 9,
         // The entry step: the facts name the entry, not a step for it.
         missed: ["3 entry forge-customers"],
         crossings: [
@@ -59,6 +60,7 @@ describe("scoreEstateFlows: reference flows against the estate the facts make", 
       stepsInOrder: 9,
       crossingFields: { want: 9, found: 8 },
       strict: { steps: 10, stepsInOrder: 9, crossingFields: { want: 9, found: 8 } },
+      stepsOnly: { stepsInOrder: 9, strict: 9 },
     });
   });
 
@@ -85,6 +87,80 @@ describe("scoreEstateFlows: reference flows against the estate the facts make", 
     r.flows[0]!.trigger.at = "src/app/app.routes.ts:10";
     const s = scoreEstateFlows(r, golden());
     expect(s.flows[0]).toMatchObject({ start: "web-app.add-a-customer", startBy: "trigger" });
+  });
+
+  describe("an error path and a branch are the same step (C-estate)", () => {
+    /** The golden estate with an error path on the customers API's create flow. */
+    const withError = (line: number) => {
+      const g = golden();
+      return {
+        ...g,
+        specs: g.specs.map((s) => ({
+          ...s,
+          flows: s.flows.map((f) =>
+            f.id !== "customers-api.create-a-customer"
+              ? f
+              : {
+                  ...f,
+                  errors: [
+                    {
+                      when: "the email is already a customer's",
+                      then: "409 and nothing is written",
+                      evidence: [
+                        {
+                          source: "code" as const,
+                          by: "assistant" as const,
+                          repo: "forge-customers",
+                          commit: "2222bbb",
+                          path: "src/main/java/forge/customers/CustomerService.java",
+                          line,
+                        },
+                      ],
+                    },
+                  ],
+                },
+          ),
+        })),
+      };
+    };
+    /** The reference with a branch step inserted before step `before` (from 1). */
+    const withBranch = (before: number, at: string) => {
+      const r = ref();
+      r.flows[0]!.steps.splice(before - 1, 0, {
+        kind: "branch",
+        repo: "forge-customers",
+        what: "A duplicate email is refused",
+        at,
+      });
+      return r;
+    };
+    const DUP = "src/main/java/forge/customers/CustomerService.java:29";
+
+    it("matches a reference branch to a drafted flow's error cited in the same file within 3 lines, in order where the error's cite falls", () => {
+      // Before the write (line 31): the error (line 29) falls before the flow's first step in that file.
+      const s = scoreEstateFlows(withBranch(5, DUP), withError(29));
+      expect(s.flows[0]).toMatchObject({ steps: 11, stepsInOrder: 10, stepsOnly: 9 });
+      expect(s.flows[0]!.missed).toEqual(["3 entry forge-customers"]);
+      expect(s.total).toMatchObject({
+        steps: 11,
+        stepsInOrder: 10,
+        stepsOnly: { stepsInOrder: 9, strict: 9 },
+        strict: { steps: 11, stepsInOrder: 10 },
+      });
+    });
+
+    it("doesn't match an error cited more than 3 lines away, or out of order", () => {
+      const far = scoreEstateFlows(withBranch(5, DUP), withError(25));
+      expect(far.flows[0]).toMatchObject({ stepsInOrder: 9, stepsOnly: 9 });
+      // The reference's branch after the customers API's response; the error falls before its write.
+      const late = scoreEstateFlows(withBranch(10, DUP), withError(29));
+      expect(late.flows[0]).toMatchObject({ steps: 11, stepsInOrder: 9, stepsOnly: 9 });
+    });
+
+    it("without errors, the figure is the steps alone", () => {
+      const s = scoreEstateFlows(ref(), golden());
+      expect(s.flows[0]).toMatchObject({ stepsInOrder: 9, stepsOnly: 9 });
+    });
   });
 
   it("places a monorepo's folders as the reference's repos", () => {
