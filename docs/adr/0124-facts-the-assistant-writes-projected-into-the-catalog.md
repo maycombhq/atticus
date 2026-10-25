@@ -237,4 +237,34 @@ The first end-to-end run of the change stages on the three bench stories (`docs/
 - **A key-pattern store has no columns or migrations** (B-arch). A read, lookup or write of a Table with `tableKind: key-pattern` isn't asked to name its columns (`delta.no-columns`), adds no column (no type, classification or migration asked, no write-sends check), is no row of data.md (`dataChanges`), and gives no story data row.
 - **data.md takes a new column from its write.** A read or lookup that names a column a write of the same change adds no longer makes the data.md row (it took the first step's migration, which a lookup before the write doesn't name, and blocked the design gate); the write does. A read naming a column no write adds is a row as before.
 - **The stories bench scores error cases by entry too** (§6; `errorsByEntry` in `scoreStory`). A reference error case is found by entry when a draft criterion on any step of the same repo and entry (the criterion's entry, else its step's) has the same field and rule; a reference step with no entry is matched by step alone. The strict figure (`errors`, by matched step) stays and is shown first; `atticus bench stories` prints both. Re-scored without re-drafting on the run's metarepos: strict 0 of 5, 0 of 4, 0 of 5 (unchanged); by entry 1 of 5, 2 of 4, 2 of 5. Steps (2 of 8, 1 of 2, 3 of 8), fields (all), invented (none) and sections (17 of 17) are unchanged.
-- **Not done here:** a task's files feeding the bench draft's step (one `at` per step); the story's data rows repeated on each story that reads a new column (the run's problem 10, second half); a migration known for a store (no Migration records come from facts, problem 7); the catalog's auth in Non-functional; the stories stage's tasks or the scorer's step matching moved to the same granularity (problem 8).
+- **Not done here:** ~~a task's files feeding the bench draft's step (one `at` per step)~~ (done in B-steps); the story's data rows repeated on each story that reads a new column (the run's problem 10, second half); a migration known for a store (no Migration records come from facts, problem 7); the catalog's auth in Non-functional; the stories stage's tasks or the scorer's step matching moved to the same granularity (problem 8; B-steps gives the story steps by place and keeps the tasks).
+
+## Addendum (B-steps): a story's implementation steps are its places in the code (no C1 to C6 change)
+
+The stories bench run found that the stories stage matched few of a reference story's changed steps (2 of 8, 1 of 2, 3 of 8), though it found every field and section (`docs/build-status.md`, B-stories-bench, problems 5 and 8). The stage makes a task per target-flow step. A professional story has a step per place in the code that changes: the model, the DTO or OpenAPI schema, the entity, the migration, the form, the client and the list view. B-fixes gave each task the files it touches (`DeltaTask.files`), but they didn't reach the story's steps or the bench draft's. Two options were weighed: change the stage's tasks to one per place, or keep the tasks and derive the places from them. The second was chosen. A task is still what a developer runs (one flow step, its criteria, its prompt), and the places are a view of the tasks.
+
+- **`storySteps(story)`** (`packages/planner/src/stages/stories.ts`), from the tasks alone, in their order:
+  - each task's own code: the file of the line its evidence gives the bench (today's step, or the step an added one goes in after), with the task's lines in that file;
+  - each file a task declares a field or column in (its `files`): one step per file, gathering every task's lines and reasons;
+  - each new migration its store step names (`migrationFile`). A migration whose name is a file the tasks already touch, such as a schema file changed in place, is that file's step.
+
+  The tasks that cite no code at all, a new flow's, are one step of new code on the story's entry. The map can't tell their places apart, so the stage claims neither one place nor many. Each step names its tasks, and their acceptance criteria accept it. Nothing is invented: every file, line and reason is a citation the map already gave a task.
+
+- **On the story, computed, not stored.** The steps are derived, so no stage file, schema or prompt changes, and the tasks, `tasks.md`, the task prompt and the task context stay as they were. The story file shows them as `## Implementation steps` after Scope. The critic, test generation and the story bar read other sections, so they are unaffected. With no prompt change, every recorded replay passes as recorded.
+- **The bench draft** (`benchStoryFromStories`) takes its steps from the places:
+  - A task's own step keeps its id, `at` and entry.
+  - A file step is cited at its first cited line (`path:line`), on no entry, so the scorer matches it by file and line as before. A file two stories touch is one step.
+  - A new migration has no line yet. A new-code step is on its entry, with no `at`.
+  - Each criterion is written on its task's own step (or the new-code step) and again on each file step of that task, cited there. A place is accepted by the criteria of the task that changes it, and the rubric asks for a criterion on every step. As a result, the strict error-case count credits an error case on any place its task changes. The by-entry count is unchanged in kind.
+- **Measured** on the run's three changes, re-scored without re-drafting:
+  - changed steps 4 of 8, 1 of 2 and 6 of 8 (were 2, 1 and 3);
+  - error cases strict 1 of 5, 2 of 4 and 3 of 5 (were 0), and by entry 1 of 5, 2 of 4 and 4 of 5 (were 1, 2 and 2);
+  - fields, invented fields and sections unchanged (all found, none and 17 of 17).
+
+  This is one assistant and one run, and no bar is set (§6).
+
+- **Not done here:**
+  - An added step that follows the trigger is placed after the trigger's line, even where the trigger is a route declaration.
+  - An existing migration the columns cite is listed as a place, though a new one goes beside it. With no Migration records from facts (problem 7), the stage can't tell it from a schema file changed in place.
+  - The draft repeats a criterion once per place its task changes.
+  - Screens and clients the facts have no field facts for still have no file step.

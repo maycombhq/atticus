@@ -55,6 +55,14 @@ steps:
     what: The order is inserted with the screen's verdict
     entry: POST /orders
     at: "src/main/java/forge/orders/OrderController.java:13"
+  # B-steps: the places the write's columns are declared, and its new migration
+  - id: f1
+    repo: forge-orders
+    what: "Task 1.3: the fields and columns change here: where table forge-orders-db.orders and its columns are"
+    at: "src/main/resources/schema.sql:1"
+  - id: f2
+    repo: forge-orders
+    what: "Task 1.3: the new migration V4__add_fraud_verdict.sql adds fraud_verdict to forge-orders-db.orders (a new file: V4__add_fraud_verdict.sql)"
 criteria:
   - id: t1-1-c1
     step: t1-1
@@ -143,6 +151,52 @@ criteria:
         then: 500 and no orders row holds the order's fraud_verdict
         at: "src/main/java/forge/orders/OrderController.java:13"
     at: "src/main/java/forge/orders/OrderController.java:13"
+  # B-steps: task 1.3's criteria accept the places it changes, cited there
+  - id: f1-t1-3-c1
+    step: f1
+    given: an accepted order
+    when: it is saved
+    then: the orders row holds sku, quantity and fraud_verdict
+    entry: POST /orders
+    fields: [sku, quantity, fraud_verdict]
+    errors: []
+    at: "src/main/resources/schema.sql:1"
+  - id: f1-t1-3-c2
+    step: f1
+    given: the insert fails
+    when: the order is saved
+    then: 500 and no orders row holds the order's fraud_verdict
+    entry: POST /orders
+    fields: [fraud_verdict]
+    errors:
+      - field: fraud_verdict
+        rule: other
+        status: 500
+        when: the insert fails
+        then: 500 and no orders row holds the order's fraud_verdict
+        at: "src/main/resources/schema.sql:1"
+    at: "src/main/resources/schema.sql:1"
+  - id: f2-t1-3-c1
+    step: f2
+    given: an accepted order
+    when: it is saved
+    then: the orders row holds sku, quantity and fraud_verdict
+    entry: POST /orders
+    fields: [sku, quantity, fraud_verdict]
+    errors: []
+  - id: f2-t1-3-c2
+    step: f2
+    given: the insert fails
+    when: the order is saved
+    then: 500 and no orders row holds the order's fraud_verdict
+    entry: POST /orders
+    fields: [fraud_verdict]
+    errors:
+      - field: fraud_verdict
+        rule: other
+        status: 500
+        when: the insert fails
+        then: 500 and no orders row holds the order's fraud_verdict
 interfaces:
   - repo: forge-orders
     entry: POST /orders
