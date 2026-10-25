@@ -4,6 +4,10 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### VS Code: /verify checks the facts
+
+- **`@atticus /verify <repo>` and _Atticus: Verify a repo's facts against its code_ run `atticus verify`** (ADR 0124), with no model: the chat shows what was rejected and offers `--write`, or sends the rejected facts back with `/map`. They ran the older scanner's `scan verify` with Copilot's model before. That check stays, as `/scanverify` and _Verify a repo's last scan_, behind `atticus.fullUi`.
+
 ### A criterion is written once and accepts several tasks (B-once, ADR 0124 addendum B-once)
 
 - **Stories are shorter.** A story criterion may list `also: [<task ids>]`, the other tasks of its story it accepts, so a behaviour a field takes through entry, validation, write and response is written once, not on each task. The stories prompt asks for this. On the deliverBy fixture the story says in 4 criteria what took 8.
