@@ -4,6 +4,15 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### npm installs carry search by meaning (ADR 0124 addendum D-npm)
+
+- **`npm install --global @maycombhq/cli` through a bank's npm mirror now gives search by meaning, with nothing downloaded after install and no install scripts.** `@maycombhq/embed-model` carries the model (all-MiniLM-L6-v2, 79 MB packed), its tokenizer, model card and Apache-2.0 licence; each `@maycombhq/onnxruntime-<platform>-<arch>` carries onnxruntime's CPU build for that platform and `@maycombhq/onnxruntime-wasm` its WebAssembly fallback, with onnxruntime's MIT licence. npm installs only your platform's runtime. On Linux x64 the install downloads 117 MB (141 packages). `--omit=optional` still leaves it out.
+- **The files are filled when a package is packed, never at install:** each package's `prepack` takes them from `.cache/pinned` (filled by `pnpm model:fetch`), checks each against its `pins.json` and refuses to pack when one is missing or wrong. The repository still holds no binaries.
+- **`atticus doctor` says the model is ready:** "Embedding model: ready: all-minilm-l6-v2@… (86 MB, Apache-2.0), installed with Atticus, in …; runtime: native".
+- **Fixed: `atticus sandbox create` failed after an npm install** ("The Forge fixture isn't here"): `@maycombhq/learn` now carries the Forge practice fixtures.
+- **`pnpm model:fetch` downloads through `HTTPS_PROXY`**, as the plugin's fetch step already did.
+- **For whoever releases Atticus:** every package is published public (`publishConfig`); `pnpm release:npm [--dry-run]` runs the pack check, then `pnpm -r publish --access public --tag beta --no-git-checks`; `.github/workflows/publish-npm.yml` does it on a published GitHub release with the `NPM_TOKEN` secret; `pnpm npm:test` installs every package from a throwaway mirror with scripts off, the way a bank would, and searches by meaning with the network blocked. The licence check also fails a package that ships a third party's files without their licence text. [The admin guide](docs/guide/admin.md#publishing-to-npm) says how to publish.
+
 ## 2.0.0-beta.1 (2026-10-25)
 
 The first beta of Atticus 2: the assistant reads, Atticus verifies. It was taken through a real trial before release: a 4,900-file Java and React monorepo the bench has never seen was read into 2,277 cited facts and 409 flows (0 rejected), joined from its front end to its API, and one real change was taken through feature, architecture and stories; everything that trial hit is fixed in the sections below. Run for real before this release: the web app on that metarepo (every page, no browser errors), the VS Code extension in VS Code 1.143 (68 checks from source, 29 from the .vsix), the IntelliJ plugin built against IntelliJ IDEA 2025.3.6 (64 tests, the Plugin Verifier, the IDE run with the plugin), and the embeddings plugin's model download through a proxy.

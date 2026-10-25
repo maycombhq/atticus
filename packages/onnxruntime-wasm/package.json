@@ -6,12 +6,16 @@
   "files": [
     "dist",
     "LICENSE",
-    "README.md"
+    "README.md",
+    "pins.json"
   ],
   "scripts": {
-    "prepack": "node ../../scripts/model/fetch.mjs ."
+    "prepack": "node ../../scripts/model/fetch.mjs . --offline"
   },
   "atticusRepackaged": {
     "from": "onnxruntime-web@1.30.0"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

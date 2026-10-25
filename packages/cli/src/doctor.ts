@@ -605,7 +605,9 @@ export async function doctorChecks(root: string, deps: DoctorDeps = {}): Promise
           ? `off (${e.problem ?? "runtime.yaml retrieval.embeddings"}); ${lexical}`
           : e.problem
             ? `${e.problem}, so ${lexical}`
-            : `${e.id} (${((e.bytes ?? 0) / 1024 / 1024).toFixed(0)} MB, ${e.licence}) in ${e.dir}; runtime: ${ort ?? `none found, so ${lexical}`}`,
+            : // ADR 0124 addendum D-npm: an npm install carries the model's and onnxruntime's
+              // bytes, so the default is ready with nothing fetched.
+              `${ort ? "ready: " : ""}${e.id} (${((e.bytes ?? 0) / 1024 / 1024).toFixed(0)} MB, ${e.licence}), ${e.setting === "bundled" ? "installed with Atticus" : "the folder runtime.yaml names"}, in ${e.dir}; runtime: ${ort ?? `none found, so ${lexical}`}`,
       fix: "The model is an optional plugin (@maycombhq/embed-model and its onnxruntime packages, optional dependencies of @maycombhq/cli on npm). Where the plugin zip added them, run node embeddings-plugin/fetch-model.mjs in the Atticus folder (--list names the files, --from <folder> takes them from your mirror). Otherwise reinstall Atticus from your npm mirror or from the offline bundle built with pnpm bundle --with-embeddings; in a checkout of Atticus run pnpm model:fetch; or point retrieval.embeddings.model at a model folder. Set it to off to say the organisation doesn't use one. Atticus itself never downloads anything.",
     });
   }

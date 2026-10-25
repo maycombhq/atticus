@@ -9,7 +9,20 @@ From nothing to a first map and a first change, on one page. Atticus is a comman
 
 ## Minute 2: install
 
-**From the offline bundle** (a bank laptop, no package registry). The bundle is one zip, `atticus-<version>-offline.zip`, about 20 MB, with a `.sha256` beside it.
+**From your npm mirror** (a bank with Artifactory or Nexus in front of npm): this is the shortest way, and it brings search by meaning with it.
+
+```bash
+npm install --global @maycombhq/cli        # @maycombhq/cli@beta while Atticus 2 is in beta
+atticus --version
+```
+
+- **Search by meaning comes with it.** The local embedding model (`@maycombhq/embed-model`, all-MiniLM-L6-v2, 79 MB to download) and this machine's onnxruntime (`@maycombhq/onnxruntime-<platform>-<arch>`, 10 to 25 MB, plus the 3.6 MB WebAssembly fallback) are optional dependencies that carry their files: npm installs only your platform's runtime, and nothing is downloaded after install. On Linux x64 the whole install is about 117 MB from the mirror (141 packages) and 250 MB on disk. `atticus doctor` then says _Embedding model: ready … runtime: native_.
+- **No install scripts.** No Atticus package has one, so a mirror or an npm config with `ignore-scripts=true` (`npm install --global --ignore-scripts @maycombhq/cli`) installs the same thing.
+- **Without search by meaning:** `npm install --global --omit=optional @maycombhq/cli` leaves the model and onnxruntime out (the rest is about 17 MB to download); Atticus searches by words and names, and doctor says so. A mirror that doesn't hold the optional packages doesn't fail the install either.
+- **If the scope is blocked** (`404` or `403` for `@maycombhq/cli`), ask the Artifactory or Nexus team to: proxy the public npm registry for the `@maycombhq` scope (or allow it in the npm remote repository's include patterns); allow tarballs of about 80 MB (`@maycombhq/embed-model`; the largest runtime, `onnxruntime-darwin-arm64`, is 25 MB); and let their licence scanner pass Apache-2.0 (Atticus and the model) and MIT (onnxruntime). Every package's licence is in its `package.json` and its `LICENSE` file; the model's training data is listed in its `MODEL-CARD.md` for your legal team. The third-party packages Atticus needs come from the public registry as usual.
+- Your npm settings decide where it comes from: `npm config get registry` should print your mirror. Behind a proxy that re-signs TLS, set `NODE_EXTRA_CA_CERTS` as below.
+
+**From the offline bundle** (a laptop with no package registry). The bundle is one zip, `atticus-<version>-offline.zip`, about 20 MB, with a `.sha256` beside it.
 
 1. Check the zip against its `.sha256`, then unzip it anywhere.
 2. **Windows:** right-click `install.ps1`, _Run with PowerShell_ (or `powershell -ExecutionPolicy Bypass -File install.ps1`; `-NoPath` leaves your PATH alone). **macOS, Linux:** `sh install.sh`.
@@ -17,9 +30,7 @@ From nothing to a first map and a first change, on one page. Atticus is a comman
 
 The script checks Node and every file against `SHA256SUMS`, copies the version into your own programs folder (`%LOCALAPPDATA%\Programs\Atticus\<version>`, or `~/.local/share/atticus/<version>`) and puts `atticus` on your PATH. Nothing in it reaches the network. It carries an SBOM (`sbom.cdx.json`) and the third-party licences for your security review.
 
-**From your npm mirror** (Artifactory, Nexus): `npm install --global @maycombhq/cli`. The mirror needs every `@maycombhq/*` package the CLI depends on and the third-party packages in the SBOM. The embedding plugin's packages (`@maycombhq/embed`, `@maycombhq/embed-model`, `@maycombhq/onnxruntime-*`) are optional dependencies: `npm install --global --omit=optional @maycombhq/cli` leaves them out, and a mirror that doesn't hold them doesn't fail the install.
-
-**Search by meaning is an optional plugin.** The default bundle leaves out the local embedding model and its runtime (all-MiniLM-L6-v2 and onnxruntime, about 100 MB more): Atticus finds things by words and names (SQLite FTS5 with BM25) and by following the graph, and `atticus doctor` says so under _Embedding model_. Three ways to add it:
+**In the offline bundle, search by meaning is an optional plugin.** The default bundle leaves out the local embedding model and its runtime (all-MiniLM-L6-v2 and onnxruntime, about 100 MB more): Atticus finds things by words and names (SQLite FTS5 with BM25) and by following the graph, and `atticus doctor` says so under _Embedding model_. Two ways to add it:
 
 - **The plugin zip, next to the default bundle:** `atticus-<version>-embeddings-plugin.zip` (built with `pnpm bundle --embeddings-plugin`, about 0.25 MB, the same zip on every platform). It holds the plugin's packages and their pins, not the model's or onnxruntime's bytes.
   1. Check it against its `.sha256`, unzip it, and run its `install.ps1` (Windows) or `sh install.sh`. It finds the Atticus of the same version in your programs folder (or give the folder: `-Atticus <folder>`, or `sh install.sh <folder>`), checks every file against `SHA256SUMS` and copies the packages into it.
@@ -29,7 +40,6 @@ The script checks Node and every file against `SHA256SUMS`, copies the version i
   An upgrade of Atticus needs the plugin zip of the new version, installed again.
 
 - **The bundle with the model inside:** a bundle built with `pnpm bundle --with-embeddings` (`atticus-<version>-offline-embeddings.zip`, for one platform), with nothing else to fetch.
-- **The npm install** without `--omit=optional`.
 
 Atticus itself never downloads anything after install; only the plugin's fetch step does, when a person runs it.
 
@@ -108,8 +118,8 @@ A tier 2 assistant takes each stage with `--handoff` (prompt file in, answer fil
 
 ## Upgrade and uninstall
 
-Install the new bundle; the old version stays beside it. In the metarepo: `atticus doctor`, then `atticus upgrade` (it backs up every file it changes to `.atticus/backups/<time>/`; `--check` lists what it would do), and commit what it changed in a pull request. To uninstall, delete the version folder and the `atticus` command (`...\Atticus\bin\atticus.cmd`, or `~/.local/bin/atticus`); Atticus keeps nothing else outside your metarepos.
+Install the new bundle (the old version stays beside it), or `npm install --global @maycombhq/cli@<version>` from your mirror. In the metarepo: `atticus doctor`, then `atticus upgrade` (it backs up every file it changes to `.atticus/backups/<time>/`; `--check` lists what it would do), and commit what it changed in a pull request. To uninstall, delete the version folder and the `atticus` command (`...\Atticus\bin\atticus.cmd`, or `~/.local/bin/atticus`), or `npm uninstall --global @maycombhq/cli`; Atticus keeps nothing else outside your metarepos.
 
-From a checkout instead: `corepack enable`, `pnpm install`, `pnpm build`, then `node packages/cli/dist/bin.js --version`. `pnpm bundle` builds the offline bundle for this platform, `pnpm bundle --with-embeddings` the one with the model (filled from pinned sources through `.cache/pinned`), `pnpm bundle --embeddings-plugin` the plugin zip, and `pnpm bundle:test <zip>` installs a bundle into a throwaway folder and uses it (`--plugin <plugin zip>` adds the plugin next to the default bundle; `--plugin-from .cache/pinned` runs its fetch step offline and searches by meaning).
+From a checkout instead: `corepack enable`, `pnpm install`, `pnpm build`, then `node packages/cli/dist/bin.js --version`. `pnpm bundle` builds the offline bundle for this platform, `pnpm bundle --with-embeddings` the one with the model (filled from pinned sources through `.cache/pinned`), `pnpm bundle --embeddings-plugin` the plugin zip, and `pnpm bundle:test <zip>` installs a bundle into a throwaway folder and uses it (`--plugin <plugin zip>` adds the plugin next to the default bundle; `--plugin-from .cache/pinned` runs its fetch step offline and searches by meaning). `pnpm npm:test` packs every npm package (after `pnpm model:fetch`), serves them from a throwaway mirror and installs them with `npm install --global --ignore-scripts` the way a bank would, then searches by meaning with the network blocked; publishing is in [the admin guide](admin.md#publishing-to-npm).
 
 Next: [running Atticus for a team](admin.md).

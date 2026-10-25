@@ -34,5 +34,8 @@
     "@maycombhq/onnxruntime-wasm": "workspace:*",
     "@maycombhq/onnxruntime-win32-arm64": "workspace:*",
     "@maycombhq/onnxruntime-win32-x64": "workspace:*"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

@@ -8,7 +8,9 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { CACHE, PINNED_PACKAGES, REPO } from "./paths.mjs";
+import { CACHE, PINNED_PACKAGES, REPO, rerunWithEnvProxy } from "./paths.mjs";
+
+rerunWithEnvProxy(import.meta.url, process.argv.slice(2), true);
 
 const { fetchSource, sha256Of } = await import(
   pathToFileURL(join(REPO, "packages/embed/dist/index.js")).href

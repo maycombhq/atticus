@@ -24,5 +24,8 @@
     "@maycombhq/core": "workspace:*",
     "@maycombhq/diagrams": "workspace:*",
     "@maycombhq/sdk": "workspace:*"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

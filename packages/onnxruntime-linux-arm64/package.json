@@ -14,10 +14,11 @@
     "dist",
     "bin",
     "LICENSE",
-    "README.md"
+    "README.md",
+    "pins.json"
   ],
   "scripts": {
-    "prepack": "node ../../scripts/model/fetch.mjs ."
+    "prepack": "node ../../scripts/model/fetch.mjs . --offline"
   },
   "dependencies": {
     "onnxruntime-common": "1.30.0"
@@ -25,5 +26,8 @@
   "atticusRepackaged": {
     "from": "onnxruntime-node@1.30.0",
     "platform": "linux-arm64"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

@@ -79,6 +79,11 @@ jobs:
           path: .cache/pinned
           key: pinned-${{ runner.os }}-${{ hashFiles('packages/*/pins.json') }}
       - run: node scripts/model/fetch.mjs --this-platform
+      # ADR 0124 addendum D-npm: every package packed (the model and onnxruntime filled from the
+      # cache above), served by a throwaway mirror, npm install -g with scripts off, then used
+      # with the network blocked: doctor says the model is ready, and it searches by meaning.
+      - if: runner.os == 'Linux'
+        run: pnpm npm:test
       - run: pnpm bundle --with-embeddings
       - run: node scripts/bundle/test-bundle.mjs dist/atticus-*-offline-embeddings.zip
         shell: bash

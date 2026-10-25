@@ -29,5 +29,8 @@
     "@maycombhq/sdk": "workspace:*",
     "yaml": "^2.9.1"
   },
-  "devDependencies": {}
+  "devDependencies": {},
+  "publishConfig": {
+    "access": "public"
+  }
 }

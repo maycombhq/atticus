@@ -384,6 +384,43 @@ describe("atticus doctor", () => {
     }
   });
 
+  it("says the model installed with Atticus is ready, and its runtime (ADR 0124 addendum D-npm)", async () => {
+    // An npm install carries the model's and onnxruntime's bytes: doctor says it is ready.
+    const ready = (setting: string) => async () =>
+      ({
+        embeddingState: async () => ({
+          setting,
+          configured: setting !== "bundled",
+          dir: "/opt/atticus/node_modules/@maycombhq/embed-model",
+          id: "all-minilm-l6-v2@759c3cd2b7fe",
+          bytes: 90_387_606,
+          licence: "Apache-2.0",
+        }),
+        runtimeAvailable: async () => "native" as const,
+      }) as unknown as typeof import("@maycombhq/embed");
+    const was = process.env.ATTICUS_EMBEDDINGS;
+    delete process.env.ATTICUS_EMBEDDINGS;
+    try {
+      const npm = byId(
+        await doctorChecks(root, { ...healthy(), embed: ready("bundled") }),
+        "embeddings",
+      );
+      expect(npm.status).toBe("ok");
+      expect(npm.detail).toBe(
+        "ready: all-minilm-l6-v2@759c3cd2b7fe (86 MB, Apache-2.0), installed with Atticus, in /opt/atticus/node_modules/@maycombhq/embed-model; runtime: native",
+      );
+      const named = byId(
+        await doctorChecks(root, { ...healthy(), embed: ready("models/minilm") }),
+        "embeddings",
+      );
+      expect(named.detail).toMatch(
+        /^ready: all-minilm-l6-v2@759c3cd2b7fe \(86 MB, Apache-2\.0\), the folder runtime\.yaml names, in /,
+      );
+    } finally {
+      if (was !== undefined) process.env.ATTICUS_EMBEDDINGS = was;
+    }
+  });
+
   it("puts the machine first on the setup checklist", async () => {
     const ok = await setupSteps(root, { doctor: await doctorChecks(root, healthy()) });
     expect(ok.steps[0]).toMatchObject({ id: "machine", done: true });

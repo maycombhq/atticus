@@ -27,5 +27,8 @@
   },
   "devDependencies": {
     "@apidevtools/swagger-parser": "13.1.0"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

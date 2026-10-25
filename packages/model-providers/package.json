@@ -24,5 +24,8 @@
     "@maycombhq/ai": "workspace:*",
     "@maycombhq/core": "workspace:*",
     "undici": "^7.30.1"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

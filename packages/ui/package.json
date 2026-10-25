@@ -39,5 +39,8 @@
   "dependencies": {
     "@xyflow/react": "12.3.6",
     "elkjs": "0.9.3"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

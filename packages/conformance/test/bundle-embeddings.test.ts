@@ -39,6 +39,44 @@ describe("the default bundle without embeddings", () => {
       expect(embeddingPackage(n), n).toBe(false);
   });
 
+  it("refuses a model or runtime package that ships a third party's files without their licence (ADR 0124 addendum D-npm)", async () => {
+    const { inventory, unlicensedThirdParty } = (await import(pathToFileURL(SCRIPT).href)) as {
+      inventory: (dir: string) => { name: string; carriesPinned?: boolean }[];
+      unlicensedThirdParty: (items: unknown[]) => string[];
+    };
+    const dir = await mkdtemp(join(tmpdir(), "atticus-deploy-licence-"));
+    const ort = join(dir, "node_modules/@maycombhq/onnxruntime-linux-x64");
+    await mkdir(join(ort, "dist"), { recursive: true });
+    await writeFile(
+      join(ort, "package.json"),
+      JSON.stringify({
+        name: "@maycombhq/onnxruntime-linux-x64",
+        version: "1.0.0",
+        license: "MIT",
+        atticusRepackaged: { from: "onnxruntime-node@1.0.0" },
+      }),
+    );
+    await writeFile(
+      join(ort, "pins.json"),
+      JSON.stringify({
+        sources: {},
+        files: [
+          { path: "dist/index.js", source: "a", sha256: "0" },
+          { path: "LICENSE", source: "b", sha256: "1" },
+        ],
+      }),
+    );
+    // The plugin zip's layout: the pins, none of the files, no licence yet. Nothing ships.
+    expect(unlicensedThirdParty(inventory(dir))).toEqual([]);
+    // An npm install: the runtime's files are there, so its licence must be too.
+    await writeFile(join(ort, "dist/index.js"), "module.exports = {};");
+    expect(unlicensedThirdParty(inventory(dir))).toEqual([
+      "@maycombhq/onnxruntime-linux-x64@1.0.0 ships onnxruntime-node@1.0.0's files without their licence text",
+    ]);
+    await writeFile(join(ort, "LICENSE"), "MIT License");
+    expect(unlicensedThirdParty(inventory(dir))).toEqual([]);
+  });
+
   it("removes them from a deployed folder, nested copies too, and keeps the rest", async () => {
     const { embeddingPackage, removePackages } = await load();
     const dir = await mkdtemp(join(tmpdir(), "atticus-deploy-test-"));

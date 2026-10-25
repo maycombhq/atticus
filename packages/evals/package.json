@@ -41,5 +41,8 @@
   },
   "devDependencies": {
     "@maycombhq/embed": "workspace:*"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

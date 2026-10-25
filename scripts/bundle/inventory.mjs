@@ -165,12 +165,24 @@ export function inventory(deployDir) {
     const m = pkg.atticusModel;
     // A third party's files Atticus repackages (onnxruntime's CPU and WASM builds, ADR 0116).
     const rp = pkg.atticusRepackaged;
+    // Whether it holds any of the third party's files its pins.json names (other than the
+    // licence): an npm install or a --with-embeddings bundle does; the plugin zip doesn't yet.
+    const pinsFile = join(dir, "pins.json");
+    const carriesPinned =
+      (m || rp) && existsSync(pinsFile)
+        ? JSON.parse(readFileSync(pinsFile, "utf8")).files.some(
+            (f) =>
+              !/^(licen[cs]e|copying)(\.(md|txt))?$/i.test(f.path) &&
+              existsSync(join(dir, ...f.path.split("/"))),
+          )
+        : Boolean(m || rp);
     out.set(key, {
       name: pkg.name,
       version: pkg.version,
       licence: licenceOf(pkg),
       text: licenceText(dir),
       own: pkg.name.startsWith("@maycombhq/") && !m && !rp,
+      ...(m || rp ? { carriesPinned } : {}),
       ...(rp ? { purl: `pkg:npm/${rp.from}`, repackagedFrom: rp.from } : {}),
       ...(m
         ? {
@@ -216,6 +228,19 @@ export function inventory(deployDir) {
   return [...out.values()].sort(
     (a, b) => a.name.localeCompare(b.name) || a.version.localeCompare(b.version),
   );
+}
+
+/**
+ * ADR 0124 addendum D-npm: a package that carries a third party's files (the model, onnxruntime's
+ * builds) ships their licence text with them. Each one that doesn't, as a sentence.
+ */
+export function unlicensedThirdParty(items) {
+  return items
+    .filter((i) => i.carriesPinned && !i.text)
+    .map(
+      (i) =>
+        `${i.name}@${i.version} ships ${i.repackagedFrom ?? i.model ?? "a third party"}'s files without their licence text`,
+    );
 }
 
 /** A CycloneDX 1.5 SBOM of the inventory. */

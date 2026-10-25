@@ -32,5 +32,8 @@
     "@maycombhq/sdk": "workspace:*",
     "@maycombhq/workspace": "workspace:*",
     "yaml": "^2.9.1"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

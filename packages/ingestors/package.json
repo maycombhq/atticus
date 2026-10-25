@@ -25,5 +25,8 @@
     "@maycombhq/reconcile": "workspace:*",
     "@maycombhq/sdk": "workspace:*",
     "yaml": "^2.9.1"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

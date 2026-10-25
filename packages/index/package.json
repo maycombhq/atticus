@@ -29,5 +29,8 @@
   },
   "optionalDependencies": {
     "@maycombhq/embed": "workspace:*"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

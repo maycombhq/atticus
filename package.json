@@ -24,7 +24,9 @@
     "docs:commands": "node scripts/write-command-doc.mjs",
     "claude-plugin": "node scripts/write-claude-plugin.mjs",
     "model:fetch": "node scripts/model/fetch.mjs --all",
-    "model:pins": "node scripts/model/write-pins.mjs"
+    "model:pins": "node scripts/model/write-pins.mjs",
+    "release:npm": "node scripts/release-npm.mjs",
+    "npm:test": "node scripts/bundle/test-npm-install.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.0",

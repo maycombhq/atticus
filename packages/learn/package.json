@@ -14,12 +14,15 @@
   },
   "files": [
     "dist",
-    "lessons"
+    "lessons",
+    "fixtures"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run --config ../../vitest.shared.mjs --fsModuleCachePath=node_modules/.vitest-cache --testTimeout=60000 --hookTimeout=60000"
+    "test": "vitest run --config ../../vitest.shared.mjs --fsModuleCachePath=node_modules/.vitest-cache --testTimeout=60000 --hookTimeout=60000",
+    "prepack": "node ../../scripts/bundle/learn-fixtures.mjs",
+    "postpack": "node ../../scripts/bundle/learn-fixtures.mjs --remove"
   },
   "dependencies": {
     "@maycombhq/adapters": "workspace:*",
@@ -29,5 +32,8 @@
     "@maycombhq/scanner": "workspace:*",
     "yaml": "^2.9.1",
     "zod": "^4.6.0"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

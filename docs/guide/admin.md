@@ -244,7 +244,7 @@ retrieval:
   rerank: false # not measured yet
 ```
 
-- **Search by meaning (`embeddings`).** `bundled` is all-MiniLM-L6-v2 (87 MB, Apache-2.0), an optional plugin: npm installs it with Atticus, and the offline bundle carries it with onnxruntime only when built with `pnpm bundle --with-embeddings` (the default bundle leaves it out, ADR 0124 addendum D-bundle). On the retrieval eval it found 0.96 of what a step needed, against 0.81 by words and names alone (`docs/evidence/context-eval.md`). It runs on the machine, on the CPU, and nothing is ever downloaded. Where the model or onnxruntime isn't installed (the default offline bundle, a checkout without `pnpm model:fetch`, or a bank that hasn't approved them yet), the engine searches by words and names, never fails a step, and `atticus doctor` says so under "Embedding model". Set `model: off` to say your organisation doesn't use one. The model's training data needs your legal team's sign-off (ADR 0116 lists it); a model you name by folder is a one-line switch.
+- **Search by meaning (`embeddings`).** `bundled` is all-MiniLM-L6-v2 (87 MB, Apache-2.0), an optional plugin: npm installs it with Atticus, the model and this platform's onnxruntime inside the packages (nothing to fetch, no install script; ADR 0124 addendum D-npm), and the offline bundle carries it with onnxruntime only when built with `pnpm bundle --with-embeddings` (the default bundle leaves it out, ADR 0124 addendum D-bundle). On the retrieval eval it found 0.96 of what a step needed, against 0.81 by words and names alone (`docs/evidence/context-eval.md`). It runs on the machine, on the CPU, and nothing is ever downloaded. Where the model or onnxruntime isn't installed (the default offline bundle, a checkout without `pnpm model:fetch`, or a bank that hasn't approved them yet), the engine searches by words and names, never fails a step, and `atticus doctor` says so under "Embedding model". Set `model: off` to say your organisation doesn't use one. The model's training data needs your legal team's sign-off (ADR 0116 lists it); a model you name by folder is a one-line switch.
 - **The expansion.** One small call (a 6,000-token budget, within GPT-4o mini's reach) before a step's selection: your assistant reads the step's input and the estate's names and says what it is about in the estate's words, and every name it uses. Atticus checks each name against the input and each id against the index. The names the estate doesn't know become the step's gaps, so a vendor named only in a sentence is asked about. In hand-off mode it is one extra round per step (one prompt, then the step's own); its answer is kept in `judgments/expansion/`, so the same input with the same estate names is never asked again, and an answer that fails its check is left out with a note while the step goes on by words and names. `expansion: false` turns it off; then only names the input marks by their form (an endpoint, a name in backticks) are asked about.
 - **The rerank** orders the candidates when they don't fit the room. It is built but not measured, so it is off.
 
@@ -312,6 +312,29 @@ More in [troubleshooting](troubleshooting.md).
 ## Upgrades and backups
 
 Install the new version on every machine, then one person runs `atticus upgrade` in the metarepo and opens a pull request with what it changed. Files it changes are copied to `.atticus/backups/<time>/` first. `atticus upgrade --check` exits 1 while an upgrade is pending, for a pipeline that should insist. The metarepo itself is the backup of everything else: the catalog, changes and org pack are files in Git, and the local index rebuilds from them (`atticus index rebuild`).
+
+## Publishing to npm
+
+For whoever releases Atticus (ADR 0124 addendum D-npm). Every package under `packages/` that isn't private is published to the public npm registry under the `maycombhq` scope, so a bank's mirror (Artifactory, Nexus) can proxy it and `npm install --global @maycombhq/cli` brings everything, search by meaning included. The model's and onnxruntime's packages carry their files: each one's `prepack` fills it from `.cache/pinned` with no network, checks every file against its `pins.json`, and refuses to pack when one is missing or wrong. No package has an install script.
+
+Once:
+
+1. On npmjs.com, sign in and create the organisation `maycombhq` (Add organization; the free plan publishes public packages). Add the people who may publish.
+2. On your machine: `npm login` (it opens the browser). `npm whoami` prints your user; `npm org ls maycombhq` lists you.
+3. For the workflow: create an npm token that may publish to the scope (a granular access token with read and write on `@maycombhq`, or an automation token), and store it as the `NPM_TOKEN` secret of the GitHub environment `npm` (Settings, Environments; add a required reviewer there so a person approves each publish). Provenance needs a public repository: when it is public, set the repository variable `NPM_PROVENANCE` to `true`.
+
+Each release, from a clean checkout of the release tag:
+
+```bash
+pnpm install --frozen-lockfile
+pnpm build
+pnpm model:fetch                  # the model and onnxruntime into .cache/pinned, each checked against pins.json
+pnpm npm:test                     # pack everything, a throwaway mirror, npm install -g --ignore-scripts, search by meaning offline
+pnpm release:npm --dry-run        # the pack check, then pnpm -r publish --dry-run: what would be published, nothing uploaded
+pnpm release:npm                  # the pack check, then pnpm -r publish --access public --tag beta --no-git-checks
+```
+
+`pnpm release:npm` publishes each package whose version npm doesn't have yet, dependencies first; `--tag <tag>` picks the dist-tag (by default the CLI version's prerelease word, `beta`, else `latest`), and `--pack-only` stops after the check. The onnxruntime packages keep onnxruntime's version (1.30.0), so they are published once and then only when onnxruntime moves. The same steps run in `.github/workflows/publish-npm.yml` when a GitHub release is published (started by hand, it is a dry run unless you untick it). About 162 MB is uploaded in all, the model's package 79 MB of it.
 
 ## Security
 

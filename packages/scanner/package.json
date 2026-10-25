@@ -35,5 +35,8 @@
   "devDependencies": {
     "@maycombhq/index": "workspace:*",
     "@maycombhq/synth": "workspace:*"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }
