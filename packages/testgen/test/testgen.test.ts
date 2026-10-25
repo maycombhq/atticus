@@ -450,6 +450,12 @@ describe("pieces", () => {
       when: "",
       then: "The transfer is held",
     });
+    // B-once: the story file's note of the other tasks a criterion accepts is no part of it.
+    expect(
+      splitCriterion(
+        "Given a client, when it posts deliverBy 2026-11-02, then 201 returns it. (also accepts tasks 1.2, 1.3 and 1.4)",
+      ),
+    ).toEqual({ given: "a client", when: "it posts deliverBy 2026-11-02", then: "201 returns it" });
   });
 
   it("makes one invalid value per constraint", () => {

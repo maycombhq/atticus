@@ -59,6 +59,11 @@ the `BenchStory` draft `atticus bench stories --change` makes of them and `stori
 and `bench/stories/forge-fraud-check.yaml`, an invented reference story (with a forge-web
 checkout step the draft lacks) to score it against.
 
+`stories-once/` is a criterion written once (ADR 0124 addendum B-once): `stories.yaml`, a story
+whose four tasks pass an order's `deliverBy` through the entry, a new validation, the write and
+the response; `repeated.yaml`, its answer with criteria repeated per task (8); and `answer.yaml`,
+the same with each behaviour written once and `also` naming the other tasks it accepts (4).
+
 `wiki/` is the knowledge each stage picks (B2, 2026-10-25): `snapshots/forge-wiki/2026-10-01/`, a
 snapshot of three invented wiki pages (Northwind Pay's fraud screen, whose timeouts and verdict
 webhook no item covers; vendor onboarding; the integration standards), and `knowledge.yaml`, a

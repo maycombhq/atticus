@@ -1,4 +1,5 @@
 import {
+  criteriaFor,
   DEFAULT_DONE,
   declaredWhat,
   storyColumns,
@@ -172,8 +173,12 @@ export function benchStoryFromStories(i: StoriesToBench): BenchStory {
   type Step = BenchStory["steps"][number];
   const steps: Step[] = [];
   const criteria: BenchStory["criteria"] = [];
-  const said = (s: DeltaStory, t: DeltaTask) =>
-    pairs.find((p) => p.s === s)?.w?.tasks.find((x) => x.id === t.id)?.criteria ?? [];
+  // B-once: the criteria that accept a task, its own and those written once on another task; a
+  // step two of their tasks share takes a shared criterion once (`seen`).
+  const said = (s: DeltaStory, t: DeltaTask, seen?: Set<StoryCriterion>) =>
+    criteriaFor(pairs.find((p) => p.s === s)?.w, t.id).filter(
+      (c) => !seen || (!seen.has(c) && !!seen.add(c)),
+    );
   const tasksOf = (ids: string[]) => `Task${ids.length === 1 ? "" : "s"} ${andList(ids)}`;
   interface FileStep {
     step: Step;
@@ -198,8 +203,9 @@ export function benchStoryFromStories(i: StoriesToBench): BenchStory {
           ...(s.entry ? { entry: s.entry } : {}),
           ...(at ? { at } : {}),
         });
+        const seen = new Set<StoryCriterion>();
         for (const x of tasks)
-          criteria.push(...criteriaOf(s, x, said(s, x), { step: stepId(t), at }));
+          criteria.push(...criteriaOf(s, x, said(s, x, seen), { step: stepId(t), at }));
       } else if (p.kind === "new") {
         const id = `new-${s.id}`;
         steps.push({
@@ -208,7 +214,8 @@ export function benchStoryFromStories(i: StoriesToBench): BenchStory {
           what: bare(`${tasksOf(p.tasks)}: ${p.what}`),
           ...(s.entry ? { entry: s.entry } : {}),
         });
-        for (const t of tasks) criteria.push(...criteriaOf(s, t, said(s, t), { step: id }));
+        const seen = new Set<StoryCriterion>();
+        for (const t of tasks) criteria.push(...criteriaOf(s, t, said(s, t, seen), { step: id }));
       } else {
         let f = files.get(p.file!);
         if (!f) {
@@ -228,9 +235,10 @@ export function benchStoryFromStories(i: StoriesToBench): BenchStory {
     const what = f.kind === "migration" ? `${f.what} (a new file: ${path})` : declaredWhat(f.why);
     f.step.what = bare(`${tasksOf([...new Set(f.links.map((l) => l.t.id))])}: ${what}`);
     if (f.kind === "declares" && f.lines.length) f.step.at = `${path}:${Math.min(...f.lines)}`;
+    const seen = new Set<StoryCriterion>();
     for (const { s, t } of f.links)
       criteria.push(
-        ...criteriaOf(s, t, said(s, t), {
+        ...criteriaOf(s, t, said(s, t, seen), {
           step: f.step.id,
           at: f.step.at,
           prefix: `${f.step.id}-`,

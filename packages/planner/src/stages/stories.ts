@@ -957,6 +957,12 @@ const CriterionObject = z.strictObject({
   rule: z.enum(STORY_ERROR_RULES).optional(),
   /** An error criterion: the status the caller sees, an HTTP status or a code. */
   status: z.union([z.number().int(), Words]).optional(),
+  /**
+   * The other tasks of the story this criterion also accepts, by id (ADR 0124 addendum
+   * B-once): a behaviour is written once, on the task whose code it exercises first, not
+   * repeated on every task a field passes through.
+   */
+  also: z.array(Words).optional(),
 });
 
 export const StoryCriterion = z.union([
@@ -1086,6 +1092,41 @@ export type StoriesAnswer = z.infer<typeof Answer>;
 /** The story writer's answer's schema, for the fast path (ADR 0113). */
 export const StoriesAnswerSchema = Answer;
 
+/** A criterion that accepts a task, and the task it is written on (ADR 0124 addendum B-once). */
+export interface AcceptingCriterion {
+  c: StoryCriterion;
+  /** The task whose criteria hold it. */
+  owner: string;
+}
+
+/**
+ * The criteria that accept a task (B-once): its own, then each criterion of the story's other
+ * tasks that names it in `also`, in the story's order.
+ */
+export function acceptingCriteria(w: StoryWords | undefined, task: string): AcceptingCriterion[] {
+  if (!w) return [];
+  return [
+    ...(w.tasks.find((t) => t.id === task)?.criteria ?? []).map((c) => ({ c, owner: task })),
+    ...w.tasks
+      .filter((t) => t.id !== task)
+      .flatMap((t) =>
+        t.criteria.filter((c) => c.also?.includes(task)).map((c) => ({ c, owner: t.id })),
+      ),
+  ];
+}
+
+/** The criteria that accept a task, its own and the shared ones (B-once). */
+export const criteriaFor = (w: StoryWords | undefined, task: string): StoryCriterion[] =>
+  acceptingCriteria(w, task).map((x) => x.c);
+
+/** The tasks of the story a criterion accepts: the one it is written on, then its `also`. */
+function acceptedTasks(s: DeltaStory, owner: string, c: StoryCriterion): DeltaTask[] {
+  const ids = new Set([owner, ...(c.also ?? [])]);
+  return s.tasks
+    .filter((t) => ids.has(t.id))
+    .sort((a, b) => (a.id === owner ? -1 : b.id === owner ? 1 : 0));
+}
+
 /** A name folded for comparing as written: lower case, underscores and hyphens left out. */
 const foldName = (s: string) => s.toLowerCase().replace(/[_-]/g, "");
 
@@ -1145,7 +1186,7 @@ export function checkStories(
       );
       continue;
     }
-    for (const t of s.tasks)
+    for (const t of s.tasks) {
       if (!want.tasks.some((x) => x.id === t.id))
         issue(
           "stories.unknown-task",
@@ -1153,6 +1194,16 @@ export function checkStories(
           `Task ${t.id} isn't a task of story ${s.id}.`,
           want.repo,
         );
+      // B-once: a criterion accepts other tasks of its own story only.
+      for (const id of new Set(t.criteria.flatMap((c) => c.also ?? [])))
+        if (!want.tasks.some((x) => x.id === id))
+          issue(
+            "stories.unknown-also",
+            `${s.id}:${t.id}:${id}`,
+            `Task ${t.id}: a criterion says it also accepts task ${id}, which isn't a task of story ${s.id} (${want.tasks.map((x) => x.id).join(", ")}).`,
+            want.repo,
+          );
+    }
   }
   for (const want of stories) {
     const got = a.stories.find((x) => x.id === want.id);
@@ -1166,7 +1217,22 @@ export function checkStories(
       continue;
     }
     for (const t of want.tasks) {
-      const c = got.tasks.find((x) => x.id === t.id)?.criteria ?? [];
+      // B-once: the task's criteria are its own and every one of the story naming it in also.
+      const c = criteriaFor(got, t.id);
+      // A criterion checks fields of the tasks it accepts: its own task's and its also tasks'.
+      for (const x of got.tasks.find((y) => y.id === t.id)?.criteria ?? []) {
+        const accepted = acceptedTasks(want, t.id, x);
+        const fields = [...new Set(accepted.flatMap((y) => y.fields))];
+        for (const f of x.checks.filter((f) => !fields.includes(f)))
+          issue(
+            "stories.unknown-check",
+            `${t.id}:${f}`,
+            accepted.length > 1
+              ? `Task ${t.id}: a criterion says it checks ${f}, which isn't a field of task ${t.id} or of the tasks it also accepts (${andList(accepted.slice(1).map((y) => y.id))}); their fields: ${fields.join(", ") || "none"}.`
+              : `Task ${t.id}: a criterion says it checks ${f}, which isn't one of the task's fields (${t.fields.join(", ") || "none"}).`,
+            t.repo,
+          );
+      }
       if (c.length === 0)
         issue(
           "stories.no-criteria",
@@ -1175,14 +1241,6 @@ export function checkStories(
           t.repo,
         );
       else {
-        for (const x of c)
-          for (const f of x.checks.filter((f) => !t.fields.includes(f)))
-            issue(
-              "stories.unknown-check",
-              `${t.id}:${f}`,
-              `Task ${t.id}: a criterion says it checks ${f}, which isn't one of the task's fields (${t.fields.join(", ") || "none"}).`,
-              t.repo,
-            );
         if (
           t.op !== "remove" &&
           t.kind &&
@@ -1354,8 +1412,13 @@ export function checkSections(
     // The story's fields, folded as writesField folds names (card_token is cardToken).
     const fields = new Set(s.tasks.flatMap((t) => t.fields.map(foldName)));
     const named = [...new Set(s.tasks.flatMap((t) => t.fields))];
+    // Each criterion once, on the task it is written on, with the tasks it accepts (B-once).
     const criteria = s.tasks.flatMap((t) =>
-      (w.tasks.find((x) => x.id === t.id)?.criteria ?? []).map((c) => ({ t, c })),
+      (w.tasks.find((x) => x.id === t.id)?.criteria ?? []).map((c) => ({
+        t,
+        c,
+        accepts: acceptedTasks(s, t.id, c),
+      })),
     );
 
     // ---- sections left out: a risk for now
@@ -1435,7 +1498,7 @@ export function checkSections(
               s.repo,
             );
           const same = (x: string) => foldName(x) === foldName(f.name);
-          const own = criteria.filter(({ t }) => t.fields.some(same));
+          const own = criteria.filter(({ accepts }) => accepts.some((t) => t.fields.some(same)));
           if (!own.some(({ c }) => c.outcome === "error" && c.checks.some(same)))
             push(
               "stories.field-no-error-case",
@@ -1600,10 +1663,14 @@ export function unwrittenChecks(a: StoriesAnswer, stories: DeltaStory[]): Unwrit
     for (const t of want.tasks) {
       const c =
         a.stories.find((x) => x.id === want.id)?.tasks.find((x) => x.id === t.id)?.criteria ?? [];
-      for (const x of c)
+      // B-once: a criterion is judged once, on the task it is written on, for the fields of
+      // every task it accepts.
+      for (const x of c) {
+        const fields = new Set(acceptedTasks(want, t.id, x).flatMap((y) => y.fields));
         for (const f of x.checks)
-          if (t.fields.includes(f) && !writesField(x.text, f))
+          if (fields.has(f) && !writesField(x.text, f))
             out.push({ task: t.id, repo: t.repo, field: f, criterion: x.text });
+      }
     }
   return out;
 }
@@ -2202,14 +2269,22 @@ function contractOf(s: DeltaStory, w: StoryWords, t: DeltaTask, e?: Estate): str
   return out;
 }
 
-/** A criterion's entry, validation and error, after its words in the task's list. */
-function criterionDetails(c: StoryCriterion): string {
+/**
+ * A criterion's entry, validation and error, after its words in the task's list, and (B-once)
+ * the other tasks it also accepts, or the task it is written on when that is another.
+ */
+function criterionDetails(c: StoryCriterion, shared: DeltaTask[] | string = []): string {
   const parts = [
     ...(c.entry ? [`Entry: ${c.entry}`] : []),
     ...(c.validation ? [`Validation: ${c.validation.replace(/[.\s]+$/, "")}`] : []),
     ...(c.outcome === "error"
       ? [`Error${c.rule ? `: ${c.rule}` : ""}${c.status !== undefined ? `, ${c.status}` : ""}`]
       : []),
+    ...(typeof shared === "string"
+      ? [`written on task ${shared}`]
+      : shared.length
+        ? [`also accepts task${shared.length === 1 ? "" : "s"} ${andList(shared.map((t) => t.id))}`]
+        : []),
   ];
   return parts.length ? ` (${parts.join("; ")})` : "";
 }
@@ -2243,7 +2318,8 @@ export function definitionOfDone(
   return out;
 }
 
-function renderStoryFile(
+/** A story's file: its sections, then each task with the criteria that accept it and its prompt. */
+export function renderStoryFile(
   change: string,
   s: DeltaStory,
   w: StoryWords,
@@ -2321,8 +2397,19 @@ function renderStoryFile(
 
   // ---- Acceptance criteria (the critic and test generation read this list)
   lines.push("## Acceptance criteria", "");
-  const crit = s.tasks.flatMap((t) => w.tasks.find((y) => y.id === t.id)?.criteria ?? []);
-  lines.push(...(crit.length ? crit.map((c) => `- ${sentence(c.text)}`) : ["- None yet."]), "");
+  // Each criterion once, naming the other tasks it accepts (B-once).
+  const crit = s.tasks.flatMap((t) =>
+    (w.tasks.find((y) => y.id === t.id)?.criteria ?? []).map((c) => ({ c, owner: t.id })),
+  );
+  lines.push(
+    ...(crit.length
+      ? crit.map(({ c, owner }) => {
+          const also = acceptedTasks(s, owner, c).slice(1);
+          return `- ${sentence(c.text)}${also.length ? ` (also accepts task${also.length === 1 ? "" : "s"} ${andList(also.map((t) => t.id))})` : ""}`;
+        })
+      : ["- None yet."]),
+    "",
+  );
 
   // ---- Interface changes
   lines.push("## Interface changes", "");
@@ -2427,7 +2514,9 @@ function renderStoryFile(
   const command = x.commands?.[s.repo];
   for (const t of s.tasks) {
     const tw = w.tasks.find((y) => y.id === t.id);
-    const c = tw?.criteria ?? [];
+    // B-once: the criteria that accept the task, its own and those written on another task.
+    const accepting = acceptingCriteria(w, t.id);
+    const c = accepting.map((x) => x.c);
     // The files the step's citations are in, with their lines, and a migration it names (new).
     const byFile = new Map<string, string[]>();
     for (const c of t.evidence) {
@@ -2462,11 +2551,11 @@ function renderStoryFile(
       ...(t.store ? [`- Store: ${t.store}`] : []),
       `- Files to touch: ${files.join(", ") || "new code; follow the repo's patterns for its neighbours"}`,
       "- Acceptance criteria:",
-      ...(c.length
-        ? c.flatMap((y) => [
-            `  - ${sentence(y.text)}${criterionDetails(y)}`,
+      ...(accepting.length
+        ? accepting.flatMap(({ c: y, owner }) => [
+            `  - ${sentence(y.text)}${criterionDetails(y, owner === t.id ? acceptedTasks(s, owner, y).slice(1) : owner)}`,
             ...unjudged
-              .filter((u) => u.task === t.id && u.criterion === y.text)
+              .filter((u) => u.task === owner && u.criterion === y.text)
               .map(
                 (u) =>
                   `  - Not judged yet: this criterion says it checks ${u.field} without naming it. The story lens and the reviewer confirm it does (judgments/covers-field/ keeps a verdict).`,
@@ -2917,6 +3006,7 @@ stories:
             validation: <error criteria: the rule it relies on>
             rule: <error criteria: required, format, length, range, limit, unique, not-found, forbidden, conflict, unavailable or other>
             status: <error criteria: the status the caller sees>
+            also: [<other task ids of this story it also accepts>]
         tests: [<the test file and cases this task adds>]
 requests:      # every request or process from the list below that a step meets
   - item: <process or request id>
@@ -2927,7 +3017,8 @@ requests:      # every request or process from the list below that a step meets
 
 Rules:
 - One entry per story and per task listed; don't add or drop any.
-- Every task has acceptance criteria a test can check. Each of the task's fields is under the checks of a criterion that checks it; checks name only the task's fields.
+- Every task has acceptance criteria a test can check. Each of the task's fields is under the checks of a criterion that accepts the task; checks name only fields of the tasks the criterion accepts.
+- Write each behaviour once: on the task whose code it exercises first, or the one a tester would drive, with the other tasks it accepts under also. Don't repeat it on each task.
 - A criterion checks a field when its outcome depends on the field's value: its then clause states the value, or a result that follows from a value its given clause fixes.
 - For each key a step matches rows by or checks (its fields.checks), add one criterion of its own for the refusal: what happens when that key doesn't match.
 - A task whose step validates, writes, calls out or publishes has at least one criterion with outcome: error: the input rejected and with what message or status, the write failing, the call failing or timing out, and what the caller sees each time.

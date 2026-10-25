@@ -1,0 +1,81 @@
+# A one-field change (ADR 0124 addendum B-once): an order may say the date it must arrive by.
+# The field deliverBy flows through the entry, a new validation, the write (as the column
+# deliver_by) and the response, so each of the four tasks carries it. storiesFromDeltas's output,
+# as data, so the checks, the story file and the bench draft are tested without an estate.
+# Invented: the Forge estate.
+- id: s1-deliver-by
+  repo: forge-orders
+  flow: forge-orders.place-order
+  name: A client places an order
+  change: modify
+  entry: POST /orders
+  before:
+    - "1. entry: OrderController.place receives the new order (forge-orders:src/main/java/forge/orders/OrderController.java:9)"
+    - "2. write: The order is inserted (forge-orders:src/main/java/forge/orders/OrderController.java:13)"
+    - "3. respond: 201 Created with the saved order (forge-orders:src/main/java/forge/orders/OrderController.java:14)"
+  after:
+    - "1. entry, changed by task 1.1: OrderController.place receives the new order with its deliverBy"
+    - "2. validate, added by task 1.2: deliverBy is a date after today"
+    - "3. write, changed by task 1.3: The order is inserted with deliver_by"
+    - "4. respond, changed by task 1.4: 201 Created with the saved order and its deliverBy"
+  kept: []
+  dependsOn: []
+  tasks:
+    - id: "1.1"
+      story: s1-deliver-by
+      repo: forge-orders
+      flow: forge-orders.place-order
+      op: change
+      position: 1
+      kind: entry
+      title: "Change the entry step: OrderController.place receives the new order with its deliverBy"
+      what: OrderController.place receives the new order with its deliverBy
+      fields: [deliverBy]
+      evidence:
+        - forge-orders:src/main/java/forge/orders/OrderController.java:9
+    - id: "1.2"
+      story: s1-deliver-by
+      repo: forge-orders
+      flow: forge-orders.place-order
+      op: add
+      position: 2
+      kind: validate
+      title: "Add the validate step: deliverBy is a date after today"
+      what: deliverBy is a date after today
+      fields: [deliverBy]
+      evidence:
+        - forge-orders:src/main/java/forge/orders/OrderController.java:10
+      placed: given
+    - id: "1.3"
+      story: s1-deliver-by
+      repo: forge-orders
+      flow: forge-orders.place-order
+      op: change
+      position: 3
+      kind: write
+      title: "Change the write step: The order is inserted with deliver_by"
+      what: The order is inserted with deliver_by
+      fields: [deliver_by]
+      evidence:
+        - forge-orders:src/main/java/forge/orders/OrderController.java:13
+      store: "forge-orders-db.orders: deliver_by"
+      data:
+        table: forge-orders-db.orders
+        new: false
+        added: [deliver_by]
+        types: { deliver_by: date }
+        classification: { deliver_by: internal }
+        migration: V5__add_deliver_by.sql
+        migrationFile: V5__add_deliver_by.sql
+    - id: "1.4"
+      story: s1-deliver-by
+      repo: forge-orders
+      flow: forge-orders.place-order
+      op: change
+      position: 4
+      kind: respond
+      title: "Change the respond step: 201 Created with the saved order and its deliverBy"
+      what: 201 Created with the saved order and its deliverBy
+      fields: [deliverBy]
+      evidence:
+        - forge-orders:src/main/java/forge/orders/OrderController.java:14

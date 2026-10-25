@@ -115,6 +115,8 @@ export function splitCriterion(text: string): {
   then: string;
   ref?: { file: string; line: number };
 } {
+  // B-once: the story file notes the other tasks a criterion accepts after it; not its words.
+  text = text.replace(/\s*\(also accepts tasks? [^()]*\)\s*$/i, "");
   const m = GWT.exec(text.trim());
   if (!m) return { given: "", when: "", then: text.trim().replace(/\.$/, "") };
   return {

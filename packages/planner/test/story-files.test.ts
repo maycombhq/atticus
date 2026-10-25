@@ -235,6 +235,36 @@ describe("a task names the files its change goes into (problem 2)", () => {
       why: "where table forge-orders-db.orders and its columns are",
     });
   });
+
+  it("a task's context holds the criteria written on another task that accept it too (B-once)", async () => {
+    const dir = await root();
+    const run = { now: NOW };
+    expect(
+      (await featureStage(dir, CHANGE, { ...run, runtime: assistant(fixture("placed.yaml")) }))
+        .state,
+    ).toBe("done");
+    expect(
+      (await architectureStage(dir, CHANGE, { ...run, runtime: assistant(fixture("deltas.yaml")) }))
+        .state,
+    ).toBe("done");
+    const accepted =
+      "Given an accepted verdict, when POST /orders is called, then the verdict lets the order go on to reserve stock";
+    const shared = fixture("answer.yaml").replace(
+      `${accepted}"\n            checks: [verdict]`,
+      `${accepted}"\n            checks: [verdict]\n            also: ["1.3"]`,
+    );
+    expect(shared).toContain('also: ["1.3"]');
+    expect((await storiesStage(dir, CHANGE, { runtime: assistant(shared), now: NOW })).state).toBe(
+      "done",
+    );
+    const c = await taskContext(dir, CHANGE, "1.3");
+    expect(c.criteria).toEqual([
+      "Given an accepted order, when it is saved, then the orders row holds sku, quantity and fraud_verdict",
+      "Given the insert fails, when the order is saved, then 500 and no orders row holds the order's fraud_verdict",
+      accepted,
+    ]);
+    expect(c.prompt).toContain(`- ${accepted} (checks verdict)`);
+  });
 });
 
 describe("the stories prompt carries the cited code (problem 3)", () => {
