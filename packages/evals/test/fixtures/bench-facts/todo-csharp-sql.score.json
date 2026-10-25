@@ -204,6 +204,7 @@
       "screens": 1,
       "screenFields": 1,
       "batchJobs": 0,
+      "keyPatterns": 0,
       "flows": 1
     }
   },

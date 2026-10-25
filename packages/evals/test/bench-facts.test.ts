@@ -294,7 +294,7 @@ describe("bench: an assistant's facts file, projected and scored", () => {
       total: 16,
       verified: 16,
       byKind: { entry: 3, call: 1, store: 1, field: 6, deploy: 1, config: 3, flow: 1 },
-      left: { screens: 1, screenFields: 1, batchJobs: 0, flows: 1 },
+      left: { screens: 1, screenFields: 1, batchJobs: 0, keyPatterns: 0, flows: 1 },
     });
     expect(s.issues).toEqual([]);
   });
@@ -496,6 +496,19 @@ deploys:
     }),
   ];
   got.push(
+    // no reference lists key-value stores' keys (references list tables): left out and counted
+    fact({
+      kind: "store",
+      id: "cache-basket",
+      store: "redis",
+      storeType: "redis",
+      name: "basket:{id}",
+      op: "write",
+      tableKind: "key-pattern",
+      cite: cite("src/Basket.cs", 20, "basket:"),
+    }),
+  );
+  got.push(
     // no reference lists scheduled jobs: left out and counted, like screens
     fact({
       kind: "entry",
@@ -507,7 +520,7 @@ deploys:
   );
   it("compares Query.field with field, and a platform with or without its cloud's prefix", () => {
     const s = scoreFacts(ref, got);
-    expect(s.facts.left).toMatchObject({ batchJobs: 1 });
+    expect(s.facts.left).toMatchObject({ batchJobs: 1, keyPatterns: 1 });
     expect(s.kinds.serves).toMatchObject({ found: 2, missed: [], wrong: [] });
     expect(s.kinds.deploys).toMatchObject({ found: 1, missed: [], wrong: [] });
   });

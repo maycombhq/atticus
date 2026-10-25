@@ -509,7 +509,13 @@ export interface FactsScore extends RepoScore {
      * fields of screens, scheduled jobs (no reference lists them) and flows (scored against
      * bench/flows, not here).
      */
-    left: { screens: number; screenFields: number; batchJobs: number; flows: number };
+    left: {
+      screens: number;
+      screenFields: number;
+      batchJobs: number;
+      keyPatterns: number;
+      flows: number;
+    };
   };
   /** What the projection refused or couldn't join (a dangling reference), as it said it. */
   issues: { factId?: string; code: string; message: string }[];
@@ -537,7 +543,11 @@ export function scoreFacts(ref: BenchReference, facts: readonly Fact[]): FactsSc
   const jobs = new Set(
     facts.filter((f) => f.kind === "entry" && f.entryType === "batch-job").map((f) => f.id),
   );
-  const leftOut = new Set([...screenFields.map((f) => f.id), ...jobs]);
+  // References list tables and collections, not a key-value store's keys: left out and counted.
+  const keys = new Set(
+    facts.filter((f) => f.kind === "store" && f.tableKind === "key-pattern").map((f) => f.id),
+  );
+  const leftOut = new Set([...screenFields.map((f) => f.id), ...jobs, ...keys]);
   const kept = facts.filter((f) => !screens.has(f.id) && !leftOut.has(f.id) && f.kind !== "flow");
   const { records, issues, ids } = projectFacts(kept);
   const soap = new Set(
@@ -557,6 +567,7 @@ export function scoreFacts(ref: BenchReference, facts: readonly Fact[]): FactsSc
         screens: screens.size,
         screenFields: screenFields.length,
         batchJobs: jobs.size,
+        keyPatterns: keys.size,
         flows: byKind.flow,
       },
     },
