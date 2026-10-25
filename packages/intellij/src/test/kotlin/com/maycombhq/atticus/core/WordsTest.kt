@@ -19,6 +19,21 @@ class WordsTest {
         assertEquals("Scan the repos", s("scan"))
         assertEquals("Scan forge-api", s("scan", repo = "forge-api"))
         assertEquals("Check the repo's spec", s("spec-check"))
+        // Atticus 2's first step (ADR 0124): run in the IDE, its title was the why sentence, shown twice.
+        assertEquals("Read forge-portal-ui's code into facts with Copilot", s("map", repo = "forge-portal-ui"))
+    }
+
+    @Test
+    fun `every step VS Code has words for has the same words here`() {
+        val words = java.nio.file.Files.readString(java.nio.file.Path.of("").toAbsolutePath().parent.resolve("vscode/src/words.ts"))
+        val table = words.substringAfter("const STEP_TITLES").substringBefore("\n};")
+        val steps = Regex("""^\s+"?([a-z-]+)"?: \(""", RegexOption.MULTILINE).findAll(table).map { it.groupValues[1] }.toList()
+        assertEquals(true, steps.size > 20, "read VS Code's step titles")
+        // "Because" is the first sentence of why: the words for a step this doesn't know.
+        assertEquals(emptyList<String>(), steps.filter { s(it) == "Because" }, "steps VS Code names and IntelliJ doesn't")
+        assertEquals("Plan add-limit, a small change, in one step", s("small", change = "add-limit"))
+        assertEquals("Find what add-limit needs from the organisation", s("needs", change = "add-limit"))
+        assertEquals("Check the knowledge items your changes use", s("verify-knowledge"))
     }
 
     @Test

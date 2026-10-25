@@ -38,6 +38,8 @@ object Parity {
             "atticus.critic" to run,
             "atticus.survey" to run,
             "atticus.verify" to run,
+            // The older scanner's check (`atticus scan verify`), kept beside the facts' verify.
+            "atticus.scanverify" to run,
             "atticus.spec" to run,
             "atticus.feature" to run,
             "atticus.architecture" to run,

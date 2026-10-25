@@ -4,7 +4,7 @@ The Atticus app in a tool window, every `atticus` command from a menu, and the n
 
 ## What you need
 
-- IntelliJ IDEA 2025.3.1 or later (built against 2026.2). Other JetBrains IDEs on the same platform should work, but haven't been tried.
+- IntelliJ IDEA 2025.3.1 or later. The Plugin Verifier finds it compatible with 2025.3.6 and 2026.2.3, with no deprecated or experimental API. Other JetBrains IDEs on the same platform should work, but haven't been tried.
 - The `atticus` command line on your PATH, or its path in **Settings → Tools → Atticus**. Node 22.13 or later. [How to install it](../../docs/guide/install.md), including the offline bundle.
 - For the AI steps: GitHub Copilot in IntelliJ, and the prompt files in your metarepo (`atticus assistant-files`).
 
@@ -96,12 +96,13 @@ cd packages/intellij
 ./gradlew test buildPlugin        # gradlew.bat on Windows cmd
 ```
 
-The plugin is written to `build/distributions/atticus-intellij-<version>.zip`.
+The plugin is written to `build/distributions/atticus-intellij-<version>.zip`. Its version is set in `build.gradle.kts` (0.1.0); it doesn't follow the command line's version.
 
-- **Another IDE folder:** pass `-Patticus.ideaPath=<folder>`, or set `atticus.ideaPath` in `~/.gradle/gradle.properties`. When that folder doesn't exist, the build downloads IntelliJ IDEA Community 2025.3.6 instead (about 1 GB), and needs a JDK 21.
-- **Checking the plugin against the IDE:** run `./gradlew verifyPlugin "-Porg.gradle.java.installations.paths=<IDE folder>/jbr"`. It uses the local IDE, but it downloads about 550 MB of Marketplace plugins into `~/.pluginVerifier`, which you can delete afterwards.
+- **Another IDE folder:** pass `-Patticus.ideaPath=<folder>`, or set `atticus.ideaPath` in `~/.gradle/gradle.properties`. When that folder doesn't exist, the build downloads IntelliJ IDEA 2025.3.6 instead (about 1.5 GB, 4 GB unpacked) and needs a JDK 21. It is the one IntelliJ IDEA distribution, free without a licence: IntelliJ IDEA Community isn't published on its own from 2025.3.
+- **Checking the plugin against the IDE:** `./gradlew verifyPlugin`. With a local IDE it checks that one (add `"-Porg.gradle.java.installations.paths=<IDE folder>/jbr"`). Without one, pick the IntelliJ IDEA versions with `-Patticus.verifyIdes=2025.3.6,2026.2.3`; left out, it checks the Marketplace's recommended set, four IDEs of about 4 GB each unpacked. The verifier runs `-offline`: the plugin needs nothing from the Marketplace, so none of its plugins are downloaded.
+- **Running it:** `./gradlew runIde -Patticus.openProject=<metarepo>` starts a sandbox IDE with the plugin, that folder open. `./gradlew runIdeForUiTests` does the same with JetBrains' Remote Robot server on 127.0.0.1:8082 (`/hierarchy` shows the UI's tree, `/js/retrieveAny` runs a script in the IDE). The sandbox's settings are in `.intellijPlatform/sandbox/`; put `options/atticus.xml` in its `config_runIdeForUiTests` folder to set the path to `atticus` before it starts.
 
-The first build downloads Gradle 9.7.1 (about 130 MB, plus about 30 MB more once unpacked), the IntelliJ Platform Gradle Plugin, the Kotlin compiler and JUnit. Together that is about 600 MB in `~/.gradle`.
+The first build downloads Gradle 9.7.1 (about 130 MB, plus about 30 MB more once unpacked), the IntelliJ Platform Gradle Plugin, the Kotlin compiler and JUnit. Together that is about 600 MB in `~/.gradle`, plus the IDE when it is downloaded.
 
 The logic is in `src/main/kotlin/com/maycombhq/atticus/core`, with JUnit 5 tests in `src/test`. It covers:
 
@@ -116,7 +117,9 @@ None of it needs the IDE. The IDE parts, in `ide/`, only ask and show. The user-
 
 ## What it doesn't do yet
 
-- It has been compiled, its logic tested and the plugin built, but the WP6 pieces (the Waiting tab, the status bar, the answer dialog, the gutter, the searchable lists) haven't been run inside the IDE yet.
+- **What was run in an IDE** (IntelliJ IDEA 2025.3.6 on Linux, under Xvfb, with a practice metarepo open, on 2026-10-25): the plugin loads; the startup read (`next`, `waiting`, `watch`) fills the status bar; the tool window opens with its three tabs; the app starts on 127.0.0.1 with its token hidden in the Output tab and stops with the IDE; the Waiting tab reads `atticus waiting --json`; opening a file runs `atticus cites` for the gutter; all 18 actions register (11 in the Tools menu, 2 in the Project view's menu); Next Step shows its dialog with the slash command, the hand-off and the missing prompt file; Run a Command… lists the commands; the settings page saves the path and Check finds `atticus`. No exception from the plugin in `idea.log`.
+- **Still for a person to click through:** the app's page in the panel (JCEF suspends itself when the IDE runs as root, as it did here, so the page wasn't seen; it was served), a Waiting tree with rows and the answer dialog, the gutter's marks and their popup, Run a Command… taken through its arguments to a run, Approve and run, a hand-off in the Run tool window, Attach to Atticus Change… and Add to Atticus Knowledge on real files, Start a Task in Copilot, and the panels with no metarepo or no `atticus`. And on Windows and macOS.
+- Run a Command… lists every command by area. It doesn't yet list the twelve first, as VS Code does (`legacy` in `atticus commands --json`).
 - Copilot in IntelliJ offers plugins no way to open its chat or run a slash command, so an AI step is copied, or run on Atticus's configured model, or as a hand-off in a console.
 - There is one native tree, Waiting on you; repos, changes and knowledge are the app's screens in the tool window.
 - The gutter reads files in the metarepo's own workspace (`workspace/<repo>/`, a change's worktree, another branch's checkout) or an adopted repo; a code repo opened as its own project, away from the metarepo, gets no marks.

@@ -11,6 +11,7 @@ import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.util.Key
+import com.intellij.util.io.BaseOutputReader
 import com.maycombhq.atticus.core.Catalog
 import com.maycombhq.atticus.core.CommandLine
 import com.maycombhq.atticus.core.Commands
@@ -114,7 +115,11 @@ class AtticusApp(private val project: Project) : Disposable {
         log.line("> ${CommandLine.text(args)}")
         val h =
             try {
-                KillableProcessHandler(AtticusCli.commandLine(root.toString(), args))
+                // The app prints its address, then little for hours: read it as a mostly silent
+                // process, as the platform asks of a long-running server (seen in idea.log).
+                object : KillableProcessHandler(AtticusCli.commandLine(root.toString(), args)) {
+                    override fun readerOptions(): BaseOutputReader.Options = BaseOutputReader.Options.forMostlySilentProcess()
+                }
             } catch (e: ExecutionException) {
                 log.line("Couldn't start atticus: ${e.message}")
                 set(AppState.Stopped("Couldn't start atticus: ${e.message}"))

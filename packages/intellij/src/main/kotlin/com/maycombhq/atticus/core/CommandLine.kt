@@ -70,7 +70,9 @@ class CommandLine(
     private fun onPath(name: String): Path? {
         // Windows runs only a name with an extension (PATHEXT): npm's extension-less `atticus` beside
         // atticus.cmd is a shell script for Git Bash, not something to start.
-        val exts = if (!windows || name.contains('.')) listOf("") + pathExt else pathExt
+        // Windows matches an extension in any case (atticus.cmd for .CMD); try it as PATHEXT writes
+        // it and in lower case, so a case-sensitive disk finds the same file.
+        val exts = (if (!windows || name.contains('.')) listOf("") + pathExt else pathExt).flatMap { listOf(it, it.lowercase()) }.distinct()
         for (d in pathDirs) {
             for (e in exts) {
                 val f = runCatching { Path.of(d, name + e) }.getOrNull() ?: continue
