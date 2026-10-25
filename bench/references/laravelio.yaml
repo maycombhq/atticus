@@ -1,0 +1,220 @@
+# Written by reading the code at the pinned commit, not from an Atticus scan.
+repo: laravelio
+commit: 2cf05064963c92737865dc3243cd7ff1a1d4bcba
+covers: [serves, calls, stores, deploys]
+notes: >-
+  Laravel.io, the Laravel community portal: a Laravel 11 app (Blade, Livewire, a Filament admin
+  panel, Eloquent on MySQL, Sanctum API tokens, Scout with Algolia). Serves: routes/web.php (no
+  prefix) and routes/api.php, which bootstrap/app.php's withRouting loads under Laravel's default
+  "api" prefix, so the API routes are /api/articles... . Route::prefix('forum'), prefix('articles')
+  and prefix('admin') groups add their prefix; optional parameters ({paste?}, {username?}) are
+  written as {paste} and {username}. Route::view pages are GET entries.
+  Route::redirect('/dashboard', '/user') registers the redirect for any method, so it has no method
+  key. Route::feeds() (spatie/laravel-feed) serves the two feeds config/feed.php declares with the
+  app's own items, GET /forum/feed and GET /articles/feed, cited at their url keys. The Filament
+  panel (app/Providers/Filament/AdminPanelProvider.php, path admin) serves its Dashboard page at GET
+  /admin and one list page per resource at GET /admin/<slug>, the slug being the model name in kebab
+  case and plural (articles, replies, threads, users), cited at each resource's getPages route('/').
+  Left out as framework or library endpoints: the /up health route (withRouting health), Filament's
+  own login page (->login()), Livewire's /livewire/* endpoints, Sanctum's /sanctum/csrf-cookie, and
+  spatie/laravel-login-link's local-only route. Calls: four Http facade calls with literal URLs:
+  Unsplash GET /photos/{id} (SyncArticleImage job; its follow-up GET to the download_location the
+  response returns is a runtime URL and left out), Fathom Analytics GET /v1/aggregations (the
+  UpdateArticleViewCounts console command; a call made from a scheduled command is still a call),
+  and GitHub GET /user/{id} on api.github.com and GET /u/{id} on avatars.githubusercontent.com
+  (App\Social\GithubUserApi). Left out of calls: Socialite's GitHub OAuth requests (library
+  mechanics), the Bluesky and Telegram notification channels and Algolia through Scout (SDK and
+  channel libraries with no path in the repo), mail (SMTP, Resend), Nightwatch, and the embed/embed
+  oEmbed fetches of URLs users paste (runtime URLs). Stores: the app's tables, cited at their CREATE
+  TABLE in database/schema/mysql-schema.sql (the squashed schema; the eleven later migrations only
+  add columns and indexes, except the queue and cache tables below): the models' tables (articles,
+  replies, threads, users, likes, subscriptions, tags), the pivot tables their relations name
+  (blocked_users on User::blockedUsers, spam_reports on the morphToMany spam relations of Thread and
+  Reply, taggables for the taggable morph relation), and two framework-defined tables the app's own
+  code reads and writes: notifications (the database channel of three notifications, read by the
+  notifications page) and personal_access_tokens (Sanctum tokens created and deleted by the
+  CreateApiToken and DeleteApiToken jobs). Framework bookkeeping tables are ignored (neither found
+  nor wrong): migrations, failed_jobs, jobs, job_batches, cache, cache_locks, sessions (the session
+  and cache drivers are file in .env.example), password_resets (the password broker's table, named
+  by AUTH_PASSWORD_RESET_TOKEN_TABLE) and spatie/laravel-schedule-monitor's
+  monitored_scheduled_tasks and monitored_scheduled_task_log_items. Deploys: Laravel Forge
+  provisions and deploys the servers: herd.yml names the Forge site, the README credits Forge and
+  Envoyer, and the tests workflow's deploy job posts to the deploy hook; recorded as laravel-forge.
+  There is no container or cloud platform config.
+serves:
+  - { type: rest, method: GET, path: /forum/feed, at: "config/feed.php:22" }
+  - { type: rest, method: GET, path: /articles/feed, at: "config/feed.php:72" }
+  - { type: rest, method: GET, path: /, at: "routes/web.php:36" }
+  - { type: rest, method: GET, path: /rules, at: "routes/web.php:37" }
+  - { type: rest, method: GET, path: /terms, at: "routes/web.php:38" }
+  - { type: rest, method: GET, path: /privacy, at: "routes/web.php:39" }
+  - { type: rest, method: GET, path: "/bin/{paste}", at: "routes/web.php:40" }
+  - { type: rest, method: GET, path: "/articles/{article}/social.png", at: "routes/web.php:42" }
+  - { type: rest, method: GET, path: /login, at: "routes/web.php:45" }
+  - { type: rest, method: POST, path: /login, at: "routes/web.php:46" }
+  - { type: rest, method: POST, path: /logout, at: "routes/web.php:47" }
+  - { type: rest, method: GET, path: /register, at: "routes/web.php:50" }
+  - { type: rest, method: POST, path: /register, at: "routes/web.php:51" }
+  - { type: rest, method: GET, path: /password/reset, at: "routes/web.php:54" }
+  - { type: rest, method: POST, path: /password/email, at: "routes/web.php:55" }
+  - { type: rest, method: GET, path: "/password/reset/{token}", at: "routes/web.php:56" }
+  - { type: rest, method: POST, path: /password/reset, at: "routes/web.php:57" }
+  - { type: rest, method: GET, path: /email/verify, at: "routes/web.php:60" }
+  - { type: rest, method: GET, path: "/email/verify/{id}/{hash}", at: "routes/web.php:61" }
+  - { type: rest, method: POST, path: /email/resend, at: "routes/web.php:62" }
+  - { type: rest, method: GET, path: /login/github, at: "routes/web.php:65" }
+  - { type: rest, method: GET, path: /auth/github, at: "routes/web.php:66" }
+  - { type: rest, path: /dashboard, at: "routes/web.php:69" }
+  - { type: rest, method: GET, path: "/user/{username}", at: "routes/web.php:70" }
+  - { type: rest, method: PUT, path: "/users/{username}/block", at: "routes/web.php:71" }
+  - { type: rest, method: PUT, path: "/users/{username}/unblock", at: "routes/web.php:72" }
+  - { type: rest, method: GET, path: /notifications, at: "routes/web.php:75" }
+  - { type: rest, method: POST, path: /notifications/mark-as-read, at: "routes/web.php:76" }
+  - { type: rest, method: GET, path: /settings, at: "routes/web.php:79" }
+  - { type: rest, method: PUT, path: /settings, at: "routes/web.php:80" }
+  - { type: rest, method: DELETE, path: /settings, at: "routes/web.php:81" }
+  - { type: rest, method: PUT, path: /settings/password, at: "routes/web.php:82" }
+  - { type: rest, method: POST, path: /settings/github/connect, at: "routes/web.php:83" }
+  - { type: rest, method: POST, path: /settings/github/disconnect, at: "routes/web.php:84" }
+  - { type: rest, method: PUT, path: "/settings/users/{username}/unblock", at: "routes/web.php:85" }
+  - { type: rest, method: POST, path: /settings/api-tokens, at: "routes/web.php:86" }
+  - { type: rest, method: DELETE, path: /settings/api-tokens, at: "routes/web.php:87" }
+  - { type: rest, method: POST, path: /settings/notifications, at: "routes/web.php:88" }
+  - { type: rest, method: GET, path: /forum, at: "routes/web.php:92" }
+  - { type: rest, method: GET, path: /forum/create-thread, at: "routes/web.php:93" }
+  - { type: rest, method: POST, path: /forum/create-thread, at: "routes/web.php:94" }
+  - { type: rest, method: GET, path: "/forum/{thread}", at: "routes/web.php:96" }
+  - { type: rest, method: GET, path: "/forum/{thread}/edit", at: "routes/web.php:97" }
+  - { type: rest, method: PUT, path: "/forum/{thread}", at: "routes/web.php:98" }
+  - { type: rest, method: DELETE, path: "/forum/{thread}", at: "routes/web.php:99" }
+  - { type: rest, method: POST, path: "/forum/{thread}/lock", at: "routes/web.php:100" }
+  - {
+      type: rest,
+      method: PUT,
+      path: "/forum/{thread}/mark-solution/{reply}",
+      at: "routes/web.php:101",
+    }
+  - { type: rest, method: PUT, path: "/forum/{thread}/unmark-solution", at: "routes/web.php:102" }
+  - { type: rest, method: POST, path: "/forum/{thread}/subscribe", at: "routes/web.php:103" }
+  - { type: rest, method: POST, path: "/forum/{thread}/unsubscribe", at: "routes/web.php:104" }
+  - { type: rest, method: POST, path: "/forum/{thread}/mark-as-spam", at: "routes/web.php:105" }
+  - { type: rest, method: GET, path: "/forum/tags/{tag}", at: "routes/web.php:107" }
+  - { type: rest, method: POST, path: /replies, at: "routes/web.php:111" }
+  - { type: rest, method: DELETE, path: "/replies/{reply}", at: "routes/web.php:112" }
+  - { type: rest, method: POST, path: "/replies/{reply}/mark-as-spam", at: "routes/web.php:113" }
+  - { type: rest, method: GET, path: "/replyable/{id}/{type}", at: "routes/web.php:114" }
+  - {
+      type: rest,
+      method: GET,
+      path: "/subscriptions/{subscription}/unsubscribe",
+      at: "routes/web.php:117",
+    }
+  - { type: rest, method: GET, path: /articles/authored, at: "routes/web.php:122" }
+  - { type: rest, method: GET, path: /articles, at: "routes/web.php:123" }
+  - { type: rest, method: GET, path: /articles/create, at: "routes/web.php:124" }
+  - { type: rest, method: POST, path: /articles, at: "routes/web.php:125" }
+  - { type: rest, method: GET, path: "/articles/{article}", at: "routes/web.php:126" }
+  - { type: rest, method: GET, path: "/articles/{article}/edit", at: "routes/web.php:127" }
+  - { type: rest, method: PUT, path: "/articles/{article}", at: "routes/web.php:128" }
+  - { type: rest, method: DELETE, path: "/articles/{article}", at: "routes/web.php:129" }
+  - { type: rest, method: PUT, path: "/admin/users/{username}/ban", at: "routes/web.php:135" }
+  - { type: rest, method: PUT, path: "/admin/users/{username}/unban", at: "routes/web.php:136" }
+  - { type: rest, method: PUT, path: "/admin/articles/{article}/approve", at: "routes/web.php:139" }
+  - {
+      type: rest,
+      method: PUT,
+      path: "/admin/articles/{article}/disapprove",
+      at: "routes/web.php:140",
+    }
+  - { type: rest, method: PUT, path: "/admin/articles/{article}/decline", at: "routes/web.php:141" }
+  - { type: rest, method: PUT, path: "/admin/articles/{article}/pinned", at: "routes/web.php:142" }
+  - { type: rest, method: POST, path: /api/articles, at: "routes/api.php:7" }
+  - { type: rest, method: PUT, path: "/api/articles/{article}", at: "routes/api.php:8" }
+  - { type: rest, method: DELETE, path: "/api/articles/{article}", at: "routes/api.php:9" }
+  - {
+      type: rest,
+      method: GET,
+      path: /admin,
+      at: "app/Providers/Filament/AdminPanelProvider.php:32",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /admin/articles,
+      at: "app/Filament/Resources/Articles/ArticleResource.php:36",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /admin/replies,
+      at: "app/Filament/Resources/Replies/ReplyResource.php:38",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /admin/threads,
+      at: "app/Filament/Resources/Threads/ThreadResource.php:36",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /admin/users,
+      at: "app/Filament/Resources/Users/UserResource.php:36",
+    }
+calls:
+  - {
+      type: rest,
+      method: GET,
+      path: "/photos/{hero_image_id}",
+      to: unsplash,
+      at: "app/Jobs/SyncArticleImage.php:42",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /v1/aggregations,
+      to: fathom,
+      at: "app/Console/Commands/UpdateArticleViewCounts.php:113",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/user/{id}",
+      to: github-api,
+      at: "app/Social/GithubUserApi.php:13",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/u/{id}",
+      to: github-avatars,
+      at: "app/Social/GithubUserApi.php:21",
+    }
+stores:
+  - { table: articles, at: "database/schema/mysql-schema.sql:10" }
+  - { table: blocked_users, at: "database/schema/mysql-schema.sql:38" }
+  - { table: likes, at: "database/schema/mysql-schema.sql:67" }
+  - { table: notifications, at: "database/schema/mysql-schema.sql:127" }
+  - { table: personal_access_tokens, at: "database/schema/mysql-schema.sql:153" }
+  - { table: replies, at: "database/schema/mysql-schema.sql:172" }
+  - { table: spam_reports, at: "database/schema/mysql-schema.sql:213" }
+  - { table: subscriptions, at: "database/schema/mysql-schema.sql:229" }
+  - { table: taggables, at: "database/schema/mysql-schema.sql:247" }
+  - { table: tags, at: "database/schema/mysql-schema.sql:263" }
+  - { table: threads, at: "database/schema/mysql-schema.sql:276" }
+  - { table: users, at: "database/schema/mysql-schema.sql:309" }
+deploys:
+  - { platform: laravel-forge, at: "herd.yml:2" }
+ignore:
+  stores:
+    - migrations
+    - failed_jobs
+    - jobs
+    - job_batches
+    - cache
+    - cache_locks
+    - sessions
+    - password_resets
+    - password_reset_tokens
+    - monitored_scheduled_tasks
+    - monitored_scheduled_task_log_items

@@ -1,0 +1,286 @@
+# Written by reading the code at the pinned commit, not from an Atticus scan.
+repo: kotlinconf
+commit: 907ce238e1ffe2472991eeb2d2bfa386bdb4ea8f
+covers: [serves, calls, stores, deploys]
+notes: >-
+  The KotlinConf app: a Ktor backend (backend/, Koin, Exposed on Postgres with its own SQL migration
+  runner) and Kotlin Multiplatform clients (app/shared, used by the Android, iOS, desktop and web
+  apps) plus a Compose HTML admin SPA (app/adminApp) that the backend serves. Serves:
+  backend/RoutesModule.kt registers /healthz (an app-declared route, kept), the year-agnostic time,
+  admin (POST /sessionizeSync) and config routes, and the year-based routes inside route("/{year}"),
+  so those paths start /{year}/ (vote and feedback add a nested route()). Each entry is cited at its
+  get()/post() line, or at the route("vote") / route("feedback") line for the bare get {} and post
+  {} inside it. Left out: the admin SPA's static assets under /admin (staticResources, a static
+  shell like a gateway's static folder). Calls: the backend's Ktor HttpClient fetches the Sessionize
+  schedule (sessionize.url in application.yaml, GET /api/v2/2r0suvtg/view/All, cited at the config
+  line that holds the path; called on a timer and by POST /sessionizeSync) and proxies speaker
+  images (GET /image/{imageId} on sessionize.imagesUrl, cited at the call). The shared client
+  (ApplicationApi and YearlyApi in app/shared/.../network) calls the backend at URLs.PRODUCTION_URL
+  (or staging) with encodedPath "time", "config" or "$year/<path>", so its paths are /time, /config
+  and /{year}/...; the admin SPA (AdminApi.kt) calls its own origin's /{year}/conference,
+  /{year}/vote/all and /{year}/feedback/summary (a front end calling its back end: calls, to
+  backend). GET /{year}/conference is called by both clients and listed once per caller. The shared
+  client also downloads assets with downloadAsset(path): the five document paths are literals in
+  ConferenceService.kt ("documents/app-terms.md"...), so they are one call to the route they hit,
+  GET /{year}/documents/{name}, cited at the literal list; the literal forms
+  (/{year}/documents/app-terms.md...) are ignored rather than wrong. Map downloads take their paths
+  from the conference-info data the backend serves (runtime data) and are ignored, as are images the
+  UI loads by URL from data (partner logos, speaker photos). Not calls: the app's links to web pages
+  (URLs.kt: homepage, stores, social sites) and the debug-only fake data. Stores: the four Exposed
+  tables (object names Users, Votes, Feedback, SignedPolicies; the V001 to V004 migrations create
+  them, V003 renaming SignedPolicies to lower case), cited at the table objects. The migration
+  runner's schema_migrations table is bookkeeping and ignored. Deploys: the backend on Heroku
+  (Procfile web: java -jar backend.jar -port=$PORT; app.json's GRADLE_TASK "that Heroku will run"),
+  and the web app on GitHub Pages (.github/workflows/web-deploy.yml, actions/deploy-pages). The
+  mobile and desktop apps are store and desktop distributions, not deploy platforms.
+serves:
+  - {
+      type: rest,
+      method: GET,
+      path: /healthz,
+      at: "backend/src/main/kotlin/org/jetbrains/kotlinconf/backend/RoutesModule.kt:22",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /time,
+      at: "backend/src/main/kotlin/org/jetbrains/kotlinconf/backend/routes/TimeRoutes.kt:21",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/time/{timestamp}",
+      at: "backend/src/main/kotlin/org/jetbrains/kotlinconf/backend/routes/TimeRoutes.kt:24",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: /sessionizeSync,
+      at: "backend/src/main/kotlin/org/jetbrains/kotlinconf/backend/routes/AdminRoutes.kt:17",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /config,
+      at: "backend/src/main/kotlin/org/jetbrains/kotlinconf/backend/routes/ConfigRoutes.kt:17",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/{year}/sign",
+      at: "backend/src/main/kotlin/org/jetbrains/kotlinconf/backend/routes/UserRoutes.kt:24",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/{year}/sign",
+      at: "backend/src/main/kotlin/org/jetbrains/kotlinconf/backend/routes/UserRoutes.kt:39",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/{year}/conference",
+      at: "backend/src/main/kotlin/org/jetbrains/kotlinconf/backend/routes/ScheduleRoutes.kt:28",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/{year}/vote",
+      at: "backend/src/main/kotlin/org/jetbrains/kotlinconf/backend/routes/VotingRoutes.kt:40",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/{year}/vote",
+      at: "backend/src/main/kotlin/org/jetbrains/kotlinconf/backend/routes/VotingRoutes.kt:40",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/{year}/vote/all",
+      at: "backend/src/main/kotlin/org/jetbrains/kotlinconf/backend/routes/VotingRoutes.kt:79",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/{year}/feedback",
+      at: "backend/src/main/kotlin/org/jetbrains/kotlinconf/backend/routes/VotingRoutes.kt:87",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/{year}/feedback/summary",
+      at: "backend/src/main/kotlin/org/jetbrains/kotlinconf/backend/routes/VotingRoutes.kt:111",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/{year}/sessionize/image/{imageId}",
+      at: "backend/src/main/kotlin/org/jetbrains/kotlinconf/backend/routes/ImageProxyRoutes.kt:20",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/{year}/conference-info",
+      at: "backend/src/main/kotlin/org/jetbrains/kotlinconf/backend/routes/ConferenceInfoRoutes.kt:31",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/{year}/partner-logos/{filename}",
+      at: "backend/src/main/kotlin/org/jetbrains/kotlinconf/backend/routes/ConferenceInfoRoutes.kt:37",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/{year}/maps/{filename}",
+      at: "backend/src/main/kotlin/org/jetbrains/kotlinconf/backend/routes/ConferenceInfoRoutes.kt:44",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/{year}/golden-kodee",
+      at: "backend/src/main/kotlin/org/jetbrains/kotlinconf/backend/routes/GoldenKodeeRoutes.kt:22",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/{year}/documents/{name}",
+      at: "backend/src/main/kotlin/org/jetbrains/kotlinconf/backend/routes/DocumentsRoutes.kt:23",
+    }
+calls:
+  - {
+      type: rest,
+      method: GET,
+      path: /api/v2/2r0suvtg/view/All,
+      to: sessionize,
+      at: "backend/src/main/resources/application.yaml:14",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/image/{imageId}",
+      to: sessionize,
+      at: "backend/src/main/kotlin/org/jetbrains/kotlinconf/backend/services/SessionizeService.kt:64",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /time,
+      to: backend,
+      at: "app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/network/ApplicationApi.kt:36",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /config,
+      to: backend,
+      at: "app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/network/ApplicationApi.kt:41",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/{year}/conference",
+      to: backend,
+      at: "app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/network/YearlyApi.kt:46",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/{year}/conference-info",
+      to: backend,
+      at: "app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/network/YearlyApi.kt:50",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/{year}/golden-kodee",
+      to: backend,
+      at: "app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/network/YearlyApi.kt:54",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/{year}/documents/{name}",
+      to: backend,
+      at: "app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/ConferenceService.kt:512",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/{year}/sign",
+      to: backend,
+      at: "app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/network/YearlyApi.kt:64",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/{year}/sign",
+      to: backend,
+      at: "app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/network/YearlyApi.kt:72",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/{year}/vote",
+      to: backend,
+      at: "app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/network/YearlyApi.kt:78",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/{year}/feedback",
+      to: backend,
+      at: "app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/network/YearlyApi.kt:86",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/{year}/vote",
+      to: backend,
+      at: "app/shared/src/commonMain/kotlin/org/jetbrains/kotlinconf/network/YearlyApi.kt:93",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/{year}/conference",
+      to: backend,
+      at: "app/adminApp/src/jsMain/kotlin/org/jetbrains/kotlinconf/admin/AdminApi.kt:31",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/{year}/vote/all",
+      to: backend,
+      at: "app/adminApp/src/jsMain/kotlin/org/jetbrains/kotlinconf/admin/AdminApi.kt:33",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/{year}/feedback/summary",
+      to: backend,
+      at: "app/adminApp/src/jsMain/kotlin/org/jetbrains/kotlinconf/admin/AdminApi.kt:35",
+    }
+stores:
+  - {
+      table: users,
+      at: "backend/src/main/kotlin/org/jetbrains/kotlinconf/backend/schema/Users.kt:6",
+    }
+  - {
+      table: votes,
+      at: "backend/src/main/kotlin/org/jetbrains/kotlinconf/backend/schema/Votes.kt:7",
+    }
+  - {
+      table: feedback,
+      at: "backend/src/main/kotlin/org/jetbrains/kotlinconf/backend/schema/Feedback.kt:7",
+    }
+  - {
+      table: signedpolicies,
+      at: "backend/src/main/kotlin/org/jetbrains/kotlinconf/backend/schema/SignedPolicies.kt:9",
+    }
+deploys:
+  - { platform: heroku, at: "Procfile:1" }
+  - { platform: github-pages, at: ".github/workflows/web-deploy.yml:56" }
+ignore:
+  calls: ["GET /{}/documents/*.md", "GET /{}/maps/*", "GET /{}/partner-logos/*"]
+  stores: [schema_migrations]

@@ -1,0 +1,240 @@
+# Written by reading the code at the pinned commit, not from an Atticus scan.
+repo: django-styleguide
+commit: a70ef43d7df03706c1211d4fcfd70b4b0120ba1e
+covers: [serves, calls, stores, deploys]
+notes: >-
+  HackSoft's Django Styleguide example: a Django project with Django REST Framework APIViews, Celery
+  (RabbitMQ broker, django-db results, django-celery-beat), Postgres, S3 or local file uploads and
+  Google OAuth2 login examples. Serves: config/urls.py mounts styleguide_example/api/urls.py at
+  "api/", which includes auth/, users/, errors/, files/ and google-oauth2/; the nested include()
+  lists add session/, jwt/, upload/, upload/direct/ and google-oauth2/login/raw/ and login/sdk/.
+  Each path is the joined prefixes plus the route, cited at the innermost path() line, with Django's
+  trailing slash kept as written and <int:user_id> written as {user_id}. The method is each method
+  the APIView defines (get, post), so UserSessionLogoutApi (get and post) is two entries at one
+  line; users update is a POST, as the view defines. The errors/ trigger endpoints and the Google
+  login callback and redirect views of both flows (raw and sdk) are routed and listed. Left out:
+  Django's admin at /admin/ (framework), the media static() route (DEBUG only) and the debug
+  toolbar's /__debug__/ routes (DEBUG only); the custom AdminSite's /admin/setup-2fa/ and
+  /admin/confirm-2fa/ are not routed, because CustomAdminConfig is commented out in INSTALLED_APPS
+  (config/django/base.py:60); the google_login_server_flow views.py classes are not routed (the urls
+  import the apis.py classes). Calls: the raw Google OAuth2 flow posts the authorization code to
+  https://oauth2.googleapis.com/token and both flows GET
+  https://www.googleapis.com/oauth2/v3/userinfo with requests (the URLs are class constants; each
+  call is cited at its requests line). The sdk flow's token exchange goes through
+  google_auth_oauthlib's Flow (library, left out; its path is the raw flow's anyway). The
+  accounts.google.com authorization URL is a browser redirect, not a call. Left out of calls: S3
+  through boto3 and django-storages (generate_presigned_post makes no request; uploads go through
+  the SDK), mail over SMTP (Mailtrap settings), Sentry, and Celery tasks sent to RabbitMQ
+  (background jobs on a task queue, not events with a topic: no event facts). Stores: Django names
+  each table <app label>_<model name, lower case> (no model sets db_table; every app's label is its
+  last module name), cited at the model class: the custom user users_baseuser and its
+  PermissionsMixin many-to-many tables users_baseuser_groups and users_baseuser_user_permissions
+  (cited at the fields in the users migration), common's simplemodel, randommodel and the
+  randommodel_simple_objects many-to-many table, emails_email, files_file, the four testing_examples
+  tables, and the blog_examples tables (the four Timestamps models, SomeDataModel in
+  f_expressions/models.py and UserTwoFactorAuthData in admin_2fa/models.py, all created by the
+  blog_examples migrations). Of the tables of Django and third-party apps, the three the app's own
+  code writes are listed: the setup_periodic_tasks command deletes and creates django_celery_beat's
+  IntervalSchedule, CrontabSchedule and PeriodicTask rows (cited at its delete lines). The rest are
+  framework bookkeeping and ignored (neither found nor wrong): auth_*, django_session (written by
+  Django's login, not the app's code), django_admin_log, django_content_type, django_migrations,
+  django_celery_results_* and the other django_celery_beat_* tables. Deploys: Heroku: the Procfile
+  (release, web, worker, beat), runtime.txt, the root requirements.txt and the README's Heroku
+  section; the workflow's deploy_to_heroku job (git push to git.heroku.com) is switched off with if:
+  false, but the target is still Heroku. The README also says the project is ready for AWS ECS, but
+  there is no ECS configuration, only docker/production.Dockerfile, so ecs is ignored (neither found
+  nor wrong); docker-compose.yml is local development (runserver, source mounted) and not a
+  deployment.
+serves:
+  - {
+      type: rest,
+      method: POST,
+      path: /api/auth/session/login/,
+      at: "styleguide_example/authentication/urls.py:17",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /api/auth/session/logout/,
+      at: "styleguide_example/authentication/urls.py:18",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: /api/auth/session/logout/,
+      at: "styleguide_example/authentication/urls.py:18",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: /api/auth/jwt/login/,
+      at: "styleguide_example/authentication/urls.py:29",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: /api/auth/jwt/logout/,
+      at: "styleguide_example/authentication/urls.py:30",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /api/auth/me/,
+      at: "styleguide_example/authentication/urls.py:36",
+    }
+  - { type: rest, method: GET, path: /api/users/, at: "styleguide_example/users/urls.py:6" }
+  - { type: rest, method: POST, path: /api/users/create/, at: "styleguide_example/users/urls.py:7" }
+  - {
+      type: rest,
+      method: GET,
+      path: "/api/users/{user_id}/",
+      at: "styleguide_example/users/urls.py:8",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/api/users/{user_id}/update/",
+      at: "styleguide_example/users/urls.py:9",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /api/errors/trigger/,
+      at: "styleguide_example/errors/urls.py:10",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /api/errors/trigger/unique/,
+      at: "styleguide_example/errors/urls.py:11",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /api/errors/trigger/exception/,
+      at: "styleguide_example/errors/urls.py:12",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: /api/files/upload/standard/,
+      at: "styleguide_example/files/urls.py:20",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: /api/files/upload/direct/start/,
+      at: "styleguide_example/files/urls.py:26",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: /api/files/upload/direct/finish/,
+      at: "styleguide_example/files/urls.py:27",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/api/files/upload/direct/local/{file_id}/",
+      at: "styleguide_example/files/urls.py:28",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /api/google-oauth2/login/raw/callback/,
+      at: "styleguide_example/blog_examples/google_login_server_flow/raw/urls.py:9",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /api/google-oauth2/login/raw/redirect/,
+      at: "styleguide_example/blog_examples/google_login_server_flow/raw/urls.py:10",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /api/google-oauth2/login/sdk/callback/,
+      at: "styleguide_example/blog_examples/google_login_server_flow/sdk/urls.py:9",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /api/google-oauth2/login/sdk/redirect/,
+      at: "styleguide_example/blog_examples/google_login_server_flow/sdk/urls.py:10",
+    }
+calls:
+  - {
+      type: rest,
+      method: POST,
+      path: /token,
+      to: google-oauth2,
+      at: "styleguide_example/blog_examples/google_login_server_flow/raw/service.py:96",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /oauth2/v3/userinfo,
+      to: google-apis,
+      at: "styleguide_example/blog_examples/google_login_server_flow/raw/service.py:109",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /oauth2/v3/userinfo,
+      to: google-apis,
+      at: "styleguide_example/blog_examples/google_login_server_flow/sdk/services.py:115",
+    }
+stores:
+  - { table: users_baseuser, at: "styleguide_example/users/models.py:49" }
+  - { table: users_baseuser_groups, at: "styleguide_example/users/migrations/0001_initial.py:28" }
+  - {
+      table: users_baseuser_user_permissions,
+      at: "styleguide_example/users/migrations/0001_initial.py:29",
+    }
+  - { table: common_simplemodel, at: "styleguide_example/common/models.py:14" }
+  - { table: common_randommodel, at: "styleguide_example/common/models.py:23" }
+  - { table: common_randommodel_simple_objects, at: "styleguide_example/common/models.py:32" }
+  - { table: emails_email, at: "styleguide_example/emails/models.py:6" }
+  - { table: files_file, at: "styleguide_example/files/models.py:10" }
+  - { table: testing_examples_school, at: "styleguide_example/testing_examples/models.py:7" }
+  - { table: testing_examples_student, at: "styleguide_example/testing_examples/models.py:15" }
+  - { table: testing_examples_schoolcourse, at: "styleguide_example/testing_examples/models.py:32" }
+  - { table: testing_examples_roster, at: "styleguide_example/testing_examples/models.py:63" }
+  - { table: blog_examples_timestampswithauto, at: "styleguide_example/blog_examples/models.py:8" }
+  - {
+      table: blog_examples_timestampswithautoanddefault,
+      at: "styleguide_example/blog_examples/models.py:13",
+    }
+  - {
+      table: blog_examples_timestampswithdefault,
+      at: "styleguide_example/blog_examples/models.py:18",
+    }
+  - {
+      table: blog_examples_timestampsopinionated,
+      at: "styleguide_example/blog_examples/models.py:23",
+    }
+  - {
+      table: blog_examples_somedatamodel,
+      at: "styleguide_example/blog_examples/f_expressions/models.py:4",
+    }
+  - {
+      table: blog_examples_usertwofactorauthdata,
+      at: "styleguide_example/blog_examples/admin_2fa/models.py:11",
+    }
+  - {
+      table: django_celery_beat_intervalschedule,
+      at: "styleguide_example/tasks/management/commands/setup_periodic_tasks.py:20",
+    }
+  - {
+      table: django_celery_beat_crontabschedule,
+      at: "styleguide_example/tasks/management/commands/setup_periodic_tasks.py:21",
+    }
+  - {
+      table: django_celery_beat_periodictask,
+      at: "styleguide_example/tasks/management/commands/setup_periodic_tasks.py:22",
+    }
+deploys:
+  - { platform: heroku, at: "Procfile:2" }
+ignore:
+  stores: ["auth_*", "django_*"]
+  deploys: [ecs]

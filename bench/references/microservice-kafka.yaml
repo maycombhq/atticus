@@ -1,0 +1,153 @@
+# Written by reading the code at the pinned commit, not from an Atticus scan.
+repo: microservice-kafka
+commit: 103de22da497c631708f0541a0cad0e662d04aa5
+covers: [serves, calls, stores, deploys]
+notes: >-
+  Three Spring Boot 3 services (order, shipping, invoicing) under microservice-kafka/, each with
+  Thymeleaf pages, JPA on its own Postgres database (dborder, dbshipping, dbinvoicing) and Kafka
+  between them; docker/ holds the compose system with Zookeeper, Kafka, Postgres and an Apache
+  httpd. Serves: each service's controller mappings, at the root (no context path is set; each runs
+  on 8080 behind its own host port). The order service's form posts (POST /, POST /line) and DELETE
+  /{id} are its own entries; shipping and invoicing both map GET / and GET /{id}, listed once per
+  service. The shipping and invoicing @KafkaListener(topics = "order") are event-topic entries, one
+  per listener. Left out: Spring Boot actuator endpoints
+  (management.endpoints.web.exposure.include=*), the order service's static monitor.html, and the
+  Apache httpd container, which only serves a static index page linking to the three host ports and
+  Apache's own /balancer-manager handler: its 000-default.conf has no ProxyPass, so despite the
+  README it forwards nothing and has no gateway routes. Calls: OrderService publishes each new order
+  with kafkaTemplate.send("order", ...) as JSON; shipping and invoicing read the same message into
+  their own Shipment and Invoice classes. No service calls another over HTTP. Stores: JPA tables
+  under Spring Boot's naming (CamelCaseToUnderscoresNamingStrategy and
+  SpringImplicitNamingStrategy), cited at the entity or field that makes them: order has ORDERTABLE
+  (@Table), order_line, customer and item, and the join table of its unidirectional @OneToMany
+  List<OrderLine> orderLine with no @JoinColumn, named owning table + "_" + property:
+  ordertable_order_line; shipping has shipment, shipment_line and shipment_shipment_line; invoicing
+  has invoice, invoice_line and invoice_invoice_line (Customer, Item and Address are @Embeddable
+  there, so they are columns, not tables). The schema comes from ddl-auto=update; there are no SQL
+  scripts. Deploys: none. docker/docker-compose.yml builds and runs the whole system, but
+  docker/README.md calls it an insecure demo ("DO NOT RUN THIS IN PRODUCTION") run locally or on a
+  Docker Machine VM, and the GitHub workflow only builds the jars and the images (docker-compose
+  build) without running them anywhere, so compose is local running here, not a deployment.
+serves:
+  - {
+      type: rest,
+      method: GET,
+      path: /,
+      at: "microservice-kafka/microservice-kafka-order/src/main/java/com/ewolff/microservice/order/logic/OrderController.java:44",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /form.html,
+      at: "microservice-kafka/microservice-kafka-order/src/main/java/com/ewolff/microservice/order/logic/OrderController.java:49",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: /line,
+      at: "microservice-kafka/microservice-kafka-order/src/main/java/com/ewolff/microservice/order/logic/OrderController.java:54",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/{id}",
+      at: "microservice-kafka/microservice-kafka-order/src/main/java/com/ewolff/microservice/order/logic/OrderController.java:60",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: /,
+      at: "microservice-kafka/microservice-kafka-order/src/main/java/com/ewolff/microservice/order/logic/OrderController.java:65",
+    }
+  - {
+      type: rest,
+      method: DELETE,
+      path: "/{id}",
+      at: "microservice-kafka/microservice-kafka-order/src/main/java/com/ewolff/microservice/order/logic/OrderController.java:71",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/{id}",
+      at: "microservice-kafka/microservice-kafka-shipping/src/main/java/com/ewolff/microservice/shipping/web/ShippingController.java:20",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /,
+      at: "microservice-kafka/microservice-kafka-shipping/src/main/java/com/ewolff/microservice/shipping/web/ShippingController.java:25",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/{id}",
+      at: "microservice-kafka/microservice-kafka-invoicing/src/main/java/com/ewolff/microservice/invoicing/web/InvoiceController.java:20",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /,
+      at: "microservice-kafka/microservice-kafka-invoicing/src/main/java/com/ewolff/microservice/invoicing/web/InvoiceController.java:25",
+    }
+  - {
+      type: event-topic,
+      path: order,
+      at: "microservice-kafka/microservice-kafka-shipping/src/main/java/com/ewolff/microservice/shipping/events/OrderKafkaListener.java:24",
+    }
+  - {
+      type: event-topic,
+      path: order,
+      at: "microservice-kafka/microservice-kafka-invoicing/src/main/java/com/ewolff/microservice/invoicing/events/OrderKafkaListener.java:24",
+    }
+calls:
+  - {
+      type: event,
+      path: order,
+      at: "microservice-kafka/microservice-kafka-order/src/main/java/com/ewolff/microservice/order/logic/OrderService.java:32",
+    }
+stores:
+  - {
+      table: ORDERTABLE,
+      at: "microservice-kafka/microservice-kafka-order/src/main/java/com/ewolff/microservice/order/logic/Order.java:27",
+    }
+  - {
+      table: order_line,
+      at: "microservice-kafka/microservice-kafka-order/src/main/java/com/ewolff/microservice/order/logic/OrderLine.java:16",
+    }
+  - {
+      table: ordertable_order_line,
+      at: "microservice-kafka/microservice-kafka-order/src/main/java/com/ewolff/microservice/order/logic/Order.java:52",
+    }
+  - {
+      table: customer,
+      at: "microservice-kafka/microservice-kafka-order/src/main/java/com/ewolff/microservice/order/customer/Customer.java:14",
+    }
+  - {
+      table: item,
+      at: "microservice-kafka/microservice-kafka-order/src/main/java/com/ewolff/microservice/order/item/Item.java:13",
+    }
+  - {
+      table: shipment,
+      at: "microservice-kafka/microservice-kafka-shipping/src/main/java/com/ewolff/microservice/shipping/Shipment.java:19",
+    }
+  - {
+      table: shipment_line,
+      at: "microservice-kafka/microservice-kafka-shipping/src/main/java/com/ewolff/microservice/shipping/ShipmentLine.java:14",
+    }
+  - {
+      table: shipment_shipment_line,
+      at: "microservice-kafka/microservice-kafka-shipping/src/main/java/com/ewolff/microservice/shipping/Shipment.java:33",
+    }
+  - {
+      table: invoice,
+      at: "microservice-kafka/microservice-kafka-invoicing/src/main/java/com/ewolff/microservice/invoicing/Invoice.java:19",
+    }
+  - {
+      table: invoice_line,
+      at: "microservice-kafka/microservice-kafka-invoicing/src/main/java/com/ewolff/microservice/invoicing/InvoiceLine.java:14",
+    }
+  - {
+      table: invoice_invoice_line,
+      at: "microservice-kafka/microservice-kafka-invoicing/src/main/java/com/ewolff/microservice/invoicing/Invoice.java:33",
+    }
+deploys: []
