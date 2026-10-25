@@ -42,7 +42,7 @@ are worked examples.
 | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Changed steps   | Reference steps matched one to one by a draft step in the same repo and file (nearest line first), else the same entry. Draft steps that match none are listed.                                                     |
 | Fields          | Reference fields (criteria, interface fields, columns) the draft names anywhere a field is meant, or writes in a Then clause. Case, `_` and `-` aside; the reference's `accepts` lists other names for a new field. |
-| Error cases     | Reference error cases, each `(step, field, rule)` counted once, that the draft has on the step it matched.                                                                                                          |
+| Error cases     | Reference error cases, each `(step, field, rule)` counted once, that the draft has on the step it matched. One with no field (`not-found`, `forbidden`, `unavailable`) matches the rule and a word of its when.     |
 | Invented fields | Draft field names known to neither the reference story, the bench references of its repos, nor the repos' facts. Must be none.                                                                                      |
 | Rubric sections | The 17 sections above present and not empty (`interfaces` and `data` may be `none: <why>`); every changed step has a criterion and at least one criterion has an error case.                                        |
 

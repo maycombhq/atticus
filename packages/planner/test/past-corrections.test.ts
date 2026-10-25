@@ -102,9 +102,11 @@ const BEFORE = {
   feature: "4e3363a5f6c7bb3a8f1b0861534d478e0cf1249773800e99ef02e85334b0c47f",
   // re-pinned after B-places asked the architect for an added step's place (`at`); and in B2,
   // because its input, the feature answer above, changed (its code didn't; the architecture
-  // answer still fits and is unchanged)
-  arch: "7d8cd9985953fb192c68debdbe110dd6ff09f873e6c733304b819c2f3a69396a",
-  stories: "2e4b6a0bf2c1f970b3bd4e50aca99ead1f0db3cf43a2039788c12aa3c397658b",
+  // answer still fits and is unchanged); and after B-run2-fixes named the table whose columns
+  // the store facts list (its one changed line)
+  arch: "8e24f28d9b508f319199f1f3373368260d67a3500293e861663f9237590d4756",
+  // re-pinned after B-run2-fixes 5 gave the stories rules the rule words (one line added)
+  stories: "595bb677dd38c833857ee81b911db56d9deabb6d9478b23640226c1a3d998ac1",
 };
 
 const ARCHIVE = join(FIX, "corrections/changes/archive");

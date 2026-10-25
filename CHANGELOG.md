@@ -22,6 +22,20 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - **A critic round a crash left behind doesn't use up the gate's rounds:** a round folder with neither its record nor a finding isn't counted.
 - **`atticus knowledge ask` has its own agent,** `knowledge-asker`, introduced as what it does. An org pack may define its own; a budget set for `knowledge-reader` still holds for ask.
 
+### What the second stories bench run found, fixed (B-run2-fixes, ADR 0124 addendum B-run2-fixes)
+
+- **The store facts of a store with no migrations name the table's own files.** For each table the change's flows use, the architecture prompt lists the schema file that creates it and the entity mapped to it (`declaringFiles`), not the first four files any of the store's columns is cited in. A superclass or a model shared with other tables is left out.
+- **A task's places are where what it adds or changes is declared.** A field a schema already holds is a change there only when the step makes it required; naming it is not. So a validator or a handler that cites one existing field is no longer a place, nor is an API contract no message of which changes. A read or lookup of a column adds no table files. A screen's fields that several screens' files share name the files today's flow cites.
+- **Two tasks the target flow puts at the same file and line are one implementation step**, with both tasks and both tasks' criteria (in the story file and the bench draft). Tasks placed only after their neighbour stay apart.
+- **The stories bench matches an error case with no field** (`not-found`, `forbidden`, `unavailable`) by the step (strict) or the entry (by entry), the rule and a word its `when` shares with the draft's, whatever field the draft keys it on.
+- **The stories prompt says which rule word fits which failure** (`range` for bounds and dates, `format` for shape, `limit` for a total across requests or items, and the others).
+- **`atticus repos discover` follows links to clones**, one level, never a link to its own folder or one above it, and a clone two links name once. The repo's folder is the link.
+- **`atticus next` skips the reader path for a repo mapped from its verified facts** (its spec's template is `facts@1`): no survey, scan, verify or spec steps, straight to the change.
+- **An answered question reaches the next prompt with what the option means and changes**, or the person's own words, not its label alone.
+- **Schema problems say what is wrong:** "story 1's interface 1's field 1's side is text ("both"): write one of request, response, message", not "storie 1's interfaces: Invalid input". A field today's entry already returns or takes (its catalog Schema holds it, as a list's `count`) is no longer refused as given nowhere.
+- **A new gRPC status on an rpc is an interface change** in design.md.
+- **A change's estate index is its own estate's** in a metarepo several estates share: the repos it touches, their systems, the repos joined to them, and outside systems such as vendors.
+
 ### The estate fixes: publishes name their event, entries without a flow are listed, errors match branches (C-estate, ADR 0124 addendum C-estate)
 
 - **`atticus verify` rejects a publish step that names no event.** A flow's `publish` step whose `ref` is missing, or isn't a call fact of `callType: event-topic` or `mq-queue`, is rejected as `publish-no-event` (a new reject code, additive like `call-out-no-call`), with the step, its line and what to name. The estate join follows a publish to its listeners only through that call.

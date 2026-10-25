@@ -31,7 +31,8 @@ import type { BenchStory } from "./story-bench.js";
  *   a new migration (no line yet). A file two stories touch is one step. A new flow's tasks that
  *   cite no code are one step on its entry, with no file.
  * - Each place is accepted by its tasks' criteria: a criterion is written on its task's own step
- *   (or its story's new-code step), and again on each file step of its task, cited there.
+ *   (or its story's new-code step), and again on each file step of its task, cited there. Tasks
+ *   whose code is at the same file and line are one step, with both tasks' criteria.
  * - Each criterion splits into given, when and then; its checks are its fields; its entry, when
  *   it names none, is the story's. An error criterion is an error case on each field it checks
  *   (or on none when it checks none), its `when` the criterion's given clause.
@@ -187,16 +188,18 @@ export function benchStoryFromStories(i: StoriesToBench): BenchStory {
     for (const p of storySteps(s)) {
       const tasks = p.tasks.map((id) => s.tasks.find((t) => t.id === id)!);
       if (p.kind === "code") {
+        // B-run2-fixes 3: tasks at the same file and line are one step, with every task's criteria.
         const t = tasks[0]!;
         const at = stepAt(t);
         steps.push({
           id: stepId(t),
           repo: t.repo,
-          what: bare(t.what || t.title),
+          what: tasks.map((x) => bare(x.what || x.title)).join("; "),
           ...(s.entry ? { entry: s.entry } : {}),
           ...(at ? { at } : {}),
         });
-        criteria.push(...criteriaOf(s, t, said(s, t)));
+        for (const x of tasks)
+          criteria.push(...criteriaOf(s, x, said(s, x), { step: stepId(t), at }));
       } else if (p.kind === "new") {
         const id = `new-${s.id}`;
         steps.push({

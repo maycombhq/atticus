@@ -9,6 +9,7 @@ import { MockRuntime, type AiRequest } from "@maycombhq/ai";
 import { parseRecord, recordPath, serializeRecord, type CatalogRecord } from "@maycombhq/core";
 import {
   architectureStage,
+  ERROR_RULE_WORDS,
   estateOf,
   EXPAND_AGENT,
   featureStage,
@@ -18,6 +19,7 @@ import {
   storiesStage,
   storyCodeSource,
   storySteps,
+  STORY_ERROR_RULES,
   taskContext,
   type StoryStep,
 } from "../src/index.js";
@@ -128,19 +130,10 @@ describe("a task names the files its change goes into (problem 2)", () => {
   it("from the fields' and the store's facts: the DTOs and spec, the table and entity, the migration's folder", async () => {
     const { stories } = await planned();
     const [callOut, branch, write] = stories[0]!.tasks;
-    // the call-out sends the order's sku and quantity, and the new cardToken: the request DTO
-    expect(callOut!.files).toEqual([
-      {
-        file: "forge-orders:src/main/java/forge/orders/NewOrder.java",
-        lines: [5, 6],
-        why: "where POST /orders' request fields are (forge-orders.post-orders.request: sku, quantity)",
-      },
-      {
-        file: "forge-orders:src/main/resources/openapi.yaml",
-        lines: [41],
-        why: "where POST /orders' request fields are (forge-orders.post-orders.request: sku, quantity)",
-      },
-    ]);
+    // B-run2-fixes 2: the call-out sends the order's sku and quantity, which POST /orders' request
+    // has already, to a new call no file declares yet: naming a field is no change to where it is
+    // declared, so the request DTO is no place of this task.
+    expect(callOut!.files).toBeUndefined();
     // a branch on the screen's verdict touches no declared field
     expect(branch!.files ?? []).toEqual([]);
     // the write adds fraud_verdict: the table's file and the entity beside its columns
@@ -227,9 +220,11 @@ describe("a task names the files its change goes into (problem 2)", () => {
       join(dir, "openspec/changes", CHANGE, "stories/s1-place-order.md"),
       "utf8",
     );
+    // B-run2-fixes 2: the call-out only names the order's fields, so its own code is its place.
     expect(story).toContain(
-      "- Files to touch: forge-orders:src/main/java/forge/orders/OrderController.java (lines 4 and 9), forge-orders:src/main/java/forge/orders/NewOrder.java (lines 5 and 6), forge-orders:src/main/resources/openapi.yaml (line 41)",
+      "- Files to touch: forge-orders:src/main/java/forge/orders/OrderController.java (lines 4 and 9)\n",
     );
+    expect(story).not.toContain("NewOrder.java");
     expect(story).toContain(
       "- Files to touch: forge-orders:src/main/java/forge/orders/OrderController.java (line 13), forge-orders:src/main/resources/schema.sql (line 1), forge-orders:src/main/java/forge/orders/Order.java (line 14), forge-orders:src/main/resources/db/migration/V4__add_fraud_verdict.sql (new migration)",
     );
@@ -252,16 +247,12 @@ describe("the stories prompt carries the cited code (problem 3)", () => {
       "forge-orders:src/main/java/forge/orders/OrderController.java lines 1-16 (cited at 4, 9 and 13):",
     );
     expect(s!.text).toContain(`8:   @PreAuthorize("hasRole('CLERK')")`);
-    expect(s!.text).toContain(
-      "forge-orders:src/main/java/forge/orders/NewOrder.java lines 2-7 (cited at 5 and 6):",
-    );
-    expect(s!.text).toContain(
-      '6:   @Min(value = 1, message = "quantity must be at least 1") int quantity',
-    );
+    // B-run2-fixes 2: no task adds a field to the order's request, so its DTO is no cited place.
+    expect(s!.text).not.toContain("NewOrder.java");
     expect(s!.text).toContain("forge-orders:src/main/resources/schema.sql lines 1-4 (cited at 1):");
     // a file the checkout doesn't have is said, not guessed
     expect(s!.text).toContain(
-      "Not in the checkout: forge-orders:src/main/resources/openapi.yaml, forge-orders:src/main/java/forge/orders/Order.java.",
+      "Not in the checkout: forge-orders:src/main/java/forge/orders/Order.java.",
     );
   });
 
@@ -307,6 +298,9 @@ describe("the stories prompt carries the cited code (problem 3)", () => {
     ).toBe("done");
     expect(prompts[0]).toContain('kind="code"');
     expect(prompts[0]).toContain(`8:   @PreAuthorize("hasRole('CLERK')")`);
+    // B-run2-fixes 5: the rules say which rule word fits which failure, as the bench scores them.
+    expect(prompts[0]).toContain(`- ${ERROR_RULE_WORDS}`);
+    for (const w of STORY_ERROR_RULES) expect(ERROR_RULE_WORDS).toContain(`${w} (`);
   });
 });
 
@@ -363,16 +357,16 @@ describe("a story's implementation steps follow the places in the code that chan
   it("a step per task's own code, then each file it declares a field or column in, then a new migration", async () => {
     const { stories } = await planned();
     const steps = storySteps(stories[0]!);
+    // Tasks 1.1 and 1.2 go in after OrderController.java:4,9 with no place of their own given,
+    // so neither is said to be at that line, and they stay two steps (B-run2-fixes 3).
     expect(steps.map(place)).toEqual([
       [1, "code", OC, [4, 9], ["1.1"]],
-      [2, "declares", "forge-orders:src/main/java/forge/orders/NewOrder.java", [5, 6], ["1.1"]],
-      [3, "declares", "forge-orders:src/main/resources/openapi.yaml", [41], ["1.1"]],
-      [4, "code", OC, [4, 9], ["1.2"]],
-      [5, "code", OC, [13], ["1.3"]],
-      [6, "declares", "forge-orders:src/main/resources/schema.sql", [1], ["1.3"]],
-      [7, "declares", "forge-orders:src/main/java/forge/orders/Order.java", [14], ["1.3"]],
+      [2, "code", OC, [4, 9], ["1.2"]],
+      [3, "code", OC, [13], ["1.3"]],
+      [4, "declares", "forge-orders:src/main/resources/schema.sql", [1], ["1.3"]],
+      [5, "declares", "forge-orders:src/main/java/forge/orders/Order.java", [14], ["1.3"]],
       [
-        8,
+        6,
         "migration",
         "forge-orders:src/main/resources/db/migration/V4__add_fraud_verdict.sql",
         [],
@@ -384,13 +378,13 @@ describe("a story's implementation steps follow the places in the code that chan
     expect(steps[0]!.what).toBe(
       "adds the call-out step after this code: Northwind Pay screens the order for fraud",
     );
-    expect(steps[4]!.what).toBe(
+    expect(steps[2]!.what).toBe(
       "changes the write step here: The order is inserted with the screen's verdict",
     );
-    expect(steps[1]!.what).toBe(
-      "the fields and columns change here: where POST /orders' request fields are (forge-orders.post-orders.request: sku, quantity)",
+    expect(steps[3]!.what).toBe(
+      "the fields and columns change here: where table forge-orders-db.orders and its columns are",
     );
-    expect(steps[7]!.what).toBe(
+    expect(steps[5]!.what).toBe(
       "the new migration V4__add_fraud_verdict.sql adds fraud_verdict to forge-orders-db.orders",
     );
   });
@@ -403,6 +397,11 @@ describe("a story's implementation steps follow the places in the code that chan
     change: modify
     why: The order carries a card token.
     steps:
+      - op: change
+        step: 1
+        kind: entry
+        what: OrderController.place receives the new order, with its card token
+        fields: { reads: [cardToken] }
       - op: add
         after: 1
         kind: validate
@@ -416,6 +415,8 @@ describe("a story's implementation steps follow the places in the code that chan
         fields: { sends: [sku, cardToken] }
 `);
     const steps = storySteps(storiesFromDeltas(d, estate)[0]!);
+    // The entry and the check both add cardToken to the order's request; the call-out sends it on
+    // to a new call (B-run2-fixes 2: it names the request's fields, it doesn't change them).
     expect(steps.map(place)).toEqual([
       [1, "code", OC, [4, 9], ["1.1"]],
       [
@@ -427,6 +428,7 @@ describe("a story's implementation steps follow the places in the code that chan
       ],
       [3, "declares", "forge-orders:src/main/resources/openapi.yaml", [41], ["1.1", "1.2"]],
       [4, "code", OC, [4, 9], ["1.2"]],
+      [5, "code", OC, [4, 9], ["1.3"]],
     ]);
   });
 
@@ -498,10 +500,10 @@ describe("a story's implementation steps follow the places in the code that chan
       `1. ${OC} (lines 4 and 9), task 1.1: adds the call-out step after this code: Northwind Pay screens the order for fraud.`,
     );
     expect(section).toContain(
-      "2. forge-orders:src/main/java/forge/orders/NewOrder.java (lines 5 and 6), task 1.1: the fields and columns change here: where POST /orders' request fields are (forge-orders.post-orders.request: sku, quantity).",
+      "5. forge-orders:src/main/java/forge/orders/Order.java (line 14), task 1.3: the fields and columns change here: where table forge-orders-db.orders and its columns are.",
     );
     expect(section).toContain(
-      "8. forge-orders:src/main/resources/db/migration/V4__add_fraud_verdict.sql (new), task 1.3: the new migration V4__add_fraud_verdict.sql adds fraud_verdict to forge-orders-db.orders.",
+      "6. forge-orders:src/main/resources/db/migration/V4__add_fraud_verdict.sql (new), task 1.3: the new migration V4__add_fraud_verdict.sql adds fraud_verdict to forge-orders-db.orders.",
     );
     // It comes after Scope and before the acceptance criteria; the tasks are still there.
     expect(story.indexOf("## Scope")).toBeLessThan(story.indexOf("## Implementation steps"));

@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, symlink, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { parse } from "yaml";
@@ -227,6 +227,41 @@ describe("reposDiscover from a folder of clones", () => {
     ]);
     expect(manifest.repos[1]!.modules).toBeUndefined();
     expect((await loadOrgPack(join(root, "org-pack"))).problems).toEqual([]);
+  });
+
+  it("follows a link to a clone (B-run2-fixes 6), never a link back up its own folder, and a clone two links name once", async () => {
+    const root = await metarepo();
+    const base = await tempDir();
+    const elsewhere = join(base, "pinned");
+    const clones = join(base, "clones");
+    await mkdir(clones, { recursive: true });
+    for (const name of ["forge-orders", "forge-web"]) {
+      await mkdir(join(elsewhere, name, ".git"), { recursive: true });
+      await writeFile(join(elsewhere, name, ".git", "HEAD"), "ref: refs/heads/main\n", "utf8");
+    }
+    await writeFile(join(elsewhere, "forge-web", "package.json"), "{}", "utf8");
+    // A junction is a directory link Windows makes without rights; elsewhere it is a symlink.
+    const link = (to: string, name: string) => symlink(to, join(clones, name), "junction");
+    await link(join(elsewhere, "forge-orders"), "forge-orders");
+    await link(join(elsewhere, "forge-web"), "forge-web");
+    await link(join(elsewhere, "forge-web"), "web-again");
+    await link(clones, "itself");
+    await link(base, "up");
+    await link(join(base, "nowhere"), "broken");
+
+    const r = await reposDiscover(root, { dir: clones }, { dryRun: true });
+    expect(r.repos.map((x) => x.entry.id)).toEqual(["forge-orders", "forge-web"]);
+    // The repo's folder is the link in the folder of clones, not where it points.
+    expect(r.repos.map((x) => x.dir)).toEqual([
+      join(clones, "forge-orders"),
+      join(clones, "forge-web"),
+    ]);
+    expect(r.skipped).toEqual([
+      { path: "broken", reason: "a link to nothing" },
+      { path: "itself", reason: "a link to this folder or one it is in" },
+      { path: "up", reason: "a link to this folder or one it is in" },
+      { path: "web-again", reason: "a link to forge-web, which is read already" },
+    ]);
   });
 });
 

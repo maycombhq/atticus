@@ -282,6 +282,32 @@ describe("a change's stories as a BenchStory draft", () => {
     expect(got.dependencies).toBeUndefined();
     expect(got.notes).toMatch(/nullable of forge-orders-db\.orders\.fraud_verdict is not said/);
   });
+
+  it("two tasks the target flow puts at the same line are one step, with both tasks' criteria (B-run2-fixes 3)", () => {
+    // The screen and the refusal both go in at OrderController.java:10, as the target flow says.
+    const stories = structuredClone(STORIES);
+    for (const t of stories[0]!.tasks.slice(0, 2)) {
+      t.evidence = [`forge-orders:${OC}:10`];
+      t.placed = "given";
+    }
+    const got = convert(stories);
+    expect(got.steps.map((s) => [s.id, s.at])).toEqual([
+      ["t1-1", `${OC}:10`],
+      ["t1-3", `${OC}:13`],
+      ["f1", "src/main/resources/schema.sql:1"],
+      ["f2", undefined],
+    ]);
+    expect(got.steps[0]!.what).toBe(
+      "Northwind Pay screens the order for fraud; A rejected order is refused with 422 and nothing is reserved",
+    );
+    expect(got.criteria.filter((c) => c.step === "t1-1").map((c) => [c.id, c.at])).toEqual([
+      ["t1-1-c1", `${OC}:10`],
+      ["t1-1-c2", `${OC}:10`],
+      ["t1-1-c3", `${OC}:10`],
+      ["t1-2-c1", `${OC}:10`],
+      ["t1-2-c2", `${OC}:10`],
+    ]);
+  });
 });
 
 const V4 = "V4__add_fraud_verdict.sql";

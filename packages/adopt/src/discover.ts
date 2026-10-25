@@ -1,4 +1,4 @@
-import { readdir } from "node:fs/promises";
+import { readdir, realpath } from "node:fs/promises";
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import { parse, stringify } from "yaml";
 import { RepoManifest, type ManifestRepo } from "@maycombhq/core";
@@ -134,10 +134,44 @@ async function localCandidates(dir: string): Promise<{
   const skipped: DiscoverResult["skipped"] = [];
   const repos: { dir: string; repo: RepoHandle; modules?: string[] }[] = [];
   const builds: string[] = [];
-  const entries = (await readdir(dir, { withFileTypes: true }))
-    .filter((e) => e.isDirectory() && !SKIP_FOLDERS.has(e.name) && !e.name.startsWith("."))
-    .map((e) => e.name)
-    .sort();
+  const listed = (await readdir(dir, { withFileTypes: true }))
+    .filter(
+      (e) =>
+        (e.isDirectory() || e.isSymbolicLink()) &&
+        !SKIP_FOLDERS.has(e.name) &&
+        !e.name.startsWith("."),
+    )
+    .sort((a, b) => (a.name < b.name ? -1 : 1));
+  // B-run2-fixes 6: a link to a clone (a folder of clones linked to pinned ones) is followed,
+  // one level only, and the repo's folder stays the link inside this folder. Never a link to this
+  // folder or one it is in (a loop), nor a second link to a clone already read.
+  const here = await realpath(dir);
+  const real = new Map<string, string>();
+  for (const e of listed) if (e.isDirectory()) real.set(await realpath(join(dir, e.name)), e.name);
+  const entries: string[] = [];
+  for (const e of listed) {
+    if (e.isDirectory()) {
+      entries.push(e.name);
+      continue;
+    }
+    const to = await realpath(join(dir, e.name)).catch(() => undefined);
+    if (!to || !(await isDir(to))) {
+      skipped.push({ path: e.name, reason: "a link to nothing" });
+      continue;
+    }
+    const up = relative(to, here);
+    if (up === "" || (!up.startsWith("..") && !isAbsolute(up))) {
+      skipped.push({ path: e.name, reason: "a link to this folder or one it is in" });
+      continue;
+    }
+    const had = real.get(to);
+    if (had) {
+      skipped.push({ path: e.name, reason: `a link to ${had}, which is read already` });
+      continue;
+    }
+    real.set(to, e.name);
+    entries.push(e.name);
+  }
   for (const name of entries) {
     const sub = join(dir, name);
     const repo = fsRepo(name, sub, "0000000");
@@ -147,6 +181,7 @@ async function localCandidates(dir: string): Promise<{
     else if (det.type !== "unknown" || det.component) builds.push(name);
     else skipped.push({ path: name, reason: "no build file, code or platform files" });
   }
+  skipped.sort((a, b) => (a.path < b.path ? -1 : 1));
   // A folder that is itself a clone is one repo: its subfolders that build are its modules,
   // and a clone inside it is a repo of its own (ADR 0057).
   if (await isDir(join(dir, ".git"))) {
