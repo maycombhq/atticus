@@ -117,6 +117,10 @@ export const FACT_RULE_PARTS: readonly (readonly RulePart[])[] = [
       text: "An entry's `path` is the full path a caller uses: class-level and group prefixes, and a context or base path the code or config sets (`server.servlet.context-path`, `UsePathBase`), joined; record that base as a `config` fact too. A route served as HTML (a server-rendered page or form post) is `entryType: rest` with its method, and so is a route that receives webhooks; `screen` is for a front end's own routes.",
     },
     {
+      when: ["routes", "protocols"],
+      text: "An entry's `auth` goes with `authCite`: the line that sets it (an annotation, a middleware, a policy, a security setting) and what it writes there. An `auth` without one is left out.",
+    },
+    {
       when: ["frontend"],
       text: "A route given by the file's place is cited on the line that makes the file a page: a Razor Page (`@page`; `Index` is its folder), a WebForms page (`GET /<path>.aspx` from the folder with `Web.config`, on its Page directive), a Next.js `app/**/page.tsx` or `pages/**`.",
     },

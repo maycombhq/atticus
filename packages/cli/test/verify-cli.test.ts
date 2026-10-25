@@ -146,3 +146,113 @@ describe("atticus verify <repo> (ADR 0124)", () => {
     expect(readdirSync(join(root, ".atticus", "questions"))).toHaveLength(1);
   });
 });
+
+/**
+ * What six readers of a real repo reported (ADR 0124 addendum A-read), on the invented
+ * forge-limits service (`fixtures/verify-read/`).
+ */
+describe("atticus verify: files read with nothing to record, and a read that is complete (A-read)", () => {
+  const READ = join(__dirname, "..", "..", "..", "fixtures", "verify-read");
+  const limits = (reviewed?: string): string => {
+    const root = mkdtempSync(join(tmpdir(), "atticus-verify-read-"));
+    cpSync(join(READ, "repo"), root, { recursive: true });
+    mkdirSync(join(root, ".atticus", "org-pack"), { recursive: true });
+    mkdirSync(join(root, ".atticus", "facts"), { recursive: true });
+    cpSync(
+      join(READ, "forge-limits.facts.jsonl"),
+      join(root, ".atticus", "facts", "forge-limits.jsonl"),
+    );
+    if (reviewed !== undefined)
+      writeFileSync(join(root, ".atticus", "facts", "forge-limits.reviewed.jsonl"), reviewed);
+    return root;
+  };
+  const reviewedFixture = () => readFileSync(join(READ, "forge-limits.reviewed.jsonl"), "utf8");
+  const report = (root: string) =>
+    parse(readFileSync(join(root, ".atticus", "facts", "forge-limits.verify.yaml"), "utf8"));
+
+  it("asks for the unknown files, and says where a file read with nothing in it is recorded", async () => {
+    const root = limits();
+    const o = io();
+    expect(await verifyCommand(root, "forge-limits", { commit: "4d1c0de" }, o.io)).toBe(0);
+    const text = o.out.join("\n");
+    expect(o.out[0]).toMatch(/coverage 67% \(6 read, 3 unknown\)/);
+    expect(text).toMatch(/Next: read the 3 unknown files/);
+    expect(text).toContain(".atticus/facts/forge-limits.reviewed.jsonl");
+    expect(text).not.toMatch(/The read is complete/);
+  });
+
+  it("counts reviewed files apart, lists them with why in the report, and says the read is complete", async () => {
+    const root = limits(reviewedFixture());
+    const o = io();
+    expect(await verifyCommand(root, "forge-limits", { commit: "4d1c0de" }, o.io)).toBe(0);
+    const text = o.out.join("\n");
+    expect(o.out[0]).toMatch(
+      /coverage 67% \(6 read, 3 reviewed with nothing to record, 0 unknown\)/,
+    );
+    expect(text).toMatch(/The read is complete: every source file is read \(6\) or reviewed/);
+    expect(text).not.toMatch(/Next: read/);
+    const r = report(root);
+    expect(r.coverage.reviewed).toBe(3);
+    expect(r.coverage.unknown).toEqual([]);
+    expect(r.reviewed).toEqual([
+      {
+        path: "src/main/java/forge/limits/calc/*.java",
+        why: "pure arithmetic and a constant table of caps: no route, call, store, field or setting",
+        files: [
+          "src/main/java/forge/limits/calc/Rounding.java",
+          "src/main/java/forge/limits/calc/Tiers.java",
+        ],
+      },
+      {
+        path: "src/main/java/forge/limits/InvalidAmount.java",
+        why: "an exception type the flow's error path throws; it holds no fact of its own",
+        files: ["src/main/java/forge/limits/InvalidAmount.java"],
+      },
+    ]);
+  });
+
+  it("refuses a reviewed line that names no file of the repo, or isn't one, and exits 1", async () => {
+    const root = limits(
+      reviewedFixture() +
+        `${JSON.stringify({ path: "src/main/java/forge/limits/Gone.java", why: "read it" })}\n{not json\n`,
+    );
+    const o = io();
+    expect(await verifyCommand(root, "forge-limits", { commit: "4d1c0de" }, o.io)).toBe(1);
+    const rejected = readFileSync(
+      join(root, ".atticus", "facts", "forge-limits.rejected.jsonl"),
+      "utf8",
+    )
+      .trim()
+      .split("\n")
+      .map((l) => JSON.parse(l) as { code: string; message: string });
+    expect(rejected.map((r) => r.code)).toEqual(["bad-reviewed", "bad-reviewed"]);
+    expect(rejected[0]!.message).toMatch(/line 3: .*Gone\.java.*not in the repo at this commit/);
+    expect(rejected[1]!.message).toMatch(/line 4/);
+    expect(o.out.join("\n")).toMatch(/bad-reviewed/);
+    // The good lines still count.
+    expect(report(root).coverage.reviewed).toBe(3);
+  });
+
+  it("leaves out an entry's auth that no line is cited for, and says so", async () => {
+    const root = limits(reviewedFixture());
+    const facts = join(root, ".atticus", "facts", "forge-limits.jsonl");
+    writeFileSync(
+      facts,
+      readFileSync(facts, "utf8").replace(
+        '"handler":"LimitController.tiers"',
+        '"handler":"LimitController.tiers","auth":"mtls"',
+      ),
+    );
+    const o = io();
+    expect(await verifyCommand(root, "forge-limits", { commit: "4d1c0de" }, o.io)).toBe(0);
+    expect(o.out.join("\n")).toMatch(/1 entry's auth left out .*authCite/);
+    expect(report(root).authUncited).toEqual([
+      {
+        id: "e-get-tiers",
+        auth: "mtls",
+        cite: "src/main/java/forge/limits/LimitController.java:24",
+      },
+    ]);
+    expect(readFileSync(facts, "utf8")).not.toContain('"auth":"mtls"');
+  });
+});

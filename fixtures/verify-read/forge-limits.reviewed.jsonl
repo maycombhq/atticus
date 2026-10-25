@@ -1,0 +1,2 @@
+{"path":"src/main/java/forge/limits/calc/*.java","why":"pure arithmetic and a constant table of caps: no route, call, store, field or setting"}
+{"path":"src/main/java/forge/limits/InvalidAmount.java","why":"an exception type the flow's error path throws; it holds no fact of its own"}

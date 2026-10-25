@@ -18,7 +18,7 @@ Atticus 2 (ADR 0124): the assistant reads the code and writes cited facts; `veri
 - **The facts path** (ADR 0124):
   1. Schema `core/src/schema/facts.ts`.
   2. Projection to C1 in `core/src/facts.ts` (`projectFacts`). A column or store fact cited in a migration file (`core/src/migration-files.ts`, `migrationOf`) makes a Migration record.
-  3. The verifier `verify/src/verify.ts`, with `atticus verify <repo> [--write]` in `cli/src/verify-commands.ts`.
+  3. The verifier `verify/src/verify.ts`, with `atticus verify <repo> [--write]` in `cli/src/verify-commands.ts`. The files a reader read with nothing to record (`<repo>.reviewed.jsonl`) are parsed in `verify/src/reviewed.ts`.
   4. Facts into the catalog: `scanner/src/facts-catalog.ts`. This covers `catalogWithFacts`, `componentRenames` for component ids two repos share, `estateFromFacts`, and the targets questions.
   5. The join across repos: `core/src/facts-join.ts` (`joinFacts`, `joinRecords`). `scanner/src/facts-scan.ts` (`estateFacts`, `factsForScan`) feeds it.
   6. The map renderers `verify/src/map.ts` (`renderMap`, `openApiOf`), with each flow's sequence diagram from `diagrams/src/flow-sequence.ts`.

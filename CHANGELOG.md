@@ -4,6 +4,14 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### `atticus verify`: what readers of a real repo asked for (A-read, ADR 0124 addendum A-read)
+
+- **A flow's steps count toward coverage.** A file that only a flow's steps or error paths cite (a service, a helper it walks through) is now read, not `unknown`.
+- **"Read, nothing here" has a place: `<repo>.reviewed.jsonl`.** One `{"path": "<file or glob>", "why": "..."}` per line, for files read and found to hold no fact (a pure computation library). Verify counts them apart ("6 read, 3 reviewed with nothing to record, 0 unknown"), never in the coverage ratio, and lists each line with its why and files in `<repo>.verify.yaml` and on the map's trust line. A path that isn't in the repo, or a glob that matches nothing, is rejected as `bad-reviewed`.
+- **A `validate` step's rule is checked on its line**, like other steps' values: a range, `@NotNull` or a pattern the line doesn't write is rejected.
+- **An entry's `auth` needs `authCite`**, the line that sets it (an annotation, middleware, policy or setting). An `auth` without one is left out of the kept fact and the catalog, and listed as a note; a cited one is checked like any part. Facts written before still parse.
+- **Clearer runs.** When nothing is unknown or rejected, verify says the read is complete instead of asking for unknown files again. A fact with several faults has all of them reported in one run.
+
 ### VS Code: /verify checks the facts
 
 - **`@atticus /verify <repo>` and _Atticus: Verify a repo's facts against its code_ run `atticus verify`** (ADR 0124), with no model: the chat shows what was rejected and offers `--write`, or sends the rejected facts back with `/map`. They ran the older scanner's `scan verify` with Copilot's model before. That check stays, as `/scanverify` and _Verify a repo's last scan_, behind `atticus.fullUi`.

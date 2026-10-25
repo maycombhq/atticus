@@ -148,6 +148,22 @@ describe("trustOf: the trust line's numbers from the verifier's report", () => {
     expect(trustOf(null)).toBeUndefined();
     expect(trustOf({ accepted: "x" })).toBeUndefined();
   });
+
+  it("reads the files the reader reviewed with nothing to record, and the trust line says them (A-read)", () => {
+    const t = trustOf({
+      accepted: 7,
+      rejected: 0,
+      coverage: { ratio: 0.667, read: 6, reviewed: 3, unknown: [], excluded: [] },
+    });
+    expect(t).toEqual({ accepted: 7, rejected: 0, ratio: 0.667, unknown: 0, reviewed: 3 });
+    const md = renderMap({ ...input(), trust: t })["map.md"]!;
+    const line = md.split("\n").find((l) => l.startsWith("**Trust:**"))!;
+    expect(line).toMatch(
+      /3 files reviewed by the reader with nothing to record \(each with why, in the verify report\)/,
+    );
+    // None reviewed: the line is as it was.
+    expect(renderMap(input())["map.md"]!).not.toMatch(/reviewed by the reader/);
+  });
 });
 
 describe("codeLinkerFor: where a line of code is", () => {

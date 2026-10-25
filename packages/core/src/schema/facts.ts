@@ -96,6 +96,12 @@ export const EntryFact = z.strictObject({
   path: str(),
   handler: z.string().optional(),
   auth: Auth.optional(),
+  /**
+   * The line that sets `auth` (an annotation, a middleware, a policy, a security setting) and
+   * what it writes there (ADR 0124 addendum A-read). The verifier checks it as it checks a part;
+   * an `auth` without it is left out of the kept fact, so the catalog never says it.
+   */
+  authCite: CitePart.optional(),
 });
 
 export const CALL_TYPES = [

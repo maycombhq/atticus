@@ -30,9 +30,11 @@ import { flowSequenceView, toMermaid } from "@maycombhq/diagrams";
 export interface MapTrust {
   accepted: number;
   rejected: number;
-  /** read / (read + unknown). */
+  /** read / (read + reviewed + unknown). */
   ratio: number;
   unknown: number;
+  /** Files the reader read and found no fact in (ADR 0124 addendum A-read); left out when none. */
+  reviewed?: number;
   commit?: string;
 }
 
@@ -85,17 +87,19 @@ export function trustOf(report: unknown): MapTrust | undefined {
     accepted?: unknown;
     rejected?: unknown;
     commit?: unknown;
-    coverage?: { ratio?: unknown; unknown?: unknown };
+    coverage?: { ratio?: unknown; unknown?: unknown; reviewed?: unknown };
   } | null;
   if (!r || typeof r.accepted !== "number" || typeof r.rejected !== "number") return undefined;
   const ratio = typeof r.coverage?.ratio === "number" ? r.coverage.ratio : 0;
   const unknown = Array.isArray(r.coverage?.unknown) ? r.coverage.unknown.length : 0;
   const commit = typeof r.commit === "string" ? r.commit : undefined;
+  const reviewed = typeof r.coverage?.reviewed === "number" ? r.coverage.reviewed : 0;
   return {
     accepted: r.accepted,
     rejected: r.rejected,
     ratio,
     unknown,
+    ...(reviewed > 0 ? { reviewed } : {}),
     ...(commit ? { commit } : {}),
   };
 }
@@ -387,7 +391,7 @@ function openQuestions(c: Ctx): string[] {
 
 function trustLine(t: MapTrust | undefined, repo: string): string {
   if (!t) return `**Trust:** No verify report yet: run \`atticus verify ${repo}\`.`;
-  return `**Trust:** ${plural(t.accepted, "fact")} verified on their lines; coverage ${pct(t.ratio)} of source files (${plural(t.unknown, "unknown file")}: cited by no fact and opened through no Atticus tool); ${t.rejected} rejected.${t.commit ? ` Commit ${t.commit}.` : ""}`;
+  return `**Trust:** ${plural(t.accepted, "fact")} verified on their lines; coverage ${pct(t.ratio)} of source files (${plural(t.unknown, "unknown file")}: cited by no fact and opened through no Atticus tool)${t.reviewed ? `; ${plural(t.reviewed, "file")} reviewed by the reader with nothing to record (each with why, in the verify report)` : ""}; ${t.rejected} rejected.${t.commit ? ` Commit ${t.commit}.` : ""}`;
 }
 
 // ---------------------------------------------------------------- flows/<flow>.md

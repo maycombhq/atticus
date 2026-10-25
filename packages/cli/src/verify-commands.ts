@@ -12,6 +12,8 @@ import {
   headOf,
   raiseReadQuestions,
   readCorrections,
+  readReviewed,
+  reviewedProblemsOf,
   writeVerifyFiles,
   type QuestionProblem,
 } from "./facts-files.js";
@@ -23,6 +25,8 @@ import {
  * `<repo>.rejected.jsonl` for the assistant to fix, and `<repo>.verify.yaml` with the coverage.
  * The questions the assistant wrote to `<repo>.questions.jsonl` are raised for a person (ADR 0078),
  * each evidence line checked; one that can't be raised goes to the rejected file too.
+ * The files the assistant read and found no fact in, `<repo>.reviewed.jsonl` (ADR 0124 addendum
+ * A-read), are counted apart from read and listed with why; a line naming no file is rejected too.
  * Exit code 1 while anything is rejected, so a reading loop knows to go again.
  */
 export interface VerifyCommandOptions {
@@ -100,6 +104,8 @@ export async function verifyCommand(
   const corrections = await readCorrections(root, repo);
   for (const b of corrections.bad)
     io.err(`${rel}/${repo}.corrections.jsonl line ${b.line} isn't a correction: ${b.message}`);
+  // ADR 0124 addendum A-read: the files the reader read and found nothing to record in.
+  const reviewed = await readReviewed(root, repo);
   const report = await verifyFacts({
     facts: parsed.facts,
     source,
@@ -107,7 +113,12 @@ export async function verifyCommand(
     ...(o.routed ? { routed: o.routed } : {}),
     exclude: await excludesOf(root, repo),
     corrections: corrections.corrections,
+    reviewed: reviewed.entries,
   });
+  const reviewedBad = reviewedProblemsOf(reviewed.bad, report).map((p) => ({
+    ...p,
+    message: `${rel}/${repo}.reviewed.jsonl ${p.message}`,
+  }));
 
   // ADR 0078: what the code can't settle, raised for a person.
   const qFile = join(factsDirOf(root), `${repo}.questions.jsonl`);
@@ -129,8 +140,17 @@ export async function verifyCommand(
     raw: b.raw,
     message: `line ${b.line} isn't a fact: ${b.issues.map((i) => i.message).join("; ")}`,
   }));
-  const summary = await writeVerifyFiles(root, repo, report, commit, qProblems, badLines);
-  const failed = report.rejected.length + qProblems.length + badLines.length > 0;
+  const summary = await writeVerifyFiles(
+    root,
+    repo,
+    report,
+    commit,
+    qProblems,
+    badLines,
+    reviewedBad,
+  );
+  const failed =
+    report.rejected.length + qProblems.length + badLines.length + reviewedBad.length > 0;
 
   // --write (ADR 0124, A3b): the kept facts become the catalog, only when none was rejected,
   // so a half-fixed read never replaces the repo's records.
@@ -150,7 +170,12 @@ export async function verifyCommand(
     } else if (o.write) io.err(rejectedNote);
     io.out(
       JSON.stringify(
-        { ...summary, questions: { raised, problems: qProblems }, ...(written ? { written } : {}) },
+        {
+          ...summary,
+          questions: { raised, problems: qProblems },
+          ...(reviewedBad.length ? { reviewedProblems: reviewedBad } : {}),
+          ...(written ? { written } : {}),
+        },
         null,
         2,
       ),
@@ -158,8 +183,9 @@ export async function verifyCommand(
     return failed ? 1 : 0;
   }
   const pct = Math.round(report.coverage.ratio * 100);
+  const cov = report.coverage;
   io.out(
-    `${repo}: ${report.accepted.length} facts kept, ${report.rejected.length} rejected; coverage ${pct}% (${report.coverage.read.length} read, ${report.coverage.unknown.length} unknown${report.coverage.excluded.length ? `, ${report.coverage.excluded.length} excluded` : ""}).`,
+    `${repo}: ${report.accepted.length} facts kept, ${report.rejected.length} rejected; coverage ${pct}% (${cov.read.length} read, ${cov.reviewed.length ? `${cov.reviewed.length} reviewed with nothing to record, ` : ""}${cov.unknown.length} unknown${cov.excluded.length ? `, ${cov.excluded.length} excluded` : ""}).`,
   );
   if (report.carried.length)
     io.out(
@@ -188,15 +214,26 @@ export async function verifyCommand(
     );
   for (const q of qProblems) io.out(`  bad-question: ${q.message}`);
   for (const b of badLines.slice(0, 15)) io.out(`  schema: ${b.message}`);
+  for (const b of reviewedBad.slice(0, 15)) io.out(`  bad-reviewed: ${b.message}`);
   if (failed)
     io.out(
-      `Fix them from ${rel}/${repo}.rejected.jsonl (read the lines again, then rewrite or drop each fact or question) and run atticus verify ${repo} again.`,
+      `Fix them from ${rel}/${repo}.rejected.jsonl (read the lines again, then rewrite or drop each fact, question or reviewed line) and run atticus verify ${repo} again.`,
     );
-  else if (report.coverage.unknown.length)
+  else if (cov.unknown.length)
     io.out(
-      `Next: read the ${report.coverage.unknown.length} unknown files (listed in ${rel}/${repo}.verify.yaml), or exclude generated code in org-pack/scan/${repo}.yaml.`,
+      `Next: read the ${cov.unknown.length} unknown files (listed in ${rel}/${repo}.verify.yaml). A file you read and found nothing to record in goes in ${rel}/${repo}.reviewed.jsonl ({"path": "<file or glob>", "why": "..."} per line); generated code is excluded in org-pack/scan/${repo}.yaml.`,
+    );
+  else
+    io.out(
+      `The read is complete: every source file is read (${cov.read.length})${cov.reviewed.length ? ` or reviewed with nothing to record (${cov.reviewed.length}, each with why in ${rel}/${repo}.verify.yaml)` : ""}.`,
     );
   if (report.redacted) io.out(`${report.redacted} quotes had a secret value redacted.`);
+  // A-read: an auth no line is cited for is left out of the kept fact (a note, not a rejection).
+  const noAuth = report.authUncited;
+  if (noAuth.length)
+    io.out(
+      `${noAuth.length} ${noAuth.length === 1 ? "entry's" : "entries'"} auth left out (no line that sets it was cited): give each an authCite, the line that sets it and what it writes there, with its auth again: ${noAuth.map((a) => `${a.id} (${a.auth}, ${a.cite})`).join(", ")}.`,
+    );
   // C-estate: a note, not a rejection, so the reader follows each listener and route with a flow.
   const unfollowed = report.entriesNoFlowFollows;
   if (unfollowed.length) {

@@ -170,7 +170,13 @@ function reread(facts: Fact[], two: string): string[] {
     return rest;
   };
   return [
-    JSON.stringify({ ...strip(get), commit: two, cite: { ...get.cite, line: 20 } }),
+    // its auth's line moved with it (ADR 0124 addendum A-read: authCite is read again too)
+    JSON.stringify({
+      ...strip(get),
+      commit: two,
+      cite: { ...get.cite, line: 20 },
+      ...(get.kind === "entry" && get.authCite ? { authCite: { ...get.authCite, line: 19 } } : {}),
+    }),
     JSON.stringify({
       ...strip(notify),
       commit: two,

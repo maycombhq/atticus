@@ -138,9 +138,11 @@ describe("lean batch prompts: the core and the topic rules a batch needs (ADR 01
   const GRPC = "A gRPC entry or call's `path`";
 
   it("leaves /atticus-map's rules as they were, byte for byte (tier 1)", () => {
-    // sha256 of FACT_RULES before the split: every rule, in the same words and order.
+    // sha256 of FACT_RULES: every rule, in the same words and order. Re-pinned once since the
+    // split, for ADR 0124 addendum A-read's one added sentence (an entry's auth goes with
+    // authCite), the only difference from adcc5b1f…d422.
     expect(createHash("sha256").update(FACT_RULES).digest("hex")).toBe(
-      "adcc5b1f6933ee4b1082b5d1e4f71312746a2aa4ddef81b0f7ac20b89433d422",
+      "9aa38f82e0f468e61eca9a3d3ad04ce88e51939b2c1df133128ddcd3d5b12b88",
     );
     expect(FACT_RULES).toBe(factRulesFor());
     expect(mapCommand().body).toContain(FACT_RULES);
