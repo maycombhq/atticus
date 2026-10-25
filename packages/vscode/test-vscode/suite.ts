@@ -1,16 +1,27 @@
 import { writeFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 import * as vscode from "vscode";
 import { pickList, requiredSwitches } from "../src/commands";
 import { COPILOT_SETUP, copilotSetup } from "../src/describe";
 import type { AtticusHandles } from "../src/extension";
 import { FULL_WHEN } from "../src/surface";
 import { WORDS } from "../src/words";
+import { shot, until } from "./drive";
+import { asAPerson, noFolder } from "./person";
 
 /**
  * The extension's checks inside a real VS Code (ADR 0098), run by scripts/test-in-vscode.mjs on a
  * practice metarepo: it activates, every command it declares is registered, the sections read
- * the metarepo, and the app opens in a tab from the extension's own files.
+ * the metarepo, and the app opens in a tab from the extension's own files. ATTICUS_VSCODE_TEST_MODE
+ * says which run this is: `metarepo` (also does what a person does: test-vscode/person.ts),
+ * `no-folder` (an empty window) or `packaged` (the extension installed from its .vsix).
  */
+
+const MODE = process.env.ATTICUS_VSCODE_TEST_MODE ?? "metarepo";
+/** This package's folder: dist-test/test-vscode/suite.js is two below it. */
+const SOURCE = resolve(__dirname, "..", "..");
+
+export type Check = (name: string, f: () => Promise<string | void>, ms?: number) => Promise<void>;
 
 const label = (t: vscode.TreeItem) =>
   typeof t.label === "string" ? t.label : (t.label?.label ?? "");
@@ -34,9 +45,23 @@ export async function run(): Promise<void> {
       clearTimeout(timer);
     }
     console.log(`[atticus test] ${results.at(-1)!.ok ? "ok" : "FAIL"} ${name}`);
+    // As it goes: a window that dies halfway still says what passed before it.
+    const out = process.env.ATTICUS_VSCODE_TEST_OUT;
+    if (out) writeFileSync(out, JSON.stringify(results, null, 2));
+  };
+  const save = () => {
+    const out = process.env.ATTICUS_VSCODE_TEST_OUT;
+    if (out) writeFileSync(out, JSON.stringify(results, null, 2));
+    const failed = results.filter((r) => !r.ok);
+    if (failed.length) throw new Error(failed.map((f) => `${f.check}: ${f.detail}`).join("\n"));
   };
   const ext = vscode.extensions.getExtension<AtticusHandles>("maycombhq.atticus");
   if (!ext) throw new Error("The extension isn't loaded.");
+  // VS Code starts it by itself: on a metarepo (workspaceContains) or once started up.
+  await check("VS Code starts the extension by itself", async () => {
+    await until(() => ext.isActive, 30_000, "the extension to start");
+    return `${MODE}, from ${ext.extensionPath}`;
+  });
   const h = await ext.activate();
   const late = setTimeout(
     () => console.log("[atticus test] still waiting for the extension to be ready"),
@@ -44,6 +69,17 @@ export async function run(): Promise<void> {
   );
   await h.ready;
   clearTimeout(late);
+  if (MODE === "no-folder") {
+    await noFolder(check, h, ext);
+    return save();
+  }
+  if (MODE === "packaged")
+    await check("runs from the installed package, not the source folder", async () => {
+      if (resolve(ext.extensionPath) === SOURCE) throw new Error(ext.extensionPath);
+      for (const f of ["dist/extension.js", "media/app/index.html", "media/atticus.svg"])
+        await vscode.workspace.fs.stat(vscode.Uri.joinPath(ext.extensionUri, f));
+      return ext.extensionPath;
+    });
 
   await check("finds the metarepo and the command line", async () => {
     if (!h.service.root) throw new Error("no metarepo found in the workspace");
@@ -333,17 +369,23 @@ export async function run(): Promise<void> {
     return s.command;
   });
 
-  await check("opens the app in a tab, from the extension's own files", async () => {
-    await vscode.commands.executeCommand("atticus.showApp", "#/architecture");
-    for (let i = 0; i < 40 && !h.panel(); i++) await new Promise((r) => setTimeout(r, 250));
-    const p = h.panel();
-    if (!p) throw new Error("no Atticus tab");
-    const html = p.webview.html;
-    if (!/default-src 'none'/.test(html) || !/nonce-/.test(html))
-      throw new Error("not the bundled app's page");
-    if (/atticus-token/.test(html)) throw new Error("the page holds the session token");
-    return "bundled page with its policy";
-  });
+  // A repo on the estate canvas: the Map's since Phase D, not a change's Architecture tab.
+  await check(
+    "opens a repo on the Map's canvas in a tab, from the extension's own files",
+    async () => {
+      await vscode.commands.executeCommand("atticus.diagram", "forge-ledger");
+      for (let i = 0; i < 40 && !h.panel(); i++) await new Promise((r) => setTimeout(r, 250));
+      const p = h.panel();
+      if (!p) throw new Error("no Atticus tab");
+      const html = p.webview.html;
+      if (!/default-src 'none'/.test(html) || !/nonce-/.test(html))
+        throw new Error("not the bundled app's page");
+      if (/atticus-token/.test(html)) throw new Error("the page holds the session token");
+      const at = /location\.hash = "([^"]*)"/.exec(html)?.[1];
+      if (at !== "#/canvas?node=repo%3Aforge-ledger") throw new Error(`opened on ${at}`);
+      return `bundled page with its policy, on ${at}`;
+    },
+  );
 
   await check("opens the app on Home when no page is named (Phase D)", async () => {
     h.panel()?.dispose();
@@ -354,8 +396,94 @@ export async function run(): Promise<void> {
     return "#/home";
   });
 
-  const out = process.env.ATTICUS_VSCODE_TEST_OUT;
-  if (out) writeFileSync(out, JSON.stringify(results, null, 2));
-  const failed = results.filter((r) => !r.ok);
-  if (failed.length) throw new Error(failed.map((f) => `${f.check}: ${f.detail}`).join("\n"));
+  // The page's own scripts ran under the panel's policy: it asks the local API through the
+  // extension (ADR 0097), and the replies are the API's.
+  await check(
+    "the app's page loads in the panel and reads the API through the extension",
+    async () => {
+      const p = h.panel();
+      if (!p) throw new Error("no Atticus tab");
+      const asked: string[] = [];
+      const sub = p.webview.onDidReceiveMessage(
+        (m: { type?: string; method?: string; path?: string }) => {
+          asked.push(`${m.type} ${m.method ?? ""} ${m.path ?? ""}`.trim());
+        },
+      );
+      try {
+        for (let i = 0; i < 3 && !asked.some((a) => a.startsWith("api ")); i++) {
+          void p.webview.postMessage({ type: "navigate", hash: "#/home" });
+          await until(
+            () => asked.some((a) => a.startsWith("api ")),
+            20_000,
+            "the page to call the API",
+          ).catch(() => undefined);
+        }
+        if (!asked.some((a) => a.startsWith("api ")))
+          throw new Error(`the page sent ${asked.join(", ") || "nothing"}: its scripts didn't run`);
+        await new Promise((r) => setTimeout(r, 3000));
+        shot(`${MODE}-app-home`);
+        // The canvas reads the estate's graph and lays its boxes out in a worker (worker-src blob:).
+        const before = asked.length;
+        void p.webview.postMessage({ type: "navigate", hash: "#/canvas?node=repo%3Aforge-ledger" });
+        await until(
+          () => asked.slice(before).some((a) => a.includes("/api/graph/")),
+          20_000,
+          "the canvas to read the graph",
+        );
+        await new Promise((r) => setTimeout(r, 6000));
+        shot(`${MODE}-app-canvas`);
+        return `${asked.length} calls, first ${asked[0]}; the canvas read ${asked
+          .slice(before)
+          .filter((a) => a.includes("/api/graph/"))
+          .join(", ")}`;
+      } finally {
+        sub.dispose();
+      }
+    },
+  );
+
+  await check("the three views open in the sidebar", async () => {
+    await vscode.commands.executeCommand("workbench.view.extension.atticus");
+    for (const v of ["atticus.view", "atticus.questions", "atticus.changes"])
+      await vscode.commands.executeCommand(`${v}.focus`);
+    await new Promise((r) => setTimeout(r, 2000));
+    shot(`${MODE}-sidebar`);
+    return "Next and Waiting, Questions, Changes";
+  });
+
+  await check("a line the facts cite has a CodeLens naming what cites it", async () => {
+    const dir = h.service.paths(h.service.root!).codeRoot("forge-ledger");
+    if (!dir) throw new Error("forge-ledger's code isn't on this machine");
+    const uri = vscode.Uri.file(
+      join(dir, "src", "main", "java", "forge", "ledger", "LedgerEndpoints.java"),
+    );
+    await vscode.window.showTextDocument(uri);
+    let lenses: vscode.CodeLens[] = [];
+    await until(
+      async () => {
+        lenses =
+          (await vscode.commands.executeCommand<vscode.CodeLens[]>(
+            "vscode.executeCodeLensProvider",
+            uri,
+          )) ?? [];
+        return (
+          lenses.some((l) => l.range.start.line === 7) &&
+          lenses.some((l) => l.range.start.line === 10)
+        );
+      },
+      30_000,
+      "lenses on lines 8 and 11",
+    );
+    const at8 = lenses.filter((l) => l.range.start.line === 7).map((l) => l.command?.title ?? "");
+    if (!at8.some((t) => /Endpoint|ledger-api/.test(t)))
+      throw new Error(`line 8: ${at8.join(" | ")}`);
+    if (lenses.some((l) => l.command?.command !== "atticus.openItem"))
+      throw new Error("a lens doesn't open what it names");
+    await new Promise((r) => setTimeout(r, 3000));
+    shot(`${MODE}-codelens`);
+    return `line 8: ${at8.join(" | ")}`;
+  });
+
+  if (MODE === "metarepo") await asAPerson(check, h);
+  save();
 }

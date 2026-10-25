@@ -64,7 +64,8 @@
     "package": "node scripts/copy-app.mjs && tsc -p tsconfig.build.json && vsce package --no-dependencies",
     "marketplace": "node scripts/copy-app.mjs && tsc -p tsconfig.build.json && vsce publish --no-dependencies",
     "marketplace:pre-release": "node scripts/copy-app.mjs && tsc -p tsconfig.build.json && vsce publish --pre-release --no-dependencies",
-    "test:vscode": "tsc -p tsconfig.build.json && node scripts/copy-app.mjs && node scripts/test-in-vscode.mjs"
+    "test:vscode": "tsc -p tsconfig.build.json && node scripts/copy-app.mjs && node scripts/test-in-vscode.mjs",
+    "test:vscode:packaged": "node scripts/test-in-vscode.mjs --vsix"
   },
   "contributes": {
     "chatParticipants": [
@@ -1757,6 +1758,7 @@
   "devDependencies": {
     "@maycombhq/cli": "workspace:*",
     "@types/vscode": "1.95.0",
+    "@vscode/test-electron": "3.1.0",
     "@vscode/vsce": "4.0.0"
   }
 }

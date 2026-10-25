@@ -14,10 +14,10 @@ async function fakeAtticus(body: string): Promise<string> {
   return f;
 }
 
-describe("the link @atticus /diagram opens (ADR 0091)", () => {
+describe("the link @atticus /diagram opens (ADR 0091; the Map's canvas since Phase D)", () => {
   it("opens a repo by its name, as the estate names it", () => {
-    expect(diagramHash("nadiengine")).toBe("#/architecture?node=repo%3Anadiengine");
-    expect(diagramHash("Forge-Notes")).toBe("#/architecture?node=repo%3Aforge-notes");
+    expect(diagramHash("nadiengine")).toBe("#/canvas?node=repo%3Anadiengine");
+    expect(diagramHash("Forge-Notes")).toBe("#/canvas?node=repo%3Aforge-notes");
   });
 
   it("opens a flow of a repo on the Flows screen, by its id or by words to find it", () => {
@@ -31,8 +31,8 @@ describe("the link @atticus /diagram opens (ADR 0091)", () => {
   });
 
   it("takes a node id as it is, and the estate when nothing is named", () => {
-    expect(diagramHash("system:payments")).toBe("#/architecture?node=system%3Apayments");
-    expect(diagramHash("  ")).toBe("#/architecture");
+    expect(diagramHash("system:payments")).toBe("#/canvas?node=system%3Apayments");
+    expect(diagramHash("  ")).toBe("#/canvas");
   });
 });
 
