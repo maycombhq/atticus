@@ -190,25 +190,22 @@ describe("atticus verify <repo> --write (ADR 0124, A3b)", () => {
     expect(existsSync(join(root, "map"))).toBe(false);
   });
 
-  it("leaves out a flow that isn't a valid Flow, says why, and writes everything else", async () => {
-    // A call-out step that names no call: the verifier keeps the fact (its line holds), but a
-    // Flow's call-out names where it goes, so the flow can't be written (B-stories-bench run).
+  it("rejects a call-out step that names no call at verify, before anything is written (B-fixes)", async () => {
+    // The B-stories-bench run: three flows' call-out steps named no call; the verifier kept them,
+    // and --write wrote the catalog, then couldn't write the flows. Now the verifier rejects such
+    // a flow, saying what to fix, and --write writes nothing until it is fixed.
     const facts = readFileSync(join(VERIFY, "forge-ledger.facts.jsonl"), "utf8").replace(
       '"ref":"c-fx-rate",',
       "",
     );
     const root = await metarepo(facts);
     const o = io();
-    expect(await write(root, o), o.err.join("\n")).toBe(0);
-    expect(o.err.join("\n")).toMatch(
-      /The flow ledger-api\.post-a-ledger-entry isn't written to specs\/forge-ledger\/: steps\.1\.to: a call-out names where it goes/,
-    );
-    expect(o.out.join("\n")).toMatch(/Wrote the catalog/);
-    expect(o.out.join("\n")).toMatch(/Flows: none\./);
-    expect(
-      existsSync(join(root, "specs", "forge-ledger", "ledger-api.post-a-ledger-entry.yaml")),
-    ).toBe(false);
-    expect(existsSync(join(root, "map", "forge-ledger", "map.md"))).toBe(true);
+    expect(await write(root, o)).toBe(1);
+    const said = [...o.out, ...o.err].join("\n");
+    expect(said).toMatch(/w-post-entry/);
+    expect(said).toMatch(/step 2 is a call-out that names no fact/);
+    expect(said).toMatch(/Nothing written to the catalog/);
+    expect(existsSync(join(root, "specs", "forge-ledger"))).toBe(false);
   });
 
   it("without --write, only checks: the catalog and the map aren't touched", async () => {

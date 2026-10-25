@@ -34,7 +34,9 @@ export type RejectCode =
   | "claim-in-comment"
   | "quote-mismatch"
   | "dangling-ref"
-  | "ref-rejected";
+  | "ref-rejected"
+  /** A flow's call-out step whose ref is missing or names neither a call nor a config fact. */
+  | "call-out-no-call";
 
 export interface Rejected {
   fact: Fact;
@@ -346,6 +348,26 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
         "dangling-ref",
         `${f.kind} ${f.id} names ${d.field} "${d.id}", which is no fact in this file`,
       );
+  }
+  // B-fixes, problem 6: a call-out step names the call it makes (a call fact), or, for a call
+  // through a cloud SDK with no path, the client's config fact the protocol records instead.
+  // One that names neither can't say where the flow goes, so the map couldn't write the flow.
+  const byId = new Map(facts.map((f) => [f.id, f]));
+  for (const f of facts) {
+    if (rejected.has(f.id) || f.kind !== "flow") continue;
+    const i = f.steps.findIndex((s) => {
+      if (s.kind !== "call-out") return false;
+      const to = s.ref === undefined ? undefined : byId.get(s.ref);
+      return to?.kind !== "call" && to?.kind !== "config";
+    });
+    if (i < 0) continue;
+    const s = f.steps[i]!;
+    const what = s.ref === undefined ? "names no fact" : `names ${byId.get(s.ref)!.kind} ${s.ref}`;
+    reject(
+      f,
+      "call-out-no-call",
+      `flow ${f.id} step ${i + 1} is a call-out that ${what} (${s.cite.file}:${s.cite.line}): give it ref, the id of the call fact it makes, or, for a call through a cloud SDK with no path, the config fact of the client's setting; or make it another kind of step if it calls nothing`,
+    );
   }
   for (let changed = true; changed;) {
     changed = false;

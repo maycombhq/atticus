@@ -58,12 +58,15 @@ import {
   endpointKey,
   endpointsFor,
   estateIndex,
+  isKeyPattern,
   loadEstate,
   schemaFieldsOf,
   triggerEntry,
   type Estate,
+  type SpecFlow,
 } from "./estate.js";
 import { mergeDelta } from "./merge.js";
+import { storyCodeSource, STORY_CODE_SHARE } from "./story-code.js";
 // A cycle (task-context reads the stories), safe: only functions are used, and only when called.
 import { migrationPath } from "../task-context.js";
 import {
@@ -125,6 +128,19 @@ export interface DeltaTask {
   to?: { component: string; entry: string; new: boolean };
   /** A store step that adds columns or a table: what the target flow says of them (B-stories). */
   data?: TaskData;
+  /**
+   * The files the change goes into beside today's step (B-fixes, problem 2): where the fields
+   * and columns the task adds or changes are declared, from the facts' citations (an entry's or
+   * call's Schema, a table and its columns). Left out when the facts cite none.
+   */
+  files?: TaskFile[];
+}
+
+/** A file a task touches, from the catalog's citations: repo:path, the cited lines and why. */
+export interface TaskFile {
+  file: string;
+  lines: number[];
+  why: string;
 }
 
 /** The columns a store step adds, with what the target flow says of each. */
@@ -195,7 +211,9 @@ export function storiesFromDeltas(all: FlowDelta[], e: Estate): DeltaStory[] {
   let k = 0;
   for (const repo of repos)
     for (const d of deltas.filter((x) => x.repo === repo)) {
-      const today = e.flowById.get(d.flow)?.flow;
+      const spec = e.flowById.get(d.flow);
+      const today = spec?.flow;
+      const entry = spec ? triggerEntry(spec, e) : d.trigger?.entry;
       const name = d.name ?? today?.name ?? d.flow;
       const id = `s${++k}-${slug(d.flow.split(".").slice(1).join("-") || d.flow).slice(0, 40)}`;
       const tasks: DeltaTask[] = [];
@@ -213,6 +231,12 @@ export function storiesFromDeltas(all: FlowDelta[], e: Estate): DeltaStory[] {
         counter.set(repo, n);
         const verb = s.op === "add" ? "Add" : s.op === "change" ? "Change" : "Remove";
         const data = taskData(s, e);
+        const cited = evidence.length
+          ? evidence
+          : d.change === "new"
+            ? []
+            : ev(d.repo, today?.trigger.evidence ?? []);
+        const files = taskFiles(d, s, old, entry, cited, e);
         tasks.push({
           id: `${repos.indexOf(repo) + 1}.${n}`,
           story: id,
@@ -227,11 +251,7 @@ export function storiesFromDeltas(all: FlowDelta[], e: Estate): DeltaStory[] {
           ),
           what,
           fields,
-          evidence: evidence.length
-            ? evidence
-            : d.change === "new"
-              ? []
-              : ev(d.repo, today?.trigger.evidence ?? []),
+          evidence: cited,
           ...(s.to ? { target: `${s.to.component} ${s.to.entry}${s.to.new ? " (new)" : ""}` } : {}),
           ...(s.store
             ? {
@@ -240,6 +260,7 @@ export function storiesFromDeltas(all: FlowDelta[], e: Estate): DeltaStory[] {
             : {}),
           ...(s.to ? { to: { component: s.to.component, entry: s.to.entry, new: s.to.new } } : {}),
           ...(data ? { data } : {}),
+          ...(files.length ? { files } : {}),
         });
       });
       stories.push({
@@ -271,6 +292,8 @@ export function storiesFromDeltas(all: FlowDelta[], e: Estate): DeltaStory[] {
 /** The columns a store step adds, or undefined when it adds none (B-stories). */
 function taskData(s: DeltaStep, e: Estate): TaskData | undefined {
   if (!s.store || s.op === "remove") return undefined;
+  // A key-pattern store (a cache read by key) has no columns or migrations (B-fixes, problem 4).
+  if (isKeyPattern(e, s.store.table)) return undefined;
   const have = columnsOf(e, s.store.table);
   const added = s.store.new ? s.store.columns : s.store.columns.filter((c) => !have.has(c));
   if (!added.length && !s.store.new) return undefined;
@@ -288,6 +311,143 @@ function taskData(s: DeltaStep, e: Estate): TaskData | undefined {
       : {}),
     ...(s.store.retention ? { retention: s.store.retention } : {}),
   };
+}
+
+type Cited = { repo?: string; path?: string; line?: number };
+type TodayStep = SpecFlow["flow"]["steps"][number];
+const foldField = (s: string) => s.toLowerCase().replace(/[_-]/g, "");
+/** At most this many lines a file, so a long spec file doesn't fill the line. */
+const FILE_LINES = 4;
+
+/**
+ * The files a task's change goes into (B-fixes, problem 2), from the facts' citations: for the
+ * fields and columns the task adds or changes (all of an added step's; a changed step's that
+ * today's step doesn't carry), the files of the Schemas that hold one of them (the story's
+ * entry's DTO or spec, or the call's client), and for a store step that adds columns, the
+ * table's and its columns' files (the schema file, the entity). Only files in the task's repo,
+ * and none of today's step's own (its evidence names those).
+ */
+function taskFiles(
+  d: FlowDelta,
+  s: DeltaStep,
+  old: TodayStep | undefined,
+  entry: string | undefined,
+  evidence: string[],
+  e: Estate,
+): TaskFile[] {
+  if (s.op === "remove") return [];
+  const had = new Set(
+    old && s.op === "change"
+      ? [
+          ...Object.values(old.data ?? {}).flatMap((v) => (Array.isArray(v) ? v : [])),
+          ...(old.store?.columns ?? []),
+        ].map((f) => foldField(String(f).split(".").at(-1)!))
+      : [],
+  );
+  const changed = new Set(
+    [...fieldNames(s.fields), ...(s.store?.columns ?? [])]
+      .map((f) => foldField(f.split(".").at(-1)!))
+      .filter((f) => !had.has(f)),
+  );
+  if (!changed.size && !s.store?.new) return [];
+  const recs = e.records as unknown as (Record<string, unknown> & { kind: string; id: string })[];
+  const seen = new Set(evidence.map((x) => x.replace(/:\d+$/, "")));
+  const out: TaskFile[] = [];
+  const add = (path: string, lines: number[], why: string) => {
+    const file = `${d.repo}:${path}`;
+    if (seen.has(file)) {
+      const had = out.find((x) => x.file === file);
+      if (had)
+        had.lines = [...new Set([...had.lines, ...lines])]
+          .sort((a, b) => a - b)
+          .slice(0, FILE_LINES);
+      return;
+    }
+    seen.add(file);
+    out.push({ file, lines: [...new Set(lines)].sort((a, b) => a - b).slice(0, FILE_LINES), why });
+  };
+  const mine = (ev: unknown) =>
+    ((ev ?? []) as Cited[]).filter((x) => x.path && (!x.repo || x.repo === d.repo));
+  /** Each cited file in order, with its lines. */
+  const byFile = (ev: Cited[]) => {
+    const m = new Map<string, number[]>();
+    for (const x of ev) m.set(x.path!, [...(m.get(x.path!) ?? []), ...(x.line ? [x.line] : [])]);
+    return m;
+  };
+
+  // ---- the Schemas holding a field the task adds or changes: the entry's, and the call's
+  const owners: { label: string; refs: Set<string> }[] = [];
+  if (entry) owners.push({ label: entry, refs: new Set(endpointsFor(e, entry)) });
+  if (s.to) {
+    const from = e.flowById.get(d.flow)?.flow.component ?? d.flow.split(".")[0];
+    const callee = new Set(endpointsFor(e, s.to.entry));
+    const key = endpointKey(s.to.entry);
+    owners.push({
+      label: `the call to ${s.to.component} ${s.to.entry}`,
+      refs: new Set(
+        recs
+          .filter(
+            (r) =>
+              r.kind === "Interface" &&
+              r.from === from &&
+              ((typeof r.endpoint === "string" && callee.has(r.endpoint)) ||
+                endpointKey(
+                  `${String(r.method ?? "")} ${String(r.normalizedPath ?? "")}`.trim(),
+                ) === key),
+          )
+          .map((r) => r.id),
+      ),
+    });
+  }
+  // A step that takes the entry's input (entry, validate) or answers it (respond) changes the
+  // entry's own request or response schema, whether or not it has the field yet (a new field).
+  const kind = s.kind ?? old?.kind;
+  const takes = kind === "entry" || kind === "validate";
+  for (const [n, o] of owners.entries())
+    for (const r of recs) {
+      if (r.kind !== "Schema" || !o.refs.has(String(r.ref))) continue;
+      const side = r.id.slice(String(r.ref).length + 1) || "request";
+      const held = ((r.fields ?? []) as { name: string }[])
+        .map((f) => f.name)
+        .filter((x, i, xs) => xs.indexOf(x) === i && changed.has(foldField(x)));
+      const own =
+        n === 0 &&
+        !s.to &&
+        ((takes && side !== "response") || (kind === "respond" && side === "response"));
+      if (!held.length && !own) continue;
+      const whose = o.label.endsWith("s") ? `${o.label}'` : `${o.label}'s`;
+      for (const [path, lines] of byFile(mine(r.evidence)))
+        add(
+          path,
+          lines,
+          `where ${whose} ${side} fields are (${r.id}${held.length ? `: ${held.join(", ")}` : ""})`,
+        );
+    }
+
+  // ---- a store step that adds columns: the table's file and its columns' (the schema, the entity)
+  const table = s.store?.table;
+  const adds = s.store && s.store.columns.some((c) => changed.has(foldField(c)));
+  if (table && adds && e.byId.get(table)?.kind === "Table") {
+    const why = `where table ${table} and its columns are`;
+    const cols = recs.filter((r) => r.kind === "Column" && r.table === table);
+    const matched = new Set(
+      cols.filter((c) => changed.has(foldField(String(c.name ?? "")))).map((c) => c.id),
+    );
+    const files = new Map<string, { lines: number[]; all: number[] }>();
+    const put = (ev: Cited[], keep: boolean) => {
+      for (const [path, lines] of byFile(ev)) {
+        const f = files.get(path) ?? { lines: [], all: [] };
+        if (keep) f.lines.push(...lines);
+        f.all.push(...lines);
+        files.set(path, f);
+      }
+    };
+    put(mine(e.byId.get(table)!.evidence), true);
+    for (const c of cols) put(mine(c.evidence), matched.has(c.id));
+    for (const [path, f] of files)
+      add(path, f.lines.length ? f.lines : f.all.length ? [Math.min(...f.all)] : [], why);
+  }
+  return out;
 }
 
 const cites = (repo: string, at: { path?: string; line?: number }[]) => {
@@ -1625,6 +1785,11 @@ export function taskPrompt(
     ...(t.evidence.length
       ? [`Today's code is at ${t.evidence.join(", ")}; read it first.`]
       : ["This is new code; follow the repo's patterns for its neighbours."]),
+    ...(t.files?.length
+      ? [
+          `Its fields and columns are declared in ${t.files.map((f) => `${f.file}${f.lines.length ? `:${f.lines.join(",")}` : ""}`).join(", ")}; change them there too.`,
+        ]
+      : []),
     "Acceptance criteria:",
     ...criteria.map(
       (c) => `- ${c.text}${c.checks.length ? ` (checks ${c.checks.join(", ")})` : ""}`,
@@ -1949,6 +2114,8 @@ function renderStoryFile(
       if (m[2] && !ls.includes(m[2])) ls.push(m[2]);
       byFile.set(m[1]!, ls);
     }
+    // B-fixes: then where the fields and columns it adds or changes are declared (the facts' files).
+    for (const f of t.files ?? []) byFile.set(f.file, f.lines.map(String));
     const files = [
       ...[...byFile].map(
         ([f, ls]) =>
@@ -2371,6 +2538,14 @@ export async function storiesStage(
       deltas.flatMap((d) => d.steps.flatMap((s) => (s.store ? [s.store.table] : []))),
     ),
   ];
+  // B-fixes, problem 3: the lines the tasks cite, from the checkouts, for an assistant that
+  // can't open the repo; none without a checkout, so such a prompt is as it was.
+  const code = await storyCodeSource(
+    root,
+    stories,
+    Math.floor(stageBudget(ctx, STORY_AGENT) * STORY_CODE_SHARE),
+  );
+  if (code) sources.push(code);
   const FORMAT = `Reply with YAML only:
 
 stories:

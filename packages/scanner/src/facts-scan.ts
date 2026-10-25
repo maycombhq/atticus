@@ -10,7 +10,7 @@ import {
   type Fact,
   type OrgPack,
 } from "@maycombhq/core";
-import { factsRecords, targetsFromAnswers } from "./facts-catalog.js";
+import { componentRenames, factsRecords, targetsFromAnswers } from "./facts-catalog.js";
 import { estateRepos } from "./merge-input.js";
 
 /**
@@ -59,7 +59,11 @@ export async function factsForScan(
   const questions = (await listQuestions(root, { repo }).catch(() => ({ questions: [] })))
     .questions;
   const targets = targetsFromAnswers(repo, facts, questions);
-  const { newRecords, facts: used } = factsRecords({ repo, facts, op, targets });
+  // B-fixes, problem 1: a component another repo's facts have too gets an estate-unique id,
+  // as verify --write gives it.
+  const others = (await estateFacts(root, op, repo)).repos;
+  const renames = componentRenames([{ repo, facts }, ...others], op);
+  const { newRecords, facts: used } = factsRecords({ repo, facts, op, targets, renames });
 
   // The cross-check: what the readers found that the facts don't have, by what each names.
   const keyOf = (r: CatalogRecord): string | undefined => {

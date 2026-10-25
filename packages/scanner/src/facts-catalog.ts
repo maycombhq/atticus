@@ -254,6 +254,61 @@ export function targetsFromAnswers(
   return out;
 }
 
+/** A repo's component renames: the id a fact's component had, and the estate-unique id it gets. */
+export type ComponentRenames = Readonly<Record<string, Readonly<Record<string, string>>>>;
+
+/**
+ * Component ids two repos would share (B-fixes, problem 1): a fact's `component` is the
+ * assistant's name for a folder of its repo (`frontend`, `backend`), so two repos can both have
+ * one, and their records would merge into one Component owned by the repo written first. A
+ * component id more than one repo uses becomes `<repo>-<component>` in each of them, except in
+ * the repo whose own id it is (repo ids are unique). Every other id stays as it was, so a facts
+ * file whose components no other repo has projects the same records as before. `taken` are
+ * component ids other repos' records already hold (the catalog as it is): one of this list's
+ * repos that uses one is renamed too, even when the other repo's facts aren't to hand.
+ */
+export function componentRenames(
+  repos: readonly { repo: string; facts: readonly Fact[] }[],
+  op: OrgPack,
+  taken: readonly { id: string; repo: string }[] = [],
+): ComponentRenames {
+  const manifests = estateRepos(op);
+  const users = new Map<string, Set<string>>(); // component id -> repos
+  const use = (id: string, repo: string) => users.set(id, (users.get(id) ?? new Set()).add(repo));
+  for (const { repo, facts } of repos) {
+    const fallback = manifests.find((r) => r.id === repo)?.component;
+    for (const f of facts)
+      if (f.kind !== "field") use(factIdPart(f.component ?? fallback ?? repo), repo);
+  }
+  for (const t of taken) if (users.has(t.id)) use(t.id, t.repo);
+  const out: Record<string, Record<string, string>> = {};
+  for (const [id, set] of [...users].sort((a, b) => a[0].localeCompare(b[0]))) {
+    if (set.size < 2) continue;
+    for (const repo of repos.map((r) => r.repo).filter((r) => set.has(r))) {
+      if (factIdPart(repo) === id) continue;
+      (out[repo] ??= {})[id] = factIdPart(`${repo}-${id}`);
+    }
+  }
+  return out;
+}
+
+/** A repo's facts with its components renamed, the manifest's component filling one left out. */
+function withComponents(
+  repo: string,
+  facts: readonly Fact[],
+  op: OrgPack,
+  renames: ComponentRenames | undefined,
+): Fact[] {
+  const fallback = estateRepos(op).find((r) => r.id === repo)?.component;
+  const mine = renames?.[repo] ?? {};
+  return facts.map((f): Fact => {
+    const c = f.component ?? fallback;
+    if (!c) return f;
+    const to = mine[factIdPart(c)];
+    return to ? { ...f, component: to } : f.component ? f : { ...f, component: c };
+  });
+}
+
 /**
  * A repo's facts as the records a scan merges (ADR 0124): projected, with a person's named targets
  * applied, the manifest's component and system, and the loose ends a scan's merge can join (a
@@ -265,13 +320,15 @@ export function factsRecords(input: {
   facts: readonly Fact[];
   op: OrgPack;
   targets?: Readonly<Record<string, string>>;
+  /** Component ids made estate-unique (componentRenames); left out, every id is kept. */
+  renames?: ComponentRenames;
 }) {
   const { repo, op } = input;
   const manifest = estateRepos(op).find((r) => r.id === repo);
-  // A fact with no component belongs to the component the manifest names for the repo.
-  const facts = input.facts.map((f): Fact => {
+  // A fact with no component belongs to the component the manifest names for the repo, and a
+  // component another repo has too gets its estate-unique id.
+  const facts = withComponents(repo, input.facts, op, input.renames).map((f): Fact => {
     let g: Fact = f;
-    if (!g.component && manifest?.component) g = { ...g, component: manifest.component };
     const to = input.targets?.[g.id];
     if (g.kind === "call" && !g.to && to) g = { ...g, to };
     return g;
@@ -328,15 +385,20 @@ export function factsRecords(input: {
 export function joinReposOf(
   op: OrgPack,
   list: readonly { repo: string; facts: readonly Fact[] }[],
+  /** Component ids made estate-unique (componentRenames), so the join names the records' ids. */
+  renames?: ComponentRenames,
 ): JoinRepo[] {
   const manifests = estateRepos(op);
   return list.map(({ repo, facts }) => {
     const m = manifests.find((r) => r.id === repo);
     const modules = (m?.modules ?? []).filter((x) => x.hosts.length > 0);
+    const component = m?.component
+      ? (renames?.[repo]?.[factIdPart(m.component)] ?? m.component)
+      : undefined;
     return {
       repo,
-      facts,
-      ...(m?.component ? { component: m.component } : {}),
+      facts: renames?.[repo] ? withComponents(repo, facts, op, renames) : facts,
+      ...(component ? { component } : {}),
       ...(m?.hosts.length ? { hosts: m.hosts } : {}),
       ...(modules.length
         ? { modules: modules.map((x) => ({ component: x.component, hosts: x.hosts })) }
@@ -418,7 +480,20 @@ function joinAbout(all: FactsJoinResult, repo: string): FactsJoinResult {
 
 export function catalogWithFacts(input: FactsCatalogInput): FactsCatalogResult {
   const { repo, op } = input;
-  const { facts, projected, newRecords, newFlows, looseFact } = factsRecords(input);
+  // B-fixes, problem 1: a component id another repo has too (in the estate's facts, or a
+  // Component of another repo the catalog already holds) is made unique by the repo's id.
+  const others = (input.estate ?? []).filter((x) => x.repo !== repo);
+  const renames = componentRenames(
+    [{ repo, facts: input.facts }, ...others],
+    op,
+    input.existing.flatMap((r) =>
+      r.kind === "Component" && r.repo && r.repo !== repo ? [{ id: r.id, repo: r.repo }] : [],
+    ),
+  );
+  const { facts, projected, newRecords, newFlows, looseFact } = factsRecords({
+    ...input,
+    renames,
+  });
 
   // ---- the existing catalog without what came from this repo
   const mine = (e: unknown) => (e as Ev).repo === repo;
@@ -484,10 +559,7 @@ export function catalogWithFacts(input: FactsCatalogInput): FactsCatalogResult {
   let join: FactsJoinResult | undefined;
   let records0 = [...kept, ...newRecords];
   if (input.estate) {
-    const repos = joinReposOf(op, [
-      { repo, facts },
-      ...input.estate.filter((x) => x.repo !== repo),
-    ]);
+    const repos = joinReposOf(op, [{ repo, facts }, ...others], renames);
     join = joinAbout(
       joinFacts({ repos, targets: { ...input.estateTargets, [repo]: input.targets ?? {} } }),
       repo,
@@ -666,12 +738,13 @@ export function estateFromFacts(input: {
     specs.push({ repo, flows: out.flows });
     invalid.push(...out.invalid);
   }
+  const renames = componentRenames(input.repos, input.op);
   const join = joinFacts({
     repos: joinReposOf(
       input.op,
       input.repos.map(({ repo, facts }) => ({
         repo,
-        facts: factsRecords({ repo, facts, op: input.op }).facts,
+        facts: factsRecords({ repo, facts, op: input.op, renames }).facts,
       })),
     ),
   });

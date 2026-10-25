@@ -192,7 +192,7 @@ Change only this repo. Write a test for each criterion. Never push to a protecte
 - Fields: sku, quantity, fraud_verdict
 - Evidence: forge-orders:src/main/java/forge/orders/OrderController.java:13
 - Store: forge-orders-db.orders: sku, quantity, fraud_verdict
-- Files to touch: forge-orders:src/main/java/forge/orders/OrderController.java (line 13), forge-orders:V4__add_fraud_verdict.sql (new migration)
+- Files to touch: forge-orders:src/main/java/forge/orders/OrderController.java (line 13), forge-orders:src/main/resources/schema.sql (line 1), forge-orders:V4__add_fraud_verdict.sql (new migration)
 - Acceptance criteria:
   - Given an accepted order, when it is saved, then the orders row holds sku, quantity and fraud_verdict.
   - Given the insert fails, when the order is saved, then 500 and no orders row holds the order's fraud_verdict. (Error: other, 500)
@@ -209,6 +209,7 @@ It uses forge-orders-db.orders: sku, quantity, fraud_verdict.
 Fields: sku, quantity, fraud_verdict.
 Column forge-orders-db.orders.fraud_verdict: varchar(20), nullable, migration V4__add_fraud_verdict.sql.
 Today's code is at forge-orders:src/main/java/forge/orders/OrderController.java:13; read it first.
+Its fields and columns are declared in forge-orders:src/main/resources/schema.sql:1; change them there too.
 Acceptance criteria:
 - Given an accepted order, when it is saved, then the orders row holds sku, quantity and fraud_verdict (checks sku, quantity, fraud_verdict)
 - Given the insert fails, when the order is saved, then 500 and no orders row holds the order's fraud_verdict (checks fraud_verdict)

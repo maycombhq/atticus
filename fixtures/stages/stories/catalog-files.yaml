@@ -1,0 +1,50 @@
+# More of forge-orders' facts, for the files a task names (B-fixes, problem 2): where POST /orders'
+# request and response fields are declared (the DTOs and the OpenAPI spec), the Order entity's
+# column, and a migration in the store's folder.
+- kind: Schema
+  schemaVersion: 3
+  id: forge-orders.post-orders.request
+  status: current
+  confidence: verified
+  format: other
+  ref: forge-orders.post-orders
+  fields:
+    - { name: sku, type: string }
+    - { name: quantity, type: integer }
+  evidence:
+    - { source: code, repo: forge-orders, path: src/main/java/forge/orders/NewOrder.java, line: 5 }
+    - { source: code, repo: forge-orders, path: src/main/java/forge/orders/NewOrder.java, line: 6 }
+    - { source: code, repo: forge-orders, path: src/main/resources/openapi.yaml, line: 41 }
+- kind: Schema
+  schemaVersion: 3
+  id: forge-orders.post-orders.response
+  status: current
+  confidence: verified
+  format: other
+  ref: forge-orders.post-orders
+  fields:
+    - { name: id, type: string }
+  evidence:
+    - { source: code, repo: forge-orders, path: src/main/java/forge/orders/OrderView.java, line: 4 }
+- kind: Column
+  schemaVersion: 3
+  id: forge-orders-db.orders.status
+  status: current
+  confidence: verified
+  table: forge-orders-db.orders
+  name: status
+  type: VARCHAR(20)
+  evidence:
+    - { source: migration, repo: forge-orders, path: src/main/java/forge/orders/Order.java, line: 14 }
+- kind: Migration
+  schemaVersion: 3
+  id: forge-orders-db.v3-add-status
+  status: current
+  confidence: verified
+  dataStore: forge-orders-db
+  version: "3"
+  tool: flyway
+  file: src/main/resources/db/migration/V3__add_status.sql
+  operations: [add column status]
+  evidence:
+    - { source: migration, repo: forge-orders, path: src/main/resources/db/migration/V3__add_status.sql, line: 1 }

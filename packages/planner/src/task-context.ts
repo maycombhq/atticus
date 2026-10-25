@@ -280,6 +280,8 @@ export async function taskContext(
     for (const s of todaySteps) for (const c of s.cites) add(c, `step ${s.n} of the same flow`);
     for (const c of cite(today.repo, today.flow.trigger.evidence)) add(c, "the flow's trigger");
   }
+  // B-fixes: where the fields and columns the task adds or changes are declared.
+  for (const f of dt?.files ?? []) add(f.lines.length ? `${f.file}:${f.lines[0]}` : f.file, f.why);
   if (step?.store?.migration) {
     const path = migrationPath(step.store.migration, step.store.table, estate);
     files.push({ path: `${line.repo}:${path}`, why: "the migration the step names (new)" });

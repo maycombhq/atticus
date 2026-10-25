@@ -286,8 +286,14 @@ export interface StoryScore {
   steps: { found: number; total: number; missed: string[]; extra: string[]; coverage: number };
   /** Reference fields the draft names (in a criterion, an interface, a column, or a then clause). */
   fields: { found: number; total: number; missed: string[]; coverage: number };
-  /** Reference error cases (step, field, rule) the draft has on the matching step. */
+  /** Reference error cases (step, field, rule) the draft has on the matching step (strict). */
   errors: { found: number; total: number; missed: string[]; coverage: number };
+  /**
+   * The same error cases matched by entry (B-fixes): found on the matching step, or on any
+   * draft step of the same repo and entry with the same field and rule. A reference step that
+   * names no entry is matched by step alone. Beside the strict figure, never instead of it.
+   */
+  errorsByEntry: { found: number; total: number; missed: string[]; coverage: number };
   /** Fields the draft names that neither the reference nor the repos' facts know. Must be none. */
   invented: string[];
   sections: { present: number; total: number; missing: string[] };
@@ -338,6 +344,32 @@ export function scoreStory(
   );
   const errorsMissed = [...wantErrors].filter((k) => !gotErrors.has(k));
 
+  // ---- errors by entry: (repo, entry, field, rule) on any draft step of that entry
+  const entryOf = (x: { entry?: string | undefined }, c: { entry?: string | undefined }) => {
+    const e = c.entry ?? x.entry;
+    return e ? entryKey(e) : undefined;
+  };
+  const what = (e: { field?: string | undefined; rule: string }) =>
+    `${e.field ? (refFields.get(canon(e.field)) ?? e.field) : "(no field)"} ${e.rule}`;
+  const draftByEntry = new Set(
+    draft.criteria.flatMap((c) => {
+      const st = draft.steps.find((x) => x.id === c.step);
+      const at = st ? entryOf(st, c) : c.entry ? entryKey(c.entry) : undefined;
+      return st && at ? c.errors.map((e) => `${st.repo}|${at}|${what(e)}`) : [];
+    }),
+  );
+  const refByEntry = new Map<string, string>(); // strict key -> entry key
+  for (const c of ref.criteria) {
+    const st = ref.steps.find((x) => x.id === c.step);
+    const at = st ? entryOf(st, c) : undefined;
+    if (st && at)
+      for (const e of c.errors) refByEntry.set(key(c.step, e), `${st.repo}|${at}|${what(e)}`);
+  }
+  const byEntryMissed = errorsMissed.filter((k) => {
+    const at = refByEntry.get(k);
+    return !at || !draftByEntry.has(at);
+  });
+
   // ---- invented
   const knownFolded = new Set([...refFields.keys(), ...alias.keys(), ...[...known].map(fold)]);
   const isKnown = (n: string) =>
@@ -364,6 +396,12 @@ export function scoreStory(
       total: wantErrors.size,
       missed: errorsMissed,
       coverage: ratio(wantErrors.size - errorsMissed.length, wantErrors.size),
+    },
+    errorsByEntry: {
+      found: wantErrors.size - byEntryMissed.length,
+      total: wantErrors.size,
+      missed: byEntryMissed,
+      coverage: ratio(wantErrors.size - byEntryMissed.length, wantErrors.size),
     },
     invented,
     sections: sectionsOf(draft),
