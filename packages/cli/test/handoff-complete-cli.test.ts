@@ -56,6 +56,10 @@ const validate = async () => [];
 
 describe("atticus handoff done finishes other commands' hand-off runs", () => {
   it("recognises which command a run finishes", () => {
+    expect(completionOf({ change: "x", outputPath: "tasks/1.2/review-complete.yaml" })).toBe(
+      "hand-up",
+    );
+    // A hand-up handed off before its lens asked the complete question.
     expect(completionOf({ change: "x", outputPath: "tasks/1.2/review-code-and-test.yaml" })).toBe(
       "hand-up",
     );

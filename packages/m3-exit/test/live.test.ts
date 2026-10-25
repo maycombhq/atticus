@@ -176,7 +176,7 @@ describe("M3 exit live runs: grade.mjs", () => {
         "no tasks.md: `plan stories --resume` did not complete",
         "the critic was never run at the plan gate (no review/plan/1/meta/round.yaml)",
         "task 1.2 was never run (no tasks/1.2/task-run.yaml)",
-        "the code-and-test lens never ran (spec hand-up not run, or its hand-off not finished)",
+        "the complete lens never ran at hand-up (spec hand-up not run, or its hand-off not finished)",
       ]);
       expect(g.exits.e.results[0]).toMatchObject({ complete: false });
       expect(g.exits.e.results[0]!.reason).toMatch(/^missing: /);
@@ -263,7 +263,7 @@ describe("M3 exit live runs: grade.mjs", () => {
       await writeText(
         join(changeDirOf(metarepoOf(runDir, "handup")), "review/hand-up/1/planted.yaml"),
         [
-          "artifact: tasks/1.2/review-code-and-test.yaml",
+          "artifact: tasks/1.2/review-complete.yaml",
           "severity: blocking",
           "state: open",
           "summary: The endpoint has no test for an unknown account.",

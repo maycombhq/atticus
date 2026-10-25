@@ -40,7 +40,7 @@ export const CHECKLISTS_README =
 
 /** checklists/README.md beside the starter review (ADR 0120). */
 export const STARTER_CHECKLISTS_README = `${CHECKLISTS_README}
-\`review.yaml\` is the starter review (ADR 0120): AI rules the critic's lenses apply to every draft, judging its meaning against the estate and the brief. It is this organisation's configuration, not the constitution: change, waive or retire its rules, or delete one, through a pull request. Delete the file to turn the starter review off; \`atticus upgrade\` won't add it back.
+\`review.yaml\` is the starter review (ADR 0120): AI rules the critic's lenses apply to every draft, judging its meaning against the estate and the brief, and two code checks (a call's timeout, a store write's rollback step). It is this organisation's configuration, not the constitution: change, waive or retire its rules, or delete one, through a pull request. Delete the file to turn the starter review off; \`atticus upgrade\` won't add it back.
 `;
 
 const FOLDER_READMES: [string, string][] = [

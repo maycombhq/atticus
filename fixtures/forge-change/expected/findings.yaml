@@ -11,6 +11,12 @@
 # role lenses became four question lenses (true, complete, safe, ship) and the constitution gained
 # the code checks of the four questions. What retired is listed under retired, with why; every
 # other seeded blocking issue is still caught, by the same layer. New entries say "(Part 4)".
+#
+# The product owner's decisions of 2026-10-24: the timeout and rollback checks moved from the
+# constitution to the starter review (org layer, the organisation's to change), which the fixture's
+# org pack carries (org-pack/checklists/review.yaml, named at the gates). r06, r07 and r08 are the
+# same findings, by the same layer, from review.call-timeout-stated and review.store-write-rollback
+# instead of constitution.*; the auth and breaking checks (g14) stay constitution rules.
 change: add-transfer-limit
 gate: plan
 
@@ -249,26 +255,26 @@ alsoExpected:
     kind: issue
     severity: risk
     layer: deterministic
-    rule: constitution.call-timeout-stated
+    rule: review.call-timeout-stated
     artifact: interfaces.md
     line: 8
-    what: The changed portal-bff call to audit-svc is synchronous and states no timeout; no pattern names one for it (Part 4, is it safe).
+    what: The changed portal-bff call to audit-svc is synchronous and states no timeout; no pattern names one for it (Part 4, is it safe; the starter review's rule since 2026-10-24).
   - id: r07-account-write-no-rollback
     kind: issue
     severity: risk
     layer: deterministic
-    rule: constitution.store-write-rollback
+    rule: review.store-write-rollback
     artifact: data.md
     line: 7
-    what: The rollback section names neither ledger-db.account nor V3__add_daily_limit.sql (Part 4, can it ship).
+    what: The rollback section names neither ledger-db.account nor V3__add_daily_limit.sql (Part 4, can it ship; the starter review's rule since 2026-10-24).
   - id: r08-limit-change-write-no-rollback
     kind: issue
     severity: risk
     layer: deterministic
-    rule: constitution.store-write-rollback
+    rule: review.store-write-rollback
     artifact: data.md
     line: 8
-    what: The rollback section says nothing about the new table limit_change (Part 4, can it ship).
+    what: The rollback section says nothing about the new table limit_change (Part 4, can it ship; the starter review's rule since 2026-10-24).
   - id: r09-proxy-request-no-fallback
     kind: issue
     severity: risk

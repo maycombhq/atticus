@@ -1,0 +1,39 @@
+# The starter review as the Forge org wrote it out (fixture). Contract C3, org layer. Only the
+# starter's two code checks are kept, exactly as packages/naysayer/starter/review.yaml writes them
+# (a test holds them equal): its AI rules are left out, so the fixture's lens prompts and recorded
+# answers stay those of the Forge and Ledger rules. The product owner moved these checks out of the
+# constitution on 2026-10-24 (ADR 0124 addendum, Part 4): they are the organisation's to change.
+schemaVersion: 1
+name: review
+version: 1.0.0
+description: The starter review's code checks of the safe and ship questions.
+rules:
+  - id: review.call-timeout-stated
+    title: Every synchronous call the change plans has a timeout
+    description: A call with no timeout waits as long as the callee does. The fact is a timeout Setting for the caller and callee in the catalog, or a timeout stated for the call in interfaces.md or design.md; a pattern that requires more is the resilience rule's.
+    lens: safe
+    question: safe
+    layer: org
+    appliesTo: { artifacts: [interfaces, design, catalog] }
+    severity: risk
+    check:
+      type: deterministic
+      check: call-timeout-stated
+    waivable: false
+    source: Atticus starter review
+    needs: []
+
+  - id: review.store-write-rollback
+    title: Every store write has a rollback step
+    description: A table the change writes or alters (data.md, or a write step of a target flow) is named, or its migration is, under the rollback heading of design.md.
+    lens: ship
+    question: ship
+    layer: org
+    appliesTo: { artifacts: [data, design, catalog] }
+    severity: risk
+    check:
+      type: deterministic
+      check: store-write-rollback
+    waivable: false
+    source: Atticus starter review
+    needs: []

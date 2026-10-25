@@ -156,7 +156,7 @@ export async function openspecCheck(root: string, io: Output): Promise<number> {
 
 /**
  * Which command a hand-off run finishes: a change artifact (checked with openspec validate),
- * a hand-up's code-and-test lens, a critic AI lens, `feature suggest-names`, `glossary scan`,
+ * a hand-up's complete lens, a critic AI lens, `feature suggest-names`, `glossary scan`,
  * `templates draft`, or the story writer of `plan stories` (finished by `--resume`).
  */
 export function completionOf(request: {
@@ -251,7 +251,7 @@ export async function handoffDone(
         const yaml = await yamlAnswerProblems(_file, request);
         return yaml.length ? yaml : selfChecked(_file, request);
       }
-      // The code-and-test lens's review must be one, as a critic lens's must (yamlAnswerProblems).
+      // The hand-up lens's review must be one, as a critic lens's must (yamlAnswerProblems).
       if (completionOf(request) === "hand-up") {
         const why = lensAnswerProblem(await readFile(_file, "utf8").catch(() => ""));
         return why ? [`${request.outputPath}: ${why}`] : [];
@@ -276,8 +276,8 @@ export async function handoffDone(
       ).length;
       io.out(
         r.lens.state === "ran"
-          ? `The code-and-test lens on task ${r.task} of ${r.change} raised ${n ?? 0} finding${n === 1 ? "" : "s"} (review/hand-up/${r.review?.round ?? "-"}).`
-          : `The code-and-test lens on task ${r.task} was ${r.lens.state}: ${r.lens.reason ?? ""}`,
+          ? `The complete lens on task ${r.task} of ${r.change} raised ${n ?? 0} finding${n === 1 ? "" : "s"} (review/hand-up/${r.review?.round ?? "-"}).`
+          : `The complete lens on task ${r.task} was ${r.lens.state}: ${r.lens.reason ?? ""}`,
       );
       for (const d of r.lens.discarded) io.err(`Discarded: ${d.reason}`);
       return r.lens.state === "ran" ? 0 : 1;

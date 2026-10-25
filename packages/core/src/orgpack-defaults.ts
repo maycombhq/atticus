@@ -13,15 +13,13 @@ import {
  * own file, these apply. A team's file replaces the default for that file as a whole.
  */
 
-const all: ChangeType["lenses"] = [
-  "business",
-  "architecture",
-  "story",
-  "ux",
-  "delivery",
-  "code-and-test",
-  "release",
-];
+/**
+ * Each type lists the critic's questions it asks (ADR 0124 addendum, Part 4; the product owner's
+ * decision of 2026-10-24): the questions its old role lenses covered, so a rule written for a
+ * question applies to the same types as before. An org pack that still lists the old lens names
+ * keeps working: each maps to its question (`lensCovers`).
+ */
+const all: ChangeType["lenses"] = ["true", "complete", "safe", "ship"];
 
 export const DEFAULT_CHANGE_TYPES = ChangeTypes.parse({
   // Version 2 (ADR 0113): a small type takes the fast path; the others stay standard.
@@ -68,7 +66,7 @@ export const DEFAULT_CHANGE_TYPES = ChangeTypes.parse({
         "tasks",
         "snow",
       ],
-      lenses: ["business", "architecture", "story", "delivery", "code-and-test", "release"],
+      lenses: all,
       approvals: {
         design: ["architect"],
         plan: ["team-lead"],
@@ -81,7 +79,7 @@ export const DEFAULT_CHANGE_TYPES = ChangeTypes.parse({
       name: "Bug fix",
       phases: ["define", "plan", "build", "qa", "release"],
       artifacts: ["proposal", "specs", "tasks"],
-      lenses: ["story", "code-and-test", "release"],
+      lenses: ["complete", "ship"],
       approvals: { plan: ["team-lead"], qa: ["qa"] },
     },
     {
@@ -91,7 +89,7 @@ export const DEFAULT_CHANGE_TYPES = ChangeTypes.parse({
         "Built and released first; the skipped lenses run afterwards and their findings become follow-up tasks.",
       phases: ["build", "release"],
       artifacts: ["proposal", "tasks"],
-      lenses: ["code-and-test", "release"],
+      lenses: ["complete", "ship"],
       approvals: { release: ["delivery-lead"] },
       postReleaseReview: true,
     },
@@ -100,7 +98,7 @@ export const DEFAULT_CHANGE_TYPES = ChangeTypes.parse({
       name: "Configuration change",
       phases: ["define", "plan", "build", "release"],
       artifacts: ["proposal", "tasks", "snow"],
-      lenses: ["architecture", "release"],
+      lenses: ["true", "safe", "ship"],
       approvals: { plan: ["team-lead"], release: ["delivery-lead"] },
       // ADR 0113: a brief that says "Size: small" takes the fast path.
       smallWhenBriefSays: true,
@@ -110,7 +108,7 @@ export const DEFAULT_CHANGE_TYPES = ChangeTypes.parse({
       name: "Technical debt",
       phases: ["design", "plan", "build", "qa"],
       artifacts: ["proposal", "design", "tasks"],
-      lenses: ["architecture", "code-and-test"],
+      lenses: ["true", "complete", "safe"],
       approvals: { design: ["architect"], plan: ["team-lead"] },
       smallWhenBriefSays: true,
     },
@@ -122,7 +120,7 @@ export const DEFAULT_CHANGE_TYPES = ChangeTypes.parse({
       size: "small",
       phases: ["plan", "build", "release"],
       artifacts: ["brief", "proposal", "design", "stories", "tasks"],
-      lenses: ["architecture", "story", "code-and-test", "release"],
+      lenses: all,
     },
   ],
 });

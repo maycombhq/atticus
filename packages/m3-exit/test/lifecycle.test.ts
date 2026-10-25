@@ -538,7 +538,7 @@ describe("M3 exit step 2: the seeded feature from Define to Release", () => {
   );
 
   it(
-    "a developer merges the task branch; spec hand-up reads the feature back at the PR, the code-and-test lens runs on replay, and nothing drifted",
+    "a developer merges the task branch; spec hand-up reads the feature back at the PR, the complete lens runs on replay, and nothing drifted",
     async () => {
       const wt = join(e.root, "workspace/.worktrees", CHANGE, "forge-ledger");
       sh(wt, "merge", "--no-ff", "-q", "-m", "Merge task 1.2", "task/add-transfer-limit/1.2");
@@ -557,7 +557,7 @@ describe("M3 exit step 2: the seeded feature from Define to Release", () => {
       expect(u.out[0]).toBe(
         "Task 1.2 is handed up from PR https://git.example.com/forge/forge-ledger/pull/7 and marked done in tasks.md.",
       );
-      expect(u.out).toContain("  The code-and-test lens raised 0 findings.");
+      expect(u.out).toContain("  The complete lens raised 0 findings.");
       expect(u.out.at(-1)).toBe("  Drift: none.");
       expect(u.code).toBe(0);
       const d = await run("drift", CHANGE);

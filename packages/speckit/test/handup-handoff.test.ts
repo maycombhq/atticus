@@ -8,7 +8,7 @@ import { completeHandUpLens, handDown, handUp, handUpLensTask } from "../src/ind
 import { CHANGE, git, NOW, speckitRoot, worktree } from "./helpers.js";
 
 /**
- * A hand-up started in hand-off mode leaves the code-and-test lens waiting on the person's
+ * A hand-up started in hand-off mode leaves the complete lens waiting on the person's
  * assistant. When the assistant has written its answer and `atticus handoff done` validated
  * the run, the answer is parsed and written as the hand-up round, as a model run would be.
  */
@@ -61,16 +61,20 @@ describe("hand-up in hand-off mode", () => {
       expect(up.lens.state).toBe("waiting");
       const runId = up.lens.runId!;
       const waiting = await runtime.result(runId);
+      expect(waiting.request.outputPath).toBe("tasks/1.2/review-complete.yaml");
       expect(handUpLensTask(waiting.request.outputPath)).toBe("1.2");
+      // A hand-off begun before the lens was the complete question's still finishes.
+      expect(handUpLensTask("tasks/1.2/review-code-and-test.yaml")).toBe("1.2");
+      expect(handUpLensTask("findings-complete.yaml")).toBeUndefined();
 
       await writeFile(
-        join(root, "openspec/changes", CHANGE, "tasks/1.2/review-code-and-test.yaml"),
+        join(root, "openspec/changes", CHANGE, "tasks/1.2/review-complete.yaml"),
         ANSWER,
       );
       const done = await runtime.done(runId);
       expect(done.state).toBe("validated");
       const r = await completeHandUpLens(root, done, { now: NOW });
-      expect(r.lens).toMatchObject({ state: "ran", runId, agent: "code-and-test-critic" });
+      expect(r.lens).toMatchObject({ state: "ran", runId, agent: "complete-critic" });
       expect(r.lens.discarded).toEqual([]);
       expect(r.review?.round).toBe(1);
       expect(r.review?.findings.map((f) => [f.finding.id, f.finding.rule])).toEqual([

@@ -2,8 +2,8 @@ import { cp, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { parse } from "yaml";
-import { ChecklistPack, DEFAULT_CHANGE_TYPES, DEFAULT_GATES } from "@maycombhq/core";
+import { parse, stringify } from "yaml";
+import { ChecklistPack, DEFAULT_CHANGE_TYPES, DEFAULT_GATES, type Lens } from "@maycombhq/core";
 import { STARTER_REVIEW_FILE, STARTER_REVIEW_PATH, starterReviewText } from "../src/index.js";
 import { prepareLayers, resolveGate } from "../src/round.js";
 
@@ -15,7 +15,7 @@ import { prepareLayers, resolveGate } from "../src/round.js";
 const NOW = "2026-10-23T09:00:00Z";
 
 describe("the starter review checklist", () => {
-  it("parses with contract C3: AI rules of the org layer, each with a plain prompt", async () => {
+  it("parses with contract C3: rules of the org layer, AI rules with a plain prompt and two code checks", async () => {
     expect(STARTER_REVIEW_PATH).toBe("checklists/review.yaml");
     const text = await starterReviewText();
     expect(text).toBe(await readFile(STARTER_REVIEW_FILE, "utf8"));
@@ -38,12 +38,25 @@ describe("the starter review checklist", () => {
       ["review.outcome-has-story", "story", "complete", ["stories"], "blocking"],
       ["review.criteria-testable", "story", "complete", ["stories"], "risk"],
       ["review.requests-raised-in-time", "delivery", "ship", ["tasks"], "risk"],
+      // The code checks of the four questions the product owner moved out of the constitution
+      // (2026-10-24): the org's to change, retire or delete; written for their question.
+      ["review.call-timeout-stated", "safe", "safe", ["interfaces", "design", "catalog"], "risk"],
+      ["review.store-write-rollback", "ship", "ship", ["data", "design", "catalog"], "risk"],
+    ]);
+    expect(
+      pack.rules.flatMap((r) =>
+        r.check.type === "deterministic" ? [[r.id, r.check.check, r.needs]] : [],
+      ),
+    ).toEqual([
+      ["review.call-timeout-stated", "call-timeout-stated", []],
+      ["review.store-write-rollback", "store-write-rollback", []],
     ]);
     for (const r of pack.rules) {
       // Configuration, not the constitution: an org can waive a blocking rule, or change it.
       expect(r.layer, r.id).toBe("org");
+      expect(r.source, r.id).toBe("Atticus starter review");
       expect(r.waivable, r.id).toBe(r.severity === "blocking");
-      expect(r.check.type, r.id).toBe("ai");
+      if (r.check.type !== "ai") continue;
       const prompt = r.check.type === "ai" ? r.check.prompt : "";
       // Plain words that ask for meaning, and a quote of the cited line; no patterns.
       expect(prompt, r.id).toMatch(/quot/i);
@@ -103,9 +116,24 @@ const PLAN = [
   "review.criteria-testable",
   "review.requests-raised-in-time",
 ];
+/** The code checks read the catalog, which is due at every gate. */
+const TIMEOUT = "review.call-timeout-stated";
+const ROLLBACK = "review.store-write-rollback";
+const CODE = [TIMEOUT, ROLLBACK];
+
+/** The default change types as they were before the four questions: the seven lenses by name. */
+const OLD_LENSES: Record<string, Lens[]> = {
+  feature: ["business", "architecture", "story", "ux", "delivery", "code-and-test", "release"],
+  integration: ["business", "architecture", "story", "delivery", "code-and-test", "release"],
+  "bug-fix": ["story", "code-and-test", "release"],
+  "emergency-fix": ["code-and-test", "release"],
+  "config-change": ["architecture", "release"],
+  "tech-debt": ["architecture", "code-and-test"],
+  "small-change": ["architecture", "story", "code-and-test", "release"],
+};
 
 describe("the starter review with the default gates and change types", () => {
-  it("runs at the gates whose artifacts each rule reads, with the lenses each type uses", async () => {
+  it("runs at the gates whose artifacts each rule reads, with the questions each type asks", async () => {
     const root = await metarepo();
     const sorted = (xs: string[]) => [...xs].sort();
     const at = async (type: string, gate: string) =>
@@ -113,12 +141,42 @@ describe("the starter review with the default gates and change types", () => {
     // Every default gate names no checklist, so every org checklist runs at it.
     expect(DEFAULT_GATES.gates.every((g) => g.checklists.length === 0)).toBe(true);
 
-    expect(await at("feature", "define")).toEqual(sorted(DEFINE));
-    expect(await at("feature", "design")).toEqual(sorted([...DEFINE, ...DESIGN]));
-    expect(await at("feature", "plan")).toEqual(sorted([...DEFINE, ...DESIGN, ...PLAN]));
-    expect(await at("integration", "define")).toEqual(sorted(DEFINE));
-    expect(await at("integration", "plan")).toEqual(sorted([...DEFINE, ...DESIGN, ...PLAN]));
-    // The fast path's one gate: no business or delivery lens in the small-change type.
+    expect(await at("feature", "define")).toEqual(sorted([...DEFINE, ...CODE]));
+    expect(await at("feature", "design")).toEqual(sorted([...DEFINE, ...DESIGN, ...CODE]));
+    expect(await at("feature", "plan")).toEqual(sorted([...DEFINE, ...DESIGN, ...PLAN, ...CODE]));
+    expect(await at("integration", "define")).toEqual(sorted([...DEFINE, ...CODE]));
+    expect(await at("integration", "plan")).toEqual(
+      sorted([...DEFINE, ...DESIGN, ...PLAN, ...CODE]),
+    );
+    // The fast path's one gate: the small-change type asks all four questions (its architecture,
+    // story, code-and-test and release lenses covered them), so it gets every rule whose
+    // artifacts it has, the business and delivery ones included.
+    expect(await at("small-change", "plan")).toEqual(
+      sorted([...DEFINE, ...DESIGN, ...PLAN, ...CODE]),
+    );
+    // A type without a brief or a design gets no rule that reads them; a type that doesn't ask a
+    // question gets none of its rules (tech-debt doesn't ask ship, bug-fix neither true nor safe).
+    expect(await at("tech-debt", "design")).toEqual(sorted([...DESIGN, TIMEOUT]));
+    expect(await at("bug-fix", "plan")).toEqual(
+      sorted(["review.requests-raised-in-time", ROLLBACK]),
+    );
+    expect(await at("config-change", "plan")).toEqual(
+      sorted(["review.requests-raised-in-time", ...CODE]),
+    );
+  });
+
+  it("keeps an org pack's change types that list the old lenses by name as they were", async () => {
+    const old = DEFAULT_CHANGE_TYPES.types.map((t) => ({ ...t, lenses: OLD_LENSES[t.id]! }));
+    const root = await metarepo(old);
+    await writeFile(
+      join(root, "org-pack/change-types.yaml"),
+      stringify({ schemaVersion: 2, types: old }),
+    );
+    const sorted = (xs: string[]) => [...xs].sort();
+    const at = async (type: string, gate: string) =>
+      sorted(await starterRules(root, `c-${type}`, gate));
+    // A rule written for an old lens applies where the type lists that lens (or its question); a
+    // rule written for a question, where a lens covers it (release covers ship, architecture safe).
     expect(await at("small-change", "plan")).toEqual(
       sorted([
         "review.changed-flow-not-read",
@@ -126,12 +184,12 @@ describe("the starter review with the default gates and change types", () => {
         ...DESIGN,
         "review.outcome-has-story",
         "review.criteria-testable",
+        ...CODE,
       ]),
     );
-    // A type without a brief or a design gets no rule that reads them.
-    expect(await at("tech-debt", "design")).toEqual(sorted(DESIGN));
-    expect(await at("bug-fix", "plan")).toEqual([]);
-    expect(await at("config-change", "plan")).toEqual([]);
+    expect(await at("tech-debt", "design")).toEqual(sorted([...DESIGN, TIMEOUT]));
+    expect(await at("bug-fix", "plan")).toEqual([ROLLBACK]);
+    expect(await at("config-change", "plan")).toEqual(sorted(CODE));
   });
 
   it("a change type that lists no lenses uses every lens, so it gets every starter rule", async () => {
@@ -154,9 +212,9 @@ describe("the starter review with the default gates and change types", () => {
       join(d, "change.yaml"),
       `schemaVersion: 1\nid: c-plain\ntitle: Plain\ntype: plain\nstate: define\ncreatedAt: ${NOW}\ncreatedBy: pat\nsystems: []\nhistory:\n  - { from: draft, to: define, at: ${NOW}, by: pat, reason: test }\n`,
     );
-    expect(await starterRules(root, "c-plain", "define")).toEqual(DEFINE);
+    expect(await starterRules(root, "c-plain", "define")).toEqual([...DEFINE, ...CODE]);
     expect((await starterRules(root, "c-plain", "plan")).sort()).toEqual(
-      [...DEFINE, ...DESIGN, ...PLAN].sort(),
+      [...DEFINE, ...DESIGN, ...PLAN, ...CODE].sort(),
     );
   });
 });

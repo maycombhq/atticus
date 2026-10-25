@@ -1,0 +1,25 @@
+# The Forge gates (fixture), laid over fixtures/forge/metarepo/org-pack/gates.yaml: the same gates,
+# with the starter review (checklists/review.yaml) named beside forge-architecture wherever a gate
+# names its checklists, as an org that keeps the starter review does.
+schemaVersion: 1
+gates:
+  - id: design
+    phase: design
+    approvers: [architect]
+    checklists: [forge-architecture, review]
+    checks: [{ check: openspec-validate }]
+  - id: plan
+    phase: plan
+    approvers: [team-lead]
+    checklists: [forge-architecture, review]
+    checks: [{ check: openspec-validate }]
+  - id: build
+    phase: build
+    approvers: [developer]
+    checks: [{ check: tests-pass }, { check: coverage, params: { minPercent: 80 } }]
+  - id: release
+    phase: release
+    approvers: [delivery-lead, sre]
+    minApprovals: 2
+    checklists: [forge-architecture, review]
+    checks: [{ check: snow-requests-closed }]

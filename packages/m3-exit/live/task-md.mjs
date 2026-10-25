@@ -77,14 +77,14 @@ Folder: \`${C}\`. The change is in Build and task 1.2 has been handed down to th
 
 Done when: step 3 printed that the build passes, and \`drift\` and \`trace\` ran.
 
-## Exercise D: the code-and-test lens at hand-up
+## Exercise D: the complete lens at hand-up
 
 Folder: \`${D}\`. Task 1.2 is already built and merged into the change's worktree.
 
-1. \`atticus spec hand-up ${CHANGE} 1.2 --by dev --pr 7 --pr-url https://git.example.com/forge/forge-ledger/pull/7\`. Exit 0; it says the code-and-test lens is waiting and gives the run id.
+1. \`atticus spec hand-up ${CHANGE} 1.2 --by dev --pr 7 --pr-url https://git.example.com/forge/forge-ledger/pull/7\`. Exit 0; it says the complete lens is waiting and gives the run id.
 2. Do the hand-off for that run (answer path: on the prompt's first line, under \`openspec/changes/${CHANGE}/\`). Review as the prompt asks; write \`findings: []\` if nothing is wrong.
 
-Done when: \`atticus handoff done\` exited 0 and printed \`The code-and-test lens on task 1.2 … raised … finding(s)\`.
+Done when: \`atticus handoff done\` exited 0 and printed \`The complete lens on task 1.2 … raised … finding(s)\`.
 
 ## Exercise E: names, definitions and drafts
 

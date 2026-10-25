@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   ChecklistRule,
   CriticQuestion,
+  DEFAULT_CHANGE_TYPES,
   Finding,
   LEGACY_LENSES,
   Lens,
@@ -97,5 +98,34 @@ describe("the critic's four questions in C3", () => {
     };
     expect(Finding.parse({ ...f, lens: "delivery" }).lens).toBe("delivery");
     expect(Finding.parse({ ...f, lens: "ship" }).lens).toBe("ship");
+  });
+});
+
+describe("the default change types ask the four questions (the product owner, 2026-10-24)", () => {
+  it("lists each type's questions instead of the old lens names, covering what the old lenses did", () => {
+    expect(Object.fromEntries(DEFAULT_CHANGE_TYPES.types.map((t) => [t.id, t.lenses]))).toEqual({
+      feature: ["true", "complete", "safe", "ship"],
+      integration: ["true", "complete", "safe", "ship"],
+      "bug-fix": ["complete", "ship"],
+      "emergency-fix": ["complete", "ship"],
+      "config-change": ["true", "safe", "ship"],
+      "tech-debt": ["true", "complete", "safe"],
+      "small-change": ["true", "complete", "safe", "ship"],
+    });
+    // Each type asks exactly the questions its old lenses covered (the architecture lens covered
+    // true and safe), so a rule written for a question applies to the same types as before.
+    const OLD: Record<string, Lens[]> = {
+      feature: [...LEGACY_LENSES],
+      integration: ["business", "architecture", "story", "delivery", "code-and-test", "release"],
+      "bug-fix": ["story", "code-and-test", "release"],
+      "emergency-fix": ["code-and-test", "release"],
+      "config-change": ["architecture", "release"],
+      "tech-debt": ["architecture", "code-and-test"],
+      "small-change": ["architecture", "story", "code-and-test", "release"],
+    };
+    for (const t of DEFAULT_CHANGE_TYPES.types) {
+      const covered = new Set(OLD[t.id]!.flatMap(lensCovers));
+      expect(t.lenses, t.id).toEqual(CriticQuestion.options.filter((q) => covered.has(q)));
+    }
   });
 });

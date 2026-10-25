@@ -68,7 +68,7 @@ async function answer(runDir, root, run, { expectDone = [0] } = {}) {
   const sha = pack.manifest.promptSha256;
   // A lens answers from its recording only when the prompt is the recorded one; otherwise the
   // perfect agent finds nothing wrong. Every other agent falls back to its only recording.
-  const text = /findings-|review-code-and-test/.test(outputPath)
+  const text = /findings-|review-(complete|code-and-test)\.yaml/.test(outputPath)
     ? ((await recordingsOf(agent.id)).find((r) => r.promptSha256 === sha)?.output ?? NOTHING_WRONG)
     : await recordedAnswer(agent.id, sha);
   // The prompt names the file: in the run's own folder for a lens and the story writer, in the
@@ -167,7 +167,7 @@ async function exerciseC(runDir) {
   step(await run("trace", CHANGE), "trace", [0, 1]);
 }
 
-/** Exercise D: the code-and-test lens at hand-up. */
+/** Exercise D: the complete lens at hand-up. */
 async function exerciseD(runDir) {
   const root = metarepoOf(runDir, "handup");
   const up = step(

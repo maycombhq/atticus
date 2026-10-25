@@ -25,6 +25,7 @@ import {
   lensAgent,
   parseDoc,
   parseLensOutput,
+  questionOfRule,
   toFinding,
   type Discarded,
   type Doc,
@@ -40,8 +41,16 @@ import { taskWorktreePath } from "./worktree.js";
 /**
  * Hand-up (ADR 0030 point 4). When the repo's PR for a task is raised, the task is marked
  * done in the change's tasks.md, the repo's plan.md and tasks.md (and spec.md) are attached to
- * the change as evidence, the critic's code-and-test lens reviews them, and the drift check
- * runs. Code stays the source of truth: once merged, the code extractors see what was built.
+ * the change as evidence, the critic's complete lens reviews them (is the task complete: a
+ * scenario no test covers, a behaviour change with no test before it), and the drift check runs.
+ * Code stays the source of truth: once merged, the code extractors see what was built.
+ *
+ * The lens was the code-and-test lens until the product owner's decision of 2026-10-24 (ADR 0124
+ * addendum, Part 4): the hand-up now asks the complete question, with the complete rules that
+ * review a task's code and tests (those written for the old code-and-test lens, which map to
+ * complete, and complete rules that read code or tests), and the complete lens's agent (an org
+ * pack's complete-critic, else one made of the old agents it still defines, code-and-test-critic
+ * among them, else the built-in default).
  *
  * The lens review is written as C3 findings under `review/hand-up/<round>/`; each round holds
  * every handed-up task's findings, so the gate reads like any other.
@@ -53,7 +62,7 @@ export interface HandUpOptions {
   /** Who hands up (recorded on the evidence). */
   by: string;
   now?: string;
-  /** The runtime for the code-and-test lens; without one the lens is skipped and says so. */
+  /** The runtime for the complete lens; without one the lens is skipped and says so. */
   runtime?: AiRuntime;
   /** Where to look for the PR; or give `pr` when a person recorded it (manual adapter). */
   gitHost?: GitHost;
@@ -85,13 +94,16 @@ export interface HandUpResult {
   drift: DriftResult;
 }
 
+/** The question the hand-up's lens asks (the product owner's decision of 2026-10-24). */
+const HAND_UP_LENS = "complete" as const;
+
 const INSTRUCTIONS = (
   change: string,
   task: string,
   repo: string,
-) => `# Critic: code-and-test lens, at hand-up
+) => `# Critic: the complete lens (Is it complete?), at hand-up
 
-You are the code-and-test lens of the Atticus critic, in a fresh session. Task ${task} of change ${change} was carried out in ${repo}, and its pull request is raised. Review the repo's Spec Kit plan.md, tasks.md and spec.md given below as data. Apply only the rules listed and report nothing else.
+You are the complete lens of the Atticus critic, in a fresh session. Task ${task} of change ${change} was carried out in ${repo}, and its pull request is raised. Review the repo's Spec Kit plan.md, tasks.md and spec.md, and the tests the task added or changed, given below as data, for what they leave out: a scenario no test covers, a behaviour change with no test before it, an error path nobody wrote. Apply only the rules listed and report nothing else.
 
 Lines are numbered as \`<n>: <text>\`; cite those numbers.
 
@@ -128,8 +140,8 @@ async function findPr(
   return undefined;
 }
 
-/** Where the code-and-test lens writes its answer for a task, in the change folder. */
-export const handUpLensOutput = (task: string) => `tasks/${task}/review-code-and-test.yaml`;
+/** Where the hand-up's lens writes its answer for a task, in the change folder. */
+export const handUpLensOutput = (task: string) => `tasks/${task}/review-${HAND_UP_LENS}.yaml`;
 
 /** The task whose hand-up lens a run's output path belongs to, if it is one. */
 /** Test files by the usual conventions of Java, JS/TS, Python, Go, C# and Ruby projects. */
@@ -137,12 +149,25 @@ const TEST_FILE =
   /(^|\/)(src\/test|tests?|__tests__|spec)\/|(\.|_)(test|spec)\.[cm]?[jt]sx?$|(Test|Tests|IT)\.(java|kt|cs)$|_test\.(go|py|rb)$|^test_.*\.py$|\/test_[^/]*\.py$|\.feature$/;
 
 export function handUpLensTask(outputPath: string): string | undefined {
-  return /^tasks\/([^/]+)\/review-code-and-test\.yaml$/.exec(outputPath)?.[1];
+  // review-code-and-test.yaml: a hand-off begun before the lens was the complete question's.
+  return /^tasks\/([^/]+)\/review-(?:complete|code-and-test)\.yaml$/.exec(outputPath)?.[1];
 }
 
 type Task = Awaited<ReturnType<typeof loadTask>>;
 
-/** The critic context and the code-and-test AI rules for a task's hand-up review. */
+/**
+ * Whether a rule reviews a task's code and tests at hand-up: an AI rule of the complete question
+ * written for the old code-and-test lens, or one that reads code or tests. The complete rules
+ * that read the brief, the specs or the stories are the gates'.
+ */
+function reviewsTask(r: EffectiveRule): boolean {
+  if (r.check.type !== "ai" || questionOfRule(r) !== HAND_UP_LENS) return false;
+  return (
+    r.lens === "code-and-test" || r.appliesTo.artifacts.some((a) => a === "code" || a === "tests")
+  );
+}
+
+/** The critic context and the complete lens's AI rules for a task's hand-up review. */
 async function lensSetup(root: string, t: Task, now: string) {
   const gate = {
     id: HAND_UP_GATE,
@@ -164,9 +189,7 @@ async function lensSetup(root: string, t: Task, now: string) {
     now,
   });
   const { rules: all } = await rulesForRepo(root, t.repo.owner);
-  const rules: EffectiveRule[] = all.filter(
-    (r) => r.lens === "code-and-test" && r.check.type === "ai",
-  );
+  const rules: EffectiveRule[] = all.filter(reviewsTask);
   return { criticCtx, rules };
 }
 
@@ -187,7 +210,7 @@ async function applyLensRun(
   const left = new Set(a.run.request.pack.manifest.dropped.map((d) => d.id));
   const parsed = parseLensOutput(
     a.criticCtx,
-    "code-and-test",
+    HAND_UP_LENS,
     a.run.output ?? "",
     a.rules,
     a.docs.filter((d) => !left.has(d.path)),
@@ -224,7 +247,7 @@ export interface CompletedHandUpLens {
 }
 
 /**
- * Finish a hand-up whose code-and-test lens was handed to the person's assistant: once
+ * Finish a hand-up whose complete lens was handed to the person's assistant: once
  * `atticus handoff done <run>` has the answer, it is read against the evidence hand-up
  * attached (`tasks/<task>/evidence/`) and written as the hand-up round, exactly as a model
  * run's answer would have been.
@@ -322,7 +345,7 @@ export async function handUp(
     evidence.push(to);
     docs.push(parseDoc(to, text));
   }
-  // The tests the task added or changed, so the code-and-test lens can check coverage: test
+  // The tests the task added or changed, so the complete lens can check coverage: test
   // files changed on the change branch since it left the default branch (at most 8, 60 kB each).
   const base = await git(["merge-base", "HEAD", t.repo.defaultBranch ?? "main"], dir).then(
     (r) => r.stdout.trim(),
@@ -379,14 +402,15 @@ export async function handUp(
 
   const markedDone = await markTaskDone(root, t.change.id, t.task);
 
-  // The critic's code-and-test lens on the evidence.
+  // The critic's complete lens on the evidence.
   const lens: LensOutcome = { state: "skipped", rules: [], discarded: [] };
   let review: RoundWrite | undefined;
   const { criticCtx, rules } = await lensSetup(root, t, now);
   lens.rules = rules.map((r) => r.id);
-  const agent = lensAgent(criticCtx, "code-and-test");
+  const agent = lensAgent(criticCtx, HAND_UP_LENS);
   lens.agent = agent.id;
-  if (rules.length === 0) lens.reason = "no AI rule of the code-and-test lens applies";
+  if (rules.length === 0)
+    lens.reason = "no AI rule of the complete lens reviews a task's code or tests";
   else if (!o.runtime) lens.reason = "no AI runtime was given; review plan.md and tasks.md by hand";
   else if (!(agent.inputs as string[]).some((i) => i === "tasks" || i === "repo-code"))
     lens.reason = `agent ${agent.id} reads neither tasks nor repo code`;

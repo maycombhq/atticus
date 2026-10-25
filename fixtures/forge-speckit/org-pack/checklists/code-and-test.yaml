@@ -1,5 +1,5 @@
-# Fixture org checklist (contract C3): the code-and-test lens rules hand-up sends plan.md and
-# tasks.md to.
+# Fixture org checklist (contract C3): a rule written for the old code-and-test lens, which the
+# hand-up's complete lens applies to plan.md, tasks.md and the tests (ADR 0124 addendum, Part 4).
 schemaVersion: 1
 name: forge-code-and-test
 version: 0.1.0

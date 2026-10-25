@@ -1,9 +1,10 @@
 import { readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { stringify } from "yaml";
+import { parse, stringify } from "yaml";
 import { MockRuntime, type AiRequest } from "@maycombhq/ai";
 import {
+  ChecklistPack,
   fileJudgments,
   makeJudgment,
   parseRecord,
@@ -19,10 +20,11 @@ import {
   QUESTIONS,
   questionOfRule,
   runCritic,
+  starterReviewText,
   typeTakes,
   type CriticResult,
 } from "../src/index.js";
-import { CHANGE, NOW, changeDir, forgeChangeRoot, write } from "./helpers.js";
+import { CHANGE, FORGE_CHANGE, NOW, changeDir, forgeChangeRoot, write } from "./helpers.js";
 
 /**
  * The critic asks four questions of every draft (ADR 0124 addendum, Part 4): is it true to the
@@ -136,13 +138,33 @@ describe("every rule answers one of the four questions, as data", () => {
       "constitution.spec-scenarios-present": ["complete", "active", "blocking"],
       "constitution.snow-drafts-present": ["ship", "retired", "blocking"],
       "constitution.no-embedded-instructions": ["safe", "active", "blocking"],
-      "constitution.call-timeout-stated": ["safe", "active", "risk"],
       "constitution.public-entry-auth": ["safe", "active", "blocking"],
       "constitution.breaking-delta-consumers": ["safe", "active", "blocking"],
-      "constitution.store-write-rollback": ["ship", "active", "risk"],
     });
     // A rule's question is its own, then its question lens, then its check's, then its old lens's.
     for (const r of c.rules) expect(questionOfRule(r)).toBe(r.question);
+  });
+
+  it("puts the timeout and rollback checks in the starter review, the org's to change (the product owner, 2026-10-24)", async () => {
+    const c = await loadConstitution();
+    const checks = (rules: ChecklistRule[]) =>
+      rules.flatMap((r) => (r.check.type === "deterministic" ? [r.check.check] : []));
+    expect(checks(c.rules)).not.toContain("call-timeout-stated");
+    expect(checks(c.rules)).not.toContain("store-write-rollback");
+    const starter = ChecklistPack.parse(parse(await starterReviewText()));
+    const code = starter.rules.filter((r) => r.check.type === "deterministic");
+    expect(
+      code.map((r) => [r.id, r.layer, r.question, r.severity, r.waivable, checks([r])[0]]),
+    ).toEqual([
+      ["review.call-timeout-stated", "org", "safe", "risk", false, "call-timeout-stated"],
+      ["review.store-write-rollback", "org", "ship", "risk", false, "store-write-rollback"],
+    ]);
+    // The fixture's org pack carries them as the starter writes them (its AI rules left out).
+    const fixture = ChecklistPack.parse(
+      parse(await readFile(join(FORGE_CHANGE, "org-pack/checklists/review.yaml"), "utf8")),
+    );
+    expect(fixture.name).toBe(starter.name);
+    expect(fixture.rules).toEqual(code);
   });
 
   it("reads an org rule written for an old lens as the question that took it over", () => {
@@ -165,7 +187,7 @@ describe("every rule answers one of the four questions, as data", () => {
     const old = { lens: "architecture" as const, check: { type: "ai" as const, prompt: "x" } };
     const safe = { lens: "safe" as const, check: { type: "ai" as const, prompt: "x" } };
     const ship = { lens: "ship" as const, check: { type: "ai" as const, prompt: "x" } };
-    // bug-fix lists story, code-and-test and release.
+    // An org pack's bug-fix type that still lists story, code-and-test and release.
     const bugFix = ["story", "code-and-test", "release"] as const;
     expect(typeTakes([...bugFix], old)).toBe(false);
     expect(typeTakes([...bugFix], safe)).toBe(false);
@@ -215,7 +237,7 @@ describe("code answers what code can: the checks the four questions add", () => 
   it("is it safe: a synchronous call with no timeout fact, merged with the pattern's resilience rule where both see it", async () => {
     const root = await forgeChangeRoot();
     const r = await runCritic(root, CHANGE, { now: NOW });
-    const f = of(r, "constitution.call-timeout-stated");
+    const f = of(r, "review.call-timeout-stated");
     expect(f.map((x) => [x.finding.artifact, x.finding.locator.line, x.finding.summary])).toEqual([
       [
         "interfaces.md",
@@ -225,12 +247,15 @@ describe("code answers what code can: the checks the four questions add", () => 
     ]);
     expect(f[0]!.finding.severity).toBe("risk");
     expect(f[0]!.finding.lens).toBe("safe");
+    expect(f[0]!.finding.layer).toBe("org");
     expect(f[0]!.finding.fix.text).toMatch(/^State the timeout for this call/);
     // The vendor and risk-engine calls are the pattern rule's (b04, b05), which also names this one.
     const b04 = of(r, "constitution.hop-resilience-stated").find(
       (x) => x.finding.locator.line === 7,
     )!;
-    expect(b04.finding.why).toContain("Also caught by constitution.call-timeout-stated");
+    expect(b04.finding.why).toContain(
+      "Also caught by vendor-timeouts-set, review.call-timeout-stated.",
+    );
 
     // A timeout setting in the catalog is a fact that answers it; so is one stated in the notes.
     const withSetting = await forgeChangeRoot();
@@ -245,7 +270,7 @@ describe("code answers what code can: the checks the four questions add", () => 
       evidence: [{ source: "config", repo: "forge-portal-bff", path: "application.yml", line: 9 }],
     });
     expect(
-      of(await runCritic(withSetting, CHANGE, { now: NOW }), "constitution.call-timeout-stated"),
+      of(await runCritic(withSetting, CHANGE, { now: NOW }), "review.call-timeout-stated"),
     ).toEqual([]);
     const noted = await forgeChangeRoot();
     await edit(
@@ -254,9 +279,56 @@ describe("code answers what code can: the checks the four questions add", () => 
       "portal-bff sends a limit-refused event to audit-svc.",
       "portal-bff sends a limit-refused event to audit-svc, with a 1 s timeout.",
     );
-    expect(
-      of(await runCritic(noted, CHANGE, { now: NOW }), "constitution.call-timeout-stated"),
-    ).toEqual([]);
+    expect(of(await runCritic(noted, CHANGE, { now: NOW }), "review.call-timeout-stated")).toEqual(
+      [],
+    );
+  });
+
+  it("lets the org turn off a starter check in its own file, unlike a constitution rule", async () => {
+    const root = await forgeChangeRoot();
+    const p = join(root, "org-pack/checklists/review.yaml");
+    const text = await readFile(p, "utf8");
+    // The first rule of the file is the timeout check: the org retires it in its own file.
+    expect(text.indexOf("review.call-timeout-stated")).toBeLessThan(
+      text.indexOf("review.store-write-rollback"),
+    );
+    await writeFile(
+      p,
+      text.replace(
+        "    source: Atticus starter review\n",
+        "    source: Atticus starter review\n    status: retired\n",
+      ),
+    );
+    const r = await runCritic(root, CHANGE, { now: NOW });
+    expect(r.refused).toEqual([]);
+    expect(r.problems).toEqual([]);
+    expect(of(r, "review.call-timeout-stated")).toEqual([]);
+    expect(r.rules.skipped.find((s) => s.rule === "review.call-timeout-stated")?.reason).toBe(
+      "status retired",
+    );
+    // The other one still runs.
+    expect(of(r, "review.store-write-rollback")).toHaveLength(2);
+    // The auth and breaking checks stay constitution rules: a pack that drops one is refused.
+    const c = await loadConstitution();
+    const auth = c.rules.find((x) => x.id === "constitution.public-entry-auth")!;
+    const layered = layerRules([
+      { origin: "constitution", file: "built-in", pack: c },
+      {
+        origin: "org",
+        file: "o.yaml",
+        pack: {
+          schemaVersion: 1,
+          name: "o",
+          version: "1.0.0",
+          rules: [
+            { ...auth, id: "o.auth", layer: "org", tightens: auth.id, status: "retired" as const },
+          ],
+        },
+      },
+    ]);
+    expect(layered.refused.map((x) => x.reason)).toEqual([
+      "it loosens constitution.public-entry-auth: it sets status retired, which drops the rule",
+    ]);
   });
 
   it("is it safe: an asynchronous hop needs no timeout", async () => {
@@ -270,10 +342,10 @@ describe("code answers what code can: the checks the four questions add", () => 
     const r = await runCritic(root, CHANGE, { now: NOW, gate: "design" });
     // The audit call is still touched (change.yaml lists its interface, synchronous in the
     // catalog); the event the row now publishes is not a call anyone waits on.
-    expect(summaries(r, "constitution.call-timeout-stated")).toEqual([
+    expect(summaries(r, "review.call-timeout-stated")).toEqual([
       "The call from portal-bff to audit-svc (POST /audit/events) states no timeout.",
     ]);
-    expect(of(r, "constitution.call-timeout-stated")[0]!.finding.locator).toEqual({
+    expect(of(r, "review.call-timeout-stated")[0]!.finding.locator).toEqual({
       record: "if-5c55930b735276a9",
       field: "notes",
     });
@@ -387,7 +459,7 @@ describe("code answers what code can: the checks the four questions add", () => 
   it("can it ship: a store write with no rollback step, in data.md and in a target flow", async () => {
     const root = await forgeChangeRoot();
     const r = await runCritic(root, CHANGE, { now: NOW });
-    const f = of(r, "constitution.store-write-rollback");
+    const f = of(r, "review.store-write-rollback");
     expect(f.map((x) => [x.finding.artifact, x.finding.locator.line, x.finding.summary])).toEqual([
       [
         "data.md",
@@ -401,6 +473,7 @@ describe("code answers what code can: the checks the four questions add", () => 
       ],
     ]);
     expect(f.every((x) => x.finding.severity === "risk" && x.finding.lens === "ship")).toBe(true);
+    expect(f.every((x) => x.finding.layer === "org")).toBe(true);
     expect(f[0]!.finding.evidence).toContainEqual({
       source: "artifact",
       path: "design.md",
@@ -417,7 +490,7 @@ describe("code answers what code can: the checks the four questions add", () => 
       "Migration first, then ledger-api, then portal-bff and portal-ui.\nTo roll back, redeploy the previous ledger-api; V3__add_daily_limit.sql only adds a column with a default, so it stays.\nRows written to limit_change in between are kept for the audit trail.",
     );
     expect(
-      summaries(await runCritic(fixed, CHANGE, { now: NOW }), "constitution.store-write-rollback"),
+      summaries(await runCritic(fixed, CHANGE, { now: NOW }), "review.store-write-rollback"),
     ).toEqual([]);
 
     // A target flow's write step is a store write too.
@@ -446,10 +519,7 @@ describe("code answers what code can: the checks the four questions add", () => 
         ],
       }),
     );
-    const tf = of(
-      await runCritic(flows, CHANGE, { now: NOW }),
-      "constitution.store-write-rollback",
-    );
+    const tf = of(await runCritic(flows, CHANGE, { now: NOW }), "review.store-write-rollback");
     expect(tf.map((x) => [x.finding.artifact, x.finding.locator.line])).toContainEqual([
       "target-flows/ledger-api.create-transfer.yaml",
       12,
