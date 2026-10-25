@@ -221,6 +221,39 @@ function defaultActionAt(lines: readonly string[], path: string): boolean {
   );
 }
 
+const WORD_SEP = "[:._\\-/#\\s]";
+
+/**
+ * Whether a word claim is put together from `cite.with` parts (ADR 0124 addendum A-derived): a
+ * rake task's `namespace:task`, a key a helper prefixes (`${prefix}_conferenceCache`). Each part's
+ * value must be in the claim as a whole piece (bounded by the claim's start or end, a separator
+ * `: . _ - / #`, or another part), and whatever is left between the parts, separators aside, must
+ * be written on the cited lines. The parts' own lines are checked by the caller.
+ */
+export function partsBuildWord(
+  claim: string,
+  parts: readonly string[],
+  lines: readonly string[],
+): boolean {
+  if (!parts.length) return false;
+  let s = claim.trim();
+  for (const raw of parts) {
+    const v = raw.trim();
+    if (!v) return false;
+    const before = new RegExp(`^${WORD_SEP}`).test(v) ? "" : `(?<=^|${WORD_SEP}|\\u0000)`;
+    const after = new RegExp(`${WORD_SEP}$`).test(v) ? "" : `(?=$|${WORD_SEP}|\\u0000)`;
+    const re = new RegExp(`${before}${escape(v)}${after}`, "i");
+    if (!re.test(s)) return false;
+    s = s.replace(re, "\u0000");
+  }
+  const edge = new RegExp(`^${WORD_SEP}+|${WORD_SEP}+$`, "g");
+  return s
+    .split("\u0000")
+    .map((p) => p.replace(edge, ""))
+    .filter(Boolean)
+    .every((p) => lines.some((l) => lineNamesWord(l, p)));
+}
+
 export function partsNamePath(lines: readonly string[], path: string): boolean {
   const parts = path
     .split(/[?#]/, 1)[0]!

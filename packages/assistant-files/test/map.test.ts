@@ -154,6 +154,27 @@ describe("the places a change goes into are facts (ADR 0124 addendum B-places)",
   });
 });
 
+describe("names a framework derives, workers and ops routes (ADR 0124 addendum A-derived)", () => {
+  it("says how a derived name, a worker and a framework's own routes are written", () => {
+    const r =
+      FACT_RULES.split("\n").find((l) => l.startsWith("- A name a framework derives")) ?? "";
+    expect(r).toContain(
+      "(ORM tables and join tables, Django's `app_model`, Rails' root and Devise routes, Spring Data REST paths) is written as the framework makes it, cited on the line that declares its source",
+    );
+    expect(r).toContain(
+      "A background job worker (Sidekiq, Celery, ActiveJob) is a `batch-job` entry named by its job",
+    );
+    expect(r).toContain("a rake `namespace:task`");
+    expect(FACT_RULES).toContain(
+      "framework admin, health and ops routes (`/up`, `/admin`, a queue's web UI) unless the repo's own code handles them",
+    );
+    expect(mapBatchInstructions({ repo: "r", commit: "0123abc", batch: 1, of: 1 })).toContain(r);
+    expect(
+      claudeCodePluginFiles("0.0.0").find((f) => f.path === "commands/atticus-map.md")?.content,
+    ).toContain(r);
+  });
+});
+
 describe("the capability probe: which tier this person's assistant reads at (ADR 0124 §4)", () => {
   const rt = (o: Record<string, unknown>) => Runtime.parse({ schemaVersion: 1, ...o });
 
