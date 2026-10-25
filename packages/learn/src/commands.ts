@@ -47,6 +47,14 @@ export const COMMANDS: readonly CommandHelp[] = [
     related: ["map", "verify"],
   },
   {
+    name: "join",
+    usage: "atticus join [--json]",
+    what: "Follows each repo's flows into the flows their calls reach in other repos, through the calls the repos' verified facts join (atticus verify <repo> --write makes those joins), and asks which repo answers a host nobody lists. The same command as atticus estate join.",
+    who: ["architect", "developer"],
+    changes: "specs/estate.yaml, and a question for each host no repo lists",
+    related: ["verify", "estate flow"],
+  },
+  {
     name: "probe",
     usage: "atticus probe [--assistant id] [--max-tokens n] [--json]",
     what: "Measures what your assistant can do here, so the tier it reads a repo at is measured, not read off runtime.yaml: it writes a file holding a code and says to run /atticus-probe, which asks the assistant to open the file, write the code back and run atticus probe answer itself.",
@@ -447,6 +455,15 @@ export const COMMANDS: readonly CommandHelp[] = [
     approval: true,
   },
   {
+    name: "task",
+    usage: "atticus task <change> <task> [--level plan|draft|pr] [--approve]",
+    what: "Runs one task of a change with your assistant: a plan only, a draft in the worktree, or a pull request. The same command as atticus task run; atticus task context <change> <task> gives the task's context.",
+    who: ["developer"],
+    changes: "the task's worktree or a task branch",
+    approval: true,
+    related: ["task run", "stories"],
+  },
+  {
     name: "spec hand-down",
     usage: "atticus spec hand-down <change> <task>",
     what: "Creates the task's Spec Kit feature in its repo from the approved design.",
@@ -480,6 +497,14 @@ export const COMMANDS: readonly CommandHelp[] = [
     what: "Writes stories, the story index and tasks from the approved design.",
     who: ["business-analyst", "team-lead"],
     changes: "stories/, stories.md, tasks.md",
+  },
+  {
+    name: "stories",
+    usage: "atticus stories <change> [--draft] [--mode m]",
+    what: "The stories stage, one of the twelve commands atticus help shows: your assistant writes the change's stories with their acceptance criteria and tasks from the design, every one checked. It is the same command as atticus plan stories.",
+    who: ["business-analyst", "team-lead"],
+    changes: "stories/, stories.md, tasks.md",
+    related: ["plan stories", "task"],
   },
   {
     name: "plan snow",
@@ -743,6 +768,20 @@ export const COMMANDS: readonly CommandHelp[] = [
     what: "Explains a record, finding, change or command in plain words.",
     who: ["everyone"],
     changes: "nothing",
+  },
+  {
+    name: "legacy",
+    usage: "atticus legacy [<command...>] [--all]",
+    what: "Lists every command outside the twelve atticus help shows, grouped by area. atticus legacy <command> runs one, exactly as atticus <command> does: the old names keep working.",
+    who: ["everyone"],
+    changes: "nothing (the command it runs may)",
+  },
+  {
+    name: "ui",
+    usage: "atticus ui [--port n] [--open] [--full]",
+    what: "Starts the app on this machine (127.0.0.1 only): Home, Map, Change, Questions, Knowledge and Set up. Ctrl+C stops it.",
+    who: ["everyone"],
+    changes: "nothing by itself; what you do in the app writes metarepo files, never Git",
   },
   {
     name: "eval run",

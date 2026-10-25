@@ -2,10 +2,98 @@
 
 Generated from `atticus --help` by `pnpm docs:commands`; don't edit it by hand. Every command takes `--root <dir>` (the metarepo; default the current folder). `atticus explain <command>` says what one does in plain words.
 
-```text
-atticus <version> (catalog schema v3)
+## The twelve
 
-Usage:
+What `atticus help` shows. Install and first steps: [installing Atticus](install.md).
+
+```text
+  atticus init <folder> --platform <p>  Start your team's metarepo (atticus adopt <path> uses Atticus inside one repo)
+  atticus map <repo>                    Your assistant reads a repo into facts, each citing its file and line (/atticus-map does it in one session)
+  atticus verify <repo> [--write]       Check the facts against the code; --write puts them in the catalog and renders the map
+  atticus join [--json]                 Follow flows from repo to repo through the calls the facts join; writes specs/estate.yaml
+  atticus change new "<title>"          Start a change; atticus help change lists its stages and the rest
+  atticus critic <change>               Review a change: rule checks, then four questions (is it true, complete, safe, can it ship)
+  atticus stories <change>              The stories stage: stories with acceptance criteria and tasks, from the design
+  atticus task <change> <task>          Run one task with your assistant: a plan, a draft or a pull request
+  atticus questions                     What Atticus needs a person to answer, and who can answer it
+  atticus knowledge scan                Read your wikis into patterns, standards, processes and decisions; atticus help knowledge lists the rest
+  atticus next                          The next step to take, its command and its slash command
+  atticus ui [--open]                   Open the app on this machine
+
+  atticus help <command>                What one command takes (atticus explain <command> says it in plain words)
+  atticus legacy                        Every other command (scan, plan, release, estate and more); each still runs by its own name
+  atticus help --all                    Every command, grouped by area
+```
+
+## The twelve in full
+
+Every command under the twelve, with its options.
+
+```text
+  atticus map <repo>                   Read a repo into facts in batches that fit your model, one hand-off at a time, each answer verified at once; for an assistant without file tools (ADR 0124; /atticus-map reads it in one session) [--mode m] [--max-tokens n] [--next] [--resume run] [--force] [--dir path] [--commit sha] [--json]
+          [--estimate]                 Say what the first read costs: the checkout, commit, facts file, source files, tokens, your assistant's tier and the batches at the limit
+          [--copy]                     Print the next batch's prompt to paste into a chat
+          [--answer <file>]            With --copy: read the pasted answer back from a file (- for stdin)
+  atticus verify <repo>                Check the facts your assistant wrote for a repo (/atticus-map) against its code: the claim on each cited line, the quote, references, secrets, coverage; raises the questions it wrote for a person; rejected facts go back to the assistant (ADR 0124) [--dir path] [--commit sha] [--routed a,b] [--json]
+          [--write]                    When nothing is rejected: put the facts in the catalog, the flows in specs/<repo>/, ask about calls nothing joins, and render the map
+  atticus map render <repo> [--json]   Render the repo's map from the catalog: map.md, a page per flow with its sequence diagram, an OpenAPI file per component, under map/<repo>/
+  atticus join [--json]                Follow each repo's flows into the flows their calls reach, through the calls the repos' verified facts join (verify --write); the same as estate join
+  atticus knowledge scan [--source s] [--mode m] [--resume run] [--full] [--batch-tokens n] [--max-tokens n]  Your assistant reads the snapshots into patterns, standards, processes, requests, decisions and constraints; every quote checked. A rescan reads only the pages that changed and says what changed
+  atticus knowledge list [--tag t] [--kind k] [--unverified] [--json]  The knowledge items, by tag and kind
+  atticus knowledge ask "<question>" [--mode m] [--resume run] [--max-tokens n]  An answer from the knowledge items only, citing them
+  atticus knowledge find "<phrase>"   Search every wiki for a term or phrase; your assistant reads the pages that mention it and proposes what isn't a knowledge item yet, each quote checked [--source s] [--mode m] [--resume run] [--json] [--max-tokens n]
+  atticus knowledge keep <item>        Keep a found item as a knowledge item you verified [--find <search>] [--as <kind>] [--set <field=value>] [--note <text>]
+  atticus knowledge finds [--json]     The searches saved, and how many of each were kept
+  atticus knowledge verify <item>      Mark a knowledge item right as read: a green tick wherever it shows [--note <text>]
+  atticus knowledge correct <item> --set field=value  Correct an item's details (a list takes a|b|c); the corrected item is what plans read [--note <text>]
+  atticus knowledge reject <item> --note <why>  Mark an item wrong: plans and answers leave it out
+  atticus questions [--json]           Knowledge gaps and the owner questions that close them
+  atticus questions list [--state open] [--json]   The questions in questions/ a step raised for a person
+  atticus questions show <id> [--json]  One question on file, with its options, evidence and answer
+  atticus questions answer <id> --option <n> | --text "..."   Write the answer to the file; prints the rerun
+          [--scope repo|repo-type] [--type <repo type>] [--by who]
+  atticus change new "<title>"         Start a change from a template: --type <type>
+          [--template id] [--id id] [--owner role=a,b]... [--system id]... [--like <archived change>]
+  atticus change similar "<brief>"     The archived changes nearest a new brief (or --change <id>: a change's own), to start from one with change new --like or change attach --like [--limit n] [--json]
+  atticus change feature <change>      The feature stage: your assistant places the change on the estate's flows and features from the brief, stories or a design; checked and criticised every draft until done [--from-figma f.json] [--mode m] [--resume run] [--force] [--context-tokens n] [--whole-context] [--max-tokens n]
+  atticus change architecture <change>  The architecture stage: the target flows (steps added, changed or removed, with fields) as flow deltas; looped the same way [--mode m] [--resume run] [--context-tokens n] [--whole-context] [--max-tokens n]
+  atticus change small <change>        The fast path for a small change (ADR 0113): your assistant places it on the flows, writes its target flows and words its stories in one step; every stage's checks, and the critic at the change type's gate [--mode m] [--resume run] [--force] [--context-tokens n] [--whole-context]
+  atticus change attach <change> <files...>  Attach a spec, screenshot, PDF, email export or document to a change: copied into its inputs/, read and cited by line or page, read by its steps [--replaces inputs/<file>] [--promote inputs/<file>: copy one into general knowledge] [--like <archived change>: attach an earlier change as an example] [--json]
+  atticus change draft <change>        Your assistant drafts the proposal, spec and interfaces from the brief and the catalog; checked [--attempts 3] [--force] [--mode m] [--max-tokens n]
+  atticus change status <id> [--json]  State, next step, what blocks it, risk, the PR to merge and test kinds
+  atticus change knowledge <id>        The wiki sections, documents, patterns, decisions and processes that apply to the change, picked by its stages, with near-misses; confirm or exclude one (an excluded item stays out of later stages) [--confirm id] [--exclude id] [--json]
+  atticus change handoff <id> --approve  Open the phase's hand-off PR; merging it approves the gate [--repo]
+                                       (without --approve: say what it would open, send nothing)
+  atticus change sync <id> [--approve]   Read the hand-off PR; a merged PR moves the change on (--approve merges a ready one)
+  atticus change return <id> --reason "<why>" --approve  Close the hand-off PR and return the change to the product owner
+  atticus change archive <id> [--no-rescan]  Archive a released change and rescan its repos
+  atticus change list [--json]         Every change and its state
+  atticus change conflicts [--json]    Open changes that touch the same systems, records or repos
+  atticus change conform <change> [--repo r] [--ref branch] [--task t] [--latest] [--json]  Does the code do what the design says: scan the branch's commit and check it against the target flows; what is missing, still there or not in the design becomes findings on the conform gate (--latest shows the newest check, scanning nothing)
+  atticus change estimate <change> [--json]  The change's estimate: its size from the target flows, the org pack's ranges summed, and what drives it, each with its source; never a number nobody stands behind
+  atticus change map <change> [--format mermaid|drawio] [--json]  The change's picture: the components, entries and tables its target flows touch, marked + new, ◇ modify or ✕ retire
+  atticus critic <change> [--gate g] [--lens l] [--mode m] [--json] [--max-tokens n]  Review a change at a gate: rule checks, then AI lenses (--mode runs them)
+  atticus critic <change> [--gate g] --resume  Read in the AI lens answers your assistant wrote (hand-off); handoff done does it per lens
+  atticus critic stats [--json]        How often each rule's findings are dismissed or waived
+  atticus task context <change> <task> [--json|--markdown]  The task's context for an assistant: its story and criteria, the step it implements with today's code, what applies, the files attached and the files likely to change
+  atticus task run <change> <task>     Run a task with AI [--level plan|draft|pr] [--mode m] [--approve]
+  atticus task <change> <task>         Run one task with your assistant, the same as task run [--level plan|draft|pr] [--mode m] [--approve]
+  atticus stories <change>             The stories stage, the same as plan stories [--force] [--mode m] [--draft] [--context-tokens n] [--whole-context] [--max-tokens n]
+  atticus change needs <change>        Your assistant says what the change needs from the organisation (requests and processes to raise, standards to follow, teams and vendors to involve), for the change, a feature, flow, story or task; each checked against the change's own words [--mode m] [--resume run] [--context-tokens n] [--whole-context] [--max-tokens n]
+  atticus init <folder> --platform <p>  Create a new metarepo named after the folder [--from pack] [--owner who]
+  atticus next [--all] [--json]        The next step to take, its command and slash command, and why; from the files only
+  atticus ui [--port n] [--open]       Start the app on this machine (127.0.0.1); Ctrl+C stops it
+          [--embed vscode]             Let a VS Code panel show the app (the Atticus extension starts it so)
+          [--parent pid]               Stop when that process ends (an editor that started it)
+          [--show-token]               Print the session token, for an assistant or a script (an editor that starts it gets it)
+          [--full]                     Every page in the menu, not only the six entries (the others open by address)
+```
+
+## Legacy commands
+
+Every other command. `atticus legacy` lists them by area; each runs by its own name, as before, or as `atticus legacy <command>`.
+
+```text
   atticus schema export [dir]          Write JSON Schema for every contract and the API's OpenAPI document (default: ./schema)
   atticus catalog validate <dir>       Check record files: schema, location and canonical form
           [--fix]                      Rewrite files that aren't in canonical form
@@ -19,13 +107,6 @@ Usage:
           [--json]                     Print the result as JSON
   atticus scan survey <repo>           Your assistant reads the repo and drafts its scan settings (folders to leave out, path prefixes, client base URLs); checked against the code [--attempts 3] [--force] [--max-tokens n]
   atticus scan verify <repo>           Your assistant compares the code with the last scan: what it missed, what it has wrong, a fix for each; checked, kept in proposals/scan/ [--attempts 3] [--json] [--accept] [--max-tokens n]
-  atticus map <repo>                   Read a repo into facts in batches that fit your model, one hand-off at a time, each answer verified at once; for an assistant without file tools (ADR 0124; /atticus-map reads it in one session) [--mode m] [--max-tokens n] [--next] [--resume run] [--force] [--dir path] [--commit sha] [--json]
-          [--estimate]                 Say what the first read costs: the checkout, commit, facts file, source files, tokens, your assistant's tier and the batches at the limit
-          [--copy]                     Print the next batch's prompt to paste into a chat
-          [--answer <file>]            With --copy: read the pasted answer back from a file (- for stdin)
-  atticus verify <repo>                Check the facts your assistant wrote for a repo (/atticus-map) against its code: the claim on each cited line, the quote, references, secrets, coverage; raises the questions it wrote for a person; rejected facts go back to the assistant (ADR 0124) [--dir path] [--commit sha] [--routed a,b] [--json]
-          [--write]                    When nothing is rejected: put the facts in the catalog, the flows in specs/<repo>/, ask about calls nothing joins, and render the map
-  atticus map render <repo> [--json]   Render the repo's map from the catalog: map.md, a page per flow with its sequence diagram, an OpenAPI file per component, under map/<repo>/
   atticus spec draft <repo>            Your assistant writes the repo's flows, one per trigger, each step cited and checked [--attempts 3] [--resume run] [--force] [--mode m] [--max-tokens n]
   atticus spec check <repo> [--json]   Check the repo's flows against the catalog, the template and the code; confirms steps on their cited lines
   atticus estate join [--json]         Join each repo's call-outs to the flows their targets start; writes specs/estate.yaml
@@ -71,25 +152,11 @@ Usage:
           [--id <id>] [--path <folder>] [--ref <branch>] [--submodule] [--kind <k,k>] [--framework <f,f>] [--owner <who>] [--save]
   atticus sources sync [--source s] [--json]  Read the wikis and copy each to a dated snapshot: pages, stale pages, conflicts with code, document-only facts
   atticus sources tag <source> [--kind k,k] [--framework f,f] [--owner o]  Tag a knowledge source in sources.yaml (kinds, frameworks, owner)
-  atticus knowledge scan [--source s] [--mode m] [--resume run] [--full] [--batch-tokens n] [--max-tokens n]  Your assistant reads the snapshots into patterns, standards, processes, requests, decisions and constraints; every quote checked. A rescan reads only the pages that changed and says what changed
-  atticus knowledge list [--tag t] [--kind k] [--unverified] [--json]  The knowledge items, by tag and kind
-  atticus knowledge ask "<question>" [--mode m] [--resume run] [--max-tokens n]  An answer from the knowledge items only, citing them
-  atticus knowledge find "<phrase>"   Search every wiki for a term or phrase; your assistant reads the pages that mention it and proposes what isn't a knowledge item yet, each quote checked [--source s] [--mode m] [--resume run] [--json] [--max-tokens n]
-  atticus knowledge keep <item>        Keep a found item as a knowledge item you verified [--find <search>] [--as <kind>] [--set <field=value>] [--note <text>]
-  atticus knowledge finds [--json]     The searches saved, and how many of each were kept
-  atticus knowledge verify <item>      Mark a knowledge item right as read: a green tick wherever it shows [--note <text>]
-  atticus knowledge correct <item> --set field=value  Correct an item's details (a list takes a|b|c); the corrected item is what plans read [--note <text>]
-  atticus knowledge reject <item> --note <why>  Mark an item wrong: plans and answers leave it out
   atticus bench knowledge [--mode m] [--resume run]  Scan the bench's invented wiki, ask its questions, and score both
   atticus bench design [--mode m] [--resume run]  Read the bench's Figma export, map it against the petclinic estate, and score it
   atticus sources refresh [--json]     Fetch every absorbed source again and show what changed
   atticus patterns scan [--json]       Find integration patterns in the wikis and compare them with the org pack
   atticus coverage [--json]            What the catalog knows per system and area: verified, document-only, unknown
-  atticus questions [--json]           Knowledge gaps and the owner questions that close them
-  atticus questions list [--state open] [--json]   The questions in questions/ a step raised for a person
-  atticus questions show <id> [--json]  One question on file, with its options, evidence and answer
-  atticus questions answer <id> --option <n> | --text "..."   Write the answer to the file; prints the rerun
-          [--scope repo|repo-type] [--type <repo type>] [--by who]
   atticus intake add <files...>        Drop documents, specs and diagrams into inputs/inbox for intake
   atticus intake list [--json]         What intake read from inputs/: kinds, systems, duplicates, versions
   atticus triage [--json]              What needs a person: unknown names, conflicts with code, image edges
@@ -123,30 +190,7 @@ Usage:
   atticus frameworks check [name]      Run each framework model's own tests; a failing model isn't used
   atticus frameworks survey [--package <prefix>[,...]]   How the repos use house frameworks, any language [--json]
   atticus frameworks kit [dir]         Export the framework-model kit for an assistant
-  atticus change new "<title>"         Start a change from a template: --type <type>
-          [--template id] [--id id] [--owner role=a,b]... [--system id]... [--like <archived change>]
-  atticus change similar "<brief>"     The archived changes nearest a new brief (or --change <id>: a change's own), to start from one with change new --like or change attach --like [--limit n] [--json]
   atticus domain profile <system>      A system as a domain profile, filled from the catalog [--out file]
-  atticus change feature <change>      The feature stage: your assistant places the change on the estate's flows and features from the brief, stories or a design; checked and criticised every draft until done [--from-figma f.json] [--mode m] [--resume run] [--force] [--context-tokens n] [--whole-context] [--max-tokens n]
-  atticus change architecture <change>  The architecture stage: the target flows (steps added, changed or removed, with fields) as flow deltas; looped the same way [--mode m] [--resume run] [--context-tokens n] [--whole-context] [--max-tokens n]
-  atticus change small <change>        The fast path for a small change (ADR 0113): your assistant places it on the flows, writes its target flows and words its stories in one step; every stage's checks, and the critic at the change type's gate [--mode m] [--resume run] [--force] [--context-tokens n] [--whole-context]
-  atticus change attach <change> <files...>  Attach a spec, screenshot, PDF, email export or document to a change: copied into its inputs/, read and cited by line or page, read by its steps [--replaces inputs/<file>] [--promote inputs/<file>: copy one into general knowledge] [--like <archived change>: attach an earlier change as an example] [--json]
-  atticus change draft <change>        Your assistant drafts the proposal, spec and interfaces from the brief and the catalog; checked [--attempts 3] [--force] [--mode m] [--max-tokens n]
-  atticus change status <id> [--json]  State, next step, what blocks it, risk, the PR to merge and test kinds
-  atticus change knowledge <id>        The wiki sections, documents, patterns, decisions and processes that apply to the change, picked by its stages, with near-misses; confirm or exclude one (an excluded item stays out of later stages) [--confirm id] [--exclude id] [--json]
-  atticus change handoff <id> --approve  Open the phase's hand-off PR; merging it approves the gate [--repo]
-                                       (without --approve: say what it would open, send nothing)
-  atticus change sync <id> [--approve]   Read the hand-off PR; a merged PR moves the change on (--approve merges a ready one)
-  atticus change return <id> --reason "<why>" --approve  Close the hand-off PR and return the change to the product owner
-  atticus change archive <id> [--no-rescan]  Archive a released change and rescan its repos
-  atticus change list [--json]         Every change and its state
-  atticus change conflicts [--json]    Open changes that touch the same systems, records or repos
-  atticus change conform <change> [--repo r] [--ref branch] [--task t] [--latest] [--json]  Does the code do what the design says: scan the branch's commit and check it against the target flows; what is missing, still there or not in the design becomes findings on the conform gate (--latest shows the newest check, scanning nothing)
-  atticus change estimate <change> [--json]  The change's estimate: its size from the target flows, the org pack's ranges summed, and what drives it, each with its source; never a number nobody stands behind
-  atticus change map <change> [--format mermaid|drawio] [--json]  The change's picture: the components, entries and tables its target flows touch, marked + new, ◇ modify or ✕ retire
-  atticus critic <change> [--gate g] [--lens l] [--mode m] [--json] [--max-tokens n]  Review a change at a gate: rule checks, then AI lenses (--mode runs them)
-  atticus critic <change> [--gate g] --resume  Read in the AI lens answers your assistant wrote (hand-off); handoff done does it per lens
-  atticus critic stats [--json]        How often each rule's findings are dismissed or waived
   atticus findings <change> [--json]   The change's findings by gate and round
   atticus finding <change> <id> <action>  apply | edit-and-apply | not-relevant | waive | ask (recorded with you; reaches main with the hand-off PR)
           [--gate g] [--reason text] [--asked-of who] [--edit patch-file]
@@ -160,15 +204,12 @@ Usage:
   atticus feature suggest-links [--json]  Suggest links between features and work items
   atticus feature spec <id>            Draft an OpenSpec capability spec from a confirmed feature
   atticus catalog migrate [--dry-run]  Rewrite catalog files to the current schema version
-  atticus task context <change> <task> [--json|--markdown]  The task's context for an assistant: its story and criteria, the step it implements with today's code, what applies, the files attached and the files likely to change
-  atticus task run <change> <task>     Run a task with AI [--level plan|draft|pr] [--mode m] [--approve]
   atticus spec hand-down <change> <task>  Create the task's Spec Kit feature in its repo [--force]
   atticus spec hand-up <change> <task>  Read the Spec Kit feature back at the PR [--pr n --pr-url url]
   atticus drift <change> [--json]      Compare design, repo plans and code
   atticus assistant-files [--repo id [--change id]] [--force] [--check]  Generate the slash commands, instructions and skills for each assistant runtime.yaml allows (Copilot, Claude Code, Cursor, Gemini CLI, Windsurf, AGENTS.md)
   atticus feature suggest-names [--mode m]  Ask AI to propose names for detected features
   atticus plan stories <change>        Write stories, stories.md and tasks.md from the approved design [--force] [--mode m] [--draft: before approval] [--context-tokens n] [--whole-context] [--max-tokens n]
-  atticus change needs <change>        Your assistant says what the change needs from the organisation (requests and processes to raise, standards to follow, teams and vendors to involve), for the change, a feature, flow, story or task; each checked against the change's own words [--mode m] [--resume run] [--context-tokens n] [--whole-context] [--max-tokens n]
   atticus needs [--change id] [--all] [--json]  What changes need from the organisation, open ones first, with lead times and who handles each
   atticus waiting [--group change|kind] [--filter words] [--json]  What waits on you across every change: questions, open needs, manual steps, findings, knowledge to verify
   atticus runs [--change id] [--limit n] [--json]  The model runs: what Atticus asked a model, each round, and whether it was answered
@@ -192,7 +233,6 @@ Usage:
   atticus todo done <step>             Record a manual step's result [--result k=v]... [--skip --note why]
   atticus todo run <step> --with <executor>  Run a step with a team's own tool [--approve --inputs sha] [--fill-only]
   atticus executors check              Ping configured executors and show what each covers
-  atticus init <folder> --platform <p>  Create a new metarepo named after the folder [--from pack] [--owner who]
   atticus adopt <path>                 Use Atticus in an existing repo; writes only .atticus/ [--platform p] [--name n]
   atticus unadopt <path>               Remove Atticus from an adopted repo, leaving it as it was
   atticus repos discover <folder> | --org <org>  Propose repos.manifest.yaml entries [--platform p] [--dry-run]
@@ -226,6 +266,7 @@ Usage:
                                        Lessons by role in a practice sandbox: list them, start one, check a step
   atticus sandbox create <dir>         A throwaway practice metarepo
   atticus commands [--json]            Every command as data: its arguments, options, area and how it runs (for an editor)
+  atticus legacy [--all]               Every command outside the twelve atticus help shows, grouped; atticus legacy <command> runs one exactly as atticus <command> does
   atticus explain <id|command>         Explain a record, finding, change or command in plain words
   atticus eval run [--agent a]... [--mode mock|replay|live] [--runs n]  Evaluate AI agents
   atticus eval report                  The latest eval results and AI quality
@@ -249,7 +290,6 @@ Usage:
   atticus openspec check               Check the OpenSpec version and validate every change and spec
   atticus handoff done <run-id>        Tell Atticus a hand-off artifact is written; it validates it (a stage's draft: with the stage's checks, its problems listed with their lines until it is clean)
   atticus stage check <change> <stage> <file>  Run a stage's checks on a draft's file and list its problems with their lines; writes nothing (a drafter checks its draft before it hands it in)
-  atticus next [--all] [--json]        The next step to take, its command and slash command, and why; from the files only
   atticus <step> --handoff [--json]    On map, scan survey, scan verify, spec draft, knowledge scan, change feature, change architecture, change small, change draft, plan stories, change needs, knowledge find, knowledge ask and critic (its lenses one at a time, as a stage offers its critic lenses after each draft): print only the prompt, the result file and the commands that finish it
   atticus <step> --max-tokens n        On the same steps: the model's limit. The whole prompt fits n tokens (counted as characters / 4, a quarter kept back for the count's error), or the step says before handing off that it can't, with the numbers. The VS Code extension passes its model's limit to every step
   atticus workspace sync               Clone or update the base clone of every repo in the manifests
@@ -262,11 +302,6 @@ Usage:
   --root <dir>                         The metarepo (default: the current folder)
   --by <handle>                        Who is acting (default: the metarepo's Git user, git config user.email)
   atticus mcp                          Serve read-only tools to an assistant over MCP (stdio): next step, catalog, knowledge, changes, needs (the Claude Code plugin starts it)
-  atticus ui [--port n] [--open]       Start the app on this machine (127.0.0.1); Ctrl+C stops it
-          [--embed vscode]             Let a VS Code panel show the app (the Atticus extension starts it so)
-          [--parent pid]               Stop when that process ends (an editor that started it)
-          [--show-token]               Print the session token, for an assistant or a script (an editor that starts it gets it)
-          [--full]                     Every page in the menu, not only the six entries (the others open by address)
   atticus --version                    Print the version
   atticus --help                       Show this help
 

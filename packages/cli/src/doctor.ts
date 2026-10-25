@@ -9,7 +9,7 @@ import {
   readProbes,
   tierLine,
 } from "@maycombhq/assistant-files";
-import { DEFAULT_PORT, loadOrgPack, orgPackDirOf, readLock } from "@maycombhq/core";
+import { DEFAULT_PORT, loadOrgPack, orgPackDirOf, readLock, retrievalOf } from "@maycombhq/core";
 import { createOpenSpec, isSupportedVersion, OPENSPEC_PINNED } from "@maycombhq/openspec-adapter";
 import {
   baseClonePath,
@@ -56,6 +56,8 @@ export interface DoctorDeps {
   onPath?: (program: string) => boolean;
   /** The slash-command files that are missing, out of date or edited by hand (ADR 0119). */
   assistantFiles?: (root: string) => Promise<AssistantFilesState>;
+  /** Load the optional embedding plugin (ADR 0124 addendum D-bundle); fails where it isn't installed. */
+  embed?: () => Promise<typeof import("@maycombhq/embed")>;
 }
 
 export interface AssistantFilesState {
@@ -468,11 +470,32 @@ export async function doctorChecks(root: string, deps: DoctorDeps = {}): Promise
   // with Atticus by default. Where it or onnxruntime isn't installed, the context engine searches by
   // words and names, never fails a step and downloads nothing; this says so. A default that
   // isn't installed is a note; a model runtime.yaml names that can't be used is a warning.
-  {
-    const { embeddingState, runtimeAvailable } = await import("@maycombhq/embed");
+  // ADR 0124 addendum D-bundle: the model and its runtime are an optional plugin the offline
+  // bundle leaves out, so @maycombhq/embed itself may be missing; that is a note, not a failure.
+  const lexical = "the context engine searches by words and names only";
+  const embed = await (deps.embed ?? (() => import("@maycombhq/embed")))().catch((e: Error) => e);
+  if (embed instanceof Error) {
+    const model = retrievalOf(rt).embeddings.model;
+    const off = process.env.ATTICUS_EMBEDDINGS === "off" || model === "off";
+    // Not installed, or installed and broken (said with its message, as a warning).
+    const missing = (embed as { code?: string }).code === "ERR_MODULE_NOT_FOUND";
+    out.push({
+      id: "embeddings",
+      label: "Embedding model",
+      status: off || (missing && model === "bundled") ? "ok" : "warn",
+      detail: off
+        ? `off (${process.env.ATTICUS_EMBEDDINGS === "off" ? "ATTICUS_EMBEDDINGS is off for this process" : "retrieval.embeddings.model is off"}); ${lexical}`
+        : !missing
+          ? `@maycombhq/embed couldn't be loaded (${embed.message.split("\n")[0]}), so ${lexical}`
+          : model === "bundled"
+            ? `not installed (@maycombhq/embed, an optional plugin), so ${lexical} (BM25 and the graph walk)`
+            : `runtime.yaml names the model ${model}, but @maycombhq/embed, the optional plugin that runs it, isn't installed, so ${lexical}`,
+      fix: "Search by meaning is an optional plugin: install Atticus from the bundle built with pnpm bundle --with-embeddings, or from your npm mirror (it brings @maycombhq/embed, @maycombhq/embed-model and onnxruntime). Set retrieval.embeddings.model to off to say the organisation doesn't use one. Nothing is ever downloaded.",
+    });
+  } else {
+    const { embeddingState, runtimeAvailable } = embed;
     const e = await embeddingState(root);
     const ort = e.setting === "off" ? undefined : await runtimeAvailable(root);
-    const lexical = "the context engine searches by words and names only";
     out.push({
       id: "embeddings",
       label: "Embedding model",
@@ -492,7 +515,7 @@ export async function doctorChecks(root: string, deps: DoctorDeps = {}): Promise
           : e.problem
             ? `${e.problem}, so ${lexical}`
             : `${e.id} (${((e.bytes ?? 0) / 1024 / 1024).toFixed(0)} MB, ${e.licence}) in ${e.dir}; runtime: ${ort ?? `none found, so ${lexical}`}`,
-      fix: "The model comes with Atticus (@maycombhq/embed-model and its onnxruntime packages, installed with @maycombhq/cli). Reinstall Atticus from your npm mirror or the offline bundle; in a checkout of Atticus run pnpm model:fetch; or point retrieval.embeddings.model at a model folder. Set it to off to say the organisation doesn't use one. Nothing is ever downloaded.",
+      fix: "The model is an optional plugin (@maycombhq/embed-model and its onnxruntime packages, installed with @maycombhq/cli from npm). Reinstall Atticus from your npm mirror or from the offline bundle built with pnpm bundle --with-embeddings; in a checkout of Atticus run pnpm model:fetch; or point retrieval.embeddings.model at a model folder. Set it to off to say the organisation doesn't use one. Nothing is ever downloaded.",
     });
   }
   const live = Object.entries(rt.adapters).filter(

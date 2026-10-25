@@ -1,4 +1,5 @@
 import { isHandoffStep } from "./handoff-flag.js";
+import { aliasArgv, isLegacy } from "./top-commands.js";
 
 /**
  * Every command as data (ADR 0096), for an editor to offer them all: the words, the arguments and
@@ -53,6 +54,11 @@ export interface CommandInfo {
   runs: Runs;
   /** For shared: the flag a person adds to approve the write (--approve, --send). */
   approve?: string;
+  /**
+   * Outside the twelve `atticus help` shows (ADR 0124 addendum D-cli): listed by `atticus legacy`,
+   * still run by its own name. Additive: an editor that doesn't read it offers every command.
+   */
+  legacy: boolean;
 }
 
 export const AREAS = [
@@ -90,9 +96,11 @@ const AREA_BY_WORD: Record<string, string> = {
   orgpack: "start",
   templates: "start",
   commands: "start",
+  legacy: "start",
   next: "changes",
   scan: "repos",
   verify: "repos",
+  join: "repos",
   map: "repos",
   spec: "repos",
   estate: "repos",
@@ -137,6 +145,7 @@ const AREA_BY_WORD: Record<string, string> = {
   questions: "changes",
   plan: "plan",
   task: "plan",
+  stories: "plan",
   todo: "plan",
   needs: "changes",
   waiting: "changes",
@@ -246,8 +255,8 @@ function parseFlags(text: string, summaries: Map<string, string>): CommandFlag[]
 }
 
 /** The commands of a help text, each with the option lines written under it. */
-export function parseHelp(help: string): Omit<CommandInfo, "area" | "runs">[] {
-  const out: Omit<CommandInfo, "area" | "runs">[] = [];
+export function parseHelp(help: string): Omit<CommandInfo, "area" | "runs" | "legacy">[] {
+  const out: Omit<CommandInfo, "area" | "runs" | "legacy">[] = [];
   let current: { line: string; more: string[]; below?: string } | undefined;
   const blocks: { line: string; more: string[]; below?: string }[] = [];
   for (const l of help.split("\n")) {
@@ -317,15 +326,26 @@ export function commandCatalog(help: string): CommandInfo[] {
     const area = AREA_BY_ID[c.id] ?? AREA_BY_WORD[c.words[0] ?? ""] ?? "";
     const approve = APPROVE_FLAGS.find((f) => c.flags.some((x) => x.name === f));
     // `critic <change>` takes --handoff too (its lenses one at a time); `critic --resume` is a
-    // person's way to read answers in, and `critic stats` reads.
+    // person's way to read answers in, and `critic stats` reads. A new name (stories) runs as the
+    // command it names (plan stories).
+    const [w0, w1] = aliasArgv(
+      c.words,
+      c.words.map((_, i) => i),
+    );
     const runs: Runs =
-      isHandoffStep(c.words[0], c.words[1]) || c.id === "critic" || c.id === "map"
+      isHandoffStep(w0, w1) || c.id === "critic" || c.id === "map"
         ? "ai"
         : SERVES.has(c.id)
           ? "serve"
           : approve
             ? "shared"
             : "local";
-    return { ...c, area, runs, ...(approve && runs === "shared" ? { approve } : {}) };
+    return {
+      ...c,
+      area,
+      runs,
+      ...(approve && runs === "shared" ? { approve } : {}),
+      legacy: isLegacy(c.words[0]),
+    };
   });
 }

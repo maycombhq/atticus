@@ -1,9 +1,15 @@
-// pnpm bundle [out-dir]: the offline install bundle (ADR 0052). One zip with everything Atticus
-// needs to install and run with no package registry: the built command line and app, every
-// production dependency, the Forge practice fixtures, install scripts for Windows, macOS and
-// Linux, SHA256SUMS, a CycloneDX SBOM and the third-party licences. Node.js itself is not
-// inside: organisations install it through their own software catalogue (22.13 or later).
+// pnpm bundle [out-dir] [--with-embeddings]: the offline install bundle (ADR 0052). One zip with
+// everything Atticus needs to install and run with no package registry: the built command line
+// and app, every production dependency, the Forge practice fixtures, install scripts for Windows,
+// macOS and Linux, SHA256SUMS, a CycloneDX SBOM and the third-party licences. Node.js itself is
+// not inside: organisations install it through their own software catalogue (22.13 or later).
 // Build first: pnpm turbo run build.
+//
+// ADR 0124 addendum D-bundle: search by meaning is an optional plugin. The default bundle leaves
+// out the embedding model and its runtime (@maycombhq/embed, @maycombhq/embed-model, the
+// @maycombhq/onnxruntime-* packages and onnxruntime-common): retrieval is words and names (FTS5,
+// BM25) and the graph walk, and doctor says so. --with-embeddings (or ATTICUS_BUNDLE_EMBEDDINGS=1)
+// puts them in, as before, in a zip named ...-offline-embeddings.zip.
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
@@ -16,22 +22,27 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { join, relative, sep } from "node:path";
+import { basename, join, relative, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
   cyclonedx,
   deploy,
+  embeddingPackage,
   forbiddenFiles,
   inventory,
   licenceAllowed,
   removeDeploy,
+  removePackages,
   REPO,
 } from "./inventory.mjs";
 
 const { zip } = await import(pathToFileURL(join(REPO, "packages/core/dist/index.js")).href);
 const VERSION = JSON.parse(readFileSync(join(REPO, "packages/cli/package.json"), "utf8")).version;
 const NAME = `atticus-${VERSION}`;
-const outDir = process.argv[2] ?? join(REPO, "dist");
+const args = process.argv.slice(2);
+const withEmbeddings =
+  args.includes("--with-embeddings") || process.env.ATTICUS_BUNDLE_EMBEDDINGS === "1";
+const outDir = args.find((a) => !a.startsWith("--")) ?? join(REPO, "dist");
 const now = new Date(
   process.env.SOURCE_DATE_EPOCH ? Number(process.env.SOURCE_DATE_EPOCH) * 1000 : Date.now(),
 );
@@ -44,30 +55,41 @@ if (!built.includes(`"${VERSION}"`)) {
   );
   process.exit(1);
 }
-// ---- the local embedding model (ADR 0116 addendum): the packages npm installs with the CLI,
-// @maycombhq/embed-model and this platform's @maycombhq/onnxruntime-<platform> with the WASM
-// fallback, filled with their pinned files first (from the cache; the only download is the
-// first fill, at build time). Other platforms' runtime packages are left out of this bundle.
-execFileSync(process.execPath, [join(REPO, "scripts/model/fetch.mjs"), "--this-platform"], {
-  stdio: "inherit",
-});
+// ---- the local embedding model (ADR 0116 addendum), only with --with-embeddings: the packages
+// npm installs with the CLI, @maycombhq/embed-model and this platform's
+// @maycombhq/onnxruntime-<platform> with the WASM fallback, filled with their pinned files first
+// (from the cache; the only download is the first fill, at build time). Other platforms' runtime
+// packages are left out of this bundle. Without it, every one of them is left out.
+if (withEmbeddings)
+  execFileSync(process.execPath, [join(REPO, "scripts/model/fetch.mjs"), "--this-platform"], {
+    stdio: "inherit",
+  });
 const dir = deploy();
 const scoped = join(dir, "node_modules", "@maycombhq");
 const here = `onnxruntime-${process.platform}-${process.arch}`;
-for (const p of readdirSync(scoped))
-  if (/^onnxruntime-(win32|linux|darwin)-/.test(p) && p !== here)
-    rmSync(join(scoped, p), { recursive: true, force: true });
-for (const f of [
-  "embed-model/model.onnx",
-  `${here}/dist/index.js`,
-  "onnxruntime-wasm/dist/ort.wasm.min.mjs",
-])
-  if (!existsSync(join(scoped, ...f.split("/")))) {
-    console.error(
-      `The bundle is missing @maycombhq/${f}: run node scripts/model/fetch.mjs --this-platform.`,
-    );
+if (withEmbeddings) {
+  for (const p of readdirSync(scoped))
+    if (/^onnxruntime-(win32|linux|darwin)-/.test(p) && p !== here)
+      rmSync(join(scoped, p), { recursive: true, force: true });
+  for (const f of [
+    "embed-model/model.onnx",
+    `${here}/dist/index.js`,
+    "onnxruntime-wasm/dist/ort.wasm.min.mjs",
+  ])
+    if (!existsSync(join(scoped, ...f.split("/")))) {
+      console.error(
+        `The bundle is missing @maycombhq/${f}: run node scripts/model/fetch.mjs --this-platform.`,
+      );
+      process.exit(1);
+    }
+} else {
+  const left = removePackages(dir, embeddingPackage);
+  if (existsSync(join(scoped, "embed"))) {
+    console.error("The default bundle still holds @maycombhq/embed.");
     process.exit(1);
   }
+  console.log(`Left out the embedding plugin: ${left.join(", ")}.`);
+}
 for (const f of ["forge", "forge-change"])
   cpSync(join(REPO, "fixtures", f), join(dir, "fixtures", f), { recursive: true });
 cpSync(join(REPO, "LICENSE"), join(dir, "LICENSE"));
@@ -182,6 +204,16 @@ writeFileSync(
     "sbom.cdx.json lists every package inside (CycloneDX 1.5); THIRD-PARTY-LICENSES.txt holds",
     "their licences. Atticus itself is Apache-2.0 (LICENSE).",
     "",
+    ...(withEmbeddings
+      ? [
+          "This bundle carries the local embedding model and its runtime: search by meaning works",
+          "offline, with nothing more to install.",
+        ]
+      : [
+          "Search by meaning is an optional plugin this bundle leaves out: Atticus searches by words",
+          "and names, and atticus doctor says so. A bundle built with --with-embeddings carries it.",
+        ]),
+    "",
   ].join("\r\n"),
 );
 
@@ -212,11 +244,11 @@ const entries = files.map((f) => ({
   mode: rel(f) === "install.sh" || rel(f).endsWith("/bin.js") ? 0o755 : 0o644,
 }));
 mkdirSync(outDir, { recursive: true });
-const out = join(outDir, `${NAME}-offline.zip`);
+const out = join(outDir, `${NAME}-offline${withEmbeddings ? "-embeddings" : ""}.zip`);
 const buf = zip(entries, now);
 writeFileSync(out, buf);
 const sha = createHash("sha256").update(buf).digest("hex");
-writeFileSync(`${out}.sha256`, `${sha}  ${NAME}-offline.zip\n`);
+writeFileSync(`${out}.sha256`, `${sha}  ${basename(out)}\n`);
 removeDeploy(dir);
 console.log(
   `Wrote ${out} (${(buf.length / 1024 / 1024).toFixed(1)} MB, ${entries.length} files, ${items.filter((i) => !i.own).length} third-party packages).\nsha256 ${sha}`,

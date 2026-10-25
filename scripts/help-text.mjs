@@ -14,6 +14,22 @@ export function helpText() {
     .replace(/\$\{SCHEMA_VERSION\}/g, String(schemaVersion()));
 }
 
+/** The twelve commands atticus help shows (ADR 0124 addendum D-cli), read from their source. */
+export function topHelpText() {
+  const src = readFileSync(join(REPO, "packages/cli/src/top-commands.ts"), "utf8");
+  const m = /export const TOP_HELP = `([\s\S]*?)`;/.exec(src);
+  if (!m) throw new Error("TOP_HELP not found in packages/cli/src/top-commands.ts");
+  return m[1];
+}
+
+/** Their first words, in order. */
+export function topWords() {
+  const src = readFileSync(join(REPO, "packages/cli/src/top-commands.ts"), "utf8");
+  const m = /export const TOP_WORDS = \[([\s\S]*?)\] as const;/.exec(src);
+  if (!m) throw new Error("TOP_WORDS not found in packages/cli/src/top-commands.ts");
+  return [...m[1].matchAll(/"([a-z-]+)"/g)].map((x) => x[1]);
+}
+
 /** The catalog schema version, read from C1's source like the help itself. */
 function schemaVersion() {
   const src = readFileSync(join(REPO, "packages/core/src/schema/common.ts"), "utf8");
@@ -25,7 +41,7 @@ function schemaVersion() {
 /** Every command the help lists: group → the sub-commands it names (empty when it takes none). */
 export function commands() {
   const out = new Map();
-  for (const line of helpText().split("\n")) {
+  for (const line of [...helpText().split("\n"), ...topHelpText().split("\n")]) {
     const m = /^\s{2}atticus\s+(.*)$/.exec(line);
     if (!m) continue;
     const words = m[1].split(/\s+/);

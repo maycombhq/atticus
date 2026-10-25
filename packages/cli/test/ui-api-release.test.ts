@@ -210,7 +210,8 @@ describe("release views over the API", () => {
 describe("atticus release and outcome in the terminal", () => {
   it("lists the commands in the help", async () => {
     const c = capture();
-    await main(["--help"], c.io);
+    // Release and outcome are legacy commands (ADR 0124 addendum D-cli): atticus legacy lists them.
+    await main(["legacy"], c.io);
     const help = c.out.join("\n");
     for (const cmd of [
       "atticus release plan <change>",

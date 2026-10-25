@@ -93,6 +93,10 @@ describe("lessons as data", () => {
     expect(commandNamed("atticus change handoff x --by pat")!.name).toBe("change handoff");
     expect(commandNamed("todo")!.name).toBe("todo");
     expect(commandNamed("nonsense here")).toBeUndefined();
+    // ADR 0124 addendum D-cli: the twelve's new names, and the way to the rest.
+    for (const name of ["join", "stories", "task", "legacy", "ui"])
+      expect(commandNamed(`atticus ${name} x`)!.name, name).toBe(name);
+    expect(commandNamed("atticus task run c t")!.name).toBe("task run");
     expect(new Set(COMMANDS.map((c) => c.name)).size).toBe(COMMANDS.length);
   });
 });

@@ -31,6 +31,39 @@ describe("similar in meaning (ADR 0116)", () => {
     ix.close();
   });
 
+  it("without the embedding plugin installed (the default offline bundle), searches by words and names and says why (ADR 0124 addendum D-bundle)", async () => {
+    const root = await retrievalRoot();
+    const missing = () =>
+      Promise.reject(
+        Object.assign(new Error("Cannot find package '@maycombhq/embed' imported from index.js"), {
+          code: "ERR_MODULE_NOT_FOUND",
+        }),
+      );
+    const was = process.env.ATTICUS_EMBEDDINGS;
+    delete process.env.ATTICUS_EMBEDDINGS;
+    try {
+      const ix = await openIndex(root, { loadEmbed: missing });
+      expect(ix.embedder).toBeUndefined();
+      expect(ix.meaning().on).toBe(false);
+      expect(ix.meaning().note).toMatch(
+        /search by meaning is an optional plugin that isn't installed \(@maycombhq\/embed\)/,
+      );
+      const s = await ix.select({ text: "the most a customer may send per day" }, { budget: 2000 });
+      expect(s.picked.length).toBeGreaterThan(0);
+      expect(s.picked.some((p) => /meaning/.test(p.via))).toBe(false);
+      expect(await ix.embed()).toBe(0);
+      ix.close();
+      // Any other failure to load it is said as it was.
+      const broken = await openIndex(root, {
+        loadEmbed: () => Promise.reject(new Error("bad onnx\nstack")),
+      });
+      expect(broken.meaning().note).toMatch(/the embedding model couldn't be read: bad onnx/);
+      broken.close();
+    } finally {
+      if (was !== undefined) process.env.ATTICUS_EMBEDDINGS = was;
+    }
+  });
+
   it("a model folder without onnxruntime beside it: the open still works, by words and names, and says why", async () => {
     // ADR 0116 addendum: a bank that hasn't approved onnxruntime gets lexical search, never a
     // failed step. The tiny model folder is invented; onnxruntime isn't installed here.

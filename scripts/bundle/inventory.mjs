@@ -82,6 +82,41 @@ export function removeDeploy(dir) {
     rmSync(parent, { recursive: true, force: true, maxRetries: 5 });
 }
 
+/**
+ * The embedding plugin's packages (ADR 0116; optional since ADR 0124 addendum D-bundle): the
+ * runner, the model, onnxruntime's builds and the one third-party package only they use.
+ */
+export const embeddingPackage = (name) =>
+  /^@maycombhq\/(embed|embed-model|onnxruntime-[a-z0-9-]+)$/.test(name) ||
+  name === "onnxruntime-common";
+
+/**
+ * Remove from a deployed folder every package whose name `drop` keeps (ADR 0124 addendum
+ * D-bundle: the embedding plugin), nested copies too. The names removed, sorted, once each.
+ */
+export function removePackages(deployDir, drop) {
+  const gone = new Set();
+  const walk = (nm) => {
+    if (!existsSync(nm)) return;
+    for (const n of readdirSync(nm)) {
+      if (n.startsWith(".")) continue;
+      const dirs = n.startsWith("@")
+        ? readdirSync(join(nm, n)).map((m) => join(nm, n, m))
+        : [join(nm, n)];
+      for (const d of dirs) {
+        const pj = join(d, "package.json");
+        const name = existsSync(pj) ? JSON.parse(readFileSync(pj, "utf8")).name : undefined;
+        if (name && drop(name)) {
+          rmSync(d, { recursive: true, force: true });
+          gone.add(name);
+        } else walk(join(d, "node_modules"));
+      }
+    }
+  };
+  walk(join(deployDir, "node_modules"));
+  return [...gone].sort();
+}
+
 function licenceOf(pkg) {
   if (typeof pkg.license === "string") return pkg.license;
   if (pkg.license && typeof pkg.license.type === "string") return pkg.license.type;

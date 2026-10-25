@@ -1,10 +1,12 @@
 import type { Output } from "./commands.js";
 import { AREAS, commandCatalog } from "./command-catalog.js";
 import { nearestCommand } from "./flags.js";
+import { isLegacy, topHelp } from "./top-commands.js";
 
 /**
  * `atticus help [command]` (ADR 0119 item 2): one command's usage and options, as the full help
- * writes them, instead of all 230 lines. With no words, every command grouped by area.
+ * writes them, instead of all 230 lines. With no words, the twelve (ADR 0124 addendum D-cli);
+ * with --all, every command grouped by area.
  */
 
 /** The help's blocks: a command's line and the option lines written under it. */
@@ -38,7 +40,18 @@ export function commandOf(words: string[], ids: string[]): string | undefined {
  * conformance...) only with `all`. The lines are the full help's, unchanged, so each command reads
  * the same here, in `atticus help <command>` and in the catalogue.
  */
-export function groupedHelp(help: string, o: { all?: boolean } = {}): string {
+export function groupedHelp(
+  help: string,
+  o: {
+    all?: boolean;
+    /** Only the commands whose first word this keeps (atticus legacy). */
+    only?: (first: string) => boolean;
+    /** The lines in place of the help's own first ones. */
+    head?: string[];
+    /** The line that says what --all adds. */
+    more?: string;
+  } = {},
+): string {
   const lines = help.split("\n");
   const first = lines.findIndex((l) => /^ {2}atticus /.test(l));
   const head = lines.slice(0, first);
@@ -51,6 +64,8 @@ export function groupedHelp(help: string, o: { all?: boolean } = {}): string {
     if (/^atticus (--help|--version)/.test(usage)) general.push(...b.lines);
     else if (/^atticus <step>/.test(usage)) steps.push(...b.lines);
     else {
+      const first = /^atticus ([a-z][a-z-]*)/.exec(usage)?.[1] ?? "";
+      if (o.only && !o.only(first)) continue;
       const area = areaOf.get(usage) ?? "start";
       byArea.set(area, [...(byArea.get(area) ?? []), ...b.lines]);
     }
@@ -59,7 +74,7 @@ export function groupedHelp(help: string, o: { all?: boolean } = {}): string {
   const tail = lines
     .slice(lines.findLastIndex((l) => /^ {2}\S/.test(l)) + 1)
     .filter((l) => l.trim());
-  const out = [...head.filter((l) => l.trim() !== "Usage:")];
+  const out = o.head ? [...o.head] : [...head.filter((l) => l.trim() !== "Usage:")];
   while (out.length && !out.at(-1)!.trim()) out.pop();
   out.push("");
   for (const a of AREAS) {
@@ -70,9 +85,27 @@ export function groupedHelp(help: string, o: { all?: boolean } = {}): string {
   }
   if (steps.length) out.push("Every AI step:", ...steps, "");
   out.push("Every command:", ...globals, ...general, "");
-  if (!o.all) out.push("atticus help --all also lists the commands for Atticus's own quality.");
+  if (!o.all)
+    out.push(o.more ?? "atticus help --all also lists the commands for Atticus's own quality.");
   out.push(...tail);
   return out.join("\n");
+}
+
+/**
+ * `atticus legacy` (ADR 0124 addendum D-cli): every command outside the twelve, grouped by area
+ * as the full help groups them, each line as the full help writes it. Each still runs by its own
+ * name, or as `atticus legacy <command>`.
+ */
+export function legacyHelp(help: string, o: { all?: boolean } = {}): string {
+  return groupedHelp(help, {
+    ...o,
+    only: isLegacy,
+    head: [
+      "atticus legacy: every command outside the twelve atticus help shows.",
+      "Each runs as before, by its own name (atticus scan) or as atticus legacy scan.",
+    ],
+    more: "atticus legacy --all also lists the commands for Atticus's own quality.",
+  });
 }
 
 export function helpCommand(
@@ -82,7 +115,7 @@ export function helpCommand(
   o: { all?: boolean } = {},
 ): number {
   if (!words.length) {
-    io.out(groupedHelp(help, o));
+    io.out(o.all ? groupedHelp(help, o) : topHelp(help.split("\n")[0]!));
     return 0;
   }
   const asked = words.join(" ");
@@ -96,7 +129,7 @@ export function helpCommand(
     io.err(
       `atticus help has nothing for "${asked}".${near ? ` Did you mean atticus help ${near}?` : ""}`,
     );
-    io.err("atticus help lists every command.");
+    io.err("atticus help --all lists every command.");
     return 2;
   }
   for (const b of found) for (const l of b.lines) io.out(l.replace(/^ {2}/, ""));
