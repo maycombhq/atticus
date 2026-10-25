@@ -179,7 +179,8 @@ export function benchStoryFromStories(i: StoriesToBench): BenchStory {
             name: f.name,
             side: f.side,
             type: f.type,
-            required: f.required,
+            // a story that doesn't say is scored as optional; the bench format has no "unknown"
+            required: f.required ?? false,
             ...(f.default ? { default: f.default } : {}),
             change: f.change,
           })),
