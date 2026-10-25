@@ -1,6 +1,6 @@
 {
   "name": "@maycombhq/features",
-  "version": "1.0.0-rc.1",
+  "version": "2.0.0-rc.1",
   "description": "Features found in code (ADR 0031): detection in every scan, AI naming outside it, people's names, merges, splits and links as curated decisions, work-item link suggestions and OpenSpec drafts.",
   "license": "Apache-2.0",
   "type": "module",

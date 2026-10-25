@@ -1,6 +1,6 @@
 {
   "name": "@maycombhq/sdk",
-  "version": "1.0.0-rc.1",
+  "version": "2.0.0-rc.1",
   "description": "Atticus plugin SDK (contract C4): interfaces for extractors, dialects, ingestors and adapters.",
   "license": "Apache-2.0",
   "type": "module",
