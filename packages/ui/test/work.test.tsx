@@ -76,32 +76,62 @@ const tasks: TaskRow[] = [
   { id: "1.2", repo: "forge-ledger", description: "Check the limit", done: false },
 ];
 
+/** A repo's line of GET /api/trust, in the state given. */
+const trusted = (id: string, state: Api.TrustRepoT["state"]): Api.TrustRepoT => ({
+  repo: id,
+  facts: { path: `facts/${id}.jsonl`, present: state !== "not-read", count: 3, unverified: 0 },
+  verify: { path: `facts/${id}.verify.yaml`, report: null },
+  checkout: { path: `workspace/${id}`, present: true },
+  sameCommit: true,
+  catalog: { from: "facts", fromFacts: 3, fromReaders: 0 },
+  state,
+  ...(state === "not-read" || state === "stale"
+    ? { next: { command: `atticus map ${id}`, slash: `/atticus-map ${id}` } }
+    : state === "unwritten"
+      ? { next: { command: `atticus verify ${id} --write` } }
+      : state === "trusted"
+        ? {}
+        : { next: { command: `atticus verify ${id}` } }),
+});
+const trustOf = (...repos: Api.TrustRepoT[]): Api.TrustViewT => ({
+  factsDir: "facts",
+  repos,
+  problems: [],
+});
+
 describe("what to run next (plan 4.5)", () => {
-  it("walks onboarding in order: pick, clone, survey, scan, answer, review", () => {
+  it("walks onboarding the Atticus 2 way: pick, clone, read and verify each repo, answer", () => {
     expect(onboardingStep(view([]), 0).command).toBe("atticus repos discover <folder>");
     expect(onboardingStep(view([repo("a", { cloned: false }), repo("b")]), 0)).toMatchObject({
       command: "atticus workspace sync",
       why: W.why.sync(1),
     });
+    // ADR 0124: a repo is read by the assistant and its facts verified; no survey, no scan.
+    const both = view([repo("a"), repo("b")]);
+    const read = onboardingStep(
+      both,
+      0,
+      trustOf(trusted("a", "trusted"), trusted("b", "not-read")),
+    );
+    expect(read).toMatchObject({ command: "atticus map b", why: W.why.read["not-read"]("b") });
+    expect(read.slash?.command).toBe("/atticus-map b");
+    expect(read.link?.href).toBe("#/trust");
     expect(
-      onboardingStep(
-        view([repo("a"), repo("b", { scanSettings: { path: "x", present: false } })]),
-        0,
-      ).command,
-    ).toBe("atticus scan survey b");
-    // ADR 0086: the AI steps have their slash commands now.
+      onboardingStep(both, 0, trustOf(trusted("a", "unwritten"), trusted("b", "trusted"))).command,
+    ).toBe("atticus verify a --write");
+    // Files not read yet don't hold onboarding up: Map › Trust lists them.
     expect(
-      onboardingStep(
-        view([repo("a"), repo("b", { scanSettings: { path: "x", present: false } })]),
-        0,
-      ).slash?.command,
-    ).toBe("/atticus-survey b");
-    expect(onboardingStep(view([repo("a", { lastScan: null })]), 0).command).toBe("atticus scan");
-    expect(onboardingStep(view([repo("a")], 0), 0).command).toBe("atticus scan");
+      onboardingStep(both, 0, trustOf(trusted("a", "unknown-files"), trusted("b", "trusted"))).done,
+    ).toBe(true);
+    // Without the trust view, a repo nothing in the catalog came from is read.
+    expect(onboardingStep(view([repo("a", { lastScan: null })]), 0).command).toBe("atticus map a");
     const answer = onboardingStep(done, 2);
     expect(answer.link?.href).toBe("#/questions");
     expect(answer.slash?.command).toBe("/atticus-answer");
-    expect(onboardingStep(done, 0).command).toBe("atticus scan review forge-ledger");
+    const end = onboardingStep(done, 0);
+    expect(end.done).toBe(true);
+    expect(end.link?.href).toBe("#/trust");
+    for (const s of [read, answer, end]) expect(s.command).not.toMatch(/atticus scan/);
   });
 
   it("puts a change at the stage its state says, with that stage's command", () => {
@@ -159,9 +189,61 @@ describe("what to run next (plan 4.5)", () => {
     expect(dashboardStep(done, 0, []).command).toBe('atticus change new "<title>" --type <type>');
   });
 
-  it("has the Architecture page follow a change at the design stage, else rescan", () => {
+  it("has the Architecture page follow a change at the design stage, else read again", () => {
     expect(architectureStep([change("a", "design")]).command).toBe("atticus change architecture a");
-    expect(architectureStep([change("a", "plan")]).command).toBe("atticus scan");
+    const again = architectureStep([change("a", "plan")]);
+    expect(again.command).toBe("atticus map <repo>");
+    expect(again.slash?.command).toBe("/atticus-map <repo>");
+    expect(again.why).not.toMatch(/scan/i);
+  });
+
+  it("follows a stage tab's own stage and the gate (a real change, 2026-10-25)", () => {
+    // Stories done while the change is still at define: it waits on its hand-off PR.
+    const c = change("add-note-tags", "define");
+    const cockpit = (
+      stories: string,
+      reasons: { code: string; message: string }[],
+    ): Api.ChangeCockpitT => ({
+      id: c.id,
+      state: "define",
+      nextStep: 'Ready to raise "Send to architecture".',
+      reasons,
+      risk: { level: "low", score: 1 },
+      stages: [
+        { stage: "feature", state: "done", drafts: 1, rounds: 1, openQuestions: 0 },
+        { stage: "architecture", state: "done", drafts: 1, rounds: 1, openQuestions: 0 },
+        { stage: "stories", state: stories, drafts: 1, rounds: 0, openQuestions: 0 },
+      ],
+      openQuestions: 0,
+      repos: [],
+    });
+    const raise = {
+      code: "no-handoff",
+      message: 'No hand-off PR yet: raise "Send to architecture".',
+    };
+    const waiting = stageStep("stories", c, undefined, cockpit("done", [raise]));
+    expect(waiting.command).toBe("atticus change handoff add-note-tags --approve");
+    expect(waiting.why).toBe(W.why.stageDone("stories", 'Ready to raise "Send to architecture".'));
+    expect(waiting.why).not.toContain(W.stageIs(W.stage.feature));
+    const arch = stageStep("architecture", c, undefined, cockpit("done", [raise]));
+    expect(arch.command).toBe("atticus change handoff add-note-tags --approve");
+    // The PR is open: sync it once it is merged.
+    const pr = { code: "pr-not-merged", message: "Waiting for PR #7 to be approved and merged" };
+    expect(stageStep("stories", c, undefined, cockpit("done", [pr])).command).toBe(
+      "atticus change sync add-note-tags",
+    );
+    // Something else blocks the gate: the status says what.
+    const blocked = { code: "blocking-finding", message: "1 blocking finding on the plan gate" };
+    const b = stageStep("stories", c, undefined, cockpit("done", [blocked, raise]));
+    expect(b.command).toBe("atticus change status add-note-tags");
+    expect(b.why).toContain("1 blocking finding on the plan gate");
+    // The stage under way: its own command, whatever the change's state says.
+    const going = stageStep("stories", c, undefined, cockpit("questions", [raise]));
+    expect(going.command).toBe("atticus plan stories add-note-tags");
+    expect(going.why).toBe(W.why.stageUnderWay("stories", "questions"));
+    // A stage not started yet: as before, the page the change is at.
+    const fresh = stageStep("stories", c, undefined, cockpit("not-started", [raise]));
+    expect(fresh.link?.href).toBe("#/feature-design?change=add-note-tags");
   });
 });
 
@@ -184,7 +266,11 @@ describe("Run next", () => {
   });
 
   it("says when no slash command does the step", () => {
-    const out = html(<RunNextPanel step={{ command: "atticus scan", why: W.why.scan }} />);
+    const out = html(
+      <RunNextPanel
+        step={{ command: "atticus verify forge-ledger --write", why: W.why.refresh }}
+      />,
+    );
     expect(out).toContain(esc(R.noSlash));
   });
 });
@@ -373,7 +459,7 @@ describe("Home's overview: the next step, the estate and the changes in flight",
     expect(out).toContain("atticus questions list --state open");
   });
 
-  it("shows what is scanned and trusted, and each change in flight with its stage", () => {
+  it("shows what is read and trusted, and each change in flight with its stage", () => {
     const out = html(
       <HomeEstate
         onboarding={{ state: "ready", data: done }}
@@ -395,7 +481,7 @@ describe("Home's overview: the next step, the estate and the changes in flight",
       />,
     );
     expect(out).toContain(esc(W.estate));
-    expect(out).toContain("2 of 2 scanned");
+    expect(out).toContain("2 of 2 in the catalog");
     expect(out).toContain(COPY.trust.summary(1, 2));
     // The repos not trusted yet, each with its state in words, and the way to Map › Trust.
     expect(out).toContain("forge-portal-bff");
@@ -497,9 +583,6 @@ describe("Onboarding", () => {
     expect(out).toContain("org-pack/scan/forge-ledger.yaml");
     expect(out).toContain(W.settingsMissing);
     expect(out).toContain("atticus repo-type detect forge-ledger");
-    // The survey is an AI step: its runs are a link away (ADR 0106).
-    expect(out).toContain('href="#/runs?q=survey"');
-    expect(out).toContain(COPY.runs.surveys);
     expect(out).toContain(W.recordCount(4));
     expect(out).toContain(W.atCommit("abc1234def"));
     expect(out).toContain("Endpoint 3, Table 1");
@@ -508,14 +591,17 @@ describe("Onboarding", () => {
     expect(out).toContain('href="#/questions"');
     // Run next: one repo isn't cloned.
     expect(out).toContain(esc(W.why.sync(1)));
+    // ADR 0124: each repo is read by the assistant, its facts verified and written; Map › Trust.
     const steps = [
       "atticus workspace sync",
-      "atticus scan survey forge-portal-bff",
-      "atticus scan</code>",
-      "atticus scan review forge-ledger",
+      "atticus map forge-portal-bff",
+      "/atticus-map forge-portal-bff",
+      "atticus verify forge-portal-bff --write",
+      'href="#/trust"',
     ];
     const at = steps.map((s) => out.lastIndexOf(s));
     expect(at.every((i) => i > 0)).toBe(true);
+    expect(out).not.toMatch(/atticus scan/);
   });
 
   it("names a file it couldn't read", () => {

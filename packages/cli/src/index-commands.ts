@@ -3,6 +3,7 @@ import {
   openIndex,
   QueryError,
   runContextTool,
+  askLookup,
   translate,
   type CatalogIndex,
 } from "@maycombhq/index";
@@ -43,11 +44,7 @@ export async function askCommand(
   io: Output,
 ): Promise<number> {
   const asked = await withIndex(root, io, (ix) => {
-    const lookup = (w: string) => {
-      const r = ix.find(w)[0];
-      return r ? { id: r.id, kind: r.kind } : undefined;
-    };
-    return translate(question, lookup);
+    return translate(question, askLookup(ix));
   });
   if (!o.json) {
     io.out(asked.explanation);

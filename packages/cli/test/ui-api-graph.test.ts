@@ -88,11 +88,11 @@ describe("GET /api/graph/node/{id}: the estate, one level at a time (ADR 0081)",
     expect(none.body.detail).toBe("There is no node system:nowhere.");
   });
 
-  it("says to scan first when the catalog is empty (422, not yet)", async () => {
+  it("says to read the repos first when the catalog is empty (422, not yet)", async () => {
     const r = await call(empty, "/api/graph/node/estate");
     expect(r.status).toBe(422);
     expect(r.body).toMatchObject({ notYet: true });
-    expect(String(r.body.detail)).toMatch(/atticus scan/);
+    expect(String(r.body.detail)).toMatch(/atticus map <repo>/);
   });
 });
 

@@ -84,6 +84,122 @@ export async function forgeMetarepo(): Promise<string> {
   return root;
 }
 
+/** The claim every fact of the Forge Studio fixture makes about its commit, until the clone's own. */
+const STUDIO_COMMIT = '"commit":"0000000"';
+
+/**
+ * A metarepo made the Atticus 2 way (fixtures/forge-studio): `atticus init`, a manifest naming one
+ * repo and its system, the repo cloned into the workspace, the assistant's facts and their
+ * companions (questions, reviewed) verified with `atticus verify --write`, a probe that measured
+ * Claude Code on this machine, and one change whose stages ran through stories and which waits on
+ * its hand-off gate. Everything is invented (CLAUDE.md rule 3).
+ */
+export async function forgeStudioMetarepo(): Promise<string> {
+  const STUDIO = join(FIXTURES, "forge-studio");
+  const parent = await mkdtemp(join(tmpdir(), "atticus-journey-"));
+  const run = (cwd: string, ...args: string[]) =>
+    spawnSync(process.execPath, [BIN, ...args], {
+      cwd,
+      encoding: "utf8",
+      env: { ...process.env, ATTICUS_RUNTIME: "hand-off" },
+    });
+  const init = run(parent, "init", "forge-studio", "--platform", "forge", "--owner", "priya");
+  if (init.status !== 0) throw new Error(`atticus init failed: ${init.stdout}${init.stderr}`);
+  const root = join(parent, "forge-studio");
+  const git = (cwd: string, ...a: string[]) =>
+    spawnSync(
+      "git",
+      [
+        "-c",
+        "user.name=Forge",
+        "-c",
+        "user.email=forge@example.com",
+        "-c",
+        "commit.gpgsign=false",
+        ...a,
+      ],
+      { cwd, encoding: "utf8" },
+    );
+  await writeFile(
+    join(root, "org-pack/profiles/forge/repos.manifest.yaml"),
+    [
+      "schemaVersion: 1",
+      "platform: forge",
+      "repos:",
+      "  - id: forge-studio",
+      "    url: https://git.forge.example/forge/forge-studio.git",
+      "    type: spring-boot",
+      "    owner: team-studio",
+      "    system: studio",
+      "",
+    ].join("\n"),
+  );
+  // The repo, cloned into the workspace at one commit.
+  const clone = join(root, "workspace/forge-studio");
+  await cp(join(STUDIO, "repo"), clone, { recursive: true });
+  git(clone, "init", "-q", "-b", "main");
+  git(clone, "add", "-A");
+  git(clone, "commit", "-qm", "Forge Studio");
+  const head = git(clone, "rev-parse", "HEAD").stdout.trim();
+  // The facts the assistant wrote, with the clone's commit, beside their companions.
+  await mkdir(join(root, "facts"), { recursive: true });
+  await cp(join(STUDIO, "facts"), join(root, "facts"), { recursive: true });
+  const facts = join(root, "facts/forge-studio.jsonl");
+  await writeFile(
+    facts,
+    readFileSync(facts, "utf8").replaceAll(STUDIO_COMMIT, `"commit":"${head}"`),
+  );
+  const verify = atticus(root, "verify", "forge-studio", "--write");
+  if (!/catalog/i.test(verify)) throw new Error(`atticus verify --write failed: ${verify}`);
+  // Each flow's call-outs followed into the flows they reach (specs/estate.yaml).
+  atticus(root, "join");
+  // atticus probe measured Claude Code here: kept on this machine, never committed.
+  await mkdir(join(root, ".atticus/probe"), { recursive: true });
+  await writeFile(
+    join(root, ".atticus/probe/claude-code.yaml"),
+    [
+      "schemaVersion: 1",
+      "assistant: claude-code",
+      `measured: "${new Date().toISOString().replace(/\.\d{3}Z$/, "Z")}"`,
+      "tier: 1",
+      "read: true",
+      "write: true",
+      "run: true",
+      "answered: command",
+      "",
+    ].join("\n"),
+  );
+  // One change, its stages done through stories, waiting on its hand-off gate.
+  atticus(root, "change", "new", "Add note tags", "--type", "feature", "--by", "priya");
+  await cp(join(STUDIO, "change/add-note-tags"), join(root, "openspec/changes/add-note-tags"), {
+    recursive: true,
+  });
+  git(root, "config", "user.name", "Priya Nair");
+  git(root, "config", "user.email", "priya@forge.example");
+  git(root, "add", "-A");
+  git(root, "commit", "-qm", "Forge Studio metarepo");
+  return root;
+}
+
+/** A Forge Studio metarepo and its own server for one journey (see forgeJourney). */
+export function forgeStudioJourney(): () => App {
+  let app: App | undefined;
+  test.describe.configure({ mode: "serial" });
+  test.beforeAll(async () => {
+    app = await startApp(await forgeStudioMetarepo());
+  });
+  test.afterAll(async () => {
+    if (!app) return;
+    await stopApp(app);
+    // atticus init made the metarepo inside the journey's own temporary folder.
+    await rm(dirname(app.root), { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  });
+  return () => {
+    if (!app) throw new Error("The journey's app hasn't started.");
+    return app;
+  };
+}
+
 export interface App {
   url: string;
   root: string;

@@ -12,6 +12,52 @@ export type Asked =
 
 export type Lookup = (word: string) => { id: string; kind: string } | undefined;
 
+/**
+ * The kind a lookup gives a system only the calls name: no record is it (a model provider, a
+ * vendor), but interfaces go to it. A question naming one searches its calls.
+ */
+export const OUTSIDE = "Outside";
+
+/** What `askLookup` needs of the index. */
+export interface AskIndex {
+  find(id: string): { id: string; kind: string }[];
+  query(text: string, o?: { limit?: number }): { rows: { id: string; kind: string }[] };
+}
+
+/** A word plain enough to put in a query as a value: no quote, comma, colon or space. */
+const PLAIN = /^[a-z0-9][a-z0-9._-]*$/;
+
+/**
+ * Look a question's word up in the catalog, the way `atticus ask` and the app's Ask both do: a
+ * record by its id; else an outside system the interfaces call (or are called from) by that name;
+ * else a table by its name (a real metarepo, 2026-10-25: "what calls the LLM?" listed every
+ * interface, because nothing named `llm` was a record).
+ */
+export function askLookup(ix: AskIndex): Lookup {
+  return (word) => {
+    const w = word.toLowerCase();
+    const rec = ix.find(w)[0];
+    if (rec) return { id: rec.id, kind: rec.kind };
+    if (!PLAIN.test(w) || STOP.has(w) || KIND_WORDS[w]) return undefined;
+    const has = (q: string) => {
+      try {
+        return ix.query(q, { limit: 1 }).rows.length > 0;
+      } catch {
+        return false;
+      }
+    };
+    if (has(`kind:interface to:${w}`) || has(`kind:interface from:${w}`))
+      return { id: w, kind: OUTSIDE };
+    try {
+      const t = ix.query(`kind:table name:${w}`, { limit: 1 }).rows[0];
+      if (t) return { id: t.id, kind: t.kind };
+    } catch {
+      // not a value the query language takes
+    }
+    return undefined;
+  };
+}
+
 const KIND_WORDS: Record<string, string> = {
   interfaces: "interface",
   interface: "interface",
@@ -57,6 +103,13 @@ export function translate(question: string, lookup: Lookup): Asked {
   const rec = named(words, lookup);
   const has = (re: RegExp) => re.test(lower);
 
+  // A system only the calls name has no record to walk or own: what reaches it are its callers.
+  if (rec?.kind === OUTSIDE)
+    return {
+      action: "query",
+      query: `kind:interface to:${rec.id}`,
+      explanation: `Read as: the calls to ${rec.id}, a system outside the estate that the code calls.`,
+    };
   if (has(/\b(break|breaks|affected|impacted|impact|reach|reaches|depends? on)\b/)) {
     if (rec)
       return {
@@ -66,7 +119,13 @@ export function translate(question: string, lookup: Lookup): Asked {
         explanation: `Read as: what a change to ${rec.id} reaches, hop by hop, with owners.`,
       };
   }
-  if (rec && has(/\bwho\b.*\b(calls?|uses?|consumes?|reads?|writes?)\b/)) {
+  if (rec && has(/\bwhat does\b.*\b(call|use|depend|talk)/))
+    return {
+      action: "query",
+      query: `kind:interface from:${rec.id}`,
+      explanation: `Read as: the interfaces ${rec.id} calls.`,
+    };
+  if (rec && has(/\b(who|what|which)\b.*\b(calls?|uses?|consumes?|reads?|writes?)\b/)) {
     if (rec.kind === "Table" || rec.kind === "Column")
       return {
         action: "query",
@@ -79,12 +138,6 @@ export function translate(question: string, lookup: Lookup): Asked {
       explanation: `Read as: the interfaces whose callee is ${rec.id}.`,
     };
   }
-  if (rec && has(/\bwhat does\b.*\b(call|use|depend|talk)/))
-    return {
-      action: "query",
-      query: `kind:interface from:${rec.id}`,
-      explanation: `Read as: the interfaces ${rec.id} calls.`,
-    };
   if (rec && has(/\bwho owns\b|\bowner of\b/))
     return {
       action: "owner",

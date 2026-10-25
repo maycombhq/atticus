@@ -21,7 +21,12 @@ import { readChangeFiles } from "@maycombhq/naysayer";
 import { readChangeTasks } from "@maycombhq/speckit";
 import type { Output } from "./commands.js";
 import { onboardingView } from "./ui-api-onboarding.js";
-import { ASSISTANT_FORMATS, readProbes, whatRunsWhere } from "@maycombhq/assistant-files";
+import {
+  ASSISTANT_FORMATS,
+  probedAssistant,
+  readProbes,
+  whatRunsWhere,
+} from "@maycombhq/assistant-files";
 import { isMetarepo, notMetarepo } from "./metarepo-guard.js";
 
 /**
@@ -689,13 +694,14 @@ export async function nextCommand(
     .catch(() => undefined);
   // Where to type a slash command (2026-10-25): the assistant a probe measured here (ADR 0124
   // addendum A-probe), the newest one runtime.yaml allows, else the default it names.
-  const probed = (await readProbes(root)).results
-    .filter((p) => !runtime || runtime.assistants.allowed.includes(p.assistant))
-    .sort((a, b) => b.measured.localeCompare(a.measured))[0]?.assistant;
+  const probes = (await readProbes(root)).results;
+  const probed = runtime
+    ? probedAssistant(runtime, probes)
+    : [...probes].sort((a, b) => b.measured.localeCompare(a.measured))[0]?.assistant;
   const assistant = probed ?? runtime?.assistants.default ?? "copilot";
   if (o.json) {
     // What runs a step here, in one line (ADR 0121 item 6), for the editors' Next view.
-    const runs = runtime ? whatRunsWhere(runtime) : undefined;
+    const runs = runtime ? whatRunsWhere(runtime, { probes }) : undefined;
     // Whether a step can run on runtime.yaml's model here (ADR 0121 item 5), as data: IntelliJ
     // offers "Run on Atticus's configured model" only then.
     const modelMode =

@@ -63,7 +63,9 @@ describe("atticus setup: the checklist until the catalog is accepted", () => {
     expect(byId.get("org-pack")!.done).toBe(true);
     expect(byId.get("repos")!.done).toBe(true);
     expect(byId.get("scan")!.done).toBe(false);
-    expect(byId.get("scan")!.fix).toMatch(/atticus scan/);
+    // Atticus 2 reads a repo with the assistant and verifies it; there is no scan to run.
+    expect(byId.get("scan")!.fix).toMatch(/atticus map <repo>.*atticus verify <repo> --write/);
+    expect(byId.get("scan")!.fix).not.toMatch(/atticus scan/);
     expect(byId.get("baseline")!.fix).toMatch(/atticus baseline/);
     expect(byId.get("baseline")!.fix).toMatch(/pull request/);
     // ADR 0073: no step maps groups to roles any more.
@@ -96,10 +98,11 @@ describe("a new metarepo's checklist", () => {
 });
 
 describe("atticus baseline", () => {
-  it("refuses an empty catalog, saying to scan first", async () => {
+  it("refuses an empty catalog, saying to read the repos first (ADR 0124)", async () => {
     const r = await run(await metarepo(false), "baseline", "--by", "priya");
     expect(r.code).toBe(1);
-    expect(r.err).toMatch(/scan first/i);
+    expect(r.err).toMatch(/read the repos first/i);
+    expect(r.err).toContain("atticus verify <repo> --write");
   });
 
   it("records the metarepo's Git user when --by isn't given (ADR 0073)", async () => {

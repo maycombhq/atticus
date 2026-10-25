@@ -488,7 +488,9 @@ export async function coverageCommand(
 ): Promise<number> {
   const { op, orgPackDir, records } = await load(root, io);
   if (records.length === 0) {
-    io.err("The catalog is empty: run atticus scan first.");
+    io.err(
+      "The catalog is empty: read the repos first (atticus map <repo>, then atticus verify <repo> --write).",
+    );
     return 2;
   }
   let documents: CatalogRecord[] = [];
@@ -548,7 +550,9 @@ export async function questionsCommand(
 ): Promise<number> {
   const { op, records } = await load(root, io);
   if (records.length === 0) {
-    io.err("The catalog is empty: run atticus scan first.");
+    io.err(
+      "The catalog is empty: read the repos first (atticus map <repo>, then atticus verify <repo> --write).",
+    );
     return 2;
   }
   const gaps = knowledgeGaps({ records, orgPack: op, now: now() });

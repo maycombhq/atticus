@@ -91,7 +91,33 @@ function ThemeSwitch() {
   );
 }
 
+/** One row of GET /api/search. */
+interface SearchPage {
+  rows: { id: string }[];
+}
+
+/**
+ * The Ask box's example, from the person's own catalog: a real table, else a real entry point;
+ * neutral while it loads, when it fails, and when the catalog has neither (a real metarepo,
+ * 2026-10-25: every user was shown a Forge example).
+ */
+export function askExample(tables?: SearchPage, entries?: SearchPage): string {
+  const id = tables?.rows[0]?.id ?? entries?.rows[0]?.id;
+  return id ? T.askWhatBreaksIf(id) : T.askNeutral;
+}
+
+function useAskExample(): string {
+  const tables = useApi<SearchPage>("/api/search?q=kind:table&limit=1");
+  const none = tables.state === "error" || (tables.state === "ready" && !tables.data.rows.length);
+  const entries = useApi<SearchPage>(none ? "/api/search?q=kind:endpoint&limit=1" : undefined);
+  return askExample(
+    tables.state === "ready" ? tables.data : undefined,
+    entries.state === "ready" ? entries.data : undefined,
+  );
+}
+
 function TopBar({ health }: { health?: Health }) {
+  const example = useAskExample();
   const [q, setQ] = useState("");
   const [blank, setBlank] = useState(false);
   const submit = (e: FormEvent) => {
@@ -118,7 +144,7 @@ function TopBar({ health }: { health?: Health }) {
             setBlank(false);
           }}
           aria-describedby={blank ? "ask-blank" : undefined}
-          placeholder={T.askWhatBreaksIf}
+          placeholder={example}
         />
         <button type="submit" className="btn" aria-label={T.ask}>
           {T.ask}
@@ -215,7 +241,15 @@ export function App() {
         </a>
         <Nav current={current} full={full} />
         <CommandPalette full={full} />
-        <Tour />
+        <Tour
+          metarepo={
+            health.state === "ready"
+              ? health.data.root
+              : health.state === "error"
+                ? null
+                : undefined
+          }
+        />
         <main id="main" className="main" tabIndex={-1}>
           <TopBar health={health.state === "ready" ? health.data : undefined} />
           <h1 className="sr">{current.label}</h1>

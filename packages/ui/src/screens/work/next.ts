@@ -44,6 +44,8 @@ export interface Step {
   slash?: Slash;
   link?: { href: string; label: string };
   after?: { command: string; why: string; slash?: Slash }[];
+  /** Onboarding has nothing left to do: this step only says so. */
+  done?: boolean;
 }
 
 export type Stage = "feature" | "architecture" | "stories" | "tasks" | "release" | "done";
@@ -126,6 +128,11 @@ export function changeStep(c: ChangeRow, tasks?: TaskRow[]): Step {
       slash: metarepo(`/atticus-small ${c.id}`),
       after: [handoff(c.id)],
     };
+  return ownStep(stage, c, tasks);
+}
+
+/** A stage's own step for a change, whatever stage the change's state puts it at. */
+function ownStep(stage: Stage, c: ChangeRow, tasks?: TaskRow[]): Step {
   switch (stage) {
     case "feature":
       return {
@@ -162,8 +169,47 @@ export function changeStep(c: ChangeRow, tasks?: TaskRow[]): Step {
   }
 }
 
-/** The step a stage page shows for a change: its own, or a pointer to the page it is at. */
-export function stageStep(page: Stage, c: ChangeRow, tasks?: TaskRow[]): Step {
+/** A stage's loop under way (stage/<stage>.yaml): drafting, with the assistant, asking or stopped. */
+const UNDER_WAY = new Set(["drafting", "waiting", "questions", "stopped"]);
+
+/**
+ * The step of a stage whose loop is done (ADR 0087): the change then waits on its gate. No
+ * hand-off PR yet and nothing else in the way: raise it. Its PR open: sync it once merged.
+ * Changes asked for on it: hand off again. Anything else (a blocking finding, a file missing):
+ * the status says what, with the first reason.
+ */
+function gateStep(page: Stage, c: ChangeRow, cockpit: Api.ChangeCockpitT): Step {
+  const others = cockpit.reasons.filter(
+    (r) => r.code !== "no-handoff" && r.code !== "pr-not-merged" && r.code !== "changes-requested",
+  );
+  const status = { command: `atticus change status ${c.id}` };
+  if (others.length) return { ...status, why: W.why.stageBlocked(page, others[0]!.message) };
+  const why = W.why.stageDone(page, cockpit.nextStep);
+  if (cockpit.reasons.some((r) => r.code === "pr-not-merged"))
+    return { command: `atticus change sync ${c.id}`, why };
+  if (cockpit.reasons.some((r) => r.code === "no-handoff" || r.code === "changes-requested"))
+    return { ...handoff(c.id), why };
+  return { ...status, why };
+}
+
+/**
+ * The step a stage page shows for a change: its own, or a pointer to the page it is at. With the
+ * change's cockpit (its stages' loop states and what stops its gate), a stage tab follows its own
+ * stage first (a real change, 2026-10-25: Stories said "at the feature stage" with stories done
+ * and the change waiting on its hand-off PR): done, the gate; under way, its own command.
+ */
+export function stageStep(
+  page: Stage,
+  c: ChangeRow,
+  tasks?: TaskRow[],
+  cockpit?: Api.ChangeCockpitT,
+): Step {
+  const own = cockpit?.stages.find((s) => s.stage === page);
+  if (cockpit && own && !c.fastPath && stageOf(c.state) !== "done") {
+    if (own.state === "done") return gateStep(page, c, cockpit);
+    if (UNDER_WAY.has(own.state))
+      return { ...ownStep(page, c, tasks), why: W.why.stageUnderWay(page, own.state) };
+  }
   const at = stageOf(c.state);
   if (at === page) return changeStep(c, tasks);
   // ADR 0113: every planning page shows a small change's one step.
@@ -193,31 +239,63 @@ export function onboardingProgress(v: OnboardingData) {
     listed: repos.length,
     cloned: repos.filter((r) => r.cloned).length,
     settings: repos.filter((r) => r.scanSettings.present).length,
+    /** Repos the catalog holds records of (from their verified facts, ADR 0124). */
     scanned: repos.filter((r) => r.lastScan !== null).length,
     records: v.catalog.records,
   };
 }
 
+/** The trust states that hold onboarding up: the repo isn't read, verified or written yet. */
+const UNREAD: ReadonlySet<Api.TrustRepoT["state"]> = new Set([
+  "not-read",
+  "unverified",
+  "rejected",
+  "stale",
+  "unwritten",
+]);
+
+/** Read a repo with the assistant (ADR 0124), then verify and write its facts. */
+export function readStep(repo: string): Step {
+  return {
+    command: `atticus map ${repo}`,
+    why: W.why.read["not-read"](repo),
+    slash: metarepo(`/atticus-map ${repo}`),
+    after: [{ command: `atticus verify ${repo} --write`, why: W.why.write(repo) }],
+  };
+}
+
 /**
- * The next onboarding step, in the order of the steps: pick, clone or sync, survey, scan,
- * answer, review. Undefined never: once everything is done, the review is what is left.
+ * The next onboarding step, the Atticus 2 way (ADR 0124): pick, clone or sync, then each repo
+ * read by the assistant and its facts verified and written, then the questions. With the trust
+ * view, a repo's step is the one Map › Trust gives it; without, a repo the catalog holds nothing
+ * of is read. Once everything is done, the step says so (`done`) and points at Map › Trust.
  */
-export function onboardingStep(v: OnboardingData, openQuestions: number): Step {
+export function onboardingStep(
+  v: OnboardingData,
+  openQuestions: number,
+  trust?: Api.TrustViewT,
+): Step {
   const repos = v.repos;
   if (repos.length === 0)
     return { command: "atticus repos discover <folder>", why: W.why.discover };
   const notCloned = repos.filter((r) => !r.cloned);
   if (notCloned.length)
     return { command: "atticus workspace sync", why: W.why.sync(notCloned.length) };
-  const unsurveyed = repos.find((r) => !r.scanSettings.present);
-  if (unsurveyed)
-    return {
-      command: `atticus scan survey ${unsurveyed.id}`,
-      why: W.why.survey(unsurveyed.id),
-      slash: metarepo(`/atticus-survey ${unsurveyed.id}`),
-    };
-  if (v.catalog.records === 0 || repos.some((r) => r.lastScan === null))
-    return { command: "atticus scan", why: W.why.scan };
+  const trustLink = { href: "#/trust", label: W.openTrust };
+  if (trust) {
+    const listed = new Set(repos.map((r) => r.id));
+    const r = trust.repos.find((x) => listed.has(x.repo) && UNREAD.has(x.state) && x.next);
+    if (r?.next)
+      return {
+        command: r.next.command,
+        why: W.why.read[r.state as keyof typeof W.why.read](r.repo),
+        ...(r.next.slash ? { slash: metarepo(r.next.slash) } : {}),
+        link: trustLink,
+      };
+  } else {
+    const unread = repos.find((r) => r.lastScan === null);
+    if (unread) return { ...readStep(unread.id), link: trustLink };
+  }
   if (openQuestions > 0)
     return {
       command: "atticus questions list --state open",
@@ -225,13 +303,16 @@ export function onboardingStep(v: OnboardingData, openQuestions: number): Step {
       slash: metarepo("/atticus-answer"),
       link: { href: "#/questions", label: W.stepAnswerLink },
     };
-  const first = repos[0]!;
-  return { command: `atticus scan review ${first.id}`, why: W.why.review(first.id) };
+  return { command: "atticus next", why: W.why.onboarded, link: trustLink, done: true };
 }
 
-/** True when onboarding has nothing left but the review. */
-export function onboarded(v: OnboardingData, openQuestions: number): boolean {
-  return onboardingStep(v, openQuestions).command.startsWith("atticus scan review");
+/** True when onboarding has nothing left to do. */
+export function onboarded(
+  v: OnboardingData,
+  openQuestions: number,
+  trust?: Api.TrustViewT,
+): boolean {
+  return onboardingStep(v, openQuestions, trust).done === true;
 }
 
 /** The dashboard's one step: onboarding first, then the first change in flight, then a new one. */
@@ -239,9 +320,10 @@ export function dashboardStep(
   v: OnboardingData,
   openQuestions: number,
   changes: ChangeRow[],
+  trust?: Api.TrustViewT,
 ): Step {
-  if (!onboarded(v, openQuestions)) {
-    const s = onboardingStep(v, openQuestions);
+  if (!onboarded(v, openQuestions, trust)) {
+    const s = onboardingStep(v, openQuestions, trust);
     return s.link ? s : { ...s, link: { href: "#/onboarding", label: W.openOnboarding } };
   }
   const c = changes.find(inFlight);
@@ -255,9 +337,22 @@ export function dashboardStep(
   };
 }
 
-/** The Architecture page's step: a change at the design stage, else a fresh scan. */
-export function architectureStep(changes: ChangeRow[]): Step {
+/**
+ * The Architecture page's step: the change its address names, by its architecture stage and gate
+ * (with its cockpit); else a change at the design stage; else reading a repo again (ADR 0124:
+ * the diagram is drawn from the catalog the verified facts fill).
+ */
+export function architectureStep(
+  changes: ChangeRow[],
+  picked?: { change: ChangeRow; cockpit?: Api.ChangeCockpitT },
+): Step {
+  if (picked) return stageStep("architecture", picked.change, undefined, picked.cockpit);
   const c = changes.find((x) => stageOf(x.state) === "architecture");
   if (c) return changeStep(c);
-  return { command: "atticus scan", why: W.why.refresh };
+  return {
+    command: "atticus map <repo>",
+    why: W.why.refresh,
+    slash: metarepo("/atticus-map <repo>"),
+    after: [{ command: "atticus verify <repo> --write", why: W.why.write("<repo>") }],
+  };
 }

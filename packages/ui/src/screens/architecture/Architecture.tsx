@@ -594,7 +594,8 @@ function Inspector({
           </a>
         )}
         {/* WP7.7: a system's page, its guide, questions and changes. */}
-        {node.kind === "system" && node.id.startsWith("system:") && (
+        {/* Only a System record has a page: a system the manifest or a call names has none yet. */}
+        {node.kind === "system" && node.id.startsWith("system:") && node.record && (
           <a className="btn" href={systemHash(node.id.slice("system:".length))}>
             {COPY.systems.openPage}
           </a>

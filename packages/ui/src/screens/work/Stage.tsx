@@ -1,3 +1,4 @@
+import type { Api } from "@maycombhq/core";
 import { useApi, useLiveEvents, type Loaded } from "../../api/client.js";
 import { Panel, View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
@@ -155,8 +156,11 @@ export function StagePage(p: {
   wanted?: string | undefined;
   detail: Loaded<ChangeDetailView> | undefined;
   tasks: Loaded<TaskRow[]> | undefined;
+  /** The change's cockpit: its stages' loop states and what stops its gate (2026-10-25). */
+  cockpit?: Loaded<Api.ChangeCockpitT> | undefined;
 }) {
   const screen = STAGE_SCREEN[p.stage]!.id;
+  const cockpit = p.cockpit?.state === "ready" ? p.cockpit.data : undefined;
   return (
     <View of={p.list} empty={(l) => l.length === 0} emptyContent={<NoChangeYet />}>
       {(list) => {
@@ -183,8 +187,10 @@ export function StagePage(p: {
             </div>
             {p.stage === "tasks" && p.tasks?.state === "loading" ? (
               <View of={p.tasks}>{() => null}</View>
+            ) : p.cockpit?.state === "loading" ? (
+              <View of={p.cockpit}>{() => null}</View>
             ) : (
-              <RunNextPanel step={stageStep(p.stage, c, ready)} />
+              <RunNextPanel step={stageStep(p.stage, c, ready, cockpit)} />
             )}
             <div className="bento">
               {/* ADR 0124 addendum D-app, B10: what the critic found, with options and comments. */}
@@ -232,11 +238,16 @@ function useStage(hash: string, stage: "feature" | "stories" | "tasks") {
   const tasks = useApi<TaskRow[]>(
     c && stage === "tasks" ? `/api/changes/${c.id}/tasks` : undefined,
   );
+  // A planning tab follows its own stage and the gate (the cockpit says both).
+  const cockpit = useApi<Api.ChangeCockpitT>(
+    c && stage !== "tasks" ? `/api/changes/${c.id}/cockpit` : undefined,
+  );
   useLiveEvents((e) => {
     if (e.type === "file.changed") {
       list.reload();
       detail.reload();
       tasks.reload();
+      cockpit.reload();
     }
   });
   return (
@@ -246,6 +257,7 @@ function useStage(hash: string, stage: "feature" | "stories" | "tasks") {
       wanted={wanted}
       detail={c ? detail : undefined}
       tasks={c && stage === "tasks" ? tasks : undefined}
+      cockpit={c && stage !== "tasks" ? cockpit : undefined}
     />
   );
 }
@@ -261,42 +273,65 @@ export function TaskListScreen({ hash }: { hash: string }) {
 }
 
 /** The Architecture screen: Run next for a change at the design stage, then the workspace. */
-export function ArchitectureStep({ list }: { list: Loaded<ChangeRow[]> }) {
+export function ArchitectureStep({
+  list,
+  wanted,
+  cockpit,
+}: {
+  list: Loaded<ChangeRow[]>;
+  /** The change the address names (?change=), whose stage and gate Run next follows. */
+  wanted?: string | undefined;
+  cockpit?: Loaded<Api.ChangeCockpitT> | undefined;
+}) {
   return (
     <>
       <p className="muted" style={{ margin: "0 0 12px", fontSize: 12.5, lineHeight: 1.55 }}>
         {W.architectureIntro}
       </p>
       <View of={list}>
-        {(l) => (
-          <>
-            <RunNextPanel step={architectureStep(l)} />
-            <p className="work-say" style={{ margin: "0 0 8px" }}>
-              <RunsLink
-                {...(l.find((c) => stageOf(c.state) === "architecture")
-                  ? { change: l.find((c) => stageOf(c.state) === "architecture")!.id }
-                  : {})}
+        {(l) => {
+          const picked = pickChange(l, wanted);
+          if (picked && cockpit?.state === "loading") return <View of={cockpit}>{() => null}</View>;
+          return (
+            <>
+              <RunNextPanel
+                step={architectureStep(
+                  l,
+                  picked
+                    ? {
+                        change: picked,
+                        ...(cockpit?.state === "ready" ? { cockpit: cockpit.data } : {}),
+                      }
+                    : undefined,
+                )}
               />
-            </p>
-            {l.length > 0 && (
-              <p className="row" style={{ gap: 12, flexWrap: "wrap", margin: "8px 0 0" }}>
-                {l.map((c) => (
-                  <span key={c.id} className="row" style={{ gap: 12 }}>
-                    <a href={`#/flows?change=${encodeURIComponent(c.id)}`}>
-                      {COPY.flows.openTargets}: {c.title}
-                    </a>
-                    <a href={`#/change-diagram?change=${encodeURIComponent(c.id)}`}>
-                      {COPY.changeDiagram.title}: {c.title}
-                    </a>
-                    <a href={`#/estimate?change=${encodeURIComponent(c.id)}`}>
-                      {COPY.estimate.title}: {c.title}
-                    </a>
-                  </span>
-                ))}
+              <p className="work-say" style={{ margin: "0 0 8px" }}>
+                <RunsLink
+                  {...(l.find((c) => stageOf(c.state) === "architecture")
+                    ? { change: l.find((c) => stageOf(c.state) === "architecture")!.id }
+                    : {})}
+                />
               </p>
-            )}
-          </>
-        )}
+              {l.length > 0 && (
+                <p className="row" style={{ gap: 12, flexWrap: "wrap", margin: "8px 0 0" }}>
+                  {l.map((c) => (
+                    <span key={c.id} className="row" style={{ gap: 12 }}>
+                      <a href={`#/flows?change=${encodeURIComponent(c.id)}`}>
+                        {COPY.flows.openTargets}: {c.title}
+                      </a>
+                      <a href={`#/change-diagram?change=${encodeURIComponent(c.id)}`}>
+                        {COPY.changeDiagram.title}: {c.title}
+                      </a>
+                      <a href={`#/estimate?change=${encodeURIComponent(c.id)}`}>
+                        {COPY.estimate.title}: {c.title}
+                      </a>
+                    </span>
+                  ))}
+                </p>
+              )}
+            </>
+          );
+        }}
       </View>
     </>
   );
@@ -340,9 +375,20 @@ export function ArchitectureReview({
 
 export function ArchitecturePage({ hash }: { hash: string }) {
   const list = useApi<ChangeRow[]>("/api/changes");
+  const wanted = queryParam(hash, "change");
+  const picked = list.state === "ready" ? pickChange(list.data, wanted) : undefined;
+  const cockpit = useApi<Api.ChangeCockpitT>(
+    picked ? `/api/changes/${picked.id}/cockpit` : undefined,
+  );
+  useLiveEvents((e) => {
+    if (e.type === "file.changed") {
+      list.reload();
+      cockpit.reload();
+    }
+  });
   return (
     <>
-      <ArchitectureStep list={list} />
+      <ArchitectureStep list={list} wanted={wanted} {...(picked ? { cockpit } : {})} />
       <ArchitectureReview list={list} wanted={queryParam(hash, "change")} />
       <Architecture hash={hash} />
     </>

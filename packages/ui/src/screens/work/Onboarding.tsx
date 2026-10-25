@@ -1,8 +1,8 @@
+import type { Api } from "@maycombhq/core";
 import { useApi, useLiveEvents, type Loaded } from "../../api/client.js";
 import { Panel, View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
 import { Table } from "../know/common.js";
-import { RunsLink } from "../runs/Runs.js";
 import type { QuestionListView } from "../Questions.js";
 import { onboardingProgress, onboardingStep, type OnboardingData } from "./next.js";
 import { Command, Problems, RunNext } from "./RunNext.js";
@@ -28,7 +28,8 @@ export function OnboardingSteps({
 }) {
   const p = onboardingProgress(v);
   const first = v.repos[0]?.id ?? "<repo>";
-  const unsurveyed = v.repos.find((r) => !r.scanSettings.present)?.id ?? first;
+  // ADR 0124: a repo is read by the assistant; the first the catalog holds nothing of yet.
+  const unread = v.repos.find((r) => r.lastScan === null)?.id ?? first;
   const scanned = p.listed > 0 && p.scanned === p.listed;
   return (
     <ol className="work-steps">
@@ -51,18 +52,17 @@ export function OnboardingSteps({
       </li>
       <li>
         <p>
-          <Chip done={p.listed > 0 && p.settings === p.listed} /> {W.stepSurvey}
+          <Chip done={scanned} /> {W.stepRead}
         </p>
-        <Command text={`atticus scan survey ${unsurveyed}`} label={COPY.runNext.copy} />
-        <p>
-          <RunsLink q="survey" label={COPY.runs.surveys} />
-        </p>
+        <Command text={`atticus map ${unread}`} label={COPY.runNext.copy} />
+        <p className="work-say">{COPY.runNext.slash}</p>
+        <Command text={`/atticus-map ${unread}`} label={COPY.runNext.copySlash} />
       </li>
       <li>
         <p>
-          <Chip done={scanned} /> {W.stepScan}
+          <Chip done={scanned} /> {W.stepWrite}
         </p>
-        <Command text="atticus scan" label={COPY.runNext.copy} />
+        <Command text={`atticus verify ${unread} --write`} label={COPY.runNext.copy} />
       </li>
       <li>
         <p>
@@ -71,8 +71,9 @@ export function OnboardingSteps({
         </p>
       </li>
       <li>
-        <p>{W.stepReview}</p>
-        <Command text={`atticus scan review ${first}`} label={COPY.runNext.copy} />
+        <p>
+          {W.stepTrust} <a href="#/trust">{W.openTrust}</a>
+        </p>
       </li>
     </ol>
   );
@@ -191,9 +192,12 @@ export function SourcesView({ v }: { v: OnboardingData }) {
 export function OnboardingPage({
   of,
   questions,
+  trust,
 }: {
   of: Loaded<OnboardingData>;
   questions: Loaded<QuestionListView>;
+  /** Map › Trust (GET /api/trust): each repo's step, the Atticus 2 way (ADR 0124). */
+  trust?: Loaded<Api.TrustViewT>;
 }) {
   const open = questions.state === "ready" ? questions.data.questions.length : 0;
   return (
@@ -201,7 +205,10 @@ export function OnboardingPage({
       <p className="muted" style={{ margin: "0 0 12px", fontSize: 12.5, lineHeight: 1.55 }}>
         {W.onbIntro}
       </p>
-      <RunNext of={of} step={(v) => onboardingStep(v, open)} />
+      <RunNext
+        of={of}
+        step={(v) => onboardingStep(v, open, trust?.state === "ready" ? trust.data : undefined)}
+      />
       <div className="bento">
         <Panel title={W.steps} span="span 5">
           <View of={of}>{(v) => <OnboardingSteps v={v} openQuestions={open} />}</View>
@@ -227,12 +234,14 @@ export function OnboardingPage({
 export function Onboarding() {
   const of = useApi<OnboardingData>("/api/onboarding");
   const questions = useApi<QuestionListView>("/api/questions?state=open");
+  const trust = useApi<Api.TrustViewT>("/api/trust");
   // Files change as commands run in a terminal: read them again.
   useLiveEvents((e) => {
     if (e.type === "file.changed") {
       of.reload();
       questions.reload();
+      trust.reload();
     }
   });
-  return <OnboardingPage of={of} questions={questions} />;
+  return <OnboardingPage of={of} questions={questions} trust={trust} />;
 }

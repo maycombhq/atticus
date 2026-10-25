@@ -165,6 +165,78 @@ describe("the estate as a hierarchy: estate, system, repo, component, element", 
   });
 });
 
+describe("an estate read from facts, with no System record (a real metarepo, 2026-10-25)", () => {
+  // As atticus verify --write projects one repo's facts: its components carry the system the
+  // manifest names, and a call names an outside system (a model provider) no component is.
+  const studio = () => {
+    const at = (path: string, line: number) => [
+      { source: "code", repo: "forge-studio", path, line, by: "assistant" },
+    ];
+    return [
+      {
+        kind: "Component",
+        id: "api",
+        confidence: "verified",
+        system: "studio",
+        repo: "forge-studio",
+        type: "service",
+        evidence: at("api/src/main/java/forge/studio/NotesController.java", 15),
+      },
+      {
+        kind: "Component",
+        id: "web",
+        confidence: "verified",
+        system: "studio",
+        repo: "forge-studio",
+        type: "spa",
+        evidence: at("web/src/app/app.routes.ts", 5),
+      },
+      {
+        kind: "Interface",
+        id: "if-227370d7866959d3",
+        confidence: "verified",
+        from: "api",
+        to: "llm",
+        via: "direct",
+        method: "POST",
+        normalizedPath: "/v1/messages",
+        sync: "sync",
+        direction: "outbound",
+        conflicts: [],
+        evidence: at("api/src/main/java/forge/studio/SummaryClient.java", 9),
+      },
+    ].map((r) => {
+      const p = parseRecord({ schemaVersion: 1, status: "current", ...r });
+      if (!p.ok) throw new Error(`${r.id}: ${JSON.stringify(p.issues)}`);
+      return p.record;
+    });
+  };
+
+  it("draws the system the components name, and the outside system a call names", () => {
+    const est = buildEstate(studio());
+    const v = nodeView(est, "estate", { lens: "architecture" });
+    expect(ids(v.children)).toEqual(["system:llm", "system:studio"]);
+    expect(v.node.next?.command).toMatch(/^atticus map /);
+    const sys = v.children.find((n) => n.id === "system:studio")!;
+    expect(sys).toMatchObject({ kind: "system", label: "studio", childCount: 1, gaps: [] });
+    expect(sys.record).toBeUndefined();
+    const llm = v.children.find((n) => n.id === "system:llm")!;
+    expect(llm).toMatchObject({
+      kind: "system",
+      label: "llm",
+      childCount: 0,
+      properties: { boundary: "outside" },
+      next: { command: 'atticus query "kind:interface to:llm"' },
+    });
+    expect(edge(v)).toEqual(["system:studio calls system:llm"]);
+    const repo = nodeView(est, "repo:forge-studio", { lens: "architecture" });
+    expect(ids(repo.path)).toEqual(["estate", "system:studio"]);
+    expect(repo.node.gaps).toEqual([]);
+    expect(repo.node.next?.command).toBe("atticus map forge-studio");
+    expect(JSON.stringify([...est.nodes.values()])).not.toMatch(/atticus scan/);
+  });
+});
+
 describe("lenses on the same model", () => {
   it("the data lens shows only what holds or touches data, and suggests focus on tables", () => {
     const est = buildEstate(forge());

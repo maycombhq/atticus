@@ -151,7 +151,7 @@ describe("atticus diagram render", () => {
     const empty = await mkdtemp(join(tmpdir(), "atticus-cli-diagram-empty-"));
     expect(await run({ view: "context" }, empty)).toEqual([
       1,
-      "The catalog is empty: run atticus scan first.",
+      "The catalog is empty: read the repos first (atticus map <repo>, then atticus verify <repo> --write).",
     ]);
   });
 });

@@ -295,9 +295,15 @@ function build(f: FlowIn): Sequence {
 
 /** A spec's flow, with the joins the estate pass found. */
 export function sequence(v: Api.FlowViewT): Sequence {
+  // The flow doesn't say who calls it, but the join does (a flow whose call-out starts this
+  // one): that flow is the caller's lane (a real metarepo, 2026-10-25).
+  const by = v.calledBy[0];
+  const caller =
+    v.flow.trigger.caller ??
+    (by ? { who: T.calledByFlows(by.name ?? by.flow, v.calledBy.length - 1) } : undefined);
   return build({
     component: v.flow.component,
-    trigger: v.flow.trigger,
+    trigger: { ...v.flow.trigger, caller },
     steps: v.flow.steps,
     errors: v.flow.errors,
     calls: v.calls,

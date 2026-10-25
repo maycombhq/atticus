@@ -23,6 +23,19 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - **Fixed: opening a repo on the canvas from VS Code landed on a change's Architecture tab** (`#/architecture`, Change › Architecture since the app's six entries). It opens the Map's estate canvas now (`#/canvas?node=…`).
 - **`pnpm --filter atticus test:vscode` downloads VS Code** with `@vscode/test-electron` when none is installed (into `.cache/vscode-test`), runs as root under `xvfb-run`, and also runs with no folder; `test:vscode:packaged` tests the installed `.vsix`.
 
+### The app on a real Atticus 2 metarepo, fixed (D-real, 2026-10-25)
+
+- **Map › Trust counts each repo once.** A facts file's companions (`<repo>.questions.jsonl`, `.rejected.jsonl`, `.reviewed.jsonl`, `.corrections.jsonl`, `.verify.yaml`) were read as another repo's facts file and reported as unreadable.
+- **The app says the Atticus 2 read, not a scan.** Home's set-up list, its next step, Onboarding, the Architecture tab, the estate canvas and the empty-catalog answers say `/atticus-map <repo>` (or `atticus map <repo>`), then `atticus verify <repo> --write`, and point at Map › Trust.
+- **"How AI steps run" names the assistant `atticus probe` measured here, with its tier**, on Home, in the set-up list and in `atticus next --json`; runtime.yaml's default when nothing was measured.
+- **The Ask box's example comes from your own catalog** (a table or entry point), else it is neutral. A question that names an outside system the code calls ("what calls the LLM?") searches its calls, in the app and in `atticus ask`, instead of listing every interface.
+- **The estate canvas and coverage show the system the manifest names and the outside systems the code calls**; with no System record, the Ecosystem map says what each repo's facts hold (entries, tables, calls, flows).
+- **A flow's sequence diagram draws its caller** when the join says which flow calls it.
+- **A stage tab's Run next follows its own stage and the gate**: once stories are done, Stories says to raise the hand-off PR (or sync it, or what blocks it), not "at the feature stage".
+- **All changes lists a staged change's stage artifacts first**, and the OpenSpec-era ones (proposal, specs, interfaces, mappings, data, ux, snow) only when their files are there.
+- **The first-run tour stays closed** once skipped, finished or left behind on another page, for that metarepo.
+- **At an editor panel's width (600 to 1000 px) the menu stays beside the page**, compact, instead of stacking above it and leaving the page a narrow column.
+
 ### What a knowledge scan of a docs folder hit, fixed (K-docs, ADR 0083 addendum K-docs, ADR 0127)
 
 - **`atticus knowledge scan` reads every page.** It used to put every page in one prompt, and the prompt silently dropped what didn't fit (76 of 103 pages) while recording those pages as read. Now it plans batches that fit the knowledge reader's prompt, from its budget or the model's limit, or `--batch-tokens`. A model or headless runtime reads batch after batch in one run. A hand-off hands one batch a run: it names the pages that wait, and after the resume says how many are left and to run the scan again. A page too big for the prompt on its own is named, with what to raise, and is never recorded as read.

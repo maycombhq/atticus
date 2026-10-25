@@ -80,6 +80,33 @@ export function factsDirOf(root: string): string {
   return join(root, ...factsRelOf(root).split("/"));
 }
 
+/**
+ * The files the facts folder keeps beside a repo's facts file (ADR 0124): the questions the
+ * assistant raised, what the verifier rejected, the files read and found to hold no fact, a
+ * person's corrections, and the verifier's report. None of them is a facts file of its own.
+ */
+export const FACTS_COMPANIONS = [
+  ".questions.jsonl",
+  ".rejected.jsonl",
+  ".reviewed.jsonl",
+  ".corrections.jsonl",
+  ".verify.yaml",
+] as const;
+
+/**
+ * The repo a file in the facts folder belongs to, and whether it is the repo's facts file
+ * (`<repo>.jsonl`) or one of its companions; undefined for any other file. Every place that lists
+ * the facts folder reads it through this, so a companion is never taken for another repo.
+ */
+export function factsFileOf(name: string): { repo: string; facts: boolean } | undefined {
+  for (const c of FACTS_COMPANIONS)
+    if (name.endsWith(c) && name.length > c.length)
+      return { repo: name.slice(0, -c.length), facts: false };
+  if (name.endsWith(".jsonl") && name.length > ".jsonl".length)
+    return { repo: name.slice(0, -".jsonl".length), facts: true };
+  return undefined;
+}
+
 /** Where the map rendered from a repo's verified facts lives, with forward slashes (ADR 0124): `map`, or `.atticus/map` when adopted. */
 export function mapRelOf(root: string): string {
   return isAdopted(root) ? ".atticus/map" : "map";

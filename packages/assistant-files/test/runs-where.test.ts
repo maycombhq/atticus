@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Runtime } from "@maycombhq/core";
-import { whatRunsWhere } from "../src/runs-where.js";
+import type { ProbeResult } from "../src/probe.js";
+import { probedAssistant, whatRunsWhere } from "../src/runs-where.js";
 
 /** ADR 0121 item 6: one line saying which mode, assistant and model run a step. */
 
@@ -55,5 +56,33 @@ describe("what runs a step here (ADR 0121)", () => {
     expect(whatRunsWhere(rt({ ai: "off" }))).toBe(
       "AI is off here: people write what agents would draft",
     );
+  });
+
+  it("names the assistant atticus probe measured here, with its tier (a real metarepo, 2026-10-25)", () => {
+    const probe = (assistant: ProbeResult["assistant"], measured: string, tier: 1 | 2 | 3) =>
+      ({
+        schemaVersion: 1,
+        assistant,
+        measured,
+        tier,
+        read: true,
+        write: tier < 3,
+        run: tier === 1,
+        answered: "command",
+      }) as ProbeResult;
+    const both = rt({ assistants: { allowed: ["copilot", "claude-code"], default: "copilot" } });
+    const probes = [probe("claude-code", "2026-10-24T09:00:00Z", 1)];
+    expect(probedAssistant(both, probes)).toBe("claude-code");
+    expect(whatRunsWhere(both, { probes })).toBe(
+      "Hand-off to Claude Code, agentic (tier 1) as atticus probe measured it",
+    );
+    // The newest measurement of an assistant runtime.yaml allows; none: the default, unchanged.
+    const two = [...probes, probe("copilot", "2026-10-25T09:00:00Z", 2)];
+    expect(whatRunsWhere(both, { probes: two })).toBe(
+      "Hand-off to GitHub Copilot, batched hand-off (tier 2) as atticus probe measured it",
+    );
+    expect(probedAssistant(rt({}), probes)).toBeUndefined();
+    expect(whatRunsWhere(rt({}), { probes })).toBe("Hand-off to GitHub Copilot");
+    expect(whatRunsWhere(both, { probes: [] })).toBe("Hand-off to GitHub Copilot");
   });
 });

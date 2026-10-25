@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { Api } from "@maycombhq/core";
 import { coverage, COVERAGE_AREAS, mapFacts, syncSources, toApiCoverage } from "../src/index.js";
-import { FORGE_ROOT, forgePack, forgeReaches, forgeRecords, forgeSystems } from "./helpers.js";
+import {
+  FORGE_ROOT,
+  forgePack,
+  forgeReaches,
+  forgeRecords,
+  forgeSystems,
+  record,
+} from "./helpers.js";
 
 describe("coverage of the expected Forge catalog", () => {
   it("defines seven areas from record kinds", () => {
@@ -90,5 +97,61 @@ describe("coverage of the expected Forge catalog", () => {
       gaps: 1,
     });
     expect(api.areas[0]).toEqual({ area: "interfaces", known: 5, expected: 5 });
+  });
+});
+
+describe("coverage of a catalog read from facts, with no System record (2026-10-25)", () => {
+  const at = [{ source: "code", repo: "forge-studio", path: "api/Notes.java", line: 15 }];
+  const studio = () => [
+    record({
+      kind: "Component",
+      id: "api",
+      confidence: "verified",
+      system: "studio",
+      repo: "forge-studio",
+      type: "service",
+      evidence: at,
+    }),
+    record({
+      kind: "Interface",
+      id: "if-227370d7866959d3",
+      confidence: "verified",
+      from: "api",
+      to: "llm",
+      via: "direct",
+      method: "POST",
+      normalizedPath: "/v1/messages",
+      sync: "sync",
+      direction: "outbound",
+      conflicts: [],
+      evidence: at,
+    }),
+  ];
+
+  it("counts the system the manifest names, and the outside system a call names", async () => {
+    const op = await forgePack();
+    const manifest = {
+      platform: "forge",
+      repos: {
+        schemaVersion: 1,
+        platform: "forge",
+        repos: [
+          {
+            id: "forge-studio",
+            url: "https://git.forge.example/forge-studio.git",
+            system: "studio",
+          },
+          { id: "forge-docs", url: "https://git.forge.example/forge-docs.git", system: "docs" },
+        ],
+      },
+    } as unknown as (typeof op.profiles)[number];
+    const res = coverage({ records: studio(), orgPack: { ...op, profiles: [manifest] } });
+    expect(res.systems.map((s) => [s.system, s.verified, s.areas.length])).toEqual([
+      // A system the manifest names that nothing was read of yet: all unknown.
+      ["docs", 0, 7],
+      // Outside the estate: only its interfaces and obligations are expected, as a vendor's.
+      ["llm", 1, 2],
+      ["studio", 1, 7],
+    ]);
   });
 });
