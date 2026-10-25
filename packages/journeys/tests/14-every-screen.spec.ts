@@ -22,7 +22,21 @@ test("the command palette is accessible and takes you anywhere", async ({ page }
   const dialog = page.getByRole("dialog", { name: "Go to anything" });
   await expect(dialog).toBeVisible();
   await accessible(page, "command palette");
-  await page.keyboard.type("governance");
+  // Change's list of every change (the ADR 0124 D-app addendum: Change opens on All changes).
+  await page.keyboard.type("all changes");
   await page.keyboard.press("Enter");
-  await expect(page).toHaveURL(/#\/governance$/);
+  await expect(page).toHaveURL(/#\/changes$/);
+  // A page behind `atticus ui --full` (Governance) isn't offered without it: what was typed
+  // becomes a question for Ask instead. Its address still opens it.
+  await page.keyboard.press("Control+k");
+  await expect(dialog).toBeVisible();
+  // The box opens empty and focused (the palette clears what was typed last time as it opens).
+  const box = dialog.getByRole("combobox");
+  await expect(box).toBeFocused();
+  await expect(box).toHaveValue("");
+  await page.keyboard.type("governance");
+  await expect(dialog.getByRole("option").first()).toContainText("Ask: governance");
+  await expect(dialog.getByRole("option", { name: /^Governance/ })).toHaveCount(0);
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/#\/explore\?ask=governance$/);
 });
