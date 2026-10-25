@@ -1,0 +1,25 @@
+# Three invented Forge repos read by the assistant (ADR 0124, addendum C-join): a web front end
+# that calls the customers API by a base URL from its config, the customers API that calls the
+# ledger over gRPC and publishes one event, and the ledger. Only the customers API lists a host.
+schemaVersion: 1
+platform: forge
+repos:
+  - id: forge-web
+    url: https://git.forge.example/forge/forge-web.git
+    type: angular
+    owner: team-web
+    component: web-app
+    system: customers
+  - id: forge-customers
+    url: https://git.forge.example/forge/forge-customers.git
+    type: spring-boot
+    owner: team-customers
+    component: customers-api
+    system: customers
+    hosts: [customers.forge.example]
+  - id: forge-ledger
+    url: https://git.forge.example/forge/forge-ledger.git
+    type: spring-boot
+    owner: team-ledger
+    component: ledger-api
+    system: ledger

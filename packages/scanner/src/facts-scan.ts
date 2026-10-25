@@ -7,9 +7,11 @@ import {
   normalizePath,
   parseFacts,
   type CatalogRecord,
+  type Fact,
   type OrgPack,
 } from "@maycombhq/core";
 import { factsRecords, targetsFromAnswers } from "./facts-catalog.js";
+import { estateRepos } from "./merge-input.js";
 
 /**
  * A scan's use of a repo's verified facts (ADR 0124 §3): when the assistant has read a repo and
@@ -24,7 +26,13 @@ export async function factsForScan(
   repo: string,
   commit: string | undefined,
   readerRecords: readonly CatalogRecord[],
-): Promise<{ records?: CatalogRecord[]; note?: string }> {
+): Promise<{
+  records?: CatalogRecord[];
+  note?: string;
+  /** The facts used (with the manifest's component), and the targets people named, for the estate join. */
+  facts?: Fact[];
+  targets?: Record<string, string>;
+}> {
   const rel = `${factsRelOf(root)}/${repo}.jsonl`;
   const text = await readFile(join(factsDirOf(root), `${repo}.jsonl`), "utf8").catch(
     () => undefined,
@@ -51,7 +59,7 @@ export async function factsForScan(
   const questions = (await listQuestions(root, { repo }).catch(() => ({ questions: [] })))
     .questions;
   const targets = targetsFromAnswers(repo, facts, questions);
-  const { newRecords } = factsRecords({ repo, facts, op, targets });
+  const { newRecords, facts: used } = factsRecords({ repo, facts, op, targets });
 
   // The cross-check: what the readers found that the facts don't have, by what each names.
   const keyOf = (r: CatalogRecord): string | undefined => {
@@ -79,6 +87,52 @@ export async function factsForScan(
     .join(", ");
   return {
     records: newRecords,
+    facts: used,
+    targets,
     note: `${repo}: read from its facts (${facts.length}, ${rel})${said ? `; its readers found ${said} the facts don't have (a cross-check: read those lines again, or a reader misreads them)` : "; its readers agree"}.`,
   };
+}
+
+/**
+ * The other repos' facts the estate join reads when a repo is written (ADR 0124, C-join): each
+ * repo of the manifests with a facts/<repo>.jsonl that reads and is all verified, and the
+ * targets people named for its calls. A facts file that doesn't read, or isn't verified yet, is
+ * left out and said, so the join never rests on an unchecked line.
+ */
+export async function estateFacts(
+  root: string,
+  op: OrgPack,
+  except: string,
+): Promise<{
+  repos: { repo: string; facts: Fact[] }[];
+  targets: Record<string, Record<string, string>>;
+  notes: string[];
+}> {
+  const repos: { repo: string; facts: Fact[] }[] = [];
+  const targets: Record<string, Record<string, string>> = {};
+  const notes: string[] = [];
+  for (const r of estateRepos(op)) {
+    if (r.id === except) continue;
+    const text = await readFile(join(factsDirOf(root), `${r.id}.jsonl`), "utf8").catch(
+      () => undefined,
+    );
+    if (text === undefined || text.trim() === "") continue;
+    const parsed = parseFacts(text);
+    if (!parsed.ok) {
+      notes.push(`${r.id}: its facts don't read, so the estate join leaves them out.`);
+      continue;
+    }
+    if (parsed.facts.some((f) => f.verified === "none")) {
+      notes.push(
+        `${r.id}: some of its facts aren't verified yet, so the estate join leaves them out (atticus verify ${r.id}).`,
+      );
+      continue;
+    }
+    repos.push({ repo: r.id, facts: parsed.facts });
+    const questions = (await listQuestions(root, { repo: r.id }).catch(() => ({ questions: [] })))
+      .questions;
+    const named = targetsFromAnswers(r.id, parsed.facts, questions);
+    if (Object.keys(named).length) targets[r.id] = named;
+  }
+  return { repos, targets, notes };
 }

@@ -8,3 +8,4 @@ export * from "./estate.js";
 export * from "./hosts-asked.js";
 export * from "./merge-input.js";
 export * from "./facts-catalog.js";
+export * from "./facts-scan.js";

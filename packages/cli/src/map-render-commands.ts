@@ -25,11 +25,13 @@ import {
   writeFlow,
   writeSpecHeader,
   type Fact,
+  type FactsJoinResult,
   type Question,
 } from "@maycombhq/core";
 import {
   catalogWithFacts,
   diffCatalogs,
+  estateFacts,
   readCatalog,
   targetQuestionDrafts,
   targetsFromAnswers,
@@ -90,6 +92,9 @@ export async function writeFactsIntoCatalog(
     const curated = await readCatalog(join(catalogDirOf(root), "curated"));
     const rerun = `atticus verify ${repo} --write`;
     const answered = (await listQuestions(root, { repo, step: TARGETS_STEP })).questions;
+    // The estate join (ADR 0124, C-join): the other repos' verified facts, so this repo's calls
+    // join the entries that serve them and their calls into this repo are joined again.
+    const estate = await estateFacts(root, op, repo);
     const result = catalogWithFacts({
       repo,
       facts,
@@ -97,6 +102,8 @@ export async function writeFactsIntoCatalog(
       op,
       decisions: curated.records,
       targets: targetsFromAnswers(repo, facts, answered),
+      estate: estate.repos,
+      estateTargets: estate.targets,
     });
     for (const i of result.invalid)
       io.err(
@@ -142,7 +149,7 @@ export async function writeFactsIntoCatalog(
     const loose = new Set(result.unresolved.map((u) => u.factId));
     const raised: Question[] = [...hosts.raised];
     const lines = [...hosts.lines];
-    for (const t of targetQuestionDrafts(facts, result.records, op)) {
+    for (const t of targetQuestionDrafts(facts, result.records, op, result.join?.asks)) {
       if (!loose.has(t.factId) || answered.some((q) => q.id === t.id)) continue;
       const r = await raiseQuestions(root, [t.draft], {
         step: TARGETS_STEP,
@@ -167,6 +174,7 @@ export async function writeFactsIntoCatalog(
     for (const p of result.curated.problems)
       io.out(`Curated decision ${p.decision} no longer applies: ${p.message}`);
     for (const p of result.projectionIssues) io.out(`  ${p.code}: ${p.message}`);
+    for (const l of joinLines(repo, result.join, estate.notes)) io.out(l);
     for (const l of lines) io.out(l);
     const map = await renderRepoMap(root, repo, io);
     return {
@@ -178,6 +186,25 @@ export async function writeFactsIntoCatalog(
   } finally {
     await lock.release();
   }
+}
+
+/** What the estate join did for a repo's write, in a few lines. */
+export function joinLines(
+  repo: string,
+  join: FactsJoinResult | undefined,
+  notes: readonly string[] = [],
+): string[] {
+  if (!join) return [...notes];
+  const out = [...notes];
+  const mine = join.joins.filter((j) => j.call.repo === repo && j.call.repo !== j.entry.repo);
+  const into = join.joins.filter((j) => j.entry.repo === repo && j.call.repo !== repo);
+  if (mine.length || into.length)
+    out.push(
+      `Joined across repos: ${mine.length} of ${repo}'s calls to the entries that serve them, ${into.length} calls of other repos into ${repo}, each citing both ends.`,
+    );
+  for (const m of join.misses) out.push(`Not joined: ${m.message} (${m.call.at}).`);
+  for (const g of join.gaps.slice(0, 10)) out.push(`Field gap: ${g.message}.`);
+  return out;
 }
 
 /** The repo's map files, written under map/<repo>/; the paths written, or undefined when nothing was there to render. */
