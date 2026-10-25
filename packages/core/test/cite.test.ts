@@ -144,6 +144,17 @@ describe("a path put together from several lines (ADR 0124 addendum A4)", () => 
       ),
     ).toBe(false);
     expect(partsNamePath(home, "/")).toBe(false);
+    // ASP.NET MVC 5's defaults object
+    expect(
+      partsNamePath(
+        [
+          "public class CatalogController : Controller {",
+          "  public ActionResult Index() {",
+          '    defaults: new { controller = "Catalog", action = "Index", id = UrlParameter.Optional }',
+        ],
+        "/",
+      ),
+    ).toBe(true);
   });
   it("is named when every plain part is written on one of its lines", async () => {
     const { partsNamePath } = await import("../src/index.js");

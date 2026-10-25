@@ -182,6 +182,10 @@ Where it falls short of the bar (85% recall, 95% precision), biggest first:
 
 These fixes are measured only by a second read, which would make batch 2 tuned too; the number above is the held-out one.
 
+### Batch 1, final revision (tuned, 2026-10-24)
+
+The two eShop repos revised once more under the protocol as it stands (flows for every action and entry, framework-derived routes, sequences, SDK calls, literal secrets): eshop 147 found, 3 missed, 9 wrong; eshop-modernizing 55, 0, 5. **Batch 1: 354 found, 3 missed, 14 wrong: 96% precision, 99% recall** (tuned). All 22 repos at their latest read: 828 found, 37 missed, 32 wrong, 96% precision, 96% recall (tuned; the honest first-read number on unseen repos is batch 2's held-out 88% / 84%).
+
 ### Batch 2, second read (tuned, 2026-10-24)
 
 The same 16 repos revised once by four Claude sessions under the protocol and verifier as they stood after the held-out read and the flows round (still never opening `bench/`), and scored with the matcher as it stands (key-value stores' keys now left out like screens and scheduled jobs: references list tables and collections). piggymetrics' and spring-petclinic-microservices' references gained the gateway's forwarding calls (the product owner's decision that a gateway's routes count, as eShop's did). **96% precision, 93% recall.** This read is tuned: the rules it follows were shaped on the first read of these same repos. It says the protocol, read in full and followed, gets there; the held-out number above is what a first read of an unseen repo gave.

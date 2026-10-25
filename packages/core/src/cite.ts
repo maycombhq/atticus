@@ -198,15 +198,23 @@ export function redactSecrets(line: string): string {
  */
 /**
  * Whether `/` is a conventional route's default action: a default route is declared
- * (`MapDefaultControllerRoute`, or a template like `{controller=Home}/{action=Index}`) and the
+ * (`MapDefaultControllerRoute`, a template like `{controller=Home}/{action=Index}`, or MVC 5's
+ * `defaults: new { controller = "Home", action = "Index" }`) and the
  * lines name that controller's class and that action.
  */
 function defaultActionAt(lines: readonly string[], path: string): boolean {
   if (path.split(/[?#]/, 1)[0]!.replace(/\/+/g, "") !== "") return false;
   const text = lines.join("\n");
-  if (!/MapDefaultControllerRoute|\{controller=\w+\}/.test(text)) return false;
-  const controller = /\{controller=(\w+)\}/.exec(text)?.[1] ?? "Home";
-  const action = /\{action=(\w+)\}/.exec(text)?.[1] ?? "Index";
+  const mvc5 = /defaults:\s*new\s*\{[^}]*\}/.exec(text)?.[0];
+  if (!/MapDefaultControllerRoute|\{controller=\w+\}/.test(text) && !mvc5) return false;
+  const controller =
+    /\{controller=(\w+)\}/.exec(text)?.[1] ??
+    (mvc5 ? /controller\s*=\s*"(\w+)"/.exec(mvc5)?.[1] : undefined) ??
+    "Home";
+  const action =
+    /\{action=(\w+)\}/.exec(text)?.[1] ??
+    (mvc5 ? /action\s*=\s*"(\w+)"/.exec(mvc5)?.[1] : undefined) ??
+    "Index";
   return (
     new RegExp(`\\b${controller}Controller\\b`).test(text) &&
     new RegExp(`\\b${action}\\s*\\(`).test(text)
