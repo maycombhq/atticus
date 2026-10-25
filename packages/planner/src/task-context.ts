@@ -170,14 +170,26 @@ async function worktreeOf(dir: string, repo: string): Promise<string | undefined
 export function migrationPath(named: string, table: string, estate: Estate): string {
   if (named.includes("/")) return named;
   const store = (estate.byId.get(table) as { dataStore?: string } | undefined)?.dataStore;
+  const files = (estate.records as { kind: string; dataStore?: string; file?: string }[])
+    .filter((r) => r.kind === "Migration" && r.dataStore === store && r.file)
+    .map((r) => r.file!);
+  // A migration that is a folder of its own (<folder>/<name>/migration.sql, B-places).
+  const nested =
+    files.length > 0 && files.every((f) => f.split("/").length > 2 && f.endsWith("/migration.sql"));
   const folders = [
     ...new Set(
-      (estate.records as { kind: string; dataStore?: string; file?: string }[])
-        .filter((r) => r.kind === "Migration" && r.dataStore === store && r.file)
-        .map((r) => r.file!.split("/").slice(0, -1).join("/")),
+      files.map((f) =>
+        f
+          .split("/")
+          .slice(0, nested ? -2 : -1)
+          .join("/"),
+      ),
     ),
   ];
-  return folders.length === 1 && folders[0] ? `${folders[0]}/${named}` : named;
+  if (!(folders.length === 1 && folders[0])) return named;
+  return nested && !/\.sql$/i.test(named)
+    ? `${folders[0]}/${named}/migration.sql`
+    : `${folders[0]}/${named}`;
 }
 
 export async function taskContext(

@@ -265,8 +265,8 @@ The stories bench run found that the stories stage matched few of a reference st
   This is one assistant and one run, and no bar is set (§6).
 
 - **Not done here:**
-  - An added step that follows the trigger is placed after the trigger's line, even where the trigger is a route declaration.
-  - An existing migration the columns cite is listed as a place, though a new one goes beside it. With no Migration records from facts (problem 7), the stage can't tell it from a schema file changed in place.
+  - An added step that follows the trigger is placed after the trigger's line, even where the trigger is a route declaration (B-places: the target flow can now say where it goes with `at`).
+  - ~~An existing migration the columns cite is listed as a place, though a new one goes beside it. With no Migration records from facts (problem 7), the stage can't tell it from a schema file changed in place.~~ (done in B-places)
   - The draft repeats a criterion once per place its task changes.
   - Screens and clients the facts have no field facts for still have no file step.
 
@@ -295,3 +295,34 @@ Before this addendum a repo's facts file carried one commit. When the checkout m
   - Uncommitted edits aren't diffed. The line check still catches a moved line.
   - Coverage's unknown list is still the whole repo's.
   - A renamed file whose content is unchanged (R100) is still re-read rather than having its cites rewritten.
+
+  - ~~Screens and clients the facts have no field facts for still have no file step.~~ (B-places: the protocol asks for them, and a task names them; the bench repos' facts aren't read again yet)
+
+## Addendum (B-places): the places a change goes into are in the map (no C1 to C6 change)
+
+B-steps gave a story a step per place in the code, but three gaps kept its step coverage low (`docs/build-status.md`, B-places): a front end's model types, forms and displayed fields were not recorded as fields, so no task could name them; a step the change adds was cited at its neighbour's line; and no migration was known for any store, so a new migration could not be told from a schema file changed in place. Each is fixed here, test-first, on the C-join estate (`fixtures/estate-facts/`, with `places/` added).
+
+- **A front end's places are field facts, in the shape the facts already have.** `FieldFact.side` already had `screen`, and `projectFacts` already made a Schema per owner and side: `<endpoint>.screen` for a screen entry's fields, `<call>.request` and `.response` for a call's, which follow the call's Interface when the estate joins it. So the narrowest shape is no new shape, only what the protocol asks for:
+  - A model or client type's properties (a TypeScript interface, a class, a generated client's types) are the `request` or `response` fields of each call fact that sends or receives them, one field fact per call, citing the property's line.
+  - A form's fields (form group controls, a zod schema's keys, a template's inputs) and the fields a screen shows are `side: screen`, owned by the screen's entry fact.
+  - A generated client that isn't committed is cited at its call site (the call rule already said so), and its fields where the calling code names them.
+
+  The planner's task files (B-fixes, `taskFiles`) now find them. A changed call-out or publish goes where today's step does when the delta leaves out `to`, and today's step names its call (an Interface, or an Unresolved call the estate can't join yet). A call-out that sends a field it didn't changes the call's request (or message) schema; one that gets a new field back, its response schema. A respond step on a screen changes the screen's fields, as a validate or entry step on it does. So the stories stage names the form, the model type and the displayed fields as places (B-steps' declaring files). Recorded in the reading protocol (`FACT_RULES`: two rules, kept short so a tier 2 batch at 7,000 tokens still has room for files), `/atticus-map` and the plugin.
+
+- **An added step goes where the target flow says.** The flow delta's step gains `at` (optional, so old answers read as before and the delta stays at version 2): `path:line` of the line the new step goes after, `path:function`, or the path. The architecture stage asks for it in its format and checks it (`placeIssues`): the file is the step's repo's, in its checkout under `workspace/` or cited by the catalog (`delta.at-unknown`); with a checkout, the line is in the file (`delta.at-line`) and the function is in it (`delta.at-function`); `at` on a changed or removed step is a note (`delta.at-not-added`). The task's evidence, and so its story step and the bench draft's `at`, is that place (`DeltaTask.placed: given`, `placedIn` for a function). Without it the task is placed after the step before it, or the trigger, as before (`placed: neighbour` or `trigger`), and its prompt and story file say the target flow gives no place. The stories prompt doesn't change, so the recorded replays pass as recorded.
+- **Migrations are facts, read off the citations.** A reader already cites a column where it is declared, often in the migration that adds it. `projectFacts` now recognises a migration file by its tool's naming (`migrationOf` in `packages/core/src/migration-files.ts`: Flyway `V<n>__*`, Liquibase changelogs, Alembic `versions/<rev>_*.py`, Prisma `migrations/<name>/migration.sql`, EF `Migrations/<timestamp>_*.cs` without its designer file, TypeORM and Knex timestamps, Rails `db/migrate`, Django `migrations/<nnnn>_*.py`, numbered `.sql` and `.up.sql`) among the citations of store facts and of the columns they own, and makes a C1 Migration record per file: `<store>.v<version>`, the tool (C1's enum: the others are `other`), the file, an operation per table with the columns it cites (`create` or `alter` only when a quote states it), and the citing facts as evidence. Chosen over a new fact kind because it needs nothing new from the reader, works on facts already written (the bench's), and stays an additive projection into C1's existing Migration kind; the cost is that a migration no fact cites is unknown, so the protocol asks for a column in the newest migration too.
+
+  With the records, `migrationsOf` (architecture) gives the store's folder, newest and next name to the store-facts block, the name check and `migrationPath`. A Prisma migration is its folder. A migration the store already has is refused as the change's migration (`delta.bad-migration`, with the next name). So is a file out of their numbering (as before), or of another kind than theirs (a `schema.sql` beside Alembic's `.py` versions). A task no longer lists an existing migration as a file to touch, so the story's new migration is its own place. A store with no migrations is told so with the files its columns are declared in, changed in place, as B-steps did.
+
+- **Re-scored, not re-drafted** (the run's scratch metarepos, with this branch's CLI):
+  - petclinic: changed steps 6 → 7 of 8. The Add Pet form's call-out now names `pet.ts`, the model type the Angular facts already cite as a call's fields.
+  - microservices-demo: 1 of 2, unchanged. Its missed step needs `at`, which only a new draft gives.
+  - fastapi-template: 4 of 8 as written. With its facts projected again (`verify --write`, after leaving out the three flows B-fixes 6 now rejects), it is 3 of 8. The three Alembic versions are no longer places, and the new migration file has no line to match the reference's step, which cites existing code.
+
+  Errors, fields, invented fields and sections are unchanged. This is one assistant and one run, and no bar is set (§6).
+
+- **Not done here:**
+  - A new migration step cites no line, so the bench can't match it. The migration it follows is known only where the files are numbered.
+  - The front-end facts of the bench repos haven't been read again with the new rules.
+  - The fast path's format (`small.ts`) doesn't ask for `at`.
+  - The draft still repeats a criterion once per place.

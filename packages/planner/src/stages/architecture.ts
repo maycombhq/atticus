@@ -42,9 +42,11 @@ import {
   fieldNames,
   FLOW_DELTA_SCHEMA_VERSION,
   FlowDelta,
+  parseAt,
   type DeltaStep,
   type FeaturePlacement,
 } from "./schema.js";
+import { readCheckoutFile } from "./story-code.js";
 import {
   consumerIssues,
   endpointConsumers,
@@ -91,6 +93,7 @@ flows:
       - op: add | change | remove
         step: <change and remove: the step's number in today's flow, as listed>
         after: <add: the number of the step it goes after; 0 for first>
+        at: <add, when the code shows where the new step goes: path:line of the line it goes after, or path:function; leave it out for code in a new file>
         kind: <add, or when the kind changes: entry, lookup, read, write, call-out, publish, transform, validate, branch, log, respond, loop, retry>
         what: <one sentence: what the step does once the change is in>
         to: { component: <component or system id>, entry: <the HTTP method and the path, such as "GET /orders/{id}", or a topic>, new: <true when it doesn't exist yet> }   # call-out and publish only: a component, never a table
@@ -569,7 +572,13 @@ export function migrationsOf(e: Estate, store: string): StoreMigrations {
       evidence?: { repo?: string }[];
     }[]
   ).filter((r) => r.kind === "Migration" && r.dataStore === store && r.file);
-  const names = recs.map((r) => fileOf(r.file!));
+  // A migration that is a folder of its own (<folder>/<name>/migration.sql) is named by its
+  // folder, and the migrations' folder is the one those are in (B-places).
+  const nested =
+    recs.length > 0 &&
+    recs.every((r) => r.file!.split(/[\\/]/).length > 2 && fileOf(r.file!) === "migration.sql");
+  const unit = (f: string) => (nested ? f.split(/[\\/]/).slice(0, -1).join("/") : f);
+  const names = recs.map((r) => fileOf(unit(r.file!)));
   const parts = names.map((n) => NUMBERED.exec(n));
   const all = parts.every((p) => p) && parts.length > 0;
   const same = (k: number) => all && new Set(parts.map((p) => p![k])).size === 1;
@@ -590,7 +599,9 @@ export function migrationsOf(e: Estate, store: string): StoreMigrations {
   const files = [...names].sort((a, b) =>
     pattern ? num(b) - num(a) || b.localeCompare(a) : b.localeCompare(a),
   );
-  const folders = [...new Set(recs.map((r) => r.file!.split(/[\\/]/).slice(0, -1).join("/")))];
+  const folders = [
+    ...new Set(recs.map((r) => unit(r.file!).split(/[\\/]/).slice(0, -1).join("/"))),
+  ];
   const repos = [...new Set(recs.map((r) => r.evidence?.[0]?.repo).filter((x) => !!x))];
   const tools = [...new Set(recs.map((r) => r.tool).filter((x) => !!x))];
   return {
@@ -619,6 +630,20 @@ export function nextMigration(m: StoreMigrations, words: string): string | undef
   const p = m.pattern;
   if (!p) return undefined;
   return `${p.prefix}${String(p.newest + 1).padStart(p.width, "0")}${p.sep}${words}${p.ext}`;
+}
+
+/** The files a store's columns are cited in, as the catalog has them (at most four). */
+function columnFilesOf(e: Estate, store: string): string[] {
+  const tables = new Set(
+    (e.records as Rec[])
+      .filter((r) => r.kind === "Table" && r.dataStore === store)
+      .map((r) => r.id),
+  );
+  const files = new Set<string>();
+  for (const r of e.records as Rec[])
+    if (r.kind === "Column" && tables.has(String(r.table)))
+      for (const ev of (r.evidence ?? []) as { path?: string }[]) if (ev.path) files.add(ev.path);
+  return [...files].sort().slice(0, 4);
 }
 
 /** The column types a store's tables are written with in the catalog, sorted. */
@@ -671,6 +696,13 @@ function migrationProblem(
   // Target flows on file, checked again once the change's code merged: the migration the
   // catalog now has by this very file name is the change's own (H4), not one to number past.
   if (onFile && m?.files.includes(file)) return undefined;
+  // B-places: a migration the store already has is never edited; the change is a new one.
+  if (m?.files.includes(file)) {
+    const where = m.folder ? `, in ${m.folder}` : "";
+    const stem = file.replace(/^[A-Za-z]*\d+[^A-Za-z0-9]+/, "").replace(/\.[A-Za-z0-9]+$/, "");
+    const next = nextMigration(m, stem);
+    return `names the migration ${name}, which ${store} already has: a change to its tables is a new migration beside it${where}: name the file ${next ?? `as its migrations are named (${m.files.slice(0, 3).join(", ")})`}.`;
+  }
   const p = m?.pattern;
   if (m && p) {
     const x = NUMBERED.exec(file);
@@ -690,7 +722,94 @@ function migrationProblem(
   }
   if (!/\.[A-Za-z0-9]+$/.test(file))
     return `names the migration ${name}, which isn't a file name: name the migration file, with its extension${m?.files.length ? `, as ${store}'s are named (${m.files.slice(0, 3).join(", ")})` : ""}.`;
+  // B-places: a store with migrations is changed by a new one of theirs, not by another file.
+  const exts = new Set(m?.files.map((f) => /\.[A-Za-z0-9]+$/.exec(f)?.[0]) ?? []);
+  const ext = /\.[A-Za-z0-9]+$/.exec(file)![0];
+  if (m && exts.size === 1 && !exts.has(ext))
+    return `names the migration ${name}, which isn't one of ${store}'s migrations (${m.files.slice(0, 3).join(", ")}): a change to its tables is a new migration named as they are${m.folder ? `, in ${m.folder}` : ""}.`;
   return undefined;
+}
+
+/** The files a repo's records and flows cite, per estate. */
+const citedFiles = new WeakMap<Estate, Set<string>>();
+function citesFile(e: Estate, repo: string, path: string): boolean {
+  let files = citedFiles.get(e);
+  if (!files) {
+    files = new Set<string>();
+    const put = (ev: unknown, repo?: string) => {
+      for (const x of (Array.isArray(ev) ? ev : []) as { repo?: string; path?: string }[])
+        if (x.path) files!.add(`${x.repo ?? repo ?? ""}:${x.path}`);
+    };
+    for (const r of e.records as Rec[]) put(r.evidence);
+    for (const f of e.flows) {
+      put(f.flow.trigger.evidence, f.repo);
+      for (const s of f.flow.steps) put(s.evidence, f.repo);
+      for (const x of f.flow.errors ?? []) put(x.evidence, f.repo);
+    }
+    citedFiles.set(e, files);
+  }
+  return files.has(`${repo}:${path}`);
+}
+
+/**
+ * Where an added step goes (B-places): a target flow's `at` names a file of the step's repo
+ * that its checkout under workspace/ or the catalog has, a line the file has and a function in
+ * it, when the checkout is there to read. Old answers have no `at`, so nothing is asked of them.
+ */
+export async function placeIssues(
+  deltas: FlowDelta[],
+  e: Estate,
+  root?: string,
+): Promise<StageIssue[]> {
+  const out: StageIssue[] = [];
+  for (const d of deltas)
+    for (const [i, s] of d.steps.entries()) {
+      if (!s.at) continue;
+      const target = `${d.flow}#${i + 1}:at`;
+      const change = `Change ${i + 1} to ${d.flow}`;
+      if (s.op !== "add") {
+        out.push({
+          rule: "delta.at-not-added",
+          target,
+          message: `${change} gives at, which is for a step the change adds: a step it ${s.op}s is where today's flow cites it, so at is left out of its task.`,
+          blocking: false,
+          repo: d.repo,
+        });
+        continue;
+      }
+      const p = parseAt(s.at);
+      const text = p && root ? await readCheckoutFile(root, d.repo, p.path) : undefined;
+      if (!p || (text === undefined && !citesFile(e, d.repo, p.path))) {
+        out.push({
+          rule: "delta.at-unknown",
+          target,
+          message: `${change} puts the new step at ${s.at}, but ${d.repo} has no such file in its checkout or the catalog: give the path as the repo has it (path:line of the line the step goes after, or path:function), or leave at out for code in a new file.`,
+          blocking: true,
+          repo: d.repo,
+        });
+        continue;
+      }
+      if (text === undefined) continue;
+      const lines = text.replace(/\r\n?/g, "\n").replace(/\n$/, "").split("\n").length;
+      if (p.line !== undefined && (p.line < 1 || p.line > lines))
+        out.push({
+          rule: "delta.at-line",
+          target,
+          message: `${change} puts the new step after line ${p.line} of ${p.path}, which has ${lines} lines in ${d.repo}'s checkout: give the line it goes after.`,
+          blocking: true,
+          repo: d.repo,
+        });
+      const fn = p.function?.split(/[.#]/).at(-1);
+      if (fn && !new RegExp(`(^|[^\\w$])${fn.replace(/\$/g, "\\$")}([^\\w$]|$)`).test(text))
+        out.push({
+          rule: "delta.at-function",
+          target,
+          message: `${change} puts the new step in ${p.function}, which ${p.path} doesn't have in ${d.repo}'s checkout: name a function the file has, or give path:line.`,
+          blocking: true,
+          repo: d.repo,
+        });
+    }
+  return out;
 }
 
 /**
@@ -705,9 +824,13 @@ export function storeFacts(e: Estate, stores: string[]): string {
     const m = migrationsOf(e, s);
     const types = columnTypesOf(e, s);
     const next = nextMigration(m, "<what_it_does>");
+    const declared = m.files.length ? [] : columnFilesOf(e, s);
     const mig = m.files.length
       ? `migrations in ${m.folder ?? "several folders"}, the newest ${m.files.slice(0, 3).join(", ")}${next ? `; the next is ${next}` : ""}`
-      : "the catalog has no migration of it: name the migration file, with its extension";
+      : declared.length
+        ? // B-places: no migrations, so the file its columns are declared in changes in place.
+          `the catalog has no migration of it; its columns are declared in ${declared.join(", ")}: a change there is made in place, so name that file under store.migration`
+        : "the catalog has no migration of it: name the migration file, with its extension";
     lines.push(
       `- ${s}${m.repo ? ` (repo ${m.repo})` : ""}: ${mig}.${types.length ? ` Column types as its tables write them: ${types.slice(0, 8).join(", ")}.` : ""}`,
     );
@@ -2094,6 +2217,8 @@ export async function architectureStage(
       }),
       // B-arch, check 4: the deploy order puts a callee before its caller, a migration first.
       ...deployIssues(a.flows, a.deploy, estate),
+      // B-places: an added step's place is a file of its repo, a line it has, a function in it.
+      ...(await placeIssues(a.flows, estate, root)),
       // W5: an endpoint the brief names whose flow the design leaves alone (a note, not blocking).
       ...briefEndpointNotes(
         await readFile(join(dir, "brief.md"), "utf8").catch(() => ""),

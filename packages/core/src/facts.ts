@@ -5,6 +5,7 @@ import { canonicalize } from "./serialize.js";
 import { SCHEMA_VERSION, type EvidenceT } from "./schema/common.js";
 import { Fact, FactsFile, type FactOf } from "./schema/facts.js";
 import { NEVER_CHECKED_STEPS } from "./schema/kinds.js";
+import { migrationOf, type MigrationFile } from "./migration-files.js";
 
 /**
  * The facts file (ADR 0124): read, write and project into catalog C1.
@@ -427,6 +428,72 @@ export function projectFacts(input: readonly Fact[], opts: ProjectOptions = {}):
       }
     }
   }
+  // ---- migrations (B-places): a column or store fact cited in a migration file
+  type MigrationTable = { cols: { name: string; line: number }[]; quotes: string[] };
+  type FoundMigration = {
+    store: string;
+    file: string;
+    found: MigrationFile;
+    tables: Map<string, MigrationTable>;
+    ev: EvidenceT[];
+    declared: boolean;
+  };
+  const migrations = new Map<string, FoundMigration>();
+  for (const f of facts) {
+    const store =
+      f.kind === "store"
+        ? f
+        : f.kind === "field" && byId.get(f.owner)?.kind === "store"
+          ? (byId.get(f.owner) as Store)
+          : undefined;
+    if (!store) continue;
+    const found = migrationOf(f.cite.file);
+    if (!found) continue;
+    const storeId = idPart(store.store);
+    const id = `${storeId}.v${slugify(found.version)}`;
+    const m: FoundMigration = migrations.get(id) ?? {
+      store: storeId,
+      file: f.cite.file,
+      found,
+      tables: new Map(),
+      ev: [],
+      declared: true,
+    };
+    const t: MigrationTable = m.tables.get(store.name) ?? { cols: [], quotes: [] };
+    if (f.kind === "field" && !t.cols.some((c) => c.name === f.name))
+      t.cols.push({ name: f.name, line: f.cite.line });
+    if (f.cite.quote) t.quotes.push(f.cite.quote);
+    m.tables.set(store.name, t);
+    m.ev.push(evidenceOf(f, "migration"));
+    if (f.conf !== "declared") m.declared = false;
+    migrations.set(id, m);
+  }
+  for (const [id, m] of migrations) {
+    out.push({
+      kind: "Migration",
+      schemaVersion: SCHEMA_VERSION,
+      status: "current",
+      confidence: m.declared ? "verified" : "inferred",
+      id,
+      dataStore: m.store,
+      version: m.found.version,
+      tool: m.found.tool,
+      file: m.file,
+      // What the facts say the file does to each table: the verb only when a quote states it.
+      operations: [...m.tables].map(([name, t]) => {
+        const q = t.quotes.join(" ");
+        const verb = /create[_ ]?table/i.test(q)
+          ? "create table"
+          : /(add|alter|drop|rename)[_ ]?(table|column)/i.test(q)
+            ? "alter table"
+            : "table";
+        const cols = [...t.cols].sort((a, b) => a.line - b.line).map((c) => c.name);
+        return `${verb} ${name}${cols.length ? ` (${cols.join(", ")})` : ""}`;
+      }),
+      evidence: [...m.ev].sort((a, b) => (a.line ?? 0) - (b.line ?? 0)),
+    } as CatalogRecord);
+  }
+
   for (const [id, s] of schemas) {
     out.push({
       kind: "Schema",
@@ -621,6 +688,7 @@ export function projectFacts(input: readonly Fact[], opts: ProjectOptions = {}):
       "DataStore",
       "Table",
       "Column",
+      "Migration",
       "Deployment",
       "Setting",
       "Flow",

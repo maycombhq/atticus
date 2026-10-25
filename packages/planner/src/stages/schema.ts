@@ -161,6 +161,31 @@ export const DeltaFields = z.strictObject({
 });
 export type DeltaFields = z.infer<typeof DeltaFields>;
 
+/** A delta step's `at` as its parts (B-places): the path, and the line or the function. */
+export interface StepPlace {
+  path: string;
+  line?: number;
+  function?: string;
+}
+
+/**
+ * `path:line`, `path:function` or `path`; undefined for no path, or one that leaves the repo (an
+ * absolute path, a drive letter, `..`).
+ */
+export function parseAt(at: string): StepPlace | undefined {
+  const t = at.trim().replace(/\\/g, "/");
+  const m = /^(.+?)(?::(\d+)|:([A-Za-z_$][\w$.#]*)(?:\(\))?)?$/.exec(t);
+  if (!m) return undefined;
+  const path = m[1]!.replace(/^\.\//, "");
+  if (!path || path.startsWith("/") || /^[A-Za-z]:/.test(path) || path.split("/").includes(".."))
+    return undefined;
+  return {
+    path,
+    ...(m[2] ? { line: Number(m[2]) } : {}),
+    ...(m[3] ? { function: m[3] } : {}),
+  };
+}
+
 /** A step's field names, from its lists (sends, returns, reads, checks, from, to), not `as`. */
 export const fieldNames = (f: DeltaFields | undefined): string[] =>
   f
@@ -186,6 +211,14 @@ export const DeltaStep = z.strictObject({
   step: z.number().int().positive().optional(),
   /** add: the position it goes after (0: first). */
   after: z.number().int().min(0).optional(),
+  /**
+   * add: where the new step's code goes in the repo (ADR 0124 addendum B-places), when the
+   * drafter knows it from the code: `path:line` of the line it goes after, or `path:function`
+   * (the function it goes in), or the path alone. Checked against the repo's checkout and the
+   * catalog; the step's and its task's citation. Left out, the task is placed after the step
+   * before it (its neighbour's citation) and says so. Optional and additive: version 2 stays.
+   */
+  at: z.string().trim().min(1).optional(),
   kind: z.enum(FLOW_STEP_KINDS).optional(),
   /** What the step does once the change is in, in one plain sentence. */
   what: z.string().optional(),

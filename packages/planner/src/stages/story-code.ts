@@ -47,6 +47,21 @@ async function inside(base: string, path: string): Promise<string | undefined> {
   }
 }
 
+/**
+ * A file of a repo's checkout under workspace/, as text: undefined with no checkout, a path out
+ * of it, a secret path, or a file too big to read (B-places reads an added step's place).
+ */
+export async function readCheckoutFile(
+  root: string,
+  repo: string,
+  path: string,
+): Promise<string | undefined> {
+  if (isSecretPath(path)) return undefined;
+  const base = defaultCodeDir(root, repo);
+  const file = base ? await inside(base, path) : undefined;
+  return file ? await readFile(file, "utf8").catch(() => undefined) : undefined;
+}
+
 const andList = (xs: string[]) =>
   xs.length > 1 ? `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}` : (xs[0] ?? "");
 

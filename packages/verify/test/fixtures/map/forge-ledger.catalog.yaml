@@ -252,6 +252,31 @@ to: ledger-api
 via: direct
 ---
 schemaVersion: 3
+kind: Migration
+id: ledger-db.v2
+status: current
+confidence: verified
+dataStore: ledger-db
+evidence:
+  - by: assistant
+    commit: 0123abc
+    line: 3
+    path: src/main/resources/db/migration/V2__create_entry.sql
+    repo: forge-ledger
+    source: migration
+  - by: assistant
+    commit: 0123abc
+    line: 4
+    path: src/main/resources/db/migration/V2__create_entry.sql
+    repo: forge-ledger
+    source: migration
+file: src/main/resources/db/migration/V2__create_entry.sql
+operations:
+  - table entry (account_id, amount)
+tool: flyway
+version: "2"
+---
+schemaVersion: 3
 kind: Schema
 id: if-0bb6f0b5cb457f7f.request
 status: current

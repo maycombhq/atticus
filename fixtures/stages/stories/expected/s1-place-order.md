@@ -136,6 +136,7 @@ forge-orders
 - Step: add (call-out), item 1 of target-flows/forge-orders.place-order.yaml
 - Fields: sku, quantity, cardToken, verdict
 - Evidence: forge-orders:src/main/java/forge/orders/OrderController.java:4, forge-orders:src/main/java/forge/orders/OrderController.java:9
+- Where it goes: not said by the target flow; after the step before it (forge-orders:src/main/java/forge/orders/OrderController.java:4, forge-orders:src/main/java/forge/orders/OrderController.java:9), where it fits
 - Goes to: northwind-pay POST /v1/screenings (new)
 - Files to touch: forge-orders:src/main/java/forge/orders/OrderController.java (lines 4 and 9)
 - Acceptance criteria:
@@ -158,6 +159,7 @@ POST /v1/screenings gains the request field sku (string, required).
 POST /v1/screenings gains the request field quantity (integer, required).
 POST /v1/screenings gains the request field cardToken (string, required).
 POST /v1/screenings gains the response field verdict (string, required).
+The target flow doesn't say where it goes: forge-orders:src/main/java/forge/orders/OrderController.java:4, forge-orders:src/main/java/forge/orders/OrderController.java:9 are the step before it, so put it where it fits after that.
 Today's code is at forge-orders:src/main/java/forge/orders/OrderController.java:4, forge-orders:src/main/java/forge/orders/OrderController.java:9; read it first.
 Acceptance criteria:
 - Given a new order with sku, quantity and cardToken, when POST /orders is called, then sku, quantity and cardToken are sent to Northwind Pay and the verdict is read (checks sku, quantity, cardToken, verdict)
@@ -174,6 +176,7 @@ Change only this repo. Write a test for each criterion. Never push to a protecte
 - Step: add (branch), item 2 of target-flows/forge-orders.place-order.yaml
 - Fields: verdict
 - Evidence: forge-orders:src/main/java/forge/orders/OrderController.java:4, forge-orders:src/main/java/forge/orders/OrderController.java:9
+- Where it goes: not said by the target flow; after the step before it (forge-orders:src/main/java/forge/orders/OrderController.java:4, forge-orders:src/main/java/forge/orders/OrderController.java:9), where it fits
 - Files to touch: forge-orders:src/main/java/forge/orders/OrderController.java (lines 4 and 9)
 - Acceptance criteria:
   - Given a rejected verdict, when POST /orders is called, then 422 says the verdict refused the order and no stock is reserved. (Error: forbidden, 422)
@@ -188,6 +191,7 @@ Prompt for Copilot or Claude Code:
 Implement task 1.2 of the change add-fraud-check in the repo forge-orders.
 Flow forge-orders.place-order (A client places an order): add the branch step. A rejected order is refused with 422 and nothing is reserved.
 Fields: verdict.
+The target flow doesn't say where it goes: forge-orders:src/main/java/forge/orders/OrderController.java:4, forge-orders:src/main/java/forge/orders/OrderController.java:9 are the step before it, so put it where it fits after that.
 Today's code is at forge-orders:src/main/java/forge/orders/OrderController.java:4, forge-orders:src/main/java/forge/orders/OrderController.java:9; read it first.
 Acceptance criteria:
 - Given a rejected verdict, when POST /orders is called, then 422 says the verdict refused the order and no stock is reserved (checks verdict)
