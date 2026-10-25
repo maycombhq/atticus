@@ -736,6 +736,54 @@ records:
     to: ledger-api
     via: direct
   - confidence: verified
+    dataStore: customers-db
+    evidence:
+      - by: assistant
+        commit: 2222bbb
+        line: 3
+        path: src/main/resources/db/migration/V1__customers.sql
+        repo: forge-customers
+        source: migration
+      - by: assistant
+        commit: 2222bbb
+        line: 4
+        path: src/main/resources/db/migration/V1__customers.sql
+        repo: forge-customers
+        source: migration
+      - by: assistant
+        commit: 2222bbb
+        line: 5
+        path: src/main/resources/db/migration/V1__customers.sql
+        repo: forge-customers
+        source: migration
+    file: src/main/resources/db/migration/V1__customers.sql
+    id: customers-db.v1
+    kind: Migration
+    operations:
+      - table customers (first_name, last_name, email_address)
+    schemaVersion: 3
+    status: current
+    tool: flyway
+    version: "1"
+  - confidence: verified
+    dataStore: ledger-db
+    evidence:
+      - by: assistant
+        commit: 3333ccc
+        line: 3
+        path: src/main/resources/db/migration/V1__accounts.sql
+        repo: forge-ledger
+        source: migration
+    file: src/main/resources/db/migration/V1__accounts.sql
+    id: ledger-db.v1
+    kind: Migration
+    operations:
+      - table accounts (customer_id)
+    schemaVersion: 3
+    status: current
+    tool: flyway
+    version: "1"
+  - confidence: verified
     evidence:
       - by: assistant
         commit: 2222bbb

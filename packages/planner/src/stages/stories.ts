@@ -85,6 +85,7 @@ import {
 } from "./loop.js";
 import {
   fieldNames,
+  parseAt,
   StageLoop,
   type DeltaStep,
   type FlowDelta,
@@ -134,6 +135,15 @@ export interface DeltaTask {
    * call's Schema, a table and its columns). Left out when the facts cite none.
    */
   files?: TaskFile[];
+  /**
+   * An added step: where its evidence comes from (B-places). `given`: the target flow's `at`;
+   * `neighbour`: the step it goes after (the target flow gives no place); `trigger`: the flow's
+   * trigger, for a step added first. Left out for a changed or removed step, and for a new flow's
+   * step with no place (new code).
+   */
+  placed?: "given" | "neighbour" | "trigger";
+  /** `at` names a function: the step goes in it (B-places). */
+  placedIn?: string;
 }
 
 /** A file a task touches, from the catalog's citations: repo:path, the cited lines and why. */
@@ -220,11 +230,16 @@ export function storiesFromDeltas(all: FlowDelta[], e: Estate): DeltaStory[] {
       d.steps.forEach((s, i) => {
         const old = s.step ? today?.steps[s.step - 1] : undefined;
         const at = s.op === "add" ? (s.after ? today?.steps[s.after - 1] : undefined) : old;
-        const evidence = at
+        // B-places: an added step goes where the target flow says, else after its neighbour.
+        const place = s.op === "add" && s.at ? parseAt(s.at) : undefined;
+        const neighbour = at
           ? ev(d.repo, at.evidence)
           : s.op === "add" && s.after === 0 && today
             ? ev(d.repo, today.trigger.evidence)
             : [];
+        const evidence = place
+          ? [`${d.repo}:${place.path}${place.line ? `:${place.line}` : ""}`]
+          : neighbour;
         const what = s.what ?? old?.what ?? "";
         const fields = [...new Set([...fieldNames(s.fields), ...(s.store?.columns ?? [])])];
         const n = (counter.get(repo) ?? 0) + 1;
@@ -236,6 +251,14 @@ export function storiesFromDeltas(all: FlowDelta[], e: Estate): DeltaStory[] {
           : d.change === "new"
             ? []
             : ev(d.repo, today?.trigger.evidence ?? []);
+        const placed: DeltaTask["placed"] =
+          s.op !== "add" || !cited.length
+            ? undefined
+            : place
+              ? "given"
+              : at && neighbour.length
+                ? "neighbour"
+                : "trigger";
         const files = taskFiles(d, s, old, entry, cited, e);
         tasks.push({
           id: `${repos.indexOf(repo) + 1}.${n}`,
@@ -261,6 +284,8 @@ export function storiesFromDeltas(all: FlowDelta[], e: Estate): DeltaStory[] {
           ...(s.to ? { to: { component: s.to.component, entry: s.to.entry, new: s.to.new } } : {}),
           ...(data ? { data } : {}),
           ...(files.length ? { files } : {}),
+          ...(placed ? { placed } : {}),
+          ...(place?.function ? { placedIn: place.function } : {}),
         });
       });
       stories.push({
@@ -325,7 +350,9 @@ const FILE_LINES = 4;
  * today's step doesn't carry), the files of the Schemas that hold one of them (the story's
  * entry's DTO or spec, or the call's client), and for a store step that adds columns, the
  * table's and its columns' files (the schema file, the entity). Only files in the task's repo,
- * and none of today's step's own (its evidence names those).
+ * and none of today's step's own (its evidence names those). B-places: a front end's call names
+ * its model or client type (the call's request or response schema) and a screen its form or
+ * shown fields (`<screen>.screen`); a migration the store has is never a file to touch.
  */
 function taskFiles(
   d: FlowDelta,
@@ -376,44 +403,65 @@ function taskFiles(
   };
 
   // ---- the Schemas holding a field the task adds or changes: the entry's, and the call's
-  const owners: { label: string; refs: Set<string> }[] = [];
-  if (entry) owners.push({ label: entry, refs: new Set(endpointsFor(e, entry)) });
-  if (s.to) {
+  const owners: { label: string; refs: Set<string>; call: boolean }[] = [];
+  if (entry) owners.push({ label: entry, refs: new Set(endpointsFor(e, entry)), call: false });
+  const kind = s.kind ?? old?.kind;
+  const calls = kind === "call-out" || kind === "publish";
+  // B-places: a changed call-out that doesn't say where it goes goes where today's step does,
+  // and today's step names its call (an Interface, or one the estate can't join yet).
+  const same = !!old?.to && (!s.to || endpointKey(s.to.entry) === endpointKey(old.to.entry));
+  const to = s.to ?? (calls && old?.to ? old.to : undefined);
+  if (to || (calls && same)) {
     const from = e.flowById.get(d.flow)?.flow.component ?? d.flow.split(".")[0];
-    const callee = new Set(endpointsFor(e, s.to.entry));
-    const key = endpointKey(s.to.entry);
+    const refs = new Set<string>();
+    if (to) {
+      const callee = new Set(endpointsFor(e, to.entry));
+      const key = endpointKey(to.entry);
+      for (const r of recs)
+        if (
+          r.kind === "Interface" &&
+          r.from === from &&
+          ((typeof r.endpoint === "string" && callee.has(r.endpoint)) ||
+            endpointKey(`${String(r.method ?? "")} ${String(r.normalizedPath ?? "")}`.trim()) ===
+              key)
+        )
+          refs.add(r.id);
+    }
+    if (same)
+      for (const ref of old?.refs ?? []) {
+        const r = e.byId.get(ref);
+        if (r?.kind === "Interface" || r?.kind === "Unresolved") refs.add(r.id);
+        else if (r?.kind === "Schema") refs.add(String(r.ref));
+      }
     owners.push({
-      label: `the call to ${s.to.component} ${s.to.entry}`,
-      refs: new Set(
-        recs
-          .filter(
-            (r) =>
-              r.kind === "Interface" &&
-              r.from === from &&
-              ((typeof r.endpoint === "string" && callee.has(r.endpoint)) ||
-                endpointKey(
-                  `${String(r.method ?? "")} ${String(r.normalizedPath ?? "")}`.trim(),
-                ) === key),
-          )
-          .map((r) => r.id),
-      ),
+      label: to ? `the call to ${to.component} ${to.entry}` : `the call ${old?.what ?? ""}`.trim(),
+      refs,
+      call: true,
     });
   }
   // A step that takes the entry's input (entry, validate) or answers it (respond) changes the
-  // entry's own request or response schema, whether or not it has the field yet (a new field).
-  const kind = s.kind ?? old?.kind;
+  // entry's own request or response schema, whether or not it has the field yet (a new field);
+  // on a screen, the fields its form takes or its page shows (B-places). A call-out or publish
+  // that sends a field it didn't changes the call's request (or message) schema, the front end's
+  // model or client type; one that gets a new field back, its response schema.
   const takes = kind === "entry" || kind === "validate";
-  for (const [n, o] of owners.entries())
+  const listed = (k: "sends" | "returns") =>
+    (s.fields?.[k] ?? []).some((f) => changed.has(foldField(f.split(".").at(-1)!)));
+  const hasCall = owners.some((o) => o.call);
+  for (const o of owners)
     for (const r of recs) {
       if (r.kind !== "Schema" || !o.refs.has(String(r.ref))) continue;
       const side = r.id.slice(String(r.ref).length + 1) || "request";
       const held = ((r.fields ?? []) as { name: string }[])
         .map((f) => f.name)
         .filter((x, i, xs) => xs.indexOf(x) === i && changed.has(foldField(x)));
-      const own =
-        n === 0 &&
-        !s.to &&
-        ((takes && side !== "response") || (kind === "respond" && side === "response"));
+      const own = o.call
+        ? ((side === "request" || side === "message") && listed("sends")) ||
+          (side === "response" && listed("returns"))
+        : !hasCall &&
+          !calls &&
+          ((takes && side !== "response") ||
+            (kind === "respond" && (side === "response" || side === "screen")));
       if (!held.length && !own) continue;
       const whose = o.label.endsWith("s") ? `${o.label}'` : `${o.label}'s`;
       for (const [path, lines] of byFile(mine(r.evidence)))
@@ -434,8 +482,19 @@ function taskFiles(
       cols.filter((c) => changed.has(foldField(String(c.name ?? "")))).map((c) => c.id),
     );
     const files = new Map<string, { lines: number[]; all: number[] }>();
+    // B-places: a migration the store has is history, never edited; the new one goes beside it
+    // (the task's migrationFile). A schema file is changed in place only where there are none.
+    const migrations = new Set(
+      recs
+        .filter(
+          (r) =>
+            r.kind === "Migration" && typeof r.file === "string" && mine(r.evidence).length > 0,
+        )
+        .map((r) => String(r.file)),
+    );
     const put = (ev: Cited[], keep: boolean) => {
       for (const [path, lines] of byFile(ev)) {
+        if (migrations.has(path)) continue;
         const f = files.get(path) ?? { lines: [], all: [] };
         if (keep) f.lines.push(...lines);
         f.all.push(...lines);
@@ -1888,6 +1947,21 @@ export interface TaskPromptExtras {
   command?: string;
 }
 
+/**
+ * Where an added step goes, in words (B-places): the target flow's place, or, when it gives
+ * none, the code of the step it goes after (or of the trigger), which is all the map knows.
+ */
+export function placeWords(t: DeltaTask): string | undefined {
+  if (!t.placed || !t.evidence.length) return undefined;
+  if (t.placed === "given")
+    return `It goes in at ${t.evidence[0]}${t.placedIn ? `, in ${t.placedIn}` : ""}, as the target flow says.`;
+  const at = t.evidence.join(", ");
+  const one = t.evidence.length === 1;
+  return t.placed === "neighbour"
+    ? `The target flow doesn't say where it goes: ${at} ${one ? "is" : "are"} the step before it, so put it where it fits after that.`
+    : `The target flow doesn't say where it goes: ${at} ${one ? "is" : "are"} the flow's trigger, so put it where it fits after that.`;
+}
+
 export function taskPrompt(
   change: string,
   s: DeltaStory,
@@ -1902,6 +1976,7 @@ export function taskPrompt(
     ...(t.store ? [`It uses ${t.store}.`] : []),
     ...(t.fields.length ? [`Fields: ${t.fields.join(", ")}.`] : []),
     ...(x.contract ?? []).map(sentence),
+    ...(placeWords(t) ? [placeWords(t)!] : []),
     ...(t.evidence.length
       ? [`Today's code is at ${t.evidence.join(", ")}; read it first.`]
       : ["This is new code; follow the repo's patterns for its neighbours."]),
@@ -2266,6 +2341,13 @@ function renderStoryFile(
       `- Step: ${t.op} (${t.kind ?? "step"}), item ${t.position} of target-flows/${s.flow}.yaml`,
       `- Fields: ${t.fields.join(", ") || "none"}`,
       `- Evidence: ${t.evidence.join(", ") || "new code"}`,
+      ...(t.placed && t.evidence.length
+        ? [
+            t.placed === "given"
+              ? `- Where it goes: ${t.evidence[0]}${t.placedIn ? `, in ${t.placedIn}` : ""} (from the target flow)`
+              : `- Where it goes: not said by the target flow; after ${t.placed === "neighbour" ? "the step before it" : "the flow's trigger"} (${t.evidence.join(", ")}), where it fits`,
+          ]
+        : []),
       ...(t.target ? [`- Goes to: ${t.target}`] : []),
       ...(t.store ? [`- Store: ${t.store}`] : []),
       `- Files to touch: ${files.join(", ") || "new code; follow the repo's patterns for its neighbours"}`,

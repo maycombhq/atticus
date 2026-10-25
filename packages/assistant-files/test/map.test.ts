@@ -6,6 +6,7 @@ import {
   ASSISTANT_FORMATS,
   assistantTier,
   claudeCodePluginFiles,
+  FACT_RULES,
   factsReference,
   GUARD,
   mapBatchInstructions,
@@ -112,6 +113,44 @@ describe("the batch prompt's instructions (tiers 2 and 3)", () => {
     expect(t).toMatch(/"question"/);
     // No tools at this tier: nothing about running commands or opening files.
     expect(t).not.toContain("atticus verify");
+  });
+});
+
+describe("the places a change goes into are facts (ADR 0124 addendum B-places)", () => {
+  const rules = FACT_RULES.split("\n");
+  const rule = (start: string) => rules.find((r) => r.startsWith(start)) ?? "";
+
+  it("a front end's model types, form fields and shown fields are field facts, owned by its calls and screens", () => {
+    const r = rule("- A front end's model and client types");
+    expect(r).toContain(
+      "are the `request` or `response` fields of each call that sends or receives them, one fact per call",
+    );
+    expect(r).toContain("are `side: screen`, owned by the screen's entry");
+    expect(r).toContain("form group controls, a zod schema's keys, a template's inputs");
+    // A generated client that isn't committed: its call is cited at its call site (the call
+    // rule), its fields where the calling code names them.
+    expect(r).toContain("cite the fields where the calling code names them");
+    expect(FACT_RULES).toContain("is cited at its call site");
+  });
+
+  it("a column is cited in its migration, so the store's migrations are known", () => {
+    const r = rule("- A field fact belongs to the fact it crosses");
+    expect(r).toContain(
+      "Cite a column in the migration that adds or last changes it, and one in the newest migration",
+    );
+    expect(r).toContain("Cite the schema or entity file only when the repo has no migrations");
+  });
+
+  it("is in /atticus-map, the batch prompt and the plugin alike", () => {
+    const front = rule("- A front end's model and client types");
+    const field = rule("- A field fact belongs to the fact it crosses");
+    expect(mapCommand().body).toContain(front);
+    expect(mapBatchInstructions({ repo: "r", commit: "0123abc", batch: 1, of: 1 })).toContain(
+      field,
+    );
+    expect(
+      claudeCodePluginFiles("0.0.0").find((f) => f.path === "commands/atticus-map.md")?.content,
+    ).toContain(front);
   });
 });
 
