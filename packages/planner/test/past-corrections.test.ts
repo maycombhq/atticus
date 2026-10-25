@@ -96,9 +96,14 @@ async function prompts(root: string): Promise<{ feature: string; arch: string; s
  * recorded replays keep matching.
  */
 const BEFORE = {
-  feature: "6e8cced1b92d0009544e22c14c47f0a8910add1ced95c7c67639005a21145f1e",
-  // re-pinned after B-places asked the architect for an added step's place (`at`)
-  arch: "96e62113e52dfaf3a8cda6db9497b2807c4ec2ecfd7365acce58e7edbe3bbc59",
+  // B2 (a): re-pinned when the feature stage began to select and send the org's knowledge (its
+  // items, a new rule to name them where they bear on a gap); the hand-written answer
+  // (corrections/answers/feature.yaml) was re-written for it: its gap names the two items.
+  feature: "4e3363a5f6c7bb3a8f1b0861534d478e0cf1249773800e99ef02e85334b0c47f",
+  // re-pinned after B-places asked the architect for an added step's place (`at`); and in B2,
+  // because its input, the feature answer above, changed (its code didn't; the architecture
+  // answer still fits and is unchanged)
+  arch: "7d8cd9985953fb192c68debdbe110dd6ff09f873e6c733304b819c2f3a69396a",
   stories: "2e4b6a0bf2c1f970b3bd4e50aca99ead1f0db3cf43a2039788c12aa3c397658b",
 };
 

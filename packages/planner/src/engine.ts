@@ -171,11 +171,13 @@ export interface ContextReport {
     score: number;
     /** Where it lives, when the index knows (knowledge items: their file; ADR 0124, Part 5). */
     file?: string;
+    /** What a person knows it by: a record's name, a section's heading path (B2). */
+    name?: string;
     /** Why it was picked: named, a search hit, or the link it was reached by. */
     via?: string;
   }[];
   /** What didn't fit, by score; why, when a model's rerank judged it not needed (ADR 0116). */
-  leftOut: { id: string; kind: string; score: number; why?: string }[];
+  leftOut: { id: string; kind: string; score: number; why?: string; name?: string }[];
   /** Names the input uses that the index has nothing for. */
   unknown: string[];
   /** The unknown names as the step's gaps: where the change names them, and the question each became (ADR 0107 point 5). */
@@ -270,6 +272,7 @@ export function reportOf(s: ContextSelection, budget: number): ContextReport {
       level: p.level,
       score: p.score,
       ...(p.file ? { file: p.file } : {}),
+      ...(p.name ? { name: p.name } : {}),
       ...(p.via ? { via: p.via } : {}),
     })),
     leftOut: s.leftOut,

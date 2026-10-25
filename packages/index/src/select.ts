@@ -410,6 +410,8 @@ export interface Picked {
   score: number;
   level: "full" | "line";
   file: string;
+  /** What a person knows it by: a record's name, a section's heading path (B2). */
+  name: string;
   /** Why it was picked: named in the input, a search hit, or the link it was reached by. */
   via: string;
 }
@@ -418,7 +420,7 @@ export interface ContextSelection {
   sources: ContextSource[];
   picked: Picked[];
   /** Candidates that didn't fit, by score: a person can see them, the model can ask for them. */
-  leftOut: { id: string; kind: string; score: number; why?: string }[];
+  leftOut: { id: string; kind: string; score: number; why?: string; name?: string }[];
   /** Names in the input the index has nothing for. */
   unknown: string[];
   tokens: number;
@@ -891,9 +893,16 @@ export function selectContext(
   // ADR 0116: a model's order of the candidates it was shown (a rerank): the fit runs in that
   // order; what it was shown and left off its list is left out, said why; the rest follow.
   const ordered = orderCandidates(found.candidates, o.order);
+  const nameOf = (key: string) =>
+    (prep(ix, "SELECT name FROM nodes WHERE key = ?").get(key) as { name: string } | undefined)
+      ?.name;
+  const named = (key: string) => {
+    const n = nameOf(key);
+    return n ? { name: n } : {};
+  };
   for (const c of ordered.candidates) {
     if (over) {
-      leftOut.push({ id: c.id, kind: c.kind, score: c.score });
+      leftOut.push({ id: c.id, kind: c.kind, score: c.score, ...named(c.key) });
       continue;
     }
     const n = nodeByKey(ix, c.key);
@@ -922,6 +931,7 @@ export function selectContext(
           score: c.score,
           level: "full",
           file: n.file,
+          name: n.name,
           via: c.via,
         });
         continue;
@@ -941,15 +951,22 @@ export function selectContext(
         score: c.score,
         level: "line",
         file: n.file,
+        name: n.name,
         via: c.via,
       });
     } else {
       over = true;
-      leftOut.push({ id: n.id, kind: n.kind, score: c.score });
+      leftOut.push({ id: n.id, kind: n.kind, score: c.score, ...(n.name ? { name: n.name } : {}) });
     }
   }
   for (const d of ordered.dropped)
-    leftOut.push({ id: d.id, kind: d.kind, score: d.score, why: "the model judged it not needed" });
+    leftOut.push({
+      id: d.id,
+      kind: d.kind,
+      score: d.score,
+      why: "the model judged it not needed",
+      ...named(d.key),
+    });
   if (lines.length)
     sources.push({
       id: linesId,

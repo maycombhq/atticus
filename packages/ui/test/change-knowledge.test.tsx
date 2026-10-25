@@ -28,6 +28,18 @@ const VIEW: Api.ChangeKnowledgeViewT = {
       stages: ["feature"],
       score: 4,
       why: "named in the brief",
+      title: "Log as JSON",
+      reason: "The change names it.",
+    },
+    {
+      id: "forge-wiki/fraud.md#Timeouts",
+      kind: "WikiSection",
+      status: "suggested",
+      stages: ["feature"],
+      score: 1.2,
+      why: "search (words #1)",
+      title: "Fraud screen › Timeouts",
+      reason: "Its words match the change's words.",
     },
     {
       id: "kafka-topic-request",
@@ -38,7 +50,9 @@ const VIEW: Api.ChangeKnowledgeViewT = {
     },
     { id: "old-adr", kind: "Decision", status: "excluded", stages: [], score: 1, why: "a person" },
   ],
-  nearMisses: [{ id: "northwind-pay", kind: "Party", score: 1.5, stage: "feature" }],
+  nearMisses: [
+    { id: "northwind-pay", kind: "Party", score: 1.5, stage: "feature", title: "Northwind Pay" },
+  ],
   command: "atticus change knowledge add-limit",
 };
 const ready = { state: "ready" as const, data: VIEW };
@@ -48,16 +62,24 @@ describe("the knowledge that applies, on Change › Feature", () => {
     const out = renderToStaticMarkup(<ChangeKnowledgeView change="add-limit" of={ready} />);
     expect(out).toContain(esc(K.title));
     expect(out).toContain("json-logging");
-    expect(out).toContain(esc("named in the brief · feature"));
+    // B2 (e): the title a person knows it by, its id beside it, and why in plain words.
+    expect(out).toContain(esc("Log as JSON"));
+    expect(out).toContain(esc("Fraud screen › Timeouts"));
+    expect(out).toContain(esc("forge-wiki/fraud.md#Timeouts"));
+    expect(out).toContain(esc("The change names it. · feature"));
+    expect(out).not.toContain(esc("search (words #1)"));
+    expect(out).toContain(esc(K.kinds.WikiSection!));
+    expect(out).toContain(esc("Northwind Pay"));
     expect(out).toContain(esc("feature, stories"));
     expect(out).toContain(esc(K.statuses.confirmed!));
     expect(out).toContain(`aria-label="${esc(K.confirmItem("kafka-topic-request"))}"`);
+    expect(out).toContain(`aria-label="${esc(K.confirmItem("Fraud screen › Timeouts"))}"`);
     expect(out).toContain(`aria-label="${esc(K.excludeItem("kafka-topic-request"))}"`);
     // A button for the status an item already has is off.
-    expect(out).toMatch(/disabled=""[^>]*aria-label="Confirm json-logging"/);
+    expect(out).toMatch(/disabled=""[^>]*aria-label="Confirm Log as JSON"/);
     expect(out).toContain(esc(K.nearMisses(1)));
     expect(out).toContain(esc(K.nearMissStage("feature")));
-    expect(out).toContain(`aria-label="${esc(K.confirmItem("northwind-pay"))}"`);
+    expect(out).toContain(`aria-label="${esc(K.confirmItem("Northwind Pay"))}"`);
   });
 
   it("shows the git command to commit the file after a write, and why a write failed", () => {
@@ -97,7 +119,7 @@ describe("the knowledge that applies, on Change › Feature", () => {
     expect(working).not.toMatch(/<button(?![^>]*disabled)[^>]*>Confirm</);
   });
 
-  it("has loading, error and empty states; empty gives the architecture stage's command", () => {
+  it("has loading, error and empty states; empty gives the feature stage's command", () => {
     const of = (o: Parameters<typeof ChangeKnowledgeView>[0]["of"]) =>
       renderToStaticMarkup(<ChangeKnowledgeView change="add-limit" of={o} />);
     expect(of({ state: "loading" })).toContain('aria-busy="true"');
@@ -107,8 +129,8 @@ describe("the knowledge that applies, on Change › Feature", () => {
       data: { ...VIEW, present: false, items: [], nearMisses: [] },
     });
     expect(empty).toContain(esc(K.none));
-    // B2: the feature stage picks no org knowledge; the architecture stage is the first that does.
-    expect(empty).toContain("atticus change architecture add-limit");
+    // B2 (a): the feature stage is the first that picks the org's knowledge.
+    expect(empty).toContain("atticus change feature add-limit");
   });
 
   it("is on the feature tab only; At a glance and All changes are Change's tabs, not links here", () => {

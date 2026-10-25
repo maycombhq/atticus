@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { Api, openApiDocument } from "../src/index.js";
+import { Api, API_VERSION, openApiDocument } from "../src/index.js";
 
 /** API 2.22.0 (ADR 0124 addendum): the Trust tab, a change's knowledge.yaml and `full` in health. */
 
 const doc = openApiDocument() as {
+  info: { version: string };
   paths: Record<string, Record<string, { operationId: string }>>;
   components: { schemas: Record<string, unknown> };
 };
@@ -50,5 +51,45 @@ describe("the app's six entries in the local API (C4 2.22.0)", () => {
     const h = { version: "1", apiVersion: "2.22.0", schemaVersion: 2, root: "/m", user: "pat" };
     expect(Api.Health.parse({ ...h, full: true }).full).toBe(true);
     expect(Api.Health.parse(h).full).toBeUndefined();
+  });
+});
+
+/** API 2.24.0 (ADR 0124 addendum B2): a change's knowledge with titles and why in plain words. */
+describe("a change's knowledge with titles and a plain why (C4 2.24.0)", () => {
+  it("is 2.24.0, and an item and a near-miss may carry a title and a reason; older answers still parse", () => {
+    expect(API_VERSION).toBe("2.24.0");
+    expect(doc.info.version).toBe("2.24.0");
+    const item = {
+      id: "forge-wiki/fraud.md#Timeouts",
+      kind: "WikiSection",
+      status: "suggested",
+      stages: ["feature"],
+      score: 1.2,
+      why: "search (words #1)",
+    };
+    const v = {
+      change: "add-limit",
+      file: "openspec/changes/add-limit/knowledge.yaml",
+      present: true,
+      items: [
+        { ...item, title: "Fraud › Timeouts", reason: "Its words match the change's words." },
+      ],
+      nearMisses: [
+        { id: "p3", kind: "Pattern", score: 0.4, stage: "feature", title: "File transfer" },
+      ],
+      command: "atticus change knowledge add-limit",
+    };
+    const parsed = Api.ChangeKnowledgeView.parse(v);
+    expect(parsed.items[0]!.title).toBe("Fraud › Timeouts");
+    expect(parsed.items[0]!.reason).toBe("Its words match the change's words.");
+    expect(parsed.nearMisses[0]!.title).toBe("File transfer");
+    // 2.23.0's answer, without either, is still one.
+    expect(
+      Api.ChangeKnowledgeView.safeParse({
+        ...v,
+        items: [item],
+        nearMisses: [{ id: "p3", kind: "Pattern", score: 0.4, stage: "feature" }],
+      }).success,
+    ).toBe(true);
   });
 });

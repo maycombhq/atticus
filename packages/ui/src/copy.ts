@@ -676,9 +676,9 @@ export const COPY = {
   changeKnowledge: {
     title: "Knowledge that applies",
     intro:
-      "What the change's stages picked from the org's knowledge, with why: the architecture stage picks patterns, standards and decisions, the stories stage processes and requests. Confirm what applies, and every later stage that takes its kind picks it; exclude what doesn't, and no later stage picks it again.",
-    none: "No stage of this change has picked knowledge yet. The feature stage picks none; the architecture stage is the first that does. Once the feature stage is done, run:",
-    architectureCommand: (id: string) => `atticus change architecture ${id}`,
+      "What the change's stages picked from the org's knowledge, with why: from the feature stage on, each picks the patterns, standards, decisions, processes and requests, and the wiki and document sections, that its own input leads to. Confirm what applies, and every later stage that takes its kind picks it; exclude what doesn't, and no later stage picks it again.",
+    none: "No stage of this change has picked knowledge yet. The feature stage is the first that does. Once the brief is written, run:",
+    featureCommand: (id: string) => `atticus change feature ${id}`,
     working: "Writing knowledge.yaml…",
     caption: "Knowledge that applies to this change",
     item: "Item",
@@ -693,8 +693,20 @@ export const COPY = {
     } as Record<string, string>,
     confirm: "Confirm",
     exclude: "Exclude",
-    confirmItem: (id: string) => `Confirm ${id}`,
-    excludeItem: (id: string) => `Exclude ${id}`,
+    confirmItem: (name: string) => `Confirm ${name}`,
+    excludeItem: (name: string) => `Exclude ${name}`,
+    /** Each kind in words (B2): an index kind isn't something a person reads. */
+    kinds: {
+      Pattern: "Pattern or standard",
+      Decision: "Decision",
+      ProcessDefinition: "Process or request",
+      Party: "Team or vendor",
+      Product: "Product",
+      GlossaryTerm: "Term",
+      SourceDocument: "Document",
+      WikiSection: "Wiki section",
+      DocumentSection: "Document section",
+    } as Record<string, string>,
     nearMisses: (n: number) => `Nearly picked (${n}): left out for room`,
     nearMissStage: (stage: string) => `left out of ${stage}`,
     set: (id: string, status: string, file: string) =>

@@ -4,9 +4,10 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { MockRuntime } from "@maycombhq/ai";
+import { HandoffRuntime, MockRuntime } from "@maycombhq/ai";
 import { KNOWLEDGE_SCAN_OUTPUT } from "@maycombhq/knowledge";
 import { sourcesSync } from "../src/knowledge-commands.js";
+import { handoffDone } from "../src/workspace-commands.js";
 import {
   benchKnowledge,
   knowledgeAsk,
@@ -354,5 +355,63 @@ describe("people's reviews and rescans (ADR 0101)", () => {
       reason: "Shared databases couple releases.",
     });
     expect(item.review!.corrected).toEqual(["handledBy", "reason"]);
+  });
+});
+
+// B2 (f): the scan's hand-back is checked like a stage's, and a resume says what failed.
+describe("the knowledge scan through a hand-off", () => {
+  const BAD = `items:
+  - kind: request
+    id: made-up
+    title: Made up
+    applies_when: Never.
+    source: { page: service-desk-catalogue.md, section: Nowhere, quote: "Words the page doesn't have." }
+`;
+  const handedOff = async () => {
+    const top = await mkdtemp(join(tmpdir(), "atticus-cli-kscan-handoff-"));
+    const r = join(top, "metarepo");
+    await mkdir(join(r, "org-pack"), { recursive: true });
+    await writeFile(
+      join(r, "org-pack", "sources.yaml"),
+      `schemaVersion: 1\nwikis:\n  - { id: forge-wiki, type: markdown-folder, location: ${JSON.stringify(WIKI)} }\n`,
+    );
+    await sourcesSync(r, capture().io, { now: "2026-10-21T09:00:00Z" });
+    const runtime = new HandoffRuntime({ root: r, validate: async () => [], now: () => NOW });
+    const c = capture();
+    expect(await knowledgeScan(r, {}, { runtime, now: NOW }, c.io)).toBe(0);
+    const runId = /run (run-[0-9a-z-]+)/.exec(c.out.join("\n"))![1]!;
+    const answer = (text: string) =>
+      writeFile(join(r, ".runs", "knowledge-scan", runId, KNOWLEDGE_SCAN_OUTPUT), text);
+    return { root: r, runtime, runId, answer };
+  };
+
+  it("handoff done lists the answer's failed checks and keeps the run open; a clean answer goes in", async () => {
+    const h = await handedOff();
+    await h.answer(BAD);
+    const bad = capture();
+    expect(await handoffDone(h.root, h.runId, bad.io)).toBe(1);
+    expect(bad.err.join("\n")).toMatch(/request made-up: quote: .*the quote is not on the page/);
+    expect(bad.err.at(-1)).toMatch(/run atticus handoff done run-.* again when it's fixed/);
+    await h.answer(ANSWER);
+    const good = capture();
+    expect(await handoffDone(h.root, h.runId, good.io)).toBe(0);
+    expect(good.out.join("\n")).toMatch(/Run the step again with --resume/);
+  });
+
+  it("a resume whose answer failed says what failed before handing the next attempt over", async () => {
+    const h = await handedOff();
+    await h.answer(BAD);
+    // As an answer that was handed in as it is (its checks used up) reaches the resume.
+    await h.runtime.done(h.runId);
+    const c = capture();
+    expect(
+      await knowledgeScan(h.root, { resume: h.runId }, { runtime: h.runtime, now: NOW }, c.io),
+    ).toBe(0);
+    const text = c.out.join("\n");
+    expect(text).toMatch(
+      /The answer of run run-.* failed 1 check, handed back with the next prompt:/,
+    );
+    expect(text).toMatch(/request made-up: quote: .*the quote is not on the page/);
+    expect(c.out.at(-1)).toMatch(/^Handed the knowledge scan to your assistant \(run run-/);
   });
 });

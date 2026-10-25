@@ -1,4 +1,4 @@
-import { readdir, stat } from "node:fs/promises";
+import { readdir, readFile, stat } from "node:fs/promises";
 import { dirname, join, relative, sep } from "node:path";
 import { parse } from "yaml";
 import { gapNameOf } from "./gaps.js";
@@ -148,6 +148,32 @@ const YAML = (n: string) => /\.ya?ml$/.test(n);
 /** The catalog folders the index reads, relative to the metarepo. */
 export const CATALOG_DIRS = ["catalog/generated", "catalog/curated"];
 
+/** The knowledge source the metarepo's inputs/ is (ADR 0122). */
+const INPUTS_SOURCE = "inputs";
+
+/** The files of inputs/ its newest snapshot lists as skipped, as root-relative paths. */
+async function inputsSkipped(kdir: string): Promise<Set<string>> {
+  const dir = join(kdir, "snapshots", INPUTS_SOURCE);
+  const newest = (await readdir(dir).catch(() => [] as string[]))
+    .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d))
+    .sort()
+    .at(-1);
+  if (!newest) return new Set();
+  try {
+    const m = parse(await readFile(join(dir, newest, "snapshot.yaml"), "utf8")) as {
+      skipped?: { page?: unknown }[];
+    } | null;
+    return new Set(
+      (m?.skipped ?? [])
+        .map((x) => (typeof x?.page === "string" ? x.page.replace(/\\/g, "/") : ""))
+        .filter(Boolean)
+        .map((p) => (p.startsWith("inputs/") ? p : `inputs/${p}`)),
+    );
+  } catch {
+    return new Set();
+  }
+}
+
 /** Every file the index reads, sorted by path. */
 export async function listSources(root: string): Promise<SourceFile[]> {
   const found: { abs: string; source: SourceKind }[] = [];
@@ -223,6 +249,9 @@ export async function listSources(root: string): Promise<SourceFile[]> {
       d.isDirectory(),
     );
     for (const s of sources) {
+      // B2: the snapshot of inputs/ (ADR 0122) holds the documents read below from the files
+      // themselves (ADR 0116), so each is indexed once, cited by its own file.
+      if (s.name === INPUTS_SOURCE) continue;
       const dates = (await readdir(join(sdir, s.name), { withFileTypes: true }).catch(() => []))
         .filter((d) => d.isDirectory() && /^\d{4}-\d{2}-\d{2}$/.test(d.name))
         .map((d) => d.name)
@@ -240,10 +269,13 @@ export async function listSources(root: string): Promise<SourceFile[]> {
     add("profile")(files);
   }
   {
-    // ADR 0116: the documents dropped into inputs/ that the document ingestor reads.
+    // ADR 0116: the documents dropped into inputs/ that the document ingestor reads, less those
+    // the newest sync of inputs/ skipped (B2): a copy of a wiki page, a file dropped twice, an
+    // older version, a page above the classification limit. None of those is read.
     const files: string[] = [];
     await walk(join(root, "inputs"), (n) => DOCUMENT_EXTENSIONS.test(n), files);
-    add("document")(files);
+    const skipped = await inputsSkipped(kdir);
+    add("document")(files.filter((f) => !skipped.has(rel(root, f))));
   }
   const out: SourceFile[] = [];
   const seen = new Set<string>();

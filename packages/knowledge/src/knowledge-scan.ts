@@ -1272,6 +1272,71 @@ export async function scanKnowledge(
 const sameSet = (a: string[], b: string[]) =>
   a.length === b.length && [...a].sort().join("\n") === [...b].sort().join("\n");
 
+/**
+ * The scan's checks of one answer, on their own (B2): what `atticus handoff done` lists for a
+ * knowledge scan handed off, as a stage's own checks are listed for its draft. The shape, each
+ * item's quote on its page and the values tied to it, an id used twice, an item from a page
+ * that is superseded, and each conflict, superseded page and flagged passage, as the scan
+ * checks them. The values only a judge settles (ADR 0117) are left to the scan's resume.
+ */
+export function checkScanAnswer(snapshots: Snapshot[], output: string): string[] {
+  const pages = snapshots.flatMap((s) => s.pages.map((p) => preparePage(p, s)));
+  const quarantined = pages.flatMap((p) => p.quarantined);
+  let answer: z.infer<typeof AnswerIn>;
+  try {
+    const a = AnswerIn.safeParse(parse(unfence(output)) ?? {});
+    if (!a.success)
+      return [`the answer isn't in the asked shape: ${fmt(a.error.issues).join("; ")}`];
+    answer = a.data;
+  } catch (e) {
+    return [`the answer isn't YAML: ${(e as Error).message.split("\n")[0]}`];
+  }
+  const problems: string[] = [];
+  const superseded = frontMatterSuperseded(pages);
+  for (const s of answer.superseded) {
+    const c = checkSuperseded(s, pages);
+    if ("problem" in c) problems.push(c.problem);
+    else superseded.push(c.ok);
+  }
+  const oldPages = new Map(superseded.map((s) => [`${s.old.source}/${s.old.page}`, s]));
+  const failed: FailedItem[] = [];
+  const ids = new Set<string>();
+  for (const raw of answer.items) {
+    const c = checkItem(raw, pages, quarantined);
+    if ("failed" in c) {
+      failed.push(c.failed);
+      continue;
+    }
+    const { item, page } = c.ok;
+    if (ids.has(item.id)) {
+      failed.push({ id: item.id, kind: item.kind, problems: ["the id is used by another item"] });
+      continue;
+    }
+    const by = oldPages.get(`${page.page.source}/${page.page.pagePath}`);
+    if (by) {
+      failed.push({
+        id: item.id,
+        kind: item.kind,
+        problems: [
+          `${page.page.pagePath} is superseded by ${by.new.page}; nothing on it is a current rule`,
+        ],
+      });
+      continue;
+    }
+    ids.add(item.id);
+  }
+  for (const raw of answer.conflicts) {
+    const c = checkConflict(raw, pages, ids);
+    if ("problem" in c) problems.push(c.problem);
+  }
+  for (const raw of answer.injections) {
+    const c = checkInjection(raw, pages);
+    if (typeof c === "string") problems.push(c);
+  }
+  for (const f of failed) problems.push(`${f.kind} ${f.id}: ${f.problems.join("; ")}`);
+  return problems;
+}
+
 function handBack(output: string, problems: string[], attempt: number): SourceInput[] {
   return [
     {

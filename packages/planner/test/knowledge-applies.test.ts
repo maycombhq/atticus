@@ -7,6 +7,7 @@ import {
   confirmedKnowledge,
   excludedKnowledge,
   knowledgeAppliesMarkdown,
+  plainWhy,
   readKnowledgeApplies,
   recordKnowledge,
   setKnowledgeStatus,
@@ -104,6 +105,63 @@ describe("knowledge that applies to a change, listed (ADR 0124, Part 5)", () => 
     expect(await confirmedKnowledge(root, "add-limit", ["ProcessDefinition"])).toEqual([]);
     await expect(setKnowledgeStatus(root, "add-limit", "nope", "confirmed")).rejects.toThrow(
       /not in .*knowledge\.yaml/,
+    );
+  });
+
+  // B2 (e): a person reads a title, not an index id, and why in words, not the search's internals.
+  it("keeps each item's title, and says why in plain words", async () => {
+    const root = metarepo();
+    await recordKnowledge(
+      root,
+      "add-limit",
+      "feature",
+      report(
+        [
+          {
+            id: "forge-wiki/limits.md#Daily limits",
+            kind: "WikiSection",
+            level: "full",
+            score: 1.2,
+            name: "Limits › Daily limits",
+            via: 'search (words #2, the model\'s "transfer status" #5, title #1)',
+          },
+          {
+            id: "vendor-onboarding",
+            kind: "ProcessDefinition",
+            level: "line",
+            score: 1,
+            name: "Vendor onboarding",
+            via: "northwind-pay quoted-on vendor-onboarding (item page)",
+          },
+        ],
+        [{ id: "decision.c", kind: "Decision", score: 0.2, name: "Freeze in December" }],
+      ),
+    );
+    const doc = (await readKnowledgeApplies(root, "add-limit"))!;
+    expect(doc.items.map((i) => i.title)).toEqual(["Limits › Daily limits", "Vendor onboarding"]);
+    expect(doc.nearMisses[0]!.title).toBe("Freeze in December");
+    expect(plainWhy(doc.items[0]!)).toBe(
+      'Its words match the change\'s title and words, and "transfer status".',
+    );
+    expect(plainWhy(doc.items[1]!)).toBe("Linked to northwind-pay, which the change leads to.");
+    expect(plainWhy({ id: "a", why: "named in the input" })).toBe("The change names it.");
+    expect(
+      plainWhy({
+        id: "a",
+        why: "named in the input (the model's reading, an id the index has)",
+      }),
+    ).toBe("The change names it.");
+    expect(plainWhy({ id: "a", why: "a person" })).toBe("A person added it.");
+    expect(plainWhy({ id: "a", why: "search (what is named #1, words #2)" })).toBe(
+      "Its words match the change's words, and what the change names.",
+    );
+    expect(plainWhy({ id: "a", why: "search (similar in meaning #1 (cos 0.62))" })).toBe(
+      "It is close in meaning to the change.",
+    );
+    expect(plainWhy({ id: "a" })).toBeUndefined();
+    const md = knowledgeAppliesMarkdown(doc);
+    expect(md).toContain(
+      '- WikiSection Limits › Daily limits [forge-wiki/limits.md#Daily limits] (suggested; feature; Its words match the change\'s title and words, and "transfer status".)',
     );
   });
 

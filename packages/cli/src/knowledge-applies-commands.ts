@@ -27,7 +27,7 @@ export async function changeKnowledge(
   const doc = await readKnowledgeApplies(root, change);
   if (!doc) {
     io.err(
-      `${change} has no knowledge list yet: the feature stage picks none; the architecture stage writes ${changesRelOf(root)}/${change}/knowledge.yaml with the patterns, standards and decisions it picks, and the stories stage adds the processes and requests (atticus change architecture ${change}).`,
+      `${change} has no knowledge list yet: its feature stage writes ${changesRelOf(root)}/${change}/knowledge.yaml with the patterns, standards, decisions, processes and requests and the wiki and document sections it picks, and every later stage adds what it picks (atticus change feature ${change}).`,
     );
     return 2;
   }

@@ -48,6 +48,7 @@ import { PlannerError } from "../errors.js";
 import { instructionSource, wholeLists, type ContextReport } from "../engine.js";
 import { pastCorrectionsSource } from "./past-corrections.js";
 import { recordKnowledge } from "./knowledge-applies.js";
+import { isStandard, processLine, standardLine } from "./knowledge-lines.js";
 import { estateContext } from "./estate-context.js";
 import { GENERATED_MARK } from "../render.js";
 import { slug } from "../words.js";
@@ -2856,15 +2857,27 @@ Rules:
     ...(past ? ["", past.rule] : []),
   ].join("\n");
 
-  // The processes the target flows call for (ADR 0107), or every one.
-  const processLine = (p: Process) =>
-    `${p.processKind} ${p.id} "${p.title}": applies when ${p.appliesWhen.replace(/[.\s]+$/, "")}${p.leadTime ? `; lead time ${p.leadTime}` : ""}`;
+  // The processes the target flows call for (ADR 0107), or every one; and (B2 c) the standards,
+  // with their rules in full, since a story's Context names "a standard, a vendor's rule". An
+  // integration pattern is the architecture stage's: never selected here.
   const byId = new Map(items.map((p) => [p.id, p]));
+  const knowledgeItems = (await readKnowledge(root)).items;
+  const standards = new Map(
+    knowledgeItems
+      .filter((i): i is RecordOf<"Pattern"> => i.kind === "Pattern" && isStandard(i))
+      .map((i) => [i.id, i] as const),
+  );
+  const notStandards = knowledgeItems
+    .filter((i) => i.kind === "Pattern" && !isStandard(i))
+    .map((i) => i.id);
   const whole: SourceInput = {
     id: "processes",
     kind: "document",
     origin: "knowledge/items (ADR 0083)",
-    text: itemsText || "No process or request is in the knowledge items.",
+    text:
+      [itemsText, ...[...standards.values()].map((st) => standardLine(st, "full"))]
+        .filter(Boolean)
+        .join("\n") || "No process or request is in the knowledge items.",
     classification: "internal",
     priority: 80,
   };
@@ -2888,22 +2901,25 @@ Rules:
       budget: stageBudget(ctx, STORY_AGENT),
       others: [instructionSource(instructions), ...sources],
       ...(o.context ? { context: o.context } : {}),
-      exclude: [change.id],
+      exclude: [change.id, ...notStandards],
       change: change.id,
       ai: stageRetrievalAi(ctx, o, `plan stories ${change.id}`),
       origin: "knowledge/items (ADR 0083)",
       priority: 80,
       knowledge: {
-        kinds: ["ProcessDefinition"],
-        line: (id) => {
+        kinds: ["ProcessDefinition", "Pattern"],
+        line: (id, level) => {
           const p = byId.get(id);
-          return p ? processLine(p) : undefined;
+          if (p) return processLine(p);
+          const st = standards.get(id);
+          return st ? standardLine(st, level) : undefined;
         },
         id: "processes",
         origin: "knowledge/items (ADR 0083), selected",
         priority: 80,
         empty: "No process or request in the knowledge items matches the target flows.",
       },
+      sections: { origin: "the wikis and documents (ADR 0116), selected", priority: 79 },
     },
   );
   if (selected && "waiting" in selected)

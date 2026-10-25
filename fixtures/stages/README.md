@@ -59,6 +59,13 @@ the `BenchStory` draft `atticus bench stories --change` makes of them and `stori
 and `bench/stories/forge-fraud-check.yaml`, an invented reference story (with a forge-web
 checkout step the draft lacks) to score it against.
 
+`wiki/` is the knowledge each stage picks (B2, 2026-10-25): `snapshots/forge-wiki/2026-10-01/`, a
+snapshot of three invented wiki pages (Northwind Pay's fraud screen, whose timeouts and verdict
+webhook no item covers; vendor onboarding; the integration standards), and `knowledge.yaml`, a
+standard with its rules (`outbound-call-timeouts`) and two integration patterns read from those
+pages (`vendor-partner-gateway`, and `managed-file-transfer`, which shares no words with the
+fraud check). `packages/planner/test/stage-knowledge.test.ts` copies it in itself.
+
 Everything here is invented.
 
 `corrections/` is the drafted-against-merged scenario (H1 to H3, ADR 0087 addendum, 2026-10-25).

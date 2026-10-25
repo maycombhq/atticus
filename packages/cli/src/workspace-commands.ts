@@ -21,6 +21,12 @@ import { NAMING_CHANGE, NAMING_OUTPUT } from "@maycombhq/features";
 import { GLOSSARY_CHANGE, GLOSSARY_OUTPUT } from "@maycombhq/glossary";
 import { lensAnswerProblem, lensRunOf } from "@maycombhq/naysayer";
 import {
+  checkScanAnswer,
+  KNOWLEDGE_SCAN_OUTPUT,
+  readSnapshot,
+  type Snapshot,
+} from "@maycombhq/knowledge";
+import {
   STORY_PROSE_OUTPUT,
   checkStageDraft,
   formatDraftProblems,
@@ -230,6 +236,27 @@ export async function handoffDone(
     }
     return [formatDraftProblems(problems)];
   };
+  // B2: the knowledge scan's answer is checked here as the scan checks it (each quote on its
+  // page, the values tied to it, the superseded pages), against the pages it was given, and the
+  // run stays open to fix; after the scan's attempts it goes in as it is, and the resume hands
+  // what still fails back with the next prompt.
+  const scanChecked = async (file: string, request: AiRequest): Promise<string[]> => {
+    if (request.change !== "knowledge-scan" || request.outputPath !== KNOWLEDGE_SCAN_OUTPUT)
+      return [];
+    const problems = checkScanAnswer(
+      await scanSnapshots(root, request),
+      await readFile(file, "utf8").catch(() => ""),
+    );
+    if (!problems.length) return [];
+    if (checks >= SCAN_CHECKS) {
+      handedAsIs = checks;
+      return [];
+    }
+    return [
+      `The answer fails ${problems.length === 1 ? "a check" : `${problems.length} checks`} the knowledge scan makes; fix each in ${request.outputPath} (or drop the item):`,
+      ...problems.map((p) => `- ${p}`),
+    ];
+  };
   const rt = new HandoffRuntime({
     root,
     validate: async (_file, request) => {
@@ -249,7 +276,9 @@ export async function handoffDone(
             ? []
             : [`${request.outputPath} is empty`];
         const yaml = await yamlAnswerProblems(_file, request);
-        return yaml.length ? yaml : selfChecked(_file, request);
+        if (yaml.length) return yaml;
+        const scan = await scanChecked(_file, request);
+        return scan.length ? scan : selfChecked(_file, request);
       }
       // The hand-up lens's review must be one, as a critic lens's must (yamlAnswerProblems).
       if (completionOf(request) === "hand-up") {
@@ -307,7 +336,9 @@ export async function handoffDone(
     if (kind === "step-answer") {
       if (handedAsIs)
         io.out(
-          `${run.request.outputPath} still has problems, and is handed in as it is after ${handedAsIs} checks: the stage hands its problems back with the next draft.`,
+          run.request.change === "knowledge-scan"
+            ? `${run.request.outputPath} still has problems, and is handed in as it is after ${handedAsIs} checks: the knowledge scan keeps what passes and hands the rest back with its next prompt.`
+            : `${run.request.outputPath} still has problems, and is handed in as it is after ${handedAsIs} checks: the stage hands its problems back with the next draft.`,
         );
       io.out(
         `The answer for ${run.request.change} is in. Run the step again with --resume ${runId}: it checks the answer and writes the result.`,
@@ -324,6 +355,23 @@ export async function handoffDone(
     `${run.request.outputPath} needs fixing; run atticus handoff done ${runId} again when it's fixed`,
   );
   return 1;
+}
+
+/** A knowledge scan's answer is checked by handoff done this many times, as the scan's attempts. */
+const SCAN_CHECKS = 3;
+
+/** The snapshots' pages a knowledge scan's run was given (its pack's page sources), newest. */
+async function scanSnapshots(root: string, request: AiRequest): Promise<Snapshot[]> {
+  const sent = new Set(
+    request.pack.manifest.sources.filter((s) => s.id.startsWith("page-")).map((s) => s.origin),
+  );
+  const out: Snapshot[] = [];
+  for (const source of [...new Set([...sent].map((o) => o.split("/")[0]!))].sort()) {
+    const s = await readSnapshot(root, source).catch(() => undefined);
+    if (!s) continue;
+    out.push({ ...s, pages: s.pages.filter((p) => sent.has(`${p.source}/${p.pagePath}`)) });
+  }
+  return out;
 }
 
 /** A run's state and attempt, read off its run.json in whichever change folder holds it. */

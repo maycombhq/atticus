@@ -51,6 +51,8 @@ export const KnowledgeApplies = z.strictObject({
         why: z.string().optional(),
         /** Where it lives, when the index knows the file. */
         file: z.string().optional(),
+        /** What a person knows it by: an item's title, a section's heading path (B2). */
+        title: z.string().optional(),
       }),
     )
     .default([]),
@@ -62,6 +64,7 @@ export const KnowledgeApplies = z.strictObject({
         kind: z.string().min(1),
         score: z.number(),
         stage: z.string(),
+        title: z.string().optional(),
       }),
     )
     .default([]),
@@ -121,6 +124,7 @@ export async function recordKnowledge(
       cur.score = Math.max(cur.score, p.score);
       if (!cur.why && p.via) cur.why = p.via;
       if (!cur.file && p.file) cur.file = p.file;
+      if (!cur.title && p.name) cur.title = p.name;
     } else
       byId.set(p.id, {
         id: p.id,
@@ -130,6 +134,7 @@ export async function recordKnowledge(
         score: p.score,
         ...(p.via ? { why: p.via } : {}),
         ...(p.file ? { file: p.file } : {}),
+        ...(p.name ? { title: p.name } : {}),
       });
   }
   doc.items = [...byId.values()];
@@ -137,7 +142,13 @@ export async function recordKnowledge(
     ...doc.nearMisses.filter((n) => n.stage !== stage),
     ...left
       .filter((l) => !byId.has(l.id))
-      .map((l) => ({ id: l.id, kind: l.kind, score: l.score, stage })),
+      .map((l) => ({
+        id: l.id,
+        kind: l.kind,
+        score: l.score,
+        stage,
+        ...(l.name ? { title: l.name } : {}),
+      })),
   ];
   await write(root, doc);
 }
@@ -157,7 +168,15 @@ export async function setKnowledgeStatus(
   else {
     const near = doc.nearMisses.find((n) => n.id === id);
     if (!near) throw new Error(`${id} is not in ${rel}: name an item or a near-miss it lists.`);
-    doc.items.push({ id, kind: near.kind, status, stages: [], score: near.score, why: "a person" });
+    doc.items.push({
+      id,
+      kind: near.kind,
+      status,
+      stages: [],
+      score: near.score,
+      why: "a person",
+      ...(near.title ? { title: near.title } : {}),
+    });
     doc.nearMisses = doc.nearMisses.filter((n) => n.id !== id);
   }
   await write(root, doc);
@@ -189,14 +208,77 @@ export async function confirmedKnowledge(
     .sort();
 }
 
+/** The names of the rankings a search hit's way in may name (the index's fuse, ADR 0116). */
+const RANKING =
+  /(the model's "([^"]*)"|synonyms of "([^"]*)"|similar in meaning|what is named|title|words) #\d+(?: \([^)]*\))?/g;
+
+const and = (xs: string[]) =>
+  xs.length <= 1 ? (xs[0] ?? "") : `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}`;
+
+/**
+ * Why an item was picked, in plain words (B2): the selection's own account (`why`: a search's
+ * rankings and ranks, the link it was reached by) is for a person debugging the search; this is
+ * for a person deciding whether it applies. Undefined when nothing says why; words it doesn't
+ * know come back as they are.
+ */
+export function plainWhy(i: { id: string; why?: string | undefined }): string | undefined {
+  const w = i.why?.trim();
+  if (!w) return undefined;
+  if (w.startsWith("named in the input")) return "The change names it.";
+  if (w === "a person") return "A person added it.";
+  const search = /^search \((.*)\)$/s.exec(w);
+  if (search) {
+    const own = new Set<string>();
+    const terms: string[] = [];
+    const others: string[] = [];
+    let meaning = false;
+    for (const m of search[1]!.matchAll(RANKING)) {
+      if (m[2] !== undefined) terms.push(`"${m[2]}"`);
+      else if (m[3] !== undefined) others.push(`another name for "${m[3]}"`);
+      else if (m[1] === "similar in meaning") meaning = true;
+      else own.add(m[1]!);
+    }
+    const mine = ["title", "words"].filter((x) => own.has(x));
+    const groups = [
+      ...(mine.length ? [`the change's ${and(mine)}`] : []),
+      ...(own.has("what is named") ? ["what the change names"] : []),
+      ...terms,
+      ...others,
+    ];
+    const words = groups.length
+      ? `Its words match ${groups.length > 1 ? `${groups.slice(0, -1).join(", ")}, and ${groups.at(-1)}` : groups[0]}.`
+      : "";
+    if (meaning)
+      return words
+        ? `${words} It is close in meaning too.`
+        : "It is close in meaning to the change.";
+    return words || "The search found it.";
+  }
+  // A link the walk followed: "<from> <type> <to> (<how>)", one end of it the item.
+  const at = w.lastIndexOf(" (");
+  const core = at > 0 && w.endsWith(")") ? w.slice(0, at) : w;
+  let other: string | undefined;
+  if (core.startsWith(`${i.id} `)) {
+    const rest = core.slice(i.id.length + 1);
+    const sp = rest.indexOf(" ");
+    other = sp > 0 ? rest.slice(sp + 1) : undefined;
+  } else if (core.endsWith(` ${i.id}`)) {
+    const head = core.slice(0, -(i.id.length + 1));
+    const sp = head.lastIndexOf(" ");
+    other = sp > 0 ? head.slice(0, sp) : undefined;
+  }
+  return other ? `Linked to ${other}, which the change leads to.` : w;
+}
+
 /** The list for a hand-off PR or the app: what applies, and what nearly did. */
 export function knowledgeAppliesMarkdown(doc: KnowledgeApplies): string {
   const shown = doc.items.filter((i) => i.status !== "excluded");
   const lines = ["### Applies to this change", ""];
   if (!shown.length) lines.push("Nothing in the org's knowledge was picked for this change.");
   for (const i of shown) {
-    const why = [i.status, i.stages.join(", "), i.why].filter(Boolean).join("; ");
-    lines.push(`- ${i.kind} ${i.id} (${why})${i.file ? `: ${i.file}` : ""}`);
+    const why = [i.status, i.stages.join(", "), plainWhy(i)].filter(Boolean).join("; ");
+    const name = i.title ? `${i.title} [${i.id}]` : i.id;
+    lines.push(`- ${i.kind} ${name} (${why})${i.file ? `: ${i.file}` : ""}`);
   }
   const excluded = doc.items.filter((i) => i.status === "excluded");
   if (excluded.length)

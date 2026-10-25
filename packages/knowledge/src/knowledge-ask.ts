@@ -1,6 +1,6 @@
 import { parse, stringify } from "yaml";
 import { z } from "zod";
-import { knowledgeKindOf, type OrgPack } from "@maycombhq/core";
+import { AgentDefinition, knowledgeKindOf, type OrgPack } from "@maycombhq/core";
 import {
   buildContextPack,
   resumedAttempt,
@@ -9,7 +9,7 @@ import {
   type SourceInput,
 } from "@maycombhq/ai";
 import {
-  knowledgeReaderAgent,
+  KNOWLEDGE_READER,
   type KnowledgeConflict,
   type KnowledgeRecord,
 } from "./knowledge-scan.js";
@@ -24,6 +24,27 @@ import { itemTitle } from "./knowledge-store.js";
  */
 
 export const KNOWLEDGE_ASK_OUTPUT = "knowledge-answers.yaml";
+
+/** The agent that answers `knowledge ask` (B2: it was the scan's reader, introduced as one). */
+export const KNOWLEDGE_ASKER = "knowledge-asker";
+
+export function knowledgeAskerAgent(
+  orgPack?: Pick<OrgPack, "agents" | "runtime">,
+): AgentDefinition {
+  const own = orgPack?.agents.find((a) => a.id === KNOWLEDGE_ASKER);
+  if (own) return own;
+  return AgentDefinition.parse({
+    schemaVersion: 1,
+    id: KNOWLEDGE_ASKER,
+    role: "architect",
+    description:
+      "Answers questions from the organisation's knowledge items only: each answer cites the items it rests on, and says when two pages disagree. It never answers from anything else.",
+    inputs: ["documents"],
+    outputArtifact: "specs",
+    tokenBudget: orgPack?.runtime.budgets.defaultTokens ?? 150_000,
+    allowedRuntimes: ["hand-off", "model", "headless-claude-code", "mock", "replay"],
+  });
+}
 
 const STOP = new Set(
   "a an and are as at be before by can do does for from get has have how i in is it its may me must need needs of on or our should so that the their them then there these this to us we what when where which who why will with without you your long take takes".split(
@@ -228,14 +249,18 @@ export async function askKnowledge(
     for (const { item, score: s } of ranked[k]!)
       score.set(item.id, Math.max(score.get(item.id) ?? 0, s));
   const byId = new Map(o.items.map((r) => [r.id, r]));
-  const agent = knowledgeReaderAgent(o.orgPack);
+  const agent = knowledgeAskerAgent(o.orgPack);
   const levels = o.orgPack?.pack?.classification ?? [
     "public",
     "internal",
     "confidential",
     "restricted",
   ];
-  const budget = o.orgPack?.runtime.budgets.perAgent[agent.id] ?? agent.tokenBudget;
+  // A budget set for the reader before ask had its own agent still holds for ask.
+  const budget =
+    o.orgPack?.runtime.budgets.perAgent[agent.id] ??
+    o.orgPack?.runtime.budgets.perAgent[KNOWLEDGE_READER] ??
+    agent.tokenBudget;
   // Questions keep their own numbers, so an answer can't land on the wrong one.
   const asked = open.map((k) => ({ n: k + 1, q: questions[k]! }));
   const task: SourceInput = {
