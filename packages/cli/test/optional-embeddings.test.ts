@@ -4,7 +4,7 @@ import { mkdtemp } from "node:fs/promises";
 import * as nodeModule from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
 
 /**
@@ -17,7 +17,8 @@ import { describe, expect, it } from "vitest";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PACKAGES = join(HERE, "../..");
 const BIN = join(HERE, "../dist/bin.js");
-const HOOK = join(HERE, "no-embeddings-hook.mjs");
+// --import takes a URL: a Windows path (C:\...) would read as a URL scheme.
+const HOOK = pathToFileURL(join(HERE, "no-embeddings-hook.mjs")).href;
 
 const plugin = (name: string) =>
   /^@maycombhq\/(embed|embed-model|onnxruntime-[a-z0-9-]+)$/.test(name) ||
