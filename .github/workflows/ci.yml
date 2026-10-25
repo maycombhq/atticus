@@ -82,6 +82,11 @@ jobs:
       - run: pnpm bundle --with-embeddings
       - run: node scripts/bundle/test-bundle.mjs dist/atticus-*-offline-embeddings.zip
         shell: bash
+      # The embeddings plugin zip, installed next to the default bundle; its fetch step takes the
+      # pinned files from the cache above, offline, and the install then searches by meaning.
+      - run: pnpm bundle --embeddings-plugin
+      - run: node scripts/bundle/test-bundle.mjs dist/atticus-*-offline.zip --plugin dist/atticus-*-embeddings-plugin.zip --plugin-from .cache/pinned
+        shell: bash
       - uses: actions/upload-artifact@v4
         with:
           name: atticus-offline-${{ matrix.os }}

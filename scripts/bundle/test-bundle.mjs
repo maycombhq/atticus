@@ -2,14 +2,32 @@
 // pnpm bundle:test <zip>: install the offline bundle the way a person would, into a throwaway
 // home folder, with no network, and use it: version, a practice sandbox, doctor, a scan, the
 // app's health call. On Windows it runs install.ps1, elsewhere install.sh.
-import { execFileSync, spawn } from "node:child_process";
+// --plugin <atticus-x.y.z-embeddings-plugin.zip> (with the default bundle): then installs the
+// embeddings plugin next to it and checks its fetch step finds the model missing; with
+// --plugin-from <folder> (the pinned files, any names, such as .cache/pinned) the step fills them
+// offline and the install searches by meaning.
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
-const zipFile = process.argv[2];
-if (!zipFile || !existsSync(zipFile)) {
-  console.error("Usage: node scripts/bundle/test-bundle.mjs <atticus-x.y.z-offline.zip>");
+const argv = process.argv.slice(2);
+const option = (name) => {
+  const i = argv.indexOf(name);
+  return i >= 0 ? argv.splice(i, 2)[1] : undefined;
+};
+const pluginZip = option("--plugin");
+const pluginFrom = option("--plugin-from");
+const zipFile = argv[0];
+if (
+  !zipFile ||
+  !existsSync(zipFile) ||
+  (pluginZip !== undefined && !existsSync(pluginZip)) ||
+  (pluginFrom !== undefined && !pluginZip)
+) {
+  console.error(
+    "Usage: node scripts/bundle/test-bundle.mjs <atticus-x.y.z-offline.zip> [--plugin <atticus-x.y.z-embeddings-plugin.zip> [--plugin-from <folder>]]",
+  );
   process.exit(2);
 }
 const win = process.platform === "win32";
@@ -89,25 +107,15 @@ if (embeddings !== carries)
       ? "the bundle doesn't carry the embedding model (@maycombhq/embed-model)"
       : "the default bundle carries the embedding model; it should leave the plugin out",
   );
-if (!embeddings) {
-  if (existsSync(join(dir, "node_modules", "@maycombhq", "embed")))
-    throw new Error("the default bundle carries @maycombhq/embed");
-  const doctor = atticus("doctor", "--root", root)
+const embeddingLine = () =>
+  atticus("doctor", "--root", root)
     .split("\n")
     .find((l) => /Embedding model/.test(l));
+const searchesByMeaning = (what) => {
+  const doctor = embeddingLine();
   console.log(doctor);
-  if (!/\[ok\].*not installed.*words and names/.test(doctor ?? ""))
-    throw new Error(`doctor didn't say the embedding plugin is left out: ${doctor}`);
-  const hits = atticus("query", "ledger", "--search", "--root", root);
-  if (!hits.trim()) throw new Error("the default bundle didn't search by words");
-  console.log("The default bundle searches by words and names, without the embedding plugin.");
-} else {
-  const doctor = atticus("doctor", "--root", root)
-    .split("\n")
-    .find((l) => /Embedding model/.test(l));
-  console.log(doctor);
-  if (!/\[ok\].*all-minilm-l6-v2.*runtime: native/.test(doctor ?? ""))
-    throw new Error(`doctor didn't find the bundled model and its runtime: ${doctor}`);
+  if (!/\[ok\].*all-minilm-l6-v2.*runtime: (native|wasm)/.test(doctor ?? ""))
+    throw new Error(`doctor didn't find ${what} and its runtime: ${doctor}`);
   console.log(atticus("index", "embed", "--root", root).trim().split("\n").at(-1));
   const hits = atticus(
     "query",
@@ -119,8 +127,79 @@ if (!embeddings) {
     root,
   );
   if (!/similar in meaning, cos/.test(hits))
-    throw new Error(`the bundled model didn't search by meaning:\n${hits}`);
-  console.log("The bundled embedding model searches by meaning offline.");
+    throw new Error(`${what} didn't search by meaning:\n${hits}`);
+  console.log(`${what} searches by meaning offline.`);
+};
+if (!embeddings) {
+  if (existsSync(join(dir, "node_modules", "@maycombhq", "embed")))
+    throw new Error("the default bundle carries @maycombhq/embed");
+  const doctor = embeddingLine();
+  console.log(doctor);
+  if (!/\[ok\].*not installed.*words and names/.test(doctor ?? ""))
+    throw new Error(`doctor didn't say the embedding plugin is left out: ${doctor}`);
+  const hits = atticus("query", "ledger", "--search", "--root", root);
+  if (!hits.trim()) throw new Error("the default bundle didn't search by words");
+  console.log("The default bundle searches by words and names, without the embedding plugin.");
+} else searchesByMeaning("The bundled embedding model");
+
+// ADR 0124 addendum D-bundle: the embeddings plugin zip, installed next to the default bundle.
+// It carries the packages and their pins, not the model's or onnxruntime's bytes: its fetch step
+// fills them, from --plugin-from here (offline), or says what is missing.
+if (pluginZip) {
+  if (embeddings) throw new Error("--plugin goes with the default bundle, not --with-embeddings");
+  const pluginUnpacked = join(work, "plugin");
+  if (win)
+    run("powershell", [
+      "-NoProfile",
+      "-Command",
+      `Expand-Archive -LiteralPath '${pluginZip}' -DestinationPath '${pluginUnpacked}'`,
+    ]);
+  else run("unzip", ["-q", pluginZip, "-d", pluginUnpacked]);
+  const [ptop] = existsSync(pluginUnpacked) ? readdirSync(pluginUnpacked) : [];
+  if (ptop !== `atticus-${version}-embeddings-plugin`)
+    throw new Error(`the plugin zip holds ${ptop}, not atticus-${version}-embeddings-plugin`);
+  const pdir = join(pluginUnpacked, ptop);
+  if (existsSync(join(pdir, "node_modules", "@maycombhq", "embed-model", "model.onnx")))
+    throw new Error("the plugin zip carries the model; its fetch step should add it");
+  const added = win
+    ? run("powershell", [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        join(pdir, "install.ps1"),
+      ])
+    : run("sh", [join(pdir, "install.sh")]);
+  console.log(added.trim().split("\n")[0]);
+  if (!/Added the embedding plugin/.test(added))
+    throw new Error(`the plugin's install didn't say it added the plugin:\n${added}`);
+  const step = join(dirname(dirname(installed)), "embeddings-plugin", "fetch-model.mjs");
+  const fetchModel = (...args) =>
+    spawnSync(process.execPath, [step, ...args], { encoding: "utf8", env });
+  const check = fetchModel("--check");
+  if (check.status !== 1 || !/model\.onnx/.test(check.stdout))
+    throw new Error(
+      `the fetch step didn't say the model is missing:\n${check.stdout}${check.stderr}`,
+    );
+  const doctor = embeddingLine();
+  console.log(doctor);
+  if (!/\[ok\].*model\.onnx isn't there.*words and names/.test(doctor ?? ""))
+    throw new Error(`doctor didn't say the plugin's model isn't fetched yet: ${doctor}`);
+  if (!atticus("query", "ledger", "--search", "--root", root).trim())
+    throw new Error("with the plugin and no model, the install didn't search by words");
+  if (pluginFrom) {
+    const filled = fetchModel("--from", pluginFrom, "--offline");
+    console.log(filled.stdout.trim());
+    if (filled.status !== 0) throw new Error(`the fetch step failed:\n${filled.stderr}`);
+    searchesByMeaning("The embeddings plugin");
+  } else {
+    const offline = fetchModel("--offline");
+    if (offline.status !== 1 || !/--list names every file it needs/.test(offline.stderr))
+      throw new Error(`the fetch step didn't fail offline as it should:\n${offline.stderr}`);
+    console.log(
+      "The embeddings plugin installs next to the default bundle; its fetch step finds the model missing and, offline, says how to bring it.",
+    );
+  }
 }
 
 // --show-token: since ADR 0119 the token is printed only when asked for (or for an editor).

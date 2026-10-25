@@ -1,5 +1,6 @@
-// pnpm bundle [out-dir] [--with-embeddings]: the offline install bundle (ADR 0052). One zip with
-// everything Atticus needs to install and run with no package registry: the built command line
+// pnpm bundle [out-dir] [--with-embeddings | --embeddings-plugin]: the offline install bundle
+// (ADR 0052). One zip with everything Atticus needs to install and run with no package
+// registry: the built command line
 // and app, every production dependency, the Forge practice fixtures, install scripts for Windows,
 // macOS and Linux, SHA256SUMS, a CycloneDX SBOM and the third-party licences. Node.js itself is
 // not inside: organisations install it through their own software catalogue (22.13 or later).
@@ -9,21 +10,14 @@
 // out the embedding model and its runtime (@maycombhq/embed, @maycombhq/embed-model, the
 // @maycombhq/onnxruntime-* packages and onnxruntime-common): retrieval is words and names (FTS5,
 // BM25) and the graph walk, and doctor says so. --with-embeddings (or ATTICUS_BUNDLE_EMBEDDINGS=1)
-// puts them in, as before, in a zip named ...-offline-embeddings.zip.
+// puts them in, as before, in a zip named ...-offline-embeddings.zip. --embeddings-plugin (or
+// ATTICUS_BUNDLE_EMBEDDINGS_PLUGIN=1) builds instead the small zip that adds them to an installed
+// default bundle, ...-embeddings-plugin.zip: the packages and their pins, without the model or
+// onnxruntime's files, which its fetch step fills (scripts/bundle/embeddings-plugin.mjs).
 import { execFileSync } from "node:child_process";
-import { createHash } from "node:crypto";
-import {
-  cpSync,
-  existsSync,
-  lstatSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
-import { basename, join, relative, sep } from "node:path";
-import { pathToFileURL } from "node:url";
+import { cpSync, existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { layOutPlugin, pluginName, writeChecksums, writeZip } from "./embeddings-plugin.mjs";
 import {
   cyclonedx,
   deploy,
@@ -36,12 +30,17 @@ import {
   REPO,
 } from "./inventory.mjs";
 
-const { zip } = await import(pathToFileURL(join(REPO, "packages/core/dist/index.js")).href);
 const VERSION = JSON.parse(readFileSync(join(REPO, "packages/cli/package.json"), "utf8")).version;
 const NAME = `atticus-${VERSION}`;
 const args = process.argv.slice(2);
 const withEmbeddings =
   args.includes("--with-embeddings") || process.env.ATTICUS_BUNDLE_EMBEDDINGS === "1";
+const plugin =
+  args.includes("--embeddings-plugin") || process.env.ATTICUS_BUNDLE_EMBEDDINGS_PLUGIN === "1";
+if (plugin && withEmbeddings) {
+  console.error("--with-embeddings and --embeddings-plugin build different zips: pick one.");
+  process.exit(2);
+}
 const outDir = args.find((a) => !a.startsWith("--")) ?? join(REPO, "dist");
 const now = new Date(
   process.env.SOURCE_DATE_EPOCH ? Number(process.env.SOURCE_DATE_EPOCH) * 1000 : Date.now(),
@@ -55,6 +54,21 @@ if (!built.includes(`"${VERSION}"`)) {
   );
   process.exit(1);
 }
+
+// ---- the embeddings plugin zip: the deploy's embedding packages only, no model, no runtime.
+if (plugin) {
+  const deployed = deploy();
+  const out = join(outDir, `${pluginName(VERSION)}.zip`);
+  const dir = join(dirname(deployed), pluginName(VERSION));
+  const r = layOutPlugin(deployed, dir, { version: VERSION, timestamp: now.toISOString() });
+  const z = await writeZip({ dir, name: pluginName(VERSION), outFile: out, now });
+  removeDeploy(deployed);
+  console.log(
+    `Wrote ${out} (${(z.bytes / 1024 / 1024).toFixed(2)} MB, ${z.entries} files: ${r.packages.join(", ")}${r.fromRepo.length ? `; from the repo: ${r.fromRepo.join(", ")}` : ""}). Left for its fetch step: ${r.left.length ? `${r.left.length} pinned files` : "every pinned file (the model's and onnxruntime's; none was filled in this checkout)"}.\nsha256 ${z.sha256}`,
+  );
+  process.exit(0);
+}
+
 // ---- the local embedding model (ADR 0116 addendum), only with --with-embeddings: the packages
 // npm installs with the CLI, @maycombhq/embed-model and this platform's
 // @maycombhq/onnxruntime-<platform> with the WASM fallback, filled with their pinned files first
@@ -211,46 +225,19 @@ writeFileSync(
         ]
       : [
           "Search by meaning is an optional plugin this bundle leaves out: Atticus searches by words",
-          "and names, and atticus doctor says so. A bundle built with --with-embeddings carries it.",
+          "and names, and atticus doctor says so. atticus-<version>-embeddings-plugin.zip adds it",
+          "to this install (its README says how); a bundle built with --with-embeddings carries it.",
         ]),
     "",
   ].join("\r\n"),
 );
 
 // ---- checksums and the zip
-const files = [];
-const walk = (d) => {
-  for (const e of readdirSync(d).sort()) {
-    const f = join(d, e);
-    const st = lstatSync(f);
-    // node_modules/.bin isn't needed: Atticus runs dist/bin.js with node. On Linux pnpm makes
-    // those links, on Windows real .cmd/.ps1 files, so skip the folder for the same zip on both.
-    if (st.isSymbolicLink() || (e === ".bin" && st.isDirectory())) continue;
-    if (st.isDirectory()) walk(f);
-    else files.push(f);
-  }
-};
-walk(dir);
-const rel = (f) => relative(dir, f).split(sep).join("/");
-const sums = files
-  .filter((f) => rel(f) !== "SHA256SUMS")
-  .map((f) => `${createHash("sha256").update(readFileSync(f)).digest("hex")}  ${rel(f)}`)
-  .join("\n");
-writeFileSync(join(dir, "SHA256SUMS"), `${sums}\n`);
-if (!files.some((f) => rel(f) === "SHA256SUMS")) files.push(join(dir, "SHA256SUMS"));
-const entries = files.map((f) => ({
-  name: `${NAME}/${rel(f)}`,
-  data: readFileSync(f),
-  mode: rel(f) === "install.sh" || rel(f).endsWith("/bin.js") ? 0o755 : 0o644,
-}));
-mkdirSync(outDir, { recursive: true });
+writeChecksums(dir);
 const out = join(outDir, `${NAME}-offline${withEmbeddings ? "-embeddings" : ""}.zip`);
-const buf = zip(entries, now);
-writeFileSync(out, buf);
-const sha = createHash("sha256").update(buf).digest("hex");
-writeFileSync(`${out}.sha256`, `${sha}  ${basename(out)}\n`);
+const z = await writeZip({ dir, name: NAME, outFile: out, now });
 removeDeploy(dir);
 console.log(
-  `Wrote ${out} (${(buf.length / 1024 / 1024).toFixed(1)} MB, ${entries.length} files, ${items.filter((i) => !i.own).length} third-party packages).\nsha256 ${sha}`,
+  `Wrote ${out} (${(z.bytes / 1024 / 1024).toFixed(1)} MB, ${z.entries} files, ${items.filter((i) => !i.own).length} third-party packages).\nsha256 ${z.sha256}`,
 );
 if (!existsSync(out)) process.exit(1);
