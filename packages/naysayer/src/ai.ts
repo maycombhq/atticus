@@ -3,7 +3,6 @@ import { z } from "zod";
 import {
   AgentDefinition,
   changesRelOf,
-  isCriticQuestion,
   LEGACY_LENSES,
   Lens,
   lensCovers,
@@ -11,7 +10,6 @@ import {
   toCanonicalYaml,
   type CatalogRecord,
   type CriticQuestion,
-  type LegacyLens,
   type RunSummary,
 } from "@maycombhq/core";
 import {
@@ -88,17 +86,6 @@ const ALL_INPUTS = [
   "checklist",
 ] as const;
 
-/** Who an old lens's default agent worked for (the spec hand-up still asks for code-and-test). */
-const LEGACY_ROLES: Record<LegacyLens, string> = {
-  business: "product-owner",
-  architecture: "architect",
-  story: "business-analyst",
-  ux: "designer",
-  delivery: "delivery-lead",
-  "code-and-test": "developer",
-  release: "delivery-lead",
-};
-
 const LENS_DESCRIPTION: Record<CriticQuestion, string> = {
   true: "The critic's true lens: is the change true to the code? Looks for a draft that contradicts how the code and the estate behave.",
   complete:
@@ -114,27 +101,14 @@ const LENS_DESCRIPTION: Record<CriticQuestion, string> = {
  * were: what any of them read, only the runtimes all of them allow, the largest budget. Else the
  * built-in default. Throws when the old agents allow no runtime in common: the org pack decides.
  *
- * Asked by an old lens's name (the spec hand-up's code-and-test review of a task, which isn't a
- * gate lens), it is that lens's agent as before: the org pack's `<lens>-critic`, else a default.
+ * Asked by an old lens's name, it is the agent of the question that lens maps to. There is no
+ * built-in agent of an old lens any more: the spec hand-up's review of a task, the last to ask
+ * for one (code-and-test), asks the complete question (the product owner's decision of
+ * 2026-10-24), and an org pack's code-and-test-critic is one of the old agents its lens is made of.
  */
 export function lensAgent(ctx: CriticContext, lens: LensName): AgentDefinition {
   const agents = ctx.lifecycle.orgPack.agents;
-  if (!isCriticQuestion(lens)) {
-    const named = agents.find((a) => a.id === `${lens}-critic`);
-    if (named) return named;
-    return AgentDefinition.parse({
-      schemaVersion: 1,
-      id: `${lens}-critic`,
-      role: LEGACY_ROLES[lens],
-      description: `The critic's ${lens} lens: looks for reasons the change's artifacts are wrong.`,
-      inputs: [...ALL_INPUTS],
-      outputArtifact: "findings",
-      checklist: "constitution",
-      tokenBudget: ctx.lifecycle.orgPack.runtime.budgets.defaultTokens,
-      allowedRuntimes: ["hand-off", "model", "headless-claude-code", "mock", "replay"],
-    });
-  }
-  const q = lens;
+  const q = questionOfLens(lens);
   const own = agents.find((a) => a.id === `${q}-critic`);
   if (own) return own;
   const legacy = LEGACY_LENSES.filter((l) => lensCovers(l).includes(q))
@@ -528,9 +502,7 @@ export function parseLensOutput(
           ? {
               question: {
                 text: f.question!.text,
-                owner:
-                  f.question!.owner ??
-                  (isCriticQuestion(lens) ? QUESTION_ROLES[lens] : LEGACY_ROLES[lens]),
+                owner: f.question!.owner ?? QUESTION_ROLES[questionOfLens(lens)],
               },
             }
           : {}),

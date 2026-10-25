@@ -211,7 +211,7 @@ describe("atticus spec hand-down, hand-up and drift", () => {
       expect(c.out[0]).toBe(
         "Task 1.2 is handed up from PR https://git.example.com/forge/forge-ledger/pull/7 and marked done in tasks.md.",
       );
-      expect(c.out).toContain("  The code-and-test lens raised 0 findings.");
+      expect(c.out).toContain("  The complete lens raised 0 findings.");
       expect(c.out.at(-1)).toBe("  Drift: 6 findings.");
     },
     T,

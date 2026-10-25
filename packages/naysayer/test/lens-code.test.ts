@@ -45,7 +45,7 @@ async function root(o: { workspace?: boolean } = {}) {
   await writeFile(
     gates,
     (await readFile(gates, "utf8")).replace(
-      /(approvers: \[team-lead\]\r?\n\s+checklists: \[forge-architecture)\]/,
+      /(approvers: \[team-lead\]\r?\n\s+checklists: \[forge-architecture[^\]]*)\]/,
       "$1, pin-review]",
     ),
   );

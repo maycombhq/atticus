@@ -1,4 +1,7 @@
-# Contract C5 agent definition (fixture). The critic's code and test lens, run in a fresh session.
+# Contract C5 agent definition (fixture). The old code-and-test lens's agent, kept to show that an org
+# pack which still defines it keeps working: with no complete-critic, the complete lens (at the
+# gates and at the spec hand-up) is made of it and the other old agents that reviewed what is now
+# the complete question. Here complete-critic is defined, so it takes over.
 schemaVersion: 1
 id: code-and-test-critic
 role: developer

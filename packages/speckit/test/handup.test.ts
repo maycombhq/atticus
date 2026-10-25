@@ -1,8 +1,8 @@
 import { existsSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { parse } from "yaml";
+import { parse, stringify } from "yaml";
 import { MockGitHost } from "@maycombhq/adapters";
 import { HandoffRuntime, MockRuntime, type AiRequest } from "@maycombhq/ai";
 import { handDown, handUp } from "../src/index.js";
@@ -67,7 +67,7 @@ async function ready() {
 
 describe("hand-up", () => {
   it(
-    "marks the task done, attaches plan.md and tasks.md, runs the code-and-test lens and the drift check",
+    "marks the task done, attaches plan.md and tasks.md, runs the complete lens and the drift check",
     async () => {
       const { root, host, pr } = await ready();
       const seen: AiRequest[] = [];
@@ -120,9 +120,18 @@ describe("hand-up", () => {
         tests: ["tasks/1.2/evidence/tests/src__test__java__forge__ledger__TransferLimitsTest.java"],
       });
 
-      // The lens saw the evidence as data and the code-and-test rules of the org and the owning team.
-      expect(r.lens).toMatchObject({ state: "ran", agent: "code-and-test-critic" });
+      // The complete question's lens (the product owner's decision of 2026-10-24) saw the
+      // evidence as data, with the rules of the org and the owning team that review a task's
+      // code and tests: those written for the old code-and-test lens, and complete rules that read
+      // code or tests. The team's other complete rules read the brief, specs and stories.
+      expect(r.lens).toMatchObject({ state: "ran", agent: "complete-critic" });
       expect(r.lens.rules.sort()).toEqual(["plan-tests-first", "tests-cover-scenarios"]);
+      expect(seen[0]!.agent.id).toBe("complete-critic");
+      expect(seen[0]!.outputPath).toBe("tasks/1.2/review-complete.yaml");
+      expect(seen[0]!.pack.prompt).toContain(
+        "# Critic: the complete lens (Is it complete?), at hand-up",
+      );
+      expect(seen[0]!.pack.prompt).not.toContain("code-and-test");
       expect(seen[0]!.pack.prompt).toContain('<atticus-data id="tasks/1.2/evidence/tasks.md"');
       expect(seen[0]!.pack.prompt).toContain("refusesOverTheLimit");
       expect(r.lens.discarded.map((d) => d.reason)).toEqual([
@@ -167,6 +176,64 @@ describe("hand-up", () => {
         state: "skipped",
         reason: "no AI runtime was given; review plan.md and tasks.md by hand",
       });
+    },
+    T,
+  );
+
+  it(
+    "takes a complete rule written for the question that reads tests, and an org pack's old code-and-test agent",
+    async () => {
+      const { root, host } = await ready();
+      // No complete-critic in this org pack: the hand-up's lens is made of the old
+      // code-and-test-critic it still defines, as the gate lenses are (ADR 0124 addendum, Part 4).
+      await rm(join(root, "org-pack/agents/complete-critic.yaml"));
+      await writeFile(
+        join(root, "org-pack/checklists/tests.yaml"),
+        stringify({
+          schemaVersion: 1,
+          name: "tests",
+          version: "1.0.0",
+          rules: [
+            {
+              id: "error-paths-tested",
+              title: "Each error path has a test",
+              layer: "org",
+              lens: "complete",
+              appliesTo: { artifacts: ["tests", "specs"] },
+              severity: "risk",
+              check: {
+                type: "ai",
+                prompt: "For each error scenario, find its test; report one with none, quoting it.",
+              },
+              waivable: false,
+              source: "test",
+            },
+          ],
+        }),
+      );
+      const seen: AiRequest[] = [];
+      const runtime = new MockRuntime((req) => {
+        seen.push(req);
+        return "findings: []\n";
+      });
+      const r = await handUp(root, CHANGE, "1.2", {
+        by: "dev",
+        now: NOW,
+        gitHost: host,
+        runtime,
+        git,
+      });
+      expect(r.lens.state).toBe("ran");
+      expect(r.lens.rules.sort()).toEqual([
+        "error-paths-tested",
+        "plan-tests-first",
+        "tests-cover-scenarios",
+      ]);
+      expect(r.lens.agent).toBe("complete-critic");
+      expect(seen[0]!.agent.description).toMatch(
+        /Made from the org pack's code-and-test-critic\.$/,
+      );
+      expect(seen[0]!.agent.allowedRuntimes).toEqual(["hand-off", "mock", "replay"]);
     },
     T,
   );

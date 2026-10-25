@@ -8,7 +8,9 @@
 # Each rule answers one of the four questions the critic asks of every draft (ADR 0124 addendum,
 # Part 4): is it true to the code, is it complete, is it safe to build, can it ship. `question` says
 # which; `lens` keeps the role lens the rule was first written for, so a pack that tightens it with
-# that lens still matches. The four rules added with the questions are written for theirs.
+# that lens still matches. The two rules added with the questions are written for theirs; the
+# timeout and rollback checks added with them are the starter review's (starter/review.yaml), the
+# organisation's to change (the product owner's decision of 2026-10-24).
 schemaVersion: 1
 name: constitution
 version: 1.0.0
@@ -232,21 +234,8 @@ rules:
     needs: []
 
   # ---- added with the four questions (ADR 0124 addendum, Part 4): code answers what code can.
-
-  - id: constitution.call-timeout-stated
-    title: Every synchronous call the change plans has a timeout
-    description: A call with no timeout waits as long as the callee does. The fact is a timeout Setting for the caller and callee in the catalog, or a timeout stated for the call in interfaces.md or design.md; a pattern that requires more is the resilience rule's.
-    layer: constitution
-    lens: safe
-    question: safe
-    appliesTo: { artifacts: [interfaces, design, catalog] }
-    severity: risk
-    check:
-      type: deterministic
-      check: call-timeout-stated
-    waivable: false
-    source: Atticus constitution
-    needs: []
+  # Never waivable (the product owner's decision of 2026-10-24); a person may still dismiss a
+  # finding as not relevant, with a reason.
 
   - id: constitution.public-entry-auth
     title: Every entry another system calls says how it authenticates
@@ -274,21 +263,6 @@ rules:
     check:
       type: deterministic
       check: breaking-delta-consumers
-    waivable: false
-    source: Atticus constitution
-    needs: []
-
-  - id: constitution.store-write-rollback
-    title: Every store write has a rollback step
-    description: A table the change writes or alters (data.md, or a write step of a target flow) is named, or its migration is, under the rollback heading of design.md.
-    layer: constitution
-    lens: ship
-    question: ship
-    appliesTo: { artifacts: [data, design, catalog] }
-    severity: risk
-    check:
-      type: deterministic
-      check: store-write-rollback
     waivable: false
     source: Atticus constitution
     needs: []

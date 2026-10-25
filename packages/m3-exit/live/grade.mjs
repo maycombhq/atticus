@@ -11,7 +11,7 @@
 //   b  critic AI lenses      round 1 at the plan gate as the agent's own `handoff done` runs left
 //                            it, compared with expected/findings.yaml by the suite's match rule
 //   c  task runner           task 1.2 built, `drift` says "No drift.", `trace` links code to s2
-//   d  code-and-test lens    the lens ran at hand-up and raised no blocking finding
+//   d  complete lens         the lens ran at hand-up and raised no blocking finding
 //   e  namers, glossary,     collected into for-a-person.md; no pass or fail
 //      templates
 //
@@ -246,21 +246,24 @@ async function gradeTask(runDir) {
   return (noDrift && linked ? pass : fail)(reason, { attempts, noDrift, linked });
 }
 
-// ------------------------------------------------------------------ d: code-and-test lens at hand-up
+// ------------------------------------------------------------------ d: complete lens at hand-up
 
 async function gradeHandup(runDir) {
   const root = metarepoOf(runDir, "handup");
   if (!(await exists(root))) return fail("the sandbox is missing");
   const dir = changeDirOf(root);
   const runs = (await yamlFiles(join(dir, "tasks/1.2/runs"))).map(([, r]) => r);
-  const lens = runs.find((r) => r.agent === "code-and-test-critic");
+  // The hand-up asks the complete question (2026-10-24); a sandbox from before ran code-and-test.
+  const lens = runs.find(
+    (r) => r.agent === "complete-critic" || r.agent === "code-and-test-critic",
+  );
   if (!lens)
     return fail(
-      "the code-and-test lens never ran (spec hand-up not run, or its hand-off not finished)",
+      "the complete lens never ran at hand-up (spec hand-up not run, or its hand-off not finished)",
     );
   if (lens.state !== "validated")
     return fail(
-      `the code-and-test lens run ended ${lens.state}: ${(lens.errors ?? []).join("; ")}`,
+      `the complete lens run at hand-up ended ${lens.state}: ${(lens.errors ?? []).join("; ")}`,
     );
   const findings = [];
   const base = join(dir, "review/hand-up");

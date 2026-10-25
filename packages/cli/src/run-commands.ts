@@ -291,8 +291,8 @@ export async function specHandUp(
     for (const e of r.evidence) io.out(`  evidence: ${changesRelOf(root)}/${r.change}/${e}`);
     const lens =
       r.lens.state === "ran"
-        ? `the code-and-test lens raised ${plural(r.review?.findings.filter((f) => f.finding.artifact.startsWith(`tasks/${r.task}/`)).length ?? 0, "finding")}`
-        : `the code-and-test lens ${r.lens.state === "waiting" ? "is waiting" : `was ${r.lens.state}`}${r.lens.reason ? `: ${r.lens.reason}` : ""}`;
+        ? `the complete lens raised ${plural(r.review?.findings.filter((f) => f.finding.artifact.startsWith(`tasks/${r.task}/`)).length ?? 0, "finding")}`
+        : `the complete lens ${r.lens.state === "waiting" ? "is waiting" : `was ${r.lens.state}`}${r.lens.reason ? `: ${r.lens.reason}` : ""}`;
     io.out(`  ${lens[0]!.toUpperCase()}${lens.slice(1)}.`);
     io.out(`  Drift: ${r.drift.found.length ? plural(r.drift.found.length, "finding") : "none"}.`);
     return r.drift.found.some((f) => f.severity === "blocking") ? 1 : 0;

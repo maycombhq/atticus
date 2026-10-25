@@ -1,21 +1,25 @@
 # Built-in default written out by Atticus: the starter review (ADR 0120). Change it through a
 # pull request; delete the file to turn the starter review off (atticus upgrade won't add it back).
 #
-# These are AI rules: the critic's lenses apply them to every draft a stage writes (ADR 0115) and
-# at each gate's critic round, judging what the draft means against the estate and the brief.
+# Most are AI rules: the critic's lenses apply them to every draft a stage writes (ADR 0115) and
+# at each gate's critic round, judging what the draft means against the estate and the brief. The
+# last two are code checks (a call's timeout, a store write's rollback step) that run before any
+# lens, with no model.
 # This is the organisation's configuration, not the constitution: change a prompt or a severity,
 # make a blocking rule not waivable, retire a rule (status: retired) or delete it, and add your own.
 # A rule runs from the first gate where its artifacts are due (brief: define; design, data and
-# interfaces: design; stories and tasks: plan), and again at each later gate. Contract C3.
+# interfaces: design; stories and tasks: plan; the catalog: every gate), and again at each later
+# gate. Contract C3.
 #
 # Each rule asks part of one of the critic's four questions (ADR 0124 addendum, Part 4): is it true
 # to the code, is it complete, is it safe to build, can it ship. `question` says which, and that
-# question's lens applies it; `lens` names the role lens it was written for, which decides the
-# change types it applies to (a type lists the lenses it uses).
+# question's lens applies it, to the change types that ask it (a type lists its questions). `lens`
+# names the role lens an AI rule was written for: a change type that still lists the old lens
+# names takes the rule when it lists that lens.
 schemaVersion: 1
 name: review
 version: 1.0.0
-description: The starter review. AI rules for the critic's true, complete, safe and ship lenses, from the define gate to the plan gate.
+description: The starter review. AI rules for the critic's true, complete, safe and ship lenses, from the define gate to the plan gate, and two code checks of the safe and ship questions.
 rules:
   # ---- define: the feature placement, against the brief and the estate
   - id: review.brief-outcomes-placed
@@ -200,3 +204,38 @@ rules:
         or the task.
     waivable: false
     source: Atticus starter review
+
+  # ---- code checks of the four questions (ADR 0124 addendum, Part 4; the product owner's decision
+  # of 2026-10-24): what code can answer before a model is asked, kept here rather than in the
+  # constitution so the organisation can change them. Each finding is a risk, which a person may
+  # dismiss with a reason; raise a rule to blocking to make it hold the gate (and waivable or not),
+  # retire it (status: retired) or delete it.
+  - id: review.call-timeout-stated
+    title: Every synchronous call the change plans has a timeout
+    description: A call with no timeout waits as long as the callee does. The fact is a timeout Setting for the caller and callee in the catalog, or a timeout stated for the call in interfaces.md or design.md; a pattern that requires more is the resilience rule's.
+    lens: safe
+    question: safe
+    layer: org
+    appliesTo: { artifacts: [interfaces, design, catalog] }
+    severity: risk
+    check:
+      type: deterministic
+      check: call-timeout-stated
+    waivable: false
+    source: Atticus starter review
+    needs: []
+
+  - id: review.store-write-rollback
+    title: Every store write has a rollback step
+    description: A table the change writes or alters (data.md, or a write step of a target flow) is named, or its migration is, under the rollback heading of design.md.
+    lens: ship
+    question: ship
+    layer: org
+    appliesTo: { artifacts: [data, design, catalog] }
+    severity: risk
+    check:
+      type: deterministic
+      check: store-write-rollback
+    waivable: false
+    source: Atticus starter review
+    needs: []

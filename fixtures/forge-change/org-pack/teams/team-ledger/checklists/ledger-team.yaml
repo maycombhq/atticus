@@ -202,8 +202,8 @@ rules:
   - id: tests-cover-scenarios
     title: Tests cover every spec scenario
     layer: team
-    # The spec hand-up reviews code and tests with the code-and-test lens's agent (packages/speckit);
-    # at the gates this rule asks the complete question.
+    # Written for the old code-and-test lens, kept so the fixture shows such a rule still works: it
+    # asks the complete question, at the gates and at the spec hand-up (packages/speckit).
     lens: code-and-test
     question: complete
     appliesTo: { artifacts: [code, tests] }
