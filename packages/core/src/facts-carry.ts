@@ -29,12 +29,18 @@ export interface StaleCite {
 const filesOfCite = (c: Cite): string[] => [c.file, ...(c.with ?? []).map((p) => p.file)];
 
 /**
- * The files a fact rests on: its cite and the cite's `with` parts, and for a flow every step's
- * and error path's cite and parts. Unique and sorted, except that a fact's own cited file comes
- * first for a non-flow fact.
+ * The files a fact rests on: its cite and the cite's `with` parts, an entry's `authCite` (ADR
+ * 0124 addendum A-read), and for a flow every step's and error path's cite and parts. Unique and
+ * sorted, except that a fact's own cited file comes first for a non-flow fact.
  */
 export function citedFiles(f: Fact): string[] {
-  if (f.kind !== "flow") return [...new Set(filesOfCite(f.cite))];
+  if (f.kind !== "flow")
+    return [
+      ...new Set([
+        ...filesOfCite(f.cite),
+        ...(f.kind === "entry" && f.authCite ? [f.authCite.file] : []),
+      ]),
+    ];
   const all = new Set<string>(filesOfCite(f.cite));
   for (const s of f.steps) for (const p of filesOfCite(s.cite)) all.add(p);
   for (const e of f.errors) for (const p of filesOfCite(e.cite)) all.add(p);

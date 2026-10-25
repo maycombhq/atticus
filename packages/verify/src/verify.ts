@@ -1,4 +1,5 @@
 import {
+  citedFiles,
   claimOnLines,
   lineNamesClaim,
   partsBuildWord,
@@ -21,6 +22,7 @@ import { applyCorrections, type AppliedCorrection, type StaleCorrection } from "
 import { derivedHolds, derivedNamesAt, type DeriveEnv, type DerivedName } from "./derived.js";
 import { isDataFile, isLocaleBundle } from "./not-product.js";
 import { pageRouteMatches } from "./pages.js";
+import { isGlob, type ReviewedEntry } from "./reviewed.js";
 import { insideRepo, type FileSource } from "./source.js";
 
 /**
@@ -57,21 +59,69 @@ export type RejectCode =
    */
   | "cite-changed";
 
-export interface Rejected {
-  fact: Fact;
+/** One thing wrong with a fact. */
+export interface Problem {
   code: RejectCode;
   message: string;
 }
 
+export interface Rejected {
+  fact: Fact;
+  /** The first problem's code. */
+  code: RejectCode;
+  /** The first problem's message, or every problem's, numbered, when there are several. */
+  message: string;
+  /**
+   * Every problem the fact has, in the order found, when there is more than one (ADR 0124
+   * addendum A-read): so a fact with two faults is fixed in one loop, not two.
+   */
+  problems?: Problem[];
+}
+
 export interface Coverage {
-  /** Source files a kept fact cites, or the reader opened through Atticus's tools. */
+  /**
+   * Source files a kept fact cites (its cite, `cite.with`, an entry's `authCite`, a flow's steps
+   * and error paths and their parts), or the reader opened through Atticus's tools.
+   */
   read: string[];
-  /** Source files nobody can show were read. Never "excused" on the reader's word. */
+  /**
+   * Source files the reader says it read and found no fact in (`<repo>.reviewed.jsonl`, ADR 0124
+   * addendum A-read): on its word, so counted apart from read and listed with why.
+   */
+  reviewed: string[];
+  /** Source files nobody can show or says were read. Never "excused" on the reader's word. */
   unknown: string[];
   /** Source files left out by an accepted exclusion rule (generated code, vendored copies). */
   excluded: string[];
-  /** read / (read + unknown), three decimals; 1 when the repo has no source files. */
+  /**
+   * read / (read + reviewed + unknown), three decimals; 1 when the repo has no source files.
+   * What facts show, so a reviewed file never raises it.
+   */
   ratio: number;
+}
+
+/** A line of `<repo>.reviewed.jsonl` that holds, with the source files it stands for. */
+export interface ReviewedFiles {
+  path: string;
+  why: string;
+  /** The source files it covers that no kept fact cites (those are read), sorted. */
+  files: string[];
+}
+
+/** A line of `<repo>.reviewed.jsonl` refused: its path names no file of the repo at the commit. */
+export interface ReviewedProblem {
+  line?: number;
+  path: string;
+  why: string;
+  message: string;
+}
+
+/** An entry whose `auth` was left out because no line was cited for it (`authCite`). */
+export interface UncitedAuth {
+  id: string;
+  auth: string;
+  /** The entry's own cite, `file:line`. */
+  cite: string;
 }
 
 export interface VerifyReport {
@@ -94,6 +144,15 @@ export interface VerifyReport {
    * so the reader writes a flow for each that does real work. In id order.
    */
   entriesNoFlowFollows: UnfollowedEntry[];
+  /** The reviewed lines that hold, each with the files it stands for (A-read). */
+  reviewed: ReviewedFiles[];
+  /** The reviewed lines refused, each with why (A-read). */
+  reviewedProblems: ReviewedProblem[];
+  /**
+   * A note, not a rejection (A-read): the kept entries whose `auth` was left out because no line
+   * that sets it was cited (`authCite`). In id order.
+   */
+  authUncited: UncitedAuth[];
 }
 
 /** An entry no flow starts: its id, type, method and path, and where it is cited (`file:line`). */
@@ -157,6 +216,11 @@ export interface VerifyOptions {
    * fact marked wrong is left out, an edited one is the person's fact and is checked as any is.
    */
   corrections?: readonly FactCorrection[];
+  /**
+   * Files the reader read and found no fact in (`<repo>.reviewed.jsonl`, `parseReviewed`): each
+   * path must be a file of the repo, or a glob matching one; coverage counts them apart.
+   */
+  reviewed?: readonly ReviewedEntry[];
 }
 
 const SOURCE_EXT =
@@ -316,7 +380,9 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
     cite: Cite,
     claims: Claim[] | undefined,
     label: string,
-  ): { code: RejectCode; message: string } | undefined => {
+    /** Say that a claim built from other lines cites them in `cite.with` (not for an authCite). */
+    withHint = true,
+  ): Problem | undefined => {
     const where = `${cite.file}:${cite.line}`;
     if (!insideRepo(cite.file))
       return {
@@ -406,7 +472,7 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
     if (claims && !claims.some(holds))
       return {
         code: "claim-not-on-line",
-        message: `${label} claims ${claims.map((c) => `"${c.value}"`).join(" or ")}, which ${where} (or the line either side)${parts.length ? " and its parts" : ""} does not name${parts.length ? "" : "; if it is put together from other lines (a base URL, a prefix, a context path), cite them in cite.with"}`,
+        message: `${label} claims ${claims.map((c) => `"${c.value}"`).join(" or ")}, which ${where} (or the line either side)${parts.length ? " and its parts" : ""} does not name${parts.length || !withHint ? "" : "; if it is put together from other lines (a base URL, a prefix, a context path), cite them in cite.with"}`,
       };
     // A claim written only in a comment (a commented-out example, a scaffold note) isn't code.
     if (claims && !parts.length) {
@@ -432,66 +498,80 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
     return undefined;
   };
 
-  const rejected = new Map<string, Rejected>();
-  const reject = (fact: Fact, code: RejectCode, message: string) =>
-    rejected.set(fact.id, { fact, code, message });
+  // Every problem a fact has is found in one run (A-read, problem 5): its own cite, its auth's,
+  // each step and error path of a flow, and its references. A fact of another commit has one.
+  const found = new Map<string, Problem[]>();
+  const other = new Set<string>();
+  const problem = (fact: Fact, code: RejectCode, message: string) =>
+    found.set(fact.id, [...(found.get(fact.id) ?? []), { code, message }]);
+  const add = (fact: Fact, p: Problem | undefined) => {
+    if (p) problem(fact, p.code, p.message);
+  };
+
+  /** What a flow step claims: none for the kinds a line can't confirm, but a validate's rule is. */
+  const stepClaims = (kind: string, value: string): Claim[] | undefined => {
+    // A-read, problem 3: a validation rule (a range, required, a format) is what a story needs
+    // most, and its value is written on its line, so it is checked as other steps are. C1's
+    // NEVER_CHECKED_STEPS stays as it is: the projection still marks no validate step confirmed
+    // by the check, since a rule's line can't show the rule is applied where the flow says.
+    if (kind === "validate")
+      return value.includes("/")
+        ? [routeOrWord(value), { kind: "word", value }]
+        : [routeOrWord(value)];
+    return (NEVER_CHECKED_STEPS as readonly string[]).includes(kind)
+      ? undefined
+      : [routeOrWord(value)];
+  };
 
   for (const f of facts) {
     const label = `${f.kind} ${f.id}`;
     if (o.commit && !sameCommit(f.commit, o.commit)) {
+      other.add(f.id);
       // a traversal or a secret is reported as such even on another commit
       const early = !insideRepo(f.cite.file)
         ? ("outside-repo" as const)
         : isSecretPath(f.cite.file)
           ? ("secret-path" as const)
           : undefined;
-      if (early) {
-        const c = checkCite(f.cite, undefined, label)!;
-        reject(f, c.code, c.message);
-      } else if (stale.has(f.id))
-        reject(f, "cite-changed", staleMessage(f, stale.get(f.id)!, o.commit));
+      if (early) add(f, checkCite(f.cite, undefined, label));
+      else if (stale.has(f.id))
+        problem(f, "cite-changed", staleMessage(f, stale.get(f.id)!, o.commit));
       else
-        reject(
+        problem(
           f,
           "wrong-commit",
           `${label} was read at ${f.commit}, not at ${o.commit}; read it again`,
         );
       continue;
     }
-    const bad = checkCite(f.cite, claimsOf(f), label);
-    if (bad) {
-      reject(f, bad.code, bad.message);
-      continue;
-    }
+    add(f, checkCite(f.cite, claimsOf(f), label));
+    // A-read, problem 4: an entry's auth rests on the line that sets it, checked as a part is.
+    if (f.kind === "entry" && f.authCite)
+      add(
+        f,
+        checkCite(
+          { ...f.authCite },
+          [{ kind: "word", value: f.authCite.value }],
+          `${label} authCite${f.auth ? ` (auth ${f.auth})` : ""}`,
+          false,
+        ),
+      );
     if (f.kind === "flow") {
-      let flowBad: { code: RejectCode; message: string } | undefined;
-      f.steps.forEach((s, i) => {
-        if (flowBad) return;
-        const checked = !(NEVER_CHECKED_STEPS as readonly string[]).includes(s.kind);
-        flowBad = checkCite(
-          s.cite,
-          checked ? [routeOrWord(s.cite.value)] : undefined,
-          `${label} step ${i + 1}`,
-        );
-      });
-      f.errors.forEach((e, i) => {
-        if (flowBad) return;
-        flowBad = checkCite(e.cite, [routeOrWord(e.cite.value)], `${label} error ${i + 1}`);
-      });
-      if (flowBad) {
-        reject(f, flowBad.code, flowBad.message);
-        continue;
-      }
+      f.steps.forEach((s, i) =>
+        add(f, checkCite(s.cite, stepClaims(s.kind, s.cite.value), `${label} step ${i + 1}`)),
+      );
+      f.errors.forEach((e, i) =>
+        add(f, checkCite(e.cite, [routeOrWord(e.cite.value)], `${label} error ${i + 1}`)),
+      );
     }
   }
 
   // references: dangling first, then whatever names a rejected fact, until nothing changes
   const ids = new Set(facts.map((f) => f.id));
   for (const f of facts) {
-    if (rejected.has(f.id)) continue;
-    const d = refsOf(f).find((r) => !ids.has(r.id));
-    if (d)
-      reject(
+    if (other.has(f.id)) continue;
+    for (const d of refsOf(f).filter((r) => !ids.has(r.id)))
+      problem(
         f,
         "dangling-ref",
         `${f.kind} ${f.id} names ${d.field} "${d.id}", which is no fact in this file`,
@@ -502,41 +582,57 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
   // One that names neither can't say where the flow goes, so the map couldn't write the flow.
   const byId = new Map(facts.map((f) => [f.id, f]));
   for (const f of facts) {
-    if (rejected.has(f.id) || f.kind !== "flow") continue;
-    const i = f.steps.findIndex((s) => {
-      if (s.kind !== "call-out") return false;
+    if (other.has(f.id) || f.kind !== "flow") continue;
+    f.steps.forEach((s, i) => {
+      if (s.kind !== "call-out") return;
       const to = s.ref === undefined ? undefined : byId.get(s.ref);
-      return to?.kind !== "call" && to?.kind !== "config";
+      if (to?.kind === "call" || to?.kind === "config") return;
+      // a ref to no fact at all is said once, as dangling
+      if (s.ref !== undefined && !to) return;
+      const what = s.ref === undefined ? "names no fact" : `names ${to!.kind} ${s.ref}`;
+      problem(
+        f,
+        "call-out-no-call",
+        `flow ${f.id} step ${i + 1} is a call-out that ${what} (${s.cite.file}:${s.cite.line}): give it ref, the id of the call fact it makes, or, for a call through a cloud SDK with no path, the config fact of the client's setting; or make it another kind of step if it calls nothing`,
+      );
     });
-    if (i < 0) continue;
-    const s = f.steps[i]!;
-    const what = s.ref === undefined ? "names no fact" : `names ${byId.get(s.ref)!.kind} ${s.ref}`;
-    reject(
-      f,
-      "call-out-no-call",
-      `flow ${f.id} step ${i + 1} is a call-out that ${what} (${s.cite.file}:${s.cite.line}): give it ref, the id of the call fact it makes, or, for a call through a cloud SDK with no path, the config fact of the client's setting; or make it another kind of step if it calls nothing`,
-    );
   }
   // C-estate: a publish step names the event it publishes (the event-topic or mq-queue call
   // fact), so the estate join can follow it to every listener of the topic.
   for (const f of facts) {
-    if (rejected.has(f.id) || f.kind !== "flow") continue;
-    const i = f.steps.findIndex((s) => {
-      if (s.kind !== "publish") return false;
+    if (other.has(f.id) || f.kind !== "flow") continue;
+    f.steps.forEach((s, i) => {
+      if (s.kind !== "publish") return;
       const to = s.ref === undefined ? undefined : byId.get(s.ref);
-      return to?.kind !== "call" || (to.callType !== "event-topic" && to.callType !== "mq-queue");
+      if (to?.kind === "call" && (to.callType === "event-topic" || to.callType === "mq-queue"))
+        return;
+      if (s.ref !== undefined && !to) return;
+      const what =
+        to === undefined
+          ? "names no fact"
+          : `names ${to.kind === "call" ? `a ${to.callType} call` : to.kind} ${s.ref}`;
+      problem(
+        f,
+        "publish-no-event",
+        `flow ${f.id} step ${i + 1} is a publish that ${what} (${s.cite.file}:${s.cite.line}): give it ref, the id of the event-topic or mq-queue call fact it publishes (write that call fact if there is none); or make it another kind of step if it publishes nothing`,
+      );
     });
-    if (i < 0) continue;
-    const s = f.steps[i]!;
-    const to = s.ref === undefined ? undefined : byId.get(s.ref);
-    const what =
-      to === undefined
-        ? "names no fact"
-        : `names ${to.kind === "call" ? `a ${to.callType} call` : to.kind} ${s.ref}`;
-    reject(
-      f,
-      "publish-no-event",
-      `flow ${f.id} step ${i + 1} is a publish that ${what} (${s.cite.file}:${s.cite.line}): give it ref, the id of the event-topic or mq-queue call fact it publishes (write that call fact if there is none); or make it another kind of step if it publishes nothing`,
+  }
+
+  const rejected = new Map<string, Rejected>();
+  for (const f of facts) {
+    const ps = found.get(f.id);
+    if (!ps?.length) continue;
+    rejected.set(
+      f.id,
+      ps.length === 1
+        ? { fact: f, ...ps[0]! }
+        : {
+            fact: f,
+            code: ps[0]!.code,
+            message: ps.map((p, i) => `(${i + 1}) ${p.message}`).join(" "),
+            problems: ps,
+          },
     );
   }
   for (let changed = true; changed;) {
@@ -545,11 +641,11 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
       if (rejected.has(f.id)) continue;
       const r = refsOf(f).find((x) => rejected.has(x.id));
       if (r) {
-        reject(
-          f,
-          "ref-rejected",
-          `${f.kind} ${f.id} names ${r.field} "${r.id}", which was rejected (${rejected.get(r.id)!.code})`,
-        );
+        rejected.set(f.id, {
+          fact: f,
+          code: "ref-rejected",
+          message: `${f.kind} ${f.id} names ${r.field} "${r.id}", which was rejected (${rejected.get(r.id)!.code})`,
+        });
         changed = true;
       }
     }
@@ -569,6 +665,7 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
     if (q !== c.quote) redacted++;
     return { ...c, quote: q };
   };
+  const authUncited: UncitedAuth[] = [];
   const accepted: Fact[] = facts
     .filter((f) => !rejected.has(f.id))
     .map((f) => {
@@ -577,6 +674,17 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
       // its own results, not this file). Everything else is verified by the line check.
       const verified = f.by === "person" && f.verified !== "none" ? f.verified : "line";
       const base = { ...f, verified, cite: fixQuote(f.cite) } as Fact;
+      // A-read, problem 4: an auth no line is cited for is left out, so the catalog never says
+      // it; a person's own fact keeps it (it is their word, marked as theirs).
+      if (base.kind === "entry" && base.auth !== undefined && !base.authCite && f.by !== "person") {
+        authUncited.push({
+          id: base.id,
+          auth: base.auth,
+          cite: `${base.cite.file}:${base.cite.line}`,
+        });
+        const { auth: _auth, ...rest } = base;
+        return rest as Fact;
+      }
       if (base.kind === "flow")
         return {
           ...base,
@@ -596,17 +704,51 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
     if (excludeRes.some((re) => re.test(p))) excluded.push(p);
     else sources.push(p);
   }
-  // A file is read when a kept fact cites it, or the reader opened it through Atticus's tools. A
-  // flow step's cite doesn't count: a step names its own value, so it is weaker evidence.
+  // A file is read when a kept fact cites it (its cite and parts, an entry's authCite, a flow's
+  // steps and error paths: A-read, problem 1, as `citedFiles` lists them for the carry), or the
+  // reader opened it through Atticus's tools.
   const touched = new Set<string>(o.routed ?? []);
-  for (const f of accepted)
-    if (f.kind !== "flow") {
-      touched.add(f.cite.file);
-      for (const p of f.cite.with ?? []) touched.add(p.file);
+  for (const f of accepted) for (const p of citedFiles(f)) touched.add(p);
+  // A-read, problem 2: what the reader says it read and found nothing in, each path checked.
+  const allFiles = o.source.list();
+  const isSource = new Set(sources);
+  const reviewedSet = new Set<string>();
+  const reviewed: ReviewedFiles[] = [];
+  const reviewedProblems: ReviewedProblem[] = [];
+  for (const r of o.reviewed ?? []) {
+    const refuse = (message: string) =>
+      reviewedProblems.push({
+        ...(r.line !== undefined ? { line: r.line } : {}),
+        path: r.path,
+        why: r.why,
+        message: `${r.line !== undefined ? `line ${r.line}: ` : ""}${r.path} ${message}`,
+      });
+    if (!insideRepo(r.path)) {
+      refuse("is outside the repo");
+      continue;
     }
+    if (isSecretPath(r.path)) {
+      refuse("is a secret's file, which is never read into a map");
+      continue;
+    }
+    const re = isGlob(r.path) ? globToRegExp(r.path) : undefined;
+    const matched = re ? allFiles.filter((p) => re.test(p)) : allFiles.filter((p) => p === r.path);
+    if (!matched.length) {
+      refuse(
+        re
+          ? "matches no file in the repo at this commit; name the files you read"
+          : "is not in the repo at this commit; name a file you read",
+      );
+      continue;
+    }
+    const files = matched.filter((p) => isSource.has(p) && !touched.has(p)).sort();
+    for (const p of files) reviewedSet.add(p);
+    reviewed.push({ path: r.path, why: r.why, files });
+  }
   const read = sources.filter((p) => touched.has(p)).sort();
-  const unknown = sources.filter((p) => !touched.has(p)).sort();
-  const total = read.length + unknown.length;
+  const reviewedFiles = sources.filter((p) => reviewedSet.has(p)).sort();
+  const unknown = sources.filter((p) => !touched.has(p) && !reviewedSet.has(p)).sort();
+  const total = read.length + reviewedFiles.length + unknown.length;
   const ratio = total === 0 ? 1 : Math.round((read.length / total) * 1000) / 1000;
 
   return {
@@ -619,12 +761,15 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
           : r,
       )
       .sort((a, b) => (a.fact.id < b.fact.id ? -1 : a.fact.id > b.fact.id ? 1 : 0)),
-    coverage: { read, unknown, excluded: excluded.sort(), ratio },
+    coverage: { read, reviewed: reviewedFiles, unknown, excluded: excluded.sort(), ratio },
     redacted,
     carried: accepted.flatMap((f) =>
       carriedFrom.has(f.id) ? [{ id: f.id, from: carriedFrom.get(f.id)! }] : [],
     ),
     corrections: { applied: corrected.applied, stale: corrected.stale },
     entriesNoFlowFollows: entriesNoFlowFollows(accepted),
+    reviewed,
+    reviewedProblems,
+    authUncited: authUncited.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)),
   };
 }

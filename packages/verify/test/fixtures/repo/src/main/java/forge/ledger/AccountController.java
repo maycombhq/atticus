@@ -14,7 +14,7 @@ public class AccountController {
   // The caller must hold the ledger.read scope.
   //
   //
-  //
+  @PreAuthorize("hasAuthority('SCOPE_ledger.read')")
   @GetMapping("/accounts/{accountId}")
   public Account get(@PathVariable long accountId) {
     return accounts.findById(accountId).orElseThrow();

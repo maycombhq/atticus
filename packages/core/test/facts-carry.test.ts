@@ -56,6 +56,18 @@ describe("citedFiles", () => {
       "src/main/resources/application.yml",
     ]);
   });
+  it("names the line an entry's auth rests on (ADR 0124 addendum A-read)", () => {
+    const secured = fact({
+      ...entry,
+      auth: "mtls",
+      authCite: { file: "src/main/resources/security.yml", line: 7, value: "client-auth" },
+    });
+    expect(citedFiles(secured)).toEqual([
+      "src/AccountController.java",
+      "src/main/resources/application.yml",
+      "src/main/resources/security.yml",
+    ]);
+  });
   it("names a flow's step and error cites and their parts too", () => {
     expect(citedFiles(flow)).toEqual([
       "src/Account.java",

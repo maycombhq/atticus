@@ -17,8 +17,10 @@ import {
 } from "@maycombhq/core";
 import {
   insideRepo,
+  parseReviewed,
   type CarryChanges,
   type FileSource,
+  type ReviewedEntry,
   type VerifyReport,
 } from "@maycombhq/verify";
 import { changesSince, createGit, type GitRunner } from "@maycombhq/workspace";
@@ -142,7 +144,14 @@ export interface VerifySummary {
   accepted: number;
   rejected: number;
   redacted: number;
-  coverage: { ratio: number; read: number; unknown: string[]; excluded: string[] };
+  coverage: {
+    ratio: number;
+    read: number;
+    /** Files the reader read and found no fact in (ADR 0124 addendum A-read); left out when none. */
+    reviewed?: number;
+    unknown: string[];
+    excluded: string[];
+  };
   rejections: { id: string; code: string; message: string }[];
   /**
    * The facts this run carried from an earlier commit to `commit` (ADR 0124 addendum
@@ -160,6 +169,20 @@ export interface VerifySummary {
    * entries no flow starts, for the reader to follow with a flow each. Left out when none.
    */
   entriesNoFlowFollows?: VerifyReport["entriesNoFlowFollows"];
+  /**
+   * The reader's `<repo>.reviewed.jsonl` lines that hold (ADR 0124 addendum A-read), each with
+   * why and the files it stands for, for a person to challenge. Left out when none.
+   */
+  reviewed?: VerifyReport["reviewed"];
+  /** A note: the entries whose `auth` was left out, no line being cited for it. Left out when none. */
+  authUncited?: VerifyReport["authUncited"];
+}
+
+/** A line of `<repo>.reviewed.jsonl` refused: not an entry, or naming no file of the repo. */
+export interface ReviewedLineProblem {
+  line?: number;
+  raw: unknown;
+  message: string;
 }
 
 /**
@@ -175,6 +198,8 @@ export async function writeVerifyFiles(
   questionProblems: readonly QuestionProblem[] = [],
   /** Lines of the facts file that aren't facts: kept here, with why, so nothing is lost. */
   badLines: readonly { line: number; raw: string; message: string }[] = [],
+  /** Lines of `<repo>.reviewed.jsonl` refused (A-read): kept here, with why, for the reader to fix. */
+  reviewedProblems: readonly ReviewedLineProblem[] = [],
 ): Promise<VerifySummary> {
   const dir = factsDirOf(root);
   await mkdir(dir, { recursive: true });
@@ -188,6 +213,9 @@ export async function writeVerifyFiles(
       JSON.stringify({ code: "bad-question", message: q.message, question: JSON.parse(q.line) }),
     ),
     ...badLines.map((b) => JSON.stringify({ code: "schema", message: b.message, raw: b.raw })),
+    ...reviewedProblems.map((r) =>
+      JSON.stringify({ code: "bad-reviewed", message: r.message, reviewed: r.raw }),
+    ),
   ];
   if (lines.length) await writeFile(rejectedFile, lines.join("\n") + "\n", "utf8");
   else await rm(rejectedFile, { force: true });
@@ -200,6 +228,7 @@ export async function writeVerifyFiles(
     coverage: {
       ratio: report.coverage.ratio,
       read: report.coverage.read.length,
+      ...(report.coverage.reviewed.length ? { reviewed: report.coverage.reviewed.length } : {}),
       unknown: report.coverage.unknown,
       excluded: report.coverage.excluded,
     },
@@ -227,6 +256,8 @@ export async function writeVerifyFiles(
   }
   if (report.entriesNoFlowFollows.length)
     summary.entriesNoFlowFollows = report.entriesNoFlowFollows;
+  if (report.reviewed.length) summary.reviewed = report.reviewed;
+  if (report.authUncited.length) summary.authUncited = report.authUncited;
   await writeFile(join(dir, `${repo}.verify.yaml`), stringify(summary), "utf8");
   return summary;
 }
@@ -243,4 +274,38 @@ export async function readCorrections(
     () => undefined,
   );
   return text === undefined ? { corrections: [], bad: [] } : parseCorrections(text);
+}
+
+/**
+ * The files the reader read and found no fact in (`<repo>.reviewed.jsonl`, ADR 0124 addendum
+ * A-read). None when there is no file; a line that isn't an entry is a problem, not fatal.
+ */
+export async function readReviewed(
+  root: string,
+  repo: string,
+): Promise<{ entries: ReviewedEntry[]; bad: ReviewedLineProblem[] }> {
+  const text = await readFile(join(factsDirOf(root), `${repo}.reviewed.jsonl`), "utf8").catch(
+    () => undefined,
+  );
+  if (text === undefined) return { entries: [], bad: [] };
+  const r = parseReviewed(text);
+  return {
+    entries: r.entries,
+    bad: r.bad.map((b) => ({ line: b.line, raw: b.raw, message: b.message })),
+  };
+}
+
+/** The reviewed lines the verifier refused, as the rejected file and the summary say them. */
+export function reviewedProblemsOf(
+  bad: readonly ReviewedLineProblem[],
+  report: VerifyReport,
+): ReviewedLineProblem[] {
+  return [
+    ...bad,
+    ...report.reviewedProblems.map((p) => ({
+      ...(p.line !== undefined ? { line: p.line } : {}),
+      raw: { path: p.path, why: p.why },
+      message: p.message,
+    })),
+  ].sort((a, b) => (a.line ?? 0) - (b.line ?? 0));
 }

@@ -67,6 +67,8 @@ import {
   headOf,
   raiseReadQuestions,
   readCorrections,
+  readReviewed,
+  reviewedProblemsOf,
   writeVerifyFiles,
   type VerifySummary,
 } from "./facts-files.js";
@@ -807,6 +809,7 @@ async function takeAnswer(
   for (const f of answer.facts) merged.set(f.id, f);
   // Facts of an earlier commit whose files are unchanged are carried (ADR 0124 addendum A-incremental).
   const { carry } = await carryOf(at.dir, [...merged.values()], s.commit, at.git);
+  const reviewed = await readReviewed(root, s.repo);
   const report = await verifyFacts({
     facts: [...merged.values()],
     source,
@@ -815,13 +818,23 @@ async function takeAnswer(
     exclude,
     // ADR 0124 addendum D-app: a person's corrections hold through every batch of a read.
     corrections: (await readCorrections(root, s.repo)).corrections,
+    // ADR 0124 addendum A-read: files the reader read and found nothing in, if it wrote any.
+    reviewed: reviewed.entries,
   });
   const q = await raiseReadQuestions(root, s.repo, answer.questions, source, {
     command: `atticus map ${s.repo}`,
     run: run.runId,
     at: now().toISOString(),
   });
-  const summary = await writeVerifyFiles(root, s.repo, report, s.commit, q.problems);
+  const summary = await writeVerifyFiles(
+    root,
+    s.repo,
+    report,
+    s.commit,
+    q.problems,
+    [],
+    reviewedProblemsOf(reviewed.bad, report),
+  );
   const fresh = new Set(answer.facts.map((f) => f.id));
   const kept = report.accepted.filter((f) => fresh.has(f.id)).length;
   io.out(
@@ -863,7 +876,7 @@ async function finish(root: string, s: MapState, io: Output, o: MapOptions): Pro
     return 0;
   }
   io.out(
-    `Read ${s.repo} in ${batches(s.batches.length)}: ${plural(last.accepted, "fact")} kept in ${rel}/${s.repo}.jsonl, ${last.rejected} still rejected; coverage ${Math.round(last.coverage.ratio * 100)}% (${last.coverage.read} read, ${last.coverage.unknown.length} unknown).`,
+    `Read ${s.repo} in ${batches(s.batches.length)}: ${plural(last.accepted, "fact")} kept in ${rel}/${s.repo}.jsonl, ${last.rejected} still rejected; coverage ${Math.round(last.coverage.ratio * 100)}% (${last.coverage.read} read, ${last.coverage.reviewed ? `${last.coverage.reviewed} reviewed with nothing to record, ` : ""}${last.coverage.unknown.length} unknown).`,
   );
   if (last.rejected)
     io.out(
