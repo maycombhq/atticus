@@ -11,6 +11,7 @@ import { readNeeds } from "./needs.js";
 import { isEmptyDelta, readDeltas, TARGET_DIR } from "./stages/architecture.js";
 import { loadEstate, type Estate } from "./stages/estate.js";
 import {
+  criteriaFor,
   readStoriesAnswer,
   storiesFromDeltas,
   taskPrompt,
@@ -56,7 +57,7 @@ export interface TaskContext {
     worktree?: string;
   };
   story?: { id: string; title: string; text: string; file: string };
-  /** The task's own acceptance criteria. */
+  /** The acceptance criteria that accept the task: its own, then those another task shares (B-once). */
   criteria: string[];
   flow?: {
     id: string;
@@ -238,7 +239,11 @@ export async function taskContext(
     : undefined;
   const sf = storyText ? readStoryFile(storyText) : undefined;
   const answer = await readStoriesAnswer(dir);
-  const ownCriteria = answer?.stories.flatMap((s) => s.tasks).find((t) => t.id === id)?.criteria;
+  // B-once: the criteria that accept the task, its own and those written on another task.
+  const words =
+    answer?.stories.find((s) => s.id === storyId) ??
+    answer?.stories.find((s) => s.tasks.some((t) => t.id === id));
+  const ownCriteria = words ? criteriaFor(words, id) : undefined;
   const own = ownCriteria?.map((c) => c.text);
   const criteria = own?.length ? own : (sf?.criteria ?? []);
 

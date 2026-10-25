@@ -308,6 +308,53 @@ describe("a change's stories as a BenchStory draft", () => {
       ["t1-2-c2", `${OC}:10`],
     ]);
   });
+
+  it("puts a criterion written once on every step it accepts (B-once)", () => {
+    // fixtures/stages/stories-once/: deliverBy through four tasks, its criteria written per task
+    // (repeated.yaml) or once with `also` (answer.yaml).
+    const ONCE = join(ROOT, "fixtures", "stages", "stories-once");
+    const stories = parse(read(join(ONCE, "stories.yaml"))) as DeltaStory[];
+    const draft = (f: string) =>
+      benchStoryFromStories({
+        story: "forge-deliver-by",
+        change: "add-deliver-by",
+        title: "Say when an order must arrive",
+        stories,
+        answer: StoriesAnswerSchema.parse(parse(read(join(ONCE, f)))),
+        done: DEFAULT_DONE,
+        requests: [],
+      });
+    const once = draft("answer.yaml");
+    const repeated = draft("repeated.yaml");
+    // every step, the migration's file too, has criteria either way
+    expect(once.steps.map((s) => s.id)).toEqual(repeated.steps.map((s) => s.id));
+    for (const d of [once, repeated])
+      for (const s of d.steps)
+        expect(
+          d.criteria.some((c) => c.step === s.id),
+          s.id,
+        ).toBe(true);
+    // the shared criterion is on each of its four tasks' steps, with the fields it checks
+    const shared = once.criteria.filter((c) => c.then.startsWith("201 returns deliverBy"));
+    expect(shared.map((c) => [c.id, c.step, c.fields])).toEqual([
+      ["t1-1-c1", "t1-1", ["deliverBy", "deliver_by"]],
+      ["t1-2-c2", "t1-2", ["deliverBy", "deliver_by"]],
+      ["t1-3-c2", "t1-3", ["deliverBy", "deliver_by"]],
+      ["t1-4-c1", "t1-4", ["deliverBy", "deliver_by"]],
+      ["f1-t1-3-c2", "f1", ["deliverBy", "deliver_by"]],
+    ]);
+    // each step's fields and errors are what the repeated criteria gave it, or more
+    const fieldsOn = (d: typeof once, step: string) =>
+      new Set(d.criteria.filter((c) => c.step === step).flatMap((c) => c.fields));
+    const errorsOn = (d: typeof once, step: string) =>
+      new Set(
+        d.criteria.filter((c) => c.step === step).flatMap((c) => c.errors.map((e) => e.rule)),
+      );
+    for (const s of repeated.steps) {
+      for (const f of fieldsOn(repeated, s.id)) expect(fieldsOn(once, s.id), s.id).toContain(f);
+      for (const r of errorsOn(repeated, s.id)) expect(errorsOn(once, s.id), s.id).toContain(r);
+    }
+  });
 });
 
 const V4 = "V4__add_fraud_verdict.sql";

@@ -105,8 +105,9 @@ const BEFORE = {
   // answer still fits and is unchanged); and after B-run2-fixes named the table whose columns
   // the store facts list (its one changed line)
   arch: "8e24f28d9b508f319199f1f3373368260d67a3500293e861663f9237590d4756",
-  // re-pinned after B-run2-fixes 5 gave the stories rules the rule words (one line added)
-  stories: "595bb677dd38c833857ee81b911db56d9deabb6d9478b23640226c1a3d998ac1",
+  // re-pinned after B-run2-fixes 5 gave the stories rules the rule words (one line added); and
+  // after B-once let a criterion accept other tasks (also in the format, one rule reworded, one added)
+  stories: "7fe7e8e23dc1ce47f75daae0fa11d2c8c2e2401f3241c91dc660c80b0e5dfbe9",
 };
 
 const ARCHIVE = join(FIX, "corrections/changes/archive");

@@ -4,6 +4,12 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### A criterion is written once and accepts several tasks (B-once, ADR 0124 addendum B-once)
+
+- **Stories are shorter.** A story criterion may list `also: [<task ids>]`, the other tasks of its story it accepts, so a behaviour a field takes through entry, validation, write and response is written once, not on each task. The stories prompt asks for this. On the deliverBy fixture the story says in 4 criteria what took 8.
+- **The checks read a task's own and shared criteria.** A task needs criteria only when none accepts it; its fields may be checked, and its error case said, by a criterion written on another task. A criterion may check its `also` tasks' fields. An `also` naming a task the story doesn't have is refused (`stories.unknown-also`).
+- **Every output carries them.** The story file lists each criterion once, with "(also accepts tasks 1.2, 1.3 and 1.4)"; each task's list and prompt, and `atticus task context`, give the task every criterion that accepts it; `atticus bench stories --change` puts a shared criterion on each step it accepts. An answer without `also` reads and renders as before.
+
 ### Lean batch prompts: each batch carries only the rules its files need (A-lean, ADR 0124 addendum A-lean)
 
 - **`atticus map <repo>` (`--handoff`, `--copy`, `--mode model`) fits smaller models.** Each batch prompt now carries the reading protocol's core rules and only the topic rules its files need: front end, back end, routes, stores, deploy, config, gRPC, SOAP, GraphQL and events, and flows. A file's kinds come from its path. When the path can't say, the file gets the rule. The instructions were 2,971 tokens for every batch. They are now 2,648 for a back-end batch, 2,180 for a front end's and 1,419 for a deploy batch's. The Forge ledger fixture now batches from 6,814 tokens, down from 7,042.
