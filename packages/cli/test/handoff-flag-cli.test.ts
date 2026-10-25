@@ -37,6 +37,14 @@ function block(out: string[]) {
   return { prompt: prompt![1]!, runId, result, done: out[3]!.trim(), resume: out[4]!.trim() };
 }
 
+/**
+ * An argument as the printed command types it (handoff-flag.ts `shell`): bare when it is plain,
+ * else in double quotes. A temp folder is plain on Linux and macOS (/tmp/at-…) and needs quotes
+ * on Windows (C:\…), so the expected commands are built with the same rule; the test "quotes a
+ * root that needs it" checks the quoted form on every platform.
+ */
+const typed = (a: string) => (/^[\w./:@=+-]+$/.test(a) ? a : `"${a}"`);
+
 /** Run a printed `atticus ...` line through main, as the assistant would in a terminal. */
 const argvOf = (line: string) =>
   [...line.matchAll(/"([^"]*)"|(\S+)/g)].map((m) => m[1] ?? m[2]!).slice(1);
@@ -54,9 +62,9 @@ describe("atticus scan survey --handoff", () => {
     const b = block(first.out);
     expect(b.prompt).toBe(`.runs/survey-forge-notes/${b.runId}/prompt.md`);
     expect(b.result).toBe(`.runs/survey-forge-notes/${b.runId}/scan-settings.yaml`);
-    expect(b.done).toBe(`atticus handoff done ${b.runId} --root "${root}"`);
+    expect(b.done).toBe(`atticus handoff done ${b.runId} --root ${typed(root)}`);
     expect(b.resume).toBe(
-      `atticus scan survey forge-notes --root "${root}" --handoff --resume ${b.runId}`,
+      `atticus scan survey forge-notes --root ${typed(root)} --handoff --resume ${b.runId}`,
     );
     // The prompt is HandoffRuntime's own, ending with the completion command.
     const prompt = await readFile(join(root, b.prompt), "utf8");
@@ -131,10 +139,7 @@ describe("atticus spec draft --handoff", () => {
     const b = block(first.out);
     expect(b.prompt).toBe(`.runs/spec-forge-orders/${b.runId}/prompt.md`);
     expect(b.resume).toBe(
-      `atticus spec draft "${repo}" --root "${root}" --handoff --resume ${b.runId}`.replace(
-        `"${repo}"`,
-        /^[\w./:@=+-]+$/.test(repo) ? repo : `"${repo}"`,
-      ),
+      `atticus spec draft ${typed(repo)} --root ${typed(root)} --handoff --resume ${b.runId}`,
     );
 
     // A result that isn't a spec: the check fails, and the step hands off a new attempt.
@@ -166,8 +171,8 @@ prefixes:
     value: /notes-api
 `;
 
-  async function setup(withSettings = false) {
-    const root = await mkdtemp(join(tmpdir(), "atticus-handoff-json-"));
+  async function setup(withSettings = false, prefix = "atticus-handoff-json-") {
+    const root = await mkdtemp(join(tmpdir(), prefix));
     await cp(join(FIXTURES, "scan-settings/metarepo"), root, { recursive: true });
     if (!withSettings) await rm(join(root, "org-pack", "scan"), { recursive: true, force: true });
     await cp(join(FIXTURES, "scan-settings/repos"), join(root, "workspace"), { recursive: true });
@@ -196,11 +201,13 @@ prefixes:
     expect(h.root).toBe(root);
     expect(h.promptFile).toBe(`.runs/survey-forge-notes/${runId}/prompt.md`);
     expect(h.resultFile).toBe(`.runs/survey-forge-notes/${runId}/scan-settings.yaml`);
-    expect(h.doneCommand).toBe(`atticus handoff done ${runId} --root "${root}"`);
+    expect(h.doneCommand).toBe(`atticus handoff done ${runId} --root ${typed(root)}`);
     expect(h.doneArgs).toEqual(["handoff", "done", runId, "--root", root]);
+    expect(argvOf(h.doneCommand as string)).toEqual(h.doneArgs);
     expect(h.resumeCommand).toBe(
-      `atticus scan survey forge-notes --root "${root}" --handoff --json --resume ${runId}`,
+      `atticus scan survey forge-notes --root ${typed(root)} --handoff --json --resume ${runId}`,
     );
+    expect(argvOf(h.resumeCommand as string)).toEqual(h.resumeArgs);
     expect(h.resumeArgs).toEqual([
       "scan",
       "survey",
@@ -231,6 +238,20 @@ prefixes:
       "Wrote org-pack/scan/forge-notes.yaml: 1 folder left out, 1 prefix.",
     );
     expect(d.questions).toEqual([]);
+  });
+
+  it("quotes a root that needs it, and the quoted commands read back as the same arguments", async () => {
+    const root = await setup(false, "atticus handoff json ");
+    const h = json(
+      (await run(["scan", "survey", "forge-notes", "--handoff", "--json", "--root", root])).out,
+    );
+    const runId = h.runId as string;
+    expect(h.doneCommand).toBe(`atticus handoff done ${runId} --root "${root}"`);
+    expect(h.resumeCommand).toBe(
+      `atticus scan survey forge-notes --root "${root}" --handoff --json --resume ${runId}`,
+    );
+    expect(argvOf(h.doneCommand as string)).toEqual(["handoff", "done", runId, "--root", root]);
+    expect(argvOf(h.resumeCommand as string)).toEqual(h.resumeArgs);
   });
 
   it("says question, with the question and its options, when the step raised one", async () => {

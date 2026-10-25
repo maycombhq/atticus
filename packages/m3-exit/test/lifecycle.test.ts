@@ -249,15 +249,20 @@ describe("M3 exit step 2: the seeded feature from Define to Release", () => {
 
   // ------------------------------------------------------------------ design
   it(
-    "Design round 1: the critic catches every seeded design problem: architecture b01-b03, runtime b04-b05, data design b06-b08, and knowledge gaps g01-g11",
+    "Design round 1: the critic catches every seeded design problem: architecture b01-b03, runtime b04-b05, data design b06-b08, knowledge gaps g01-g11 and g14, and the risks r01 and r06-r08",
     async () => {
       await writeArtifacts(e.root, FC, DESIGN_FILES);
       const r = await run("critic", CHANGE, "--gate", "design");
       expect(r.code).toBe(1);
+      // Re-baselined for the four questions (ADR 0124 addendum, Part 4, and the product owner's
+      // decisions of 2026-10-24): g14 (constitution.public-entry-auth), r06
+      // (review.call-timeout-stated), r07 and r08 (review.store-write-rollback).
       expect(r.out[0]).toBe(
-        "Critic round 1 of 2 at the design gate for add-transfer-limit: 8 blocking, 11 gaps, 1 risks, 0 ideas.",
+        "Critic round 1 of 2 at the design gate for add-transfer-limit: 8 blocking, 12 gaps, 4 risks, 0 ideas.",
       );
-      const ex = await readYaml<{ seeded: Seeded[] }>(join(FORGE_CHANGE, "expected/findings.yaml"));
+      const ex = await readYaml<{ seeded: Seeded[]; alsoExpected: Seeded[] }>(
+        join(FORGE_CHANGE, "expected/findings.yaml"),
+      );
       const atDesign = ex.seeded.filter(
         (s) =>
           s.layer === "deterministic" &&
@@ -283,11 +288,29 @@ describe("M3 exit step 2: the seeded feature from Define to Release", () => {
         "g09-ledger-slo-unknown",
         "g10-portal-slo-unknown",
         "g11-ledger-volume-unknown",
+        "g14-audit-entry-auth-unknown",
       ]);
       const found = await findingFiles(e.root, "design", 1);
       expect(atDesign.filter((s) => !found.some((f) => matches(s, f))).map((s) => s.id)).toEqual(
         [],
       );
+      // The four risks are the expected ones the design artifacts carry, each caught by code.
+      const risksAtDesign = ex.alsoExpected.filter(
+        (s) =>
+          s.layer === "deterministic" &&
+          ["interfaces.md", "data.md", "mappings.md"].includes(s.artifact ?? ""),
+      );
+      expect(risksAtDesign.map((s) => s.id)).toEqual([
+        "r01-mapping-missing",
+        "r06-audit-call-no-timeout",
+        "r07-account-write-no-rollback",
+        "r08-limit-change-write-no-rollback",
+      ]);
+      const risks = found.filter((f) => f.severity === "risk");
+      expect(risks).toHaveLength(4);
+      expect(
+        risksAtDesign.filter((s) => !risks.some((f) => matches(s, f))).map((s) => s.id),
+      ).toEqual([]);
       // A blocking finding stops the hand-off.
       const h = await run("change", "handoff", CHANGE, "--approve", "--by", "ari");
       expect(h.code).toBe(1);
@@ -298,10 +321,10 @@ describe("M3 exit step 2: the seeded feature from Define to Release", () => {
   );
 
   it(
-    "Design fix: the architect asks each gap's owner and fixes the artifacts; round 2 has nothing blocking and the gaps stay asked",
+    "Design fix: the architect asks each gap's owner and fixes the artifacts; round 2 has nothing blocking, the gaps stay asked and the two rollback risks stay open",
     async () => {
       const gaps = (await findingFiles(e.root, "design", 1)).filter((f) => f.severity === "gap");
-      expect(gaps).toHaveLength(11);
+      expect(gaps).toHaveLength(12);
       for (const g of gaps) {
         const a = await run("finding", CHANGE, g.id, "ask", "--by", "ari");
         expect(a.code, a.text).toBe(0);
@@ -312,9 +335,17 @@ describe("M3 exit step 2: the seeded feature from Define to Release", () => {
       await writeArtifacts(e.root, FIX, ["interfaces.md", "data.md", "design.md", "ux.md"]);
       const r = await run("critic", CHANGE, "--gate", "design");
       expect(r.out[0]).toBe(
-        "Critic round 2 of 2 at the design gate for add-transfer-limit: 0 blocking, 11 gaps, 0 risks, 0 ideas.",
+        "Critic round 2 of 2 at the design gate for add-transfer-limit: 0 blocking, 12 gaps, 2 risks, 0 ideas.",
       );
-      expect(r.out.filter((l) => l.endsWith("(asked in the last round)"))).toHaveLength(11);
+      expect(r.out.filter((l) => l.endsWith("(asked in the last round)"))).toHaveLength(12);
+      // The fix states the audit call's timeout (r06 goes), but its rollback line ("the new column
+      // and table stay") names neither table nor migration, so r07 and r08 stay: risks, which
+      // don't stop the gate (review.store-write-rollback).
+      const risks = (await findingFiles(e.root, "design", 2)).filter((f) => f.severity === "risk");
+      expect(risks.map((f) => [f.rule, f.artifact, f.locator.line])).toEqual([
+        ["review.store-write-rollback", "data.md", 7],
+        ["review.store-write-rollback", "data.md", 8],
+      ]);
       expect(r.out.at(-1)).toBe("The design gate may proceed: nothing blocking is open.");
       expect(r.code).toBe(0);
     },
@@ -371,15 +402,18 @@ describe("M3 exit step 2: the seeded feature from Define to Release", () => {
   );
 
   it(
-    "Plan critic round: nothing blocking (no story without criteria, no instruction in a story, both service-desk drafts complete); the eleven gaps come back at the plan gate, already asked at the design gate",
+    "Plan critic round: nothing blocking (no story without criteria, no instruction in a story, both service-desk drafts complete); the twelve gaps come back at the plan gate, already asked at the design gate, and the two rollback risks stay open",
     async () => {
       const r = json<{
         open: { blocking: number; gaps: number };
         findings: { rule: string; severity: string; state: string }[];
       }>(await run("critic", CHANGE, "--gate", "plan", "--json"));
-      expect(r.open).toEqual({ blocking: 0, gaps: 0, risks: 0, ideas: 0 });
+      expect(r.open).toEqual({ blocking: 0, gaps: 0, risks: 2, ideas: 0 });
+      expect(
+        r.findings.filter((f) => f.severity === "risk" && f.state === "open").map((f) => f.rule),
+      ).toEqual(["review.store-write-rollback", "review.store-write-rollback"]);
       const gaps = r.findings.filter((f) => f.severity === "gap");
-      expect(gaps).toHaveLength(11);
+      expect(gaps).toHaveLength(12);
       expect(gaps.every((f) => f.state === "asked")).toBe(true);
       for (const rule of [
         "constitution.story-acceptance-criteria",
@@ -396,8 +430,8 @@ describe("M3 exit step 2: the seeded feature from Define to Release", () => {
     "finding-gate: the questions asked at the design gate come back at the plan gate already asked, linked to the first; atticus finding acts on the plan gate's copy, and --gate picks one",
     async () => {
       const gaps = (await findingFiles(e.root, "plan", 1)).filter((f) => f.severity === "gap");
-      expect(gaps).toHaveLength(11);
-      expect(gaps.map((f) => f.state)).toEqual(Array(11).fill("asked"));
+      expect(gaps).toHaveLength(12);
+      expect(gaps.map((f) => f.state)).toEqual(Array(12).fill("asked"));
       expect(
         parse(
           await readFile(

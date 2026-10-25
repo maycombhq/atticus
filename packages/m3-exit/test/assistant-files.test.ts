@@ -171,8 +171,25 @@ describe("M3 exit step 3: assistant files for Copilot and Claude Code", () => {
       generated.metarepo = created(r.out);
       for (const f of ["CLAUDE.md", ".github/copilot-instructions.md"])
         expect(generated.metarepo).toContain(f);
-      expect(generated.metarepo.filter((f) => f.startsWith(".claude/agents/"))).toHaveLength(9);
-      expect(generated.metarepo.filter((f) => f.startsWith(".github/agents/"))).toHaveLength(9);
+      // One agent per org-pack agent: since the critic asks four questions (ADR 0124 addendum,
+      // Part 4) the fixture's lens agents are the four question agents, plus the old
+      // code-and-test-critic it still defines and the Forge pack's architecture-critic.
+      const agents = [
+        "architecture-critic",
+        "code-and-test-critic",
+        "complete-critic",
+        "safe-critic",
+        "ship-critic",
+        "story-writer",
+        "task-runner",
+        "true-critic",
+      ];
+      expect(generated.metarepo.filter((f) => f.startsWith(".claude/agents/")).sort()).toEqual(
+        agents.map((a) => `.claude/agents/${a}.md`),
+      );
+      expect(generated.metarepo.filter((f) => f.startsWith(".github/agents/")).sort()).toEqual(
+        agents.map((a) => `.github/agents/${a}.agent.md`),
+      );
       expect(generated.metarepo).toContain(".claude/commands/atticus-critic.md");
       expect(generated.metarepo).toContain(".github/prompts/atticus-critic.prompt.md");
       // The draft skill is never generated.
