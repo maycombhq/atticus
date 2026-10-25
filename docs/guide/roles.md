@@ -23,7 +23,7 @@ Start a change (`atticus change new "<title>" --type feature`, or from Changes),
 **Screens you use most:** Home, Breakdown, Feature brief, Changes, Test trace, Features, Search the catalog, Ecosystem map.
 **Watch for:** changes in Plan, and findings on stories and specs.
 
-Breakdown shows the stories, the story bar they must meet and what no story covers yet. _Write stories with AI_ drafts them from the approved design (`atticus plan stories <change>`); with AI off you write them and the rule checks review them. Test trace follows every requirement to a story, a test and code.
+Breakdown shows the stories, the story bar they must meet and what no story covers yet. _Write stories with AI_ drafts them from the approved design (`atticus stories <change>`); with AI off you write them and the rule checks review them. Test trace follows every requirement to a story, a test and code.
 
 ## Architect
 

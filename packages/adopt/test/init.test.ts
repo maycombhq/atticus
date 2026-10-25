@@ -61,7 +61,10 @@ describe("init", () => {
       schema: "org-flow",
     });
     const gi = await readFile(join(root, ".gitignore"), "utf8");
-    for (const l of ["/workspace/", "/.index/", "/.runs/", "/.atticus/"]) expect(gi).toContain(l);
+    for (const l of ["/workspace/", "/.index/", "/.runs/", "/.atticus/*"]) expect(gi).toContain(l);
+    // B-place: the stamp atticus upgrade writes is committed (ADR 0051); the rest of .atticus/ isn't.
+    expect(gi).toContain("\n!/.atticus/metarepo.yaml\n");
+    expect(gi).not.toMatch(/^\/\.atticus\/$/m);
     // ADR 0120: the starter review, the org's own checklist to change or delete.
     const review = await readFile(join(root, "org-pack/checklists/review.yaml"), "utf8");
     expect(review).toBe(await starterReviewText());

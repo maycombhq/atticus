@@ -42,7 +42,6 @@ Flow "A client places an order" (modify, repo forge-orders): The response carrie
 ## Files likely to change
 
 - forge-orders:src/main/java/forge/orders/OrderController.java:14: today's respond step (step 5), which this task changes
-- forge-orders:src/main/java/forge/orders/StockClient.java:7: step 2 of the same flow
 
 ## What applies
 

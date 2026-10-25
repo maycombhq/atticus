@@ -49,10 +49,13 @@ import {
   FLOW_DELTA_SCHEMA_VERSION,
   FlowDelta,
   parseAt,
+  parseNewFile,
+  usesOf,
   type DeltaStep,
   type FeaturePlacement,
 } from "./schema.js";
-import { readCheckoutFile } from "./story-code.js";
+import { checkoutHas, readCheckoutFile } from "./story-code.js";
+import { callsAt, declaresMethod, doneAt, flowCitesFile } from "./places.js";
 import {
   consumerIssues,
   endpointConsumers,
@@ -99,7 +102,9 @@ flows:
       - op: add | change | remove
         step: <change and remove: the step's number in today's flow, as listed>
         after: <add: the number of the step it goes after; 0 for first>
-        at: <add: where the new step's code goes, path:line of the line it goes after, or path:function; give it whenever the code goes into or beside a file the repo has (a class it calls or extends counts, in a new flow too); leave it out only for code in a file the change creates>
+        at: <add, when the step's code goes into code the repo has: path:line of the line it goes after; that code changes>
+        new: <add, when the step's code goes in a file the change creates: its path, in the folder of its nearest kin>
+        uses: [<path:line of existing code the step calls or reuses; it doesn't change>]
         kind: <add, or when the kind changes: entry, lookup, read, write, call-out, publish, transform, validate, branch, log, respond, loop, retry>
         what: <one sentence: what the step does once the change is in>
         to: { component: <component or system id>, entry: <the HTTP method and the path, such as "GET /orders/{id}", or a topic>, new: <true when it doesn't exist yet> }   # call-out and publish only: a component, never a table
@@ -120,6 +125,7 @@ Rules:
 - A flow under flows adds, changes or removes at least one step. A flow whose steps all stay as they are is context: put it under reads, never under flows with no steps.
 - Number steps as today's flow lists them (1 is the first). Don't renumber after an add. Adds with the same after (and a new flow's steps) run in the order you write them, so write a step that gives a field before the step that returns or sends it.
 - Name fields at every step that moves data: what a call sends and returns, what a write stores, what a transform maps. A key a write or read matches rows by goes under checks.
+- Give each added step at or new. A class or function it only calls is uses, never at; a step that code under uses already does needs no at or new.
 - Use component, system and table ids from the index. Something that doesn't exist yet is marked new: true.
 - Follow the integration patterns and standards below where they apply; say in why when one shapes a step.
 ${storeRules(levels).join("\n")}
@@ -770,10 +776,29 @@ function citesFile(e: Estate, repo: string, path: string): boolean {
   return files.has(`${repo}:${path}`);
 }
 
+/** Whether the catalog cites a file of the repo in a folder ("" for the repo's root). */
+function citesFolder(e: Estate, repo: string, folder: string): boolean {
+  citesFile(e, repo, "");
+  const prefix = `${repo}:${folder ? `${folder}/` : ""}`;
+  for (const f of citedFiles.get(e) ?? []) if (f.startsWith(prefix)) return true;
+  return false;
+}
+
+/** The three places a step's code can have, in words for a message (B-place). */
+const PLACES_HOW =
+  "at: path:line of the line it goes after, for code that changes; new: <path> for a file the change creates, in the folder of its nearest kin; and uses: path:line for existing code it only calls";
+
 /**
- * Where an added step goes (B-places): a target flow's `at` names a file of the step's repo
- * that its checkout under workspace/ or the catalog has, a line the file has and a function in
- * it, when the checkout is there to read. Old answers have no `at`, so nothing is asked of them.
+ * Where an added step goes (B-places, B-place): three kinds of place.
+ * - `at`, path:line, is code that changes: a file of the step's repo its checkout under
+ *   workspace/ or the catalog has, with a line (path:function and the path alone are refused),
+ *   a line the file has. A call-out, publish, lookup or read whose line is code it only calls
+ *   (another flow's step that does that call or read there, or a method the flow doesn't cite
+ *   declared on that line) is refused: that is `uses`. Another kind of step there is a note.
+ * - `new` is a file the change creates: not one the repo has, in a folder it has.
+ * - `uses` is existing code the step calls: a file and a line the repo has.
+ * An added step with none of `at` and `new`, that existing code doesn't already do, is a note:
+ * its task says the place isn't given. Older answers read as before; only the checks are new.
  */
 export async function placeIssues(
   deltas: FlowDelta[],
@@ -781,52 +806,155 @@ export async function placeIssues(
   root?: string,
 ): Promise<StageIssue[]> {
   const out: StageIssue[] = [];
+  const read = async (repo: string, path: string) =>
+    root ? await readCheckoutFile(root, repo, path) : undefined;
+  const linesOf = (text: string) => text.replace(/\r\n?/g, "\n").replace(/\n$/, "").split("\n");
   for (const d of deltas)
     for (const [i, s] of d.steps.entries()) {
-      if (!s.at) continue;
-      const target = `${d.flow}#${i + 1}:at`;
       const change = `Change ${i + 1} to ${d.flow}`;
+      const issue = (key: string, rule: string, message: string, blocking = true) =>
+        out.push({ rule, target: `${d.flow}#${i + 1}:${key}`, message, blocking, repo: d.repo });
+      // ---- uses: existing code, a file and a line the repo has (any step may call code)
+      for (const u of usesOf(s)) {
+        const p = parseAt(u);
+        const text = p ? await read(d.repo, p.path) : undefined;
+        if (!p || (text === undefined && !citesFile(e, d.repo, p.path))) {
+          issue(
+            "uses",
+            "delta.uses-unknown",
+            `${change} uses ${u}, but ${d.repo} has no such file in its checkout or the catalog: give path:line of the code it calls as the repo has it.`,
+          );
+          continue;
+        }
+        if (p.line === undefined) {
+          issue(
+            "uses",
+            "delta.uses-no-line",
+            `${change} uses ${u}, with no line: give path:line of the code it calls (the method's first line).`,
+          );
+          continue;
+        }
+        const n = text === undefined ? undefined : linesOf(text).length;
+        if (n !== undefined && (p.line < 1 || p.line > n))
+          issue(
+            "uses",
+            "delta.uses-line",
+            `${change} uses line ${p.line} of ${p.path}, which has ${n} lines in ${d.repo}'s checkout: give the line of the code it calls.`,
+          );
+      }
       if (s.op !== "add") {
-        out.push({
-          rule: "delta.at-not-added",
-          target,
-          message: `${change} gives at, which is for a step the change adds: a step it ${s.op}s is where today's flow cites it, so at is left out of its task.`,
-          blocking: false,
-          repo: d.repo,
-        });
+        for (const [key, what] of [
+          ["at", s.at],
+          ["new", s.new],
+        ] as const)
+          if (what)
+            issue(
+              key,
+              `delta.${key}-not-added`,
+              `${change} gives ${key}, which is for a step the change adds: a step it ${s.op}s is where today's flow cites it, so ${key} is left out of its task.`,
+              false,
+            );
         continue;
       }
-      const p = parseAt(s.at);
-      const text = p && root ? await readCheckoutFile(root, d.repo, p.path) : undefined;
-      if (!p || (text === undefined && !citesFile(e, d.repo, p.path))) {
-        out.push({
-          rule: "delta.at-unknown",
-          target,
-          message: `${change} puts the new step at ${s.at}, but ${d.repo} has no such file in its checkout or the catalog: give the path as the repo has it (path:line of the line the step goes after, or path:function). Leave at out only for code in a file the change creates.`,
-          blocking: true,
-          repo: d.repo,
-        });
+      if (s.at && s.new) {
+        issue(
+          "at",
+          "delta.place-both",
+          `${change} gives both at and new. Give one place for the step's code: ${PLACES_HOW}.`,
+        );
         continue;
       }
-      if (text === undefined) continue;
-      const lines = text.replace(/\r\n?/g, "\n").replace(/\n$/, "").split("\n").length;
-      if (p.line !== undefined && (p.line < 1 || p.line > lines))
-        out.push({
-          rule: "delta.at-line",
-          target,
-          message: `${change} puts the new step after line ${p.line} of ${p.path}, which has ${lines} lines in ${d.repo}'s checkout: give the line it goes after.`,
-          blocking: true,
-          repo: d.repo,
-        });
-      const fn = p.function?.split(/[.#]/).at(-1);
-      if (fn && !new RegExp(`(^|[^\\w$])${fn.replace(/\$/g, "\\$")}([^\\w$]|$)`).test(text))
-        out.push({
-          rule: "delta.at-function",
-          target,
-          message: `${change} puts the new step in ${p.function}, which ${p.path} doesn't have in ${d.repo}'s checkout: name a function the file has, or give path:line.`,
-          blocking: true,
-          repo: d.repo,
-        });
+      // ---- at: code that changes, path:line
+      if (s.at) {
+        const p = parseAt(s.at);
+        const text = p ? await read(d.repo, p.path) : undefined;
+        if (!p || (text === undefined && !citesFile(e, d.repo, p.path))) {
+          issue(
+            "at",
+            "delta.at-unknown",
+            `${change} puts the new step at ${s.at}, but ${d.repo} has no such file in its checkout or the catalog: give the path as the repo has it, path:line of the line the step goes after. For code in a file the change creates, write new: <path> instead.`,
+          );
+          continue;
+        }
+        if (p.line === undefined) {
+          issue(
+            "at",
+            "delta.at-no-line",
+            `${change} puts the new step at ${s.at}, with no line. Say where its code goes: ${PLACES_HOW}.`,
+          );
+          continue;
+        }
+        const lines = text === undefined ? undefined : linesOf(text);
+        if (lines && (p.line < 1 || p.line > lines.length)) {
+          issue(
+            "at",
+            "delta.at-line",
+            `${change} puts the new step after line ${p.line} of ${p.path}, which has ${lines.length} lines in ${d.repo}'s checkout: give the line it goes after.`,
+          );
+          continue;
+        }
+        const by = callsAt(d, p.path, p.line, e);
+        const declared =
+          !!lines && declaresMethod(lines[p.line - 1]!) && !flowCitesFile(d, p.path, e);
+        const kind = s.kind ?? "step";
+        if (["call-out", "publish", "lookup", "read"].includes(kind) && (by || declared))
+          issue(
+            "at",
+            "delta.at-calls",
+            `${change} puts the new ${kind} at ${s.at}, which is ${by ? `the ${by.kind} of step ${by.step} of ${by.flow}` : `a method ${d.flow} doesn't cite`}: a step that calls existing code doesn't change it, so write uses: ${p.path}:${p.line}, and give the step's own code new: <path> for a file the change creates, or at: path:line in code that changes.`,
+          );
+        else if (declared)
+          issue(
+            "at",
+            "delta.at-shared",
+            `${change} puts the new ${kind} step at ${s.at}, the first line of a method ${d.flow} doesn't cite. If the new code only calls it, write uses: ${p.path}:${p.line} and give the new code new: <path> or at: path:line; keep at only if the change edits that method.`,
+            false,
+          );
+        continue;
+      }
+      // ---- new: a file the change creates, in a folder the repo has
+      if (s.new) {
+        const f = parseNewFile(s.new);
+        if (!f) {
+          issue(
+            "new",
+            "delta.new-folder",
+            `${change} puts the new code in ${s.new}, which isn't a path in ${d.repo}: give the new file's path from the repo's root, in the folder of its nearest kin.`,
+          );
+          continue;
+        }
+        const has = root ? await checkoutHas(root, d.repo, f) : undefined;
+        if (has === "file" || citesFile(e, d.repo, f)) {
+          issue(
+            "new",
+            "delta.new-exists",
+            `${change} puts the new code in a new file ${f}, but ${d.repo} has it already: for code that goes into it, give at: ${f}:<line> of the line it goes after.`,
+          );
+          continue;
+        }
+        const folder = f.includes("/") ? f.slice(0, f.lastIndexOf("/")) : "";
+        const checkout = root ? await checkoutHas(root, d.repo, "") : undefined;
+        const there =
+          (root ? (await checkoutHas(root, d.repo, folder)) === "dir" : false) ||
+          citesFolder(e, d.repo, folder);
+        if (!there)
+          issue(
+            "new",
+            "delta.new-folder",
+            `${change} puts the new code in a new file ${f}, but ${d.repo} has no folder ${folder || "at its root"}${checkout ? "" : " that the catalog cites"}: name the file in the folder of its nearest kin, the repo's own layout.`,
+            // Without a checkout the catalog may not cite every folder: a note, not a refusal.
+            !!checkout,
+          );
+        continue;
+      }
+      // ---- no place: existing code may already do it; otherwise the task says so
+      if (!doneAt(d, s, e))
+        issue(
+          "at",
+          "delta.no-place",
+          `${change} adds a step and doesn't say where its code goes, so its task says the place isn't given. Give it: ${PLACES_HOW}.`,
+          false,
+        );
     }
   return out;
 }

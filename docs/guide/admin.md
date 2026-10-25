@@ -233,7 +233,7 @@ It is your configuration, not the constitution. Change it through a pull request
 
 ### How the steps find their context (retrieval)
 
-The steps that use the context engine (change needs, feature, architecture, plan stories) search the index for what their input is about. `runtime.yaml` `retrieval` sets how (ADR 0116 and its addendum). Leaving the section out, or writing `retrieval: {}`, gives the defaults:
+The steps that use the context engine (change needs, feature, architecture, stories) search the index for what their input is about. `runtime.yaml` `retrieval` sets how (ADR 0116 and its addendum). Leaving the section out, or writing `retrieval: {}`, gives the defaults:
 
 ```yaml
 retrieval:

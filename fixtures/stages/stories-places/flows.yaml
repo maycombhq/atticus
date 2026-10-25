@@ -1,0 +1,122 @@
+# Today's flows of the order story's estate (ADR 0124 addendum B-place), as the map's specs have
+# them, citing the files under code/. forge-orders.draft-reply is the capability the story reuses:
+# AssistantClient.complete reserves the spend, calls the model and settles the spend.
+# forge-orders.order-history reads an order's events through OrderEventReader. Invented.
+- schemaVersion: 1
+  kind: Flow
+  id: forge-orders.draft-reply
+  status: current
+  confidence: inferred
+  component: forge-orders
+  name: An agent drafts a reply to a ticket
+  evidence: []
+  family: []
+  template: default@1
+  trigger:
+    kind: endpoint
+    ref: forge-orders.post-tickets-ticketid-reply-draft
+    what: An agent asks for a draft reply
+    evidence: [{ source: code, repo: forge-orders, path: src/main/java/forge/orders/TicketController.java, line: 12 }]
+  errors:
+    - when: The month's spend is used up
+      then: 429 with "the assistant's budget is spent"
+      evidence: [{ source: code, repo: forge-orders, path: src/main/java/forge/orders/ai/AssistantClient.java, line: 32 }]
+  steps:
+    - kind: entry
+      what: TicketController.draft receives the ticket id
+      evidence: [{ source: code, repo: forge-orders, path: src/main/java/forge/orders/TicketController.java, line: 12 }]
+      refs: [forge-orders.post-tickets-ticketid-reply-draft]
+      data: { reads: [ticketId] }
+    - kind: transform
+      what: The ticket's messages become a prompt
+      evidence: [{ source: code, repo: forge-orders, path: src/main/java/forge/orders/TicketPrompts.java, line: 20 }]
+      refs: []
+      data: { from: [messages], to: [prompt] }
+    - kind: write
+      what: The spend is reserved before the call
+      evidence: [{ source: code, repo: forge-orders, path: src/main/java/forge/orders/ai/AssistantClient.java, line: 30 }]
+      refs: [forge-orders-db.ai_spend]
+      store: { table: forge-orders-db.ai_spend, columns: [request_id, reserved_cents] }
+    - kind: call-out
+      what: Northwind Models writes the text
+      evidence: [{ source: code, repo: forge-orders, path: src/main/java/forge/orders/ai/AssistantClient.java, line: 37 }]
+      refs: [if-66ae84ede8a6bd7b]
+      to: { component: northwind-models, entry: POST /v1/completions }
+      data: { sends: [prompt], returns: [text, citations] }
+    - kind: write
+      what: The spend is settled with what the call cost
+      evidence: [{ source: code, repo: forge-orders, path: src/main/java/forge/orders/ai/AssistantClient.java, line: 45 }]
+      refs: [forge-orders-db.ai_spend]
+      store: { table: forge-orders-db.ai_spend, columns: [request_id, spent_cents] }
+    - kind: respond
+      what: 200 with the draft
+      evidence: [{ source: code, repo: forge-orders, path: src/main/java/forge/orders/TicketController.java, line: 19 }]
+      refs: []
+      data: { returns: [text] }
+- schemaVersion: 1
+  kind: Flow
+  id: forge-orders.order-history
+  status: current
+  confidence: inferred
+  component: forge-orders
+  name: A shop owner lists an order's events
+  evidence: []
+  family: []
+  template: default@1
+  trigger:
+    kind: endpoint
+    ref: forge-orders.get-orders-orderid-events
+    what: The order page asks for the order's events
+    evidence: [{ source: code, repo: forge-orders, path: src/main/java/forge/orders/OrderController.java, line: 22 }]
+  errors: []
+  steps:
+    - kind: entry
+      what: OrderController.events receives the order id
+      evidence: [{ source: code, repo: forge-orders, path: src/main/java/forge/orders/OrderController.java, line: 22 }]
+      refs: [forge-orders.get-orders-orderid-events]
+      data: { reads: [orderId] }
+    - kind: read
+      what: The order's events are read, oldest first
+      evidence: [{ source: code, repo: forge-orders, path: src/main/java/forge/orders/OrderEventReader.java, line: 20 }]
+      refs: [forge-orders-db.order_events]
+      store: { table: forge-orders-db.order_events, columns: [order_id, kind, at] }
+    - kind: respond
+      what: 200 with the events
+      evidence: [{ source: code, repo: forge-orders, path: src/main/java/forge/orders/OrderController.java, line: 24 }]
+      refs: []
+      data: { returns: [kind, at] }
+- schemaVersion: 1
+  kind: Flow
+  id: forge-web.view-order
+  status: current
+  confidence: inferred
+  component: forge-web
+  name: A shop owner views an order
+  evidence: []
+  family: []
+  template: default@1
+  trigger:
+    kind: page
+    what: The shop owner opens /orders/{orderId}
+    evidence: [{ source: code, repo: forge-web, path: src/orders/OrderPage.tsx, line: 10 }]
+  errors:
+    - when: GET /orders/{orderId} answers 404
+      then: the page says the order isn't found
+      evidence: [{ source: code, repo: forge-web, path: src/orders/OrderPage.tsx, line: 18 }]
+  steps:
+    - kind: entry
+      what: OrderPage reads the order id from the route
+      evidence: [{ source: code, repo: forge-web, path: src/orders/OrderPage.tsx, line: 10 }]
+      refs: []
+      data: { reads: [orderId] }
+    - kind: call-out
+      what: The page gets the order
+      evidence: [{ source: code, repo: forge-web, path: src/api/orders.ts, line: 14 }]
+      refs: []
+      to: { component: forge-orders, entry: "GET /orders/{orderId}" }
+      data: { sends: [orderId], returns: [id, status] }
+    - kind: respond
+      what: The page shows the order's status
+      evidence: [{ source: code, repo: forge-web, path: src/orders/OrderPage.tsx, line: 28 }]
+      refs: []
+      data: { returns: [status] }

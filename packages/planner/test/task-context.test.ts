@@ -93,15 +93,17 @@ describe("atticus task context", () => {
       [4, "write", false],
       [5, "respond", true],
     ]);
-    // The file the step cites first, then the flow's other files in the repo.
+    // The file the step cites first. B-place: the task's own places only, never the flow's
+    // other steps' files (the stock client the flow calls doesn't change).
     expect(c.files[0]).toEqual({
       path: "forge-orders:src/main/java/forge/orders/OrderController.java",
       line: 14,
       why: "today's respond step (step 5), which this task changes",
     });
-    expect(c.files.map((f) => f.path)).toContain(
+    expect(c.files.map((f) => f.path)).not.toContain(
       "forge-orders:src/main/java/forge/orders/StockClient.java",
     );
+    expect(c.uses).toEqual([]);
     expect(c.inputs).toEqual([
       {
         path: "openspec/changes/return-order-time/inputs/checkout-note.md",

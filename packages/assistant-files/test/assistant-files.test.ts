@@ -249,7 +249,7 @@ const STEPS: [name: string, run: string | undefined][] = [
   ["atticus-knowledge", "atticus knowledge scan --source"],
   ["atticus-feature", "atticus change feature"],
   ["atticus-architecture", "atticus change architecture"],
-  ["atticus-stories", "atticus plan stories"],
+  ["atticus-stories", "atticus stories"],
   // ADR 0113: the fast path; attaching files and loading a task's context are commands a person runs.
   ["atticus-small", "atticus change small"],
   ["atticus-attach", undefined],

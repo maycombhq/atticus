@@ -62,6 +62,23 @@ export async function readCheckoutFile(
   return file ? await readFile(file, "utf8").catch(() => undefined) : undefined;
 }
 
+/**
+ * What a path of a repo's checkout is (B-place): a file, a folder, or undefined with no
+ * checkout, nothing there, or a path out of it. A `new:` file's folder must be one.
+ */
+export async function checkoutHas(
+  root: string,
+  repo: string,
+  path: string,
+): Promise<"file" | "dir" | undefined> {
+  const base = defaultCodeDir(root, repo);
+  if (!base) return undefined;
+  if (!path) return "dir";
+  const full = await inside(base, path);
+  if (!full) return undefined;
+  return (await stat(full)).isDirectory() ? "dir" : "file";
+}
+
 const andList = (xs: string[]) =>
   xs.length > 1 ? `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}` : (xs[0] ?? "");
 

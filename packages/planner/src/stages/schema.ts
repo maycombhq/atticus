@@ -186,6 +186,16 @@ export function parseAt(at: string): StepPlace | undefined {
   };
 }
 
+/** A step's `uses` as a list (B-place): one place or several, as written. */
+export const usesOf = (s: { uses?: string | string[] }): string[] =>
+  s.uses === undefined ? [] : Array.isArray(s.uses) ? s.uses : [s.uses];
+
+/** A step's `new` file as a repo-relative path, or undefined for one that leaves the repo. */
+export function parseNewFile(path: string): string | undefined {
+  const p = parseAt(path);
+  return p && p.line === undefined && p.function === undefined ? p.path : undefined;
+}
+
 /** A step's field names, from its lists (sends, returns, reads, checks, from, to), not `as`. */
 export const fieldNames = (f: DeltaFields | undefined): string[] =>
   f
@@ -212,13 +222,28 @@ export const DeltaStep = z.strictObject({
   /** add: the position it goes after (0: first). */
   after: z.number().int().min(0).optional(),
   /**
-   * add: where the new step's code goes in the repo (ADR 0124 addendum B-places), when the
-   * drafter knows it from the code: `path:line` of the line it goes after, or `path:function`
-   * (the function it goes in), or the path alone. Checked against the repo's checkout and the
-   * catalog; the step's and its task's citation. Left out, the task is placed after the step
-   * before it (its neighbour's citation) and says so. Optional and additive: version 2 stays.
+   * add: where the new step's code goes into code the repo has (ADR 0124 addendum B-places),
+   * `path:line` of the line it goes after: that code changes. B-place: only an edit there; code
+   * the step only calls is `uses`, a file the change creates is `new`, and the check refuses a
+   * place with no line (`path:function` and the path alone read as before, for older answers).
+   * Checked against the repo's checkout and the catalog; the step's and its task's citation.
+   * Left out, a step of a modify flow is placed after the step before it and says so.
+   * Optional and additive: version 2 stays.
    */
   at: z.string().trim().min(1).optional(),
+  /**
+   * add (B-place): the new file the step's code goes in, a path the change creates, in the
+   * folder of its nearest kin (the check asks that the folder exists). Steps naming the same
+   * file are one task. Optional and additive: version 2 stays.
+   */
+  new: z.string().trim().min(1).optional(),
+  /**
+   * B-place: existing code the step calls or reuses, `path:line`, one or several. It doesn't
+   * change: a task names it as code it calls, never as a file to touch. A step whose `uses`
+   * line already does what the step does (an existing flow's step there, the same write, read
+   * or call) is already done. Optional and additive: version 2 stays.
+   */
+  uses: z.union([z.string().trim().min(1), z.array(z.string().trim().min(1)).min(1)]).optional(),
   kind: z.enum(FLOW_STEP_KINDS).optional(),
   /** What the step does once the change is in, in one plain sentence. */
   what: z.string().optional(),
@@ -435,6 +460,11 @@ export const StageLoop = z.strictObject({
       /** person: the draft under review is a person's edit, so a blocking finding stops for them. */
       by: z.enum(["person"]).optional(),
       files: z.array(z.string()).default([]),
+      /**
+       * The files the draft's write changed on disk (B-place): a run that resumes the review says
+       * what the draft wrote, not "nothing changed". Optional and additive.
+       */
+      changed: z.array(z.string()).optional(),
       /**
        * The questions the draft raised (ADR 0117 addendum, 2026-10-24): the stage's file doesn't
        * keep them, so they wait here with the draft until its lenses are in, and are raised then.

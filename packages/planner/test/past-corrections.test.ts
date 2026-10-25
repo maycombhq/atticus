@@ -99,19 +99,23 @@ const BEFORE = {
   // B2 (a): re-pinned when the feature stage began to select and send the org's knowledge (its
   // items, a new rule to name them where they bear on a gap); the hand-written answer
   // (corrections/answers/feature.yaml) was re-written for it: its gap names the two items.
-  feature: "4e3363a5f6c7bb3a8f1b0861534d478e0cf1249773800e99ef02e85334b0c47f",
+  // B-place (2026-10-25): every stage's self-check line no longer names a check_draft tool a
+  // hand-off doesn't have (diffed: that one line in each of the three prompts).
+  feature: "3f0e4fc2fbb02ba0aa525e11e15b8cc48630a24fbd7659471dfcfc86fabc1b6c",
   // re-pinned after B-places asked the architect for an added step's place (`at`); and in B2,
   // because its input, the feature answer above, changed (its code didn't; the architecture
   // answer still fits and is unchanged); and after B-run2-fixes named the table whose columns
   // the store facts list (its one changed line); and after B-tasks asked for `at` whenever the
-  // code goes into or beside a file the repo has, a new flow's too (the format's one `at` line)
-  arch: "0905038a9c4ad3011b8d35caed274086fab7dc8a3c17d30e725d329a6dd76027",
+  // code goes into or beside a file the repo has, a new flow's too (the format's one `at` line);
+  // and after B-place gave three places (the format's `at` line became at, new and uses, one rule
+  // added) and the self-check line
+  arch: "700bb874fd0b751ea7fda7c8a6f1ec4bb0d6993ee0e6232c8ea009c65c1bf9ce",
   // re-pinned after B-run2-fixes 5 gave the stories rules the rule words (one line added); and
   // after B-once let a criterion accept other tasks (also in the format, one rule reworded, one added);
   // and on 2026-10-25 twice: the format's requests line (a standard is followed, never listed
   // there) and B-tasks grouping the fraud check's call-out and branch into one task (the source's
-  // two task lines became one that lists the steps it covers)
-  stories: "dbbd7fce7baafd6761886557101312c91f36c5fa168be41ae977854a52ffc20c",
+  // two task lines became one that lists the steps it covers); and after B-place's self-check line
+  stories: "394828a20d66aa7099ec331b867272f61e6fcacc1716215e468f17209f0ec955",
 };
 
 const ARCHIVE = join(FIX, "corrections/changes/archive");

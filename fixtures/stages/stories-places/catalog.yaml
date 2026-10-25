@@ -1,0 +1,195 @@
+# The order story (ADR 0124 addendum B-place): a new server flow and a new page in the invented
+# forge-orders (Spring) and forge-web (React) repos. The catalog a scan of them would give, written
+# by hand; code/ holds the files it cites that the checks read. Northwind Models is an invented
+# model vendor. Invented throughout: the Forge estate.
+- kind: System
+  schemaVersion: 2
+  id: forge
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-orders, path: src/main/java/forge/orders/OrderController.java, line: 1 }]
+  name: Forge
+  boundary: product
+  repos: [forge-orders, forge-web]
+- kind: System
+  schemaVersion: 2
+  id: northwind-models
+  status: current
+  confidence: asserted
+  evidence: [{ source: manual, by: forge-architecture }]
+  name: Northwind Models
+  boundary: vendor
+- kind: Component
+  schemaVersion: 2
+  id: forge-orders
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-orders, path: src/main/java/forge/orders/OrderController.java, line: 5 }]
+  system: forge
+  repo: forge-orders
+  type: service
+- kind: Component
+  schemaVersion: 2
+  id: forge-web
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-web, path: src/orders/OrderPage.tsx, line: 7 }]
+  system: forge
+  repo: forge-web
+  type: frontend
+- kind: Endpoint
+  schemaVersion: 2
+  id: forge-orders.get-orders-orderid
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-orders, path: src/main/java/forge/orders/OrderController.java, line: 17 }]
+  component: forge-orders
+  endpointType: rest
+  method: GET
+  pathOrTopic: /orders/{orderId}
+  normalizedPath: /orders/{}
+- kind: Endpoint
+  schemaVersion: 2
+  id: forge-orders.get-orders-orderid-events
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-orders, path: src/main/java/forge/orders/OrderController.java, line: 22 }]
+  component: forge-orders
+  endpointType: rest
+  method: GET
+  pathOrTopic: /orders/{orderId}/events
+  normalizedPath: /orders/{}/events
+- kind: Endpoint
+  schemaVersion: 2
+  id: forge-orders.post-tickets-ticketid-reply-draft
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-orders, path: src/main/java/forge/orders/TicketController.java, line: 12 }]
+  component: forge-orders
+  endpointType: rest
+  method: POST
+  pathOrTopic: /tickets/{ticketId}/reply-draft
+  normalizedPath: /tickets/{}/reply-draft
+- kind: Interface
+  schemaVersion: 3
+  id: if-66ae84ede8a6bd7b
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-orders, path: src/main/java/forge/orders/ai/AssistantClient.java, line: 37 }]
+  from: forge-orders
+  to: northwind-models
+  direction: outbound
+  method: POST
+  normalizedPath: /v1/completions
+  sync: sync
+  via: direct
+- kind: DataStore
+  schemaVersion: 2
+  id: forge-orders-db
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-orders, path: src/main/resources/db/migration/V1__orders.sql, line: 1 }]
+  storeType: relational
+  ownerComponent: forge-orders
+- kind: Table
+  schemaVersion: 2
+  id: forge-orders-db.orders
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-orders, path: src/main/resources/db/migration/V1__orders.sql, line: 1 }]
+  dataStore: forge-orders-db
+  name: orders
+  tableKind: table
+  ownerComponent: forge-orders
+- kind: Column
+  schemaVersion: 2
+  id: forge-orders-db.orders.id
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-orders, path: src/main/resources/db/migration/V1__orders.sql, line: 2 }]
+  table: forge-orders-db.orders
+  name: id
+  type: BIGINT
+- kind: Column
+  schemaVersion: 2
+  id: forge-orders-db.orders.status
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-orders, path: src/main/resources/db/migration/V1__orders.sql, line: 5 }]
+  table: forge-orders-db.orders
+  name: status
+  type: VARCHAR(20)
+- kind: Table
+  schemaVersion: 2
+  id: forge-orders-db.order_events
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-orders, path: src/main/resources/db/migration/V3__order_events.sql, line: 1 }]
+  dataStore: forge-orders-db
+  name: order_events
+  tableKind: table
+  ownerComponent: forge-orders
+- kind: Column
+  schemaVersion: 2
+  id: forge-orders-db.order_events.order_id
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-orders, path: src/main/resources/db/migration/V3__order_events.sql, line: 2 }]
+  table: forge-orders-db.order_events
+  name: order_id
+  type: BIGINT
+- kind: Column
+  schemaVersion: 2
+  id: forge-orders-db.order_events.kind
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-orders, path: src/main/resources/db/migration/V3__order_events.sql, line: 3 }]
+  table: forge-orders-db.order_events
+  name: kind
+  type: VARCHAR(30)
+- kind: Column
+  schemaVersion: 2
+  id: forge-orders-db.order_events.at
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-orders, path: src/main/resources/db/migration/V3__order_events.sql, line: 4 }]
+  table: forge-orders-db.order_events
+  name: at
+  type: TIMESTAMP
+- kind: Table
+  schemaVersion: 2
+  id: forge-orders-db.ai_spend
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-orders, path: src/main/resources/db/migration/V5__ai_spend.sql, line: 1 }]
+  dataStore: forge-orders-db
+  name: ai_spend
+  tableKind: table
+  ownerComponent: forge-orders
+- kind: Column
+  schemaVersion: 2
+  id: forge-orders-db.ai_spend.request_id
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-orders, path: src/main/resources/db/migration/V5__ai_spend.sql, line: 2 }]
+  table: forge-orders-db.ai_spend
+  name: request_id
+  type: VARCHAR(36)
+- kind: Column
+  schemaVersion: 2
+  id: forge-orders-db.ai_spend.reserved_cents
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-orders, path: src/main/resources/db/migration/V5__ai_spend.sql, line: 3 }]
+  table: forge-orders-db.ai_spend
+  name: reserved_cents
+  type: INT
+- kind: Column
+  schemaVersion: 2
+  id: forge-orders-db.ai_spend.spent_cents
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-orders, path: src/main/resources/db/migration/V5__ai_spend.sql, line: 4 }]
+  table: forge-orders-db.ai_spend
+  name: spent_cents
+  type: INT

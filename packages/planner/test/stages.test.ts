@@ -494,6 +494,10 @@ describe("the critic's AI lenses in hand-off mode (ADR 0115)", () => {
     expect(await readFile(join(root, ".runs", CHANGE, draft2, "prompt.md"), "utf8")).toContain(
       "The critic (flow-use-matches-estate): Reserving stock now waits for the screen's verdict",
     );
+    // B-place: the redraft is told where its last draft is, to start from it.
+    expect(await readFile(join(root, ".runs", CHANGE, draft2, "prompt.md"), "utf8")).toContain(
+      `Your last draft is in openspec/changes/${CHANGE}/feature.yaml, as Atticus wrote it from your answer.`,
+    );
     // The round records both lenses as run, and the finding.
     expect((await roundMeta(root, 1)).lenses.map((l) => [l.lens, l.state])).toEqual([
       ["true", "ran"],
@@ -519,6 +523,9 @@ describe("the critic's AI lenses in hand-off mode (ADR 0115)", () => {
     expect(lenses).toEqual(["true", "complete"]);
     expect(r.state).toBe("done");
     expect(r.iteration).toBe(2);
+    // B-place: the run that finishes the review drafted nothing, but says what the draft wrote.
+    expect(r.drafts).toBe(0);
+    expect(r.changed).toContain("feature.yaml");
     expect((await roundMeta(root, 2)).lenses.every((l) => l.state === "ran")).toBe(true);
     const loop = parse(await readFile(join(dir(root), "stage/feature.yaml"), "utf8"));
     expect(loop.state).toBe("done");
@@ -886,13 +893,12 @@ describe("a criterion that checks a field without naming it", () => {
     expect(r.findings.some((f) => f.rule === "stories.check-not-in-criterion")).toBe(false);
     // The story file says so, where the story lens and the PR's reviewer read it.
     const story = await readFile(join(dir(root), "stories/s1-place-order.md"), "utf8");
+    // B-place: one line for the story, with the count and the fields by task; not a bullet, so
+    // the readers of the criteria list don't take it for one.
     expect(story).toContain(
-      "says it checks fraud_verdict without naming it. The story lens and the reviewer confirm it does (judgments/covers-field/ keeps a verdict).",
+      "\nNot judged yet: 1 criterion says it checks a field without naming it (task 1.3: fraud_verdict). The story lens and the reviewer confirm it does (judgments/covers-field/ keeps a verdict).\n",
     );
-    // B-tasks: in the task's section, naming the criterion by its first words; not in the list.
-    expect(story).toMatch(
-      /^- Not judged yet: "Given .*…" says it checks fraud_verdict without naming it\./m,
-    );
+    expect(story).not.toMatch(/^- Not judged yet/m);
   });
 
   it("with a direct model, asks the judge: yes passes, no goes back, unsure is a note", async () => {

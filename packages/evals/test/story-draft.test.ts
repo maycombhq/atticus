@@ -377,14 +377,15 @@ describe("a change's stories as a BenchStory draft", () => {
     expect(got.criteria.some((c) => c.step === "t1-2" && c.then.startsWith("422"))).toBe(true);
   });
 
-  it("gives new code placed beside another step's code no at, and says why (B-tasks)", () => {
+  it("gives new code in a new file no at, and says why; the code it calls is no step (B-place)", () => {
     const s = structuredClone(STORIES[0]!);
     s.change = "new";
     s.entry = "POST /orders";
     for (const t of s.tasks[0]!.covers!) {
-      t.evidence = ["forge-orders:src/main/java/forge/orders/OrderEventReader.java:18"];
-      t.placed = "beside";
-      t.beside = { by: "neighbour", step: 3 };
+      t.evidence = [];
+      t.placed = "new";
+      t.newFile = "forge-orders:src/main/java/forge/orders/OrderScreening.java";
+      t.uses = ["forge-orders:src/main/java/forge/orders/OrderEventReader.java:18"];
     }
     const got = convert([s]);
     const fresh = got.steps.find((x) => x.id === "new-s1-place-order")!;
@@ -392,7 +393,7 @@ describe("a change's stories as a BenchStory draft", () => {
     expect(fresh.at).toBeUndefined();
     expect(got.steps.some((x) => x.at?.includes("OrderEventReader"))).toBe(false);
     expect(got.notes).toContain(
-      "new code placed beside another step's code has no at: the rubric's at is today's code a step changes or rests on",
+      "new code in a new file has no at: the rubric's at is today's code a step changes or rests on",
     );
   });
 });

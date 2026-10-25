@@ -38,9 +38,9 @@ import type { BenchStory } from "./story-bench.js";
  *   whose code is at the same file and line are one step, with both tasks' criteria.
  * - B-tasks: a task covering several steps of the target flow is a step per place its steps go
  *   (each step's own id and `at`), each with the task's criteria (an id met again is prefixed
- *   with its step's). A step placed beside another's code is new code: the rubric's `at` is
- *   today's code a step changes or rests on, so it joins the story's one new-code step on its
- *   entry, with no `at`, and the notes say so.
+ *   with its step's). A step whose code goes in a new file (B-place `new`) is new code: the
+ *   rubric's `at` is today's code a step changes or rests on, so it joins the story's one
+ *   new-code step on its entry, with no `at`, and the notes say so.
  * - Each criterion splits into given, when and then; its checks are its fields; its entry, when
  *   it names none, is the story's. An error criterion is an error case on each field it checks
  *   (or on none when it checks none), its `when` the criterion's given clause.
@@ -208,10 +208,10 @@ export function benchStoryFromStories(i: StoriesToBench): BenchStory {
       criteria.push({ ...c, id });
     }
   };
-  let beside = false;
+  let fresh = false;
   for (const { s } of pairs) {
-    // B-tasks: the story's new code is one step on its entry, however many places it goes beside.
-    const fresh = new Map<string, { step: Step; seen: Set<StoryCriterion> }>();
+    // B-tasks: the story's new code is one step on its entry, however many new files it goes in.
+    const news = new Map<string, { step: Step; seen: Set<StoryCriterion> }>();
     for (const p of storySteps(s)) {
       const tasks = p.tasks.map((id) => s.tasks.find((t) => t.id === id)!);
       // B-tasks: the steps whose change goes here, each as a task of its own (`partsOf`).
@@ -231,19 +231,19 @@ export function benchStoryFromStories(i: StoriesToBench): BenchStory {
         for (const x of tasks) add(criteriaOf(s, x, said(s, x, seen), { step: stepId(t), at }));
       } else if (p.kind === "new") {
         const id = `new-${s.id}`;
-        // B-tasks: a place beside another's code isn't today's code the step changes or rests on
-        // (the rubric's at), so the step has no at, and the notes say so.
-        if (p.beside) beside = true;
-        let f = fresh.get(id);
+        // B-place: a new file isn't today's code the step changes or rests on (the rubric's at),
+        // so the step has no at, and the notes say so.
+        if (p.newFile) fresh = true;
+        let f = news.get(id);
         if (!f) {
           f = {
             step: { id, repo: p.repo, what: "", ...(s.entry ? { entry: s.entry } : {}) },
             seen: new Set(),
           };
-          fresh.set(id, f);
+          news.set(id, f);
           steps.push(f.step);
         }
-        const what = p.beside
+        const what = p.newFile
           ? `new code: ${parts.map((x) => bare(x.what || x.title)).join("; ")}`
           : p.what;
         f.step.what = f.step.what
@@ -264,9 +264,9 @@ export function benchStoryFromStories(i: StoriesToBench): BenchStory {
       }
     }
   }
-  if (beside)
+  if (fresh)
     notes.push(
-      "new code placed beside another step's code has no at: the rubric's at is today's code a step changes or rests on, so it is one step of new code on its entry",
+      "new code in a new file has no at: the rubric's at is today's code a step changes or rests on, so it is one step of new code on its entry",
     );
   // A file step's words, place and criteria once every story's tasks are in.
   for (const [file, f] of files) {

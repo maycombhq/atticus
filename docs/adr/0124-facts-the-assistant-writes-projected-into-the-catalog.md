@@ -444,6 +444,45 @@ A real change (a one-page feature in a Spring and React app) came out as 3 stori
   - The fast path's format still doesn't ask for `at`.
   - A step's `done` match is by facts alone. An existing step doing "the same" with other semantics would be wrongly noted done; the reviewer sees the note and its citation.
 
+## Addendum (B-place): where code goes, with the right verb (no C1 to C6 change)
+
+A re-draft of a real change on the B-tasks build grouped 26 tasks into 15 and left no step without a file, but 9 of the 15 named the wrong one. Tasks told the developer to change shared code the new code should only call (a reader's method, a text helper, a shared page component), and put new logic beside unrelated files (a filter beside a helper, a document builder beside the model client, a page's states beside the web client). One printed "new code beside lines " with no line, from an `at` written as path:function. Three causes: the architecture format said a class a step calls counts as its `at`; the stories stage reads `at` as "the step's code goes after this line"; and `besideOf` gave a step with no place its neighbour's. Two steps that the existing client's call method already does (reserve and settle the model spend) got no "already done" note, and their tasks said to add the write after those very lines.
+
+- **Three kinds of place** on an added step of a flow delta, each optional and additive (version 2 stays; the planner's stage file, not C1 to C6, per `docs/codebase-map.md`):
+  - `at: path:line`: the code at that line changes. Only an edit there: a changed step, or an added step inserted into code the repo has.
+  - `new: <path>`: the step's code goes in a file the change creates, named in the repo's own layout, in the folder of its nearest kin.
+  - `uses: path:line` (one or a list): existing code the step calls or reuses. It doesn't change.
+  - The format gives the three in place of the one `at` line, and one rule: give each added step `at` or `new`; a class or function it only calls is `uses`, never `at`; a step that code under `uses` already does needs neither.
+- **The checks** (`placeIssues`, with `places.ts`), all blocking unless said:
+  - An `at` must carry a line: path:function and the path alone are refused (`delta.at-no-line`), and `delta.at-function` goes with them. Its file must be the repo's (`delta.at-unknown`), the line within it (`delta.at-line`).
+  - A call-out, publish, lookup or read whose `at` line is code it calls is refused with "use `uses:`" (`delta.at-calls`): another flow's step on that line that does a call or a read, or a method declared on that line in a file today's flow doesn't cite (`declaresMethod`, one line by pattern). Any other kind there is a note (`delta.at-shared`): keep `at` only if the change edits that method.
+  - `at` and `new` together are refused (`delta.place-both`). A `new` file the repo has is refused (`delta.new-exists`), and so is one outside a folder the repo has (`delta.new-folder`). Without a checkout, a folder the catalog cites no file in is a note, since the catalog may not cite every folder.
+  - A `uses` must name a file the repo has (`delta.uses-unknown`), with a line (`delta.uses-no-line`) the file has (`delta.uses-line`).
+  - `new` on a changed or removed step is a note (`delta.new-not-added`), as `at` is.
+  - An added step with neither `at` nor `new`, that existing code doesn't already do, is a note (`delta.no-place`). It is not blocking, so recorded drafts keep passing.
+- **The stories stage says the verb.** `besideOf` is removed: a step with no place is "new code — place not given", never a neighbour's file. A modify flow's step with no place is still "not said by the target flow; after the step before it", as B-places had it. The story file, the task prompt and the implementation steps say "change `<file>:<line>`" (`placed: given`), "new file `<path>`" (`placed: new`, `newFile`), each with "(uses `<file>:<line>`)". "Files to touch" never lists `uses`, which is a line of its own, "Code it calls (unchanged)". The stories prompt's task lines name a new file and the code a task calls only when there is one, so the fraud check's prompt is unchanged.
+- **Grouping by these places.** The steps of one `new` file are one task, wherever they sit in the flow, and the task sits where its first step is. Otherwise grouping is B-tasks': consecutive steps in one file, a step adding a table or columns on its own.
+- **Already done** (`doneAt`). An added step whose `uses` line (or an older answer's `at`) is cited by a step of another flow of the repo with the same effect is matched: the same kind, the same existing entry for a call-out or publish, the same existing table with no new column for a read, lookup or write. A matched step is a done note ("already done by `<file:line>` (step N of `<flow>`), no code") under the task of a step that calls that file (its `uses` or `at`). When no step does, the first matched step of the file is the task that calls it (`reuses`), and the others are its notes. B-tasks' run match by order still applies to the rest.
+- **`atticus task context`.** "Files likely to change" lists only the task's own places: today's code a changed or removed step changes, an added step's `at`, the step an unplaced added step goes after, its new file, where its fields and columns are declared, and its migration. It no longer lists the flow's other steps and trigger. The code its steps call is listed apart, in `uses` and under "Code it calls".
+- **The same run's small things.**
+  - A stage resumed to finish a draft's review said "0 drafts this run … Kept the target flows: nothing changed" though the draft had written files. The review now keeps what its draft's write changed (`review.changed`, additive), and the result says it. The line says "none drafted this run".
+  - A redraft after a finding or a risk is told where its last draft is (`<change>/<source>`) and to start from it.
+  - The self-check rule named a `check_draft` tool that a hand-off doesn't have. It now says to check "the way this run offers: a check tool given with this prompt, or the command the finishing step below gives". The tool's own description tells a model mode drafter to call it.
+  - The story file's "Not judged yet" notes took a line per criterion and task (76 of 944 lines in the run). They are one line per story, with the count and the fields by task, not a bullet, so the criteria's readers don't take it for one.
+  - `atticus upgrade` asks a person to commit `.atticus/metarepo.yaml`, but `atticus init` ignored all of `.atticus/`. ADR 0051 makes the stamp a committed workspace file, so the ignore is what was wrong. `init` writes `/.atticus/*` and `!/.atticus/metarepo.yaml`. The upgrade step `stamp-committed` rewrites an older `/.atticus/` line. An adopted repo's own `.gitignore` is never touched.
+  - The guide and the slash commands now say `atticus stories` (the top-level command; `atticus plan stories` stays its alias). The CLI's own printed hints and the app still say `plan stories`.
+- **Measured.**
+  - On `fixtures/stages/stories-places/`, a new service that calls an existing client and an existing reader, a new page that uses a shared component, and two steps the client already does. Its `before.yaml` is the draft as B-tasks read it: 8 tasks, every one naming a wrong file, and no step done. The architecture check now refuses it: two `at-calls`, one `at-no-line`, and notes. `deltas.yaml`, with the three places, passes the check and gives 4 tasks from 14 steps, none naming a wrong file, with reserve and settle done.
+  - `fixtures/stages/stories-units/` (its deltas now give `new` and `uses`): 7 tasks to 6, 486 lines to 467.
+  - The bench scores are unchanged.
+  - Re-pinned after diffing old and new prompts: the feature, architecture and stories pins in `past-corrections.test.ts` (the self-check line in all three; the place lines and one rule in the architecture prompt). `docs/evidence/context-eval.md` was regenerated: architecture +51 tokens, feature and stories +2, recall unchanged.
+  - Re-pinned on purpose: the task-context golden (the flow's other file left out).
+- **Not done here:**
+  - No change was re-drafted with the new format.
+  - The fast path's format asks for no place.
+  - `declaresMethod` reads one line by pattern, not a parse.
+  - A done match is by the cited line alone. An existing step "doing the same" with other semantics would be wrongly noted done; the reviewer sees the note and its citation.
+
 ## Addendum (C-join, the fallback): a relative call whose target names nothing (no C1 to C6 change)
 
 A trial on one repo holding a React single-page app and the Spring API it calls joined 0 of 467 call-outs. The app's calls are relative (`fetch("/api/...")`), so the reader set each call's `to` to its guess of the API's name; Atticus named the API's component after the repo. `joinFacts` left a call whose `to` names nothing in the estate to that name (as for a vendor), and `joinEstate` stopped at "<name> isn't a component in the catalog" for 417 of them. Renaming `to` by hand joined 411.

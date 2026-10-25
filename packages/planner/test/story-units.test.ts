@@ -30,8 +30,10 @@ import {
  * A. Consecutive steps of a story that go into the same file are one task; a step that adds a
  *    table or columns is a task of its own (its migration lands first); a step existing code
  *    already does is a note under the task that wires the capability, not a task.
- * B. An added step with no `at` goes beside the nearest step of its flow that has one, or the
- *    class it calls.
+ * B. B-place: an added step goes where the target flow says, a new file (`new`) or code that
+ *    changes (`at`); the code it only calls (`uses`) is no place. A step with no place is new
+ *    code whose place isn't given, never beside a neighbour's code (B-tasks did that, and named
+ *    code the step only calls as the file to change).
  * C. The story file says its context once, lists each criterion once and keeps today's flow
  *    behind a summary.
  */
@@ -76,13 +78,12 @@ describe("A. tasks are units of work a developer takes", () => {
       story(stories, flow).tasks.map((t) => [t.id, partsOf(t).map((p) => p.position)]);
     expect(ids(ROUTE)).toEqual([["1.1", [1, 2]]]);
     expect(ids(SERVER)).toEqual([
-      // the new entry's handler: placed nowhere yet, one task
-      ["2.1", [1, 2]],
-      // lookup, read, prompt, reserve (wiring the existing client), drop, log: beside the reader
+      // B-place: the new controller, the entry's handler and its answer, one task
+      ["2.1", [1, 2, 12]],
+      // lookup, read, prompt, reserve (wiring the existing client), drop, log: the new service
       ["2.3", [3, 4, 5, 6, 9, 11]],
       // a new table: its migration lands first, so it is a task of its own
       ["2.10", [10]],
-      ["2.12", [12]],
     ]);
     expect(ids(WEB)).toEqual([
       ["3.1", [1, 2]],
@@ -100,6 +101,7 @@ describe("A. tasks are units of work a developer takes", () => {
     expect(stepTasks(story(stories, SERVER)).map((t) => t.id)).toEqual([
       "2.1",
       "2.2",
+      "2.12",
       "2.3",
       "2.4",
       "2.5",
@@ -107,7 +109,6 @@ describe("A. tasks are units of work a developer takes", () => {
       "2.9",
       "2.11",
       "2.10",
-      "2.12",
     ]);
   });
 
@@ -162,10 +163,9 @@ describe("A. tasks are units of work a developer takes", () => {
 `);
     const s = storiesFromDeltas([d!], e)[0]!;
     expect(s.tasks.flatMap((t) => t.done ?? [])).toEqual([]);
-    // B: the call goes beside the class it calls (the Interface's citation), the handler nowhere.
+    // B-place: the call names no place, so it has none: never the class it calls.
     const call = stepTasks(s).find((t) => t.kind === "call-out")!;
-    expect([call.placed, call.evidence]).toEqual(["beside", [`${CLIENT}:38`]]);
-    expect(call.beside).toEqual({ by: "calls" });
+    expect([call.placed, call.evidence]).toEqual([undefined, []]);
   });
 
   it("the fraud check's call-out and branch in OrderController are one task; the write with its migration another", async () => {
@@ -182,10 +182,9 @@ describe("A. tasks are units of work a developer takes", () => {
     const folded = foldAnswer(a, stories);
     const s2 = folded.stories.find((s) => s.id === "s2-summarise-order")!;
     expect(s2.tasks.map((t) => [t.id, t.criteria.length])).toEqual([
-      ["2.1", 4],
+      ["2.1", 5],
       ["2.3", 12],
       ["2.10", 3],
-      ["2.12", 1],
     ]);
     // Folding is idempotent, and the checks read either form the same.
     expect(foldAnswer(folded, stories)).toEqual(folded);
@@ -202,50 +201,62 @@ describe("A. tasks are units of work a developer takes", () => {
   it("an also naming a step folds to its task, and a task's criteria never name itself", () => {
     const { stories } = planned();
     const a = answer();
-    a.stories[1]!.tasks[0]!.criteria[0]!.also = ["2.2", "2.12"];
+    a.stories[1]!.tasks[0]!.criteria[0]!.also = ["2.2", "2.10"];
     const s2 = foldAnswer(a, stories).stories[1]!;
-    expect(s2.tasks[0]!.criteria[0]!.also).toEqual(["2.12"]);
+    expect(s2.tasks[0]!.criteria[0]!.also).toEqual(["2.10"]);
   });
 });
 
-describe("B. new code goes beside its nearest placed neighbour", () => {
-  it("a step with no at is placed beside the nearest step of its flow that has one; the handler's steps stay unplaced", () => {
+describe("B. new code goes where the target flow says (B-place)", () => {
+  const SERVICE = "forge-orders:src/main/java/forge/orders/OrderSummaryService.java";
+
+  it("each step has its new file; the reader it uses is no place; a step with none is placed nowhere", () => {
     const { stories } = planned();
     const steps = stepTasks(story(stories, SERVER));
     const at = (n: number) => steps.find((t) => t.position === n)!;
-    expect([at(4).placed, at(4).evidence]).toEqual(["given", [READER]]);
-    for (const n of [3, 5, 6, 9, 10, 11]) {
-      expect([n, at(n).placed, at(n).evidence]).toEqual([n, "beside", [READER]]);
-      expect(at(n).beside).toEqual({ by: "neighbour", step: 4 });
-    }
-    // entry, validate and respond are the new entry's handler: beside a reader is no place for them
-    for (const n of [1, 2, 12])
-      expect([n, at(n).placed, at(n).evidence]).toEqual([n, undefined, []]);
+    expect([at(4).placed, at(4).newFile, at(4).uses, at(4).evidence]).toEqual([
+      "new",
+      SERVICE,
+      [READER],
+      [],
+    ]);
+    // B-tasks' own draft: the read's `at` on the reader, every other step with no place. No step
+    // is placed beside the reader any more: it says the place isn't given.
+    const old = deltas().map((d) => ({
+      ...d,
+      steps: d.steps.map((s) => {
+        const { new: _new, uses: _uses, ...rest } = s;
+        return s.uses
+          ? { ...rest, at: "src/main/java/forge/orders/OrderEventReader.java:18" }
+          : rest;
+      }),
+    }));
+    const before = stepTasks(story(storiesFromDeltas(old, estate()), SERVER));
+    for (const n of [3, 5, 6, 9, 10, 11])
+      expect([n, before.find((t) => t.position === n)!.evidence]).toEqual([n, []]);
   });
 
-  it("says new code beside <file>:<line> in the story file, the task's prompt and the implementation steps", () => {
+  it("says new file and uses in the story file, the task's prompt and the implementation steps", () => {
     const { stories } = planned();
     const s = story(stories, SERVER);
     const t = s.tasks.find((x) => x.id === "2.3")!;
-    expect(taskPrompt("order-summary", s, t, [])).toContain(`New code beside ${READER}`);
-    const md = renderStoryFile("order-summary", s, foldAnswer(answer(), stories).stories[1]!);
-    expect(md).toContain(
-      `- Where it goes: new code beside ${READER} (step 4, the nearest placed step)`,
+    expect(taskPrompt("order-summary", s, t, [])).toContain(
+      `It calls existing code, which doesn't change: ${READER} (item 4). Read it first.`,
     );
-    expect(storySteps(s).find((p) => p.kind === "code" && p.tasks.includes("2.3"))).toMatchObject({
-      kind: "code",
-      file: "forge-orders:src/main/java/forge/orders/OrderEventReader.java",
-      lines: [18],
-    });
-    // the beside steps are new code, not today's code at the reader's line
+    const md = renderStoryFile("order-summary", s, foldAnswer(answer(), stories).stories[1]!);
+    expect(md).toContain(`- Where it goes: new file ${SERVICE} (uses ${READER}): item 4`);
+    expect(md).not.toContain("new code beside");
+    // the new files are places; the reader they call isn't
     expect(
       storySteps(s)
-        .filter((p) => p.beside)
-        .map((p) => [p.kind, p.file, p.tasks]),
+        .filter((p) => p.kind === "new")
+        .map((p) => [p.file, p.tasks]),
     ).toEqual([
-      ["new", "forge-orders:src/main/java/forge/orders/OrderEventReader.java", ["2.3"]],
-      ["new", "forge-orders:src/main/java/forge/orders/OrderEventReader.java", ["2.10"]],
+      ["forge-orders:src/main/java/forge/orders/OrderSummaryController.java", ["2.1"]],
+      [SERVICE, ["2.3"]],
+      [SERVICE, ["2.10"]],
     ]);
+    expect(storySteps(s).some((p) => p.file?.includes("OrderEventReader"))).toBe(false);
   });
 });
 

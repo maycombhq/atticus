@@ -21,6 +21,12 @@ import { ORG_PACK_DIR } from "./layout.js";
 import { writeStartingPack } from "./orgpack-files.js";
 
 /**
+ * A metarepo's .gitignore lines for .atticus/: this machine's files stay out of Git, and the
+ * stamp `atticus upgrade` writes, .atticus/metarepo.yaml, is committed (ADR 0051).
+ */
+export const ATTICUS_FOLDER_IGNORE = ["/.atticus/*", "!/.atticus/metarepo.yaml"] as const;
+
+/**
  * `atticus init <name> --platform <pack>`: a new metarepo, ready for `repos discover`,
  * `workspace sync` and reading each repo (`/atticus-map`, `atticus verify --write`). The org
  * pack comes from the built-in defaults (written out as files) or is copied from a given pack;
@@ -207,11 +213,16 @@ export async function init(dir: string, o: InitOptions): Promise<InitResult> {
   );
   await writeNew(join(dir, "README.md"), README(o.name, o.platform));
   await ensureGitignore(dir);
-  // Per-person settings (executors.yaml) live in .atticus/ and are never committed either.
+  // Per-person settings (executors.yaml) live in .atticus/ and are never committed either; its
+  // stamp, .atticus/metarepo.yaml, is (ADR 0051), so the folder's files are ignored but that one.
   const gi = join(dir, ".gitignore");
   const text = await readFile(gi, "utf8");
-  if (!/^\/?\.atticus\/?$/m.test(text))
-    await writeFile(gi, `${text.endsWith("\n") ? text : `${text}\n`}/.atticus/\n`, "utf8");
+  if (!/^\/?\.atticus(\/\*?)?$/m.test(text))
+    await writeFile(
+      gi,
+      `${text.endsWith("\n") ? text : `${text}\n`}${ATTICUS_FOLDER_IGNORE.join("\n")}\n`,
+      "utf8",
+    );
 
   const op = await loadOrgPack(orgPack);
   const created = (await listFiles(dir)).filter((f) => !before.has(f));
