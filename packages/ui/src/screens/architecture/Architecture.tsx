@@ -9,9 +9,12 @@ import { systemHash } from "../know/Systems.js";
 import { CopyButton, Facts } from "../run/shared.js";
 import { RunStep } from "../../app/runstep.js";
 import { ArchitectureCanvas } from "./Canvas.js";
+import { Citation, EvidenceProvider, useEvidence } from "../../app/evidence.js";
 import {
   canvasGraph,
   directionFor,
+  evidenceRepos,
+  withEvidenceGaps,
   keyStep,
   legibility,
   openAt,
@@ -53,22 +56,44 @@ const nodePath = (id: string, lens: Lens) =>
  * The Architecture workspace (plan 4.6, ADR 0081): the estate from the graph API, opened a node
  * at a time. A lens switcher, breadcrumbs, the picture of the open node, an outline of the same
  * graph for keyboards and screen readers, and a details panel with the command for the next step.
+ * Each box's and link's evidence is looked up in its repo's facts (ADR 0124 addendum D-app, F3):
+ * the details panel cites each line with its quote and Correct this, and what lacks a verified
+ * fact or has a question open is a gap like any other.
  */
-export function Architecture({
-  hash,
-  screen = "architecture",
-}: {
+export function Architecture(p: {
   hash: string;
   /** The page it is shown on: Change's Architecture tab, or the Map's estate canvas. */
   screen?: string;
 }) {
+  return (
+    <EvidenceProvider>
+      <Workspace {...p} />
+    </EvidenceProvider>
+  );
+}
+
+function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: string }) {
   const lensParam = queryParam(hash, "lens");
   const lens: Lens = (LENSES as readonly string[]).includes(lensParam ?? "")
     ? (lensParam as Lens)
     : "architecture";
   // A link to one node (#/architecture?node=<id>, ADR 0091), e.g. from @atticus /diagram.
   const nodeParam = queryParam(hash, "node");
-  const [views, setViews] = useState<Views>(new Map());
+  const [loaded, setViews] = useState<Views>(new Map());
+  // F3: the repos' facts, so each box and link says what its evidence lacks.
+  const ev = useEvidence();
+  const repos = evidenceRepos(loaded).join(" ");
+  useEffect(() => {
+    for (const r of repos.split(" ").filter(Boolean)) ev?.need(r);
+  }, [repos, ev]);
+  const views = useMemo(
+    () =>
+      withEvidenceGaps(loaded, (r) => {
+        const v = ev?.of(r);
+        return v?.state === "ready" ? v.data : undefined;
+      }),
+    [loaded, ev],
+  );
   const [status, setStatus] = useState<Status>({ state: "loading" });
   const [current, setCurrent] = useState("estate");
   const [expanded, setExpanded] = useState<Set<string>>(new Set(["estate"]));
@@ -459,6 +484,10 @@ export function Architecture({
                 onOpen={open}
                 onFocus={showFocus}
                 lens={lens}
+                links={(focus?.edges ?? view.edges).filter(
+                  (e) => e.from === sel.id || e.to === sel.id,
+                )}
+                labelOf={(id) => find(id)?.label ?? id}
                 {...(!focus && graph.boxes.some((b) => b.id === sel.id)
                   ? { here: { open: inPlace.has(sel.id), toggle: () => void toggleHere(sel.id) } }
                   : {})}
@@ -521,8 +550,13 @@ function Inspector({
   onOpen,
   onFocus,
   here,
+  links = [],
+  labelOf = (id) => id,
 }: {
   node: Api.HierNodeT;
+  /** The links in the view that start or end on the box, each with its evidence (F3). */
+  links?: Api.HierEdgeT[];
+  labelOf?: (id: string) => string;
   /** The box is the one the canvas shows already: Open would do nothing. */
   isCurrent?: boolean;
   lens: Lens;
@@ -585,14 +619,38 @@ function Inspector({
       {node.evidence.length ? (
         <ul>
           {node.evidence.map((e) => (
-            <li key={`${e.repo ?? ""}:${e.at}`} className="mono">
-              {e.repo ? `${e.repo}: ` : ""}
-              {e.at}
+            <li key={`${e.repo ?? ""}:${e.at}`}>
+              {e.repo && <span className="mono">{e.repo}: </span>}
+              <Citation repo={e.repo} at={e.at} />
             </li>
           ))}
         </ul>
       ) : (
         <p>{WORDS.noEvidence}</p>
+      )}
+      <h4 className="hud">{COPY.evidence.links}</h4>
+      {links.length ? (
+        <ul>
+          {links.map((l) => (
+            <li key={l.id}>
+              {COPY.evidence.linkOf(labelOf(l.from), labelOf(l.to), l.type)}
+              {l.gaps.length > 0 &&
+                ` · ${WORDS.gaps}: ${l.gaps.map((g) => WORDS.gap[g] ?? g).join(", ")}`}
+              {l.evidence.length > 0 && (
+                <ul>
+                  {l.evidence.map((e) => (
+                    <li key={`${e.repo ?? ""}:${e.at}`}>
+                      {e.repo && <span className="mono">{e.repo}: </span>}
+                      <Citation repo={e.repo} at={e.at} />
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p>{COPY.evidence.noLinks}</p>
       )}
       {node.next && (
         <>

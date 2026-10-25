@@ -11,6 +11,7 @@ import {
   excludesOf,
   headOf,
   raiseReadQuestions,
+  readCorrections,
   writeVerifyFiles,
   type QuestionProblem,
 } from "./facts-files.js";
@@ -95,12 +96,17 @@ export async function verifyCommand(
   // ADR 0124 addendum A-incremental: facts read at an earlier commit are carried to this one
   // where every file they cite is unchanged since, and read again where one changed.
   const { carry, missing } = await carryOf(dir, parsed.facts, commit, o.git);
+  // ADR 0124 addendum D-app: a person's corrections from the Map, applied on every run.
+  const corrections = await readCorrections(root, repo);
+  for (const b of corrections.bad)
+    io.err(`${rel}/${repo}.corrections.jsonl line ${b.line} isn't a correction: ${b.message}`);
   const report = await verifyFacts({
     facts: parsed.facts,
     source,
     ...(commit ? { commit, carry } : {}),
     ...(o.routed ? { routed: o.routed } : {}),
     exclude: await excludesOf(root, repo),
+    corrections: corrections.corrections,
   });
 
   // ADR 0078: what the code can't settle, raised for a person.
@@ -168,6 +174,12 @@ export async function verifyCommand(
     io.out(
       `Facts of commit ${c.slice(0, 12)} can't be compared with ${commit!.slice(0, 12)} (this clone doesn't have it): they are rejected as wrong-commit; read them again.`,
     );
+  const fixed = report.corrections.applied;
+  if (fixed.length)
+    io.out(
+      `${fixed.length} ${fixed.length === 1 ? "correction" : "corrections"} by a person applied (${rel}/${repo}.corrections.jsonl): ${fixed.map((a) => `${a.fact} ${a.action === "wrong" ? "left out as wrong" : "as corrected"}`).join(", ")}.`,
+    );
+  for (const s of report.corrections.stale) io.out(`  correction: ${s.message}`);
   for (const r of report.rejected.slice(0, 15)) io.out(`  ${r.code}: ${r.message}`);
   if (report.rejected.length > 15) io.out(`  ... and ${report.rejected.length - 15} more`);
   if (raised)

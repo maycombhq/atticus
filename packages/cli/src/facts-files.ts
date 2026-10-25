@@ -7,10 +7,12 @@ import {
   isAdopted,
   isSecretPath,
   orgPackDirOf,
+  parseCorrections,
   QuestionDraft,
   raiseQuestions,
   serializeFacts,
   type Fact,
+  type FactCorrection,
   type Question,
 } from "@maycombhq/core";
 import {
@@ -148,6 +150,11 @@ export interface VerifySummary {
    * `commit` in the facts file is now `commit`; this is where they were read. Left out when none.
    */
   carried?: { from: string; facts: string[] }[];
+  /** A person's corrections the verifier applied, and those that met no fact. */
+  corrections?: {
+    applied: { fact: string; action: string; by: string }[];
+    stale: { fact: string; why: string; message: string }[];
+  };
 }
 
 /**
@@ -192,6 +199,19 @@ export async function writeVerifyFiles(
       excluded: report.coverage.excluded,
     },
     rejections: report.rejected.map((r) => ({ id: r.fact.id, code: r.code, message: r.message })),
+    // ADR 0124 addendum D-app: a person's corrections, said only when there are some.
+    ...(report.corrections.applied.length || report.corrections.stale.length
+      ? {
+          corrections: {
+            applied: report.corrections.applied,
+            stale: report.corrections.stale.map((s) => ({
+              fact: s.correction.fact,
+              why: s.why,
+              message: s.message,
+            })),
+          },
+        }
+      : {}),
   };
   if (report.carried.length) {
     const by = new Map<string, string[]>();
@@ -202,4 +222,18 @@ export async function writeVerifyFiles(
   }
   await writeFile(join(dir, `${repo}.verify.yaml`), stringify(summary), "utf8");
   return summary;
+}
+
+/**
+ * A person's corrections of a repo's facts (`<repo>.corrections.jsonl`, ADR 0124 addendum D-app),
+ * written from the Map. None when there is no file; a line that isn't one is said, not fatal.
+ */
+export async function readCorrections(
+  root: string,
+  repo: string,
+): Promise<{ corrections: FactCorrection[]; bad: { line: number; message: string }[] }> {
+  const text = await readFile(join(factsDirOf(root), `${repo}.corrections.jsonl`), "utf8").catch(
+    () => undefined,
+  );
+  return text === undefined ? { corrections: [], bad: [] } : parseCorrections(text);
 }

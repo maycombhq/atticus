@@ -263,6 +263,25 @@ async function readLoop(dir: string, change: string, stage: Stage): Promise<Stag
   });
 }
 
+/**
+ * A stage's loop file (`stage/<stage>.yaml`) and whether it is there, for what reads or adds to it
+ * outside a run: the app's stage tab and a person's comment on a finding (ADR 0124 addendum D-app).
+ */
+export async function readStageLoop(
+  dir: string,
+  change: string,
+  stage: Stage,
+): Promise<{ loop: StageLoop; present: boolean; file: string }> {
+  const present = await stat(join(dir, loopRel(stage))).then(
+    (s) => s.isFile(),
+    () => false,
+  );
+  return { loop: await readLoop(dir, change, stage), present, file: loopRel(stage) };
+}
+
+/** Write a stage's loop file as the loop does. */
+export const writeStageLoop = (dir: string, l: StageLoop): Promise<void> => writeLoop(dir, l);
+
 async function writeLoop(dir: string, l: StageLoop): Promise<void> {
   await writeFileAtomic(
     join(dir, loopRel(l.stage)),

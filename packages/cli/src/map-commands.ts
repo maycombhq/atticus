@@ -58,6 +58,7 @@ import {
   excludesOf,
   headOf,
   raiseReadQuestions,
+  readCorrections,
   writeVerifyFiles,
   type VerifySummary,
 } from "./facts-files.js";
@@ -772,6 +773,8 @@ async function takeAnswer(
     commit: s.commit,
     carry,
     exclude,
+    // ADR 0124 addendum D-app: a person's corrections hold through every batch of a read.
+    corrections: (await readCorrections(root, s.repo)).corrections,
   });
   const q = await raiseReadQuestions(root, s.repo, answer.questions, source, {
     command: `atticus map ${s.repo}`,

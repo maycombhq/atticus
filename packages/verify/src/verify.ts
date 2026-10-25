@@ -13,8 +13,10 @@ import {
   type Fact,
   type FileChange,
   type StaleCite,
+  type FactCorrection,
 } from "@maycombhq/core";
 import { globToRegExp } from "@maycombhq/sdk";
+import { applyCorrections, type AppliedCorrection, type StaleCorrection } from "./corrections.js";
 import { pageRouteMatches } from "./pages.js";
 import { insideRepo, type FileSource } from "./source.js";
 
@@ -75,6 +77,8 @@ export interface VerifyReport {
    * `accepted` is the one verified; this is the record of where they were read. By id.
    */
   carried: { id: string; from: string }[];
+  /** A person's corrections (ADR 0124 addendum D-app): applied, and those that met no fact. */
+  corrections: { applied: AppliedCorrection[]; stale: StaleCorrection[] };
 }
 
 /** The files changed since each earlier commit the facts name, keyed by that commit as the facts write it. */
@@ -98,6 +102,11 @@ export interface VerifyOptions {
   routed?: readonly string[];
   /** Accepted exclusion globs: generated code, vendored copies (ADR 0075 scan settings). */
   exclude?: readonly string[];
+  /**
+   * A person's corrections (`<repo>.corrections.jsonl`), applied before anything is checked: a
+   * fact marked wrong is left out, an edited one is the person's fact and is checked as any is.
+   */
+  corrections?: readonly FactCorrection[];
 }
 
 const SOURCE_EXT =
@@ -218,7 +227,8 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
   // of this commit (ADR 0124 addendum A-incremental); one citing a changed file is read again.
   const carriedFrom = new Map<string, string>();
   const stale = new Map<string, StaleCite>();
-  const facts = [...o.facts]
+  const corrected = applyCorrections(o.facts, o.corrections ?? []);
+  const facts = [...corrected.facts]
     .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
     .map((f) => {
       if (!o.commit || sameCommit(f.commit, o.commit)) return f;
@@ -520,5 +530,6 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
     carried: accepted.flatMap((f) =>
       carriedFrom.has(f.id) ? [{ id: f.id, from: carriedFrom.get(f.id)! }] : [],
     ),
+    corrections: { applied: corrected.applied, stale: corrected.stale },
   };
 }

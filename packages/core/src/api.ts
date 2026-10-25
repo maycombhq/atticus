@@ -13,6 +13,7 @@ import {
 import { ChangeArtifact, Phase } from "./schema/orgpack.js";
 import { Finding, FindingAction, Lens, Severity } from "./schema/review.js";
 import { Question, QuestionScopeLevel } from "./schema/question.js";
+import { FactCorrection } from "./schema/fact-corrections.js";
 import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
 
 /**
@@ -48,8 +49,12 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  * 2.22.0 (ADR 0124 addendum, the app's six entries): GET /api/trust (the Trust tab), a change's
  *   knowledge.yaml (GET /api/changes/{id}/knowledge, POST .../knowledge/{item}), and `full` in
  *   health (`atticus ui --full`). Additive only.
+ * 2.23.0 (ADR 0124 addendum D-app, F3 and B10): the Map with its evidence, a repo's facts as the
+ *   Map cites them and a person's correction of one (GET /api/facts/{repo}, POST
+ *   .../corrections); a stage tab's critic findings with their options, a comment on one and
+ *   the stage's questions (GET /api/changes/{id}/stages/{stage}, POST .../comments). Additive only.
  */
-export const API_VERSION = "2.22.0";
+export const API_VERSION = "2.23.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -657,6 +662,145 @@ export const SetChangeKnowledgeResult = z.object({
 });
 export type ChangeKnowledgeViewT = z.infer<typeof ChangeKnowledgeView>;
 export type SetChangeKnowledgeResultT = z.infer<typeof SetChangeKnowledgeResult>;
+
+/**
+ * 2.23.0 (ADR 0124 addendum D-app, F3): a repo's facts as the Map cites them. Each fact with the
+ * line it rests on and its quote, who made it and who checked it, the fields a person may correct
+ * and a correction already on file. A flow's steps and error paths carry their own citations.
+ */
+export const FactCiteSpot = z.object({
+  file: z.string(),
+  line: z.number().int().positive(),
+  value: z.string(),
+  quote: z.string().optional(),
+});
+export const FactCiteView = z.object({
+  id: z.string(),
+  kind: z.string(),
+  /** The claim in a few words: `GET /accounts/{accountId}`, `ledger.entries (write)`. */
+  label: z.string(),
+  /** The fields a person may correct, with their values now. */
+  claim: z.record(z.string(), z.string()),
+  cite: FactCiteSpot,
+  /** A flow's steps and error paths, each at its own line. */
+  steps: z.array(FactCiteSpot.extend({ what: z.string() })).optional(),
+  verified: z.enum(["line", "sample", "person", "none"]),
+  by: z.enum(["assistant", "reader", "person"]),
+  /** A person's correction of the fact, on file; atticus verify applies it. */
+  correction: FactCorrection.optional(),
+});
+export const RepoFactsView = z.object({
+  repo: z.string(),
+  /** `facts/<repo>.jsonl`, from the metarepo's root. */
+  file: z.string(),
+  present: z.boolean(),
+  commit: z.string().optional(),
+  facts: z.array(FactCiteView),
+  /** `facts/<repo>.corrections.jsonl`: how many, and the facts they name the file doesn't have. */
+  corrections: z.object({ file: z.string(), count: z.number().int(), stale: z.array(z.string()) }),
+  /** Open questions about the repo, with the lines they read (path:line). */
+  questions: z.array(
+    z.object({ id: z.string(), question: z.string(), evidence: z.array(z.string()) }),
+  ),
+  /** The command that checks the facts again and applies the corrections. */
+  verify: z.string(),
+  problems: z.array(z.object({ file: z.string(), message: z.string() })),
+});
+/** Mark a fact wrong (with why) or correct its claim: its fields, or the line it is on. */
+export const FactCorrectionRequest = z.strictObject({
+  fact: z.string().min(1),
+  action: z.enum(["wrong", "edit"]),
+  set: z.record(z.string().min(1), z.string()).optional(),
+  line: z.number().int().positive().optional(),
+  reason: z.string().trim().min(1).max(500).optional(),
+});
+export const FactCorrectionResult = z.object({
+  correction: FactCorrection,
+  /** `facts/<repo>.corrections.jsonl`, from the metarepo's root. */
+  file: z.string(),
+  /** The git command that commits the file (the app runs no git). */
+  commit: z.string(),
+  /** The command that applies it: the verifier reads the corrections every time it runs. */
+  verify: z.string(),
+});
+export type FactCiteViewT = z.infer<typeof FactCiteView>;
+export type RepoFactsViewT = z.infer<typeof RepoFactsView>;
+export type FactCorrectionResultT = z.infer<typeof FactCorrectionResult>;
+
+/**
+ * 2.23.0 (ADR 0124 addendum D-app, B10): a stage tab's critic findings (the latest round of the
+ * stage's gate, `review/<gate>/<round>/`), each with the options it allows and the comments a
+ * person wrote on it, the stage's own questions, and the command to run next. A comment is a
+ * question the person answered as they asked it (ADR 0078), listed in the stage's loop file, so
+ * the stage's next run reads it as a person's answer and hands it to the drafter (ADR 0087).
+ */
+export const STAGE_TABS = ["feature", "architecture", "stories"] as const;
+export const StageTab = z.enum(STAGE_TABS);
+export const StageComment = z.object({
+  /** The question the comment is written as, `questions/<id>.yaml`. */
+  question: z.string(),
+  text: z.string(),
+  by: z.string(),
+  at: z.string(),
+  /** A draft of the stage has read it. */
+  read: z.boolean(),
+});
+export const StageFindingView = z.object({
+  finding: Finding,
+  /** The finding's file, from the metarepo's root. */
+  file: z.string(),
+  options: z.object({
+    /** The fix's one action, in words. */
+    fix: z.string(),
+    /** Apply: record the fix as made (an issue). */
+    apply: z.boolean(),
+    /** Not relevant, with a reason (an issue). */
+    dismiss: z.boolean(),
+    /** Waive, with a reason: a blocking finding of a rule that allows it. */
+    waive: z.boolean(),
+    /** A knowledge gap's question to its owner: Ask routes it. */
+    ask: z.object({ text: z.string(), owner: z.string() }).optional(),
+  }),
+  comments: z.array(StageComment),
+});
+export const StageReviewView = z.object({
+  change: z.string(),
+  stage: StageTab,
+  /** The gate the stage's critic reviews at; null when gates.yaml has none for its phase. */
+  gate: z.string().nullable(),
+  /** The round shown, the gate's latest; null before the critic reviewed anything. */
+  round: z.number().int().nullable(),
+  /** `stage/<stage>.yaml`, the stage's loop: whether the stage has run, and where it stopped. */
+  loop: z.object({
+    file: z.string(),
+    present: z.boolean(),
+    state: z.string().optional(),
+    iteration: z.number().int().optional(),
+  }),
+  findings: z.array(StageFindingView),
+  /** The questions the stage raised (comments aside), open first. */
+  questions: z.array(Question),
+  /** The stage's command (and slash command), which reads the answers and comments. */
+  next: z.object({ command: z.string(), slash: z.string() }),
+  problems: z.array(z.object({ file: z.string(), message: z.string() })),
+});
+export const StageCommentRequest = z.strictObject({
+  finding: z.string().min(1),
+  /** The gate the finding belongs to, when its id alone is ambiguous. */
+  gate: z.string().optional(),
+  text: z.string().trim().min(1).max(4000),
+});
+export const StageCommentResult = z.object({
+  comment: StageComment,
+  /** The files written, from the metarepo's root: the question, and the stage's loop file. */
+  files: z.array(z.string()),
+  /** The git command that commits them (the app runs no git). */
+  commit: z.string(),
+  next: z.object({ command: z.string(), slash: z.string() }),
+});
+export type StageReviewViewT = z.infer<typeof StageReviewView>;
+export type StageFindingViewT = z.infer<typeof StageFindingView>;
+export type StageCommentResultT = z.infer<typeof StageCommentResult>;
 
 /**
  * ADR 0092: the specs (ADR 0079) as the Flows screen reads them, from files only: the repos
@@ -2398,6 +2542,29 @@ const OPS: Record<string, Record<string, Op>> = {
       ok: { status: 200, schema: "TrustView", description: "OK" },
     },
   },
+  "/api/facts/{repo}": {
+    get: {
+      id: "getRepoFacts",
+      summary:
+        "A repo's facts as the Map cites them: each with its line and quote, who made and checked it, the fields a person may correct and any correction on file; the open questions about the repo (ADR 0124)",
+      tag: "workspace",
+      params: [p("repo")],
+      ok: { status: 200, schema: "RepoFactsView", description: "OK" },
+      errors: [400],
+    },
+  },
+  "/api/facts/{repo}/corrections": {
+    post: {
+      id: "correctFact",
+      summary:
+        "Mark a fact wrong or correct its claim: a line in facts/<repo>.corrections.jsonl, which atticus verify applies every time it runs. Returns the git command that commits the file and the verify command",
+      tag: "workspace",
+      params: [p("repo")],
+      body: FactCorrectionRequest,
+      ok: { status: 200, schema: "FactCorrectionResult", description: "Recorded" },
+      errors: [400, 404, 422],
+    },
+  },
   "/api/workspace/sync": {
     post: {
       id: "syncWorkspace",
@@ -3244,6 +3411,29 @@ const OPS: Record<string, Record<string, Op>> = {
       errors: [400, 404, 422],
     },
   },
+  "/api/changes/{changeId}/stages/{stage}": {
+    get: {
+      id: "getStageReview",
+      summary:
+        "A stage tab's critic findings (the latest round of its gate) with their options and comments, the stage's questions, and the command to run next (ADR 0087, ADR 0124)",
+      tag: "changes",
+      params: [p("changeId"), p("stage", { schema: { type: "string", enum: [...STAGE_TABS] } })],
+      ok: { status: 200, schema: "StageReviewView", description: "OK" },
+      errors: [400, 404],
+    },
+  },
+  "/api/changes/{changeId}/stages/{stage}/comments": {
+    post: {
+      id: "commentOnFinding",
+      summary:
+        "A person's comment on a finding: written as a question they answered (questions/), listed in the stage's loop file, so the stage's next run hands it to the drafter. Returns the git command and the stage's command",
+      tag: "changes",
+      params: [p("changeId"), p("stage", { schema: { type: "string", enum: [...STAGE_TABS] } })],
+      body: StageCommentRequest,
+      ok: { status: 200, schema: "StageCommentResult", description: "Written" },
+      errors: [400, 404, 409, 422],
+    },
+  },
   "/api/changes/{changeId}/knowledge": {
     get: {
       id: "getChangeKnowledge",
@@ -3380,6 +3570,10 @@ export function openApiDocument(): Record<string, unknown> {
     TrustView,
     ChangeKnowledgeView,
     SetChangeKnowledgeResult,
+    RepoFactsView,
+    FactCorrectionResult,
+    StageReviewView,
+    StageCommentResult,
     OrgPackDraftView,
     AcceptedOrgPack,
   };

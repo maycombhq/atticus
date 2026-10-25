@@ -2962,4 +2962,140 @@ export const COPY = {
   nextStep: {
     releasePlan: "Release plan",
   },
+  /** ADR 0124 addendum D-app, F3: the Map with its evidence, and correcting a fact in place. */
+  evidence: {
+    cite: (at: string) => `Where this was found: ${at}`,
+    citeOf: (at: string, repo: string) => `Where this was found: ${repo}, ${at}`,
+    loading: "Reading the facts for this line…",
+    quote: "The line, as the reader quoted it",
+    noQuote: "No quote was kept for this line.",
+    facts: (n: number) => `${n} fact${n === 1 ? "" : "s"} on this line`,
+    by: {
+      assistant: "read by the assistant",
+      reader: "read by a built-in reader",
+      person: "a person's fact",
+    } as Record<string, string>,
+    verified: {
+      line: "checked on its line by atticus verify",
+      sample: "checked by a sample session",
+      person: "confirmed by a person",
+      none: "not checked yet: run atticus verify",
+    } as Record<string, string>,
+    gaps: {
+      unverified: "No fact verified from code cites this",
+      question: "A question is open on this",
+      corrected: "A person corrected this; atticus verify applies it",
+    } as Record<string, string>,
+    short: {
+      unverified: "unproven",
+      question: "question open",
+      corrected: "corrected",
+    } as Record<string, string>,
+    noFacts: (repo: string) =>
+      `${repo} has no facts yet: what is drawn from it comes from the built-in readers, not from a read the verifier checked.`,
+    openQuestion: "Answer it",
+    correct: "Correct this",
+    correctFact: (label: string) => `Correct the fact ${label}`,
+    close: "Close",
+    correctTitle: (label: string) => `Correct ${label}`,
+    correctIntro:
+      "Say the fact is wrong, or put the claim right. Atticus writes your correction to the repo's corrections file; atticus verify applies it every time it runs, so the next read keeps it. A corrected claim is still checked on its line: the code must say it.",
+    wrong: "It is wrong",
+    edit: "Put the claim right",
+    reason: "Why (required to mark it wrong)",
+    reasonOptional: "Why (optional)",
+    line: "Line it is on",
+    save: "Save the correction",
+    saving: "Writing the correction…",
+    needReason: "Say why the fact is wrong first.",
+    nothingChanged: "Change a field or the line first.",
+    saved: (file: string) =>
+      `Written to ${file}. Commit it with the metarepo's other files, then run atticus verify to apply it:`,
+    copyCommit: "Copy the git command",
+    copyVerify: "Copy the verify command",
+    correction: (action: string, by: string) =>
+      action === "wrong" ? `Marked wrong by ${by}` : `Corrected by ${by}`,
+    links: "Links",
+    noLinks: "No link starts or ends here in this view.",
+    linkOf: (from: string, to: string, type: string) => `${from} ${type} ${to}`,
+  },
+  /** ADR 0124 addendum D-app, B10: a stage tab's critic findings, their options and a comment box. */
+  stageReview: {
+    title: "What the critic found",
+    intro:
+      "The critic's findings on this stage's latest draft, each with what you can do about it: make the fix, say it isn't relevant, waive it where the rule allows, or ask its owner. Or leave a comment: the stage's next run gives it to your assistant as your answer, with the next draft.",
+    notRun:
+      "This stage hasn't run for this change yet, so there is nothing to review. Run it first:",
+    noRound: (gate: string | null) =>
+      gate
+        ? `The critic hasn't reviewed a draft at the ${gate} gate yet. The stage runs it on each draft that passes its checks.`
+        : "No gate in gates.yaml reviews this stage's phase, so the critic doesn't run here.",
+    clean: (gate: string, round: number) => `Nothing found at the ${gate} gate, round ${round}.`,
+    round: (gate: string, round: number, n: number) =>
+      `${n} finding${n === 1 ? "" : "s"} at the ${gate} gate, round ${round}`,
+    loopState: {
+      drafting: "The stage is drafting.",
+      waiting: "The stage waits on your assistant's answer.",
+      questions: "The stage waits on the questions below.",
+      stopped: "The stage stopped: its assistant couldn't fix what was found.",
+      done: "The stage is done.",
+    } as Record<string, string>,
+    severity: {
+      blocking: "Blocking",
+      gap: "Knowledge gap",
+      risk: "Risk",
+      idea: "Idea",
+    } as Record<string, string>,
+    state: {
+      open: "Open",
+      applied: "Fixed",
+      dismissed: "Not relevant",
+      waived: "Waived",
+      asked: "Asked",
+    } as Record<string, string>,
+    where: "Where",
+    why: "Why",
+    fix: "The fix",
+    options: "What you can do",
+    apply: "Make the fix",
+    applyFor: (id: string) => `Make the fix for ${id}`,
+    dismiss: "Not relevant",
+    dismissFor: (id: string) => `Not relevant: ${id}`,
+    waive: "Waive",
+    waiveFor: (id: string) => `Waive ${id}`,
+    ask: (owner: string) => `Ask ${owner}`,
+    askFor: (id: string, owner: string) => `Ask ${owner} about ${id}`,
+    cantWaive: "This rule can't be waived: fix it, or say it isn't relevant with why.",
+    reason: (id: string) => `Why, for ${id} (needed for not relevant and waive)`,
+    needReason: "Write why first: not relevant and waive need a reason.",
+    acted: (action: string) => `Recorded: ${action}.`,
+    actions: {
+      apply: "the fix is made",
+      "not-relevant": "not relevant",
+      waive: "waived",
+      ask: "asked of its owner",
+    } as Record<string, string>,
+    resolved: (state: string, by: string) => `${state} by ${by}`,
+    question: (owner: string) => `The question for ${owner}`,
+    comments: "Comments",
+    comment: (id: string) => `Your comment on ${id}`,
+    commentHint:
+      "Say what the next draft should do about it. Your words go to the assistant as your answer.",
+    saveComment: "Save the comment",
+    savingComment: "Writing the comment…",
+    needComment: "Write the comment first.",
+    read: "read by a draft",
+    unread: "not read yet: run the stage",
+    commented: (files: string) =>
+      `Written to ${files}. Commit them, then run the stage again: its next draft reads your comment.`,
+    copyCommit: "Copy the git command",
+    questions: "The stage's questions",
+    noQuestions: "The stage has no question for a person.",
+    answered: (words: string) => `Answered: ${words}`,
+    answerIt: (q: string) => `Answer: ${q}`,
+    next: "Then run the stage again",
+    nextWhy:
+      "It reads your answers, comments and choices, drafts again where they ask, and the critic checks the new draft.",
+    pickForArchitecture: "Pick a change to see what the critic found in its architecture.",
+  },
 } as const;
