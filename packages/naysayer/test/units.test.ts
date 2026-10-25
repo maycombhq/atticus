@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { MockRuntime, ReplayRuntime } from "@maycombhq/ai";
-import { Runtime } from "@maycombhq/core";
+import { Runtime, changesRelOf } from "@maycombhq/core";
 import {
   applyPatch,
   criticModel,
@@ -205,6 +205,34 @@ ${finding("{ path: ux.md, line: 3 }")}${finding('{ path: ux.md, line: 3, quote: 
     const kept = r.findings.filter((f) => f.layer === "ai");
     expect(kept.map((k) => k.finding.evidence)).toEqual([
       [{ source: "artifact", path: "ux.md", line: 3, quote: "The transfer screen shows" }],
+    ]);
+  });
+
+  // B2 (the knowledge walk): an assistant cites a file by the path its data block's origin gives
+  // (the metarepo path), not only by the block's id; the finding was dropped as having no evidence.
+  it("takes a file cited by its metarepo path as the file the lens was given", async () => {
+    const root = await forgeChangeRoot();
+    const at = `${changesRelOf(root)}/${CHANGE}/ux.md`;
+    const ux = `findings:
+  - rule: ux-states-complete
+    artifact: ${at}
+    summary: The screen has no loading state.
+    why: Nothing is shown while the limit loads.
+    evidence: [{ path: ${at}, line: 3, quote: "The transfer screen shows" }]
+`;
+    await keepUxStatesRule(root);
+    const rt = new MockRuntime(
+      (req) => (req.agent.id === "complete-critic" ? ux : "findings: []"),
+      { now: () => new Date(NOW) },
+    );
+    const r = await runCritic(root, CHANGE, { now: NOW, runtime: rt });
+    expect(r.discarded).toEqual([]);
+    const kept = r.findings.filter((f) => f.layer === "ai");
+    expect(kept.map((k) => [k.finding.artifact, k.finding.evidence])).toEqual([
+      [
+        "ux.md",
+        [{ source: "artifact", path: "ux.md", line: 3, quote: "The transfer screen shows" }],
+      ],
     ]);
   });
 

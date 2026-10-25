@@ -16,6 +16,7 @@ import {
   FlowDelta,
   loadEstate,
   PlannerError,
+  StageLoop,
 } from "../src/index.js";
 
 /**
@@ -168,6 +169,37 @@ const stopped = async (p: Promise<unknown>): Promise<PlannerError> => {
   expect((e as PlannerError).code).toBe("stopped");
   return e as PlannerError;
 };
+
+// B2 (the knowledge walk): the stories stage's judged doubt (holdOnce, locateText, judged, ask,
+// options) waited in the loop file while the critic's lenses were handed off, and the loop
+// file refused it: `plan stories --handoff --resume` crashed with "Unrecognized key: locateText".
+describe("a draft's issues waiting with its lenses", () => {
+  it("keeps every part of a stage's issue in the loop file", () => {
+    const issue = {
+      rule: "stories.check-not-in-criterion",
+      target: "1.1:transfer_id",
+      message: "Task 1.1: the criterion doesn't depend on transfer_id.",
+      blocking: true,
+      kind: "decision" as const,
+      repo: "forge-ledger",
+      holdOnce: true,
+      locateText: "Given a webhook with transfer_id T1",
+      judged: [{ field: "transfer_id", criterion: "Given a webhook", task: "1.1" }],
+      ask: "Does the criterion check transfer_id?",
+      options: [{ label: "Yes", means: "It checks it", changes: "The criterion stands" }],
+    };
+    const loop = StageLoop.parse({
+      schemaVersion: 1,
+      change: CHANGE,
+      stage: "stories",
+      iteration: 1,
+      state: "waiting",
+      updatedAt: NOW.toISOString(),
+      review: { gate: "design", round: 1, files: [], issues: [issue] },
+    });
+    expect(loop.review!.issues[0]).toEqual(issue);
+  });
+});
 
 describe("a lens run that is lost, or whose answer failed its check (B1, M6)", () => {
   it("records the lost lens as not reviewed, offers the next one, then stops; a rerun reviews the same draft again", async () => {

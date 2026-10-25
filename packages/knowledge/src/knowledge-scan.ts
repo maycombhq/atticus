@@ -389,7 +389,11 @@ ${snapshots
         : ""
     }`;
   })
-  .join("\n")}
+  .join("\n")}${
+  sharedPagePaths(snapshots).length
+    ? `\n\nMore than one source has a page at these paths, so write them as <source>/<page>: ${sharedPagePaths(snapshots).join(", ")}.`
+    : ""
+}
 
 ## Rules
 
@@ -477,15 +481,48 @@ Leave out fields a page doesn't state.
 
 const basename = (p: string) => p.split("/").pop() ?? p;
 
-function resolvePage(pages: PreparedPage[], ref: string): PreparedPage | undefined {
+/**
+ * The page a reference names. Two sources may each have a page at the same path (B2: a team's
+ * wiki and the org's both have `integration-patterns.md`); then the page the quote is on is the
+ * one meant, and with no quote, or a quote on neither, the first.
+ */
+function resolvePage(pages: PreparedPage[], ref: string, quote?: string): PreparedPage | undefined {
   const r = ref.trim().replace(/^\.\//, "");
-  const exact = pages.find(
+  const exact = pages.filter(
     (p) =>
       p.page.pagePath === r || `${p.page.source}/${p.page.pagePath}` === r || p.page.path === r,
   );
-  if (exact) return exact;
+  if (exact.length > 1 && quote !== undefined)
+    return exact.find((p) => checkQuote(p.page.text ?? "", quote).ok) ?? exact[0];
+  if (exact.length) return exact[0];
   const byName = pages.filter((p) => basename(p.page.pagePath) === basename(r));
   return byName.length === 1 ? byName[0] : undefined;
+}
+
+/** The sources that have a page at the path a reference names, when more than one does. */
+function sharedPath(pages: PreparedPage[], ref: string): string[] {
+  const r = ref.trim().replace(/^\.\//, "");
+  const on = pages.filter((p) => p.page.pagePath === r).map((p) => p.page.source);
+  return on.length > 1 ? on : [];
+}
+
+/** What to say when the quote is on none of the pages two or more sources have at that path. */
+const sharedPathProblem = (ref: string, sources: string[]) =>
+  `${ref} is on ${sources.join(" and ")}, and the quote is on neither page: write the page as <source>/<page> (${sources[0]}/${ref})`;
+
+/** Page paths more than one snapshot has: the prompt asks for them as `<source>/<page>`. */
+function sharedPagePaths(snapshots: Snapshot[]): string[] {
+  const seen = new Map<string, Set<string>>();
+  for (const s of snapshots)
+    for (const p of s.pages) {
+      const set = seen.get(p.pagePath) ?? new Set<string>();
+      set.add(s.manifest.source);
+      seen.set(p.pagePath, set);
+    }
+  return [...seen]
+    .filter(([, on]) => on.size > 1)
+    .map(([path]) => path)
+    .sort();
 }
 
 const words = (s: string) =>
@@ -553,27 +590,33 @@ function checkItem(
   if (!parsed.success) return { failed: { ...label, problems: fmt(parsed.error.issues) } };
   const item = parsed.data;
   const problems: string[] = [];
-  const page = resolvePage(pages, item.source.page);
+  const page = resolvePage(pages, item.source.page, item.source.quote);
   let line = 0;
   let section = item.source.section;
+  // B2: a path two sources share, with the quote on neither page, says so (not the first's miss).
+  const shared = (ref: string, quote: string) =>
+    sharedPath(pages, ref).length &&
+    !pages.some((p) => p.page.pagePath === ref.trim() && checkQuote(p.page.text ?? "", quote).ok)
+      ? sharedPathProblem(ref.trim(), sharedPath(pages, ref))
+      : undefined;
   if (!page) problems.push(`there is no page ${item.source.page} in the snapshot`);
   else {
     const c = checkQuote(page.page.text ?? "", item.source.quote, item.source.section);
     if (c.ok) {
       line = c.line;
       section = c.section;
-    } else problems.push(`quote: ${c.problem}`);
+    } else problems.push(`quote: ${shared(item.source.page, item.source.quote) ?? c.problem}`);
   }
   const alsoOn: CheckedItem["alsoOn"] = [];
   for (const a of item.also_on) {
-    const p = resolvePage(pages, a.page);
+    const p = resolvePage(pages, a.page, a.quote);
     if (!p) {
       problems.push(`also_on: there is no page ${a.page} in the snapshot`);
       continue;
     }
     const c = checkQuote(p.page.text ?? "", a.quote, a.section);
     if (c.ok) alsoOn.push({ page: p, line: c.line, section: c.section, quote: a.quote });
-    else problems.push(`also_on ${a.page}: ${c.problem}`);
+    else problems.push(`also_on ${a.page}: ${shared(a.page, a.quote) ?? c.problem}`);
   }
   const links: PageLink[] = [];
   if (page) {
@@ -632,7 +675,7 @@ function checkConflict(
     };
   const refs: PageRef[] = [];
   for (let k = 0; k < c.pages.length; k++) {
-    const pg = resolvePage(pages, c.pages[k]!);
+    const pg = resolvePage(pages, c.pages[k]!, c.says[k]!);
     if (!pg) return { problem: `${label}: there is no page ${c.pages[k]} in the snapshot` };
     const q = checkQuote(pg.page.text ?? "", c.says[k]!);
     if (!q.ok) return { problem: `${label}: on ${c.pages[k]}, ${q.problem}` };
@@ -660,7 +703,7 @@ function checkSuperseded(
   const newP = resolvePage(pages, s.new);
   if (!oldP) return { problem: `superseded: there is no page ${s.old} in the snapshot` };
   if (!newP) return { problem: `superseded: there is no page ${s.new} in the snapshot` };
-  const on = s.page ? resolvePage(pages, s.page) : undefined;
+  const on = s.page ? resolvePage(pages, s.page, s.quote) : undefined;
   const candidates = on ? [on] : [newP, oldP];
   const where = candidates.find((c) => checkQuote(c.page.text ?? "", s.quote).ok);
   if (!where)

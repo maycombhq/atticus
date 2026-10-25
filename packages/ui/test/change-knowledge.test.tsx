@@ -97,7 +97,7 @@ describe("the knowledge that applies, on Change › Feature", () => {
     expect(working).not.toMatch(/<button(?![^>]*disabled)[^>]*>Confirm</);
   });
 
-  it("has loading, error and empty states; empty gives the feature stage's command", () => {
+  it("has loading, error and empty states; empty gives the architecture stage's command", () => {
     const of = (o: Parameters<typeof ChangeKnowledgeView>[0]["of"]) =>
       renderToStaticMarkup(<ChangeKnowledgeView change="add-limit" of={o} />);
     expect(of({ state: "loading" })).toContain('aria-busy="true"');
@@ -107,7 +107,8 @@ describe("the knowledge that applies, on Change › Feature", () => {
       data: { ...VIEW, present: false, items: [], nearMisses: [] },
     });
     expect(empty).toContain(esc(K.none));
-    expect(empty).toContain("atticus change feature add-limit");
+    // B2: the feature stage picks no org knowledge; the architecture stage is the first that does.
+    expect(empty).toContain("atticus change architecture add-limit");
   });
 
   it("is on the feature tab only; At a glance and All changes are Change's tabs, not links here", () => {

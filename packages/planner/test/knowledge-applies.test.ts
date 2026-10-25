@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { ContextReport } from "../src/engine.js";
 import {
+  confirmedKnowledge,
   excludedKnowledge,
   knowledgeAppliesMarkdown,
   readKnowledgeApplies,
@@ -97,6 +98,10 @@ describe("knowledge that applies to a change, listed (ADR 0124, Part 5)", () => 
       score: 3,
     });
     expect(await excludedKnowledge(root, "add-limit")).toEqual(["decision.b"]);
+    // B2: what a person confirmed, for the stages that take its kind.
+    expect(await confirmedKnowledge(root, "add-limit")).toEqual(["pattern.a"]);
+    expect(await confirmedKnowledge(root, "add-limit", ["Pattern"])).toEqual(["pattern.a"]);
+    expect(await confirmedKnowledge(root, "add-limit", ["ProcessDefinition"])).toEqual([]);
     await expect(setKnowledgeStatus(root, "add-limit", "nope", "confirmed")).rejects.toThrow(
       /not in .*knowledge\.yaml/,
     );

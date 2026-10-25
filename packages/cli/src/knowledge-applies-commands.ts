@@ -27,12 +27,18 @@ export async function changeKnowledge(
   const doc = await readKnowledgeApplies(root, change);
   if (!doc) {
     io.err(
-      `${change} has no knowledge list yet: its stages write ${changesRelOf(root)}/${change}/knowledge.yaml when they select context (atticus change feature ${change}).`,
+      `${change} has no knowledge list yet: the feature stage picks none; the architecture stage writes ${changesRelOf(root)}/${change}/knowledge.yaml with the patterns, standards and decisions it picks, and the stories stage adds the processes and requests (atticus change architecture ${change}).`,
     );
     return 2;
   }
   if (o.json) io.out(JSON.stringify(doc, null, 2));
-  else for (const l of knowledgeAppliesMarkdown(doc).trimEnd().split("\n")) io.out(l);
+  else {
+    for (const l of knowledgeAppliesMarkdown(doc).trimEnd().split("\n")) io.out(l);
+    if (!o.confirm && !o.exclude)
+      io.out(
+        `Confirm or exclude an item: atticus change knowledge ${change} --confirm <id> (or --exclude <id>); an excluded one stays out of later stages.`,
+      );
+  }
   if (o.confirm || o.exclude)
     io.out(
       `Written to ${changesRelOf(root)}/${change}/knowledge.yaml; commit it with the change's files.`,

@@ -98,7 +98,7 @@ export function ChangeKnowledgeView(p: {
           <div className="state">
             <p style={{ margin: "0 0 8px" }}>{K.none}</p>
             <p className="work-say">{R.terminal}</p>
-            <Command text={K.featureCommand(p.change)} label={R.copy} />
+            <Command text={K.architectureCommand(p.change)} label={R.copy} />
           </div>
         }
       >

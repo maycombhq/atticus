@@ -284,7 +284,7 @@ export const COMMANDS: readonly CommandHelp[] = [
   {
     name: "change knowledge",
     usage: "atticus change knowledge <id> [--confirm id] [--exclude id] [--json]",
-    what: "Lists the wiki sections, documents, patterns, decisions and processes that apply to a change, picked by its stages, with the near-misses; confirm one, or exclude it so later stages leave it out.",
+    what: "Lists the patterns, standards, decisions, processes and requests that apply to a change, picked by its architecture and stories stages, with the near-misses; confirm one so later stages pick it, or exclude it so they leave it out.",
     who: ["developer", "business-analyst", "architect"],
     changes: "the change's knowledge.yaml",
     related: ["change status"],

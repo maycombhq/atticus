@@ -218,6 +218,15 @@ export async function sourcesAdd(
     ...(entry.path ? [`path: ${entry.path}`] : []),
     ...(entry.ref ? [`ref: ${entry.ref}`] : []),
     ...("checkout" in entry && entry.checkout ? [`checkout: ${entry.checkout}`] : []),
+    // B2: the owner and tags it was given, as --save writes them.
+    ...(entry.owner
+      ? [`owner: ${/^[\w.-]+$/.test(entry.owner) ? entry.owner : JSON.stringify(entry.owner)}`]
+      : []),
+    ...(entry.tags
+      ? [
+          `tags: { kinds: [${entry.tags.kinds.join(", ")}], frameworks: [${entry.tags.frameworks.join(", ")}] }`,
+        ]
+      : []),
   ];
   io.out(
     `  - { id: ${entry.id}, type: ${entry.type}, location: ${JSON.stringify(entry.location)}${extra.map((x) => `, ${x}`).join("")} }`,

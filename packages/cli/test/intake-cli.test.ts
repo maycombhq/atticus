@@ -57,6 +57,8 @@ describe("atticus intake add", () => {
       "Added inputs/inbox/northwind-swagger.json (swagger).",
       "Added inputs/inbox/meeting-notes.md (document, needs reading).",
       "Run atticus intake list to see what Atticus made of them.",
+      // B2: a document becomes knowledge through the inputs source (ADR 0122), not intake list.
+      "To read the documents into knowledge every change can use: atticus sources sync --source inputs, then atticus knowledge scan --source inputs.",
     ]);
     expect((await readdir(join(root, "inputs/inbox"))).sort()).toEqual([
       "meeting-notes.md",

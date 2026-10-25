@@ -18,7 +18,7 @@ import {
   type RetrievalAi,
 } from "../engine.js";
 import { fitGapSources, gapContext } from "../gaps.js";
-import { excludedKnowledge } from "./knowledge-applies.js";
+import { confirmedKnowledge, excludedKnowledge } from "./knowledge-applies.js";
 import { briefEndpointsSource } from "./brief-endpoints.js";
 import { ESTATE_HEADING, ESTATE_KINDS, estateLine, flowSummary, type Estate } from "./estate.js";
 
@@ -76,8 +76,15 @@ export async function estateContext(
   | undefined
 > {
   if (!useEngine(step, o.context)) return undefined;
-  // Knowledge a person excluded from this change stays out of every later selection (Part 5).
+  // Knowledge a person excluded from this change stays out of every later selection (Part 5);
+  // what they confirmed is selected by every later stage that takes its kind, as a named id.
   const excluded = o.change ? await excludedKnowledge(root, o.change) : [];
+  // Only the kinds this stage takes, and at the selection, not in what the model's expansion
+  // reads: confirming an item between two hand-off rounds doesn't ask for the expansion again.
+  const confirmed =
+    o.change && o.knowledge ? await confirmedKnowledge(root, o.change, o.knowledge.kinds) : [];
+  const pinned = (inp: ContextInput): ContextInput =>
+    confirmed.length ? { ...inp, ids: [...new Set([...(inp.ids ?? []), ...confirmed])] } : inp;
   const room = roomFor(o.budget, o.others, o.context);
   const e = o.estate;
   const kinds = [...(e ? ESTATE_KINDS : []), ...(o.knowledge?.kinds ?? [])];
@@ -92,7 +99,7 @@ export async function estateContext(
     return estateLine(e, n.kind, n.id);
   };
   const selectAt = (budget: number) => (inp: ContextInput, order?: SelectOptions["order"]) =>
-    selectFor(root, inp, {
+    selectFor(root, pinned(inp), {
       budget,
       ...(order ? { order } : {}),
       kinds,
