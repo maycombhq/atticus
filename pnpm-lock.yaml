@@ -215,12 +215,6 @@ importers:
       '@maycombhq/diagrams':
         specifier: workspace:*
         version: link:../diagrams
-      '@maycombhq/embed':
-        specifier: workspace:*
-        version: link:../embed
-      '@maycombhq/embed-model':
-        specifier: workspace:*
-        version: link:../embed-model
       '@maycombhq/evals':
         specifier: workspace:*
         version: link:../evals
@@ -311,6 +305,13 @@ importers:
       zod:
         specifier: ^4.6.0
         version: 4.6.7
+    optionalDependencies:
+      '@maycombhq/embed':
+        specifier: workspace:*
+        version: link:../embed
+      '@maycombhq/embed-model':
+        specifier: workspace:*
+        version: link:../embed-model
 
   packages/conformance:
     dependencies:
@@ -578,9 +579,6 @@ importers:
       '@maycombhq/core':
         specifier: workspace:*
         version: link:../core
-      '@maycombhq/embed':
-        specifier: workspace:*
-        version: link:../embed
       '@maycombhq/ingestors':
         specifier: workspace:*
         version: link:../ingestors
@@ -590,6 +588,10 @@ importers:
       yaml:
         specifier: ^2.9.1
         version: 2.9.1
+    optionalDependencies:
+      '@maycombhq/embed':
+        specifier: workspace:*
+        version: link:../embed
 
   packages/ingestors:
     dependencies:

@@ -297,6 +297,10 @@ describe("atticus doctor", () => {
         /^not installed \(@maycombhq\/embed, an optional plugin\), so the context engine searches by words and names only/,
       );
       expect(dflt.fix).toMatch(/--with-embeddings/);
+      // The plugin zip adds it to an installed bundle; npm leaves it out with --omit=optional.
+      expect(dflt.fix).toMatch(/embeddings-plugin\.zip/);
+      expect(dflt.fix).toMatch(/fetch-model\.mjs/);
+      expect(dflt.fix).toMatch(/--omit=optional/);
       // A model runtime.yaml names that can't be used is a warning, as before.
       const own = await mkdtemp(join(tmpdir(), "atticus-doctor-noembed-"));
       await cp(join(FIXTURES, "forge/metarepo"), own, { recursive: true });

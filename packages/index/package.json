@@ -23,9 +23,11 @@
   "dependencies": {
     "@maycombhq/ai": "workspace:*",
     "@maycombhq/core": "workspace:*",
-    "@maycombhq/embed": "workspace:*",
     "@maycombhq/ingestors": "workspace:*",
     "@maycombhq/intake": "workspace:*",
     "yaml": "^2.9.1"
+  },
+  "optionalDependencies": {
+    "@maycombhq/embed": "workspace:*"
   }
 }
