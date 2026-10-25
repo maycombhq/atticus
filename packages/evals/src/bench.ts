@@ -123,7 +123,8 @@ export function parseReference(text: string): BenchReference {
 
 /**
  * A path as references are written: no host or `{API}`-style base before the first slash, no
- * query, every parameter (`{id}`, `:id`, `${id}`) as `{}`, no trailing slash. A topic or queue
+ * query, every parameter (`{id}`, `:id`, `${id}`, Django's `<int:id>`, Rails' `*glob`) as `{}`, no
+ * trailing slash and no Rails `(.:format)`. A topic or queue
  * name (no slash) is kept as it is.
  */
 export function normalizePath(p: string): string {
@@ -134,7 +135,12 @@ export function normalizePath(p: string): string {
   // A base before the path: {API}/x, ${BASE}/x, BASE_URL + "/x" already joined.
   const slash = s.search(/\/(?![^{]*\})/);
   if (slash > 0) s = s.slice(slash);
-  s = s.replace(/\$?\{[^}]*\}/g, "{}").replace(/\/:[^/]+/g, "/{}");
+  s = s.replace(/\(\.:format\)$/, ""); // Rails' optional format suffix
+  s = s
+    .replace(/\$?\{[^}]*\}/g, "{}")
+    .replace(/\/:[^/]+/g, "/{}")
+    .replace(/<[^>]+>/g, "{}") // Django's path converters, <int:user_id>
+    .replace(/\/\*[A-Za-z_]\w*/g, "/{}"); // Rails' glob, *full_name
   s = s.replace(/\/+/g, "/");
   if (s.length > 1) s = s.replace(/\/$/, "");
   return s;

@@ -94,6 +94,10 @@ describe("bench: scoring a scan against a hand-written reference", () => {
   it("normalises paths the way references are written", () => {
     expect(normalizePath("/owners/{ownerId}/")).toBe("/owners/{}");
     expect(normalizePath("{API}/api/vets/:id?full=1")).toBe("/api/vets/{}");
+    // Django's path converters, Rails' globs and optional format (batch 3)
+    expect(normalizePath("/api/users/<int:user_id>/update")).toBe("/api/users/{}/update");
+    expect(normalizePath("/*full_name/info(.:format)")).toBe("/{}/info");
+    expect(normalizePath("/*full_name")).toBe("/{}");
     expect(normalizePath("https://vets.example.com/api/vets/${id}")).toBe("/api/vets/{}");
     expect(normalizePath("orders.created")).toBe("orders.created");
   });

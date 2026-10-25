@@ -228,6 +228,26 @@ Batches 1 and 2 are now both tuned: the protocol and verifier were shaped on the
 
 Counts are entries as listed; facts compare as a set per repo, so repeats (GET / in each Kafka service, a call listed per caller) count once: 304 distinct facts in all. Each reference's `notes` records its judgement calls; the ones a reader is most likely to decide differently: Rails' PUT twins of PATCH routes (listed), Devise's library routes (left out, but the OmniAuth callback the app handles is kept), Django's and Laravel's framework tables (listed only where the app's own code reads or writes them, the rest ignored), Laravel Forge and Firebase Hosting as platforms (and Firebase Hosting's rewrites not treated as gateway routes), wild-workouts' fixture loader calling users gRPC at start-up (kept), and microservice-kafka's compose system counted as local running, not docker. No reader has read these repos yet; the first read's numbers go here when it is made.
 
+### The first read (2026-10-25)
+
+Three Claude (Opus) sessions, one per two repos, each read once with the protocol as it stood (after batch 2's second read, before any of these repos was looked at); none opened `bench/`. **89% precision, 89% recall** over serves to deploys, against the built-in readers' 69% and 10% on the same repos. Scored with one matcher equivalence added after the read and applied to every score: Django's path converters (`<int:user_id>`), Rails' globs (`*full_name`) and its optional `(.:format)` are parameters like `{id}`; before it, **86% / 86%**.
+
+| Repo               |   Found | Missed |  Wrong | First score (before the matcher's path forms) |
+| ------------------ | ------: | -----: | -----: | --------------------------------------------: |
+| codetriage         |      63 |      4 |      6 |                                  57 / 10 / 12 |
+| django-styleguide  |      24 |     21 |     17 |                                  21 / 24 / 20 |
+| laravelio          |      95 |      1 |      3 |                                    95 / 1 / 3 |
+| wild-workouts      |      37 |      0 |      1 |                                    37 / 0 / 1 |
+| kotlinconf         |      38 |      2 |      1 |                                    38 / 2 / 1 |
+| microservice-kafka |      13 |      6 |      4 |                                    13 / 6 / 4 |
+| **Batch 3**        | **270** | **34** | **32** |                             **261 / 43 / 41** |
+
+Recall meets the bar (85%); precision doesn't (95%). What is wrong, by cause:
+
+1. **Names a framework derives, which no line writes:** Django's `<app>_<model>` tables, Hibernate's snake_case and join tables (microservice-kafka), Devise's routes. The verifier accepts only a name written on a cited line, so the readers recorded the class name instead, or dropped the fact.
+2. **Background job workers** (Sidekiq, Celery) recorded as `mq-queue` entries; the references don't list job consumers, as they don't list scheduled jobs.
+3. **Framework and ops routes** a reference leaves out (`/up`, `/admin`, the Sidekiq UI, a Filament login).
+
 ## The stories bench (Phase B)
 
 `stories/rubric.md` is the rubric for a professional user story, and three reference stories, written by reading the code with every changed step, criterion and error case cited, are the answers:
