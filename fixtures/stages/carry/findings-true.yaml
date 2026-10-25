@@ -1,0 +1,8 @@
+findings:
+  - rule: flow-use-matches-estate
+    artifact: feature.md
+    summary: The verdict's cache key is the order id alone, so a verdict from an older screen data version is served.
+    why: Northwind Pay's screen changes its data version; a verdict cached under the order id alone outlives it.
+    fix: Key the cached verdict by the order id and the screen's data version.
+    evidence:
+      - { path: feature.md, quote: "the screen's verdict is cached by order id for an hour" }

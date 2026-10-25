@@ -5,7 +5,9 @@ import { parse } from "yaml";
 import {
   AgentDefinition,
   answerWords,
+  changesDirOf,
   changesRelOf,
+  gateRoundLimit,
   raiseQuestions,
   readQuestion,
   retrievalOf,
@@ -39,6 +41,7 @@ import {
 import {
   checkRoundRule,
   completeLensRun,
+  countedRounds,
   CriticError,
   failLens,
   fingerprint as criticFingerprint,
@@ -47,6 +50,7 @@ import {
   runCritic,
   waitingLenses,
   writeQuarantineItems,
+  type Discarded,
   type StoredFinding,
 } from "@maycombhq/naysayer";
 import type { ChangeLifecycle, RunRetrieval } from "@maycombhq/core";
@@ -114,6 +118,8 @@ export interface StageIssue {
   locateText?: string;
   /** What a judge refused, kept on the finding so a person's answer settles exactly that (V1). */
   judged?: { field: string; criterion: string; task: string }[];
+  /** A critic's risk: never blocking, handed back with its fix for one more draft. */
+  risk?: boolean;
 }
 
 export const issueFingerprint = (rule: string, target: string, evidence = "") =>
@@ -230,6 +236,8 @@ export interface StageResult<A> {
   checked?: StageIssue[];
   /** Questions due that this stop didn't ask, over the change policy's questionsPerStop (U3). */
   moreQuestions?: number;
+  /** Those questions' words and evidence, as the loop file keeps them (`waiting`). */
+  queued?: { question: string; evidence: string[] }[];
   /**
    * The files this run changed on disk, of those it wrote (`files`): a write whose hashes match
    * what was there is no change ("kept your target flows").
@@ -281,6 +289,49 @@ export async function readStageLoop(
 
 /** Write a stage's loop file as the loop does. */
 export const writeStageLoop = (dir: string, l: StageLoop): Promise<void> => writeLoop(dir, l);
+
+/** A question a stage holds back over its stop's cap, as `atticus questions list` shows it. */
+export interface WaitingQuestion {
+  change: string;
+  stage: Stage;
+  question: string;
+  evidence: string[];
+  /** The command that asks it, once the open questions are answered: the stage's rerun. */
+  rerun: string;
+}
+
+/**
+ * Every question the changes' stages hold back over the stop's cap (ADR 0117 addendum,
+ * 2026-10-25), from their loop files (`waiting`), by change and stage. A loop file that doesn't
+ * read holds none.
+ */
+export async function waitingQuestions(root: string): Promise<WaitingQuestion[]> {
+  const out: WaitingQuestion[] = [];
+  const changes = (await readdir(changesDirOf(root), { withFileTypes: true }).catch(() => []))
+    .filter((d) => d.isDirectory() && d.name !== "archive")
+    .map((d) => d.name)
+    .sort();
+  for (const change of changes) {
+    const files = (await readdir(join(changesDirOf(root), change, "stage")).catch(() => []))
+      .filter((f) => f.endsWith(".yaml"))
+      .sort();
+    for (const f of files) {
+      let loop: StageLoop;
+      try {
+        const r = StageLoop.safeParse(
+          parse(await readFile(join(changesDirOf(root), change, "stage", f), "utf8")),
+        );
+        if (!r.success) continue;
+        loop = r.data;
+      } catch {
+        continue;
+      }
+      for (const w of loop.waiting ?? [])
+        out.push({ change, stage: loop.stage, ...w, rerun: rerunOf(loop.stage, change) });
+    }
+  }
+  return out;
+}
 
 async function writeLoop(dir: string, l: StageLoop): Promise<void> {
   await writeFileAtomic(
@@ -463,6 +514,9 @@ export async function runStageLoop<A>(
       runs,
       changed: [...changed].sort(),
       ...(state === "done" ? { pr: stagePr(change.id) } : {}),
+      ...(state === "questions" && loop.waiting?.length
+        ? { moreQuestions: loop.waiting.length, queued: loop.waiting }
+        : {}),
       ...(state === "questions" && stoppedOn().length
         ? {
             stopped: {
@@ -526,6 +580,8 @@ export async function runStageLoop<A>(
       ...new Set([...Object.keys(loop.written ?? {}), ...(await sourceFiles(dir, spec.source))]),
     ]);
     const files = await spec.write(a);
+    // The file a person edits; every other file written is rendered from it (act.ts reads this).
+    loop.source = spec.source;
     loop.written = await hashFiles(dir, [
       ...new Set([...files, ...(await sourceFiles(dir, spec.source))]),
     ]);
@@ -719,17 +775,26 @@ export async function runStageLoop<A>(
     }
   }
 
-  // Issues to hand back with the next draft. A stop for questions that also ended on drafting
-  // findings hands those back with the answers, so the next draft fixes them too (A2).
+  // Issues to hand back with the next draft. A stop for questions hands back, with the answers,
+  // every problem the last draft had that no question carries: the drafting findings it stopped
+  // on (A2), a blocking finding seen once (the critic's too: a live run's cache-key bug was found
+  // in the round that asked a question, and the next draft was never told), and its risks.
   let issues: StageIssue[] =
     !o.resume && loop.state === "questions"
-      ? stoppedOn().map((f) => ({
-          rule: f.rule,
-          target: f.target,
-          ...(f.evidence ? { evidence: f.evidence } : {}),
-          message: f.message,
-          blocking: true,
-        }))
+      ? loop.findings
+          .filter(
+            (f) =>
+              f.seenIn.at(-1) === loop.iteration &&
+              ((f.blocking && !f.question) || (f.risk && !riskHandedBack(loop, f))),
+          )
+          .map((f) => ({
+            rule: f.rule,
+            target: f.target,
+            ...(f.evidence ? { evidence: f.evidence } : {}),
+            message: f.message,
+            blocking: f.blocking,
+            ...(f.risk ? { risk: true } : {}),
+          }))
       : [];
   // Nothing new to draft: a person's answers all read, the result on file, no --force. Check it
   // again without AI; draft only if the check finds something.
@@ -819,6 +884,7 @@ export async function runStageLoop<A>(
         const stop = lensStop(spec.stage, change.id, loop.iteration, lenses.failed);
         await stopNow(stop.message, stop.lines);
       }
+      notes.push(...discardedNotes(lenses.discarded));
       // The lenses of a checking round past the gate's limit found something: a person decides.
       if (
         lenses.issues.some((i) => i.blocking) &&
@@ -849,14 +915,18 @@ export async function runStageLoop<A>(
       delete loop.review;
       answered = (await questionsOf(loop.questions)).filter((q) => q.state === "answered");
       const fix = issues.filter((i) => i.blocking);
-      const back = handBacks(fix, answered);
+      // A risk goes back once (ADR 0115 addendum, 2026-10-25): one draft to fix it, never more.
+      const risks = issues.filter((i) => !i.blocking && i.risk);
+      if (risks.length)
+        loop.handedBack = [...new Set([...(loop.handedBack ?? []), ...risks.map(riskKey)])].sort();
+      const back = handBacks(fix, answered, risks);
       const sources: SourceInput[] = [
         {
           id: "instructions",
           kind: "instruction",
           origin: "atticus",
           text: [
-            instructionsWith(spec.instructions, fix, answered),
+            instructionsWith(spec.instructions, fix, answered, risks),
             ...(personDraft
               ? [
                   "",
@@ -1085,6 +1155,8 @@ export async function runStageLoop<A>(
       if (f.seenIn.at(-1) === n) continue; // the same problem twice in one draft
       f.message = i.message;
       f.blocking = i.blocking;
+      if (i.risk) f.risk = true;
+      else delete f.risk;
       if (i.judged?.length) f.judged = i.judged;
       f.kind = i.kind ?? (f.source === "critic" ? "decision" : stageRuleKind(i.rule));
       f.seenIn = [...f.seenIn, n];
@@ -1158,9 +1230,15 @@ export async function runStageLoop<A>(
     const held: HeldQuestion[] = [];
     // U3: at most the change policy's questionsPerStop go to a person at one stop; the rest wait
     // as findings, handed back with the next draft and asked once these are answered.
+    // The ones over the cap are kept in the loop file by their words (ADR 0117 addendum,
+    // 2026-10-25), so a person sees what comes next; a draft's own questions were otherwise only
+    // in its run, under the gitignored .runs/.
     const cap = ctx.policy.questionsPerStop;
-    const waitingMore = Math.max(0, drafted.length - cap);
-    if (waitingMore) drafted.splice(cap);
+    const over = drafted.splice(cap);
+    const waitingMore = over.length;
+    if (over.length)
+      loop.waiting = over.map((x) => ({ question: x.q.question.trim(), evidence: x.q.evidence }));
+    else delete loop.waiting;
     if (drafted.length) {
       const qs: Question[] = [];
       const judges = stepJudges(root, o.runtime, change.id, now);
@@ -1319,6 +1397,25 @@ export async function runStageLoop<A>(
       });
     }
     if (blocking.length === 0 && heldIssues.length === 0) {
+      // ADR 0115 addendum (2026-10-25): the critic's risks get one more draft, handed back with
+      // what to fix, while the gate has a critic round left to review it. A risk never blocks:
+      // one that comes back after its draft stays a finding for a person.
+      const risks = current.filter((f) => f.risk && !riskHandedBack(loop, f));
+      if (risks.length && (await roundLeft(root, ctx, change.id, spec))) {
+        notes.push(
+          `Handed ${risks.length === 1 ? "the critic's risk" : `the critic's ${risks.length} risks`} back to your assistant for one more draft, with what to fix; a risk never blocks.`,
+        );
+        await writeLoop(dir, loop);
+        issues = risks.map((f) => ({
+          rule: f.rule,
+          target: f.target,
+          ...(f.evidence ? { evidence: f.evidence } : {}),
+          message: f.message,
+          blocking: false,
+          risk: true,
+        }));
+        continue;
+      }
       loop.state = "done";
       await writeLoop(dir, loop);
       return result("done", { files, ...(answer !== undefined ? { answer } : {}) });
@@ -1332,8 +1429,38 @@ export async function runStageLoop<A>(
         blocking: true,
       })),
       ...heldIssues,
+      // A draft going back anyway takes the critic's risks with it, once each.
+      ...current
+        .filter((f) => f.risk && !riskHandedBack(loop, f))
+        .map((f) => ({
+          rule: f.rule,
+          target: f.target,
+          ...(f.evidence ? { evidence: f.evidence } : {}),
+          message: f.message,
+          blocking: false,
+          risk: true,
+        })),
     ];
   }
+}
+
+/** What a risk is handed back once by: its rule and the file it is about, whatever its words. */
+const riskKey = (f: { rule: string; evidence?: string; target: string }) =>
+  `risk:${f.rule}:${f.evidence?.replace(/:\d+$/, "") ?? f.target}`;
+const riskHandedBack = (loop: StageLoop, f: { rule: string; evidence?: string; target: string }) =>
+  (loop.handedBack ?? []).includes(riskKey(f));
+
+/** Whether the stage's gate has a critic round left to review another draft. */
+async function roundLeft(
+  root: string,
+  ctx: ChangeContext,
+  change: string,
+  spec: { stage: Stage; gate?: string | null },
+): Promise<boolean> {
+  const gate = spec.gate === undefined ? stageGate(ctx, spec.stage) : spec.gate;
+  if (!gate) return false;
+  const max = gateRoundLimit(ctx.orgPack.gates, gate);
+  return max === undefined || (await countedRounds(root, change, gate)).length < max;
 }
 
 /**
@@ -1435,7 +1562,8 @@ export function stageEnd(r: StageResult<unknown>, rerun: string): string[] {
     ...r.questions.map((q) => `  ${q.id}: ${q.question}`),
     ...(r.moreQuestions
       ? [
-          `${r.moreQuestions} more question${r.moreQuestions === 1 ? " waits; it is" : "s wait; they are"} asked once these are answered.`,
+          `${r.moreQuestions} more question${r.moreQuestions === 1 ? " waits; it is" : "s wait; they are"} asked once these are answered${r.queued?.length ? ":" : "."}`,
+          ...(r.queued ?? []).map((q) => `  - ${q.question}`),
         ]
       : []),
     `Answer each with atticus questions answer <id> --option <n> (or --text "..."), or with /atticus-answer.`,
@@ -1577,12 +1705,22 @@ export const HAND_BACKS = "hand-backs";
  * from the repos and attachments, so they go in the hand-backs data block (handBacks), where
  * the defences screen them (rule 6), never in the trusted instructions.
  */
-function instructionsWith(base: string, fix: StageIssue[], answered: Question[]): string {
+function instructionsWith(
+  base: string,
+  fix: StageIssue[],
+  answered: Question[],
+  risks: StageIssue[] = [],
+): string {
   const out = [base];
   if (fix.length)
     out.push(
       "",
       `Your last draft had problems; the "${HAND_BACKS}" data block lists them. Fix every one; a problem that comes back unchanged goes to a person.`,
+    );
+  if (risks.length)
+    out.push(
+      "",
+      `The critic also saw risks in your last draft; the "${HAND_BACKS}" data block lists them with what to fix. Fix each one the brief and the answers allow. A risk doesn't block: this draft is the one that may fix it.`,
     );
   if (answered.length)
     out.push(
@@ -1593,12 +1731,22 @@ function instructionsWith(base: string, fix: StageIssue[], answered: Question[])
 }
 
 /** The hand-backs data block's text: the last draft's problems and people's answers. */
-function handBacks(fix: StageIssue[], answered: Question[]): string | undefined {
+function handBacks(
+  fix: StageIssue[],
+  answered: Question[],
+  risks: StageIssue[] = [],
+): string | undefined {
   const out: string[] = [];
   if (fix.length)
     out.push(
       "Problems in the last draft:",
       ...fix.map((i) => `- ${i.message}${i.evidence ? ` (${i.evidence})` : ""}`),
+    );
+  if (risks.length)
+    out.push(
+      ...(out.length ? [""] : []),
+      "Risks the critic saw in the last draft:",
+      ...risks.map((i) => `- ${i.message}${i.evidence ? ` (${i.evidence})` : ""}`),
     );
   if (answered.length)
     out.push(
@@ -1698,17 +1846,25 @@ async function criticIssues(
 ): Promise<StageIssue[]> {
   const rel = `${changesRelOf(root)}/${change}`;
   const out: StageIssue[] = [];
+  // Open blocking findings, and risks (ADR 0115 addendum, 2026-10-25), except a risk about what a
+  // person decided by answering: they already made that decision.
   for (const f of findings.filter(
-    (x) => x.finding.state === "open" && x.finding.severity === "blocking",
-  ))
+    (x) =>
+      x.finding.state === "open" &&
+      (x.finding.severity === "blocking" || (x.finding.severity === "risk" && !x.finding.answered)),
+  )) {
+    const risk = f.finding.severity === "risk";
+    // What to fix goes with it, so the next draft has it without remembering the round.
+    const fix = f.finding.fix.text.trim();
     out.push({
       rule: `critic:${f.finding.rule}`,
       target: criticFingerprint(f.finding),
       evidence: `${rel}/${f.finding.artifact}${f.finding.locator.line ? `:${f.finding.locator.line}` : ""}`,
-      message: `The critic (${f.finding.rule}): ${f.finding.summary}`,
-      blocking: true,
-      kind: await kindOf(f.finding),
+      message: `The critic (${f.finding.rule}): ${f.finding.summary}${fix && fix !== "See why." ? ` What to fix: ${/[.!?]$/.test(fix) ? fix : `${fix}.`}` : ` Why: ${f.finding.why.trim()}`}`,
+      blocking: !risk,
+      ...(risk ? { risk: true } : { kind: await kindOf(f.finding) }),
     });
+  }
   return out;
 }
 
@@ -1727,7 +1883,12 @@ async function lensesIn(
   o: StageOptions,
   at: string,
   kindOf: (f: { rule: string; kind: "issue" | "knowledge-gap" }) => Promise<FindingKind>,
-): Promise<{ waiting?: LensWait; issues: StageIssue[]; failed: LensFailed[] }> {
+): Promise<{
+  waiting?: LensWait;
+  issues: StageIssue[];
+  failed: LensFailed[];
+  discarded: Discarded[];
+}> {
   const rt = o.criticRuntime ?? o.runtime;
   for (const w of await waitingLenses(root, change, review.gate, review.round)) {
     const run = await rt.result(w.runId).catch(() => undefined);
@@ -1746,13 +1907,27 @@ async function lensesIn(
       );
       continue;
     }
-    return { waiting: { ...w, gate: review.gate }, issues: [], failed: [] };
+    return { waiting: { ...w, gate: review.gate }, issues: [], failed: [], discarded: [] };
   }
   const { findings } = await readRound(root, change, review.gate, review.round);
   return {
     issues: await criticIssues(root, change, findings, kindOf),
     failed: await failedLenses(root, change, review.gate, review.round),
+    discarded: ((await readRoundMeta(root, change, review.gate, review.round))?.discarded ??
+      []) as Discarded[],
   };
+}
+
+/**
+ * What the critic left out of a round, said in the stage's notes (a live run, 2026-10-25: a
+ * finding whose quote was under 12 characters was dropped without a word). Never silent.
+ */
+function discardedNotes(discarded: Discarded[]): string[] {
+  return discarded.map((d) =>
+    d.summary
+      ? `The critic's ${d.lens} lens gave a finding Atticus couldn't check, so it was left out: "${d.summary}" (${d.reason}).`
+      : `The critic's ${d.lens} lens gave an entry Atticus couldn't read as a finding, so it was left out (${d.reason}).`,
+  );
 }
 
 /**
@@ -1824,6 +1999,7 @@ async function criticRound(
     .filter((l) => l.state === "failed")
     .map((l) => ({ lens: l.lens, reason: l.reason ?? "it gave no review" }));
   if (failed.length) return { issues: [], stop: lensStop(spec.stage, change.id, draftNo, failed) };
+  notes.push(...discardedNotes(r.discarded));
   const issues = await criticIssues(root, change.id, r.findings, kindOf);
   // A checking round past the limit reviewed what a person did: what it finds goes to a person,
   // not to another draft no round is left to review (ADR 0115 addendum).

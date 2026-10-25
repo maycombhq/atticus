@@ -81,3 +81,8 @@ reworded) and `reserve-later` (merged as drafted). `changes/restock-alert/` was 
 host but isn't pulled yet (`waiting-for-merge`). `expected/learn.json` and `expected/learn.txt` are
 the report `atticus change learn` gives for them. `answers/` holds the three stage answers for the
 fraud check, which the past-corrections test drafts with and without the archive beside it.
+
+`carry/` is what a real change's run hit (ADR 0087 addendum, 2026-10-25): two placements of the fraud
+check (the first caches the verdict by order id alone and asks a question; the second keys it by
+the data version too), the true lens's blocking finding on the first, and the complete lens's risk
+finding. See `carry/README.md`.

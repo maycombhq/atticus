@@ -281,8 +281,11 @@ describe("a critic finding about drafting quality", () => {
     );
     const e = await stopOf(storiesStage(root, CHANGE, { runtime: assistant([plain]), now: NOW }));
     expect(e.code).toBe("stopped");
-    expect(e.message).toContain(
-      `  - The critic (constitution.story-acceptance-criteria): Story s1-place-order has an acceptance criteria heading but no Given/When/Then criteria. (rule constitution.story-acceptance-criteria; in ${REL}/stories/s1-place-order.md:`,
+    // The finding says what to fix (ADR 0115 addendum, 2026-10-25), as the drafter was told.
+    expect(e.message).toMatch(
+      new RegExp(
+        `  - The critic \\(constitution\\.story-acceptance-criteria\\): Story s1-place-order has an acceptance criteria heading but no Given/When/Then criteria\\. What to fix: [^\\n]+\\. \\(rule constitution\\.story-acceptance-criteria; in ${REL.replace(/[.]/g, "\\.")}/stories/s1-place-order\\.md:`,
+      ),
     );
     expect(e.message).toContain(
       `Fix ${REL}/stage/stories-answer.yaml (the stage writes the files above from it), or tell your assistant how; then run atticus plan stories ${CHANGE} again.`,

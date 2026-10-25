@@ -12,6 +12,7 @@ import {
   QuestionState,
   type Question,
 } from "@maycombhq/core";
+import { waitingQuestions } from "@maycombhq/planner";
 import { gitUser } from "@maycombhq/workspace";
 import type { Output } from "./commands.js";
 
@@ -25,9 +26,13 @@ import type { Output } from "./commands.js";
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 const sentence = (s: string) => (/[.!?]$/.test(s.trim()) ? s.trim() : `${s.trim()}.`);
 
-/** "this repo (forge-notes)" or "every repo of type forge-service". */
-export function scopeWords(s: Question["scope"], short = false): string {
-  if (s.level === "repo") return short ? "this repo" : `this repo (${s.id})`;
+/**
+ * "this repo (forge-notes)" or "every repo of type forge-service"; a stage's question, filed
+ * under its change's id, is "this change (add-pins)".
+ */
+export function scopeWords(s: Question["scope"], short = false, change = false): string {
+  const what = change ? "this change" : "this repo";
+  if (s.level === "repo") return short ? what : `${what} (${s.id})`;
   return `every repo of type ${s.id}`;
 }
 
@@ -39,8 +44,8 @@ async function isChange(root: string, id: string): Promise<boolean> {
   );
 }
 
-/** The lines `atticus questions list` prints for one question. */
-export function questionLines(q: Question): string[] {
+/** The lines `atticus questions list` prints for one question; `change`: it is a change's. */
+export function questionLines(q: Question, o: { change?: boolean } = {}): string[] {
   const lines = [
     `${q.id}  ${q.state}  ${q.repo}  (asked by ${q.askedBy.command} on ${q.askedBy.at.slice(0, 10)})`,
     `  ${q.question}`,
@@ -52,11 +57,11 @@ export function questionLines(q: Question): string[] {
   ];
   if (q.answer)
     lines.push(
-      `  Answered by ${q.answer.by} on ${q.answer.at.slice(0, 10)}: ${answerWords(q)} (${scopeWords(q.answer.scope, true)})`,
+      `  Answered by ${q.answer.by} on ${q.answer.at.slice(0, 10)}: ${answerWords(q)} (${scopeWords(q.answer.scope, true, o.change)})`,
     );
   else if (q.state === "open")
     lines.push(
-      `  Proposed scope: ${scopeWords(q.scope)}`,
+      `  Proposed scope: ${scopeWords(q.scope, false, o.change)}`,
       `  Answer: atticus questions answer ${q.id}${q.options.length ? " --option <n>, or" : ""} --text "your own words"`,
     );
   return lines;
@@ -94,17 +99,34 @@ export async function questionsFiles(
     }
     const r = await listQuestions(root, state ? { state: state as QuestionState } : {});
     for (const p of r.problems) io.err(`${p.file} isn't a valid question: ${p.message}`);
+    // ADR 0117 addendum (2026-10-25): what the stages hold back over a stop's cap, from their
+    // loop files, so a person sees what comes next.
+    const waiting = !state || state === "open" ? await waitingQuestions(root) : [];
     if (values.json === true) {
-      io.out(JSON.stringify(r, null, 2));
+      io.out(JSON.stringify({ ...r, waiting }, null, 2));
       return r.problems.length ? 1 : 0;
     }
-    for (const q of r.questions) for (const l of questionLines(q)) io.out(l);
+    const changes = new Set<string>();
+    for (const q of r.questions) if (await isChange(root, q.repo)) changes.add(q.repo);
+    for (const q of r.questions)
+      for (const l of questionLines(q, { change: changes.has(q.repo) })) io.out(l);
     const what = state ?? "";
     io.out(
       r.questions.length
         ? `${plural(r.questions.length, `${what ? `${what} ` : ""}question`)}.`
         : `No ${what ? `${what} ` : ""}questions.`,
     );
+    if (waiting.length) {
+      io.out(
+        `${plural(waiting.length, "more question")} ${waiting.length === 1 ? "waits" : "wait"}, asked once the open ones are answered:`,
+      );
+      for (const w of waiting)
+        io.out(
+          `  ${w.change}, ${w.stage} stage: ${w.question}${w.evidence.length ? ` (${w.evidence.join(", ")})` : ""}`,
+        );
+      for (const rerun of [...new Set(waiting.map((w) => w.rerun))])
+        io.out(`Run the stage again after answering: ${rerun}`);
+    }
     return r.problems.length ? 1 : 0;
   }
   if (command === "show") {
@@ -120,7 +142,7 @@ export async function questionsFiles(
       return 1;
     }
     if (values.json === true) io.out(JSON.stringify(q, null, 2));
-    else for (const l of questionLines(q)) io.out(l);
+    else for (const l of questionLines(q, { change: await isChange(root, q.repo) })) io.out(l);
     return 0;
   }
   if (command === "answer") {

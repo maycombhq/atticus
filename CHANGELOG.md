@@ -13,6 +13,19 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - **The org-knowledge index covers what was snapshotted and scanned.** It indexes the pages a snapshot lists, and once the scan has read a source, only the pages it read. A comment line in a fenced code block is no longer indexed as a heading.
 - **`atticus change knowledge <change> --confirm <id>` takes any knowledge item**, wiki or document section, listed or not. It applies like one a stage picked. Each `--confirm` or `--exclude` prints only what changed.
 
+### What a real change's run through feature, architecture and stories hit (ADR 0087 addendum, 2026-10-25)
+
+- **The critic's finding reaches the next draft, with what to fix.** A blocking finding from the round in which the assistant also asked a question is handed back with the answers; it was lost before. Each critic finding's message now says what to fix.
+- **A risk gets one more draft.** The critic's risk findings go back once, with their fix, while the gate has a round left; they never block.
+- **A fix to a rendered file is refused, with a pointer to the source.** `apply` and `edit-and-apply` refuse a patch to a file a stage renders (a story's .md, feature.md, design.md), and a recorded hand edit of only such files, naming the file to fix (`stage/stories-answer.yaml`, feature.yaml, target-flows/).
+- **A held-back question is weighed only against answered questions about the same target**, not every question the change answered.
+- **The questions over a stop's cap are seen.** The stage keeps them in its loop file, names them at the stop, and `atticus questions list` lists them by change and stage. A change's question says "Proposed scope: this change (<id>)".
+- **An outside system a call fact names (a model provider, a vendor) is a call-out's target**, and the estate index lists it.
+- **design.md labels a call to an entry that exists today `existing`**, not `planned-new`.
+- **A critic finding is never dropped silently.** A quote under 12 characters counts when it is word for word on the line it cites; what is left out is said in the stage's notes.
+- **A standard listed as a request** is refused as `stories.standard-as-request`: a standard is followed, not raised.
+- **`atticus next` starts with the change in hand** (its questions, then its stage) and names the assistant a probe measured here.
+
 ### What a trial on one repo found, fixed (ADR 0124 addendum C-join, the fallback)
 
 - **A relative call joins the API that serves it.** A front end's `fetch("/api/...")` has no host, so the reader guessed a `to` the estate doesn't have, and `atticus join` joined none of its calls. Such a call (or one naming no target) now joins by method and path the one entry of its own repo that serves it, else the one of the estate, and is marked inferred: `atticus verify <repo> --write` says how many and where, `atticus join` prints "inferred" beside each. When two or more could answer, a person is asked which. A vendor the org pack lists keeps its name. `/atticus-map` now says to leave `to` out of a relative call, or name the component that serves it.

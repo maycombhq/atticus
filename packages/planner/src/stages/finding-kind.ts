@@ -81,6 +81,7 @@ export const DRAFTING_STAGE_RULES: ReadonlySet<string> = new Set([
   "stories.field-not-checked",
   "stories.unknown-check",
   "stories.request-unquoted",
+  "stories.standard-as-request",
   "stories.missing-story",
   "stories.unknown-story",
   "stories.unknown-task",

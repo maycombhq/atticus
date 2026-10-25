@@ -363,6 +363,62 @@ const fold = (s: string) =>
 export const quotedIn = (text: string, quote: string) =>
   fold(quote).length > 0 && fold(text).includes(fold(quote));
 
+/** Words that say nothing of what a question is about. */
+const PLAIN = new Set(
+  (
+    "a an the and or but nor of in on at to for from by with as is are was were be been being it " +
+    "its this that these those there here which who whom what when where why how all any each " +
+    "some no not only than then so too very can will would should could may might must shall do " +
+    "does did has have had having i we you he she they them our your his her their us me my " +
+    "also into onto about over under more most other such one two own same just still yet " +
+    "if else out up down off again ever never always kind kinds sort way ways thing things " +
+    "get gets got make makes made say says said use uses used want wants need needs count " +
+    "question questions answer answers draft drafts problem problems " +
+    // The words a stage's own question is framed in (loop.ts): "Three drafts in a row had this
+    // problem: ... What should the target flows say?"
+    "three row came back after fixed had placement target flow flows story stories small " +
+    "change plan feature"
+  ).split(" "),
+);
+
+/** A word folded for comparing what two questions are about: lower case, its plural and endings off. */
+const stem = (w: string) =>
+  w
+    .toLowerCase()
+    .replace(/'s$/, "")
+    .replace(/(?<=..)(ies)$/, "y")
+    .replace(/(?<=...)(ing|ed|es|s)$/, "")
+    .replace(/([b-df-hj-np-tv-z])\1$/, "$1");
+
+/** The words of substance a question says, folded (stem): what it is about. */
+function substance(text: string): Set<string> {
+  return new Set(
+    (text.match(/\p{L}+/gu) ?? [])
+      .filter((w) => !PLAIN.has(w.toLowerCase()))
+      .map(stem)
+      .filter((w) => w.length >= 3),
+  );
+}
+
+/**
+ * Whether two questions are about the same target (ADR 0117 addendum, 2026-10-25), as far as
+ * facts tell: they name an id in common, or cite a file in common and share at least two words
+ * of substance. Whether they ask the same thing about it is the judgment's; this keeps an answer
+ * from being weighed for a question about something else.
+ */
+export function sameTarget(
+  a: { question: string; evidence: readonly string[] },
+  b: { question: string; evidence: readonly string[] },
+  repo = "",
+): boolean {
+  const ia = namedIdentifiers(a.question, repo);
+  if ([...namedIdentifiers(b.question, repo)].some((x) => ia.has(x))) return true;
+  const files = new Set(a.evidence.map(evidenceFile));
+  if (!b.evidence.some((e) => files.has(evidenceFile(e)))) return false;
+  const wa = substance(a.question);
+  return [...substance(b.question)].filter((w) => wa.has(w)).length >= 2;
+}
+
 /**
  * The questions on file a new one is weighed against: the same repo, not retired, asked by
  * another step (or answered, by this one), citing a file in common or naming an id in common.
@@ -436,16 +492,17 @@ export async function raiseQuestions(
     const cands = candidatesFor(by.repo, d, by.step, others).filter(
       (x) => !differentThings(d, x, by.repo),
     );
-    // The answered questions whose answer may decide it: the candidates above, and every one
-    // this step asked (a draft re-asking its own answered question cites other lines). The
-    // veto: it names something neither the question nor its answer names.
+    // The answered questions whose answer may decide it: those about the same target (ADR 0117
+    // addendum, 2026-10-25), the one it names as its own (sameAs), or one naming an id it names,
+    // or citing a file it cites and sharing words of substance with it. A draft re-asking its
+    // own answered question cites other lines, so a line in common isn't needed; but every
+    // question the step asked is not a candidate (a live run held a question back as a possible
+    // repeat of every answered question of the change). The veto: it names something neither
+    // the question nor its answer names.
     const answered = others.filter(
       (x) =>
         x.state === "answered" &&
-        (cands.some((c) => c.id === x.id) ||
-          x.id === d.sameAs?.id ||
-          askedByStep(x, by.step) ||
-          candidatesFor(by.repo, d, "", [x]).length > 0) &&
+        (x.id === d.sameAs?.id || sameTarget(d, x, by.repo)) &&
         namedBeyondAnswer(d, { question: x.question, answer: answerWords(x) ?? "" }, by.repo)
           .length === 0,
     );

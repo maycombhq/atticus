@@ -1,0 +1,8 @@
+findings:
+  - rule: brief-outcome-placed
+    artifact: feature.md
+    summary: The brief's clear message for a refused order isn't placed on any flow.
+    why: The brief's outcome says a rejected order is refused with a clear message; the placement only says it is refused.
+    fix: Say which flow's response carries the refusal message.
+    evidence:
+      - { path: feature.md, quote: "Every new order is screened by Northwind Pay" }

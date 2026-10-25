@@ -832,7 +832,8 @@ export async function mergeStoryRequests(
   const fresh: Need[] = [];
   for (const r of requests) {
     const item = byId.get(r.item);
-    if (!item) continue;
+    // Only what a person raises joins as a request: a standard is followed, never raised.
+    if (!item || item.kind !== "ProcessDefinition") continue;
     fresh.push(
       needFrom(
         item,

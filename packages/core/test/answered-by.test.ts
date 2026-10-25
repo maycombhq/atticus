@@ -182,4 +182,28 @@ describe("an answered question asked again in other words (ADR 0117 addendum)", 
     const again = await raiseQuestions(root, [draft(s.reasked)], by(s.change));
     expect(again.raised).toHaveLength(1);
   });
+
+  // A live run (2026-10-25): a question held back was handed to the drafter as a possible repeat
+  // of every question the change had answered. A repeat asks the same thing about the same
+  // target: the answered questions it may repeat cite the file it cites and share its words, or
+  // name an id it names; the others, though the same step asked them, are about something else.
+  it("holds a question back only with the answered questions about the same target", async () => {
+    const s = await scenario();
+    const { root, answered } = await metarepo(s);
+    const others = [
+      { question: "Who may see the shop's opening hours?", evidence: s.asked.evidence },
+      {
+        question: "How long are archived invoices kept?",
+        evidence: [`openspec/changes/${s.change}/brief.md:3`],
+      },
+    ];
+    for (const o of others) {
+      const r = await raiseQuestions(root, [draft(o)], by(s.change, "run-20261024090000-0003"));
+      await answerQuestion(root, r.raised[0]!.id, { text: "Nobody.", by: "pat", at: AT });
+    }
+    expect((await listQuestions(root, { state: "answered" })).questions).toHaveLength(3);
+    const r = await raiseQuestions(root, [draft(s.reasked)], by(s.change), { hold: () => true });
+    expect(r.held).toHaveLength(1);
+    expect(r.held[0]!.answered.map((q) => q.id)).toEqual([answered.id]);
+  });
 });

@@ -197,7 +197,54 @@ describe("atticus questions show, and a change's question (WP2.4)", () => {
       command: "atticus plan stories add-pins",
       rerun: "atticus plan stories add-pins",
     });
+    // Listed, its proposed scope is the change too (a live run printed "this repo (add-pins)").
+    const listed = await run(root, ["list", "--state", "open"]);
+    expect(listed.out).toContain("  Proposed scope: this change (add-pins)");
+    expect(listed.out.join("\n")).not.toContain("this repo (add-pins)");
     const r = await run(root, ["answer", raised[0]!.id, "--option", "2", "--by", "pat"]);
     expect(r.out[0]).toContain("(for this change, add-pins)");
+  });
+
+  // A live run (2026-10-25): a stop asks at most questionsPerStop questions; the rest lived only
+  // in the gitignored .runs/, so nobody could see what was coming. The stage keeps them in its
+  // loop file, and the list shows them after the open ones.
+  it("shows the questions a stage holds back over its cap, by change and stage", async () => {
+    const root = await mkdtemp(join(tmpdir(), "atticus-questions-waiting-"));
+    await mkdir(join(root, "org-pack"), { recursive: true });
+    const dir = join(root, "openspec", "changes", "add-pins");
+    await mkdir(join(dir, "stage"), { recursive: true });
+    await writeFile(join(dir, "change.yaml"), "id: add-pins\n");
+    await writeFile(
+      join(dir, "stage", "feature.yaml"),
+      [
+        "schemaVersion: 1",
+        "change: add-pins",
+        "stage: feature",
+        "iteration: 1",
+        "state: questions",
+        "updatedAt: 2026-10-21T12:00:00Z",
+        "waiting:",
+        "  - question: How many notes can be pinned?",
+        "    evidence: [openspec/changes/add-pins/brief.md:4]",
+        "  - question: Who may unpin a note?",
+        "    evidence: [openspec/changes/add-pins/brief.md:6]",
+        "",
+      ].join("\n"),
+    );
+    const r = await run(root, ["list", "--state", "open"]);
+    expect(r.code).toBe(0);
+    expect(r.out.slice(-4)).toEqual([
+      "2 more questions wait, asked once the open ones are answered:",
+      "  add-pins, feature stage: How many notes can be pinned? (openspec/changes/add-pins/brief.md:4)",
+      "  add-pins, feature stage: Who may unpin a note? (openspec/changes/add-pins/brief.md:6)",
+      "Run the stage again after answering: atticus change feature add-pins",
+    ]);
+    const json = JSON.parse((await run(root, ["list", "--json"])).out.join("\n")) as {
+      waiting: { change: string; stage: string; question: string }[];
+    };
+    expect(json.waiting.map((w) => [w.change, w.stage, w.question])).toEqual([
+      ["add-pins", "feature", "How many notes can be pinned?"],
+      ["add-pins", "feature", "Who may unpin a note?"],
+    ]);
   });
 });

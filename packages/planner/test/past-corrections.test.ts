@@ -106,8 +106,10 @@ const BEFORE = {
   // the store facts list (its one changed line)
   arch: "8e24f28d9b508f319199f1f3373368260d67a3500293e861663f9237590d4756",
   // re-pinned after B-run2-fixes 5 gave the stories rules the rule words (one line added); and
-  // after B-once let a criterion accept other tasks (also in the format, one rule reworded, one added)
-  stories: "7fe7e8e23dc1ce47f75daae0fa11d2c8c2e2401f3241c91dc660c80b0e5dfbe9",
+  // after B-once let a criterion accept other tasks (also in the format, one rule reworded, one added);
+  // and on 2026-10-25, when the format's requests line said a standard is followed, never listed
+  // there (its one changed line: with the old line put back, the prompt hashes to 7fe7e8e2...)
+  stories: "2a957f3ce77ab521af0ad5df1e9d7464327b8d426576c0d40c26dad4d243edd6",
 };
 
 const ARCHIVE = join(FIX, "corrections/changes/archive");

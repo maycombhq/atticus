@@ -359,6 +359,18 @@ const norm = (s: string) => s.replace(/\s+/g, " ").trim().toLowerCase();
 /** The shortest quote an evidence entry may give (ADR 0111), as the knowledge scan asks. */
 const MIN_QUOTE = 12;
 
+/**
+ * Whether a short quote is word for word on a line: the same characters (whitespace runs aside),
+ * case and all, not inside a longer word or number ("429" in "status 429", never in "14290").
+ */
+function wordFor(line: string, quote: string): boolean {
+  if (!quote) return false;
+  const esc = quote.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(^|[^\\p{L}\\p{N}_])${esc}($|[^\\p{L}\\p{N}_])`, "u").test(
+    line.replace(/\s+/g, " "),
+  );
+}
+
 /** A lens's answer as data: the findings list, or why the answer isn't a review at all. */
 function lensFindings(output: string): { list: unknown[] } | { problem: string } {
   let data: unknown;
@@ -446,6 +458,7 @@ export function parseLensOutput(
     }
     const evidence: Hit["evidence"] = [];
     let unquoted = 0;
+    let short = 0;
     for (const e of f.evidence) {
       const d = byPath.get(e.path);
       if (!d) continue;
@@ -453,8 +466,20 @@ export function parseLensOutput(
       // ADR 0111: an entry quotes the words it relies on, at least 12 characters, on the line it
       // cites; a quote on another line counts only when it is on exactly one line of the file.
       const q = norm(e.quote ?? "");
-      if (q.length < MIN_QUOTE) {
+      if (!q) {
         unquoted++;
+        continue;
+      }
+      // ADR 0111 addendum (2026-10-25): a shorter quote (a status, a column, a value) counts when
+      // it is word for word on the line it cites; one with no line, or not there, is left out
+      // and says so (a finding quoting "429" was dropped without a word).
+      if (q.length < MIN_QUOTE) {
+        const said = (e.quote ?? "").replace(/\s+/g, " ").trim();
+        if (line && wordFor(d.rawLines[line - 1] ?? "", said)) {
+          evidence.push({ source: "artifact", path: d.path, line, quote: said });
+          continue;
+        }
+        short++;
         continue;
       }
       if (!(line && norm(d.rawLines[line - 1] ?? "").includes(q))) {
@@ -473,10 +498,13 @@ export function parseLensOutput(
       evidence.push({ source: "artifact", path: d.path, line, quote });
     }
     if (evidence.length === 0) {
+      const given = f.evidence.filter((e) => byPath.has(e.path)).length;
       drop(
-        unquoted && unquoted === f.evidence.filter((e) => byPath.has(e.path)).length
+        unquoted && unquoted === given
           ? "its evidence quotes nothing: each entry needs the exact words (at least 12 characters) on the line it cites"
-          : "none of its evidence is in the files it was given",
+          : short && unquoted + short === given
+            ? "its quote is under 12 characters and isn't word for word on the line it cites: a short quote counts only on its own line, so give the line, or quote more of it"
+            : "none of its evidence is in the files it was given",
       );
       continue;
     }

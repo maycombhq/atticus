@@ -190,20 +190,27 @@ describe("AI lens output", () => {
     why: Nothing is shown while the limit loads.
     evidence: [${evidence}]
 `;
+    // A live run (2026-10-25): a finding quoting a value under 12 characters ("429") was
+    // dropped with no word. A short quote counts when it is word for word on the line it cites;
+    // one with no line, or not on its line, is left out and says why.
     const ux = `findings:
-${finding("{ path: ux.md, line: 3 }")}${finding('{ path: ux.md, line: 3, quote: "amount" }')}${finding('{ path: ux.md, line: 1, quote: "The transfer screen shows" }')}`;
+${finding("{ path: ux.md, line: 3 }")}${finding('{ path: ux.md, line: 4, quote: "refused" }')}${finding('{ path: ux.md, quote: "amount" }')}${finding('{ path: ux.md, line: 1, quote: "amoun" }')}${finding('{ path: ux.md, line: 1, quote: "The transfer screen shows" }')}`;
     await keepUxStatesRule(root);
     const rt = new MockRuntime(
       (req) => (req.agent.id === "complete-critic" ? ux : "findings: []"),
       { now: () => new Date(NOW) },
     );
     const r = await runCritic(root, CHANGE, { now: NOW, runtime: rt });
+    const short =
+      "its quote is under 12 characters and isn't word for word on the line it cites: a short quote counts only on its own line, so give the line, or quote more of it";
     expect(r.discarded.map((d) => d.reason)).toEqual([
       "its evidence quotes nothing: each entry needs the exact words (at least 12 characters) on the line it cites",
-      "its evidence quotes nothing: each entry needs the exact words (at least 12 characters) on the line it cites",
+      short,
+      short,
     ]);
     const kept = r.findings.filter((f) => f.layer === "ai");
     expect(kept.map((k) => k.finding.evidence)).toEqual([
+      [{ source: "artifact", path: "ux.md", line: 4, quote: "refused" }],
       [{ source: "artifact", path: "ux.md", line: 3, quote: "The transfer screen shows" }],
     ]);
   });

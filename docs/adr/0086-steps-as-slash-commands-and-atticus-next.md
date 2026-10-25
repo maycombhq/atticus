@@ -28,3 +28,10 @@ No record, org-pack, plugin SDK or local API schema changes. `atticus next --jso
 - `/atticus-architecture`, `/atticus-onboard` and `/atticus-scan` (plan 4.8) aren't written. The architecture stage has no AI drafting step to hand off. `atticus scan` is deterministic, and `atticus next` names it. Onboarding is the survey, scan and verify commands.
 - `atticus next` and the app's `next.ts` each work out the order: the CLI from files, the app from the API. They agree on the stage mapping, but the app's Dashboard order still ends at `scan review` and doesn't yet include verify, specs or knowledge. Sharing one pure function between them is follow-up work.
 - `atticus next` doesn't yet see a spec gone stale because a cited file changed (the spec check reports that), nor a knowledge source missing from `sources.yaml`.
+
+## Addendum (2026-10-25): the change in hand first, and the assistant that was probed
+
+A live run: `atticus next` pointed at eleven repo questions from the map read while the change waited on its own step, and said "In Copilot Chat: /atticus-..." when Claude Code was the assistant probed. Tested in `packages/cli/test/next-cli.test.ts`.
+
+- **The change in hand comes first.** It is the change whose stage is under way (its loop file is drafting, waiting, questions or stopped), the most recently updated. Its steps lead: its own open questions (those filed under its id), then its stage's step. The repos' questions follow, without the changes' questions. Every other change's questions are asked with that change's steps. With no stage under way, the order is as before.
+- **The assistant named is the one probed here** (ADR 0124 addendum A-probe): the newest probe result runtime.yaml allows, else its default. `--json` gives it as `assistant`.

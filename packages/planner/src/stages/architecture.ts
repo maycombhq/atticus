@@ -19,6 +19,7 @@ import {
   estateIndex,
   inScope,
   loadEstate,
+  outsideSystems,
   scopeRepos,
   type Estate,
 } from "./estate.js";
@@ -1208,9 +1209,13 @@ export function checkDeltas(
           `Change ${i + 1} to ${t} is a ${kind} with no target: say which component and entry it goes to.`,
           d.repo,
         );
+      // ADR 0087 addendum (2026-10-25): an outside system a call fact or the estate's flows name
+      // (a model provider, a vendor) is a call-out's target, as a component is.
+      const outside = s.to ? outsideSystems(e).get(s.to.component) : undefined;
       if (
         s.to &&
         !s.to.new &&
+        !outside &&
         !["Component", "System"].includes(e.byId.get(s.to.component)?.kind ?? "")
       )
         issue(
@@ -1222,7 +1227,18 @@ export function checkDeltas(
           d.repo,
         );
       // ADR 0111: the entry is resolved against the callee's endpoints, when the catalog has any.
-      if (s.to) {
+      if (s.to && outside) {
+        // The map read the call, not the outside system: an entry no call gives is a person's
+        // to confirm, never refused.
+        if (!s.to.new && !outside.entries.has(entryKey(s.to.entry)))
+          out.push({
+            rule: "delta.entry-uncited",
+            target: at,
+            message: `Change ${i + 1} to ${t} calls ${s.to.entry} on ${s.to.component}, an outside system the estate calls${outside.entries.size ? ` at ${[...new Set(outside.entries.values())].sort().join(", ")}` : ""}; nothing the map read confirms ${s.to.entry}. Mark it new: true if this change starts calling it; otherwise a person confirms it.`,
+            blocking: false,
+            repo: d.repo,
+          });
+      } else if (s.to) {
         const have = entriesOf(e, s.to.component);
         const known = have.has(entryKey(s.to.entry));
         if (have.size && !s.to.new && !known)
@@ -1733,6 +1749,9 @@ export function interfaceChanges(deltas: FlowDelta[], e: Estate) {
         s.to ??
         (old?.to ? { component: old.to.component, entry: old.to.entry, new: false } : undefined);
       if (!to) continue;
+      // ADR 0087 addendum (2026-10-25): an added call to an entry that exists today is a new use
+      // of it, not a new entry (a live run's design showed existing endpoints as planned-new).
+      // Planned-new is for an entry the change adds (new: true).
       out.push({
         flow: d.flow,
         caller,
@@ -1741,9 +1760,11 @@ export function interfaceChanges(deltas: FlowDelta[], e: Estate) {
         status:
           s.op === "remove"
             ? "planned-retire"
-            : s.op === "add" || to.new
+            : to.new
               ? "planned-new"
-              : "planned-modify",
+              : s.op === "add"
+                ? "existing"
+                : "planned-modify",
         fields: [...(s.fields?.sends ?? []), ...(s.fields?.returns ?? [])],
       });
     }
