@@ -10,7 +10,7 @@ atticus bench facts podinfo --facts podinfo.jsonl   # score an assistant's facts
 atticus bench stories --draft story.yaml            # score a drafted user story against stories/
 ```
 
-- `repos.yaml`: the repos, their commits and stacks. Batch 1 is six repos; the rest of the approved list (22 in all) follows.
+- `repos.yaml`: the repos, their commits and stacks. Batch 1 is six repos; the rest of the approved list (22 in all) follows as batch 2. Batch 3 is six held-out repos added later (below).
 - `references/<id>.yaml`: the reference. `covers` says which kinds are complete; only those are scored. `notes` records every judgement call; `ignore` lists true facts outside a kind's scope (a logging level is config, but not config that names another system), which are neither found nor wrong.
 - `stories/`: the stories bench (Phase B): `rubric.md` and three reference stories.
 - Clones and results live in `%LOCALAPPDATA%\atticus\bench` (or `~/.cache/atticus/bench`); results are JSON per run, with what was missed and wrong per kind.
@@ -211,6 +211,22 @@ The same 16 repos revised once by four Claude sessions under the protocol and ve
 | **Batch 2, second read**       | **474** | **34** | **18** |
 
 What is still wrong: clean-architecture's ASP.NET Identity tables (no line in the repo names them; the database is made by `EnsureCreated`) and bulletproof-react's calls (their base path lives only in `.env.example`, which the protocol never cites).
+
+## Batch 3, held out (2026-10-25)
+
+Batches 1 and 2 are now both tuned: the protocol and verifier were shaped on their reads. Batch 3 is six new repos in stacks the bench didn't have, so the map's accuracy on code nobody tuned on can be measured again. **The references were written before any read, by a session that never saw a reader's facts**, by reading each repo at its pinned commit (fetched with `atticus bench fetch`), every `at` line-checked by a script against the clone (the cited line names the path's last segment, the table or the topic; empty routes under a prefix, deploy lines and one generated-client call site were checked by hand).
+
+| Repo               | Stack                                                      |  Serves |  Calls | Stores | Deploys | Why chosen                                                                                                              |
+| ------------------ | ---------------------------------------------------------- | ------: | -----: | -----: | ------: | ----------------------------------------------------------------------------------------------------------------------- |
+| codetriage         | Ruby on Rails, ActiveRecord, Sidekiq                       |      45 |     10 |     11 |       1 | Rails routing (resources, PATCH and PUT, glob scopes, Devise), GitHub API calls built with `File.join`, Heroku          |
+| django-styleguide  | Django, DRF, Celery                                        |      21 |      3 |     21 |       1 | nested `include()` prefixes, convention table names (`<app>_<model>`, many-to-many tables), framework tables            |
+| laravelio          | PHP Laravel 11, Eloquent, Livewire, Filament               |      79 |      4 |     12 |       1 | the largest route file, the implicit `/api` prefix, Filament's derived pages, a squashed schema dump, Laravel Forge     |
+| wild-workouts      | Go services over gRPC and chi HTTP (OpenAPI), Firestore    |      17 |     15 |      3 |       2 | gRPC servers and clients between services, a mount prefix, a Vue front end's generated clients, Cloud Run and Firebase  |
+| kotlinconf         | Kotlin Ktor backend, Exposed, Kotlin Multiplatform clients |      19 |     16 |      4 |       2 | Ktor nested `route()` blocks under `/{year}`, Multiplatform and admin clients calling the backend, Heroku, GitHub Pages |
+| microservice-kafka | Spring Boot services over Kafka, JPA, Postgres             |      12 |      1 |     11 |       0 | a Kafka topic published and consumed by two services, JPA's implicit join-table names, compose that is not a deployment |
+| **Batch 3**        |                                                            | **193** | **49** | **62** |   **7** |                                                                                                                         |
+
+Counts are entries as listed; facts compare as a set per repo, so repeats (GET / in each Kafka service, a call listed per caller) count once: 304 distinct facts in all. Each reference's `notes` records its judgement calls; the ones a reader is most likely to decide differently: Rails' PUT twins of PATCH routes (listed), Devise's library routes (left out, but the OmniAuth callback the app handles is kept), Django's and Laravel's framework tables (listed only where the app's own code reads or writes them, the rest ignored), Laravel Forge and Firebase Hosting as platforms (and Firebase Hosting's rewrites not treated as gateway routes), wild-workouts' fixture loader calling users gRPC at start-up (kept), and microservice-kafka's compose system counted as local running, not docker. No reader has read these repos yet; the first read's numbers go here when it is made.
 
 ## The stories bench (Phase B)
 

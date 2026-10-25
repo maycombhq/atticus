@@ -4,6 +4,10 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### The bench gains a held-out batch 3
+
+- **Six new public repos, in stacks the bench lacked, with hand-checked references written before any read** (`bench/repos.yaml`, `batch: 3`): codetriage (Ruby on Rails), django-styleguide (Django and DRF), laravelio (PHP Laravel), wild-workouts (Go over gRPC and chi, Firestore), kotlinconf (Kotlin Ktor and Multiplatform clients) and microservice-kafka (Spring Boot over Kafka). 193 entries, 49 calls, 62 tables and 7 platforms, every `at` line-checked against the pinned clone, each judgement call in the reference's `notes`. The session that wrote them never saw a reader's facts, so the first read of batch 3 measures the map on code nobody tuned on (`bench/README.md`).
+
 ### A story's implementation steps follow the places in the code that change (B-steps, ADR 0124 addendum B-steps)
 
 - **Each story file has an Implementation steps section**, after Scope: one numbered step per place the change goes into, in the tasks' order. A step is each task's own code (the line its flow step is at, or the line an added step goes in after), each file a task declares a field or column in (the files to touch from the map's citations, B-fixes: one step per file, with every task's lines and reasons), and each new migration file. A new flow's tasks that cite no code are one step of new code, because the map can't tell their places apart. Each step names its tasks, and their acceptance criteria accept it. The tasks are unchanged and are still what a developer runs. The steps are worked out from the tasks (`storySteps` in the planner) and aren't stored. The stories prompt is unchanged, so no recording was re-recorded.

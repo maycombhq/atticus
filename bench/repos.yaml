@@ -116,3 +116,33 @@ repos:
     commit: 1d76b00d683e86b62867a6bf59530f8ab301244f
     stack: Spring Cloud gateway, discovery, config server, four services
     batch: 2
+  - id: codetriage
+    url: https://github.com/codeTriage/codetriage
+    commit: d1868f8634e97a111a7fca49d58cc776d206007e
+    stack: Ruby on Rails, ActiveRecord, Sidekiq, GitHub API
+    batch: 3
+  - id: django-styleguide
+    url: https://github.com/HackSoftware/Django-Styleguide-Example
+    commit: a70ef43d7df03706c1211d4fcfd70b4b0120ba1e
+    stack: Django, Django REST Framework, Celery
+    batch: 3
+  - id: laravelio
+    url: https://github.com/laravelio/laravel.io
+    commit: 2cf05064963c92737865dc3243cd7ff1a1d4bcba
+    stack: PHP Laravel, Eloquent
+    batch: 3
+  - id: wild-workouts
+    url: https://github.com/ThreeDotsLabs/wild-workouts-go-ddd-example
+    commit: 8ecfcdf05b1462c4757bd2dcac9086c78e9f7791
+    stack: Go services over gRPC and HTTP (chi, OpenAPI), Firestore, MySQL, Terraform
+    batch: 3
+  - id: kotlinconf
+    url: https://github.com/JetBrains/kotlinconf-app
+    commit: 907ce238e1ffe2472991eeb2d2bfa386bdb4ea8f
+    stack: Kotlin Ktor backend, Exposed, Kotlin Multiplatform clients
+    batch: 3
+  - id: microservice-kafka
+    url: https://github.com/ewolff/microservice-kafka
+    commit: 103de22da497c631708f0541a0cad0e662d04aa5
+    stack: Spring Boot services over Kafka, JPA, Postgres
+    batch: 3

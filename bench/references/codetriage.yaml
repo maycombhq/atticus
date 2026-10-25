@@ -1,0 +1,201 @@
+# Written by reading the code at the pinned commit, not from an Atticus scan.
+repo: codetriage
+commit: d1868f8634e97a111a7fca49d58cc776d206007e
+covers: [serves, calls, stores, deploys]
+notes: >-
+  CodeTriage: a server-rendered Ruby on Rails app (Slim views, ActiveRecord on Postgres, Sidekiq
+  jobs) that subscribes users to GitHub repos and mails them issues and undocumented methods.
+  Serves: every route in config/routes.rb, cited at its line, with Rails' optional "(.:format)"
+  suffix dropped and :param written as {param}. A resources line gives one entry per action its
+  only: list keeps, at the standard REST paths (show GET /x/{id}, index GET /x, new GET /x/new,
+  create POST /x, edit GET /x/{id}/edit, destroy DELETE /x/{id}); update answers both PATCH and PUT,
+  so it is two entries at the same line. resources :repos lists :index, but ReposController has no
+  index action and there is no repos/index view, so GET /repos raises and is left out (a declared
+  route nothing implements, like petclinic-rest's /oops). The scope "*full_name" (a glob matching
+  "owner/name", slash included) is written as /{full_name}, so repos#show is GET /{full_name} and
+  the badge route is GET /{full_name}/badges/{badge_type}. The two redirect routes the app declares
+  (GET /sitemap.xml.gz to the S3 sitemap, GET /mail_view to rails/mailers) are entries. Left out as
+  framework or library endpoints: Devise's own session and password routes (devise_for :users with
+  database_authenticatable and recoverable: /users/sign_in, /users/sign_out, /users/password...),
+  the OmniAuth request phase /users/auth/github, the Sidekiq::Web UI mounted at /sidekiq for admins,
+  and Rails' mailer previews at /rails/mailers. The OmniAuth callback /users/auth/github/callback is
+  kept, because the app's own Users::OmniauthCallbacksController#github handles it (devise_for's
+  controllers: option, routes.rb:22); Devise routes it for GET and POST, so it has no method key.
+  Calls: the GitHub REST API (api.github.com, the GitHubBub gem's base), made through the
+  GithubFetcher resources in app/models/github_fetcher, each of which sets its @api_path with
+  File.join (cited at the line naming its last literal segment), plus RepoLabelAssigner's labels
+  request (used by a rake task in lib/tasks/schedule.rake; a call made from a scheduled task is
+  still a call). Paths are written with a leading slash and their File.join parts as {param}; query
+  options (sort, state, page, per_page) are not part of the path. GithubFetcher::Repos makes three
+  calls, /user/repos, /user/starred and /user/subscriptions, one per KINDS constant (cited at each
+  constant). GithubFetcher::User's GET /user is left out: its only caller, User#set_avatar_url!, is
+  never called (and calls a json method Resource doesn't have). Left out of calls: the git clone of
+  each repo over HTTPS (GithubFetcher::Repo#clone, not an API request), OmniAuth's OAuth token and
+  user-info requests to GitHub (library mechanics), the S3 sitemap upload through the AWS SDK
+  adapter (config/sitemap.rb), mail over SMTP, Sentry, and Redis and Memcachier (key-value stores,
+  no tables). Stores: the tables of db/schema.rb (the Ruby schema is the one Rails loads;
+  db/structure.sql is stale, still lists the dropped opro_* tables and lacks most current tables, so
+  it isn't used). Every table has an ActiveRecord model except data_dumps, which the schema creates
+  but no code reads or writes: it is ignored (neither found nor wrong). schema_migrations and
+  ar_internal_metadata are Rails' bookkeeping and also ignored. Deploys: Heroku. app.json (addons
+  heroku-postgresql, heroku-redis, Heroku buildpacks), heroku.yml and the Procfile (web, worker,
+  release phase running db:migrate) are the Heroku deployment; the GitHub workflow only lints and
+  tests.
+serves:
+  - { type: rest, method: GET, path: /sitemap.xml.gz, at: "config/routes.rb:7" }
+  - { type: rest, method: GET, path: "/doc_methods/{id}", at: "config/routes.rb:12" }
+  - { type: rest, method: GET, path: /university, at: "config/routes.rb:14" }
+  - { type: rest, method: GET, path: "/university/{id}", at: "config/routes.rb:14" }
+  - { type: rest, method: GET, path: /example_app, at: "config/routes.rb:15" }
+  - { type: rest, method: GET, path: /reproduction, at: "config/routes.rb:16" }
+  - { type: rest, method: GET, path: /repro, at: "config/routes.rb:17" }
+  - { type: rest, method: GET, path: /squash, at: "config/routes.rb:18" }
+  - { type: rest, method: GET, path: /rebase, at: "config/routes.rb:19" }
+  - { type: rest, path: /users/auth/github/callback, at: "config/routes.rb:22" }
+  - { type: rest, method: GET, path: /users/edit, at: "config/routes.rb:25" }
+  - { type: rest, method: PATCH, path: /users, at: "config/routes.rb:26" }
+  - { type: rest, method: GET, path: /, at: "config/routes.rb:29" }
+  - { type: rest, method: GET, path: "/topics/{id}", at: "config/routes.rb:30" }
+  - { type: rest, method: GET, path: /what, at: "config/routes.rb:32" }
+  - { type: rest, method: GET, path: /privacy, at: "config/routes.rb:33" }
+  - { type: rest, method: GET, path: /support, at: "config/routes.rb:34" }
+  - { type: rest, method: GET, path: "/users/after_signup/{id}", at: "config/routes.rb:37" }
+  - { type: rest, method: PATCH, path: "/users/after_signup/{id}", at: "config/routes.rb:37" }
+  - { type: rest, method: PUT, path: "/users/after_signup/{id}", at: "config/routes.rb:37" }
+  - { type: rest, method: GET, path: "/users/{id}", at: "config/routes.rb:40" }
+  - { type: rest, method: GET, path: "/users/{id}/edit", at: "config/routes.rb:40" }
+  - { type: rest, method: PATCH, path: "/users/{id}", at: "config/routes.rb:40" }
+  - { type: rest, method: PUT, path: "/users/{id}", at: "config/routes.rb:40" }
+  - { type: rest, method: DELETE, path: "/users/{id}", at: "config/routes.rb:40" }
+  - {
+      type: rest,
+      method: GET,
+      path: "/users/unsubscribe/{account_delete_token}",
+      at: "config/routes.rb:41",
+    }
+  - {
+      type: rest,
+      method: DELETE,
+      path: "/users/unsubscribe/{account_delete_token}",
+      at: "config/routes.rb:42",
+    }
+  - { type: rest, method: POST, path: /issue_assignments, at: "config/routes.rb:44" }
+  - {
+      type: rest,
+      method: GET,
+      path: "/issue_assignments/{id}/users/{user_id}/click",
+      at: "config/routes.rb:46",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/doc_methods/{id}/users/{user_id}/click",
+      at: "config/routes.rb:47",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/doc_methods/{id}/users/{user_id}/source_click",
+      at: "config/routes.rb:48",
+    }
+  - { type: rest, method: POST, path: /repo_subscriptions, at: "config/routes.rb:50" }
+  - { type: rest, method: DELETE, path: "/repo_subscriptions/{id}", at: "config/routes.rb:50" }
+  - { type: rest, method: PATCH, path: "/repo_subscriptions/{id}", at: "config/routes.rb:50" }
+  - { type: rest, method: PUT, path: "/repo_subscriptions/{id}", at: "config/routes.rb:50" }
+  - { type: rest, method: GET, path: /mail_view, at: "config/routes.rb:52" }
+  - { type: rest, method: GET, path: /repos/new, at: "config/routes.rb:57" }
+  - { type: rest, method: POST, path: /repos, at: "config/routes.rb:57" }
+  - { type: rest, method: GET, path: /repos/list, at: "config/routes.rb:59" }
+  - { type: rest, method: GET, path: "/{full_name}/badges/{badge_type}", at: "config/routes.rb:65" }
+  - { type: rest, method: GET, path: "/{full_name}/info", at: "config/routes.rb:66" }
+  - { type: rest, method: GET, path: "/{full_name}", at: "config/routes.rb:68" }
+  - { type: rest, method: PATCH, path: "/{full_name}", at: "config/routes.rb:69" }
+  - { type: rest, method: GET, path: "/{full_name}/edit", at: "config/routes.rb:70" }
+  - { type: rest, method: GET, path: "/{full_name}/subscribers", at: "config/routes.rb:71" }
+calls:
+  - {
+      type: rest,
+      method: GET,
+      path: "/repos/{user_name}/{name}/commits/{default_branch}",
+      to: github-api,
+      at: "app/models/github_fetcher/commit_sha.rb:10",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /user/emails,
+      to: github-api,
+      at: "app/models/github_fetcher/email.rb:7",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/repos/{owner_name}/{repo_name}/issues/{number}",
+      to: github-api,
+      at: "app/models/github_fetcher/issue.rb:10",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/repos/{owner_name}/{repo_name}/issues/{number}/comments",
+      to: github-api,
+      at: "app/models/github_fetcher/issue_comments.rb:12",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/repos/{user_name}/{name}/issues",
+      to: github-api,
+      at: "app/models/github_fetcher/issues.rb:10",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/repos/{user_name}/{name}",
+      to: github-api,
+      at: "app/models/github_fetcher/repo.rb:23",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /user/repos,
+      to: github-api,
+      at: "app/models/github_fetcher/repos.rb:6",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /user/starred,
+      to: github-api,
+      at: "app/models/github_fetcher/repos.rb:7",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /user/subscriptions,
+      to: github-api,
+      at: "app/models/github_fetcher/repos.rb:8",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/repos/{user_name}/{name}/labels",
+      to: github-api,
+      at: "app/services/repo_label_assigner.rb:16",
+    }
+stores:
+  - { table: doc_assignments, at: "db/schema.rb:24" }
+  - { table: doc_classes, at: "db/schema.rb:36" }
+  - { table: doc_comments, at: "db/schema.rb:48" }
+  - { table: doc_methods, at: "db/schema.rb:58" }
+  - { table: issue_assignments, at: "db/schema.rb:77" }
+  - { table: issues, at: "db/schema.rb:87" }
+  - { table: labels, at: "db/schema.rb:108" }
+  - { table: repo_labels, at: "db/schema.rb:114" }
+  - { table: repo_subscriptions, at: "db/schema.rb:124" }
+  - { table: repos, at: "db/schema.rb:142" }
+  - { table: users, at: "db/schema.rb:168" }
+deploys:
+  - { platform: heroku, at: "app.json:16" }
+ignore:
+  stores: [data_dumps, schema_migrations, ar_internal_metadata]
