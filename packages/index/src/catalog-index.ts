@@ -54,20 +54,41 @@ export interface OpenOptions {
    * `atticus index embed`. Until every node has one, similarity stays off and says so.
    */
   embedOnOpen?: number;
+  /**
+   * Where the embedding plugin comes from (ADR 0124 addendum D-bundle): `@maycombhq/embed`, which
+   * the default offline bundle leaves out. Tests pass one that fails as a missing package does.
+   */
+  loadEmbed?: () => Promise<Pick<typeof import("@maycombhq/embed"), "embedderFor">>;
 }
 
 /** The vectors file beside an index file. */
 const vectorsFileOf = (file: string) => join(dirname(file), "vectors.sqlite");
 
+/** A dynamic import that failed because the package isn't installed (not because it broke). */
+const notInstalled = (e: unknown, pkg: string) =>
+  (e as { code?: string }).code === "ERR_MODULE_NOT_FOUND" &&
+  String((e as Error).message).includes(pkg);
+
 async function embedderOf(
   root: string,
   setting: OpenOptions["embeddings"],
+  load: NonNullable<OpenOptions["loadEmbed"]> = () => import("@maycombhq/embed"),
 ): Promise<{ embedder?: Embedder; why?: string }> {
   if (setting === "off") return { why: "turned off for this command" };
   if (setting && setting !== "auto") return { embedder: setting };
   // Never fails the open: without a model the engine searches by words and names, and says why.
+  let embed: Awaited<ReturnType<typeof load>>;
   try {
-    const { embedderFor } = await import("@maycombhq/embed");
+    embed = await load();
+  } catch (e) {
+    if (notInstalled(e, "@maycombhq/embed"))
+      return {
+        why: "search by meaning is an optional plugin that isn't installed (@maycombhq/embed)",
+      };
+    return { why: `the embedding model couldn't be read: ${(e as Error).message.split("\n")[0]}` };
+  }
+  try {
+    const { embedderFor } = embed;
     const r = await embedderFor(root);
     return r.embedder ? { embedder: r.embedder } : { why: r.state.problem ?? "no embedding model" };
   } catch (e) {
@@ -91,7 +112,7 @@ export async function openIndex(root: string, o: OpenOptions = {}): Promise<Cata
     const u = await updateIndex(db, root, files, { force: fresh });
     const rebuilt = fresh || u.changed.length > 0 || u.removed.length > 0;
     attachVectors(db, vectorsFileOf(file));
-    const e = await embedderOf(root, o.embeddings);
+    const e = await embedderOf(root, o.embeddings, o.loadEmbed);
     const ix = new CatalogIndex(db, file, u.problems, rebuilt, u, e.embedder, e.why);
     if (e.embedder && (o.embedOnOpen ?? 500) > 0)
       await ix.embed({ max: o.embedOnOpen ?? 500 }).catch((err: Error) => {

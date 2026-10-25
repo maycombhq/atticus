@@ -281,6 +281,55 @@ describe("atticus doctor", () => {
     }
   });
 
+  it("says the embedding plugin isn't installed, as a note, when the bundle leaves it out (ADR 0124 addendum D-bundle)", async () => {
+    const missing = () =>
+      Promise.reject(
+        Object.assign(new Error("Cannot find package '@maycombhq/embed' imported from doctor.js"), {
+          code: "ERR_MODULE_NOT_FOUND",
+        }),
+      );
+    const was = process.env.ATTICUS_EMBEDDINGS;
+    delete process.env.ATTICUS_EMBEDDINGS;
+    try {
+      const dflt = byId(await doctorChecks(root, { ...healthy(), embed: missing }), "embeddings");
+      expect(dflt.status).toBe("ok");
+      expect(dflt.detail).toMatch(
+        /^not installed \(@maycombhq\/embed, an optional plugin\), so the context engine searches by words and names only/,
+      );
+      expect(dflt.fix).toMatch(/--with-embeddings/);
+      // A model runtime.yaml names that can't be used is a warning, as before.
+      const own = await mkdtemp(join(tmpdir(), "atticus-doctor-noembed-"));
+      await cp(join(FIXTURES, "forge/metarepo"), own, { recursive: true });
+      await writeFile(
+        join(own, "org-pack/runtime.yaml"),
+        [
+          "schemaVersion: 1",
+          "assistants: { allowed: [copilot], default: copilot }",
+          "retrieval: { embeddings: { model: models/minilm } }",
+        ].join("\n"),
+      );
+      expect(
+        byId(await doctorChecks(own, { ...healthy(), embed: missing }), "embeddings"),
+      ).toMatchObject({
+        status: "warn",
+      });
+      // Turned off, there is nothing to install.
+      await writeFile(
+        join(own, "org-pack/runtime.yaml"),
+        [
+          "schemaVersion: 1",
+          "assistants: { allowed: [copilot], default: copilot }",
+          "retrieval: { embeddings: { model: off } }",
+        ].join("\n"),
+      );
+      const off = byId(await doctorChecks(own, { ...healthy(), embed: missing }), "embeddings");
+      expect(off.status).toBe("ok");
+      expect(off.detail).toMatch(/^off/);
+    } finally {
+      if (was !== undefined) process.env.ATTICUS_EMBEDDINGS = was;
+    }
+  });
+
   it("puts the machine first on the setup checklist", async () => {
     const ok = await setupSteps(root, { doctor: await doctorChecks(root, healthy()) });
     expect(ok.steps[0]).toMatchObject({ id: "machine", done: true });

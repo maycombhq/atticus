@@ -42,7 +42,8 @@ beforeAll(async () => {
     0,
   );
   wt = join(e.root, "workspace/.worktrees", CHANGE, "forge-ledger");
-  const help = (await atticus(undefined, "--help")).out.join("\n").split("\n");
+  // Every command, the legacy ones too (ADR 0124 addendum D-cli): atticus help shows twelve.
+  const help = (await atticus(undefined, "help", "--all")).out.join("\n").split("\n");
   helpGroups = new Set();
   helpPairs = new Set();
   for (const l of help) {

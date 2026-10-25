@@ -1,136 +1,99 @@
 # Installing Atticus
 
-Atticus runs on each person's own machine: a command line (`atticus`) and a local app (`atticus ui`) that work on a Git metarepo the team shares. There is no server to run and nothing to host.
+From nothing to a first map and a first change, on one page. Atticus is a command line (`atticus`) and a local app (`atticus ui`) on each person's own machine, working on a Git metarepo the team shares. There is no server to run.
 
-## What a machine needs
+## Minute 0: what the machine needs
 
-| Need         | Version                                  | Why                                                              |
-| ------------ | ---------------------------------------- | ---------------------------------------------------------------- |
-| Node.js      | 22.13 or later (LTS 22 or 24)            | Atticus is a Node program; its index uses Node's built-in SQLite |
-| Git          | 2.30 or later                            | Base clones, worktrees, hand-off branches                        |
-| An editor    | VS Code or IntelliJ (optional)           | Change worktrees open as editor workspaces                       |
-| An assistant | GitHub Copilot or Claude Code (optional) | AI steps run in the person's own assistant (hand-off)            |
+- **Node.js 22.13 or later** and **Git 2.30 or later**, from your software catalogue. No administrator rights.
+- **An assistant** (optional, but it does the reading): Claude Code, Copilot in VS Code or IntelliJ, or any chat you can paste into.
 
-No administrator rights are needed. Atticus never needs a package registry after it is installed, and scans never touch the network.
+## Minute 2: install
 
-## Install from the offline bundle (recommended)
+**From the offline bundle** (a bank laptop, no package registry). The bundle is one zip, `atticus-<version>-offline.zip`, about 20 MB, with a `.sha256` beside it.
 
-The bundle is one zip per platform, `atticus-<version>-offline.zip` (about 113 MB on Windows), with a `.sha256` file beside it. It holds the command line and app with every dependency, the local embedding model and its runtime for that platform (search by meaning works at once, with nothing more to install), install scripts, `SHA256SUMS`, an SBOM (`sbom.cdx.json`) and the third-party licences.
+1. Check the zip against its `.sha256`, then unzip it anywhere.
+2. **Windows:** right-click `install.ps1`, _Run with PowerShell_ (or `powershell -ExecutionPolicy Bypass -File install.ps1`; `-NoPath` leaves your PATH alone). **macOS, Linux:** `sh install.sh`.
+3. Open a new terminal: `atticus --version`.
 
-1. Check the zip against its `.sha256` file, then unzip it anywhere.
-2. Run the install script from the unzipped folder:
-   - **Windows:** right-click `install.ps1` and choose _Run with PowerShell_, or run `powershell -ExecutionPolicy Bypass -File install.ps1`. Add `-NoPath` to leave your PATH as it is.
-   - **macOS, Linux:** `sh install.sh`.
-3. Open a new terminal and run `atticus --version`.
+The script checks Node and every file against `SHA256SUMS`, copies the version into your own programs folder (`%LOCALAPPDATA%\Programs\Atticus\<version>`, or `~/.local/share/atticus/<version>`) and puts `atticus` on your PATH. Nothing in it reaches the network. It carries an SBOM (`sbom.cdx.json`) and the third-party licences for your security review.
 
-The script checks Node, checks every file against `SHA256SUMS`, copies the version into your own programs folder (`%LOCALAPPDATA%\Programs\Atticus\<version>` on Windows, `~/.local/share/atticus/<version>` elsewhere) and puts `atticus` on your PATH. Versions sit side by side: to go back, run the older bundle's script.
+**From your npm mirror** (Artifactory, Nexus): `npm install --global @maycombhq/cli`. The mirror needs every `@maycombhq/*` package the CLI depends on and the third-party packages in the SBOM.
 
-On Windows, also run once:
+**Search by meaning is an optional plugin.** The default bundle leaves out the local embedding model and its runtime (all-MiniLM-L6-v2 and onnxruntime, about 100 MB more): Atticus finds things by words and names (SQLite FTS5 with BM25) and by following the graph, and `atticus doctor` says so under _Embedding model_. To add it, use a bundle built with `pnpm bundle --with-embeddings` (`atticus-<version>-offline-embeddings.zip`), or the npm install, which brings it as ordinary dependencies. Either way nothing is downloaded after install.
+
+On Windows, once: `git config --global core.longpaths true`. If Git doesn't know you yet: `git config --global user.name "Your Name"` and `user.email`; Atticus records who did what by your Git user, with no sign-in.
+
+## Minute 5: a metarepo and the machine check
 
 ```bash
-git config --global core.longpaths true
-```
-
-Change worktrees nest deeply, and Windows paths stop at 260 characters without it.
-
-Atticus knows you by your Git user (ADR 0073): there is no sign-in and no role to pick. If Git doesn't know you yet, set it once:
-
-```bash
-git config --global user.name "Your Name"
-git config --global user.email you@example.com
-```
-
-Every command and the app record you by it (the email's part before the `@`); `--by <handle>` names someone else. Without it, Atticus uses your OS user name and warns each time.
-
-## Install from your npm mirror
-
-Where the organisation mirrors npm (a bank's Artifactory or Nexus, say), one command installs Atticus for you:
-
-```bash
-npm install --global @maycombhq/cli
-atticus --version
-```
-
-That is all: the local embedding model for search by meaning (`@maycombhq/embed-model`, all-MiniLM-L6-v2, 87 MB) and its runtime (onnxruntime's CPU build for your platform, 25 to 86 MB by platform, plus a 14 MB WebAssembly fallback) come with it as ordinary dependencies. Nothing runs at install time and nothing is downloaded afterwards: no package Atticus installs has an install script. `atticus doctor` shows the model and its runtime under _Embedding model_. The VS Code and IntelliJ extensions run this `atticus`, so they don't carry the model themselves.
-
-The mirror needs these packages: every `@maycombhq/*` package `@maycombhq/cli` depends on (among them `@maycombhq/embed-model`, `@maycombhq/onnxruntime-wasm` and the `@maycombhq/onnxruntime-<platform>-<arch>` package for each platform your people use), `onnxruntime-common@1.30.0`, and the third-party packages listed in the SBOM.
-
-## Install from source
-
-For contributors, or where the bundle can't be used:
-
-```bash
-corepack enable
-pnpm install
-pnpm build
-node packages/cli/dist/bin.js --version
-```
-
-`pnpm bundle` builds the offline bundle for the platform it runs on from a checkout (it first fills the model and runtime packages from their pinned sources, `node scripts/model/fetch.mjs --this-platform`, through a cache in `.cache/pinned`), and `pnpm bundle:test <zip>` installs it into a throwaway folder and uses it, a search by meaning included. In a checkout, `pnpm model:fetch` fetches the model and every runtime package (about 330 MB, once); without it, everything works but search by meaning, and `atticus doctor` says so.
-
-## Check the machine
-
-In your metarepo (after the next section, or in a practice sandbox):
-
-```bash
-atticus doctor
-```
-
-Each line is `[ok]`, `[warn]` or `[FAIL]` with what to do. It checks Node, Git and your Git identity, long paths on Windows, the bundled OpenSpec, proxy variables, `NODE_EXTRA_CA_CERTS`, that the metarepo is writable, free disk, the app's port, the org pack, the assistant and editor `runtime.yaml` allows, the metarepo's version and whether the last scan finished. It reads the machine only: no network, no AI, and never a secret's value.
-
-### Behind a proxy that inspects TLS
-
-Atticus itself makes no network calls in a scan. Plugins and adapters that reach your systems do, and they use Node's certificate store. If your proxy re-signs TLS, set `NODE_EXTRA_CA_CERTS` to your organisation's root certificate in PEM form (your desktop or network team has it), and add `localhost` and `127.0.0.1` to `NO_PROXY`. `atticus doctor` checks both.
-
-## Start a metarepo
-
-A team needs one metarepo: a Git repository that holds the org pack, the catalog and the changes.
-
-**New metarepo:**
-
-```bash
-atticus init forge-meta --platform forge --owner <you>
+atticus init forge-meta --platform forge --owner <you>   # an estate of repos: one metarepo for the team
 cd forge-meta
-atticus repos discover <folder with your clones>
+atticus repos discover <folder with your clones>         # proposes repos.manifest.yaml entries; add them
+atticus workspace sync                                   # base clones of every repo
+atticus doctor                                           # each line [ok], [warn] or [FAIL], with what to do
 ```
 
-`repos discover` proposes `repos.manifest.yaml` entries; add what it proposes. Then:
+One repo instead of an estate: `atticus adopt <path>` writes only `.atticus/` in it (`atticus unadopt <path>` leaves it byte for byte as it was). To practise first: `atticus sandbox create ./practice`, then work in `practice/metarepo`.
+
+## Minute 10: measure your assistant
 
 ```bash
-atticus workspace sync
-atticus scan
-atticus ui --open
+atticus probe
 ```
 
-The app updates by itself when files change, whoever wrote them: your assistant, the command line or a teammate's pull. The page carries its own session token; `atticus ui --show-token` prints it for an assistant or a script that calls the local API.
+It writes a file holding a code it never prints and tells you to run `/atticus-probe` in your assistant. The assistant opens the file, writes the code back and runs `atticus probe answer <code>`; what it managed decides its tier, measured rather than guessed, and `atticus map <repo> --estimate` then says what the first read costs. A chat that can't run commands gives you the line to run with `--pasted`; one that can't open files answers `none`. The result stays on your machine (`.atticus/probe/`).
 
-**An existing repo** (an OpenSpec or Spec Kit repo, or a repo with its own assistant prompts) can use Atticus in place: `atticus adopt <path>` writes only `.atticus/`, and `atticus unadopt <path>` leaves the repo byte for byte as it was.
+## The first map, by tier
 
-**Practice first:** `atticus sandbox create <dir>` makes a throwaway metarepo from the invented Forge ecosystem, with every outside system a mock except the Git host, which is manual: you record its pull request steps with `atticus todo done`, as you would without Git host access.
+Every tier writes the same facts file, each fact citing its file and line, and `atticus verify` checks every claim on its line. Only the speed differs.
 
-**In your editor or assistant:**
+**Claude Code, Cursor or Copilot agent mode (tier 1: the assistant opens files and runs commands).**
 
-- **VS Code:** the Atticus extension (`packages/vscode`), with Copilot running the AI steps.
-- **IntelliJ IDEA:** the Atticus plugin (`packages/intellij`); AI steps run as `/atticus-*` slash commands in Copilot Chat.
-- **Claude Code:** the Atticus plugin (ADR 0104). Install it once:
+- Claude Code: install the plugin once, `/plugin marketplace add maycombhq/atticus` then `/plugin install atticus@maycombhq`.
+- Copilot agent mode (VS Code) or another tool: `atticus assistant-files` writes its prompt files into the metarepo; commit them in a pull request.
 
-  ```
-  /plugin marketplace add maycombhq/atticus
-  /plugin install atticus@maycombhq
-  ```
+Then, in the assistant: `/atticus-map <repo>`. It reads the repo, runs `atticus verify <repo>` after each pass and fixes what is rejected until everything passes, then shows you the questions it raised. Finish with `atticus verify <repo> --write`: the facts go into the catalog and the map is rendered under `map/<repo>/` for review in a pull request.
 
-  Every step is a slash command (`/atticus-next`, `/atticus-survey`, `/atticus-needs` and the rest), a session in a metarepo starts with its next step, and the read-only `atticus` MCP tools read the catalog, knowledge, changes and needs. `atticus assistant-files` still writes the org pack's own agents, skills and commands into the metarepo.
+**Copilot Chat without tools (tier 2: it reads and writes a file you give it, but runs nothing).**
 
-The app's Home shows the setup checklist until the catalog is accepted. The same list is `atticus setup`. Next: [the admin guide](admin.md).
+```bash
+atticus map <repo> --estimate   # the batches at your model's limit
+atticus map <repo> --handoff    # prints the batch's prompt file and the answer file to write
+```
 
-## Upgrade
+Give the assistant the prompt file; it writes the answer file. Then `atticus handoff done <run>` and `atticus map <repo> --next` for the next batch: each answer is verified as it comes back. When the last batch is in, `atticus verify <repo> --write`.
 
-1. Install the new bundle (step 2 above). The old version stays.
-2. In the metarepo: `atticus doctor`, then `atticus upgrade`.
-3. Commit what `upgrade` changed, in a pull request.
+**Copy and paste (tier 3: IntelliJ with Copilot Chat, a web chat).**
 
-`atticus upgrade` copies every file it changes to `.atticus/backups/<time>/` first and records the version in `.atticus/metarepo.yaml`. `atticus upgrade --check` lists what it would do. An older Atticus refuses a metarepo a newer one upgraded, so install the newer version on every machine that works in it.
+```bash
+atticus map <repo> --copy                    # prints the batch's prompt to paste
+atticus map <repo> --copy --answer reply.txt # reads the answer you saved (--answer - for stdin)
+```
 
-## Uninstall
+Repeat until it says the read is done, then `atticus verify <repo> --write`.
 
-Delete the version folder (`%LOCALAPPDATA%\Programs\Atticus\<version>`, or `~/.local/share/atticus/<version>`) and the `atticus` command (`...\Atticus\bin\atticus.cmd`, or `~/.local/bin/atticus`). Atticus keeps nothing else outside your metarepos. In a metarepo, `.atticus/logs/`, `.atticus/locks/`, `.atticus/backups/` and `.atticus/me.yaml` (your digest settings) are this machine's own files and are never committed.
+With several repos read: `atticus join` follows flows from repo to repo through the calls the facts join, and asks which repo answers a host nobody lists. `atticus ui --open` shows the map, with the Trust tab saying per repo what was verified.
+
+## The first change
+
+```bash
+atticus change new "Cap daily transfers" --type feature   # then write its brief
+atticus next                                              # the next step, and its slash command
+```
+
+The stages, each looping with Atticus's checks and the critic until it is done: the feature (`/atticus-feature <change>`, or `atticus change feature <change> --handoff`), the architecture (`/atticus-architecture`), the stories (`/atticus-stories`, or `atticus stories <change>`), then a task at a time (`/atticus-task <change> <task>`, or `atticus task <change> <task>`). `atticus critic <change>` reviews it at a gate; `atticus questions` lists what needs a person. Every write to a shared system waits for a person's approval, and a gate is approved by merging its hand-off pull request.
+
+A tier 2 assistant takes each stage with `--handoff` (prompt file in, answer file out, `atticus handoff done <run>`); a tier 3 one with the same prompt pasted.
+
+## When something goes wrong
+
+- `atticus doctor` first. Behind a proxy that re-signs TLS, set `NODE_EXTRA_CA_CERTS` to your root certificate and add `localhost` and `127.0.0.1` to `NO_PROXY`; doctor checks both. A scan never touches the network; the only network call a read makes is to the model provider your runtime.yaml names, if any.
+- `atticus help` shows the twelve main commands; `atticus legacy` lists the rest, which all still run by their own names. [The troubleshooting guide](troubleshooting.md) says what each error means.
+
+## Upgrade and uninstall
+
+Install the new bundle; the old version stays beside it. In the metarepo: `atticus doctor`, then `atticus upgrade` (it backs up every file it changes to `.atticus/backups/<time>/`; `--check` lists what it would do), and commit what it changed in a pull request. To uninstall, delete the version folder and the `atticus` command (`...\Atticus\bin\atticus.cmd`, or `~/.local/bin/atticus`); Atticus keeps nothing else outside your metarepos.
+
+From a checkout instead: `corepack enable`, `pnpm install`, `pnpm build`, then `node packages/cli/dist/bin.js --version`. `pnpm bundle` builds the offline bundle for this platform, `pnpm bundle --with-embeddings` the one with the model (filled from pinned sources through `.cache/pinned`), and `pnpm bundle:test <zip>` installs a bundle into a throwaway folder and uses it.
+
+Next: [running Atticus for a team](admin.md).

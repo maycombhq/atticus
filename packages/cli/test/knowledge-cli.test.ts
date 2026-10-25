@@ -230,7 +230,7 @@ describe("knowledge commands through main", () => {
     const io = { out: (l: string) => out.push(l), err: (l: string) => err.push(l) };
     expect(await main(["sources", "add"], io)).toBe(2);
     expect(err.join("\n")).toMatch(/sources add needs a type and a location/);
-    expect(await main(["--help"], io)).toBe(0);
+    expect(await main(["help", "--all"], io)).toBe(0);
     expect(out.join("\n")).toMatch(/atticus patterns scan/);
   });
 });

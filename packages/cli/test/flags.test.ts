@@ -87,12 +87,16 @@ describe("atticus with a mistake", () => {
   });
 
   it("groups the help by area, with Atticus's own quality commands only under --all", async () => {
-    const short = await run(["--help"]);
+    // ADR 0124 addendum D-cli: atticus help shows the twelve; the rest are grouped under legacy.
+    const short = await run(["legacy"]);
     const all = await run(["help", "--all"]);
     expect(short.out).toContain("Set up and keep healthy:");
-    expect(short.out).toContain("Changes, findings and questions:");
+    expect(short.out).toContain("Plans, tasks and work items:");
     expect(short.out).not.toContain("atticus bench run");
-    expect(short.out).toContain("atticus help --all");
+    expect(short.out).toContain("atticus legacy --all");
+    expect((await run(["--help"])).out).toContain("atticus help --all");
+    expect(all.out).toContain("Set up and keep healthy:");
+    expect(all.out).toContain("Changes, findings and questions:");
     expect(all.out).toContain("For Atticus's own quality:");
     expect(all.out).toContain("atticus bench run");
     // Every command the full help names is in the grouped one, once.

@@ -20,6 +20,7 @@ import { registerModelProviderPlugins } from "./model-plugins.js";
 import { existsSync } from "node:fs";
 
 import { VERSION } from "./version.js";
+import { aliasArgv } from "./top-commands.js";
 
 /**
  * Command modules load when their command runs, not at start: loading all of them took most
@@ -408,6 +409,7 @@ Usage:
   atticus estate join [--json]         Join each repo's call-outs to the flows their targets start; writes specs/estate.yaml
   atticus estate flow <flow> [--depth 5] [--json]  A flow followed across repos, with the data at each crossing
   atticus estate lineage <flow> <field> [--depth 5] [--json]  Follow a field along a flow to the column it is stored in, or where it breaks
+  atticus join [--json]                Follow each repo's flows into the flows their calls reach, through the calls the repos' verified facts join (verify --write); the same as estate join
   atticus repo-type detect <repo> [--json]   Match a repo against the org pack's repo types by fingerprint, with the evidence for each signal
   atticus repo-type new <id> --from <repo> [--force]   Draft a repo type from a repo (its build files, dependencies, markers, folders) for you to edit
   atticus scan review <repo>           What the last scan couldn't read: your assistant gives a verdict on each gap and a rule for code it can read; checked [--gaps] [--attempts 3]
@@ -539,12 +541,14 @@ Usage:
   atticus catalog migrate [--dry-run]  Rewrite catalog files to the current schema version
   atticus task context <change> <task> [--json|--markdown]  The task's context for an assistant: its story and criteria, the step it implements with today's code, what applies, the files attached and the files likely to change
   atticus task run <change> <task>     Run a task with AI [--level plan|draft|pr] [--mode m] [--approve]
+  atticus task <change> <task>         Run one task with your assistant, the same as task run [--level plan|draft|pr] [--mode m] [--approve]
   atticus spec hand-down <change> <task>  Create the task's Spec Kit feature in its repo [--force]
   atticus spec hand-up <change> <task>  Read the Spec Kit feature back at the PR [--pr n --pr-url url]
   atticus drift <change> [--json]      Compare design, repo plans and code
   atticus assistant-files [--repo id [--change id]] [--force] [--check]  Generate the slash commands, instructions and skills for each assistant runtime.yaml allows (Copilot, Claude Code, Cursor, Gemini CLI, Windsurf, AGENTS.md)
   atticus feature suggest-names [--mode m]  Ask AI to propose names for detected features
   atticus plan stories <change>        Write stories, stories.md and tasks.md from the approved design [--force] [--mode m] [--draft: before approval] [--context-tokens n] [--whole-context] [--max-tokens n]
+  atticus stories <change>             The stories stage, the same as plan stories [--force] [--mode m] [--draft] [--context-tokens n] [--whole-context] [--max-tokens n]
   atticus change needs <change>        Your assistant says what the change needs from the organisation (requests and processes to raise, standards to follow, teams and vendors to involve), for the change, a feature, flow, story or task; each checked against the change's own words [--mode m] [--resume run] [--context-tokens n] [--whole-context] [--max-tokens n]
   atticus needs [--change id] [--all] [--json]  What changes need from the organisation, open ones first, with lead times and who handles each
   atticus waiting [--group change|kind] [--filter words] [--json]  What waits on you across every change: questions, open needs, manual steps, findings, knowledge to verify
@@ -603,6 +607,7 @@ Usage:
                                        Lessons by role in a practice sandbox: list them, start one, check a step
   atticus sandbox create <dir>         A throwaway practice metarepo
   atticus commands [--json]            Every command as data: its arguments, options, area and how it runs (for an editor)
+  atticus legacy [--all]               Every command outside the twelve atticus help shows, grouped; atticus legacy <command> runs one exactly as atticus <command> does
   atticus explain <id|command>         Explain a record, finding, change or command in plain words
   atticus eval run [--agent a]... [--mode mock|replay|live] [--runs n]  Evaluate AI agents
   atticus eval report                  The latest eval results and AI quality
@@ -695,7 +700,7 @@ function num(v: unknown): number | undefined {
  * its stack and rethrown, carrying the log's path for the message the person sees.
  */
 export async function main(
-  argv: string[],
+  given: string[],
   io: Output,
   o: { quiet?: boolean } = {},
 ): Promise<number> {
@@ -710,6 +715,9 @@ export async function main(
   registerToolSource((at) => (req) => bothTools(metarepoToolBox(at), draftCheckTool(at, req)));
   // W1: the critic checks a name a lens's finding says is missing against the repos' code.
   registerCodeSearch(criticCodeSearch);
+  // ADR 0124 addendum D-cli: `legacy <words>`, `join`, `stories` and `task <change> <task>` are
+  // the commands that exist, so everything after this (flags, hand-off, the log) sees those.
+  const argv = aliasArgv(given, positionalsAt(given));
   const words = argv.filter((a) => !a.startsWith("-")).slice(0, 2);
   const flags = [
     ...new Set(argv.filter((a) => a.startsWith("--")).map((a) => a.slice(2).split("=")[0]!)),
@@ -728,6 +736,18 @@ export async function main(
     if (l && e instanceof Error) (e as Error & { logFile?: string }).logFile = l.file;
     throw e;
   }
+}
+
+/** The indexes of argv's positional words, as the parser reads them (an option's value isn't one). */
+function positionalsAt(argv: string[]): number[] {
+  const { tokens } = parseArgs({
+    args: argv,
+    allowPositionals: true,
+    options: OPTIONS,
+    strict: false,
+    tokens: true,
+  });
+  return tokens.filter((t) => t.kind === "positional").map((t) => t.index);
 }
 
 /** A metarepo, or a repo adopted in place: where Atticus keeps a log. */
@@ -949,6 +969,13 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
     return helpCommand(group === "help" ? positionals.slice(1) : positionals, HELP, io, {
       all: values.all === true,
     });
+  }
+  // ADR 0124 addendum D-cli: the commands outside the twelve, grouped as the help groups them.
+  // (`atticus legacy <words>` never gets here: main runs <words>.)
+  if (group === "legacy") {
+    const { legacyHelp } = await import("./help-commands.js");
+    io.out(legacyHelp(HELP, { all: values.all === true }));
+    return 0;
   }
   // ADR 0096: every command as data, for an editor.
   if (group === "commands") {
@@ -3025,7 +3052,9 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
   io.err(
     `Unknown command: ${positionals.join(" ")}.${near ? ` Did you mean atticus ${near}?` : ""}`,
   );
-  io.err("atticus help lists every command; atticus help <command> explains one.");
+  io.err(
+    "atticus help lists the main commands, atticus legacy the rest; atticus help <command> explains one.",
+  );
   return 2;
 }
 
@@ -3062,7 +3091,7 @@ async function checkFlags(
   io.err(
     id
       ? `atticus help ${id} lists what it takes. Nothing was run.`
-      : "atticus help lists every command and what it takes. Nothing was run.",
+      : "atticus help --all lists every command and what it takes. Nothing was run.",
   );
   return 2;
 }

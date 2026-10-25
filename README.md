@@ -70,7 +70,8 @@ scripts/bundle/      the offline install bundle, SBOM and licence check
 
 ## Get started
 
-- **Install:** [docs/guide/install.md](docs/guide/install.md). One offline zip and one script; Node.js 22.13 or later and Git 2.30 or later.
+- **Install, then a first map and a first change:** [docs/guide/install.md](docs/guide/install.md), one page for every kind of assistant (Claude Code or Copilot agent mode, Copilot Chat without tools, copy and paste) and for an offline bank laptop. One offline zip (about 20 MB) and one script; Node.js 22.13 or later and Git 2.30 or later.
+- **Twelve commands:** `atticus help` shows them (`init`, `map`, `verify`, `join`, `change`, `critic`, `stories`, `task`, `questions`, `knowledge`, `next`, `ui`); `atticus legacy` lists the rest, which all still run by their own names.
 - **Set it up for a team:** [docs/guide/admin.md](docs/guide/admin.md).
 - **By kind of work:** [docs/guide/roles.md](docs/guide/roles.md).
 - **Every command:** [docs/guide/commands.md](docs/guide/commands.md).

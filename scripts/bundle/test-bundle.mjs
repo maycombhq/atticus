@@ -78,11 +78,30 @@ const root = join(sandbox, "metarepo");
 console.log(atticus("doctor", "--root", root).trim().split("\n").at(-1));
 console.log(atticus("scan", "--root", root).trim().split("\n").at(-1));
 
-/// ADR 0116 addendum: every bundle carries the embedding model, the default, and searches by
-// meaning with no network and nothing else to install.
-if (!existsSync(join(dir, "node_modules", "@maycombhq", "embed-model", "model.onnx")))
-  throw new Error("the bundle doesn't carry the embedding model (@maycombhq/embed-model)");
-{
+// ADR 0124 addendum D-bundle: the default bundle leaves the embedding plugin out and searches by
+// words and names; a bundle built with --with-embeddings carries the model (ADR 0116 addendum)
+// and searches by meaning with no network and nothing else to install.
+const embeddings = /-offline-embeddings\.zip$/.test(zipFile);
+const carries = existsSync(join(dir, "node_modules", "@maycombhq", "embed-model", "model.onnx"));
+if (embeddings !== carries)
+  throw new Error(
+    embeddings
+      ? "the bundle doesn't carry the embedding model (@maycombhq/embed-model)"
+      : "the default bundle carries the embedding model; it should leave the plugin out",
+  );
+if (!embeddings) {
+  if (existsSync(join(dir, "node_modules", "@maycombhq", "embed")))
+    throw new Error("the default bundle carries @maycombhq/embed");
+  const doctor = atticus("doctor", "--root", root)
+    .split("\n")
+    .find((l) => /Embedding model/.test(l));
+  console.log(doctor);
+  if (!/\[ok\].*not installed.*words and names/.test(doctor ?? ""))
+    throw new Error(`doctor didn't say the embedding plugin is left out: ${doctor}`);
+  const hits = atticus("query", "ledger", "--search", "--root", root);
+  if (!hits.trim()) throw new Error("the default bundle didn't search by words");
+  console.log("The default bundle searches by words and names, without the embedding plugin.");
+} else {
   const doctor = atticus("doctor", "--root", root)
     .split("\n")
     .find((l) => /Embedding model/.test(l));
