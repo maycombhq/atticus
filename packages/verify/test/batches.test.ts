@@ -2,6 +2,9 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   dirSource,
+  FILE_KINDS,
+  fileKinds,
+  kindsOf,
   isSourceFile,
   memorySource,
   numberedSlice,
@@ -124,5 +127,109 @@ describe("planBatches: every source line once, each batch within the room (ADR 0
     const a = planBatches(dirSource(repo), { room: 500 });
     const b = planBatches(dirSource(repo), { room: 500 });
     expect(JSON.stringify(a)).toBe(JSON.stringify(b));
+  });
+});
+
+describe("fileKinds: which topic rules of the protocol a file's batch needs (ADR 0124 addendum A-lean)", () => {
+  const BACK = ["backend", "routes", "data", "protocols", "flows"];
+  const CODE = ["frontend", "backend", "routes", "data", "protocols", "flows"];
+
+  it("gives server-side code every code topic but the front end's", () => {
+    expect(fileKinds(`${L}/EntryController.java`)).toEqual(BACK);
+    expect(fileKinds("src/Forge.Api/Controllers/OrdersController.cs")).toEqual(BACK);
+    expect(fileKinds("app/main.py")).toEqual(BACK);
+    expect(fileKinds("cmd/server/main.go")).toEqual(BACK);
+    expect(fileKinds("src/orders/orders.controller.ts")).toEqual(BACK);
+  });
+
+  it("gives front-end files the front end's topics, and both sides when the path can't say", () => {
+    expect(fileKinds("web/src/components/OrderForm.tsx")).toEqual(["frontend", "flows"]);
+    expect(fileKinds("web/src/app/orders/order-list.component.ts")).toEqual(["frontend", "flows"]);
+    expect(fileKinds("web/src/app/orders/order-list.component.html")).toEqual([
+      "frontend",
+      "flows",
+    ]);
+    expect(fileKinds("web/src/views/Orders.vue")).toEqual(["frontend", "flows"]);
+    // A page a server renders also serves its route.
+    expect(fileKinds("Pages/Accounts/Index.cshtml")).toEqual(["frontend", "routes", "flows"]);
+    expect(fileKinds("src/main/resources/templates/account.html")).toEqual([
+      "frontend",
+      "routes",
+      "flows",
+    ]);
+    // Code behind a page, a Next.js page and a plain .ts file could be either side: both.
+    expect(fileKinds("Pages/Accounts/Index.cshtml.cs")).toEqual(CODE);
+    expect(fileKinds("app/orders/page.tsx")).toEqual(CODE);
+    expect(fileKinds("generated/client.ts")).toEqual(CODE);
+    expect(fileKinds("src/util/strings.ts")).toEqual(CODE);
+  });
+
+  it("gives build, deploy and config files their own topics, infrastructure as code a few more", () => {
+    expect(fileKinds("k8s/ledger-api.yaml")).toEqual(["deploy", "config"]);
+    expect(fileKinds("Dockerfile")).toEqual(["deploy", "config"]);
+    expect(fileKinds("charts/ledger/values-prod.yaml")).toEqual(["deploy", "config"]);
+    expect(fileKinds(".github/workflows/ci.yml")).toEqual(["deploy", "config"]);
+    expect(fileKinds("pom.xml")).toEqual(["deploy", "config"]);
+    expect(fileKinds("infra/main.tf")).toEqual(["routes", "data", "deploy", "config", "protocols"]);
+    expect(fileKinds("serverless.yml")).toEqual([
+      "routes",
+      "data",
+      "deploy",
+      "config",
+      "protocols",
+    ]);
+    expect(fileKinds("src/main/resources/application.yml")).toEqual(["config"]);
+    expect(fileKinds("appsettings.Production.json")).toEqual(["config"]);
+    // Code that holds settings (an environment file, a settings module) is config too.
+    expect(fileKinds("web/src/environments/environment.prod.ts")).toContain("config");
+    expect(fileKinds("config/environments/production.rb")).toEqual([
+      "backend",
+      "routes",
+      "data",
+      "config",
+      "protocols",
+      "flows",
+    ]);
+  });
+
+  it("gives schemas, migrations and contracts theirs, and an unknown file every topic", () => {
+    expect(fileKinds("src/main/resources/db/migration/V2__create_entry.sql")).toEqual(["data"]);
+    expect(fileKinds("proto/ledger.proto")).toEqual(["protocols"]);
+    expect(fileKinds("schema/ledger.graphql")).toEqual(["routes", "protocols"]);
+    expect(fileKinds("api/openapi.yaml")).toEqual(["routes", "protocols"]);
+    expect(fileKinds("ops/kong.yaml")).toEqual(["routes", "data", "deploy", "config", "protocols"]);
+    expect(fileKinds("scripts/release.sh")).toEqual([...FILE_KINDS]);
+  });
+
+  it("a batch's kinds are its files' kinds together, in one order", () => {
+    expect(kindsOf(["k8s/ledger-api.yaml", "src/main/resources/application.yml"])).toEqual([
+      "deploy",
+      "config",
+    ]);
+    expect(kindsOf([])).toEqual([]);
+  });
+});
+
+describe("planBatches with instructions that grow with a batch's kinds (A-lean)", () => {
+  // Stand-in topic rules: 50 tokens for each kind a batch's files have.
+  const overhead = (kinds: readonly string[]) => kinds.length * 50;
+
+  it("keeps each batch's files and its topic rules within the room", () => {
+    const room = 700;
+    const p = planBatches(dirSource(repo), { room, overhead });
+    for (const b of p.batches) {
+      const tokens = b.reduce((n, s) => n + s.tokens, 0);
+      expect(tokens + overhead(kindsOf(b.map((s) => s.path)))).toBeLessThanOrEqual(room);
+    }
+    // The least room a file had after its own topic rules: the generated client's six kinds (a
+    // .ts file could be either side).
+    expect(p.leastRoom).toBe(room - 6 * 50);
+  });
+
+  it("plans exactly as before without them", () => {
+    const a = planBatches(dirSource(repo), { room: 500 });
+    const b = planBatches(dirSource(repo), { room: 500, overhead: () => 0 });
+    expect(JSON.stringify(b)).toBe(JSON.stringify(a));
+    expect(a.leastRoom).toBe(500);
   });
 });
