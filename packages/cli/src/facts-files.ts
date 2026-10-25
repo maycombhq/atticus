@@ -10,10 +10,16 @@ import {
   QuestionDraft,
   raiseQuestions,
   serializeFacts,
+  type Fact,
   type Question,
 } from "@maycombhq/core";
-import { insideRepo, type FileSource, type VerifyReport } from "@maycombhq/verify";
-import { createGit } from "@maycombhq/workspace";
+import {
+  insideRepo,
+  type CarryChanges,
+  type FileSource,
+  type VerifyReport,
+} from "@maycombhq/verify";
+import { changesSince, createGit, type GitRunner } from "@maycombhq/workspace";
 import { repoFor } from "./onboard-commands.js";
 
 /**
@@ -38,6 +44,27 @@ export async function headOf(dir: string): Promise<string | undefined> {
   } catch {
     return undefined;
   }
+}
+
+/**
+ * The files changed since each earlier commit the facts name, to `commit` (ADR 0124 addendum
+ * A-incremental), read with local git in the checkout; a commit the clone doesn't have is
+ * `missing`, and its facts are read again whole.
+ */
+export async function carryOf(
+  dir: string,
+  facts: readonly Fact[],
+  commit: string | undefined,
+  git?: GitRunner,
+): Promise<{ carry: CarryChanges; missing: string[] }> {
+  if (!commit) return { carry: {}, missing: [] };
+  const r = await changesSince(
+    dir,
+    facts.map((f) => f.commit),
+    commit,
+    git,
+  );
+  return { carry: r.changes, missing: r.missing };
 }
 
 /** Exclusion globs a person accepted for this repo (ADR 0075 scan settings). */
@@ -115,6 +142,12 @@ export interface VerifySummary {
   redacted: number;
   coverage: { ratio: number; read: number; unknown: string[]; excluded: string[] };
   rejections: { id: string; code: string; message: string }[];
+  /**
+   * The facts this run carried from an earlier commit to `commit` (ADR 0124 addendum
+   * A-incremental): every file they cite unchanged since, their lines checked again. Their
+   * `commit` in the facts file is now `commit`; this is where they were read. Left out when none.
+   */
+  carried?: { from: string; facts: string[] }[];
 }
 
 /**
@@ -160,6 +193,13 @@ export async function writeVerifyFiles(
     },
     rejections: report.rejected.map((r) => ({ id: r.fact.id, code: r.code, message: r.message })),
   };
+  if (report.carried.length) {
+    const by = new Map<string, string[]>();
+    for (const c of report.carried) by.set(c.from, [...(by.get(c.from) ?? []), c.id]);
+    summary.carried = [...by.entries()]
+      .sort((a, b) => (a[0] < b[0] ? -1 : 1))
+      .map(([from, facts]) => ({ from, facts: facts.sort() }));
+  }
   await writeFile(join(dir, `${repo}.verify.yaml`), stringify(summary), "utf8");
   return summary;
 }

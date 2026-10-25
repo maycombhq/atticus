@@ -1,3 +1,5 @@
+import { execFileSync } from "node:child_process";
+import { cpSync, readFileSync } from "node:fs";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -94,6 +96,115 @@ describe("a scan takes a repo's verified facts over its readers (ADR 0124 §3)",
       const r = await scan(facts, "b".repeat(40));
       expect(ledgerEndpoints(r.records).length).toBeGreaterThan(1);
       expect(r.notes.join("\n")).toMatch(/forge-ledger: its facts are of commit a{7}/);
+    },
+    T,
+  );
+
+  it(
+    "carries facts of an earlier commit whose files are unchanged, leaves out those citing a changed file, and gives the same catalog as the facts written at HEAD (addendum A-incremental)",
+    async () => {
+      // forge-ledger in a temp git repo: the facts read at commit one, the checkout moved to two
+      const dir = await mkdtemp(join(tmpdir(), "atticus-scan-carry-"));
+      cpSync(join(FORGE, "repos", "forge-ledger"), dir, { recursive: true });
+      const git = (...args: string[]) =>
+        execFileSync(
+          "git",
+          [
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.com",
+            "-c",
+            "commit.gpgsign=false",
+            ...args,
+          ],
+          { cwd: dir, encoding: "utf8" },
+        ).trim();
+      git("init", "-q");
+      git("add", "-A");
+      git("commit", "-q", "-m", "one");
+      const one = git("rev-parse", "HEAD");
+      const client = join(dir, "src/main/java/forge/ledger/NorthwindClient.java");
+      await writeFile(
+        client,
+        readFileSync(client, "utf8").replace("// Calls", "// v2 client\n// Calls"),
+      );
+      git("commit", "-q", "-am", "two");
+      const two = git("rev-parse", "HEAD");
+
+      const at = (commit: string) =>
+        [
+          fact({
+            commit,
+            kind: "entry",
+            id: "e-balance",
+            entryType: "rest",
+            method: "GET",
+            path: "/accounts/{id}/balance",
+            cite: {
+              file: "src/main/java/forge/ledger/LedgerEndpoints.java",
+              line: 8,
+              value: "/accounts/{id}/balance",
+            },
+          }),
+          fact({
+            commit,
+            kind: "entry",
+            id: "e-transfer",
+            entryType: "rest",
+            method: "POST",
+            path: "/transfers",
+            cite: {
+              file: "src/main/java/forge/ledger/LedgerEndpoints.java",
+              line: 11,
+              value: "/transfers",
+            },
+          }),
+          fact({
+            commit,
+            kind: "call",
+            id: "c-pay",
+            callType: "rest",
+            method: "POST",
+            path: "/v2/payments",
+            from: "e-transfer",
+            cite: {
+              file: "src/main/java/forge/ledger/NorthwindClient.java",
+              line: 8,
+              value: "/v2/payments",
+            },
+          }),
+        ].join("\n");
+      const scanAt = async (facts: string) => {
+        const root = await mkdtemp(join(tmpdir(), "atticus-scan-facts-"));
+        await mkdir(join(root, "facts"), { recursive: true });
+        await writeFile(join(root, "facts", "forge-ledger.jsonl"), facts);
+        return scanEstate({
+          root,
+          orgPack: join(FORGE, "metarepo/org-pack"),
+          repoDir: (id) => (id === "forge-ledger" ? dir : join(FORGE, "repos", id)),
+          repoState: async (id) => ({ commit: id === "forge-ledger" ? two : COMMIT, dirty: false }),
+          cache: null,
+          scannedAt: "2026-10-24T09:00:00Z",
+          inputsDir: null,
+        });
+      };
+      const carried = await scanAt(at(one));
+      const note = carried.notes.find((n) => n.startsWith("forge-ledger: read from its facts"));
+      expect(note).toMatch(
+        new RegExp(
+          `read from its facts \\(2, facts/forge-ledger\\.jsonl; 2 carried from commit ${one.slice(0, 7)} to ${two.slice(0, 7)} .*, 1 left out until read again`,
+        ),
+      );
+      const eps = ledgerEndpoints(carried.records);
+      expect(eps).toHaveLength(2);
+      expect(eps.every((e) => e.evidence.every((x) => x.by === "assistant"))).toBe(true);
+
+      // Determinism: the carried facts give the catalog the same facts written at HEAD give.
+      const fresh = await scanAt(at(two).split("\n").slice(0, 2).join("\n"));
+      const bytes = (r: { records: unknown[] }) => JSON.stringify(r.records);
+      expect(bytes(carried)).toBe(bytes(fresh));
+      expect(bytes(await scanAt(at(one)))).toBe(bytes(carried));
     },
     T,
   );

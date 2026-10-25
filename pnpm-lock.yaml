@@ -974,6 +974,9 @@ importers:
       '@maycombhq/sdk':
         specifier: workspace:*
         version: link:../sdk
+      '@maycombhq/verify':
+        specifier: workspace:*
+        version: link:../verify
       '@maycombhq/workspace':
         specifier: workspace:*
         version: link:../workspace

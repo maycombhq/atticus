@@ -38,15 +38,22 @@ import {
 import {
   dirSource,
   numberedSlice,
+  onlyFiles,
   planBatches,
+  rereadPlan,
+  sameCommit,
   sliceText,
+  staleMessage,
   verifyFacts,
   type FileSlice,
   type FileSource,
   type Rejected,
+  type RereadPlan,
 } from "@maycombhq/verify";
+import type { GitRunner } from "@maycombhq/workspace";
 import type { Output } from "./commands.js";
 import {
+  carryOf,
   checkoutOf,
   excludesOf,
   headOf,
@@ -98,6 +105,8 @@ export interface MapDeps {
   /** Read the answer from stdin (--answer -). */
   stdin?: () => Promise<string>;
   now?: () => Date;
+  /** The git runner the diff since the facts' commit is read with (tests mock it). */
+  git?: GitRunner;
 }
 
 /** The step's agent: the org pack's own `repo-reader`, else this one. */
@@ -146,6 +155,11 @@ interface MapState {
   fixRound?: boolean;
   done?: boolean;
   last?: VerifySummary;
+  /**
+   * A re-read (ADR 0124 addendum A-incremental): the facts were of these earlier commits, and the
+   * batches hold only the files changed since; the facts citing them were handed back to rewrite.
+   */
+  reread?: { from: string[]; carried: number; facts: number };
 }
 
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
@@ -296,6 +310,35 @@ async function readFactsFile(root: string, repo: string): Promise<Fact[] | strin
   return `${factsRelOf(root)}/${repo}.jsonl does not read as facts (${parsed.issues[0]?.message ?? "?"}); fix it, or start again with --force after moving it aside.`;
 }
 
+/** What a re-read's prompts add to the protocol: only the changed files, rewrite or drop, keep the rest. */
+function rereadInstructions(s: MapState): string {
+  const r = s.reread!;
+  return [
+    `This is a re-read: the facts were read at ${r.from.map((c) => c.slice(0, 12)).join(", ")}, and the checkout moved to ${s.commit}. Only the files changed since are in these batches.`,
+    `The ${plural(r.facts, "fact")} that cite a changed file are listed below as rejected (cite-changed): read the file again (a renamed file under its new path) and write each again at this commit under the same id, with its line as it is now, or leave it out if the code no longer says it.`,
+    `The other ${plural(r.carried, "fact")} cite files that didn't change: they are kept and carried to this commit. Don't write them again; name them by id.`,
+    "Write a fact for anything new in the changed files, as in a first read.",
+  ].join("\n");
+}
+
+/**
+ * A re-read (ADR 0124 addendum A-incremental): when facts are of an earlier commit that the
+ * clone can compare with this one, the files changed since and the facts citing them.
+ */
+async function rereadOf(
+  dir: string,
+  facts: readonly Fact[],
+  commit: string,
+  source: FileSource,
+  exclude: string[],
+  git?: GitRunner,
+): Promise<{ plan?: RereadPlan; missing: string[] }> {
+  if (!facts.some((f) => !sameCommit(f.commit, commit))) return { missing: [] };
+  const { carry, missing } = await carryOf(dir, facts, commit, git);
+  if (!Object.keys(carry).length) return { missing };
+  return { plan: rereadPlan({ facts, commit, carry, source, exclude }), missing };
+}
+
 /** The prompt of one batch (or of the fix round), fitted to the model's limit. */
 async function packFor(
   root: string,
@@ -329,6 +372,18 @@ async function packFor(
       classification: "public",
       trusted: true,
     },
+    ...(s.reread
+      ? [
+          {
+            id: "0-reread",
+            kind: "instruction" as const,
+            origin: "atticus/map",
+            text: rereadInstructions(s),
+            classification: "public",
+            trusted: true,
+          },
+        ]
+      : []),
     ...(slices.length
       ? [
           {
@@ -466,7 +521,12 @@ export async function mapCommand(
   const factsFile = `${factsRelOf(root)}/${repo}.jsonl`;
 
   if (o.estimate)
-    return estimate(root, repo, { o, op, dir, commit, source, exclude, factsFile }, io);
+    return estimate(
+      root,
+      repo,
+      { o, op, dir, commit, source, exclude, factsFile, ...(deps.git ? { git: deps.git } : {}) },
+      io,
+    );
 
   const runtime = deps.runtime;
   if (!runtime) {
@@ -517,7 +577,10 @@ export async function mapCommand(
       io.report?.({ handoff: { runId } });
       return 0;
     }
-    const r = await takeAnswer(root, s, run, s.waiting.batch, source, exclude, now, io);
+    const r = await takeAnswer(root, s, run, s.waiting.batch, source, exclude, now, io, {
+      dir,
+      ...(deps.git ? { git: deps.git } : {}),
+    });
     if (typeof r === "number") return r;
     s = r;
   } else if (!continuing) {
@@ -556,13 +619,33 @@ export async function mapCommand(
       );
       return 2;
     }
-    const plan = planBatches(source, { room, exclude });
-    if (!plan.batches.length) {
+    // A moved checkout (ADR 0124 addendum A-incremental): only the files changed since the facts'
+    // commit are read, and the facts citing them handed back to rewrite; the rest are carried.
+    const re = await rereadOf(dir, existing, commit, source, exclude, deps.git);
+    const reread = re.plan && !re.plan.unknown.length ? re.plan : undefined;
+    const since = reread?.from.map((x) => x.commit.slice(0, 12)).join(", ");
+    if (reread && !reread.files.length && !reread.reread.length) {
+      io.out(
+        `Nothing ${repo}'s facts cite changed since ${since}, and no source file did: atticus verify ${repo} carries its ${plural(reread.carried, "fact")} to ${commit.slice(0, 12)}.`,
+      );
+      return 0;
+    }
+    const plan = planBatches(
+      reread
+        ? onlyFiles(
+            source,
+            reread.files.map((f) => f.path),
+          )
+        : source,
+      { room, exclude },
+    );
+    if (!plan.batches.length && !reread) {
       io.out(
         `${repo} has no source files to read${plan.excluded.length ? ` (${plural(plan.excluded.length, "file")} excluded)` : ""}.`,
       );
       return 0;
     }
+    const byId = new Map(existing.map((f) => [f.id, f]));
     s = {
       schemaVersion: 1,
       repo,
@@ -571,12 +654,26 @@ export async function mapCommand(
       room,
       batches: plan.batches,
       next: 0,
-      rejected: [],
+      rejected: (reread?.reread ?? []).map((r) => {
+        const fact = byId.get(r.id)!;
+        return { id: r.id, code: "cite-changed", message: staleMessage(fact, r, commit), fact };
+      }),
       problems: [],
+      ...(reread
+        ? {
+            reread: {
+              from: reread.from.map((x) => x.commit),
+              carried: reread.carried,
+              facts: reread.reread.length,
+            },
+          }
+        : {}),
     };
     await saveState(root, s);
     io.out(
-      `Reading ${repo} at ${commit.slice(0, 12)} in ${batches(plan.batches.length)} (${plural(plan.files, "source file")}, about ${plan.tokens} tokens${limit ? `, each prompt within ${limit} tokens` : ""}); facts go to ${factsFile}.`,
+      reread
+        ? `Re-reading ${repo} at ${commit.slice(0, 12)}: ${plural(plan.files, "source file")} changed since ${since}, in ${batches(plan.batches.length)}${plan.batches.length ? ` (about ${plan.tokens} tokens${limit ? `, each prompt within ${limit} tokens` : ""})` : ""}; ${plural(reread.reread.length, "fact")} to rewrite, ${reread.carried} carried as they are; facts go to ${factsFile}.`
+        : `Reading ${repo} at ${commit.slice(0, 12)} in ${batches(plan.batches.length)} (${plural(plan.files, "source file")}, about ${plan.tokens} tokens${limit ? `, each prompt within ${limit} tokens` : ""}); facts go to ${factsFile}.`,
     );
   }
 
@@ -608,7 +705,10 @@ export async function mapCommand(
       io.report?.({ handoff: { runId: run.runId } });
       return 0;
     }
-    const r = await takeAnswer(root, s, run, s.next, source, exclude, now, io);
+    const r = await takeAnswer(root, s, run, s.next, source, exclude, now, io, {
+      dir,
+      ...(deps.git ? { git: deps.git } : {}),
+    });
     if (typeof r === "number") return r;
     s = r;
   }
@@ -644,6 +744,7 @@ async function takeAnswer(
   exclude: string[],
   now: () => Date,
   io: Output,
+  at: { dir: string; git?: GitRunner },
 ): Promise<MapState | number> {
   const label =
     batch < s.batches.length ? `Batch ${batch + 1} of ${s.batches.length}` : "The fix round";
@@ -663,10 +764,13 @@ async function takeAnswer(
   }
   const merged = new Map(existing.map((f) => [f.id, f]));
   for (const f of answer.facts) merged.set(f.id, f);
+  // Facts of an earlier commit whose files are unchanged are carried (ADR 0124 addendum A-incremental).
+  const { carry } = await carryOf(at.dir, [...merged.values()], s.commit, at.git);
   const report = await verifyFacts({
     facts: [...merged.values()],
     source,
     commit: s.commit,
+    carry,
     exclude,
   });
   const q = await raiseReadQuestions(root, s.repo, answer.questions, source, {
@@ -678,18 +782,23 @@ async function takeAnswer(
   const fresh = new Set(answer.facts.map((f) => f.id));
   const kept = report.accepted.filter((f) => fresh.has(f.id)).length;
   io.out(
-    `${label}: ${plural(kept, "fact")} kept (${report.accepted.length} in all), ${report.rejected.length} rejected${q.raised.length ? `, ${plural(q.raised.length, "question")} raised for a person` : ""}${answer.problems.length ? `, ${plural(answer.problems.length, "line")} not read` : ""}.`,
+    `${label}: ${plural(kept, "fact")} kept (${report.accepted.length} in all${report.carried.length ? `, ${report.carried.length} carried from an earlier commit` : ""}), ${report.rejected.length} rejected${q.raised.length ? `, ${plural(q.raised.length, "question")} raised for a person` : ""}${answer.problems.length ? `, ${plural(answer.problems.length, "line")} not read` : ""}.`,
   );
   const { waiting: _w, ...rest } = s;
+  const rejected = report.rejected.map((r: Rejected) => ({
+    id: r.fact.id,
+    code: r.code,
+    message: r.message,
+    fact: r.fact,
+  }));
+  // A re-read's facts to rewrite stay handed back until a batch rewrites them (their file may be
+  // in a later batch) or the fix round leaves them out; they are no longer in the facts file.
+  const settled = new Set([...report.accepted.map((f) => f.id), ...rejected.map((r) => r.id)]);
+  const pending = s.rejected.filter((r) => r.code === "cite-changed" && !settled.has(r.id));
   return {
     ...rest,
     next: batch + 1,
-    rejected: report.rejected.map((r: Rejected) => ({
-      id: r.fact.id,
-      code: r.code,
-      message: r.message,
-      fact: r.fact,
-    })),
+    rejected: [...rejected, ...pending],
     problems: [...answer.problems, ...q.problems.map((p) => `${p.message}: ${p.line}`)],
     last: summary,
   };
@@ -724,6 +833,43 @@ async function finish(root: string, s: MapState, io: Output, o: MapOptions): Pro
   return last.rejected ? 1 : 0;
 }
 
+/**
+ * What a re-read is, for the person and the /atticus-map protocol: the facts carried as they are,
+ * the facts to rewrite or drop and why, and the changed files to read (ADR 0124 addendum
+ * A-incremental). Every fact and file is listed: they are the read.
+ */
+function rereadLines(repo: string, r: RereadPlan): string[] {
+  const head = r.commit.slice(0, 12);
+  const since = r.from.map((x) => x.commit.slice(0, 12)).join(", ");
+  const changed = r.from.reduce((n, x) => n + x.changed, 0);
+  const out = [
+    `A re-read: the facts are of ${since} and the checkout is at ${head}; ${plural(changed, "file")} changed since. Read only what is listed here, not the whole repo.`,
+    `${plural(r.carried, "fact")} still ${r.carried === 1 ? "holds" : "hold"} (every file they cite is unchanged): keep them as they are; atticus verify ${repo} carries them to ${head}, checking each line again.`,
+  ];
+  if (r.current)
+    out.push(`${plural(r.current, "fact")} ${r.current === 1 ? "is" : "are"} already of ${head}.`);
+  if (r.reread.length) {
+    out.push(
+      `${plural(r.reread.length, "fact")} ${r.reread.length === 1 ? "cites" : "cite"} a file that changed: read it again, then write each at ${head} under the same id with its line as it is now, or drop it if the code no longer says it:`,
+    );
+    for (const f of r.reread)
+      out.push(
+        `  ${f.id} (${f.kind}): ${f.file} was ${f.how === "renamed" ? `renamed to ${f.to}` : f.how}`,
+      );
+  }
+  if (r.files.length) {
+    out.push(`${plural(r.files.length, "file")} to read whole (changed since ${since}):`);
+    for (const f of r.files)
+      out.push(
+        `  ${f.path} (${f.facts ? `${plural(f.facts, "fact")} to rewrite` : `${f.status === "added" ? "new" : f.status}; no fact cites it yet`})`,
+      );
+  } else if (!r.reread.length)
+    out.push(
+      `Nothing a fact cites changed and no source file did: run atticus verify ${repo} to carry the facts to ${head}.`,
+    );
+  return out;
+}
+
 /** --estimate: what the first read costs, at every tier, and the tier runtime.yaml points to. */
 async function estimate(
   root: string,
@@ -736,6 +882,7 @@ async function estimate(
     source: FileSource;
     exclude: string[];
     factsFile: string;
+    git?: GitRunner;
   },
   io: Output,
 ): Promise<number> {
@@ -743,8 +890,25 @@ async function estimate(
   const { limit: given, from } = limitOf(c.o, c.op, tier);
   const limit = given ?? EXAMPLE_LIMIT;
   const room = roomFor(limit, c.op, repo, c.commit);
-  const whole = planBatches(c.source, { room: Number.MAX_SAFE_INTEGER, exclude: c.exclude });
-  const plan = room >= MIN_ROOM ? planBatches(c.source, { room, exclude: c.exclude }) : undefined;
+  // A moved checkout (ADR 0124 addendum A-incremental): the read is the files changed since the
+  // facts' commit and the facts citing them, not the whole repo.
+  const existing = await readFactsFile(root, repo);
+  const re =
+    typeof existing === "string"
+      ? { missing: [] as string[] }
+      : await rereadOf(c.dir, existing, c.commit, c.source, c.exclude, c.git);
+  const reread = re.plan && !re.plan.unknown.length ? re.plan : undefined;
+  const readSource = reread
+    ? onlyFiles(
+        c.source,
+        reread.files.map((f) => f.path),
+      )
+    : c.source;
+  const repoWhole = reread
+    ? planBatches(c.source, { room: Number.MAX_SAFE_INTEGER, exclude: c.exclude })
+    : undefined;
+  const whole = planBatches(readSource, { room: Number.MAX_SAFE_INTEGER, exclude: c.exclude });
+  const plan = room >= MIN_ROOM ? planBatches(readSource, { room, exclude: c.exclude }) : undefined;
   const questions = (await listQuestions(root, { repo })).questions.filter(
     (q) => q.state !== "retired",
   );
@@ -772,6 +936,18 @@ async function estimate(
             state: q.state,
             ...(q.answer ? { answer: q.answer } : {}),
           })),
+          // A re-read: what the files and batches above are, and the facts to revisit.
+          reread: reread
+            ? {
+                ...reread,
+                repo: {
+                  files: repoWhole!.files,
+                  lines: repoWhole!.lines,
+                  tokens: repoWhole!.tokens,
+                },
+              }
+            : null,
+          ...(re.missing.length ? { notComparable: re.missing } : {}),
         },
         null,
         2,
@@ -781,8 +957,13 @@ async function estimate(
   }
   io.out(`${repo} at ${c.commit} in ${c.dir}`);
   io.out(`Facts file: ${c.factsFile}`);
+  if (reread) for (const l of rereadLines(repo, reread)) io.out(l);
+  for (const m of re.missing)
+    io.out(
+      `Some facts are of commit ${m.slice(0, 12)}, which this clone can't compare with ${c.commit.slice(0, 12)} (fetch it, or read the repo again whole): the read below is the whole repo.`,
+    );
   io.out(
-    `${plural(whole.files, "source file")}, ${plural(whole.lines, "line")}, about ${whole.tokens} tokens${whole.excluded.length ? `; ${whole.excluded.length} excluded` : ""}.`,
+    `${plural(whole.files, "source file")}${reread ? " to read" : ""}, ${plural(whole.lines, "line")}, about ${whole.tokens} tokens${whole.excluded.length ? `; ${whole.excluded.length} excluded` : ""}${reread ? ` (the repo has ${plural(repoWhole!.files, "source file")}, about ${repoWhole!.tokens} tokens)` : ""}.`,
   );
   io.out(`Your assistant: ${tierWords(tier)}, ${tierSource(tier)}. ${tier.how}`);
   io.out(

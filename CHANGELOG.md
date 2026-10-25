@@ -4,6 +4,15 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### A changed file invalidates only what cites it (A-incremental, ADR 0124 addendum A-incremental)
+
+- **A moved checkout is re-read, not read again whole.** When a repo's facts are of an earlier commit, `atticus map <repo> --estimate` compares that commit with HEAD (local `git diff --name-status -M`, renames followed) and lists three things. The facts that still hold, because every file they cite is unchanged: kept as they are. The facts that cite a file edited, renamed (with its new path) or deleted since: read again, then rewrite or drop. The changed source files, which are the only files to read. The token and batch estimate covers only those files. `--estimate --json` gains `reread` (and `notComparable` for a commit the clone doesn't have).
+- **`atticus map <repo> --handoff` and `--copy` batch only the changed files.** The first prompt says it is a re-read and hands back the facts to rewrite with their lines, and the rest are carried.
+- **`atticus verify <repo>` carries facts of an earlier commit.** A fact whose cited files (with `cite.with` parts and flow step cites) are all unchanged is checked against its line at HEAD and written back with `commit` set to HEAD. The carry is recorded under `carried` in `<repo>.verify.yaml`, with the commit each fact was read at. A fact citing a changed file is rejected as `cite-changed` (a new verifier code), saying how the file changed. A fact of a commit the clone can't compare is still `wrong-commit`. The facts schema doesn't change.
+- **`atticus scan` uses carried facts** instead of falling back to the readers, and its note says how many facts were carried and how many were left out until the repo is read again. The readers stand in only when the two commits can't be compared.
+- **`/atticus-map`** has a re-read step: read the listed files, rewrite or drop the listed facts, keep the rest. The Claude Code plugin is regenerated.
+- The same commit, facts and answers give the same catalog bytes whether the facts were carried or read at HEAD (tested).
+
 ### A story's implementation steps follow the places in the code that change (B-steps, ADR 0124 addendum B-steps)
 
 - **Each story file has an Implementation steps section**, after Scope: one numbered step per place the change goes into, in the tasks' order. A step is each task's own code (the line its flow step is at, or the line an added step goes in after), each file a task declares a field or column in (the files to touch from the map's citations, B-fixes: one step per file, with every task's lines and reasons), and each new migration file. A new flow's tasks that cite no code are one step of new code, because the map can't tell their places apart. Each step names its tasks, and their acceptance criteria accept it. The tasks are unchanged and are still what a developer runs. The steps are worked out from the tasks (`storySteps` in the planner) and aren't stored. The stories prompt is unchanged, so no recording was re-recorded.

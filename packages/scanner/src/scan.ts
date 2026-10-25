@@ -45,7 +45,7 @@ import {
 } from "@maycombhq/extractors";
 import { listIngestors } from "@maycombhq/ingestors";
 import { scanInputs, type ScanInputsResult } from "@maycombhq/intake";
-import { baseClonePath, checkoutState } from "@maycombhq/workspace";
+import { baseClonePath, checkoutState, type GitRunner } from "@maycombhq/workspace";
 import { resolveFederatedLooseEnds } from "./federate-loose.js";
 import { readCatalog } from "./files.js";
 import { curatedDirOf, estateMergeInput, estateRepos } from "./merge-input.js";
@@ -69,6 +69,8 @@ export interface ScanOptions {
   repoDir?: (repoId: string) => string;
   /** The commit and cleanliness of a repo; default read with git. */
   repoState?: (repoId: string, dir: string) => Promise<{ commit: string; dirty: boolean }>;
+  /** The git runner a repo's facts of an earlier commit are compared with (default: git on PATH). */
+  git?: GitRunner;
   /** Only these repos (others are left out of the catalog). */
   repos?: string[];
   /** Scan cache; default .index/scan-cache under root. Pass null to disable. */
@@ -535,9 +537,13 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
       settings.clients,
     );
     // ADR 0124 §3: a repo the assistant has read takes its verified facts over its readers'
-    // records; the readers stay as a cross-check, said as a note. Facts of another commit are
-    // stale: the readers stand in until the repo is read again.
-    const fromFacts = await factsForScan(o.root, op, r.id, state.commit, readerRecords);
+    // records; the readers stay as a cross-check, said as a note. Facts of an earlier commit are
+    // carried where the files they cite are unchanged (addendum A-incremental); the readers stand
+    // in only when the two commits can't be compared.
+    const fromFacts = await factsForScan(o.root, op, r.id, state.commit, readerRecords, {
+      dir,
+      ...(o.git ? { git: o.git } : {}),
+    });
     if (fromFacts.note) factNotes.push(fromFacts.note);
     if (fromFacts.facts)
       factRepos.push({ repo: r.id, facts: fromFacts.facts, targets: fromFacts.targets ?? {} });

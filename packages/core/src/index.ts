@@ -3,6 +3,7 @@ export * from "./schema/kinds.js";
 export * from "./schema/facts.js";
 export * from "./facts.js";
 export * from "./facts-join.js";
+export * from "./facts-carry.js";
 export * from "./cite.js";
 export * from "./catalog.js";
 export * from "./identity.js";
