@@ -97,7 +97,8 @@ async function prompts(root: string): Promise<{ feature: string; arch: string; s
  */
 const BEFORE = {
   feature: "6e8cced1b92d0009544e22c14c47f0a8910add1ced95c7c67639005a21145f1e",
-  arch: "348f67241e3836579c516d57038786b4665e1bfed1f3bf743e05fc04f96e6d42",
+  // re-pinned after B-places asked the architect for an added step's place (`at`)
+  arch: "96e62113e52dfaf3a8cda6db9497b2807c4ec2ecfd7365acce58e7edbe3bbc59",
   stories: "2e4b6a0bf2c1f970b3bd4e50aca99ead1f0db3cf43a2039788c12aa3c397658b",
 };
 
