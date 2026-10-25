@@ -17,7 +17,8 @@ class ParityTest {
     private val vscodeCommands =
         Regex(""""command":\s*"(atticus\.[A-Za-z]+)",\s*"title"""").findAll(read("vscode/package.json")).map { it.groupValues[1] }.toSet()
     private val actions = Regex("""<action id="([^"]+)"""").findAll(read("intellij/src/main/resources/META-INF/plugin.xml")).map { it.groupValues[1] }.toSet()
-    private val screens = Regex("""\{ id: "([a-z-]+)", label:""").findAll(read("ui/src/app/screens.ts")).map { it.groupValues[1] }.toSet()
+    // A screen on one line or, as Prettier writes a longer one, over several (Home).
+    private val screens = Regex("""\{\s*id: "([a-z-]+)",\s*label:""").findAll(read("ui/src/app/screens.ts")).map { it.groupValues[1] }.toSet()
 
     @Test
     fun `every VS Code command has its place in IntelliJ`() {

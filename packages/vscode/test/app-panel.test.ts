@@ -84,6 +84,25 @@ describe("starting the app for the panel", { timeout: 60_000 }, () => {
     await stopped;
   });
 
+  it("starts it with --full when the setting atticus.fullUi asks for every page (Phase D)", async () => {
+    const bin = await fakeAtticus(
+      `console.log("Atticus is running at http://127.0.0.1:4998 (Ctrl+C stops it).");
+       console.log("For assistants and scripts, the session token is tok-8");
+       setInterval(() => {}, 1000);`,
+    );
+    const lines: string[] = [];
+    const app = await startApp(
+      { atticusPath: bin, cwd: tmpdir(), log: (l) => lines.push(l) },
+      { full: true },
+    );
+    expect(lines[0]).toBe(
+      `> ${commandText(["ui", "--port", "0", "--embed", "vscode", "--full", "--root", tmpdir()])}`,
+    );
+    const stopped = new Promise<void>((r) => app.onExit(() => r()));
+    app.stop();
+    await stopped;
+  });
+
   it("says why when atticus ui stops before it serves", async () => {
     const bin = await fakeAtticus(
       `console.error("--embed takes vscode (the app in a VS Code panel), not x."); process.exit(2);`,

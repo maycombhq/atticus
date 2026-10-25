@@ -3,6 +3,8 @@ import * as vscode from "vscode";
 import { pickList, requiredSwitches } from "../src/commands";
 import { COPILOT_SETUP, copilotSetup } from "../src/describe";
 import type { AtticusHandles } from "../src/extension";
+import { FULL_WHEN } from "../src/surface";
+import { WORDS } from "../src/words";
 
 /**
  * The extension's checks inside a real VS Code (ADR 0098), run by scripts/test-in-vscode.mjs on a
@@ -99,24 +101,49 @@ export async function run(): Promise<void> {
       throw new Error(items.join(", ") || "empty");
     return items.join(", ");
   });
-  // ADR 0105: one arrangement, in the order of a working day.
+  // Phase D: three views, in the order of a working day; the other four with atticus.fullUi.
   await check(
-    "the sidebar reads Next, Waiting on you, Changes, Knowledge, Repos, Catalog, Model runs",
+    "the sidebar reads Next and Waiting, Questions, Changes; Knowledge, Repos, Catalog, Model runs with atticus.fullUi",
     async () => {
       const views = (
-        ext.packageJSON.contributes.views.atticus as { id: string; name: string }[]
-      ).map((v) => `${v.name} (${v.id})`);
+        ext.packageJSON.contributes.views.atticus as { id: string; name: string; when?: string }[]
+      ).map((v) => `${v.name} (${v.id})${v.when?.includes(FULL_WHEN) ? " full" : ""}`);
       const want = [
-        "Next (atticus.view)",
-        "Waiting on you (atticus.questions)",
+        "Next and Waiting (atticus.view)",
+        "Questions (atticus.questions)",
         "Changes (atticus.changes)",
-        "Knowledge (atticus.knowledge)",
-        "Repos (atticus.repos)",
-        "Catalog (atticus.catalog)",
-        "Model runs (atticus.runs)",
+        "Knowledge (atticus.knowledge) full",
+        "Repos (atticus.repos) full",
+        "Catalog (atticus.catalog) full",
+        "Model runs (atticus.runs) full",
       ];
       if (views.join(", ") !== want.join(", ")) throw new Error(views.join(", "));
       return views.map((v) => v.split(" (")[0]).join(", ");
+    },
+  );
+  await check("Next and Waiting has what waits on you under the steps (Phase D)", async () => {
+    await h.view.refresh();
+    const rows = h.view.getChildren();
+    const head = rows.find((n) => h.view.getTreeItem(n).id === "next:waiting");
+    if (!head) throw new Error(rows.map((n) => label(h.view.getTreeItem(n))).join(", "));
+    await h.waiting.children();
+    const under = h.view.getChildren(head).map((n) => label(h.view.getTreeItem(n)));
+    if (!under.length) throw new Error("nothing under Waiting on you");
+    if (under.includes("Questions")) throw new Error(`the questions are here: ${under.join(", ")}`);
+    return under.join(", ");
+  });
+  await check(
+    "Questions lists the open questions by repo, or says none waits (Phase D)",
+    async () => {
+      await h.view.refresh();
+      const q = h.questions;
+      const rows = q.getChildren().map((n) => q.getTreeItem(n));
+      if (!rows.length) throw new Error("empty");
+      const first = label(rows[0]!);
+      if (first === WORDS.noQuestions) return first;
+      if (rows.some((r) => r.contextValue !== "atticus.questionRepo"))
+        throw new Error(rows.map(label).join(", "));
+      return rows.map((r) => `${label(r)} (${String(r.description)})`).join(", ");
     },
   );
   // ADR 0105 addendum: by change by default, each change with what is open on it.
@@ -127,7 +154,7 @@ export async function run(): Promise<void> {
     const rows = await w.children();
     const items = rows.map((n) => w.getTreeItem(n));
     const shown = items.map(label);
-    if (shown.length === 1 && shown[0] === "Nothing waits on you.") return shown[0];
+    if (shown.length === 1 && shown[0] === WORDS.nothingElseWaits) return shown[0];
     const odd = items.filter(
       (t) =>
         !/^waiting:(change:|other$|.*:error$)/.test(String(t.id)) ||
@@ -184,7 +211,7 @@ export async function run(): Promise<void> {
       await vscode.commands.executeCommand("atticus.waitingByChange");
       const groups = ["Questions", "Needs", "Manual steps", "Findings", "Knowledge to verify"];
       const shown = rows.map(label);
-      if (shown.length === 1 && shown[0] === "Nothing waits on you.") return shown[0];
+      if (shown.length === 1 && shown[0] === WORDS.nothingElseWaits) return shown[0];
       const odd = shown.filter((l) => !groups.includes(l));
       if (odd.length) throw new Error(`not a group: ${odd.join(", ")}`);
       // In order, and each with its count.
@@ -316,6 +343,15 @@ export async function run(): Promise<void> {
       throw new Error("not the bundled app's page");
     if (/atticus-token/.test(html)) throw new Error("the page holds the session token");
     return "bundled page with its policy";
+  });
+
+  await check("opens the app on Home when no page is named (Phase D)", async () => {
+    h.panel()?.dispose();
+    await vscode.commands.executeCommand("atticus.showApp");
+    for (let i = 0; i < 40 && !h.panel(); i++) await new Promise((r) => setTimeout(r, 250));
+    const html = h.panel()?.webview.html ?? "";
+    if (!html.includes('location.hash = "#/home"')) throw new Error("not on Home");
+    return "#/home";
   });
 
   const out = process.env.ATTICUS_VSCODE_TEST_OUT;

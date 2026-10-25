@@ -1,6 +1,14 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import {
+  APP_HOME,
+  DEFAULT_CHAT,
+  DEFAULT_PALETTE,
+  DEFAULT_VIEWS,
+  FULL_VIEWS,
+  FULL_WHEN,
+} from "../src/surface";
 
 /**
  * ADR 0096: what the extension offers in VS Code (package.json) and what its code registers agree,
@@ -31,7 +39,17 @@ describe("the extension's manifest and its code", () => {
     ].map((m) => m[1]!),
   );
   // The step commands are registered in a loop over STEP_COMMANDS.
-  for (const s of ["survey", "verify", "spec", "feature", "architecture", "stories", "small"])
+  for (const s of [
+    "survey",
+    "verify",
+    "spec",
+    "feature",
+    "architecture",
+    "stories",
+    "small",
+    "map",
+    "critic",
+  ])
     registered.add(`atticus.${s}`);
 
   it("registers every command it declares", () => {
@@ -95,24 +113,110 @@ describe("the extension's manifest and its code", () => {
       .filter((m) => m.when === `view == ${view}`)
       .map((m) => ({ command: m.command!, group: m.group ?? "" }));
 
-  it("orders the sidebar Next, Waiting on you, Changes, Knowledge, Repos, Catalog, Model runs (ADR 0105, 0106)", () => {
-    const views = pkg.contributes.views.atticus! as { id: string; name: string }[];
-    expect(views.map((v) => v.name)).toEqual([
-      "Next",
-      "Waiting on you",
-      "Changes",
-      "Knowledge",
-      "Repos",
-      "Catalog",
-      "Model runs",
-    ]);
-    // ADR 0106: the model runs at the bottom, collapsed, where there is a metarepo and the command line.
-    const runs = views[6] as { id: string; visibility?: string; when?: string };
-    expect(runs.id).toBe("atticus.runs");
-    expect(runs.visibility).toBe("collapsed");
-    expect(runs.when).toBe("atticus.hasMetarepo && !atticus.cliMissing");
-    // The view keeps its id, so settings and keybindings that name it keep working.
-    expect(views[1]!.id).toBe("atticus.questions");
+  it("shows Next and Waiting, Questions and Changes; the other four only with atticus.fullUi (Phase D)", () => {
+    const views = pkg.contributes.views.atticus! as {
+      id: string;
+      name: string;
+      when?: string;
+      visibility?: string;
+    }[];
+    const shown = (v: { when?: string }) => !(v.when ?? "").includes(FULL_WHEN);
+    expect(views.filter(shown).map((v) => ({ id: v.id, name: v.name }))).toEqual(DEFAULT_VIEWS);
+    // Behind the setting, in the order they had (ADR 0105, 0106), nothing removed.
+    const full = views.filter((v) => !shown(v));
+    expect(full.map((v) => ({ id: v.id, name: v.name }))).toEqual(FULL_VIEWS);
+    for (const v of full)
+      expect(v.when).toBe(`atticus.hasMetarepo && !atticus.cliMissing && ${FULL_WHEN}`);
+    // ADR 0106: the model runs at the bottom, collapsed.
+    expect(views.at(-1)).toMatchObject({ id: "atticus.runs", visibility: "collapsed" });
+    // The Next view hosts the welcome (no metarepo, no command line), so it has no condition.
+    expect(views[0]!.when).toBeUndefined();
+  });
+
+  it("declares atticus.fullUi, off by default, as the app's atticus ui --full", () => {
+    const c = pkg.contributes as unknown as {
+      configuration: { properties: Record<string, { type: string; default: unknown }> };
+    };
+    expect(c.configuration.properties["atticus.fullUi"]).toMatchObject({
+      type: "boolean",
+      default: false,
+    });
+  });
+
+  const palette = () =>
+    Object.fromEntries(
+      ((pkg.contributes.menus.commandPalette ?? []) as { command: string; when?: string }[]).map(
+        (m) => [m.command, m.when],
+      ),
+    );
+
+  it("offers about fifteen commands in the Command Palette; the rest only with atticus.fullUi", () => {
+    const when = palette();
+    const declared = pkg.contributes.commands.map((c) => c.command);
+    // A command only its view's title bar or rows offer (focusedView, or never) isn't counted.
+    const offered = declared.filter((c) => when[c] === undefined);
+    expect(offered).toEqual(DEFAULT_PALETTE);
+    expect(offered.length).toBeLessThanOrEqual(16);
+    const rest = declared.filter(
+      (c) => when[c] !== undefined && when[c] !== "false" && !when[c]!.startsWith("focusedView"),
+    );
+    // Nothing removed: every other one is in the palette again with the setting on.
+    for (const c of rest) expect(when[c], c).toBe(FULL_WHEN);
+    expect(rest).toContain("atticus.runCommand");
+    expect(rest).toContain("atticus.ask");
+    expect(rest.length).toBeGreaterThan(30);
+  });
+
+  it("keeps the every-command runner (ADR 0096) behind atticus.fullUi wherever it is offered", () => {
+    const entries = Object.values(pkg.contributes.menus).flat() as {
+      command?: string;
+      when?: string;
+    }[];
+    for (const c of [
+      "atticus.runCommand",
+      "atticus.repoCommand",
+      "atticus.changeCommand",
+      "atticus.runTask",
+    ])
+      for (const m of entries.filter((x) => x.command === c && x.when !== "false"))
+        expect(m.when ?? "", c).toContain(FULL_WHEN);
+    const keys = (
+      pkg.contributes as unknown as { keybindings: { command: string; when?: string }[] }
+    ).keybindings;
+    expect(keys.find((k) => k.command === "atticus.runCommand")?.when).toContain(FULL_WHEN);
+    // The everyday keys stay.
+    expect(keys.find((k) => k.command === "atticus.runNext")?.when).not.toContain(FULL_WHEN);
+    expect(keys.find((k) => k.command === "atticus.showApp")?.when).not.toContain(FULL_WHEN);
+  });
+
+  it("offers @atticus's steps by default, and its other commands only with atticus.fullUi", () => {
+    const chat = (
+      pkg.contributes as unknown as {
+        chatParticipants: { commands: { name: string; when?: string }[] }[];
+      }
+    ).chatParticipants[0]!.commands;
+    expect(chat.filter((c) => !c.when).map((c) => c.name)).toEqual(DEFAULT_CHAT);
+    const rest = chat.filter((c) => c.when);
+    for (const c of rest) expect(c.when, c.name).toBe(FULL_WHEN);
+    expect(rest.map((c) => c.name)).toContain("run");
+    // The handler still answers each one: nothing is removed.
+    for (const c of chat) expect(src, c.name).toMatch(new RegExp(`"${c.name}"`));
+  });
+
+  it("starts or brings in from the Next title bar; bringing in knowledge only with atticus.fullUi", () => {
+    const start = pkg.contributes.menus["atticus.start"] as {
+      command: string;
+      group: string;
+      when?: string;
+    }[];
+    for (const m of start)
+      if (m.group.startsWith("3_")) expect(m.when, m.command).toContain(FULL_WHEN);
+      else expect(m.when ?? "", m.command).not.toContain(FULL_WHEN);
+  });
+
+  it("opens the app on Home, one of its six entries (ADR 0124 addendum D-app)", () => {
+    expect(APP_HOME).toBe("#/home");
+    expect(src).not.toContain('"#/dashboard"');
   });
 
   it("keeps four buttons in Knowledge's title bar, the rest in three groups of its menu (ADR 0105)", () => {
@@ -154,7 +258,7 @@ describe("the extension's manifest and its code", () => {
     expect(title("atticus.knowledge").some((m) => m.command === "atticus.absorb")).toBe(false);
   });
 
-  it("offers a need's and a finding's buttons in Waiting on you as in Changes (ADR 0105)", () => {
+  it("offers a need's and a finding's buttons in Next and Waiting as in Changes (ADR 0105)", () => {
     const item = pkg.contributes.menus["view/item/context"] as {
       command?: string;
       when?: string;
@@ -163,7 +267,7 @@ describe("the extension's manifest and its code", () => {
       item.some(
         (m) =>
           m.command === c &&
-          /atticus\\?\.\(?[a-z|]*questions/.test(m.when ?? "") &&
+          /atticus\\?\.\(?[a-z|]*\bview\b/.test(m.when ?? "") &&
           /changes/.test(m.when ?? ""),
       );
     for (const c of [
@@ -181,13 +285,13 @@ describe("the extension's manifest and its code", () => {
       .filter((m) => (m.when ?? "").split(" && ")[0] === `view == ${view}`)
       .map((m) => ({ command: m.command!, when: m.when ?? "", group: m.group ?? "" }));
 
-  it("switches Waiting on you between By change and By kind from its title bar (ADR 0105)", () => {
-    const t = titleBar("atticus.questions");
+  it("switches what waits between By change and By kind from Next and Waiting's title bar (ADR 0105)", () => {
+    const t = titleBar("atticus.view");
     const byKind = t.find((m) => m.command === "atticus.waitingByKind");
     const byChange = t.find((m) => m.command === "atticus.waitingByChange");
     // One button at a time: Group by kind while by change (the default), and back.
-    expect(byKind?.when).toBe("view == atticus.questions && atticus.waitingGroup != kind");
-    expect(byChange?.when).toBe("view == atticus.questions && atticus.waitingGroup == kind");
+    expect(byKind?.when).toBe("view == atticus.view && atticus.waitingGroup != kind");
+    expect(byChange?.when).toBe("view == atticus.view && atticus.waitingGroup == kind");
     for (const m of [byKind!, byChange!]) expect(m.group).toMatch(/^navigation/);
     const titles = Object.fromEntries(
       (pkg.contributes.commands as { command: string; title: string; icon?: string }[]).map((c) => [
@@ -201,7 +305,7 @@ describe("the extension's manifest and its code", () => {
     expect(titles["atticus.waitingByChange"]?.icon).toBeDefined();
   });
 
-  it("filters Waiting on you, Changes and Knowledge from their title bars, with Clear filter (ADR 0105)", () => {
+  it("filters what waits, Changes and Knowledge from their title bars, with Clear filter (ADR 0105)", () => {
     const cmds = Object.fromEntries(
       (pkg.contributes.commands as { command: string; title: string; icon?: string }[]).map((c) => [
         c.command,
@@ -209,7 +313,7 @@ describe("the extension's manifest and its code", () => {
       ]),
     );
     for (const [view, name, key] of [
-      ["atticus.questions", "Waiting", "questions"],
+      ["atticus.view", "Waiting", "waiting"],
       ["atticus.changes", "Changes", "changes"],
       ["atticus.knowledge", "Knowledge", "knowledge"],
       ["atticus.runs", "Runs", "runs"],

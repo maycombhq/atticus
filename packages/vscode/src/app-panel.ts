@@ -101,10 +101,23 @@ export function stopChild(child: ChildProcess, graceMs = 0): void {
   child.once("close", () => clearTimeout(t));
 }
 
-/** Start `atticus ui --port 0 --embed vscode`; resolves once it prints its address. */
-export function startApp(o: CliOptions): Promise<RunningApp> {
+/**
+ * Start `atticus ui --port 0 --embed vscode`; resolves once it prints its address. With `full`
+ * (the setting atticus.fullUi, Phase D) it is `atticus ui --full`: every page of the app, not
+ * only its six entries.
+ */
+export function startApp(o: CliOptions, how: { full?: boolean } = {}): Promise<RunningApp> {
   const log = o.log ?? (() => undefined);
-  const args = ["ui", "--port", "0", "--embed", "vscode", "--root", o.cwd];
+  const args = [
+    "ui",
+    "--port",
+    "0",
+    "--embed",
+    "vscode",
+    ...(how.full ? ["--full"] : []),
+    "--root",
+    o.cwd,
+  ];
   const cmd = resolveCommand(o);
   log(`> ${commandText(args)}`);
   if (cmd.shell && args.some((a) => SHELL_UNSAFE.test(a)))

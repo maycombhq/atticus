@@ -100,6 +100,16 @@ export function actionFor(step: NextStep): NextAction {
   // The critic's AI lenses, one at a time (ADR 0106 addendum); critic stats only reads.
   if (args[0] === "critic" && args[1] && args[1] !== "stats" && !args.includes("--resume"))
     return { kind: "ai", args };
+  // ADR 0124 §4: the batched read of a repo, a batch a hand-off; its estimate and the rendered
+  // map only read.
+  if (
+    args[0] === "map" &&
+    args[1] &&
+    !args[1].startsWith("-") &&
+    args[1] !== "render" &&
+    !args.includes("--estimate")
+  )
+    return { kind: "ai", args };
   return { kind: "run", args };
 }
 
@@ -112,6 +122,38 @@ export const STEP_COMMANDS = {
   architecture: { args: (t: string) => ["change", "architecture", t], target: "change" },
   stories: { args: (t: string) => ["plan", "stories", t], target: "change" },
   small: { args: (t: string) => ["change", "small", t], target: "change" },
+  // Phase D: the assistant reads the repo (ADR 0124), and the critic reviews a change.
+  map: { args: (t: string) => ["map", t], target: "repo" },
+  critic: { args: (t: string) => ["critic", t], target: "change" },
 } as const;
 
 export type StepCommand = keyof typeof STEP_COMMANDS;
+
+/** The step command each AI step runs as, by its first two words. */
+const STEP_BY_WORDS: Record<string, StepCommand> = {
+  "scan survey": "survey",
+  "scan verify": "verify",
+  "spec draft": "spec",
+  "change feature": "feature",
+  "change architecture": "architecture",
+  "plan stories": "stories",
+  "change small": "small",
+};
+
+/**
+ * The @atticus command a next step runs as, when the chat runs it: the step with the editor's
+ * model, the open questions, or a task started in agent mode with its context (ADR 0113).
+ */
+export function chatQuery(n: NextStep): string | undefined {
+  const a = actionFor(n);
+  if (a.kind === "answer") return "@atticus /answer";
+  const words = argsOf(n.command);
+  if (words[0] === "task" && words[1] === "run" && words[2] && words[3])
+    return `@atticus /task ${words[2]} ${words[3]}`;
+  if (a.kind !== "ai") return undefined;
+  // map <repo> and critic <change> name their target second; the others third.
+  const one = a.args[0] === "map" || a.args[0] === "critic";
+  const name = one ? (a.args[0] as StepCommand) : STEP_BY_WORDS[a.args.slice(0, 2).join(" ")];
+  const target = one ? a.args[1] : a.args[2];
+  return name && target ? `@atticus /${name} ${target}` : undefined;
+}

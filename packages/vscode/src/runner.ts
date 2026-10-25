@@ -148,7 +148,14 @@ export async function runStep(args: string[], given: RunnerDeps, token: Cancel):
   if (given.mode === "model")
     return runOnce([...args, "--mode", "model"], { ...given, model: async () => undefined }, token);
   const model = await given.model();
-  const d: RunnerDeps = { ...given, model: async () => model };
+  // ADR 0124 §4: `atticus map` hands off a batch a round, so a read takes as many rounds as it
+  // has batches; a draft keeps its eight.
+  const read = args[0] === "map" && given.maxRounds === undefined;
+  const d: RunnerDeps = {
+    ...given,
+    model: async () => model,
+    ...(read ? { maxRounds: MAX_BATCHES } : {}),
+  };
   const argv = withLimit(args, model);
   // A knowledge scan reads its pages in batches that fit one prompt of the model: it sizes
   // each batch from the limit (ADR 0106, 0112) and says how many pages are left.

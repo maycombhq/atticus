@@ -181,7 +181,19 @@ function questionRows(qs: OpenQuestion[]): WaitingRow[] {
         description: [l.description, q.options.length ? `${q.options.length} options` : ""]
           .filter(Boolean)
           .join(" · "),
-        tooltip: `${q.question}\n\n${q.options.map((o, i) => `${i + 1}. **${o.label}**${o.means ? `: ${o.means}` : ""}`).join("\n")}\n\nClick to answer.`,
+        tooltip: [
+          q.question,
+          q.options
+            .map((o, i) => `${i + 1}. **${o.label}**${o.means ? `: ${o.means}` : ""}`)
+            .join("\n"),
+          // What the question read, so the person sees where it comes from before answering.
+          q.evidence.length
+            ? WORDS.questionEvidence(q.evidence.map((e) => `\`${e}\``).join(", "))
+            : "",
+          WORDS.questionClick,
+        ]
+          .filter(Boolean)
+          .join("\n\n"),
         markdown: true,
         icon: "question",
         command: { command: "atticus.answerQuestion", args: [q.id] },
@@ -316,15 +328,48 @@ function errorRows(questions: OpenQuestion[] | string, w: WaitingRead): WaitingR
  * to no change (the questions by repo, manual steps with no change, knowledge to verify). By kind:
  * a group for each kind with its count. Either way an empty group is left out, a part that
  * couldn't be read is said (by kind in its place, by change first), and one row says when
- * nothing waits.
+ * nothing waits. With `questions: false` (Next and Waiting, Phase D) the questions are left out:
+ * they have their own view, which says when they couldn't be read.
  */
 export function waitingRows(
   questions: OpenQuestion[] | string,
   w: WaitingRead,
   group: WaitingGroup = "change",
+  o: { questions?: boolean } = {},
 ): WaitingRow[] {
   const titleOf = (c: string) => w.titles[c] ?? c;
-  return group === "kind" ? byKind(questions, w, titleOf) : byChange(questions, w, titleOf);
+  const withQuestions = o.questions !== false;
+  const q = withQuestions ? questions : [];
+  const rows = group === "kind" ? byKind(q, w, titleOf) : byChange(q, w, titleOf);
+  return !withQuestions && rows.length === 1 && rows[0] === NOTHING ? [NOTHING_ELSE] : rows;
+}
+
+const NOTHING_ELSE: WaitingRow = {
+  id: "waiting:none",
+  label: WORDS.nothingElseWaits,
+  tooltip: WORDS.nothingElseWaitsTip,
+  icon: "check",
+};
+
+/**
+ * The Questions view's rows (Phase D): the open questions by repo, each answered with a click in
+ * the dialog that shows the lines it read; a row while they are read, the reason when they
+ * couldn't be, and one row when none waits.
+ */
+export function questionsRows(questions: OpenQuestion[] | string | undefined): WaitingRow[] {
+  if (questions === undefined)
+    return [{ id: "questions:loading", label: WORDS.readingQuestions, icon: "loading~spin" }];
+  if (typeof questions === "string") return [errorRow("questions", questions)];
+  if (!questions.length)
+    return [
+      {
+        id: "questions:none",
+        label: WORDS.noQuestions,
+        tooltip: WORDS.noQuestionsTip,
+        icon: "check",
+      },
+    ];
+  return questionRows(questions);
 }
 
 function byChange(

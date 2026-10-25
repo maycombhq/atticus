@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { actionFor } from "../src/atticus";
 import { nextRow, type NextNode } from "../src/next-rows";
+import { WORDS } from "../src/words";
 
 /**
  * The Next section's rows (ADR 0098, 0100, 0101): every row a person can act on does something
@@ -36,13 +37,16 @@ const every: NextNode[] = [
   { kind: "app" },
   { kind: "runs", runs: "Hand-off to GitHub Copilot", model: "" },
   { kind: "no-root" },
+  { kind: "waiting" },
 ];
 
 describe("the Next section's rows", () => {
-  it("gives every row but the loading and nothing-to-do ones a command", () => {
+  it("gives every row but the loading, nothing-to-do and Waiting on you ones a command", () => {
     for (const n of every) {
       const r = nextRow(n);
-      if (n.kind === "loading" || n.kind === "no-next") expect(r.command).toBeUndefined();
+      // Waiting on you opens and closes, as a parent row does.
+      if (n.kind === "loading" || n.kind === "no-next" || n.kind === "waiting")
+        expect(r.command).toBeUndefined();
       else expect(r.command, n.kind).toBeDefined();
     }
   });
@@ -113,5 +117,13 @@ describe("what runs a step (ADR 0121 item 6)", () => {
     expect(nextRow({ kind: "runs", runs: "x", model: "atticus" }).description).toBe(
       "in VS Code: Atticus's configured model",
     );
+  });
+});
+
+describe("Next and Waiting (Phase D)", () => {
+  it("has a Waiting on you row, open, under the steps", () => {
+    const r = nextRow({ kind: "waiting" });
+    expect(r).toMatchObject({ label: WORDS.waitingHead, id: "next:waiting", expanded: true });
+    expect(r.tooltip).toBe(WORDS.waitingHeadTip);
   });
 });

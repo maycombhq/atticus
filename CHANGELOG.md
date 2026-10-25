@@ -4,6 +4,12 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### The editors: three views and the steps, the rest behind a setting (Phase D, ADR 0124 addendum D-app)
+
+- **VS Code shows three views:** **Next and Waiting** (the next step, then what waits on you under it), **Questions** (each answered in a dialog beside the lines it read) and **Changes**. The Command Palette offers fifteen commands; `@atticus` offers the steps, run with the editor's model: `/next`, `/map <repo>` (new), `/verify`, `/feature`, `/architecture`, `/stories`, `/task <change> [task]` (new), `/critic <change>` (new) and `/answer`. The Atticus tab opens on the app's Home.
+- **Nothing is removed:** the setting `atticus.fullUi` brings back the Knowledge, Repos, Catalog and Model runs views, **Run a command…** for every command (ADR 0096), the rest of the palette and of `@atticus`, and the app with every page (`atticus ui --full`).
+- **IntelliJ:** its parity table places VS Code's two new commands (map and the critic, as their slash commands); its parity test reads the app's screens however Prettier lays them out. The plugin's own actions are unchanged (not built here: it needs the IntelliJ Platform download).
+
 ### The stories bench scores the stories Atticus drafts (B-stories-bench)
 
 - **`atticus bench stories --change <change> --story <id>`** scores the stories the stories stage drafted for a change (give its id, or its folder) against the reference story in `bench/stories/<id>.yaml`: the change's stories become one bench story (each task a changed step with today's file and line, each criterion split into given, when and then, each error criterion an error case), scored as `--draft` scores a file. `--out <file>` keeps the converted draft.

@@ -11,6 +11,7 @@ import { Loads } from "./loads";
 import type { NextStep, OpenQuestion } from "./types";
 import { filterItems } from "./filter";
 import {
+  questionsRows,
   readWaiting,
   waitingRows,
   type WaitingGroup,
@@ -19,14 +20,17 @@ import {
 } from "./waiting-data";
 
 /**
- * The Next section (ADR 0090, 0098, 0100): the next step in plain words with a Run button, the
- * steps after it (each runs when clicked, as the next one does), the setup checklist until the
+ * The Next and Waiting section (ADR 0090, 0098, 0100; Phase D): the next step in plain words with
+ * a Run button, the steps after it (each runs when clicked, as the next one does), then what
+ * waits on you (WaitingView's rows, ADR 0105, under one row), the setup checklist until the
  * catalog is accepted, and Open the app. It reads `atticus next` and `atticus questions` once,
- * for Waiting on you too (WaitingView, ADR 0105); each shows a
- * loading line while it reads, the reason when it can't, and says so when there is nothing.
+ * for the Questions view too (QuestionsView); each shows a loading line while it reads, the
+ * reason when it can't, and says so when there is nothing.
  */
 
-type Node = NextNode;
+/** A row of what waits, under the Waiting on you row. */
+type Under = { kind: "under"; row: WNode };
+type Node = NextNode | Under;
 
 /** How many of the steps after the next one to show. */
 const THEN = 4;
@@ -41,6 +45,14 @@ export class AtticusView implements vscode.TreeDataProvider<Node> {
   private loading: Promise<void> | undefined;
 
   constructor(private readonly svc: Service) {}
+
+  /** What waits on you, shown under the steps (Phase D). */
+  private waiting: WaitingView | undefined;
+  showWaiting(waiting: WaitingView): vscode.Disposable {
+    this.waiting = waiting;
+    // Its rows read on their own: draw them when they are in.
+    return waiting.onDidChangeTreeData(() => this.changed.fire(undefined));
+  }
 
   /** The next step last read, for Run. */
   next: NextStep | undefined;
@@ -114,6 +126,8 @@ export class AtticusView implements vscode.TreeDataProvider<Node> {
       nodes.push({ kind: "next", step: n.value.next });
       for (const s of n.value.steps.slice(1, 1 + THEN)) nodes.push({ kind: "then", step: s });
     } else nodes.push({ kind: "no-next" });
+    // What waits on you, under the steps (Phase D).
+    if (this.waiting) nodes.push({ kind: "waiting" });
     // The setup checklist, until the catalog is accepted.
     if (setup?.steps?.length && !setup.baselined) nodes.push({ kind: "setup", steps: setup.steps });
     // What runs a step (ADR 0121 item 6), above Open the app.
@@ -131,6 +145,9 @@ export class AtticusView implements vscode.TreeDataProvider<Node> {
 
   getChildren(node?: Node): Node[] {
     if (node?.kind === "setup") return node.steps.map((step) => ({ kind: "setup-step", step }));
+    const under = (rows: WNode[]): Node[] => rows.map((row) => ({ kind: "under", row }));
+    if (node?.kind === "waiting") return under(this.waiting?.getChildren() ?? []);
+    if (node?.kind === "under") return under(this.waiting?.getChildren(node.row) ?? []);
     return node ? [] : this.nodes;
   }
 
@@ -159,6 +176,7 @@ export class AtticusView implements vscode.TreeDataProvider<Node> {
   };
 
   getTreeItem(node: Node): vscode.TreeItem {
+    if (node.kind === "under") return rowItem(node.row);
     const r = nextRow(node, this.changeTitle);
     const t = new vscode.TreeItem(
       r.label,
@@ -188,14 +206,54 @@ export class AtticusView implements vscode.TreeDataProvider<Node> {
   }
 }
 
-/** The Waiting on you section (ADR 0105), as the tree view draws it. */
+/** What waits on you (ADR 0105), as the tree view draws it. */
 type WNode = WaitingRow | { id: string; state: "loading" | "error"; message: string };
 const isRow = (n: WNode): n is WaitingRow => !("state" in n);
 
+/** A row of what waits, or of the questions, as a tree item. */
+function rowItem(node: WNode): vscode.TreeItem {
+  if (!isRow(node)) {
+    const t = new vscode.TreeItem(node.state === "error" ? errorLabel(node.message) : node.message);
+    t.id = node.id;
+    t.iconPath = new vscode.ThemeIcon(node.state === "loading" ? "loading~spin" : "warning");
+    if (node.state === "error") {
+      t.tooltip = `${node.message}
+
+Click to see the commands run, in the Atticus output. Refresh to read it again.`;
+      t.command = { command: "atticus.showLog", title: "Show the commands run" };
+    }
+    return t;
+  }
+  const t = new vscode.TreeItem(
+    node.label,
+    node.rows ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.None,
+  );
+  t.id = node.id;
+  if (node.description) t.description = node.description;
+  if (node.tooltip)
+    t.tooltip = node.markdown ? new vscode.MarkdownString(node.tooltip) : node.tooltip;
+  if (node.icon)
+    t.iconPath = new vscode.ThemeIcon(
+      node.icon,
+      node.color ? new vscode.ThemeColor(node.color) : undefined,
+    );
+  if (node.context) t.contextValue = node.context;
+  if (node.command)
+    t.command = {
+      command: node.command.command,
+      title: node.label,
+      ...(node.command.args ? { arguments: node.command.args } : {}),
+    };
+  else if (node.open)
+    t.command = { command: "atticus.openItem", title: "Open", arguments: [node.open] };
+  return t;
+}
+
 /**
- * The Waiting on you section (ADR 0105): what waits on a person across every change. Its
- * questions are those the Next section read; the rest it reads itself, when shown, with a
- * "Reading…" row until then. A refresh keeps the rows on show until they are read again.
+ * What waits on you (ADR 0105): what waits on a person across every change, drawn under the
+ * steps in Next and Waiting (Phase D). The open questions have their own view, so they are left
+ * out unless asked for; the rest it reads itself, when shown, with a "Reading…" row until then.
+ * A refresh keeps the rows on show until they are read again.
  */
 export class WaitingView implements vscode.TreeDataProvider<WNode> {
   private readonly changed = new vscode.EventEmitter<WNode | undefined>();
@@ -211,6 +269,8 @@ export class WaitingView implements vscode.TreeDataProvider<WNode> {
   constructor(
     private readonly svc: Service,
     private readonly next: AtticusView,
+    /** Whether the open questions are among the rows (the Questions view has them). */
+    private readonly withQuestions = false,
   ) {
     next.onQuestions(() => {
       if (next.questions !== undefined) this.questions = next.questions;
@@ -245,7 +305,7 @@ export class WaitingView implements vscode.TreeDataProvider<WNode> {
 
   private read(root: string): Promise<WaitingRead | string> {
     const p = readWaiting(this.svc.cli(root), root);
-    void vscode.window.withProgress({ location: { viewId: "atticus.questions" } }, () =>
+    void vscode.window.withProgress({ location: { viewId: "atticus.view" } }, () =>
       p.catch(() => undefined),
     );
     return p;
@@ -263,7 +323,7 @@ export class WaitingView implements vscode.TreeDataProvider<WNode> {
       return [{ id: "waiting:loading", state: "loading", message: "Reading what waits on you…" }];
     if (typeof w === "string") return [{ id: "waiting:error", state: "error", message: w }];
     return filterItems(
-      waitingRows(q, w, this.group),
+      waitingRows(q, w, this.group, { questions: this.withQuestions }),
       this.filter,
       "Waiting on you",
       "atticus.clearFilterWaiting",
@@ -307,46 +367,52 @@ export class WaitingView implements vscode.TreeDataProvider<WNode> {
   }
 
   getTreeItem(node: WNode): vscode.TreeItem {
-    if (!isRow(node)) {
-      const t = new vscode.TreeItem(
-        node.state === "error" ? errorLabel(node.message) : node.message,
-      );
-      t.id = node.id;
-      t.iconPath = new vscode.ThemeIcon(node.state === "loading" ? "loading~spin" : "warning");
-      if (node.state === "error") {
-        t.tooltip = `${node.message}
-
-Click to see the commands run, in the Atticus output. Refresh to read it again.`;
-        t.command = { command: "atticus.showLog", title: "Show the commands run" };
-      }
-      return t;
-    }
-    const t = new vscode.TreeItem(
-      node.label,
-      node.rows ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.None,
-    );
-    t.id = node.id;
-    if (node.description) t.description = node.description;
-    if (node.tooltip)
-      t.tooltip = node.markdown ? new vscode.MarkdownString(node.tooltip) : node.tooltip;
-    if (node.icon)
-      t.iconPath = new vscode.ThemeIcon(
-        node.icon,
-        node.color ? new vscode.ThemeColor(node.color) : undefined,
-      );
-    if (node.context) t.contextValue = node.context;
-    if (node.command)
-      t.command = {
-        command: node.command.command,
-        title: node.label,
-        ...(node.command.args ? { arguments: node.command.args } : {}),
-      };
-    else if (node.open)
-      t.command = { command: "atticus.openItem", title: "Open", arguments: [node.open] };
-    return t;
+    return rowItem(node);
   }
 
   dispose() {
+    this.changed.dispose();
+  }
+}
+
+/**
+ * The Questions view (Phase D): the open questions by repo, as the Next and Waiting section read
+ * them. A click opens the answer dialog, with the lines the question read beside its answers
+ * (atticus.answerQuestion); a repo's button answers its questions one after another.
+ */
+export class QuestionsView implements vscode.TreeDataProvider<WaitingRow> {
+  private readonly changed = new vscode.EventEmitter<WaitingRow | undefined>();
+  readonly onDidChangeTreeData = this.changed.event;
+  private readonly sub: vscode.Disposable;
+  /** The questions last read, kept on show while they are read again. */
+  private shown: OpenQuestion[] | string | undefined;
+
+  constructor(private readonly next: AtticusView) {
+    this.sub = next.onQuestions(() => {
+      if (next.questions !== undefined) this.shown = next.questions;
+      this.changed.fire(undefined);
+    });
+  }
+
+  /** Forget what was read (another metarepo opened): Reading… again. */
+  reset() {
+    this.shown = undefined;
+    this.changed.fire(undefined);
+  }
+
+  getChildren(node?: WaitingRow): WaitingRow[] {
+    if (node) return node.rows ?? [];
+    // No metarepo or no command line: empty, and the view isn't shown.
+    if (!this.next.hasMetarepo) return [];
+    return questionsRows(this.shown ?? this.next.questions);
+  }
+
+  getTreeItem(node: WaitingRow): vscode.TreeItem {
+    return rowItem(node);
+  }
+
+  dispose() {
+    this.sub.dispose();
     this.changed.dispose();
   }
 }

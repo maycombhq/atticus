@@ -9,6 +9,7 @@ import { runSpec, runStep, type StepEnd } from "../src/runner";
 import {
   ModelRefused,
   type Cancel,
+  type Cli,
   type ChatTurnMessage,
   type ModelTool,
   type ModelTurn,
@@ -624,5 +625,77 @@ describe("Atticus's configured model (ADR 0121 item 5)", () => {
       "--json",
     ]);
     expect(end).toMatchObject({ state: "done", messages: ["Answered."] });
+  });
+});
+
+describe("a repo read with map, a batch a hand-off (ADR 0124 §4)", () => {
+  /** A canned `atticus map`: it hands off `batches` batches, then says it is done. */
+  async function mapCli(batches: number) {
+    const root = await mkdtemp(join(tmpdir(), "atticus-vscode-map-"));
+    const asked: string[][] = [];
+    let handed = 0;
+    const cli: Cli = async (args) => {
+      asked.push(args);
+      if (args[0] === "handoff") return { code: 0, stdout: "", stderr: "", cancelled: false };
+      if (handed === batches)
+        return {
+          code: 0,
+          stdout: JSON.stringify({ state: "done", exitCode: 0, messages: ["Read forge-notes."] }),
+          stderr: "",
+          cancelled: false,
+        };
+      handed++;
+      const runId = `run-${handed}`;
+      const promptFile = `.runs/map-forge-notes/${runId}/prompt.md`;
+      await mkdir(join(root, ".runs/map-forge-notes", runId), { recursive: true });
+      await writeFile(join(root, promptFile), `Batch ${handed}: read these lines.`);
+      return {
+        code: 0,
+        stdout: JSON.stringify({
+          state: "handoff",
+          runId,
+          promptFile,
+          resultFile: `.runs/map-forge-notes/${runId}/output.jsonl`,
+          doneArgs: ["handoff", "done", runId],
+          resumeArgs: ["map", "forge-notes", "--handoff", "--json", "--resume", runId],
+        }),
+        stderr: "",
+        cancelled: false,
+      };
+    };
+    return { root, cli, asked };
+  }
+
+  it("answers every batch, past the eight rounds a draft gets", async () => {
+    const { root, cli, asked } = await mapCli(12);
+    const model = new FakeModel(Array.from({ length: 12 }, (_, i) => `{"fact": ${i}}\n`));
+    const end = await runStep(
+      ["map", "forge-notes"],
+      { root, cli, model: async () => model },
+      cancelSource(),
+    );
+    expect(end.state, JSON.stringify(end)).toBe("done");
+    expect(model.prompts).toHaveLength(12);
+    expect(asked[0]).toEqual([
+      "map",
+      "forge-notes",
+      "--max-tokens",
+      "200000",
+      "--handoff",
+      "--json",
+      "--root",
+      root,
+    ]);
+  });
+
+  it("still stops a read that never ends", async () => {
+    const { root, cli } = await mapCli(1000);
+    const model = new FakeModel(Array.from({ length: 1000 }, () => "{}\n"));
+    const end = await runStep(
+      ["map", "forge-notes"],
+      { root, cli, model: async () => model },
+      cancelSource(),
+    );
+    expect(end.state).toBe("too-many-rounds");
   });
 });

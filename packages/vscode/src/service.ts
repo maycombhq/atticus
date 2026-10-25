@@ -6,6 +6,7 @@ import { startApp, type RunningApp } from "./app-panel";
 import { cliRunner, resolveCommand, type CliOptions } from "./cli";
 import { codeRootFor, type Paths } from "./sidebar-data";
 import { runSpec, runStep, type RunnerDeps, type StepEnd } from "./runner";
+import { FULL_UI } from "./surface";
 import type { Cancel, Cli } from "./types";
 import { pickModel, usesConfiguredModel } from "./vscode-model";
 
@@ -74,7 +75,8 @@ export class Service {
    */
   runningApp(root: string): Promise<RunningApp> {
     if (!this.app) {
-      const started = startApp(this.cliOptions(root));
+      const full = vscode.workspace.getConfiguration("atticus").get<boolean>(FULL_UI, false);
+      const started = startApp(this.cliOptions(root), { full });
       this.app = started;
       const drop = () => {
         if (this.app === started) this.app = undefined;
@@ -82,6 +84,19 @@ export class Service {
       started.then((a) => a.onExit(drop), drop);
     }
     return this.app;
+  }
+
+  /**
+   * Stop the app, so the next call starts it again: the setting atticus.fullUi changed, and
+   * `atticus ui` takes --full only when it starts.
+   */
+  restartApp() {
+    const app = this.app;
+    this.app = undefined;
+    void app?.then(
+      (a) => a.stop(),
+      () => undefined,
+    );
   }
 
   /** The app's API, starting the app if it isn't running. */
