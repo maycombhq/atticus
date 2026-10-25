@@ -11,8 +11,8 @@ const doc = openApiDocument() as {
 
 describe("the Map's evidence and a stage tab's findings in the local API (C4 2.23.0)", () => {
   it("documents the four calls and their answers", () => {
-    expect(API_VERSION).toBe("2.23.0");
-    expect(doc.info.version).toBe("2.23.0");
+    // The version has moved on (2.24.0, trust-api.test.ts); these calls are still there.
+    expect(doc.info.version).toBe(API_VERSION);
     expect(doc.paths["/api/facts/{repo}"]!.get!.operationId).toBe("getRepoFacts");
     expect(doc.paths["/api/facts/{repo}/corrections"]!.post!.operationId).toBe("correctFact");
     expect(doc.paths["/api/changes/{changeId}/stages/{stage}"]!.get!.operationId).toBe(

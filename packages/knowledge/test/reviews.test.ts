@@ -157,6 +157,34 @@ describe("a person reviews what the scan read", () => {
     });
   });
 
+  // B2 (h): the scan's answer writes lead_time, the record leadTime; a person may type either.
+  it("takes a field by the scan's name too (lead_time), and writes the record's (leadTime)", async () => {
+    const { root } = await scanned();
+    const item = (await readKnowledge(root)).items.find((i) => i.id === "kafka-topic-request")!;
+    const r = reviewItem(item, {
+      verdict: "corrected",
+      by: "Tom George",
+      at: "2026-10-21T10:00:00Z",
+      set: { lead_time: "3 working days", handled_by: "Platform team" },
+    });
+    if ("error" in r) throw new Error(r.error);
+    expect(r.review.corrections).toEqual({
+      leadTime: "3 working days",
+      handledBy: "Platform team",
+    });
+    expect(r.item).toMatchObject({ leadTime: "3 working days", handledBy: "Platform team" });
+    expect(r.item).not.toHaveProperty("lead_time");
+    // A name that is no field in either form is still refused, by the name the person typed.
+    expect(
+      reviewItem(item, {
+        verdict: "corrected",
+        by: "T",
+        at: "2026-10-21T10:00:00Z",
+        set: { lead_colour: "x" },
+      }),
+    ).toMatchObject({ error: expect.stringContaining("A request has no field lead_colour") });
+  });
+
   it("refuses a correction to what the page quoted, or a field the kind hasn't", async () => {
     const { root } = await scanned();
     const item = (await readKnowledge(root)).items.find((i) => i.id === "kafka-topic-request")!;

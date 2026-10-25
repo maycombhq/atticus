@@ -25,6 +25,7 @@ import { instructionSource, wholeLists, type ContextReport } from "../engine.js"
 import { pastCorrectionsSource } from "./past-corrections.js";
 import { recordKnowledge } from "./knowledge-applies.js";
 import { estateContext } from "./estate-context.js";
+import { patternLine, type Level } from "./knowledge-lines.js";
 import {
   runStageLoop,
   SELF_CHECK_RULE,
@@ -2098,8 +2099,10 @@ export async function architectureStage(
       priority: 85,
     })),
   ];
-  const patternLine = (i: (typeof patterns)[number]) =>
-    `${i.kind} ${i.id}: ${(i as { title?: string; name?: string }).title ?? (i as { name?: string }).name ?? ""}. Applies when: ${(i as { appliesWhen?: string }).appliesWhen ?? ""} (${i.quote?.page ?? ""})`;
+  // B2 (c): a pattern sent in full carries its rules, a decision what it decided, since the
+  // drafter is told to follow them; in one line, its title and when it applies, as before.
+  const lineOf = (i: (typeof patterns)[number], level: Level) =>
+    i.kind === "Pattern" || i.kind === "Decision" ? patternLine(i, level) : "";
   const whole: SourceInput[] = [
     {
       id: "estate-index",
@@ -2115,7 +2118,7 @@ export async function architectureStage(
             id: "patterns",
             kind: "document" as const,
             origin: "knowledge/items (ADR 0083)",
-            text: patterns.map(patternLine).join("\n"),
+            text: patterns.map((i) => lineOf(i, "full")).join("\n"),
             classification: "internal",
             priority: 70,
           },
@@ -2171,14 +2174,15 @@ export async function architectureStage(
       priority: 80,
       knowledge: {
         kinds: ["Pattern", "Decision"],
-        line: (id) => {
+        line: (id, level) => {
           const i = patternById.get(id);
-          return i ? patternLine(i) : undefined;
+          return i ? lineOf(i, level) : undefined;
         },
         id: "patterns",
         origin: "knowledge/items (ADR 0083), selected",
         priority: 70,
       },
+      sections: { origin: "the wikis and documents (ADR 0116), selected", priority: 69 },
     },
   );
   if (selected && "waiting" in selected)

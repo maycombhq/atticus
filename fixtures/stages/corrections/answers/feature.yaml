@@ -11,4 +11,4 @@ flows:
     why: Reserving stock happens only after the screen passes.
 gaps:
   - what: No call to Northwind Pay exists yet.
-    why: The estate never talks to the fraud screen today.
+    why: The estate never talks to the fraud screen today; the new vendor host needs a Network firewall rule (firewall-rule-request) and Northwind Pay onboarded before the first call (vendor-onboarding).

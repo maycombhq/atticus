@@ -8,7 +8,11 @@ import { MockRuntime, type AiRequest, type AiRuntime, type Run } from "@maycombh
 import {
   askKnowledge,
   checkQuote,
+  checkScanAnswer,
   filterItems,
+  KNOWLEDGE_ASKER,
+  knowledgeAskerAgent,
+  knowledgeReaderAgent,
   readKnowledge,
   readSnapshot,
   scanKnowledge,
@@ -545,6 +549,21 @@ describe("the knowledge scan", () => {
     );
   });
 
+  // B2 (f): `atticus handoff done` checks the scan's answer as the scan does, before the resume.
+  it("checks an answer on its own, as the scan does: the quotes, the pages and the superseded", () => {
+    const first = checkScanAnswer([snap], FIRST);
+    expect(first.join("\n")).toMatch(
+      /anvil-health-endpoints: quote: the quote is on the page under "Health endpoints", not under "Logging"/,
+    );
+    expect(first.join("\n")).toMatch(/made-up: quote: the quote is not on the page/);
+    expect(first.join("\n")).toMatch(
+      /anvil-2-health: anvil-logging-2023.md is superseded by anvil-service-standard.md/,
+    );
+    expect(checkScanAnswer([snap], SECOND)).toEqual([]);
+    expect(checkScanAnswer([snap], "items: [")[0]).toMatch(/^the answer isn't YAML/);
+    expect(checkScanAnswer([snap], "items: 3")[0]).toMatch(/^the answer isn't in the asked shape/);
+  });
+
   it("stores items per kind and lists them by tag and kind", async () => {
     const r = await scanKnowledge([snap], { runtime, now: new Date(NOW) });
     await writeKnowledge(root, r, NOW);
@@ -581,6 +600,26 @@ describe("knowledge ask", () => {
     });
     expect(r.answers[0]).toMatchObject({ status: "answered", cites: ["broker-topic-request"] });
     expect(prompt).toContain("id: broker-topic-request");
+  });
+
+  // B2 (j): ask is its own agent, introduced as what it does, not as the scan's reader.
+  it("is introduced as the asker, not the scan's reader; an org pack may define its own", async () => {
+    const { items } = await readKnowledge(root);
+    const agents: AiRequest["agent"][] = [];
+    const runtime = new MockRuntime((r) => {
+      agents.push(r.agent);
+      return "answers:\n  - question: 1\n    answer: Raise a Broker topic request.\n    cites: [broker-topic-request]\n";
+    });
+    await askKnowledge(["How do I get a new broker topic?"], { items, runtime });
+    expect(agents[0]!.id).toBe(KNOWLEDGE_ASKER);
+    expect(agents[0]!.id).not.toBe(knowledgeReaderAgent().id);
+    expect(agents[0]!.description).toMatch(/^Answers questions from the organisation's knowledge/);
+    expect(agents[0]!.description).not.toMatch(/Reads the organisation's wiki pages/);
+    const own = knowledgeAskerAgent({
+      ...op,
+      agents: [{ ...knowledgeAskerAgent(), description: "Our own asker." }],
+    });
+    expect(own.description).toBe("Our own asker.");
   });
 
   it("says when items disagree, in what the AI is given", async () => {

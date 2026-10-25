@@ -1,0 +1,26 @@
+schemaVersion: 1
+source: forge-wiki
+date: 2026-10-01
+takenAt: 2026-10-01T08:00:00Z
+type: markdown-folder
+location: ../forge-wiki
+tags:
+  kinds: [integration-patterns]
+  frameworks: []
+pages:
+  - page: integration-standards.md
+    file: integration-standards.md
+    sha256: 3256822f98cb1cf315500c7f65b78096483ffa8079d7e01837997654c609f053
+    title: Integration standards
+    classification: internal
+  - page: northwind-pay-fraud-screen.md
+    file: northwind-pay-fraud-screen.md
+    sha256: 2cf73c739d2b6af99d6d75cfb768a053b0ceee898d354bcd5d98ad0288ac464d
+    title: Northwind Pay fraud screen
+    classification: internal
+  - page: vendor-onboarding.md
+    file: vendor-onboarding.md
+    sha256: e966333cd47b21490b8d2fa3a1b217ac81c5517a3a5cccc82b3a293582ba259f
+    title: Vendor onboarding
+    classification: internal
+skipped: []

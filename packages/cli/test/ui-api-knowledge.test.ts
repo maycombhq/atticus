@@ -111,6 +111,14 @@ items:
     score: 4
     why: named in the brief
     file: knowledge/items/pattern/json-logging.yaml
+  - id: "platform/how-to/webhooks.md#Signatures"
+    kind: WikiSection
+    status: suggested
+    stages: [feature]
+    score: 1.2
+    why: 'search (words #3, the model''s "transfer status" #5, title #1)'
+    file: knowledge/snapshots/platform/2026-10-20/how-to/webhooks.md
+    title: Webhooks › Signatures
 nearMisses:
   - id: northwind-pay
     kind: Party
@@ -499,9 +507,17 @@ describe("the knowledge that applies to a change (ADR 0124, Part 5)", () => {
         id: "json-logging",
         status: "suggested",
         why: "named in the brief",
+        // B2 (e): an item's title from its record when the file has none, and why in words.
+        title: "Log as JSON",
+        reason: "named in the brief",
+      }),
+      expect.objectContaining({
+        id: "platform/how-to/webhooks.md#Signatures",
+        title: "Webhooks › Signatures",
+        reason: 'Its words match the change\'s title and words, and "transfer status".',
       }),
     ]);
-    expect(v.nearMisses.map((n) => n.id)).toEqual(["northwind-pay"]);
+    expect(v.nearMisses.map((n) => [n.id, n.title])).toEqual([["northwind-pay", "Northwind Pay"]]);
     const none = Api.ChangeKnowledgeView.parse(
       (await call("GET", "/api/changes/add-transfer-limit/knowledge")).body,
     );
@@ -532,12 +548,15 @@ describe("the knowledge that applies to a change (ADR 0124, Part 5)", () => {
     expect(no.knowledge.items.find((i) => i.id === "northwind-pay")).toMatchObject({
       status: "excluded",
       why: "a person",
+      title: "Northwind Pay",
+      reason: "A person added it.",
     });
     const file = parse(
       await readFile(join(root, "openspec/changes/add-chat-export/knowledge.yaml"), "utf8"),
     ) as { items: { id: string; status: string }[] };
     expect(file.items.map((i) => [i.id, i.status])).toEqual([
       ["json-logging", "confirmed"],
+      ["platform/how-to/webhooks.md#Signatures", "suggested"],
       ["northwind-pay", "excluded"],
     ]);
   });

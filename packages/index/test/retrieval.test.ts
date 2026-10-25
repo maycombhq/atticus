@@ -167,6 +167,46 @@ describe("ingested documents (ADR 0116)", () => {
     ix.close();
   });
 
+  // B2 (d): a document in inputs/ is also in its knowledge snapshot (ADR 0122); the index reads
+  // it once, from the file, and not at all when the sync skipped it (a wiki page's copy, say).
+  it("indexes a document of inputs/ once, not again from its snapshot, and not one the sync skipped", async () => {
+    const root = await retrievalRoot();
+    const guide =
+      "# Partner guide\n\n## Webhooks\n\nEvery webhook is signed with the shared secret.\n";
+    await writeFile(join(root, "inputs/partner-guide.md"), guide);
+    await writeFile(join(root, "inputs/copy-of-wiki.md"), "# Copied\n\n## Page\n\nA wiki page.\n");
+    const snap = join(root, "knowledge/snapshots/inputs/2026-10-25");
+    await mkdir(snap, { recursive: true });
+    await writeFile(join(snap, "partner-guide.md"), guide);
+    await writeFile(
+      join(snap, "snapshot.yaml"),
+      [
+        "schemaVersion: 1",
+        "source: inputs",
+        "date: 2026-10-25",
+        "takenAt: 2026-10-25T09:00:00Z",
+        "type: markdown-folder",
+        "location: inputs/",
+        "pages:",
+        "  - { page: partner-guide.md, file: partner-guide.md, sha256: " + "0".repeat(64) + " }",
+        "skipped:",
+        "  - { page: inputs/copy-of-wiki.md, reason: 'the same page as ledger.md, which the wiki source forge-wiki reads' }",
+        "",
+      ].join("\n"),
+    );
+    const ix = await openIndex(root);
+    const ids = [...nodeRows(ix, "DocumentSection"), ...nodeRows(ix, "WikiSection")].map(
+      (r) => r.id,
+    );
+    expect(ids.filter((id) => id.includes("partner-guide"))).toEqual([
+      "inputs/partner-guide.md#Webhooks",
+    ]);
+    expect(ids.filter((id) => id.includes("copy-of-wiki"))).toEqual([]);
+    // A wiki's own snapshot is read as before.
+    expect(ids.some((id) => id.startsWith("forge-wiki/"))).toBe(true);
+    ix.close();
+  });
+
   it("ranks a document below a verified record that says the same, and keeps out a document that hides instructions", async () => {
     const root = await retrievalRoot();
     // A runbook page that repeats a verified column's words, and one that tries to instruct.

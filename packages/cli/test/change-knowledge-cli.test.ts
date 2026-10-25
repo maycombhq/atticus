@@ -18,12 +18,22 @@ describe("atticus change knowledge <id> (ADR 0124, Part 5)", () => {
     mkdirSync(join(root, "openspec", "changes", "add-limit"), { recursive: true });
     const none = io();
     expect(await changeKnowledge(root, "add-limit", {}, none.io)).toBe(2);
-    // B2: the feature stage picks no org knowledge, so the list starts at architecture.
-    expect(none.err[0]).toMatch(/atticus change architecture add-limit/);
-    expect(none.err[0]).toMatch(/the feature stage picks none/);
+    // B2 (a): the feature stage is the first that picks the org's knowledge.
+    expect(none.err[0]).toMatch(/atticus change feature add-limit/);
+    expect(none.err[0]).not.toMatch(/the feature stage picks none/);
     await recordKnowledge(root, "add-limit", "feature", {
       engine: true,
-      picked: [{ id: "pattern.a", kind: "Pattern", level: "full", score: 2, via: "named" }],
+      picked: [
+        { id: "pattern.a", kind: "Pattern", level: "full", score: 2, via: "named" },
+        {
+          id: "forge-wiki/limits.md#Daily limits",
+          kind: "WikiSection",
+          level: "line",
+          score: 1,
+          name: "Limits › Daily limits",
+          via: "search (words #1)",
+        },
+      ],
       leftOut: [{ id: "decision.c", kind: "Decision", score: 0.2 }],
       unknown: [],
     });
@@ -46,6 +56,7 @@ describe("atticus change knowledge <id> (ADR 0124, Part 5)", () => {
     const doc = (await readKnowledgeApplies(root, "add-limit"))!;
     expect(doc.items.map((i) => `${i.id}:${i.status}`)).toEqual([
       "decision.c:confirmed",
+      "forge-wiki/limits.md#Daily limits:suggested",
       "pattern.a:excluded",
     ]);
     const bad = io();

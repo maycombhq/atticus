@@ -53,8 +53,10 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   Map cites them and a person's correction of one (GET /api/facts/{repo}, POST
  *   .../corrections); a stage tab's critic findings with their options, a comment on one and
  *   the stage's questions (GET /api/changes/{id}/stages/{stage}, POST .../comments). Additive only.
+ * 2.24.0 (ADR 0124 addendum B2): a change's knowledge with a title for each item and near-miss
+ *   and why each was picked in plain words (title, reason). Additive only.
  */
-export const API_VERSION = "2.23.0";
+export const API_VERSION = "2.24.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -637,6 +639,10 @@ export const ChangeKnowledgeItem = z.object({
   score: z.number(),
   why: z.string().optional(),
   file: z.string().optional(),
+  /** 2.24.0: what a person knows it by: an item's title, a section's heading path. */
+  title: z.string().optional(),
+  /** 2.24.0: why it was picked, in plain words (`why` is the selection's own account). */
+  reason: z.string().optional(),
 });
 export const ChangeKnowledgeView = z.object({
   change: z.string(),
@@ -645,7 +651,14 @@ export const ChangeKnowledgeView = z.object({
   present: z.boolean(),
   items: z.array(ChangeKnowledgeItem),
   nearMisses: z.array(
-    z.object({ id: z.string(), kind: z.string(), score: z.number(), stage: z.string() }),
+    z.object({
+      id: z.string(),
+      kind: z.string(),
+      score: z.number(),
+      stage: z.string(),
+      /** 2.24.0: what a person knows it by. */
+      title: z.string().optional(),
+    }),
   ),
   /** The command that lists it (and confirms or excludes with --confirm, --exclude). */
   command: z.string(),

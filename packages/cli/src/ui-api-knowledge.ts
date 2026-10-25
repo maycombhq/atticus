@@ -47,6 +47,7 @@ import {
 import {
   markNeed,
   NEEDS_FILE,
+  plainWhy,
   readKnowledgeApplies,
   readNeeds,
   setKnowledgeStatus,
@@ -180,12 +181,25 @@ export function uiKnowledgeRoutes(
         "Atticus can't read that file",
         `${file} isn't a valid knowledge list.`,
       );
+    // 2.24.0 (B2): what a person knows each by, and why in plain words. A list written before the
+    // stages kept titles takes an item's title from its record.
+    const titles = new Map<string, string>();
+    if (doc?.items.some((i) => !i.title) || doc?.nearMisses.some((n) => !n.title))
+      for (const r of await readKnowledge(root).then((k) => [...k.items, ...k.rejected]))
+        titles.set(r.id, itemTitle(r));
+    const titled = <T extends { id: string; title?: string }>(x: T): T => {
+      const title = x.title ?? titles.get(x.id);
+      return title ? { ...x, title } : x;
+    };
     return {
       change,
       file,
       present,
-      items: doc?.items ?? [],
-      nearMisses: doc?.nearMisses ?? [],
+      items: (doc?.items ?? []).map((i) => {
+        const reason = plainWhy(i);
+        return { ...titled(i), ...(reason ? { reason } : {}) };
+      }),
+      nearMisses: (doc?.nearMisses ?? []).map(titled),
       command: `atticus change knowledge ${change}`,
     };
   };

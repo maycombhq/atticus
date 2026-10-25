@@ -43,7 +43,7 @@ Each source is copied to `knowledge/snapshots/<source>/<date>/`. The scan reads 
 atticus knowledge scan --handoff
 ```
 
-Your assistant reads every page and writes the items. Atticus checks each quote on its page, word for word, and each lead time, owner, status and date against the quote that states it. Anything that fails goes back to the assistant in the next prompt, up to three attempts. The scan keeps what passed and writes it to `knowledge/items/` and `knowledge/scan.yaml`. It also lists pages that disagree, superseded pages and hidden instructions.
+Your assistant reads every page and writes the items. Atticus checks each quote on its page, word for word, and each lead time, owner, status and date against the quote that states it. `atticus handoff done` runs the same checks on the answer and lists what fails, so your assistant can fix it before you resume; after three checks the answer goes in as it is. Anything that still fails goes back to the assistant in the next prompt, and the resume says which checks failed, up to three attempts. The scan keeps what passed and writes it to `knowledge/items/` and `knowledge/scan.yaml`. It also lists pages that disagree, superseded pages and hidden instructions.
 
 A rescan reads only the pages that changed (`--full` reads them all; `--source <id>` reads one source).
 
@@ -58,7 +58,9 @@ atticus knowledge ask "What do I need before Forge can call a new vendor host?" 
 
 `ask` answers from the items only, citing each one, and says when two pages disagree. `query --search` also finds wiki and document sections that no item covers. To turn one of those into an item, use `atticus knowledge find "<phrase>"`, then `atticus knowledge keep <item>`.
 
-Check an item with `atticus knowledge verify <item>`, fix it with `atticus knowledge correct <item> --set leadTime="5 working days"`, or drop it with `atticus knowledge reject <item> --note "<why>"`.
+Check an item with `atticus knowledge verify <item>`, fix it with `atticus knowledge correct <item> --set leadTime="5 working days"` (the scan's own field names, such as `lead_time`, work too), or drop it with `atticus knowledge reject <item> --note "<why>"`.
+
+A document in `inputs/` is searched once, from the file itself, cited by its file and section. A file the sync skipped, such as a copy of a wiki page, isn't searched.
 
 ## 5. See what applies to a change
 
@@ -72,9 +74,18 @@ atticus stories show-held-transfers --handoff
 atticus change knowledge show-held-transfers
 ```
 
-The feature stage picks no knowledge. The architecture stage picks the patterns, standards and decisions that apply, and the stories stage picks the processes and requests. Each stage writes what it picked to `openspec/changes/<id>/knowledge.yaml`, with why it picked each item and the stage that used it. A process or request that a story's step meets also goes into `requests.md`, quoting its catalogue page.
+Each stage picks the knowledge its own input leads to, and sends it to your assistant with the rest of its prompt:
 
-In the app, the list is the **Knowledge that applies** panel on the change's Feature design tab (`GET /api/changes/<id>/knowledge`).
+- **Feature:** from the brief and the flows and systems it leads to, the patterns, standards, decisions, processes and requests. The placer names an item where it bears on a gap or a question.
+- **Architecture:** the patterns, standards and decisions, each one sent in full with its rules.
+- **Stories:** the processes and requests, and the standards with their rules.
+- **Every stage:** the wiki and document sections, vendors and glossary terms its input matches, found by the same search as `query --search`. The top three go in with the page's own words and where they are read from, the next as one line each, within a small share of the prompt. A page no item covers, such as an API guide's webhook section, reaches the change this way.
+
+Each stage writes what it picked to `openspec/changes/<id>/knowledge.yaml`: each item's title, why it was picked and the stages that used it. A process or request that a story's step meets also goes into `requests.md`, quoting its catalogue page.
+
+`atticus change knowledge` lists each item by its title, with its id in brackets, and says why in plain words: "The change names it", "Linked to northwind-pay, which the change leads to", or "Its words match the change's title and words".
+
+In the app, the list is the **Knowledge that applies** panel on the change's Feature design tab (`GET /api/changes/<id>/knowledge`), filled from the feature stage on.
 
 ## 6. Confirm or exclude
 
@@ -90,9 +101,8 @@ The app's Confirm and Exclude buttons write the same file and show the `git add 
 
 ## What it doesn't do yet
 
-- The feature stage doesn't list knowledge, so the Feature design panel is empty until the architecture stage runs.
-- No stage picks wiki or document sections, vendors or glossary terms. Only items reach a change, so a page no item covers never applies to one.
-- The architecture stage sends each pattern's title and when it applies, but not its rules.
-- The app's panel shows item ids, not titles.
+- Matching by words still picks "file transfer" items (a file-transfer pattern, its request, a file hub's retirement) for a change about a money transfer, from the model's reading of the brief. Exclude them; no later stage picks them again.
+- A story's Context doesn't yet link the items its criteria drew on.
+- A real document, a diagram and a real repo are still to walk.
 
-`docs/build-status.md` (B2) lists these gaps in full.
+`docs/build-status.md` (B2) has the detail.

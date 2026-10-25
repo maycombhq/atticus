@@ -20,6 +20,7 @@ import {
 import {
   askKnowledge,
   correctableFields,
+  fieldName,
   findKnowledge,
   keepCandidate,
   readFind,
@@ -206,6 +207,18 @@ export async function knowledgeScan(
         snapshots: [],
       };
   if (r.status === "waiting") {
+    // B2: a resume whose answer failed says what failed, not only that a new prompt waits.
+    const failed = r.attempts.filter((a) => a.state !== "waiting" && a.problems.length).at(-1);
+    if (o.resume && failed) {
+      io.out(
+        `The answer of run ${failed.runId} failed ${plural(failed.problems.length, "check")}, handed back with the next prompt:`,
+      );
+      for (const p of failed.problems) io.out(`  ${p}`);
+      if (failed.kept)
+        io.out(
+          `${failed.kept === 1 ? "1 item passed and is" : `${failed.kept} items passed and are`} kept for the next attempt.`,
+        );
+    }
     io.out(
       `Handed the knowledge scan to your assistant (run ${r.runId}). When it is done: atticus handoff done ${r.runId}, then atticus knowledge scan${o.source ? ` --source ${o.source}` : ""} --resume ${r.runId}`,
     );
@@ -581,7 +594,7 @@ export async function knowledgeKeep(
       io.err(`--set takes field=value, not ${pair}.`);
       return 2;
     }
-    const field = pair.slice(0, at).trim();
+    const field = fieldName(pair.slice(0, at).trim(), fields);
     const value = pair.slice(at + 1);
     set[field] =
       fields[field] === "list" || fields[field] === "links"
@@ -677,7 +690,7 @@ export async function knowledgeReview(
       io.err(`--set takes field=value, not ${pair}.`);
       return 2;
     }
-    const field = pair.slice(0, at).trim();
+    const field = fieldName(pair.slice(0, at).trim(), fields);
     const value = pair.slice(at + 1);
     // A list (and a list of links) takes a|b|c.
     set[field] =

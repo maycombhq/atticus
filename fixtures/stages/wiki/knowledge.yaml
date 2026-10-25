@@ -1,0 +1,65 @@
+# Knowledge items read from the wiki snapshot beside this file (B2), added to ../knowledge.yaml
+# by the tests that copy this folder in: a standard and two integration patterns, as a knowledge
+# scan of the invented Forge wiki would write them. Invented, written by hand.
+- kind: Pattern
+  schemaVersion: 2
+  id: outbound-call-timeouts
+  status: current
+  confidence: inferred
+  evidence: [{ source: document, path: knowledge/snapshots/forge-wiki/2026-10-01/integration-standards.md, line: 5, side: document }]
+  code: outbound-call-timeouts
+  name: Outbound calls state their timeouts
+  patternKind: standard
+  patternStatus: to-review
+  appliesWhen: A service calls another service or a vendor.
+  rules:
+    - "Every call to another service or a vendor states its timeout and its retries."
+    - "A call that can't be answered in time degrades: the caller says what it does instead."
+  quote:
+    source: forge-wiki
+    page: integration-standards.md
+    section: Outbound calls
+    text: "Every call to another service or a vendor states its timeout and its retries."
+    snapshot: 2026-10-01
+    line: 5
+- kind: Pattern
+  schemaVersion: 2
+  id: vendor-partner-gateway
+  status: current
+  confidence: inferred
+  evidence: [{ source: document, path: knowledge/snapshots/forge-wiki/2026-10-01/integration-standards.md, line: 11, side: document }]
+  code: vendor-partner-gateway
+  name: Vendor calls through the partner gateway
+  patternKind: integration-pattern
+  patternStatus: to-review
+  appliesWhen: A service calls a vendor.
+  rules:
+    - "Calls to a vendor go through the partner gateway, never straight to the vendor's host."
+    - "The gateway holds the vendor's credentials; a service never keeps them."
+  quote:
+    source: forge-wiki
+    page: integration-standards.md
+    section: Vendor calls
+    text: "Calls to a vendor go through the partner gateway, never straight to the vendor's host."
+    snapshot: 2026-10-01
+    line: 11
+- kind: Pattern
+  schemaVersion: 2
+  id: managed-file-transfer
+  status: current
+  confidence: inferred
+  evidence: [{ source: document, path: knowledge/snapshots/forge-wiki/2026-10-01/integration-standards.md, line: 17, side: document }]
+  code: managed-file-transfer
+  name: Batch files through managed file transfer
+  patternKind: integration-pattern
+  patternStatus: to-review
+  appliesWhen: A batch file goes to a partner.
+  rules:
+    - "Batch files to a partner go through the managed file transfer route, never by email."
+  quote:
+    source: forge-wiki
+    page: integration-standards.md
+    section: File transfer
+    text: "Batch files to a partner go through the managed file transfer route, never by email."
+    snapshot: 2026-10-01
+    line: 17

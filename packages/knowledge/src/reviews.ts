@@ -123,6 +123,13 @@ const FIXED = new Set(["quote", "alsoOn", "evidence", "id", "kind", "schemaVersi
 export const correctableFields = (r: { kind: string }): Record<string, FieldType> =>
   CORRECTABLE[r.kind] ?? {};
 
+/** A field as the record names it: lead_time (the scan's answer) is leadTime. */
+export function fieldName(typed: string, fields: Record<string, FieldType>): string {
+  if (fields[typed] || FIXED.has(typed) || !typed.includes("_")) return typed;
+  const camel = typed.replace(/_([a-z0-9])/g, (_, c: string) => c.toUpperCase());
+  return fields[camel] || FIXED.has(camel) ? camel : typed;
+}
+
 const kindWord = (r: KnowledgeRecord) => knowledgeKindOf(r) ?? r.kind.toLowerCase();
 
 function canonical(v: unknown): unknown {
@@ -173,13 +180,16 @@ export function reviewItem(
     return { error: "Only a correction sets fields." };
   const fields = correctableFields(item);
   const corrections: Record<string, string | string[] | { url: string; label?: string }[]> = {};
-  for (const [k, v] of Object.entries(set)) {
+  for (const [typed, v] of Object.entries(set)) {
+    // B2: the scan's answer names a field as lead_time, the record as leadTime: either is taken,
+    // and the record's name is written.
+    const k = fieldName(typed, fields);
     if (FIXED.has(k))
       return { error: `${k} can't be corrected: it is what the page says, checked word for word.` };
     const type = fields[k];
     if (!type)
       return {
-        error: `A ${kindWord(item)} has no field ${k}. It has: ${Object.keys(fields).join(", ")}.`,
+        error: `A ${kindWord(item)} has no field ${typed}. It has: ${Object.keys(fields).join(", ")}.`,
       };
     const values = (Array.isArray(v) ? v : [v]).map((x) => x.trim()).filter(Boolean);
     if (type === "text") corrections[k] = values.join(", ");

@@ -20,7 +20,27 @@ const R = COPY.runNext;
 
 type Applies = Api.ChangeKnowledgeViewT;
 type Status = "confirmed" | "excluded";
-type Item = { id: string; kind: string; status?: string; why?: string; stages?: string[] };
+type Item = { id: string; kind: string; status?: string; title?: string; stages?: string[] };
+
+/** What a person knows it by (B2): its title, else its id. */
+const nameOf = (i: { id: string; title?: string }) => i.title ?? i.id;
+const kindWord = (k: string) => K.kinds[k] ?? k;
+
+/** The title a person reads, with the id it is set by (the command takes the id) beside it. */
+function Name({ item }: { item: { id: string; kind: string; title?: string } }) {
+  return (
+    <>
+      {item.title ? <span>{item.title}</span> : <code className="mono">{item.id}</code>}{" "}
+      <span className="muted">{kindWord(item.kind)}</span>
+      {item.title && (
+        <>
+          <br />
+          <code className="mono muted">{item.id}</code>
+        </>
+      )}
+    </>
+  );
+}
 
 /** What a write said: under way, done with the commit command, or why it failed. */
 export type Written =
@@ -36,7 +56,7 @@ function Buttons(p: { item: Item; busy: boolean; onSet: (id: string, status: Sta
         type="button"
         className="btn"
         disabled={p.busy || p.item.status === "confirmed"}
-        aria-label={K.confirmItem(p.item.id)}
+        aria-label={K.confirmItem(nameOf(p.item))}
         onClick={() => p.onSet(p.item.id, "confirmed")}
       >
         {K.confirm}
@@ -45,7 +65,7 @@ function Buttons(p: { item: Item; busy: boolean; onSet: (id: string, status: Sta
         type="button"
         className="btn"
         disabled={p.busy || p.item.status === "excluded"}
-        aria-label={K.excludeItem(p.item.id)}
+        aria-label={K.excludeItem(nameOf(p.item))}
         onClick={() => p.onSet(p.item.id, "excluded")}
       >
         {K.exclude}
@@ -54,7 +74,7 @@ function Buttons(p: { item: Item; busy: boolean; onSet: (id: string, status: Sta
   );
 }
 
-function WrittenNote({ w }: { w: Written }) {
+function WrittenNote({ w, named }: { w: Written; named: (id: string) => string }) {
   if (w.state === "idle") return null;
   if (w.state === "working")
     return (
@@ -70,7 +90,9 @@ function WrittenNote({ w }: { w: Written }) {
     );
   return (
     <div role="status" style={{ marginTop: 8 }}>
-      <p className="work-say">{K.set(w.id, K.statuses[w.status]!.toLowerCase(), w.result.file)}</p>
+      <p className="work-say">
+        {K.set(named(w.id), K.statuses[w.status]!.toLowerCase(), w.result.file)}
+      </p>
       <Command text={w.result.commit} label={K.copyCommit} />
     </div>
   );
@@ -84,6 +106,11 @@ export function ChangeKnowledgeView(p: {
   onSet?: (id: string, status: Status) => void;
 }) {
   const w = p.written ?? { state: "idle" };
+  const named = (id: string) => {
+    const d = p.of.state === "ready" ? p.of.data : undefined;
+    const x = [...(d?.items ?? []), ...(d?.nearMisses ?? [])].find((i) => i.id === id);
+    return x ? nameOf(x) : id;
+  };
   const busy = w.state === "working";
   const set = p.onSet ?? (() => undefined);
   return (
@@ -98,7 +125,7 @@ export function ChangeKnowledgeView(p: {
           <div className="state">
             <p style={{ margin: "0 0 8px" }}>{K.none}</p>
             <p className="work-say">{R.terminal}</p>
-            <Command text={K.architectureCommand(p.change)} label={R.copy} />
+            <Command text={K.featureCommand(p.change)} label={R.copy} />
           </div>
         }
       >
@@ -112,16 +139,13 @@ export function ChangeKnowledgeView(p: {
                 cols={[
                   {
                     label: K.item,
-                    cell: (i) => (
-                      <>
-                        <code className="mono">{i.id}</code> <span className="muted">{i.kind}</span>
-                      </>
-                    ),
+                    cell: (i) => <Name item={i} />,
                   },
                   {
                     label: K.why,
+                    // Why in plain words (the API's reason), never the search's own account.
                     cell: (i) =>
-                      [i.why, i.stages.join(", ") || K.noStages].filter(Boolean).join(" · "),
+                      [i.reason, i.stages.join(", ") || K.noStages].filter(Boolean).join(" · "),
                   },
                   {
                     label: K.status,
@@ -149,10 +173,8 @@ export function ChangeKnowledgeView(p: {
                   {v.nearMisses.map((n) => (
                     <li key={n.id} className="row between" style={{ gap: 8, flexWrap: "wrap" }}>
                       <span>
-                        <code className="mono">{n.id}</code>{" "}
-                        <span className="muted">
-                          {n.kind} · {K.nearMissStage(n.stage)}
-                        </span>
+                        <Name item={n} />{" "}
+                        <span className="muted">· {K.nearMissStage(n.stage)}</span>
                       </span>
                       <Buttons item={n} busy={busy} onSet={set} />
                     </li>
@@ -160,7 +182,7 @@ export function ChangeKnowledgeView(p: {
                 </ul>
               </details>
             )}
-            <WrittenNote w={w} />
+            <WrittenNote w={w} named={named} />
           </>
         )}
       </View>
