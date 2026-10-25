@@ -78,6 +78,10 @@ export const WORDS = {
     task
       ? `Starting ${task} of ${change} in Copilot's agent mode, with its context.`
       : `Pick a task of ${change}; it starts in Copilot's agent mode, with its context.`,
+  // ADR 0124 addendum D-cli: the command lists show the twelve first, the rest under Legacy.
+  twelveCommands: "The twelve commands",
+  legacyGroup: (area: string) => `Legacy · ${area}`,
+  otherArea: "Other",
   fullUiChanged: (on: boolean) =>
     on
       ? "Atticus now offers every view and command, and the app every page."

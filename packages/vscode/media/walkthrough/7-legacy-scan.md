@@ -1,10 +1,7 @@
-# Scan the repos
+# Legacy: scan the repos
 
-**Scan every repo** reads the code into the catalog: endpoints, calls, tables, topics and deployments, each with the file and line it was read from.
+`atticus scan` is a legacy command: it still runs by its own name, and `atticus legacy` lists it with the others outside the twelve. **Map the repos** is the way in now.
 
-With Copilot, you can also:
+**Scan every repo** reads the code into the catalog with Atticus's built-in readers: endpoints, calls, tables, topics and deployments, each with the file and line it was read from. It is a cross-check of what map found, never the way to accuracy.
 
-- read a repo, every fact cited and checked (**map**, `@atticus /map <repo>`);
-- check a scan against the code (**verify**).
-
-Questions only a person can answer appear in the **Questions** section; the open needs, manual steps, findings and knowledge to verify are under **Waiting on you** in **Next and Waiting**.
+With the setting `atticus.fullUi`, **Run a command…** lists every legacy command under **Legacy**, after the twelve.
