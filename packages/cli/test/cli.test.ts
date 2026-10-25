@@ -40,7 +40,10 @@ describe("atticus CLI", () => {
   it("prints help and version", async () => {
     const c = capture();
     expect(await main([], c.io)).toBe(0);
-    expect(c.out.join("\n")).toContain("catalog validate");
+    // the twelve commands (ADR 0124 addendum D-cli); every other command is under atticus legacy
+    expect(c.out.join("\n")).toContain("atticus verify");
+    expect(c.out.join("\n")).toContain("atticus legacy");
+    expect(c.out.join("\n")).not.toContain("catalog validate");
     const v = capture();
     expect(await main(["--version"], v.io)).toBe(0);
     expect(v.out[0]).toMatch(/^\d+\.\d+\.\d+/);
