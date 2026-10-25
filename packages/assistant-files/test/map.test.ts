@@ -142,7 +142,7 @@ describe("lean batch prompts: the core and the topic rules a batch needs (ADR 01
     // two added sentences: what `to` is for a relative call (C-join) and an entry's auth goes with
     // authCite (A-read).
     expect(createHash("sha256").update(FACT_RULES).digest("hex")).toBe(
-      "REPIN",
+      "05a8f21d1ad08f21f570cc6014ecf6b75c4b47c0bdfe7875317bcac59f64c387",
     );
     expect(FACT_RULES).toBe(factRulesFor());
     expect(mapCommand().body).toContain(FACT_RULES);
