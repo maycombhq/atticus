@@ -76,9 +76,14 @@ describe("atticus map <repo> --estimate on a big repo (A-big)", () => {
     expect(text).toMatch(/ {2}research\/\*\* \(about \d+ tokens, 12 files\): data, not code/);
     expect(text).toContain(".atticus/org-pack/scan/forge-ledger.yaml");
     expect(text).toMatch(/With them left out: about \d+ tokens \(now \d+\)/);
-    // the block is ready to paste, and the scan settings schema takes it
-    const block = text.slice(text.indexOf("exclude:\n"), text.indexOf("\nWith them left out"));
-    const parsed = ScanSettings.safeParse({ schemaVersion: 1, repo: REPO, ...parse(block) });
+    // with no scan settings yet, the whole file is printed, ready to save as it is: the scan
+    // settings schema takes it with nothing added
+    expect(text).toMatch(/a person saves this as .*scan\/forge-ledger\.yaml in a pull request/);
+    const block = text.slice(
+      text.indexOf("schemaVersion: 1\n"),
+      text.indexOf("\nWith them left out"),
+    );
+    const parsed = ScanSettings.safeParse(parse(block));
     expect(parsed.success).toBe(true);
     expect(parsed.data?.exclude.map((e) => e.path)).toEqual(["research/**"]);
     // a person accepts it in a pull request: Atticus never writes it

@@ -1061,9 +1061,14 @@ async function estimate(
       io.out(
         `  ... and ${proposed.proposals.length - SHOWN_PROPOSALS} more (all in the exclude: block below)`,
       );
+    // No scan settings yet: the whole file, ready to save (the schema needs its version and repo).
+    const fresh = !existsSync(join(root, scan));
     io.out(
-      `To leave them out, a person adds these entries to the exclude: list of ${scan} in a pull request (Atticus never writes it):`,
+      fresh
+        ? `To leave them out, a person saves this as ${scan} in a pull request (Atticus never writes it):`
+        : `To leave them out, a person adds these entries to the exclude: list of ${scan} in a pull request (Atticus never writes it):`,
     );
+    if (fresh) io.out(`schemaVersion: 1\nrepo: ${repo}`);
     io.out(exclusionYaml(proposed.proposals).trimEnd());
     io.out(`With them left out: about ${proposed.after} tokens (now ${proposed.before}).`);
   }
