@@ -3,8 +3,10 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { factsDirOf, factsRelOf, parseFactsLines } from "@maycombhq/core";
 import { dirSource, verifyFacts } from "@maycombhq/verify";
+import type { GitRunner } from "@maycombhq/workspace";
 import type { Output } from "./commands.js";
 import {
+  carryOf,
   checkoutOf,
   excludesOf,
   headOf,
@@ -36,6 +38,8 @@ export interface VerifyCommandOptions {
   write?: boolean;
   json?: boolean;
   now?: () => Date;
+  /** The git runner the diff since the facts' commit is read with (tests mock it). */
+  git?: GitRunner;
 }
 
 /** The JSON objects of a questions file; a line that isn't JSON is a problem. */
@@ -88,10 +92,13 @@ export async function verifyCommand(
   }
   const commit = o.commit ?? (await headOf(dir));
   const source = dirSource(dir);
+  // ADR 0124 addendum A-incremental: facts read at an earlier commit are carried to this one
+  // where every file they cite is unchanged since, and read again where one changed.
+  const { carry, missing } = await carryOf(dir, parsed.facts, commit, o.git);
   const report = await verifyFacts({
     facts: parsed.facts,
     source,
-    ...(commit ? { commit } : {}),
+    ...(commit ? { commit, carry } : {}),
     ...(o.routed ? { routed: o.routed } : {}),
     exclude: await excludesOf(root, repo),
   });
@@ -148,6 +155,19 @@ export async function verifyCommand(
   io.out(
     `${repo}: ${report.accepted.length} facts kept, ${report.rejected.length} rejected; coverage ${pct}% (${report.coverage.read.length} read, ${report.coverage.unknown.length} unknown${report.coverage.excluded.length ? `, ${report.coverage.excluded.length} excluded` : ""}).`,
   );
+  if (report.carried.length)
+    io.out(
+      `${report.carried.length} of them carried to ${commit!.slice(0, 12)} from ${[...new Set(report.carried.map((c) => c.from.slice(0, 12)))].join(", ")}: every file they cite is unchanged since, and their lines were checked again (listed under carried in ${rel}/${repo}.verify.yaml).`,
+    );
+  const changed = report.rejected.filter((r) => r.code === "cite-changed").length;
+  if (changed)
+    io.out(
+      `${changed} cite a file that changed since they were read: read those files again (atticus map ${repo} --estimate lists them), then rewrite or drop each fact.`,
+    );
+  for (const c of missing)
+    io.out(
+      `Facts of commit ${c.slice(0, 12)} can't be compared with ${commit!.slice(0, 12)} (this clone doesn't have it): they are rejected as wrong-commit; read them again.`,
+    );
   for (const r of report.rejected.slice(0, 15)) io.out(`  ${r.code}: ${r.message}`);
   if (report.rejected.length > 15) io.out(`  ... and ${report.rejected.length - 15} more`);
   if (raised)

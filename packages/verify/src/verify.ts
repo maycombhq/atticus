@@ -7,9 +7,12 @@ import {
   quoteMatches,
   quoteNotRequired,
   redactSecrets,
+  staleCite,
   type Cite,
   type Claim,
   type Fact,
+  type FileChange,
+  type StaleCite,
 } from "@maycombhq/core";
 import { globToRegExp } from "@maycombhq/sdk";
 import { pageRouteMatches } from "./pages.js";
@@ -36,7 +39,12 @@ export type RejectCode =
   | "dangling-ref"
   | "ref-rejected"
   /** A flow's call-out step whose ref is missing or names neither a call nor a config fact. */
-  | "call-out-no-call";
+  | "call-out-no-call"
+  /**
+   * A fact of an earlier commit that cites a file edited, renamed or deleted since (ADR 0124
+   * addendum A-incremental): a changed file invalidates what cites it, so it is read again.
+   */
+  | "cite-changed";
 
 export interface Rejected {
   fact: Fact;
@@ -61,13 +69,31 @@ export interface VerifyReport {
   coverage: Coverage;
   /** Quotes stored with a secret value redacted. */
   redacted: number;
+  /**
+   * Facts of an earlier commit carried to `commit` (ADR 0124 addendum A-incremental): every file
+   * they cite is unchanged since `from`, and their lines checked again. Their `commit` in
+   * `accepted` is the one verified; this is the record of where they were read. By id.
+   */
+  carried: { id: string; from: string }[];
 }
+
+/** The files changed since each earlier commit the facts name, keyed by that commit as the facts write it. */
+export type CarryChanges = Readonly<Record<string, readonly FileChange[]>>;
 
 export interface VerifyOptions {
   facts: readonly Fact[];
   source: FileSource;
-  /** The commit being verified; a fact of another commit is refused. Prefixes match. */
+  /**
+   * The commit being verified; a fact of another commit is refused, unless `carry` has the diff
+   * from its commit (then it is carried or read again). Prefixes match.
+   */
   commit?: string;
+  /**
+   * For each earlier commit the facts name, the files changed from it to `commit` (`changesSince`
+   * in @maycombhq/workspace): a fact whose cited files are all unchanged is carried to `commit`,
+   * one citing a changed file is rejected as `cite-changed`.
+   */
+  carry?: CarryChanges;
   /** Files the reader opened through Atticus-routed tools (ADR 0118), repo-relative. */
   routed?: readonly string[];
   /** Accepted exclusion globs: generated code, vendored copies (ADR 0075 scan settings). */
@@ -146,7 +172,28 @@ function claimsOf(f: Fact): Claim[] {
   }
 }
 
-const sameCommit = (a: string, b: string) => a.startsWith(b) || b.startsWith(a);
+/** Same commit when either names the other's prefix (a facts file may keep a short one). */
+export const sameCommit = (a: string, b: string) => a.startsWith(b) || b.startsWith(a);
+
+/** The diff taken from a fact's commit, when there is one. */
+export function changesFor(
+  carry: CarryChanges | undefined,
+  commit: string,
+): readonly FileChange[] | undefined {
+  if (!carry) return undefined;
+  const key = Object.keys(carry).find((k) => sameCommit(k, commit));
+  return key === undefined ? undefined : carry[key];
+}
+
+/** Why a fact must be read again, in the words the reader gets back. */
+export function staleMessage(f: Fact, s: StaleCite, commit: string): string {
+  const how = s.how === "renamed" ? `renamed to ${s.to}` : s.how;
+  const then =
+    s.how === "deleted"
+      ? "drop the fact, or cite where the code says it now"
+      : "rewrite the fact with its line as it is now, or drop it";
+  return `${f.kind} ${f.id} cites ${s.file}, which was ${how} since commit ${f.commit}; read it again at ${commit}, then ${then}`;
+}
 
 function refsOf(f: Fact): { field: string; id: string }[] {
   const out: { field: string; id: string }[] = [];
@@ -167,7 +214,24 @@ function refsOf(f: Fact): { field: string; id: string }[] {
 }
 
 export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
-  const facts = [...o.facts].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  // A fact of an earlier commit whose cited files are all unchanged since is checked as a fact
+  // of this commit (ADR 0124 addendum A-incremental); one citing a changed file is read again.
+  const carriedFrom = new Map<string, string>();
+  const stale = new Map<string, StaleCite>();
+  const facts = [...o.facts]
+    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+    .map((f) => {
+      if (!o.commit || sameCommit(f.commit, o.commit)) return f;
+      const changes = changesFor(o.carry, f.commit);
+      if (!changes) return f;
+      const s = staleCite(f, changes);
+      if (s) {
+        stale.set(f.id, s);
+        return f;
+      }
+      carriedFrom.set(f.id, f.commit);
+      return { ...f, commit: o.commit } as Fact;
+    });
   const linesCache = new Map<string, string[] | undefined>();
   const linesOf = (path: string) => {
     if (!linesCache.has(path)) {
@@ -302,7 +366,9 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
       if (early) {
         const c = checkCite(f.cite, undefined, label)!;
         reject(f, c.code, c.message);
-      } else
+      } else if (stale.has(f.id))
+        reject(f, "cite-changed", staleMessage(f, stale.get(f.id)!, o.commit));
+      else
         reject(
           f,
           "wrong-commit",
@@ -441,10 +507,18 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
 
   return {
     accepted,
-    rejected: [...rejected.values()].sort((a, b) =>
-      a.fact.id < b.fact.id ? -1 : a.fact.id > b.fact.id ? 1 : 0,
-    ),
+    // a rejected fact goes back as it was read, at its own commit, even one that was carried
+    rejected: [...rejected.values()]
+      .map((r) =>
+        carriedFrom.has(r.fact.id)
+          ? { ...r, fact: { ...r.fact, commit: carriedFrom.get(r.fact.id)! } as Fact }
+          : r,
+      )
+      .sort((a, b) => (a.fact.id < b.fact.id ? -1 : a.fact.id > b.fact.id ? 1 : 0)),
     coverage: { read, unknown, excluded: excluded.sort(), ratio },
     redacted,
+    carried: accepted.flatMap((f) =>
+      carriedFrom.has(f.id) ? [{ id: f.id, from: carriedFrom.get(f.id)! }] : [],
+    ),
   };
 }
