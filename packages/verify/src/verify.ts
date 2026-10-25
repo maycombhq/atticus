@@ -1,6 +1,7 @@
 import {
   claimOnLines,
   lineNamesClaim,
+  partsBuildWord,
   partsNamePath,
   isSecretPath,
   NEVER_CHECKED_STEPS,
@@ -17,6 +18,7 @@ import {
 } from "@maycombhq/core";
 import { globToRegExp } from "@maycombhq/sdk";
 import { applyCorrections, type AppliedCorrection, type StaleCorrection } from "./corrections.js";
+import { derivedHolds, derivedNamesAt, type DeriveEnv, type DerivedName } from "./derived.js";
 import { pageRouteMatches } from "./pages.js";
 import { insideRepo, type FileSource } from "./source.js";
 
@@ -24,7 +26,8 @@ import { insideRepo, type FileSource } from "./source.js";
  * The verifier (ADR 0124). It never reads code to find facts; it checks the facts it is given:
  * the file is inside the repo and not a secret, the fact is of the commit being verified, the
  * cited line exists, the claim (the route, topic, table, field, key or resource the fact states)
- * is on that line or one line either side, the quote matches after the model's small rewrites
+ * is on that line or one line either side (or, for a name a framework derives, the line declares
+ * its source: `derived.ts`), the quote matches after the model's small rewrites
  * are forgiven, and every fact a fact names exists and holds. What it proves: every fact rests on
  * a real line that names the thing claimed. What it cannot prove: that the reader understood it.
  */
@@ -291,7 +294,8 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
   const linesCache = new Map<string, string[] | undefined>();
   const linesOf = (path: string) => {
     if (!linesCache.has(path)) {
-      const text = o.source.read(path);
+      // a path a rule builds (`app/models/user.rb`) is read only when it stays in the repo
+      const text = insideRepo(path) && !isSecretPath(path) ? o.source.read(path) : undefined;
       linesCache.set(
         path,
         text === undefined ? undefined : text.replace(/\r\n?/g, "\n").split("\n"),
@@ -299,6 +303,8 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
     }
     return linesCache.get(path);
   };
+  let fileList: string[] | undefined;
+  const deriveEnv: DeriveEnv = { lines: linesOf, files: () => (fileList ??= o.source.list()) };
 
   /** One citation checked against its file: undefined when it holds, else why not. */
   const checkCite = (
@@ -368,6 +374,13 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
         };
       partLines.push(...near(ls, p.line));
     }
+    // Names a framework derives from what the cited line or a part declares (A-derived).
+    let derived: DerivedName[] | undefined;
+    const derivedHere = () =>
+      (derived ??= [
+        { file: cite.file, line: cite.line },
+        ...parts.map((p) => ({ file: p.file, line: p.line })),
+      ].flatMap((at) => derivedNamesAt(at.file, linesOf(at.file) ?? [], at.line, deriveEnv)));
     const holds = (c: Claim) =>
       claimOnLines(lines, cite.line, c) ||
       // a framework that routes by file place (Razor Pages, WebForms, Next.js)
@@ -376,7 +389,15 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
       (parts.length > 0 &&
         (c.kind === "route"
           ? partsNamePath([...near(lines, cite.line), ...partLines], c.value)
-          : partLines.some((l) => lineNamesClaim(l, c))));
+          : partLines.some((l) => lineNamesClaim(l, c)) ||
+            // a word put together from parts (`namespace:task`, a key a helper prefixes)
+            (c.kind === "word" &&
+              partsBuildWord(
+                c.value,
+                parts.map((p) => p.value),
+                near(lines, cite.line),
+              )))) ||
+      derivedHolds(c, derivedHere(), partLines, partsNamePath);
     if (claims && !claims.some(holds))
       return {
         code: "claim-not-on-line",

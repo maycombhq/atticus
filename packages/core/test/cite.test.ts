@@ -218,3 +218,19 @@ describe("secret-looking keys: the key's last part ends in a secret word", () =>
     );
   });
 });
+
+describe("a word put together from cite.with parts (ADR 0124 addendum A-derived)", () => {
+  it("takes each part as a whole piece, the rest written on the cited lines", async () => {
+    const { partsBuildWord } = await import("../src/index.js");
+    const task = ["  task triage_emails: :environment do"];
+    const key = ['  redis.get(key("conferenceCache"))'];
+    expect(partsBuildWord("schedule:triage_emails", ["schedule"], task)).toBe(true);
+    expect(partsBuildWord("forge_conferenceCache", ["forge"], key)).toBe(true);
+    expect(partsBuildWord("${prefix}_conferenceCache", ["${prefix}_"], key)).toBe(true);
+    // a part inside a longer piece, a part the claim doesn't hold, a piece written nowhere
+    expect(partsBuildWord("schedulex:triage_emails", ["schedule"], task)).toBe(false);
+    expect(partsBuildWord("nightly:triage_emails", ["schedule"], task)).toBe(false);
+    expect(partsBuildWord("schedule:triage_all", ["schedule"], task)).toBe(false);
+    expect(partsBuildWord("schedule:triage_emails", [], task)).toBe(false);
+  });
+});
