@@ -237,7 +237,7 @@ describe("atticus upgrade", () => {
       openspecVersion: async () => "1.14.0",
       portFree: async () => true,
     });
-    // The installed CLI reports its own version (2.0.0-rc.1 here), older than 2.1.0.
+    // The installed CLI reports its own version (2.0.0-beta.1 here), older than 2.1.0.
     expect(doctor.find((c) => c.id === "upgrade")).toMatchObject({ status: "fail" });
   });
 });

@@ -4,7 +4,7 @@
 
 Atticus is an open-source framework for teams whose systems span many repositories, gateways, event streams and vendors. It builds on [OpenSpec](https://github.com/Fission-AI/openspec) and works with the assistant you already use: Claude Code, GitHub Copilot (VS Code or IntelliJ), Cursor, or any chat you can paste into.
 
-> **Status: release candidate 2.0.0-rc.1 (Atticus 2, ADR 0124).** The map now comes from the assistant's cited facts, not from Atticus's own parsers. All five parts are built and measured on public repos; several bars are not met yet (below). What is open is in [docs/build-status.md](docs/build-status.md), under "Where Atticus 2 stands".
+> **Status: beta 2.0.0-beta.1 (Atticus 2, ADR 0124).** The map now comes from the assistant's cited facts, not from Atticus's own parsers. All five parts are built and measured on public repos; several bars are not met yet (below). What is open is in [docs/build-status.md](docs/build-status.md), under "Where Atticus 2 stands".
 
 ## The five parts
 

@@ -4,6 +4,12 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+## 2.0.0-beta.1 (2026-10-25)
+
+The first beta of Atticus 2: the assistant reads, Atticus verifies. It was taken through a real trial before release: a 4,900-file Java and React monorepo the bench has never seen was read into 2,277 cited facts and 409 flows (0 rejected), joined from its front end to its API, and one real change was taken through feature, architecture and stories; everything that trial hit is fixed in the sections below. Run for real before this release: the web app on that metarepo (every page, no browser errors), the VS Code extension in VS Code 1.143 (68 checks from source, 29 from the .vsix), the IntelliJ plugin built against IntelliJ IDEA 2025.3.6 (64 tests, the Plugin Verifier, the IDE run with the plugin), and the embeddings plugin's model download through a proxy.
+
+Not yet tried, so expect rough edges: Windows and macOS installs and `pnpm check` on them; the AI steps through Copilot's model in VS Code (`@atticus`), and Copilot in IntelliJ; the app page inside IntelliJ's panel (JCEF); a second real change, and an estate of many repos read with Copilot at tier 2.
+
 ### The model download works behind a proxy
 
 - **`fetch-model.mjs` (the embeddings plugin's fetch step) now downloads through the proxy `HTTPS_PROXY` names.** Node's fetch ignores `HTTPS_PROXY` on its own, so behind a corporate proxy every download failed with a bare "fetch failed". The script runs again with `NODE_USE_ENV_PROXY=1` (Node 22.21 and later honour it), and a failure now names the network error, the proxy (never its credentials) and, on an older Node, that it needs 22.21 or later; `--list` and `--from` remain the way round. Tried for real: the model, onnxruntime and their licences downloaded through a proxy in about ten seconds, every file matching its pin.

@@ -1,6 +1,6 @@
 {
   "name": "@maycombhq/conformance",
-  "version": "2.0.0-rc.1",
+  "version": "2.0.0-beta.1",
   "description": "The conformance suite for the Atticus specification: checks a catalog folder, an org pack, a dialect, a plugin extractor or ingestor, or a step executor against contracts C1-C6; and the generator of the published spec pages.",
   "license": "Apache-2.0",
   "type": "module",
