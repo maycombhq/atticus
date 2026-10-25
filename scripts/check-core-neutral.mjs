@@ -256,14 +256,16 @@ export const ALLOW = [
     reason:
       "the feature stage reads a Figma file export and checks the design against it (plan 4.4, ADR 0087): the reader names the format it reads",
   })),
-  ...["packages/planner/src/stages/loop.ts", "packages/knowledge/src/knowledge-scan.ts"].map(
-    (file) => ({
-      file,
-      names: ["claude"],
-      reason:
-        "the agent lists the runtimes it may use; headless-claude-code is a runtime kind in the C5 contract (ADR 0014)",
-    }),
-  ),
+  ...[
+    "packages/planner/src/stages/loop.ts",
+    "packages/knowledge/src/knowledge-scan.ts",
+    "packages/knowledge/src/knowledge-ask.ts",
+  ].map((file) => ({
+    file,
+    names: ["claude"],
+    reason:
+      "the agent lists the runtimes it may use; headless-claude-code is a runtime kind in the C5 contract (ADR 0014)",
+  })),
   {
     file: "packages/planner/src/stages/finding-kind.ts",
     names: ["teams"],
