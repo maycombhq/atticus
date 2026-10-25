@@ -48,6 +48,36 @@ describe("atticus verify <repo> (ADR 0124)", () => {
     expect(kept).toContain('"verified":"line"');
   });
 
+  it("lists the entries no flow follows in the report and the summary, a note that doesn't fail the run (C-estate)", async () => {
+    const root = adoptedRepo(readFileSync(join(fixtures, "forge-ledger.facts.jsonl"), "utf8"));
+    const o = io();
+    const code = await verifyCommand(root, "forge-ledger", { commit: "0123abc" }, o.io);
+    expect(code).toBe(0);
+    const report = parse(
+      readFileSync(join(root, ".atticus", "facts", "forge-ledger.verify.yaml"), "utf8"),
+    );
+    // e-post-entry starts w-post-entry; the account read and the settlement listener have no flow.
+    expect(report.entriesNoFlowFollows).toEqual([
+      {
+        id: "e-get-account",
+        entryType: "rest",
+        method: "GET",
+        path: "/accounts/{accountId}",
+        cite: "src/main/java/forge/ledger/AccountController.java:18",
+      },
+      {
+        id: "e-settle-listener",
+        entryType: "event-topic",
+        path: "forge.payments.settled",
+        cite: "src/main/java/forge/ledger/SettlementListener.java:14",
+      },
+    ]);
+    const text = o.out.join("\n");
+    expect(text).toMatch(/2 entries no flow follows/);
+    expect(text).toContain("GET /accounts/{accountId}");
+    expect(text).toContain("event-topic forge.payments.settled");
+  });
+
   it("writes the rejected facts with their reasons and exits 1, so the reading loop goes again", async () => {
     const both =
       readFileSync(join(fixtures, "forge-ledger.facts.jsonl"), "utf8") +
