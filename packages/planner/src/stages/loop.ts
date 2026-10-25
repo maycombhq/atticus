@@ -545,7 +545,13 @@ export async function runStageLoop<A>(
     },
     extra: Partial<StageResult<A>> = {},
   ): Promise<StageResult<A>> => {
-    loop.review = { gate: w.gate, round: w.round, ...draft };
+    loop.review = {
+      gate: w.gate,
+      round: w.round,
+      ...draft,
+      // B-place: what the draft's write changed, said again by the run that finishes its review.
+      ...(changed.size ? { changed: [...changed].sort() } : {}),
+    };
     loop.state = "waiting";
     loop.run = w.runId;
     loop.updatedAt = at;
@@ -908,6 +914,7 @@ export async function runStageLoop<A>(
       if (review.draft) run = await o.runtime.result(review.draft).catch(() => undefined);
       answer = await spec.current();
       files = review.files;
+      for (const f of review.changed ?? []) changed.add(f);
       found.push(...review.issues, ...lenses.issues);
       reviewed = review.questions;
     } else {
@@ -920,13 +927,18 @@ export async function runStageLoop<A>(
       if (risks.length)
         loop.handedBack = [...new Set([...(loop.handedBack ?? []), ...risks.map(riskKey)])].sort();
       const back = handBacks(fix, answered, risks);
+      // B-place: a draft going back says where the last one is, so the next starts from it.
+      const last =
+        (fix.length || risks.length) && !personDraft && (await sourceFiles(dir, spec.source)).length
+          ? `${rel}/${spec.source}`
+          : undefined;
       const sources: SourceInput[] = [
         {
           id: "instructions",
           kind: "instruction",
           origin: "atticus",
           text: [
-            instructionsWith(spec.instructions, fix, answered, risks),
+            instructionsWith(spec.instructions, fix, answered, risks, last),
             ...(personDraft
               ? [
                   "",
@@ -1595,7 +1607,7 @@ export const READ_AGAIN_RULE = `Your last answer isn't YAML, so it doesn't count
 
 /** What every stage's drafter is told about checking its own draft (W3a), in Atticus's words. */
 export const SELF_CHECK_RULE =
-  "Check your answer with the stage's own checks before you hand it in: call the check_draft tool with your whole answer if you have it, or follow the finishing step below. Fix every problem it lists, and check again, until it says the draft is clean.";
+  "Check your answer with the stage's own checks before you hand it in, the way this run offers: a check tool given with this prompt, or the command the finishing step below gives. Fix every problem it lists, and check again, until it says the draft is clean.";
 
 /** Where an answer that didn't read is copied when the loop stops on it (S5). */
 export const failedAnswerRel = (spec: Pick<StageSpec<unknown>, "output">) => `stage/${spec.output}`;
@@ -1710,8 +1722,14 @@ function instructionsWith(
   fix: StageIssue[],
   answered: Question[],
   risks: StageIssue[] = [],
+  last?: string,
 ): string {
   const out = [base];
+  if (last)
+    out.push(
+      "",
+      `Your last draft is in ${last}, as Atticus wrote it from your answer. Start from it: keep what the hand-backs don't ask you to change, and answer in full again.`,
+    );
   if (fix.length)
     out.push(
       "",

@@ -200,7 +200,7 @@ export function stepCommands(): CommandDef[] {
       body(
         "Run the stories stage of the change {{ARGS}}. Atticus derives the stories per repo from the target flows, a task per changed step with its fields, evidence and prompt, and the change tasks and service requests the knowledge items call for, each citing its item and step. You word the stories and write each task's acceptance criteria. Atticus checks them and runs the critic on every draft. Loop until the stage is done.",
         [
-          ...handoff("atticus plan stories {{ARGS}}"),
+          ...handoff("atticus stories {{ARGS}}"),
           "If the first command says the design isn't approved yet, or that the change has no target flows, stop and say so: a person approves the architecture first.",
           "Never raise a suggested request yourself: they are in requests.md for a person to raise.",
           "When it says the stage is done, tell the person the pull request command it printed. A person opens and approves that pull request; never open or merge it yourself.",

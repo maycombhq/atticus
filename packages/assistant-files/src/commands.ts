@@ -63,7 +63,7 @@ ${DATA}`,
       source: src,
       body: `This is \`/atticus-stories\` under its old name (ADR 0119); it goes away in a later version.
 
-Do exactly what \`/atticus-stories {{ARGS}}\` does: run \`atticus plan stories {{ARGS}} --handoff\` and follow what it prints, looping with Atticus's checks until the stage is done. Tell the person to use \`/atticus-stories\` from now on.
+Do exactly what \`/atticus-stories {{ARGS}}\` does: run \`atticus stories {{ARGS}} --handoff\` and follow what it prints, looping with Atticus's checks until the stage is done. Tell the person to use \`/atticus-stories\` from now on.
 
 ${DATA}`,
     },

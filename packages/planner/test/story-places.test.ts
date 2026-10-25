@@ -254,12 +254,13 @@ describe("2. an added step goes where the target flow says", () => {
       file: `forge-customers:${SERVICE}`,
       lines: [29],
     });
+    // B-place: the verb, change, and the place.
     expect(taskPrompt("add-birth-date", s, check, [])).toContain(
-      `It goes in at forge-customers:${SERVICE}:29, as the target flow says.`,
+      `Change forge-customers:${SERVICE}:29: the target flow puts the step's code there.`,
     );
   });
 
-  it("at path:function: the file, and the function said in the task", async () => {
+  it("at path:function (an older answer; the check now refuses it): the file, and the function said in the task", async () => {
     const e = await estate();
     const s = storyOf(
       storiesFromDeltas([createApi({ at: `${SERVICE}:create` })], e),
@@ -268,7 +269,7 @@ describe("2. an added step goes where the target flow says", () => {
     const check = s.tasks[0]!;
     expect(check.evidence).toEqual([`forge-customers:${SERVICE}`]);
     expect(taskPrompt("add-birth-date", s, check, [])).toContain(
-      `It goes in at forge-customers:${SERVICE}, in create, as the target flow says.`,
+      `Change forge-customers:${SERVICE}, in create: the target flow puts the step's code there.`,
     );
   });
 
@@ -285,7 +286,7 @@ describe("2. an added step goes where the target flow says", () => {
     );
   });
 
-  it("checks the place: a file of the repo in its checkout or the catalog, a line it has, a function in it", async () => {
+  it("checks the place: a file of the repo in its checkout or the catalog, and a line it has", async () => {
     const e = await estate();
     const root = await mkdtemp(join(tmpdir(), "atticus-places-"));
     const file = async (path: string, lines: string[]) => {
@@ -311,25 +312,28 @@ describe("2. an added step goes where the target flow says", () => {
     ]);
     // In the checkout only: known.
     expect(await rules("src/main/java/forge/customers/BirthDates.java:1", root)).toEqual([]);
-    // A line past the file's end, a function the file doesn't have.
+    // A line past the file's end. B-place: an at with no line (path:function or the path) is
+    // refused, whatever the file has.
     expect(await rules(`${SERVICE}:99`, root)).toEqual(["delta.at-line"]);
-    expect(await rules(`${SERVICE}:create`, root)).toEqual([]);
-    expect(await rules(`${SERVICE}:remove`, root)).toEqual(["delta.at-function"]);
+    expect(await rules(`${SERVICE}:create`, root)).toEqual(["delta.at-no-line"]);
+    expect(await rules(SERVICE, root)).toEqual(["delta.at-no-line"]);
     // A path out of the repo is no place.
     expect(await rules("../forge-ledger/x.java:1", root)).toEqual(["delta.at-unknown"]);
     const [msg] = await placeIssues([createApi({ at: "src/Nowhere.java:3" })], e);
     expect(msg!.message).toBe(
-      "Change 1 to customers-api.create-a-customer puts the new step at src/Nowhere.java:3, but forge-customers has no such file in its checkout or the catalog: give the path as the repo has it (path:line of the line the step goes after, or path:function). Leave at out only for code in a file the change creates.",
+      "Change 1 to customers-api.create-a-customer puts the new step at src/Nowhere.java:3, but forge-customers has no such file in its checkout or the catalog: give the path as the repo has it, path:line of the line the step goes after. For code in a file the change creates, write new: <path> instead.",
     );
   });
 
-  it("old answers without at read as before", async () => {
+  it("old answers without at read as before; the check notes the place isn't given", async () => {
     const e = await estate();
     const before = storiesFromDeltas([createApi()], e);
     expect(before[0]!.tasks[0]!.evidence).toEqual([
       "forge-customers:src/main/java/forge/customers/CustomerController.java:25",
     ]);
-    expect(await placeIssues([createApi()], e)).toEqual([]);
+    expect((await placeIssues([createApi()], e)).map((i) => [i.rule, i.blocking])).toEqual([
+      ["delta.no-place", false],
+    ]);
   });
 });
 

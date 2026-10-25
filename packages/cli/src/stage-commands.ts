@@ -170,7 +170,8 @@ function printStage(
     return 1;
   }
   io.out(
-    `The ${NAMES[r.stage]} stage is done after ${plural(r.iteration, "draft")} (${plural(r.drafts, "draft")} this run): nothing blocking is open and no question is waiting.`,
+    // B-place: a run that resumes the last draft's review, or finds nothing to draft, drafts none.
+    `The ${NAMES[r.stage]} stage is done after ${plural(r.iteration, "draft")} (${r.drafts ? `${plural(r.drafts, "draft")} this run` : "none drafted this run"}): nothing blocking is open and no question is waiting.`,
   );
   // The gate's open gap, in the words change status uses (ADR 0087 addendum).
   if (owner) io.out(owner);

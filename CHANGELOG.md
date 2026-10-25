@@ -4,6 +4,15 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### Where code goes, with the right verb (B-place, ADR 0124 addendum B-place)
+
+- **Three kinds of place for a new step.** A target flow's step now says `at: path:line` (the code there changes), `new: <path>` (a file the change creates, in the folder of its nearest kin) or `uses: path:line` (existing code it only calls, which doesn't change). Before, `at` meant all three, and a step with no place took a neighbour's, so 9 of 15 tasks of a real change named code the new code should only call.
+- **The architecture stage checks them.** An `at` with no line is refused; so is a call-out, publish, lookup or read `at` the code it calls (another flow's call or read on that line, or a method the flow doesn't cite), with "use `uses:`". A `new` file must not exist yet and must sit in a folder the repo has; `uses` must name a file and a line the repo has. A step with no place is a note.
+- **Stories and tasks say the verb**: "change `<file>:<line>`", "new file `<path>` (uses `<file>:<line>`)", or "new code — place not given"; never "beside". A new file's steps are one task. On a fixture mirroring the real change: 4 tasks from 14 steps, none naming a wrong file (8 of 8 wrong before).
+- **A step the existing code already does is a note**, not a task: its `uses` line is an existing flow's step with the same write, read or call ("already done by `<file:line>`").
+- **`atticus task context`** lists only the task's own places under "Files likely to change", and the code it calls under "Code it calls".
+- **Smaller fixes from the same run.** A resumed stage no longer says "nothing changed" when the draft it finishes wrote files. A redraft after a finding or a critic's risk is told where its last draft is. Prompts no longer tell a hand-off to call a `check_draft` tool it doesn't have. A story's "Not judged yet" notes are one line with a count. `atticus init` no longer ignores `.atticus/metarepo.yaml`, the stamp `atticus upgrade` asks you to commit (upgrade step `stamp-committed` fixes an older `.gitignore`). The docs and slash commands say `atticus stories`.
+
 ### What a knowledge scan of a docs folder hit, fixed (K-docs, ADR 0083 addendum K-docs, ADR 0127)
 
 - **`atticus knowledge scan` reads every page.** It used to put every page in one prompt, and the prompt silently dropped what didn't fit (76 of 103 pages) while recording those pages as read. Now it plans batches that fit the knowledge reader's prompt, from its budget or the model's limit, or `--batch-tokens`. A model or headless runtime reads batch after batch in one run. A hand-off hands one batch a run: it names the pages that wait, and after the resume says how many are left and to run the scan again. A page too big for the prompt on its own is named, with what to raise, and is never recorded as read.

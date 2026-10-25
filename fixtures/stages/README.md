@@ -57,9 +57,20 @@ file the stage writes from it, with a build command from a repos manifest the te
 out too fine, as a real change did. `catalog.yaml` and `flows.yaml` are forge-orders, forge-web
 and forge-gateway, with an existing flow (`forge-orders.draft-reply`) whose AssistantClient
 reserves the spend, calls the invented vendor Northwind Models and settles the spend.
-`deltas.yaml` holds a new server flow of twelve steps (one placed with `at`), a web story and a
-gateway route story; `answer.yaml` is the story writer's answer written per step (17 steps, 28
-criteria). The tests build the estate from them in memory.
+`deltas.yaml` holds a new server flow of twelve steps (B-place: in two new files, `new`, the read
+using the existing reader, `uses`), a web story and a gateway route story; `answer.yaml` is the
+story writer's answer written per step (17 steps, 28 criteria). The tests build the estate from
+them in memory.
+
+`stories-places/` is the order story (ADR 0124 addendum B-place), mirroring a re-draft whose
+tasks named the wrong files: a new server flow whose service calls an existing reader, a text
+helper and the model client (two of its steps, reserve and settle the spend, are what the client
+already does), and a new page that uses a shared quote list. `catalog.yaml` and `flows.yaml` are
+forge-orders and forge-web; `code/` holds the files they cite, copied under `workspace/` by the
+tests so the checks read lines. `before.yaml` is the draft as B-tasks read it (`at` on code a
+step only calls, a path:function `at`, most steps with no place); `deltas.yaml` is the same change
+with `at`, `new` and `uses`. Where each step belongs is in the test
+(`packages/planner/test/story-place-verbs.test.ts`).
 
 `stories-bench/` is the stories bench's conversion (B-stories-bench): `stories.yaml`, the stories
 the stage works out for the fraud check from `stories/deltas.yaml`; `expected/forge-fraud-check.yaml`,

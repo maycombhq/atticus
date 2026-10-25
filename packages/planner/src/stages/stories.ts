@@ -88,9 +88,12 @@ import {
   stageRetrievalAi,
   withoutResume,
 } from "./loop.js";
+import { doneAt, type DoneAt } from "./places.js";
 import {
   fieldNames,
   parseAt,
+  parseNewFile,
+  usesOf,
   StageLoop,
   type DeltaStep,
   type FlowDelta,
@@ -141,22 +144,23 @@ export interface DeltaTask {
    */
   files?: TaskFile[];
   /**
-   * An added step: where its evidence comes from (B-places). `given`: the target flow's `at`;
+   * An added step: where its evidence comes from (B-places). `given`: the target flow's `at`, code
+   * that changes; `new` (B-place): a file the change creates (`newFile`), with no evidence;
    * `neighbour`: the step it goes after (the target flow gives no place); `trigger`: the flow's
-   * trigger, for a step added first; `beside` (B-tasks): new code beside the nearest step of its
-   * flow that has a place, or the code it calls (`beside`). Left out for a changed or removed
-   * step, and for a step with no place at all (new code).
+   * trigger, for a step added first. Left out for a changed or removed step, and for a step with
+   * no place at all: new code whose place isn't given. B-place: a step is never placed beside
+   * another's code, which named code it only calls as the file to change.
    */
-  placed?: "given" | "neighbour" | "trigger" | "beside";
-  /** `at` names a function: the step goes in it (B-places). */
+  placed?: "given" | "new" | "neighbour" | "trigger";
+  /** `at` names a function: the step goes in it (B-places; an older answer's `at`). */
   placedIn?: string;
+  /** B-place: the new file the step's code goes in, repo:path (`new` in the target flow). */
+  newFile?: string;
   /**
-   * B-tasks: what a `beside` place is beside. `neighbour`: the nearest step of the same flow with
-   * an `at` (its position), of the same family (the entry's handler: entry, validate, respond; or
-   * the rest); `calls`: the code of the call it makes (the Interface's citation), or of the
-   * existing step it does again.
+   * B-place: existing code the step calls or reuses, repo:path:line (`uses` in the target flow).
+   * It doesn't change: code it calls, never a file to touch.
    */
-  beside?: { by: "neighbour"; step: number } | { by: "calls" };
+  uses?: string[];
   /**
    * B-tasks: an added step that starts a run of steps an existing flow already does, in order:
    * the existing step it calls, and its code. The run's later steps are the task's `done`.
@@ -174,7 +178,9 @@ export interface DeltaTask {
 /**
  * A target-flow step that needs no code (B-tasks): a later step of a run of added steps that an
  * existing flow of the repo does, step by step, already (the same kind on the same call or table,
- * with no field it doesn't carry), so the run's first step calling that code does it.
+ * with no field it doesn't carry), so the run's first step calling that code does it. B-place:
+ * or a step whose `uses` line is an existing flow's step with the same effect, in code another
+ * step of the change calls (`doneAt`).
  */
 export interface DoneStep {
   /** The id it would have had as a task: traceable, and what an answer written per step names. */
@@ -286,11 +292,19 @@ export function storiesFromDeltas(all: FlowDelta[], e: Estate): DeltaStory[] {
       const id = `s${++k}-${slug(d.flow.split(".").slice(1).join("-") || d.flow).slice(0, 40)}`;
       const tasks: DeltaTask[] = [];
       const twins = d.steps.map((s) => twinsOf(d, s, e));
+      // B-place: an added step whose `uses` line already does it, in an existing flow.
+      const dones = d.steps.map((s) => doneAt(d, s, e));
       d.steps.forEach((s, i) => {
         const old = s.step ? today?.steps[s.step - 1] : undefined;
         const at = s.op === "add" ? (s.after ? today?.steps[s.after - 1] : undefined) : old;
         // B-places: an added step goes where the target flow says, else after its neighbour.
+        // B-place: `at` is code that changes, `new` a file the change creates.
         const place = s.op === "add" && s.at ? parseAt(s.at) : undefined;
+        const fresh = s.op === "add" && !place && s.new ? parseNewFile(s.new) : undefined;
+        const uses = usesOf(s).flatMap((u) => {
+          const p = parseAt(u);
+          return p ? [`${d.repo}:${p.path}${p.line ? `:${p.line}` : ""}`] : [];
+        });
         const neighbour = at
           ? ev(d.repo, at.evidence)
           : s.op === "add" && s.after === 0 && today
@@ -298,32 +312,35 @@ export function storiesFromDeltas(all: FlowDelta[], e: Estate): DeltaStory[] {
             : [];
         const evidence = place
           ? [`${d.repo}:${place.path}${place.line ? `:${place.line}` : ""}`]
-          : neighbour;
+          : fresh
+            ? []
+            : neighbour;
         const what = s.what ?? old?.what ?? "";
         const fields = [...new Set([...fieldNames(s.fields), ...(s.store?.columns ?? [])])];
         const n = (counter.get(repo) ?? 0) + 1;
         counter.set(repo, n);
         const verb = s.op === "add" ? "Add" : s.op === "change" ? "Change" : "Remove";
         const data = taskData(s, e);
-        const fallback = evidence.length
-          ? evidence
-          : d.change === "new"
-            ? []
-            : ev(d.repo, today?.trigger.evidence ?? []);
-        // B-tasks: an added step nothing places goes beside its nearest placed neighbour, or the
-        // code it calls.
-        const by = s.op === "add" && !fallback.length ? besideOf(d, i, twins[i]!, e) : undefined;
-        const cited = by ? [by.at] : fallback;
+        // B-place: a step with no place is never given a neighbour's file in a new flow (B-tasks
+        // put it beside one, which named code it only calls); its task says the place isn't given.
+        const cited =
+          evidence.length || fresh
+            ? evidence
+            : d.change === "new"
+              ? []
+              : ev(d.repo, today?.trigger.evidence ?? []);
         const placed: DeltaTask["placed"] =
-          s.op !== "add" || !cited.length
+          s.op !== "add"
             ? undefined
-            : place
-              ? "given"
-              : by
-                ? "beside"
-                : at && neighbour.length
-                  ? "neighbour"
-                  : "trigger";
+            : fresh
+              ? "new"
+              : !cited.length
+                ? undefined
+                : place
+                  ? "given"
+                  : at && neighbour.length
+                    ? "neighbour"
+                    : "trigger";
         const files = taskFiles(d, s, old, entry, cited, e);
         tasks.push({
           id: `${repos.indexOf(repo) + 1}.${n}`,
@@ -351,10 +368,11 @@ export function storiesFromDeltas(all: FlowDelta[], e: Estate): DeltaStory[] {
           ...(files.length ? { files } : {}),
           ...(placed ? { placed } : {}),
           ...(place?.function ? { placedIn: place.function } : {}),
-          ...(by ? { beside: by.beside } : {}),
+          ...(fresh ? { newFile: `${d.repo}:${fresh}` } : {}),
+          ...(uses.length ? { uses } : {}),
         });
       });
-      const grouped = groupTasks(tasks, twins);
+      const grouped = groupTasks(tasks, twins, dones);
       stories.push({
         id,
         repo,
@@ -427,69 +445,76 @@ function twinsOf(d: FlowDelta, s: DeltaStep, e: Estate): Twin[] {
   return out;
 }
 
-/** Entry, validate and respond: the code of the entry's handler, placed apart from the rest. */
-const HANDLER_KINDS = new Set(["entry", "validate", "respond"]);
+/** A done note of a step's own task, done by existing code at `at`, step `step` of `flow`. */
+const doneNote = (t: DeltaTask, by: { flow: string; step: number; at: string }): DoneStep => ({
+  id: t.id,
+  position: t.position,
+  ...(t.kind ? { kind: t.kind } : {}),
+  what: t.what,
+  fields: t.fields,
+  by: by.at,
+  flow: by.flow,
+  step: by.step,
+});
 
-/**
- * Where an added step nothing places goes (B-tasks): beside the nearest step of the same flow
- * that has an `at`, of the same family (a handler step beside a handler step, any other beside
- * any other; the earlier on a tie), else beside the code of the call it makes (the Interface from
- * the flow's component to that entry) or of the existing step that does it already.
- */
-function besideOf(
-  d: FlowDelta,
-  i: number,
-  twins: Twin[],
-  e: Estate,
-): { at: string; beside: NonNullable<DeltaTask["beside"]> } | undefined {
-  const s = d.steps[i]!;
-  const handler = HANDLER_KINDS.has(s.kind ?? "");
-  let best: { j: number; at: string } | undefined;
-  d.steps.forEach((x, j) => {
-    const p = x.op === "add" && x.at ? parseAt(x.at) : undefined;
-    if (j === i || !p || HANDLER_KINDS.has(x.kind ?? "") !== handler) return;
-    if (best && Math.abs(best.j - i) <= Math.abs(j - i)) return;
-    best = { j, at: `${d.repo}:${p.path}${p.line ? `:${p.line}` : ""}` };
-  });
-  if (best) return { at: best.at, beside: { by: "neighbour", step: best.j + 1 } };
-  if (s.to && !s.to.new) {
-    const from = d.flow.split(".")[0];
-    const key = endpointKey(s.to.entry);
-    for (const r of e.records as unknown as (Record<string, unknown> & { kind: string })[]) {
-      if (r.kind !== "Interface" || r.from !== from || r.to !== s.to.component) continue;
-      if (endpointKey(`${String(r.method ?? "")} ${String(r.normalizedPath ?? "")}`) !== key)
-        continue;
-      const at = ev(
-        d.repo,
-        ((r.evidence ?? []) as Cited[]).filter((x) => !x.repo || x.repo === d.repo),
-      );
-      if (at.length) return { at: at[0]!, beside: { by: "calls" } };
-    }
-  }
-  return twins[0] ? { at: twins[0].at, beside: { by: "calls" } } : undefined;
-}
+/** The file of a citation, repo:path. */
+const fileOfCite = (c: string) => evidenceAt(c)[1]!;
 
 /**
  * The tasks a developer takes, from the steps' own tasks (B-tasks), deterministically:
+ * - B-place: a step whose `uses` line is an existing flow's step with the same effect (`doneAt`)
+ *   is done when another step of the change calls that file (its `uses` or `at`): a note under
+ *   that step's task. When none does, the first such step of the file is the task that calls it
+ *   (`reuses`) and the others are its notes;
  * - a run of added steps an existing flow does in the same order (`twinsOf`, each the next step
  *   of the same flow) is wired by its first step, which `reuses` that code; the others are its
  *   task's `done` notes, never tasks;
- * - consecutive steps whose code goes into the same file (an added step's place, a changed or
+ * - B-place: the steps whose code goes in the same new file (`new`) are one task;
+ * - consecutive steps whose code goes into the same file (an added step's `at`, a changed or
  *   removed step's code; steps placed nowhere count as one place) are one task, with all their
  *   criteria; a done step between them doesn't part them;
  * - a step that adds a table or columns is a task of its own, since its migration lands first
  *   (the deploy order); the steps around it in one file stay one task.
  * A task takes the id of its first step, and lists the steps it covers (`covers`).
  */
-function groupTasks(steps: DeltaTask[], twins: Twin[][]): DeltaTask[] {
+function groupTasks(
+  steps: DeltaTask[],
+  twins: Twin[][],
+  dones: (DoneAt | undefined)[] = [],
+): DeltaTask[] {
   const done = new Map<string, DoneStep[]>();
+  const note = (wire: DeltaTask, n: DoneStep) =>
+    done.set(wire.id, [...(done.get(wire.id) ?? []), n]);
   const skip = new Set<number>();
+  // B-place: the steps existing code does, by the file of that code.
+  const matched = new Map<string, number[]>();
+  steps.forEach((_, i) => {
+    const d = dones[i];
+    if (d) matched.set(fileOfCite(d.at), [...(matched.get(fileOfCite(d.at)) ?? []), i]);
+  });
+  const explicit = new Set([...matched.values()].flat());
+  const calls = (t: DeltaTask) =>
+    [...(t.uses ?? []), ...(t.placed === "given" ? t.evidence : [])].map(fileOfCite);
+  for (const [file, idx] of matched) {
+    const caller = steps.findIndex((t, j) => !explicit.has(j) && calls(t).includes(file));
+    const wire = caller >= 0 ? steps[caller]! : steps[idx[0]!]!;
+    if (caller < 0) {
+      const d = dones[idx[0]!]!;
+      wire.reuses = { flow: d.flow, step: d.step, at: d.at };
+    }
+    for (const i of caller >= 0 ? idx : idx.slice(1)) {
+      skip.add(i);
+      note(wire, doneNote(steps[i]!, dones[i]!));
+    }
+  }
   for (let i = 0; i < steps.length; i++) {
+    if (explicit.has(i)) continue;
     let best: { twin: Twin; end: number } | undefined;
     for (const twin of twins[i] ?? []) {
       let end = i;
       while (
         end + 1 < steps.length &&
+        !explicit.has(end + 1) &&
         (twins[end + 1] ?? []).some(
           (x) => x.flow === twin.flow && x.step === twin.step + (end + 1 - i),
         )
@@ -500,25 +525,13 @@ function groupTasks(steps: DeltaTask[], twins: Twin[][]): DeltaTask[] {
     if (!best) continue;
     const wire = steps[i]!;
     wire.reuses = { flow: best.twin.flow, step: best.twin.step, at: best.twin.at };
-    const notes: DoneStep[] = [];
     for (let j = i + 1; j <= best.end; j++) {
-      const t = steps[j]!;
       const twin = twins[j]!.find(
         (x) => x.flow === best.twin.flow && x.step === best.twin.step + j - i,
       )!;
       skip.add(j);
-      notes.push({
-        id: t.id,
-        position: t.position,
-        ...(t.kind ? { kind: t.kind } : {}),
-        what: t.what,
-        fields: t.fields,
-        by: twin.at,
-        flow: twin.flow,
-        step: twin.step,
-      });
+      note(wire, doneNote(steps[j]!, twin));
     }
-    done.set(wire.id, notes);
     i = best.end;
   }
   const home = (t: DeltaTask) => {
@@ -526,6 +539,7 @@ function groupTasks(steps: DeltaTask[], twins: Twin[][]): DeltaTask[] {
     return c ? evidenceAt(c)[1]! : "";
   };
   const groups: DeltaTask[][] = [];
+  const byNew = new Map<string, DeltaTask[]>();
   let open: DeltaTask[] | undefined;
   steps.forEach((t, j) => {
     if (skip.has(j)) return;
@@ -533,15 +547,24 @@ function groupTasks(steps: DeltaTask[], twins: Twin[][]): DeltaTask[] {
       groups.push([t]);
       return;
     }
-    if (open && home(open[0]!) === home(t)) open.push(t);
+    if (t.newFile) {
+      const had = byNew.get(t.newFile);
+      if (had) (open = had).push(t);
+      else {
+        byNew.set(t.newFile, (open = [t]));
+        groups.push(open);
+      }
+      return;
+    }
+    if (open && !open[0]!.newFile && home(open[0]!) === home(t)) open.push(t);
     else groups.push((open = [t]));
   });
-  return groups.map((parts) =>
-    unitOf(
-      parts,
-      parts.flatMap((p) => done.get(p.id) ?? []),
-    ),
-  );
+  return groups.map((parts) => {
+    const notes = parts
+      .flatMap((p) => done.get(p.id) ?? [])
+      .sort((a, b) => a.position - b.position);
+    return unitOf(parts, notes);
+  });
 }
 
 /** One task of the steps it covers: the first step's, with every step's fields, code and files. */
@@ -559,7 +582,7 @@ function unitOf(parts: DeltaTask[], done: DoneStep[]): DeltaTask {
     else files.set(f.file, { ...f, lines: [...f.lines] });
   }
   const base = (() => {
-    const c = lead.op === "add" ? lead.evidence.at(-1) : lead.evidence[0];
+    const c = lead.newFile ?? (lead.op === "add" ? lead.evidence.at(-1) : lead.evidence[0]);
     return c ? baseName(evidenceAt(c)[1]!) : undefined;
   })();
   const more = parts.length - 1;
@@ -568,12 +591,15 @@ function unitOf(parts: DeltaTask[], done: DoneStep[]): DeltaTask {
   const store = first("store");
   const to = first("to");
   const data = first("data");
+  // B-place: the code the task's steps call, each once.
+  const uses = [...new Set(parts.flatMap((p) => p.uses ?? []))];
   return {
     ...lead,
     title: `${lead.title}, and ${more} more step${more === 1 ? "" : "s"}${base ? ` in ${base}` : ""}`,
     what: parts.map((p) => p.what.replace(/[.\s]+$/, "")).join("; "),
     fields: [...new Set(parts.flatMap((p) => p.fields))],
     evidence: [...new Set(parts.flatMap((p) => p.evidence))],
+    ...(uses.length ? { uses } : {}),
     ...(target ? { target } : {}),
     ...(store ? { store } : {}),
     ...(to ? { to } : {}),
@@ -869,8 +895,8 @@ export interface StoryStep {
    * `code`: where a task's flow step is in today's code (the step it changes or removes, or the
    * one an added step goes in after: its evidence); `declares`: a file declaring fields or
    * columns the tasks add or change (`DeltaTask.files`); `migration`: the new migration file a
-   * store step names; `new`: new code, beside a file the facts cite (`beside`, B-tasks) or in
-   * no file the facts know yet.
+   * store step names; `new`: new code, in a new file the target flow names (`newFile`,
+   * B-place) or in no file the target flow gives.
    */
   kind: "code" | "declares" | "migration" | "new";
   repo: string;
@@ -886,8 +912,8 @@ export interface StoryStep {
   tasks: string[];
   /** B-tasks: the target-flow steps whose change goes here, by their own ids (`partsOf`). */
   stepIds: string[];
-  /** B-tasks: new code beside the file and line, not today's code there. */
-  beside?: boolean;
+  /** B-place: a new file the change creates (`file`), not today's code. */
+  newFile?: boolean;
 }
 
 const evidenceAt = (c: string) => /^(.+?)(?::(\d+))?$/.exec(c)!;
@@ -904,8 +930,9 @@ export const declaredWhat = (why: readonly string[]) =>
  * step per file, gathering every task's lines and reasons), then the new migration its store
  * step names. A migration whose name is a file the tasks already touch (a schema file changed in
  * place) is that file's step, not a new file. B-tasks: each task's steps in turn (`partsOf`),
- * each place naming the task; a step placed beside another's code is new code beside that
- * file, one place per file and task. The steps that cite no code at all, a new flow's, are one
+ * each place naming the task. B-place: a step whose code goes in a new file is that file's
+ * place, one per file and task; the code a step only calls (`uses`) is no place. The steps that
+ * give no place, a new flow's, are one
  * step of new code where the first of them is: the facts can't tell their places apart, so none
  * is claimed (the files they declare in are steps as any task's are).
  */
@@ -915,7 +942,7 @@ export function storySteps(s: DeltaStory): StoryStep[] {
   /** Code steps whose place is known, not a neighbour's line (B-run2-fixes 3). */
   const placedAt = new Set<Place>();
   const touched = stepTasks(s).flatMap((t) => [
-    ...(t.placed === "beside" ? [] : t.evidence.map((c) => evidenceAt(c)[1]!)),
+    ...t.evidence.map((c) => evidenceAt(c)[1]!),
     ...(t.files ?? []).map((f) => f.file),
   ]);
   const fresh: { task: string; step: DeltaTask }[] = [];
@@ -929,10 +956,10 @@ export function storySteps(s: DeltaStory): StoryStep[] {
     for (const t of partsOf(unit)) {
       const task = unit.id;
       const cited = t.evidence.map(evidenceAt);
-      if (t.placed === "beside" && cited.length) {
-        const [, file, line] = cited[0]!;
+      if (t.newFile) {
+        const file = t.newFile;
         const had = out.find(
-          (x) => x.kind === "new" && x.beside && x.file === file && x.tasks[0] === task,
+          (x) => x.kind === "new" && x.newFile && x.file === file && x.tasks[0] === task,
         );
         if (had) {
           had.what = `${had.what}; ${short(t)}`;
@@ -941,12 +968,12 @@ export function storySteps(s: DeltaStory): StoryStep[] {
           out.push({
             kind: "new",
             repo: t.repo,
-            file: file!,
-            lines: line ? [Number(line)] : [],
-            what: `new code beside this code: ${short(t)}`,
+            file,
+            lines: [],
+            what: `a new file: ${short(t)}`,
             tasks: [task],
             stepIds: [t.id],
-            beside: true,
+            newFile: true,
           });
       } else if (cited.length) {
         // The file of the line the bench cites: the last an added step follows, else the first.
@@ -2519,18 +2546,17 @@ export interface TaskPromptExtras {
 }
 
 /**
- * Where an added step goes, in words (B-places): the target flow's place, or, when it gives
- * none, the code of the step it goes after (or of the trigger), which is all the map knows; or
- * (B-tasks) new code beside the nearest step of its flow that has a place, or the code it calls.
+ * Where an added step goes, in words (B-places, B-place): the verb and the place. `Change` the
+ * code at the target flow's `at`; a `new file` the target flow names; or, when it gives none, the
+ * code of the step it goes after (or of the trigger), which is all the map knows. A step of a new
+ * flow with no place says nothing here: its task says the code is new.
  */
 export function placeWords(t: DeltaTask): string | undefined {
+  if (t.placed === "new" && t.newFile)
+    return `New file ${t.newFile}: the target flow puts the step's code there, in the repo's own layout.`;
   if (!t.placed || !t.evidence.length) return undefined;
   if (t.placed === "given")
-    return `It goes in at ${t.evidence[0]}${t.placedIn ? `, in ${t.placedIn}` : ""}, as the target flow says.`;
-  if (t.placed === "beside")
-    return t.beside?.by === "neighbour"
-      ? `New code beside ${t.evidence[0]}: the target flow doesn't say where it goes, and step ${t.beside.step} is the nearest step of the flow it places.`
-      : `New code beside ${t.evidence[0]}: the target flow doesn't say where it goes, and that is the code it calls.`;
+    return `Change ${t.evidence[0]}${t.placedIn ? `, in ${t.placedIn}` : ""}: the target flow puts the step's code there.`;
   const at = t.evidence.join(", ");
   const one = t.evidence.length === 1;
   return t.placed === "neighbour"
@@ -2545,6 +2571,19 @@ const stepWords = (t: DeltaTask) =>
 /** The steps a task notes as done, in one sentence (B-tasks). */
 const doneWords = (done: DoneStep[]) =>
   `Already done by existing code, so no change: ${done.map((d) => `item ${d.position} (${d.what.replace(/[.\s]+$/, "")}) at ${d.by}, step ${d.step} of ${d.flow}`).join("; ")}.`;
+
+/**
+ * The existing code a task's steps call (B-place `uses`), in one sentence: it doesn't change.
+ */
+function usesWords(t: DeltaTask): string | undefined {
+  const parts = partsOf(t).filter((p) => p.uses?.length);
+  if (!parts.length) return undefined;
+  const one = partsOf(t).length === 1;
+  const list = one
+    ? parts[0]!.uses!.join(", ")
+    : parts.map((p) => `${p.uses!.join(", ")} (item ${p.position})`).join(", ");
+  return `It calls existing code, which doesn't change: ${list}. Read it first.`;
+}
 
 /** The existing code an added step calls (B-tasks), in one sentence. */
 const reusesWords = (t: DeltaTask) =>
@@ -2580,6 +2619,7 @@ export function taskPrompt(
     ...(t.fields.length ? [`Fields: ${t.fields.join(", ")}.`] : []),
     ...(x.contract ?? []).map(sentence),
     ...new Set(parts.flatMap((p) => (placeWords(p) ? [placeWords(p)!] : []))),
+    ...(usesWords(t) ? [usesWords(t)!] : []),
     ...(t.evidence.length
       ? [`Today's code is at ${t.evidence.join(", ")}; read it first.`]
       : ["This is new code; follow the repo's patterns for its neighbours."]),
@@ -2791,12 +2831,6 @@ function flowSummary(s: DeltaStory): string[] {
   ];
 }
 
-/** A criterion's first words, to name it where its whole text would repeat it. */
-const firstWords = (text: string) => {
-  const w = text.trim().split(/\s+/);
-  return w.length > 8 ? `${w.slice(0, 8).join(" ")}…` : text.trim();
-};
-
 /** "the 3 under Task 1.1 above, and 1 written on task 1.3 that also accepts it" (B-tasks). */
 function criteriaWhere(s: DeltaStory, w: StoryWords, t: DeltaTask): string {
   const accepting = acceptingCriteria(w, t.id);
@@ -2821,14 +2855,21 @@ function whereLines(t: DeltaTask): string[] {
   const parts = partsOf(t);
   const lines = new Map<string, number[]>();
   for (const p of parts) {
-    if (!p.placed || !p.evidence.length) continue;
+    // B-place: the verb and the place, with the code it calls; never "beside" another's code.
+    const uses = p.uses?.length ? ` (uses ${p.uses.join(", ")})` : "";
     const line =
-      p.placed === "given"
-        ? `${p.evidence[0]}${p.placedIn ? `, in ${p.placedIn}` : ""} (from the target flow)`
-        : p.placed === "beside"
-          ? `new code beside ${p.evidence[0]} (${p.beside?.by === "neighbour" ? `step ${p.beside.step}, the nearest placed step` : "the code it calls"})`
-          : `not said by the target flow; after ${p.placed === "neighbour" ? "the step before it" : "the flow's trigger"} (${p.evidence.join(", ")}), where it fits`;
-    lines.set(line, [...(lines.get(line) ?? []), p.position]);
+      p.placed === "new" && p.newFile
+        ? `new file ${p.newFile}${uses}`
+        : p.placed === "given" && p.evidence.length
+          ? `change ${p.evidence[0]}${p.placedIn ? `, in ${p.placedIn}` : ""}${uses}`
+          : p.placed && p.evidence.length
+            ? `not said by the target flow; after ${p.placed === "neighbour" ? "the step before it" : "the flow's trigger"} (${p.evidence.join(", ")}), where it fits${uses}`
+            : p.op === "add"
+              ? `new code — place not given${uses}`
+              : uses && p.evidence.length
+                ? `change ${p.evidence[0]}${uses}`
+                : undefined;
+    if (line) lines.set(line, [...(lines.get(line) ?? []), p.position]);
   }
   return [...lines].map(
     ([line, items]) =>
@@ -2836,25 +2877,27 @@ function whereLines(t: DeltaTask): string[] {
   );
 }
 
-/** The files a task touches: its steps' code, where its fields are declared, its new migrations. */
+/**
+ * The files a task touches: its steps' code, its new files (B-place), where its fields are
+ * declared, its new migrations. Never the code it only calls (`uses`): that is said apart.
+ */
 function filesLine(t: DeltaTask): string {
-  const byFile = new Map<string, { lines: string[]; beside: boolean }>();
-  for (const p of partsOf(t))
+  const byFile = new Map<string, { lines: string[]; fresh: boolean }>();
+  for (const p of partsOf(t)) {
+    if (p.newFile && !byFile.has(p.newFile)) byFile.set(p.newFile, { lines: [], fresh: true });
     for (const c of p.evidence) {
       const m = evidenceAt(c);
-      const f = byFile.get(m[1]!) ?? { lines: [], beside: true };
+      const f = byFile.get(m[1]!) ?? { lines: [], fresh: false };
       if (m[2] && !f.lines.includes(m[2])) f.lines.push(m[2]);
-      if (p.placed !== "beside") f.beside = false;
       byFile.set(m[1]!, f);
     }
+  }
   // B-fixes: then where the fields and columns it adds or changes are declared (the facts' files).
-  for (const f of t.files ?? []) byFile.set(f.file, { lines: f.lines.map(String), beside: false });
+  for (const f of t.files ?? []) byFile.set(f.file, { lines: f.lines.map(String), fresh: false });
   const lines = (ls: string[]) => `line${ls.length === 1 ? "" : "s"} ${andList(ls)}`;
   return [
     ...[...byFile].map(([f, x]) =>
-      x.beside
-        ? `${f} (new code beside ${lines(x.lines)})`
-        : `${f}${x.lines.length ? ` (${lines(x.lines)})` : ""}`,
+      x.fresh ? `${f} (new file)` : `${f}${x.lines.length ? ` (${lines(x.lines)})` : ""}`,
     ),
     ...partsOf(t).flatMap((p) =>
       p.data?.migrationFile ? [`${p.repo}:${p.data.migrationFile} (new migration)`] : [],
@@ -2920,12 +2963,12 @@ export function renderStoryFile(
       "",
       ...steps.map((p) => {
         const ls = `line${p.lines.length === 1 ? "" : "s"} ${andList(p.lines.map(String))}`;
-        const at = p.beside
-          ? `New code beside ${p.file}${p.lines.length ? ` (${ls})` : ""}`
+        const at = p.newFile
+          ? `New file ${p.file}`
           : p.file
             ? `${p.file}${p.kind === "migration" ? " (new)" : p.lines.length ? ` (${ls})` : ""}`
-            : "New code the map places in no file yet";
-        const what = p.beside ? p.what.replace(/^new code beside this code: /, "") : p.what;
+            : "New code the target flow places in no file yet";
+        const what = p.newFile ? p.what.replace(/^a new file: /, "") : p.what;
         return `${p.n}. ${at}, task${p.tasks.length === 1 ? "" : "s"} ${andList(p.tasks)}: ${sentence(what)}`;
       }),
       "",
@@ -2957,6 +3000,28 @@ export function renderStoryFile(
           ...(details ? [`  ${details.replace(/^ \((.*)\)$/, "$1")}.`] : []),
         ];
       }),
+      "",
+    );
+  }
+  // B-place: the criteria no one has judged yet, one line for the story (not a bullet: the
+  // readers of the list take bullets), with the count and the fields by task.
+  const notJudged = s.tasks.flatMap((t) =>
+    acceptingCriteria(w, t.id)
+      .filter(({ owner }) => owner === t.id)
+      .flatMap(({ c: y }) =>
+        unjudged.filter((u) => u.task === t.id && u.criterion === y.text).map((u) => u),
+      ),
+  );
+  if (notJudged.length) {
+    const byTask = new Map<string, string[]>();
+    for (const u of notJudged) {
+      const fs = byTask.get(u.task) ?? [];
+      if (!fs.includes(u.field)) fs.push(u.field);
+      byTask.set(u.task, fs);
+    }
+    const n = notJudged.length;
+    lines.push(
+      `Not judged yet: ${n === 1 ? "1 criterion says it checks a field" : `${n} criteria say they check a field`} without naming it (${[...byTask].map(([id, fs]) => `task ${id}: ${fs.join(", ")}`).join("; ")}). The story lens and the reviewer confirm ${n === 1 ? "it does" : "they do"} (judgments/covers-field/ keeps a verdict).`,
       "",
     );
   }
@@ -3106,15 +3171,9 @@ export function renderStoryFile(
           : [],
       ),
       `- Files to touch: ${files || "new code; follow the repo's patterns for its neighbours"}`,
+      // B-place: the code its steps only call, apart from the files it touches.
+      ...(t.uses?.length ? [`- Code it calls (unchanged): ${t.uses.join(", ")}`] : []),
       `- Acceptance criteria: ${criteriaWhere(s, w, t)}`,
-      ...accepting.flatMap(({ c: y, owner }) =>
-        unjudged
-          .filter((u) => u.task === owner && u.criterion === y.text)
-          .map(
-            (u) =>
-              `- Not judged yet: "${firstWords(y.text)}" says it checks ${u.field} without naming it. The story lens and the reviewer confirm it does (judgments/covers-field/ keeps a verdict).`,
-          ),
-      ),
       ...(tw?.tests?.length
         ? ["- Tests to add:", ...tw.tests.map((y) => `  - ${sentence(y)}`)]
         : [
@@ -3484,7 +3543,7 @@ export async function storiesStage(
         `story ${s.id}: ${s.change} flow ${s.flow} "${s.name}" in repo ${s.repo}`,
         ...s.tasks.map(
           (t) =>
-            `  task ${t.id}: ${t.title}; fields ${t.fields.join(", ") || "none"}; evidence ${t.evidence.join(", ") || "new code"}${t.target ? `; goes to ${t.target}` : ""}${t.store ? `; store ${t.store}` : ""}${t.covers ? `; covers steps ${andList(t.covers.map((p) => String(p.position)))} of the target flow (${t.covers.map((p) => `${p.position}: ${p.op} ${p.kind ?? "step"}, ${p.what.replace(/[.\s]+$/, "")}`).join("; ")})` : ""}${t.done?.length ? `; already done by existing code, no criteria needed: ${t.done.map((d) => `step ${d.position} (${d.what.replace(/[.\s]+$/, "")}) at ${d.by}`).join("; ")}` : ""}`,
+            `  task ${t.id}: ${t.title}; fields ${t.fields.join(", ") || "none"}; evidence ${t.evidence.join(", ") || "new code"}${t.newFile ? `; new file ${t.newFile}` : ""}${t.uses?.length ? `; calls ${t.uses.join(", ")} (unchanged)` : ""}${t.target ? `; goes to ${t.target}` : ""}${t.store ? `; store ${t.store}` : ""}${t.covers ? `; covers steps ${andList(t.covers.map((p) => String(p.position)))} of the target flow (${t.covers.map((p) => `${p.position}: ${p.op} ${p.kind ?? "step"}, ${p.what.replace(/[.\s]+$/, "")}`).join("; ")})` : ""}${t.done?.length ? `; already done by existing code, no criteria needed: ${t.done.map((d) => `step ${d.position} (${d.what.replace(/[.\s]+$/, "")}) at ${d.by}`).join("; ")}` : ""}`,
         ),
       ].join("\n"),
     )

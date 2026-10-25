@@ -1,0 +1,85 @@
+# The order story's target flows as a drafter wrote them under B-tasks (ADR 0124 addendum B-place),
+# in the shape of a real re-draft whose tasks named the wrong files: `at` names the code a step
+# only calls (the event reader, the shared text helper, the model client, the shared quote list),
+# an `at` is written as path:function, and most steps give no place, so B-tasks put them beside
+# a neighbour's. The reserve and settle steps are what AssistantClient.complete already does.
+# Invented.
+flows:
+  - flow: forge-orders.order-story
+    repo: forge-orders
+    change: new
+    name: A shop owner reads an order's story
+    trigger: { kind: endpoint, what: The story page asks for the order's story, entry: "GET /orders/{orderId}/story" }
+    why: The story page tells an order's history in plain sentences, each citing its event.
+    steps:
+      - op: add
+        kind: entry
+        what: OrderStoryController.story receives the order id
+        at: src/main/java/forge/orders/OrderController.java:get
+        fields: { reads: [orderId] }
+      - op: add
+        kind: validate
+        what: The caller may read the order
+        fields: { checks: [orderId] }
+      - op: add
+        kind: read
+        what: The order's events are read, oldest first
+        at: src/main/java/forge/orders/OrderEventReader.java:18
+        store: { table: forge-orders-db.order_events, columns: [order_id, kind, at] }
+      - op: add
+        kind: transform
+        what: The events' notes are put in plain words
+        at: src/main/java/forge/orders/text/Plain.java:9
+        fields: { from: [kind], to: [note] }
+      - op: add
+        kind: transform
+        what: Events about a refund are kept apart from the story
+        fields: { from: [kind], to: [refunds] }
+      - op: add
+        kind: write
+        what: The spend is reserved before the call
+        store: { table: forge-orders-db.ai_spend, columns: [request_id, reserved_cents] }
+      - op: add
+        kind: call-out
+        what: Northwind Models writes the story
+        at: src/main/java/forge/orders/ai/AssistantClient.java:27
+        to: { component: northwind-models, entry: POST /v1/completions }
+        fields: { sends: [prompt, maxWords], returns: [text, citations] }
+      - op: add
+        kind: write
+        what: The spend is settled with what the call cost
+        store: { table: forge-orders-db.ai_spend, columns: [request_id, spent_cents] }
+      - op: add
+        kind: transform
+        what: The story is split into sentences, each citing its event
+        fields: { from: [text, citations], to: [sentences] }
+      - op: add
+        kind: respond
+        what: 200 with the sentences
+        fields: { returns: [sentences] }
+  - flow: forge-web.order-story-page
+    repo: forge-web
+    change: new
+    name: A shop owner reads an order's story
+    trigger: { kind: page, what: "The shop owner opens /orders/{orderId}/story" }
+    why: A page of its own for the story, each sentence quoting its event.
+    steps:
+      - op: add
+        kind: entry
+        what: OrderStoryPage reads the order id from the route
+        fields: { reads: [orderId] }
+      - op: add
+        kind: call-out
+        what: The page gets the order's story
+        at: src/api/orders.ts:15
+        to: { component: forge-orders, entry: "GET /orders/{orderId}/story", new: true }
+        fields: { sends: [orderId], returns: [sentences] }
+      - op: add
+        kind: branch
+        what: While the story loads, or when it fails, the page says so
+        fields: { reads: [sentences] }
+      - op: add
+        kind: respond
+        what: The page lists the sentences, each quoting its event
+        at: src/shared/QuoteList.tsx:7
+        fields: { returns: [sentences] }

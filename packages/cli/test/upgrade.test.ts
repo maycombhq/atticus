@@ -56,6 +56,18 @@ const io = () => {
 };
 
 describe("atticus upgrade", () => {
+  it("lets the stamp it asks a person to commit be committed: init's whole-folder ignore becomes all but it (B-place)", async () => {
+    const root = await oldMetarepo();
+    await writeFile(join(root, ".gitignore"), "/workspace/\n/.index/\n/.runs/\n/.atticus/\n");
+    const c = await upgradeCheck(root, "1.0.0");
+    expect(c.pending.find((p) => p.id === "stamp-committed")?.files).toEqual([".gitignore"]);
+    expect(await upgradeCommand(root, {}, io().io, "1.0.0")).toBe(0);
+    expect(await readFile(join(root, ".gitignore"), "utf8")).toBe(
+      "/workspace/\n/.index/\n/.runs/\n/.atticus/*\n!/.atticus/metarepo.yaml\n",
+    );
+    expect((await upgradeCheck(root, "1.0.0")).pending).toEqual([]);
+  });
+
   it("lists what an older metarepo needs, and --check exits 1 until it is done", async () => {
     const root = await oldMetarepo();
     const c = await upgradeCheck(root, "1.0.0");
@@ -118,6 +130,7 @@ describe("atticus upgrade", () => {
       "starter-review",
       "catalog-schema-v3",
       "sources-v2",
+      "stamp-committed",
     ]);
     // sources.yaml at version 2, its wiki as it was: every page still read.
     const sources = await readFile(join(root, "org-pack/sources.yaml"), "utf8");

@@ -1,7 +1,11 @@
 import { cp, mkdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { parse, stringify } from "yaml";
-import { CHECKLISTS_README, STARTER_CHECKLISTS_README } from "@maycombhq/adopt";
+import {
+  ATTICUS_FOLDER_IGNORE,
+  CHECKLISTS_README,
+  STARTER_CHECKLISTS_README,
+} from "@maycombhq/adopt";
 import { readPackFiles, STARTER_REVIEW_PATH, starterReviewText } from "@maycombhq/naysayer";
 import { metarepoOrigin } from "@maycombhq/changes";
 import {
@@ -184,7 +188,34 @@ export const MIGRATIONS: Migration[] = [
       return [rel];
     },
   },
+  {
+    // ADR 0124 addendum B-place: `atticus init` ignored the whole of .atticus/, so the stamp this
+    // command asks a person to commit (ADR 0051) was never committed.
+    id: "stamp-committed",
+    summary:
+      "The stamp .atticus/metarepo.yaml committed, the rest of .atticus/ kept out of Git (metarepo .gitignore, ADR 0051)",
+    async pending(root) {
+      if (isAdopted(root)) return [];
+      const text = await readFile(join(root, ".gitignore"), "utf8").catch(() => "");
+      return stampIgnored(text) ? [".gitignore"] : [];
+    },
+    async apply(root) {
+      if (isAdopted(root)) return [];
+      const text = await readFile(join(root, ".gitignore"), "utf8").catch(() => "");
+      if (!stampIgnored(text)) return [];
+      await writeFileAtomic(
+        join(root, ".gitignore"),
+        text.replace(WHOLE_FOLDER, ATTICUS_FOLDER_IGNORE.join("\n")),
+      );
+      return [".gitignore"];
+    },
+  },
 ];
+
+/** A .gitignore line that ignores the whole of .atticus/, the stamp with it. */
+const WHOLE_FOLDER = /^\/?\.atticus\/?[ \t]*$/m;
+const stampIgnored = (text: string) =>
+  WHOLE_FOLDER.test(text) && !/^!\/?\.atticus\/metarepo\.yaml\s*$/m.test(text);
 
 /**
  * A step that rewrites the catalog's record files (generated and curated) at some older schema

@@ -1,0 +1,97 @@
+# The order story's target flows with the three places (ADR 0124 addendum B-place): `new` for the
+# controller, service and page the change creates, in the folder of their nearest kin; `uses` for
+# the existing code a step only calls (the event reader, the text helper, the model client, the
+# shared quote list), which doesn't change; `at` path:line only where existing code changes (a
+# function added to the web's orders client). The reserve and settle steps use the lines of
+# AssistantClient.complete that already do them. Invented.
+flows:
+  - flow: forge-orders.order-story
+    repo: forge-orders
+    change: new
+    name: A shop owner reads an order's story
+    trigger: { kind: endpoint, what: The story page asks for the order's story, entry: "GET /orders/{orderId}/story" }
+    why: The story page tells an order's history in plain sentences, each citing its event.
+    steps:
+      - op: add
+        kind: entry
+        what: OrderStoryController.story receives the order id
+        new: src/main/java/forge/orders/OrderStoryController.java
+        fields: { reads: [orderId] }
+      - op: add
+        kind: validate
+        what: The caller may read the order
+        new: src/main/java/forge/orders/OrderStoryController.java
+        fields: { checks: [orderId] }
+      - op: add
+        kind: read
+        what: The order's events are read, oldest first
+        new: src/main/java/forge/orders/OrderStoryService.java
+        uses: src/main/java/forge/orders/OrderEventReader.java:18
+        store: { table: forge-orders-db.order_events, columns: [order_id, kind, at] }
+      - op: add
+        kind: transform
+        what: The events' notes are put in plain words
+        new: src/main/java/forge/orders/OrderStoryService.java
+        uses: src/main/java/forge/orders/text/Plain.java:9
+        fields: { from: [kind], to: [note] }
+      - op: add
+        kind: transform
+        what: Events about a refund are kept apart from the story
+        new: src/main/java/forge/orders/OrderStoryService.java
+        fields: { from: [kind], to: [refunds] }
+      - op: add
+        kind: write
+        what: The spend is reserved before the call
+        uses: src/main/java/forge/orders/ai/AssistantClient.java:30
+        store: { table: forge-orders-db.ai_spend, columns: [request_id, reserved_cents] }
+      - op: add
+        kind: call-out
+        what: Northwind Models writes the story
+        new: src/main/java/forge/orders/OrderStoryService.java
+        uses: src/main/java/forge/orders/ai/AssistantClient.java:27
+        to: { component: northwind-models, entry: POST /v1/completions }
+        fields: { sends: [prompt, maxWords], returns: [text, citations] }
+      - op: add
+        kind: write
+        what: The spend is settled with what the call cost
+        uses: src/main/java/forge/orders/ai/AssistantClient.java:45
+        store: { table: forge-orders-db.ai_spend, columns: [request_id, spent_cents] }
+      - op: add
+        kind: transform
+        what: The story is split into sentences, each citing its event
+        new: src/main/java/forge/orders/OrderStoryService.java
+        fields: { from: [text, citations], to: [sentences] }
+      - op: add
+        kind: respond
+        what: 200 with the sentences
+        new: src/main/java/forge/orders/OrderStoryController.java
+        fields: { returns: [sentences] }
+  - flow: forge-web.order-story-page
+    repo: forge-web
+    change: new
+    name: A shop owner reads an order's story
+    trigger: { kind: page, what: "The shop owner opens /orders/{orderId}/story" }
+    why: A page of its own for the story, each sentence quoting its event.
+    steps:
+      - op: add
+        kind: entry
+        what: OrderStoryPage reads the order id from the route
+        new: src/orders/OrderStoryPage.tsx
+        fields: { reads: [orderId] }
+      - op: add
+        kind: call-out
+        what: The page gets the order's story
+        at: src/api/orders.ts:15
+        to: { component: forge-orders, entry: "GET /orders/{orderId}/story", new: true }
+        fields: { sends: [orderId], returns: [sentences] }
+      - op: add
+        kind: branch
+        what: While the story loads, or when it fails, the page says so
+        new: src/orders/OrderStoryPage.tsx
+        fields: { reads: [sentences] }
+      - op: add
+        kind: respond
+        what: The page lists the sentences, each quoting its event
+        new: src/orders/OrderStoryPage.tsx
+        uses: src/shared/QuoteList.tsx:7
+        fields: { returns: [sentences] }

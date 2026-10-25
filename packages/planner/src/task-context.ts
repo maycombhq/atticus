@@ -93,8 +93,13 @@ export interface TaskContext {
   knowledge: { id: string; kind: string; line: string; verified: boolean }[];
   /** Files attached to the change (ADR 0113), metarepo-relative. */
   inputs: { path: string; name: string; kind: string }[];
-  /** The files likely to change, repo:path, ranked. */
+  /**
+   * The files likely to change, repo:path: the task's own places (B-place), never the flow's
+   * other steps' files.
+   */
   files: { path: string; line?: number; why: string }[];
+  /** B-place: existing code the task's steps call, repo:path and line; it doesn't change. */
+  uses: { path: string; line?: number; why: string }[];
   /** The task's prompt for Copilot or Claude Code, as the story file carries it. */
   prompt: string;
   notes: string[];
@@ -292,8 +297,10 @@ export async function taskContext(
       });
     });
 
-  // The files likely to change: the steps' own citations, the steps they go after, the flow's
-  // other files in the same repo, then its trigger; a migration a step names is a new file.
+  // The files likely to change (B-place): the task's own places only. Today's code a changed or
+  // removed step changes, an added step's `at`, the step an unplaced added step goes after, its
+  // new file, where its fields and columns are declared, and a migration it names. Not the
+  // flow's other steps: the code the task only calls is listed apart (`uses`).
   const files: TaskContext["files"] = [];
   const add = (c: string, why: string) => {
     const m = /^(.+?)(?::(\d+))?$/.exec(c)!;
@@ -302,7 +309,12 @@ export async function taskContext(
   };
   for (const x of parts) {
     const t = todayOf(x);
-    if (t)
+    if (x.p.op === "add" && x.p.placed === "given")
+      for (const c of x.p.evidence)
+        add(c, `step ${x.p.position}'s code goes in here, after this line (the target flow's at)`);
+    else if (x.p.op === "add" && x.p.newFile)
+      add(x.p.newFile, `the new file step ${x.p.position}'s code goes in (new)`);
+    else if (t)
       for (const c of t.cites)
         add(
           c,
@@ -310,22 +322,6 @@ export async function taskContext(
             ? `today's ${t.kind} step (step ${t.number}), which this task ${x.s?.op === "remove" ? "removes" : "changes"}`
             : `today's ${t.kind} step (step ${t.number}), which the new step follows`,
         );
-    // B-tasks: an added step nothing places goes beside its nearest placed neighbour.
-    if (x.p.placed === "beside")
-      for (const c of x.p.evidence)
-        add(
-          c,
-          `new code for step ${x.p.position} goes beside it${x.p.beside?.by === "neighbour" ? ` (step ${x.p.beside.step}, the nearest placed step)` : " (the code it calls)"}`,
-        );
-    if (x.p.reuses)
-      add(
-        x.p.reuses.at,
-        `the existing code step ${x.p.position} calls (step ${x.p.reuses.step} of ${x.p.reuses.flow})`,
-      );
-  }
-  if (today && dt?.repo === today.repo) {
-    for (const s of todaySteps) for (const c of s.cites) add(c, `step ${s.n} of the same flow`);
-    for (const c of cite(today.repo, today.flow.trigger.evidence)) add(c, "the flow's trigger");
   }
   // B-fixes: where the fields and columns the task adds or changes are declared.
   for (const f of dt?.files ?? []) add(f.lines.length ? `${f.file}:${f.lines[0]}` : f.file, f.why);
@@ -334,6 +330,22 @@ export async function taskContext(
       const path = migrationPath(x.s.store.migration, x.s.store.table, estate);
       files.push({ path: `${line.repo}:${path}`, why: "the migration the step names (new)" });
     }
+  // B-place: the code the task's steps call, which doesn't change: what they use, and the
+  // existing code that wires a run of steps already done.
+  const uses: TaskContext["uses"] = [];
+  const use = (c: string, why: string) => {
+    const m = /^(.+?)(?::(\d+))?$/.exec(c)!;
+    if (uses.some((u) => u.path === m[1] && u.line === (m[2] ? Number(m[2]) : undefined))) return;
+    uses.push({ path: m[1]!, ...(m[2] ? { line: Number(m[2]) } : {}), why });
+  };
+  for (const x of parts) {
+    for (const c of x.p.uses ?? []) use(c, `step ${x.p.position} calls it`);
+    if (x.p.reuses)
+      use(
+        x.p.reuses.at,
+        `step ${x.p.position} calls it (step ${x.p.reuses.step} of ${x.p.reuses.flow})`,
+      );
+  }
   if (dt && !files.length)
     notes.push(
       "This is new code: nothing today cites it; follow the repo's patterns for its neighbours.",
@@ -503,6 +515,7 @@ export async function taskContext(
     knowledge: picked,
     inputs,
     files,
+    uses,
     prompt:
       dt && ds
         ? taskPrompt(
@@ -599,6 +612,15 @@ export function renderTaskContext(c: TaskContext): string {
       : ["- None cited: this is new code."]),
     "",
   );
+  if (c.uses.length)
+    out.push(
+      "## Code it calls",
+      "",
+      "Read it; the task doesn't change it.",
+      "",
+      ...c.uses.map((u) => `- ${u.path}${u.line ? `:${u.line}` : ""}: ${u.why}`),
+      "",
+    );
   if (c.needs.length || c.knowledge.length) {
     out.push("## What applies", "");
     for (const n of c.needs)

@@ -1,7 +1,8 @@
 # The order summary's target flows (ADR 0124 addendum B-tasks), in the shape of a real change
-# that came out too fine: a new server flow of twelve steps (only one of them placed with `at`;
-# three of them, reserve, call and settle, are what the existing AssistantClient already does
-# for forge-orders.draft-reply), one web story and one route story. Invented.
+# that came out too fine: a new server flow of twelve steps (three of them, reserve, call and
+# settle, are what the existing AssistantClient already does for forge-orders.draft-reply), one
+# web story and one route story. B-place: the server's steps go in two new files (`new`), and the
+# read uses the existing OrderEventReader (`uses`; B-tasks' draft gave it as `at`). Invented.
 flows:
   - flow: forge-orders.summarise-order
     repo: forge-orders
@@ -13,45 +14,55 @@ flows:
       - op: add
         kind: entry
         what: OrderSummaryController.summary receives the order id
+        new: src/main/java/forge/orders/OrderSummaryController.java
         fields: { reads: [orderId] }
       - op: add
         kind: validate
         what: The caller may read the order
+        new: src/main/java/forge/orders/OrderSummaryController.java
         fields: { checks: [orderId] }
       - op: add
         kind: lookup
         what: The order is found by its id
+        new: src/main/java/forge/orders/OrderSummaryService.java
         store: { table: forge-orders-db.orders, columns: [id, status] }
         fields: { checks: [id] }
       - op: add
         kind: read
         what: The order's events are read, oldest first
-        at: src/main/java/forge/orders/OrderEventReader.java:18
+        new: src/main/java/forge/orders/OrderSummaryService.java
+        uses: src/main/java/forge/orders/OrderEventReader.java:18
         store: { table: forge-orders-db.order_events, columns: [order_id, kind, at] }
       - op: add
         kind: transform
         what: The events become a prompt, one line per event
+        new: src/main/java/forge/orders/OrderSummaryService.java
         fields: { from: [kind, at], to: [prompt] }
       - op: add
         kind: write
         what: The spend is reserved before the call
+        new: src/main/java/forge/orders/OrderSummaryService.java
         store: { table: forge-orders-db.ai_spend, columns: [request_id, reserved_cents] }
       - op: add
         kind: call-out
         what: Northwind Models writes the summary
+        new: src/main/java/forge/orders/OrderSummaryService.java
         to: { component: northwind-models, entry: POST /v1/completions }
         fields: { sends: [prompt], returns: [text, citations] }
       - op: add
         kind: write
         what: The spend is settled with what the call cost
+        new: src/main/java/forge/orders/OrderSummaryService.java
         store: { table: forge-orders-db.ai_spend, columns: [request_id, spent_cents] }
       - op: add
         kind: transform
         what: Sentences that cite no event are dropped
+        new: src/main/java/forge/orders/OrderSummaryService.java
         fields: { from: [text, citations], to: [summary] }
       - op: add
         kind: write
         what: The summary is kept for an hour
+        new: src/main/java/forge/orders/OrderSummaryService.java
         store:
           table: forge-orders-db.order_summaries
           columns: [order_id, summary, created_at]
@@ -63,10 +74,12 @@ flows:
       - op: add
         kind: log
         what: The summary's length and cost are logged
+        new: src/main/java/forge/orders/OrderSummaryService.java
         fields: { reads: [summary] }
       - op: add
         kind: respond
         what: 200 with the summary and its citations
+        new: src/main/java/forge/orders/OrderSummaryController.java
         fields: { returns: [summary, citations] }
   - flow: forge-web.view-order
     repo: forge-web
