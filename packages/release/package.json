@@ -1,6 +1,6 @@
 {
   "name": "@maycombhq/release",
-  "version": "1.0.0-rc.1",
+  "version": "2.0.0-rc.1",
   "description": "Generated views of a change for releasing it: the deployment plan, the forecast, the evidence pack, release notes, outcomes and the security review draft. Computed from the change folder, the catalog and the org pack on every read, so they never go stale.",
   "license": "Apache-2.0",
   "type": "module",

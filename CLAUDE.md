@@ -14,14 +14,14 @@ Rules for every contributor and every AI coding session (Claude Code, Copilot or
 
 ## Definition of done
 
-- `pnpm check` passes (deny-list, ESLint, Prettier, typecheck, tests) on Linux and Windows CI.
+- `pnpm check` passes (deny-list, ESLint, Prettier, the core-neutral, portable-path, dependency, docs and licence checks, typecheck, tests) on Linux and Windows CI.
 - New behaviour has unit tests; extractors and dialects have golden-file tests.
 - Screens have empty, loading and error states and pass accessibility checks (WCAG 2.1 AA).
 - User-facing words come from the copy file; docs and the changelog are updated.
 
 ## Ticket loop
 
-1. Read the package's `SPEC.md` (cut from the generic edition of the plan).
+1. Read the ADR for the area (`docs/adr/`), its ticket in `docs/build-status.md`, and `docs/codebase-map.md` for where the code lives.
 2. Write fixtures and golden files.
 3. Write failing tests.
 4. Write code until they pass.

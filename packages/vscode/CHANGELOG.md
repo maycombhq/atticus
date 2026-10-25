@@ -4,6 +4,8 @@ The Atticus extension for VS Code. The command line's own changes are in the rep
 
 ## Unreleased
 
+## 0.5.0 (pre-release, with Atticus 2.0.0-rc.1)
+
 Three views and the steps; the rest behind `atticus.fullUi` (Phase D, ADR 0124 addendum D-app).
 
 - **Three views:** **Next and Waiting** (the next step, the steps after it, then **Waiting on you** open under them: needs, findings, manual steps and knowledge to verify, by change or by kind, with its filter), **Questions** (the open questions by repo, each answered in the dialog with the lines it read; its tooltip shows them too) and **Changes**.

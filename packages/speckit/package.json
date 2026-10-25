@@ -1,6 +1,6 @@
 {
   "name": "@maycombhq/speckit",
-  "version": "1.0.0-rc.1",
+  "version": "2.0.0-rc.1",
   "description": "The Spec Kit layer (ADR 0030): hand-down of a task into a repo's Spec Kit feature, hand-up, the generated constitution and the three-way drift check.",
   "license": "Apache-2.0",
   "type": "module",

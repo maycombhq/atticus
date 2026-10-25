@@ -1,77 +1,68 @@
 # Atticus
 
-**Map a multi-repo ecosystem from its code, then run every change from idea to release, with an AI critic that argues the other side and a human approval at every gate.**
+**Your AI assistant reads the code; Atticus checks every fact it writes against the line it cites, then runs each change from idea to tasks on that map, with a critic that argues the other side and a person's approval at every gate.**
 
-Atticus is an open-source, configurable framework for teams whose systems span many repositories, gateways, event streams and vendors. It builds on [OpenSpec](https://github.com/Fission-AI/openspec) and works with the AI assistant you already use (GitHub Copilot or Claude Code).
+Atticus is an open-source framework for teams whose systems span many repositories, gateways, event streams and vendors. It builds on [OpenSpec](https://github.com/Fission-AI/openspec) and works with the assistant you already use: Claude Code, GitHub Copilot (VS Code or IntelliJ), Cursor, or any chat you can paste into.
 
-> **Status: release candidate 1.0.0-rc.1.** The whole product is built: the catalog from code, the critic, changes from idea to release across repos, the local app with a home for each of thirteen roles, and the install kit (offline bundle, doctor, upgrade, support bundle). What remains before 1.0 is listed in [docs/m5-exit.md](docs/m5-exit.md) under "For a person".
+> **Status: release candidate 2.0.0-rc.1 (Atticus 2, ADR 0124).** The map now comes from the assistant's cited facts, not from Atticus's own parsers. All five parts are built and measured on public repos; several bars are not met yet (below). What is open is in [docs/build-status.md](docs/build-status.md), under "Where Atticus 2 stands".
 
-## What it does
+## The five parts
 
-- **Catalog from code.** Parsers read code, gateway config, event configs, infrastructure, migrations and pipelines into a catalog of who calls whom, what data lives where, and how everything runs. Every fact records its source, commit and confidence.
-- **Impact and reconcile.** Ask what a change to an API, table or column will break, and check architects' diagrams against what the code really does.
-- **Changes across repos.** One change, many repos: ordering, a branch and PR per repo, tickets, release plan.
-- **A critic with evidence.** Four questions of every draft: is it true to the code, is it complete, is it safe to build, can it ship. Code answers what code can, then one AI lens per question reads the rest. Findings carry evidence and a suggested fix; when Atticus lacks a fact it says so instead of passing silently.
-- **Every role.** Screens for product owners, analysts, architects, developers, testers, delivery leads and more, not just an editor.
-- **Configurable.** Everything organisation-specific lives in an org pack: dialects for house frameworks, change types, roles, checklists, integration patterns, templates and AI policy.
-- **Adopts what you have.** Runs on top of an existing AI metarepo or OpenSpec repo without moving anything, and absorbs other teams' repos and wikis.
+1. **Map: the assistant reads, Atticus verifies.** The assistant reads a repo (`/atticus-map`) and writes facts: what it serves, calls and stores, the fields crossing each boundary, where it deploys, the config naming other systems, and flows through them. Each fact gives its file, line, claimed value and quote. `atticus verify` checks that the file exists at the commit, that the claimed value is on the cited line, that the quote matches and references resolve, that no secret is quoted, and reports coverage. Fabricated or misplaced citations are rejected. `atticus verify --write` projects the kept facts into the catalog (contract C1) and renders `map.md`, `flows/` and OpenAPI `contracts/` for review in a pull request. With several repos, `verify --write` joins each call to the entry in another repo that serves it, citing both ends. If a host matches no repo, it asks a person instead of guessing. `atticus join` then follows flows from repo to repo through those joins. The built-in readers remain as an optional cross-check.
+2. **Change, in three stages.** Feature, architecture, then stories and tasks. In each stage the assistant drafts, Atticus checks the draft in code, the critic argues, open points become questions, and the stage closes when its hand-off pull request merges. The architecture stage drafts target flows, contract deltas, data changes and a deploy order. Code then checks that every delta cites a fact and that a breaking change lists its consumers from the map. It also checks that a new table has a migration, classification and retention, and that the order puts a callee before its caller and a migration before its code.
+3. **Stories and tasks, with acceptance criteria and a completeness check.** A story has context, scope, Given/When/Then criteria including error cases, interface and data changes, non-functional needs, test notes, dependencies and a definition of done. Each task names the files to touch and the command to run. Before the critic sees a story, a completeness check rejects:
+   - an entry the flows add that the story leaves out;
+   - an invented field or column;
+   - a new request field with no validation or error criterion;
+   - column facts that differ from the target flow's.
+4. **The critic's four questions.** Is it true to the code? Is it complete? Is it safe to build? Can it ship? Code answers what it can, and then one AI lens per question reads the rest in a fresh session, bound to evidence. Constitution rules can't be waived, and organisations add their own rules on top. Org packs written for the old seven role lenses still work.
+5. **Knowledge.** `atticus knowledge scan` indexes the organisation's wikis and documents into patterns, standards, decisions, processes, vendors and terms. Quotes are checked word for word, conflicts and superseded pages are flagged, and injected instructions are cut out. Each stage lists the items that apply to a change, with near-misses, in the change's `knowledge.yaml`. `atticus change knowledge` confirms or excludes items.
 
-The assistant reads the code and drafts; deterministic code verifies every citation, keeps the files and does the repeated work (ADR 0124). Tests never call a model.
+The rule behind all five: the assistant does the thinking; Atticus keeps the files, checks them in deterministic code, and names the next step. Tests never call a model.
 
-## Repository layout
+## Any assistant: three tiers and the probe
 
-```
-packages/
-  core/              contracts C1 (catalog), C2 (dialects), C3 (checklists and findings), workspace files, canonical YAML, identity and branch rules
-  sdk/               plugin SDK (C4): extractors, ingestors, scan runner and cache
-  openspec-adapter/  the only door to OpenSpec: pinned CLI wrapper, org-flow schema, contract tests
-  workspace/         base clones, change worktrees, repos files, VS Code and IntelliJ workspaces
-  adapters/          work tracker, service desk, Git host, wiki, design tool, notifications; each with a mock
-  ai/                AI runtime (C5): context packs, hand-off, model, mock and replay runtimes
-  extractors/        built-in extractors and the dialect rule engine
-  scanner/           the estate scan: merge, catalog files and diffs
-  index/             local SQLite index, query language, graph and impact
-  reconcile/         draw.io reader, aliases, diagram-versus-code reconcile
-  ingestors/         diagram (Lucid, Visio, Mermaid) and document (Office, PDF, Markdown) readers
-  changes/           change lifecycle, hand-off PRs, approvals, risk and conflicts
-  naysayer/          the critic: rule layers, deterministic checks, AI lenses, gates
-  taskrun/           Run with AI: plan, draft or PR for one task
-  speckit/           Spec Kit hand-down, hand-up and drift
-  assistant-files/   Copilot and Claude Code files from one skill source
-  planner/           stories, tasks, service-desk drafts, story bar, work-item sync, templates
-  executors/         procedures and the protocol for teams' own automation tools
-  adopt/             init, repo discovery, adopt in place, absorb and federation
-  testgen/           tests from stories, and traceability
-  ci/                the pipeline drift check and the archive gate
-  glossary/          business terms from wikis, code and people
-  initiatives/       initiatives, guided journeys, commitments and system cards
-  learn/             lessons per role, the practice sandbox and explain
-  evals/             datasets and graders for every AI agent
-  features/          features found in code, names, links and gaps
-  intake/            inputs/ intake, triage, curated decisions
-  stubs/             stub servers from specs or the catalog
-  diagrams/          Mermaid and draw.io views of the catalog
-  assistant-kit/     the dialect build kit and its grader
-  knowledge/         wiki sources, pattern scan, coverage, knowledge gaps and owner questions
-  synth/             synthetic estate generator for scale tests
-  server/            the local API server (127.0.0.1, session token)
-  ui/                the local app: 27 screens, a home for each role
-  release/           deployment plan, forecast, evidence pack, release notes, outcomes, security review
-  site/              system guides and the read-only catalog site
-  journeys/          the thirteen role journeys and accessibility checks, in a browser
-  m3-exit/ m4-exit/ m5-exit/   milestone exit suites
-  cli/               the `atticus` command
-  fixtures/          tests that keep the Forge fixture consistent
-fixtures/forge/      an invented ecosystem with a hand-written expected catalog
-docs/guide/          install, admin, role and troubleshooting guides; the command reference
-docs/adr/            architecture decision records
-scripts/bundle/      the offline install bundle, SBOM and licence check
-```
+- **Tier 1, agentic** (Claude Code, Cursor, Copilot agent mode): the assistant opens files and runs commands. Reading a repo takes one session.
+- **Tier 2, chat with a token limit and no file tools** (Copilot Chat): `atticus map <repo> --handoff` splits the repo into batches that fit the model. Each answer is verified as it comes back.
+- **Tier 3, copy and paste** (IntelliJ with Copilot, a web chat): the same batches with `--copy`.
+
+`atticus probe` measures the tier instead of guessing it. The assistant must open a file holding a code, write the code back and run a command. The result stays on your machine. Every tier writes the same facts and gets the same checks; only the speed differs.
+
+## Twelve commands and six app entries
+
+`atticus help` shows twelve commands: `init`, `map`, `verify`, `join`, `change`, `critic`, `stories`, `task`, `questions`, `knowledge`, `next`, `ui`. `atticus legacy` lists every other command; each still runs by its own name, exactly as before.
+
+The app (`atticus ui`) has six entries:
+
+| Entry     | What it shows                                                   |
+| --------- | --------------------------------------------------------------- |
+| Home      | What needs you, what is read and trusted, changes in flight     |
+| Map       | Estate canvas, flows, contracts, impact, trust                  |
+| Change    | All changes, at a glance, feature, architecture, stories, tasks |
+| Questions | Open questions                                                  |
+| Knowledge | Items, sources, documents, search                               |
+| Set up    | Repos, AI, org pack                                             |
+
+`atticus ui --full` brings back every other page. The VS Code extension has three views by default, with the setting `atticus.fullUi` for the rest. Nothing was removed.
+
+## Measured, with the caveats
+
+On the bench (`bench/`: 22 public repos pinned to a commit, with references written by reading the code; numbers and method in [bench/README.md](bench/README.md)):
+
+| What                                           | Result                                                                                                        | Bar                        | Caveat                                                                                                                                                                  |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Map, batch 2 (16 repos, held out)              | **88% precision, 84% recall**; the built-in readers 57% and 33%                                               | 95% precision, 85% recall  | Not met. Read once with the protocol frozen. Scored after three matcher equivalences added after the read (82% and 79% before them). Fixes made since are not measured. |
+| Map, batch 1 (6 repos)                         | 89% precision, 97% recall; the readers 60% and 31%                                                            | the same                   | Tuned: the protocol and verifier were fixed on these repos, then the repos were read again.                                                                             |
+| Estate, steps in order and fields at crossings | petclinic 67% and 94%, microservices-demo 80% and 100%, eShop 33% and 83%                                     | 80% and 90%                | Met by microservices-demo only. Tuned (these repos were read before). eShop's sagas run through ten integration events.                                                 |
+| Stories, three reference stories               | changed steps 2/8, 1/2, 3/8; fields all; nothing invented; sections 17/17; error cases by entry 1/5, 2/4, 2/5 | none set yet (ADR 0124 §6) | One assistant, one run. Step coverage is far from the design's 90%.                                                                                                     |
+| The critic (`fixtures/forge-change`)           | 12 blocking issues (10 by code, 2 by the lenses) and 14 gaps caught                                           | every seeded issue         | Re-baselined for the four questions. Three seeded items retired with the old lenses (service-desk drafts, UX states).                                                   |
+| Offline bundle                                 | 20.1 MB on Linux x64, installed and used offline                                                              | under 60 MB                | Search by meaning is now an optional plugin (`--with-embeddings`). Windows and macOS sizes not measured here.                                                           |
+
+No model cost per repo was recorded: the reading sessions ran as Claude sessions, not through the runtime's meter.
 
 ## Get started
 
-- **Install, then a first map and a first change:** [docs/guide/install.md](docs/guide/install.md), one page for every kind of assistant (Claude Code or Copilot agent mode, Copilot Chat without tools, copy and paste) and for an offline bank laptop. One offline zip (about 20 MB) and one script; Node.js 22.13 or later and Git 2.30 or later.
-- **Twelve commands:** `atticus help` shows them (`init`, `map`, `verify`, `join`, `change`, `critic`, `stories`, `task`, `questions`, `knowledge`, `next`, `ui`); `atticus legacy` lists the rest, which all still run by their own names.
+- **Install, then a first map and a first change:** [docs/guide/install.md](docs/guide/install.md) has one page covering every tier and an offline bank laptop. You need one offline zip (about 20 MB), one script, Node.js 22.13 or later and Git 2.30 or later.
 - **Set it up for a team:** [docs/guide/admin.md](docs/guide/admin.md).
 - **By kind of work:** [docs/guide/roles.md](docs/guide/roles.md).
 - **Every command:** [docs/guide/commands.md](docs/guide/commands.md).
@@ -83,7 +74,7 @@ Try it without touching anything real:
 atticus sandbox create ./practice      # the invented Forge ecosystem, no outside system reached
 cd practice/metarepo
 atticus doctor
-atticus scan
+atticus next
 atticus ui --open
 ```
 
@@ -96,6 +87,16 @@ pnpm build
 pnpm check          # deny-list, lint, dependency, licence and docs checks, typecheck, tests
 pnpm bundle         # dist/atticus-<version>-offline.zip
 ```
+
+## Where things are
+
+`packages/` holds one package per responsibility: `core` (the contracts, the facts schema and its projection, the facts join), `verify` (the verifier and the map renderers), `assistant-files` (the slash commands for every assistant, and the probe), `planner` (the stages and the stories), `naysayer` (the critic), `knowledge`, `cli`, `server`, `ui`, `vscode`, `intellij` and more. [docs/codebase-map.md](docs/codebase-map.md) lists each package and marks which are outside the default product. Other locations:
+
+- `fixtures/`: the invented Forge ecosystem the tests use.
+- `bench/`: the public-repo bench.
+- `docs/adr/`: the decisions.
+- `plugins/atticus/`: the Claude Code plugin.
+- `scripts/bundle/`: the offline bundle.
 
 ## Contributing
 
