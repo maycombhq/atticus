@@ -11,6 +11,7 @@ import {
 } from "@maycombhq/assistant-files";
 import {
   AgentDefinition,
+  citedFiles,
   Fact,
   factsDirOf,
   factsRelOf,
@@ -37,6 +38,8 @@ import {
 } from "@maycombhq/ai";
 import {
   dirSource,
+  FILE_KINDS,
+  kindsOf,
   numberedSlice,
   onlyFiles,
   planBatches,
@@ -45,6 +48,7 @@ import {
   sliceText,
   staleMessage,
   verifyFacts,
+  type FileKind,
   type FileSlice,
   type FileSource,
   type Rejected,
@@ -180,15 +184,28 @@ async function saveState(root: string, s: MapState): Promise<void> {
 
 const LEVELS = ["public", "internal", "confidential", "restricted"];
 
-/** The tokens a prompt keeps for its instructions, the data rule and the frame around the files. */
-function instructionTokens(repo: string, commit: string): number {
+/**
+ * The tokens a prompt keeps for its instructions, the data rule and the frame around the files:
+ * with the core rules alone, or with the topic rules of these kinds of file too (ADR 0124
+ * addendum A-lean).
+ */
+function instructionTokens(repo: string, commit: string, kinds: readonly FileKind[] = []): number {
   return (
-    estimateTokens(mapBatchInstructions({ repo, commit, batch: 999, of: 999 })) +
+    estimateTokens(mapBatchInstructions({ repo, commit, batch: 999, of: 999, kinds })) +
     estimateTokens(DATA_RULE) +
     // the <atticus-data> wrapper around the batch's files
     60
   );
 }
+
+/** What a batch's topic rules add to the core's instructions, for the batch planner. */
+const overheadOf = (repo: string, commit: string) => {
+  const core = instructionTokens(repo, commit);
+  return (kinds: readonly FileKind[]) => instructionTokens(repo, commit, kinds) - core;
+};
+
+const joinKinds = (a: readonly FileKind[], b: readonly FileKind[]) =>
+  FILE_KINDS.filter((k) => a.includes(k) || b.includes(k));
 
 /** What a fact claims, in a few words, for the list of facts already kept. */
 function claimOf(f: Fact): string {
@@ -358,6 +375,20 @@ async function packFor(
     (q) => q.state !== "retired",
   );
   const slices = fix ? [] : s.batches[batch]!;
+  const rejected = s.rejected.map((r) => rejectedText(r, source));
+  // The topic rules of the batch's files (planned to fit), and of the files its rejected facts
+  // cite when those rules fit the reserve beside the rejected facts themselves (A-lean). The fix
+  // round has no files: its rejected facts' kinds.
+  const own = kindsOf(slices.map((x) => x.path));
+  const theirs = kindsOf(s.rejected.flatMap((r) => citedFiles(r.fact)));
+  const both = joinKinds(own, theirs);
+  const extra =
+    instructionTokens(s.repo, s.commit, both) - instructionTokens(s.repo, s.commit, own);
+  const kinds = fix
+    ? theirs
+    : extra + rejected.reduce((n, t) => n + estimateTokens(t), 0) <= KEPT_RESERVE
+      ? both
+      : own;
   const sources: SourceInput[] = [
     {
       id: "0-instructions",
@@ -369,6 +400,7 @@ async function packFor(
         batch: batch + 1,
         of: s.batches.length,
         ...(fix ? { fix: true } : {}),
+        kinds,
       }),
       classification: "public",
       trusted: true,
@@ -401,7 +433,7 @@ async function packFor(
       id: `2-rejected-${String(i + 1).padStart(3, "0")}`,
       kind: "document" as const,
       origin: `${factsRelOf(root)}/${s.repo}.rejected.jsonl`,
-      text: rejectedText(r, source),
+      text: rejected[i]!,
       classification: "internal",
       priority: 6,
     })),
@@ -607,19 +639,21 @@ export async function mapCommand(
       runtime.kind === "hand-off" ? await tierHere(root, op) : undefined,
     );
     const room = roomFor(limit, op, repo, commit);
-    if (room < MIN_ROOM) {
+    /** The model is too small: a prompt needs `more` tokens of topic rules beyond the core. */
+    const tooSmall = (more: number) => {
       const fitted = limit === undefined ? room : promptBudget(limit);
       io.err(
         new PromptTooLong(
           `map ${repo}`,
-          instructionTokens(repo, commit) + KEPT_RESERVE + MIN_ROOM,
+          instructionTokens(repo, commit) + more + KEPT_RESERVE + MIN_ROOM,
           fitted,
           limit ?? fitted,
           [],
         ).message,
       );
       return 2;
-    }
+    };
+    if (room < MIN_ROOM) return tooSmall(0);
     // A moved checkout (ADR 0124 addendum A-incremental): only the files changed since the facts'
     // commit are read, and the facts citing them handed back to rewrite; the rest are carried.
     const re = await rereadOf(dir, existing, commit, source, exclude, deps.git);
@@ -638,8 +672,10 @@ export async function mapCommand(
             reread.files.map((f) => f.path),
           )
         : source,
-      { room, exclude },
+      { room, exclude, overhead: overheadOf(repo, commit) },
     );
+    // A file whose topic rules leave too little room beside them (A-lean).
+    if (plan.leastRoom < MIN_ROOM) return tooSmall(room - plan.leastRoom);
     if (!plan.batches.length && !reread) {
       io.out(
         `${repo} has no source files to read${plan.excluded.length ? ` (${plural(plan.excluded.length, "file")} excluded)` : ""}.`,
@@ -911,7 +947,15 @@ async function estimate(
     ? planBatches(c.source, { room: Number.MAX_SAFE_INTEGER, exclude: c.exclude })
     : undefined;
   const whole = planBatches(readSource, { room: Number.MAX_SAFE_INTEGER, exclude: c.exclude });
-  const plan = room >= MIN_ROOM ? planBatches(readSource, { room, exclude: c.exclude }) : undefined;
+  const planned =
+    room >= MIN_ROOM
+      ? planBatches(readSource, {
+          room,
+          exclude: c.exclude,
+          overhead: overheadOf(repo, c.commit),
+        })
+      : undefined;
+  const plan = planned && planned.leastRoom >= MIN_ROOM ? planned : undefined;
   const questions = (await listQuestions(root, { repo })).questions.filter(
     (q) => q.state !== "retired",
   );

@@ -368,7 +368,7 @@ describe("atticus map --handoff on a moved checkout (addendum A-incremental)", (
       const runtime = new HandoffRuntime({ root, validate: async () => [], now: NOW });
       const first = io();
       expect(
-        await mapCommand(root, REPO, { dir: repo, maxTokens: 9000 }, first.io, {
+        await mapCommand(root, REPO, { dir: repo, maxTokens: 7000 }, first.io, {
           runtime,
           now: NOW,
         }),
@@ -401,7 +401,7 @@ describe("atticus map --handoff on a moved checkout (addendum A-incremental)", (
       writeFileSync(join(runDir, "facts.jsonl"), reread(factsOf(root), two).join("\n"));
       const o = io();
       expect(
-        await mapCommand(root, REPO, { dir: repo, maxTokens: 9000, next: true }, o.io, {
+        await mapCommand(root, REPO, { dir: repo, maxTokens: 7000, next: true }, o.io, {
           runtime,
           now: NOW,
         }),
@@ -418,7 +418,7 @@ describe("atticus map --handoff on a moved checkout (addendum A-incremental)", (
       writeFileSync(join(root, ".runs", `map-${REPO}`, o.reported[0]!, "facts.jsonl"), "");
       const f = io();
       expect(
-        await mapCommand(root, REPO, { dir: repo, maxTokens: 9000, next: true }, f.io, {
+        await mapCommand(root, REPO, { dir: repo, maxTokens: 7000, next: true }, f.io, {
           runtime,
           now: NOW,
         }),

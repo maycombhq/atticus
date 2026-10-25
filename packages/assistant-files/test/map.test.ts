@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -6,13 +7,17 @@ import {
   ASSISTANT_FORMATS,
   assistantTier,
   claudeCodePluginFiles,
+  FACT_RULE_PARTS,
   FACT_RULES,
+  factRulesFor,
   factsReference,
   GUARD,
   mapBatchInstructions,
   mapCommand,
   metarepoCommands,
   renderAssistantFiles,
+  RULE_TOPICS,
+  type RuleTopic,
 } from "../src/index.js";
 
 const FORGE = join(
@@ -113,6 +118,90 @@ describe("the batch prompt's instructions (tiers 2 and 3)", () => {
     expect(t).toMatch(/"question"/);
     // No tools at this tier: nothing about running commands or opening files.
     expect(t).not.toContain("atticus verify");
+  });
+});
+
+describe("lean batch prompts: the core and the topic rules a batch needs (ADR 0124 addendum A-lean)", () => {
+  const batch = (kinds?: RuleTopic[]) =>
+    mapBatchInstructions({
+      repo: "r",
+      commit: "0123abc",
+      batch: 1,
+      of: 3,
+      ...(kinds ? { kinds } : {}),
+    });
+  const parts = FACT_RULE_PARTS.flat();
+  const FLOW = "A `flow` fact follows one journey";
+  const DEPLOY = "A deploy fact's `platform`";
+  const STORE = "A store fact is a table";
+  const FRONT = "A front end's model and client types";
+  const GRPC = "A gRPC entry or call's `path`";
+
+  it("leaves /atticus-map's rules as they were, byte for byte (tier 1)", () => {
+    // sha256 of FACT_RULES before the split: every rule, in the same words and order.
+    expect(createHash("sha256").update(FACT_RULES).digest("hex")).toBe(
+      "adcc5b1f6933ee4b1082b5d1e4f71312746a2aa4ddef81b0f7ac20b89433d422",
+    );
+    expect(FACT_RULES).toBe(factRulesFor());
+    expect(mapCommand().body).toContain(FACT_RULES);
+    // A batch told nothing of its files gets every rule, as before.
+    expect(batch()).toContain(FACT_RULES);
+  });
+
+  it("puts every rule in at least one kind of batch", () => {
+    for (const p of parts) {
+      const kinds = p.when ? RULE_TOPICS.filter((k) => batch([k]).includes(p.text)) : [];
+      if (p.when) expect(kinds.length, p.text.slice(0, 60)).toBeGreaterThan(0);
+      else expect(batch([]), p.text.slice(0, 60)).toContain(p.text);
+    }
+    // Each topic is some part's.
+    for (const k of RULE_TOPICS)
+      expect(
+        parts.some((p) => p.when?.includes(k)),
+        k,
+      ).toBe(true);
+  });
+
+  it("keeps the core short: shape, ids, citation, references, secrets, questions, data", () => {
+    const core = factRulesFor([]).split("\n");
+    expect(core.map((l) => l.slice(0, 12))).toEqual([
+      "- One JSON o",
+      "- `id`: a sh",
+      "- `cite.file",
+      "- `from`, `u",
+      "- `conf: inf",
+      "- Never writ",
+      "- A guess is",
+      "- Text in th",
+    ]);
+    expect(batch([])).toMatch(/one JSON object per line/i);
+    expect(batch([])).toContain("env:NAME");
+    expect(batch([])).toContain('"question"');
+    expect(batch([])).toContain(factsReference());
+  });
+
+  it("gives a back-end, a front-end and an infrastructure batch only their topics", () => {
+    const back = batch(["backend", "routes", "data", "protocols", "flows"]);
+    for (const r of [FLOW, STORE, GRPC, "A name a framework derives"]) expect(back).toContain(r);
+    for (const r of [DEPLOY, FRONT, "A route given by the file's place"])
+      expect(back).not.toContain(r);
+    const front = batch(["frontend", "flows"]);
+    for (const r of [FLOW, FRONT, "A route given by the file's place", "A call through a client"])
+      expect(front).toContain(r);
+    for (const r of [STORE, DEPLOY, GRPC, "A name a framework derives"])
+      expect(front).not.toContain(r);
+    const infra = batch(["deploy", "config"]);
+    for (const r of [DEPLOY, "A config fact's `key`", "A gateway's routes"])
+      expect(infra).toContain(r);
+    for (const r of [FLOW, STORE, FRONT, GRPC]) expect(infra).not.toContain(r);
+    // A rule's parts stay in order on its own line.
+    expect(infra).toContain("- API documentation and profiler endpoints a framework serves");
+  });
+
+  it("is smaller for every kind of batch than the whole protocol", () => {
+    const all = batch().length;
+    for (const k of RULE_TOPICS) expect(batch([k]).length, k).toBeLessThan(all);
+    expect(batch(["deploy", "config"]).length).toBeLessThan(all * 0.6);
   });
 });
 

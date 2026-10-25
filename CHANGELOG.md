@@ -4,6 +4,12 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### Lean batch prompts: each batch carries only the rules its files need (A-lean, ADR 0124 addendum A-lean)
+
+- **`atticus map <repo>` (`--handoff`, `--copy`, `--mode model`) fits smaller models.** Each batch prompt now carries the reading protocol's core rules and only the topic rules its files need: front end, back end, routes, stores, deploy, config, gRPC, SOAP, GraphQL and events, and flows. A file's kinds come from its path. When the path can't say, the file gets the rule. The instructions were 2,971 tokens for every batch. They are now 2,648 for a back-end batch, 2,180 for a front end's and 1,419 for a deploy batch's. The Forge ledger fixture now batches from 6,814 tokens, down from 7,042.
+- **The plan counts each batch's own rules**, so every prompt still fits `--max-tokens`. A read whose files leave too little room beside their rules is refused with the tokens it needs.
+- **`/atticus-map` and the Claude Code plugin are unchanged.** An assistant that reads the whole repo still gets every rule, word for word.
+
 ### The estate fixes: publishes name their event, entries without a flow are listed, errors match branches (C-estate, ADR 0124 addendum C-estate)
 
 - **`atticus verify` rejects a publish step that names no event.** A flow's `publish` step whose `ref` is missing, or isn't a call fact of `callType: event-topic` or `mq-queue`, is rejected as `publish-no-event` (a new reject code, additive like `call-out-no-call`), with the step, its line and what to name. The estate join follows a publish to its listeners only through that call.

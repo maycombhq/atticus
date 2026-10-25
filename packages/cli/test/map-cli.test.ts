@@ -19,7 +19,9 @@ import {
   type AiRequest,
   type AiRuntime,
 } from "@maycombhq/ai";
+import { FACT_RULE_PARTS, RULE_TOPICS } from "@maycombhq/assistant-files";
 import { parseFacts, type Fact } from "@maycombhq/core";
+import { FILE_KINDS, kindsOf } from "@maycombhq/verify";
 import type { StepFact } from "../src/commands.js";
 import { mapCommand, readAnswer, type MapOptions } from "../src/map-commands.js";
 
@@ -125,7 +127,7 @@ describe("atticus map <repo> --estimate: what the first read costs", () => {
     const code = await mapCommand(
       root,
       REPO,
-      { estimate: true, commit: COMMIT, maxTokens: 8000 },
+      { estimate: true, commit: COMMIT, maxTokens: 7000 },
       o.io,
     );
     expect(o.err).toEqual([]);
@@ -144,7 +146,7 @@ describe("atticus map <repo> --estimate: what the first read costs", () => {
     expect(text).toContain(
       "Another agentic assistant (Claude Code, Cursor, Gemini CLI) reads it the same way: /atticus-map",
     );
-    expect(text).toMatch(/In batches at 8000 tokens a prompt: [2-9] prompts/);
+    expect(text).toMatch(/In batches at 7000 tokens a prompt: [2-9] prompts/);
   });
 
   it("says the limit it assumed when none is given, and gives the reading order as JSON", async () => {
@@ -163,6 +165,31 @@ describe("atticus map <repo> --estimate: what the first read costs", () => {
     expect(r.maxTokensGiven).toBe(false);
   });
 
+  it("refuses a model whose limit leaves a file too little room beside its own rules (A-lean)", async () => {
+    // At 6,500 the core rules leave room, but the generated client (a .ts file, either side)
+    // needs nearly every topic rule, and those leave it under a prompt's worth.
+    const root = adoptedRepo();
+    const j = io();
+    await mapCommand(
+      root,
+      REPO,
+      { estimate: true, commit: COMMIT, maxTokens: 6500, json: true },
+      j.io,
+    );
+    expect(JSON.parse(j.out.join("\n")).batches).toBeNull();
+    const o = io();
+    const runtime = new MockRuntime(() => "", { now: NOW });
+    expect(
+      await mapCommand(root, REPO, { commit: COMMIT, maxTokens: 6500 }, o.io, {
+        runtime,
+        now: NOW,
+      }),
+    ).toBe(2);
+    expect(o.err[0]).toMatch(
+      /can't fit its smallest useful prompt in the model: it needs about \d+/,
+    );
+  });
+
   it("refuses without a checkout or a commit", async () => {
     const root = adoptedRepo();
     const o = io();
@@ -178,7 +205,7 @@ describe("atticus map <repo> --estimate: what the first read costs", () => {
 describe("atticus map <repo>: hand-off batches (tier 2)", () => {
   const handoff = (root: string) =>
     new HandoffRuntime({ root, validate: async () => [], now: NOW });
-  const opts: MapOptions = { commit: COMMIT, maxTokens: 8000 };
+  const opts: MapOptions = { commit: COMMIT, maxTokens: 7000 };
 
   it("hands one batch at a time, verifies each answer at once, feeds back what was rejected", async () => {
     const root = adoptedRepo();
@@ -234,7 +261,7 @@ describe("atticus map <repo>: hand-off batches (tier 2)", () => {
         readFileSync(join(runsDir, runId, "context-manifest.json"), "utf8"),
       );
       // Every prompt fits the model's limit, frame and all (ADR 0112).
-      expect(manifest.totalTokens).toBeLessThanOrEqual(promptBudget(8000));
+      expect(manifest.totalTokens).toBeLessThanOrEqual(promptBudget(7000));
       prompts++;
       if (prompts === 2) {
         // What was rejected comes back with the lines it cited, and the kept facts by id.
@@ -344,7 +371,7 @@ describe("atticus map <repo> in model mode: every batch in one call", () => {
       { now: NOW },
     );
     const o = io();
-    const code = await mapCommand(root, REPO, { commit: COMMIT, maxTokens: 8000 }, o.io, {
+    const code = await mapCommand(root, REPO, { commit: COMMIT, maxTokens: 7000 }, o.io, {
       runtime,
       now: NOW,
     });
@@ -352,9 +379,58 @@ describe("atticus map <repo> in model mode: every batch in one call", () => {
     expect(code).toBe(0);
     expect(prompts.length).toBeGreaterThan(1);
     for (const p of prompts)
-      expect(p.pack.manifest.totalTokens).toBeLessThanOrEqual(promptBudget(8000));
+      expect(p.pack.manifest.totalTokens).toBeLessThanOrEqual(promptBudget(7000));
     expect(factsOf(root)).toHaveLength(17);
     expect(o.out.at(-2) ?? o.out.at(-1)).toMatch(/17 facts kept/);
+  });
+
+  it("gives each batch the core rules and only the topic rules its files need (A-lean)", async () => {
+    // The planner's kinds of file are the protocol's topics, word for word.
+    expect([...FILE_KINDS]).toEqual([...RULE_TOPICS]);
+    const root = adoptedRepo();
+    const reader = honestReader();
+    const prompts: string[] = [];
+    const runtime = new MockRuntime(
+      (r) => {
+        prompts.push(r.pack.prompt);
+        return reader(r.pack.prompt);
+      },
+      { now: NOW },
+    );
+    expect(
+      await mapCommand(root, REPO, { commit: COMMIT, maxTokens: 7000 }, io().io, {
+        runtime,
+        now: NOW,
+      }),
+    ).toBe(0);
+    const parts = FACT_RULE_PARTS.flat();
+    for (const prompt of prompts) {
+      const kinds = kindsOf(filesIn(prompt));
+      for (const p of parts) {
+        const needed = !p.when || p.when.some((k) => kinds.includes(k));
+        // A rule the files need is always there; one they don't is left out, unless a rejected
+        // fact shown in the prompt cites a file that needs it.
+        if (needed) expect(prompt, p.text.slice(0, 40)).toContain(p.text);
+        else if (!prompt.includes("was rejected ("))
+          expect(prompt, p.text.slice(0, 40)).not.toContain(p.text);
+      }
+    }
+    // The deploy file's batch has the deploy rule; the batches of Java and SQL alone go without
+    // it and the front end's.
+    const flow = "A `flow` fact follows one journey";
+    const deploy = "A deploy fact's `platform`";
+    expect(prompts.find((p) => filesIn(p).has("k8s/ledger-api.yaml"))).toContain(deploy);
+    const java = prompts.filter(
+      (p) =>
+        filesIn(p).size > 0 &&
+        [...filesIn(p)].every((f) => f.endsWith(".java") || f.endsWith(".sql")),
+    );
+    expect(java.length).toBeGreaterThan(0);
+    for (const p of java) {
+      expect(p).toContain(flow);
+      expect(p).not.toContain(deploy);
+      expect(p).not.toContain("A front end's model and client types");
+    }
   });
 
   it("replays recorded answers to the same prompts, byte for byte the same facts", async () => {
@@ -369,7 +445,7 @@ describe("atticus map <repo> in model mode: every batch in one call", () => {
       { now: NOW },
     );
     const a = adoptedRepo();
-    await mapCommand(a, REPO, { commit: COMMIT, maxTokens: 8000 }, io().io, {
+    await mapCommand(a, REPO, { commit: COMMIT, maxTokens: 7000 }, io().io, {
       runtime: live,
       now: NOW,
     });
@@ -386,7 +462,7 @@ describe("atticus map <repo> in model mode: every batch in one call", () => {
     const b = adoptedRepo();
     const o = io();
     expect(
-      await mapCommand(b, REPO, { commit: COMMIT, maxTokens: 8000 }, o.io, {
+      await mapCommand(b, REPO, { commit: COMMIT, maxTokens: 7000 }, o.io, {
         runtime: replay,
         now: NOW,
       }),
@@ -402,7 +478,7 @@ describe("atticus map <repo> --copy: copy-paste (tier 3)", () => {
     const root = adoptedRepo();
     const runtime = new HandoffRuntime({ root, validate: async () => [], now: NOW });
     const reader = honestReader();
-    const opts: MapOptions = { commit: COMMIT, maxTokens: 8000, copy: true };
+    const opts: MapOptions = { commit: COMMIT, maxTokens: 7000, copy: true };
     const a = io();
     expect(await mapCommand(root, REPO, opts, a.io, { runtime, now: NOW })).toBe(0);
     const between = (out: string[]) =>
@@ -494,7 +570,7 @@ describe("atticus map <repo> --handoff: the step the editors and /atticus-* loop
   it("prints the prompt, the result file and the two finishing commands, batch after batch", async () => {
     const root = adoptedRepo();
     const reader = honestReader();
-    const base = ["map", REPO, "--commit", COMMIT, "--max-tokens", "8000", "--root", root];
+    const base = ["map", REPO, "--commit", COMMIT, "--max-tokens", "7000", "--root", root];
     let r = await cli([...base, "--handoff"]);
     expect(r.err).toEqual([]);
     for (let n = 0; ; n++) {
