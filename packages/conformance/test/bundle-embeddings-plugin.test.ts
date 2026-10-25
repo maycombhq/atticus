@@ -300,6 +300,21 @@ describe("the plugin's fetch step", () => {
     expect(run("--check").status).toBe(0);
   });
 
+  it("downloads through the proxy HTTPS_PROXY names, and says so when it can't reach it", async () => {
+    const { dir } = await installed();
+    // Port 9 on this machine refuses: a download that honours the proxy fails at the proxy, not
+    // at a DNS lookup of the pinned host (Node's fetch ignores HTTPS_PROXY on its own).
+    const r = spawnSync(process.execPath, [join(dir, "embeddings-plugin", "fetch-model.mjs")], {
+      encoding: "utf8",
+      timeout: 60_000,
+      env: { ...process.env, HTTPS_PROXY: "http://127.0.0.1:9", NODE_USE_ENV_PROXY: "" },
+    });
+    expect(r.status).toBe(1);
+    expect(r.stderr).not.toMatch(/ENOTFOUND/);
+    expect(r.stderr).toMatch(/through the proxy HTTPS_PROXY names \(http:\/\/127\.0\.0\.1:9\)/);
+    expect(r.stderr).toMatch(/--list names every file it needs/);
+  });
+
   it("says the plugin isn't installed where it isn't", async () => {
     const dir = await mkdtemp(join(tmpdir(), "atticus-plugin-none-"));
     await mkdir(join(dir, "embeddings-plugin"));

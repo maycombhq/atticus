@@ -14,12 +14,41 @@
 //   --atticus <dir>   the Atticus folder (default: the one this script is installed in)
 // Shipped in the plugin zip by scripts/bundle/embeddings-plugin.mjs; it needs nothing but Node
 // and the Atticus it is installed in.
+import { spawnSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const args = process.argv.slice(2);
+
+// Behind a proxy: Node's fetch ignores HTTPS_PROXY unless NODE_USE_ENV_PROXY is set (Node 22.21
+// and later honour it), so a download goes straight to the host and fails. Run again with it set.
+const proxyName = ["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"].find(
+  (n) => process.env[n],
+);
+const downloads = !["--list", "--check", "--offline"].some((a) => args.includes(a));
+if (proxyName && downloads && !process.env.NODE_USE_ENV_PROXY) {
+  const again = spawnSync(process.execPath, [fileURLToPath(import.meta.url), ...args], {
+    stdio: "inherit",
+    env: { ...process.env, NODE_USE_ENV_PROXY: "1" },
+  });
+  process.exit(again.status ?? 1);
+}
+/** The proxy as the environment names it, without any credentials in its URL. */
+const proxyShown = () => {
+  try {
+    const u = new URL(process.env[proxyName]);
+    return `${u.protocol}//${u.host}`;
+  } catch {
+    return "set";
+  }
+};
+/** The network error's code (ECONNREFUSED, ENOTFOUND, a certificate code), if any. */
+const codeOf = (e) => {
+  for (let c = e, i = 0; c && i < 5; c = c.cause, i++) if (c.code) return c.code;
+  return undefined;
+};
 const value = (name) => {
   const i = args.indexOf(name);
   return i >= 0 ? args[i + 1] : undefined;
@@ -113,8 +142,14 @@ try {
     );
   }
 } catch (e) {
+  const code = codeOf(e);
+  const how = !code
+    ? ""
+    : proxyName
+      ? ` (${code}, through the proxy ${proxyName} names (${proxyShown()}): check it is reachable and allows the hosts --list names${Number(process.versions.node.split(".")[0]) === 22 && Number(process.versions.node.split(".")[1]) < 21 ? `; Node ${process.versions.node} can't send downloads through a proxy, Node 22.21 or later can` : ""})`
+      : ` (${code}; behind a corporate proxy, set HTTPS_PROXY)`;
   console.error(
-    `${e instanceof Error ? e.message : String(e)}\nnode ${basename(fileURLToPath(import.meta.url))} --list names every file it needs; fetch them through your mirror, then add --from <folder>.`,
+    `${e instanceof Error ? e.message : String(e)}${how}\nnode ${basename(fileURLToPath(import.meta.url))} --list names every file it needs; fetch them through your mirror, then add --from <folder>.`,
   );
   process.exitCode = 1;
 } finally {

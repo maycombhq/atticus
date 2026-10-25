@@ -4,6 +4,10 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### The model download works behind a proxy
+
+- **`fetch-model.mjs` (the embeddings plugin's fetch step) now downloads through the proxy `HTTPS_PROXY` names.** Node's fetch ignores `HTTPS_PROXY` on its own, so behind a corporate proxy every download failed with a bare "fetch failed". The script runs again with `NODE_USE_ENV_PROXY=1` (Node 22.21 and later honour it), and a failure now names the network error, the proxy (never its credentials) and, on an older Node, that it needs 22.21 or later; `--list` and `--from` remain the way round. Tried for real: the model, onnxruntime and their licences downloaded through a proxy in about ten seconds, every file matching its pin.
+
 ### What a knowledge scan of a docs folder hit, fixed (K-docs, ADR 0083 addendum K-docs, ADR 0127)
 
 - **`atticus knowledge scan` reads every page.** It used to put every page in one prompt, and the prompt silently dropped what didn't fit (76 of 103 pages) while recording those pages as read. Now it plans batches that fit the knowledge reader's prompt, from its budget or the model's limit, or `--batch-tokens`. A model or headless runtime reads batch after batch in one run. A hand-off hands one batch a run: it names the pages that wait, and after the resume says how many are left and to run the scan again. A page too big for the prompt on its own is named, with what to raise, and is never recorded as read.
