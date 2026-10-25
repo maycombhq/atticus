@@ -1,5 +1,7 @@
 import {
   criteriaFor,
+  foldAnswer,
+  stepTasks,
   DEFAULT_DONE,
   declaredWhat,
   storyColumns,
@@ -34,6 +36,11 @@ import type { BenchStory } from "./story-bench.js";
  * - Each place is accepted by its tasks' criteria: a criterion is written on its task's own step
  *   (or its story's new-code step), and again on each file step of its task, cited there. Tasks
  *   whose code is at the same file and line are one step, with both tasks' criteria.
+ * - B-tasks: a task covering several steps of the target flow is a step per place its steps go
+ *   (each step's own id and `at`), each with the task's criteria (an id met again is prefixed
+ *   with its step's). A step placed beside another's code is new code: the rubric's `at` is
+ *   today's code a step changes or rests on, so it joins the story's one new-code step on its
+ *   entry, with no `at`, and the notes say so.
  * - Each criterion splits into given, when and then; its checks are its fields; its entry, when
  *   it names none, is the story's. An error criterion is an error case on each field it checks
  *   (or on none when it checks none), its `when` the criterion's given clause.
@@ -140,7 +147,9 @@ function criteriaOf(
 }
 
 export function benchStoryFromStories(i: StoriesToBench): BenchStory {
-  const pairs = i.stories.map((s) => ({ s, w: i.answer.stories.find((x) => x.id === s.id) }));
+  // B-tasks: an answer written per step reads per task.
+  const answer = foldAnswer(i.answer, i.stories);
+  const pairs = i.stories.map((s) => ({ s, w: answer.stories.find((x) => x.id === s.id) }));
   const many = pairs.length > 1;
   const notes: string[] = [];
   const first = pairs.find((p) => p.w)?.w;
@@ -189,33 +198,58 @@ export function benchStoryFromStories(i: StoriesToBench): BenchStory {
     links: { s: DeltaStory; t: DeltaTask }[];
   }
   const files = new Map<string, FileStep>();
-  for (const { s } of pairs)
+  // B-tasks: a task covering several places has its criteria on each; an id taken already is
+  // prefixed with its step's, so every criterion's id stays its own.
+  const ids = new Set<string>();
+  const add = (cs: BenchStory["criteria"]) => {
+    for (const c of cs) {
+      const id = ids.has(c.id) ? `${c.step}-${c.id}` : c.id;
+      ids.add(id);
+      criteria.push({ ...c, id });
+    }
+  };
+  let beside = false;
+  for (const { s } of pairs) {
+    // B-tasks: the story's new code is one step on its entry, however many places it goes beside.
+    const fresh = new Map<string, { step: Step; seen: Set<StoryCriterion> }>();
     for (const p of storySteps(s)) {
       const tasks = p.tasks.map((id) => s.tasks.find((t) => t.id === id)!);
+      // B-tasks: the steps whose change goes here, each as a task of its own (`partsOf`).
+      const parts = p.stepIds.map((id) => stepTasks(s).find((t) => t.id === id)!);
       if (p.kind === "code") {
-        // B-run2-fixes 3: tasks at the same file and line are one step, with every task's criteria.
-        const t = tasks[0]!;
+        // B-run2-fixes 3: steps at the same file and line are one step, with every task's criteria.
+        const t = parts[0]!;
         const at = stepAt(t);
         steps.push({
           id: stepId(t),
           repo: t.repo,
-          what: tasks.map((x) => bare(x.what || x.title)).join("; "),
+          what: parts.map((x) => bare(x.what || x.title)).join("; "),
           ...(s.entry ? { entry: s.entry } : {}),
           ...(at ? { at } : {}),
         });
         const seen = new Set<StoryCriterion>();
-        for (const x of tasks)
-          criteria.push(...criteriaOf(s, x, said(s, x, seen), { step: stepId(t), at }));
+        for (const x of tasks) add(criteriaOf(s, x, said(s, x, seen), { step: stepId(t), at }));
       } else if (p.kind === "new") {
         const id = `new-${s.id}`;
-        steps.push({
-          id,
-          repo: p.repo,
-          what: bare(`${tasksOf(p.tasks)}: ${p.what}`),
-          ...(s.entry ? { entry: s.entry } : {}),
-        });
-        const seen = new Set<StoryCriterion>();
-        for (const t of tasks) criteria.push(...criteriaOf(s, t, said(s, t, seen), { step: id }));
+        // B-tasks: a place beside another's code isn't today's code the step changes or rests on
+        // (the rubric's at), so the step has no at, and the notes say so.
+        if (p.beside) beside = true;
+        let f = fresh.get(id);
+        if (!f) {
+          f = {
+            step: { id, repo: p.repo, what: "", ...(s.entry ? { entry: s.entry } : {}) },
+            seen: new Set(),
+          };
+          fresh.set(id, f);
+          steps.push(f.step);
+        }
+        const what = p.beside
+          ? `new code: ${parts.map((x) => bare(x.what || x.title)).join("; ")}`
+          : p.what;
+        f.step.what = f.step.what
+          ? `${f.step.what}; ${bare(`${tasksOf(p.tasks)}: ${what}`)}`
+          : bare(`${tasksOf(p.tasks)}: ${what}`);
+        for (const t of tasks) add(criteriaOf(s, t, said(s, t, f.seen), { step: id }));
       } else {
         let f = files.get(p.file!);
         if (!f) {
@@ -229,6 +263,11 @@ export function benchStoryFromStories(i: StoriesToBench): BenchStory {
         for (const t of tasks) if (!f.links.some((l) => l.t === t)) f.links.push({ s, t });
       }
     }
+  }
+  if (beside)
+    notes.push(
+      "new code placed beside another step's code has no at: the rubric's at is today's code a step changes or rests on, so it is one step of new code on its entry",
+    );
   // A file step's words, place and criteria once every story's tasks are in.
   for (const [file, f] of files) {
     const path = file.slice(f.step.repo.length + 1);
@@ -237,8 +276,8 @@ export function benchStoryFromStories(i: StoriesToBench): BenchStory {
     if (f.kind === "declares" && f.lines.length) f.step.at = `${path}:${Math.min(...f.lines)}`;
     const seen = new Set<StoryCriterion>();
     for (const { s, t } of f.links)
-      criteria.push(
-        ...criteriaOf(s, t, said(s, t, seen), {
+      add(
+        criteriaOf(s, t, said(s, t, seen), {
           step: f.step.id,
           at: f.step.at,
           prefix: `${f.step.id}-`,

@@ -12,6 +12,8 @@ import { isEmptyDelta, readDeltas, TARGET_DIR } from "./stages/architecture.js";
 import { loadEstate, type Estate } from "./stages/estate.js";
 import {
   criteriaFor,
+  foldWords,
+  partsOf,
   readStoriesAnswer,
   storiesFromDeltas,
   taskPrompt,
@@ -68,6 +70,11 @@ export interface TaskContext {
     file: string;
   };
   step?: TaskContextStep;
+  /**
+   * B-tasks: every step the task covers, in order, when it covers more than one (`step` is the
+   * first). Additive: a task of one step leaves it out.
+   */
+  steps?: TaskContextStep[];
   /** Today's flow, numbered as the target flow counts it; the step this task changes marked. */
   todaySteps: { n: number; kind: string; what: string; cites: string[]; this?: boolean }[];
   /** What the organisation needs of this task, its story, flow or the whole change. */
@@ -218,7 +225,7 @@ export async function taskContext(
         : `${change.id} has no tasks yet: plan its stories first (atticus next says how).`,
     );
 
-  // The task as the target flows give it: its flow, step, fields and today's code.
+  // The task as the target flows give it: its flow, steps, fields and today's code.
   const ctx = await loadChangeContext(root);
   const estate = await loadEstate(root, ctx.records);
   const deltas = (await readDeltas(dir)).deltas.filter((d) => !isEmptyDelta(d));
@@ -228,6 +235,8 @@ export async function taskContext(
   const delta = dt ? deltas.find((d) => d.flow === dt.flow) : undefined;
   const step = delta && dt ? delta.steps[dt.position - 1] : undefined;
   const today = delta ? estate.flowById.get(delta.flow) : undefined;
+  // B-tasks: the steps the task covers, each with the delta's step.
+  const parts = dt ? partsOf(dt).map((p) => ({ p, s: delta?.steps[p.position - 1] })) : [];
   if (!dt)
     notes.push(
       `Task ${id} isn't one the target flows give, so it has no step or cited code here; read its story.`,
@@ -240,72 +249,98 @@ export async function taskContext(
   const sf = storyText ? readStoryFile(storyText) : undefined;
   const answer = await readStoriesAnswer(dir);
   // B-once: the criteria that accept the task, its own and those written on another task.
-  const words =
+  // B-tasks: an answer kept per step reads per task.
+  const found =
     answer?.stories.find((s) => s.id === storyId) ??
     answer?.stories.find((s) => s.tasks.some((t) => t.id === id));
+  const words = found && ds ? foldWords(ds, found) : found;
   const ownCriteria = words ? criteriaFor(words, id) : undefined;
   const own = ownCriteria?.map((c) => c.text);
   const criteria = own?.length ? own : (sf?.criteria ?? []);
 
-  let todayStep: TaskContextStep["today"];
-  const todaySteps: TaskContext["todaySteps"] = [];
-  if (today) {
-    const at =
-      step?.op === "add"
-        ? step.after
-        : step?.op === "change" || step?.op === "remove"
-          ? step.step
+  const todayOf = (x: (typeof parts)[number]): TaskContextStep["today"] => {
+    if (!today) return undefined;
+    const n =
+      x.s?.op === "add"
+        ? x.s.after
+        : x.s?.op === "change" || x.s?.op === "remove"
+          ? x.s.step
           : undefined;
+    const t = n ? today.flow.steps[n - 1] : undefined;
+    return t && n
+      ? {
+          number: n,
+          kind: t.kind,
+          what: t.what,
+          cites: cite(today.repo, t.evidence),
+          relation: x.s?.op === "add" ? "after" : "is",
+        }
+      : undefined;
+  };
+  const todayStep = parts[0] ? todayOf(parts[0]) : undefined;
+  const marked = new Set(parts.flatMap((x) => (todayOf(x) ? [todayOf(x)!.number] : [])));
+  const todaySteps: TaskContext["todaySteps"] = [];
+  if (today)
     today.flow.steps.forEach((s, i) => {
       const n = i + 1;
-      const cites = cite(today.repo, s.evidence);
       todaySteps.push({
         n,
         kind: s.kind,
         what: s.what,
-        cites,
-        ...(n === at ? { this: true } : {}),
+        cites: cite(today.repo, s.evidence),
+        ...(marked.has(n) ? { this: true } : {}),
       });
-      if (n === at)
-        todayStep = {
-          number: n,
-          kind: s.kind,
-          what: s.what,
-          cites,
-          relation: step?.op === "add" ? "after" : "is",
-        };
     });
-  }
 
-  // The files likely to change: the step's own citations, the step it goes after, the flow's
-  // other files in the same repo, then its trigger; a migration the step names is a new file.
+  // The files likely to change: the steps' own citations, the steps they go after, the flow's
+  // other files in the same repo, then its trigger; a migration a step names is a new file.
   const files: TaskContext["files"] = [];
   const add = (c: string, why: string) => {
     const m = /^(.+?)(?::(\d+))?$/.exec(c)!;
     if (files.some((f) => f.path === m[1])) return;
     files.push({ path: m[1]!, ...(m[2] ? { line: Number(m[2]) } : {}), why });
   };
-  if (todayStep)
-    for (const c of todayStep.cites)
+  for (const x of parts) {
+    const t = todayOf(x);
+    if (t)
+      for (const c of t.cites)
+        add(
+          c,
+          t.relation === "is"
+            ? `today's ${t.kind} step (step ${t.number}), which this task ${x.s?.op === "remove" ? "removes" : "changes"}`
+            : `today's ${t.kind} step (step ${t.number}), which the new step follows`,
+        );
+    // B-tasks: an added step nothing places goes beside its nearest placed neighbour.
+    if (x.p.placed === "beside")
+      for (const c of x.p.evidence)
+        add(
+          c,
+          `new code for step ${x.p.position} goes beside it${x.p.beside?.by === "neighbour" ? ` (step ${x.p.beside.step}, the nearest placed step)` : " (the code it calls)"}`,
+        );
+    if (x.p.reuses)
       add(
-        c,
-        todayStep.relation === "is"
-          ? `today's ${todayStep.kind} step (step ${todayStep.number}), which this task ${step?.op === "remove" ? "removes" : "changes"}`
-          : `today's ${todayStep.kind} step (step ${todayStep.number}), which the new step follows`,
+        x.p.reuses.at,
+        `the existing code step ${x.p.position} calls (step ${x.p.reuses.step} of ${x.p.reuses.flow})`,
       );
+  }
   if (today && dt?.repo === today.repo) {
     for (const s of todaySteps) for (const c of s.cites) add(c, `step ${s.n} of the same flow`);
     for (const c of cite(today.repo, today.flow.trigger.evidence)) add(c, "the flow's trigger");
   }
   // B-fixes: where the fields and columns the task adds or changes are declared.
   for (const f of dt?.files ?? []) add(f.lines.length ? `${f.file}:${f.lines[0]}` : f.file, f.why);
-  if (step?.store?.migration) {
-    const path = migrationPath(step.store.migration, step.store.table, estate);
-    files.push({ path: `${line.repo}:${path}`, why: "the migration the step names (new)" });
-  }
+  for (const x of parts)
+    if (x.s?.store?.migration) {
+      const path = migrationPath(x.s.store.migration, x.s.store.table, estate);
+      files.push({ path: `${line.repo}:${path}`, why: "the migration the step names (new)" });
+    }
   if (dt && !files.length)
     notes.push(
       "This is new code: nothing today cites it; follow the repo's patterns for its neighbours.",
+    );
+  for (const d of dt?.done ?? [])
+    notes.push(
+      `Step ${d.position} (${d.what.replace(/[.\s]+$/, "")}) is already done by existing code at ${d.by} (step ${d.step} of ${d.flow}): no change.`,
     );
 
   // What the organisation needs of it, and the knowledge the step leads to.
@@ -444,6 +479,25 @@ export async function taskContext(
           },
         }
       : {}),
+    // B-tasks: a task covering several steps gives each.
+    ...(parts.length > 1
+      ? {
+          steps: parts.map((x) => {
+            const t = todayOf(x);
+            return {
+              op: x.p.op,
+              position: x.p.position,
+              ...(x.p.kind ? { kind: x.p.kind } : {}),
+              what: x.p.what,
+              fields: x.p.fields,
+              ...(x.p.target ? { target: x.p.target } : {}),
+              ...(x.p.store ? { store: x.p.store } : {}),
+              ...(x.s?.why ? { why: x.s.why } : {}),
+              ...(t ? { today: t } : {}),
+            };
+          }),
+        }
+      : {}),
     todaySteps,
     needs,
     knowledge: picked,
@@ -495,12 +549,8 @@ export function renderTaskContext(c: TaskContext): string {
   out.push("## Acceptance criteria", "");
   out.push(...(c.criteria.length ? c.criteria.map((x) => `- ${x}`) : ["- None written yet."]), "");
   if (c.flow && c.step) {
-    const s = c.step;
-    out.push(
-      `## The step: ${s.op} the ${s.kind ?? "step"} step of ${c.flow.id}`,
-      "",
-      `Flow "${c.flow.name}" (${c.flow.change}, repo ${c.flow.repo}): ${c.flow.why}`,
-      "",
+    const flow = c.flow;
+    const bullets = (s: TaskContextStep) => [
       `- Once the change is in: ${s.what}`,
       ...(s.fields.length ? [`- Fields: ${s.fields.join(", ")}`] : []),
       ...(s.target ? [`- Goes to: ${s.target}`] : []),
@@ -511,9 +561,28 @@ export function renderTaskContext(c: TaskContext): string {
             `- Today (${s.today.relation === "is" ? "the step it changes" : "the step it goes after"}): step ${s.today.number}, ${s.today.kind}: ${s.today.what} (${s.today.cites.join(", ") || "not cited"})`,
           ]
         : ["- Today: nothing; this is a new step."]),
-      `- Item ${s.position} of ${c.flow.file}`,
-      "",
-    );
+      `- Item ${s.position} of ${flow.file}`,
+    ];
+    const why = `Flow "${flow.name}" (${flow.change}, repo ${flow.repo}): ${flow.why}`;
+    if (c.steps?.length) {
+      // B-tasks: a task covering several steps gives each, under the flow said once.
+      out.push(`## The steps: ${c.steps.length} steps of ${flow.id}`, "", why, "");
+      for (const s of c.steps)
+        out.push(
+          `### Item ${s.position}: ${s.op} the ${s.kind ?? "step"} step`,
+          "",
+          ...bullets(s),
+          "",
+        );
+    } else
+      out.push(
+        `## The step: ${c.step.op} the ${c.step.kind ?? "step"} step of ${flow.id}`,
+        "",
+        why,
+        "",
+        ...bullets(c.step),
+        "",
+      );
   }
   if (c.todaySteps.length) {
     out.push("## Today's flow", "");
@@ -545,6 +614,8 @@ export function renderTaskContext(c: TaskContext): string {
     out.push(...c.inputs.map((i) => `- ${i.path} (${i.kind})`), "");
   }
   if (c.notes.length) out.push("## Notes", "", ...c.notes.map((n) => `- ${n}`), "");
+  // The prompt keeps its criteria: `atticus task run` sends this file as it is, and its recorded
+  // replays are keyed by the prompt (B-tasks leaves a one-step task's task file as it was).
   out.push("## The task's prompt", "", "```text", c.prompt, "```", "");
   return out.join("\n");
 }

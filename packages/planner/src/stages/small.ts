@@ -50,7 +50,9 @@ import {
   judgedRequests,
   judgeRuntime,
   mergeRequests,
+  partsOf,
   RequestIn,
+  stepTasks,
   storiesFromDeltas,
   unjudgedChecks,
   unwrittenChecks,
@@ -207,8 +209,12 @@ function wordingOf(a: SmallAnswer, stories: DeltaStory[]): StoriesAnswer {
         asA: s.asA,
         iWant: s.iWant,
         soThat: s.soThat,
+        // B-tasks: a step's own id; the story checks and files fold it onto the task covering it.
         tasks: s.tasks.map((t) => ({
-          id: story?.tasks.find((x) => x.position === t.step)?.id ?? `${s.flow}#${t.step}`,
+          id:
+            (story ? stepTasks(story) : []).find((x) => x.position === t.step)?.id ??
+            story?.tasks.flatMap((x) => x.done ?? []).find((x) => x.position === t.step)?.id ??
+            `${s.flow}#${t.step}`,
           criteria: t.criteria,
         })),
       };
@@ -217,6 +223,9 @@ function wordingOf(a: SmallAnswer, stories: DeltaStory[]): StoriesAnswer {
   };
 }
 
+const andWords = (xs: string[]) =>
+  xs.length > 1 ? `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}` : (xs[0] ?? "");
+
 /** The story checks' words, with each story and task named as the assistant wrote them. */
 function inOwnWords(issues: StageIssue[], stories: DeltaStory[]): StageIssue[] {
   const tasks = stories.flatMap((s) => s.tasks);
@@ -224,12 +233,15 @@ function inOwnWords(issues: StageIssue[], stories: DeltaStory[]): StageIssue[] {
     let message = i.message;
     for (const s of stories)
       message = message.replaceAll(`Story ${s.id}`, `The story for flow ${s.flow}`);
-    for (const t of tasks)
+    for (const t of tasks) {
+      // B-tasks: a task covering several steps is named by all of them.
+      const at = partsOf(t).map((p) => String(p.position));
       message = message.replace(
         new RegExp(`\\bTask ${t.id.replace(".", "\\.")}('s)?\\b`, "g"),
         (_m, s: string | undefined) =>
-          `Step ${t.position} of flow ${t.flow}${s ? "'s task's" : "'s task"}`,
+          `Step${at.length === 1 ? "" : "s"} ${andWords(at)} of flow ${t.flow}${s ? "'s task's" : "'s task"}`,
       );
+    }
     message = message.replace(
       /Story flow:(\S+) isn't one of the stories[^:]*: .*$/,
       (_m, f: string) => `There is a story for flow ${f}, which has no target flow with steps.`,

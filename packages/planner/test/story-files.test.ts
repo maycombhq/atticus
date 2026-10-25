@@ -18,6 +18,7 @@ import {
   storiesFromDeltas,
   storiesStage,
   storyCodeSource,
+  stepTasks,
   storySteps,
   STORY_ERROR_RULES,
   taskContext,
@@ -129,7 +130,7 @@ async function checkout(dir: string) {
 describe("a task names the files its change goes into (problem 2)", () => {
   it("from the fields' and the store's facts: the DTOs and spec, the table and entity, the migration's folder", async () => {
     const { stories } = await planned();
-    const [callOut, branch, write] = stories[0]!.tasks;
+    const [callOut, branch, write] = stepTasks(stories[0]!);
     // B-run2-fixes 2: the call-out sends the order's sku and quantity, which POST /orders' request
     // has already, to a new call no file declares yet: naming a field is no change to where it is
     // declared, so the request DTO is no place of this task.
@@ -173,7 +174,7 @@ describe("a task names the files its change goes into (problem 2)", () => {
         what: 201 Created with the order and its screening
         fields: { returns: [id, screening] }
 `);
-    const [validate, respond] = storiesFromDeltas(d, estate)[0]!.tasks;
+    const [validate, respond] = stepTasks(storiesFromDeltas(d, estate)[0]!);
     expect(validate!.files?.map((f) => [f.file, f.why])).toEqual([
       [
         "forge-orders:src/main/java/forge/orders/NewOrder.java",
@@ -191,7 +192,7 @@ describe("a task names the files its change goes into (problem 2)", () => {
 
   it("names only what the facts cite: with no DTO or entity facts, the table's file alone", async () => {
     const { stories } = await planned(false);
-    expect(stories[0]!.tasks.map((t) => (t.files ?? []).map((f) => f.file))).toEqual([
+    expect(stepTasks(stories[0]!).map((t) => (t.files ?? []).map((f) => f.file))).toEqual([
       [],
       [],
       ["forge-orders:src/main/resources/schema.sql"],
@@ -374,7 +375,7 @@ describe("a key-pattern store adds no column to a story (problem 4)", () => {
         "store: { table: forge-orders-cache.cart, columns: [items] }",
       ),
     );
-    const write = storiesFromDeltas(d, e)[0]!.tasks[2]!;
+    const write = stepTasks(storiesFromDeltas(d, e)[0]!)[2]!;
     expect(write.store).toBe("forge-orders-cache.cart: items");
     expect(write.data).toBeUndefined();
   });
@@ -382,7 +383,8 @@ describe("a key-pattern store adds no column to a story (problem 4)", () => {
 
 describe("a story's implementation steps follow the places in the code that change (B-steps)", () => {
   const OC = "forge-orders:src/main/java/forge/orders/OrderController.java";
-  const place = (s: StoryStep) => [s.n, s.kind, s.file, s.lines, s.tasks];
+  // B-tasks: each place by the steps whose change goes there (their own ids).
+  const place = (s: StoryStep) => [s.n, s.kind, s.file, s.lines, s.stepIds];
 
   it("a step per task's own code, then each file it declares a field or column in, then a new migration", async () => {
     const { stories } = await planned();
@@ -402,6 +404,15 @@ describe("a story's implementation steps follow the places in the code that chan
         [],
         ["1.3"],
       ],
+    ]);
+    // B-tasks: the call-out and the branch, both after OrderController.java:4,9, are one task.
+    expect(steps.map((s) => s.tasks)).toEqual([
+      ["1.1"],
+      ["1.1"],
+      ["1.3"],
+      ["1.3"],
+      ["1.3"],
+      ["1.3"],
     ]);
     expect(steps.every((s) => s.repo === "forge-orders")).toBe(true);
     // What changes there, from the task and the facts' citations: nothing the flow doesn't say.
@@ -481,7 +492,7 @@ describe("a story's implementation steps follow the places in the code that chan
         what: 204 No Content
 `);
     const s = storiesFromDeltas(d, estate)[0]!;
-    expect(s.tasks.map((t) => t.evidence)).toEqual([[], []]);
+    expect(stepTasks(s).map((t) => t.evidence)).toEqual([[], []]);
     const steps = storySteps(s);
     expect(steps.map(place)).toEqual([[1, "new", undefined, [], ["1.1", "1.2"]]]);
     expect(steps[0]!.what).toBe(
@@ -494,7 +505,7 @@ describe("a story's implementation steps follow the places in the code that chan
     const { estate } = await planned(false);
     const d = deltas(fixture("deltas.yaml").replace("V4__add_fraud_verdict.sql", "schema.sql"));
     const s = storiesFromDeltas(d, estate)[0]!;
-    expect(s.tasks[2]!.data?.migrationFile).toBe("schema.sql");
+    expect(stepTasks(s)[2]!.data?.migrationFile).toBe("schema.sql");
     expect(storySteps(s).map((x) => [x.kind, x.file])).toEqual([
       ["code", OC],
       ["code", OC],

@@ -1,0 +1,122 @@
+# Today's flows of the order summary's estate (ADR 0124 addendum B-tasks), as the map's specs
+# have them. forge-orders.draft-reply is the existing capability the summary reuses: its
+# AssistantClient reserves the spend, calls the model and settles the spend. Invented.
+- schemaVersion: 1
+  kind: Flow
+  id: forge-orders.draft-reply
+  status: current
+  confidence: inferred
+  component: forge-orders
+  name: An agent drafts a reply to a ticket
+  evidence: []
+  family: []
+  template: default@1
+  trigger:
+    kind: endpoint
+    ref: forge-orders.post-tickets-ticketid-reply-draft
+    what: An agent asks for a draft reply
+    evidence: [{ source: code, repo: forge-orders, path: src/main/java/forge/orders/TicketController.java, line: 12 }]
+  errors:
+    - when: Northwind Models doesn't answer within 10 seconds
+      then: 503 with "the assistant is busy"
+      evidence: [{ source: code, repo: forge-orders, path: src/main/java/forge/orders/ai/AssistantClient.java, line: 52 }]
+    - when: The month's spend is used up
+      then: 429 with "the assistant's budget is spent"
+      evidence: [{ source: code, repo: forge-orders, path: src/main/java/forge/orders/ai/AssistantClient.java, line: 33 }]
+  steps:
+    - kind: entry
+      what: TicketController.draft receives the ticket id
+      evidence: [{ source: code, repo: forge-orders, path: src/main/java/forge/orders/TicketController.java, line: 12 }]
+      refs: [forge-orders.post-tickets-ticketid-reply-draft]
+      data: { reads: [ticketId] }
+    - kind: transform
+      what: The ticket's messages become a prompt
+      evidence: [{ source: code, repo: forge-orders, path: src/main/java/forge/orders/TicketPrompts.java, line: 20 }]
+      refs: []
+      data: { from: [messages], to: [prompt] }
+    - kind: write
+      what: The spend is reserved before the call
+      evidence: [{ source: code, repo: forge-orders, path: src/main/java/forge/orders/ai/AssistantClient.java, line: 31 }]
+      refs: [forge-orders-db.ai_spend]
+      store: { table: forge-orders-db.ai_spend, columns: [request_id, reserved_cents] }
+    - kind: call-out
+      what: Northwind Models writes the text
+      evidence: [{ source: code, repo: forge-orders, path: src/main/java/forge/orders/ai/AssistantClient.java, line: 38 }]
+      refs: [if-66ae84ede8a6bd7b]
+      to: { component: northwind-models, entry: POST /v1/completions }
+      data: { sends: [prompt], returns: [text, citations] }
+    - kind: write
+      what: The spend is settled with what the call cost
+      evidence: [{ source: code, repo: forge-orders, path: src/main/java/forge/orders/ai/AssistantClient.java, line: 45 }]
+      refs: [forge-orders-db.ai_spend]
+      store: { table: forge-orders-db.ai_spend, columns: [request_id, spent_cents] }
+    - kind: respond
+      what: 200 with the draft
+      evidence: [{ source: code, repo: forge-orders, path: src/main/java/forge/orders/TicketController.java, line: 19 }]
+      refs: []
+      data: { returns: [text] }
+- schemaVersion: 1
+  kind: Flow
+  id: forge-web.view-order
+  status: current
+  confidence: inferred
+  component: forge-web
+  name: A shop owner views an order
+  evidence: []
+  family: []
+  template: default@1
+  trigger:
+    kind: page
+    what: The shop owner opens /orders/{orderId}
+    evidence: [{ source: code, repo: forge-web, path: src/routes.tsx, line: 22 }]
+  errors:
+    - when: GET /orders/{orderId} answers 404
+      then: the page says the order isn't found
+      evidence: [{ source: code, repo: forge-web, path: src/orders/OrderPage.tsx, line: 18 }]
+  steps:
+    - kind: entry
+      what: OrderPage reads the order id from the route
+      evidence: [{ source: code, repo: forge-web, path: src/orders/OrderPage.tsx, line: 10 }]
+      refs: []
+      data: { reads: [orderId] }
+    - kind: call-out
+      what: The page gets the order
+      evidence: [{ source: code, repo: forge-web, path: src/api/orders.ts, line: 14 }]
+      refs: []
+      to: { component: forge-orders, entry: "GET /orders/{orderId}" }
+      data: { sends: [orderId], returns: [id, status] }
+    - kind: respond
+      what: The page shows the order's status
+      evidence: [{ source: code, repo: forge-web, path: src/orders/OrderPage.tsx, line: 30 }]
+      refs: []
+      data: { returns: [status] }
+- schemaVersion: 1
+  kind: Flow
+  id: forge-gateway.route-orders
+  status: current
+  confidence: inferred
+  component: forge-gateway
+  name: The gateway routes order calls
+  evidence: []
+  family: []
+  template: default@1
+  trigger:
+    kind: endpoint
+    ref: forge-gateway.any-orders
+    what: A call to /orders/** reaches the gateway
+    evidence: [{ source: config, repo: forge-gateway, path: src/main/resources/routes.yaml, line: 3 }]
+  errors: []
+  steps:
+    - kind: entry
+      what: The /orders/** route matches the call
+      evidence: [{ source: config, repo: forge-gateway, path: src/main/resources/routes.yaml, line: 3 }]
+      refs: [forge-gateway.any-orders]
+    - kind: validate
+      what: The caller's token is checked
+      evidence: [{ source: code, repo: forge-gateway, path: src/main/java/forge/gateway/AuthFilter.java, line: 20 }]
+      refs: []
+    - kind: call-out
+      what: The call is forwarded to forge-orders
+      evidence: [{ source: config, repo: forge-gateway, path: src/main/resources/routes.yaml, line: 8 }]
+      refs: []
+      to: { component: forge-orders, entry: "GET /orders/{orderId}" }

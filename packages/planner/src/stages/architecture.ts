@@ -99,7 +99,7 @@ flows:
       - op: add | change | remove
         step: <change and remove: the step's number in today's flow, as listed>
         after: <add: the number of the step it goes after; 0 for first>
-        at: <add, when the code shows where the new step goes: path:line of the line it goes after, or path:function; leave it out for code in a new file>
+        at: <add: where the new step's code goes, path:line of the line it goes after, or path:function; give it whenever the code goes into or beside a file the repo has (a class it calls or extends counts, in a new flow too); leave it out only for code in a file the change creates>
         kind: <add, or when the kind changes: entry, lookup, read, write, call-out, publish, transform, validate, branch, log, respond, loop, retry>
         what: <one sentence: what the step does once the change is in>
         to: { component: <component or system id>, entry: <the HTTP method and the path, such as "GET /orders/{id}", or a topic>, new: <true when it doesn't exist yet> }   # call-out and publish only: a component, never a table
@@ -802,7 +802,7 @@ export async function placeIssues(
         out.push({
           rule: "delta.at-unknown",
           target,
-          message: `${change} puts the new step at ${s.at}, but ${d.repo} has no such file in its checkout or the catalog: give the path as the repo has it (path:line of the line the step goes after, or path:function), or leave at out for code in a new file.`,
+          message: `${change} puts the new step at ${s.at}, but ${d.repo} has no such file in its checkout or the catalog: give the path as the repo has it (path:line of the line the step goes after, or path:function). Leave at out only for code in a file the change creates.`,
           blocking: true,
           repo: d.repo,
         });

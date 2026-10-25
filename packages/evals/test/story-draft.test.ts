@@ -4,6 +4,7 @@ import { parse } from "yaml";
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_DONE,
+  stepTasks,
   StoriesAnswerSchema,
   type DeltaStory,
   type RequestTask,
@@ -283,10 +284,10 @@ describe("a change's stories as a BenchStory draft", () => {
     expect(got.notes).toMatch(/nullable of forge-orders-db\.orders\.fraud_verdict is not said/);
   });
 
-  it("two tasks the target flow puts at the same line are one step, with both tasks' criteria (B-run2-fixes 3)", () => {
+  it("two steps the target flow puts at the same line are one step, with their task's criteria (B-run2-fixes 3)", () => {
     // The screen and the refusal both go in at OrderController.java:10, as the target flow says.
     const stories = structuredClone(STORIES);
-    for (const t of stories[0]!.tasks.slice(0, 2)) {
+    for (const t of stories[0]!.tasks[0]!.covers!) {
       t.evidence = [`forge-orders:${OC}:10`];
       t.placed = "given";
     }
@@ -300,12 +301,13 @@ describe("a change's stories as a BenchStory draft", () => {
     expect(got.steps[0]!.what).toBe(
       "Northwind Pay screens the order for fraud; A rejected order is refused with 422 and nothing is reserved",
     );
+    // B-tasks: the two steps are task 1.1, so its five criteria (1.2's folded onto it) are here.
     expect(got.criteria.filter((c) => c.step === "t1-1").map((c) => [c.id, c.at])).toEqual([
       ["t1-1-c1", `${OC}:10`],
       ["t1-1-c2", `${OC}:10`],
       ["t1-1-c3", `${OC}:10`],
-      ["t1-2-c1", `${OC}:10`],
-      ["t1-2-c2", `${OC}:10`],
+      ["t1-1-c4", `${OC}:10`],
+      ["t1-1-c5", `${OC}:10`],
     ]);
   });
 
@@ -355,7 +357,44 @@ describe("a change's stories as a BenchStory draft", () => {
       for (const r of errorsOn(repeated, s.id)) expect(errorsOn(once, s.id), s.id).toContain(r);
     }
   });
-});
 
+  it("scores the fraud check's tasks grouped (B-tasks) no lower than one per step: each step keeps its place, each criterion its own id", () => {
+    // The stage makes the call-out and the branch, both after OrderController.java:4,9, one task
+    // (1.1 covering 1.1 and 1.2); the answer, written per step, folds onto it. Before B-tasks
+    // each step was a task: the same stories with every covered step a task again.
+    const perStep = STORIES.map((s) => ({ ...s, tasks: stepTasks(s) }));
+    const got = convert();
+    const before = convert(perStep);
+    const ref = parseReferenceStory(read(join(FIX, "bench", "stories", "forge-fraud-check.yaml")));
+    const [now, was] = [scoreStory(ref, got), scoreStory(ref, before)];
+    expect(got.steps.map((x) => [x.id, x.at])).toEqual(before.steps.map((x) => [x.id, x.at]));
+    for (const k of ["steps", "fields", "errors", "errorsByEntry"] as const)
+      expect(now[k].found, k).toBeGreaterThanOrEqual(was[k].found);
+    expect(now.sections).toMatchObject({ present: 17, total: 17 });
+    expect(now.invented).toEqual([]);
+    expect(new Set(got.criteria.map((c) => c.id)).size).toBe(got.criteria.length);
+    // The branch's step has the task's criteria too, its refusal among them.
+    expect(got.criteria.some((c) => c.step === "t1-2" && c.then.startsWith("422"))).toBe(true);
+  });
+
+  it("gives new code placed beside another step's code no at, and says why (B-tasks)", () => {
+    const s = structuredClone(STORIES[0]!);
+    s.change = "new";
+    s.entry = "POST /orders";
+    for (const t of s.tasks[0]!.covers!) {
+      t.evidence = ["forge-orders:src/main/java/forge/orders/OrderEventReader.java:18"];
+      t.placed = "beside";
+      t.beside = { by: "neighbour", step: 3 };
+    }
+    const got = convert([s]);
+    const fresh = got.steps.find((x) => x.id === "new-s1-place-order")!;
+    expect(fresh).toMatchObject({ entry: "POST /orders" });
+    expect(fresh.at).toBeUndefined();
+    expect(got.steps.some((x) => x.at?.includes("OrderEventReader"))).toBe(false);
+    expect(got.notes).toContain(
+      "new code placed beside another step's code has no at: the rubric's at is today's code a step changes or rests on",
+    );
+  });
+});
 const V4 = "V4__add_fraud_verdict.sql";
 const OC = "src/main/java/forge/orders/OrderController.java";

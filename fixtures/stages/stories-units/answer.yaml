@@ -1,0 +1,210 @@
+# The story writer's answer for the order summary as the stage asked for it before B-tasks: one
+# entry per target-flow step, each with its own criteria, repeated where a field passes through
+# several steps. An answer keyed by step reads the same once the steps are grouped into tasks:
+# a step's criteria and tests go to the task that covers it. Invented.
+stories:
+  - id: s1-route-orders
+    title: Route the summary call
+    asA: shop owner
+    iWant: the order summary to reach forge-orders through the gateway
+    soThat: the order page can show it
+    context: The gateway is the only way in from the browser; forge-orders isn't reachable directly.
+    scope:
+      in: []
+      out: [Other order routes keep their limits.]
+    interfaces:
+      - entry: "GET /orders/{orderId}/summary"
+        change: added
+        breaking: false
+        why: A new route to a new entry.
+        consumers: [forge-web]
+        fields:
+          - { name: summary, side: response, type: string, change: added }
+    data: { none: the gateway stores nothing }
+    nonFunctional:
+      auth: The caller's token is checked as for every order route.
+      audit: The gateway's access log records each call.
+      timeouts: The route times out after 15 seconds, the model's 10 and some room.
+      performance: One route match more per call.
+    tests: [RoutesTest gains the summary route and its limit.]
+    dependencies: { stories: [s2-summarise-order], repos: [], notes: [] }
+    tasks:
+      - id: "1.1"
+        criteria:
+          - text: Given a caller who asked for 10 summaries this minute, when they ask again, then 429 says to wait
+            outcome: error
+            rule: limit
+            status: 429
+            entry: "GET /orders/{orderId}/summary"
+          - text: Given a caller who asked for 9 summaries this minute, when they ask again, then the call reaches forge-orders
+            entry: "GET /orders/{orderId}/summary"
+      - id: "1.2"
+        criteria:
+          - text: Given the summary route, when GET /orders/42/summary is called, then forge-orders gets orderId 42 and answers with the summary and citations
+            checks: [orderId, summary, citations]
+            entry: "GET /orders/{orderId}/summary"
+          - text: Given forge-orders is down, when GET /orders/42/summary is called, then 502 says the summary can't be had now
+            outcome: error
+            rule: unavailable
+            status: 502
+            entry: "GET /orders/{orderId}/summary"
+  - id: s2-summarise-order
+    title: Summarise an order's history
+    asA: shop owner
+    iWant: a short summary of what happened to an order
+    soThat: I don't read every event to answer a customer
+    context: Northwind Models is the vendor forge-orders already calls for draft replies; the month's spend is capped.
+    scope:
+      in: [The summary is cached for an hour.]
+      out: [Draft replies stay as they are., The summary is not editable.]
+    interfaces:
+      - entry: "GET /orders/{orderId}/summary"
+        change: added
+        breaking: false
+        why: A new entry.
+        consumers: [forge-gateway]
+        fields:
+          - { name: orderId, side: request, type: integer, required: true, change: added, validation: a positive whole number }
+          - { name: summary, side: response, type: string, required: true, change: added }
+          - { name: citations, side: response, type: array, required: true, change: added }
+    data:
+      - { table: forge-orders-db.order_summaries, column: order_id, type: BIGINT, nullable: false, migration: V7__order_summaries.sql, classification: internal, retention: one hour }
+      - { table: forge-orders-db.order_summaries, column: summary, type: TEXT, nullable: false, migration: V7__order_summaries.sql, classification: internal, retention: one hour }
+      - { table: forge-orders-db.order_summaries, column: created_at, type: TIMESTAMP, nullable: false, migration: V7__order_summaries.sql, classification: internal, retention: one hour }
+    nonFunctional:
+      auth: A shop owner who may read the order may read its summary.
+      audit: Each summary's cost is logged with the order id.
+      timeouts: The model call times out after 10 seconds with no retry, as AssistantClient does today.
+      performance: One model call per order an hour; the cache answers the rest.
+    tests:
+      - OrderSummaryControllerTest covers a summary, a missing order and a refused caller.
+      - OrderSummaryServiceTest covers the prompt, the dropped sentences and the cache.
+    dependencies: { stories: [], repos: [], notes: [The V7 migration runs before forge-orders is released.] }
+    tasks:
+      - id: "2.1"
+        criteria:
+          - text: Given order 42, when GET /orders/42/summary is called, then the controller reads orderId 42
+            checks: [orderId]
+            entry: "GET /orders/{orderId}/summary"
+      - id: "2.2"
+        criteria:
+          - text: Given a caller who may read order 42, when GET /orders/42/summary is called, then the orderId is let through
+            checks: [orderId]
+          - text: Given a caller who may not read order 42, when GET /orders/42/summary is called, then 403 says they may not and nothing is summarised
+            checks: [orderId]
+            outcome: error
+            rule: forbidden
+            status: 403
+            validation: the caller may read the order
+          - text: Given orderId abc, when GET /orders/abc/summary is called, then 400 says orderId must be a number
+            checks: [orderId]
+            outcome: error
+            rule: format
+            status: 400
+            validation: orderId is a positive whole number
+      - id: "2.3"
+        criteria:
+          - text: Given order 42 exists, when its summary is asked for, then the order with id 42 and its status is found
+            checks: [id, status]
+          - text: Given no order 42, when its summary is asked for, then 404 says the order isn't found
+            checks: [id]
+            outcome: error
+            rule: not-found
+            status: 404
+      - id: "2.4"
+        criteria:
+          - text: Given order 42 has three events, when its summary is asked for, then the three events are read by order_id, oldest at first, each with its kind
+            checks: [order_id, kind, at]
+      - id: "2.5"
+        criteria:
+          - text: Given three events, when the prompt is made, then the prompt has one line per event with its kind and at
+            checks: [kind, at, prompt]
+      - id: "2.6"
+        criteria:
+          - text: Given a summary is asked for, when the call is made, then a spend row with a request_id and its reserved_cents is written first
+            checks: [request_id, reserved_cents]
+          - text: Given the month's spend is used up, when the spend is reserved, then 429 says the assistant's budget is spent
+            checks: [reserved_cents]
+            outcome: error
+            rule: limit
+            status: 429
+      - id: "2.7"
+        criteria:
+          - text: Given a prompt, when Northwind Models is called, then the prompt is sent and the text and citations come back
+            checks: [prompt, text, citations]
+          - text: Given Northwind Models doesn't answer within 10 seconds, when the summary is asked for, then 503 says the assistant is busy
+            outcome: error
+            rule: unavailable
+            status: 503
+      - id: "2.8"
+        criteria:
+          - text: Given the call cost 3 cents, when the spend is settled, then the spend row for the request_id has spent_cents 3
+            checks: [request_id, spent_cents]
+          - text: Given the settle fails, when the summary is asked for, then the summary is still returned and the failure is logged
+            outcome: error
+            rule: unavailable
+      - id: "2.9"
+        criteria:
+          - text: Given a text of three sentences, one citing no event, when the citations are checked, then the summary has the two that cite one
+            checks: [text, citations, summary]
+      - id: "2.10"
+        criteria:
+          - text: Given a summary, when it is kept, then an order_summaries row holds the order_id, the summary and created_at
+            checks: [order_id, summary, created_at]
+          - text: Given a row made 30 minutes ago, when the summary is asked for again, then the kept summary is returned and no model is called
+            checks: [summary, created_at]
+          - text: Given the insert fails, when the summary is kept, then the summary is still returned and the failure is logged
+            outcome: error
+            rule: unavailable
+      - id: "2.11"
+        criteria:
+          - text: Given a summary of 400 characters, when it is returned, then the log has its length and cost and never the summary itself
+            checks: [summary]
+      - id: "2.12"
+        criteria:
+          - text: Given order 42, when GET /orders/42/summary is called, then 200 returns the summary and its citations
+            checks: [summary, citations]
+            entry: "GET /orders/{orderId}/summary"
+  - id: s3-view-order
+    title: Show the order's summary
+    asA: shop owner
+    iWant: the order page to show the order's summary
+    soThat: I see its history at a glance
+    scope:
+      in: []
+      out: [The order's status shows as today.]
+    interfaces:
+      - entry: "GET /orders/{orderId}/summary"
+        change: added
+        breaking: false
+        why: The page calls the new entry.
+        consumers: [forge-web]
+        fields:
+          - { name: summary, side: response, type: string, change: added }
+          - { name: citations, side: response, type: array, change: added }
+    data: { none: the page stores nothing }
+    nonFunctional:
+      auth: As the order page today.
+      audit: Nothing is recorded on the page.
+      timeouts: The page waits 15 seconds for the summary, then shows "no summary yet".
+      performance: One call more per page view.
+    tests: [OrderPage.test.tsx covers the summary, its links and a failed summary.]
+    dependencies: { stories: [s2-summarise-order, s1-route-orders], repos: [], notes: [] }
+    tasks:
+      - id: "3.1"
+        criteria:
+          - text: Given order 42, when the page opens, then it asks GET /orders/42/summary with orderId 42 and gets the summary and citations
+            checks: [orderId, summary, citations]
+          - text: Given the summary call fails, when the page opens, then the page shows "no summary yet"
+            checks: [summary]
+            outcome: error
+            rule: unavailable
+      - id: "3.2"
+        criteria:
+          - text: Given the summary call fails, when the page opens, then the order's status still shows and the summary says "no summary yet"
+            checks: [summary]
+      - id: "3.3"
+        criteria:
+          - text: Given a summary with two citations, when the page shows it, then the status shows and each sentence of the summary links its event from citations
+            checks: [status, summary, citations]
+requests: []

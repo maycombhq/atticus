@@ -812,10 +812,11 @@ describe("the stories stage", () => {
     });
     expect(r.state).toBe("done");
     expect(prompts[1]).toContain("Task 1.3's criteria check no value of quantity, fraud_verdict");
+    // B-tasks: the call-out and the branch both go in after OrderController.java:4,9: one task.
     expect(r.stories.map((s) => [s.id, s.repo, s.tasks.map((t) => t.id)])).toEqual([
-      ["s1-place-order", "forge-orders", ["1.1", "1.2", "1.3"]],
+      ["s1-place-order", "forge-orders", ["1.1", "1.3"]],
     ]);
-    const t3 = r.stories[0]!.tasks[2]!;
+    const t3 = r.stories[0]!.tasks[1]!;
     expect(t3.fields).toEqual(["sku", "quantity", "fraud_verdict"]);
     expect(t3.evidence).toEqual([
       "forge-orders:src/main/java/forge/orders/OrderController.java:13",
@@ -828,7 +829,7 @@ describe("the stories stage", () => {
     expect(story).toContain("It goes to northwind-pay POST /v1/screenings (new).");
     const tasks = await readFile(join(dir(root), "tasks.md"), "utf8");
     expect(tasks).toContain(
-      "- [ ] 1.1 Add the call-out step: Northwind Pay screens the order for fraud (story s1-place-order)",
+      "- [ ] 1.1 Add the call-out step: Northwind Pay screens the order for fraud, and 1 more step in OrderController.java (story s1-place-order)",
     );
     expect(tasks).toContain(
       "  - Waits for: R1 Network firewall rule (10 working days); R2 Vendor onboarding (20 working days)",
@@ -886,7 +887,11 @@ describe("a criterion that checks a field without naming it", () => {
     // The story file says so, where the story lens and the PR's reviewer read it.
     const story = await readFile(join(dir(root), "stories/s1-place-order.md"), "utf8");
     expect(story).toContain(
-      "  - Not judged yet: this criterion says it checks fraud_verdict without naming it. The story lens and the reviewer confirm it does (judgments/covers-field/ keeps a verdict).",
+      "says it checks fraud_verdict without naming it. The story lens and the reviewer confirm it does (judgments/covers-field/ keeps a verdict).",
+    );
+    // B-tasks: in the task's section, naming the criterion by its first words; not in the list.
+    expect(story).toMatch(
+      /^- Not judged yet: "Given .*…" says it checks fraud_verdict without naming it\./m,
     );
   });
 

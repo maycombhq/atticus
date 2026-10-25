@@ -53,6 +53,14 @@ addendum B-stories): `placed.yaml` and `deltas.yaml`, the feature and architectu
 non-functional notes, test notes and dependencies; and `expected/s1-place-order.md`, the story
 file the stage writes from it, with a build command from a repos manifest the test writes.
 
+`stories-units/` is the order summary (ADR 0124 addendum B-tasks): a one-page feature that came
+out too fine, as a real change did. `catalog.yaml` and `flows.yaml` are forge-orders, forge-web
+and forge-gateway, with an existing flow (`forge-orders.draft-reply`) whose AssistantClient
+reserves the spend, calls the invented vendor Northwind Models and settles the spend.
+`deltas.yaml` holds a new server flow of twelve steps (one placed with `at`), a web story and a
+gateway route story; `answer.yaml` is the story writer's answer written per step (17 steps, 28
+criteria). The tests build the estate from them in memory.
+
 `stories-bench/` is the stories bench's conversion (B-stories-bench): `stories.yaml`, the stories
 the stage works out for the fraud check from `stories/deltas.yaml`; `expected/forge-fraud-check.yaml`,
 the `BenchStory` draft `atticus bench stories --change` makes of them and `stories/answer.yaml`;

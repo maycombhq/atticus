@@ -7,34 +7,17 @@ As a shop owner I want every new order screened by Northwind Pay so that stolen 
 
 Northwind Pay is a vendor outside the estate; it answers each screening with a verdict of accepted or rejected.
 
-Today, flow forge-orders.place-order (A client places an order), started by POST /orders:
-
-1. entry: OrderController.place receives the new order (forge-orders:src/main/java/forge/orders/OrderController.java:4, forge-orders:src/main/java/forge/orders/OrderController.java:9)
-2. call-out: The stock service reserves the quantity (forge-orders:src/main/java/forge/orders/StockClient.java:7)
-3. transform: The request becomes an Order entity (forge-orders:src/main/java/forge/orders/OrderController.java:12)
-4. write: The order is inserted (forge-orders:src/main/java/forge/orders/OrderController.java:13)
-5. respond: 201 Created with the saved order (forge-orders:src/main/java/forge/orders/OrderController.java:14)
+Today, forge-orders.place-order (A client places an order), started by POST /orders, has 5 steps and 1 error path; the change adds 2 steps and changes 1. The full flow, today's and once the change is in, is in target-flows/forge-orders.place-order.yaml.
 
 Its error paths today:
 
 - The body fails validation: 400 with the errors (forge-orders:src/main/java/forge/orders/OrderController.java:10)
 
-Once the change is in:
-
-1. entry: OrderController.place receives the new order
-2. call-out, added by task 1.1: Northwind Pay screens the order for fraud
-3. branch, added by task 1.2: A rejected order is refused with 422 and nothing is reserved
-4. call-out: The stock service reserves the quantity
-5. transform: The request becomes an Order entity
-6. write, changed by task 1.3: The order is inserted with the screen's verdict
-7. respond: 201 Created with the saved order
-
 ## Scope
 
 In:
 
-- Task 1.1: Add the call-out step: Northwind Pay screens the order for fraud.
-- Task 1.2: Add the branch step: A rejected order is refused with 422 and nothing is reserved.
+- Task 1.1: Add the call-out step: Northwind Pay screens the order for fraud, and 1 more step in OrderController.java.
 - Task 1.3: Change the write step: The order is inserted with the screen's verdict.
 - The checkout sends the card token with each order.
 
@@ -46,23 +29,30 @@ Out:
 
 ## Implementation steps
 
-Each place in the code the change goes into, in order, from the tasks and the map's citations. The tasks below say how; each task's acceptance criteria accept the places it changes.
-
 1. forge-orders:src/main/java/forge/orders/OrderController.java (lines 4 and 9), task 1.1: adds the call-out step after this code: Northwind Pay screens the order for fraud.
-2. forge-orders:src/main/java/forge/orders/OrderController.java (lines 4 and 9), task 1.2: adds the branch step after this code: A rejected order is refused with 422 and nothing is reserved.
+2. forge-orders:src/main/java/forge/orders/OrderController.java (lines 4 and 9), task 1.1: adds the branch step after this code: A rejected order is refused with 422 and nothing is reserved.
 3. forge-orders:src/main/java/forge/orders/OrderController.java (line 13), task 1.3: changes the write step here: The order is inserted with the screen's verdict.
 4. forge-orders:src/main/resources/schema.sql (line 1), task 1.3: the fields and columns change here: where table forge-orders-db.orders and its columns are.
 5. forge-orders:V4__add_fraud_verdict.sql (new), task 1.3: the new migration V4__add_fraud_verdict.sql adds fraud_verdict to forge-orders-db.orders.
 
 ## Acceptance criteria
 
+Task 1.1:
+
 - Given a new order with sku, quantity and cardToken, when POST /orders is called, then sku, quantity and cardToken are sent to Northwind Pay and the verdict is read.
 - Given an order without a cardToken, when POST /orders is called, then 400 says cardToken is required and nothing is sent to Northwind Pay.
+  Validation: cardToken is required; Error: required, 400.
 - Given Northwind Pay doesn't answer within 2 seconds, when POST /orders is called, then 503 says the order can't be screened now and no stock is reserved.
+  Error: unavailable, 503.
 - Given a rejected verdict, when POST /orders is called, then 422 says the verdict refused the order and no stock is reserved.
+  Error: forbidden, 422.
 - Given an accepted verdict, when POST /orders is called, then the verdict lets the order go on to reserve stock.
+
+Task 1.3:
+
 - Given an accepted order, when it is saved, then the orders row holds sku, quantity and fraud_verdict.
 - Given the insert fails, when the order is saved, then 500 and no orders row holds the order's fraud_verdict.
+  Error: other, 500.
 
 ## Interface changes
 
@@ -129,30 +119,28 @@ target-flows/forge-orders.place-order.yaml (modify flow forge-orders.place-order
 
 forge-orders
 
+Build and test with `./gradlew test`.
+
 ## Tasks
 
-### Task 1.1: Add the call-out step: Northwind Pay screens the order for fraud
+### Task 1.1: Add the call-out step: Northwind Pay screens the order for fraud, and 1 more step in OrderController.java
 
-- Step: add (call-out), item 1 of target-flows/forge-orders.place-order.yaml
+- Step: add (call-out), item 1 of target-flows/forge-orders.place-order.yaml: Northwind Pay screens the order for fraud; goes to northwind-pay POST /v1/screenings (new)
+- Step: add (branch), item 2 of target-flows/forge-orders.place-order.yaml: A rejected order is refused with 422 and nothing is reserved
 - Fields: sku, quantity, cardToken, verdict
-- Evidence: forge-orders:src/main/java/forge/orders/OrderController.java:4, forge-orders:src/main/java/forge/orders/OrderController.java:9
-- Where it goes: not said by the target flow; after the step before it (forge-orders:src/main/java/forge/orders/OrderController.java:4, forge-orders:src/main/java/forge/orders/OrderController.java:9), where it fits
-- Goes to: northwind-pay POST /v1/screenings (new)
+- Where it goes: not said by the target flow; after the step before it (forge-orders:src/main/java/forge/orders/OrderController.java:4, forge-orders:src/main/java/forge/orders/OrderController.java:9), where it fits: items 1 and 2
 - Files to touch: forge-orders:src/main/java/forge/orders/OrderController.java (lines 4 and 9)
-- Acceptance criteria:
-  - Given a new order with sku, quantity and cardToken, when POST /orders is called, then sku, quantity and cardToken are sent to Northwind Pay and the verdict is read. (Entry: POST /orders)
-  - Given an order without a cardToken, when POST /orders is called, then 400 says cardToken is required and nothing is sent to Northwind Pay. (Entry: POST /orders; Validation: cardToken is required; Error: required, 400)
-  - Given Northwind Pay doesn't answer within 2 seconds, when POST /orders is called, then 503 says the order can't be screened now and no stock is reserved. (Entry: POST /orders; Error: unavailable, 503)
+- Acceptance criteria: the 5 under Task 1.1 in Acceptance criteria
 - Tests to add:
   - FraudClientTest sends sku, quantity and cardToken and reads the verdict.
-- Run: `./gradlew test`
 
 Prompt for Copilot or Claude Code:
 
 ```text
 Implement task 1.1 of the change add-fraud-check in the repo forge-orders.
-Flow forge-orders.place-order (A client places an order): add the call-out step. Northwind Pay screens the order for fraud.
-It goes to northwind-pay POST /v1/screenings (new).
+Flow forge-orders.place-order (A client places an order): 2 steps of the target flow, in one change.
+- Item 1: add the call-out step. Northwind Pay screens the order for fraud. It goes to northwind-pay POST /v1/screenings (new).
+- Item 2: add the branch step. A rejected order is refused with 422 and nothing is reserved.
 Fields: sku, quantity, cardToken, verdict.
 POST /orders gains the request field cardToken (string, required). Validation: required; 1 to 64 characters.
 POST /v1/screenings gains the request field sku (string, required).
@@ -161,58 +149,20 @@ POST /v1/screenings gains the request field cardToken (string, required).
 POST /v1/screenings gains the response field verdict (string, required).
 The target flow doesn't say where it goes: forge-orders:src/main/java/forge/orders/OrderController.java:4, forge-orders:src/main/java/forge/orders/OrderController.java:9 are the step before it, so put it where it fits after that.
 Today's code is at forge-orders:src/main/java/forge/orders/OrderController.java:4, forge-orders:src/main/java/forge/orders/OrderController.java:9; read it first.
-Acceptance criteria:
-- Given a new order with sku, quantity and cardToken, when POST /orders is called, then sku, quantity and cardToken are sent to Northwind Pay and the verdict is read (checks sku, quantity, cardToken, verdict)
-- Given an order without a cardToken, when POST /orders is called, then 400 says cardToken is required and nothing is sent to Northwind Pay (checks cardToken)
-- Given Northwind Pay doesn't answer within 2 seconds, when POST /orders is called, then 503 says the order can't be screened now and no stock is reserved
+Acceptance criteria: the 5 under Task 1.1 in Acceptance criteria (stories/s1-place-order.md).
 Tests to add:
 - FraudClientTest sends sku, quantity and cardToken and reads the verdict
 Run ./gradlew test until it passes.
 Change only this repo. Write a test for each criterion. Never push to a protected branch.
 ```
 
-### Task 1.2: Add the branch step: A rejected order is refused with 422 and nothing is reserved
-
-- Step: add (branch), item 2 of target-flows/forge-orders.place-order.yaml
-- Fields: verdict
-- Evidence: forge-orders:src/main/java/forge/orders/OrderController.java:4, forge-orders:src/main/java/forge/orders/OrderController.java:9
-- Where it goes: not said by the target flow; after the step before it (forge-orders:src/main/java/forge/orders/OrderController.java:4, forge-orders:src/main/java/forge/orders/OrderController.java:9), where it fits
-- Files to touch: forge-orders:src/main/java/forge/orders/OrderController.java (lines 4 and 9)
-- Acceptance criteria:
-  - Given a rejected verdict, when POST /orders is called, then 422 says the verdict refused the order and no stock is reserved. (Error: forbidden, 422)
-  - Given an accepted verdict, when POST /orders is called, then the verdict lets the order go on to reserve stock.
-- Tests to add:
-  - A test for each criterion above, beside the tests of src/main/java/forge/orders/OrderController.java.
-- Run: `./gradlew test`
-
-Prompt for Copilot or Claude Code:
-
-```text
-Implement task 1.2 of the change add-fraud-check in the repo forge-orders.
-Flow forge-orders.place-order (A client places an order): add the branch step. A rejected order is refused with 422 and nothing is reserved.
-Fields: verdict.
-The target flow doesn't say where it goes: forge-orders:src/main/java/forge/orders/OrderController.java:4, forge-orders:src/main/java/forge/orders/OrderController.java:9 are the step before it, so put it where it fits after that.
-Today's code is at forge-orders:src/main/java/forge/orders/OrderController.java:4, forge-orders:src/main/java/forge/orders/OrderController.java:9; read it first.
-Acceptance criteria:
-- Given a rejected verdict, when POST /orders is called, then 422 says the verdict refused the order and no stock is reserved (checks verdict)
-- Given an accepted verdict, when POST /orders is called, then the verdict lets the order go on to reserve stock (checks verdict)
-Run ./gradlew test until it passes.
-Change only this repo. Write a test for each criterion. Never push to a protected branch.
-```
-
 ### Task 1.3: Change the write step: The order is inserted with the screen's verdict
 
-- Step: change (write), item 3 of target-flows/forge-orders.place-order.yaml
+- Step: change (write), item 3 of target-flows/forge-orders.place-order.yaml; store forge-orders-db.orders: sku, quantity, fraud_verdict
 - Fields: sku, quantity, fraud_verdict
-- Evidence: forge-orders:src/main/java/forge/orders/OrderController.java:13
-- Store: forge-orders-db.orders: sku, quantity, fraud_verdict
 - Files to touch: forge-orders:src/main/java/forge/orders/OrderController.java (line 13), forge-orders:src/main/resources/schema.sql (line 1), forge-orders:V4__add_fraud_verdict.sql (new migration)
-- Acceptance criteria:
-  - Given an accepted order, when it is saved, then the orders row holds sku, quantity and fraud_verdict.
-  - Given the insert fails, when the order is saved, then 500 and no orders row holds the order's fraud_verdict. (Error: other, 500)
-- Tests to add:
-  - A test for each criterion above, beside the tests of src/main/java/forge/orders/OrderController.java.
-- Run: `./gradlew test`
+- Acceptance criteria: the 2 under Task 1.3 in Acceptance criteria
+- Tests to add: a test for each criterion, beside the tests of src/main/java/forge/orders/OrderController.java.
 
 Prompt for Copilot or Claude Code:
 
@@ -224,9 +174,7 @@ Fields: sku, quantity, fraud_verdict.
 Column forge-orders-db.orders.fraud_verdict: varchar(20), nullable, migration V4__add_fraud_verdict.sql.
 Today's code is at forge-orders:src/main/java/forge/orders/OrderController.java:13; read it first.
 Its fields and columns are declared in forge-orders:src/main/resources/schema.sql:1; change them there too.
-Acceptance criteria:
-- Given an accepted order, when it is saved, then the orders row holds sku, quantity and fraud_verdict (checks sku, quantity, fraud_verdict)
-- Given the insert fails, when the order is saved, then 500 and no orders row holds the order's fraud_verdict (checks fraud_verdict)
+Acceptance criteria: the 2 under Task 1.3 in Acceptance criteria (stories/s1-place-order.md).
 Run ./gradlew test until it passes.
 Change only this repo. Write a test for each criterion. Never push to a protected branch.
 ```

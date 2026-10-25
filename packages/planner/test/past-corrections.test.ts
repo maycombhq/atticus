@@ -103,13 +103,15 @@ const BEFORE = {
   // re-pinned after B-places asked the architect for an added step's place (`at`); and in B2,
   // because its input, the feature answer above, changed (its code didn't; the architecture
   // answer still fits and is unchanged); and after B-run2-fixes named the table whose columns
-  // the store facts list (its one changed line)
-  arch: "8e24f28d9b508f319199f1f3373368260d67a3500293e861663f9237590d4756",
+  // the store facts list (its one changed line); and after B-tasks asked for `at` whenever the
+  // code goes into or beside a file the repo has, a new flow's too (the format's one `at` line)
+  arch: "0905038a9c4ad3011b8d35caed274086fab7dc8a3c17d30e725d329a6dd76027",
   // re-pinned after B-run2-fixes 5 gave the stories rules the rule words (one line added); and
   // after B-once let a criterion accept other tasks (also in the format, one rule reworded, one added);
-  // and on 2026-10-25, when the format's requests line said a standard is followed, never listed
-  // there (its one changed line: with the old line put back, the prompt hashes to 7fe7e8e2...)
-  stories: "2a957f3ce77ab521af0ad5df1e9d7464327b8d426576c0d40c26dad4d243edd6",
+  // and on 2026-10-25 twice: the format's requests line (a standard is followed, never listed
+  // there) and B-tasks grouping the fraud check's call-out and branch into one task (the source's
+  // two task lines became one that lists the steps it covers)
+  stories: "dbbd7fce7baafd6761886557101312c91f36c5fa168be41ae977854a52ffc20c",
 };
 
 const ARCHIVE = join(FIX, "corrections/changes/archive");
