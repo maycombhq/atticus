@@ -1665,11 +1665,34 @@
             ]
           },
           {
-            "id": "scan",
-            "title": "Scan the repos",
-            "description": "Read the code into the catalog.\n[Scan every repo](command:atticus.scanAll)",
+            "id": "map",
+            "title": "Map the repos",
+            "description": "Copilot reads each repo into facts, each citing its line; Atticus checks them.\n[Map a repo](command:atticus.map)\n[Verify it](command:atticus.verify)\n[See the map](command:atticus.showApp)",
             "media": {
-              "markdown": "media/walkthrough/5-scan.md"
+              "markdown": "media/walkthrough/5-map.md"
+            },
+            "completionEvents": [
+              "onCommand:atticus.map",
+              "onCommand:atticus.verify"
+            ]
+          },
+          {
+            "id": "change",
+            "title": "Start a change",
+            "description": "Plan it on the map, with the critic at every stage.\n[New change](command:atticus.newChange)\n[Write its stories](command:atticus.stories)\n[Review it with the critic](command:atticus.critic)",
+            "media": {
+              "markdown": "media/walkthrough/6-change.md"
+            },
+            "completionEvents": [
+              "onCommand:atticus.newChange"
+            ]
+          },
+          {
+            "id": "scan",
+            "title": "Legacy: scan the repos",
+            "description": "The built-in readers, before map. Still there for scripts and older metarepos.\n[Scan every repo](command:atticus.scanAll)",
+            "media": {
+              "markdown": "media/walkthrough/7-legacy-scan.md"
             },
             "completionEvents": [
               "onCommand:atticus.scanAll"
@@ -1677,24 +1700,13 @@
           },
           {
             "id": "specs",
-            "title": "Draft the specs",
-            "description": "Each repo's flows, step by step, with Copilot.\n[Draft a spec](command:atticus.draftSpec)\n[See the diagrams](command:atticus.showApp)",
+            "title": "Legacy: draft the specs",
+            "description": "Each repo's flows drafted from a scan; map and verify give the flows now.\n[Draft a spec](command:atticus.draftSpec)",
             "media": {
-              "markdown": "media/walkthrough/6-specs.md"
+              "markdown": "media/walkthrough/8-legacy-specs.md"
             },
             "completionEvents": [
               "onCommand:atticus.draftSpec"
-            ]
-          },
-          {
-            "id": "change",
-            "title": "Start a change",
-            "description": "Plan it on the flows, with the critic at every stage.\n[New change](command:atticus.newChange)",
-            "media": {
-              "markdown": "media/walkthrough/7-change.md"
-            },
-            "completionEvents": [
-              "onCommand:atticus.newChange"
             ]
           }
         ]

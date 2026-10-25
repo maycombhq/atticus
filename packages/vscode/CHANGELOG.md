@@ -4,6 +4,9 @@ The Atticus extension for VS Code. The command line's own changes are in the rep
 
 ## Unreleased
 
+- **The twelve commands first** (ADR 0124 addendum D-cli): Run a command…, a repo's and a change's commands and `@atticus /run` list the command line's twelve (those `atticus commands --json` marks `legacy: false`) first, in `atticus help`'s order, then every other command by area under **Legacy**. With an older command line they are listed by area as before.
+- **The walkthrough maps first:** map a repo, verify it and see the Map, then start a change; scanning and drafting specs are the last two steps, under **Legacy**.
+
 ## 0.5.0 (pre-release, with Atticus 2.0.0-rc.1)
 
 Three views and the steps; the rest behind `atticus.fullUi` (Phase D, ADR 0124 addendum D-app).

@@ -62,3 +62,23 @@ export const DEFAULT_CHAT = [
 
 /** Where the Atticus tab opens: Home, the first of the app's six entries. */
 export const APP_HOME = "#/home";
+
+/**
+ * The command line's twelve, in the order `atticus help` shows them (ADR 0124 addendum D-cli;
+ * `TOP_WORDS` in packages/cli/src/top-commands.ts, held to it by test/manifest.test.ts). The
+ * command lists show the commands under these words first and the legacy ones after.
+ */
+export const TOP_COMMANDS = [
+  "init",
+  "map",
+  "verify",
+  "join",
+  "change",
+  "critic",
+  "stories",
+  "task",
+  "questions",
+  "knowledge",
+  "next",
+  "ui",
+] as const;

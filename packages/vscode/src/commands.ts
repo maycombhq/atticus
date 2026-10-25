@@ -1,4 +1,5 @@
-import { commandTitle } from "./words";
+import { TOP_COMMANDS } from "./surface";
+import { commandTitle, WORDS } from "./words";
 
 /**
  * Every Atticus command in the editor (ADR 0096), from `atticus commands --json`: the command
@@ -44,6 +45,11 @@ export interface CatalogCommand {
   area: string;
   runs: "ai" | "shared" | "serve" | "local";
   approve?: string;
+  /**
+   * Outside the twelve (ADR 0124 addendum D-cli): reached with `atticus legacy`, and still run
+   * by its own name. Absent from an older command line's catalogue.
+   */
+  legacy?: boolean;
 }
 
 export interface Catalog {
@@ -166,30 +172,49 @@ const HOW: Record<CatalogCommand["runs"], string> = {
   local: "",
 };
 
+const itemOf = (x: CatalogCommand): PickItem => {
+  const usage = x.usage.replace(/^atticus /, "");
+  return {
+    label: commandTitle(x.summary) || usage,
+    id: x.id,
+    description: HOW[x.runs] ? `${usage} · ${HOW[x.runs]}` : usage,
+    detail: x.summary,
+  };
+};
+
+/** Where a command's first word comes among the twelve; after them when it isn't one. */
+const topRank = (x: CatalogCommand) => {
+  const i = (TOP_COMMANDS as readonly string[]).indexOf(x.words[0] ?? "");
+  return i < 0 ? TOP_COMMANDS.length : i;
+};
+
 /**
  * Every command, by area, for a quick pick: what it does first, the command and how it runs beside
  * it (ADR 0098). The commands only Atticus's own developers use are left out unless asked for.
+ * ADR 0124 addendum D-cli: when the command line marks its commands `legacy`, the twelve come
+ * first, in the order `atticus help` shows them, and every other command after them by area,
+ * under Legacy.
  */
 export function pickList(c: Catalog, o: { developer?: boolean } = {}): PickItem[] {
   const out: PickItem[] = [];
+  const marked = c.commands.some((x) => x.legacy !== undefined);
+  const twelve = marked ? c.commands.filter((x) => x.legacy === false) : [];
+  if (twelve.length) {
+    out.push({ label: WORDS.twelveCommands, separator: true });
+    // A stable sort: within one of the twelve, the catalogue's own order.
+    for (const x of [...twelve].sort((a, b) => topRank(a) - topRank(b))) out.push(itemOf(x));
+  }
   const areas = [
     ...c.areas.filter((a) => o.developer || a.id !== "developer"),
-    { id: "", title: "Other" },
+    { id: "", title: WORDS.otherArea },
   ];
   const seen = new Set(c.areas.map((a) => a.id));
+  const rest = marked ? c.commands.filter((x) => x.legacy !== false) : c.commands;
   for (const a of areas) {
-    const these = c.commands.filter((x) => (a.id ? x.area === a.id : !seen.has(x.area)));
-    if (!these.length && a.id) continue;
-    out.push({ label: a.title, separator: true });
-    for (const x of these) {
-      const usage = x.usage.replace(/^atticus /, "");
-      out.push({
-        label: commandTitle(x.summary) || usage,
-        id: x.id,
-        description: HOW[x.runs] ? `${usage} · ${HOW[x.runs]}` : usage,
-        detail: x.summary,
-      });
-    }
+    const these = rest.filter((x) => (a.id ? x.area === a.id : !seen.has(x.area)));
+    if (!these.length && (a.id || marked)) continue;
+    out.push({ label: marked ? WORDS.legacyGroup(a.title) : a.title, separator: true });
+    for (const x of these) out.push(itemOf(x));
   }
   return out;
 }

@@ -17,9 +17,21 @@ From nothing to a first map and a first change, on one page. Atticus is a comman
 
 The script checks Node and every file against `SHA256SUMS`, copies the version into your own programs folder (`%LOCALAPPDATA%\Programs\Atticus\<version>`, or `~/.local/share/atticus/<version>`) and puts `atticus` on your PATH. Nothing in it reaches the network. It carries an SBOM (`sbom.cdx.json`) and the third-party licences for your security review.
 
-**From your npm mirror** (Artifactory, Nexus): `npm install --global @maycombhq/cli`. The mirror needs every `@maycombhq/*` package the CLI depends on and the third-party packages in the SBOM.
+**From your npm mirror** (Artifactory, Nexus): `npm install --global @maycombhq/cli`. The mirror needs every `@maycombhq/*` package the CLI depends on and the third-party packages in the SBOM. The embedding plugin's packages (`@maycombhq/embed`, `@maycombhq/embed-model`, `@maycombhq/onnxruntime-*`) are optional dependencies: `npm install --global --omit=optional @maycombhq/cli` leaves them out, and a mirror that doesn't hold them doesn't fail the install.
 
-**Search by meaning is an optional plugin.** The default bundle leaves out the local embedding model and its runtime (all-MiniLM-L6-v2 and onnxruntime, about 100 MB more): Atticus finds things by words and names (SQLite FTS5 with BM25) and by following the graph, and `atticus doctor` says so under _Embedding model_. To add it, use a bundle built with `pnpm bundle --with-embeddings` (`atticus-<version>-offline-embeddings.zip`), or the npm install, which brings it as ordinary dependencies. Either way nothing is downloaded after install.
+**Search by meaning is an optional plugin.** The default bundle leaves out the local embedding model and its runtime (all-MiniLM-L6-v2 and onnxruntime, about 100 MB more): Atticus finds things by words and names (SQLite FTS5 with BM25) and by following the graph, and `atticus doctor` says so under _Embedding model_. Three ways to add it:
+
+- **The plugin zip, next to the default bundle:** `atticus-<version>-embeddings-plugin.zip` (built with `pnpm bundle --embeddings-plugin`, about 0.25 MB, the same zip on every platform). It holds the plugin's packages and their pins, not the model's or onnxruntime's bytes.
+  1. Check it against its `.sha256`, unzip it, and run its `install.ps1` (Windows) or `sh install.sh`. It finds the Atticus of the same version in your programs folder (or give the folder: `-Atticus <folder>`, or `sh install.sh <folder>`), checks every file against `SHA256SUMS` and copies the packages into it.
+  2. Fetch the model and this machine's onnxruntime: `node <Atticus folder>/embeddings-plugin/fetch-model.mjs`. Each file comes from its pinned source (Hugging Face at a fixed revision, the npm registry, onnxruntime's licence on GitHub) and is checked against the sha256 in `pins.json`. On a machine that can't reach them, `--list` prints each file's sha256 and source: fetch them through your mirror or on another machine, put them in a folder under any names, and run the step with `--from <folder> --offline`. `--check` says what is still missing.
+  3. `atticus doctor` shows the model and its runtime under _Embedding model_; then `atticus index embed` in the metarepo.
+
+  An upgrade of Atticus needs the plugin zip of the new version, installed again.
+
+- **The bundle with the model inside:** a bundle built with `pnpm bundle --with-embeddings` (`atticus-<version>-offline-embeddings.zip`, for one platform), with nothing else to fetch.
+- **The npm install** without `--omit=optional`.
+
+Atticus itself never downloads anything after install; only the plugin's fetch step does, when a person runs it.
 
 On Windows, once: `git config --global core.longpaths true`. If Git doesn't know you yet: `git config --global user.name "Your Name"` and `user.email`; Atticus records who did what by your Git user, with no sign-in.
 
@@ -94,6 +106,6 @@ A tier 2 assistant takes each stage with `--handoff` (prompt file in, answer fil
 
 Install the new bundle; the old version stays beside it. In the metarepo: `atticus doctor`, then `atticus upgrade` (it backs up every file it changes to `.atticus/backups/<time>/`; `--check` lists what it would do), and commit what it changed in a pull request. To uninstall, delete the version folder and the `atticus` command (`...\Atticus\bin\atticus.cmd`, or `~/.local/bin/atticus`); Atticus keeps nothing else outside your metarepos.
 
-From a checkout instead: `corepack enable`, `pnpm install`, `pnpm build`, then `node packages/cli/dist/bin.js --version`. `pnpm bundle` builds the offline bundle for this platform, `pnpm bundle --with-embeddings` the one with the model (filled from pinned sources through `.cache/pinned`), and `pnpm bundle:test <zip>` installs a bundle into a throwaway folder and uses it.
+From a checkout instead: `corepack enable`, `pnpm install`, `pnpm build`, then `node packages/cli/dist/bin.js --version`. `pnpm bundle` builds the offline bundle for this platform, `pnpm bundle --with-embeddings` the one with the model (filled from pinned sources through `.cache/pinned`), `pnpm bundle --embeddings-plugin` the plugin zip, and `pnpm bundle:test <zip>` installs a bundle into a throwaway folder and uses it (`--plugin <plugin zip>` adds the plugin next to the default bundle; `--plugin-from .cache/pinned` runs its fetch step offline and searches by meaning).
 
 Next: [running Atticus for a team](admin.md).

@@ -136,7 +136,7 @@ async function runTyped(
     stream.markdown(
       line.trim()
         ? `No atticus command starts with ${inline(line.trim())}. Pick one from the list:`
-        : "Pick a command from the list, by area, or type it after /run (for example /run spec check nadiengine).",
+        : "Pick a command from the list (the twelve first, then the legacy ones by area), or type it after /run (for example /run verify nadiengine).",
     );
     stream.button({ command: "atticus.runCommand", title: "Pick a command" });
     return;

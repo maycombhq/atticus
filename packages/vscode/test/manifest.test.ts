@@ -8,6 +8,7 @@ import {
   DEFAULT_VIEWS,
   FULL_VIEWS,
   FULL_WHEN,
+  TOP_COMMANDS,
 } from "../src/surface";
 
 /**
@@ -359,5 +360,38 @@ describe("the extension's manifest and its code", () => {
           (m as { when?: string }).when === "view == atticus.catalog",
       ),
     ).toBe(true);
+  });
+});
+
+describe("the twelve commands first (ADR 0124 addendum D-cli)", () => {
+  it("knows the twelve in the order atticus help shows them", () => {
+    // The command line's own list, read from its source (no build needed).
+    const cli = readFileSync(join(HERE, "../../cli/src/top-commands.ts"), "utf8");
+    const words = /export const TOP_WORDS = \[([^\]]*)\]/.exec(cli)![1]!;
+    expect([...words.matchAll(/"([a-z-]+)"/g)].map((m) => m[1])).toEqual([...TOP_COMMANDS]);
+  });
+
+  it("walks a person through the twelve first, and puts scan and spec drafting under Legacy, last", () => {
+    const steps = (
+      pkg.contributes as unknown as {
+        walkthroughs: { steps: { id: string; title: string; description: string }[] }[];
+      }
+    ).walkthroughs[0]!.steps;
+    const legacy = steps.filter((s) => s.title.startsWith("Legacy: "));
+    expect(legacy.length).toBeGreaterThan(0);
+    // Every legacy step after every other step.
+    expect(steps.slice(steps.length - legacy.length)).toEqual(legacy);
+    const links = (s: { description: string }) =>
+      [...s.description.matchAll(/\(command:([A-Za-z.]+)/g)].map((m) => m[1]!);
+    for (const c of ["atticus.scanAll", "atticus.draftSpec"])
+      expect(
+        legacy.some((s) => links(s).includes(c)),
+        c,
+      ).toBe(true);
+    const first = steps.slice(0, steps.length - legacy.length).flatMap(links);
+    for (const c of ["atticus.map", "atticus.verify", "atticus.newChange", "atticus.stories"])
+      expect(first, c).toContain(c);
+    expect(first).not.toContain("atticus.scanAll");
+    expect(first).not.toContain("atticus.draftSpec");
   });
 });

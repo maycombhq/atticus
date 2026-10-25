@@ -1,5 +1,8 @@
+import { execFileSync } from "node:child_process";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  normaliseCatalog,
   answersFrom,
   requiredSwitches,
   briefPathFrom,
@@ -275,6 +278,99 @@ describe("the command list, friendlier (ADR 0098)", () => {
     };
     expect(pickList(withDev).some((i) => i.id === "bench run")).toBe(false);
     expect(pickList(withDev, { developer: true }).some((i) => i.id === "bench run")).toBe(true);
+  });
+});
+
+describe("the twelve commands first, the legacy ones after (ADR 0124 addendum D-cli)", () => {
+  // `atticus commands --json` marks each command legacy or not.
+  const top = (id: string, area: string, runs: CatalogCommand["runs"], summary: string) => ({
+    ...cmd("ui"),
+    id,
+    words: id.split(" "),
+    usage: `atticus ${id}`,
+    summary,
+    area,
+    runs,
+    legacy: false,
+  });
+  const marked: Catalog = {
+    areas: [...catalog.areas, { id: "developer", title: "For Atticus's own quality" }],
+    commands: [
+      { ...cmd("spec draft"), legacy: true },
+      { ...cmd("spec check"), legacy: true },
+      { ...cmd("ado sync"), legacy: true },
+      { ...cmd("intake add"), legacy: true },
+      { ...cmd("ui"), legacy: false },
+      { ...cmd("change status"), legacy: false },
+      { ...cmd("change new"), legacy: false },
+      top("map", "repos", "ai", "Your assistant reads a repo into facts"),
+      top("init", "start", "local", "Start your team's metarepo"),
+      top("legacy", "start", "local", "Every other command"),
+      { ...top("bench run", "developer", "local", "Bench"), legacy: true },
+    ],
+  };
+  const shape = (c: Catalog, o?: { developer?: boolean }) =>
+    pickList(c, o).map((i) => (i.separator ? `# ${i.label}` : i.id));
+
+  it("lists the twelve first, in the help's order, then each area's legacy commands under Legacy", () => {
+    expect(shape(marked)).toEqual([
+      "# The twelve commands",
+      "init",
+      "map",
+      // Within one of the twelve, the catalogue's own order.
+      "change status",
+      "change new",
+      "ui",
+      "legacy",
+      "# Legacy · Repos, scans and specs",
+      "spec draft",
+      "spec check",
+      "# Legacy · Plans, tasks and work items",
+      "ado sync",
+      "# Legacy · Other",
+      "intake add",
+    ]);
+    // Each item still says what it does first, the command and how it runs beside it.
+    expect(pickList(marked).find((i) => i.id === "map")).toMatchObject({
+      label: "Your assistant reads a repo into facts",
+      description: "map · with Copilot",
+    });
+    // The developers' commands only when asked, under Legacy too.
+    expect(shape(marked, { developer: true })).toContain("# Legacy · For Atticus's own quality");
+    expect(shape(marked, { developer: true })).toContain("bench run");
+  });
+
+  it("orders a subset the same way (a change's commands)", () => {
+    expect(shape({ ...marked, commands: commandsFor(marked, "change") })).toEqual([
+      "# The twelve commands",
+      "change status",
+      "# Legacy · Plans, tasks and work items",
+      "ado sync",
+    ]);
+  });
+
+  it("lists by area as before when the command line doesn't mark them", () => {
+    expect(shape(catalog)[0]).toBe("# Repos, scans and specs");
+  });
+
+  it("does so with the command line's own catalogue: the twelve, then every other command", () => {
+    const bin = join(process.cwd(), "../cli/dist/bin.js");
+    const real = normaliseCatalog(
+      JSON.parse(
+        execFileSync(process.execPath, [bin, "commands", "--json"], { encoding: "utf8" }),
+      ) as Catalog,
+    );
+    const list = pickList(real, { developer: true });
+    expect(list[0]).toMatchObject({ label: "The twelve commands", separator: true });
+    expect(list[1]!.id).toBe("init");
+    const firstLegacy = list.findIndex((i) => i.separator && i.label.startsWith("Legacy · "));
+    const head = list.slice(1, firstLegacy);
+    expect(head.every((i) => !i.separator)).toBe(true);
+    const byId = new Map(real.commands.map((c) => [c.id, c]));
+    expect(head.every((i) => byId.get(i.id!)!.legacy === false)).toBe(true);
+    expect(list.slice(firstLegacy).every((i) => i.separator || byId.get(i.id!)!.legacy)).toBe(true);
+    // Every command is offered once.
+    expect(list.filter((i) => !i.separator)).toHaveLength(real.commands.length);
   });
 });
 
