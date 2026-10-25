@@ -11,7 +11,9 @@ notes: >-
   The gateway's own route paths (spring.cloud.gateway routes in api-gateway application.yml) are
   recorded as serves of the gateway with the Path predicate as written ("/api/vet/**" etc.) and no
   method, since a route accepts every method; StripPrefix=2 forwards /api/customer/owners to
-  customers-service /owners. The proxying itself is not recorded as calls. No service sets a
+  customers-service /owners. Each route's forwarding is a call of the gateway to its service at the path
+  the service receives after StripPrefix=2 ("/**"; the product owner's decision of 2026-10-24 that a
+  gateway's routes count). No service sets a
   context path in this repo (service config lives in the external spring-petclinic-microservices-config
   repo, which is not part of this reference), so service paths are the controller mappings. Paths
   keep the literal "*" segment where the mapping uses one (owners/*/pets/{petId}). FallbackController
@@ -148,6 +150,26 @@ serves:
       at: "spring-petclinic-genai-service/src/main/java/org/springframework/samples/petclinic/genai/PetclinicChatClient.java:57",
     }
 calls:
+  - {
+      path: "/**",
+      to: vets-service,
+      at: "spring-petclinic-api-gateway/src/main/resources/application.yml:24",
+    }
+  - {
+      path: "/**",
+      to: visits-service,
+      at: "spring-petclinic-api-gateway/src/main/resources/application.yml:30",
+    }
+  - {
+      path: "/**",
+      to: customers-service,
+      at: "spring-petclinic-api-gateway/src/main/resources/application.yml:36",
+    }
+  - {
+      path: "/**",
+      to: genai-service,
+      at: "spring-petclinic-api-gateway/src/main/resources/application.yml:42",
+    }
   - {
       type: rest,
       method: GET,

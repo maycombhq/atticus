@@ -9,8 +9,9 @@ notes: >-
   Service paths include the servlet context-path each service gets from the config server
   (config/src/main/resources/shared/<service>.yml: /accounts, /uaa, /statistics, /notifications).
   The gateway's Zuul routes (shared/gateway.yml) are recorded as serves of the gateway with the
-  route path as written ("/uaa/**" etc.) and no method, since a route accepts every method; the
-  proxying itself is not recorded as calls. Framework-provided endpoints are left out: the OAuth2
+  route path as written ("/uaa/**" etc.) and no method, since a route accepts every method; each
+  route's forwarding is a call of the gateway to its service at the path the service receives (stripPrefix
+  false, so the same path; the product owner's decision of 2026-10-24 that a gateway's routes count). Framework-provided endpoints are left out: the OAuth2
   token endpoint /uaa/oauth/token (@EnableAuthorizationServer), actuator, config server, Eureka,
   Hystrix dashboard and Turbine; the gateway's static index.html is not recorded as a page route.
   Feign clients resolve service ids through Eureka, so their paths are written as declared (they
@@ -100,6 +101,22 @@ serves:
       at: "statistics-service/src/main/java/com/piggymetrics/statistics/controller/StatisticsController.java:32",
     }
 calls:
+  - { path: "/uaa/**", to: auth-service, at: "config/src/main/resources/shared/gateway.yml:21" }
+  - {
+      path: "/accounts/**",
+      to: account-service,
+      at: "config/src/main/resources/shared/gateway.yml:27",
+    }
+  - {
+      path: "/statistics/**",
+      to: statistics-service,
+      at: "config/src/main/resources/shared/gateway.yml:33",
+    }
+  - {
+      path: "/notifications/**",
+      to: notification-service,
+      at: "config/src/main/resources/shared/gateway.yml:39",
+    }
   - {
       type: rest,
       method: POST,

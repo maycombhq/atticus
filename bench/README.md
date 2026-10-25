@@ -182,6 +182,32 @@ Where it falls short of the bar (85% recall, 95% precision), biggest first:
 
 These fixes are measured only by a second read, which would make batch 2 tuned too; the number above is the held-out one.
 
+### Batch 2, second read (tuned, 2026-10-24)
+
+The same 16 repos revised once by four Claude sessions under the protocol and verifier as they stood after the held-out read and the flows round (still never opening `bench/`), and scored with the matcher as it stands (key-value stores' keys now left out like screens and scheduled jobs: references list tables and collections). piggymetrics' and spring-petclinic-microservices' references gained the gateway's forwarding calls (the product owner's decision that a gateway's routes count, as eShop's did). **96% precision, 93% recall.** This read is tuned: the rules it follows were shaped on the first read of these same repos. It says the protocol, read in full and followed, gets there; the held-out number above is what a first read of an unseen repo gave.
+
+| Repo                           |   Found | Missed |  Wrong |
+| ------------------------------ | ------: | -----: | -----: |
+| piggymetrics                   |      32 |      1 |      3 |
+| spring-realworld               |      44 |      0 |      0 |
+| spring-soap                    |       1 |      0 |      0 |
+| eshop-on-web                   |      75 |      4 |      1 |
+| clean-architecture             |      23 |      7 |      6 |
+| todo-csharp-sql                |      24 |      0 |      0 |
+| angular-realworld              |      19 |      0 |      0 |
+| bulletproof-react              |      16 |     16 |      0 |
+| node-realworld                 |      27 |      0 |      0 |
+| nestjs-realworld               |      26 |      1 |      0 |
+| fastapi-template               |      42 |      1 |      2 |
+| fastapi-realworld              |      26 |      1 |      0 |
+| podinfo                        |      47 |      1 |      4 |
+| todo-nodejs-mongo              |      25 |      1 |      0 |
+| jenkins-maven                  |       0 |      0 |      0 |
+| spring-petclinic-microservices |      47 |      1 |      2 |
+| **Batch 2, second read**       | **474** | **34** | **18** |
+
+What is still wrong: clean-architecture's ASP.NET Identity tables (no line in the repo names them; the database is made by `EnsureCreated`) and bulletproof-react's calls (their base path lives only in `.env.example`, which the protocol never cites).
+
 ## The stories bench (Phase B)
 
 `stories/rubric.md` is the rubric for a professional user story, and three reference stories, written by reading the code with every changed step, criterion and error case cited, are the answers:
