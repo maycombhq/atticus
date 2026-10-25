@@ -19,17 +19,19 @@ const slug = (s: string) =>
 
 /**
  * The app link for `@atticus /diagram <repo> [flow]`:
- * - `<repo>` opens the repo on the Architecture canvas (a node id, system:payments, as it is);
+ * - `<repo>` opens the repo on the estate canvas (a node id, system:payments, as it is);
  * - `<repo> flows` opens the repo's flows;
  * - `<repo> <flow id>` opens that flow, and `<repo> <words>` the flows that match them;
  * - nothing named opens the estate.
+ * The canvas is the Map's (#/canvas) since Phase D: #/architecture is now a change's
+ * Architecture tab, which shows the change's next step above the canvas (found running in VS Code).
  */
 export function diagramHash(target: string): string {
   const [first, ...rest] = target.trim().split(/\s+/).filter(Boolean);
-  if (!first) return "#/architecture";
+  if (!first) return "#/canvas";
   if (!rest.length) {
     const id = first.includes(":") ? first : `repo:${slug(first)}`;
-    return `#/architecture?node=${encodeURIComponent(id)}`;
+    return `#/canvas?node=${encodeURIComponent(id)}`;
   }
   const repo = `#/flows?repo=${encodeURIComponent(slug(first))}`;
   const words = rest.join(" ");

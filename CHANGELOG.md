@@ -17,6 +17,12 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - **The path to `atticus` is found on Linux and macOS as on Windows** when its extension is written in another case (`atticus.cmd` for `.CMD`).
 - **The next step has the same words as in VS Code** for a small change, needs, the org pack's draft and checking knowledge, and a title for reading a repo (`map`) instead of its reason twice.
 
+### The VS Code extension, run in a real VS Code (2026-10-25)
+
+- **The extension was run in VS Code 1.143.1** (Linux, under Xvfb), from the source folder and installed from its `.vsix`, on a practice metarepo with an assistant's facts for forge-ledger, and in a window with no folder: 68 checks from the source folder, 29 from the package. Details in [the extension's changelog](packages/vscode/CHANGELOG.md).
+- **Fixed: opening a repo on the canvas from VS Code landed on a change's Architecture tab** (`#/architecture`, Change › Architecture since the app's six entries). It opens the Map's estate canvas now (`#/canvas?node=…`).
+- **`pnpm --filter atticus test:vscode` downloads VS Code** with `@vscode/test-electron` when none is installed (into `.cache/vscode-test`), runs as root under `xvfb-run`, and also runs with no folder; `test:vscode:packaged` tests the installed `.vsix`.
+
 ### What a knowledge scan of a docs folder hit, fixed (K-docs, ADR 0083 addendum K-docs, ADR 0127)
 
 - **`atticus knowledge scan` reads every page.** It used to put every page in one prompt, and the prompt silently dropped what didn't fit (76 of 103 pages) while recording those pages as read. Now it plans batches that fit the knowledge reader's prompt, from its budget or the model's limit, or `--batch-tokens`. A model or headless runtime reads batch after batch in one run. A hand-off hands one batch a run: it names the pages that wait, and after the resume says how many are left and to run the scan again. A page too big for the prompt on its own is named, with what to raise, and is never recorded as read.
