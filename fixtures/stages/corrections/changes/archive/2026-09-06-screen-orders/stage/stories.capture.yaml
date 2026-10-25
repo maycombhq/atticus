@@ -1,0 +1,16 @@
+# What Atticus drafted beside what was merged (H1, ADR 0087 addendum). Atticus writes this file.
+schemaVersion: 1
+change: screen-orders
+stage: stories
+phase: plan
+pr: { number: 5, url: https://git.example.com/forge/forge-metarepo/pull/5 }
+branch: handoff/screen-orders/plan
+base: main
+state: captured
+mergedAt: 2026-09-05T10:00:00Z
+capturedAt: 2026-09-05T10:00:00Z
+drafted: { from: git, commit: d5d5d5d5d5d5d5d5000000000000000000000000 }
+merged: { commit: m5m5m5m5m5m5m5m5000000000000000000000000, at: 2026-09-05T10:00:00Z, how: message }
+files:
+  - { path: stories/s1-screen-order.md, status: edited }
+  - { path: tasks.md, status: same }

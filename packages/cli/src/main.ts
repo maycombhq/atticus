@@ -323,6 +323,8 @@ const changeStatus: typeof import("./change-commands.js").changeStatus = (...a) 
   loadChangeCommands().then((m) => m.changeStatus(...a));
 const changeSync: typeof import("./change-commands.js").changeSync = (...a) =>
   loadChangeCommands().then((m) => m.changeSync(...a));
+const changeLearn: typeof import("./change-commands.js").changeLearn = (...a) =>
+  loadChangeCommands().then((m) => m.changeLearn(...a));
 const loadDialectCommands = () => import("./dialect-commands.js");
 const dialectGrade: typeof import("./dialect-commands.js").dialectGrade = (...a) =>
   loadDialectCommands().then((m) => m.dialectGrade(...a));
@@ -515,7 +517,8 @@ Usage:
   atticus change knowledge <id>        The wiki sections, documents, patterns, decisions and processes that apply to the change, picked by its stages, with near-misses; confirm or exclude one (an excluded item stays out of later stages) [--confirm id] [--exclude id] [--json]
   atticus change handoff <id> --approve  Open the phase's hand-off PR; merging it approves the gate [--repo]
                                        (without --approve: say what it would open, send nothing)
-  atticus change sync <id> [--approve]   Read the hand-off PR; a merged PR moves the change on (--approve merges a ready one)
+  atticus change sync <id> [--approve]   Read the hand-off PR; a merged PR moves the change on (--approve merges a ready one) and keeps what Atticus drafted beside what merged (stage/<stage>.drafted/, .merged/)
+  atticus change learn [--json]        How much people changed Atticus's drafts: per merged change and stage, lines per file and each story's criteria and fields, and whether it falls over time (from the kept drafts; completes any whose merge you have since pulled)
   atticus change return <id> --reason "<why>" --approve  Close the hand-off PR and return the change to the product owner
   atticus change archive <id> [--no-rescan]  Archive a released change and rescan its repos
   atticus change list [--json]         Every change and its state
@@ -2531,6 +2534,7 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
         io,
       );
     }
+    if (command === "learn") return changeLearn(root, { json }, io);
     if (command === "draft")
       return changeDraft(
         root,

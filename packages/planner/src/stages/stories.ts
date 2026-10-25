@@ -46,6 +46,7 @@ import { readKnowledge } from "@maycombhq/knowledge";
 import { mergeStoryRequests } from "../needs.js";
 import { PlannerError } from "../errors.js";
 import { instructionSource, wholeLists, type ContextReport } from "../engine.js";
+import { pastCorrectionsSource } from "./past-corrections.js";
 import { recordKnowledge } from "./knowledge-applies.js";
 import { estateContext } from "./estate-context.js";
 import { GENERATED_MARK } from "../render.js";
@@ -2828,6 +2829,22 @@ Rules:
 - Non-functional: auth, audit, the timeout and retries of every call, and the cost per request. Dependencies: the stories and repos that land first, or empty lists.
 - Name a request only when the knowledge item's "applies when" fits the step, quoting those words. Never raise it yourself.
 - Plain, short English.`;
+  // H2: the closest past corrections of this stage, when there are any (else nothing changes).
+  const past = await pastCorrectionsSource(root, {
+    stage: "stories",
+    change: change.id,
+    touches: {
+      repos: [...deltas.map((d) => d.repo), ...change.touches.repos],
+      tables: [
+        ...deltas.flatMap((d) => d.steps.flatMap((s) => (s.store ? [s.store.table] : []))),
+        ...change.touches.tables,
+      ],
+      flows: deltas.map((d) => d.flow),
+      systems: change.systems,
+    },
+    budget: stageBudget(ctx, STORY_AGENT),
+  });
+  if (past) sources.push(past.source);
   const instructions = [
     "# Story writer",
     "",
@@ -2836,6 +2853,7 @@ Rules:
     FORMAT,
     "",
     SELF_CHECK_RULE,
+    ...(past ? ["", past.rule] : []),
   ].join("\n");
 
   // The processes the target flows call for (ADR 0107), or every one.

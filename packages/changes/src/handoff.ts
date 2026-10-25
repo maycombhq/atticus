@@ -30,6 +30,8 @@ import {
   phaseState,
   sha256,
 } from "./lifecycle.js";
+import type { GitRunner } from "@maycombhq/workspace";
+import { captureHandoff, type DraftCapture } from "./drafted.js";
 import type { HandoffPublisher } from "./publish.js";
 import { changeFolder, changeStore } from "./store.js";
 import type { Artifact, PhaseId } from "./types.js";
@@ -87,6 +89,31 @@ async function walkReview(dir: string, gate: string): Promise<string[]> {
   return out;
 }
 
+/** The files of the drafted/merged pairs kept in a change folder (H1), relative to it. */
+async function keptPairFiles(dir: string): Promise<string[]> {
+  const out: string[] = [];
+  let entries;
+  try {
+    entries = await readdir(join(dir, "stage"), { withFileTypes: true });
+  } catch {
+    return out;
+  }
+  const walk = async (rel: string): Promise<void> => {
+    for (const e of await readdir(join(dir, ...rel.split("/")), { withFileTypes: true }).catch(
+      () => [],
+    )) {
+      const p = `${rel}/${e.name}`;
+      if (e.isDirectory()) await walk(p);
+      else out.push(p);
+    }
+  };
+  for (const e of entries) {
+    if (e.isFile() && e.name.endsWith(".capture.yaml")) out.push(`stage/${e.name}`);
+    else if (e.isDirectory() && /\.(drafted|merged)$/.test(e.name)) await walk(`stage/${e.name}`);
+  }
+  return out.sort();
+}
+
 /**
  * The files a phase's hand-off PR carries, relative to the change folder: the phase's
  * artifacts that exist (brief.md with the first phase), tasks.md and repos.yaml with
@@ -121,6 +148,8 @@ async function handoffFiles(
   }
   for (const gate of phaseGates(ctx, phase))
     for (const f of await walkReview(dir, gate)) files.add(f);
+  // H1: the drafted/merged pairs kept from earlier phases ride along, so they reach the metarepo by a PR.
+  for (const f of await keptPairFiles(dir)) files.add(f);
   return { files: [...files].sort(), artifacts };
 }
 
@@ -338,6 +367,10 @@ function nextAfterResubmit(a: Assessment, phase: PhaseId): LifecycleState {
 export interface SyncOptions extends HostOptions {
   /** The approval for the auto-merge. Without it, a ready PR is reported, not merged. */
   approval?: Approval;
+  /** Git for keeping the drafted files beside the merged ones (H1); the git on PATH by default. */
+  git?: GitRunner;
+  /** The Git host's remote in the clone; default origin. */
+  remote?: string;
 }
 
 export interface SyncResult {
@@ -347,6 +380,11 @@ export interface SyncResult {
   state: LifecycleState;
   handoff: ChangeHandoff;
   reasons: Reason[];
+  /**
+   * H1: on a merge, what Atticus drafted kept beside what merged (`stage/<stage>.capture.yaml`).
+   * Absent when the metarepo isn't a git clone or the hand-off drafted nothing.
+   */
+  capture?: DraftCapture;
 }
 
 /**
@@ -434,8 +472,26 @@ export async function syncHandoff(
       });
       state = "post-release-review";
     }
-    await save(h, { state, history });
-    return { merged: true, ready: true, state, handoff: h, reasons: [] };
+    const saved = await save(h, { state, history });
+    // H1: keep the draft beside what merged, from the clone's git; never fails the sync.
+    const kept = await captureHandoff({
+      ctx,
+      change: saved,
+      type: a.type,
+      handoff: h,
+      base: pr.base,
+      now,
+      ...(opts.git ? { git: opts.git } : {}),
+      ...(opts.remote ? { remote: opts.remote } : {}),
+    }).catch(() => undefined);
+    return {
+      merged: true,
+      ready: true,
+      state,
+      handoff: h,
+      reasons: [],
+      ...(kept ? { capture: kept.capture } : {}),
+    };
   };
 
   if (pr.state === "merged") return advance(strip(opts.approval?.by ?? live.by));

@@ -1,0 +1,11 @@
+schemaVersion: 1
+id: reserve-later
+title: Reserve stock after payment
+type: feature
+template: feature
+state: archived
+createdAt: 2026-09-01T09:00:00Z
+createdBy: pat
+systems:
+  - forge
+history: []

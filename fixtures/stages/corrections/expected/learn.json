@@ -1,0 +1,477 @@
+{
+  "schemaVersion": 1,
+  "changes": [
+    {
+      "change": "screen-orders",
+      "stages": [
+        {
+          "stage": "feature",
+          "phase": "define",
+          "pr": 3,
+          "mergedAt": "2026-09-01T10:00:00Z",
+          "drafted": {
+            "from": "git",
+            "commit": "d3d3d3d3d3d3d3d3000000000000000000000000"
+          },
+          "merged": {
+            "commit": "m3m3m3m3m3m3m3m3000000000000000000000000"
+          },
+          "files": [
+            {
+              "path": "feature.md",
+              "status": "same",
+              "drafted": 4,
+              "merged": 4,
+              "added": 0,
+              "removed": 0,
+              "changed": 0
+            },
+            {
+              "path": "feature.yaml",
+              "status": "edited",
+              "drafted": 18,
+              "merged": 20,
+              "added": 2,
+              "removed": 0,
+              "changed": 3
+            }
+          ],
+          "stories": [],
+          "totals": {
+            "drafted": 22,
+            "merged": 24,
+            "added": 2,
+            "removed": 0,
+            "changed": 3,
+            "editRate": 0.2083,
+            "files": 2,
+            "filesEdited": 1
+          }
+        },
+        {
+          "stage": "architecture",
+          "phase": "design",
+          "pr": 4,
+          "mergedAt": "2026-09-03T10:00:00Z",
+          "drafted": {
+            "from": "git",
+            "commit": "d4d4d4d4d4d4d4d4000000000000000000000000"
+          },
+          "merged": {
+            "commit": "m4m4m4m4m4m4m4m4000000000000000000000000"
+          },
+          "files": [
+            {
+              "path": "target-flows/forge-orders.place-order.yaml",
+              "status": "edited",
+              "drafted": 17,
+              "merged": 17,
+              "added": 0,
+              "removed": 0,
+              "changed": 2
+            }
+          ],
+          "stories": [],
+          "totals": {
+            "drafted": 17,
+            "merged": 17,
+            "added": 0,
+            "removed": 0,
+            "changed": 2,
+            "editRate": 0.1176,
+            "files": 1,
+            "filesEdited": 1
+          }
+        },
+        {
+          "stage": "stories",
+          "phase": "plan",
+          "pr": 5,
+          "mergedAt": "2026-09-05T10:00:00Z",
+          "drafted": {
+            "from": "git",
+            "commit": "d5d5d5d5d5d5d5d5000000000000000000000000"
+          },
+          "merged": {
+            "commit": "m5m5m5m5m5m5m5m5000000000000000000000000"
+          },
+          "files": [
+            {
+              "path": "stories/s1-screen-order.md",
+              "status": "edited",
+              "drafted": 34,
+              "merged": 34,
+              "added": 0,
+              "removed": 0,
+              "changed": 4
+            },
+            {
+              "path": "tasks.md",
+              "status": "same",
+              "drafted": 4,
+              "merged": 4,
+              "added": 0,
+              "removed": 0,
+              "changed": 0
+            }
+          ],
+          "stories": [
+            {
+              "id": "s1-screen-order",
+              "file": "stories/s1-screen-order.md",
+              "status": "edited",
+              "criteria": {
+                "added": [
+                  "Given a rejected verdict, when the order is placed, then 422 says the verdict refused it and no stock is reserved"
+                ],
+                "removed": [
+                  "Given any order, when it is placed, then it is logged"
+                ]
+              },
+              "fields": {
+                "added": [
+                  "cardToken"
+                ],
+                "removed": []
+              },
+              "changed": [
+                "title",
+                "Acceptance criteria",
+                "Data changes",
+                "Tasks"
+              ]
+            }
+          ],
+          "totals": {
+            "drafted": 38,
+            "merged": 38,
+            "added": 0,
+            "removed": 0,
+            "changed": 4,
+            "editRate": 0.1053,
+            "files": 2,
+            "filesEdited": 1
+          }
+        }
+      ]
+    },
+    {
+      "change": "bulk-orders",
+      "stages": [
+        {
+          "stage": "feature",
+          "phase": "define",
+          "pr": 7,
+          "mergedAt": "2026-09-15T10:00:00Z",
+          "drafted": {
+            "from": "git",
+            "commit": "d7d7d7d7d7d7d7d7000000000000000000000000"
+          },
+          "merged": {
+            "commit": "m7m7m7m7m7m7m7m7000000000000000000000000"
+          },
+          "files": [
+            {
+              "path": "feature.md",
+              "status": "same",
+              "drafted": 4,
+              "merged": 4,
+              "added": 0,
+              "removed": 0,
+              "changed": 0
+            },
+            {
+              "path": "feature.yaml",
+              "status": "edited",
+              "drafted": 15,
+              "merged": 15,
+              "added": 0,
+              "removed": 0,
+              "changed": 1
+            }
+          ],
+          "stories": [],
+          "totals": {
+            "drafted": 19,
+            "merged": 19,
+            "added": 0,
+            "removed": 0,
+            "changed": 1,
+            "editRate": 0.0526,
+            "files": 2,
+            "filesEdited": 1
+          }
+        },
+        {
+          "stage": "stories",
+          "phase": "plan",
+          "pr": 9,
+          "mergedAt": "2026-09-18T10:00:00Z",
+          "drafted": {
+            "from": "git",
+            "commit": "d9d9d9d9d9d9d9d9000000000000000000000000"
+          },
+          "merged": {
+            "commit": "m9m9m9m9m9m9m9m9000000000000000000000000"
+          },
+          "files": [
+            {
+              "path": "stories/s1-bulk-upload.md",
+              "status": "edited",
+              "drafted": 33,
+              "merged": 33,
+              "added": 0,
+              "removed": 0,
+              "changed": 1
+            }
+          ],
+          "stories": [
+            {
+              "id": "s1-bulk-upload",
+              "file": "stories/s1-bulk-upload.md",
+              "status": "edited",
+              "criteria": {
+                "added": [
+                  "Given a bad line, when the file is uploaded, then 400 names the line and nothing is placed"
+                ],
+                "removed": [
+                  "Given a bad line, when the file is uploaded, then the line is skipped"
+                ]
+              },
+              "fields": {
+                "added": [],
+                "removed": []
+              },
+              "changed": [
+                "Acceptance criteria"
+              ]
+            }
+          ],
+          "totals": {
+            "drafted": 33,
+            "merged": 33,
+            "added": 0,
+            "removed": 0,
+            "changed": 1,
+            "editRate": 0.0303,
+            "files": 1,
+            "filesEdited": 1
+          }
+        }
+      ]
+    },
+    {
+      "change": "reserve-later",
+      "stages": [
+        {
+          "stage": "feature",
+          "phase": "define",
+          "pr": 11,
+          "mergedAt": "2026-10-01T10:00:00Z",
+          "drafted": {
+            "from": "git",
+            "commit": "d11d11d11d11d11d11d11d11000000000000000000000000"
+          },
+          "merged": {
+            "commit": "m11m11m11m11m11m11m11m11000000000000000000000000"
+          },
+          "files": [
+            {
+              "path": "feature.yaml",
+              "status": "same",
+              "drafted": 15,
+              "merged": 15,
+              "added": 0,
+              "removed": 0,
+              "changed": 0
+            }
+          ],
+          "stories": [],
+          "totals": {
+            "drafted": 15,
+            "merged": 15,
+            "added": 0,
+            "removed": 0,
+            "changed": 0,
+            "editRate": 0,
+            "files": 1,
+            "filesEdited": 0
+          }
+        },
+        {
+          "stage": "stories",
+          "phase": "plan",
+          "pr": 12,
+          "mergedAt": "2026-10-03T10:00:00Z",
+          "drafted": {
+            "from": "git",
+            "commit": "d12d12d12d12d12d12d12d12000000000000000000000000"
+          },
+          "merged": {
+            "commit": "m12m12m12m12m12m12m12m12000000000000000000000000"
+          },
+          "files": [
+            {
+              "path": "stories/s1-reserve-paid.md",
+              "status": "same",
+              "drafted": 32,
+              "merged": 32,
+              "added": 0,
+              "removed": 0,
+              "changed": 0
+            }
+          ],
+          "stories": [
+            {
+              "id": "s1-reserve-paid",
+              "file": "stories/s1-reserve-paid.md",
+              "status": "same",
+              "criteria": {
+                "added": [],
+                "removed": []
+              },
+              "fields": {
+                "added": [],
+                "removed": []
+              },
+              "changed": []
+            }
+          ],
+          "totals": {
+            "drafted": 32,
+            "merged": 32,
+            "added": 0,
+            "removed": 0,
+            "changed": 0,
+            "editRate": 0,
+            "files": 1,
+            "filesEdited": 0
+          }
+        }
+      ]
+    }
+  ],
+  "pending": [
+    {
+      "change": "restock-alert",
+      "stage": "feature",
+      "pr": 14,
+      "state": "waiting-for-merge",
+      "note": "The merge of PR #14 isn't in this clone yet: pull main, then run atticus change learn."
+    }
+  ],
+  "trend": {
+    "overall": {
+      "points": [
+        {
+          "change": "screen-orders",
+          "stage": "feature",
+          "mergedAt": "2026-09-01T10:00:00Z",
+          "editRate": 0.2083
+        },
+        {
+          "change": "screen-orders",
+          "stage": "architecture",
+          "mergedAt": "2026-09-03T10:00:00Z",
+          "editRate": 0.1176
+        },
+        {
+          "change": "screen-orders",
+          "stage": "stories",
+          "mergedAt": "2026-09-05T10:00:00Z",
+          "editRate": 0.1053
+        },
+        {
+          "change": "bulk-orders",
+          "stage": "feature",
+          "mergedAt": "2026-09-15T10:00:00Z",
+          "editRate": 0.0526
+        },
+        {
+          "change": "bulk-orders",
+          "stage": "stories",
+          "mergedAt": "2026-09-18T10:00:00Z",
+          "editRate": 0.0303
+        },
+        {
+          "change": "reserve-later",
+          "stage": "feature",
+          "mergedAt": "2026-10-01T10:00:00Z",
+          "editRate": 0
+        },
+        {
+          "change": "reserve-later",
+          "stage": "stories",
+          "mergedAt": "2026-10-03T10:00:00Z",
+          "editRate": 0
+        }
+      ],
+      "earlier": 0.1437,
+      "later": 0.0101,
+      "direction": "falling"
+    },
+    "byStage": {
+      "architecture": {
+        "points": [
+          {
+            "change": "screen-orders",
+            "stage": "architecture",
+            "mergedAt": "2026-09-03T10:00:00Z",
+            "editRate": 0.1176
+          }
+        ],
+        "direction": "too-few"
+      },
+      "feature": {
+        "points": [
+          {
+            "change": "screen-orders",
+            "stage": "feature",
+            "mergedAt": "2026-09-01T10:00:00Z",
+            "editRate": 0.2083
+          },
+          {
+            "change": "bulk-orders",
+            "stage": "feature",
+            "mergedAt": "2026-09-15T10:00:00Z",
+            "editRate": 0.0526
+          },
+          {
+            "change": "reserve-later",
+            "stage": "feature",
+            "mergedAt": "2026-10-01T10:00:00Z",
+            "editRate": 0
+          }
+        ],
+        "earlier": 0.2083,
+        "later": 0,
+        "direction": "falling"
+      },
+      "stories": {
+        "points": [
+          {
+            "change": "screen-orders",
+            "stage": "stories",
+            "mergedAt": "2026-09-05T10:00:00Z",
+            "editRate": 0.1053
+          },
+          {
+            "change": "bulk-orders",
+            "stage": "stories",
+            "mergedAt": "2026-09-18T10:00:00Z",
+            "editRate": 0.0303
+          },
+          {
+            "change": "reserve-later",
+            "stage": "stories",
+            "mergedAt": "2026-10-03T10:00:00Z",
+            "editRate": 0
+          }
+        ],
+        "earlier": 0.1053,
+        "later": 0,
+        "direction": "falling"
+      }
+    }
+  }
+}
