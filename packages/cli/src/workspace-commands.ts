@@ -41,6 +41,7 @@ import type { Output } from "./commands.js";
 import { completeCriticLens } from "./critic-commands.js";
 import { completeFeatureNaming } from "./feature-commands.js";
 import { yamlAnswerProblems } from "./handoff-yaml.js";
+import { storeSummaryLines } from "./openspec-stores-commands.js";
 import { completeTemplatesDraft } from "./plan-commands.js";
 import { completeGlossaryScan } from "./quality-commands.js";
 
@@ -157,6 +158,10 @@ export async function openspecCheck(root: string, io: Output): Promise<number> {
   }
   const t = report.summary.totals;
   io.out(`OpenSpec ${v}: ${t.items} checked, ${t.passed} passed, ${t.failed} failed`);
+  // ADR 0126: the stores org-pack/openspec.yaml names, read-only; never validated or counted here.
+  const stores = await storeSummaryLines(root);
+  for (const l of stores.out) io.out(l);
+  for (const l of stores.err) io.err(l);
   return t.failed > 0 ? 1 : 0;
 }
 

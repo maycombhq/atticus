@@ -437,7 +437,7 @@ Usage:
   atticus probe                        Measure what your assistant can do here (open a file, write one, run a command), so the tier it reads a repo at is measured, not read off runtime.yaml; then /atticus-probe in the assistant (ADR 0124) [--assistant id] [--max-tokens n] [--json]
   atticus probe answer <code>          Check the assistant's answer (none when it couldn't open the file) and keep what it measured in .atticus/probe/<assistant>.yaml, on this machine only [--pasted] [--max-tokens n] [--json]
   atticus secret set|check|forget <name>  Keep a model provider's key in this machine's credential store under the name runtime.yaml gives as keyEnv; read from stdin, never printed
-  atticus upgrade [--check|--dry-run]  Bring the metarepo's files up to this version (backs them up first)
+  atticus upgrade [--check|--dry-run]  Bring the metarepo's files up to this version (backs them up first) [--openspec-store: also make it an OpenSpec store, beta]
   atticus support bundle               Collect versions, checks, counts and the redacted log in a zip [--out f]
   atticus digest                       What waits on you: hand-offs to revise, blocking findings [--channel c] [--send] [--json]
   atticus watch [<change>] [--off]     Follow a change without being on it (or stop); with no change, how each one you watch is doing [--json]
@@ -576,7 +576,7 @@ Usage:
   atticus todo done <step>             Record a manual step's result [--result k=v]... [--skip --note why]
   atticus todo run <step> --with <executor>  Run a step with a team's own tool [--approve --inputs sha] [--fill-only]
   atticus executors check              Ping configured executors and show what each covers
-  atticus init <folder> --platform <p>  Create a new metarepo named after the folder [--from pack] [--owner who]
+  atticus init <folder> --platform <p>  Create a new metarepo named after the folder [--from pack] [--owner who] [--openspec-store: also an OpenSpec store, beta]
   atticus adopt <path>                 Use Atticus in an existing repo; writes only .atticus/ [--platform p] [--name n]
   atticus unadopt <path>               Remove Atticus from an adopted repo, leaving it as it was
   atticus repos discover <folder> | --org <org>  Propose repos.manifest.yaml entries [--platform p] [--dry-run]
@@ -878,6 +878,7 @@ const OPTIONS = {
   eval: { type: "string" },
   epic: { type: "string" },
   "no-ai": { type: "boolean" },
+  "openspec-store": { type: "boolean" },
   "no-drift": { type: "boolean" },
   warnings: { type: "boolean" },
   "no-rescan": { type: "boolean" },
@@ -1519,6 +1520,7 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
         dryRun: values["dry-run"] === true,
         ...(values.check === true || values["dry-run"] === true ? {} : { by: who() }),
         json: values.json === true,
+        ...(values["openspec-store"] === true ? { openspecStore: true } : {}),
       },
       io,
     );
@@ -2061,6 +2063,7 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
         ...(str(values.platform) ? { platform: str(values.platform)! } : {}),
         ...(str(values.from) ? { packFrom: resolve(str(values.from)!) } : {}),
         ...(owner ? { owner } : {}),
+        ...(values["openspec-store"] === true ? { openspecStore: true } : {}),
         json,
       },
       io,

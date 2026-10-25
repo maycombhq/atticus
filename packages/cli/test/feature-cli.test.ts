@@ -311,6 +311,36 @@ describe("atticus feature spec", () => {
   });
 });
 
+describe("atticus feature spec and OpenSpec stores (ADR 0126)", () => {
+  it("says when a store the org pack names already has a spec for the capability", async () => {
+    const root = await forgeRoot();
+    const store = join(await mkdtemp(join(tmpdir(), "atticus-feature-store-")), "payments");
+    await cp(join(FORGE, "../openspec-stores/forge-payments-store"), store, { recursive: true });
+    await mkdir(join(store, "openspec/specs/transfers"), { recursive: true });
+    await writeFile(
+      join(store, "openspec/specs/transfers/spec.md"),
+      "# transfers Specification\n\n## Purpose\n\nTransfers between Forge accounts.\n",
+    );
+    await writeFile(
+      join(root, "org-pack/openspec.yaml"),
+      `schemaVersion: 1\nstores:\n  - path: ${store}\n    label: payments\n`,
+    );
+    await featureName(
+      root,
+      "transfers",
+      "Money transfers",
+      { by: "a.owner", description: "Moves money." },
+      capture().io,
+    );
+    const c = capture();
+    expect(await featureSpec(root, "transfers", c.io)).toBe(0);
+    expect(c.out).toEqual([
+      "Wrote openspec/specs/transfers/spec.md, a draft from feature.transfers: check its requirements, then commit it in a pull request.",
+      `The OpenSpec store payments (read-only) has a transfers spec too: ${join(store, "openspec/specs/transfers/spec.md")} ("Transfers between Forge accounts."). Check the two agree before the draft is merged.`,
+    ]);
+  });
+});
+
 describe("atticus feature suggest-names", () => {
   it("asks the naming agent and writes its proposals, which the next listing shows", async () => {
     const root = await forgeRoot();

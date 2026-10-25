@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
@@ -188,6 +188,60 @@ describe("hand-down (Spec Kit engine)", () => {
       const forced = await handDown(root, CHANGE, "1.2", { git, force: true, commit: false });
       expect(forced.written).toContain("specs/1.2/plan.md");
       expect(await read(plan)).not.toContain("The developer's own notes.");
+    },
+    T,
+  );
+});
+
+describe("hand-down and OpenSpec stores (ADR 0126)", () => {
+  const STORES = join(SPECKIT, "../openspec-stores");
+
+  it(
+    "adds the metarepo under references: in the repo's openspec/config.yaml only when the org pack turns it on",
+    async () => {
+      const { root } = await speckitRoot({ repos: ["forge-ledger"] });
+      const wt = worktree(root, "forge-ledger");
+      const config = join(wt, "openspec/config.yaml");
+      await mkdir(join(wt, "openspec"), { recursive: true });
+      await writeFile(config, await read(join(STORES, "references/no-references.yaml")));
+      await mkdir(join(root, ".openspec-store"), { recursive: true });
+      await writeFile(join(root, ".openspec-store/store.yaml"), "version: 1\nid: forge\n");
+
+      // Off by default: the file is the developer's, as it was.
+      const off = await handDown(root, CHANGE, "1.2", { git });
+      expect(off.written).not.toContain("openspec/config.yaml");
+      expect(await read(config)).toBe(await read(join(STORES, "references/no-references.yaml")));
+
+      await writeFile(
+        join(root, "org-pack/openspec.yaml"),
+        "schemaVersion: 1\nreferenceInRepos: true\n",
+      );
+      const on = await handDown(root, CHANGE, "1.2", { git });
+      expect(on.written).toContain("openspec/config.yaml");
+      expect(on.problems).toEqual([]);
+      // The metarepo has no origin here, so the reference is the store id alone.
+      expect(await read(config)).toBe(
+        await read(join(STORES, "references/no-references-expected.yaml")),
+      );
+      expect(sh(wt, "status", "--porcelain")).toBe("");
+      const again = await handDown(root, CHANGE, "1.2", { git });
+      expect(again.unchanged).toContain("openspec/config.yaml");
+    },
+    T,
+  );
+
+  it(
+    "says why it added no reference when the metarepo isn't a store yet",
+    async () => {
+      const { root } = await speckitRoot({ repos: ["forge-ledger"] });
+      await writeFile(
+        join(root, "org-pack/openspec.yaml"),
+        "schemaVersion: 1\nreferenceInRepos: true\n",
+      );
+      const r = await handDown(root, CHANGE, "1.2", { git });
+      expect(r.problems).toContain(
+        "OpenSpec reference not added to openspec/config.yaml: this metarepo isn't an OpenSpec store yet (no .openspec-store/store.yaml): run atticus upgrade --openspec-store, commit the file, then hand down again",
+      );
     },
     T,
   );

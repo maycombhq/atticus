@@ -7,6 +7,7 @@ import {
   writeAssistantFiles,
   type WriteReport,
 } from "@maycombhq/assistant-files";
+import { referenceMetarepoIn } from "@maycombhq/changes";
 import { createGit, toRepoRelative, type GitRunner } from "@maycombhq/workspace";
 import { changeWorktree, loadTask, type TaskContext } from "./change.js";
 import {
@@ -37,6 +38,8 @@ import {
  *   `.specify/memory/constitution.md` from the org pack; and Spec Kit's templates, scripts and
  *   `/speckit.*` commands through the skill source (assistant files).
  * - Atticus engine: `.atticus/tasks/<task-id>.md`.
+ * - Either engine, when org-pack/openspec.yaml turns it on (ADR 0126): the metarepo under
+ *   `references:` in the repo's existing openspec/config.yaml, the rest of the file kept.
  *
  * Files a developer already changed are never overwritten (`force` overrides), so a second
  * hand-down is safe. The result is committed on the change branch locally; nothing is pushed.
@@ -149,6 +152,14 @@ export async function handDown(
     problems: [],
   };
   for (const [rel, text] of handDownFiles(t, engine)) await putIfFree(dir, rel, text, !!o.force, r);
+
+  // ADR 0126: when org-pack/openspec.yaml says so, the metarepo becomes read-only context for
+  // the repo's own OpenSpec (references: in its openspec/config.yaml). Off by default.
+  const ref = await referenceMetarepoIn(root, dir, o.git ? { git: o.git } : {});
+  if (ref.action === "added") r.written.push(ref.file);
+  else if (ref.action === "present") r.unchanged.push(ref.file);
+  else if (ref.action === "skipped")
+    r.problems.push(`OpenSpec reference not added to ${ref.file}: ${ref.why}`);
 
   if (engine === "speckit") {
     // The current feature is Atticus's to set: always point it at the task handed down last.

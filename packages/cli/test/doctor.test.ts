@@ -32,6 +32,7 @@ const healthy = (o: Partial<DoctorDeps> = {}): DoctorDeps => ({
   nodeVersion: "22.13.1",
   git: gitWith({ "user.name": "Pat", "user.email": "pat@example.com" }),
   openspecVersion: async () => "1.14.0",
+  openspecStores: async () => true,
   portFree: async () => true,
   freeBytes: async () => 50 * 1024 ** 3,
   onPath: (p) => p === "code",
@@ -90,6 +91,55 @@ describe("atticus doctor", () => {
     );
     expect(code).toBe(1);
     expect(out.join("\n")).toMatch(/\[FAIL\] Node\.js: Node 20\.11\.0/);
+  });
+
+  it("says whether OpenSpec has stores (beta): a note when nothing uses them, a warning when the metarepo does (ADR 0126)", async () => {
+    const plain = byId(
+      await doctorChecks(root, healthy({ openspecStores: async () => false })),
+      "openspec-stores",
+    );
+    expect(plain).toMatchObject({
+      label: "OpenSpec stores (beta)",
+      status: "ok",
+      detail: "the installed OpenSpec has no stores; nothing here uses them",
+    });
+    const have = byId(
+      await doctorChecks(root, healthy({ openspecStores: async () => true })),
+      "openspec-stores",
+    );
+    expect(have).toMatchObject({
+      status: "ok",
+      detail:
+        "OpenSpec 1.14.0 has stores; this metarepo isn't one (optional: atticus upgrade --openspec-store)",
+    });
+
+    const store = await mkdtemp(join(tmpdir(), "atticus-doctor-store-"));
+    await cp(join(FIXTURES, "forge/metarepo"), store, { recursive: true });
+    await upgradeCommand(store, { by: "pat" }, { out: () => undefined, err: () => undefined });
+    await mkdir(join(store, ".openspec-store"));
+    await writeFile(join(store, ".openspec-store/store.yaml"), "version: 1\nid: forge\n");
+    await writeFile(
+      join(store, "org-pack/openspec.yaml"),
+      "schemaVersion: 1\nstores:\n  - path: ../forge-payments-store\n",
+    );
+    expect(
+      byId(
+        await doctorChecks(store, healthy({ openspecStores: async () => true })),
+        "openspec-stores",
+      ).detail,
+    ).toBe(
+      "OpenSpec 1.14.0 has stores; this metarepo is the store forge; org-pack/openspec.yaml names 1 store to read",
+    );
+    const lacking = byId(
+      await doctorChecks(store, healthy({ openspecStores: async () => false })),
+      "openspec-stores",
+    );
+    expect(lacking).toMatchObject({
+      status: "warn",
+      detail:
+        "the installed OpenSpec has no stores, but this metarepo is the store forge; org-pack/openspec.yaml names 1 store to read",
+    });
+    expect(lacking.fix).toMatch(/^Plain OpenSpec can't register this metarepo/);
   });
 
   it("warns about a proxy without a localhost bypass or a CA, and never prints the proxy's value", async () => {

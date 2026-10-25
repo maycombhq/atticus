@@ -53,10 +53,18 @@ function fail(io: Output, e: unknown): number {
   return 1;
 }
 
-/** atticus init <name> --platform <pack> [--from <org pack>] [--owner who] */
+/** atticus init <name> --platform <pack> [--from <org pack>] [--owner who] [--openspec-store] */
 export async function initCommand(
   dir: string,
-  o: { name?: string; platform?: string; packFrom?: string; owner?: string; json?: boolean },
+  o: {
+    name?: string;
+    platform?: string;
+    packFrom?: string;
+    owner?: string;
+    json?: boolean;
+    /** Also make it an OpenSpec store (beta, ADR 0126). */
+    openspecStore?: boolean;
+  },
   io: Output,
 ): Promise<number> {
   if (!o.name || !o.platform) {
@@ -69,6 +77,7 @@ export async function initCommand(
       platform: o.platform,
       ...(o.packFrom ? { packFrom: resolve(o.packFrom) } : {}),
       ...(o.owner ? { owner: o.owner } : {}),
+      ...(o.openspecStore ? { openspecStore: true } : {}),
     });
     if (o.json) {
       io.out(JSON.stringify(r, null, 2));
@@ -81,6 +90,10 @@ export async function initCommand(
         : "openspec/ was made as folders with the org-flow schema.",
     );
     if (r.openspecNote) io.out(r.openspecNote);
+    if (r.openspecStore)
+      io.out(
+        `It is also the OpenSpec store ${r.openspecStore.id} (beta, .openspec-store/store.yaml): once it is pushed, a developer runs openspec store register <their clone> to use it from plain OpenSpec.`,
+      );
     for (const p of r.problems)
       io.err(`org-pack/${p.file}: ${p.path ? `${p.path}: ` : ""}${p.message}`);
     for (const q of r.questions) io.out(`Question: ${q}`);

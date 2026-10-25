@@ -3,16 +3,26 @@ import { join } from "node:path";
 import { parse, stringify } from "yaml";
 import { CHECKLISTS_README, STARTER_CHECKLISTS_README } from "@maycombhq/adopt";
 import { readPackFiles, STARTER_REVIEW_PATH, starterReviewText } from "@maycombhq/naysayer";
+import { metarepoOrigin } from "@maycombhq/changes";
+import {
+  readStoreMarker,
+  STORE_MARKER,
+  storeIdOf,
+  writeStoreMarker,
+} from "@maycombhq/openspec-adapter";
 import {
   catalogDirOf,
   ensureLocalIgnore,
   isAdopted,
+  layoutOf,
+  loadOrgPack,
   LOCAL_ONLY,
   MetarepoStamp,
   migrateCatalog,
   migrateChangeTypesText,
   migrateGatesText,
   migrateQuestions,
+  orgPackDirOf,
   specsDirOf,
   specsRelOf,
   WORKSPACE_SCHEMA_VERSION,
@@ -252,10 +262,66 @@ export async function upgradeCheck(root: string, version = VERSION): Promise<Upg
   };
 }
 
-/** atticus upgrade [--check] [--dry-run] [--by you] [--json]; the person defaults to the Git user. */
+/**
+ * `atticus upgrade --openspec-store` (ADR 0126): what making this metarepo an OpenSpec store
+ * (beta) would do. Opt-in, so it is not one of MIGRATIONS. A store keeps openspec/ at its root, so
+ * a metarepo that keeps it elsewhere can't be one; a store.yaml that is there is never replaced.
+ */
+export interface OpenSpecStorePlan {
+  action: "create" | "present" | "differs" | "refused";
+  /** The store id: the org pack's name, made kebab-case. */
+  id?: string;
+  /** The id the store.yaml that is there names. */
+  has?: string;
+  remote?: string;
+  why?: string;
+}
+
+async function openspecStorePlan(root: string): Promise<OpenSpecStorePlan> {
+  const where = layoutOf(root).openspec.replace(/\/+$/, "");
+  if (where !== "openspec")
+    return {
+      action: "refused",
+      why: `An OpenSpec store keeps openspec/ at its root; this metarepo keeps it in ${where}, so it can't be one. Nothing was changed.`,
+    };
+  const name = (await loadOrgPack(orgPackDirOf(root))).pack?.name;
+  const id = name ? storeIdOf(name) : undefined;
+  if (!id)
+    return {
+      action: "refused",
+      why: "The org pack has no name to make a store id from (org-pack/pack.yaml name). Nothing was changed.",
+    };
+  const have = await readStoreMarker(root);
+  if (!have.missing)
+    return have.marker?.id === id
+      ? { action: "present", id }
+      : { action: "differs", id, ...(have.marker ? { has: have.marker.id } : {}) };
+  const remote = await metarepoOrigin(root);
+  return { action: "create", id, ...(remote ? { remote } : {}) };
+}
+
+function storeLine(s: OpenSpecStorePlan): string {
+  if (s.action === "present")
+    return `This metarepo is already the OpenSpec store ${s.id} (${STORE_MARKER}).`;
+  if (s.action === "differs")
+    return s.has
+      ? `${STORE_MARKER} names the store ${s.has}, not ${s.id}: left as it is.`
+      : `${STORE_MARKER} is there but can't be read: left as it is.`;
+  return `Wrote ${STORE_MARKER}: this metarepo is the OpenSpec store ${s.id} (beta). Commit it; then a developer runs openspec store register <their clone> once to use it from plain OpenSpec.`;
+}
+
+/** atticus upgrade [--check] [--dry-run] [--openspec-store] [--by you] [--json]; the person defaults to the Git user. */
 export async function upgradeCommand(
   root: string,
-  o: { check?: boolean; dryRun?: boolean; by?: string; json?: boolean; now?: Date },
+  o: {
+    check?: boolean;
+    dryRun?: boolean;
+    by?: string;
+    json?: boolean;
+    now?: Date;
+    /** Also make the metarepo an OpenSpec store (beta, ADR 0126). */
+    openspecStore?: boolean;
+  },
   io: Output,
   version = VERSION,
 ): Promise<number> {
@@ -267,17 +333,27 @@ export async function upgradeCommand(
     if (o.json) io.out(JSON.stringify(c, null, 2));
     return 1;
   }
+  const store = o.openspecStore ? await openspecStorePlan(root) : undefined;
+  if (store?.action === "refused") {
+    io.err(store.why!);
+    if (o.json) io.out(JSON.stringify({ ...c, openspecStore: store }, null, 2));
+    return 1;
+  }
   if (o.check || o.dryRun) {
-    if (o.json) io.out(JSON.stringify(c, null, 2));
-    else if (!c.pending.length) io.out(`Up to date for Atticus ${version}.`);
-    else {
-      io.out(
-        `${c.pending.length} upgrade step${c.pending.length === 1 ? "" : "s"} to run (atticus upgrade):`,
-      );
+    const steps = c.pending.length + (store?.action === "create" ? 1 : 0);
+    if (o.json) io.out(JSON.stringify(store ? { ...c, openspecStore: store } : c, null, 2));
+    else if (!steps) {
+      io.out(`Up to date for Atticus ${version}.`);
+      if (store) io.out(storeLine(store));
+    } else {
+      io.out(`${steps} upgrade step${steps === 1 ? "" : "s"} to run (atticus upgrade):`);
       for (const p of c.pending)
         io.out(`  ${p.summary}: ${p.files.length} file${p.files.length === 1 ? "" : "s"}`);
+      if (store?.action === "create")
+        io.out(`  Make this metarepo the OpenSpec store ${store.id} (beta): ${STORE_MARKER}`);
+      else if (store) io.out(storeLine(store));
     }
-    return o.check && c.pending.length ? 1 : 0;
+    return o.check && steps ? 1 : 0;
   }
   const now = o.now ?? new Date();
   const by = o.by ?? (await gitUser(root)).handle;
@@ -308,16 +384,33 @@ export async function upgradeCommand(
     migrations: [...new Set([...(c.stamp?.migrations ?? []), ...MIGRATIONS.map((m) => m.id)])],
   });
   await writeFileAtomic(join(root, STAMP_FILE), stringify(stamp));
+  if (store?.action === "create") {
+    await writeStoreMarker(root, {
+      id: store.id!,
+      ...(store.remote ? { remote: store.remote } : {}),
+    });
+    changed.push(STORE_MARKER);
+  }
   if (o.json)
     io.out(
-      JSON.stringify({ upgraded: c.pending.map((p) => p.id), files: changed, stamp }, null, 2),
+      JSON.stringify(
+        {
+          upgraded: c.pending.map((p) => p.id),
+          files: changed,
+          stamp,
+          ...(store ? { openspecStore: store } : {}),
+        },
+        null,
+        2,
+      ),
     );
   else {
     if (c.pending.length) {
       for (const p of c.pending)
         io.out(`Done: ${p.summary} (${p.files.length} file${p.files.length === 1 ? "" : "s"})`);
       io.out(`The files as they were are in ${backup}.`);
-    } else io.out(`Nothing to change for Atticus ${version}.`);
+    } else if (store?.action !== "create") io.out(`Nothing to change for Atticus ${version}.`);
+    if (store) io.out(storeLine(store));
     io.out(
       `Recorded Atticus ${version} in ${STAMP_FILE.split("\\").join("/")}. Commit the changes in a pull request.`,
     );

@@ -35,6 +35,7 @@ import {
   type CuratedDecision,
   type WorkItemLike,
 } from "@maycombhq/features";
+import { storeSpecLookup } from "@maycombhq/changes";
 import { readWorkItemExports } from "@maycombhq/intake";
 import { featureCoverage } from "@maycombhq/knowledge";
 import { readCatalog } from "@maycombhq/scanner";
@@ -463,6 +464,11 @@ export async function featureSpec(root: string, id: string, io: Output): Promise
   io.out(
     `Wrote ${rel}, a draft from ${f.id}: check its requirements, then commit it in a pull request.`,
   );
+  // ADR 0126: a store the org pack names may already specify this capability (read-only).
+  for (const s of await storeSpecLookup(root, draft.capability))
+    io.out(
+      `The OpenSpec store ${s.store} (read-only) has a ${s.id} spec too: ${s.file}${s.purpose ? ` ("${s.purpose}")` : ""}. Check the two agree before the draft is merged.`,
+    );
   return 0;
 }
 

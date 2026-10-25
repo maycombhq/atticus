@@ -9,8 +9,22 @@ import {
   readProbes,
   tierLine,
 } from "@maycombhq/assistant-files";
-import { DEFAULT_PORT, loadOrgPack, orgPackDirOf, readLock, retrievalOf } from "@maycombhq/core";
-import { createOpenSpec, isSupportedVersion, OPENSPEC_PINNED } from "@maycombhq/openspec-adapter";
+import {
+  DEFAULT_PORT,
+  loadOpenSpecSettings,
+  loadOrgPack,
+  orgPackDirOf,
+  readLock,
+  retrievalOf,
+} from "@maycombhq/core";
+import {
+  createOpenSpec,
+  isSupportedVersion,
+  OPENSPEC_PINNED,
+  openspecHasStores,
+  readStoreMarker,
+  STORE_MARKER,
+} from "@maycombhq/openspec-adapter";
 import {
   baseClonePath,
   createGit,
@@ -48,6 +62,8 @@ export interface DoctorDeps {
   git?: GitRunner;
   /** The OpenSpec CLI's version, or undefined when it can't run. */
   openspecVersion?: () => Promise<string | undefined>;
+  /** Whether the OpenSpec CLI has stores (beta, ADR 0126). */
+  openspecStores?: () => Promise<boolean>;
   /** Whether a TCP port on 127.0.0.1 is free. */
   portFree?: (port: number) => Promise<boolean>;
   /** Free bytes on the metarepo's disk. */
@@ -147,6 +163,7 @@ export async function doctorChecks(root: string, deps: DoctorDeps = {}): Promise
       }
     });
   const openspecSoon = openspecVersion();
+  const storesSoon = (deps.openspecStores ?? (() => openspecHasStores()))().catch(() => false);
   const upgradeSoon = upgradeCheck(root);
   // Read below; marked handled here so a check that throws first leaves no stray rejection.
   upgradeSoon.catch(() => undefined);
@@ -224,6 +241,40 @@ export async function doctorChecks(root: string, deps: DoctorDeps = {}): Promise
       ? `OpenSpec ${osv} (tested with ${OPENSPEC_PINNED})`
       : "the bundled OpenSpec CLI didn't run",
     fix: "Reinstall Atticus (it carries a pinned OpenSpec); with the offline bundle, run its install script again.",
+  });
+
+  // ADR 0126: OpenSpec's stores are beta and optional. Atticus reads the stores the org pack
+  // names itself; plain OpenSpec needs them to register this metarepo or use it as a reference.
+  const hasStores = await storesSoon;
+  const marker = await readStoreMarker(root);
+  const { settings: osSettings, problem: osProblem } = await loadOpenSpecSettings(
+    orgPackDirOf(root),
+  );
+  const uses = [
+    marker.marker
+      ? `this metarepo is the store ${marker.marker.id}`
+      : !marker.missing
+        ? `this metarepo has a ${STORE_MARKER} that can't be read`
+        : "",
+    osSettings.stores.length
+      ? `org-pack/openspec.yaml names ${osSettings.stores.length} store${osSettings.stores.length === 1 ? "" : "s"} to read`
+      : "",
+    osSettings.referenceInRepos ? "hand-down adds it to code repos' references" : "",
+  ].filter(Boolean);
+  out.push({
+    id: "openspec-stores",
+    label: "OpenSpec stores (beta)",
+    status: osProblem || (!hasStores && uses.length) ? "warn" : "ok",
+    detail: osProblem
+      ? `org-pack/${osProblem}`
+      : hasStores
+        ? `${osv ? `OpenSpec ${osv}` : "OpenSpec"} has stores; ${uses.length ? uses.join("; ") : "this metarepo isn't one (optional: atticus upgrade --openspec-store)"}`
+        : uses.length
+          ? `the installed OpenSpec has no stores, but ${uses.join("; ")}`
+          : "the installed OpenSpec has no stores; nothing here uses them",
+    fix: osProblem
+      ? "Fix org-pack/openspec.yaml (ADR 0126); until then Atticus reads no store and hand-down adds no reference."
+      : "Plain OpenSpec can't register this metarepo or read it as a reference until it has stores; Atticus still reads the stores org-pack/openspec.yaml names. Install an Atticus whose pinned OpenSpec has stores (1.14.0 does).",
   });
 
   // ---- Network: proxy and TLS, read from the environment only

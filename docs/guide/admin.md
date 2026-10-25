@@ -252,6 +252,25 @@ retrieval:
 
 `runtime.yaml` `adapters` names the work tracker, service desk, Git host, wiki, notifications and design tool. Each can be a live adapter (a plugin), `manual` (Atticus writes a step a person does, with every field ready to copy, and records the result) or left out. A live adapter that can't be reached falls back to manual steps on its own (ADR 0032). Every write to a shared system needs a person's approval, whatever the adapter.
 
+### OpenSpec stores (beta)
+
+OpenSpec's stores are a beta feature: an `openspec/` folder in its own Git repo, marked by `.openspec-store/store.yaml`. Each developer registers a clone once with `openspec store register <path>`. Atticus works with stores but never needs them (ADR 0126). Everything below is off until you turn it on, and Atticus never registers, clones, pulls or pushes a store.
+
+- **Make the metarepo a store.** Run `atticus init <folder> --platform <p> --openspec-store` for a new metarepo, or `atticus upgrade --openspec-store` in an existing one. Either writes `.openspec-store/store.yaml` with the org pack's name as the store id. Commit it in a pull request. Then a developer runs `openspec store register <their clone>`, and plain OpenSpec sees the metarepo's changes and specs from anywhere with `--store <id>`. A repo adopted in place can't be a store, because its OpenSpec folder isn't at its root.
+- **Give code repos the metarepo as context.** In `org-pack/openspec.yaml`, set `referenceInRepos: true`. Each hand-down then adds the metarepo under `references:` in the repo's own `openspec/config.yaml`, with its origin as `remote`, in the commit on the change branch. It only edits a config that is already there, and keeps its comments and other keys. The metarepo must be a store first; when it isn't, the hand-down says so and writes nothing.
+- **Read stores you already have.** List them by the path of a clone. Their open changes then show in `atticus change list` under "From OpenSpec stores (read-only, beta)", each with its store. `atticus openspec check` gives each store's changes and specs. `atticus feature spec` says when a store already has a spec for the capability it drafts. Atticus never writes into these stores or validates them.
+
+```yaml
+# org-pack/openspec.yaml (optional)
+schemaVersion: 1
+stores:
+  - path: ../forge-payments-store # relative to the metarepo, absolute, or ~/...
+    label: payments # default: the store's id
+referenceInRepos: false
+```
+
+`atticus doctor` has an "OpenSpec stores (beta)" line. It warns when the installed OpenSpec has no stores but this metarepo uses them; the OpenSpec Atticus ships (1.14.0) has them. Store names, flags and formats may change in OpenSpec. A store file in a newer format is still read, with a note.
+
 ### Who you are and how approving works
 
 Atticus has no roles, views or sign-in (ADR 0073). Each person is the metarepo's **Git user** (`git config user.name` and `user.email`), which the app shows in the top bar and every command records as `by`; `--by <handle>` names someone else. With no Git user set, Atticus uses the OS user name and warns until it is set.

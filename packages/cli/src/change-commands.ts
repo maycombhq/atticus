@@ -32,6 +32,7 @@ import { gateStatus, ownerWaitsLine, reviewedGates } from "@maycombhq/naysayer";
 import type { Output } from "./commands.js";
 import { statusLine } from "./critic-commands.js";
 import { table } from "./index-commands.js";
+import { storeChangeRows } from "./openspec-stores-commands.js";
 import { scanCommand } from "./scan-commands.js";
 
 /**
@@ -589,28 +590,37 @@ export async function changeArchive(
   }
 }
 
-/** atticus change list: every change with its type, state and open hand-off. */
+/**
+ * atticus change list: every change with its type, state and open hand-off; then, when
+ * org-pack/openspec.yaml names OpenSpec stores (ADR 0126), their open changes, read-only and
+ * labelled with the store.
+ */
 export async function changeList(root: string, o: { json?: boolean }, io: Output): Promise<number> {
   const all = await changeStore(root).list();
+  const stores = await storeChangeRows(root);
+  for (const l of stores.err) io.err(l);
   if (o.json) {
     io.out(
       JSON.stringify(
-        all.map((c) => ({ id: c.id, title: c.title, type: c.type, state: c.state })),
+        [
+          ...all.map((c) => ({ id: c.id, title: c.title, type: c.type, state: c.state })),
+          ...stores.json,
+        ],
         null,
         2,
       ),
     );
     return 0;
   }
-  if (all.length === 0) {
-    io.out("No changes yet. Start one with atticus change new.");
-    return 0;
+  if (all.length === 0) io.out("No changes yet. Start one with atticus change new.");
+  else {
+    const rows = all.map((c) => {
+      const live = c.handoffs.find((h) => h.state === "open" || h.state === "changes-requested");
+      return [c.id, c.type, c.state, live ? `#${live.pr.number} ${live.state}` : "", c.title];
+    });
+    for (const l of table(["ID", "TYPE", "STATE", "HAND-OFF", "TITLE"], rows)) io.out(l);
   }
-  const rows = all.map((c) => {
-    const live = c.handoffs.find((h) => h.state === "open" || h.state === "changes-requested");
-    return [c.id, c.type, c.state, live ? `#${live.pr.number} ${live.state}` : "", c.title];
-  });
-  for (const l of table(["ID", "TYPE", "STATE", "HAND-OFF", "TITLE"], rows)) io.out(l);
+  for (const l of stores.lines) io.out(l);
   return 0;
 }
 

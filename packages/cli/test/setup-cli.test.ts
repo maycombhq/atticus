@@ -82,6 +82,20 @@ describe("atticus init", () => {
     expect(again.err[0]).toMatch(/already a metarepo/);
   });
 
+  it("makes it an OpenSpec store too with --openspec-store, and says how to register it (ADR 0126)", async () => {
+    const t = io();
+    const dir = await temp("forge-meta");
+    expect(
+      await initCommand(dir, { name: "forge", platform: "forge", openspecStore: true }, t.io),
+    ).toBe(0);
+    expect(t.out).toContain(
+      "It is also the OpenSpec store forge (beta, .openspec-store/store.yaml): once it is pushed, a developer runs openspec store register <their clone> to use it from plain OpenSpec.",
+    );
+    expect(await readFile(join(dir, ".openspec-store/store.yaml"), "utf8")).toBe(
+      "version: 1\nid: forge\n",
+    );
+  });
+
   it("names the org pack after the folder's base name, whatever path it is given", async () => {
     const dir = await temp("shop-meta");
     const t = io();

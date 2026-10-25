@@ -910,6 +910,44 @@ export const Estimates = z.strictObject({
 });
 export type Estimates = z.infer<typeof Estimates>;
 
+// ------------------------------------------------------------------ openspec.yaml (ADR 0126)
+
+/**
+ * What Atticus does with OpenSpec's stores (beta; ADR 0126, an addendum to ADR 0006). A new,
+ * optional file: a pack without it reads no store and hand-down adds no reference, as before.
+ * Atticus never registers, clones, pulls, pushes or writes into a store.
+ */
+export const OpenSpecSettings = z
+  .strictObject({
+    schemaVersion: V,
+    /** Existing OpenSpec stores, read read-only beside the metarepo's own changes and specs. */
+    stores: z
+      .array(
+        z.strictObject({
+          /** A clone of the store: relative to the metarepo root, absolute, or starting `~/`. */
+          path: z.string().min(1),
+          /** Shown with what is read from it; default its store.yaml id, else its folder name. */
+          label: RecordId.optional(),
+        }),
+      )
+      .default([]),
+    /**
+     * Hand-down adds this metarepo (its store.yaml id, with its origin as `remote` when it has
+     * one) under `references:` in the code repo's existing openspec/config.yaml.
+     */
+    referenceInRepos: z.boolean().default(false),
+  })
+  .superRefine((s, ctx) => {
+    unique(s.stores, (x) => x.path, ctx, "stores");
+    unique(
+      s.stores.filter((x) => x.label),
+      (x) => x.label!,
+      ctx,
+      "stores",
+    );
+  });
+export type OpenSpecSettings = z.infer<typeof OpenSpecSettings>;
+
 // ------------------------------------------------------------------ profiles/<platform>/profile.yaml
 
 export const Profile = z

@@ -422,3 +422,17 @@ Where: `org-pack/profiles/<profile>/profile.yaml`.
 | `legend.modify`      | string[]            | no       | default `["Modify"]`                                              |                                                                                                                                                              |
 | `legend.retire`      | string[]            | no       | default `["Retire"]`                                              |                                                                                                                                                              |
 | `gates`              | string (RecordId)[] | no       |                                                                   | Gate ids from gates.yaml that are mandatory on this platform.                                                                                                |
+
+## OpenSpecSettings
+
+Where: `org-pack/openspec.yaml` (optional; OpenSpec's beta stores, ADR 0126).
+
+What Atticus does with OpenSpec's stores (beta; ADR 0126, an addendum to ADR 0006). A new, optional file: a pack without it reads no store and hand-down adds no reference, as before. Atticus never registers, clones, pulls, pushes or writes into a store.
+
+| Field              | Type              | Required | Values          | Description                                                                                                                                                         |
+| ------------------ | ----------------- | -------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `schemaVersion`    | 1                 | yes      |                 |                                                                                                                                                                     |
+| `stores`           | object[]          | no       |                 | Existing OpenSpec stores, read read-only beside the metarepo's own changes and specs.                                                                               |
+| `stores[].path`    | string            | yes      |                 | A clone of the store: relative to the metarepo root, absolute, or starting `~/`.                                                                                    |
+| `stores[].label`   | string (RecordId) | no       |                 | Shown with what is read from it; default its store.yaml id, else its folder name.                                                                                   |
+| `referenceInRepos` | boolean           | no       | default `false` | Hand-down adds this metarepo (its store.yaml id, with its origin as `remote` when it has one) under `references:` in the code repo's existing openspec/config.yaml. |

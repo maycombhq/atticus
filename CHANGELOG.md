@@ -4,6 +4,13 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### OpenSpec stores (beta): compatible, never depended on (ADR 0126, ADR 0006 addendum)
+
+- **The metarepo can be an OpenSpec store.** `atticus init --openspec-store` and `atticus upgrade --openspec-store` write `.openspec-store/store.yaml`. It holds `version: 1`, the org pack's name as a kebab-case `id`, and `remote` when the metarepo's origin is a URL. This is the shape the pinned OpenSpec 1.14.0 reads. A developer then runs `openspec store register <their clone>`. A store.yaml that is there is never replaced. A plain `atticus upgrade` never adds one. A repo adopted in place, whose OpenSpec folder isn't at its root, is refused.
+- **Hand-down can add the metarepo to a code repo's `references:`.** Turn it on with `referenceInRepos: true` in the new, optional `org-pack/openspec.yaml` (C6, `OpenSpecSettings`, its own version 1; a pack without it is unchanged). The entry goes into the repo's existing `openspec/config.yaml`, keeping its comments and every other key, in the hand-down's commit. When the metarepo isn't a store yet, or the repo has no OpenSpec config, the hand-down's problems say so.
+- **Existing stores are read, read-only and labelled.** `openspec.yaml` `stores:` names clones by path. Their open changes follow the metarepo's in `atticus change list` ("From OpenSpec stores (read-only, beta)"; `store` and `readOnly` in `--json`). `atticus openspec check` gives one line per store. `atticus feature spec` says when a store already has a spec for the capability. A later store.yaml version, or a folder with none, is read with a note.
+- **`atticus doctor` says whether the installed OpenSpec has stores.** This is a warning only when the metarepo uses them.
+
 ### VS Code: /verify checks the facts
 
 - **`@atticus /verify <repo>` and _Atticus: Verify a repo's facts against its code_ run `atticus verify`** (ADR 0124), with no model: the chat shows what was rejected and offers `--write`, or sends the rejected facts back with `/map`. They ran the older scanner's `scan verify` with Copilot's model before. That check stays, as `/scanverify` and _Verify a repo's last scan_, behind `atticus.fullUi`.

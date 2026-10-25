@@ -22,6 +22,7 @@ import {
   ChangeTypes,
   Estimates,
   Gates,
+  OpenSpecSettings,
   IntegrationPattern,
   PackManifest,
   Procedure,
@@ -515,6 +516,35 @@ export async function loadOrgPack(dir: string): Promise<OrgPack> {
     defaulted,
     problems,
   };
+}
+
+/**
+ * The org pack's OpenSpec store settings (ADR 0126), `openspec.yaml`: the defaults (nothing on)
+ * when the pack has none, and also, with a problem, when the file is there and doesn't read.
+ */
+export async function loadOpenSpecSettings(
+  dir: string,
+): Promise<{ settings: OpenSpecSettings; problem?: string }> {
+  const settings = OpenSpecSettings.parse({ schemaVersion: 1 });
+  let text: string;
+  try {
+    text = await readFile(join(dir, "openspec.yaml"), "utf8");
+  } catch {
+    return { settings };
+  }
+  try {
+    const r = OpenSpecSettings.safeParse(parse(text));
+    if (r.success) return { settings: r.data };
+    return {
+      settings,
+      problem: `openspec.yaml: ${r.error.issues.map((i) => `${i.path.join(".") || "(file)"}: ${i.message}`).join("; ")}`,
+    };
+  } catch (e) {
+    return {
+      settings,
+      problem: `openspec.yaml isn't YAML: ${(e as Error).message.split("\n")[0]}`,
+    };
+  }
 }
 
 /**

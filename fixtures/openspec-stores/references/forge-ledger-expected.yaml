@@ -1,0 +1,17 @@
+# Forge ledger's OpenSpec settings. Keep the context short.
+schema: spec-driven
+
+context: |
+  forge-ledger posts every Forge transfer to the ledger.
+
+# Read-only context for this repo's assistant.
+references:
+  - forge-payments # the payments team's store
+  - id: forge-statements
+    remote: https://code.forge.example/forge/forge-statements-store.git
+  - id: forge
+    remote: https://code.forge.example/forge/forge-meta.git
+
+rules:
+  tasks:
+    - Every task names its test first
