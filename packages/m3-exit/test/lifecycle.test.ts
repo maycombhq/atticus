@@ -150,6 +150,21 @@ afterAll(async () => {
   for (const d of made) await rm(d, { recursive: true, force: true });
 });
 
+/**
+ * A sync's lines without the H1 note on keeping the draft beside what merged (ADR 0087 addendum),
+ * so each step checks the merge line itself. The mock Git host merges on its side only, so here
+ * the note always says the merge isn't in this clone yet.
+ */
+function merged(out: string[]): string[] {
+  return out.filter(
+    (l) =>
+      !l.startsWith("Kept what Atticus drafted beside what merged") &&
+      !/^The merge of PR #\d+ isn't in this clone yet: pull main, then run atticus change learn\.$/.test(
+        l,
+      ),
+  );
+}
+
 describe("M3 exit step 2: the seeded feature from Define to Release", () => {
   // ------------------------------------------------------------------ define
   it(
@@ -242,7 +257,7 @@ describe("M3 exit step 2: the seeded feature from Define to Release", () => {
       expect(early.text).toMatch(/PR #1 isn't approved yet/);
       gh.review(METAREPO, 1, "ari", "approved");
       const s = await run("change", "sync", CHANGE, "--approve", "--by", "pat");
-      expect(s.out).toEqual(["PR #1 merged. add-transfer-limit is now design."]);
+      expect(merged(s.out)).toEqual(["PR #1 merged. add-transfer-limit is now design."]);
     },
     T,
   );
@@ -366,9 +381,9 @@ describe("M3 exit step 2: the seeded feature from Define to Release", () => {
         "  - PR #2 is approved only by ari, who raised it; it needs someone else's approval.",
       ]);
       gh.review(METAREPO, 2, "avery", "approved");
-      expect((await run("change", "sync", CHANGE, "--approve", "--by", "avery")).out).toEqual([
-        "PR #2 merged. add-transfer-limit is now plan.",
-      ]);
+      expect(
+        merged((await run("change", "sync", CHANGE, "--approve", "--by", "avery")).out),
+      ).toEqual(["PR #2 merged. add-transfer-limit is now plan."]);
     },
     T,
   );
@@ -509,9 +524,9 @@ describe("M3 exit step 2: the seeded feature from Define to Release", () => {
     async () => {
       expect((await run("change", "handoff", CHANGE, "--approve", "--by", "bao")).code).toBe(0);
       gh.review(METAREPO, 3, "tia", "approved");
-      expect((await run("change", "sync", CHANGE, "--approve", "--by", "tia")).out).toEqual([
-        "PR #3 merged. add-transfer-limit is now build.",
-      ]);
+      expect(merged((await run("change", "sync", CHANGE, "--approve", "--by", "tia")).out)).toEqual(
+        ["PR #3 merged. add-transfer-limit is now build."],
+      );
     },
     T,
   );
@@ -665,9 +680,9 @@ describe("M3 exit step 2: the seeded feature from Define to Release", () => {
     async () => {
       expect((await run("change", "handoff", CHANGE, "--approve", "--by", "dev")).code).toBe(0);
       gh.review(METAREPO, 4, "dee", "approved");
-      expect((await run("change", "sync", CHANGE, "--approve", "--by", "dee")).out).toEqual([
-        "PR #4 merged. add-transfer-limit is now qa.",
-      ]);
+      expect(merged((await run("change", "sync", CHANGE, "--approve", "--by", "dee")).out)).toEqual(
+        ["PR #4 merged. add-transfer-limit is now qa."],
+      );
     },
     T,
   );
@@ -678,9 +693,9 @@ describe("M3 exit step 2: the seeded feature from Define to Release", () => {
     async () => {
       expect((await run("change", "handoff", CHANGE, "--approve", "--by", "tia")).code).toBe(0);
       gh.review(METAREPO, 5, "quinn", "approved");
-      expect((await run("change", "sync", CHANGE, "--approve", "--by", "quinn")).out).toEqual([
-        "PR #5 merged. add-transfer-limit is now release-ready.",
-      ]);
+      expect(
+        merged((await run("change", "sync", CHANGE, "--approve", "--by", "quinn")).out),
+      ).toEqual(["PR #5 merged. add-transfer-limit is now release-ready."]);
     },
     T,
   );
@@ -710,9 +725,9 @@ describe("M3 exit step 2: the seeded feature from Define to Release", () => {
       const ready = await run("change", "sync", CHANGE, "--by", "dana");
       expect(ready.code).toBe(1);
       expect(ready.out[0]).toMatch(/^PR #6 is approved and the Git host's rules are met\./);
-      expect((await run("change", "sync", CHANGE, "--approve", "--by", "dana")).out).toEqual([
-        "PR #6 merged. add-transfer-limit is now released.",
-      ]);
+      expect(
+        merged((await run("change", "sync", CHANGE, "--approve", "--by", "dana")).out),
+      ).toEqual(["PR #6 merged. add-transfer-limit is now released."]);
     },
     T,
   );
