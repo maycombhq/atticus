@@ -13,10 +13,13 @@ import { parseYamlAs } from "./answer.js";
 import {
   allowedValuesSource,
   columnsOf,
+  declaringFiles,
   isKeyPattern,
   endpointKey,
   estateIndex,
+  inScope,
   loadEstate,
+  scopeRepos,
   type Estate,
 } from "./estate.js";
 import { baseProblem, deltaBase, flowBase, mergeDelta } from "./merge.js";
@@ -257,6 +260,31 @@ function nearestEntries(written: string, have: string[]): string[] {
   return [...have].sort((a, b) => score(b) - score(a) || a.localeCompare(b)).slice(0, 8);
 }
 
+/** Today's flow as the source checks read it: its steps' fields, and what its trigger and steps cite. */
+type TodayFlow = {
+  trigger?: { ref?: string };
+  steps: { kind: string; data?: Record<string, string[] | undefined>; refs?: string[] }[];
+};
+
+/**
+ * The fields today's flow already carries in the catalog's Schemas (B-run2-fixes 9): its entry's
+ * request, response or screen, and the Schemas of the calls, endpoints and Schemas its steps cite,
+ * folded. A field one of them holds has its source in today's code though no step's field list
+ * names it (a list's count, the request's title), so returning it is no field from nowhere.
+ */
+function todaysFields(today: TodayFlow, e: Estate): Set<string> {
+  const fold = (c: string) => c.replace(/[_-]/g, "").toLowerCase();
+  const refs = new Set<string>([
+    ...(today.trigger?.ref ? [today.trigger.ref] : []),
+    ...today.steps.flatMap((s) => s.refs ?? []),
+  ]);
+  const out = new Set<string>();
+  for (const r of e.records as Rec[])
+    if (r.kind === "Schema" && (refs.has(r.id) || refs.has(String(r.ref))))
+      for (const f of (r.fields ?? []) as { name: string }[]) out.add(fold(f.name));
+  return out;
+}
+
 /**
  * The fields a changed or added step newly returns that nothing in the flow gives (a recall
  * check: seen with a small model, whose plan returned a new field it never stored). A field is
@@ -266,12 +294,12 @@ function nearestEntries(written: string, have: string[]): string[] {
  */
 function fieldsFromNowhere(
   d: FlowDelta,
-  today: { steps: { kind: string; data?: Record<string, string[] | undefined> }[] },
+  today: TodayFlow,
   e: Estate,
 ): { change: number; field: string }[] {
   const fold = (c: string) => c.replace(/[_-]/g, "").toLowerCase();
   const m = mergeDelta(d, today as never);
-  const given = new Set<string>();
+  const given = todaysFields(today, e);
   for (const s of m.steps) {
     if (s.mark === "removed") continue;
     // W3b: a field the step works out from columns is given there, a respond step's too.
@@ -376,7 +404,7 @@ function derivedProblems(
  */
 function returnedBeforeGiven(
   d: FlowDelta,
-  today: { steps: { kind: string; data?: Record<string, string[] | undefined> }[] } | undefined,
+  today: TodayFlow | undefined,
   e: Estate,
 ): {
   step: number;
@@ -405,6 +433,8 @@ function returnedBeforeGiven(
   const given = new Set<string>();
   for (const p of (d.trigger?.entry ?? "").matchAll(/\{([^}]+)\}/g)) given.add(fold(p[1]!));
   const each = steps.map(gives);
+  // B-run2-fixes 9: what today's entry and calls already carry is given from today's code.
+  const known = today && m.change === "modify" ? todaysFields(today, e) : new Set<string>();
   const out: ReturnType<typeof returnedBeforeGiven> = [];
   steps.forEach((s, i) => {
     const verb =
@@ -421,7 +451,7 @@ function returnedBeforeGiven(
           ? (today?.steps[s.today - 1]?.data?.[verb] ?? []).map(leaf)
           : [];
       for (const f of ((s.data ?? {}) as Record<string, string[] | undefined>)[verb] ?? []) {
-        if (was.includes(leaf(f)) || given.has(leaf(f))) continue;
+        if (was.includes(leaf(f)) || given.has(leaf(f)) || known.has(leaf(f))) continue;
         const j = each.findIndex((g, k) => k > i && g.has(leaf(f)));
         // Given nowhere in a changed flow: today's flow may carry it in a step no field list
         // names (delta.field-from-nowhere says so for what a respond returns). Only a new flow's
@@ -633,20 +663,6 @@ export function nextMigration(m: StoreMigrations, words: string): string | undef
   return `${p.prefix}${String(p.newest + 1).padStart(p.width, "0")}${p.sep}${words}${p.ext}`;
 }
 
-/** The files a store's columns are cited in, as the catalog has them (at most four). */
-function columnFilesOf(e: Estate, store: string): string[] {
-  const tables = new Set(
-    (e.records as Rec[])
-      .filter((r) => r.kind === "Table" && r.dataStore === store)
-      .map((r) => r.id),
-  );
-  const files = new Set<string>();
-  for (const r of e.records as Rec[])
-    if (r.kind === "Column" && tables.has(String(r.table)))
-      for (const ev of (r.evidence ?? []) as { path?: string }[]) if (ev.path) files.add(ev.path);
-  return [...files].sort().slice(0, 4);
-}
-
 /** The column types a store's tables are written with in the catalog, sorted. */
 export function columnTypesOf(e: Estate, store: string): string[] {
   const tables = new Set(
@@ -819,19 +835,15 @@ export async function placeIssues(
  * one and the folder) and the column types its tables are written with. Facts from the catalog,
  * given before the first draft so it needn't learn them from a finding.
  */
-export function storeFacts(e: Estate, stores: string[]): string {
+export function storeFacts(e: Estate, stores: string[], tables: readonly string[] = []): string {
   const lines: string[] = [];
   for (const s of stores) {
     const m = migrationsOf(e, s);
     const types = columnTypesOf(e, s);
     const next = nextMigration(m, "<what_it_does>");
-    const declared = m.files.length ? [] : columnFilesOf(e, s);
     const mig = m.files.length
       ? `migrations in ${m.folder ?? "several folders"}, the newest ${m.files.slice(0, 3).join(", ")}${next ? `; the next is ${next}` : ""}`
-      : declared.length
-        ? // B-places: no migrations, so the file its columns are declared in changes in place.
-          `the catalog has no migration of it; its columns are declared in ${declared.join(", ")}: a change there is made in place, so name that file under store.migration`
-        : "the catalog has no migration of it: name the migration file, with its extension";
+      : noMigrationWords(e, s, tables);
     lines.push(
       `- ${s}${m.repo ? ` (repo ${m.repo})` : ""}: ${mig}.${types.length ? ` Column types as its tables write them: ${types.slice(0, 8).join(", ")}.` : ""}`,
     );
@@ -839,6 +851,42 @@ export function storeFacts(e: Estate, stores: string[]): string {
   return lines.length
     ? ["The data stores the change may write, from the catalog:", ...lines].join("\n")
     : "";
+}
+
+/**
+ * A store with no migrations (B-places): the files its tables' columns are declared in change in
+ * place. B-run2-fixes 1: for each table the change's flows use, the files that declare that
+ * table's columns (its schema file and the entity mapped to it, `declaringFiles`), not every file
+ * one of the store's columns is cited in; with none of its tables used, the store's as a whole.
+ */
+function noMigrationWords(e: Estate, store: string, tables: readonly string[]): string {
+  const own = [...new Set(tables)].filter((t) => storeOfTable(e, t) === store).sort();
+  const all = (e.records as Rec[])
+    .filter((r) => r.kind === "Table" && r.dataStore === store)
+    .map((r) => r.id);
+  const said = (
+    own.length
+      ? own.map((t) => ({ t, files: declaringFiles(e, [t]).map((f) => f.path) }))
+      : [{ t: undefined, files: declaringFiles(e, all).map((f) => f.path) }]
+  ).filter((g) => g.files.length);
+  if (!said.length)
+    return "the catalog has no migration of it: name the migration file, with its extension";
+  const one = said.length === 1 && said[0]!.files.length === 1;
+  const where = said
+    .map(
+      (g) =>
+        `${g.t ? `the columns of ${sqlNameOf(e, g.t)}` : "its columns"} are declared in ${g.files.join(", ")}`,
+    )
+    .join("; ");
+  return `the catalog has no migration of it; ${where}: a change there is made in place, so name ${one ? "that file" : "the schema file that creates the table"} under store.migration`;
+}
+
+/** The tables today's flows the change touches use, for the store facts (B-run2-fixes 1). */
+export function touchedTables(e: Estate, p: FeaturePlacement): string[] {
+  const out = new Set<string>();
+  for (const f of p.flows)
+    for (const s of e.flowById.get(f.id)?.flow.steps ?? []) if (s.store) out.add(s.store.table);
+  return [...out].sort();
 }
 
 /**
@@ -921,7 +969,7 @@ export function consumersSource(e: Estate, p: FeaturePlacement): SourceInput[] {
 
 /** The store facts as a data block of the step's pack, when the change may write a store. */
 export function storeFactsSource(e: Estate, p: FeaturePlacement): SourceInput[] {
-  const text = storeFacts(e, storesFor(e, p));
+  const text = storeFacts(e, storesFor(e, p), touchedTables(e, p));
   return text
     ? [
         {
@@ -1569,6 +1617,83 @@ export function checkDeltas(
 }
 
 /** Interface changes, from the deltas: a call-out or publish added, changed or removed. */
+/** gRPC's status codes, as written in code and in words: INVALID_ARGUMENT and InvalidArgument. */
+const GRPC_CODES = [
+  "CANCELLED",
+  "UNKNOWN",
+  "INVALID_ARGUMENT",
+  "DEADLINE_EXCEEDED",
+  "NOT_FOUND",
+  "ALREADY_EXISTS",
+  "PERMISSION_DENIED",
+  "RESOURCE_EXHAUSTED",
+  "FAILED_PRECONDITION",
+  "ABORTED",
+  "OUT_OF_RANGE",
+  "UNIMPLEMENTED",
+  "INTERNAL",
+  "UNAVAILABLE",
+  "DATA_LOSS",
+  "UNAUTHENTICATED",
+];
+const pascal = (c: string) =>
+  c
+    .toLowerCase()
+    .split("_")
+    .map((w) => w[0]!.toUpperCase() + w.slice(1))
+    .join("");
+/**
+ * The gRPC codes a text names, each as the code (INVALID_ARGUMENT): the code, or its PascalCase
+ * name (InvalidArgument); a one-word name (Internal, Unknown) only qualified (StatusCode.Internal),
+ * since it is a plain word too.
+ */
+function grpcCodesIn(text: string): string[] {
+  return GRPC_CODES.filter((c) => {
+    const name = c.includes("_") ? pascal(c) : `(?:StatusCode|Status|codes|Code)\\.${pascal(c)}`;
+    return new RegExp(`(^|[^A-Za-z_])(${c}|${name})([^A-Za-z_]|$)`).test(text);
+  });
+}
+
+/**
+ * B-run2-fixes 10: an added or changed step of a flow an rpc starts that answers a gRPC status
+ * today's flow doesn't (its steps and error paths name none such) changes the rpc's contract:
+ * its callers get an error they didn't. One row per rpc, with each new status.
+ */
+function newRpcStatuses(d: FlowDelta, e: Estate) {
+  const spec = e.flowById.get(d.flow);
+  const today = spec?.flow;
+  const ep = e.byId.get(today?.trigger.ref ?? "") as
+    { kind?: string; endpointType?: string; pathOrTopic?: string } | undefined;
+  if (!today || ep?.kind !== "Endpoint" || ep.endpointType !== "grpc" || !ep.pathOrTopic) return [];
+  const had = new Set(
+    grpcCodesIn(
+      [...today.steps.map((s) => s.what), ...today.errors.flatMap((x) => [x.when, x.then])].join(
+        "\n",
+      ),
+    ),
+  );
+  const added = [
+    ...new Set(
+      d.steps
+        .filter((s) => s.op !== "remove")
+        .flatMap((s) => grpcCodesIn(s.what ?? ""))
+        .filter((c) => !had.has(c)),
+    ),
+  ];
+  return added.length
+    ? [
+        {
+          flow: d.flow,
+          caller: "its callers",
+          callee: today.component,
+          operation: ep.pathOrTopic,
+          status: "planned-modify",
+          fields: added.map((c) => `error status ${c}`),
+        },
+      ]
+    : [];
+}
+
 export function interfaceChanges(deltas: FlowDelta[], e: Estate) {
   const out: {
     flow: string;
@@ -1581,6 +1706,7 @@ export function interfaceChanges(deltas: FlowDelta[], e: Estate) {
   for (const d of deltas) {
     const today = e.flowById.get(d.flow)?.flow;
     const caller = today?.component ?? d.flow.split(".")[0]!;
+    out.push(...newRpcStatuses(d, e));
     for (const s of d.steps) {
       const old = s.step ? today?.steps[s.step - 1] : undefined;
       const kind = s.kind ?? old?.kind;
@@ -2100,12 +2226,20 @@ export async function architectureStage(
   ];
   const patternLine = (i: (typeof patterns)[number]) =>
     `${i.kind} ${i.id}: ${(i as { title?: string; name?: string }).title ?? (i as { name?: string }).name ?? ""}. Applies when: ${(i as { appliesWhen?: string }).appliesWhen ?? ""} (${i.quote?.page ?? ""})`;
+  // B-run2-fixes 11: the estate of the repos the change touches, their systems and neighbours.
+  const scope = scopeRepos(estate, [
+    ...placement.flows.flatMap((f) => {
+      const r = estate.flowById.get(f.id)?.repo;
+      return r ? [r] : [];
+    }),
+    ...placement.newFlows.map((f) => f.repo),
+  ]);
   const whole: SourceInput[] = [
     {
       id: "estate-index",
       kind: "catalog",
       origin: "atticus change architecture (deterministic)",
-      text: estateIndex(estate),
+      text: estateIndex(estate, scope),
       classification: "internal",
       priority: 80,
     },
@@ -2164,7 +2298,7 @@ export async function architectureStage(
       budget: stageBudget(ctx, ARCHITECTURE_AGENT),
       others: [instructionSource(instructions), ...sources],
       ...(o.context ? { context: o.context } : {}),
-      exclude: [change.id],
+      exclude: [change.id, ...inScope(estate, scope).outside],
       change: change.id,
       ai: stageRetrievalAi(ctx, o, `change architecture ${change.id}`),
       origin: "atticus change architecture (context engine)",

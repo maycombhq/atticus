@@ -56,11 +56,14 @@ import { isEmptyDelta, readDeltas, TARGET_DIR } from "./architecture.js";
 import {
   allowedValuesSource,
   columnsOf,
+  declaringFiles,
   endpointKey,
   endpointsFor,
   estateIndex,
+  inScope,
   isKeyPattern,
   loadEstate,
+  scopeRepos,
   schemaFieldsOf,
   triggerEntry,
   type Estate,
@@ -378,6 +381,9 @@ function taskFiles(
       .filter((f) => !had.has(f)),
   );
   if (!changed.size && !s.store?.new) return [];
+  // B-run2-fixes 2: a field a schema holds already is changed there only when the step says how
+  // (made required); naming it is not a change, so where it is declared is no place to touch.
+  const required = new Set((s.fields?.required ?? []).map((f) => foldField(f.split(".").at(-1)!)));
   const recs = e.records as unknown as (Record<string, unknown> & { kind: string; id: string })[];
   const seen = new Set(evidence.map((x) => x.replace(/:\d+$/, "")));
   const out: TaskFile[] = [];
@@ -401,6 +407,39 @@ function taskFiles(
     const m = new Map<string, number[]>();
     for (const x of ev) m.set(x.path!, [...(m.get(x.path!) ?? []), ...(x.line ? [x.line] : [])]);
     return m;
+  };
+  /**
+   * B-run2-fixes 2: a schema's files to touch, with their lines. A field it holds that changes:
+   * that field's own citation (the record cites one per field, in order), else every file. A new
+   * field: the files that declare most of its fields (the DTO, the API spec; at least half as many
+   * as the file declaring the most), not a validator or handler citing one of them in passing. A
+   * screen's fields that several screens' files share: the files today's flow cites, the screen's
+   * own, when it cites any.
+   */
+  const schemaFiles = (
+    r: Record<string, unknown>,
+    side: string,
+    held: string[],
+    flowFiles: Set<string>,
+  ): Map<string, number[]> => {
+    const all = (r.evidence ?? []) as Cited[];
+    const fields = (r.fields ?? []) as { name: string }[];
+    const ev = mine(all);
+    if (held.length && all.length === fields.length) {
+      const want = new Set(held.map(foldField));
+      const pick = mine(all.filter((_, i) => want.has(foldField(fields[i]!.name))));
+      if (pick.length) return byFile(pick);
+    }
+    const files = byFile(ev);
+    if (side === "screen" && files.size > 1) {
+      const own = new Map([...files].filter(([p]) => flowFiles.has(p)));
+      if (own.size) return own;
+    }
+    if (held.length) return files;
+    const count = new Map<string, number>();
+    for (const x of ev) count.set(x.path!, (count.get(x.path!) ?? 0) + 1);
+    const most = Math.max(0, ...count.values());
+    return new Map([...files].filter(([p]) => (count.get(p) ?? 0) * 2 >= most));
   };
 
   // ---- the Schemas holding a field the task adds or changes: the entry's, and the call's
@@ -449,13 +488,31 @@ function taskFiles(
   const listed = (k: "sends" | "returns") =>
     (s.fields?.[k] ?? []).some((f) => changed.has(foldField(f.split(".").at(-1)!)));
   const hasCall = owners.some((o) => o.call);
+  // The files today's flow cites (its steps and trigger) and its target flow puts steps in (`at`):
+  // a screen's own files (B-run2-fixes 2).
+  const today = e.flowById.get(d.flow)?.flow;
+  const flowFiles = new Set([
+    ...[...(today?.trigger.evidence ?? []), ...(today?.steps ?? []).flatMap((x) => x.evidence)]
+      .filter((x) => x.path && (!x.repo || x.repo === d.repo))
+      .map((x) => x.path!),
+    ...d.steps.flatMap((x) => {
+      const p = x.at ? parseAt(x.at) : undefined;
+      return p ? [p.path] : [];
+    }),
+  ]);
   for (const o of owners)
     for (const r of recs) {
       if (r.kind !== "Schema" || !o.refs.has(String(r.ref))) continue;
       const side = r.id.slice(String(r.ref).length + 1) || "request";
-      const held = ((r.fields ?? []) as { name: string }[])
+      const fields = (r.fields ?? []) as { name: string; required?: boolean }[];
+      const has = new Set(fields.map((f) => foldField(f.name)));
+      // B-run2-fixes 2: only what the task adds here (a field the schema doesn't hold) or changes
+      // (a field it holds, made required); a field it only names is declared as it is.
+      const fresh = [...changed].filter((f) => !has.has(f));
+      const held = fields
+        .filter((f) => required.has(foldField(f.name)) && f.required !== true)
         .map((f) => f.name)
-        .filter((x, i, xs) => xs.indexOf(x) === i && changed.has(foldField(x)));
+        .filter((x, i, xs) => xs.indexOf(x) === i);
       const own = o.call
         ? ((side === "request" || side === "message") && listed("sends")) ||
           (side === "response" && listed("returns"))
@@ -463,9 +520,9 @@ function taskFiles(
           !calls &&
           ((takes && side !== "response") ||
             (kind === "respond" && (side === "response" || side === "screen")));
-      if (!held.length && !own) continue;
+      if (!held.length && !(own && fresh.length)) continue;
       const whose = o.label.endsWith("s") ? `${o.label}'` : `${o.label}'s`;
-      for (const [path, lines] of byFile(mine(r.evidence)))
+      for (const [path, lines] of schemaFiles(r, side, held, flowFiles))
         add(
           path,
           lines,
@@ -475,12 +532,36 @@ function taskFiles(
 
   // ---- a store step that adds columns: the table's file and its columns' (the schema, the entity)
   const table = s.store?.table;
-  const adds = s.store && s.store.columns.some((c) => changed.has(foldField(c)));
+  // B-run2-fixes 2: a column the table hasn't got, or one given another type; a read or lookup of
+  // a column adds none (the write that adds it names the files).
+  const have = table ? new Set([...columnsOf(e, table)].map(foldField)) : new Set<string>();
+  const retyped = new Set(Object.keys(s.store?.types ?? {}).map(foldField));
+  const adds =
+    s.store &&
+    kind !== "read" &&
+    kind !== "lookup" &&
+    s.store.columns.some(
+      (c) => changed.has(foldField(c)) && (!have.has(foldField(c)) || retyped.has(foldField(c))),
+    );
   if (table && adds && e.byId.get(table)?.kind === "Table") {
     const why = `where table ${table} and its columns are`;
-    const cols = recs.filter((r) => r.kind === "Column" && r.table === table);
+    // The files that declare this table's columns (its schema file, the entity mapped to it), not
+    // a base class or a file citing one column in passing (B-run2-fixes 1, `declaringFiles`).
+    const declaring = new Set(declaringFiles(e, [table], { repo: d.repo }).map((f) => f.path));
+    const cols = recs
+      .filter((r) => r.kind === "Column" && r.table === table)
+      .map((c) => ({
+        id: c.id,
+        name: c.name,
+        evidence: ((c.evidence ?? []) as Cited[]).filter((x) => declaring.has(x.path ?? "")),
+      }));
     const matched = new Set(
-      cols.filter((c) => changed.has(foldField(String(c.name ?? "")))).map((c) => c.id),
+      cols
+        .filter((c) => {
+          const n = foldField(String(c.name ?? ""));
+          return changed.has(n) && retyped.has(n);
+        })
+        .map((c) => c.id),
     );
     const files = new Map<string, { lines: number[]; all: number[] }>();
     // B-places: a migration the store has is history, never edited; the new one goes beside it
@@ -558,6 +639,8 @@ export const declaredWhat = (why: readonly string[]) =>
 export function storySteps(s: DeltaStory): StoryStep[] {
   const out: Place[] = [];
   const reasons = new Map<Place, string[]>();
+  /** Code steps whose place is known, not a neighbour's line (B-run2-fixes 3). */
+  const placedAt = new Set<Place>();
   const touched = s.tasks.flatMap((t) => [
     ...t.evidence.map((c) => evidenceAt(c)[1]!),
     ...(t.files ?? []).map((f) => f.file),
@@ -570,14 +653,32 @@ export function storySteps(s: DeltaStory): StoryStep[] {
       // The file of the line the bench cites: the last an added step follows, else the first.
       const file = (t.op === "add" ? cited.at(-1)! : cited[0]!)[1]!;
       const verb = t.op === "add" ? "adds" : t.op === "change" ? "changes" : "removes";
-      out.push({
-        kind: "code",
-        repo: t.repo,
-        file,
-        lines: [...new Set(cited.filter((c) => c[1] === file && c[2]).map((c) => Number(c[2])))],
-        what: `${verb} the ${t.kind ?? "flow"} step ${t.op === "add" ? "after this code" : "here"}: ${t.what.replace(/[.\s]+$/, "")}`,
-        tasks: [t.id],
-      });
+      const lines = [
+        ...new Set(cited.filter((c) => c[1] === file && c[2]).map((c) => Number(c[2]))),
+      ];
+      const what = `${verb} the ${t.kind ?? "flow"} step ${t.op === "add" ? "after this code" : "here"}: ${t.what.replace(/[.\s]+$/, "")}`;
+      // B-run2-fixes 3: tasks whose code is at the same file and lines are one place, with both
+      // tasks. Only where the place is known: today's step a task changes or removes, or the `at`
+      // the target flow gives an added step; one placed after its neighbour isn't said to be there.
+      const known = t.op !== "add" || t.placed === "given";
+      const same = known
+        ? out.find(
+            (x) =>
+              x.kind === "code" &&
+              placedAt.has(x) &&
+              x.file === file &&
+              x.lines.length === lines.length &&
+              x.lines.every((l, i) => l === lines[i]),
+          )
+        : undefined;
+      if (same) {
+        same.what = `${same.what}; ${what}`;
+        same.tasks.push(t.id);
+      } else {
+        const step: Place = { kind: "code", repo: t.repo, file, lines, what, tasks: [t.id] };
+        out.push(step);
+        if (known) placedAt.add(step);
+      }
     } else {
       if (freshAt < 0) freshAt = out.length;
       fresh.push(t);
@@ -829,6 +930,13 @@ export const STORY_ERROR_RULES = [
   "unavailable",
   "other",
 ] as const;
+
+/**
+ * When to use which rule, as the stories bench's rubric scores them (B-run2-fixes 5): one rule in
+ * the stories prompt, so an error criterion's rule is the bench's word for its failure.
+ */
+export const ERROR_RULE_WORDS =
+  "An error criterion's rule is one word: required (a field left out or empty); format (the wrong shape or pattern: not a date, not 15 digits, not an email); length (too short or too long); range (a value outside its bounds: below a minimum, above a maximum, a date before or after the one it must follow); limit (a total over its limit, counted across requests or items, such as the quantity of a product already in the cart plus the one added); unique (a value another row has); not-found (what the request names doesn't exist); forbidden (the caller may not do it); conflict (the state doesn't allow it now); unavailable (a store or a call fails or times out); other (only when none of these fits).";
 
 const Words = z.string().trim().min(1);
 
@@ -2822,6 +2930,7 @@ Rules:
 - A criterion checks a field when its outcome depends on the field's value: its then clause states the value, or a result that follows from a value its given clause fixes.
 - For each key a step matches rows by or checks (its fields.checks), add one criterion of its own for the refusal: what happens when that key doesn't match.
 - A task whose step validates, writes, calls out or publishes has at least one criterion with outcome: error: the input rejected and with what message or status, the write failing, the call failing or timing out, and what the caller sees each time.
+- ${ERROR_RULE_WORDS}
 - Write every section of each story, so a developer builds it without asking. Every line comes from the target flows, the estate or the brief: name only the fields, columns, entries, stories and repos they have.
 - Interfaces: list every entry the target flows add (a new flow's trigger, a call to a new entry) and every entry whose request or response fields change, with each field's side, type, required and default; say whether the change breaks its consumers and why.
 - Every request field an entry of this repo gains or changes has a validation, and a criterion with outcome: error that checks it, saying the status and message the caller sees.
@@ -2873,6 +2982,11 @@ Rules:
   // estate it selected only processes, so a draft had no record of the estate at all.
   const brief = await readFile(join(dir, "brief.md"), "utf8").catch(() => "");
   const design = await readFile(join(dir, "design.md"), "utf8").catch(() => "");
+  // B-run2-fixes 11: the estate of the repos the target flows are in, their systems and neighbours.
+  const scope = scopeRepos(
+    estate,
+    deltas.map((d) => d.repo),
+  );
   const selected = await estateContext(
     root,
     "stories",
@@ -2888,7 +3002,7 @@ Rules:
       budget: stageBudget(ctx, STORY_AGENT),
       others: [instructionSource(instructions), ...sources],
       ...(o.context ? { context: o.context } : {}),
-      exclude: [change.id],
+      exclude: [change.id, ...inScope(estate, scope).outside],
       change: change.id,
       ai: stageRetrievalAi(ctx, o, `plan stories ${change.id}`),
       origin: "knowledge/items (ADR 0083)",
@@ -2921,7 +3035,7 @@ Rules:
       id: "estate-index",
       kind: "catalog",
       origin: "atticus plan stories (deterministic)",
-      text: estateIndex(estate),
+      text: estateIndex(estate, scope),
       classification: "internal",
       priority: 70,
     });

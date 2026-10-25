@@ -286,7 +286,11 @@ export interface StoryScore {
   steps: { found: number; total: number; missed: string[]; extra: string[]; coverage: number };
   /** Reference fields the draft names (in a criterion, an interface, a column, or a then clause). */
   fields: { found: number; total: number; missed: string[]; coverage: number };
-  /** Reference error cases (step, field, rule) the draft has on the matching step (strict). */
+  /**
+   * Reference error cases (step, field, rule) the draft has on the matching step (strict). One
+   * with no field (not found, forbidden, unavailable) is matched by the step, the rule and a word
+   * its `when` shares with the draft's, whatever field the draft names (B-run2-fixes 4).
+   */
   errors: { found: number; total: number; missed: string[]; coverage: number };
   /**
    * The same error cases matched by entry (B-fixes): found on the matching step, or on any
@@ -300,6 +304,26 @@ export interface StoryScore {
 }
 
 const ratio = (a: number, b: number) => (b === 0 ? 1 : a / b);
+
+/** Words a `when` is made of that say nothing on their own. */
+const PLAIN = new Set(
+  "the a an no not any is are was has have had with without of to in on for from and or it its when given then that this there be by at as do does doesn't isn't can can't".split(
+    " ",
+  ),
+);
+const whenWords = (s: string) =>
+  new Set(
+    s
+      .toLowerCase()
+      .split(/[^a-z0-9']+/)
+      .filter((w) => w.length > 2 && !PLAIN.has(w))
+      .map((w) => w.replace(/'s$/, "").replace(/s$/, "")),
+  );
+/** Whether two error cases' `when` share a word that says something (B-run2-fixes 4). */
+function sameWhen(a: string, b: string): boolean {
+  const x = whenWords(a);
+  return [...whenWords(b)].some((w) => x.has(w));
+}
 
 /**
  * Score a drafted story against its reference. `known` is every other field name the repos are
@@ -342,6 +366,20 @@ export function scoreStory(
       return step ? c.errors.map((e) => key(step, e)) : [];
     }),
   );
+  // B-run2-fixes 4: a reference error about the whole request (no field: not found, forbidden,
+  // unavailable) is matched by a draft error on the same step with the same rule whose `when`
+  // says the same thing, whatever field the draft keys it on (an id field, often).
+  const noField = ref.criteria.flatMap((c) =>
+    c.errors.filter((e) => !e.field).map((e) => ({ c, e, k: key(c.step, e) })),
+  );
+  for (const c of draft.criteria) {
+    const step = matched.get(c.step);
+    if (!step) continue;
+    for (const e of c.errors)
+      for (const r of noField)
+        if (r.c.step === step && r.e.rule === e.rule && sameWhen(r.e.when, e.when))
+          gotErrors.add(r.k);
+  }
   const errorsMissed = [...wantErrors].filter((k) => !gotErrors.has(k));
 
   // ---- errors by entry: (repo, entry, field, rule) on any draft step of that entry
@@ -365,9 +403,28 @@ export function scoreStory(
     if (st && at)
       for (const e of c.errors) refByEntry.set(key(c.step, e), `${st.repo}|${at}|${what(e)}`);
   }
+  // B-run2-fixes 4: a no-field reference error on any draft step of its entry, by rule and `when`.
+  const draftWhens = draft.criteria.flatMap((c) => {
+    const st = draft.steps.find((x) => x.id === c.step);
+    const at = st ? entryOf(st, c) : c.entry ? entryKey(c.entry) : undefined;
+    return st && at
+      ? c.errors.map((e) => ({ at: `${st.repo}|${at}`, rule: e.rule, when: e.when }))
+      : [];
+  });
+  const noFieldByEntry = (k: string) => {
+    const r = noField.find((x) => x.k === k);
+    const at = refByEntry.get(k);
+    return (
+      !!r &&
+      !!at &&
+      draftWhens.some(
+        (d) => at.startsWith(`${d.at}|`) && d.rule === r.e.rule && sameWhen(r.e.when, d.when),
+      )
+    );
+  };
   const byEntryMissed = errorsMissed.filter((k) => {
     const at = refByEntry.get(k);
-    return !at || !draftByEntry.has(at);
+    return !at || (!draftByEntry.has(at) && !noFieldByEntry(k));
   });
 
   // ---- invented

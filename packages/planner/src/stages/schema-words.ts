@@ -17,7 +17,11 @@ const EXPECTED: Record<string, string> = {
   object: "keys and values, such as { table: forge-orders-db.orders }",
 };
 
-/** "steps.2.fields.sends" in words: "step 3's fields.sends". */
+/** A list's name for one of its items: steps → step, stories → story (B-run2-fixes 9). */
+const one = (k: string) =>
+  k.endsWith("ies") ? `${k.slice(0, -3)}y` : k.endsWith("s") ? k.slice(0, -1) : k;
+
+/** "steps.2.fields.sends" in words: "step 3's fields.sends"; "stories.0.interfaces.1.entry": "story 1's interface 2's entry". */
 export function pathWords(path: readonly PropertyKey[]): string {
   const out: string[] = [];
   let i = 0;
@@ -25,12 +29,9 @@ export function pathWords(path: readonly PropertyKey[]): string {
     const k = path[i]!;
     const next = path[i + 1];
     if (typeof k === "string" && typeof next === "number") {
-      const one = k.endsWith("s") ? k.slice(0, -1) : k;
-      const rest = path
-        .slice(i + 2)
-        .map(String)
-        .join(".");
-      out.push(rest ? `${one} ${next + 1}'s ${rest}` : `${one} ${next + 1}`);
+      const rest = path.slice(i + 2);
+      const item = `${one(k)} ${next + 1}`;
+      out.push(rest.length ? `${item}'s ${pathWords(rest)}` : item);
       break;
     }
     out.push(String(k));
@@ -38,6 +39,25 @@ export function pathWords(path: readonly PropertyKey[]): string {
   }
   return out.join(".") || "the file";
 }
+
+/**
+ * The issues of the union branch a value was meant for (B-run2-fixes 9): the first whose issues
+ * don't say the value itself is of another type, with their paths from the file's root. None
+ * when every branch wants another type, which `issueWords` then says.
+ */
+function unionCause(issue: z.core.$ZodIssue): z.core.$ZodIssue[] | undefined {
+  const branches = (issue as { errors?: z.core.$ZodIssue[][] }).errors ?? [];
+  const meant = branches.find(
+    (b) => b.length > 0 && !b.some((x) => x.path.length === 0 && x.code === "invalid_type"),
+  );
+  return meant?.map((x) => ({ ...x, path: [...issue.path, ...x.path] }) as z.core.$ZodIssue);
+}
+
+const valueAt = (value: unknown, path: readonly PropertyKey[]) => {
+  let v = value;
+  for (const k of path) v = (v as Record<PropertyKey, unknown> | undefined)?.[k];
+  return v;
+};
 
 const kindOf = (v: unknown) =>
   v === null || v === undefined
@@ -64,6 +84,25 @@ export function issueWords(issue: z.core.$ZodIssue, value: unknown): string {
   if (issue.code === "invalid_value") {
     const values = ((issue as { values?: unknown[] }).values ?? []).map(String);
     return `${where} is ${kindOf(value)}: write ${values.length > 1 ? `one of ${values.join(", ")}` : (values[0] ?? "another value")}.`;
+  }
+  // B-run2-fixes 9: a union's real cause, not "Invalid input": the issues of the branch the
+  // value was written for, or, when it fits none, the kinds each branch takes.
+  if (issue.code === "invalid_union") {
+    const cause = unionCause(issue);
+    if (cause)
+      return cause
+        .map((x) => issueWords(x, valueAt(value, x.path.slice(issue.path.length))))
+        .join(" ");
+    const wants = ((issue as { errors?: z.core.$ZodIssue[][] }).errors ?? []).flatMap((b) =>
+      b
+        .filter((x) => x.path.length === 0 && x.code === "invalid_type")
+        .map((x) => {
+          const e = String((x as { expected?: string }).expected);
+          return EXPECTED[e] ?? e;
+        }),
+    );
+    if (wants.length)
+      return `${where} is ${kindOf(value)}: write ${[...new Set(wants)].join(", or ")}.`;
   }
   return `${where}: ${issue.message}.`;
 }

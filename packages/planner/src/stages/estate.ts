@@ -226,15 +226,111 @@ export const ESTATE_KINDS = ["System", "Component", "Capability", "Flow", "Endpo
 export const ESTATE_HEADING =
   "The estate, from the repos' specs and the scanned catalog. Ids are exact: name only these, or say something is new.";
 
-/** The compact index: features, flows, components and systems, endpoints, tables. */
-export function estateIndex(e: Estate): string {
+/**
+ * The repos a change's estate context covers (B-run2-fixes 11), in a metarepo several estates
+ * share: the repos it touches, every repo of their components' systems, and the repos whose
+ * components call theirs or are called by them (the catalog's Interfaces), one hop.
+ */
+export function scopeRepos(e: Estate, touched: Iterable<string>): Set<string> {
   const recs = e.records as Rec[];
+  const repoOf = (id: unknown) => str((e.byId.get(str(id) ?? "") as Rec | undefined)?.repo);
+  const out = new Set(touched);
+  const systems = new Set(
+    recs
+      .filter((r) => r.kind === "Component" && out.has(str(r.repo) ?? ""))
+      .flatMap((r) => (str(r.system) ? [str(r.system)!] : [])),
+  );
+  for (const r of recs)
+    if (r.kind === "Component" && systems.has(str(r.system) ?? "") && str(r.repo))
+      out.add(str(r.repo)!);
+  const seed = new Set(out);
+  for (const r of recs) {
+    if (r.kind !== "Interface") continue;
+    const callee =
+      repoOf(r.to) ?? repoOf((e.byId.get(str(r.endpoint) ?? "") as Rec | undefined)?.component);
+    const caller = repoOf(r.from);
+    if (caller && seed.has(caller) && callee) out.add(callee);
+    if (callee && seed.has(callee) && caller) out.add(caller);
+  }
+  return out;
+}
+
+/**
+ * What of the estate belongs to these repos (B-run2-fixes 11): their components and systems, the
+ * endpoints those serve, the tables they own, read or write, the features whose entry points are
+ * theirs, and the repos' flows; every other kind of record. The whole estate when no repo is
+ * given, or none of the catalog's components is in one.
+ */
+export function inScope(
+  e: Estate,
+  repos?: ReadonlySet<string>,
+): { records: CatalogRecord[]; flows: SpecFlow[]; outside: string[] } {
+  const all = e.records as Rec[];
+  const comps = new Set(
+    all.filter((r) => r.kind === "Component" && repos?.has(str(r.repo) ?? "")).map((r) => r.id),
+  );
+  const scoped = !!repos && comps.size > 0;
+  if (!scoped) return { records: e.records, flows: e.flows, outside: [] };
+  const systems = new Set(
+    all.filter((r) => comps.has(r.id)).flatMap((r) => (str(r.system) ? [str(r.system)!] : [])),
+  );
+  const endpoints = new Set(
+    all.filter((r) => r.kind === "Endpoint" && comps.has(str(r.component) ?? "")).map((r) => r.id),
+  );
+  // The systems some repo's component is in; any other is outside every estate (a vendor).
+  const owned = new Set(
+    all
+      .filter((r) => r.kind === "Component" && str(r.repo) && str(r.system))
+      .map((r) => str(r.system)!),
+  );
+  const cited = (r: Rec) =>
+    ((r.evidence ?? []) as { repo?: string }[]).some((x) => !!x.repo && repos!.has(x.repo));
+  const keep = (r: Rec): boolean => {
+    switch (r.kind) {
+      case "System":
+        // A vendor's or another outside system (no repo's component is in it) stays: a call to it is a fact of any estate.
+        return systems.has(r.id) || !owned.has(r.id);
+      case "Component":
+        return comps.has(r.id) || !str(r.repo);
+      case "Capability":
+        return arr(r.entryPoints).some((x) => endpoints.has(x)) || cited(r);
+      case "Endpoint":
+        return endpoints.has(r.id);
+      case "Table":
+        return (
+          [str(r.ownerComponent), ...arr(r.readers), ...arr(r.writers)].some(
+            (c) => !!c && comps.has(c),
+          ) || cited(r)
+        );
+      default:
+        return true;
+    }
+  };
+  const flows = e.flows.filter((f) => repos!.has(f.repo));
+  return {
+    records: all.filter(keep),
+    flows,
+    outside: [
+      ...all.filter((r) => !keep(r)).map((r) => r.id),
+      ...e.flows.filter((f) => !repos!.has(f.repo)).map((f) => f.flow.id),
+    ].sort(),
+  };
+}
+
+/**
+ * The compact index: features, flows, components and systems, endpoints, tables. With `repos`
+ * (B-run2-fixes 11), only what belongs to those repos (`scopeRepos`, `inScope`): another estate's
+ * flows in a shared metarepo are no context for a change.
+ */
+export function estateIndex(e: Estate, repos?: ReadonlySet<string>): string {
+  const { records, flows } = inScope(e, repos);
+  const recs = records as Rec[];
   const of = (k: string) =>
     recs.filter((r) => r.kind === k).sort((a, b) => a.id.localeCompare(b.id));
   const lines = [ESTATE_HEADING, ""];
   for (const k of ["System", "Component", "Capability"])
     for (const r of of(k)) lines.push(estateLine(e, k, r.id, r)!);
-  for (const f of [...e.flows].sort((a, b) => a.flow.id.localeCompare(b.flow.id)))
+  for (const f of [...flows].sort((a, b) => a.flow.id.localeCompare(b.flow.id)))
     lines.push(flowLine(f, e));
   for (const k of ["Endpoint", "Table"])
     for (const r of of(k)) lines.push(estateLine(e, k, r.id, r)!);
@@ -249,6 +345,72 @@ export function columnsOf(e: Estate, table: string): Set<string> {
       .filter((r) => r.kind === "Column" && str(r.table) === table)
       .map((r) => str(r.name) ?? r.id.split(".").pop()!),
   );
+}
+
+/** A schema file a database reads (DDL), not code. */
+const SCHEMA_FILE = /\.(sql|ddl|cql|prisma)$/i;
+
+/** A file that declares columns of a table, from the columns' citations. */
+export interface DeclaringFile {
+  path: string;
+  /** The tables' columns it cites, in the order first cited. */
+  columns: string[];
+  /** Its cited lines, sorted. */
+  lines: number[];
+}
+
+/**
+ * The files that declare these tables' columns (B-run2-fixes 1 and 2), from the columns'
+ * citations: the schema file that creates a table (one citing at least half of its columns) and
+ * the entity mapped to it (the code file citing the most of its columns and no other table's),
+ * not a superclass or a shared model citing one of its columns in passing (at most half as many
+ * as the entity, or beside other tables'). Most columns first, then by path.
+ * `repo` keeps the citations in that repo (and those that name none). At most `max`.
+ */
+export function declaringFiles(
+  e: Estate,
+  tables: readonly string[],
+  o: { repo?: string; max?: number } = {},
+): DeclaringFile[] {
+  const want = new Set(tables);
+  const files = new Map<string, { columns: Set<string>; lines: Set<number>; other: number }>();
+  let total = 0;
+  for (const r of e.records as Rec[]) {
+    if (r.kind !== "Column") continue;
+    const mine = want.has(str(r.table) ?? "");
+    if (mine) total++;
+    for (const ev of (r.evidence ?? []) as { path?: string; line?: number; repo?: string }[]) {
+      if (!ev.path || (o.repo && ev.repo && ev.repo !== o.repo)) continue;
+      const f = files.get(ev.path) ?? { columns: new Set(), lines: new Set(), other: 0 };
+      if (!mine) f.other++;
+      else {
+        f.columns.add(r.id);
+        if (ev.line) f.lines.add(ev.line);
+      }
+      files.set(ev.path, f);
+    }
+  }
+  // Of the code files citing only these tables' columns, the entity cites the most: a superclass
+  // declaring one of them (a name, an id) cites fewer than half as many.
+  const entity = Math.max(
+    0,
+    ...[...files]
+      .filter(([p, f]) => f.other === 0 && !SCHEMA_FILE.test(p))
+      .map(([, f]) => f.columns.size),
+  );
+  return [...files]
+    .filter(
+      ([, f]) =>
+        f.columns.size > 0 &&
+        (f.columns.size * 2 >= total || (f.other === 0 && f.columns.size * 2 >= entity)),
+    )
+    .sort(([a, x], [b, y]) => y.columns.size - x.columns.size || a.localeCompare(b))
+    .slice(0, o.max ?? 6)
+    .map(([path, f]) => ({
+      path,
+      columns: [...f.columns].map((c) => c.split(".").at(-1)!),
+      lines: [...f.lines].sort((a, b) => a - b),
+    }));
 }
 
 /**

@@ -97,9 +97,11 @@ async function prompts(root: string): Promise<{ feature: string; arch: string; s
  */
 const BEFORE = {
   feature: "6e8cced1b92d0009544e22c14c47f0a8910add1ced95c7c67639005a21145f1e",
-  // re-pinned after B-places asked the architect for an added step's place (`at`)
-  arch: "96e62113e52dfaf3a8cda6db9497b2807c4ec2ecfd7365acce58e7edbe3bbc59",
-  stories: "2e4b6a0bf2c1f970b3bd4e50aca99ead1f0db3cf43a2039788c12aa3c397658b",
+  // re-pinned after B-places asked the architect for an added step's place (`at`), and after
+  // B-run2-fixes named the table whose columns the store facts list (its one changed line)
+  arch: "3c3572d47ccbb97eaef748e2594a7d800de3ab7c6638f8d77c9bc853dfd88faf",
+  // re-pinned after B-run2-fixes 5 gave the stories rules the rule words (one line added)
+  stories: "595bb677dd38c833857ee81b911db56d9deabb6d9478b23640226c1a3d998ac1",
 };
 
 const ARCHIVE = join(FIX, "corrections/changes/archive");

@@ -191,6 +191,32 @@ settings:
     expect(j.steps[2]!.why).toContain(q);
   });
 
+  it("after verify --write, a repo whose spec comes from its verified facts skips the reader path (B-run2-fixes 7)", async () => {
+    const root = await metarepo({ clone: true });
+    // No scan, no verify proposal, no spec check: the spec and catalog come from the facts.
+    await rm(join(root, "org-pack", "scan", "forge-notes-ui.yaml"));
+    for (const id of ["forge-notes", "forge-notes-ui"]) {
+      await mkdir(join(root, "specs", id), { recursive: true });
+      await writeFile(
+        join(root, "specs", id, "spec.yaml"),
+        `schemaVersion: 1\nrepo: ${id}\ncommit: ${"a".repeat(40)}\ntemplate: facts@1\ntemplateReviewed: false\n`,
+      );
+    }
+    await component(root, "forge-notes");
+    await component(root, "forge-notes-ui");
+    expect(commands((await json(root)).steps)).toEqual([
+      ['atticus change new "<title>" --type <type>', null],
+    ]);
+    await cp(
+      join(FIXTURES, "forge-change/openspec/changes/add-transfer-limit"),
+      join(root, "openspec/changes/add-transfer-limit"),
+      { recursive: true },
+    );
+    expect(commands((await json(root)).steps)).toEqual([
+      ["atticus plan stories add-transfer-limit", "/atticus-stories add-transfer-limit"],
+    ]);
+  });
+
   it("with a change at the stories stage, gives /atticus-stories", async () => {
     const root = await metarepo({ clone: true });
     await component(root, "forge-notes");

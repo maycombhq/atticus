@@ -144,6 +144,135 @@ describe("stories bench: scoring a draft", () => {
   });
 });
 
+describe("stories bench: an error case with no field (B-run2-fixes 4)", () => {
+  // An invented Forge story: cancelling an order, refused when no order has the id.
+  const base = {
+    schemaVersion: 1,
+    story: "forge-cancel-order",
+    title: "Cancel an order",
+    repos: ["forge-orders"],
+  };
+  const criterion = (step: string, errors: object[], at?: string) => ({
+    id: `${step}-c1`,
+    step,
+    given: "an order",
+    when: "POST /orders/{id}/cancel is called",
+    then: "the order is cancelled",
+    errors,
+    ...(at ? { at } : {}),
+  });
+  const ref = parseDraftStory(
+    JSON.stringify({
+      ...base,
+      steps: [
+        {
+          id: "api-cancel",
+          repo: "forge-orders",
+          what: "cancel the order",
+          entry: "POST /orders/{id}/cancel",
+          at: "src/OrderController.java:20",
+        },
+      ],
+      criteria: [
+        criterion("api-cancel", [
+          { rule: "not-found", status: 404, when: "no order has the id", then: "404" },
+          {
+            field: "reason",
+            rule: "required",
+            status: 400,
+            when: "no reason is given",
+            then: "400",
+          },
+        ]),
+      ],
+    }),
+  );
+  const draft = (errors: object[], o: { at?: string } = {}) =>
+    parseDraftStory(
+      JSON.stringify({
+        ...base,
+        steps: [
+          {
+            id: "t1-1",
+            repo: "forge-orders",
+            what: "cancel it",
+            entry: "POST /orders/{id}/cancel",
+            at: o.at ?? "src/OrderController.java:21",
+          },
+        ],
+        criteria: [criterion("t1-1", errors)],
+      }),
+    );
+  const found = (d: ReturnType<typeof draft>) => {
+    const s = scoreStory(ref, d);
+    return [s.errors.found, s.errorsByEntry.found];
+  };
+
+  it("matches a draft error keyed on the id field by the step, the rule and its when, strict and by entry", () => {
+    expect(
+      found(
+        draft([
+          { field: "id", rule: "not-found", when: "the order id names no order", then: "404" },
+        ]),
+      ),
+    ).toEqual([1, 1]);
+    // A draft error with no field matched as before.
+    expect(found(draft([{ rule: "not-found", when: "the order is gone", then: "404" }]))).toEqual([
+      1, 1,
+    ]);
+  });
+
+  it("not on another rule, nor a when about something else", () => {
+    expect(
+      found(
+        draft([{ field: "id", rule: "forbidden", when: "another client's order", then: "403" }]),
+      ),
+    ).toEqual([0, 0]);
+    expect(
+      found(
+        draft([
+          { field: "id", rule: "not-found", when: "the payments service is down", then: "404" },
+        ]),
+      ),
+    ).toEqual([0, 0]);
+    // A field error is matched by its field as before: the id field isn't the reason.
+    expect(
+      found(draft([{ field: "id", rule: "required", when: "no reason is given", then: "400" }])),
+    ).toEqual([0, 0]);
+  });
+
+  it("on another step of the same entry: by entry, not strict", () => {
+    const d = parseDraftStory(
+      JSON.stringify({
+        ...base,
+        steps: [
+          {
+            id: "t1-1",
+            repo: "forge-orders",
+            what: "cancel it",
+            entry: "POST /orders/{id}/cancel",
+            at: "src/OrderController.java:21",
+          },
+          {
+            id: "t1-2",
+            repo: "forge-orders",
+            what: "look it up",
+            entry: "POST /orders/{id}/cancel",
+            at: "src/OrderRepository.java:9",
+          },
+        ],
+        criteria: [
+          criterion("t1-1", []),
+          criterion("t1-2", [
+            { field: "id", rule: "not-found", when: "no order has the id", then: "404" },
+          ]),
+        ],
+      }),
+    );
+    expect(found(d)).toEqual([0, 1]);
+  });
+});
+
 function golden(file: string, s: unknown) {
   const path = join(FIX, file);
   if (process.env.UPDATE_GOLDEN) writeFileSync(path, JSON.stringify(s, null, 2) + "\n");

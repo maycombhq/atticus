@@ -59,6 +59,11 @@ export interface RepoState {
   checked: boolean;
   /** Findings of the last check that haven't become a question. */
   findings: number;
+  /**
+   * Its spec and catalog come from its verified facts (`atticus verify --write`, ADR 0124): the
+   * reader path (survey, scan, verify, spec draft and check) is not its way in (B-run2-fixes 7).
+   */
+  facts?: boolean;
 }
 
 export interface NextState {
@@ -125,6 +130,7 @@ export async function readNextState(root: string): Promise<NextState> {
       flows: spec.flows.length,
       checked: !!findings && findings.draftedAt === spec.header?.drafted?.at,
       findings: findings?.findings.filter((f) => !f.question).length ?? 0,
+      ...(spec.header?.template.startsWith("facts@") ? { facts: true } : {}),
     });
   }
   const open = await listQuestions(root, { state: "open" });
@@ -432,7 +438,8 @@ export function nextSteps(s: NextState): NextStep[] {
       command: "atticus workspace sync",
       why: `${plural(notCloned.length, "repo")} ${notCloned.length === 1 ? "isn't" : "aren't"} cloned yet: ${notCloned.map((r) => r.id).join(", ")}.`,
     });
-  const cloned = s.repos.filter((r) => r.cloned);
+  // B-run2-fixes 7: a repo mapped from its verified facts skips the reader path.
+  const cloned = s.repos.filter((r) => r.cloned && !r.facts);
   for (const r of cloned.filter((x) => !x.settings))
     out.push({
       step: "survey",

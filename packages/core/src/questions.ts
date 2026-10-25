@@ -468,7 +468,8 @@ export async function raiseQuestions(
       const answer = answerWords(x) ?? "";
       const said =
         p.d.sameAs?.id === x.id && p.d.sameAs.verdict === "answered" ? p.d.sameAs : undefined;
-      if (said && quotedIn(answer, said.quote)) {
+      // The prompt gives the option's meaning too (answerText): a quote of it is the answer's.
+      if (said && (quotedIn(answer, said.quote) || quotedIn(answerText(x) ?? "", said.quote))) {
         const j = await store.put(
           makeJudgment({
             kind: ANSWERED_BY,
@@ -687,6 +688,21 @@ export function answerWords(q: Question): string | undefined {
 }
 
 const sentence = (s: string) => (/[.!?]$/.test(s.trim()) ? s.trim() : `${s.trim()}.`);
+
+/**
+ * An answer as a step's next prompt gives it (B-run2-fixes 8): the option picked with what it
+ * means and what it changes, or the person's own words. `answerWords` (the label alone) stays what
+ * judgments are keyed by, so their stored verdicts hold.
+ */
+export function answerText(q: Question): string | undefined {
+  const a = q.answer;
+  if (!a) return undefined;
+  if (a.text !== undefined) return a.text;
+  const o = q.options[(a.option ?? 0) - 1];
+  return o
+    ? `${sentence(o.label)} It means: ${sentence(o.means)} It changes: ${sentence(o.changes)}`
+    : undefined;
+}
 
 /** Put (or replace) the answer's line under "## Answers" in a skill file's text. */
 export function withSkillAnswer(body: string, q: Question): string {
