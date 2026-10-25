@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import {
   actionFor,
   argsOf,
+  chatQuery,
   readNext,
   readOpenQuestions,
   STEP_COMMANDS,
@@ -16,7 +17,7 @@ import { ChatSessions, promptText, recordChat, recordingStream } from "./history
 import type { StepEnd } from "./runner";
 import { stepTitle, WORDS } from "./words";
 import type { Service } from "./service";
-import type { NextStep, OpenQuestion } from "./types";
+import type { OpenQuestion } from "./types";
 
 /**
  * The @atticus chat participant (ADR 0090). Each command runs the step runner, or reads
@@ -59,25 +60,6 @@ export function showFiles(stream: vscode.ChatResponseStream, end: StepEnd, root:
       arguments: [{ kind: "file", path: f.path }],
       title: f.title,
     });
-}
-
-/** The chat command that runs a next step in the chat, when there is one. */
-function chatQuery(n: NextStep): string | undefined {
-  const a = actionFor(n);
-  if (a.kind === "answer") return "@atticus /answer";
-  if (a.kind !== "ai") return undefined;
-  const w = a.args.slice(0, 2).join(" ");
-  const t = a.args[2];
-  const byWords: Record<string, StepCommand> = {
-    "scan survey": "survey",
-    "scan verify": "verify",
-    "spec draft": "spec",
-    "change feature": "feature",
-    "change architecture": "architecture",
-    "plan stories": "stories",
-    "change small": "small",
-  };
-  return byWords[w] && t ? `@atticus /${byWords[w]} ${t}` : undefined;
 }
 
 async function next(
@@ -267,13 +249,18 @@ function participant(
     }
     const cmd = request.command;
     if (!cmd || cmd === "next") {
-      if (!cmd && request.prompt.trim())
-        stream.markdown(
-          "Use a command: /next, /survey <repo>, /verify <repo>, /spec <repo>, /feature <change>, /architecture <change>, /stories <change>, /small <change>, /answer, /diagram [repo], /changemap <change>, /estimate <change>, /new <title>, /run <command> or /ask <question>.\n\n",
-        );
+      if (!cmd && request.prompt.trim()) stream.markdown(`${WORDS.chatUse}\n\n`);
       return next(svc, root, stream, token);
     }
     if (cmd === "answer") return answer(svc, root, stream, token);
+    // ADR 0113: a task starts in Copilot's agent mode with its context, nothing pasted.
+    if (cmd === "task") {
+      const [change, task] = argsOf(`atticus ${request.prompt}`);
+      if (change) ranOn(change);
+      stream.markdown(change ? WORDS.taskStarting(change, task) : WORDS.taskSay);
+      if (change) await vscode.commands.executeCommand("atticus.startTask", change, task);
+      return;
+    }
     if (cmd === "run" && commands)
       return runTyped(svc, commands(), root, request.prompt, stream, token, request.model);
     if (cmd === "new") {

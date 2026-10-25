@@ -63,7 +63,8 @@ describe("the app's page in a panel (ADR 0097)", () => {
       hash: '"</script><script>alert(1)</script>',
     });
     expect(bad).not.toContain("alert(1)");
-    expect(bad).toContain('location.hash = "#/dashboard";');
+    // The app's Home, one of its six entries (ADR 0124 addendum D-app).
+    expect(bad).toContain('location.hash = "#/home";');
   });
 });
 

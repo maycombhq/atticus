@@ -38,13 +38,16 @@ import { checkRunStep, runEndMessage, runProgressMessage, runRefusedMessage } fr
 import type * as Api from "./api-types";
 import { Service } from "./service";
 import { attachPaths, START_WORDS, startTaskChat, TASK_PROMPT_FILE } from "./task-start";
-import { AtticusView, WaitingView } from "./view";
+import { APP_HOME, FULL_UI } from "./surface";
+import { AtticusView, QuestionsView, WaitingView } from "./view";
 import type { WaitingGroup } from "./waiting-data";
 
 /**
  * The Atticus extension (ADR 0090, plan 4.8): a thin runner of Atticus's AI steps with
  * Copilot's model through vscode.lm. Atticus's command line keeps every check; the extension
  * carries prompts and answers between it and the model, and shows what it did. No telemetry.
+ * Phase D (surface.ts): three views and about fifteen commands by default; every command below
+ * stays registered, and the setting atticus.fullUi offers the rest again.
  */
 
 const APP_PORT = 4321;
@@ -69,6 +72,7 @@ export interface AtticusHandles {
   ready: Promise<void>;
   view: AtticusView;
   waiting: WaitingView;
+  questions: QuestionsView;
   sections: Record<string, SectionTree>;
   panel: () => vscode.WebviewPanel | undefined;
   service: Service;
@@ -80,28 +84,31 @@ export interface AtticusHandles {
 
 export function activate(context: vscode.ExtensionContext): AtticusHandles {
   const svc = new Service();
+  // Phase D: three views by default. Next and Waiting: the steps, then what waits on you (ADR
+  // 0105) under them. Questions: the open questions, in the view that had them before ADR 0105.
   const view = new AtticusView(svc);
-  // ADR 0105: Waiting on you keeps the Questions view's id, so settings that name it still work.
   const waiting = new WaitingView(svc, view);
+  const questions = new QuestionsView(view);
   const reg = (id: string, f: (...a: never[]) => unknown) =>
     context.subscriptions.push(
       vscode.commands.registerCommand(id, f as (...a: unknown[]) => unknown),
     );
+  // What waits, Changes and Knowledge are filtered, and say so in their description (ADR 0105).
+  const treeViews: Record<string, vscode.TreeView<unknown>> = {};
+  const nextView = vscode.window.createTreeView("atticus.view", { treeDataProvider: view });
+  treeViews.waiting = nextView as vscode.TreeView<unknown>;
   context.subscriptions.push(
     svc,
     view,
     waiting,
-    vscode.window.registerTreeDataProvider("atticus.view", view),
+    questions,
+    view.showWaiting(waiting),
+    nextView,
+    vscode.window.registerTreeDataProvider("atticus.questions", questions),
   );
-  // Waiting on you, Changes and Knowledge are filtered, and say so in their description (ADR 0105).
-  const treeViews: Record<string, vscode.TreeView<unknown>> = {};
-  const waitingView = vscode.window.createTreeView("atticus.questions", {
-    treeDataProvider: waiting,
-  });
-  treeViews.questions = waitingView as vscode.TreeView<unknown>;
-  context.subscriptions.push(waitingView);
   // The sections that read the app's API (ADR 0093), in the sidebar's order (ADR 0105), and the
-  // model runs at the bottom (ADR 0106), read from the command line.
+  // model runs at the bottom (ADR 0106), read from the command line. Knowledge, Repos, Catalog
+  // and Model runs are shown only with the setting atticus.fullUi; they are drawn either way.
   const SECTIONS: Section[] = ["changes", "knowledge", "repos", "catalog", "runs"];
   const sections = SECTIONS.map((name) => {
     const tree = new SectionTree(svc, name);
@@ -334,16 +341,16 @@ ${view.next.why}`
   reg("atticus.waitingByKind", () => setGroup("kind"));
   reg("atticus.waitingByChange", () => setGroup("change"));
 
-  // A filter on Waiting on you, Changes and Knowledge, each its own for the session: the view's
-  // description says it, and Clear filter (shown while one is on) removes it.
+  // A filter on what waits (in Next and Waiting), Changes and Knowledge, each its own for the
+  // session: the view's description says it, and Clear filter (shown while one is on) removes it.
   const filtered: Record<string, { setFilter: (w: string) => void; filter: string }> = {
-    questions: waiting,
+    waiting,
     changes: sections[SECTIONS.indexOf("changes")]!,
     knowledge: sections[SECTIONS.indexOf("knowledge")]!,
     runs: sections[SECTIONS.indexOf("runs")]!,
   };
   const NAMES: Record<string, string> = {
-    questions: "Waiting on you",
+    waiting: WORDS.waitingHead,
     changes: "Changes",
     knowledge: "Knowledge",
     runs: "Model runs",
@@ -356,7 +363,7 @@ ${view.next.why}`
     void vscode.commands.executeCommand("setContext", `atticus.filtered.${view}`, !!w);
   };
   for (const [command, view] of [
-    ["atticus.filterWaiting", "questions"],
+    ["atticus.filterWaiting", "waiting"],
     ["atticus.filterChanges", "changes"],
     ["atticus.filterKnowledge", "knowledge"],
     ["atticus.filterRuns", "runs"],
@@ -371,7 +378,7 @@ ${view.next.why}`
       if (words !== undefined) setFilter(view, words);
     });
   for (const [command, view] of [
-    ["atticus.clearFilterWaiting", "questions"],
+    ["atticus.clearFilterWaiting", "waiting"],
     ["atticus.clearFilterChanges", "changes"],
     ["atticus.clearFilterKnowledge", "knowledge"],
     ["atticus.clearFilterRuns", "runs"],
@@ -433,14 +440,17 @@ ${view.next.why}`
     if (root && item?.task)
       void commands.pickAndRun(root, "task run", { args: [item.task.change, item.task.id] });
   });
-  // ADR 0113: a task started in Copilot's agent mode with its context, nothing pasted.
-  reg("atticus.startTask", async (item?: Item) => {
+  // ADR 0113: a task started in Copilot's agent mode with its context, nothing pasted. A row of
+  // Changes passes the task; @atticus /task passes the change and, when it was said, the task.
+  reg("atticus.startTask", async (target?: Item | string, taskId?: unknown) => {
     const root = needRoot();
     if (!root) return;
+    const item = typeof target === "string" ? undefined : target;
     const change =
-      item?.task?.change ?? (await commands.pickTarget(root, "change", START_WORDS.pickChange));
+      (typeof target === "string" ? target : item?.task?.change) ??
+      (await commands.pickTarget(root, "change", START_WORDS.pickChange));
     if (!change) return;
-    let task = item?.task?.id;
+    let task = item?.task?.id ?? (typeof taskId === "string" && taskId ? taskId : undefined);
     if (!task) {
       let tasks: Api.Task[];
       try {
@@ -605,6 +615,7 @@ ${view.next.why}`
         void updateContext().then(() => {
           for (const t of sections) t.reset();
           waiting.reset();
+          questions.reset();
           refreshAll();
         }),
     ),
@@ -614,6 +625,18 @@ ${view.next.why}`
       if (e.affectsConfiguration("atticus.path")) void updateContext().then(refreshAll);
       // A model picked: the Next view's "in VS Code" says the new one.
       else if (e.affectsConfiguration("atticus.model")) refreshAll();
+      // Phase D: every view and command, or the three views and the steps. The views and menus
+      // follow the setting by themselves; the app takes --full only when it starts, so it starts
+      // again, and an open Atticus tab opens again on it.
+      else if (e.affectsConfiguration(`atticus.${FULL_UI}`)) {
+        const on = vscode.workspace.getConfiguration("atticus").get<boolean>(FULL_UI, false);
+        svc.restartApp();
+        const open = !!panel;
+        panel?.dispose();
+        refreshAll();
+        if (open) void vscode.commands.executeCommand("atticus.showApp");
+        void vscode.window.showInformationMessage(WORDS.fullUiChanged(on));
+      }
     }),
   );
   reg("atticus.checkHealth", async () => {
@@ -1280,7 +1303,7 @@ ${view.next.why}`
     if (panel && panelMode !== mode) panel.dispose();
     if (panel && mode === "bundled") {
       // Already open: go to the view, keeping what the person arranged.
-      void panel.webview.postMessage({ type: "navigate", hash: hash || "#/dashboard" });
+      void panel.webview.postMessage({ type: "navigate", hash: hash || APP_HOME });
       panel.reveal(undefined, !!o?.beside);
       return;
     }
@@ -1320,7 +1343,7 @@ ${view.next.why}`
         base: `${web.asWebviewUri(appDir).toString()}/`,
         cspSource: web.cspSource,
         nonce: randomBytes(16).toString("base64url"),
-        hash: hash || "#/dashboard",
+        hash: hash || APP_HOME,
       });
     } else {
       const external = (await vscode.env.asExternalUri(vscode.Uri.parse(a.url))).toString(true);
@@ -1426,6 +1449,7 @@ ${view.next.why}`
     ready,
     view,
     waiting,
+    questions,
     sections: Object.fromEntries(sections.map((t, i) => [SECTIONS[i]!, t])),
     panel: () => panel,
     service: svc,

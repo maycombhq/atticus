@@ -2,7 +2,15 @@ import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { actionFor, answerQuestion, argsOf, readNext, readOpenQuestions } from "../src/atticus";
+import {
+  actionFor,
+  answerQuestion,
+  argsOf,
+  chatQuery,
+  readNext,
+  readOpenQuestions,
+  STEP_COMMANDS,
+} from "../src/atticus";
 import { cliRunner, commandText, parseJson, resolveCommand, shimTarget } from "../src/cli";
 import { block } from "../src/describe";
 import { runStep } from "../src/runner";
@@ -137,6 +145,18 @@ describe("what a next step becomes", { timeout: 120_000 }, () => {
       kind: "run",
       args: ["scan"],
     });
+    // ADR 0124 §4: the batched read of a repo, one batch a hand-off; its estimate and the
+    // rendered map only read.
+    expect(actionFor(step({ step: "map", command: "atticus map forge-notes" }))).toEqual({
+      kind: "ai",
+      args: ["map", "forge-notes"],
+    });
+    for (const command of [
+      "atticus map forge-notes --estimate",
+      "atticus map render forge-notes",
+      "atticus map --help",
+    ])
+      expect(actionFor(step({ step: "map", command })).kind, command).toBe("run");
     expect(argsOf('atticus change new "Add a fraud check" --type feature')).toEqual([
       "change",
       "new",
@@ -203,5 +223,50 @@ describe("starting atticus", { timeout: 120_000 }, () => {
 
   it("puts what Atticus printed in a fence nothing inside can close", () => {
     expect(block(["a ``` b"])).toBe("\n````text\na ``` b\n````\n");
+  });
+});
+
+describe("the steps @atticus and the palette run (Phase D)", () => {
+  it("reads a repo with map, and reviews a change with the critic", () => {
+    expect(STEP_COMMANDS.map.args("forge-notes")).toEqual(["map", "forge-notes"]);
+    expect(STEP_COMMANDS.map.target).toBe("repo");
+    expect(STEP_COMMANDS.critic.args("add-note-tags")).toEqual(["critic", "add-note-tags"]);
+    expect(STEP_COMMANDS.critic.target).toBe("change");
+    // Each one is an AI step the runner takes, as atticus next would name it.
+    for (const s of Object.values(STEP_COMMANDS))
+      expect(
+        actionFor({ step: "x", why: "", command: `atticus ${s.args("t").join(" ")}` }).kind,
+      ).toBe("ai");
+  });
+});
+
+describe("the chat command a next step runs as (Phase D)", () => {
+  const step = (command: string, o: Record<string, string> = {}) => ({
+    step: "x",
+    why: "",
+    command,
+    ...o,
+  });
+  it("names the @atticus step for each step it runs with the editor's model", () => {
+    expect(chatQuery(step("atticus map forge-notes"))).toBe("@atticus /map forge-notes");
+    expect(chatQuery(step("atticus scan verify forge-notes"))).toBe("@atticus /verify forge-notes");
+    expect(chatQuery(step("atticus change feature add-note-tags"))).toBe(
+      "@atticus /feature add-note-tags",
+    );
+    expect(chatQuery(step("atticus critic add-note-tags"))).toBe("@atticus /critic add-note-tags");
+    expect(chatQuery(step("atticus questions list --state open", { step: "answer" }))).toBe(
+      "@atticus /answer",
+    );
+    // A task starts in Copilot's agent mode with its context (ADR 0113).
+    expect(
+      chatQuery(
+        step("atticus task run add-note-tags T2", { step: "task", change: "add-note-tags" }),
+      ),
+    ).toBe("@atticus /task add-note-tags T2");
+  });
+
+  it("names none for a step the chat doesn't run", () => {
+    expect(chatQuery(step("atticus scan"))).toBeUndefined();
+    expect(chatQuery(step("atticus critic stats"))).toBeUndefined();
   });
 });

@@ -4,6 +4,15 @@ The Atticus extension for VS Code. The command line's own changes are in the rep
 
 ## Unreleased
 
+Three views and the steps; the rest behind `atticus.fullUi` (Phase D, ADR 0124 addendum D-app).
+
+- **Three views:** **Next and Waiting** (the next step, the steps after it, then **Waiting on you** open under them: needs, findings, manual steps and knowledge to verify, by change or by kind, with its filter), **Questions** (the open questions by repo, each answered in the dialog with the lines it read; its tooltip shows them too) and **Changes**.
+- **About fifteen commands in the Command Palette:** the next step and Run it, the steps (read a repo with map, verify, feature, architecture, stories, the critic), answer a question, open the app, the output, a new change, start a task in Copilot, check this machine, pick the model.
+- **`@atticus` runs the steps:** `/next`, `/map <repo>` (new: the batched read of ADR 0124, a batch a round, up to 50), `/verify`, `/feature`, `/architecture`, `/stories`, `/task <change> [task]` (new: the task in agent mode with its context), `/critic <change>` (new), `/answer`.
+- **The app opens on Home**, the first of its six entries.
+- **The setting `atticus.fullUi`** (off) offers everything else again, as `atticus ui --full` does for the app: the Knowledge, Repos, Catalog and Model runs views, **Run a command…** (in the palette, the title bar and Ctrl+Alt+Shift+A), a repo's and a change's play button, **Run the task**, the rest of the palette, `@atticus`'s other commands (`/run`, `/ask`, `/new`, `/survey`, `/spec`, `/small`, `/diagram`, `/changemap`, `/estimate`), bringing in from Start or bring in, and the app with every page. Nothing was removed; changing the setting starts the app again.
+- Not yet run in a real VS Code: the suite in `test-vscode` has new checks for the three views and Home, compiled but not run here.
+
 - **Every step's prompt fits the model** (ADR 0112): the extension tells every AI step its Copilot model's limit, not only the knowledge scan, so each builds a prompt that fits (8,658 of GPT-4o mini's 12,078 tokens, by the command line's count) instead of ending "the prompt is too long". A step that can't fit even its smallest useful prompt says so before anything is sent, with the numbers and what to do.
 
 Small changes fast, files into a change, and a task started with its context (ADR 0113).

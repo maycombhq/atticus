@@ -3,7 +3,7 @@ import type { NextStep } from "./types";
 import { modelChoice, modelSetting, stepTitle, WORDS, type ChangeTitles } from "./words";
 
 /**
- * The Next section's rows (ADR 0090, 0098, 0100), as plain data: view.ts turns them into tree
+ * The Next and Waiting section's rows (ADR 0090, 0098, 0100; Phase D), as plain data: view.ts turns them into tree
  * items. Every row a person can act on runs something when clicked: the next step and each step
  * after it run through atticus.runStep (the same path as Run the next step), a setup step runs
  * its fix. No `vscode` here, so it is tested outside the editor.
@@ -20,7 +20,9 @@ export type NextNode =
   | { kind: "app" }
   /** What runs a step (ADR 0121 item 6): runtime.yaml's line, and the setting atticus.model. */
   | { kind: "runs"; runs: string; model: string }
-  | { kind: "no-root" };
+  | { kind: "no-root" }
+  /** Phase D: what waits on you, under the steps (Next and Waiting); its rows are view.ts's. */
+  | { kind: "waiting" };
 
 export interface NextRow {
   label: string;
@@ -125,6 +127,15 @@ export function nextRow(node: NextNode, titles?: ChangeTitles): NextRow {
           "The app with its diagrams, in a VS Code tab. Atticus: Open the app in the browser opens it there instead.",
         plain: true,
         command: { command: "atticus.showApp", title: "Open the app" },
+      };
+    case "waiting":
+      return {
+        id: "next:waiting",
+        label: WORDS.waitingHead,
+        tooltip: WORDS.waitingHeadTip,
+        plain: true,
+        icon: "bell",
+        expanded: true,
       };
   }
 }

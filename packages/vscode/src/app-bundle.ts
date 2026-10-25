@@ -5,6 +5,7 @@
  * container. The page's API calls come to the extension as messages; it answers them from the
  * local API, which keeps the session token. No `vscode` here, so it is tested outside the editor.
  */
+import { APP_HOME } from "./surface";
 
 /** Only the app's own screens: #/<screen>[/<id>][?query]. */
 const SCREEN_HASH = /^#\/[a-z][a-z0-9-]*(\/[^?\s"<>]*)?(\?[^\s"<>]*)?$/;
@@ -13,7 +14,7 @@ export function bundledHtml(
   index: string,
   o: { base: string; cspSource: string; nonce: string; hash?: string },
 ): string {
-  const hash = o.hash && SCREEN_HASH.test(o.hash) ? o.hash : "#/dashboard";
+  const hash = o.hash && SCREEN_HASH.test(o.hash) ? o.hash : APP_HOME;
   const csp = [
     "default-src 'none'",
     `script-src 'nonce-${o.nonce}' ${o.cspSource}`,

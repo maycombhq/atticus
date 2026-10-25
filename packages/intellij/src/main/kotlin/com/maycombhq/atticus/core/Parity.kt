@@ -32,6 +32,10 @@ object Parity {
         linkedMapOf(
             "atticus.next" to action("Atticus.NextStep"),
             "atticus.runNext" to action("Atticus.NextStep"),
+            // Phase D: the read of a repo and the critic, VS Code's steps; here, as every AI step,
+            // their slash command (/atticus-map, /atticus-critic) to copy into Copilot Chat.
+            "atticus.map" to run,
+            "atticus.critic" to run,
             "atticus.survey" to run,
             "atticus.verify" to run,
             "atticus.spec" to run,

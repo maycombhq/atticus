@@ -1,8 +1,10 @@
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { Cli, CliResult, OpenQuestion } from "../src/types";
+import { WORDS } from "../src/words";
 import {
   isUnverified,
+  questionsRows,
   readWaiting,
   waitingRows,
   type WaitingRead,
@@ -525,5 +527,79 @@ describe("the Waiting on you rows, by change (ADR 0105 addendum)", () => {
     expect(rows.map((r) => [r.label, r.command?.command])).toEqual([
       ["Couldn't read the findings: add-note-tags has no change.yaml", "atticus.showLog"],
     ]);
+  });
+});
+
+describe("Next and Waiting leaves the questions to the Questions view (Phase D)", () => {
+  const read = async () => readWaiting(fakeCli().cli, ROOT, files);
+  const none: WaitingRead = {
+    needs: [],
+    needsMd: {},
+    todo: [],
+    findings: [],
+    titles: {},
+    unverified: 0,
+  };
+
+  it("has no Questions group by kind, and none under Not part of a change", async () => {
+    const w = await read();
+    expect(labels(waitingRows(QUESTIONS, w, "kind", { questions: false }))).toEqual([
+      "Needs",
+      "Manual steps",
+      "Findings",
+      "Knowledge to verify",
+    ]);
+    const other = group(waitingRows(QUESTIONS, w, "change", { questions: false }), "other");
+    expect(labels(other.rows!)).toEqual(["Knowledge to verify"]);
+    // Its count is what is in it: the two items to verify, not the questions.
+    expect(other.description).toBe("2 waiting");
+  });
+
+  it("says nothing waits when only questions are open, and a question it couldn't read stays out", () => {
+    for (const g of ["change", "kind"] as const) {
+      expect(labels(waitingRows(QUESTIONS, none, g, { questions: false }))).toEqual([
+        WORDS.nothingElseWaits,
+      ]);
+      expect(
+        labels(waitingRows("Couldn't read the questions: x", none, g, { questions: false })),
+      ).toEqual([WORDS.nothingElseWaits]);
+    }
+  });
+});
+
+describe("the Questions view's rows (Phase D)", () => {
+  const withEvidence: OpenQuestion[] = [
+    {
+      ...QUESTIONS[0]!,
+      evidence: ["forge-ledger/src/main/resources/db/V3__refunds.sql:4"],
+    },
+    QUESTIONS[1]!,
+  ];
+
+  it("says it is reading until the questions are read, and why when they couldn't be", () => {
+    expect(questionsRows(undefined)).toEqual([
+      { id: "questions:loading", label: WORDS.readingQuestions, icon: "loading~spin" },
+    ]);
+    const [e] = questionsRows("Couldn't read the questions: no metarepo");
+    expect(e).toMatchObject({
+      label: "Couldn't read the questions: no metarepo",
+      icon: "warning",
+      command: { command: "atticus.showLog" },
+    });
+  });
+
+  it("says so in one row when no question waits", () => {
+    expect(questionsRows([]).map((r) => r.label)).toEqual([WORDS.noQuestions]);
+  });
+
+  it("lists the questions by repo, each answered in the dialog with what it read beside it", () => {
+    const rows = questionsRows(withEvidence);
+    expect(labels(rows)).toEqual(["forge-ledger", "forge-notes"]);
+    expect(rows[0]).toMatchObject({ context: "atticus.questionRepo", description: "1 open" });
+    const q = rows[0]!.rows![0]!;
+    expect(q.command).toEqual({ command: "atticus.answerQuestion", args: ["q-1"] });
+    expect(q.tooltip).toContain("forge-ledger/src/main/resources/db/V3__refunds.sql:4");
+    // A question with nothing read says no line, rather than an empty list.
+    expect(rows[1]!.rows![0]!.tooltip).not.toContain(WORDS.questionEvidence(""));
   });
 });

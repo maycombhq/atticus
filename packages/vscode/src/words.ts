@@ -59,6 +59,29 @@ export const WORDS = {
   ownerPrompt:
     "The handle of the person or team who looks after the org pack, normally the platform lead (for example priya.nair or team-platform).",
   ownerRule: "One handle: letters, digits, dots and hyphens, no spaces.",
+  // Phase D: three views, the steps, and the rest behind the setting atticus.fullUi.
+  waitingHead: "Waiting on you",
+  waitingHeadTip:
+    "What waits on you across every change: open needs, open findings, manual steps and knowledge to verify. The open questions are in the Questions view.",
+  nothingElseWaits: "Nothing else waits on you.",
+  nothingElseWaitsTip:
+    "No open need, no manual step, no open finding and no knowledge to verify. The open questions are in the Questions view.",
+  readingQuestions: "Reading the open questions…",
+  noQuestions: "No question waits for an answer.",
+  noQuestionsTip: "When a step needs a person's answer, its question is here.",
+  questionEvidence: (lines: string) => `What it read: ${lines}`,
+  questionClick: "Click to answer it, with the lines it read beside the answers.",
+  chatUse:
+    "Use a command: /next, /map <repo>, /verify <repo>, /feature <change>, /architecture <change>, /stories <change>, /task <change> [task], /critic <change> or /answer. With the setting atticus.fullUi on, the others too (/run, /ask, /diagram and the rest).",
+  taskSay: "Say which change, and the task if you know it: /task add-note-tags T2",
+  taskStarting: (change: string, task?: string) =>
+    task
+      ? `Starting ${task} of ${change} in Copilot's agent mode, with its context.`
+      : `Pick a task of ${change}; it starts in Copilot's agent mode, with its context.`,
+  fullUiChanged: (on: boolean) =>
+    on
+      ? "Atticus now offers every view and command, and the app every page."
+      : "Atticus now offers Next and Waiting, Questions, Changes and the steps; the app its six entries.",
 };
 
 /** WP7.6: an archived change near a new one, as `atticus change similar --json` gives it. */
