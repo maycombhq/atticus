@@ -1,7 +1,7 @@
 import { mkdir, readdir, writeFile } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import { stringify } from "yaml";
-import { loadOrgPack, type OrgPackProblem } from "@maycombhq/core";
+import { loadOrgPack, SOURCES_SCHEMA_VERSION, type OrgPackProblem } from "@maycombhq/core";
 import { ORG_FLOW, setDefaultSchema, writeOrgFlowSchema } from "@maycombhq/openspec-adapter";
 import { reposDiscover, type DiscoveredRepo, type OwnerQuestion } from "./discover.js";
 import { AdoptError } from "./errors.js";
@@ -198,7 +198,7 @@ export async function adopt(path: string, o: AdoptOptions = {}): Promise<AdoptRe
     name,
     platform,
     owner: "unassigned",
-    sources: { schemaVersion: 1, layout },
+    sources: { schemaVersion: SOURCES_SCHEMA_VERSION, layout },
     defaults: true,
   });
   if (!detected.openspec) {

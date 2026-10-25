@@ -54,3 +54,26 @@ Results: one canonical record per item at `knowledge/items/<kind>/<id>.yaml`, an
 - C6 gains `wikis[].tags`. Packs without tags behave as before; an untagged source is read for every kind.
 - Every knowledge item quotes its snapshot and the check proves the quote is there (plan principle 2); whether the item reads the quote correctly is for review.
 - Not built yet: knowledge repos cloned to `knowledge-repos/` (only folder and API wikis are synced, and the CLI has no API wiki adapter wired), re-reading only changed pages (every scan reads the whole snapshot), the app's sources and knowledge screens, the MCP tools, and the planning checks of plan 4.3's last bullet.
+
+## Addendum (K-docs): what a scan of a project's docs folder hit, fixed (2026-10-25)
+
+A knowledge scan of a real project's docs folder (103 Markdown pages) found six problems. Each is fixed test-first on the invented Forge Orders docs folder (`packages/knowledge/test/fixtures/forge-docs`) and the bench's Forge wiki. The only contract change is `sources.yaml` version 2 (ADR 0127). The facts file, C1 and the scan's answer format don't change.
+
+1. **No page is left out without a word.** Without `--batch-tokens`, the scan put every changed page in one prompt. The context pack then dropped what didn't fit its 200,000-token budget (76 pages). Only the hand-off's `context-manifest.json` showed this, and the dropped pages were recorded as read. Now:
+   - The scan plans batches that fit the reader's prompt (`knowledgeScanRoom`: the knowledge reader's budget, fitted to the model's limit, less the instructions, the data rule and a 1,000-token reserve). It counts each page as the pack does, in its data wrapper.
+   - A page the pack still has no room for is in `KnowledgeScanResult.leftOut`, with the reason, and is never recorded as read.
+   - A runtime that answers at once reads batch after batch in one run.
+   - A hand-off hands one batch a run, as `atticus map` does. Before handing it off, the scan says how many pages wait and names them. After the resume, it says "N pages left to read: run atticus knowledge scan again for the next batch (…)" and reports `pagesLeft`.
+   - A page too big for the prompt on its own is named, with what to raise. The other pages are still read, and the page isn't counted in `pagesLeft`, since another batch won't read it.
+2. **Include, exclude and one copy of a page** (ADR 0127).
+3. **The quote check folds blockquote and list markers.** A line's leading `>` (nested too) and list marker (`-`, `*`, `+`, `1.`, `1)`) are left out when matching, on the page and at the start of the quote. A sentence that wraps inside a blockquote, or runs into the next list item, matches; its words must still be on the page, in order.
+4. **The injection filter flags imperatives aimed at an AI, not prose that names a prompt.**
+   - The rule that flagged any mention of "system prompt" or "developer message" now flags only handing the reader a prompt: "your new system prompt", "here is your new system prompt", "New system prompt:".
+   - A heading is a turn marker only in a transcript's form, with a colon ("### Assistant:"). "## System prompt" and "## Instructions" are ordinary headings.
+   - "Ignore previous instructions", "you are now", "disregard … the rules" and hidden text are flagged as before.
+   - The red-team corpus (`packages/ai/test/fixtures/red-team`) has the false positive (`markdown/prompt-engineering.md`, risk none) and the same topic written as imperatives (`markdown/prompt-imperatives.md`), with a line corpus of each in `defences.test.ts`. `DEFENCES_VERSION` is `defences@1.1.0`.
+5. **The index covers what was snapshotted and scanned.**
+   - A wiki snapshot's sections are indexed from the pages its `snapshot.yaml` lists. A snapshot without one, written by hand, is read whole.
+   - Once `knowledge/scan.yaml` records a source, only the pages it read are indexed.
+   - A `#` line inside a fenced code block is code, not a heading, in the index and in the scan's own heading lookup. Front matter is no longer indexed as a section.
+6. **A person confirms any knowledge item for a change.** `atticus change knowledge <change> --confirm <id>` (and `--exclude`, and the app's buttons, through `setKnowledgeStatus`) takes any id the index holds as knowledge: a knowledge item, a wiki or document section, a vendor or a term. An id outside the list is added as a person's pick (`why: a person`) and then applies like one a stage picked. A change no stage has run for starts its list. Each `--confirm` or `--exclude` prints only what changed, not the whole list again.

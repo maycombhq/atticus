@@ -30,7 +30,7 @@ import { createHash } from "node:crypto";
  * no AI, no clock.
  */
 
-export const DEFENCES_VERSION = "defences@1.0.0";
+export const DEFENCES_VERSION = "defences@1.1.0";
 
 export type DefenceRule =
   /** Chat-template turn or role markers: <|im_start|>, [INST], "Assistant:", <system>. */
@@ -290,8 +290,10 @@ const PATTERNS: Pattern[] = [
     notIn: ["code", "html"],
   },
   {
+    // A transcript's turn as a heading ("### Assistant:"). Without the colon it is an ordinary
+    // heading: engineering pages have "## System prompt" and "## Instructions" sections.
     rule: "role-marker",
-    re: /^\s*#{1,6}\s*(system|instruction|instructions|assistant|human|developer)( prompt)?\s*:?\s*$/,
+    re: /^\s*#{1,6}\s*(system|assistant|human|developer)\s*:\s*$/,
   },
   {
     rule: "role-marker",
@@ -313,8 +315,10 @@ const PATTERNS: Pattern[] = [
     re: /\byou are now\b|\bfrom now on,? you\b|\bnew (system )?instructions?\s*:/,
   },
   {
+    // Handing the reader a new prompt. Naming the system prompt or the developer message is
+    // not an instruction: prose about how a product builds its prompts names them.
     rule: "override",
-    re: /\b(system|developer) (prompt|message)\b/,
+    re: /\byour (new|real|actual|updated|true) (system |developer )?(prompts?|instructions?|messages?|role)\b|\bhere (is|are) your (new )?(system prompts?|developer messages?|instructions)\b|\b(new|updated) (system|developer) (prompt|message)\s*:/,
     notIn: ["instructions", "code"],
   },
   {

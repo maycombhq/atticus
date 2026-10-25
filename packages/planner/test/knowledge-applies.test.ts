@@ -1,7 +1,10 @@
-import { mkdirSync, mkdtempSync, readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { parse } from "yaml";
+import { parseRecord, recordPath, serializeRecord } from "@maycombhq/core";
 import type { ContextReport } from "../src/engine.js";
 import {
   confirmedKnowledge,
@@ -104,7 +107,7 @@ describe("knowledge that applies to a change, listed (ADR 0124, Part 5)", () => 
     expect(await confirmedKnowledge(root, "add-limit", ["Pattern"])).toEqual(["pattern.a"]);
     expect(await confirmedKnowledge(root, "add-limit", ["ProcessDefinition"])).toEqual([]);
     await expect(setKnowledgeStatus(root, "add-limit", "nope", "confirmed")).rejects.toThrow(
-      /not in .*knowledge\.yaml/,
+      /nope is not in .*knowledge\.yaml/,
     );
   });
 
@@ -188,5 +191,52 @@ describe("knowledge that applies to a change, listed (ADR 0124, Part 5)", () => 
     expect(md).toContain("- Pattern pattern.a (suggested; feature; named)");
     expect(md).toContain("Near-misses");
     expect(md).toContain("decision.c");
+  });
+});
+
+// A person confirms knowledge the stages didn't list (a docs-folder trial): any knowledge item,
+// wiki or document section the index holds can be confirmed or excluded for a change.
+describe("a person confirms any knowledge item for a change", () => {
+  const FIX = join(dirname(fileURLToPath(import.meta.url)), "../../../fixtures");
+  async function withItems(): Promise<string> {
+    const root = metarepo();
+    for (const r of parse(readFileSync(join(FIX, "stages/knowledge.yaml"), "utf8")) as unknown[]) {
+      const p = parseRecord(r);
+      if (!p.ok) throw new Error(JSON.stringify(p.issues));
+      const f = join(root, "knowledge/items", recordPath(p.record));
+      mkdirSync(dirname(f), { recursive: true });
+      writeFileSync(f, serializeRecord(p.record));
+    }
+    return root;
+  }
+
+  it("adds an item no stage picked, as confirmed, and later stages select it", async () => {
+    const root = await withItems();
+    await recordKnowledge(
+      root,
+      "add-limit",
+      "feature",
+      report([{ id: "pattern.a", kind: "Pattern", level: "full", score: 2 }]),
+    );
+    const r = await setKnowledgeStatus(root, "add-limit", "firewall-rule-request", "confirmed");
+    expect(r.items.find((i) => i.id === "firewall-rule-request")).toMatchObject({
+      kind: "ProcessDefinition",
+      status: "confirmed",
+      stages: [],
+      why: "a person",
+      title: "Network firewall rule",
+    });
+    expect(await confirmedKnowledge(root, "add-limit", ["ProcessDefinition"])).toEqual([
+      "firewall-rule-request",
+    ]);
+  });
+
+  it("starts the list when no stage has run, and still refuses an id that is no knowledge", async () => {
+    const root = await withItems();
+    await setKnowledgeStatus(root, "add-limit", "broker-topic-request", "excluded");
+    expect(await excludedKnowledge(root, "add-limit")).toEqual(["broker-topic-request"]);
+    await expect(setKnowledgeStatus(root, "add-limit", "nope", "confirmed")).rejects.toThrow(
+      /nope is not in .*knowledge\.yaml, and no knowledge item, wiki or document section has that id/,
+    );
   });
 });

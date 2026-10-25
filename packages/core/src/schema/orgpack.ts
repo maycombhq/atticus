@@ -443,9 +443,29 @@ export const SourceTags = z.strictObject({
 });
 export type SourceTags = z.infer<typeof SourceTags>;
 
+/**
+ * sources.yaml's own schema version. Version 2 (ADR 0083 addendum, docs-folder fixes) adds a
+ * wiki's `include` and `exclude` globs. Version 1 files still read; `atticus upgrade` moves
+ * them to version 2 (`sources-v2`), changing nothing else.
+ */
+export const SOURCES_SCHEMA_VERSION = 2 as const;
+
+/**
+ * A page path pattern inside a source, "/"-separated: `**` spans folders, `*` stays in one, `?`
+ * is one character; a pattern ending in `/`, or with no wildcard, also takes the folder it names.
+ */
+const PageGlob = z
+  .string()
+  .min(1)
+  .refine((g) => !g.startsWith("/") && !g.split("/").includes(".."), {
+    message: "a page pattern is relative to the source: no leading / and no ..",
+  });
+
+const SOURCES_V2_FIELDS = ["include", "exclude"] as const;
+
 export const Sources = z
   .strictObject({
-    schemaVersion: V,
+    schemaVersion: z.union([V, z.literal(SOURCES_SCHEMA_VERSION)]),
     /** Adopt in place: where an existing metarepo keeps things. Nothing is moved. */
     layout: z
       .strictObject({
@@ -475,6 +495,10 @@ export const Sources = z
             path: RelPath.optional(),
             /** A git wiki is cloned into local state (clone), or kept as a submodule of the metarepo under knowledge/repos/. */
             checkout: z.enum(["clone", "submodule"]).optional(),
+            /** Version 2: only the pages matching one of these (default every page). */
+            include: z.array(PageGlob).optional(),
+            /** Version 2: never the pages matching one of these, even when included. */
+            exclude: z.array(PageGlob).optional(),
           })
           .transform((w) => (w.type === "git" ? { ...w, checkout: w.checkout ?? "clone" } : w))
           .superRefine((w, ctx) => {
@@ -514,7 +538,51 @@ export const Sources = z
   .superRefine((s, ctx) => {
     unique(s.wikis, (w) => w.id, ctx, "wikis");
     unique(s.absorbed, (a) => a.id, ctx, "absorbed");
+    if (s.schemaVersion === 1)
+      s.wikis.forEach((w, i) => {
+        for (const f of SOURCES_V2_FIELDS)
+          if (w[f] !== undefined)
+            ctx.addIssue({
+              code: "custom",
+              path: ["wikis", i, f],
+              message: `${f} needs schemaVersion 2: run atticus upgrade`,
+            });
+      });
   });
+
+/**
+ * Whether a page path inside a source matches a page pattern (sources.yaml `include` and
+ * `exclude`): `**` spans folders, `*` stays in one, `?` is one character, and a pattern ending
+ * in `/` or with no wildcard also takes everything under the folder it names.
+ */
+export function pageGlobMatches(glob: string, page: string): boolean {
+  const g = glob.replace(/\\/g, "/").replace(/^\.\//, "");
+  const p = page.replace(/\\/g, "/");
+  const folder = g.endsWith("/") ? g.slice(0, -1) : /[*?]/.test(g) ? undefined : g;
+  if (folder !== undefined) return p === folder || p.startsWith(`${folder}/`);
+  let re = "";
+  for (let i = 0; i < g.length; i++) {
+    const c = g[i]!;
+    if (c === "*") {
+      if (g[i + 1] === "*") {
+        const slash = g[i + 2] === "/";
+        re += slash ? "(?:.*/)?" : ".*";
+        i += slash ? 2 : 1;
+      } else re += "[^/]*";
+    } else if (c === "?") re += "[^/]";
+    else re += c.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+  }
+  return new RegExp(`^${re}$`).test(p);
+}
+
+/** Whether a source reads a page, by its `include` and `exclude` (sources.yaml version 2). */
+export function sourceReadsPage(
+  w: { include?: string[] | undefined; exclude?: string[] | undefined },
+  page: string,
+): boolean {
+  if (w.include?.length && !w.include.some((g) => pageGlobMatches(g, page))) return false;
+  return !w.exclude?.some((g) => pageGlobMatches(g, page));
+}
 
 // ------------------------------------------------------------------ runtime.yaml
 

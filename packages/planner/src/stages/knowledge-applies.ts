@@ -1,9 +1,10 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parse } from "yaml";
 import { z } from "zod";
 import { changeFolder } from "@maycombhq/changes";
 import { changesRelOf, toCanonicalYaml } from "@maycombhq/core";
+import { nodesById, openIndex } from "@maycombhq/index";
 import type { ContextReport } from "../engine.js";
 
 /**
@@ -153,29 +154,71 @@ export async function recordKnowledge(
   await write(root, doc);
 }
 
-/** A person confirms or excludes an item (or a near-miss, which becomes an item). */
+/** A knowledge item, wiki or document section the index holds, as the list names it. */
+export interface KnowledgeFound {
+  kind: string;
+  title?: string;
+  file?: string;
+}
+
+/** Look an id up in the index: a knowledge item, a wiki or document section, a vendor, a term. */
+export async function findKnowledgeItem(
+  root: string,
+  id: string,
+): Promise<KnowledgeFound | undefined> {
+  const ix = await openIndex(root, { embeddings: "off", embedOnOpen: 0 });
+  try {
+    const n = nodesById(ix, id).find((x) => isKnowledge(x.kind));
+    return n
+      ? { kind: n.kind, ...(n.name ? { title: n.name } : {}), ...(n.file ? { file: n.file } : {}) }
+      : undefined;
+  } finally {
+    ix.close();
+  }
+}
+
+/**
+ * A person confirms or excludes an item: one the list has, a near-miss (which becomes an item),
+ * or any knowledge item, wiki or document section the index holds (it is added as a person's
+ * pick and then applies like one a stage picked). A change no stage has run for starts its list.
+ */
 export async function setKnowledgeStatus(
   root: string,
   change: string,
   id: string,
   status: KnowledgeStatus,
+  o: { find?: (id: string) => Promise<KnowledgeFound | undefined> } = {},
 ): Promise<KnowledgeApplies> {
-  const doc = await readKnowledgeApplies(root, change);
   const rel = `${changesRelOf(root)}/${change}/${FILE}`;
-  if (!doc) throw new Error(`${rel} doesn't exist yet: run a stage of ${change} first.`);
+  const had = await readKnowledgeApplies(root, change);
+  if (!had && !(await stat(changeFolder(root, change)).catch(() => undefined)))
+    throw new Error(`There is no change ${change} (${changesRelOf(root)}/${change}/).`);
+  const doc = had ?? {
+    schemaVersion: 1 as const,
+    change,
+    items: [],
+    nearMisses: [],
+  };
   const item = doc.items.find((i) => i.id === id);
   if (item) item.status = status;
   else {
     const near = doc.nearMisses.find((n) => n.id === id);
-    if (!near) throw new Error(`${id} is not in ${rel}: name an item or a near-miss it lists.`);
+    const found = near
+      ? { kind: near.kind, ...(near.title ? { title: near.title } : {}) }
+      : await (o.find ?? ((x: string) => findKnowledgeItem(root, x)))(id);
+    if (!found)
+      throw new Error(
+        `${id} is not in ${rel}, and no knowledge item, wiki or document section has that id: name one atticus knowledge list or the change's list shows.`,
+      );
     doc.items.push({
       id,
-      kind: near.kind,
+      kind: found.kind,
       status,
       stages: [],
-      score: near.score,
+      score: near?.score ?? 0,
       why: "a person",
-      ...(near.title ? { title: near.title } : {}),
+      ...(found.title ? { title: found.title } : {}),
+      ...("file" in found && found.file ? { file: found.file } : {}),
     });
     doc.nearMisses = doc.nearMisses.filter((n) => n.id !== id);
   }

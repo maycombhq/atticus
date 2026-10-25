@@ -22,6 +22,7 @@ import {
   migrateChangeTypesText,
   migrateGatesText,
   migrateQuestions,
+  migrateSourcesText,
   orgPackDirOf,
   specsDirOf,
   specsRelOf,
@@ -164,6 +165,25 @@ export const MIGRATIONS: Migration[] = [
     "Catalog records at schema version 3: a Schema field can say whether it is required (ADR 0125)",
     [2],
   ),
+  {
+    id: "sources-v2",
+    summary:
+      "sources.yaml at version 2: a wiki can include and exclude pages by pattern; every wiki still reads every page (ADR 0083)",
+    async pending(root) {
+      const rel = packRel(root, "sources.yaml");
+      const text = await readFile(join(root, rel), "utf8").catch(() => undefined);
+      return text !== undefined && migrateSourcesText(text).changed ? [rel] : [];
+    },
+    async apply(root) {
+      const rel = packRel(root, "sources.yaml");
+      const text = await readFile(join(root, rel), "utf8").catch(() => undefined);
+      if (text === undefined) return [];
+      const r = migrateSourcesText(text);
+      if (!r.changed) return [];
+      await writeFileAtomic(join(root, rel), r.text);
+      return [rel];
+    },
+  },
 ];
 
 /**
