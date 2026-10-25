@@ -76,3 +76,7 @@
         classification: { fraud_verdict: internal }
         migration: V4__add_fraud_verdict.sql
         migrationFile: V4__add_fraud_verdict.sql
+      files:
+        - file: forge-orders:src/main/resources/schema.sql
+          lines: [1]
+          why: where table forge-orders-db.orders and its columns are

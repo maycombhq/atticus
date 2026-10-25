@@ -4,6 +4,12 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### A story's implementation steps follow the places in the code that change (B-steps, ADR 0124 addendum B-steps)
+
+- **Each story file has an Implementation steps section**, after Scope: one numbered step per place the change goes into, in the tasks' order. A step is each task's own code (the line its flow step is at, or the line an added step goes in after), each file a task declares a field or column in (the files to touch from the map's citations, B-fixes: one step per file, with every task's lines and reasons), and each new migration file. A new flow's tasks that cite no code are one step of new code, because the map can't tell their places apart. Each step names its tasks, and their acceptance criteria accept it. The tasks are unchanged and are still what a developer runs. The steps are worked out from the tasks (`storySteps` in the planner) and aren't stored. The stories prompt is unchanged, so no recording was re-recorded.
+- **`atticus bench stories --change` scores those steps.** The draft's steps are the story's places. A file step is cited at `file:line` (its first cited line) so the scorer matches it by file and line, and a file two stories touch is one step. A criterion is written on its task's own step and again on each file step of that task, cited there. On the run's three changes, re-scored without re-drafting: changed steps went from 2 of 8 to 4 of 8, 1 of 2 to 1 of 2, and 3 of 8 to 6 of 8. Strict error cases went from 0 to 1 of 5, 0 to 2 of 4, and 0 to 3 of 5. Fields (all found), invented fields (none) and sections (17 of 17) are unchanged.
+- The fraud check's golden story (`fixtures/stages/stories/expected/s1-place-order.md`) gains the section. The bench golden (`fixtures/stages/stories-bench/expected/forge-fraud-check.yaml`) gains the write's schema file and migration as steps, and its score against the invented reference is unchanged.
+
 ## 2.0.0-rc.1 (2026-10-24)
 
 Atticus 2 (ADR 0124): your assistant reads the code, and Atticus verifies every fact it writes against the line it cites.

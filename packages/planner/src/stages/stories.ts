@@ -450,6 +450,126 @@ function taskFiles(
   return out;
 }
 
+/**
+ * A place in the code a story's change goes into (B-steps): what a developer edits, and what the
+ * stories bench scores a story's changed steps by. A view of the story's tasks, worked out from
+ * them by `storySteps`, never stored: the tasks stay the unit a developer runs.
+ */
+export interface StoryStep {
+  /** The step's number in the story, from 1. */
+  n: number;
+  /**
+   * `code`: where a task's flow step is in today's code (the step it changes or removes, or the
+   * one an added step goes in after: its evidence); `declares`: a file declaring fields or
+   * columns the tasks add or change (`DeltaTask.files`); `migration`: the new migration file a
+   * store step names; `new`: code of a new flow the facts place in no file yet.
+   */
+  kind: "code" | "declares" | "migration" | "new";
+  repo: string;
+  /** repo:path; left out for new code. */
+  file?: string;
+  /** The cited lines in the file, in order; none for a new file or new code. */
+  lines: number[];
+  /** What changes there, in the flow's and the facts' words. */
+  what: string;
+  /** declares: why each task's file is touched (`TaskFile.why`), one each. */
+  why?: string[];
+  /** The tasks whose change goes here, in order: their acceptance criteria accept it. */
+  tasks: string[];
+}
+
+const evidenceAt = (c: string) => /^(.+?)(?::(\d+))?$/.exec(c)!;
+const baseName = (p: string) => p.split(/[\\/]/).at(-1)!;
+type Place = Omit<StoryStep, "n">;
+/** What a declaring file's step says, from its reasons. */
+export const declaredWhat = (why: readonly string[]) =>
+  `the fields and columns change here: ${why.join("; ")}`;
+
+/**
+ * A story's implementation steps (B-steps), from its tasks alone, in the tasks' order: each
+ * task's own code (its evidence: the file of the line `atticus bench stories` cites, with its
+ * lines there), then each file it declares a field or column in that no earlier task did (one
+ * step per file, gathering every task's lines and reasons), then the new migration its store
+ * step names. A migration whose name is a file the tasks already touch (a schema file changed in
+ * place) is that file's step, not a new file. The tasks that cite no code of their own, a new
+ * flow's, are one step of new code where the first of them is: the facts can't tell their places
+ * apart, so none is claimed (the files they declare in are steps as any task's are).
+ */
+export function storySteps(s: DeltaStory): StoryStep[] {
+  const out: Place[] = [];
+  const reasons = new Map<Place, string[]>();
+  const touched = s.tasks.flatMap((t) => [
+    ...t.evidence.map((c) => evidenceAt(c)[1]!),
+    ...(t.files ?? []).map((f) => f.file),
+  ]);
+  const fresh: DeltaTask[] = [];
+  let freshAt = -1;
+  for (const t of s.tasks) {
+    const cited = t.evidence.map(evidenceAt);
+    if (cited.length) {
+      // The file of the line the bench cites: the last an added step follows, else the first.
+      const file = (t.op === "add" ? cited.at(-1)! : cited[0]!)[1]!;
+      const verb = t.op === "add" ? "adds" : t.op === "change" ? "changes" : "removes";
+      out.push({
+        kind: "code",
+        repo: t.repo,
+        file,
+        lines: [...new Set(cited.filter((c) => c[1] === file && c[2]).map((c) => Number(c[2])))],
+        what: `${verb} the ${t.kind ?? "flow"} step ${t.op === "add" ? "after this code" : "here"}: ${t.what.replace(/[.\s]+$/, "")}`,
+        tasks: [t.id],
+      });
+    } else {
+      if (freshAt < 0) freshAt = out.length;
+      fresh.push(t);
+    }
+    for (const f of t.files ?? []) {
+      let step = out.find((x) => x.kind === "declares" && x.file === f.file);
+      if (!step) {
+        step = { kind: "declares", repo: t.repo, file: f.file, lines: [], what: "", tasks: [] };
+        out.push(step);
+      }
+      step.lines = [...new Set([...step.lines, ...f.lines])].sort((a, b) => a - b);
+      if (!step.tasks.includes(t.id)) step.tasks.push(t.id);
+      const r = reasons.get(step) ?? [];
+      if (!r.includes(f.why)) r.push(f.why);
+      reasons.set(step, r);
+    }
+    const d = t.data;
+    if (!d?.migrationFile) continue;
+    const file = `${t.repo}:${d.migrationFile}`;
+    const inPlace = touched.some(
+      (x) => x === file || (!/[\\/]/.test(d.migrationFile!) && baseName(x) === d.migrationFile),
+    );
+    if (inPlace) continue;
+    let step = out.find((x) => x.kind === "migration" && x.file === file);
+    if (!step) {
+      step = {
+        kind: "migration",
+        repo: t.repo,
+        file,
+        lines: [],
+        what: `the new migration ${d.migration ?? d.migrationFile} ${d.new ? `adds the table ${d.table}` : `adds ${andList(d.added)} to ${d.table}`}`,
+        tasks: [],
+      };
+      out.push(step);
+    }
+    if (!step.tasks.includes(t.id)) step.tasks.push(t.id);
+  }
+  for (const [step, r] of reasons) {
+    step.why = r;
+    step.what = declaredWhat(r);
+  }
+  if (fresh.length)
+    out.splice(freshAt, 0, {
+      kind: "new",
+      repo: s.repo,
+      lines: [],
+      what: `new code for ${s.entry ?? `flow ${s.flow}`}: ${fresh.map((t) => t.what.replace(/[.\s]+$/, "")).join("; ")}`,
+      tasks: fresh.map((t) => t.id),
+    });
+  return out.map((x, i) => ({ n: i + 1, ...x }));
+}
+
 const cites = (repo: string, at: { path?: string; line?: number }[]) => {
   const c = ev(repo, at);
   return c.length ? ` (${c.join(", ")})` : "";
@@ -1996,6 +2116,23 @@ function renderStoryFile(
     ...(out.length ? out.map((o) => `- ${o}`) : [`- ${NOT_WRITTEN}`]),
     "",
   );
+
+  // ---- Implementation steps (B-steps): the places in the code the tasks change, in order
+  const steps = storySteps(s);
+  if (steps.length)
+    lines.push(
+      "## Implementation steps",
+      "",
+      "Each place in the code the change goes into, in order, from the tasks and the map's citations. The tasks below say how; each task's acceptance criteria accept the places it changes.",
+      "",
+      ...steps.map((p) => {
+        const at = p.file
+          ? `${p.file}${p.kind === "migration" ? " (new)" : p.lines.length ? ` (line${p.lines.length === 1 ? "" : "s"} ${andList(p.lines.map(String))})` : ""}`
+          : "New code the map places in no file yet";
+        return `${p.n}. ${at}, task${p.tasks.length === 1 ? "" : "s"} ${andList(p.tasks)}: ${sentence(p.what)}`;
+      }),
+      "",
+    );
 
   // ---- Acceptance criteria (the critic and test generation read this list)
   lines.push("## Acceptance criteria", "");

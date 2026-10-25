@@ -44,6 +44,16 @@ Out:
 - Orders placed before the change are not screened.
 - The stock reservation call and its fields stay as they are.
 
+## Implementation steps
+
+Each place in the code the change goes into, in order, from the tasks and the map's citations. The tasks below say how; each task's acceptance criteria accept the places it changes.
+
+1. forge-orders:src/main/java/forge/orders/OrderController.java (lines 4 and 9), task 1.1: adds the call-out step after this code: Northwind Pay screens the order for fraud.
+2. forge-orders:src/main/java/forge/orders/OrderController.java (lines 4 and 9), task 1.2: adds the branch step after this code: A rejected order is refused with 422 and nothing is reserved.
+3. forge-orders:src/main/java/forge/orders/OrderController.java (line 13), task 1.3: changes the write step here: The order is inserted with the screen's verdict.
+4. forge-orders:src/main/resources/schema.sql (line 1), task 1.3: the fields and columns change here: where table forge-orders-db.orders and its columns are.
+5. forge-orders:V4__add_fraud_verdict.sql (new), task 1.3: the new migration V4__add_fraud_verdict.sql adds fraud_verdict to forge-orders-db.orders.
+
 ## Acceptance criteria
 
 - Given a new order with sku, quantity and cardToken, when POST /orders is called, then sku, quantity and cardToken are sent to Northwind Pay and the verdict is read.

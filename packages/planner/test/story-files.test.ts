@@ -17,7 +17,9 @@ import {
   storiesFromDeltas,
   storiesStage,
   storyCodeSource,
+  storySteps,
   taskContext,
+  type StoryStep,
 } from "../src/index.js";
 
 /**
@@ -351,6 +353,162 @@ describe("a key-pattern store adds no column to a story (problem 4)", () => {
     const write = storiesFromDeltas(d, e)[0]!.tasks[2]!;
     expect(write.store).toBe("forge-orders-cache.cart: items");
     expect(write.data).toBeUndefined();
+  });
+});
+
+describe("a story's implementation steps follow the places in the code that change (B-steps)", () => {
+  const OC = "forge-orders:src/main/java/forge/orders/OrderController.java";
+  const place = (s: StoryStep) => [s.n, s.kind, s.file, s.lines, s.tasks];
+
+  it("a step per task's own code, then each file it declares a field or column in, then a new migration", async () => {
+    const { stories } = await planned();
+    const steps = storySteps(stories[0]!);
+    expect(steps.map(place)).toEqual([
+      [1, "code", OC, [4, 9], ["1.1"]],
+      [2, "declares", "forge-orders:src/main/java/forge/orders/NewOrder.java", [5, 6], ["1.1"]],
+      [3, "declares", "forge-orders:src/main/resources/openapi.yaml", [41], ["1.1"]],
+      [4, "code", OC, [4, 9], ["1.2"]],
+      [5, "code", OC, [13], ["1.3"]],
+      [6, "declares", "forge-orders:src/main/resources/schema.sql", [1], ["1.3"]],
+      [7, "declares", "forge-orders:src/main/java/forge/orders/Order.java", [14], ["1.3"]],
+      [
+        8,
+        "migration",
+        "forge-orders:src/main/resources/db/migration/V4__add_fraud_verdict.sql",
+        [],
+        ["1.3"],
+      ],
+    ]);
+    expect(steps.every((s) => s.repo === "forge-orders")).toBe(true);
+    // What changes there, from the task and the facts' citations: nothing the flow doesn't say.
+    expect(steps[0]!.what).toBe(
+      "adds the call-out step after this code: Northwind Pay screens the order for fraud",
+    );
+    expect(steps[4]!.what).toBe(
+      "changes the write step here: The order is inserted with the screen's verdict",
+    );
+    expect(steps[1]!.what).toBe(
+      "the fields and columns change here: where POST /orders' request fields are (forge-orders.post-orders.request: sku, quantity)",
+    );
+    expect(steps[7]!.what).toBe(
+      "the new migration V4__add_fraud_verdict.sql adds fraud_verdict to forge-orders-db.orders",
+    );
+  });
+
+  it("a file two tasks declare in is one step, with both tasks and their lines", async () => {
+    const { estate } = await planned();
+    const d = deltas(`flows:
+  - flow: forge-orders.place-order
+    repo: forge-orders
+    change: modify
+    why: The order carries a card token.
+    steps:
+      - op: add
+        after: 1
+        kind: validate
+        what: cardToken is present
+        fields: { checks: [cardToken] }
+      - op: add
+        after: 1
+        kind: call-out
+        what: Northwind Pay screens the order
+        to: { component: northwind-pay, entry: "POST /v1/screenings", new: true }
+        fields: { sends: [sku, cardToken] }
+`);
+    const steps = storySteps(storiesFromDeltas(d, estate)[0]!);
+    expect(steps.map(place)).toEqual([
+      [1, "code", OC, [4, 9], ["1.1"]],
+      [
+        2,
+        "declares",
+        "forge-orders:src/main/java/forge/orders/NewOrder.java",
+        [5, 6],
+        ["1.1", "1.2"],
+      ],
+      [3, "declares", "forge-orders:src/main/resources/openapi.yaml", [41], ["1.1", "1.2"]],
+      [4, "code", OC, [4, 9], ["1.2"]],
+    ]);
+  });
+
+  it("a new flow's tasks that cite no code are one step of new code, which the facts place nowhere", async () => {
+    const { estate } = await planned(false);
+    const d = deltas(`flows:
+  - flow: forge-orders.cancel-order
+    repo: forge-orders
+    change: new
+    name: A client cancels an order
+    trigger: { kind: endpoint, what: A client cancels an order, entry: "DELETE /orders/{id}" }
+    why: Orders can be cancelled.
+    steps:
+      - op: add
+        kind: entry
+        what: OrderController.cancel receives the order id
+        fields: { reads: [id] }
+      - op: add
+        kind: respond
+        what: 204 No Content
+`);
+    const s = storiesFromDeltas(d, estate)[0]!;
+    expect(s.tasks.map((t) => t.evidence)).toEqual([[], []]);
+    const steps = storySteps(s);
+    expect(steps.map(place)).toEqual([[1, "new", undefined, [], ["1.1", "1.2"]]]);
+    expect(steps[0]!.what).toBe(
+      "new code for DELETE /orders/{id}: OrderController.cancel receives the order id; 204 No Content",
+    );
+  });
+
+  it("a migration that names a file already among the steps is that file, not a new one", async () => {
+    // With no migration folder known, a migration named schema.sql is the schema file itself.
+    const { estate } = await planned(false);
+    const d = deltas(fixture("deltas.yaml").replace("V4__add_fraud_verdict.sql", "schema.sql"));
+    const s = storiesFromDeltas(d, estate)[0]!;
+    expect(s.tasks[2]!.data?.migrationFile).toBe("schema.sql");
+    expect(storySteps(s).map((x) => [x.kind, x.file])).toEqual([
+      ["code", OC],
+      ["code", OC],
+      ["code", OC],
+      ["declares", "forge-orders:src/main/resources/schema.sql"],
+    ]);
+  });
+
+  it("the story file lists them under Implementation steps, tasks staying the unit a developer runs", async () => {
+    const dir = await root();
+    expect(
+      (await featureStage(dir, CHANGE, { runtime: assistant(fixture("placed.yaml")), now: NOW }))
+        .state,
+    ).toBe("done");
+    expect(
+      (
+        await architectureStage(dir, CHANGE, {
+          runtime: assistant(fixture("deltas.yaml")),
+          now: NOW,
+        })
+      ).state,
+    ).toBe("done");
+    expect(
+      (await storiesStage(dir, CHANGE, { runtime: assistant(fixture("answer.yaml")), now: NOW }))
+        .state,
+    ).toBe("done");
+    const story = await readFile(
+      join(dir, "openspec/changes", CHANGE, "stories/s1-place-order.md"),
+      "utf8",
+    );
+    const section = /## Implementation steps\n([\s\S]*?)\n## /.exec(story)?.[1] ?? "";
+    expect(section).toContain(
+      `1. ${OC} (lines 4 and 9), task 1.1: adds the call-out step after this code: Northwind Pay screens the order for fraud.`,
+    );
+    expect(section).toContain(
+      "2. forge-orders:src/main/java/forge/orders/NewOrder.java (lines 5 and 6), task 1.1: the fields and columns change here: where POST /orders' request fields are (forge-orders.post-orders.request: sku, quantity).",
+    );
+    expect(section).toContain(
+      "8. forge-orders:src/main/resources/db/migration/V4__add_fraud_verdict.sql (new), task 1.3: the new migration V4__add_fraud_verdict.sql adds fraud_verdict to forge-orders-db.orders.",
+    );
+    // It comes after Scope and before the acceptance criteria; the tasks are still there.
+    expect(story.indexOf("## Scope")).toBeLessThan(story.indexOf("## Implementation steps"));
+    expect(story.indexOf("## Implementation steps")).toBeLessThan(
+      story.indexOf("## Acceptance criteria"),
+    );
+    expect(story).toContain("### Task 1.3: Change the write step");
   });
 });
 

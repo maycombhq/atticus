@@ -1,11 +1,14 @@
 import {
   DEFAULT_DONE,
+  declaredWhat,
   storyColumns,
+  storySteps,
   type DeltaStory,
   type DeltaTask,
   type RequestTask,
   type StoriesAnswer,
   type StoryCriterion,
+  type StoryStep,
   type StoryWords,
 } from "@maycombhq/planner";
 import type { BenchStory } from "./story-bench.js";
@@ -20,9 +23,15 @@ import type { BenchStory } from "./story-bench.js";
  *
  * - A bench story is one capability across repos; a change has a story per repo and flow. All of
  *   the change's stories go into the one draft, in their order; the statement is the first's.
- * - Each task is a changed step: its repo, what it does, the story's entry, and today's code from
- *   its evidence (an added step goes in after the step it follows, so the last line it cites;
- *   any other step, the first).
+ * - The steps are the places in the code the change goes into (B-steps; the planner's
+ *   `storySteps`), as a professional story lists them: each task's own code (its repo, what it
+ *   does, the story's entry, and today's code from its evidence: an added step goes in after the
+ *   step it follows, so the last line it cites; any other step, the first), each file a task
+ *   declares a field or column in (`DeltaTask.files`: at its first cited line, on no entry), and
+ *   a new migration (no line yet). A file two stories touch is one step. A new flow's tasks that
+ *   cite no code are one step on its entry, with no file.
+ * - Each place is accepted by its tasks' criteria: a criterion is written on its task's own step
+ *   (or its story's new-code step), and again on each file step of its task, cited there.
  * - Each criterion splits into given, when and then; its checks are its fields; its entry, when
  *   it names none, is the story's. An error criterion is an error case on each field it checks
  *   (or on none when it checks none), its `when` the criterion's given clause.
@@ -92,9 +101,17 @@ function contextOf(s: DeltaStory, w: StoryWords | undefined): string {
   return blocks.join("\n\n");
 }
 
-function criteriaOf(s: DeltaStory, t: DeltaTask, cs: StoryCriterion[]): BenchStory["criteria"] {
-  const step = stepId(t);
-  const at = stepAt(t);
+function criteriaOf(
+  s: DeltaStory,
+  t: DeltaTask,
+  cs: StoryCriterion[],
+  /** The step they accept and where it is (the task's own by default), and their ids' prefix. */
+  on: { step: string; at?: string | undefined; prefix?: string } = {
+    step: stepId(t),
+    at: stepAt(t),
+  },
+): BenchStory["criteria"] {
+  const { step, at } = on;
   return cs.map((c, i) => {
     const parts = splitCriterion(c.text);
     const entry = c.entry ?? s.entry;
@@ -107,7 +124,7 @@ function criteriaOf(s: DeltaStory, t: DeltaTask, cs: StoryCriterion[]): BenchSto
       ...(at ? { at } : {}),
     });
     return {
-      id: `${step}-c${i + 1}`,
+      id: `${on.prefix ?? ""}${stepId(t)}-c${i + 1}`,
       step,
       ...parts,
       ...(entry ? { entry } : {}),
@@ -150,21 +167,73 @@ export function benchStoryFromStories(i: StoriesToBench): BenchStory {
     ];
   });
 
-  const steps = pairs.flatMap(({ s }) =>
-    s.tasks.map((t) => {
-      const at = stepAt(t);
-      return {
-        id: stepId(t),
-        repo: t.repo,
-        what: bare(t.what || t.title),
-        ...(s.entry ? { entry: s.entry } : {}),
-        ...(at ? { at } : {}),
-      };
-    }),
-  );
-  const criteria = pairs.flatMap(({ s, w }) =>
-    s.tasks.flatMap((t) => criteriaOf(s, t, w?.tasks.find((x) => x.id === t.id)?.criteria ?? [])),
-  );
+  // ---- steps: the places in the code (B-steps); a file two stories touch is one step
+  type Step = BenchStory["steps"][number];
+  const steps: Step[] = [];
+  const criteria: BenchStory["criteria"] = [];
+  const said = (s: DeltaStory, t: DeltaTask) =>
+    pairs.find((p) => p.s === s)?.w?.tasks.find((x) => x.id === t.id)?.criteria ?? [];
+  const tasksOf = (ids: string[]) => `Task${ids.length === 1 ? "" : "s"} ${andList(ids)}`;
+  interface FileStep {
+    step: Step;
+    kind: StoryStep["kind"];
+    what: string;
+    why: string[];
+    lines: number[];
+    links: { s: DeltaStory; t: DeltaTask }[];
+  }
+  const files = new Map<string, FileStep>();
+  for (const { s } of pairs)
+    for (const p of storySteps(s)) {
+      const tasks = p.tasks.map((id) => s.tasks.find((t) => t.id === id)!);
+      if (p.kind === "code") {
+        const t = tasks[0]!;
+        const at = stepAt(t);
+        steps.push({
+          id: stepId(t),
+          repo: t.repo,
+          what: bare(t.what || t.title),
+          ...(s.entry ? { entry: s.entry } : {}),
+          ...(at ? { at } : {}),
+        });
+        criteria.push(...criteriaOf(s, t, said(s, t)));
+      } else if (p.kind === "new") {
+        const id = `new-${s.id}`;
+        steps.push({
+          id,
+          repo: p.repo,
+          what: bare(`${tasksOf(p.tasks)}: ${p.what}`),
+          ...(s.entry ? { entry: s.entry } : {}),
+        });
+        for (const t of tasks) criteria.push(...criteriaOf(s, t, said(s, t), { step: id }));
+      } else {
+        let f = files.get(p.file!);
+        if (!f) {
+          const step: Step = { id: `f${files.size + 1}`, repo: p.repo, what: p.what };
+          f = { step, kind: p.kind, what: p.what, why: [], lines: [], links: [] };
+          files.set(p.file!, f);
+          steps.push(step);
+        }
+        f.lines.push(...p.lines);
+        for (const w of p.why ?? []) if (!f.why.includes(w)) f.why.push(w);
+        for (const t of tasks) if (!f.links.some((l) => l.t === t)) f.links.push({ s, t });
+      }
+    }
+  // A file step's words, place and criteria once every story's tasks are in.
+  for (const [file, f] of files) {
+    const path = file.slice(f.step.repo.length + 1);
+    const what = f.kind === "migration" ? `${f.what} (a new file: ${path})` : declaredWhat(f.why);
+    f.step.what = bare(`${tasksOf([...new Set(f.links.map((l) => l.t.id))])}: ${what}`);
+    if (f.kind === "declares" && f.lines.length) f.step.at = `${path}:${Math.min(...f.lines)}`;
+    for (const { s, t } of f.links)
+      criteria.push(
+        ...criteriaOf(s, t, said(s, t), {
+          step: f.step.id,
+          at: f.step.at,
+          prefix: `${f.step.id}-`,
+        }),
+      );
+  }
 
   // ---- interfaces and data: the lists, else none when every story that wrote one says none
   const listedInterfaces = pairs.flatMap(({ s, w }) =>
