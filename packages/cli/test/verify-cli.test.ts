@@ -139,11 +139,167 @@ describe("atticus verify <repo> (ADR 0124)", () => {
     );
     expect(rejected).toContain('"code":"bad-question"');
     expect(rejected).toContain("src/Nowhere.java:3 is no line of the repo");
-    expect(o.out.join("\n")).toMatch(/1 question raised for a person/);
-    // Asked again by the next verify: the same question, the same file.
+    expect(o.out.join("\n")).toMatch(
+      /1 question raised for a person now, 1 refused \(of 2 lines in \.atticus\/facts\/forge-ledger\.questions\.jsonl\)/,
+    );
+    // Asked again by the next verify: the same question, the same file, and still counted.
     const p = io();
     await verifyCommand(root, "forge-ledger", { commit: "0123abc" }, p.io);
     expect(readdirSync(join(root, ".atticus", "questions"))).toHaveLength(1);
+    expect(p.out.join("\n")).toMatch(/0 questions raised for a person now, 1 raised before/);
+    expect(p.out.join("\n")).toMatch(/1 question open for forge-ledger/);
+  });
+});
+
+/**
+ * Every list verify prints is summarised (A-big2): a count, the first few, and where the whole
+ * list is. A real read printed 221 entries without an authCite on one line. The repo is an
+ * invented Forge gates service with many routes, read with no authCite and no flow.
+ */
+describe("atticus verify: long lists are counted, shown in part and pointed to (A-big2)", () => {
+  const N = 12;
+  const CTRL = "src/main/java/forge/gates/GateController.java";
+  const gates = () => {
+    const root = mkdtempSync(join(tmpdir(), "atticus-verify-gates-"));
+    mkdirSync(join(root, ".atticus", "org-pack"), { recursive: true });
+    mkdirSync(join(root, ".atticus", "facts"), { recursive: true });
+    mkdirSync(join(root, "src", "main", "java", "forge", "gates"), { recursive: true });
+    const lines = [
+      "package forge.gates;",
+      "",
+      "import org.springframework.web.bind.annotation.*;",
+      "",
+      "@RestController",
+      '@RequestMapping("/gates")',
+      "public class GateController {",
+      ...Array.from({ length: N }, (_, i) => [
+        `  @GetMapping("/g${i}")`,
+        `  public String g${i}() { return "open"; }`,
+      ]).flat(),
+      "}",
+    ];
+    writeFileSync(join(root, CTRL), lines.join("\n") + "\n");
+    // line 8 + 2i holds route i
+    const entry = (i: number, value = `/g${i}`) =>
+      JSON.stringify({
+        kind: "entry",
+        id: `e-g${i}`,
+        repo: "forge-gates",
+        commit: "6a7e5c0",
+        component: "gates-api",
+        entryType: "rest",
+        method: "GET",
+        path: `/gates${value}`,
+        handler: `GateController.g${i}`,
+        auth: "oauth2",
+        cite: {
+          file: CTRL,
+          line: 8 + 2 * i,
+          value,
+          quote: `@GetMapping("/g${i}")`,
+          with: [{ file: CTRL, line: 6, value: "/gates" }],
+        },
+      });
+    const facts = Array.from({ length: N }, (_, i) => entry(i));
+    return { root, facts, entry };
+  };
+  const question = (i: number) =>
+    JSON.stringify({
+      question: `Is gate g${i} served to the public, or only inside the Forge network?`,
+      options: [
+        { label: "Public", means: "anyone can call it", changes: "it is an edge route" },
+        { label: "Internal", means: "only Forge services", changes: "it is an internal route" },
+      ],
+      evidence: [`${CTRL}:${8 + 2 * i}`],
+    });
+  const longest = (out: string[]) => Math.max(...out.map((l) => l.length));
+
+  it("counts the entries whose auth was left out, shows the first five, and points to verify.yaml", async () => {
+    const { root, facts } = gates();
+    writeFileSync(join(root, ".atticus", "facts", "forge-gates.jsonl"), facts.join("\n") + "\n");
+    const o = io();
+    expect(await verifyCommand(root, "forge-gates", { commit: "6a7e5c0" }, o.io)).toBe(0);
+    const text = o.out.join("\n");
+    expect(text).toMatch(
+      /12 entries' auth left out \(no line that sets it was cited; all under authUncited in \.atticus\/facts\/forge-gates\.verify\.yaml\)/,
+    );
+    const shown = o.out.filter((l) => /^ {2}e-g\d+ \(oauth2, /.test(l));
+    expect(shown).toHaveLength(5);
+    expect(shown[0]).toBe(`  e-g0 (oauth2, ${CTRL}:8)`);
+    expect(text).toMatch(
+      /\.\.\. and 7 more \(authUncited in \.atticus\/facts\/forge-gates\.verify\.yaml\)/,
+    );
+    // the entries no flow follows, the same way
+    expect(text).toMatch(/12 entries no flow follows/);
+    expect(o.out.filter((l) => /^ {2}GET \/gates\/g\d+ \(e-g\d+, /.test(l))).toHaveLength(5);
+    expect(text).toMatch(
+      /\.\.\. and 7 more \(entriesNoFlowFollows in \.atticus\/facts\/forge-gates\.verify\.yaml\)/,
+    );
+    expect(longest(o.out)).toBeLessThan(1_000);
+    const report = parse(
+      readFileSync(join(root, ".atticus", "facts", "forge-gates.verify.yaml"), "utf8"),
+    );
+    expect(report.authUncited).toHaveLength(N);
+  });
+
+  it("counts the rejected facts and the lines that aren't facts, the first five of each, and points to rejected.jsonl", async () => {
+    const { root, facts, entry } = gates();
+    // a route no line has: rejected
+    const wrong = Array.from({ length: 8 }, (_, i) =>
+      entry(i, `/nowhere${i}`).replace(`"e-g${i}"`, `"e-x${i}"`),
+    );
+    const junk = Array.from({ length: 7 }, (_, i) =>
+      JSON.stringify({ kind: "entry", id: `e-bad${i}` }),
+    );
+    writeFileSync(
+      join(root, ".atticus", "facts", "forge-gates.jsonl"),
+      [...facts, ...wrong, ...junk].join("\n") + "\n",
+    );
+    const o = io();
+    expect(await verifyCommand(root, "forge-gates", { commit: "6a7e5c0" }, o.io)).toBe(1);
+    const text = o.out.join("\n");
+    expect(o.out.filter((l) => /^ {2}claim-not-on-line: /.test(l))).toHaveLength(5);
+    expect(text).toMatch(
+      /\.\.\. and 3 more rejected \(all in \.atticus\/facts\/forge-gates\.rejected\.jsonl\)/,
+    );
+    expect(o.out.filter((l) => /^ {2}schema: /.test(l))).toHaveLength(5);
+    expect(text).toMatch(
+      /\.\.\. and 2 more lines that aren't facts \(all in \.atticus\/facts\/forge-gates\.rejected\.jsonl\)/,
+    );
+    expect(longest(o.out)).toBeLessThan(1_000);
+  });
+
+  it("raises every question the reader wrote, says how many are open, and shows the first five", async () => {
+    const { root, facts } = gates();
+    writeFileSync(join(root, ".atticus", "facts", "forge-gates.jsonl"), facts.join("\n") + "\n");
+    const bad = Array.from({ length: 7 }, (_, i) =>
+      JSON.stringify({ question: `Is g${i} used?`, evidence: [`src/Nowhere${i}.java:3`] }),
+    );
+    writeFileSync(
+      join(root, ".atticus", "facts", "forge-gates.questions.jsonl"),
+      [...Array.from({ length: N }, (_, i) => question(i)), ...bad].join("\n") + "\n",
+    );
+    const o = io();
+    expect(await verifyCommand(root, "forge-gates", { commit: "6a7e5c0" }, o.io)).toBe(1);
+    // none held back: every one is a file in questions/
+    expect(readdirSync(join(root, ".atticus", "questions"))).toHaveLength(N);
+    const text = o.out.join("\n");
+    expect(text).toMatch(
+      /12 questions raised for a person now, 7 refused \(of 19 lines in \.atticus\/facts\/forge-gates\.questions\.jsonl\)/,
+    );
+    expect(text).toMatch(
+      /12 questions open for forge-gates, waiting for a person's answer \(atticus questions list --state open lists them all; a person answers, never the assistant\):/,
+    );
+    expect(o.out.filter((l) => /^ {2}q-[0-9a-f]{12}: Is gate g\d+ served/.test(l))).toHaveLength(5);
+    expect(text).toMatch(/\.\.\. and 7 more open/);
+    expect(o.out.filter((l) => /^ {2}bad-question: /.test(l))).toHaveLength(5);
+    expect(text).toMatch(
+      /\.\.\. and 2 more refused questions \(all in \.atticus\/facts\/forge-gates\.rejected\.jsonl\)/,
+    );
+    const j = io();
+    await verifyCommand(root, "forge-gates", { commit: "6a7e5c0", json: true }, j.io);
+    const r = JSON.parse(j.out.join("\n"));
+    expect(r.questions).toMatchObject({ lines: 19, raised: 0, known: N, refused: 7, open: N });
   });
 });
 

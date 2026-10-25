@@ -222,8 +222,13 @@ describe("a person's correction from the Map", () => {
       { out: (l) => out.push(l), err: (l) => out.push(l) },
     );
     expect(code).toBe(0);
+    // A-big2: listed one a line, the first few, the whole list in verify.yaml.
     expect(out.join("\n")).toContain(
-      "2 corrections by a person applied (facts/forge-ledger.corrections.jsonl): e-get-account as corrected, e-settle-listener left out as wrong.",
+      [
+        "2 corrections by a person applied (facts/forge-ledger.corrections.jsonl; listed under corrections in facts/forge-ledger.verify.yaml):",
+        "  e-get-account as corrected",
+        "  e-settle-listener left out as wrong",
+      ].join("\n"),
     );
     const kept = parseFacts(await readFile(join(root, "facts/forge-ledger.jsonl"), "utf8"));
     if (!kept.ok) throw new Error("the kept facts don't parse");

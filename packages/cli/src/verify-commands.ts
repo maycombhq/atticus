@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { factsDirOf, factsRelOf, parseFactsLines } from "@maycombhq/core";
+import { factsDirOf, factsRelOf, listQuestions, parseFactsLines } from "@maycombhq/core";
 import { dirSource, verifyFacts } from "@maycombhq/verify";
 import type { GitRunner } from "@maycombhq/workspace";
 import type { Output } from "./commands.js";
@@ -49,6 +49,12 @@ export interface VerifyCommandOptions {
   git?: GitRunner;
 }
 
+/**
+ * How many of a list verify prints (A-big2): the rest is counted and pointed to, in the verify
+ * report or the rejected file, so a long list never fills the terminal or one line.
+ */
+export const SHOWN = 5;
+
 /** The JSON objects of a questions file; a line that isn't JSON is a problem. */
 function questionLines(text: string): { lines: unknown[]; problems: QuestionProblem[] } {
   const lines: unknown[] = [];
@@ -87,7 +93,8 @@ export async function verifyCommand(
     io.err(`${rel}/${repo}.jsonl does not read as facts:`);
     for (const b of parsed.bad.slice(0, 20))
       io.err(`  line ${b.line}: ${b.issues.map((i) => i.message).join("; ")}`);
-    if (parsed.bad.length > 20) io.err(`  ... and ${parsed.bad.length - 20} more`);
+    if (parsed.bad.length > 20)
+      io.err(`  ... and ${parsed.bad.length - 20} more (no line of the file is a fact)`);
     return 2;
   }
   const dir = await checkoutOf(root, repo, o.dir);
@@ -104,8 +111,12 @@ export async function verifyCommand(
   const { carry, missing } = await carryOf(dir, parsed.facts, commit, o.git);
   // ADR 0124 addendum D-app: a person's corrections from the Map, applied on every run.
   const corrections = await readCorrections(root, repo);
-  for (const b of corrections.bad)
+  for (const b of corrections.bad.slice(0, SHOWN))
     io.err(`${rel}/${repo}.corrections.jsonl line ${b.line} isn't a correction: ${b.message}`);
+  if (corrections.bad.length > SHOWN)
+    io.err(
+      `... and ${corrections.bad.length - SHOWN} more lines of ${rel}/${repo}.corrections.jsonl that aren't corrections`,
+    );
   // ADR 0124 addendum A-read: the files the reader read and found nothing to record in.
   const reviewed = await readReviewed(root, repo);
   const report = await verifyFacts({
@@ -123,19 +134,26 @@ export async function verifyCommand(
   }));
 
   // ADR 0078: what the code can't settle, raised for a person.
+  // A-big2: every line is raised (none is held back or capped), and the count is said.
   const qFile = join(factsDirOf(root), `${repo}.questions.jsonl`);
   let raised = 0;
+  let known = 0;
+  let qLines = 0;
   const qProblems: QuestionProblem[] = [];
-  if (existsSync(qFile)) {
+  const hasQuestions = existsSync(qFile);
+  if (hasQuestions) {
     const q = questionLines(await readFile(qFile, "utf8"));
+    qLines = q.lines.length + q.problems.length;
     qProblems.push(...q.problems);
     const r = await raiseReadQuestions(root, repo, q.lines, source, {
       command: `atticus verify ${repo}`,
       at: (o.now?.() ?? new Date()).toISOString(),
     });
     raised = r.raised.length;
+    known = r.known.length;
     qProblems.push(...r.problems);
   }
+  const open = hasQuestions ? (await listQuestions(root, { repo, state: "open" })).questions : [];
 
   const badLines = parsed.bad.map((b) => ({
     line: b.line,
@@ -174,7 +192,14 @@ export async function verifyCommand(
       JSON.stringify(
         {
           ...summary,
-          questions: { raised, problems: qProblems },
+          questions: {
+            lines: qLines,
+            raised,
+            known,
+            refused: qProblems.length,
+            open: open.length,
+            problems: qProblems,
+          },
           ...(reviewedBad.length ? { reviewedProblems: reviewedBad } : {}),
           ...(written ? { written } : {}),
         },
@@ -189,34 +214,79 @@ export async function verifyCommand(
   io.out(
     `${repo}: ${report.accepted.length} facts kept, ${report.rejected.length} rejected; coverage ${pct}% (${cov.read.length} read, ${cov.reviewed.length ? `${cov.reviewed.length} reviewed with nothing to record, ` : ""}${cov.unknown.length} unknown${cov.excluded.length ? `, ${cov.excluded.length} excluded` : ""}).`,
   );
-  if (report.carried.length)
+  // A-big2: every list is said as a count, its first few, and where the whole list is.
+  const verifyYaml = `${rel}/${repo}.verify.yaml`;
+  const rejectedFile = `${rel}/${repo}.rejected.jsonl`;
+  const show = (lines: readonly string[], more: string) => {
+    for (const l of lines.slice(0, SHOWN)) io.out(`  ${l}`);
+    if (lines.length > SHOWN) io.out(`  ... and ${lines.length - SHOWN} more ${more}`);
+  };
+  if (report.carried.length) {
+    const from = [...new Set(report.carried.map((c) => c.from.slice(0, 12)))];
     io.out(
-      `${report.carried.length} of them carried to ${commit!.slice(0, 12)} from ${[...new Set(report.carried.map((c) => c.from.slice(0, 12)))].join(", ")}: every file they cite is unchanged since, and their lines were checked again (listed under carried in ${rel}/${repo}.verify.yaml).`,
+      `${report.carried.length} of them carried to ${commit!.slice(0, 12)} from ${from.slice(0, SHOWN).join(", ")}${from.length > SHOWN ? ` and ${from.length - SHOWN} more commits` : ""}: every file they cite is unchanged since, and their lines were checked again (listed under carried in ${verifyYaml}).`,
     );
+  }
   const changed = report.rejected.filter((r) => r.code === "cite-changed").length;
   if (changed)
     io.out(
       `${changed} cite a file that changed since they were read: read those files again (atticus map ${repo} --estimate lists them), then rewrite or drop each fact.`,
     );
-  for (const c of missing)
+  if (missing.length) {
     io.out(
-      `Facts of commit ${c.slice(0, 12)} can't be compared with ${commit!.slice(0, 12)} (this clone doesn't have it): they are rejected as wrong-commit; read them again.`,
+      `Facts of ${missing.length === 1 ? "a commit" : `${missing.length} commits`} this clone doesn't have can't be compared with ${commit!.slice(0, 12)}: they are rejected as wrong-commit; read them again.`,
     );
+    show(
+      missing.map((c) => c.slice(0, 12)),
+      "commits",
+    );
+  }
   const fixed = report.corrections.applied;
-  if (fixed.length)
+  if (fixed.length) {
     io.out(
-      `${fixed.length} ${fixed.length === 1 ? "correction" : "corrections"} by a person applied (${rel}/${repo}.corrections.jsonl): ${fixed.map((a) => `${a.fact} ${a.action === "wrong" ? "left out as wrong" : "as corrected"}`).join(", ")}.`,
+      `${fixed.length} ${fixed.length === 1 ? "correction" : "corrections"} by a person applied (${rel}/${repo}.corrections.jsonl; listed under corrections in ${verifyYaml}):`,
     );
-  for (const s of report.corrections.stale) io.out(`  correction: ${s.message}`);
-  for (const r of report.rejected.slice(0, 15)) io.out(`  ${r.code}: ${r.message}`);
-  if (report.rejected.length > 15) io.out(`  ... and ${report.rejected.length - 15} more`);
-  if (raised)
+    show(
+      fixed.map((a) => `${a.fact} ${a.action === "wrong" ? "left out as wrong" : "as corrected"}`),
+      `(corrections in ${verifyYaml})`,
+    );
+  }
+  const stale = report.corrections.stale;
+  if (stale.length)
+    show(
+      stale.map((s) => `correction: ${s.message}`),
+      `corrections meeting no fact (corrections.stale in ${verifyYaml})`,
+    );
+  show(
+    report.rejected.map((r) => `${r.code}: ${r.message}`),
+    `rejected (all in ${rejectedFile})`,
+  );
+  if (hasQuestions) {
     io.out(
-      `${raised} question${raised === 1 ? "" : "s"} raised for a person (atticus questions list): a person answers, never the assistant.`,
+      `${raised} question${raised === 1 ? "" : "s"} raised for a person now${known ? `, ${known} raised before` : ""}${qProblems.length ? `, ${qProblems.length} refused` : ""} (of ${qLines} line${qLines === 1 ? "" : "s"} in ${rel}/${repo}.questions.jsonl).`,
     );
-  for (const q of qProblems) io.out(`  bad-question: ${q.message}`);
-  for (const b of badLines.slice(0, 15)) io.out(`  schema: ${b.message}`);
-  for (const b of reviewedBad.slice(0, 15)) io.out(`  bad-reviewed: ${b.message}`);
+    if (open.length) {
+      io.out(
+        `${open.length} question${open.length === 1 ? "" : "s"} open for ${repo}, waiting for a person's answer (atticus questions list --state open lists them all; a person answers, never the assistant):`,
+      );
+      show(
+        open.map((q) => `${q.id}: ${q.question}`),
+        "open",
+      );
+    }
+  }
+  show(
+    qProblems.map((q) => `bad-question: ${q.message}`),
+    `refused questions (all in ${rejectedFile})`,
+  );
+  show(
+    badLines.map((b) => `schema: ${b.message}`),
+    `lines that aren't facts (all in ${rejectedFile})`,
+  );
+  show(
+    reviewedBad.map((b) => `bad-reviewed: ${b.message}`),
+    `refused reviewed lines (all in ${rejectedFile})`,
+  );
   if (failed)
     io.out(
       `Fix them from ${rel}/${repo}.rejected.jsonl (read the lines again, then rewrite or drop each fact, question or reviewed line) and run atticus verify ${repo} again.`,
@@ -232,21 +302,28 @@ export async function verifyCommand(
   if (report.redacted) io.out(`${report.redacted} quotes had a secret value redacted.`);
   // A-read: an auth no line is cited for is left out of the kept fact (a note, not a rejection).
   const noAuth = report.authUncited;
-  if (noAuth.length)
+  if (noAuth.length) {
     io.out(
-      `${noAuth.length} ${noAuth.length === 1 ? "entry's" : "entries'"} auth left out (no line that sets it was cited): give each an authCite, the line that sets it and what it writes there, with its auth again: ${noAuth.map((a) => `${a.id} (${a.auth}, ${a.cite})`).join(", ")}.`,
+      `${noAuth.length} ${noAuth.length === 1 ? "entry's" : "entries'"} auth left out (no line that sets it was cited; all under authUncited in ${verifyYaml}): give each an authCite, the line that sets it and what it writes there, with its auth again:`,
     );
+    show(
+      noAuth.map((a) => `${a.id} (${a.auth}, ${a.cite})`),
+      `(authUncited in ${verifyYaml})`,
+    );
+  }
   // C-estate: a note, not a rejection, so the reader follows each listener and route with a flow.
   const unfollowed = report.entriesNoFlowFollows;
   if (unfollowed.length) {
     io.out(
-      `${unfollowed.length} ${unfollowed.length === 1 ? "entry" : "entries"} no flow follows (a note, not a rejection; listed under entriesNoFlowFollows in ${rel}/${repo}.verify.yaml): write a flow for each that does real work.`,
+      `${unfollowed.length} ${unfollowed.length === 1 ? "entry" : "entries"} no flow follows (a note, not a rejection; listed under entriesNoFlowFollows in ${verifyYaml}): write a flow for each that does real work.`,
     );
-    for (const e of unfollowed.slice(0, 15)) {
-      const what = e.entryType === "rest" && e.method ? e.method : e.entryType;
-      io.out(`  ${what} ${e.path} (${e.id}, ${e.cite})`);
-    }
-    if (unfollowed.length > 15) io.out(`  ... and ${unfollowed.length - 15} more`);
+    show(
+      unfollowed.map(
+        (e) =>
+          `${e.entryType === "rest" && e.method ? e.method : e.entryType} ${e.path} (${e.id}, ${e.cite})`,
+      ),
+      `(entriesNoFlowFollows in ${verifyYaml})`,
+    );
   }
   if (failed) {
     if (o.write) io.err(rejectedNote);

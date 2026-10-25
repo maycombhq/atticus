@@ -216,6 +216,157 @@ describe("proposed exclusions: folders that hold data, docs or vendored code (A-
   });
 });
 
+/**
+ * The Forge atlas as a real repo had it (A-big2): a library cloned into REFERENCES/ beside the
+ * reference texts, a library's source copied into jar/, a folder of text corpora, and the
+ * product's own pages under its resources. Contents are given, so the module lists are read.
+ */
+function atlasWithVendored(): {
+  files: FileTokens[];
+  all: string[];
+  read: (p: string) => string | undefined;
+} {
+  const text: Record<string, string> = {
+    "pom.xml": "<project><modules><module>atlas-api</module></modules></project>",
+    "atlas-api/pom.xml": "<project/>",
+    "REFERENCES/northwind-quill/setup.py": "from setuptools import setup\n",
+    "REFERENCES/northwind-quill/pyproject.toml": "[project]\nname = 'nwquill'\n",
+    "REFERENCES/northwind-quill/src/nwquill/__init__.py": "",
+  };
+  const files: FileTokens[] = [
+    { path: "pom.xml", tokens: 900 },
+    { path: "atlas-api/pom.xml", tokens: 700 },
+    ...Array.from({ length: 40 }, (_, i) => ({
+      path: `atlas-api/src/main/java/forge/atlas/Service${i}.java`,
+      tokens: 2_500,
+    })),
+    // the product's own pages: never documents, however many
+    ...Array.from({ length: 10 }, (_, i) => ({
+      path: `atlas-api/src/main/resources/templates/report${i}.html`,
+      tokens: 3_000,
+    })),
+    // the cloned library: its own LICENSE and build files, in no module list
+    { path: "REFERENCES/northwind-quill/setup.py", tokens: 300 },
+    { path: "REFERENCES/northwind-quill/pyproject.toml", tokens: 200 },
+    { path: "REFERENCES/northwind-quill/src/nwquill/__init__.py", tokens: 10 },
+    ...Array.from({ length: 20 }, (_, i) => ({
+      path: `REFERENCES/northwind-quill/src/nwquill/part${i}.py`,
+      tokens: 3_000,
+    })),
+    // reference texts beside it
+    ...Array.from({ length: 3 }, (_, i) => ({
+      path: `REFERENCES/chapter${i}.html`,
+      tokens: 4_000,
+    })),
+    { path: "REFERENCES/glossary.xml", tokens: 2_000 },
+    // a library's source copied in, no build file, another org's packages
+    ...Array.from({ length: 6 }, (_, i) => ({
+      path: `jar/org/northwind/codec/Codec${i}.java`,
+      tokens: 2_500,
+    })),
+    // a text corpus: pages, no code
+    ...Array.from({ length: 8 }, (_, i) => ({ path: `corpus/rulings/r${i}.htm`, tokens: 2_000 })),
+    { path: "corpus/rulings/index.xml", tokens: 1_000 },
+  ];
+  for (let i = 0; i < 40; i++)
+    text[`atlas-api/src/main/java/forge/atlas/Service${i}.java`] =
+      `package forge.atlas;\npublic class Service${i} {}\n`;
+  for (let i = 0; i < 6; i++)
+    text[`jar/org/northwind/codec/Codec${i}.java`] =
+      `package org.northwind.codec;\npublic class Codec${i} {}\n`;
+  const all = [
+    ...files.map((f) => f.path),
+    "LICENSE",
+    "REFERENCES/northwind-quill/LICENSE",
+    "REFERENCES/northwind-quill/docs/index.md",
+    "REFERENCES/notes.txt",
+    "jar/LICENSE",
+    "jar/README.md",
+    "corpus/rulings/r0.txt",
+    "corpus/README.md",
+  ].sort();
+  return { files, all, read: (p) => text[p] };
+}
+
+describe("proposed exclusions: vendored projects and text corpora (A-big2)", () => {
+  it("proposes the reference folder whole, the copied library and the corpus, and never the product's pages", () => {
+    const { files, all, read } = atlasWithVendored();
+    const r = proposeExclusions(files, all, read);
+    expect(r.proposals.map((p) => [p.path, p.tokens, p.files, p.at])).toEqual([
+      ["REFERENCES/**", 74_510, 27, "REFERENCES/northwind-quill/LICENSE:1"],
+      ["corpus/**", 17_000, 9, "corpus/rulings/r0.htm:1"],
+      ["jar/**", 15_000, 6, "jar/LICENSE:1"],
+    ]);
+    expect(r.proposals.map((p) => p.path)).not.toContain("atlas-api/**");
+    expect(r.proposals.some((p) => p.path.includes("templates"))).toBe(false);
+  });
+
+  it("says what each is, in words a person can check", () => {
+    const { files, all, read } = atlasWithVendored();
+    const [refs, corpus, jar] = proposeExclusions(files, all, read).proposals;
+    expect(refs!.why).toBe(
+      "documents, not code: 3 .html files, 1 .xml file; with 1 vendored project: REFERENCES/northwind-quill, a project of its own (LICENSE, pyproject.toml, setup.py) that the repo's build doesn't include as a module",
+    );
+    expect(corpus!.why).toBe("documents, not code: 8 .htm files, 1 .xml file");
+    expect(jar!.why).toBe(
+      "its own LICENSE and no build file, and its packages (org.northwind) aren't the repo's own (forge.atlas): a vendored copy of third-party code? Check before accepting",
+    );
+  });
+
+  it("proposes the cloned library alone when nothing else is beside it", () => {
+    const { files, all, read } = atlasWithVendored();
+    const top = /^REFERENCES\/[^/]+$/;
+    const r = proposeExclusions(
+      files.filter((f) => !top.test(f.path)),
+      all.filter((p) => !top.test(p)),
+      read,
+    );
+    expect(r.proposals[0]).toMatchObject({
+      path: "REFERENCES/northwind-quill/**",
+      at: "REFERENCES/northwind-quill/LICENSE:1",
+      why: "a project of its own (LICENSE, pyproject.toml, setup.py) that the repo's build doesn't include as a module: vendored third-party code? Check before accepting",
+    });
+  });
+
+  it("doesn't take a folder of pages with code beside them for a corpus", () => {
+    const files: FileTokens[] = [
+      ...Array.from({ length: 10 }, (_, i) => ({ path: `guide/p${i}.html`, tokens: 2_000 })),
+      { path: "guide/search.js", tokens: 500 },
+      { path: "src/main/java/forge/atlas/Atlas.java", tokens: 50_000 },
+    ];
+    expect(
+      proposeExclusions(
+        files,
+        files.map((f) => f.path),
+      ).proposals,
+    ).toEqual([]);
+  });
+
+  it("proposes every folder that qualifies, not the first ten, so the parts leave them all out", () => {
+    const files: FileTokens[] = [
+      { path: "src/main/java/forge/atlas/Atlas.java", tokens: 100_000 },
+      ...Array.from({ length: 12 }, (_, i) => ({
+        path: `research/set${String(i).padStart(2, "0")}/table.json`,
+        tokens: 20_000,
+      })),
+    ];
+    // research/ is one folder of data: proposed whole
+    expect(
+      proposeExclusions(
+        files,
+        files.map((f) => f.path),
+      ).proposals.map((p) => p.path),
+    ).toEqual(["research/**"]);
+    const apart = files.map((f) => ({ ...f, path: f.path.replace(/^research\//, "") }));
+    expect(
+      proposeExclusions(
+        apart,
+        apart.map((f) => f.path),
+      ).proposals,
+    ).toHaveLength(12);
+  });
+});
+
 describe("reading a big repo in parts (A-big)", () => {
   const big = (): FileTokens[] => [
     { path: "pom.xml", tokens: 1_000 },

@@ -12,6 +12,12 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - **`atticus repos discover` skips hidden folders, `node_modules` and nested worktrees**, so an assistant's worktree under `.claude/` no longer decides what a repo is.
 - **`atticus doctor` says which repos' facts are read** (at which commit, or not read yet) instead of "Last scan".
 
+### What the big repo's first read still missed (A-big2, ADR 0124 addendum A-big)
+
+- **Vendored projects inside a repo are proposed.** `atticus map <repo> --estimate` now proposes a folder with its own LICENSE and build file (setup.py, pyproject.toml, pom.xml, package.json, build.gradle) that the root build doesn't include as a module (Maven modules, Gradle settings, npm, yarn or pnpm workspaces). It also proposes a folder with a LICENSE and no build file whose packages aren't the repo's own. Folders of text pages with no code (`.html`, `.htm`, `.xml`, beside `.txt` and `.md`) are proposed as documents. A reference folder holding both is proposed whole.
+- **The parts are of product code.** Every folder that qualifies is proposed (the first 10 are printed, the `exclude:` block holds all). The estimate says the parts are planned over what is left with them out.
+- **`atticus verify` summarises every list.** Entries without an `authCite`, entries no flow follows, rejected facts, refused questions and the rest are each a count, the first 5, and where the whole list is (`verify.yaml` or `rejected.jsonl`). It says how many questions were raised now, raised before, refused, and are open for the repo.
+
 ### A big repo's first read (A-big, ADR 0124 addendum A-big)
 
 - **Coverage and the estimate count less that isn't code.** Translation bundles under a locale folder (`i18n/`, `locales/`, `lang/`, `translations/`) and JSON or XML files over 2,000 lines or 200 KB are no longer source. Build, config, API and migration files count whatever their size.

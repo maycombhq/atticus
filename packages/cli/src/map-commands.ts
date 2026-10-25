@@ -46,6 +46,7 @@ import {
   planBatches,
   planParts,
   proposeExclusions,
+  SHOWN_PROPOSALS,
   rereadPlan,
   SESSION_TOKENS,
   sameCommit,
@@ -978,13 +979,12 @@ async function estimate(
   const files = whole.batches.flat().map((s) => ({ path: s.path, tokens: s.tokens }));
   const proposed = reread
     ? { proposals: [], before: whole.tokens, after: whole.tokens }
-    : proposeExclusions(files, c.source.list());
+    : proposeExclusions(files, c.source.list(), (p) => c.source.read(p));
   const left = proposed.proposals.map((p) => p.path.slice(0, -2));
   const session = Math.max(SESSION_TOKENS, Math.floor(0.75 * (given ?? 0)));
-  const parts = planParts(
-    files.filter((f) => !left.some((d) => f.path.startsWith(d))),
-    session,
-  );
+  // A-big2: the parts are of the product code left with every proposal out.
+  const product = files.filter((f) => !left.some((d) => f.path.startsWith(d)));
+  const parts = planParts(product, session);
   const questions = (await listQuestions(root, { repo })).questions.filter(
     (q) => q.state !== "retired",
   );
@@ -1055,8 +1055,12 @@ async function estimate(
     io.out(
       `Folders that look like data, documentation or vendored code, not the product (${proposed.proposals.length}):`,
     );
-    for (const p of proposed.proposals)
+    for (const p of proposed.proposals.slice(0, SHOWN_PROPOSALS))
       io.out(`  ${p.path} (about ${p.tokens} tokens, ${plural(p.files, "file")}): ${p.why}`);
+    if (proposed.proposals.length > SHOWN_PROPOSALS)
+      io.out(
+        `  ... and ${proposed.proposals.length - SHOWN_PROPOSALS} more (all in the exclude: block below)`,
+      );
     io.out(
       `To leave them out, a person adds these entries to the exclude: list of ${scan} in a pull request (Atticus never writes it):`,
     );
@@ -1064,6 +1068,10 @@ async function estimate(
     io.out(`With them left out: about ${proposed.after} tokens (now ${proposed.before}).`);
   }
   if (parts.length) {
+    if (proposed.proposals.length)
+      io.out(
+        `The parts below are planned over what is left with the ${plural(proposed.proposals.length, "proposed folder")} left out (${plural(product.length, "source file")}, about ${proposed.after} tokens); no part reads a proposed folder.`,
+      );
     io.out(
       `About ${parts.reduce((n, p) => n + p.tokens, 0)} tokens${proposed.proposals.length ? " with those left out" : ""} is more than one session reads (${session} tokens): read it in ${parts.length} parts, one per session or sub-agent, as /atticus-map says:`,
     );
