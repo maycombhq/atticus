@@ -1,0 +1,106 @@
+# The order summary's target flows (ADR 0124 addendum B-tasks), in the shape of a real change
+# that came out too fine: a new server flow of twelve steps (only one of them placed with `at`;
+# three of them, reserve, call and settle, are what the existing AssistantClient already does
+# for forge-orders.draft-reply), one web story and one route story. Invented.
+flows:
+  - flow: forge-orders.summarise-order
+    repo: forge-orders
+    change: new
+    name: A shop owner reads an order's summary
+    trigger: { kind: endpoint, what: The order page asks for the summary, entry: "GET /orders/{orderId}/summary" }
+    why: The order page shows a summary of the order's history, each sentence citing an event.
+    steps:
+      - op: add
+        kind: entry
+        what: OrderSummaryController.summary receives the order id
+        fields: { reads: [orderId] }
+      - op: add
+        kind: validate
+        what: The caller may read the order
+        fields: { checks: [orderId] }
+      - op: add
+        kind: lookup
+        what: The order is found by its id
+        store: { table: forge-orders-db.orders, columns: [id, status] }
+        fields: { checks: [id] }
+      - op: add
+        kind: read
+        what: The order's events are read, oldest first
+        at: src/main/java/forge/orders/OrderEventReader.java:18
+        store: { table: forge-orders-db.order_events, columns: [order_id, kind, at] }
+      - op: add
+        kind: transform
+        what: The events become a prompt, one line per event
+        fields: { from: [kind, at], to: [prompt] }
+      - op: add
+        kind: write
+        what: The spend is reserved before the call
+        store: { table: forge-orders-db.ai_spend, columns: [request_id, reserved_cents] }
+      - op: add
+        kind: call-out
+        what: Northwind Models writes the summary
+        to: { component: northwind-models, entry: POST /v1/completions }
+        fields: { sends: [prompt], returns: [text, citations] }
+      - op: add
+        kind: write
+        what: The spend is settled with what the call cost
+        store: { table: forge-orders-db.ai_spend, columns: [request_id, spent_cents] }
+      - op: add
+        kind: transform
+        what: Sentences that cite no event are dropped
+        fields: { from: [text, citations], to: [summary] }
+      - op: add
+        kind: write
+        what: The summary is kept for an hour
+        store:
+          table: forge-orders-db.order_summaries
+          columns: [order_id, summary, created_at]
+          new: true
+          types: { order_id: BIGINT, summary: TEXT, created_at: TIMESTAMP }
+          classification: { order_id: internal, summary: internal, created_at: internal }
+          migration: V7__order_summaries.sql
+          retention: one hour
+      - op: add
+        kind: log
+        what: The summary's length and cost are logged
+        fields: { reads: [summary] }
+      - op: add
+        kind: respond
+        what: 200 with the summary and its citations
+        fields: { returns: [summary, citations] }
+  - flow: forge-web.view-order
+    repo: forge-web
+    change: modify
+    why: The order page shows the order's summary under its status.
+    steps:
+      - op: add
+        after: 2
+        kind: call-out
+        what: The page gets the order's summary
+        to: { component: forge-orders, entry: "GET /orders/{orderId}/summary", new: true }
+        fields: { sends: [orderId], returns: [summary, citations] }
+      - op: add
+        after: 2
+        kind: branch
+        what: A summary that fails shows "no summary yet" and the page still shows the order
+        fields: { reads: [summary] }
+      - op: change
+        step: 3
+        kind: respond
+        what: The page shows the order's status and its summary, each sentence linking its event
+        fields: { returns: [status, summary, citations] }
+  - flow: forge-gateway.route-orders
+    repo: forge-gateway
+    change: modify
+    why: The gateway routes the summary call and limits how often it is asked.
+    steps:
+      - op: add
+        after: 2
+        kind: validate
+        what: The summary route allows 10 calls a minute per caller
+        at: src/main/resources/routes.yaml:8
+      - op: change
+        step: 3
+        what: The call is forwarded to forge-orders, the summary call too
+        fields: { sends: [orderId], returns: [summary, citations] }
+        to: { component: forge-orders, entry: "GET /orders/{orderId}/summary", new: true }

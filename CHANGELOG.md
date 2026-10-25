@@ -4,6 +4,13 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### Tasks a developer takes, and shorter stories (B-tasks, ADR 0124 addendum B-tasks)
+
+- **Steps that go into the same file are one task.** `atticus plan stories` used to make a task per target-flow step. Now consecutive steps whose code goes into one file are one task with all their criteria. A step that adds a table or columns stays a task of its own, since its migration lands first. A task keeps its first step's id and lists the steps it covers. An answer written per step still reads.
+- **Steps existing code already does are notes, not tasks.** When a run of new steps is what an existing flow already does, step by step (the same call or table, no new field), the first step calls that code and the rest are noted as "already done by `<file:line>`".
+- **New code says where it goes.** A new step with no place goes beside the nearest step of its flow that has one, or the code it calls, shown as "new code beside `<file>:<line>`". The architecture stage now asks for a new step's place in a new flow too.
+- **Shorter story files.** Today's flow is one line with a link to the target flow, each criterion is written once under its task, and tasks point at their criteria. On the fixtures: 788 lines to 486 and 17 tasks to 7 for a one-page feature.
+
 ### What a trial on one repo found, fixed (ADR 0124 addendum C-join, the fallback)
 
 - **A relative call joins the API that serves it.** A front end's `fetch("/api/...")` has no host, so the reader guessed a `to` the estate doesn't have, and `atticus join` joined none of its calls. Such a call (or one naming no target) now joins by method and path the one entry of its own repo that serves it, else the one of the estate, and is marked inferred: `atticus verify <repo> --write` says how many and where, `atticus join` prints "inferred" beside each. When two or more could answer, a person is asked which. A vendor the org pack lists keeps its name. `/atticus-map` now says to leave `to` out of a relative call, or name the component that serves it.

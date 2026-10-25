@@ -103,11 +103,14 @@ const BEFORE = {
   // re-pinned after B-places asked the architect for an added step's place (`at`); and in B2,
   // because its input, the feature answer above, changed (its code didn't; the architecture
   // answer still fits and is unchanged); and after B-run2-fixes named the table whose columns
-  // the store facts list (its one changed line)
-  arch: "8e24f28d9b508f319199f1f3373368260d67a3500293e861663f9237590d4756",
+  // the store facts list (its one changed line); and after B-tasks asked for `at` whenever the
+  // code goes into or beside a file the repo has, a new flow's too (the format's one `at` line)
+  arch: "0905038a9c4ad3011b8d35caed274086fab7dc8a3c17d30e725d329a6dd76027",
   // re-pinned after B-run2-fixes 5 gave the stories rules the rule words (one line added); and
-  // after B-once let a criterion accept other tasks (also in the format, one rule reworded, one added)
-  stories: "7fe7e8e23dc1ce47f75daae0fa11d2c8c2e2401f3241c91dc660c80b0e5dfbe9",
+  // after B-once let a criterion accept other tasks (also in the format, one rule reworded, one added);
+  // and after B-tasks grouped the fraud check's call-out and branch into one task: the instructions
+  // didn't change, only the stories source's two task lines became one that lists the steps it covers
+  stories: "218981e3f8ea3aaa1493e6ab61754e75d87b5548d85d3bb7eb4d222496c42fe9",
 };
 
 const ARCHIVE = join(FIX, "corrections/changes/archive");

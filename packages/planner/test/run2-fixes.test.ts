@@ -25,6 +25,7 @@ import {
   scopeRepos,
   storeFacts,
   StoriesAnswerSchema,
+  stepTasks,
   storiesFromDeltas,
   storySteps,
   type DeltaStory,
@@ -164,27 +165,30 @@ describe("2. a task's places are where what it adds or changes is declared", () 
   });
 
   it("only naming fields the request has is no place; making one required is, at its own line", () => {
-    const [named, required] = storiesFromDeltas(
-      [
-        createApi([
-          {
-            op: "add",
-            after: 1,
-            kind: "validate",
-            what: "The names and email are checked again",
-            fields: { checks: ["firstName", "email"] },
-          },
-          {
-            op: "add",
-            after: 1,
-            kind: "validate",
-            what: "A phone number is required",
-            fields: { checks: ["phone"], required: ["phone"] },
-          },
-        ]),
-      ],
-      estate(),
-    )[0]!.tasks;
+    // B-tasks: the two steps are one task (both after the same step); each step keeps its files.
+    const [named, required] = stepTasks(
+      storiesFromDeltas(
+        [
+          createApi([
+            {
+              op: "add",
+              after: 1,
+              kind: "validate",
+              what: "The names and email are checked again",
+              fields: { checks: ["firstName", "email"] },
+            },
+            {
+              op: "add",
+              after: 1,
+              kind: "validate",
+              what: "A phone number is required",
+              fields: { checks: ["phone"], required: ["phone"] },
+            },
+          ]),
+        ],
+        estate(),
+      )[0]!,
+    );
     expect(named!.files).toBeUndefined();
     expect(required!.files).toEqual([
       {
@@ -261,7 +265,7 @@ describe("2. a task's places are where what it adds or changes is declared", () 
 });
 
 describe("3. two tasks at the same file and line are one place", () => {
-  it("a read and a check added at one line are one step, with both tasks", () => {
+  it("a read and a check added at one line are one step, with both steps (B-tasks: one task)", () => {
     const at = "src/main/java/forge/customers/CustomerService.java:29";
     const s = storiesFromDeltas(
       [
@@ -294,11 +298,12 @@ describe("3. two tasks at the same file and line are one place", () => {
       estate(),
     )[0]!;
     const steps = storySteps(s);
-    expect(steps.map((x) => [x.kind, x.file, x.lines, x.tasks])).toEqual([
+    expect(steps.map((x) => [x.kind, x.file, x.lines, x.tasks, x.stepIds])).toEqual([
       [
         "code",
         "forge-customers:src/main/java/forge/customers/CustomerService.java",
         [29],
+        ["1.1"],
         ["1.1", "1.2"],
       ],
     ]);

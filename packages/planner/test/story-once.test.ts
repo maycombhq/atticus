@@ -130,15 +130,21 @@ describe("a criterion written once accepts several tasks (B-once)", () => {
     expect(i!.message).toContain("1.9");
   });
 
-  it("puts a shared criterion in each task's list and prompt in the story file", () => {
+  it("says in each task where the criteria that accept it are, written once in the story file (B-tasks)", () => {
     const md = renderStoryFile("add-deliver-by", STORIES[0]!, story(answer()));
-    expect(taskListed(md, "1.4")).toEqual([
-      `${SHARED}. (Entry: POST /orders; written on task 1.1)`,
-    ]);
-    expect(taskListed(md, "1.2")).toHaveLength(3);
+    // B-tasks: the criteria are listed once, under the task they are written on; a task's section
+    // and its prompt say where its own are and which other tasks' accept it too.
+    expect(md.split(SHARED)).toHaveLength(2);
+    expect(taskListed(md, "1.4")).toEqual([]);
+    expect(md).toContain(
+      "- Acceptance criteria: the one written on task 1.1 that also accepts it\n",
+    );
+    expect(md).toContain(
+      "- Acceptance criteria: the one under Task 1.2 in Acceptance criteria, and 2 written on task 1.1 that also accept it\n",
+    );
     const prompt1_4 = md.slice(md.indexOf("Implement task 1.4"));
     expect(prompt1_4.slice(0, prompt1_4.indexOf("```"))).toContain(
-      `- ${SHARED} (checks deliverBy, deliver_by)`,
+      "Acceptance criteria: the one written on task 1.1 that also accepts it (stories/s1-deliver-by.md).",
     );
   });
 

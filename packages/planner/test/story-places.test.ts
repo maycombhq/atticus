@@ -319,7 +319,7 @@ describe("2. an added step goes where the target flow says", () => {
     expect(await rules("../forge-ledger/x.java:1", root)).toEqual(["delta.at-unknown"]);
     const [msg] = await placeIssues([createApi({ at: "src/Nowhere.java:3" })], e);
     expect(msg!.message).toBe(
-      "Change 1 to customers-api.create-a-customer puts the new step at src/Nowhere.java:3, but forge-customers has no such file in its checkout or the catalog: give the path as the repo has it (path:line of the line the step goes after, or path:function), or leave at out for code in a new file.",
+      "Change 1 to customers-api.create-a-customer puts the new step at src/Nowhere.java:3, but forge-customers has no such file in its checkout or the catalog: give the path as the repo has it (path:line of the line the step goes after, or path:function). Leave at out only for code in a file the change creates.",
     );
   });
 
