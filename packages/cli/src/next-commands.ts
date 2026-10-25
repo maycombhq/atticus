@@ -21,7 +21,7 @@ import { readChangeFiles } from "@maycombhq/naysayer";
 import { readChangeTasks } from "@maycombhq/speckit";
 import type { Output } from "./commands.js";
 import { onboardingView } from "./ui-api-onboarding.js";
-import { ASSISTANT_FORMATS, whatRunsWhere } from "@maycombhq/assistant-files";
+import { ASSISTANT_FORMATS, readProbes, whatRunsWhere } from "@maycombhq/assistant-files";
 import { isMetarepo, notMetarepo } from "./metarepo-guard.js";
 
 /**
@@ -73,6 +73,14 @@ export interface NextState {
   repos: RepoState[];
   catalogRecords: number;
   openQuestions: string[];
+  /** The open questions a change's stages raised (filed under the change's id), by change. */
+  changeQuestions?: Record<string, string[]>;
+  /**
+   * The change in hand (2026-10-25): the one whose stage is in progress (drafting, waiting on its
+   * assistant, waiting on a person's answers, or stopped), the most recently updated. Its steps
+   * come first.
+   */
+  active?: string;
   /** age: days since the newest snapshot (ADR 0101: an old one is synced again). */
   sources: { id: string; snapshot: boolean; scanned: boolean; age?: number }[];
   /**
@@ -139,6 +147,17 @@ export async function readNextState(root: string): Promise<NextState> {
   }
   const open = await listQuestions(root, { state: "open" });
   problems.push(...open.problems);
+  const changeIds = new Set(
+    await changeStore(root)
+      .list()
+      .then(
+        (cs) => cs.map((c) => c.id),
+        () => [] as string[],
+      ),
+  );
+  const changeQuestions: Record<string, string[]> = {};
+  for (const q of open.questions)
+    if (changeIds.has(q.repo)) (changeQuestions[q.repo] ??= []).push(q.id);
   const knowledge = await readKnowledge(root);
   const sources: NextState["sources"] = [];
   for (const w of view.sources.wikis) {
@@ -187,6 +206,7 @@ export async function readNextState(root: string): Promise<NextState> {
   }
   const changes: NextState["changes"] = [];
   let unverifiedNeeds = 0;
+  let active: { id: string; at: string } | undefined;
   // ADR 0113: the change types, to tell a small change from a standard one.
   const types = await loadOrgPack(orgPackDirOf(root)).then(
     (op) => op.changeTypes.types,
@@ -208,6 +228,9 @@ export async function readNextState(root: string): Promise<NextState> {
           days: n.leadTimeDays ? workingDays(n.leadTimeDays) : 0,
         }))
         .sort((a, b) => b.days - a.days)[0];
+      const busy = await stageInProgress(root, c.id);
+      if (busy && stageOf(c.state) !== "done" && (!active || busy > active.at))
+        active = { id: c.id, at: busy };
       changes.push({
         id: c.id,
         state: c.state,
@@ -244,12 +267,41 @@ export async function readNextState(root: string): Promise<NextState> {
     repos,
     catalogRecords: view.catalog.records,
     openQuestions: open.questions.map((q) => q.id),
+    ...(Object.keys(changeQuestions).length ? { changeQuestions } : {}),
+    ...(active ? { active: active.id } : {}),
     sources,
     changes,
     problems,
     ...(orgpack ? { orgpack } : {}),
     ...(unverifiedNeeds ? { unverifiedNeeds } : {}),
   };
+}
+
+/** The states a stage's loop is in while it is under way (stage/<stage>.yaml). */
+const UNDER_WAY = new Set(["drafting", "waiting", "questions", "stopped"]);
+
+/** When a change's stage under way was last updated, or undefined when none is. */
+async function stageInProgress(root: string, change: string): Promise<string | undefined> {
+  const dir = join(changesDirOf(root), change, "stage");
+  let newest: string | undefined;
+  for (const f of (await readdir(dir).catch(() => [] as string[])).filter((x) =>
+    x.endsWith(".yaml"),
+  )) {
+    const loop = await readFile(join(dir, f), "utf8").then(
+      (t) => {
+        try {
+          return parse(t) as { state?: unknown; updatedAt?: unknown } | null;
+        } catch {
+          return null;
+        }
+      },
+      () => null,
+    );
+    const at = typeof loop?.updatedAt === "string" ? loop.updatedAt : "";
+    if (typeof loop?.state === "string" && UNDER_WAY.has(loop.state) && (!newest || at > newest))
+      newest = at || "0";
+  }
+  return newest;
 }
 
 /** Whether a change takes the fast path (ADR 0113), from its type and its brief. */
@@ -424,10 +476,34 @@ function stageSteps(c: NextState["changes"][number]): NextStep[] {
   }
 }
 
+/** A person answers a change's own questions; its stage goes on after. */
+function changeAnswer(id: string, ids: string[]): NextStep[] {
+  if (!ids.length) return [];
+  return [
+    {
+      step: "answer",
+      command: "atticus questions list --state open",
+      slash: "/atticus-answer",
+      where: METAREPO,
+      why: `${plural(ids.length, "question")} of ${id} ${ids.length === 1 ? "is" : "are"} waiting for a person: ${ids.join(", ")}. Its stage goes on once ${ids.length === 1 ? "it is" : "they are"} answered.`,
+      person: true,
+      change: id,
+    },
+  ];
+}
+
 /** Every step still to take, in the order to take them. Pure: tests check each case. */
 export function nextSteps(s: NextState): NextStep[] {
   const out: NextStep[] = [];
-  if (s.repos.length === 0) {
+  // The change in hand first (a live run, 2026-10-25, was pointed at eleven repo questions while
+  // its change waited on its own step): its own questions, then its stage.
+  const byChange = s.changeQuestions ?? {};
+  const inHand = s.active ? s.changes.find((c) => c.id === s.active) : undefined;
+  if (inHand && stageOf(inHand.state) !== "done")
+    out.push(...changeAnswer(inHand.id, byChange[inHand.id] ?? []), ...changeSteps(inHand));
+  const ofChanges = new Set(Object.values(byChange).flat());
+  const repoQuestions = s.openQuestions.filter((id) => !ofChanges.has(id));
+  if (s.repos.length === 0 && !inHand) {
     out.push({
       step: "discover",
       command: "atticus repos discover <folder>",
@@ -500,13 +576,13 @@ export function nextSteps(s: NextState): NextStep[] {
         person: true,
         repo: r.id,
       });
-  if (s.openQuestions.length)
+  if (repoQuestions.length)
     out.push({
       step: "answer",
       command: "atticus questions list --state open",
       slash: "/atticus-answer",
       where: METAREPO,
-      why: `${plural(s.openQuestions.length, "question")} ${s.openQuestions.length === 1 ? "is" : "are"} waiting for a person: ${s.openQuestions.join(", ")}. The steps that asked go on once they are answered.`,
+      why: `${plural(repoQuestions.length, "question")} ${repoQuestions.length === 1 ? "is" : "are"} waiting for a person: ${repoQuestions.join(", ")}. The steps that asked go on once they are answered.`,
       person: true,
     });
   for (const r of scanned) {
@@ -583,7 +659,8 @@ export function nextSteps(s: NextState): NextStep[] {
       person: true,
     });
   const inFlight = s.changes.filter((c) => stageOf(c.state) !== "done");
-  for (const c of inFlight) out.push(...changeSteps(c));
+  for (const c of inFlight)
+    if (c !== inHand) out.push(...changeAnswer(c.id, byChange[c.id] ?? []), ...changeSteps(c));
   if (!inFlight.length)
     out.push({
       step: "new-change",
@@ -610,6 +687,12 @@ export async function nextCommand(
   const runtime = await loadOrgPack(orgPackDirOf(root))
     .then((op) => op.runtime)
     .catch(() => undefined);
+  // Where to type a slash command (2026-10-25): the assistant a probe measured here (ADR 0124
+  // addendum A-probe), the newest one runtime.yaml allows, else the default it names.
+  const probed = (await readProbes(root)).results
+    .filter((p) => !runtime || runtime.assistants.allowed.includes(p.assistant))
+    .sort((a, b) => b.measured.localeCompare(a.measured))[0]?.assistant;
+  const assistant = probed ?? runtime?.assistants.default ?? "copilot";
   if (o.json) {
     // What runs a step here, in one line (ADR 0121 item 6), for the editors' Next view.
     const runs = runtime ? whatRunsWhere(runtime) : undefined;
@@ -623,7 +706,14 @@ export async function nextCommand(
       runtime.adapters.model.type !== "mock";
     io.out(
       JSON.stringify(
-        { next: steps[0], steps, problems: state.problems, ...(runs ? { runs } : {}), modelMode },
+        {
+          next: steps[0],
+          steps,
+          problems: state.problems,
+          ...(runs ? { runs } : {}),
+          modelMode,
+          assistant,
+        },
         null,
         2,
       ),
@@ -631,8 +721,8 @@ export async function nextCommand(
     return 0;
   }
   for (const p of state.problems) io.err(`Couldn't read ${p.file}: ${p.message}`);
-  // Where to type it: the default assistant runtime.yaml names (ADR 0121).
-  const typeIn = ASSISTANT_FORMATS[runtime?.assistants.default ?? "copilot"].typeIn;
+  // Where to type it: the assistant probed here, or the default runtime.yaml names (ADR 0121).
+  const typeIn = ASSISTANT_FORMATS[assistant].typeIn;
   const slashLine = (x: NextStep) =>
     x.slash
       ? `In ${typeIn}${x.where && x.where !== METAREPO ? ` in ${x.where}` : ""}: ${x.slash}`

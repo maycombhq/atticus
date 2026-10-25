@@ -420,4 +420,84 @@ describe("nextSteps (pure)", () => {
     });
     expect(fresh.map((x) => x.step)).not.toContain("sync-source");
   });
+
+  // A live run (2026-10-25): next pointed at eleven repo questions from the map read while the
+  // change in hand waited on its own step. With a change active, its steps come first: its own
+  // questions, then its stage; the repos' questions after.
+  it("puts the change in hand first: its questions, then its stage, then the repos' questions", () => {
+    const repoQs = Array.from({ length: 11 }, (_, i) => `q-00000000000${i.toString(16)}`);
+    const steps = nextSteps({
+      ...base,
+      openQuestions: [...repoQs, "q-aaaaaaaaaaaa"],
+      changeQuestions: { "add-limit": ["q-aaaaaaaaaaaa"] },
+      active: "add-limit",
+      changes: [
+        { id: "move-ledger", state: "design", tasks: [] },
+        { id: "add-limit", state: "define", tasks: [] },
+      ],
+    });
+    expect(steps.map((x) => [x.step, x.change ?? null])).toEqual([
+      ["answer", "add-limit"],
+      ["feature", "add-limit"],
+      ["answer", null],
+      ["architecture", "move-ledger"],
+    ]);
+    expect(steps[0]!.why).toBe(
+      "1 question of add-limit is waiting for a person: q-aaaaaaaaaaaa. Its stage goes on once it is answered.",
+    );
+    expect(steps[2]!.why).toContain("11 questions are waiting for a person");
+    expect(steps[2]!.why).not.toContain("q-aaaaaaaaaaaa");
+  });
+});
+
+describe("atticus next with a change in hand, and the assistant that was probed", () => {
+  it("reads the change whose stage is in progress as the one in hand", async () => {
+    const root = await metarepo({ clone: true });
+    await component(root, "forge-notes");
+    await component(root, "forge-notes-ui");
+    const dir = join(root, "openspec/changes/add-fraud-check");
+    await cp(join(FIXTURES, "stages/changes/add-fraud-check"), dir, { recursive: true });
+    await mkdir(join(dir, "stage"), { recursive: true });
+    await writeFile(
+      join(dir, "stage/feature.yaml"),
+      "schemaVersion: 1\nchange: add-fraud-check\nstage: feature\niteration: 1\nstate: questions\nupdatedAt: 2026-10-25T09:00:00Z\n",
+    );
+    const at = "2026-10-25T09:00:00Z";
+    await raiseQuestions(
+      root,
+      [
+        {
+          question: "Is the screen's verdict kept?",
+          options: [],
+          evidence: ["x:1"],
+          scope: "repo",
+        },
+      ],
+      { step: "change-feature", repo: "add-fraud-check", command: "c", rerun: "c", at },
+    );
+    await raiseQuestions(
+      root,
+      [{ question: "Is docs/ generated?", options: [], evidence: ["y:1"], scope: "repo" }],
+      { step: "map", repo: "forge-notes", command: "c", rerun: "c", at },
+    );
+    const j = await json(root);
+    expect(j.steps[0]).toMatchObject({ step: "answer", change: "add-fraud-check" });
+    expect(j.steps[1]).toMatchObject({ step: "feature", change: "add-fraud-check" });
+  });
+
+  it("names the assistant a probe measured here, not the default's chat", async () => {
+    const root = await metarepo({ clone: true });
+    await rm(join(root, "org-pack", "scan", "forge-notes-ui.yaml"));
+    await writeFile(
+      join(root, "org-pack", "runtime.yaml"),
+      "schemaVersion: 1\nassistants: { allowed: [copilot, claude-code], default: copilot }\n",
+    );
+    await mkdir(join(root, ".atticus", "probe"), { recursive: true });
+    await writeFile(
+      join(root, ".atticus", "probe", "claude-code.yaml"),
+      "schemaVersion: 1\nassistant: claude-code\nmeasured: 2026-10-25T09:00:00Z\ntier: 1\nread: true\nwrite: true\nrun: true\nanswered: command\n",
+    );
+    const r = await run(["next", "--root", root]);
+    expect(r.out[1]).toBe("In Claude Code: /atticus-map forge-notes");
+  });
 });

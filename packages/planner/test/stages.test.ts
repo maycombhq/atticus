@@ -976,19 +976,32 @@ describe("the starter review at each stage (ADR 0120)", () => {
     for (const l of lenses) expect(l.prompt, l.lens).toMatch(brief);
 
     lenses = [];
-    expect((await architectureStage(root, CHANGE, { runtime: rt([DELTAS]), now: NOW })).state).toBe(
-      "done",
-    );
-    expect(lenses.map((l) => l.lens)).toEqual(["true", "complete", "safe"]);
+    const arch = await architectureStage(root, CHANGE, { runtime: rt([DELTAS]), now: NOW });
+    expect(arch.state).toBe("done");
+    // The starter rules' risk on the call to Northwind Pay (no timeout stated) gets one more
+    // draft, handed back with its fix (ADR 0115 addendum, 2026-10-25); the same draft again
+    // leaves it a risk, and the stage is done: two rounds of the same three lenses.
+    expect(arch.drafts).toBe(2);
+    expect(arch.notes.join("\n")).toContain("back to your assistant for one more draft");
+    expect(lenses.map((l) => l.lens)).toEqual([
+      "true",
+      "complete",
+      "safe",
+      "true",
+      "complete",
+      "safe",
+    ]);
     expect(lenses[0]!.prompt).toContain("review.shown-data-has-a-source");
     expect(lenses[1]!.prompt).toContain("review.outcome-has-target-steps");
     expect(lenses[2]!.prompt).toContain("review.new-column-complete");
 
     lenses = [];
-    expect((await storiesStage(root, CHANGE, { runtime: rt([STORIES]), now: NOW })).state).toBe(
-      "done",
-    );
-    expect(lenses.map((l) => l.lens)).toEqual(["true", "complete", "safe", "ship"]);
+    const stories = await storiesStage(root, CHANGE, { runtime: rt([STORIES]), now: NOW });
+    expect(stories.state).toBe("done");
+    // A starter rule's risk gets its one more draft here too.
+    expect(stories.drafts).toBe(2);
+    const four = ["true", "complete", "safe", "ship"];
+    expect(lenses.map((l) => l.lens)).toEqual([...four, ...four]);
     const complete = lenses.find((l) => l.lens === "complete")!.prompt;
     expect(complete).toContain("review.outcome-has-story");
     // The story rules read the stories only; the lens judges them against the brief all the same.

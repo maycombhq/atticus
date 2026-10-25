@@ -91,3 +91,12 @@ A live run on a real metarepo (a chat app: a Java/Spring API and a React web app
 Tests: `packages/naysayer/test/lens-code.test.ts` (the prompt with and without clones, the model-mode tools, a class and an endpoint found, nothing found, the hand-off path), `recorded-facts.test.ts`, `cross-gate.test.ts` (carried across gates; a fix that didn't take is raised again), `packages/ai/test/factory.test.ts` (the headless reviewer's folders), `packages/cli/test/critic-code-search.test.ts`. Fifteen recordings in `fixtures/forge-change/recordings/` were added under new prompt hashes: ten for prompts that now carry `recorded-by-people`, five for the M3 exit sandbox, whose clones now put the code rule in the lens prompts. Their hand-written answers are unchanged.
 
 No contract shape changes: the lens output format gains optional `absent` (a prompt format, read with a default); a C3 finding of severity `idea` with code or catalog evidence is an existing shape; `RunCriticOptions.codeSearch` and `CriticContext.recorded` are additions. Not built: the absence check doesn't read a name in prose ("an only-my-own-message check") — that is the lens's to search for, and the prompt says so; a challenged recorded fact isn't linked back to it the way `answered` links an answer.
+
+## Addendum (2026-10-25): findings carried, risks redrafted once, nothing left out silently
+
+From a real change's run (ADR 0087 addendum, same date):
+
+- **The round's findings reach the next draft.** A blocking finding of the round in which the draft also asked a question is handed back with the answers, with its fix in the message.
+- **A risk gets one more draft.** An open risk not linked to a person's answer goes back once, with its fix, while the gate has a round left. It never blocks. That costs one more draft and its lenses' round when a risk is found; the starter rules' timeout and criteria risks are found on the Forge stages, so those stages draft twice in the tests.
+- **A rendered file isn't the place for a fix.** `apply` and `edit-and-apply` refuse a patch to a file a stage renders from its source, and a recorded hand edit of only such files, naming the source.
+- **What the critic leaves out is said.** A finding a lens gave that didn't hold (no checkable quote, a rule it wasn't asked, a file it wasn't given) is in the stage's notes: "The critic's true lens gave a finding Atticus couldn't check, so it was left out: "…" (why)." In hand-off mode the notes come from the round's record (`meta/round.yaml`, `discarded`).

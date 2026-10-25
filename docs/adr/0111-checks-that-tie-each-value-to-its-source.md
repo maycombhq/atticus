@@ -94,3 +94,7 @@ A live run on a real metarepo (a chat app; the change pins a message) found two 
 - It is checked as a fact (`delta.derived-unknown-column`, drafting). The expression's identifiers, with quoted literals and SQL's own words left out, are columns that a step at or before it reads or writes, or columns of those steps' tables (the catalog's, or the table's one definition in this change).
 - A derived field is given by the step that declares it, so `delta.field-from-nowhere` and `delta.returned-before-given` accept it.
 - The architecture and fast-path formats show `derived`, and a store rule says when to use it. The merged step carries it (`MergedStep.derived`), not in its data.
+
+## Addendum (2026-10-25): a short quote on its own line
+
+A live run: a critic finding quoting a value under 12 characters (a status, `429`) was dropped with no retry and no word. A lens's evidence entry whose quote is under 12 characters now counts when it names its line and the quote is on that line word for word (case and all, not inside a longer word or number). With no line, or not on its line, the finding is left out with its reason ("its quote is under 12 characters and isn't word for word on the line it cites"), and the stage says so in its notes (ADR 0115 addendum, same date). Quotes of 12 characters or more are checked as before. Tested in `packages/naysayer/test/units.test.ts` and `packages/planner/test/carry-findings.test.ts`.

@@ -131,3 +131,11 @@ The live rerun of the same change found three more. Retold on Forge in `packages
    - The question's options are "yes, it checks them", "no: change the criterion" and "not needed". `fixtures/judgments/covers-field.yaml` gains the case (`given-fixes-lookup-id`, truth yes), which the old word rule gets wrong and the judge gets right.
 
 Contracts, additive only: the C5 judgment kind `covers-answer`; covers-field inputs version 2; the core question's optional `retired`; the stage loop's optional `LoopFinding.judged`.
+
+## Addendum (2026-10-25): a repeat is the same thing about the same target, and what waits is seen
+
+From a real change's run (ADR 0087 addendum, same date):
+
+- **A held-back question is weighed only against answered questions about the same target.** It was handed to the drafter as a possible repeat of every answered question of the change, because every question the step had asked was a candidate. Now an answered question is a candidate when the new one names it (`sameAs`), or they name an id in common, or they cite a file in common and share at least two words of substance (`sameTarget` in core: case, plurals and endings folded, and the loop's own framing words left out). A draft re-asking its own answered question in other words, citing another line of the same file, is still found. Whether two such questions ask the same thing is still the drafter's reading or the judge's.
+- **The questions over `questionsPerStop` are seen.** They are kept in the stage's loop file (`waiting`), named at the stop, and listed by `atticus questions list`. The cap stays the org's choice.
+- Tested in `packages/core/test/answered-by.test.ts`, `packages/planner/test/carry-findings.test.ts` and `packages/cli/test/questions-cli.test.ts`.

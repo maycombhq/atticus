@@ -347,6 +347,11 @@ export const LoopFinding = z.strictObject({
    * verdict on exactly that (ADR 0117 addendum, V1): each field and the criterion it was claimed for.
    */
   judged: z.array(z.strictObject({ field: text(), criterion: text(), task: text() })).optional(),
+  /**
+   * A critic's risk finding (ADR 0115 addendum, 2026-10-25): it never blocks, and goes back to
+   * the drafter with its fix for one more draft.
+   */
+  risk: z.boolean().optional(),
 });
 export type LoopFinding = z.infer<typeof LoopFinding>;
 
@@ -370,7 +375,8 @@ export const StageLoop = z.strictObject({
   /**
    * Questions held back once and handed to the drafter with an answer on file that may decide
    * them, by the id they would have had (ADR 0117 addendum, 2026-10-24). One asked again after
-   * that goes to a person.
+   * that goes to a person. Also the critic's risks handed back for their one draft, as
+   * `risk:<rule>:<file>` (ADR 0115 addendum, 2026-10-25).
    */
   handedBack: z.array(z.string()).optional(),
   /**
@@ -380,6 +386,18 @@ export const StageLoop = z.strictObject({
   failedAnswer: z.string().optional(),
   /** A read-again of an answer that isn't YAML, handed off and waited for (S5): no draft spent. */
   readAgain: z.string().optional(),
+  /**
+   * The stage's source, change-folder relative (ADR 0087 addendum, 2026-10-25): the file or folder
+   * a person edits (feature.yaml, target-flows/, stage/stories-answer.yaml). Every other file
+   * under `written` is rendered from it, so a fix to one of those is refused with a pointer here.
+   */
+  source: z.string().optional(),
+  /**
+   * The questions due that the last stop didn't ask, over the change policy's questionsPerStop
+   * (ADR 0117 addendum, 2026-10-25): their words and evidence, so a person sees what comes next
+   * (`atticus questions list`). They are asked once the open ones are answered.
+   */
+  waiting: z.array(z.strictObject({ question: text(), evidence: z.array(z.string()) })).optional(),
   /** The critic rounds the loop ran, newest last. */
   critic: z.array(z.strictObject({ gate: text(), round: z.number().int().positive() })).default([]),
   /**
@@ -443,6 +461,7 @@ export const StageLoop = z.strictObject({
             judged: z
               .array(z.strictObject({ field: text(), criterion: text(), task: text() }))
               .optional(),
+            risk: z.boolean().optional(),
           }),
         )
         .default([]),

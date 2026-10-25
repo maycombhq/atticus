@@ -442,7 +442,8 @@ describe("U3: the covers-field judge asks one question per criterion, after one 
     expect(r.questions).toHaveLength(1);
     expect(r.moreQuestions).toBe(1);
     expect(stageEnd(r, `atticus plan stories ${CHANGE}`).join("\n")).toContain(
-      "1 more question waits; it is asked once these are answered.",
+      // The one waiting is named (ADR 0117 addendum, 2026-10-25): a person sees what comes next.
+      "1 more question waits; it is asked once these are answered:\n  - ",
     );
     expect((await listQuestions(root, { state: "open" })).questions).toHaveLength(1);
   });

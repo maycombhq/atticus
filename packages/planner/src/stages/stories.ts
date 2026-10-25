@@ -1164,6 +1164,8 @@ export interface SectionCheckOptions {
   known?: Set<string>;
   /** The estate, for the entries, components and repos it has. */
   estate?: Estate;
+  /** The standards' ids: a standard is followed, never a request (ADR 0083 addendum, 2026-10-25). */
+  standards?: ReadonlySet<string>;
 }
 
 export function checkStories(
@@ -1267,7 +1269,15 @@ export function checkStories(
   }
   for (const r of a.requests) {
     const p = items.find((x) => x.id === r.item);
-    if (!p)
+    // A live run (2026-10-25): a standard was listed as a request. A standard is followed (a
+    // story's context names it); a request or process is raised by a person.
+    if (!p && o.standards?.has(r.item))
+      issue(
+        "stories.standard-as-request",
+        `${r.item}:${r.flow}#${r.step}`,
+        `${r.item} is a standard to follow, not a request to raise: leave it out of requests, and name it in the context of the story whose step it governs.`,
+      );
+    else if (!p)
       issue(
         "stories.unknown-request",
         r.item,
@@ -3008,7 +3018,7 @@ stories:
             status: <error criteria: the status the caller sees>
             also: [<other task ids of this story it also accepts>]
         tests: [<the test file and cases this task adds>]
-requests:      # every request or process from the list below that a step meets
+requests:      # every request or process from the list below that a step meets; a standard is followed (name it in a story's context), never listed here
   - item: <process or request id>
     flow: <flow id>
     step: <the step's item number in that flow's target>
@@ -3177,7 +3187,10 @@ Rules:
       return { ...(r.value ? { answer: r.value } : {}), issues: r.issues };
     },
     check: async (a) => [
-      ...checkStories(a, stories, deltas, items, sectionCheck),
+      ...checkStories(a, stories, deltas, items, {
+        ...sectionCheck,
+        standards: new Set(standards.keys()),
+      }),
       ...(await coverageIssues(unwrittenChecks(a, stories), {
         ...(judging ? { runtime: judging } : {}),
         store,

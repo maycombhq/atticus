@@ -68,6 +68,54 @@ export function estateOf(
   };
 }
 
+/** A system outside every repo of the estate that the estate calls: a vendor, a model provider. */
+export interface OutsideSystem {
+  id: string;
+  /** The entries it is called at: each entry's key (endpointKey) to the way it is written. */
+  entries: Map<string, string>;
+  /** The components that call it. */
+  callers: Set<string>;
+}
+
+/** The kinds a call's target may be inside the estate; any other id it names is outside. */
+const INSIDE = new Set(["Component", "System", "Table", "DataStore", "Endpoint", "Column"]);
+const outsideOf = new WeakMap<Estate, Map<string, OutsideSystem>>();
+
+/**
+ * The outside systems the estate names as a call's target (ADR 0087 addendum, 2026-10-25): the
+ * target a call fact names (its Interface's `to`) and the target a spec flow's call-out or
+ * publish names, where the catalog has no Component or System of that id (a model provider,
+ * `llm`; a vendor the join couldn't resolve, `unresolved.<call>`). A target flow may call them.
+ */
+export function outsideSystems(e: Estate): Map<string, OutsideSystem> {
+  const had = outsideOf.get(e);
+  if (had) return had;
+  const out = new Map<string, OutsideSystem>();
+  const add = (id: string | undefined, entry: string | undefined, caller: string | undefined) => {
+    if (!id || INSIDE.has(e.byId.get(id)?.kind ?? "")) return;
+    const o = out.get(id) ?? { id, entries: new Map(), callers: new Set<string>() };
+    if (entry?.trim()) {
+      const w = entry.trim();
+      o.entries.set(/^\s*[A-Za-z]+\s+\S/.test(w) ? endpointKey(w) : w, w);
+    }
+    if (caller) o.callers.add(caller);
+    out.set(id, o);
+  };
+  for (const r of e.records as Rec[])
+    if (r.kind === "Interface")
+      add(str(r.to), [str(r.method), str(r.normalizedPath)].filter(Boolean).join(" "), str(r.from));
+  for (const f of e.flows)
+    for (const s of f.flow.steps) if (s.to) add(s.to.component, s.to.entry, f.flow.component);
+  outsideOf.set(e, out);
+  return out;
+}
+
+/** An outside system as the compact index writes it. */
+export function outsideLine(o: OutsideSystem): string {
+  const entries = [...new Set(o.entries.values())].sort();
+  return `outside system ${o.id}: called by ${[...o.callers].sort().join(", ") || "?"}${entries.length ? ` at ${entries.join(", ")}` : ""}`;
+}
+
 /** "get /a/{id}/" → "GET /a/{}": method upper case, parameters and trailing slash folded. */
 export function endpointKey(s: string): string {
   const m = /^\s*([A-Za-z]+)\s+(\S+)/.exec(s);
@@ -330,6 +378,10 @@ export function estateIndex(e: Estate, repos?: ReadonlySet<string>): string {
   const lines = [ESTATE_HEADING, ""];
   for (const k of ["System", "Component", "Capability"])
     for (const r of of(k)) lines.push(estateLine(e, k, r.id, r)!);
+  // The outside systems the components here call (a model provider, a vendor): a call-out's target too.
+  const comps = new Set(of("Component").map((r) => r.id));
+  for (const o of [...outsideSystems(e).values()].sort((a, b) => a.id.localeCompare(b.id)))
+    if ([...o.callers].some((c) => comps.has(c))) lines.push(outsideLine(o));
   for (const f of [...flows].sort((a, b) => a.flow.id.localeCompare(b.flow.id)))
     lines.push(flowLine(f, e));
   for (const k of ["Endpoint", "Table"])

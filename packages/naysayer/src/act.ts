@@ -185,6 +185,7 @@ export async function act(
       "invalid",
       "Edit and apply needs the edited patch, or a reason saying what you changed by hand.",
     );
+  const folder = changeFolder(root, change.id);
   if (patch) {
     const target = patchTarget(patch) ?? f.artifact;
     const safe = normalize(target).split(sep).join("/");
@@ -193,6 +194,10 @@ export async function act(
         "refused",
         `The patch changes ${target}, but the finding is about ${f.artifact}; a patch may only change its own artifact.`,
       );
+    // A file a stage renders from its source is written again on the next run: a fix there is
+    // lost (a live run, 2026-10-25, fixed a story's .md, not stage/stories-answer.yaml).
+    const from = (await renderedFrom(folder)).get(safe);
+    if (from) throw new CriticError("refused", renderedRefusal(change.id, safe, from));
     const path = join(changeFolder(root, change.id), f.artifact);
     let text: string;
     try {
@@ -216,7 +221,15 @@ export async function act(
   else if (act === "edit-and-apply") {
     // The files the person changed, from the stages' write hashes; with none changed, what they
     // did, in their words (W6): no file is named that nobody edited.
-    const edited = await editedByPerson(changeFolder(root, change.id));
+    const edited = await editedByPerson(folder);
+    // Only rendered files edited: the fix is lost the next time the stage writes them.
+    const rendered = await renderedFrom(folder);
+    const lost = edited.filter((x) => rendered.has(x));
+    if (lost.length && lost.length === edited.length)
+      throw new CriticError(
+        "refused",
+        renderedRefusal(change.id, lost[0]!, rendered.get(lost[0]!)!),
+      );
     const said = o.reason?.trim().replace(/[.!?]+$/, "");
     message = edited.length
       ? `Recorded your edit to ${edited.join(", ")}.`
@@ -258,6 +271,48 @@ async function afterLimit(root: string, change: string, f: Finding): Promise<str
     return `But no critic round is left at the ${f.gate} gate: act on the ${f.severity === "blocking" ? "other " : ""}${left} blocking finding${left === 1 ? "" : "s"} of round ${f.round}; once every one is acted on, ${checkRoundRule(f.round)}.`;
   if ((await checkRoundDue(root, change, f.gate)).length === 0) return undefined;
   return `The ${f.gate} gate has no critic round left, but ${checkRoundRule(f.round)}: run atticus critic ${change} --gate ${f.gate}, or run the change's stage again, to review what was done. If that round finds something blocking, a person decides again.`;
+}
+
+/** A file a stage renders: the stage, and the source it is rendered from. */
+interface RenderedFrom {
+  stage: string;
+  source: string;
+}
+
+/**
+ * The change-folder files a stage renders from its source (ADR 0087 addendum, 2026-10-25): each
+ * stage's loop file names its source (`source`) and keeps what it wrote (`written`); a file it
+ * wrote that isn't the source, or under it, is rendered, and the next run writes it again. Facts,
+ * read off the loop files; a loop file from before `source` was kept names none.
+ */
+async function renderedFrom(folder: string): Promise<Map<string, RenderedFrom>> {
+  const out = new Map<string, RenderedFrom>();
+  const stages = await readdir(join(folder, "stage")).catch(() => [] as string[]);
+  for (const s of stages.filter((x) => x.endsWith(".yaml")).sort()) {
+    let loop: { stage?: unknown; source?: unknown; written?: unknown } | undefined;
+    try {
+      loop = parse(await readFile(join(folder, "stage", s), "utf8")) as typeof loop;
+    } catch {
+      continue;
+    }
+    const source = loop?.source;
+    if (typeof source !== "string" || !loop?.written || typeof loop.written !== "object") continue;
+    const stage = typeof loop.stage === "string" ? loop.stage : s.replace(/\.yaml$/, "");
+    for (const file of Object.keys(loop.written as Record<string, unknown>)) {
+      const own = source.endsWith("/") ? file.startsWith(source) : file === source;
+      if (!own && !out.has(file)) out.set(file, { stage, source });
+    }
+  }
+  return out;
+}
+
+/** The command that runs a stage again, as the stage loop names it. */
+const stageRun = (stage: string, change: string) =>
+  stage === "stories" ? `atticus plan stories ${change}` : `atticus change ${stage} ${change}`;
+
+/** Why a fix to a rendered file is refused, and where it goes instead. */
+function renderedRefusal(change: string, file: string, from: RenderedFrom): string {
+  return `${file} is written by the ${from.stage} stage from ${from.source}, so a fix there is lost the next time the stage writes it. Make the fix in ${from.source}, run ${stageRun(from.stage, change)} (it checks your edit as the stage's draft and writes ${file} again), then record it here with edit-and-apply --reason "<what you changed>".`;
 }
 
 /**
