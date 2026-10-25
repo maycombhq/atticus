@@ -5,7 +5,9 @@ import {
   createOpenSpec,
   ORG_FLOW,
   setDefaultSchema,
+  storeIdOf,
   writeOrgFlowSchema,
+  writeStoreMarker,
 } from "@maycombhq/openspec-adapter";
 import { createGit, ensureGitignore, type GitRunner } from "@maycombhq/workspace";
 import { AdoptError } from "./errors.js";
@@ -36,6 +38,11 @@ export interface InitOptions {
   openspec?: "cli" | "folders" | "auto";
   /** The git runner the repository is made with; default the git on PATH (tests mock it). */
   git?: GitRunner;
+  /**
+   * Also make the metarepo an OpenSpec store (beta, ADR 0126): write `.openspec-store/store.yaml`
+   * with the org pack's name as its id, so a developer can `openspec store register` a clone.
+   */
+  openspecStore?: boolean;
 }
 
 export interface InitResult {
@@ -43,6 +50,8 @@ export interface InitResult {
   /** Files written, relative to the root. */
   created: string[];
   openspec: "cli" | "folders";
+  /** The OpenSpec store id written in .openspec-store/store.yaml, when asked for. */
+  openspecStore?: { id: string };
   /** Why the OpenSpec CLI wasn't used, when it wasn't. */
   openspecNote?: string;
   problems: OrgPackProblem[];
@@ -176,6 +185,12 @@ export async function init(dir: string, o: InitOptions): Promise<InitResult> {
   }
   await writeOrgFlowSchema(dir);
   await setDefaultSchema(dir, ORG_FLOW);
+  let store: InitResult["openspecStore"];
+  if (o.openspecStore) {
+    const id = storeIdOf(o.name)!;
+    await writeStoreMarker(dir, { id });
+    store = { id };
+  }
 
   await writeNew(
     join(dir, "catalog", "generated", "README.md"),
@@ -199,6 +214,7 @@ export async function init(dir: string, o: InitOptions): Promise<InitResult> {
     root: dir,
     created,
     openspec: mode,
+    ...(store ? { openspecStore: store } : {}),
     ...(note ? { openspecNote: note } : {}),
     problems: op.problems,
     questions,

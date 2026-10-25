@@ -1,0 +1,4 @@
+version: 2
+id: forge-statements
+remote: https://code.forge.example/forge/forge-statements-store.git
+owner: team-statements

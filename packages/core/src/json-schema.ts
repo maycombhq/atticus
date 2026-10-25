@@ -116,6 +116,7 @@ export function orgPackJsonSchemas(): Record<string, object> {
     Procedure: C6.Procedure,
     TestStrategy: C6.TestStrategy,
     Estimates: C6.Estimates,
+    OpenSpecSettings: C6.OpenSpecSettings,
     Profile: C6.Profile,
     AgentDefinition: C5.AgentDefinition,
   };

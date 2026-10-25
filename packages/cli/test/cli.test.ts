@@ -59,7 +59,7 @@ describe("atticus CLI", () => {
     const c = capture();
     expect(await main(["schema", "export", dir], c.io)).toBe(0);
     expect(await readdir(join(dir, "catalog"))).toHaveLength(33); // Flow (ADR 0079), ProcessDefinition (0083), Product (0101)
-    expect(await readdir(join(dir, "orgpack"))).toHaveLength(21); // FrameworkModel (ADR 0054), ScanSettings (0075), RepoType (0077), Question (0078), SpecTemplate (0079), ScannerPlugin (0080), Estimates (0109), ModelProviderPlugin (0121)
+    expect(await readdir(join(dir, "orgpack"))).toHaveLength(22); // FrameworkModel (ADR 0054), ScanSettings (0075), RepoType (0077), Question (0078), SpecTemplate (0079), ScannerPlugin (0080), Estimates (0109), ModelProviderPlugin (0121), OpenSpecSettings (0126)
     expect(JSON.parse(await readFile(join(dir, "api", "openapi.json"), "utf8")).openapi).toBe(
       "3.1.0",
     );

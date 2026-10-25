@@ -303,6 +303,66 @@ describe("atticus upgrade and the starter review (ADR 0120)", () => {
     expect(await readFile(join(own, "org-pack/checklists/review.yaml"), "utf8")).toBe(theirs);
   });
 
+  it("makes the metarepo an OpenSpec store only with --openspec-store, once (ADR 0126)", async () => {
+    const root = await oldMetarepo();
+    await mkdir(join(root, "openspec/changes"), { recursive: true });
+    await writeFile(join(root, "openspec/config.yaml"), "schema: org-flow\n");
+    const marker = join(root, ".openspec-store/store.yaml");
+    await upgradeCommand(root, { by: "pat" }, io().io, "1.0.0");
+    await expect(readFile(marker, "utf8")).rejects.toThrow();
+
+    const check = io();
+    expect(
+      await upgradeCommand(root, { check: true, openspecStore: true }, check.io, "1.0.0"),
+    ).toBe(1);
+    expect(check.out).toContain(
+      "  Make this metarepo the OpenSpec store forge (beta): .openspec-store/store.yaml",
+    );
+    await expect(readFile(marker, "utf8")).rejects.toThrow();
+
+    const run = io();
+    expect(await upgradeCommand(root, { by: "pat", openspecStore: true }, run.io, "1.0.0")).toBe(0);
+    expect(await readFile(marker, "utf8")).toBe("version: 1\nid: forge\n");
+    expect(run.out).toContain(
+      "Wrote .openspec-store/store.yaml: this metarepo is the OpenSpec store forge (beta). Commit it; then a developer runs openspec store register <their clone> once to use it from plain OpenSpec.",
+    );
+    const again = io();
+    expect(await upgradeCommand(root, { by: "pat", openspecStore: true }, again.io, "1.0.0")).toBe(
+      0,
+    );
+    expect(again.out).toContain(
+      "This metarepo is already the OpenSpec store forge (.openspec-store/store.yaml).",
+    );
+    expect((await upgradeCheck(root, "1.0.0")).pending).toEqual([]);
+  });
+
+  it("leaves a store.yaml naming another store as it is, and refuses an OpenSpec folder away from the root", async () => {
+    const root = await oldMetarepo();
+    await mkdir(join(root, ".openspec-store"), { recursive: true });
+    await writeFile(join(root, ".openspec-store/store.yaml"), "version: 1\nid: forge-specs\n");
+    const other = io();
+    expect(await upgradeCommand(root, { by: "pat", openspecStore: true }, other.io, "1.0.0")).toBe(
+      0,
+    );
+    expect(other.out).toContain(
+      ".openspec-store/store.yaml names the store forge-specs, not forge: left as it is.",
+    );
+    expect(await readFile(join(root, ".openspec-store/store.yaml"), "utf8")).toBe(
+      "version: 1\nid: forge-specs\n",
+    );
+
+    const away = await oldMetarepo();
+    await writeFile(
+      join(away, "org-pack/sources.yaml"),
+      "schemaVersion: 1\nlayout:\n  openspec: specs/openspec\n",
+    );
+    const r = io();
+    expect(await upgradeCommand(away, { by: "pat", openspecStore: true }, r.io, "1.0.0")).toBe(1);
+    expect(r.err).toEqual([
+      "An OpenSpec store keeps openspec/ at its root; this metarepo keeps it in specs/openspec, so it can't be one. Nothing was changed.",
+    ]);
+  });
+
   it("keeps an org's own README and still adds the starter review", async () => {
     const root = await withoutReview();
     await writeFile(join(root, "org-pack/checklists/README.md"), "# Our rules\n");

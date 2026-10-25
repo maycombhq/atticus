@@ -1,0 +1,3 @@
+version: 1
+id: forge-payments
+remote: https://code.forge.example/forge/forge-payments-store.git

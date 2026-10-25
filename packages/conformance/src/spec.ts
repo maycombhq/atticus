@@ -249,6 +249,10 @@ const CONTRACTS: Contract[] = [
       { name: "Procedure", where: "org-pack/process/procedures/<id>.yaml" },
       { name: "TestStrategy", where: "org-pack/test-strategy.yaml" },
       { name: "Profile", where: "org-pack/profiles/<profile>/profile.yaml" },
+      {
+        name: "OpenSpecSettings",
+        where: "org-pack/openspec.yaml (optional; OpenSpec's beta stores, ADR 0126)",
+      },
     ],
   },
 ];

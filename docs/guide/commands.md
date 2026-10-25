@@ -82,7 +82,7 @@ Every command under the twelve, with its options.
   atticus task <change> <task>         Run one task with your assistant, the same as task run [--level plan|draft|pr] [--mode m] [--approve]
   atticus stories <change>             The stories stage, the same as plan stories [--force] [--mode m] [--draft] [--context-tokens n] [--whole-context] [--max-tokens n]
   atticus change needs <change>        Your assistant says what the change needs from the organisation (requests and processes to raise, standards to follow, teams and vendors to involve), for the change, a feature, flow, story or task; each checked against the change's own words [--mode m] [--resume run] [--context-tokens n] [--whole-context] [--max-tokens n]
-  atticus init <folder> --platform <p>  Create a new metarepo named after the folder [--from pack] [--owner who]
+  atticus init <folder> --platform <p>  Create a new metarepo named after the folder [--from pack] [--owner who] [--openspec-store: also an OpenSpec store, beta]
   atticus next [--all] [--json]        The next step to take, its command and slash command, and why; from the files only
   atticus ui [--port n] [--open]       Start the app on this machine (127.0.0.1); Ctrl+C stops it
           [--embed vscode]             Let a VS Code panel show the app (the Atticus extension starts it so)
@@ -139,7 +139,7 @@ Every other command. `atticus legacy` lists them by area; each runs by its own n
   atticus probe                        Measure what your assistant can do here (open a file, write one, run a command), so the tier it reads a repo at is measured, not read off runtime.yaml; then /atticus-probe in the assistant (ADR 0124) [--assistant id] [--max-tokens n] [--json]
   atticus probe answer <code>          Check the assistant's answer (none when it couldn't open the file) and keep what it measured in .atticus/probe/<assistant>.yaml, on this machine only [--pasted] [--max-tokens n] [--json]
   atticus secret set|check|forget <name>  Keep a model provider's key in this machine's credential store under the name runtime.yaml gives as keyEnv; read from stdin, never printed
-  atticus upgrade [--check|--dry-run]  Bring the metarepo's files up to this version (backs them up first)
+  atticus upgrade [--check|--dry-run]  Bring the metarepo's files up to this version (backs them up first) [--openspec-store: also make it an OpenSpec store, beta]
   atticus support bundle               Collect versions, checks, counts and the redacted log in a zip [--out f]
   atticus digest                       What waits on you: hand-offs to revise, blocking findings [--channel c] [--send] [--json]
   atticus watch [<change>] [--off]     Follow a change without being on it (or stop); with no change, how each one you watch is doing [--json]

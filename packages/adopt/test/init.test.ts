@@ -121,6 +121,29 @@ describe("init", () => {
     });
   });
 
+  it("marks the metarepo as an OpenSpec store only when asked (ADR 0126)", async () => {
+    const plain = join(await tempDir(), "plain-meta");
+    const p = await init(plain, { name: "forge", platform: "forge", openspec: "folders" });
+    expect(p.created).not.toContain(".openspec-store/store.yaml");
+    expect(p.openspecStore).toBeUndefined();
+
+    const root = join(await tempDir(), "store-meta");
+    const r = await init(root, {
+      name: "forge.platform",
+      platform: "forge",
+      openspec: "folders",
+      openspecStore: true,
+    });
+    expect(r.created).toContain(".openspec-store/store.yaml");
+    // The org pack's name, made into an id OpenSpec accepts.
+    expect(r.openspecStore).toEqual({ id: "forge-platform" });
+    expect(await readFile(join(root, ".openspec-store/store.yaml"), "utf8")).toBe(
+      "version: 1\nid: forge-platform\n",
+    );
+    // Committed with the metarepo: the .gitignore doesn't hide it.
+    expect(await readFile(join(root, ".gitignore"), "utf8")).not.toMatch(/openspec-store/);
+  });
+
   it("refuses a folder that is already a metarepo, and bad names", async () => {
     const root = join(await tempDir(), "twice");
     await init(root, { name: "shop", platform: "shop", openspec: "folders" });

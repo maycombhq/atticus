@@ -431,6 +431,11 @@ Facts stay deterministic: from code, or from a decision a person recorded. The m
 
 ### E. Working with an existing AI meta repo
 
+- [x] **E2. OpenSpec stores (beta), compatible and not depended on** (ADR 0126, the ADR 0006 addendum). Everything is off by default.
+  - **Built.** `atticus init|upgrade --openspec-store` writes `.openspec-store/store.yaml`, in OpenSpec 1.14.0's shape. A contract test registers it with the pinned CLI.
+  - **Built.** The optional `org-pack/openspec.yaml` (C6, its own version 1, `OpenSpecSettings`) holds `referenceInRepos`: hand-down adds the metarepo under `references:` in the code repo's existing `openspec/config.yaml`, keeping its comments and other keys. It also holds `stores:`, read read-only and labelled in `change list`, `openspec check` and `feature spec`.
+  - **Built.** `atticus doctor` has an "OpenSpec stores (beta)" line.
+  - **Not built:** store changes in the app's Changes screen; naming a store by id through the machine's registry; `store:`-only code repos as a place Atticus writes.
 - [ ] **E1. Sample meta repo** with another team's layout (agents, skills, Spec Kit, `repos/`, `domains/`), invented content only; `atticus adopt` it and wire its skills to Atticus: a call-chain skill asks `atticus impact`/`query`, the PO agent uses `change draft`, the naysayer `atticus critic`, `domains/` from `atticus domain profile` with the team's own template.
 
 ### F. App and diagrams

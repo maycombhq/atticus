@@ -1,0 +1,5 @@
+# A code repo that uses OpenSpec on its own.
+schema: spec-driven
+store: forge-ledger-specs
+references:
+  - forge
