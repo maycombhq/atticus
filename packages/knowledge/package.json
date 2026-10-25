@@ -1,6 +1,6 @@
 {
   "name": "@maycombhq/knowledge",
-  "version": "2.0.0-rc.1",
+  "version": "2.0.0-beta.1",
   "description": "Read-only knowledge sources (wikis), facts mapped from them, the integration pattern scan, coverage, freshness and owner questions for knowledge gaps.",
   "license": "Apache-2.0",
   "type": "module",

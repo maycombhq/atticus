@@ -1,6 +1,6 @@
 {
   "name": "@maycombhq/extractors",
-  "version": "2.0.0-rc.1",
+  "version": "2.0.0-beta.1",
   "description": "Atticus's built-in extractors: OpenAPI, Apigee-style gateways, Spring, frontend calls, topic configs and SQL migrations.",
   "license": "Apache-2.0",
   "type": "module",

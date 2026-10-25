@@ -1,6 +1,6 @@
 {
   "name": "@maycombhq/site",
-  "version": "2.0.0-rc.1",
+  "version": "2.0.0-beta.1",
   "description": "System guides generated from the catalog, and the read-only catalog site: static files with only the systems open to everyone.",
   "license": "Apache-2.0",
   "type": "module",
