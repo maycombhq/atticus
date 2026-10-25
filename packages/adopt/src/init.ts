@@ -1,6 +1,11 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
-import { loadOrgPack, RecordId, type OrgPackProblem } from "@maycombhq/core";
+import {
+  loadOrgPack,
+  RecordId,
+  SOURCES_SCHEMA_VERSION,
+  type OrgPackProblem,
+} from "@maycombhq/core";
 import {
   createOpenSpec,
   ORG_FLOW,
@@ -147,7 +152,7 @@ export async function init(dir: string, o: InitOptions): Promise<InitResult> {
       name: o.name,
       platform: o.platform,
       owner,
-      sources: { schemaVersion: 1 },
+      sources: { schemaVersion: SOURCES_SCHEMA_VERSION },
       defaults: false,
     });
   } else {
@@ -155,7 +160,7 @@ export async function init(dir: string, o: InitOptions): Promise<InitResult> {
       name: o.name,
       platform: o.platform,
       owner,
-      sources: { schemaVersion: 1 },
+      sources: { schemaVersion: SOURCES_SCHEMA_VERSION },
       defaults: true,
     });
   }

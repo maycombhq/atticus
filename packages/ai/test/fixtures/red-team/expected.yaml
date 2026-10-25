@@ -39,6 +39,22 @@ screened:
     risk: low
     rules: [hidden-text]
     action: passed
+  # Engineering prose about prompts (a system prompt heading, the developer message, an
+  # "Instructions" heading for people): it only mentions prompts, so nothing is flagged.
+  - file: markdown/prompt-engineering.md
+    screen: text
+    format: markdown
+    risk: none
+    rules: []
+    action: passed
+  # The same topic written as imperatives aimed at an AI: each line is flagged.
+  - file: markdown/prompt-imperatives.md
+    screen: text
+    format: markdown
+    risk: medium
+    rules: [override]
+    line: 5
+    action: neutralised
   - file: markdown/zero-width.md
     screen: text
     format: markdown

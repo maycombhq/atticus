@@ -1,9 +1,14 @@
-import { mkdirSync, mkdtempSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { parse } from "yaml";
+import { parseRecord, recordPath, serializeRecord } from "@maycombhq/core";
 import { recordKnowledge, readKnowledgeApplies } from "@maycombhq/planner";
 import { changeKnowledge } from "../src/knowledge-applies-commands.js";
+
+const FIX = join(dirname(fileURLToPath(import.meta.url)), "../../../fixtures");
 
 const io = () => {
   const out: string[] = [];
@@ -59,7 +64,46 @@ describe("atticus change knowledge <id> (ADR 0124, Part 5)", () => {
       "forge-wiki/limits.md#Daily limits:suggested",
       "pattern.a:excluded",
     ]);
+    // B2: what changed, not the whole list again.
+    expect(set.out).toEqual([
+      "Confirmed decision.c (Decision): every later stage that takes it selects it.",
+      "Excluded pattern.a (Pattern): every later stage leaves it out.",
+      "Written to openspec/changes/add-limit/knowledge.yaml; commit it with the change's files.",
+    ]);
     const bad = io();
     expect(await changeKnowledge(root, "add-limit", { confirm: "nope" }, bad.io)).toBe(2);
+  });
+
+  it("confirms a knowledge item the stages didn't list, and says only that", async () => {
+    const root = mkdtempSync(join(tmpdir(), "atticus-ckn-"));
+    mkdirSync(join(root, "org-pack"), { recursive: true });
+    mkdirSync(join(root, "openspec", "changes", "add-limit"), { recursive: true });
+    for (const r of parse(readFileSync(join(FIX, "stages/knowledge.yaml"), "utf8")) as unknown[]) {
+      const p = parseRecord(r);
+      if (!p.ok) throw new Error(JSON.stringify(p.issues));
+      const f = join(root, "knowledge/items", recordPath(p.record));
+      mkdirSync(dirname(f), { recursive: true });
+      writeFileSync(f, serializeRecord(p.record));
+    }
+    await recordKnowledge(root, "add-limit", "feature", {
+      engine: true,
+      picked: [{ id: "pattern.a", kind: "Pattern", level: "full", score: 2, via: "named" }],
+      leftOut: Array.from({ length: 20 }, (_, k) => ({
+        id: `decision.n${k}`,
+        kind: "Decision",
+        score: 0.1,
+      })),
+      unknown: [],
+    });
+    const c = io();
+    expect(
+      await changeKnowledge(root, "add-limit", { confirm: "firewall-rule-request" }, c.io),
+    ).toBe(0);
+    expect(c.out).toEqual([
+      "Confirmed firewall-rule-request (ProcessDefinition, Network firewall rule): every later stage that takes it selects it.",
+      "Written to openspec/changes/add-limit/knowledge.yaml; commit it with the change's files.",
+    ]);
+    const doc = (await readKnowledgeApplies(root, "add-limit"))!;
+    expect(doc.items.find((i) => i.id === "firewall-rule-request")?.status).toBe("confirmed");
   });
 });

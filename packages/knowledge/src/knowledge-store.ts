@@ -152,8 +152,11 @@ export async function writeKnowledge(
   /** Pages whose items and flags this scan replaces, by source; undefined: the whole source. */
   const replaced = (source: string): Set<string> | undefined =>
     plan ? new Set([...(plan.changed[source] ?? []), ...(plan.removed[source] ?? [])]) : undefined;
+  // A page the prompt had no room for wasn't read: what was read from it before stays.
+  const unread = new Set((result.leftOut ?? []).map((l) => `${l.source}/${l.page}`));
   const touches = (source: string | undefined, page: string | undefined) => {
     if (source === undefined || !scanned.has(source)) return false;
+    if (page !== undefined && unread.has(`${source}/${page}`)) return false;
     const pages = replaced(source);
     return !pages || page === undefined || pages.has(page);
   };
@@ -205,14 +208,22 @@ export async function writeKnowledge(
     );
   /**
    * The pages recorded as read: every page of the snapshot, except those a batched scan left for
-   * the next (they keep what the last scan recorded, if anything, so the next scan reads them).
+   * the next and those its prompt had no room for (they keep what the last scan recorded, if
+   * anything, so the next scan reads them).
    */
   const hashesAfter = (w: Snapshot, source: string): Record<string, string> => {
-    const left = new Set(plan?.deferred[source] ?? []);
+    const left = new Set([
+      ...(plan?.deferred[source] ?? []),
+      ...(result.leftOut ?? []).filter((l) => l.source === source).map((l) => l.page),
+    ]);
     const was = old?.snapshots.find((x) => x.source === source)?.hashes ?? {};
+    // With a plan, a page is read when the plan read it; one it didn't plan (as it was, or left
+    // out of this run) keeps what was recorded.
+    const read = plan ? new Set(plan.changed[source] ?? []) : undefined;
     const out: Record<string, string> = {};
     for (const p of w.manifest.pages) {
-      if (!left.has(p.page)) out[p.page] = p.sha256;
+      const now = !left.has(p.page) && (!read || read.has(p.page) || was[p.page] === p.sha256);
+      if (now) out[p.page] = p.sha256;
       else if (was[p.page] !== undefined) out[p.page] = was[p.page]!;
     }
     return out;

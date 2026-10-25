@@ -16,6 +16,9 @@ import {
 } from "@maycombhq/core";
 import {
   buildContextPack,
+  DATA_RULE,
+  estimateTokens,
+  fitBudget,
   hiddenSpans,
   INSTRUCTION_RULES,
   resumedAttempt,
@@ -233,7 +236,20 @@ export interface KnowledgeScanResult {
   failed: FailedItem[];
   /** Sources and snapshot dates read. */
   snapshots: { source: string; date: string; pages: number }[];
+  /**
+   * Pages the prompt had no room for: not read, so not recorded as read (the next scan reads
+   * them), and named, never dropped without a word. Absent in results from before it existed.
+   */
+  leftOut?: LeftOutPage[];
 }
+
+/** A page a scan's prompt had no room for, and why. */
+export interface LeftOutPage extends PageRef {
+  reason: string;
+}
+
+/** A context pack's reason for a source it had no room for. */
+const NO_ROOM = /^over the \d+-token budget$/;
 
 // ------------------------------------------------------------------ defences per page
 
@@ -259,13 +275,23 @@ const lineStarts = (t: string) => {
   return out;
 };
 
+/** The heading a line sits under; a `#` line inside a fenced code block is not one. */
 function headingAt(t: string, line: number): string {
   const lines = t.split("\n");
-  for (let k = Math.min(line, lines.length) - 1; k >= 0; k--) {
-    const m = /^ {0,3}#{1,6}\s+(.*?)\s*#*\s*$/.exec(lines[k]!);
-    if (m) return m[1]!;
+  let heading = "";
+  let fence: string | undefined;
+  for (let k = 0; k < Math.min(line, lines.length); k++) {
+    const l = lines[k]!;
+    const f = /^ {0,3}(```+|~~~+)/.exec(l);
+    if (f) {
+      fence = fence ? (l.trim().startsWith(fence) ? undefined : fence) : f[1];
+      continue;
+    }
+    if (fence) continue;
+    const m = /^ {0,3}#{1,6}\s+(.*?)\s*#*\s*$/.exec(l);
+    if (m) heading = m[1]!;
   }
-  return "";
+  return heading;
 }
 
 const shorten = (s: string, n = 400) => {
@@ -476,6 +502,25 @@ injections:
 
 Leave out fields a page doesn't state.
 `;
+
+/** Tokens a batch keeps beside its pages: the items read before, the notes on cut-out text. */
+export const SCAN_ROOM_RESERVE = 1000;
+
+/**
+ * The room for pages in one prompt of the knowledge scan: the reader's budget (runtime.yaml
+ * `budgets.perAgent.knowledge-reader`, else its default, fitted to the model's limit, ADR 0112)
+ * less the instructions, the data rule and a reserve. A scan plans its batch with it
+ * (`planRescan`'s `batchTokens`), so every page it plans fits the prompt.
+ */
+export function knowledgeScanRoom(
+  snapshots: Snapshot[],
+  orgPack?: Pick<OrgPack, "agents" | "runtime">,
+): number {
+  const agent = knowledgeReaderAgent(orgPack);
+  const budget = fitBudget(orgPack?.runtime.budgets.perAgent[agent.id] ?? agent.tokenBudget);
+  const fixed = estimateTokens(DATA_RULE) + estimateTokens(INSTRUCTIONS(snapshots, []));
+  return Math.max(0, budget - fixed - SCAN_ROOM_RESERVE);
+}
 
 // ------------------------------------------------------------------ checks
 
@@ -1067,7 +1112,40 @@ export async function scanKnowledge(
       date: s.manifest.date,
       pages: s.pages.length,
     })),
+    leftOut: [],
   };
+  const packOf = (extra: SourceInput[]) =>
+    buildContextPack({
+      change,
+      agent: agent.id,
+      budget,
+      sources: [task, ...pageSources, ...previousSource, ...focusSource, ...extra],
+      levels,
+      maxClassification: levels.includes("internal") ? "internal" : levels.at(-1)!,
+      now,
+      step: "knowledge scan",
+      smaller: "read fewer pages at a time with --batch-tokens n",
+    });
+  // The pages the first prompt has no room for, decided once (a resumed hand-off was handed the
+  // same prompt): named, left for the next scan, and not recorded as read.
+  for (const d of packOf([]).manifest.dropped) {
+    if (!NO_ROOM.test(d.reason)) continue;
+    const k = pageSources.findIndex((s) => s.id === d.id);
+    if (k >= 0)
+      result.leftOut!.push({
+        source: pages[k]!.page.source,
+        page: pages[k]!.page.pagePath,
+        reason: d.reason,
+      });
+  }
+  // What the defences cut out of a page not read is said when the page is read.
+  const unread = new Set(result.leftOut!.map((l) => `${l.source}/${l.page}`));
+  result.injections = result.injections.filter((i) => !unread.has(`${i.source}/${i.page}`));
+  // No page fits: there is nothing to ask the AI. The pages are named, and nothing is read.
+  if (pages.length && result.leftOut!.length === pages.length && !o.resume) {
+    result.status = "scanned";
+    return result;
+  }
   const kept = new Map<string, CheckedItem>();
   let failed: FailedItem[] = [];
   let conflicts: KnowledgeConflict[] = [];
@@ -1086,19 +1164,11 @@ export async function scanKnowledge(
     let run: Run;
     if (resumed && attempt === from.attempt) run = resumed;
     else {
-      const pack = buildContextPack({
-        change,
-        agent: agent.id,
-        budget,
-        sources: [task, ...pageSources, ...previousSource, ...focusSource, ...feedback],
-        levels,
-        maxClassification: levels.includes("internal") ? "internal" : levels.at(-1)!,
-        now,
-        step: "knowledge scan",
-        smaller: "read fewer pages at a time with --batch-tokens n",
-      });
-      // A page the defences still quarantine as a whole is said aloud, never sent.
+      const pack = packOf(feedback);
+      // A page the defences still quarantine as a whole is said aloud, never sent. A page with
+      // no room is in leftOut.
       for (const d of pack.manifest.dropped) {
+        if (NO_ROOM.test(d.reason)) continue;
         const src = pageSources.find((s) => s.id === d.id);
         if (src && !result.failed.some((f) => f.page === src.origin))
           result.failed.push({

@@ -174,6 +174,50 @@ async function inputsSkipped(kdir: string): Promise<Set<string>> {
   }
 }
 
+/** The pages the knowledge scan has read, by source (knowledge/scan.yaml's page hashes). */
+async function scannedPages(kdir: string): Promise<Map<string, Set<string>>> {
+  const out = new Map<string, Set<string>>();
+  try {
+    const r = parse(await readFile(join(kdir, "scan.yaml"), "utf8")) as {
+      snapshots?: { source?: unknown; hashes?: Record<string, unknown> }[];
+    } | null;
+    for (const s of r?.snapshots ?? [])
+      if (typeof s?.source === "string" && s.hashes && typeof s.hashes === "object")
+        out.set(s.source, new Set(Object.keys(s.hashes)));
+  } catch {
+    // No scan yet, or a report that can't be read: every snapshotted page is indexed.
+  }
+  return out;
+}
+
+/**
+ * The files of a wiki snapshot to index, relative to its folder: those its snapshot.yaml lists
+ * (a stray copy is not the snapshot), and once the knowledge scan has read the source, only the
+ * pages it read, so the index covers what was scanned (a page a batch left for the next joins
+ * when it is read). Undefined: every Markdown file (a snapshot written by hand has no list).
+ */
+async function wikiPagesToIndex(
+  dir: string,
+  source: string,
+  scanned: Map<string, Set<string>>,
+): Promise<Set<string> | undefined> {
+  let pages: { page: string; file: string }[];
+  try {
+    const m = parse(await readFile(join(dir, "snapshot.yaml"), "utf8")) as {
+      pages?: { page?: unknown; file?: unknown }[];
+    } | null;
+    pages = (m?.pages ?? []).flatMap((p) =>
+      typeof p?.page === "string" && typeof p.file === "string"
+        ? [{ page: p.page, file: p.file.replace(/\\/g, "/") }]
+        : [],
+    );
+  } catch {
+    return undefined;
+  }
+  const read = scanned.get(source);
+  return new Set(pages.filter((p) => !read || read.has(p.page)).map((p) => p.file));
+}
+
 /** Every file the index reads, sorted by path. */
 export async function listSources(root: string): Promise<SourceFile[]> {
   const found: { abs: string; source: SourceKind }[] = [];
@@ -245,6 +289,7 @@ export async function listSources(root: string): Promise<SourceFile[]> {
   {
     // The newest snapshot of each wiki source: knowledge/snapshots/<source>/<date>/.
     const sdir = join(kdir, "snapshots");
+    const scanned = await scannedPages(kdir);
     const sources = (await readdir(sdir, { withFileTypes: true }).catch(() => [])).filter((d) =>
       d.isDirectory(),
     );
@@ -259,8 +304,10 @@ export async function listSources(root: string): Promise<SourceFile[]> {
       const newest = dates.at(-1);
       if (!newest) continue;
       const files: string[] = [];
-      await walk(join(sdir, s.name, newest), (n) => /\.(md|markdown)$/i.test(n), files);
-      add("wiki")(files);
+      const dir = join(sdir, s.name, newest);
+      await walk(dir, (n) => /\.(md|markdown)$/i.test(n), files);
+      const only = await wikiPagesToIndex(dir, s.name, scanned);
+      add("wiki")(only ? files.filter((f) => only.has(rel(dir, f))) : files);
     }
   }
   {
@@ -834,8 +881,17 @@ function wikiNodes(root: string, path: string, text: string): FileRead {
   const sections: { heading: string; level: number; line: number; text: string[] }[] = [
     { heading: "", level: 0, line: 1, text: [] },
   ];
+  // Front matter is the page's metadata, not its words: blank lines keep the line numbers.
+  if (lines[0]?.trim() === "---") {
+    const end = lines.findIndex((l, k) => k > 0 && (l.trim() === "---" || l.trim() === "..."));
+    for (let k = 0; k <= end; k++) lines[k] = "";
+  }
+  // A `#` line in a fenced code block (a shell comment) is code, not a heading.
+  let fence: string | undefined;
   lines.forEach((l, i) => {
-    const m = /^(#{1,6})\s+(.+?)\s*#*\s*$/.exec(l);
+    const f = /^ {0,3}(```+|~~~+)/.exec(l);
+    if (f) fence = fence ? (l.trim().startsWith(fence) ? undefined : fence) : f[1];
+    const m = fence || f ? undefined : /^(#{1,6})\s+(.+?)\s*#*\s*$/.exec(l);
     if (m) sections.push({ heading: m[2]!, level: m[1]!.length, line: i + 1, text: [] });
     else sections.at(-1)!.text.push(l);
   });

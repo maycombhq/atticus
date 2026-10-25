@@ -4,6 +4,15 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### What a knowledge scan of a docs folder hit, fixed (K-docs, ADR 0083 addendum K-docs, ADR 0127)
+
+- **`atticus knowledge scan` reads every page.** It used to put every page in one prompt, and the prompt silently dropped what didn't fit (76 of 103 pages) while recording those pages as read. Now it plans batches that fit the knowledge reader's prompt, from its budget or the model's limit, or `--batch-tokens`. A model or headless runtime reads batch after batch in one run. A hand-off hands one batch a run: it names the pages that wait, and after the resume says how many are left and to run the scan again. A page too big for the prompt on its own is named, with what to raise, and is never recorded as read.
+- **A wiki source can `include` and `exclude` pages** by pattern (`runbooks/`, `drafts/**`, `architecture/*.md`). `sources.yaml` is now version 2, and `atticus upgrade` moves a version 1 file (step `sources-v2`, only the number changes). A page two sources cover is read once, by the source nearest to it; the other source lists it as skipped and says where it is read.
+- **A quote that wraps inside a blockquote, or runs into the next list item, can be quoted.** The check leaves out a line's `>` and list markers; every word must still be on the page, in order.
+- **Prose that names the system prompt is no longer held back as an instruction to AI tools.** The filter flags imperatives aimed at an AI ("ignore previous instructions", "you are now", "disregard the rules above", "your new system prompt is", hidden text), not a "System prompt" or "Instructions" heading or a sentence about how a product builds its prompts (`defences@1.1.0`).
+- **The org-knowledge index covers what was snapshotted and scanned.** It indexes the pages a snapshot lists, and once the scan has read a source, only the pages it read. A comment line in a fenced code block is no longer indexed as a heading.
+- **`atticus change knowledge <change> --confirm <id>` takes any knowledge item**, wiki or document section, listed or not. It applies like one a stage picked. Each `--confirm` or `--exclude` prints only what changed.
+
 ### What a trial on one repo found, fixed (ADR 0124 addendum C-join, the fallback)
 
 - **A relative call joins the API that serves it.** A front end's `fetch("/api/...")` has no host, so the reader guessed a `to` the estate doesn't have, and `atticus join` joined none of its calls. Such a call (or one naming no target) now joins by method and path the one entry of its own repo that serves it, else the one of the estate, and is marked inferred: `atticus verify <repo> --write` says how many and where, `atticus join` prints "inferred" beside each. When two or more could answer, a person is asked which. A vendor the org pack lists keeps its name. `/atticus-map` now says to leave `to` out of a relative call, or name the component that serves it.

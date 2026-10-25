@@ -1,3 +1,4 @@
+import { estimateTokens, wrapData } from "@maycombhq/ai";
 import type { KnowledgeRecord } from "./knowledge-scan.js";
 import type { KnowledgeReport } from "./knowledge-store.js";
 import type { Snapshot } from "./snapshot.js";
@@ -26,14 +27,20 @@ export interface RescanPlan {
   deferred: Record<string, string[]>;
 }
 
-/** About as many tokens as the context pack will count for a page. */
-const tokensOf = (text: string) => Math.ceil(text.length / 4);
+/** As many tokens as the context pack counts for a page: its text in its data wrapper. */
+const tokensOf = (source: string, page: string, text: string) =>
+  estimateTokens(wrapData({ id: "page-000", kind: "document", origin: `${source}/${page}` }, text));
 
 export function planRescan(
   snapshots: Snapshot[],
   report: KnowledgeReport | undefined,
   items: KnowledgeRecord[],
-  o: { full?: boolean; batchTokens?: number } = {},
+  o: {
+    full?: boolean;
+    batchTokens?: number;
+    /** Pages a scan in batches has read already in this run, by source: not read again. */
+    read?: Record<string, string[]>;
+  } = {},
 ): RescanPlan {
   const plan: RescanPlan = {
     snapshots: [],
@@ -50,8 +57,9 @@ export function planRescan(
     const source = s.manifest.source;
     const last = o.full ? undefined : report?.snapshots.find((x) => x.source === source)?.hashes;
     const now = new Map(s.manifest.pages.map((p) => [p.page, p.sha256]));
+    const done = new Set(o.read?.[source] ?? []);
     const all = s.manifest.pages
-      .filter((p) => !last || last[p.page] !== p.sha256)
+      .filter((p) => (!last || last[p.page] !== p.sha256) && !done.has(p.page))
       .map((p) => p.page);
     const changed: string[] = [];
     const deferred: string[] = [];
@@ -61,7 +69,7 @@ export function planRescan(
         continue;
       }
       const text = s.pages.find((p) => p.pagePath === page)?.text ?? "";
-      const t = tokensOf(text);
+      const t = tokensOf(source, page, text);
       if (taken === 0 || (deferred.length === 0 && t <= room)) {
         changed.push(page);
         room -= t;

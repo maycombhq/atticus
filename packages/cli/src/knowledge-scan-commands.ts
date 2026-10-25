@@ -10,13 +10,7 @@ import {
   orgPackDirOf,
   type KnowledgeKind,
 } from "@maycombhq/core";
-import {
-  currentPromptLimit,
-  promptBudget,
-  RuntimeConfigError,
-  runtimeForCli,
-  type AiRuntime,
-} from "@maycombhq/ai";
+import { RuntimeConfigError, runtimeForCli, type AiRuntime } from "@maycombhq/ai";
 import {
   askKnowledge,
   correctableFields,
@@ -27,11 +21,14 @@ import {
   readFinds,
   saveFind,
   filterItems,
+  knowledgeScanRoom,
   planRescan,
   readReviews,
   reviewItem,
   writeReview,
+  type KnowledgeChanges,
   type KnowledgeScanResult,
+  type RescanPlan,
   type ReviewSummary,
   itemTitle,
   readKnowledge,
@@ -47,9 +44,6 @@ import {
 import { prepareKnowledgeBench, runKnowledgeBench, type KnowledgeScore } from "@maycombhq/evals";
 import type { Output } from "./commands.js";
 import { table } from "./index-commands.js";
-
-/** Tokens a batched knowledge scan keeps for its instructions and the items read before. */
-const SCAN_RESERVE = 4000;
 
 /**
  * Knowledge sources tagged, snapshot, scanned and queried (ADR 0083, revamp plan 4.3):
@@ -163,49 +157,97 @@ export async function knowledgeScan(
   if (!snapshots) return 2;
   const op = await loadOrgPack(orgPackDirOf(root));
   const now = deps.now ?? new Date();
-  // ADR 0101: a rescan reads only the pages that changed since the last scan (--full: all).
-  const before = await readKnowledge(root, { raw: true });
-  // --batch-tokens: only the pages that fit one prompt of the model (ADR 0106); the rest wait.
-  // Given only the model's limit (--max-tokens, ADR 0112), the batch is what the limit leaves
-  // after the scan's instructions and the items read before.
-  const limit = currentPromptLimit();
-  const batchTokens =
-    o.batchTokens ?? (limit ? Math.max(500, promptBudget(limit) - SCAN_RESERVE) : undefined);
-  const plan = planRescan(snapshots, before.report, before.items, {
-    full: o.full === true,
-    ...(batchTokens ? { batchTokens } : {}),
-  });
-  const left = Object.values(plan.deferred).flat().length;
-  const leftLine = () =>
-    `${plural(left, "page")} left to read: run atticus knowledge scan again for the next batch.`;
-  const gone = Object.values(plan.removed).flat().length;
-  if (!plan.snapshots.length && !gone) {
-    for (const s of snapshots)
-      io.out(
-        `Nothing changed in ${s.manifest.source} since the last scan (snapshot ${s.manifest.date}, ${plural(s.manifest.pages.length, "page")}). --full reads every page again.`,
-      );
-    return 0;
+  // Every page is read, in batches that each fit the reader's prompt (ADR 0106): --batch-tokens
+  // sets a batch's room for pages; else it is what the reader's budget (and the model's limit,
+  // --max-tokens, ADR 0112) leaves beside the instructions. A page the prompt still has no room
+  // for is named and left for the next batch, never dropped without a word.
+  const room = o.batchTokens ?? knowledgeScanRoom(snapshots, op);
+  // A runtime that answers at once reads batch after batch; a hand-off (and its resume) reads
+  // one batch a run and says what is left, as `atticus map` hands one batch a round.
+  const once = o.resume !== undefined || deps.runtime.kind === "hand-off";
+  const batches: { plan: RescanPlan; r: KnowledgeScanResult; changes: KnowledgeChanges }[] = [];
+  /** Pages read in this run, and pages too big for the prompt on their own, by source. */
+  const readNow: Record<string, string[]> = {};
+  const tooBig: { source: string; page: string; reason: string }[] = [];
+  const passed = () => {
+    const out: Record<string, string[]> = {};
+    for (const [s, ps] of Object.entries(readNow)) out[s] = [...ps];
+    for (const t of tooBig) (out[t.source] ??= []).push(t.page);
+    return out;
+  };
+  /** The pages that wait for the next batch. */
+  let pending: string[];
+  let plan!: RescanPlan;
+  let r!: KnowledgeScanResult;
+  for (;;) {
+    // ADR 0101: a rescan reads only the pages that changed since the last scan (--full: all).
+    const before = await readKnowledge(root, { raw: true });
+    plan = planRescan(snapshots, before.report, before.items, {
+      full: o.full === true,
+      batchTokens: room,
+      read: passed(),
+    });
+    const gone = Object.values(plan.removed).flat().length;
+    if (!plan.snapshots.length && !gone) {
+      pending = [];
+      if (batches.length) break;
+      for (const s of snapshots)
+        io.out(
+          `Nothing changed in ${s.manifest.source} since the last scan (snapshot ${s.manifest.date}, ${plural(s.manifest.pages.length, "page")}). --full reads every page again.`,
+        );
+      return 0;
+    }
+    r = plan.snapshots.length
+      ? await scanKnowledge(plan.snapshots, {
+          runtime: deps.runtime,
+          orgPack: op,
+          now,
+          maxAttempts: o.attempts ?? 3,
+          ...(o.resume && !batches.length ? { resume: o.resume } : {}),
+          ...(plan.previous.length ? { previous: plan.previous } : {}),
+          judgments: fileJudgments(root),
+        })
+      : {
+          status: "scanned",
+          attempts: [],
+          items: [],
+          conflicts: [],
+          superseded: [],
+          injections: [],
+          failed: [],
+          snapshots: [],
+        };
+    const deferred = Object.entries(plan.deferred).flatMap(([s, ps]) => ps.map((p) => `${s}/${p}`));
+    const unread = new Set((r.leftOut ?? []).map((l) => `${l.source}/${l.page}`));
+    pending = [...deferred, ...unread];
+    if (r.status !== "scanned") break;
+    const w = await writeKnowledge(root, r, stamp(now), { snapshots, plan });
+    batches.push({ plan, r, changes: w.changes });
+    let read = 0;
+    for (const [source, pages] of Object.entries(plan.changed))
+      for (const p of pages)
+        if (!unread.has(`${source}/${p}`)) {
+          (readNow[source] ??= []).push(p);
+          read++;
+        }
+    // Nothing of this batch fitted: each page it planned is too big for the prompt on its own.
+    // It is named at the end, and the scan goes on with the rest.
+    if (!read && unread.size) {
+      tooBig.push(...(r.leftOut ?? []));
+      pending = deferred;
+      if (pending.length) continue;
+      break;
+    }
+    if (!pending.length || once) break;
   }
-  const r: KnowledgeScanResult = plan.snapshots.length
-    ? await scanKnowledge(plan.snapshots, {
-        runtime: deps.runtime,
-        orgPack: op,
-        now,
-        maxAttempts: o.attempts ?? 3,
-        ...(o.resume ? { resume: o.resume } : {}),
-        ...(plan.previous.length ? { previous: plan.previous } : {}),
-        judgments: fileJudgments(root),
-      })
-    : {
-        status: "scanned",
-        attempts: [],
-        items: [],
-        conflicts: [],
-        superseded: [],
-        injections: [],
-        failed: [],
-        snapshots: [],
-      };
+  const named = (xs: string[]) =>
+    xs.length > 10 ? `${xs.slice(0, 10).join(", ")} and ${xs.length - 10} more` : xs.join(", ");
+  if (r.status === "waiting" && pending.length) {
+    const inBatch = Object.values(plan.changed).flat().length - (r.leftOut?.length ?? 0);
+    io.out(
+      `This batch holds ${plural(inBatch, "page")}, as many as fit the reader's prompt; ${plural(pending.length, "page")} wait for the next (${named(pending)}). After this one, run atticus knowledge scan again.`,
+    );
+  }
   if (r.status === "waiting") {
     // B2: a resume whose answer failed says what failed, not only that a new prompt waits.
     const failed = r.attempts.filter((a) => a.state !== "waiting" && a.problems.length).at(-1);
@@ -226,11 +268,34 @@ export async function knowledgeScan(
   }
   if (r.status === "failed") {
     io.err(
-      `The knowledge scan got no answer it could read after ${plural(r.attempts.length, "attempt")}: ${r.attempts.at(-1)?.problems.join("; ") ?? "no run"}. Nothing was written.`,
+      `The knowledge scan got no answer it could read after ${plural(r.attempts.length, "attempt")}: ${r.attempts.at(-1)?.problems.join("; ") ?? "no run"}. ${batches.length ? `The ${plural(batches.length, "batch")} before it ${batches.length === 1 ? "was" : "were"} written; nothing of this one was.` : "Nothing was written."}`,
     );
     return 1;
   }
-  const w = await writeKnowledge(root, r, stamp(now), { snapshots, plan });
+  // What every batch of this run read, kept and flagged, as one scan.
+  const first = batches[0]!.plan;
+  const all = (f: (r: KnowledgeScanResult) => unknown[]) => batches.flatMap((b) => f(b.r));
+  const total = {
+    ...r,
+    items: all((x) => x.items) as KnowledgeScanResult["items"],
+    conflicts: all((x) => x.conflicts) as KnowledgeScanResult["conflicts"],
+    superseded: all((x) => x.superseded) as KnowledgeScanResult["superseded"],
+    injections: all((x) => x.injections) as KnowledgeScanResult["injections"],
+    failed: all((x) => x.failed) as KnowledgeScanResult["failed"],
+    attempts: all((x) => x.attempts) as KnowledgeScanResult["attempts"],
+  };
+  const was = new Set(batches.flatMap((b) => [...b.changes.added, ...b.changes.changed]));
+  const c: KnowledgeChanges = {
+    added: [...new Set(batches.flatMap((b) => b.changes.added))].sort(),
+    changed: [...new Set(batches.flatMap((b) => b.changes.changed))].sort(),
+    removed: [...new Set(batches.flatMap((b) => b.changes.removed))]
+      .filter((id) => !was.has(id))
+      .sort(),
+  };
+  // Pages that wait for the next batch (a tool that runs the batches reads pagesLeft); pages too
+  // big for the prompt on their own aren't among them: another batch won't read them.
+  const left = pending.length;
+  const big = tooBig.map((t) => `${t.source}/${t.page}`);
   const after = await readKnowledge(root);
   const recheck = Object.entries(after.reviews)
     .filter(([, v]) => v.state === "stale")
@@ -239,30 +304,35 @@ export async function knowledgeScan(
     io.out(
       JSON.stringify(
         {
-          ...r,
-          changes: w.changes,
+          ...total,
+          changes: c,
           recheck,
-          plan: { changed: plan.changed, removed: plan.removed, unchanged: plan.unchanged },
+          plan: { changed: first.changed, removed: first.removed, unchanged: first.unchanged },
+          batches: batches.length,
           pagesLeft: left,
+          ...(left ? { left: pending } : {}),
+          ...(big.length ? { tooBig } : {}),
         },
         null,
         2,
       ),
     );
-    return r.failed.length ? 1 : 0;
+    if (left) io.report?.({ pagesLeft: left });
+    return total.failed.length ? 1 : 0;
   }
   for (const s of snapshots) {
     const id = s.manifest.source;
-    const read = plan.changed[id]?.length ?? 0;
-    const kept = plan.unchanged[id] ?? 0;
-    const removed = plan.removed[id]?.length ?? 0;
+    const read = readNow[id]?.length ?? 0;
+    const kept = first.unchanged[id] ?? 0;
+    const removed = first.removed[id]?.length ?? 0;
+    const n = batches.filter((b) => b.r.attempts.length).length;
+    const inBatches = n > 1 ? ` in ${n} batches, each within the reader's prompt` : "";
     io.out(
       kept || removed
-        ? `Read ${plural(read, "page")} of ${id} that changed or are new (snapshot ${s.manifest.date}); kept ${plural(kept, "page")}'s items as they were${removed ? `; ${plural(removed, "page")} gone` : ""}.`
-        : `Read ${plural(read, "page")} of ${id} (snapshot ${s.manifest.date}).`,
+        ? `Read ${plural(read, "page")} of ${id} that changed or are new${inBatches} (snapshot ${s.manifest.date}); kept ${plural(kept, "page")}'s items as they were${removed ? `; ${plural(removed, "page")} gone` : ""}.`
+        : `Read ${plural(read, "page")} of ${id}${inBatches} (snapshot ${s.manifest.date}).`,
     );
   }
-  const c = w.changes;
   if (c.added.length) io.out(`New: ${c.added.join(", ")}`);
   if (c.changed.length) io.out(`Changed: ${c.changed.join(", ")}`);
   if (c.removed.length) io.out(`Gone: ${c.removed.join(", ")}`);
@@ -271,10 +341,11 @@ export async function knowledgeScan(
     io.out(
       `Reviews to check again, their page changed: ${recheck.join(", ")} (atticus knowledge verify <item>).`,
     );
-  const count = (k: KnowledgeKind) => r.items.filter((i) => knowledgeKindOf(i) === k).length;
+  const items = total.items;
+  const count = (k: KnowledgeKind) => items.filter((i) => knowledgeKindOf(i) === k).length;
   io.out(
-    `Kept ${plural(r.items.length, "item")}${
-      r.items.length
+    `Kept ${plural(items.length, "item")}${
+      items.length
         ? `, each quote checked on its page: ${KNOWLEDGE_KINDS.filter((k) => count(k) > 0)
             .map((k) => `${count(k)} ${k}`)
             .join(", ")}`
@@ -282,38 +353,46 @@ export async function knowledgeScan(
     }.`,
   );
   io.out(`Written to ${knowledgeRelOf(root)}/items/ and ${knowledgeRelOf(root)}/scan.yaml.`);
+  if (big.length)
+    io.out(
+      `${plural(big.length, "page")} didn't fit the reader's prompt on ${big.length === 1 ? "its" : "their"} own and ${big.length === 1 ? "isn't" : "aren't"} read: ${named(big)} (${tooBig[0]!.reason}). Give the knowledge reader more room (budgets.perAgent.knowledge-reader in org-pack/runtime.yaml), or use a model with a bigger limit, then run atticus knowledge scan again.`,
+    );
   if (left) {
-    io.out(leftLine());
+    io.out(
+      `${plural(left, "page")} left to read: run atticus knowledge scan again for the next batch (${named(pending)}).`,
+    );
     // As data too, for a tool that runs the batches (--handoff --json gives it as pagesLeft).
     io.report?.({ pagesLeft: left });
   }
-  if (r.conflicts.length) {
+  if (total.conflicts.length) {
     io.out(
-      `${plural(r.conflicts.length, "conflict")} between pages (both kept, for an owner to settle):`,
+      `${plural(total.conflicts.length, "conflict")} between pages (both kept, for an owner to settle):`,
     );
-    for (const c of r.conflicts)
+    for (const x of total.conflicts)
       io.out(
-        `  ${c.about.join(", ")}: ${c.pages.map((p, k) => `${p.page} says "${c.says[k]}"`).join("; ")}`,
+        `  ${x.about.join(", ")}: ${x.pages.map((p, k) => `${p.page} says "${x.says[k]}"`).join("; ")}`,
       );
   }
-  for (const s of r.superseded)
+  for (const s of total.superseded)
     io.out(
       `Superseded: ${s.old.page} is replaced by ${s.new.page}; nothing on it was kept as a current rule.`,
     );
-  if (r.injections.length) {
+  const inj = total.injections;
+  if (inj.length) {
     io.out(
-      `${plural(r.injections.length, "passage")} that tr${r.injections.length === 1 ? "ies" : "y"} to instruct AI tools (data, never followed; a person should review the page):`,
+      `${plural(inj.length, "passage")} that tr${inj.length === 1 ? "ies" : "y"} to instruct AI tools (data, never followed; a person should review the page):`,
     );
-    for (const i of r.injections)
+    for (const i of inj)
       io.out(
         `  ${i.source}/${i.page}:${i.line}${i.section ? ` (${i.section})` : ""}${i.hidden ? ", hidden from readers" : ""}: "${i.text}"`,
       );
   }
-  if (r.failed.length) {
+  const failed = total.failed;
+  if (failed.length) {
     io.out(
-      `${plural(r.failed.length, "item")} still fail${r.failed.length === 1 ? "s" : ""} the checks and ${r.failed.length === 1 ? "was" : "were"} not kept:`,
+      `${plural(failed.length, "item")} still fail${failed.length === 1 ? "s" : ""} the checks and ${failed.length === 1 ? "was" : "were"} not kept:`,
     );
-    for (const f of r.failed) io.out(`  ${f.kind} ${f.id}: ${f.problems.join("; ")}`);
+    for (const f of failed) io.out(`  ${f.kind} ${f.id}: ${f.problems.join("; ")}`);
     return 1;
   }
   return 0;

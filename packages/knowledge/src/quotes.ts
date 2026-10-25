@@ -6,8 +6,9 @@ import { hiddenSpans } from "@maycombhq/ai";
  * comments, hidden elements) never counts: a quote has to be in what a reader of the page sees.
  * Whitespace and line breaks are folded, curly quotes match straight ones, single quote marks
  * match double ones, and the punctuation a quote ends with is left out, so a sentence cut short or
- * a table cell quoted as a sentence still matches (ADR 0103); every word is still on the page, in
- * order. Nothing else is forgiven.
+ * a table cell quoted as a sentence still matches (ADR 0103); a line's blockquote and list markers
+ * are left out, so a sentence wrapping inside a blockquote matches; every word is still on the
+ * page, in order. Nothing else is forgiven.
  */
 
 export interface PageLine {
@@ -78,12 +79,20 @@ const sameHeading = (a: string, b: string) =>
 /** Folded for matching a quote: double quote marks as single ones too (ADR 0103). */
 const matchFold = (s: string) => foldQuote(s).replace(/"/g, "'");
 
+/**
+ * A line's Markdown container markers: blockquote `>` (nested too), then a list marker (`-`,
+ * `*`, `+`, `1.` or `1)`). A sentence that wraps inside a blockquote, or runs from one list item
+ * into the next, reads on without them; the words are still on the page, in order.
+ */
+const MARKERS = /^\s*(?:>\s?)*\s*(?:(?:[-*+]|\d{1,9}[.)])\s+)?/;
+const unmark = (s: string) => s.replace(MARKERS, "");
+
 /** Find folded words in a run of lines; the line the match starts on. */
 function findIn(lines: PageLine[], q: string): number | undefined {
   let text = "";
   const lineAt: number[] = [];
   for (const l of lines) {
-    const t = matchFold(l.text);
+    const t = matchFold(unmark(l.text));
     if (!t) continue;
     if (text) {
       text += " ";
@@ -106,7 +115,8 @@ export type QuoteCheck =
  */
 export function checkQuote(text: string, quote: string, section?: string): QuoteCheck {
   // The punctuation a quote ends with is the model's, not always the page's (ADR 0103).
-  const q = matchFold(quote).replace(/[\s.,;:!?]+$/, "");
+  // A quote copied with the page's marker in front ("> Every restart...") reads as the page does.
+  const q = matchFold(unmark(quote)).replace(/[\s.,;:!?]+$/, "");
   if (q.length < 12) return { ok: false, problem: "the quote is too short to check" };
   const lines = pageLines(text);
   const sections = [...new Set(lines.map((l) => l.section))];

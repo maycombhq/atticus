@@ -68,10 +68,12 @@ describe("atticus upgrade", () => {
       ["gates-v2", ["org-pack/gates.yaml"]],
       ["flow-schema-v2", ["specs/forge-web/forge-web.save-customer.yaml"]],
       ["questions-v2", ["questions/q-0f1e2d3c4b5a.yaml"]],
+      // The Forge pack's sources.yaml is at version 1.
+      ["sources-v2", ["org-pack/sources.yaml"]],
     ]);
     const r = io();
     expect(await upgradeCommand(root, { check: true }, r.io, "1.0.0")).toBe(1);
-    expect(r.out[0]).toMatch(/6 upgrade steps to run/);
+    expect(r.out[0]).toMatch(/7 upgrade steps to run/);
     // A dry run changes nothing.
     const before = await readFile(join(root, "catalog/generated/system/ledger.yaml"), "utf8");
     expect(await upgradeCommand(root, { dryRun: true }, io().io, "1.0.0")).toBe(0);
@@ -115,6 +117,18 @@ describe("atticus upgrade", () => {
       "questions-v2",
       "starter-review",
       "catalog-schema-v3",
+      "sources-v2",
+    ]);
+    // sources.yaml at version 2, its wiki as it was: every page still read.
+    const sources = await readFile(join(root, "org-pack/sources.yaml"), "utf8");
+    expect(sources).toMatch(/^schemaVersion: 2$/m);
+    expect(parse(sources).wikis).toEqual([
+      {
+        id: "forge-wiki",
+        type: "markdown-folder",
+        location: "../../inputs/wiki",
+        owner: "team-platform",
+      },
     ]);
     expect(await readFile(join(root, "questions/q-0f1e2d3c4b5a.yaml"), "utf8")).toMatch(
       /^schemaVersion: 2$/m,

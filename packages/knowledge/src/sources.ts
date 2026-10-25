@@ -3,6 +3,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
   parseRecord,
+  sourceReadsPage,
   type CatalogRecord,
   type OrgPack,
   type RecordOf,
@@ -366,6 +367,9 @@ export async function syncSources(o: SyncOptions): Promise<SyncResult> {
     return res;
   }
 
+  // Every source's pages first, each source's include and exclude applied (sources.yaml version
+  // 2), so a page two sources cover can be read once.
+  const read: { source: WikiSource; raw: RawPage[] }[] = [];
   for (const source of o.orgPack.sources.wikis) {
     const folder =
       source.type === "markdown-folder" ||
@@ -393,6 +397,24 @@ export async function syncSources(o: SyncOptions): Promise<SyncResult> {
             : `Can't read the ${source.type} wiki ${source.id}: ${(e as Error).message}`,
       });
       continue;
+    }
+    read.push({ source, raw: raw.filter((r) => sourceReadsPage(source, r.pagePath)) });
+  }
+  const owners = pageOwners(read.filter((x) => !o.adaptersById?.[x.source.id]));
+
+  for (const { source, raw: all } of read) {
+    // A page another source also covers is read by the one nearest to it (its path there is
+    // shortest; the first listed on a tie), and skipped here with where it is read.
+    const raw: RawPage[] = [];
+    for (const r of all) {
+      const owner = owners.get(r.path);
+      if (!owner || owner.source === source.id) raw.push(r);
+      else
+        res.skipped.push({
+          source: source.id,
+          path: r.path,
+          reason: `also in ${owner.source} (as ${owner.pagePath}), which reads it`,
+        });
     }
     // Screen every page as it was read (wiki text is untrusted); keep them all, flag the risky.
     const flagged = new Map(
@@ -452,6 +474,33 @@ export async function syncSources(o: SyncOptions): Promise<SyncResult> {
     }
   }
   return res;
+}
+
+/**
+ * Which source reads each page that two or more cover, by the page's evidence path: the source
+ * whose path for it has the fewest folders (the source nearest to it, likely made for it), the
+ * first listed on a tie. A page one source covers isn't listed.
+ */
+function pageOwners(
+  read: { source: WikiSource; raw: RawPage[] }[],
+): Map<string, { source: string; pagePath: string }> {
+  const by = new Map<string, { source: string; pagePath: string }[]>();
+  for (const { source, raw } of read)
+    for (const r of raw) {
+      const list = by.get(r.path) ?? [];
+      list.push({ source: source.id, pagePath: r.pagePath });
+      by.set(r.path, list);
+    }
+  const out = new Map<string, { source: string; pagePath: string }>();
+  for (const [path, list] of by) {
+    if (new Set(list.map((x) => x.source)).size < 2) continue;
+    const depth = (p: string) => p.split("/").length;
+    out.set(
+      path,
+      list.reduce((a, b) => (depth(b.pagePath) < depth(a.pagePath) ? b : a)),
+    );
+  }
+  return out;
 }
 
 /** The SourceDocument record for a page read from a wiki. */
