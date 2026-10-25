@@ -22,6 +22,7 @@ import {
 import { baseProblem, deltaBase, flowBase, mergeDelta } from "./merge.js";
 import { readPlacement } from "./feature.js";
 import { instructionSource, wholeLists, type ContextReport } from "../engine.js";
+import { pastCorrectionsSource } from "./past-corrections.js";
 import { recordKnowledge } from "./knowledge-applies.js";
 import { estateContext } from "./estate-context.js";
 import {
@@ -1998,6 +1999,23 @@ export async function architectureStage(
         ]
       : []),
   ];
+  // H2: the closest past corrections of this stage, when there are any (else nothing changes).
+  const past = await pastCorrectionsSource(root, {
+    stage: "architecture",
+    change: change.id,
+    touches: {
+      repos: [
+        ...touched.map((f) => f!.repo),
+        ...placement.newFlows.map((f) => f.repo),
+        ...change.touches.repos,
+      ],
+      tables: [...tablesFor(estate, placement), ...change.touches.tables],
+      flows: placement.flows.map((f) => f.id),
+      systems: change.systems,
+    },
+    budget: stageBudget(ctx, ARCHITECTURE_AGENT),
+  });
+  if (past) sources.push(past.source);
   const instructions = [
     "# Flow architect",
     "",
@@ -2006,6 +2024,7 @@ export async function architectureStage(
     formatFor(classificationLevels(ctx)),
     "",
     SELF_CHECK_RULE,
+    ...(past ? ["", past.rule] : []),
   ].join("\n");
   // The estate and the patterns the placement and today's flows lead to (ADR 0107), or all.
   const patternById = new Map(patterns.map((i) => [i.id, i]));

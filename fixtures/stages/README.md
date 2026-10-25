@@ -60,3 +60,12 @@ and `bench/stories/forge-fraud-check.yaml`, an invented reference story (with a 
 checkout step the draft lacks) to score it against.
 
 Everything here is invented.
+
+`corrections/` is the drafted-against-merged scenario (H1 to H3, ADR 0087 addendum, 2026-10-25).
+`changes/archive/` holds three archived Forge changes whose kept pairs (`stage/<stage>.drafted/`,
+`.merged/` and `.capture.yaml`) needed fewer edits each time: `screen-orders` (feature,
+architecture and stories, many edits), `bulk-orders` (one line in the feature, one criterion
+reworded) and `reserve-later` (merged as drafted). `changes/restock-alert/` was merged on the
+host but isn't pulled yet (`waiting-for-merge`). `expected/learn.json` and `expected/learn.txt` are
+the report `atticus change learn` gives for them. `answers/` holds the three stage answers for the
+fraud check, which the past-corrections test drafts with and without the archive beside it.

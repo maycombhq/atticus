@@ -4,6 +4,13 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### Better with every correction: drafted against merged, measured, and fed back (H1 to H3, ADR 0087 addendum)
+
+- **What Atticus drafted is kept beside what merged.** When `atticus change sync` finds a stage's hand-off PR merged, it writes `stage/<stage>.drafted/` (the stage's files as the draft commit had them), `stage/<stage>.merged/` (as the merge commit has them) and `stage/<stage>.capture.yaml` (both commits, and each file's status). It reads them from the clone's git, with no fetch and no Git host call beyond the sync's own. A merge you haven't pulled yet waits, and `atticus change learn` completes it after a pull. The next hand-off PR carries the pairs.
+- **`atticus change learn [--json]`** says how much people changed the drafts, per merged change and stage: lines added, removed and changed per file, and per story the criteria and fields added and removed and the parts reworded. It also gives the trend by merge date, comparing the earlier half with the later half once a stage has three merged changes. It is deterministic, from the kept pairs.
+- **Past corrections in the next draft.** The feature, architecture and stories stages' prompts get at most two past pairs of the same stage. Each shares a repo, table, flow, system or entry with the new change, and is quoted as "the draft said … the team changed it to …", within 5% of the stage's budget. With no past pair, the prompt is byte for byte what it was, so recorded replays keep passing.
+- Not yet: H4 (repeated corrections become proposed critic rules), and past corrections for `change draft` and `plan stories` on the change-draft path.
+
 ### A story's implementation steps follow the places in the code that change (B-steps, ADR 0124 addendum B-steps)
 
 - **Each story file has an Implementation steps section**, after Scope: one numbered step per place the change goes into, in the tasks' order. A step is each task's own code (the line its flow step is at, or the line an added step goes in after), each file a task declares a field or column in (the files to touch from the map's citations, B-fixes: one step per file, with every task's lines and reasons), and each new migration file. A new flow's tasks that cite no code are one step of new code, because the map can't tell their places apart. Each step names its tasks, and their acceptance criteria accept it. The tasks are unchanged and are still what a developer runs. The steps are worked out from the tasks (`storySteps` in the planner) and aren't stored. The stories prompt is unchanged, so no recording was re-recorded.

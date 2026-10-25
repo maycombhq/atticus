@@ -1,0 +1,30 @@
+stories:
+  - id: s1-place-order
+    title: Screen each order for fraud
+    asA: shop owner
+    iWant: every new order screened by Northwind Pay
+    soThat: stolen cards don't empty the stock
+    tasks:
+      - id: "1.1"
+        criteria:
+          - text: "Given a new order, when it is placed, then sku, quantity and cardToken are sent to Northwind Pay and the verdict is read"
+            checks: [sku, quantity, cardToken, verdict]
+      - id: "1.2"
+        criteria:
+          - text: "Given a rejected verdict, when the order is placed, then the verdict refuses it with 422 and no stock is reserved"
+            checks: [verdict]
+      - id: "1.3"
+        criteria:
+          - text: "Given an accepted order, when it is saved, then the orders row holds sku, quantity and fraud_verdict"
+            checks: [sku, quantity, fraud_verdict]
+requests:
+  - item: firewall-rule-request
+    flow: forge-orders.place-order
+    step: 1
+    why: The new call reaches the Northwind Pay host.
+    quote: "including every new vendor host"
+  - item: vendor-onboarding
+    flow: forge-orders.place-order
+    step: 1
+    why: The order's details go to Northwind Pay for the first time.
+    quote: "Before a service sends any data to a vendor for the first time."

@@ -1,0 +1,14 @@
+# What Atticus drafted beside what was merged (H1, ADR 0087 addendum). Atticus writes this file.
+schemaVersion: 1
+change: restock-alert
+stage: feature
+phase: define
+pr: { number: 14, url: https://git.example.com/forge/forge-metarepo/pull/14 }
+branch: handoff/restock-alert/define
+base: main
+state: waiting-for-merge
+mergedAt: 2026-10-10T10:00:00Z
+capturedAt: 2026-10-10T10:00:00Z
+drafted: { from: git, commit: d9d9d9d9d9d9d9d9d9d9d9d9d9d9d9d9d9d9d9d9 }
+files: []
+note: "The merge of PR #14 isn't in this clone yet: pull main, then run atticus change learn."

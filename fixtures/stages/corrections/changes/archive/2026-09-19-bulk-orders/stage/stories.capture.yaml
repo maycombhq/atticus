@@ -1,0 +1,15 @@
+# What Atticus drafted beside what was merged (H1, ADR 0087 addendum). Atticus writes this file.
+schemaVersion: 1
+change: bulk-orders
+stage: stories
+phase: plan
+pr: { number: 9, url: https://git.example.com/forge/forge-metarepo/pull/9 }
+branch: handoff/bulk-orders/plan
+base: main
+state: captured
+mergedAt: 2026-09-18T10:00:00Z
+capturedAt: 2026-09-18T10:00:00Z
+drafted: { from: git, commit: d9d9d9d9d9d9d9d9000000000000000000000000 }
+merged: { commit: m9m9m9m9m9m9m9m9000000000000000000000000, at: 2026-09-18T10:00:00Z, how: message }
+files:
+  - { path: stories/s1-bulk-upload.md, status: edited }

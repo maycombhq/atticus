@@ -1,0 +1,30 @@
+How much people changed Atticus's drafts, from 7 merged hand-offs in 3 changes:
+
+screen-orders
+  feature (PR #3, merged 2026-09-01): 5 of 24 lines edited (21%); 1 of 2 files
+    feature.yaml (edited): +2 -0 ~3
+  architecture (PR #4, merged 2026-09-03): 2 of 17 lines edited (12%); 1 of 1 files
+    target-flows/forge-orders.place-order.yaml (edited): +0 -0 ~2
+  stories (PR #5, merged 2026-09-05): 4 of 38 lines edited (11%); 1 of 2 files
+    stories/s1-screen-order.md (edited): +0 -0 ~4
+    story s1-screen-order (edited): criteria +1 -1; fields added: cardToken; changed: title, Acceptance criteria, Data changes, Tasks
+
+bulk-orders
+  feature (PR #7, merged 2026-09-15): 1 of 19 lines edited (5%); 1 of 2 files
+    feature.yaml (edited): +0 -0 ~1
+  stories (PR #9, merged 2026-09-18): 1 of 33 lines edited (3%); 1 of 1 files
+    stories/s1-bulk-upload.md (edited): +0 -0 ~1
+    story s1-bulk-upload (edited): criteria +1 -1; changed: Acceptance criteria
+
+reserve-later
+  feature (PR #11, merged 2026-10-01): 0 of 15 lines edited (0%); 0 of 1 files
+  stories (PR #12, merged 2026-10-03): 0 of 32 lines edited (0%); 0 of 1 files
+
+Trend (share of lines people edited, by merge date):
+  all stages: 14% of lines edited in the earlier half, 1% in the later half, over 7 merged: falling.
+  architecture: 1 merged so far; a trend needs 3.
+  feature: 21% of lines edited in the earlier half, 0% in the later half, over 3 merged: falling.
+  stories: 11% of lines edited in the earlier half, 0% in the later half, over 3 merged: falling.
+
+Not counted yet:
+  restock-alert feature (PR #14): The merge of PR #14 isn't in this clone yet: pull main, then run atticus change learn.

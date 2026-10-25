@@ -28,6 +28,7 @@ import {
 } from "./loop.js";
 import { FeaturePlacement, STAGE_SCHEMA_VERSION } from "./schema.js";
 import { dropUncitedQuestions } from "./uncited.js";
+import { pastCorrectionsSource } from "./past-corrections.js";
 
 /**
  * `atticus change feature <change>` (ADR 0087, plan 4.4): the feature placed against the
@@ -391,6 +392,21 @@ export async function featureStage(
       priority: 94,
     });
 
+  // H2: the closest past corrections of this stage, when there are any (else nothing changes).
+  const past = await pastCorrectionsSource(root, {
+    stage: "feature",
+    change: change.id,
+    touches: {
+      repos: change.touches.repos,
+      tables: change.touches.tables,
+      flows: [],
+      systems: change.systems,
+      entry,
+    },
+    budget: stageBudget(ctx, FEATURE_AGENT),
+  });
+  if (past) sources.push(past.source);
+
   const instructions = [
     "# Feature placer",
     "",
@@ -400,6 +416,7 @@ export async function featureStage(
     ...(design ? ["", "Add the design, mapped against the estate:", "", DESIGN_FORMAT] : []),
     "",
     SELF_CHECK_RULE,
+    ...(past ? ["", past.rule] : []),
   ].join("\n");
 
   // The estate: what the brief, stories or design name and lead to (ADR 0107), or all of it.

@@ -5,6 +5,10 @@ import { changesRelOf, handoffBranch, loadOrgPack, orgPackDirOf } from "@maycomb
 import {
   ChangeError,
   archiveChange,
+  completeCaptures,
+  formatLearn,
+  learnReport,
+  type DraftCapture,
   changeFootprint,
   changeReport,
   changeStore,
@@ -378,9 +382,11 @@ export async function changeSync(
       now,
       ...(o.repo ? { repo: o.repo } : {}),
       ...(o.approve && o.by ? { approval: approvalOf(o.by, now, `${id}#merge`) } : {}),
+      ...(deps.git ? { git: deps.git } : {}),
     });
     if (r.merged) {
       io.out(`PR #${r.handoff.pr.number} merged. ${id} is now ${r.state}.`);
+      if (r.capture) io.out(captureLine(r.capture));
       return 0;
     }
     if (r.ready) {
@@ -399,6 +405,37 @@ export async function changeSync(
     }
     return fail(io, e);
   }
+}
+
+/** What `change sync` kept of a merged hand-off (H1), in one line. */
+export function captureLine(c: DraftCapture): string {
+  if (c.state !== "captured") return c.note ?? "";
+  const edited = c.files.filter((f) => f.status !== "same").length;
+  return `Kept what Atticus drafted beside what merged: stage/${c.stage}.drafted/ and stage/${c.stage}.merged/ (${edited} of ${c.files.length} file${c.files.length === 1 ? "" : "s"} changed by people). atticus change learn measures it.`;
+}
+
+/**
+ * atticus change learn [--json] (H3): how much people changed what Atticus drafted, per merged
+ * change and stage, and whether that falls over time. Local only: it first keeps the pairs of
+ * merged hand-offs whose merge is now in the clone (H1), then reads every kept pair.
+ */
+export async function changeLearn(
+  root: string,
+  o: { json?: boolean },
+  io: Output,
+  deps: ChangeDeps = {},
+): Promise<number> {
+  const now = deps.now ?? nowIso();
+  try {
+    const ctx = await loadChangeContext(root);
+    await completeCaptures(root, ctx, { now, ...(deps.git ? { git: deps.git } : {}) });
+  } catch {
+    // No org pack or no git: report what is kept.
+  }
+  const report = await learnReport(root);
+  if (o.json) io.out(JSON.stringify(report, null, 2));
+  else for (const l of formatLearn(report)) io.out(l);
+  return 0;
 }
 
 /**

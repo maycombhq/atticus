@@ -1,0 +1,15 @@
+# What Atticus drafted beside what was merged (H1, ADR 0087 addendum). Atticus writes this file.
+schemaVersion: 1
+change: reserve-later
+stage: feature
+phase: define
+pr: { number: 11, url: https://git.example.com/forge/forge-metarepo/pull/11 }
+branch: handoff/reserve-later/define
+base: main
+state: captured
+mergedAt: 2026-10-01T10:00:00Z
+capturedAt: 2026-10-01T10:00:00Z
+drafted: { from: git, commit: d11d11d11d11d11d11d11d11000000000000000000000000 }
+merged: { commit: m11m11m11m11m11m11m11m11000000000000000000000000, at: 2026-10-01T10:00:00Z, how: message }
+files:
+  - { path: feature.yaml, status: same }

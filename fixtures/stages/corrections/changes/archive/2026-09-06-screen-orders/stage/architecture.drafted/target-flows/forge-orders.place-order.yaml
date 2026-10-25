@@ -1,0 +1,17 @@
+schemaVersion: 2
+flow: forge-orders.place-order
+repo: forge-orders
+change: modify
+why: The order is screened before stock is reserved.
+steps:
+  - op: add
+    after: 1
+    kind: call-out
+    what: Northwind Pay screens the order
+    to: { component: northwind-pay, entry: "POST /v1/screenings", new: true }
+    fields: { sends: [sku, quantity], returns: [verdict] }
+  - op: change
+    step: 4
+    kind: write
+    what: The order is inserted with the verdict
+    store: { table: forge-orders-db.orders, columns: [sku, quantity, fraud_verdict], types: { fraud_verdict: varchar(10) }, migration: V4__verdict.sql }

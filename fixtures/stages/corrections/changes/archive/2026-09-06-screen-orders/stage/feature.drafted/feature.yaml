@@ -1,0 +1,18 @@
+# The feature placement (ADR 0087). Atticus writes this file.
+schemaVersion: 1
+change: screen-orders
+entry: brief
+summary: Every new order is screened by Northwind Pay before stock is reserved.
+features:
+  - id: cap-ordering
+    why: Placing an order is the feature that changes.
+flows:
+  - id: forge-orders.place-order
+    how: changed
+    why: The screen runs before stock is reserved.
+  - id: forge-stock.reserve-stock
+    how: changed
+    why: Reserving stock waits for the screen.
+newFlows: []
+gaps: []
+conflicts: []
