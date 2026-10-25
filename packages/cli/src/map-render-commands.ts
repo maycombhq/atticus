@@ -13,6 +13,7 @@ import {
   mapDirOf,
   mapRelOf,
   orgPackDirOf,
+  parseRecord,
   questionsRelOf,
   raiseQuestions,
   readRepoSpec,
@@ -114,14 +115,25 @@ export async function writeFactsIntoCatalog(
 
     // Flows go to specs/<repo>/ (ADR 0079); those an earlier write made and the facts no longer
     // have are removed. A drafted flow (another template) is left alone.
+    // A flow the facts project into an invalid Flow (a call-out that names no call: the verifier
+    // keeps the fact, since its line holds) is left out and said, never a crash after the
+    // catalog is written.
+    const flows = result.flows.filter((f) => {
+      const p = parseRecord(f);
+      if (p.ok) return true;
+      io.err(
+        `The flow ${f.id} isn't written to ${specRelOf(root, repo)}/: ${p.issues.map((i) => `${i.path}: ${i.message}`).join("; ")}. Have your assistant fix its flow fact (each call-out step's ref names the call it makes), then run ${rerun}.`,
+      );
+      return false;
+    });
     const spec = await readRepoSpec(root, repo);
-    const ids = new Set(result.flows.map((f) => f.id));
+    const ids = new Set(flows.map((f) => f.id));
     for (const f of spec.flows)
       if (f.template === FACTS_TEMPLATE && !ids.has(f.id)) await removeFlow(root, repo, f.id);
     const flowPaths: string[] = [];
-    for (const f of result.flows) flowPaths.push(await writeFlow(root, repo, f));
+    for (const f of flows) flowPaths.push(await writeFlow(root, repo, f));
     const files: Record<string, string> = {};
-    for (const f of result.flows)
+    for (const f of flows)
       for (const p of flowFiles(f)) {
         const text = await readFile(join(o.dir, ...p.split("/")), "utf8").catch(() => undefined);
         if (text !== undefined) files[p] = specFileHash(text);

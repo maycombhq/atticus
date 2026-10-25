@@ -1,0 +1,78 @@
+# The stories the stories stage works out from add-fraud-check's target flow
+# (../stories/deltas.yaml) over the Forge estate: storiesFromDeltas's output, as data, so the
+# converter to a BenchStory is tested without loading an estate. The CLI test checks that the
+# stage's own reading of the change folder gives the same draft. Invented: Forge, Northwind Pay.
+- id: s1-place-order
+  repo: forge-orders
+  flow: forge-orders.place-order
+  name: A client places an order
+  change: modify
+  entry: POST /orders
+  before:
+    - "1. entry: OrderController.place receives the new order (forge-orders:src/main/java/forge/orders/OrderController.java:4, forge-orders:src/main/java/forge/orders/OrderController.java:9)"
+    - "2. call-out: The stock service reserves the quantity (forge-orders:src/main/java/forge/orders/StockClient.java:7)"
+    - "3. transform: The request becomes an Order entity (forge-orders:src/main/java/forge/orders/OrderController.java:12)"
+    - "4. write: The order is inserted (forge-orders:src/main/java/forge/orders/OrderController.java:13)"
+    - "5. respond: 201 Created with the saved order (forge-orders:src/main/java/forge/orders/OrderController.java:14)"
+  errors:
+    - "The body fails validation: 400 with the errors (forge-orders:src/main/java/forge/orders/OrderController.java:10)"
+  after:
+    - "1. entry: OrderController.place receives the new order"
+    - "2. call-out, added by task 1.1: Northwind Pay screens the order for fraud"
+    - "3. branch, added by task 1.2: A rejected order is refused with 422 and nothing is reserved"
+    - "4. call-out: The stock service reserves the quantity"
+    - "5. transform: The request becomes an Order entity"
+    - "6. write, changed by task 1.3: The order is inserted with the screen's verdict"
+    - "7. respond: 201 Created with the saved order"
+  kept: [1, 4, 5, 7]
+  dependsOn: []
+  tasks:
+    - id: "1.1"
+      story: s1-place-order
+      repo: forge-orders
+      flow: forge-orders.place-order
+      op: add
+      position: 1
+      kind: call-out
+      title: "Add the call-out step: Northwind Pay screens the order for fraud"
+      what: Northwind Pay screens the order for fraud
+      fields: [sku, quantity, cardToken, verdict]
+      evidence:
+        - forge-orders:src/main/java/forge/orders/OrderController.java:4
+        - forge-orders:src/main/java/forge/orders/OrderController.java:9
+      target: northwind-pay POST /v1/screenings (new)
+      to: { component: northwind-pay, entry: POST /v1/screenings, new: true }
+    - id: "1.2"
+      story: s1-place-order
+      repo: forge-orders
+      flow: forge-orders.place-order
+      op: add
+      position: 2
+      kind: branch
+      title: "Add the branch step: A rejected order is refused with 422 and nothing is reserved"
+      what: A rejected order is refused with 422 and nothing is reserved
+      fields: [verdict]
+      evidence:
+        - forge-orders:src/main/java/forge/orders/OrderController.java:4
+        - forge-orders:src/main/java/forge/orders/OrderController.java:9
+    - id: "1.3"
+      story: s1-place-order
+      repo: forge-orders
+      flow: forge-orders.place-order
+      op: change
+      position: 3
+      kind: write
+      title: "Change the write step: The order is inserted with the screen's verdict"
+      what: The order is inserted with the screen's verdict
+      fields: [sku, quantity, fraud_verdict]
+      evidence:
+        - forge-orders:src/main/java/forge/orders/OrderController.java:13
+      store: "forge-orders-db.orders: sku, quantity, fraud_verdict"
+      data:
+        table: forge-orders-db.orders
+        new: false
+        added: [fraud_verdict]
+        types: { fraud_verdict: varchar(20) }
+        classification: { fraud_verdict: internal }
+        migration: V4__add_fraud_verdict.sql
+        migrationFile: V4__add_fraud_verdict.sql

@@ -4,6 +4,12 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### The stories bench scores the stories Atticus drafts (B-stories-bench)
+
+- **`atticus bench stories --change <change> --story <id>`** scores the stories the stories stage drafted for a change (give its id, or its folder) against the reference story in `bench/stories/<id>.yaml`: the change's stories become one bench story (each task a changed step with today's file and line, each criterion split into given, when and then, each error criterion an error case), scored as `--draft` scores a file. `--out <file>` keeps the converted draft.
+- **`atticus verify <repo> --write` no longer stops half way** when a flow from the facts isn't a valid flow (a call-out step that names no call): the catalog and the other flows are written, and it says which flow was left out and what to fix in its fact.
+- `atticus verify <repo> --write --root <dir>` reads `--root` again; it was taken as `--write`'s value.
+
 ### The tier your assistant reads a repo at is measured, not assumed (ADR 0124 addendum A-probe)
 
 - **`atticus probe`** writes a file holding a code it never prints and says what to do in your assistant: **`/atticus-probe`** asks it to open the file, write the code to `answer.txt` beside it and run `atticus probe answer <code>` itself. An assistant that can't run commands gives you the line to paste with `--pasted`; a web chat answers `none`. Opened, wrote and ran is agentic (tier 1); opened and wrote is the batched hand-off (tier 2); anything less is copy-paste (tier 3). A wrong code records nothing, and a probe more than a day old must be started again.
