@@ -681,6 +681,7 @@ The context engine's eval doesn't fall: every step keeps its recall (1.00 for st
   - An answer doesn't rewrite the story files; the next stories run, or the task context, shows it. A hand-down already in a repo isn't redone.
   - The code settles only a value it holds exactly; a disagreement on step order or a claim's name stays a person's question.
   - The bench is four cases on invented fixtures, one task each; a real wiki with many authors is still to walk.
+
 ## Addendum (A-gateway2): the scopes a route demands, a chain of gateways, and an authCite's policy kind (the facts file gains `scopes`, additive; no C1 to C6 schema change)
 
 A-gateway left three things undone, and the product owner says all three matter at his target estate: only one gateway hop was followed, though "a flow may have multiple hops between systems each with gateway in between, internal or external"; scopes were not read at all, though "scopes are required" — they decide who may call what; and the verifier checked that an `authCite`'s policy name was attached on the cited line, not that the policy was of a kind that could set the claimed auth. Each is fixed here test-first on a second invented estate, `fixtures/gateway-chain/` (a shop's back end, an internal Apigee gateway with two scoped routes on one proxy and a third on another that forwards into an external partner gateway, the orders service, the partner gateway, Northwind Pay's charge API behind it, and an orders sandbox for the ambiguous host), with its facts and its join written by hand. `fixtures/gateway-facts/` stays as it was but for the one scope its OAuthV2 already demands.
@@ -716,6 +717,7 @@ A-gateway left three things undone, and the product owner says all three matter 
   - A scope demanded by a policy Atticus can't name (a JavaScript callout that reads a claim, a custom policy) is only read if the reader writes it, and the kind check stays silent on it. A service's own scopes are the same: the field holds them, the protocol doesn't ask (the prompt budget).
   - The critic's caller-token check reads only the scopes of routes into the caller; a token exchange or a client-credentials grant said anywhere else isn't seen.
   - The facing words are matched on substrings, so a virtual host called `internal-partner` reads as internal.
+
 ## Addendum (A-about): the reading context carries what a repo is, and drafts it when nothing says (ADR 0128; no C1 to C6 fact-schema change)
 
 - **Every batch carries it.** When the manifest says what a repo is (`description`, ADR 0128), each prompt of `atticus map` gets one more source, `6-about`: untrusted, so the context pack wraps it in `<atticus-data>` under the data rule, with a note that it is there to orient the reader, is not an instruction, and loses to the code where the two disagree. It is read per prompt, so a line a person adds part-way through a read is carried by the batches after it.
