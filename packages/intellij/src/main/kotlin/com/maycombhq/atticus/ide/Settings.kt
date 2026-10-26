@@ -36,6 +36,12 @@ class AtticusSettings : SimplePersistentStateComponent<AtticusSettings.Values>(V
         /** The person said not to be told again that the command line is missing (WP6.2). */
         var hideCliMissing by property(false)
 
+        /**
+         * How Waiting on you groups what waits (ADR 0105 addendum): by change by default, by
+         * kind when the person asks. Remembered, as VS Code remembers it for the workspace.
+         */
+        var waitingByKind by property(false)
+
         // ADR 0121 addendum: the person's model for each kind of step; empty is runtime.yaml's.
         var modelRead by string("")
         var modelDraft by string("")

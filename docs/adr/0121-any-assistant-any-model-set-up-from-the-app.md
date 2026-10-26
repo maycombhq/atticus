@@ -134,3 +134,29 @@ One model ran every AI step: in VS Code the one `pickModel` chose (`atticus.mode
 - A stage's prompt is sized for its own kind's model; a lens prompt longer than the critic's model takes ends as "too long", as any prompt does.
 - The critic's note on model families still reads `models.recommended.critic` (naysayer `criticModel`); `models.critic` names the model its lenses run on. Joining the two is left to the critic's own work.
 - An editor older than this command line ignores `stepClass`; a command line older than the editor gives none, and the editor keeps one model per step and doesn't pass `--model`.
+
+## Addendum 2 (2026-10-26): the AI-step path through Copilot in IntelliJ (C5)
+
+### Context
+
+Item 8 of the first addendum said Copilot in IntelliJ offers plugins no model, so the plugin names the model a step expects and the person picks it. That was right but thin: the notice only said "this is an AI step, type `/atticus-spec` in Copilot Chat", the slash command went on the clipboard only when `atticus assistant-files` had already written its prompt file, and nothing said what Atticus could and could not do for the person. The product owner, who uses IntelliJ at the bank, asked for this path to be real and provable.
+
+### Decision
+
+1. **What goes on the clipboard, in order of what works.** `core/Handoff.toPaste`: the step's slash command when its Copilot prompt file is written (`.github/prompts/atticus-<step>.prompt.md`); else the prompt itself, read from the file the hand-off wrote; else nothing, and the notice offers "Write the prompt files" (`atticus assistant-files`). The clipboard is set before the notice appears, so the person can paste straight away.
+
+2. **The notice, in order, and nothing more.** `core/Handoff.notice` builds it: what to paste and where; the step's class and the model that class names, for the person to pick in Copilot's own picker (the first addendum's `ATTICUS_MODEL_<CLASS>` and `models.<class>`); how AI steps run in this metarepo (`atticus next`'s `runs`); the limit; and that `atticus` checks the answer, so nothing is taken on trust because Copilot said it.
+
+3. **The limit, said plainly.** GitHub Copilot's IntelliJ plugin publishes no extension point, service or API a third-party plugin can call. Atticus cannot open its chat with a message in it, cannot send a prompt, cannot read a chat (so nothing typed there reaches the prompt history, ADR 0110) and cannot choose its model. The notice says exactly that. The one thing that is reachable is the IDE's own action registry, so the plugin looks up the action that opens the chat (`copilot.chat.show`) and offers "Open Copilot Chat" **when that action is registered**; when it isn't, nothing is offered and nothing is implied. When the Copilot plugin isn't installed at all, the notice says where to get it and offers the other two paths.
+
+4. **Claude Code in a terminal, from IntelliJ.** Every AI step also offers "Run it in Claude Code in a terminal": `claude <the same slash command>` in a console in the metarepo, which the Atticus plugin for Claude Code answers (ADR 0104). The slash commands are the same words in both, so a person who moves between them types one thing. This is cheap because the console is the one the hand-off and model mode already use.
+
+5. **So a step offers, in this order:** Copilot Chat (the clipboard, and Open Copilot Chat where the action exists), Claude Code in a terminal, Atticus's own model where `runtime.yaml` allows model mode (item 5 of the first addendum), and the hand-off on its own. `Handoff.ways` is that list and is tested.
+
+6. **Nothing about checking changes.** The person runs the step; Copilot or Claude writes the answer where the prompt says; `atticus` checks it exactly as it does for any assistant — the facts' verifier, the draft checks, the critic. A shared write still needs a person's yes (safety rule 6).
+
+### Consequences
+
+- An AI step in IntelliJ is one paste and one send, with the model it wants named on screen, instead of a line of instructions.
+- The guide (docs/guide/intellij.md) says what is native, what goes through Copilot or Claude Code, and the two things only VS Code does; it does not promise a Copilot integration that does not exist.
+- If GitHub ever publishes an API for its IntelliJ plugin, `Copilot.kt` is the one place to change, and `Handoff.notice`'s `copilotApi` flag already has the words for it.

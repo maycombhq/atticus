@@ -40,6 +40,7 @@ class RefreshAction : AtticusAction() {
         val p = e.project ?: return
         AtticusApp.of(p).reload()
         AtticusStatus.of(p).refresh()
+        AtticusTrees.of(p).refreshAll()
     }
 }
 

@@ -36,11 +36,26 @@ class AtticusToolWindowFactory :
     DumbAware {
     override fun createToolWindowContent(project: Project, toolWindow: ToolWindow) {
         val cf = ContentFactory.getInstance()
-        val app = AppPanel(project, toolWindow.disposable)
+        val d = toolWindow.disposable
+        val app = AppPanel(project, d)
+        // ADR 0105 addendum 2: the tabs in the order of a working day — what is next, what waits
+        // on me, my changes, the repos, what the organisation knows, then the model's own work;
+        // the app and the Output last. Each tree reads itself when its tab is first shown.
+        val trees: List<Pair<String, RowTree>> =
+            listOf(
+                Copy.NEXT_TAB to NextPanel(project, d),
+                Copy.WAITING_TAB to WaitingPanel(project, d),
+                Copy.CHANGES_TAB to ChangesPanel(project, d),
+                Copy.REPOS_TAB to ReposPanel(project, d),
+                Copy.KNOWLEDGE_TAB to KnowledgePanel(project, d),
+                Copy.RUNS_TAB to RunsPanel(project, d),
+                Copy.HISTORY_TAB to HistoryPanel(project, d),
+            )
+        for ((name, panel) in trees) toolWindow.contentManager.addContent(cf.createContent(panel, name, false))
         toolWindow.contentManager.addContent(cf.createContent(app, Copy.APP_TAB, false))
-        // WP6.2: what waits on you, as a native tree beside the app.
-        toolWindow.contentManager.addContent(cf.createContent(WaitingPanel(project, toolWindow.disposable), Copy.WAITING_TAB, false))
-        toolWindow.contentManager.addContent(cf.createContent(LogPanel(project, toolWindow.disposable), Copy.OUTPUT_TAB, false))
+        toolWindow.contentManager.addContent(cf.createContent(LogPanel(project, d), Copy.OUTPUT_TAB, false))
+        AtticusTrees.of(project).register(trees.map { it.second })
+        for ((_, panel) in trees) panel.refresh()
         val service = AtticusApp.of(project)
         if (service.state == AppState.Checking) service.refresh() else app.show(service.state)
     }

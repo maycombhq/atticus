@@ -30,6 +30,7 @@ import com.maycombhq.atticus.core.CommandLine
 import com.maycombhq.atticus.core.Commands
 import com.maycombhq.atticus.core.Copy
 import com.maycombhq.atticus.core.ExpectedModel
+import com.maycombhq.atticus.core.Handoff
 import com.maycombhq.atticus.core.HowToRun
 import com.maycombhq.atticus.core.Lists
 import com.maycombhq.atticus.core.Metarepo
@@ -41,6 +42,7 @@ import com.maycombhq.atticus.core.Peer
 import com.maycombhq.atticus.core.PickItem
 import com.maycombhq.atticus.core.StepClass
 import com.maycombhq.atticus.core.StepModels
+import com.maycombhq.atticus.core.ToPaste
 import com.maycombhq.atticus.core.Words
 import java.awt.datatransfer.StringSelection
 import java.nio.file.Files
@@ -119,6 +121,9 @@ class CommandFlow(private val project: Project) {
 
     /** ADR 0113: a change, picked from those the metarepo has (or typed when it has none). */
     fun pickChange(title: String, prompt: String): String? = fromList(title, changes(), Copy.NO_CHANGES, prompt)?.trim()?.takeIf { it.isNotEmpty() }
+
+    /** A repo, picked from the manifests (ADR 0105 addendum 2: every native step on a repo asks it). */
+    fun pickRepo(title: String, prompt: String): String? = fromList(title, repos(), Copy.NO_REPOS, prompt)?.trim()?.takeIf { it.isNotEmpty() }
 
     /** ADR 0113: one of a change's tasks, from its tasks.md. */
     fun pickTask(change: String): String? {
@@ -261,22 +266,40 @@ class CommandFlow(private val project: Project) {
     fun aiStep(argv: List<String>, slash: String?) {
         background("Reading how AI steps run here", { cli(listOf("next", "--json", "--root", cwd)) }) { r ->
             val view = Next.parse(r.stdout)
-            // WP6.1: the slash command works only where its prompt file is; else say how to write it.
-            val missing = slash != null && metarepo != null && !Peer.hasPromptFile(metarepo, slash)
+            // ADR 0121 addendum 2: the prompt or its slash command on the clipboard, with the
+            // model class the step expects and the one limit said plainly. Nothing is sent for
+            // the person: Copilot's IntelliJ plugin publishes nothing a plugin can call.
+            val paste = Handoff.toPaste(metarepo, slash, null)
+            if (paste !is ToPaste.Nothing) CopyPasteManager.getInstance().setContents(StringSelection(pasted(paste)))
+            val expects = expectedFor(argv, null, view)
+            // The one thing Copilot's IntelliJ plugin leaves reachable: the IDE's action registry.
+            val chat = Copilot.chatAction()
+            val lines = Handoff.notice(paste, expects, view?.runs, copilotApi = chat != null) + if (Copilot.installed()) emptyList() else listOf(Copy.COPILOT_MISSING)
             val actions =
                 listOfNotNull(
-                    if (missing) Notify.action(Copy.WRITE_PROMPT_FILES) { captured(listOf("assistant-files")) { said(listOf("assistant-files"), it) } } else null,
-                    slash?.takeIf { !missing }?.let { s -> Notify.action(Copy.copy(s)) { CopyPasteManager.getInstance().setContents(StringSelection(s)) } },
+                    if (chat != null) Notify.action(Copy.OPEN_COPILOT_CHAT) { Copilot.openChat() } else null,
+                    if (paste is ToPaste.Nothing) {
+                        Notify.action(Copy.WRITE_PROMPT_FILES) { captured(listOf("assistant-files")) { said(listOf("assistant-files"), it) } }
+                    } else {
+                        Notify.action(Copy.copy(pasteWhat(paste))) { CopyPasteManager.getInstance().setContents(StringSelection(pasted(paste))) }
+                    },
+                    // The same slash command in Claude Code, in a terminal opened in the metarepo.
+                    slash?.let { s -> Notify.action(Copy.RUN_IN_CLAUDE_CODE) { inConsole("claude", Handoff.claudeCodeArgv(s)) } },
                     if (view?.modelMode == true) Notify.action(Copy.RUN_MODEL) { inConsole("model", Commands.withModel(argv)) } else null,
                     Notify.action(Copy.RUN_HANDOFF) { inConsole("hand-off", Commands.handoff(argv)) },
                 )
-            // ADR 0121 addendum: IntelliJ can't choose Copilot's model, so the text names the one
-            // this kind of step expects, for the person to pick in Copilot's own picker.
-            val expects = expectedFor(argv, null, view)?.let { "<br>" + Copy.expectsModel(it) } ?: ""
-            val text = (if (missing) Copy.noPromptFile(slash) else Copy.aiStep(slash)) + (view?.runs?.let { "<br>" + Copy.howStepsRun(it) } ?: "") + expects
-            Notify.show(project, text, NotificationType.INFORMATION, *actions.toTypedArray()).also { it.setTitle(Copy.AI_TITLE) }
+            Notify.show(project, lines.joinToString("<br>"), NotificationType.INFORMATION, *actions.toTypedArray()).also { it.setTitle(Copy.AI_TITLE) }
         }
     }
+
+    private fun pasted(p: ToPaste): String =
+        when (p) {
+            is ToPaste.Slash -> p.slash
+            is ToPaste.Prompt -> p.text
+            is ToPaste.Nothing -> ""
+        }
+
+    private fun pasteWhat(p: ToPaste): String = if (p is ToPaste.Slash) p.slash else Copy.THE_PROMPT
 
     /** A shared write: a dry run, the person's yes, then the run with the approve flag. Never the write without the yes. */
     fun approveAndRun(argv: List<String>, flag: String) {
