@@ -72,6 +72,52 @@ export function bundledOpenSpecBin(here: string = import.meta.url): string {
   return join(dirname(dirname(entry)), "bin", "openspec.js");
 }
 
+/**
+ * Run the bundled OpenSpec CLI with the arguments as they are, in the metarepo (ADR 0006
+ * addendum 2026-10-26). `openspec` is not on PATH — it is vendored inside the installed package —
+ * so `atticus openspec <args>` is how a person runs it, and the commands Atticus names in its
+ * messages are commands that work. Nothing is parsed: its own output and exit code come back.
+ */
+export async function runOpenSpecRaw(
+  args: readonly string[],
+  o: { root: string; bin?: string; timeoutMs?: number; env?: NodeJS.ProcessEnv },
+): Promise<{ stdout: string; stderr: string; exitCode: number | null }> {
+  const bin = o.bin ?? bundledOpenSpecBin();
+  return new Promise((done, reject) => {
+    execFile(
+      process.execPath,
+      [bin, ...args],
+      {
+        cwd: resolve(o.root),
+        env: openspecEnv(o.env),
+        timeout: o.timeoutMs ?? 60_000,
+        maxBuffer: 64 * 1024 * 1024,
+        windowsHide: true,
+        encoding: "utf8",
+      },
+      (err, stdout, stderr) => {
+        if (err && (err as NodeJS.ErrnoException).code === "ENOENT") {
+          reject(
+            new OpenSpecError(
+              `OpenSpec could not be started: ${err.message}`,
+              "not_installed",
+              args,
+              null,
+              stderr,
+            ),
+          );
+          return;
+        }
+        done({
+          stdout,
+          stderr,
+          exitCode: err ? (typeof err.code === "number" ? err.code : 1) : 0,
+        });
+      },
+    );
+  });
+}
+
 export class OpenSpecError extends Error {
   constructor(
     message: string,

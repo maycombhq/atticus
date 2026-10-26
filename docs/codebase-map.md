@@ -22,12 +22,14 @@ Atticus 2 (ADR 0124): the assistant reads the code and writes cited facts; `veri
   4. Facts into the catalog: `scanner/src/facts-catalog.ts`. This covers `catalogWithFacts`, `componentRenames` for component ids two repos share, `estateFromFacts`, and the targets questions.
   5. The join across repos: `core/src/facts-join.ts` (`joinFacts`, `joinRecords`). `scanner/src/facts-scan.ts` (`estateFacts`, `factsForScan`) feeds it.
   6. The map renderers `verify/src/map.ts` (`renderMap`, `openApiOf`), with each flow's sequence diagram from `diagrams/src/flow-sequence.ts`.
+  7. The read ledger of a repo read in parts (addendum A-ledger): the plan is written and read in `cli/src/map-parts.ts` (`writeReadPlan`, `readPlanProgress`) as the facts companion `<repo>.read-plan.yaml`; each part's state is read back from the facts and `<repo>.reviewed.jsonl`, never recorded by hand. `map --estimate` writes it, `atticus next` names the part that comes next. The companion names are `FACTS_COMPANIONS` in `core/src/metarepo.ts`.
 - **The scan** (now the readers' cross-check, and the merge every catalog build shares):
   - `packages/scanner/src/scan.ts` (`scanEstate`).
   - `merge-input.ts` (`mergeEstate`, `estateMergeInput`).
   - `facts-scan.ts`: a repo with verified facts is taken from them, and its readers become a note.
 - **CLI:** `packages/cli/src/main.ts` routes every command to a `*-commands.ts` file in the same folder.
   - The twelve commands `atticus help` shows are `TOP_WORDS` and `TOP_HELP` in `top-commands.ts`, with `aliasArgv` for `join`, `stories` and `task`.
+  - `atticus openspec <args...>` (ADR 0006 addendum 2026-10-26) is a pass-through in `openspec-run-commands.ts`, running the bundled OpenSpec through `runOpenSpecRaw` (`openspec-adapter/src/adapter.ts`); `openspec setup` and `openspec check` stay Atticus's own in `workspace-commands.ts`.
   - Every other command is legacy. `atticus legacy` lists them (`help-commands.ts`), and each still runs by its own name.
   - The full `HELP` text in `main.ts` is the command catalogue (`atticus commands --json`, `pnpm docs:commands`, the docs check).
   - Start time: `bin.ts` answers `--version` itself and dynamic-imports `main.ts`, which statically imports only `@maycombhq/core/light` (`SCHEMA_VERSION`, `createLog`) and its own small files; every command module, and `setUpAi` (model providers, context tools, the critic's code search), loads when a command needs it (`NO_AI` lists the commands that skip it). `test/startup.test.ts` holds this. Import a helper like `table` from its own small file (`table.ts`), not from a command module.

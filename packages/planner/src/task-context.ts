@@ -449,13 +449,14 @@ export async function taskContext(
       `${line.repo} has no worktree for ${change.id} yet: open one with atticus workspace open ${change.id} --repos ${line.repo}.`,
     );
   // ADR 0006 addendum: the task phase's progress is OpenSpec's (`openspec instructions apply`
-  // counts tasks.md's boxes), in a metarepo set up with it.
+  // counts tasks.md's boxes), in a metarepo set up with it. The command is named as a person can
+  // run it: openspec isn't on PATH, it ships inside Atticus (addendum 2026-10-26).
   const apply = await metarepoOpenSpec(root)
     ?.applyInstructions(change.id)
     .catch(() => undefined);
   if (apply)
     notes.push(
-      `OpenSpec counts ${apply.progress.complete} of ${apply.progress.total} task${apply.progress.total === 1 ? "" : "s"} done (openspec instructions apply); tick this one in tasks.md when its tests pass.`,
+      `OpenSpec counts ${apply.progress.complete} of ${apply.progress.total} task${apply.progress.total === 1 ? "" : "s"} done (atticus openspec instructions apply); tick this one in tasks.md when its tests pass.`,
     );
   const flowName = ds?.name ?? today?.flow.name ?? delta?.flow;
   return {

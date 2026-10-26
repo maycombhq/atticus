@@ -100,7 +100,8 @@ describe("atticus map <repo> --estimate on a big repo (A-big)", () => {
     expect(text).toMatch(
       /more than one session reads \(150000 tokens\): read it in [2-9] parts, one per session or sub-agent/,
     );
-    expect(text).toMatch(/ {2}part 1 \(about \d+ tokens, \d+ files\): accounts\/\*\*, /);
+    // A-ledger: each part says whether it is read; none is, on a first estimate.
+    expect(text).toMatch(/ {2}part 1 \(to read, about \d+ tokens, \d+ files\): accounts\/\*\*, /);
     // the parts are of the read with the exclusions accepted: no part reads the research tables
     expect(text).not.toMatch(/part \d+ .*research/);
   });

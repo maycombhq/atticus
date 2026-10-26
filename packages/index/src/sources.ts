@@ -427,6 +427,17 @@ function recordNode(
       kind: r.kind,
       how: "endpoint",
     });
+  // A-ledger: a hop is known by the endpoint it calls too. A call out of the estate (a vendor, a
+  // model provider) is an Interface with its method and path and no Endpoint of its own, because
+  // nobody reads a vendor's code: without this, "POST /messages" was a gap though the catalog
+  // held the call.
+  if (r.kind === "Interface" && str(x.method) && str(x.normalizedPath))
+    names.push({
+      name: endpointName(String(x.method), String(x.normalizedPath)),
+      id: r.id,
+      kind: r.kind,
+      how: "call",
+    });
   const links: LinkRow[] = [];
   for (const ref of recordReferences(r))
     links.push({ from: key, to: ref.id, by: "id", type: "ref", how: `field:${ref.field}` });

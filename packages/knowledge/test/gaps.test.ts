@@ -36,6 +36,25 @@ describe("knowledge gaps on the expected Forge catalog", () => {
     ]);
   });
 
+  /**
+   * ADR 0021 addendum (2026-10-26), trial problem 3: the gate asked for a system owner nothing had
+   * asked for, because the platform profile has no owner for the system. The gap now names the
+   * file and the field a person fills, so the answer has somewhere to go.
+   */
+  it("says which file and field a missing system owner is filled in", async () => {
+    const gaps = knowledgeGaps({ records: forgeRecords(), orgPack: await forgePack() });
+    const audit = gaps.find((g) => g.check === "component-source-known")!;
+    expect(audit.fill).toEqual([
+      {
+        file: "profiles/forge/profile.yaml",
+        field: "systems[] (id: audit): owner",
+        what: "the team that owns the system",
+      },
+    ]);
+    // A gap about something the profile doesn't hold names no file to fill.
+    expect(gaps.find((g) => g.check === "call-resilience-known")!.fill).toBeUndefined();
+  });
+
   it("raises each gap as an OwnerQuestion record that passes C1", async () => {
     const gaps = knowledgeGaps({ records: forgeRecords(), orgPack: await forgePack() });
     expect(gaps.map((g) => g.question)).toEqual([

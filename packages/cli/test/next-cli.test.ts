@@ -148,6 +148,51 @@ describe("atticus next", () => {
     ]);
   });
 
+  /**
+   * ADR 0124 addendum A-ledger: a repo read in parts has a read plan beside its facts, so
+   * `atticus next` says which part comes next instead of leaving the person to keep the list.
+   */
+  it("names the part that comes next for a repo read in parts", async () => {
+    const root = await metarepo({ clone: true });
+    await mkdir(join(root, "facts"), { recursive: true });
+    await writeFile(
+      join(root, "facts", "forge-notes.read-plan.yaml"),
+      [
+        "schemaVersion: 1",
+        "repo: forge-notes",
+        "commit: 0123abc",
+        "session: 150000",
+        "plannedAt: 2026-10-26T09:00:00Z",
+        "parts:",
+        ...Array.from({ length: 13 }, (_, i) =>
+          [
+            `  - part: ${i + 1}`,
+            "    paths:",
+            `      - mod${i + 1}/**`,
+            "    files: 10",
+            "    tokens: 120000",
+          ].join("\n"),
+        ),
+        "",
+      ].join("\n"),
+    );
+    // Three parts' folders are in the reviewed file: parts 1 to 3 are read, part 4 is next.
+    await writeFile(
+      join(root, "facts", "forge-notes.reviewed.jsonl"),
+      [1, 2, 3]
+        .map((n) => JSON.stringify({ path: `mod${n}/**`, why: "read; no fact to record" }))
+        .join("\n") + "\n",
+    );
+    const j = await json(root);
+    expect(j.steps[0]!.command).toBe("atticus map forge-notes");
+    expect(j.steps[0]!.why).toBe(
+      "forge-notes is read in 13 parts (facts/forge-notes.read-plan.yaml): part 4 of 13 is next, 3 are read (mod4/**). Your assistant reads the part and writes its facts, each citing its line.",
+    );
+    const r = await run(["next", "--root", root]);
+    expect(r.out[0]).toBe("Next: atticus map forge-notes");
+    expect(r.out[1]).toBe("In Copilot Chat: /atticus-map forge-notes");
+  });
+
   it("after the scan: verify each repo, accept a proposal, answer the questions, then the specs", async () => {
     const root = await metarepo({ clone: true });
     await component(root, "forge-notes");

@@ -60,8 +60,9 @@ describe("identifier words (ADR 0116)", () => {
     ix.close();
   });
 
-  it("is index version 3: an index of version 2 is rebuilt once", () => {
-    expect(INDEX_VERSION).toBe(3);
+  // A-ledger: a hop's endpoint name is indexed too, so an index built before it is rebuilt once.
+  it("is index version 4: an index of an earlier version is rebuilt once", () => {
+    expect(INDEX_VERSION).toBe(4);
   });
 });
 

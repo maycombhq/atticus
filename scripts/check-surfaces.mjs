@@ -17,7 +17,7 @@ import { helpText, REPO } from "./help-text.mjs";
  */
 const CENSUS = {
   /** Distinct `atticus <group> [<sub>]` commands in the help text, which is the catalogue's source (ADR 0096). */
-  commands: 223,
+  commands: 224,
   /** The twelve a person meets first (ADR 0124 addendum D-cli). */
   topCommands: 12,
   /** Pages in the app (`packages/ui/src/app/screens.ts`). */

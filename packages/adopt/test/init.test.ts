@@ -84,6 +84,30 @@ describe("init", () => {
     ]);
   });
 
+  /**
+   * ADR 0006 addendum (2026-10-26), trial problem 1: `init` ends by naming `/atticus-map <repo>`,
+   * so a fresh metarepo must have that slash command. It writes the assistant files itself
+   * instead of leaving the person to find `atticus assistant-files` under `atticus legacy`.
+   */
+  it("writes the assistant files, so /atticus-map exists in a fresh metarepo", async () => {
+    const root = join(await tempDir(), "forge-meta");
+    const r = await init(root, { name: "forge", platform: "forge", openspec: "folders" });
+    expect(r.problems).toEqual([]);
+    for (const f of [
+      ".claude/commands/atticus-map.md",
+      ".claude/commands/atticus-next.md",
+      ".github/prompts/atticus-map.prompt.md",
+      ".github/copilot-instructions.md",
+      "CLAUDE.md",
+    ])
+      expect(r.created, f).toContain(f);
+    expect(await readFile(join(root, ".claude/commands/atticus-map.md"), "utf8")).toContain(
+      "atticus map",
+    );
+    // The count the trial saw: the slash commands are all there, not none.
+    expect(r.assistantFiles).toBeGreaterThanOrEqual(24);
+  });
+
   it("writes no starter review into an org pack it copies (--pack-from)", async () => {
     const root = join(await tempDir(), "forge-meta");
     const r = await init(root, {

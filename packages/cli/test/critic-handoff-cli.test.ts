@@ -171,7 +171,7 @@ describe("atticus critic --mode hand-off", () => {
     await write(r, l.runId!, l.lens, "findings: [unclosed\n");
     let c = capture();
     expect(await handoffDone(r, l.runId!, c.io)).toBe(1);
-    expect(c.err[0]).toMatch(/^findings-complete.yaml isn't YAML: /);
+    expect(c.err[0]).toMatch(/^findings-complete\.yaml isn't YAML(?: \(line \d+, column \d+\))?: /);
     await write(r, l.runId!, l.lens, "findings: []\n");
     c = capture();
     expect(await handoffDone(r, l.runId!, c.io, { now: () => new Date(LATER) })).toBe(0);
@@ -319,6 +319,7 @@ describe("atticus critic <change> --handoff --json (ADR 0106 addendum)", () => {
     doneArgs?: string[];
     resumeArgs?: string[];
     messages?: string[];
+    errors?: string[];
   }
   const step = async (argv: string[]) => {
     const { main } = await import("../src/main.js");
@@ -352,6 +353,49 @@ describe("atticus critic <change> --handoff --json (ADR 0106 addendum)", () => {
     expect(offered).toEqual(["complete", "safe", "ship"]);
     expect(s.j.state).toBe("stopped");
     expect(s.j.messages?.at(-1)).toMatch(/^The plan gate is closed: 12 blocking/);
+  });
+
+  /**
+   * ADR 0115 addendum (2026-10-26), trial problem 5: an unquoted colon in findings-true.yaml made
+   * `--handoff --resume` hand the identical prompt back with no hint anything was wrong; only
+   * `atticus handoff done` named the YAML error. Whichever command reads the answer says what is
+   * wrong with it, with the file, the line and what to fix.
+   */
+  it("names the YAML error in the answer when --handoff --resume offers the run again", async () => {
+    const r = await root();
+    const first = await step([
+      "critic",
+      CHANGE,
+      "--gate",
+      "plan",
+      "--handoff",
+      "--json",
+      "--root",
+      r,
+    ]);
+    const file = first.j.resultFile!;
+    // An unquoted colon in a flow-style entry: the yaml parser refuses it.
+    await writeFile(
+      join(r, file),
+      "findings:\n  - { rule: review.x, artifact: design.md, summary: the hop ledger-api: /transfers has no timeout, why: y, evidence: [{ path: design.md, line: 1 }] }\n",
+    );
+    const again = await step(first.j.resumeArgs!);
+    // Another lens is handed off next, but the broken answer is not passed over in silence.
+    expect(again.j.state).toBe("handoff");
+    const said = [...(again.j.messages ?? []), ...(again.j.errors ?? []), ...again.err].join("\n");
+    expect(said).toMatch(/findings-complete\.yaml isn't YAML \(line \d+, column \d+\): /);
+    expect(said).toContain("A value that holds a colon, a #, or a { } [ ] goes in double quotes.");
+    expect(said).toContain(`atticus handoff done ${first.j.runId}`);
+    // The same, printed rather than as JSON: the error comes before the prompt is offered again.
+    const { main } = await import("../src/main.js");
+    const c = capture();
+    await main(
+      first.j.resumeArgs!.filter((a) => a !== "--json"),
+      c.io,
+      { quiet: true },
+    );
+    expect(c.err[0]).toMatch(/^findings-complete\.yaml isn't YAML \(line \d+, column \d+\): /);
+    expect(c.out.join("\n")).toContain("Prompt: ");
   });
 
   it("counts as an AI step, and critic stats doesn't", async () => {

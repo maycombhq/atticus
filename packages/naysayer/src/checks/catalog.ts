@@ -1,5 +1,11 @@
 import { z } from "zod";
-import { RECORD_KINDS, type CatalogRecord, type OrgPack, type RecordKind } from "@maycombhq/core";
+import {
+  orgPackRelOf,
+  RECORD_KINDS,
+  type CatalogRecord,
+  type OrgPack,
+  type RecordKind,
+} from "@maycombhq/core";
 import { knowledgeGaps, type KnowledgeGap } from "@maycombhq/knowledge";
 import {
   docOf,
@@ -147,8 +153,12 @@ export const knowledgeCheck: DeterministicCheckDef = {
         locator: { record: subject },
         summary: sentence(`Unknown: ${g.question.neededFact}.`),
         why: `The change touches ${subject}, and the catalog can't say this about it, so checks that depend on it can't pass.${g.stale?.length ? ` Stale: ${g.stale.join(", ")}.` : ""}`,
+        // ADR 0021 addendum: when the fact is one a person writes in the org pack (a system's owner), the
+        // fix names that file and field, so the answer has somewhere to go.
         fix: {
-          text: "Answer the owner question; the answer counts once the fact is in the catalog.",
+          text: g.fill?.length
+            ? `Write it in ${g.fill.map((f) => `${orgPackRelOf(ctx.root)}/${f.file}: ${f.field} (${f.what})`).join("; ")}, in a pull request. Answering the owner question doesn't close the gap on its own: the answer counts once the fact is in the catalog.`
+            : "Answer the owner question; the answer counts once the fact is in the catalog.",
         },
         evidence: catalogEvidence(ctx, subject),
         question: { text: g.question.question, owner },

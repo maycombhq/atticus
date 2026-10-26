@@ -205,12 +205,16 @@ export async function handoffStep(
       },
       io,
     );
-  if (stillOffered) io.out(`Run ${run.runId} is still waiting for its result file.`);
   if (!run) {
     for (const l of out) io.out(l);
     for (const l of err) io.err(l);
     return code;
   }
+  // ADR 0115 addendum (2026-10-26): what the step said about an answer it read goes out before the
+  // next prompt is offered. Without this an answer that didn't parse was handed back in silence,
+  // and only `atticus handoff done` ever named the error.
+  for (const l of err) io.err(l);
+  if (stillOffered) io.out(`Run ${run.runId} is still waiting for its result file.`);
   const runsRel = runsRelOf(root);
   io.out(`Prompt: ${HandoffRuntime.promptRel(run, runsRel)}`);
   io.out(`Result file: ${HandoffRuntime.outputRel(run, changesRelOf(root), runsRel)}`);
@@ -293,6 +297,9 @@ async function printJson(
             runArgs: ["--run", run.runId, ...rootArgv(argv)],
           },
           messages: s.out,
+          // ADR 0115 addendum (2026-10-26): what the step said was wrong with an answer it read,
+          // so a tool that runs the loop shows it instead of re-sending the same prompt silently.
+          ...(s.err.length ? { errors: s.err } : {}),
         },
         null,
         2,

@@ -55,14 +55,32 @@ function touchedStores(ctx: CriticContext): { stores: string[]; evidence: Eviden
   return { stores: [...stores].sort(), evidence };
 }
 
+/**
+ * Whether the change's footprint was read from the stages' own files (ADR 0124 addendum
+ * B-change): a target flow is where a schema change is declared on that path.
+ */
+const onStagePath = (ctx: CriticContext) =>
+  ctx.footprint.from.some((f) => f.startsWith("target-flows/"));
+
+/** Whether its target flows change the schema: a new table, a migration, or a column with a type. */
+const changesSchema = (ctx: CriticContext) =>
+  ctx.footprint.signals.some((s) => s.factor === "schema");
+
 export const dataDocPresent: DeterministicCheckDef = {
   id: "data-doc-present",
   question: "complete",
-  description: "When the change touches a data store, data.md exists and is filled in.",
+  description:
+    "When the change's target flows change a data store's schema, data.md exists and is filled in.",
   params: z.strictObject({}),
   run(ctx) {
     const { stores, evidence } = touchedStores(ctx);
     if (stores.length === 0) return { hits: [], subjects: [] };
+    // ADR 0006 addendum (2026-10-26): on the stage path the architecture stage writes data.md
+    // from the target flows, and only when a step changes the schema. A change that reads or
+    // writes columns the catalog already has never gets one, so it is never asked for one: the
+    // design's own Data changes section is the artifact. Nothing is weakened — a schema change
+    // still blocks, and a change off the stage path (a person's own data.md) is asked as before.
+    if (onStagePath(ctx) && !changesSchema(ctx)) return { hits: [], subjects: stores };
     const doc = docOf(ctx.files, DATA);
     if (doc && isFilledDoc(doc)) return { hits: [], subjects: stores };
     const hit: Hit = {
@@ -73,8 +91,12 @@ export const dataDocPresent: DeterministicCheckDef = {
         `The change touches ${stores.join(", ")} but data.md is ${doc ? "still the template" : "missing"}.`,
       ),
       why: "Every data change is described against the current database design: tables, columns, migrations, classification and retention.",
+      // The stage writes data.md from the target flows, so on that path the fix is to run it,
+      // not to write the document by hand (ADR 0006 addendum 2026-10-26).
       fix: {
-        text: "Write data.md: the Changes table, backfill, classification and retention, and other readers and writers.",
+        text: onStagePath(ctx)
+          ? `Run atticus change architecture ${ctx.change.id}: it writes data.md from the target flows (the Changes table, backfill, classification and retention). Edit the flows, never data.md.`
+          : "Write data.md: the Changes table, backfill, classification and retention, and other readers and writers.",
       },
       evidence: [...stores.filter((s) => ctx.byId.has(s)).map(recordEvidence), ...evidence],
       key: "data-doc",

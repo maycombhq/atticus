@@ -57,7 +57,7 @@ atticus workspace sync                                   # base clones of every 
 atticus doctor                                           # each line [ok], [warn] or [FAIL], with what to do
 ```
 
-`atticus init` makes the folder a git repository (`git init`, branch `main`) when it isn't inside one, so the metarepo's changes go through pull requests; a folder already inside a repository is left as it is. `atticus repos discover` never looks inside hidden folders (an assistant's worktrees under `.claude/`), `node_modules` or a nested worktree.
+`atticus init` makes the folder a git repository (`git init`, branch `main`) when it isn't inside one, so the metarepo's changes go through pull requests; a folder already inside a repository is left as it is. It also writes your assistant's files — the slash commands (`.claude/commands/`), Copilot's prompts (`.github/prompts/`) and the instructions — so `/atticus-map <repo>` works in the new metarepo straight away; commit them in a pull request, and run `atticus assistant-files` again whenever the org pack's process files change. `atticus repos discover` never looks inside hidden folders (an assistant's worktrees under `.claude/`), `node_modules` or a nested worktree.
 
 ### Say what each repo is
 
@@ -105,11 +105,20 @@ Every tier writes the same facts file, each fact citing its file and line, and `
 **Claude Code, Cursor or Copilot agent mode (tier 1: the assistant opens files and runs commands).**
 
 - Claude Code: install the plugin once, `/plugin marketplace add maycombhq/atticus` then `/plugin install atticus@maycombhq`.
-- Copilot agent mode (VS Code) or another tool: `atticus assistant-files` writes its prompt files into the metarepo; commit them in a pull request.
+- Copilot agent mode (VS Code) or another tool: `atticus init` already wrote its prompt files into the metarepo; `atticus assistant-files` writes them again after an org-pack change.
 
 Then, in the assistant: `/atticus-map <repo>`. It reads the repo, runs `atticus verify <repo>` after each pass and fixes what is rejected until everything passes, then shows you the questions it raised. Finish with `atticus verify <repo> --write`: the facts go into the catalog and the map is rendered under `map/<repo>/` for review in a pull request.
 
 For a big repo, run `atticus map <repo> --estimate` first: it proposes folders of data, docs or vendored code to leave out (an `exclude:` block to add to `org-pack/scan/<repo>.yaml` in a pull request), and, past what one session reads, the parts to read it in, one per session or sub-agent.
+
+You don't keep that list of parts yourself. `--estimate` writes the plan to `facts/<repo>.read-plan.yaml` and, run again, says which parts are read and which comes next:
+
+```bash
+atticus map <repo> --estimate   # part 4 of 13 is next (3 of 13 read): ...
+atticus next                    # the same, among the other steps
+```
+
+A part counts as read when every folder it covers is accounted for in the facts: a fact citing a file under it, or a line of `facts/<repo>.reviewed.jsonl` saying the file holds nothing to record. So the plan survives a lost session, a sub-agent and someone else carrying on, and reading a part again never un-does it. Commit the plan with the facts.
 
 **Copilot Chat without tools (tier 2: it reads and writes a file you give it, but runs nothing).**
 
@@ -119,6 +128,8 @@ atticus map <repo> --handoff    # prints the batch's prompt file and the answer 
 ```
 
 Give the assistant the prompt file; it writes the answer file. Then `atticus handoff done <run>` and `atticus map <repo> --next` for the next batch: each answer is verified as it comes back. When the last batch is in, `atticus verify <repo> --write`.
+
+If an answer doesn't read, the command that reads it says so — the file, the line and the column, and what to fix (a value holding a `:`, a `#` or `{ } [ ]` goes in double quotes). You never get the same prompt back in silence.
 
 **Copy and paste (tier 3: IntelliJ with Copilot Chat, a web chat).**
 
@@ -141,6 +152,16 @@ atticus next                                              # the next step, and i
 The stages, each looping with Atticus's checks and the critic until it is done: the feature (`/atticus-feature <change>`, or `atticus change feature <change> --handoff`), the architecture (`/atticus-architecture`), the stories (`/atticus-stories`, or `atticus stories <change>`), then a task at a time (`/atticus-task <change> <task>`, or `atticus task <change> <task>`). `atticus critic <change>` reviews it at a gate; `atticus questions` lists what needs a person. Every write to a shared system waits for a person's approval, and a gate is approved by merging its hand-off pull request.
 
 A tier 2 assistant takes each stage with `--handoff` (prompt file in, answer file out, `atticus handoff done <run>`); a tier 3 one with the same prompt pasted.
+
+Between rounds you copy nothing. When a stage's checks find something, the next round's prompt points at a result file that already holds your assistant's last answer, to be edited in place; the stage says which file it copied where. And whichever command reads an answer names what is wrong with it, with the line and what to fix, before it offers a prompt again.
+
+OpenSpec itself ships inside Atticus rather than on your PATH, so run it through Atticus:
+
+```bash
+atticus openspec status                  # --change is filled in when one change is open
+atticus openspec instructions apply
+atticus openspec list --specs
+```
 
 ## When something goes wrong
 

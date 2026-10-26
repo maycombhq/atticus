@@ -12,6 +12,7 @@ import {
   readQuestion,
   retrievalOf,
   runsDirOf,
+  runsRelOf,
   toCanonicalYaml,
   type HeldQuestion,
   type Question,
@@ -896,6 +897,14 @@ export async function runStageLoop<A>(
   }
 
   let resume = o.resume ?? carried;
+  /**
+   * The last draft's answer as the assistant wrote it (ADR 0115 addendum 2026-10-26). A round
+   * after a finding carries it into the new run's folder, so the assistant edits the file it
+   * already wrote and `handoff done` never says the answer wasn't written.
+   */
+  let lastAnswerText: string | undefined;
+  /** Only a hand-off writes its answer to a file, so only a hand-off has one to carry. */
+  const carriesAnswer = o.runtime.kind === "hand-off";
   for (;;) {
     let answered: Question[];
     let run: Run | undefined;
@@ -971,6 +980,11 @@ export async function runStageLoop<A>(
           origin: "atticus",
           text: [
             instructionsWith(spec.instructions, fix, answered, risks, last),
+            // The last answer is in the new run's folder already (2026-10-26): an edit, not a
+            // rewrite. A person's own draft replaces it, so it isn't carried then.
+            ...(carriesAnswer && lastAnswerText !== undefined && !personDraft
+              ? ["", CARRIED_ANSWER_RULE]
+              : []),
             ...(personDraft
               ? [
                   "",
@@ -1049,6 +1063,16 @@ export async function runStageLoop<A>(
           prepared.runId,
           quarantineItems(pack.defences ?? []),
         );
+        // Carry the last answer into this run's folder, so the assistant fixes the file it wrote
+        // instead of writing it again, and nothing has to be copied across by hand.
+        if (carriesAnswer && lastAnswerText !== undefined && !personDraft) {
+          const where = `${runsRelOf(root)}/${change.id}/${prepared.runId}/${spec.output}`;
+          await writeFileAtomic(
+            join(runsDirOf(root), change.id, prepared.runId, spec.output),
+            lastAnswerText,
+          );
+          notes.push(`Your last answer was copied to ${where}: fix it there.`);
+        }
         draftRun = await o.runtime.run(prepared.runId);
       }
       run = draftRun;
@@ -1136,6 +1160,8 @@ export async function runStageLoop<A>(
           blocking: true,
         });
       else {
+        // Kept for the next round's run folder (2026-10-26), as the assistant wrote it.
+        lastAnswerText = run.output;
         // A line cited by the data block it was read in is read as that block's file (cite.ts).
         const p = spec.parse(citeFiles(run.output, sources));
         found.push(...p.issues);
@@ -1636,6 +1662,14 @@ export function rerunOf(stage: Stage, change: string): string {
     ? `atticus plan stories ${change}`
     : `atticus change ${stage} ${change}`;
 }
+
+/**
+ * What the drafter is told when the last round's answer has been carried into the new run's folder
+ * (ADR 0115 addendum 2026-10-26): the file to write is already the last answer, so the round is an
+ * edit, not a rewrite, and nobody copies the file across by hand.
+ */
+export const CARRIED_ANSWER_RULE =
+  "The result file already holds your last answer: edit it in place, changing only what the problems below need. Don't write it out again from the start.";
 
 /**
  * What the drafter is told when its answer isn't YAML (S5), in Atticus's words; the problem and
