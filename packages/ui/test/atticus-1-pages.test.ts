@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { hasDiagrams } from "../src/screens/know/Design.js";
-import { listsArtifact } from "../src/screens/know/Phase.js";
+import { hopSource, listsArtifact } from "../src/screens/know/Phase.js";
 import { COPY } from "../src/copy.js";
 
 // Atticus 1's pages under More pages on an Atticus 2 change (2026-10-25): the feature brief,
@@ -55,5 +55,26 @@ describe("reconcile", () => {
     ])
       expect(hasDiagrams({ documents: [doc(`inputs/diagrams/${f}`)] }), f).toBe(true);
     expect(hasDiagrams("error")).toBe(true);
+  });
+});
+
+// ADR 0129 section 2.3: API mappings read mappings.md and nothing else, so on a change taken
+// through the stages — which never write that file — the page was empty. It now reads the
+// architecture stage's target flows, and each hop says which file it came from.
+describe("where a field-mapping hop was read from", () => {
+  it("names mappings.md, or the target flow, in the reader's words", () => {
+    expect(hopSource("mappings.md")).toBe("from mappings.md");
+    expect(hopSource("target-flows/forge-orders.place-order.yaml")).toBe(
+      "from the target flow forge-orders.place-order",
+    );
+  });
+
+  it("says nothing when the API didn't say, so an older server's answer still renders", () => {
+    expect(hopSource(undefined)).toBeUndefined();
+  });
+
+  it("tells a reader with no hops where they come from, not only which file to write", () => {
+    expect(COPY.phase.noHopsInMappings).toMatch(/target flows/);
+    expect(COPY.phase.noHopsInMappings).toMatch(/mappings\.md/);
   });
 });

@@ -87,7 +87,11 @@ Every one of the app's 52 pages has a component (`SCREEN_COMPONENTS`), is reache
 
 Five pages whose only source was an Atticus 1 artifact — the feature brief, prototypes and UX, the architecture review, API mappings and reconcile — were given their Atticus 2 behaviour on 2026-10-25 (ADR 0124 addendum D-app follow-up): each asks only for the artifacts its change actually lists (`listsArtifact`), and where a change has none it says in words what Atticus 2 writes instead rather than failing with an HTTP error. `packages/ui/test/atticus-1-pages.test.ts` holds that.
 
-**Screens: 52 → 52.** No page is hidden, removed or made worse by this ADR.
+One page's only _source_ was still an Atticus 1 file: **API mappings** read `mappings.md` and nothing else, so on a change taken through the stages — which never write that file — it showed "no hops in mappings" and was a dead end. Its Atticus 2 source is the architecture stage's target flows, where every step that moves data names the fields it sends, returns and reads, the column each is stored as (`fields.as`) and how a field is worked out (`fields.derived`). `mappingGrid` now reads there when `mappings.md` gives nothing, each hop says which file it came from, and a change that has `mappings.md` reads exactly as before (`packages/cli/test/mappings-from-flows.test.ts`, `packages/ui/test/atticus-1-pages.test.ts`).
+
+**Prototypes and UX** is the page left thin: Atticus 2 writes no UX artifact, and the page's own answer — bring a design export into `inputs/` through Intake (ADR 0122) — is a real path, not a dead end. Left as it is rather than invented.
+
+**Screens: 52 → 52.** No page is hidden, removed or made worse by this ADR, and one is better sourced.
 
 #### 2.4 Readers, dialects, extractors
 

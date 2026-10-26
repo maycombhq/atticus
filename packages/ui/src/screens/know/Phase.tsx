@@ -515,9 +515,23 @@ interface MappingHop {
   note?: string;
   rows: { line: number; source: string; target: string; rule: string; whenMissing: string }[];
   asIs: { id: string; interface: string; source: string; target: string; transform?: string }[];
+  /** The change's file the hop was read from (ADR 0129): mappings.md, or a target flow. */
+  from?: string;
 }
 
-/** Each hop's field mappings from mappings.md, beside what the catalog maps today (ADR 0048). */
+/** Where a hop's rows came from, in the reader's words; nothing when the API didn't say. */
+export function hopSource(from: string | undefined): string | undefined {
+  if (!from) return undefined;
+  if (from === "mappings.md") return T.readFromMappingsFile;
+  const flow = from.replace(/^target-flows\//, "").replace(/\.yaml$/, "");
+  return T.readFromTargetFlow(flow);
+}
+
+/**
+ * Each hop's field mappings, beside what the catalog maps today (ADR 0048). The rows come from
+ * `mappings.md` on a change that has one, and from the architecture stage's target flows on a
+ * change taken through the stages (ADR 0129 §2.3); each hop says which.
+ */
 function MappingGrid({ change }: { change: string }) {
   const g = useApi<{ hops: MappingHop[]; catalogMappings: number }>(
     `/api/changes/${encodeURIComponent(change)}/mappings`,
@@ -528,7 +542,12 @@ function MappingGrid({ change }: { change: string }) {
         {(d) => (
           <div className="stack" style={{ gap: 14 }}>
             {d.hops.map((h) => (
-              <section key={h.line} aria-label={h.heading} className="stack" style={{ gap: 6 }}>
+              <section
+                key={`${h.from ?? ""}#${h.line}`}
+                aria-label={h.heading}
+                className="stack"
+                style={{ gap: 6 }}
+              >
                 <div className="row between" style={{ flexWrap: "wrap", gap: 6 }}>
                   <h3 className="mono" style={{ margin: 0, fontSize: 13 }}>
                     {h.heading}
@@ -539,6 +558,11 @@ function MappingGrid({ change }: { change: string }) {
                     <span className="chip">{T.fields(h.rows.length)}</span>
                   )}
                 </div>
+                {hopSource(h.from) && (
+                  <span className="hud" style={{ fontSize: 10 }}>
+                    {hopSource(h.from)}
+                  </span>
+                )}
                 {h.note && (
                   <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
                     {h.note}
