@@ -24,7 +24,10 @@ export async function writeFileAtomic(path: string, data: string | Uint8Array): 
 
 const BUSY = new Set(["EPERM", "EBUSY", "EACCES"]);
 
-export async function renameRetrying(from: string, to: string, tries = 6): Promise<void> {
+// Up to about 5 s in all (20 ms doubling): on Windows an editor indexing a folder it has just
+// opened, or a virus scanner, can hold a file longer than half a second (seen running atticus
+// upgrade with VS Code opening the metarepo). It only waits when the file is held.
+export async function renameRetrying(from: string, to: string, tries = 9): Promise<void> {
   for (let i = 0; ; i++) {
     try {
       await rename(from, to);
