@@ -92,14 +92,19 @@ describe("watchMetarepo", () => {
 
   it("says each top folder once when very many files change together", async () => {
     const root = await metarepo();
-    const { events } = collect(root, 200);
-    await Promise.all(
+    // A window long enough that the whole burst lands in it however slowly the machine writes
+    // the files: what is tested is that the watcher says the folder once, not how fast the OS
+    // reports the writes. At 200 ms a loaded two-CPU machine spread 80 writes over several
+    // windows and reported 50 events.
+    const { events } = collect(root, 1_500);
+    const writes = Promise.all(
       Array.from({ length: 80 }, (_, i) =>
         writeFile(join(root, `catalog/generated/r-${i}.yaml`), "x"),
       ),
     );
-    await until(() => events.length > 0);
-    await new Promise((r) => setTimeout(r, 400));
+    await writes;
+    await until(() => events.length > 0, 10_000);
+    await new Promise((r) => setTimeout(r, 2_000));
     // The burst is said as its folder (Windows may report the folder itself); an event the OS
     // reports late may follow on its own.
     expect(["catalog", "catalog/generated"]).toContain(paths(events)[0]);
