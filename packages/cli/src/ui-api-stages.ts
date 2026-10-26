@@ -2,7 +2,13 @@ import { stat } from "node:fs/promises";
 import { join } from "node:path";
 import { Api, changesRelOf, readQuestion, type Finding, type Question } from "@maycombhq/core";
 import { changeFolder, loadChangeContext } from "@maycombhq/changes";
-import { readRound, reviewedGates, roundsOf, type StoredFinding } from "@maycombhq/naysayer";
+import {
+  readProposals,
+  readRound,
+  reviewedGates,
+  roundsOf,
+  type StoredFinding,
+} from "@maycombhq/naysayer";
 import {
   commentOnFinding,
   PlannerError,
@@ -108,14 +114,29 @@ export async function stageReviewView(
   const comments = await stageComments(root, change, stage);
   const { loop, present, file } = await readStageLoop(changeFolder(root, change), change, stage);
   const order = { blocking: 0, gap: 1, risk: 2, idea: 3 } as const;
+  // What an assistant proposed, waiting on a person (ADR 0115 addendum, 2026-10-25).
+  const proposals =
+    gate && l.round !== null ? await readProposals(root, change, gate, l.round) : [];
   const findings = l.findings
     .map((s) => {
       const fileRel = `${rel}/${s.path}`;
+      const p =
+        s.finding.state === "open" ? proposals.find((x) => x.finding === s.finding.id) : undefined;
       return {
         finding: s.finding,
         file: fileRel,
         options: findingOptions(s.finding),
         comments: comments.comments.filter((c) => c.about === fileRel).map(view),
+        ...(p
+          ? {
+              proposal: {
+                claim: p.claim,
+                by: p.by,
+                at: p.at,
+                ...(p.reason ? { reason: p.reason } : {}),
+              },
+            }
+          : {}),
       };
     })
     .sort(

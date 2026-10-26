@@ -1,9 +1,10 @@
-import { readFile } from "node:fs/promises";
+import { readdir, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { changeFolder, writeFileAtomic } from "@maycombhq/changes";
 import {
   CriticQuestion,
   fileJudgments,
+  findingPath,
   judgmentKey,
   runsDirOf,
   toCanonicalYaml,
@@ -31,11 +32,22 @@ import { CriticError } from "./errors.js";
 import {
   checkRoundState,
   countedRounds,
+  fingerprint,
   markNeedHit,
   mergeHits,
   roundsOf,
+  writeFinding,
   type RuledHit,
 } from "./findings.js";
+import { writeProposals } from "./proposals.js";
+import {
+  ANSWERS_TEXT,
+  dropReviewedBefore,
+  keepReviewed,
+  sinceReview,
+  SOURCE_PREFIX,
+} from "./review-scope.js";
+import { answersText } from "./answers.js";
 import { checkRoundRule, gateStatusOf, maxRoundsOf, type GateStatus } from "./gates.js";
 import type { DeterministicCheckDef } from "./hits.js";
 import { criticModel, type ModelChoice } from "./model.js";
@@ -105,6 +117,34 @@ export async function draftDocs(dir: string, files: string[]): Promise<Doc[]> {
  * checked against the text it reviewed, even when the draft is edited before it is read in.
  */
 export const DRAFT_DIR = "draft";
+
+/**
+ * Where the newest round at a gate keeps each lens's prompt and answer, in the change folder's
+ * committed review/ (ADR 0115 addendum, 2026-10-25): `meta/lenses/<lens>.prompt.md` and
+ * `<lens>.answer.yaml`. An older round keeps its findings, their resolutions and its record
+ * (round.yaml, the run summaries), not the prompts: those stay in the gitignored .runs/.
+ */
+export const LENS_RECORDS = "lenses";
+
+/** Keep the lenses' prompts and answers for this round; drop those older rounds at the gate kept. */
+export async function keepLensRecords(
+  root: string,
+  change: string,
+  gate: string,
+  round: number,
+  runs: readonly Pick<LensRun, "lens" | "prompt" | "answer">[],
+): Promise<void> {
+  const review = join(changeFolder(root, change), "review", gate);
+  const dir = join(review, String(round), "meta", LENS_RECORDS);
+  for (const r of runs) {
+    if (r.prompt !== undefined) await writeFileAtomic(join(dir, `${r.lens}.prompt.md`), r.prompt);
+    if (r.answer !== undefined) await writeFileAtomic(join(dir, `${r.lens}.answer.yaml`), r.answer);
+  }
+  if (!runs.some((r) => r.prompt !== undefined || r.answer !== undefined)) return;
+  for (const n of await readdir(review).catch(() => [] as string[]))
+    if (/^\d+$/.test(n) && Number(n) < round)
+      await rm(join(review, n, "meta", LENS_RECORDS), { recursive: true, force: true });
+}
 
 export interface CriticResult {
   change: string;
@@ -262,17 +302,53 @@ export async function runCritic(
   const draft = opts.review
     ? await draftDocs(changeFolder(root, change.id), opts.review.files)
     : [];
+  // A redraft that passed the code checks: what changed since the last reviewed draft, what is
+  // still open, and what is carried (ADR 0115 addendum, 2026-10-25).
+  const scope =
+    opts.review && failed.size === 0
+      ? await sinceReview(root, {
+          change: change.id,
+          gate: gate.id,
+          round,
+          now,
+          texts: new Map<string, string>([
+            ...[...ctx.files.docs.values()].map((d) => [d.path, d.raw] as const),
+            ...draft.map((d) => [d.path, d.raw] as const),
+            ...opts.review.sources
+              .filter((s) => s.kind === "artifact")
+              .map((s) => [`${SOURCE_PREFIX}${s.id}`, s.text] as const),
+            // A person's new answer moves the brief: the round then reviews the whole draft.
+            [ANSWERS_TEXT, ctx.answers?.length ? answersText(ctx.answers) : ""] as const,
+          ]),
+          questions: lenses,
+          prior: rounds.at(-1),
+        })
+      : undefined;
   const ai = await runLenses(ctx, applicable, {
     ...(opts.runtime ? { runtime: opts.runtime } : {}),
     lenses,
     failed,
     ...(opts.maxClassification ? { maxClassification: opts.maxClassification } : {}),
     ...(opts.review
-      ? { review: { stage: opts.review.stage, docs: draft, sources: opts.review.sources } }
+      ? {
+          review: {
+            stage: opts.review.stage,
+            docs: draft,
+            sources: opts.review.sources,
+            ...(scope ? { since: scope.since } : {}),
+          },
+        }
       : {}),
     quarantined,
     ...(opts.codeSearch ? { codeSearch: opts.codeSearch } : {}),
   });
+  // The texts the lenses reviewed, kept on this machine for the next redraft's diff, once a lens
+  // has them; the texts an older round kept go, but the one this round was diffed against.
+  if (ai.runs.some((r) => r.state === "ran" || r.state === "waiting")) {
+    ai.reviewed.set(ANSWERS_TEXT, ctx.answers?.length ? answersText(ctx.answers) : "");
+    await keepReviewed(root, change.id, gate.id, round, ai.reviewed);
+    await dropReviewedBefore(root, change.id, gate.id, scope?.since.round ?? round);
+  }
   // A lens handed off keeps the draft as it was given, so its answer is checked against that.
   for (const r of ai.runs)
     if (r.state === "waiting" && r.runId)
@@ -290,13 +366,52 @@ export async function runCritic(
     lenses.includes(questionOfRule(h.rule)),
   );
 
-  const findings = await writeHits(root, all, {
-    change: change.id,
-    gate: gate.id,
-    round,
-    now,
-    priorRound: rounds.at(-1),
-  });
+  // A redraft's findings about what didn't change are carried as they were (ADR 0115 addendum,
+  // 2026-10-25); a lens's hit about the same problem isn't written twice.
+  const taken = new Set<string>();
+  const carriedFindings: CriticFinding[] = [];
+  for (const c of scope?.carry ?? []) {
+    let id = c.id;
+    for (let i = 2; taken.has(id); i++) id = `${c.id}-${i}`;
+    taken.add(id);
+    const f = { ...c, id };
+    await writeFinding(root, f);
+    // `carried` says a decision came with it, as for writeHits; `unchanged` that it was carried
+    // because its part didn't change, open or not.
+    carriedFindings.push({
+      finding: f,
+      path: findingPath(f),
+      layer: "ai",
+      carried: f.state !== "open",
+      unchanged: true,
+    });
+  }
+  if (scope?.proposals.length)
+    await writeProposals(
+      root,
+      change.id,
+      gate.id,
+      round,
+      scope.proposals.map((p) => ({
+        ...p,
+        finding:
+          carriedFindings.find((c) => fingerprint(c.finding) === p.fingerprint)?.finding.id ??
+          p.finding,
+      })),
+    );
+  const findings = [
+    ...carriedFindings,
+    ...(await writeHits(root, all, {
+      change: change.id,
+      gate: gate.id,
+      round,
+      now,
+      priorRound: rounds.at(-1),
+      taken,
+      skip: new Set(carriedFindings.map((c) => fingerprint(c.finding))),
+    })),
+  ];
+  await keepLensRecords(root, change.id, gate.id, round, ai.runs);
 
   const model = criticModel(lifecycle.orgPack.runtime, opts.authorModel);
   const metaDir = join(changeFolder(root, change.id), "review", gate.id, String(round), "meta");
@@ -321,6 +436,7 @@ export async function runCritic(
           rule: f.finding.rule,
           severity: f.finding.severity,
           ...(f.carried ? { carried: true } : {}),
+          ...(f.unchanged ? { unchanged: true } : {}),
         })),
         rules: { ran: [...new Set(ran)].sort(), skipped },
         refused: layered.refused,
@@ -329,11 +445,15 @@ export async function runCritic(
           lens: r.lens,
           agent: r.agent,
           state: r.state,
+          ...(r.held ? { held: true } : {}),
           ...(r.reason ? { reason: r.reason } : {}),
           rules: r.rules,
           artifacts: r.artifacts,
           ...(r.promptSha256 ? { promptSha256: r.promptSha256 } : {}),
           ...(r.runId ? { runId: r.runId } : {}),
+          // What the lens was sent (ADR 0115 addendum, 2026-10-25): its size, what was cut to
+          // need, and in a redraft the round it was diffed against and what wasn't sent.
+          ...(r.context ? { context: r.context } : {}),
         })),
         discarded: ai.discarded,
         failedLayer1: [...failed].sort(),

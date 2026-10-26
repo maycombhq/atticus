@@ -1,11 +1,12 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parse } from "yaml";
-import { Finding, findingPath, toCanonicalYaml } from "@maycombhq/core";
+import { Finding, findingPath, isAssistantResolution, toCanonicalYaml } from "@maycombhq/core";
 import { changeFolder, writeFileAtomic } from "@maycombhq/changes";
 import { changeAnswers } from "./answers.js";
 import { decidedAt, decidedReason } from "./recorded.js";
 import type { Hit } from "./hits.js";
+import { assistantClosed, type Proposal } from "./proposals.js";
 import { questionOfRule } from "./questions.js";
 import { layerRank, severityRank, type EffectiveRule } from "./rules.js";
 
@@ -257,6 +258,11 @@ export interface StoredFinding {
   finding: Finding;
   /** Change-folder-relative path. */
   path: string;
+  /**
+   * What an assistant proposed about it, waiting on a person (ADR 0115 addendum, 2026-10-25):
+   * set where a person reads the finding (gateStatus), from the round's proposals.
+   */
+  proposal?: Proposal;
 }
 
 /** Round numbers that exist for a gate, ascending. */
@@ -290,7 +296,11 @@ export async function countedRounds(root: string, change: string, gate: string):
     }
     const due = (m?.lenses ?? []).filter((l) => l.state !== "skipped");
     const nothingReviewed = due.length > 0 && due.every((l) => l.state === "failed");
-    if (!nothingReviewed) out.push(n);
+    // A draft the code checks held back from its lenses (ADR 0115 addendum, 2026-10-25) used no
+    // review: it went back to its drafter without a lens call.
+    // A checking round past the limit counts whatever its lenses did: the rounds stay bounded.
+    const held = due.length === 0 && (m?.lenses ?? []).some((l) => l.held) && !m?.checkRound;
+    if (!nothingReviewed && !held) out.push(n);
   }
   return out;
 }
@@ -327,9 +337,12 @@ export async function checkRoundState(
   const since = meta?.createdAt ?? "";
   const carried = new Set((meta?.findings ?? []).filter((f) => f.carried).map((f) => f.id));
   const findings = (await readRound(root, change, gate, n)).findings;
+  // An assistant's resolution of a blocking finding (a file from before ADR 0115's 2026-10-25
+  // addendum) closes nothing: it is still open, and it isn't a person acting.
   const openBlocking = findings.filter(
     (f) =>
-      f.finding.severity === "blocking" && (!DECIDED.has(f.finding.state) || !f.finding.resolution),
+      f.finding.severity === "blocking" &&
+      (!DECIDED.has(f.finding.state) || !f.finding.resolution || assistantClosed(f.finding)),
   ).length;
   if (openBlocking) return { round: n, openBlocking, actedOn: [] };
   const acted = findings
@@ -337,6 +350,7 @@ export async function checkRoundState(
       (f) =>
         f.finding.resolution &&
         f.finding.state !== "open" &&
+        !isAssistantResolution(f.finding.resolution) &&
         !carried.has(f.finding.id) &&
         f.finding.resolution.at >= since,
     )
@@ -376,6 +390,8 @@ export async function decidedElsewhere(
     for (const s of (await readRound(root, change, g, round)).findings) {
       const f = s.finding;
       if (!f.resolution || !(["dismissed", "waived"].includes(f.state) || wroteIn(f))) continue;
+      // An assistant's dismissal of a blocking or risk finding was never a decision (ADR 0115 addendum).
+      if (assistantClosed(f)) continue;
       const reason = f.resolution.reason;
       const linked = !reason || decidedReason(reason).gate !== undefined;
       const resolution = linked
@@ -409,12 +425,16 @@ export interface RoundLens {
   lens: string;
   agent: string;
   state: "ran" | "skipped" | "failed" | "waiting";
+  /** Skipped because the code checks blocked the stage's draft (ai.ts). */
+  held?: boolean;
   reason?: string;
   rules: string[];
   artifacts: string[];
   promptSha256?: string;
   /** The hand-off run a waiting (or read-in) lens was with. */
   runId?: string;
+  /** What the lens was sent, sized to need (ai.ts LensContext). */
+  context?: { tokens: number; since?: number; unchanged?: string[] };
 }
 
 /** A round's `meta/round.yaml`, as written by the critic (keys it doesn't know are kept). */
@@ -423,7 +443,15 @@ export interface RoundMeta extends Record<string, unknown> {
   gate: string;
   round: number;
   createdAt: string;
-  findings: { id: string; layer: Layer; rule: string; severity: string; carried?: boolean }[];
+  findings: {
+    id: string;
+    layer: Layer;
+    rule: string;
+    severity: string;
+    carried?: boolean;
+    /** Carried because its part didn't change since the last reviewed draft. */
+    unchanged?: boolean;
+  }[];
   rules: { ran: string[]; skipped: { rule: string; reason: string }[] };
   lenses: RoundLens[];
   discarded: { lens: string; reason: string; summary?: string }[];

@@ -1,13 +1,20 @@
 import { createHash } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import { join, normalize, sep } from "node:path";
-import { changeFolder, changeStore, loadChangeContext, writeFileAtomic } from "@maycombhq/changes";
+import {
+  changeFolder,
+  changeStore,
+  loadChangeContext,
+  writeFileAtomic,
+  type ChangeContext,
+} from "@maycombhq/changes";
 import { Finding, FindingAction, gateRoundLimit } from "@maycombhq/core";
 import { z } from "zod";
 import { CriticError } from "./errors.js";
 import {
   checkRoundDue,
   countedRounds,
+  fingerprint,
   readRound,
   reviewedGates,
   roundsOf,
@@ -15,6 +22,16 @@ import {
   type StoredFinding,
 } from "./findings.js";
 import { applyPatch, PatchError, patchTarget } from "./patch.js";
+import {
+  assistantClosed,
+  assistantNames,
+  assistantOf,
+  PERSON_CLOSES,
+  Proposal,
+  proposalWords,
+  readProposals,
+  writeProposals,
+} from "./proposals.js";
 import { checkRoundRule } from "./gates.js";
 import { parse } from "yaml";
 
@@ -34,7 +51,13 @@ export interface ActOptions {
 }
 
 export interface ActResult {
+  /** The finding as it is now: still open when an assistant only proposed (`proposed`). */
   finding: Finding;
+  /**
+   * An assistant's not-relevant or fix of a blocking or risk finding, recorded as a proposal that
+   * waits on a person (ADR 0115 addendum, 2026-10-25); the finding stays open.
+   */
+  proposed?: Proposal;
   /** Change-folder-relative path of the finding file. */
   path: string;
   /** The artifact a patch was applied to, if any. */
@@ -48,9 +71,15 @@ export interface ActResult {
  * at the same moment), unless a gate is named. A copy left in an older round is refused only
  * when no gate has the finding in its newest round.
  */
-async function locate(root: string, change: string, id: string, gate?: string) {
+async function locate(
+  lifecycle: ChangeContext,
+  root: string,
+  change: string,
+  id: string,
+  gate?: string,
+) {
   const gates = gate ? [gate] : await reviewedGates(root, change);
-  const order = (await loadChangeContext(root)).orgPack.gates.gates.map((g) => g.id);
+  const order = lifecycle.orgPack.gates.gates.map((g) => g.id);
   const current: { hit: StoredFinding; gate: string }[] = [];
   let stale: string | undefined;
   for (const g of gates) {
@@ -109,20 +138,35 @@ export async function act(
     .catch((e: Error) => {
       throw new CriticError("not-found", e.message);
     });
-  const found = await locate(root, change.id, findingId, o.gate);
+  // The change context is read once for the whole action: it is the slow part.
+  const lifecycle = await loadChangeContext(root);
+  const found = await locate(lifecycle, root, change.id, findingId, o.gate);
   if (!found)
     throw new CriticError(
       "not-found",
       `No finding ${findingId} in ${change.id}'s newest critic rounds.`,
     );
   const f = found.finding;
-  if (f.state !== "open")
+  const known = assistantNames(lifecycle);
+  const ai = assistantOf(lifecycle, o.by);
+  // An assistant's resolution of a blocking or risk finding closed nothing (a file from before
+  // the rule): a person may still decide it.
+  const reopen = !ai && assistantClosed(f, known);
+  if (f.state !== "open" && !reopen)
     throw new CriticError(
       "refused",
       `Finding ${f.id} is already ${f.state} (by ${f.resolution?.by ?? "someone"}).${f.state === "asked" && f.resolution?.reason ? ` ${f.resolution.reason}` : ""}`,
     );
   const gap = f.kind === "knowledge-gap";
   const act = a.data;
+  // ADR 0115 addendum (2026-10-25): an assistant only proposes about a blocking or risk finding,
+  // and never waives.
+  const proposing = !!ai && PERSON_CLOSES.has(f.severity) && act !== "ask";
+  if (ai && act === "waive")
+    throw new CriticError(
+      "refused",
+      `${o.by} is an assistant: only a person waives a finding. Propose that ${f.id} is not relevant, with a reason, or fix it and record the fix; a person decides.`,
+    );
 
   // A gap has no fix to apply, only a fact to write in: a person who already wrote it by hand
   // records that with edit-and-apply and a reason, no patch needed.
@@ -136,8 +180,24 @@ export async function act(
       "refused",
       `${f.id} is a knowledge gap: answer it with Ask (route the question to its owner) or Edit and apply (write the fact in). It can't be ${act === "waive" ? "waived" : act === "apply" ? "applied" : "dismissed"}.`,
     );
+  const proposals = await readProposals(root, change.id, f.gate, f.round);
+  const waiting = proposals.find((p) => p.finding === f.id);
+  // A person taking an assistant's proposal: with no reason of their own, its reason is kept,
+  // saying whose it was and who accepted it.
+  if (
+    !ai &&
+    act === "not-relevant" &&
+    !o.reason?.trim() &&
+    waiting?.claim === "not-relevant" &&
+    waiting.reason
+  )
+    o = {
+      ...o,
+      reason: `${waiting.reason.trim()} (proposed by ${waiting.by}; accepted by ${o.by})`,
+    };
   if (act === "not-relevant" && !o.reason?.trim())
     throw new CriticError("invalid", "Not relevant needs a reason (--reason).");
+
   if (act === "waive") {
     if (f.severity !== "blocking")
       throw new CriticError(
@@ -164,8 +224,10 @@ export async function act(
     waive: "waived",
     ask: "asked",
   } as const;
+  const { resolution: _was, ...base } = f;
+  void _was;
   const next = Finding.safeParse({
-    ...f,
+    ...base,
     state: state[act],
     resolution: {
       action: act,
@@ -242,9 +304,45 @@ export async function act(
     message = `Waived ${f.id}. The waiver, its reason and your name are recorded on the finding; it reaches main with the ${f.gate} hand-off PR, where reviewers see it.`;
   else message = `Dismissed ${f.id} as not relevant.`;
 
+  if (proposing) {
+    const proposed = Proposal.parse({
+      finding: f.id,
+      claim: act === "not-relevant" ? "not-relevant" : "fixed",
+      action: act,
+      by: o.by,
+      at: next.data.resolution!.at,
+      ...(o.reason?.trim() ? { reason: o.reason.trim() } : {}),
+      fingerprint: fingerprint(f),
+    });
+    await writeProposals(root, change.id, f.gate, f.round, [
+      ...proposals.filter((p) => p.finding !== f.id),
+      proposed,
+    ]);
+    const done = patched ? `Applied the fix to ${patched}. ` : "";
+    return {
+      finding: f,
+      proposed,
+      path: found.path,
+      ...(patched ? { patched } : {}),
+      message: `${done}${f.id} stays open: ${proposalWords(proposed)}. ${
+        proposed.claim === "fixed"
+          ? "The next critic round checks the fix, and a person closes the finding"
+          : "A person closes it"
+      } (atticus finding ${change.id} ${f.id} ${proposed.claim === "fixed" ? "apply" : "not-relevant"}, as themselves).`,
+    };
+  }
   await writeFinding(root, next.data);
+  // A person decided: what an assistant proposed about it is answered.
+  if (waiting)
+    await writeProposals(
+      root,
+      change.id,
+      f.gate,
+      f.round,
+      proposals.filter((p) => p.finding !== f.id),
+    );
   // What comes next: the next critic round checks a fix, unless the gate has none left.
-  const after = act === "ask" ? undefined : await afterLimit(root, change.id, next.data);
+  const after = act === "ask" ? undefined : await afterLimit(lifecycle, root, change.id, next.data);
   if (after) message = `${message} ${after}`;
   else if (act === "apply" || act === "edit-and-apply")
     message =
@@ -259,8 +357,12 @@ export async function act(
  * used up (ADR 0115 addendum): the other blocking findings of the round still to act on, or the
  * one checking round past the limit that reviews what was done. Undefined while rounds are left.
  */
-async function afterLimit(root: string, change: string, f: Finding): Promise<string | undefined> {
-  const ctx = await loadChangeContext(root);
+async function afterLimit(
+  ctx: ChangeContext,
+  root: string,
+  change: string,
+  f: Finding,
+): Promise<string | undefined> {
   const max = gateRoundLimit(ctx.orgPack.gates, f.gate);
   if (max === undefined || (await countedRounds(root, change, f.gate)).length < max)
     return undefined;

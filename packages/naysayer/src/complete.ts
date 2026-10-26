@@ -4,9 +4,16 @@ import { Lens, runsDirOf, toCanonicalYaml } from "@maycombhq/core";
 import { toRunSummary, type Run } from "@maycombhq/ai";
 import { leftOut, parseLensOutput, type Discarded, type LensName, type LensRun } from "./ai.js";
 import { checkAbsences, codeSearchFor, type CodeSearch } from "./code.js";
-import { draftDocs, DRAFT_DIR } from "./critic.js";
+import { draftDocs, DRAFT_DIR, keepLensRecords } from "./critic.js";
 import { CriticError } from "./errors.js";
-import { mergeHits, readRound, readRoundMeta, reviewedGates, roundsOf } from "./findings.js";
+import {
+  fingerprint,
+  mergeHits,
+  readRound,
+  readRoundMeta,
+  reviewedGates,
+  roundsOf,
+} from "./findings.js";
 import { gateStatusOf, type GateStatus } from "./gates.js";
 import {
   prepareLayers,
@@ -177,6 +184,11 @@ export async function completeLensRun(
     const hits = mergeHits(parsed.hits, ctx.systemOf);
     const existing = await readRound(root, changeId, gateId, round);
     const prior = (await roundsOf(root, changeId, gateId)).filter((n) => n < round).at(-1);
+    // Findings carried from the last reviewed draft (ADR 0115 addendum, 2026-10-25) aren't
+    // written twice when the lens raises them again.
+    const carriedAi = new Set(
+      meta.findings.filter((f) => f.layer === "ai" && f.unchanged).map((f) => f.id),
+    );
     findings = await writeHits(root, hits, {
       change: changeId,
       gate: gateId,
@@ -184,7 +196,15 @@ export async function completeLensRun(
       now,
       priorRound: prior,
       taken: new Set(existing.findings.map((s) => s.finding.id)),
+      skip: new Set(
+        existing.findings
+          .filter((s) => carriedAi.has(s.finding.id))
+          .map((s) => fingerprint(s.finding)),
+      ),
     });
+    await keepLensRecords(root, changeId, gateId, round, [
+      { lens, prompt: run.request.pack.prompt, answer: run.output },
+    ]);
     // An answer that isn't a review (empty, a refusal, prose) is a failed lens, never a clean one.
     outcome = parsed.malformed
       ? { ...base, state: "failed", reason: parsed.malformed }

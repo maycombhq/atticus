@@ -359,8 +359,12 @@ gates:
   // draft by hand and applied the finding, and the stage still said "a person decides now".
   describe("a fix a person applied when no critic round is left", () => {
     // The true lens (the old architecture rule) finds the flow marked read until the placement marks it changed.
-    const lens = () =>
-      new MockRuntime(
+    // Each draft words its summary a little differently, so each round's lenses have something to
+    // review (a draft with nothing changed calls no lens, ADR 0115 addendum, 2026-10-25); the
+    // flow marked read is a part that didn't change, so its finding is carried.
+    const lens = () => {
+      let n = 0;
+      return new MockRuntime(
         (req: AiRequest) =>
           req.agent.id === "true-critic"
             ? req.pack.prompt.includes("Flow forge-stock.reserve-stock (read)")
@@ -368,9 +372,10 @@ gates:
               : "findings: []"
             : req.agent.id.endsWith("-critic")
               ? "findings: []"
-              : PLACED,
+              : PLACED.replace("is refused.", `is refused (draft ${++n}).`),
         { now: () => NOW },
       );
+    };
     const stuck = async (root: string) => {
       await limited(root, 2);
       const e = await stopped(featureStage(root, CHANGE, { runtime: lens(), now: NOW }));

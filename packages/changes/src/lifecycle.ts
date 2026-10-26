@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { parse } from "yaml";
 import {
   Finding,
+  isAssistantResolution,
   PHASES,
   type ChangeLifecycle,
   type ChangeType,
@@ -338,7 +339,10 @@ export async function checkFindings(
         continue;
       }
       const x = r.data;
-      if (x.state !== "open") continue;
+      // An assistant's resolution of a blocking finding closes nothing (ADR 0115 addendum,
+      // 2026-10-25): only a person's does. A file from before the rule still blocks.
+      const byAssistant = x.severity === "blocking" && isAssistantResolution(x.resolution);
+      if (x.state !== "open" && !byAssistant) continue;
       if (x.severity === "blocking")
         reasons.push({
           code: "blocking-finding",

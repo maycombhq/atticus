@@ -8,6 +8,7 @@ import {
   BUILT_IN_CHECKS,
   CriticError,
   act,
+  countedRounds,
   completeLensRun,
   gateStatus,
   lensRunOf,
@@ -393,14 +394,17 @@ describe("the critic in hand-off mode", () => {
         ],
       },
     });
-    // The fixture's artifacts have blocking layer-1 findings: fix those first.
+    // The fixture's artifacts have blocking layer-1 findings: fix those first. ADR 0115 addendum
+    // (2026-10-25): no lens is handed off at all; the draft goes back without a lens call, and the
+    // round doesn't count toward the gate's limit.
     expect(r.failedLayer1.length).toBeGreaterThan(0);
-    for (const l of lensRuns(r)) expect(l.artifacts).not.toContain("feature.md");
-    const prompt = await readFile(
-      join(root, ".runs", CHANGE, lensRuns(r)[0]!.runId!, "prompt.md"),
-      "utf8",
-    );
-    expect(prompt).not.toContain("Review the draft against the estate and the brief");
+    expect(lensRuns(r)).toEqual([]);
+    expect(r.lenses.length).toBeGreaterThan(0);
+    for (const l of r.lenses) {
+      expect(l).toMatchObject({ state: "skipped", held: true });
+      expect(l.reason).toContain("the lenses review the draft once they pass");
+    }
+    expect(await countedRounds(root, CHANGE, "plan")).toEqual([]);
   });
 });
 

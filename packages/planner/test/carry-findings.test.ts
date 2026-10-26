@@ -278,8 +278,18 @@ describe("a critic finding left out (7)", () => {
 `;
     const prompts: string[] = [];
     let n = 0;
+    // The second draft says how a cached verdict is cleared: line 4 changed, so the finding about
+    // it goes to the lens again rather than being carried (ADR 0115 addendum, 2026-10-25).
+    const cleared = FIXED.replace(
+      "for an hour.",
+      "for an hour, cleared when the screen withdraws it.",
+    );
     const r = await featureStage(root, CHANGE, {
-      runtime: assistant([FIXED], { true: () => (n++ === 0 ? short : "findings: []") }, prompts),
+      runtime: assistant(
+        [FIXED, cleared],
+        { true: () => (n++ === 0 ? short : "findings: []") },
+        prompts,
+      ),
       now: NOW,
     });
     expect(r.state).toBe("done");

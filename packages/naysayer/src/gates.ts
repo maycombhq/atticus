@@ -7,6 +7,7 @@ import {
 } from "@maycombhq/changes";
 import { gateRoundLimit, type ChangeLifecycle } from "@maycombhq/core";
 import { CriticError } from "./errors.js";
+import { proposalWords, readProposals } from "./proposals.js";
 import {
   checkRoundDue,
   countedRounds,
@@ -74,7 +75,13 @@ export async function gateStatusOf(
 ): Promise<GateStatus> {
   const rounds = await roundsOf(root, change.id, gate);
   const round = rounds.at(-1);
-  const { findings } = round ? await readRound(root, change.id, gate, round) : { findings: [] };
+  const read = round ? await readRound(root, change.id, gate, round) : { findings: [] };
+  // What an assistant proposed, waiting on a person (ADR 0115 addendum, 2026-10-25), on each finding.
+  const proposals = round ? await readProposals(root, change.id, gate, round) : [];
+  const findings: StoredFinding[] = read.findings.map((f) => {
+    const p = proposals.find((x) => x.finding === f.finding.id);
+    return p && f.finding.state === "open" ? { ...f, proposal: p } : f;
+  });
   const open = findings.filter((f) => f.finding.state === "open");
   // The lifecycle's own reading decides: one answer for the critic and for the hand-off.
   const blocking = (await checkFindings(root, change, [gate])).map((r) => r.message);
@@ -85,8 +92,13 @@ export async function gateStatusOf(
         .filter((l) => l.state === "waiting" && l.runId)
         .map((l) => ({ lens: l.lens, runId: l.runId! }))
     : [];
+  const proposed = findings.filter((f) => f.proposal && f.finding.severity === "blocking");
   const reasons = [
     ...blocking,
+    ...proposed.map(
+      (f) =>
+        `${f.finding.id} is ${proposalWords(f.proposal!)}: atticus finding ${change.id} ${f.finding.id} ${f.proposal!.claim === "fixed" ? "apply" : "not-relevant"} records a person's decision.`,
+    ),
     ...waiting.map(
       (w) =>
         `The ${w.lens} lens is still with your assistant: run atticus handoff done ${w.runId}.`,

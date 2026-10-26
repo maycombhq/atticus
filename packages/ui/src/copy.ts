@@ -3180,6 +3180,9 @@ export const COPY = {
       ask: "asked of its owner",
     } as Record<string, string>,
     resolved: (state: string, by: string) => `${state} by ${by}`,
+    // ADR 0115 addendum (2026-10-25): an assistant only proposes; a person closes the finding.
+    proposed: (by: string, claim: string) =>
+      `Proposed by the assistant (${by}) as ${claim === "fixed" ? "fixed" : "not relevant"}, waiting on a person`,
     question: (owner: string) => `The question for ${owner}`,
     comments: "Comments",
     comment: (id: string) => `Your comment on ${id}`,

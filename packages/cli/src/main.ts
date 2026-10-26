@@ -2498,13 +2498,19 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
       );
       return 2;
     }
+    // In a coding assistant's terminal with no --by, the assistant is acting, not the Git user
+    // (ADR 0115 addendum, 2026-10-25): on a blocking or risk finding that is a proposal.
+    const session = given
+      ? undefined
+      : (await import("./assistant-session.js")).assistantSession(process.env);
+    if (session) io.err(`Recorded as ${session.by}: ${session.because}.`);
     return findingAction(
       root,
       command,
       findingId,
       action,
       {
-        by: who(),
+        by: session?.by ?? who(),
         ...(str(values.reason) ? { reason: str(values.reason)! } : {}),
         ...(str(values["asked-of"]) ? { askedOf: str(values["asked-of"])! } : {}),
         ...(str(values.edit) ? { edit: str(values.edit)! } : {}),

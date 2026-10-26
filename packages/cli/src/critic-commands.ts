@@ -27,6 +27,7 @@ import {
   ownerWaitsLine,
   roundsUsed,
   overrideStats,
+  proposalWords,
   reviewedGates,
   runCritic,
   waitingLenses,
@@ -393,7 +394,12 @@ export async function findings(
           humanDecides: s.humanDecides,
           checkRound: s.checkRound,
           open: s.open,
-          findings: s.findings.map((f) => ({ ...f.finding, path: f.path })),
+          findings: s.findings.map((f) => ({
+            ...f.finding,
+            path: f.path,
+            // ADR 0115 addendum (2026-10-25): an assistant's proposal, waiting on a person.
+            ...(f.proposal ? { proposal: f.proposal } : {}),
+          })),
         })),
         null,
         2,
@@ -411,7 +417,7 @@ export async function findings(
       ["SEVERITY", "STATE", "ID", "WHERE", "SUMMARY"],
       s.findings.map((f) => [
         f.finding.severity,
-        f.finding.state,
+        f.proposal ? `open (${proposalWords(f.proposal)})` : f.finding.state,
         f.finding.id,
         where(f.finding.artifact, f.finding.locator.line),
         f.finding.summary,

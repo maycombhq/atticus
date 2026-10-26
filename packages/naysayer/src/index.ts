@@ -25,3 +25,5 @@ export * from "./recorded.js";
 export * from "./code.js";
 export * from "./stats.js";
 export * from "./snow-triggers.js";
+export * from "./proposals.js";
+export * from "./review-scope.js";

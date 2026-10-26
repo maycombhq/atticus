@@ -62,8 +62,11 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  * 2.26.0 (ADR 0124 addendum B-task-knowledge): the tasks whose own selection picked a change's
  *   item (tasks), and the pages that disagree with who decided which applies (conflicts, on a
  *   change's knowledge and on a knowledge item). Additive only.
+ * 2.27.0 (ADR 0115 addendum, 2026-10-25): a stage tab's finding carries what an assistant
+ *   proposed about it (`proposal`: not relevant or fixed, by whom, why), waiting on a person.
+ *   Additive only.
  */
-export const API_VERSION = "2.26.0";
+export const API_VERSION = "2.27.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -836,6 +839,19 @@ export const StageFindingView = z.object({
     ask: z.object({ text: z.string(), owner: z.string() }).optional(),
   }),
   comments: z.array(StageComment),
+  /**
+   * ADR 0115 addendum (2026-10-25): what an assistant proposed about the open finding (that it
+   * is not relevant, or fixed), waiting on a person. Only a person's resolution closes a blocking
+   * or risk finding. Optional (additive, API 2.25.0).
+   */
+  proposal: z
+    .object({
+      claim: z.enum(["not-relevant", "fixed"]),
+      by: z.string(),
+      at: z.string(),
+      reason: z.string().optional(),
+    })
+    .optional(),
 });
 export const StageReviewView = z.object({
   change: z.string(),

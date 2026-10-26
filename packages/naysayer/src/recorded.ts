@@ -1,4 +1,4 @@
-import type { FindingAction } from "@maycombhq/core";
+import { isAssistantResolution, type FindingAction } from "@maycombhq/core";
 import type { z } from "zod";
 import { readRound, reviewedGates, roundsOf } from "./findings.js";
 
@@ -40,6 +40,9 @@ export async function recordedFacts(root: string, change: string): Promise<Recor
       for (const { finding: f } of (await readRound(root, change, gate, n)).findings) {
         const r = f.resolution;
         if (!r?.reason || !RECORDED.has(r.action) || f.state === "open") continue;
+        // What an assistant wrote isn't what people recorded (ADR 0115 addendum, 2026-10-25): a
+        // live run's drafter dismissed a finding, and its words reached the lenses as a person's.
+        if (isAssistantResolution(r)) continue;
         const d = decidedReason(r.reason);
         const key = [f.id, r.action, r.by, r.at].join("|");
         // A carried copy is the same decision: its reason names the gate it was made at.

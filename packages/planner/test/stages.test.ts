@@ -996,9 +996,11 @@ describe("the starter review at each stage (ADR 0120)", () => {
     lenses = [];
     const arch = await architectureStage(root, CHANGE, { runtime: rt([DELTAS]), now: NOW });
     expect(arch.state).toBe("done");
-    // ADR 0006 addendum: design.md now says how the write to forge-orders-db.orders is undone
-    // (Rollout and rollback), so the ship question's rollback check, which used to send this
-    // draft back once on every run, finds nothing: one draft, one round of the three lenses.
+    // Two effects landed together, and together they leave one draft. ADR 0006 addendum:
+    // design.md now says how the write to forge-orders-db.orders is undone (Rollout and
+    // rollback), so the ship question's rollback check, which used to send this draft back on
+    // every run, finds nothing. ADR 0115 addendum (critic cost): the lenses run only on a draft
+    // the code checks pass, so no round is spent on a draft that never reached them.
     expect(arch.drafts).toBe(1);
     expect(arch.notes.join("\n")).not.toContain("back to your assistant for one more draft");
     expect(lenses.map((l) => l.lens)).toEqual(["true", "complete", "safe"]);
@@ -1009,8 +1011,8 @@ describe("the starter review at each stage (ADR 0120)", () => {
     lenses = [];
     const stories = await storiesStage(root, CHANGE, { runtime: rt([STORIES]), now: NOW });
     expect(stories.state).toBe("done");
-    // The rollback risk was the one that sent this draft back too; with design.md's rollback
-    // lines it is gone, so one draft and one round of the four lenses.
+    // Both effects again: design.md's rollback lines settle the rollback risk that used to send
+    // this draft back, so one draft and one round of the four lenses.
     expect(stories.drafts).toBe(1);
     const four = ["true", "complete", "safe", "ship"];
     expect(lenses.map((l) => l.lens)).toEqual(four);

@@ -223,11 +223,18 @@ export class HandoffRuntime implements AiRuntime {
  * Retention: remove run folders older than `days` (runtime.yaml retention.runsDays,
  * default 30). Summaries in review/ are kept; only full packs and transcripts go.
  */
-export async function pruneRuns(root: string, days: number, now = new Date()): Promise<string[]> {
+export async function pruneRuns(
+  root: string,
+  days: number,
+  now = new Date(),
+  /** Only this change's runs (a stage prunes its own as it runs, ADR 0115 addendum 2026-10-25). */
+  only?: string,
+): Promise<string[]> {
   const removed: string[] = [];
   const runs = runsDirOf(root);
   const cutoff = now.getTime() - days * 86_400_000;
-  for (const change of await readdir(runs).catch(() => [] as string[])) {
+  const changes = only ? [only] : await readdir(runs).catch(() => [] as string[]);
+  for (const change of changes) {
     for (const runId of await readdir(join(runs, change)).catch(() => [] as string[])) {
       const f = join(runs, change, runId, "run.json");
       const text = await readFile(f, "utf8").catch(() => undefined);
