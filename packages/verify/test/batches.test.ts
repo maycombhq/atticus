@@ -198,7 +198,8 @@ describe("fileKinds: which topic rules of the protocol a file's batch needs (ADR
     expect(fileKinds("schema/ledger.graphql")).toEqual(["routes", "protocols"]);
     expect(fileKinds("api/openapi.yaml")).toEqual(["routes", "protocols"]);
     expect(fileKinds("ops/kong.yaml")).toEqual(["routes", "data", "deploy", "config", "protocols"]);
-    expect(fileKinds("scripts/release.sh")).toEqual([...FILE_KINDS]);
+    // Every kind but the gateway's: a gateway's files are told by their paths (A-gateway).
+    expect(fileKinds("scripts/release.sh")).toEqual(FILE_KINDS.filter((k) => k !== "gateway"));
   });
 
   it("a batch's kinds are its files' kinds together, in one order", () => {

@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -6,11 +7,17 @@ import { MockRuntime, type AiRequest } from "@maycombhq/ai";
 import {
   ChecklistPack,
   fileJudgments,
+  joinFacts,
+  joinRecords,
   makeJudgment,
+  parseFacts,
   parseRecord,
+  projectFacts,
   recordPath,
   serializeRecord,
   type ChecklistRule,
+  type Fact,
+  type JoinRepo,
 } from "@maycombhq/core";
 import {
   BUILT_IN_CHECKS,
@@ -47,6 +54,46 @@ async function record(root: string, r: Record<string, unknown>) {
   const p = parseRecord({ schemaVersion: 1, status: "current", confidence: "verified", ...r });
   if (!p.ok) throw new Error(`bad record ${String(r.id)}: ${JSON.stringify(p)}`);
   await write(root, join("catalog/generated", recordPath(p.record)), serializeRecord(p.record));
+}
+
+/**
+ * The invented portal → Apigee gateway → accounts estate's facts (fixtures/gateway-facts), as
+ * the facts join reads them; `routeAuth: false` leaves the gateway's routes without auth.
+ */
+function gatewayEstate(routeAuth: boolean): (JoinRepo & { system: string })[] {
+  const dir = join(__dirname, "..", "..", "..", "fixtures", "gateway-facts", "facts");
+  const read = (repo: string): Fact[] => {
+    const r = parseFacts(readFileSync(join(dir, `${repo}.jsonl`), "utf8"));
+    if (!r.ok) throw new Error(JSON.stringify(r.issues));
+    return r.facts.map((f) => {
+      if (routeAuth || f.kind !== "entry" || repo !== "forge-gateway") return f;
+      const { auth: _a, authCite: _c, ...rest } = f;
+      return rest as Fact;
+    });
+  };
+  return [
+    {
+      repo: "forge-portal-api",
+      facts: read("forge-portal-api"),
+      component: "portal-api",
+      system: "portal",
+    },
+    {
+      repo: "forge-gateway",
+      facts: read("forge-gateway"),
+      component: "api-gateway",
+      hosts: ["api.forge.example"],
+      gateway: true,
+      system: "platform",
+    },
+    {
+      repo: "forge-accounts",
+      facts: read("forge-accounts"),
+      component: "accounts-api",
+      hosts: ["accounts.forge.internal"],
+      system: "accounts",
+    },
+  ];
 }
 
 const AUDIT_CALL = {
@@ -384,6 +431,62 @@ describe("code answers what code can: the checks the four questions add", () => 
     expect(
       of(await runCritic(oauth, CHANGE, { now: NOW }), "constitution.public-entry-auth"),
     ).toEqual([]);
+  });
+
+  it("is it safe: a call through an Apigee gateway takes its auth from the gateway's facts, not a legacy reader (A-gateway)", async () => {
+    // The portal's API calls POST /forge/v1/accounts/{id}/transfers on the gateway, which
+    // forwards it to the accounts service's POST /transfers; the catalog is only what the facts
+    // project and join (no GatewayRoute from packages/extractors).
+    const ROW =
+      "| if-0136b1d1afc3441f | portal-api | accounts-api |  | POST /transfers | none | planned-modify |";
+    const root = async (routeAuth: boolean) => {
+      const r = await forgeChangeRoot();
+      // No legacy reader ran: the fixture's GatewayRoute gw-ledger-v1 (which the notes name for
+      // POST /transfers, and whose scopes would pass any hop) is gone.
+      await rm(
+        join(
+          r,
+          "catalog/generated",
+          recordPath({ kind: "GatewayRoute", id: "gw-ledger-v1" } as never),
+        ),
+      );
+      const repos = gatewayEstate(routeAuth);
+      // Projected as the scanner does, each fact in the manifest's component.
+      for (const x of repos)
+        for (const rec of projectFacts(
+          x.facts.map((f) => ({ ...f, component: x.component }) as Fact),
+          { system: x.system },
+        ).records)
+          if (rec.kind === "Component" || rec.kind === "Endpoint")
+            await record(r, rec as unknown as Record<string, unknown>);
+      for (const rec of joinRecords(joinFacts({ repos }), repos))
+        await record(r, rec as unknown as Record<string, unknown>);
+      await edit(
+        r,
+        "interfaces.md",
+        "| new | ledger-api | risk-engine | S.GW.SOR | POST /risk/assess | none | planned-new |",
+        `| new | ledger-api | risk-engine | S.GW.SOR | POST /risk/assess | none | planned-new |\n${ROW}`,
+      );
+      return r;
+    };
+    const onRow = (r: CriticResult) =>
+      of(r, "constitution.public-entry-auth").filter((x) => x.finding.locator.line === 10);
+
+    // The route checks an OAuth token (OAuth-VerifyToken attached on the transfer flow): safe.
+    expect(onRow(await runCritic(await root(true), CHANGE, { now: NOW }))).toEqual([]);
+
+    // The gateway's facts say nothing of auth, nor does the service's entry: asked, not passed.
+    const gap = onRow(await runCritic(await root(false), CHANGE, { now: NOW }));
+    expect(gap.map((x) => [x.finding.kind, x.finding.summary])).toEqual([
+      [
+        "knowledge-gap",
+        "Nothing says how accounts-api authenticates callers of POST /transfers, which portal-api calls from another system.",
+      ],
+    ]);
+    expect(gap[0]!.finding.evidence).toContainEqual({
+      source: "catalog",
+      record: "if-0136b1d1afc3441f",
+    });
   });
 
   it("is it safe: a breaking change to an operation another consumer calls, by fact (retired), by a judgment on file, or asked", async () => {

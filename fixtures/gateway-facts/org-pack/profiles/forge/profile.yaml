@@ -1,0 +1,8 @@
+schemaVersion: 1
+platform: forge
+name: Forge portal through its API gateway (invented, for ADR 0124 addendum A-gateway)
+systems:
+  - { id: portal, name: Portal, boundary: product, owner: team-portal, aliases: [] }
+  - { id: platform, name: Platform, boundary: product, owner: team-platform, aliases: [] }
+  - { id: accounts, name: Accounts, boundary: product, owner: team-accounts, aliases: [] }
+environments: [dev, prod]

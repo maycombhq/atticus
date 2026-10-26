@@ -1,0 +1,3 @@
+<SharedFlowBundle name="forge-security">
+  <Description>The API key every Forge proxy checks</Description>
+</SharedFlowBundle>

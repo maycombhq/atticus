@@ -140,9 +140,9 @@ describe("lean batch prompts: the core and the topic rules a batch needs (ADR 01
   it("leaves /atticus-map's rules as they were, byte for byte (tier 1)", () => {
     // sha256 of FACT_RULES: every rule, in the same words and order. Re-pinned since the split for
     // two added sentences: what `to` is for a relative call (C-join) and an entry's auth goes with
-    // authCite (A-read).
+    // authCite (A-read); and for the Apigee rule's three parts (A-gateway).
     expect(createHash("sha256").update(FACT_RULES).digest("hex")).toBe(
-      "05a8f21d1ad08f21f570cc6014ecf6b75c4b47c0bdfe7875317bcac59f64c387",
+      "7af3b336f075363977766a780ca305446296817e7cafddfa0b844a67a99cb074",
     );
     expect(FACT_RULES).toBe(factRulesFor());
     expect(mapCommand().body).toContain(FACT_RULES);
@@ -204,6 +204,43 @@ describe("lean batch prompts: the core and the topic rules a batch needs (ADR 01
     const all = batch().length;
     for (const k of RULE_TOPICS) expect(batch([k]).length, k).toBeLessThan(all);
     expect(batch(["deploy", "config"]).length).toBeLessThan(all * 0.6);
+  });
+
+  it("gives an Apigee bundle's batch the gateway's rules, and no other batch (A-gateway)", () => {
+    const APIGEE = "An Apigee proxy (`apiproxy/`)";
+    const AUTH = "Its `auth` is the strongest check run before the target";
+    const FORWARD = "Each route has a forwarding `call`";
+    // An Apigee file's kinds (fileKinds in @maycombhq/verify): config and gateway.
+    const gw = batch(["config", "gateway"]);
+    for (const r of [APIGEE, AUTH, FORWARD, "A gateway's routes", "An entry's `auth` goes with"])
+      expect(gw).toContain(r);
+    for (const r of [FLOW, STORE, FRONT, GRPC, DEPLOY]) expect(gw).not.toContain(r);
+    for (const kinds of [
+      ["backend", "routes", "data", "protocols", "flows"],
+      ["frontend", "flows"],
+      ["deploy", "config"],
+    ] as RuleTopic[][])
+      for (const r of [APIGEE, AUTH, FORWARD]) expect(batch(kinds), kinds.join()).not.toContain(r);
+    // Smaller than a back end's batch, so a gateway batch never has less room for its files.
+    expect(gw.length).toBeLessThan(
+      batch(["backend", "routes", "data", "protocols", "flows"]).length,
+    );
+  });
+
+  it("says how a route, its auth and its forwarding call are read and cited (A-gateway)", () => {
+    const rule = FACT_RULES.split("\n").find((l) => l.startsWith("- An Apigee proxy")) ?? "";
+    for (const words of [
+      "each conditional `<Flow>` is a `rest` entry",
+      "`method` from `request.verb`",
+      "the `<BasePath>` line in `cite.with`",
+      "a shared flow a `FlowCallout` there names (follow it)",
+      "`authCite` is the `<Step><Name>` line that attaches it",
+      "`target.copy.pathsuffix` is false",
+      "AssignMessage or JavaScript policy sets the path",
+      "`base` is the TargetServer's name (or the KVM key)",
+      "cited on the host line",
+    ])
+      expect(rule, words).toContain(words);
   });
 });
 

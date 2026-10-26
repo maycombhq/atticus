@@ -1,0 +1,9 @@
+[
+  {
+    "name": "accounts-backend",
+    "host": "accounts.forge.internal",
+    "port": 8443,
+    "isEnabled": true,
+    "sSLInfo": { "enabled": true }
+  }
+]
