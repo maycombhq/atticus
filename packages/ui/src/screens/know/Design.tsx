@@ -121,6 +121,73 @@ function RecordGaps({ evidence }: { evidence: Evidence[] }) {
   return <GapMarks gaps={gapsOfEvidence(evidence, of, { bare: true })} />;
 }
 
+/**
+ * The whole path of a call through the gateways (ADR 0124 addendum A-gateway2): each hop's
+ * proxy and base path, what it checks and the scopes it demands, in the order the call meets
+ * them. The hops are the GatewayRoute records the Interface cites on its gateway side, matched
+ * by the line each rests on, so what is shown is what the catalog holds and nothing more.
+ */
+function CallPath({ r }: { r: Rec }) {
+  const routes = useApi<{ items: Rec[] }>("/api/catalog/GatewayRoute?limit=500");
+  const at = (e: Evidence) => `${e.repo ?? ""}|${e.path ?? ""}:${e.line ?? ""}`;
+  const order = (r.evidence ?? [])
+    .filter((e) => (e as Evidence & { side?: string }).side === "gateway" && e.path)
+    .map(at);
+  const hopsOf = (items: Rec[]) =>
+    order.length
+      ? items
+          .flatMap((x) => {
+            const own = (x.evidence ?? [])[0];
+            const n = own?.path ? order.indexOf(at(own)) : -1;
+            return n < 0 ? [] : [{ x, n }];
+          })
+          .sort((a, b) => a.n - b.n || (a.x.id < b.x.id ? -1 : 1))
+          .map((h) => h.x)
+      : [];
+  return (
+    <div>
+      <div className="hud" style={{ fontSize: 10, marginBottom: 6 }}>
+        {T.thePathOfTheCall}
+      </div>
+      {/* Loading and error states are the View's; a call with no route in the catalog says so. */}
+      <View
+        of={routes}
+        empty={(d) => hopsOf(d.items).length === 0}
+        emptyText={T.noRouteRecordedFor}
+      >
+        {(d) => (
+          <ol className="stack" style={{ gap: 4, margin: 0, paddingLeft: 18, fontSize: 12.5 }}>
+            {hopsOf(d.items).map((h, i) => {
+              const scopes = (h.scopes as string[] | undefined) ?? [];
+              const policies = (h.policies as string[] | undefined) ?? [];
+              return (
+                <li key={h.id}>
+                  <span className="mono">
+                    {String(h.proxy ?? h.id)} {String(h.basepath ?? "")}
+                  </span>{" "}
+                  <span className={`chip ${scopes.length ? "done" : "blocking"}`}>
+                    {scopes.length ? T.scopesIt(scopes.join(", ")) : T.noScopeDemanded}
+                  </span>{" "}
+                  <span className="hud" style={{ fontSize: 9.5 }}>
+                    {i === 0 && r.auth
+                      ? T.theCallerMeets(String(r.auth))
+                      : policies.join(", ") || T.thenReaches(String(h.target ?? ""))}
+                  </span>
+                </li>
+              );
+            })}
+            <li>
+              <span className="mono">
+                {String(r.to ?? "")} {String(r.method ?? "")} {String(r.normalizedPath ?? "")}
+              </span>
+            </li>
+          </ol>
+        )}
+      </View>
+    </div>
+  );
+}
+
 function ContractDetail({ r }: { r: Rec }) {
   const rec = useApi<Rec>(`/api/catalog/${r.kind}/${encodeURIComponent(r.id)}`);
   const imp = useApi<{ affected: { id: string; kind: string; owner?: string }[] }>(
@@ -161,6 +228,7 @@ function ContractDetail({ r }: { r: Rec }) {
                 ))
               )}
             </div>
+            {d.kind === "Interface" && d.via === "gateway" ? <CallPath r={d} /> : null}
             <div>
               <div className="hud" style={{ fontSize: 10, marginBottom: 6 }}>
                 {T.consumersAndDependants}

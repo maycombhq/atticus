@@ -3,6 +3,7 @@ import { BREAKING_SPEC, type JudgeItem } from "@maycombhq/ai";
 import type { RecordOf } from "@maycombhq/core";
 import {
   docOf,
+  filesOf,
   hopNotes,
   hopRoutes,
   normalizePath,
@@ -10,7 +11,7 @@ import {
   type Hop,
 } from "../artifacts.js";
 import type { CriticContext } from "../context.js";
-import { sectionLines, type Doc } from "../doc.js";
+import { sectionLines, sectionMatching, type Doc } from "../doc.js";
 import {
   hasWord,
   lineEvidence,
@@ -126,16 +127,81 @@ function endpointOf(
 const interfaceOf = (ctx: CriticContext, h: Hop) =>
   h.id.startsWith("if-") ? ctx.get("Interface", h.id) : undefined;
 
+/** A scope as written: `orders.read`, `SCOPE_ledger.read`, `payments:charge` (A-gateway2). */
+const SCOPE_WORD = /^[A-Za-z][A-Za-z0-9]*(?:[._:-][A-Za-z0-9]+)+$/;
+/** The scopes a line of a story's criteria names: only quoted or backticked, only where it says scope. */
+function scopesNamedIn(text: string): string[] {
+  if (!/\bscopes?\b/i.test(text)) return [];
+  const out = new Set<string>();
+  for (const m of text.matchAll(/[`'"]([^`'"]{3,60})[`'"]/g))
+    if (SCOPE_WORD.test(m[1]!.trim())) out.add(m[1]!.trim());
+  return [...out].sort();
+}
+
+/**
+ * The scopes each component's own callers' tokens carry: the routes the catalog says lead to it.
+ * Read once per run (the records are walked once, not once per hop).
+ */
+function scopesIntoEach(ctx: CriticContext): Map<string, string[]> {
+  const out = new Map<string, Set<string>>();
+  for (const r of ctx.records) {
+    if (r.kind !== "Interface" || !r.route) continue;
+    const scopes = ctx.get("GatewayRoute", r.route)?.scopes ?? [];
+    if (!scopes.length) continue;
+    const have = out.get(r.to) ?? new Set<string>();
+    for (const s of scopes) have.add(s);
+    out.set(r.to, have);
+  }
+  return new Map([...out].map(([k, v]) => [k, [...v].sort()]));
+}
+
 export const publicEntryAuth: DeterministicCheckDef = {
   id: "public-entry-auth",
   question: "safe",
   description:
-    "Every entry point the change adds or changes that another system or the gateway calls has an auth fact: the Endpoint's or the Interface's auth, or a gateway route that checks scopes.",
+    "Every entry point the change adds or changes that another system or the gateway calls has an auth fact: the Endpoint's or the Interface's auth, or a gateway route that checks scopes. And the scopes hold up (A-gateway2): a route through the gateway that demands none, a caller whose own token can't hold the scope a hop downstream demands, and a scope a story's criteria name that no route demands.",
   params: z.strictObject({}),
   run(ctx) {
     const doc = docOf(ctx.files, IFACES);
     if (!doc) return { hits: [], subjects: [] };
     const hits: Hit[] = [];
+    // A-gateway2: each hop's gateway routes, read once (the notes are parsed once per hop), the
+    // scopes they demand between them, and the scopes the stories' criteria name.
+    const routesOf = new Map<number, RecordOf<"GatewayRoute">[]>();
+    for (const h of ctx.hops)
+      routesOf.set(
+        h.line,
+        hopRoutes(ctx.files, h)
+          .map((id) => ctx.get("GatewayRoute", id))
+          .filter((r) => r !== undefined),
+      );
+    const allRoutes = [...routesOf.values()].flat();
+    const demanded = new Set(allRoutes.flatMap((r) => r.scopes));
+    /** The scopes each component's callers' tokens hold, read only if a hop needs them. */
+    let heldBy: Map<string, string[]> | undefined;
+    if (allRoutes.length)
+      for (const story of filesOf(ctx.files, "stories").filter((d) => d.path !== "stories.md")) {
+        const s = sectionMatching(story, /acceptance criteria/i);
+        if (!s) continue;
+        for (const l of sectionLines(story, s))
+          for (const scope of scopesNamedIn(l.text)) {
+            if (demanded.has(scope)) continue;
+            hits.push({
+              kind: "issue",
+              artifact: story.path,
+              locator: { line: l.n, heading: s.heading },
+              summary: sentence(
+                `The criteria ask for the scope ${scope}, and no gateway route the change names demands it.`,
+              ),
+              why: `The routes in interfaces.md demand ${demanded.size ? [...demanded].sort().join(", ") : "no scope at all"}, so a caller without ${scope} would be let through and the criterion would not hold.`,
+              fix: {
+                text: `Demand ${scope} on the route that carries this operation and record it on the GatewayRoute, or write the criterion with the scope the route does demand.`,
+              },
+              evidence: [lineEvidence(story, l.n)],
+              key: `scope-unknown|${story.path}|${scope}`,
+            });
+          }
+      }
     for (const h of ctx.hops) {
       if (h.status !== "planned-new" && h.status !== "planned-modify") continue;
       const calleeSystem = ctx.systemOf(h.callee);
@@ -143,9 +209,7 @@ export const publicEntryAuth: DeterministicCheckDef = {
       if (!calleeSystem || ctx.boundaryOf(calleeSystem) === "vendor") continue;
       const callerSystem = ctx.systemOf(h.caller);
       const rec = interfaceOf(ctx, h);
-      const routes = hopRoutes(ctx.files, h)
-        .map((id) => ctx.get("GatewayRoute", id))
-        .filter((r) => r !== undefined);
+      const routes = routesOf.get(h.line) ?? [];
       const pattern = ctx.patterns.get(h.pattern);
       const gateway = routes.length > 0 || pattern?.route === "gateway" || rec?.via === "gateway";
       const crosses = callerSystem !== calleeSystem;
@@ -153,7 +217,6 @@ export const publicEntryAuth: DeterministicCheckDef = {
       const ep = endpointOf(ctx, h.callee, h.method, h.path, rec);
       const facts = [ep?.auth, rec?.auth].filter((a) => a !== undefined);
       const checked = routes.filter((r) => r.scopes.length > 0);
-      if (facts.some((a) => a !== "none") || checked.length) continue;
       const op = h.operation || h.path || "the operation";
       const from = crosses ? "from another system" : "through the gateway";
       const evidence: Evidence[] = [
@@ -161,6 +224,52 @@ export const publicEntryAuth: DeterministicCheckDef = {
         ...(rec ? [recordEvidence(rec.id)] : []),
         ...(ep ? [recordEvidence(ep.id)] : []),
       ];
+      // A-gateway2: the scopes, where the facts show them. A route that demands none lets any
+      // token through, and a caller whose own callers' tokens can't hold what a route demands
+      // can't pass one on. Never a silent pass: whichever the facts settle is said.
+      if (routes.length) {
+        const routeEvidence = [...evidence, ...routes.map((r) => recordEvidence(r.id))];
+        if (!checked.length)
+          hits.push({
+            kind: "issue",
+            artifact: IFACES,
+            locator: { ...rowLocator(doc, h.line), field: "notes" },
+            summary: sentence(
+              `The gateway route ${routes.map((r) => r.id).join(", ")} that carries ${op} demands no scope.`,
+            ),
+            why: `The route checks who the caller is and nothing about what they may do, so any token the gateway accepts reaches ${h.callee}: ${h.caller} and every other client of ${routes[0]!.proxy} are let through alike.`,
+            fix: {
+              text: `Demand the scope this operation needs on the route (an OAuthV2 \`<Scope>\`, a JWT scope claim check) and record it on the GatewayRoute; if it is meant to be open to every caller the gateway lets in, dismiss this with the reason.`,
+            },
+            evidence: routeEvidence,
+            key: `scope-none|${h.line}`,
+          });
+        else {
+          const held = (heldBy ??= scopesIntoEach(ctx)).get(h.caller) ?? [];
+          const wants = checked.flatMap((r) => r.scopes);
+          if (held.length && !wants.some((s) => held.includes(s)))
+            hits.push({
+              kind: "knowledge-gap",
+              artifact: IFACES,
+              locator: { ...rowLocator(doc, h.line), field: "notes" },
+              summary: sentence(
+                `${op} demands ${wants.join(", ")}, and the token ${h.caller} is itself called with holds ${held.join(", ")}.`,
+              ),
+              why: `The routes into ${h.caller} demand ${held.join(", ")}, so a token passed straight through would be refused at ${routes.map((r) => r.id).join(", ")}. Nothing in the catalog says ${h.caller} gets a token that holds ${wants.join(", ")}.`,
+              fix: {
+                text: `Write how ${h.caller} gets a token for ${wants.join(", ")} (a token exchange, its own client credentials) in the hop's note in interfaces.md, or answer the question.`,
+              },
+              evidence: routeEvidence,
+              question: {
+                text: `How does ${h.caller} get a token holding ${wants.join(", ")}, which ${op} demands? The routes into ${h.caller} demand ${held.join(", ")}.`,
+                owner: questionOwner(ctx, h.caller),
+              },
+              subject: h.caller,
+              key: `scope-caller|${h.line}`,
+            });
+        }
+      }
+      if (facts.some((a) => a !== "none") || checked.length) continue;
       if (facts.length) {
         hits.push({
           kind: "issue",

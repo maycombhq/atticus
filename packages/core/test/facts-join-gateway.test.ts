@@ -67,12 +67,20 @@ describe("joinFacts through a gateway: the caller joins the service the route fo
       entry: { repo: "forge-accounts", fact: "entry.post.transfers" },
       method: "POST",
       path: "/transfers",
-      gateway: {
-        entry: { fact: "entry.post.forge-v1-accounts-id-transfers" },
-        call: { fact: "call.post.transfers" },
-        tie: { fact: "config.targetserver.accounts-backend" },
-      },
+      // A-gateway2: the hops in order, each with its auth and the scopes its route demands.
+      gateway: [
+        {
+          entry: { fact: "entry.post.forge-v1-accounts-id-transfers" },
+          call: { fact: "call.post.transfers" },
+          tie: { fact: "config.targetserver.accounts-backend" },
+          auth: "oauth2",
+          scopes: ["accounts.transfer"],
+        },
+      ],
+      scopes: ["accounts.transfer"],
     });
+    // Nothing says whether this gateway faces inside or out (`<VirtualHost>secure</VirtualHost>`).
+    expect(post.gateway![0]!.facing).toBeUndefined();
   });
 
   it("joins at the gateway when the forwarding call's host is one nobody lists, and asks the host", () => {
@@ -238,8 +246,10 @@ describe("joinRecords through a gateway: the Interface, its route and the auth a
       basepath: "/forge/v1",
       target: "accounts-api",
       policies: ["OAuth-VerifyToken"],
-      scopes: [],
+      // A-gateway2: filled from the route's scope facts, not left empty.
+      scopes: ["accounts.transfer"],
     });
+    expect(routes[0]).toMatchObject({ policies: ["VAK-VerifyKey"], scopes: [] });
     for (const r of rs) expect(parseRecord(JSON.parse(JSON.stringify(r))).ok, r.id).toBe(true);
   });
 
@@ -247,7 +257,7 @@ describe("joinRecords through a gateway: the Interface, its route and the auth a
     const noRouteAuth = (fs: Fact[]) =>
       fs.map((f) => {
         if (f.kind !== "entry") return f;
-        const { auth: _a, authCite: _c, ...rest } = f;
+        const { auth: _a, authCite: _c, scopes: _s, ...rest } = f;
         return rest as Fact;
       });
     const bare = swap(estate(), "forge-gateway", noRouteAuth);

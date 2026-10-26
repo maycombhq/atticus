@@ -1,0 +1,3 @@
+<APIProxy name="northwind-pay-v1">
+  <Description>Northwind Pay, for Forge services that take card payments</Description>
+</APIProxy>

@@ -1,0 +1,11 @@
+<AssignMessage name="AM-RewriteDispatch">
+  <!-- The orders service takes a dispatch at its own path; the order id travels in the body. -->
+  <AssignVariable>
+    <Name>target.copy.pathsuffix</Name>
+    <Value>false</Value>
+  </AssignVariable>
+  <Set>
+    <Path>/dispatch</Path>
+  </Set>
+  <AssignTo createNew="false" transport="http" type="request"/>
+</AssignMessage>

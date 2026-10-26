@@ -1,0 +1,1 @@
+{"kind":"entry","id":"entry.get.orders-id","repo":"forge-orders-sandbox","commit":"fff6666","entryType":"rest","method":"GET","path":"/orders/{id}","handler":"OrdersController.get","cite":{"file":"src/main/java/forge/orders/OrdersController.java","line":10,"value":"/orders/{id}","quote":"@GetMapping(\"/orders/{id}\")"},"verified":"line","by":"assistant","conf":"declared"}

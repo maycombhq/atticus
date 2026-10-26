@@ -1,0 +1,38 @@
+<ProxyEndpoint name="default">
+  <Description>Forge orders for the shop, version 2</Description>
+  <PreFlow name="PreFlow">
+    <Request>
+      <Step>
+        <Name>SA-Orders</Name>
+      </Step>
+    </Request>
+  </PreFlow>
+  <Flows>
+    <Flow name="GetOrder">
+      <Request>
+        <Step>
+          <Name>OAuth-VerifyRead</Name>
+        </Step>
+      </Request>
+      <Condition>(proxy.pathsuffix MatchesPath "/orders/*") and (request.verb = "GET")</Condition>
+    </Flow>
+    <Flow name="DispatchOrder">
+      <Request>
+        <Step>
+          <Name>OAuth-VerifyDispatch</Name>
+        </Step>
+        <Step>
+          <Name>AM-RewriteDispatch</Name>
+        </Step>
+      </Request>
+      <Condition>(proxy.pathsuffix MatchesPath "/orders/*/dispatch") and (request.verb = "POST")</Condition>
+    </Flow>
+  </Flows>
+  <HTTPProxyConnection>
+    <BasePath>/forge/v2</BasePath>
+    <VirtualHost>internal</VirtualHost>
+  </HTTPProxyConnection>
+  <RouteRule name="orders">
+    <TargetEndpoint>orders</TargetEndpoint>
+  </RouteRule>
+</ProxyEndpoint>

@@ -1,0 +1,11 @@
+<AssignMessage name="AM-RewritePay">
+  <!-- The partner gateway has a base path of its own; the charge goes out at that path. -->
+  <AssignVariable>
+    <Name>target.copy.pathsuffix</Name>
+    <Value>false</Value>
+  </AssignVariable>
+  <Set>
+    <Path>/pay/v1/charges</Path>
+  </Set>
+  <AssignTo createNew="false" transport="http" type="request"/>
+</AssignMessage>

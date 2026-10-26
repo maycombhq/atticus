@@ -21,13 +21,28 @@ To change what a resource type gives, copy the shipped file into `org-pack/diale
 
 ## Apigee gateways
 
-You don't need a model or a dialect for an Apigee gateway: `/atticus-map` (and each `atticus map` batch holding a bundle's files) tells the assistant how to read one (ADR 0124 addendum A-gateway). Type the gateway's repo `gateway` in `repos.manifest.yaml` and list the host callers use under `hosts:`.
+You don't need a model or a dialect for an Apigee gateway: `/atticus-map` (and each `atticus map` batch holding a bundle's files) tells the assistant how to read one (ADR 0124 addenda A-gateway and A-gateway2). Type the gateway's repo `gateway` in `repos.manifest.yaml` and list the host callers use under `hosts:`. A gateway that faces partners or the internet can be typed `gateway-external` (and one that stays inside `gateway-internal`), so every hop through it is marked.
 
 - **Routes.** Each conditional `<Flow>` of a proxy is an entry of the gateway: the method from `request.verb`, the path the `<BasePath>` and the `proxy.pathsuffix` pattern joined (`/forge/v1/accounts/{id}`), cited on the `<Condition>` with the `<BasePath>` line beside it.
-- **Auth.** The strongest check that runs before the target, in the flow, the PreFlow or a shared flow a FlowCallout calls: OAuthV2 or VerifyJWT is `oauth2`, VerifyAPIKey `api-key`, BasicAuthentication `basic`, cited on the `<Step>` that attaches it. SpikeArrest and Quota are rate-limit settings.
+- **Auth.** The strongest check that runs before the target, in the flow, the PreFlow or a shared flow a FlowCallout calls: OAuthV2 or VerifyJWT is `oauth2`, VerifyAPIKey `api-key`, BasicAuthentication `basic`, cited on the `<Step>` that attaches it. SpikeArrest and Quota are rate-limit settings. The verifier opens the policy the citation names and refuses an auth it cannot set: a `VerifyAPIKey` never makes `oauth2`, and a `SpikeArrest` authenticates nobody.
+- **Scopes.** The scopes a route demands are read with it: an OAuthV2's `<Scope>` (a space-separated list is one scope each, all citing that line), a VerifyJWT or VerifyAccessToken scope claim, a scope a `Condition` asserts on the token's claims, or the scopes a shared flow it calls checks. Each is cited on the line that names it, each is checked like any other claim, and each ends up on the GatewayRoute. A route that demands none says so by leaving them out. A proxy's `<VirtualHost>` is recorded too, so a hop can be called internal or external without guessing.
 - **Where it goes.** Each route's forwarding call has the path the service receives: the base path dropped, or the path an AssignMessage or JavaScript policy sets when `target.copy.pathsuffix` is false. Its host comes from the TargetServer (`targetservers.json`) or KVM entry it names.
 
-Once the gateway, its callers and the services behind it are read and verified, `atticus join` links a UI back end's call to the service the route forwards to, at the rewritten path, `via: gateway` with the route's auth. When a TargetServer's hosts differ by environment and point at different repos, you're asked which one is meant. The critic's auth check reads that auth; nothing from the old gateway reader is needed.
+Once the gateway, its callers and the services behind it are read and verified, `atticus join` links a UI back end's call to the service the route forwards to, at the rewritten path, `via: gateway` with the route's auth and its scopes.
+
+**Chains.** A route that forwards into another gateway is followed too, so a call reads
+`caller → internal gateway → partner gateway → the vendor's service`, with each hop in order: its
+own auth, the scopes it demands, and whether it faces inside or out. `map.md`'s call lines and the
+app's Interface page print the whole path, and each hop is a GatewayRoute of its own whose target
+is the next hop. The walk is bounded: a ring of routes that forward back into a gateway already in
+the path is a question, never a loop, and so is a chain longer than four gateways. When a
+TargetServer's hosts differ by environment and point at different repos, you're asked which one is
+meant and the call stops at the last gateway the facts settle.
+
+**The critic** reads the auth and the scopes: a route through the gateway that demands no scope is
+a finding, a scope a story's criteria name that no route demands is a finding, and a caller whose
+own callers' tokens hold none of the scopes a hop downstream demands is a question. Nothing from
+the old gateway reader is needed.
 
 ## Repos Atticus can't read yet: onboard them
 

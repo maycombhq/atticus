@@ -1,0 +1,8 @@
+<TargetEndpoint name="northwind">
+  <HTTPTargetConnection>
+    <LoadBalancer>
+      <Server name="northwind-pay"/>
+    </LoadBalancer>
+    <Path>/v2</Path>
+  </HTTPTargetConnection>
+</TargetEndpoint>

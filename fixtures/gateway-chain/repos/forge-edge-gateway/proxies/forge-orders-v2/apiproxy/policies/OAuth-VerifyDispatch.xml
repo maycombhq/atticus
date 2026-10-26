@@ -1,0 +1,4 @@
+<OAuthV2 name="OAuth-VerifyDispatch">
+  <Operation>VerifyAccessToken</Operation>
+  <Scope>orders.dispatch orders.write</Scope>
+</OAuthV2>

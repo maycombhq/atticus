@@ -1,0 +1,15 @@
+<ProxyEndpoint name="default">
+  <Description>The echo the partner gateway answers, and which answers through it</Description>
+  <Flows>
+    <Flow name="Ping">
+      <Condition>(proxy.pathsuffix MatchesPath "/ping") and (request.verb = "GET")</Condition>
+    </Flow>
+  </Flows>
+  <HTTPProxyConnection>
+    <BasePath>/forge/loop</BasePath>
+    <VirtualHost>internal</VirtualHost>
+  </HTTPProxyConnection>
+  <RouteRule name="partner">
+    <TargetEndpoint>partner</TargetEndpoint>
+  </RouteRule>
+</ProxyEndpoint>

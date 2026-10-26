@@ -40,6 +40,8 @@ describe("the hand-written facts of the gateway, its caller and its service veri
     expect(r.coverage.read).toEqual([
       "environments/prod/targetservers.json",
       `${P}/policies/AM-RewriteTransfers.xml`,
+      // A-gateway2: the OAuthV2 whose <Scope> the transfer route's scope fact cites.
+      `${P}/policies/OAuth-VerifyToken.xml`,
       `${P}/policies/SA-Accounts.xml`,
       `${P}/proxies/default.xml`,
       `${P}/targets/accounts.xml`,

@@ -1,0 +1,9 @@
+[
+  {
+    "name": "northwind-pay",
+    "host": "api.northwindpay.example",
+    "port": 443,
+    "isEnabled": true,
+    "sSLInfo": { "enabled": true }
+  }
+]

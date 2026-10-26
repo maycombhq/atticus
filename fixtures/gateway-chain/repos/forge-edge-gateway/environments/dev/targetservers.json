@@ -1,0 +1,8 @@
+[
+  {
+    "name": "orders-backend",
+    "host": "orders-sandbox.forge.internal",
+    "port": 8443,
+    "isEnabled": true
+  }
+]

@@ -420,7 +420,14 @@ export function joinReposOf(
         ? { modules: modules.map((x) => ({ component: x.component, hosts: x.hosts })) }
         : {}),
       // An API gateway's entries are routes the join follows through (ADR 0124 addendum A-gateway).
-      ...(m?.type === "gateway" ? { gateway: true } : {}),
+      // A type that says which side it faces (`gateway-external`, `gateway-internal`) marks each
+      // hop through it (A-gateway2); a plain `gateway` leaves that to the proxy's virtual host.
+      ...(m && /^gateway(-|$)/.test(m.type) ? { gateway: true } : {}),
+      ...(m?.type === "gateway-external"
+        ? { facing: "external" as const }
+        : m?.type === "gateway-internal"
+          ? { facing: "internal" as const }
+          : {}),
     };
   });
 }

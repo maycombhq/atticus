@@ -102,6 +102,20 @@ export const EntryFact = z.strictObject({
    * an `auth` without it is left out of the kept fact, so the catalog never says it.
    */
   authCite: CitePart.optional(),
+  /**
+   * The scopes a caller's token must hold to be let in (ADR 0124 addendum A-gateway2): an
+   * Apigee `OAuthV2`'s `<Scope>`, a `VerifyJWT` or `VerifyAccessToken` scope claim check, a
+   * scope a `Condition` asserts on the token's claims, or one a shared flow checks; and, for a
+   * service's own entry, the scope its annotation or middleware requires, though only a gateway
+   * batch's rules ask for scopes (the prompt budget: see the addendum).
+   *
+   * One citation per scope: `value` is the scope as written, on the line that names it, with
+   * the other lines a scope built from parts comes from in `with`, as for any other claim. The
+   * verifier checks each like a part, so an invented scope, or one cited on a line that doesn't
+   * name it, rejects the entry. A field on the entry, not a fact kind of its own: a scope has no
+   * identity apart from the entry that demands it (see the addendum for why).
+   */
+  scopes: z.array(Cite).max(12).optional(),
 });
 
 export const CALL_TYPES = [

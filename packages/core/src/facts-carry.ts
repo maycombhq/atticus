@@ -39,6 +39,8 @@ export function citedFiles(f: Fact): string[] {
       ...new Set([
         ...filesOfCite(f.cite),
         ...(f.kind === "entry" && f.authCite ? [f.authCite.file] : []),
+        // A-gateway2: a changed scope line invalidates the entry that demands the scope.
+        ...(f.kind === "entry" ? (f.scopes ?? []).flatMap(filesOfCite) : []),
       ]),
     ];
   const all = new Set<string>(filesOfCite(f.cite));

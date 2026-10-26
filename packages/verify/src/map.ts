@@ -224,6 +224,37 @@ function targetName(c: Ctx, id: string): string {
   return id;
 }
 
+/**
+ * The gateway hops a joined call passes through, in order (ADR 0124 addendum A-gateway2): the
+ * GatewayRoute records the Interface cites on its gateway side, matched by the line each rests
+ * on. Empty when the catalog has no route for the hop, so the line reads as it did before.
+ */
+function gatewayHops(c: Ctx, i: Rec<"Interface">): Rec<"GatewayRoute">[] {
+  if (i.via !== "gateway") return [];
+  const order = (i.evidence as Ev[])
+    .filter((e) => e.side === "gateway" && e.path)
+    .map((e) => `${e.repo ?? ""}|${e.path}:${e.line}`);
+  if (!order.length) return [];
+  return records(c, "GatewayRoute")
+    .flatMap((r) => {
+      const own = (r.evidence as Ev[])[0];
+      const at = own?.path ? `${own.repo ?? ""}|${own.path}:${own.line}` : "";
+      const n = order.indexOf(at);
+      return n < 0 ? [] : [{ r, n }];
+    })
+    .sort((a, b) => a.n - b.n || cmp(a.r.id, b.r.id))
+    .map((x) => x.r);
+}
+
+/** One hop as the map says it: the proxy and its base path, what it checks, the scopes it wants. */
+function hopText(r: Rec<"GatewayRoute">): string {
+  const what = [
+    ...(r.policies.length ? [list(r.policies)] : []),
+    r.scopes.length ? `scopes ${list(r.scopes)}` : "no scope",
+  ];
+  return `${r.proxy} ${r.basepath} (${what.join("; ")})`;
+}
+
 function calls(c: Ctx): string[] {
   const ifs = records(c, "Interface").filter((i) => c.comps.has(i.from));
   const loose = records(c, "Unresolved").filter(
@@ -238,10 +269,14 @@ function calls(c: Ctx): string[] {
       .sort((a, b) => cmp(a.normalizedPath ?? "", b.normalizedPath ?? "") || cmp(a.id, b.id))) {
       const what = [i.method, i.normalizedPath].filter(Boolean).join(" ");
       const req = c.byId.get(`${i.id}.request`);
+      // A-gateway2: the whole path of the call, each hop with what it checks and the scopes it
+      // demands, so a reader sees where a token has to be good enough and where it isn't.
+      const hops = gatewayHops(c, i);
       const notes = [
         `from ${i.from}`,
         i.sync,
-        `via ${i.via}`,
+        hops.length ? `via ${hops.map(hopText).join(" then ")}` : `via ${i.via}`,
+        ...(hops.length && i.auth ? [`the caller meets ${i.auth}`] : []),
         ...(i.endpoint ? [`reaches ${i.endpoint}`] : []),
         ...(req?.kind === "Schema" && req.fields.length
           ? [`sends ${list(req.fields.map((f) => f.name))}`]

@@ -1,0 +1,4 @@
+<OAuthV2 name="OAuth-VerifyPay">
+  <Operation>VerifyAccessToken</Operation>
+  <Scope>payments.charge</Scope>
+</OAuthV2>
