@@ -676,8 +676,39 @@ export const ASSISTANTS = [
 export const AssistantId = z.enum(ASSISTANTS);
 export type AssistantId = z.infer<typeof AssistantId>;
 
-export const Runtime = z.strictObject({
-  schemaVersion: V,
+/**
+ * The kinds of AI step (C5, ADR 0121 addendum: per-step models). Each request's class is decided
+ * in code (`@maycombhq/ai` `stepClassOf`), never by its prompt, and picks the model it runs on:
+ * - read: reading repos into facts (atticus map and its fix round) and scan verify;
+ * - draft: the feature, architecture and stories drafts, small changes, change and spec drafts,
+ *   scan surveys and their questions, dialect and framework drafts, tasks and tests;
+ * - critic: the critic's lenses and the hand-up lens;
+ * - knowledge: the knowledge scan and find, what a change needs (which items apply) and ask;
+ * - quick: everything else that's small: judgments, context expansion and ordering, names,
+ *   glossary definitions, ticket text and explanations.
+ * Kept here, beside runtime.yaml's `models`, which names a model for each.
+ */
+export const STEP_CLASSES = ["read", "draft", "critic", "knowledge", "quick"] as const;
+export const StepClass = z.enum(STEP_CLASSES);
+export type StepClass = z.infer<typeof StepClass>;
+
+/**
+ * runtime.yaml's own schema version (ADR 0121 addendum). Version 2 adds a model per kind of step
+ * (`models.read`, `draft`, `critic`, `knowledge`, `quick`). A version 1 file still reads, every
+ * step on the one model; `atticus upgrade` moves it to version 2 (`runtime-v2`), changing nothing
+ * else.
+ */
+export const RUNTIME_SCHEMA_VERSION = 2 as const;
+
+/**
+ * The model for one kind of step: a model of runtime.yaml's provider (model mode, headless
+ * Claude Code), or `vendor/family` for a model an editor offers (VS Code's language models, or
+ * the one a hand-off text asks for). A bare name in an editor is Copilot's family of that name.
+ */
+const StepModel = z.string().min(1).regex(/^\S+$/, "a model name or vendor/family, without spaces");
+
+const RuntimeFields = z.strictObject({
+  schemaVersion: z.union([V, z.literal(RUNTIME_SCHEMA_VERSION)]),
   assistants: z
     .strictObject({
       allowed: z.array(AssistantId).min(1),
@@ -707,6 +738,16 @@ export const Runtime = z.strictObject({
       allowed: z.array(z.string().min(1)).default([]),
       /** A recommended model per task type, shown in the assistant's picker hints. */
       recommended: z.record(z.string(), z.string()).default({}),
+      /**
+       * Version 2 (ADR 0121 addendum): the organisation's model for each kind of step. A step
+       * whose kind names none runs on the one model (adapters.model's, or the editor's), as every
+       * step did in version 1. A person's editor setting overrides these for them.
+       */
+      read: StepModel.optional(),
+      draft: StepModel.optional(),
+      critic: StepModel.optional(),
+      knowledge: StepModel.optional(),
+      quick: StepModel.optional(),
     })
     .default({ allowed: [], recommended: {} }),
   autonomy: z
@@ -780,7 +821,30 @@ export const Runtime = z.strictObject({
     })
     .optional(),
 });
+
+export const Runtime = RuntimeFields.superRefine((r, ctx) => {
+  if (r.schemaVersion !== 1) return;
+  for (const c of STEP_CLASSES)
+    if (r.models[c] !== undefined)
+      ctx.addIssue({
+        code: "custom",
+        path: ["models", c],
+        message: `models.${c} needs schemaVersion 2 (ADR 0121 addendum): run atticus upgrade`,
+      });
+});
 export type Runtime = z.infer<typeof Runtime>;
+
+/** runtime.yaml's model for each kind of step, those it names (ADR 0121 addendum). */
+export function stepModelsOf(
+  runtime: Pick<Runtime, "models"> | undefined,
+): Partial<Record<StepClass, string>> {
+  const out: Partial<Record<StepClass, string>> = {};
+  for (const c of STEP_CLASSES) {
+    const m = runtime?.models[c];
+    if (m) out[c] = m;
+  }
+  return out;
+}
 
 // ------------------------------------------------------------------ process/
 

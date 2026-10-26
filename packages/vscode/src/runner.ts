@@ -11,6 +11,7 @@ import {
   type OpenQuestion,
   type StepModel,
 } from "./types";
+import { isStepClass, stepClassOfArgs, type StepClass } from "./step-models";
 import { WORDS } from "./words";
 
 /**
@@ -44,6 +45,10 @@ export interface HandoffJson {
   pagesLeft?: number;
   /** The read-only tools the model may call, and how to run a call (ADR 0107 addendum). */
   tools?: HandoffTools;
+  /** The run's kind of step (ADR 0121 addendum): it picks the model. */
+  stepClass?: string;
+  /** runtime.yaml's model for that kind, when it names one. */
+  orgModel?: string;
 }
 
 export interface HandoffTools {
@@ -94,8 +99,12 @@ export interface RunnerDeps {
   /** The metarepo; the prompt and result files are relative to it. */
   root: string;
   cli: Cli;
-  /** The model, chosen the first time a step hands a prompt off. */
-  model: () => Promise<StepModel | undefined>;
+  /**
+   * The model for a kind of step (ADR 0121 addendum), chosen the first time a run of that kind
+   * is handed off, with runtime.yaml's model for it when the hand-off names one. Called with no
+   * kind before the step starts, for the step's own kind (`stepClassOfArgs`).
+   */
+  model: (want?: ModelWanted) => Promise<StepModel | undefined>;
   /** A line of progress for the person. */
   progress?: (line: string) => void;
   /**
@@ -108,6 +117,12 @@ export interface RunnerDeps {
    * item 5, Atticus's configured model). Nothing is handed off and vscode.lm isn't asked.
    */
   mode?: "model";
+}
+
+/** What a round asks of the model choice: its kind of step and runtime.yaml's model for it. */
+export interface ModelWanted {
+  stepClass?: StepClass;
+  orgModel?: string;
 }
 
 /**
@@ -147,13 +162,26 @@ const withLimit = (args: string[], model: StepModel | undefined) =>
 export async function runStep(args: string[], given: RunnerDeps, token: Cancel): Promise<StepEnd> {
   if (given.mode === "model")
     return runOnce([...args, "--mode", "model"], { ...given, model: async () => undefined }, token);
-  const model = await given.model();
+  // The step's own kind's model sizes its prompts (ADR 0112); each hand-off then takes its own
+  // kind's model (ADR 0121 addendum), each kind chosen once in the step.
+  const own = stepClassOfArgs(args);
+  const model = await given.model(own ? { stepClass: own } : {});
+  const chosen = new Map<string, Promise<StepModel | undefined>>();
   // ADR 0124 §4: `atticus map` hands off a batch a round, so a read takes as many rounds as it
   // has batches; a draft keeps its eight.
   const read = args[0] === "map" && given.maxRounds === undefined;
   const d: RunnerDeps = {
     ...given,
-    model: async () => model,
+    model: async (want) => {
+      const c = want?.stepClass;
+      if (!c) return model;
+      // The kind's model with runtime.yaml's choice for it, once; a kind asked first without it
+      // (the step's own, before any hand-off) is asked again once the hand-off names it.
+      const key = `${c}:${want.orgModel ?? ""}`;
+      if (!chosen.has(key))
+        chosen.set(key, c === own && !want.orgModel ? Promise.resolve(model) : given.model(want));
+      return chosen.get(key)!;
+    },
     ...(read ? { maxRounds: MAX_BATCHES } : {}),
   };
   const argv = withLimit(args, model);
@@ -207,7 +235,7 @@ async function loop(
   const say = d.progress ?? (() => undefined);
   const max = d.maxRounds ?? 8;
   let argv = [...args, "--handoff", "--json", "--root", d.root];
-  let model: StepModel | undefined;
+  let one: StepModel | undefined;
   let rounds = 0;
   for (;;) {
     if (token.isCancellationRequested) return { state: "cancelled" };
@@ -249,7 +277,12 @@ async function loop(
         ? `The critic's ${h.lens} lens: Atticus handed off run ${h.runId}, to review what the step wrote.`
         : `Round ${rounds}: Atticus handed off run ${h.runId}.`,
     );
-    model ??= await d.model();
+    // ADR 0121 addendum: each run's kind of step picks its model; a command line that says no
+    // kind gets the step's one model, as before.
+    const stepClass = isStepClass(h.stepClass) ? h.stepClass : undefined;
+    const model = stepClass
+      ? await d.model({ stepClass, ...(h.orgModel ? { orgModel: h.orgModel } : {}) })
+      : (one ??= await d.model());
     if (!model) return { state: "no-model", ...waiting };
     const prompt = await readFile(resolve(d.root, h.promptFile), "utf8");
     const messages = [PREFACE, prompt];
@@ -292,7 +325,10 @@ async function loop(
     await mkdir(dirname(file), { recursive: true });
     await writeFile(file, answer, "utf8");
     say(`Wrote the answer (${answer.length} characters) to ${h.resultFile}; Atticus checks it.`);
-    const done = await d.cli(h.doneArgs, token);
+    // The model that wrote it goes in the run record, where the command line knows the option
+    // (it says each run's kind of step, ADR 0121 addendum).
+    const doneArgs = stepClass && model.id ? [...h.doneArgs, "--model", model.id] : h.doneArgs;
+    const done = await d.cli(doneArgs, token);
     if (done.cancelled) return { state: "cancelled", ...waiting };
     if (done.code !== 0) {
       const why = (done.stderr.trim() || done.stdout.trim()).split("\n")[0];

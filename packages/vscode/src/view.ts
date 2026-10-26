@@ -5,7 +5,9 @@ import { readNext, readOpenQuestions } from "./atticus";
 import { parseJson } from "./cli";
 import type { SetupStep } from "./guided";
 import { nextRow, type NextNode } from "./next-rows";
-import type { Service } from "./service";
+import { orgModelsOf, type Service } from "./service";
+import { choicesFor, isStepClass } from "./step-models";
+import { modelSettings } from "./vscode-model";
 import { errorLabel } from "./feedback";
 import { Loads } from "./loads";
 import type { NextStep, OpenQuestion } from "./types";
@@ -131,12 +133,17 @@ export class AtticusView implements vscode.TreeDataProvider<Node> {
     // The setup checklist, until the catalog is accepted.
     if (setup?.steps?.length && !setup.baselined) nodes.push({ kind: "setup", steps: setup.steps });
     // What runs a step (ADR 0121 item 6), above Open the app.
-    if (n.ok && n.value.runs)
+    // ADR 0121 addendum: the next step's kind picks its model.
+    if (n.ok && n.value.runs) {
+      const c = isStepClass(n.value.next?.stepClass) ? n.value.next.stepClass : undefined;
+      const org = orgModelsOf(root);
       nodes.push({
         kind: "runs",
         runs: n.value.runs,
-        model: vscode.workspace.getConfiguration("atticus").get<string>("model", ""),
+        model: choicesFor(c, modelSettings(), c ? org[c] : undefined)[0]?.value ?? "",
+        ...(c ? { stepClass: c } : {}),
       });
+    }
     this.next = n.ok ? n.value.next : undefined;
     this.questions = q.ok ? q.value : `Couldn't read the questions: ${q.message}`;
     nodes.push({ kind: "app" });

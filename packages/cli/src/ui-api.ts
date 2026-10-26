@@ -203,6 +203,9 @@ async function runView(root: string, change: string, runId: string) {
     finishedAt?: string;
     errors: string[];
     request: { agent: string | { id: string }; change: string; outputPath?: string };
+    /** ADR 0121 addendum: the kind of step and the model that ran it. */
+    stepClass?: Api.RunListItem["stepClass"];
+    model?: string;
   };
   const manifest = await readFile(join(dir, "context-manifest.json"), "utf8").catch(() => "");
   return {
@@ -219,6 +222,8 @@ async function runView(root: string, change: string, runId: string) {
     contextManifestSha256: sha(manifest),
     errors: r.errors ?? [],
     attempt: r.attempt ?? 1,
+    ...(r.stepClass ? { stepClass: r.stepClass } : {}),
+    ...(r.model ? { model: r.model } : {}),
     promptPath: `${runsRelOf(root)}/${change}/${runId}/prompt.md`,
   };
 }

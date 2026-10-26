@@ -11,13 +11,22 @@ data class NextStep(
     val repo: String? = null,
     val change: String? = null,
     val source: String? = null,
+    /** The kind of AI step (ADR 0121 addendum): read, draft, critic, knowledge or quick. */
+    val stepClass: String? = null,
 )
 
 /**
  * [runs] says in one line what runs a step here (ADR 0121 item 6); [modelMode] whether a step can
- * run on runtime.yaml's model, so "Run on Atticus's configured model" is offered.
+ * run on runtime.yaml's model, so "Run on Atticus's configured model" is offered; [orgModels]
+ * runtime.yaml's model for each kind of step it names one for (its addendum).
  */
-data class NextView(val next: NextStep?, val steps: List<NextStep>, val runs: String? = null, val modelMode: Boolean = false)
+data class NextView(
+    val next: NextStep?,
+    val steps: List<NextStep>,
+    val runs: String? = null,
+    val modelMode: Boolean = false,
+    val orgModels: Map<String, String> = emptyMap(),
+)
 
 /** What the plugin does for a step `atticus next` names. */
 sealed interface NextAction {
@@ -38,7 +47,8 @@ object Next {
     /** Read `atticus next --json`; null when it printed no JSON (not a metarepo, say). */
     fun parse(json: String): NextView? {
         val root = runCatching { Json.objectIn(json) }.getOrNull().obj() ?: return null
-        return NextView(root["next"].obj()?.let(::step), root.objs("steps").map(::step), root.str("runs"), root.bool("modelMode"))
+        val org = root["orgModels"].obj()?.entries?.mapNotNull { (k, v) -> if (k is String && v is String) k to v else null }?.toMap().orEmpty()
+        return NextView(root["next"].obj()?.let(::step), root.objs("steps").map(::step), root.str("runs"), root.bool("modelMode"), org)
     }
 
     private fun step(m: Map<*, *>) =
@@ -52,6 +62,7 @@ object Next {
             repo = m.str("repo"),
             change = m.str("change"),
             source = m.str("source"),
+            stepClass = m.str("stepClass"),
         )
 
     /** The words of a printed command, without "atticus"; quoted parts kept whole. */

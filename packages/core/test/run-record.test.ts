@@ -22,31 +22,51 @@ const V1 = {
   attempt: 1,
 };
 
-describe("the run record, version 3", () => {
-  it("reads a version 1 record as version 3 with no tools and no retrieval", () => {
-    expect(RUN_SCHEMA_VERSION).toBe(3);
+describe("the run record, version 4", () => {
+  it("reads a version 1 record as version 4 with no tools, retrieval, class or model", () => {
+    expect(RUN_SCHEMA_VERSION).toBe(4);
     expect(RunSummary.safeParse(V1).success).toBe(false);
     const r = readRunSummary(V1);
     expect(r.success).toBe(true);
-    expect(r.data?.schemaVersion).toBe(3);
+    expect(r.data?.schemaVersion).toBe(4);
     expect(r.data?.tools).toBeUndefined();
     expect(r.data?.retrieval).toBeUndefined();
-    // ADR 0116: a version 2 record reads as version 3 with no retrieval.
+    expect(r.data?.stepClass).toBeUndefined();
+    expect(r.data?.model).toBeUndefined();
+    // ADR 0116: a version 2 record reads with no retrieval.
     const v2 = readRunSummary({
       ...V1,
       schemaVersion: 2,
       tools: { offered: ["search"], calls: [] },
     });
     expect(v2.success).toBe(true);
-    expect(v2.data?.schemaVersion).toBe(3);
+    expect(v2.data?.schemaVersion).toBe(4);
     expect(v2.data?.retrieval).toBeUndefined();
+    // ADR 0121 addendum: a version 3 record reads with no class and no model.
+    const v3 = readRunSummary({ ...V1, schemaVersion: 3 });
+    expect(v3.success).toBe(true);
+    expect(v3.data?.schemaVersion).toBe(4);
+    expect(v3.data?.stepClass).toBeUndefined();
     expect(migrateRunSummary("not a record")).toBe("not a record");
+  });
+
+  it("keeps the step's class and the model that ran it (ADR 0121 addendum)", () => {
+    const r = RunSummary.parse({
+      ...V1,
+      schemaVersion: 4,
+      stepClass: "critic",
+      model: "copilot/claude-sonnet-4.5",
+    });
+    expect(r.stepClass).toBe("critic");
+    expect(r.model).toBe("copilot/claude-sonnet-4.5");
+    expect(RunSummary.safeParse({ ...V1, schemaVersion: 4, stepClass: "big" }).success).toBe(false);
+    expect(RunSummary.safeParse({ ...V1, schemaVersion: 4, model: "" }).success).toBe(false);
   });
 
   it("keeps every tool call, what it returned, and the cap that stopped them", () => {
     const r = RunSummary.parse({
       ...V1,
-      schemaVersion: 3,
+      schemaVersion: 4,
       tools: {
         offered: ["search", "show", "walk", "show_code"],
         calls: [
@@ -77,7 +97,7 @@ describe("the run record, version 3", () => {
   it("keeps how the context was retrieved: the model's expansion and its order (ADR 0116)", () => {
     const r = RunSummary.parse({
       ...V1,
-      schemaVersion: 3,
+      schemaVersion: 4,
       retrieval: {
         expansion: {
           run: "run-20261020-0000",

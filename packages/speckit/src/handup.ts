@@ -467,6 +467,7 @@ export async function handUp(
         agent,
         pack,
         outputPath: handUpLensOutput(t.task.id),
+        stepClass: "critic",
       });
       const run = await o.runtime.run(prepared.runId);
       lens.runId = run.runId;

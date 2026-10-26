@@ -26,6 +26,7 @@ import {
   migrateChangeTypesText,
   migrateGatesText,
   migrateQuestions,
+  migrateRuntimeText,
   migrateSourcesText,
   orgPackDirOf,
   specsDirOf,
@@ -208,6 +209,25 @@ export const MIGRATIONS: Migration[] = [
         text.replace(WHOLE_FOLDER, ATTICUS_FOLDER_IGNORE.join("\n")),
       );
       return [".gitignore"];
+    },
+  },
+  {
+    id: "runtime-v2",
+    summary:
+      "runtime.yaml at version 2: a model can be named for each kind of step (read, draft, critic, knowledge, quick); every step still runs on the one model until one is named (ADR 0121)",
+    async pending(root) {
+      const rel = packRel(root, "runtime.yaml");
+      const text = await readFile(join(root, rel), "utf8").catch(() => undefined);
+      return text !== undefined && migrateRuntimeText(text).changed ? [rel] : [];
+    },
+    async apply(root) {
+      const rel = packRel(root, "runtime.yaml");
+      const text = await readFile(join(root, rel), "utf8").catch(() => undefined);
+      if (text === undefined) return [];
+      const r = migrateRuntimeText(text);
+      if (!r.changed) return [];
+      await writeFileAtomic(join(root, rel), r.text);
+      return [rel];
     },
   },
 ];

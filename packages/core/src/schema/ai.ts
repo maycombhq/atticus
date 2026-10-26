@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { IsoDateTime, RecordId } from "./common.js";
-import { BUILT_IN_ROLES, ChangeArtifact } from "./orgpack.js";
+import { BUILT_IN_ROLES, ChangeArtifact, StepClass } from "./orgpack.js";
 
 /**
  * Contract C5: the AI runtime's files. Agent definitions live in org-pack/agents/<id>.yaml;
@@ -110,9 +110,10 @@ export type RunState = z.infer<typeof RunState>;
 /**
  * The run record's own version: 2 adds the tools a run's model called (ADR 0107 addendum); 3 how
  * its context was retrieved (ADR 0116): the model's expansion of the input and its order of the
- * candidates. A version 1 or 2 record is read through `migrateRunSummary`, with neither.
+ * candidates; 4 the step's class and the model that ran it (ADR 0121 addendum, per-step models).
+ * A version 1, 2 or 3 record is read through `migrateRunSummary`, without what came later.
  */
-export const RUN_SCHEMA_VERSION = 3 as const;
+export const RUN_SCHEMA_VERSION = 4 as const;
 
 /**
  * How a run's context was retrieved (ADR 0116), when a model helped: what it read the input as
@@ -212,17 +213,26 @@ export const RunSummary = z.strictObject({
   tools: RunTools.optional(),
   /** How the run's context was retrieved, when a model helped (version 3, ADR 0116). */
   retrieval: RunRetrieval.optional(),
+  /** The kind of step the run was (version 4, ADR 0121 addendum): it picks the model. */
+  stepClass: StepClass.optional(),
+  /**
+   * The model that ran it (version 4): the provider's model in model mode, the one headless
+   * Claude Code was given, or the editor's model a hand-off was answered with (`atticus handoff
+   * done --model`). Left out when nothing said which.
+   */
+  model: z.string().min(1).optional(),
 });
 export type RunSummary = z.infer<typeof RunSummary>;
 
 /**
- * A stored run record at the current version: version 1 (before tools) and 2 (before retrieval)
- * read as version 3 with neither; anything else is returned as it is, for the schema to judge.
+ * A stored run record at the current version: version 1 (before tools), 2 (before retrieval) and
+ * 3 (before the step's class and model) read as version 4 without them; anything else is
+ * returned as it is, for the schema to judge.
  */
 export function migrateRunSummary(raw: unknown): unknown {
   if (typeof raw !== "object" || raw === null) return raw;
   const r = raw as Record<string, unknown>;
-  return r.schemaVersion === 1 || r.schemaVersion === 2
+  return r.schemaVersion === 1 || r.schemaVersion === 2 || r.schemaVersion === 3
     ? { ...r, schemaVersion: RUN_SCHEMA_VERSION }
     : raw;
 }

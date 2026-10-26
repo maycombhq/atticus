@@ -7,8 +7,10 @@ import {
   type RunSummary,
   type RunTools,
   type RuntimeKind,
+  type StepClass,
 } from "@maycombhq/core";
 import { sha256, type ContextPack } from "./context.js";
+import { stepClassOf } from "./step-class.js";
 
 /**
  * The runtime interface (contract C5): prepare → run → result. Implemented by the hand-off,
@@ -36,6 +38,12 @@ export interface AiRequest {
    * draft may have before it is handed in as it is. The model runtime offers it as a tool.
    */
   selfCheck?: { command: string; limit: number };
+  /**
+   * The kind of step (ADR 0121 addendum), when its call site decides it: a step whose agent
+   * does more than one kind (the dialect drafter also verifies a scan) tags each request. Left
+   * out, `stepClassOf` decides it from the agent. It picks the model; the prompt never does.
+   */
+  stepClass?: StepClass;
 }
 
 export interface Usage {
@@ -56,6 +64,10 @@ export interface Run {
   errors: string[];
   /** The tools the model was offered, every call it made and what it got back (ADR 0107). */
   tools?: RunTools;
+  /** The kind of step (ADR 0121 addendum), set when the run is prepared. */
+  stepClass?: StepClass;
+  /** The model that ran it, when the runtime knows (model, headless) or was told (hand-off). */
+  model?: string;
 }
 
 export interface AiRuntime {
@@ -129,6 +141,8 @@ export function toRunSummary(run: Run): RunSummary {
     attempt: run.attempt,
     ...(run.tools ? { tools: run.tools } : {}),
     ...(run.request.retrieval ? { retrieval: run.request.retrieval } : {}),
+    stepClass: run.stepClass ?? stepClassOf(run.request),
+    ...(run.model ? { model: run.model } : {}),
   };
 }
 
@@ -151,6 +165,11 @@ export abstract class OneShotRuntime implements AiRuntime {
 
   protected now(): Date {
     return this.opts.now?.() ?? new Date();
+  }
+
+  /** The model a request will run on, when this runtime knows it before it runs. */
+  protected modelFor(_request: AiRequest): string | undefined {
+    return undefined;
   }
 
   protected abstract produce(
@@ -177,6 +196,8 @@ export abstract class OneShotRuntime implements AiRuntime {
       attempt: 1,
       startedAt: now.toISOString(),
       errors: [],
+      stepClass: stepClassOf(request),
+      ...(this.modelFor(request) ? { model: this.modelFor(request)! } : {}),
     };
     this.runs.set(run.runId, run);
     return run;

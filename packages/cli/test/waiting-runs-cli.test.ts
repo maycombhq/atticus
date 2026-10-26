@@ -212,13 +212,15 @@ describe("atticus runs", () => {
     const root = await metarepo();
     const l = capture();
     expect(await runsCli(root, {}, l.io)).toBe(0);
+    // ADR 0121 addendum: a run kept before its kind was recorded gets it from its agent.
     expect(l.out).toEqual([
-      "run-20261023034002-0001  knowledge-scan  knowledge-reader  round 2  validated  answered  1 problem handed back  2026-10-23 03:40",
+      "run-20261023034002-0001  knowledge-scan  knowledge-reader  knowledge step  round 2  validated  answered  1 problem handed back  2026-10-23 03:40",
     ]);
     const s = capture();
     expect(await runShowCli(root, "run-20261023034002-0001", {}, s.io)).toBe(0);
     expect(s.out).toEqual([
       "run-20261023034002-0001: knowledge-scan, knowledge-reader, round 2, validated (hand-off)",
+      "Model: not recorded, for a knowledge step (the kind of step picks the model).",
       "Prompt: .runs/knowledge-scan/run-20261023034002-0001/prompt.md (902 tokens)",
       "Handed back after round 1:",
       "  - team ledger-team: quote: the quote is not on the page, word for word",

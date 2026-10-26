@@ -10,11 +10,14 @@ import {
   runsRelOf,
   RuntimeKind,
   stateDirOf,
+  STEP_CLASSES,
   type ModelProviderPlugin,
   type OrgPack,
   type Recording,
+  type StepClass,
   orgPackDirOf,
 } from "@maycombhq/core";
+import { modelsByClass, stepClassOf } from "./step-class.js";
 import { DATA_RULE, estimateTokens } from "./context.js";
 import { HandoffRuntime, type HandoffOptions } from "./handoff.js";
 import {
@@ -215,6 +218,8 @@ export interface HeadlessOptions {
     allowedTools?: string[];
   };
   model?: string;
+  /** A model per kind of step (ADR 0121 addendum); the other kinds run on `model`. */
+  models?: Partial<Record<StepClass, string>>;
   timeoutMs?: number;
   now?: () => Date;
   validate?: (output: string, request: AiRequest) => Promise<string[]>;
@@ -232,6 +237,10 @@ export class HeadlessClaudeCodeRuntime extends OneShotRuntime {
   constructor(private readonly h: HeadlessOptions) {
     super({ ...(h.now ? { now: h.now } : {}), ...(h.validate ? { validate: h.validate } : {}) });
     this.runner = h.runner ?? claudeCodeCliRunner();
+  }
+
+  protected override modelFor(request: AiRequest): string | undefined {
+    return this.h.models?.[stepClassOf(request)] ?? this.h.model;
   }
 
   /** The command-line arguments for one request (exported for the audit trail and tests). */
@@ -367,7 +376,7 @@ export class HeadlessClaudeCodeRuntime extends OneShotRuntime {
       promptFile,
       args: HeadlessClaudeCodeRuntime.args({
         permissionMode: inv.permissionMode ?? "acceptEdits",
-        ...(this.h.model ? { model: this.h.model } : {}),
+        ...(this.modelFor(request) ? { model: this.modelFor(request)! } : {}),
         ...(inv.allowedTools ? { allowedTools: inv.allowedTools } : {}),
         ...(inv.addDirs ? { addDirs: inv.addDirs } : {}),
         ...(inv.disallowedTools ? { disallowedTools: inv.disallowedTools } : {}),
@@ -517,7 +526,42 @@ export interface CreateRuntimeOptions {
   replayDir?: string;
   recordings?: Recording[];
   headless?: Omit<HeadlessOptions, "root" | "now" | "validate">;
+  /**
+   * The person's model per kind of step (ADR 0121 addendum), as the editors pass it:
+   * ATTICUS_MODEL_READ, _DRAFT, _CRITIC, _KNOWLEDGE, _QUICK. Model and headless mode only.
+   */
+  env?: Record<string, string | undefined>;
+  /** Told once, for each model named for a kind of step that the provider can't run. */
+  onNote?: (line: string) => void;
 }
+
+/**
+ * The models named for kinds of step that runtime.yaml's provider can run (the person's setting,
+ * else runtime.yaml's), each once; what was named and passed over is told through onNote, once
+ * per process for the same words.
+ */
+function classModels(
+  rt: OrgPack["runtime"],
+  o: Pick<CreateRuntimeOptions, "env" | "onNote">,
+): Partial<Record<StepClass, string>> {
+  const by = modelsByClass(rt, o.env ?? {});
+  const out: Partial<Record<StepClass, string>> = {};
+  for (const c of STEP_CLASSES) {
+    const m = by[c];
+    if (m.from !== "fallback" && m.model) out[c] = m.model;
+    const said = m.notes.join(" ");
+    if (!said || !o.onNote) continue;
+    const seen = told.get(o.onNote) ?? new Set<string>();
+    told.set(o.onNote, seen);
+    if (seen.has(said)) continue;
+    seen.add(said);
+    o.onNote(said);
+  }
+  return out;
+}
+
+/** What each listener has been told, so the same words are said to it once. */
+const told = new WeakMap<(line: string) => void, Set<string>>();
 
 const nonEmpty: HandoffOptions["validate"] = async (file, request) => {
   const text = await readFile(file, "utf8").catch(() => "");
@@ -573,24 +617,39 @@ export async function createRuntime(
           `No ${cfg.type} model provider is installed. Add its plugin, or use hand-off mode.`,
         );
       const tools = o.tools ?? toolSource?.(o.root);
-      return new ModelRuntime(make(cfg.settings as Settings), {
+      const settings = cfg.settings as Settings;
+      const provider = make(settings);
+      // ADR 0121 addendum: a provider for each kind of step that names a model of its own.
+      const models: Partial<Record<StepClass, ModelProvider>> = {};
+      for (const [c, m] of Object.entries(classModels(rt, o)) as [StepClass, string][])
+        if (m !== provider.model)
+          models[c] = make({
+            ...settings,
+            model: m,
+            ...(cfg.type === "azure-openai" ? { deployment: m } : {}),
+          });
+      return new ModelRuntime(provider, {
         ...one,
         allowedModels: rt.models.allowed,
         root: o.root,
         ...(tools ? { tools } : {}),
+        ...(Object.keys(models).length ? { models } : {}),
       });
     }
-    case "headless-claude-code":
+    case "headless-claude-code": {
       if (!rt.assistants.allowed.includes("claude-code"))
         throw new RuntimeConfigError(
           "Headless Claude Code runs Claude Code, which runtime.yaml doesn't list under assistants.allowed.",
         );
+      const models = classModels(rt, o);
       return new HeadlessClaudeCodeRuntime({
         root: o.root,
+        ...(Object.keys(models).length ? { models } : {}),
         ...o.headless,
         ...(o.now ? { now: o.now } : {}),
         ...(o.validate ? { validate: o.validate } : {}),
       });
+    }
     case "replay":
       if (o.recordings) return new ReplayRuntime(o.recordings, one);
       if (!o.replayDir)
@@ -604,6 +663,9 @@ export async function createRuntime(
       return new MockRuntime(o.respond, one);
   }
 }
+
+/** The command line's way to tell a model passed over: on standard error, so stdout stays data. */
+const sayOnce = (line: string) => process.stderr.write(`${line}\n`);
 
 export interface CliRuntime {
   runtime: AiRuntime;
@@ -625,6 +687,8 @@ export async function runtimeForCli(
     providers?: CreateRuntimeOptions["providers"];
     headless?: CreateRuntimeOptions["headless"];
     handoffValidate?: CreateRuntimeOptions["handoffValidate"];
+    /** Where a model passed over is told; default the command line's standard error, once. */
+    onNote?: (line: string) => void;
   } = {},
 ): Promise<CliRuntime> {
   const env = o.env ?? process.env;
@@ -647,6 +711,9 @@ export async function runtimeForCli(
     ...(o.providers ? { providers: o.providers } : {}),
     ...(o.headless ? { headless: o.headless } : {}),
     ...(o.handoffValidate ? { handoffValidate: o.handoffValidate } : {}),
+    // ADR 0121 addendum: the person's model per kind of step, and a model passed over said once.
+    env,
+    onNote: o.onNote ?? sayOnce,
   });
   const describe =
     mode === "hand-off"

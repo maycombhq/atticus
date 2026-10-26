@@ -35,6 +35,8 @@ export async function runsCli(
         r.runId,
         r.change,
         r.agent,
+        // ADR 0121 addendum: the kind of step, and the model that ran it when it is known.
+        ...(r.stepClass ? [`${r.stepClass} step${r.model ? ` on ${r.model}` : ""}`] : []),
         `round ${r.attempt}`,
         r.state,
         r.answered ? "answered" : "no answer yet",
@@ -63,6 +65,10 @@ export async function runShowCli(
   }
   const r = t.run;
   io.out(`${r.runId}: ${r.change}, ${r.agent}, round ${r.attempt}, ${r.state} (${r.runtime})`);
+  if (r.stepClass)
+    io.out(
+      `Model: ${r.model ?? "not recorded"}, for a ${r.stepClass} step (the kind of step picks the model).`,
+    );
   io.out(`Prompt: ${r.promptPath}${r.promptTokens ? ` (${r.promptTokens} tokens)` : ""}`);
   if (t.tools) {
     const calls = t.tools.calls;

@@ -175,8 +175,10 @@ export const DEFAULT_ROLES = Roles.parse({
   ],
 });
 
+// Written at runtime.yaml's current version (2, ADR 0121 addendum): it names no model per kind
+// of step, so every step runs on the one model until an organisation names some.
 export const DEFAULT_RUNTIME = Runtime.parse({
-  schemaVersion: 1,
+  schemaVersion: 2,
   assistants: { allowed: ["copilot", "claude-code"], default: "copilot" },
 });
 

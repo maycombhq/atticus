@@ -214,7 +214,8 @@ export async function handoffDone(
   root: string,
   runId: string,
   io: Output,
-  deps: { now?: () => Date } = {},
+  /** model: the model that wrote the answer (`--model`, ADR 0121 addendum), kept in its record. */
+  deps: { now?: () => Date; model?: string } = {},
 ): Promise<number> {
   const os = createOpenSpec({ root });
   // W3a: a stage's draft is checked here with the stage's own checks, the way a linter is run:
@@ -297,7 +298,7 @@ export async function handoffDone(
       );
     },
   });
-  const run = await rt.done(runId);
+  const run = await rt.done(runId, deps.model ? { model: deps.model } : {});
   if (run.state === "validated") {
     const kind = completionOf(run.request);
     const now = deps.now?.();

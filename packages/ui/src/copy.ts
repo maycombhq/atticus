@@ -2878,12 +2878,24 @@ export const COPY = {
     cols: {
       step: "Step or change",
       agent: "Agent",
+      model: "Model",
       round: "Round",
       state: "State",
       answered: "Answered",
       handedBack: "Handed back",
       when: "When",
     },
+    /** ADR 0121 addendum: the kind of step picks the model; the model that ran it, when known. */
+    classes: {
+      read: "Read",
+      draft: "Draft",
+      critic: "Critic",
+      knowledge: "Knowledge",
+      quick: "Quick",
+    } as Record<string, string>,
+    modelCell: (stepClass: string | undefined, model: string | undefined) =>
+      `${model ?? "Not recorded"}${stepClass ? ` · ${stepClass}` : ""}`,
+    modelNotRecorded: "Not recorded",
     yes: "Yes",
     notYet: "Not yet",
     problems: (n: number) => (n === 0 ? "Nothing" : n === 1 ? "1 problem" : `${n} problems`),
@@ -2943,6 +2955,8 @@ export const COPY = {
     facts: {
       agent: "Agent",
       runtime: "Runs with",
+      stepClass: "Kind of step",
+      model: "Model",
       state: "State",
       started: "Started",
       finished: "Finished",

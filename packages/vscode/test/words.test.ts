@@ -9,10 +9,14 @@ import {
   ownerFrom,
   ownerProblem,
   pastChangeRows,
+  scopeRows,
+  SETTINGS_WORDS,
   startupNotice,
   statusText,
+  STEP_CLASS_WORDS,
   stepTitle,
   watchTooltip,
+  WORDS,
 } from "../src/words";
 
 /** ADR 0098: the extension speaks in plain words first; the command is beside it, not instead. */
@@ -208,6 +212,49 @@ describe("which model a step runs on (ADR 0121)", () => {
       label: "GPT-4o",
       description: "copilot/gpt-4o",
     });
+  });
+});
+
+describe("Pick the model, for every step or one kind (ADR 0121 addendum)", () => {
+  it("asks for which steps first: every step, then each kind with what falls in it and its own model", () => {
+    const rows = scopeRows("copilot/gpt-5-mini", { draft: "copilot/claude-opus-4.5" });
+    expect(rows.map((r) => r.scope)).toEqual(["", "read", "draft", "critic", "knowledge", "quick"]);
+    expect(rows[0]).toMatchObject({
+      label: WORDS.scopeEvery,
+      description: WORDS.classNow("copilot/gpt-5-mini"),
+    });
+    expect(rows[2]).toEqual({
+      label: `${WORDS.scopeOne}: draft`,
+      description: WORDS.classNow("copilot/claude-opus-4.5"),
+      detail: STEP_CLASS_WORDS.draft.detail,
+      scope: "draft",
+    });
+    expect(rows[1]!.description).toBeUndefined();
+  });
+
+  it("shows VS Code's own note on a model (its premium requests) when it gives one, and nothing when it doesn't", () => {
+    const rows = modelPickRows(
+      [
+        { vendor: "copilot", family: "claude-opus-4.5", name: "Claude Opus 4.5", detail: "3x" },
+        { vendor: "copilot", family: "gpt-5-mini", name: "GPT-5 mini" },
+      ],
+      "",
+      { forClass: true },
+    );
+    const models = rows.filter((r) => "setting" in r && r.setting.includes("/"));
+    expect(models.map((r) => ("detail" in r ? r.detail : undefined))).toEqual(["3x", undefined]);
+    // For one kind, the first row is the next choice, not Copilot's default.
+    expect(rows[0]).toMatchObject({ label: WORDS.classFallback, setting: "", picked: true });
+    expect(modelPickItem({ vendor: "copilot", family: "x", name: "X", detail: "  " })).toEqual({
+      label: "X",
+      description: "copilot/x",
+    });
+  });
+
+  it("names every kind's setting in the settings' words", () => {
+    for (const c of ["read", "draft", "critic", "knowledge", "quick"])
+      expect(SETTINGS_WORDS[`atticus.models.${c}`]).toContain(`models.${c}`);
+    expect(SETTINGS_WORDS["atticus.model"]).toContain("atticus.models.*");
   });
 });
 

@@ -29,14 +29,18 @@ import com.maycombhq.atticus.core.CatalogFlag
 import com.maycombhq.atticus.core.CommandLine
 import com.maycombhq.atticus.core.Commands
 import com.maycombhq.atticus.core.Copy
+import com.maycombhq.atticus.core.ExpectedModel
 import com.maycombhq.atticus.core.HowToRun
 import com.maycombhq.atticus.core.Lists
 import com.maycombhq.atticus.core.Metarepo
 import com.maycombhq.atticus.core.Next
 import com.maycombhq.atticus.core.NextAction
+import com.maycombhq.atticus.core.NextView
 import com.maycombhq.atticus.core.Pick
 import com.maycombhq.atticus.core.Peer
 import com.maycombhq.atticus.core.PickItem
+import com.maycombhq.atticus.core.StepClass
+import com.maycombhq.atticus.core.StepModels
 import com.maycombhq.atticus.core.Words
 import java.awt.datatransfer.StringSelection
 import java.nio.file.Files
@@ -44,6 +48,15 @@ import java.nio.file.Path
 
 /** An answer to one question: a value (null when left out), or the person cancelled. */
 private class Got(val value: List<String>?)
+
+/**
+ * The model an AI step expects (ADR 0121 addendum): its kind's (as `atticus next` says it, else
+ * from its command), from the person's settings, else runtime.yaml's; null when neither names one.
+ */
+internal fun expectedFor(argv: List<String>, stepClass: String?, view: NextView?): ExpectedModel? {
+    val c = StepClass.of(stepClass) ?: StepModels.classOf(argv) ?: return null
+    return StepModels.expected(c, AtticusSettings.get().stepModels(), view?.orgModels.orEmpty())
+}
 
 /**
  * Run a command (ADR 0096, 0099): pick it, answer what it needs, and run it as its kind needs.
@@ -257,7 +270,10 @@ class CommandFlow(private val project: Project) {
                     if (view?.modelMode == true) Notify.action(Copy.RUN_MODEL) { inConsole("model", Commands.withModel(argv)) } else null,
                     Notify.action(Copy.RUN_HANDOFF) { inConsole("hand-off", Commands.handoff(argv)) },
                 )
-            val text = (if (missing) Copy.noPromptFile(slash) else Copy.aiStep(slash)) + (view?.runs?.let { "<br>" + Copy.howStepsRun(it) } ?: "")
+            // ADR 0121 addendum: IntelliJ can't choose Copilot's model, so the text names the one
+            // this kind of step expects, for the person to pick in Copilot's own picker.
+            val expects = expectedFor(argv, null, view)?.let { "<br>" + Copy.expectsModel(it) } ?: ""
+            val text = (if (missing) Copy.noPromptFile(slash) else Copy.aiStep(slash)) + (view?.runs?.let { "<br>" + Copy.howStepsRun(it) } ?: "") + expects
             Notify.show(project, text, NotificationType.INFORMATION, *actions.toTypedArray()).also { it.setTitle(Copy.AI_TITLE) }
         }
     }
@@ -402,6 +418,8 @@ class NextFlow(private val project: Project) {
                 if (slash != null) append("\n\nIn Copilot Chat: ").append(slash)
                 if (slash != null && Roots.metarepo(project)?.let { Peer.hasPromptFile(it, slash) } == false) append("\n\n").append(Copy.noPromptFile(slash))
                 if (action is NextAction.Ai) view.runs?.let { append("\n\n").append(Copy.howStepsRun(it)) }
+                // ADR 0121 addendum: the model this kind of step expects, picked in Copilot's own picker.
+                if (action is NextAction.Ai) expectedFor(action.args, n.stepClass, view)?.let { append("\n\n").append(Copy.expectsModel(it)) }
             }
         val copy = { s: String -> CopyPasteManager.getInstance().setContents(StringSelection(s)) }
         val openApp = { AtticusWindow.showTab(project, Copy.APP_TAB) }

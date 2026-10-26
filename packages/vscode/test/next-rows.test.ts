@@ -118,6 +118,16 @@ describe("what runs a step (ADR 0121 item 6)", () => {
       "in VS Code: Atticus's configured model",
     );
   });
+
+  it("names the next step's model and its kind of step (ADR 0121 addendum)", () => {
+    expect(
+      nextRow({ kind: "runs", runs: "x", model: "copilot/claude-opus-4.5", stepClass: "draft" })
+        .description,
+    ).toBe("in VS Code: copilot/claude-opus-4.5 for draft steps");
+    expect(nextRow({ kind: "runs", runs: "x", model: "", stepClass: "read" }).description).toBe(
+      "in VS Code: the chat's model for read steps",
+    );
+  });
 });
 
 describe("Next and Waiting (Phase D)", () => {

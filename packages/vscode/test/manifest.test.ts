@@ -12,6 +12,7 @@ import {
   LEGACY_PALETTE,
   TOP_COMMANDS,
 } from "../src/surface";
+import { SETTINGS_WORDS } from "../src/words";
 
 /**
  * ADR 0096: what the extension offers in VS Code (package.json) and what its code registers agree,
@@ -91,6 +92,20 @@ describe("the extension's manifest and its code", () => {
         expect(readdirSync(join(HERE, "..", "media", "walkthrough"))).toContain(
           s.media.markdown.split("/").pop(),
         );
+  });
+
+  it("says each model setting in the words words.ts keeps (ADR 0121 addendum)", () => {
+    const conf = (pkg.contributes as unknown as { configuration: unknown }).configuration;
+    const props = (Array.isArray(conf) ? conf[0] : conf) as {
+      properties: Record<string, { markdownDescription?: string; type?: string }>;
+    };
+    for (const [key, words] of Object.entries(SETTINGS_WORDS)) {
+      expect(props.properties[key]?.markdownDescription, key).toBe(words);
+      expect(props.properties[key]?.type, key).toBe("string");
+    }
+    expect(Object.keys(props.properties).filter((k) => k.startsWith("atticus.models."))).toEqual(
+      ["read", "draft", "critic", "knowledge", "quick"].map((c) => `atticus.models.${c}`),
+    );
   });
 
   it("draws every view it declares", () => {

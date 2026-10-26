@@ -20,6 +20,7 @@ import com.maycombhq.atticus.core.CommandLine
 import com.maycombhq.atticus.core.Copy
 import com.maycombhq.atticus.core.Launch
 import com.maycombhq.atticus.core.Metarepo
+import com.maycombhq.atticus.core.StepModels
 import java.io.File
 import java.nio.charset.StandardCharsets
 import java.nio.file.Path
@@ -57,6 +58,8 @@ object AtticusCli {
             .withWorkDirectory(cwd)
             .withCharset(StandardCharsets.UTF_8)
             .withParentEnvironmentType(GeneralCommandLine.ParentEnvironmentType.CONSOLE)
+            // ADR 0121 addendum: the person's model per kind of step, as ATTICUS_MODEL_<KIND>.
+            .withEnvironment(StepModels.env(AtticusSettings.get().stepModels()))
     }
 
     /** Run and wait; call it off the UI thread (in a background task or under a progress dialog). */

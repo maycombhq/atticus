@@ -833,6 +833,7 @@ export async function runLenses(
         // the round (the findings), not the assistant's raw answers.
         outputPath: `findings-${lens}.yaml`,
         outputIn: "run",
+        stepClass: "critic",
       });
       const run = await o.runtime.run(prepared.runId);
       const summary = toRunSummary(run);
@@ -900,6 +901,7 @@ export async function runLenses(
           }),
           outputPath: `findings-${lens}.yaml`,
           outputIn: "run",
+          stepClass: "critic",
         });
         const second = await o.runtime.run(again.runId);
         if (second.state === "validated" && second.output !== undefined) {

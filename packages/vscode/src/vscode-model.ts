@@ -7,15 +7,25 @@ import {
   type ModelTurn,
   type StepModel,
 } from "./types";
-import { WORDS, modelChoice, modelPickRows } from "./words";
+import {
+  chooseStepModel,
+  isStepClass,
+  STEP_CLASSES,
+  stepClassOfArgs,
+  usesConfigured,
+  type ModelSettings,
+  type StepClass,
+} from "./step-models";
+import { modelPickRows, modelSetting, scopeRows, STEP_CLASS_WORDS, WORDS } from "./words";
 
 /**
  * vscode.lm in the runner's shape (ADR 0090). The model is any chat model VS Code offers (ADR
- * 0121 item 5): the one the setting atticus.model names (`vendor/family`, or a bare family for
+ * 0121 item 5), one per kind of step (its addendum): the setting atticus.models.<kind>, else
+ * runtime.yaml's model for the kind, else atticus.model (`vendor/family`, or a bare family for
  * Copilot's), else the model the person picked in the chat (when the step runs from the chat),
- * else the first Copilot model. The first request outside the chat makes VS Code ask the person;
- * a refusal becomes ModelRefused. `atticus` in the setting is runtime.yaml's model, which the
- * command line runs (usesConfiguredModel), so vscode.lm isn't asked.
+ * else the first Copilot model (step-models.ts). The first request outside the chat makes VS
+ * Code ask the person; a refusal becomes ModelRefused. `atticus` is runtime.yaml's model, which
+ * the command line runs (usesConfiguredModel), so vscode.lm isn't asked.
  */
 
 const JUSTIFICATION =
@@ -29,6 +39,7 @@ function adapt(m: vscode.LanguageModelChat): StepModel {
       : e;
   return {
     name: m.name,
+    id: modelSetting({ vendor: m.vendor, family: m.family }),
     maxInputTokens: m.maxInputTokens,
     async countTokens(text: string, token: Cancel) {
       try {
@@ -102,37 +113,97 @@ function adapt(m: vscode.LanguageModelChat): StepModel {
   };
 }
 
-const setting = () => vscode.workspace.getConfiguration("atticus").get<string>("model", "");
+const config = () => vscode.workspace.getConfiguration("atticus");
+const setting = () => config().get<string>("model", "");
 
-/** The setting asks for runtime.yaml's model: the step runs in model mode by the command line. */
-export const usesConfiguredModel = () => modelChoice(setting()) === "configured";
-
-export async function pickModel(
-  chatModel?: vscode.LanguageModelChat,
-): Promise<StepModel | undefined> {
-  const choice = modelChoice(setting());
-  if (choice === "configured") return undefined;
-  if (choice) {
-    const [m] = await vscode.lm.selectChatModels(choice);
-    return m ? adapt(m) : undefined;
+/** The person's settings: atticus.model and atticus.models.<kind> (ADR 0121 addendum). */
+export function modelSettings(): ModelSettings {
+  const perClass: ModelSettings["perClass"] = {};
+  for (const c of STEP_CLASSES) {
+    const v = config().get<string>(`models.${c}`, "");
+    if (v.trim()) perClass[c] = v.trim();
   }
-  if (chatModel) return adapt(chatModel);
-  const [m] = await vscode.lm.selectChatModels({ vendor: "copilot" });
-  return m ? adapt(m) : undefined;
+  return { perClass, model: setting() };
 }
 
 /**
- * Atticus: Pick the model (ADR 0121 item 5): every chat model VS Code offers, by vendor, plus
- * Copilot's default and Atticus's configured model; the choice is written to atticus.model.
+ * The step runs on runtime.yaml's model, by the command line in model mode: its kind's first
+ * choice (the person's setting for it, runtime.yaml's, else atticus.model) says `atticus`.
+ */
+export const usesConfiguredModel = (
+  args: string[] = [],
+  org: Partial<Record<StepClass, string>> = {},
+) => {
+  const c = stepClassOfArgs(args);
+  return usesConfigured(c, modelSettings(), c ? org[c] : undefined);
+};
+
+/** What was said already, so each passed-over model is told once a window (ADR 0121 addendum). */
+const told = new Set<string>();
+
+/**
+ * The model for one kind of step (ADR 0121 addendum): atticus.models.<kind>, runtime.yaml's
+ * model for it, atticus.model, the chat's model, Copilot's first; what VS Code doesn't offer is
+ * passed over, and said: in the step's progress, and once a window as a warning.
+ */
+export async function pickModel(
+  chatModel?: vscode.LanguageModelChat,
+  want: { stepClass?: StepClass; orgModel?: string } = {},
+  say?: (line: string) => void,
+): Promise<StepModel | undefined> {
+  const r = await chooseStepModel(want.stepClass, modelSettings(), {
+    select: async (s) => vscode.lm.selectChatModels(s),
+    handOff: true,
+    ...(want.orgModel ? { orgModel: want.orgModel } : {}),
+    ...(chatModel ? { chatModel } : {}),
+  });
+  if (r.notes.length) {
+    const text = r.notes.join(" ");
+    say?.(text);
+    if (!told.has(text)) {
+      told.add(text);
+      void vscode.window.showWarningMessage(`Atticus: ${text}`);
+    }
+  }
+  return r.model ? adapt(r.model) : undefined;
+}
+
+type Row = vscode.QuickPickItem & { setting?: string };
+
+/** VS Code's own note on a model (Copilot's premium-request multiplier), when it exposes one. */
+const detailOf = (m: vscode.LanguageModelChat): string | undefined => {
+  const d = (m as unknown as { detail?: unknown }).detail;
+  return typeof d === "string" && d.trim() ? d.trim() : undefined;
+};
+
+/**
+ * Atticus: Pick the model (ADR 0121 item 5 and addendum): for every step (atticus.model) or for
+ * one kind (atticus.models.<kind>), then every chat model VS Code offers, by vendor, each with
+ * VS Code's own note on it when there is one; plus Copilot's default (or, for a kind, the next
+ * choice) and Atticus's configured model.
  */
 export async function chooseModel(): Promise<void> {
+  const s = modelSettings();
+  const scopes = scopeRows(s.model, s.perClass);
+  const scope = await vscode.window.showQuickPick(scopes, {
+    title: WORDS.pickModel,
+    placeHolder: WORDS.pickScope,
+    matchOnDetail: true,
+  });
+  if (!scope) return;
+  const c = isStepClass(scope.scope) ? scope.scope : undefined;
   const models = await vscode.lm.selectChatModels();
   const rows = modelPickRows(
-    models.map((m) => ({ vendor: m.vendor, family: m.family, name: m.name })),
-    setting(),
+    models.map((m) => ({
+      vendor: m.vendor,
+      family: m.family,
+      name: m.name,
+      ...(detailOf(m) ? { detail: detailOf(m)! } : {}),
+    })),
+    c ? (s.perClass[c] ?? "") : s.model,
+    { forClass: !!c },
   );
-  type Item = vscode.QuickPickItem & { setting?: string };
-  const items: Item[] = rows.map((r) =>
+  const items: Row[] = rows.map((r) =>
     "separator" in r
       ? { label: r.separator, kind: vscode.QuickPickItemKind.Separator }
       : {
@@ -143,16 +214,24 @@ export async function chooseModel(): Promise<void> {
         },
   );
   if (!models.length) void vscode.window.showWarningMessage(WORDS.modelNone);
+  const label = c ? STEP_CLASS_WORDS[c].label : undefined;
   const pick = await vscode.window.showQuickPick(items, {
     title: WORDS.pickModel,
-    placeHolder: WORDS.pickModelPlaceholder,
+    placeHolder: label ? WORDS.pickClassModel(label) : WORDS.pickModelPlaceholder,
     matchOnDescription: true,
   });
   if (pick?.setting === undefined) return;
-  await vscode.workspace
-    .getConfiguration("atticus")
-    .update("model", pick.setting, vscode.ConfigurationTarget.Global);
+  await config().update(
+    c ? `models.${c}` : "model",
+    pick.setting,
+    vscode.ConfigurationTarget.Global,
+  );
+  const what = pick.label.replace(/^\$\(check\) /, "");
   void vscode.window.showInformationMessage(
-    WORDS.modelPicked(pick.label.replace(/^\$\(check\) /, "")),
+    label
+      ? pick.setting
+        ? WORDS.modelPickedFor(label, what)
+        : WORDS.modelFallbackFor(label)
+      : WORDS.modelPicked(what),
   );
 }

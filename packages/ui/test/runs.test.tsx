@@ -30,7 +30,7 @@ const esc = (s: string) =>
 
 type Item = Api.RunListItem;
 const run = (n: number, over: Partial<Item> = {}): Item => ({
-  schemaVersion: 3,
+  schemaVersion: 4,
   runId: `run-2026102303400${n}-0001`,
   change: "knowledge-scan",
   agent: "knowledge-reader",
@@ -45,10 +45,58 @@ const run = (n: number, over: Partial<Item> = {}): Item => ({
   ...over,
 });
 const runs = [
-  run(3, { state: "waiting", answered: false }),
-  run(2, { attempt: 2, handedBack: 2 }),
-  run(1, { change: "add-transfer-limit", agent: "story-writer" }),
+  run(3, { state: "waiting", answered: false, stepClass: "knowledge" }),
+  run(2, { attempt: 2, handedBack: 2, stepClass: "knowledge", model: "claude-haiku-4-5" }),
+  run(1, {
+    change: "add-transfer-limit",
+    agent: "story-writer",
+    stepClass: "draft",
+    model: "copilot/claude-opus-4.5",
+  }),
 ];
+
+describe("which model ran each run, and its kind of step (ADR 0121 addendum)", () => {
+  it("shows the model and the kind in the list, and says when the model wasn't recorded", () => {
+    const out = html(
+      <RunsTable of={{ state: "ready", data: { runs, serverModel: null } }} text="" />,
+    );
+    expect(out).toContain(R.cols.model);
+    expect(out).toContain(esc(R.modelCell(R.classes.draft, "copilot/claude-opus-4.5")));
+    expect(out).toContain(esc(R.modelCell(R.classes.knowledge, "claude-haiku-4-5")));
+    expect(out).toContain(esc(R.modelCell(R.classes.knowledge, undefined)));
+    expect(R.modelCell(undefined, undefined)).toBe(R.modelNotRecorded);
+  });
+
+  it("filters on the model and the kind", () => {
+    expect(shownRuns(runs, "opus").map((r) => r.change)).toEqual(["add-transfer-limit"]);
+    expect(shownRuns(runs, "knowledge haiku")).toHaveLength(1);
+    expect(shownRuns(runs, "draft")).toHaveLength(1);
+  });
+
+  it("shows the kind and the model among a run's facts", () => {
+    const out = html(
+      <RunDetail
+        of={{
+          state: "ready",
+          data: { run: runs[2]!, prompt: "p", handedBack: [], rounds: [] },
+        }}
+      />,
+    );
+    expect(out).toContain(R.facts.stepClass);
+    expect(out).toContain(R.classes.draft);
+    expect(out).toContain("copilot/claude-opus-4.5");
+    const old = html(
+      <RunDetail
+        of={{
+          state: "ready",
+          data: { run: run(4), prompt: "p", handedBack: [], rounds: [] },
+        }}
+      />,
+    );
+    expect(old).toContain(R.modelNotRecorded);
+    expect(old).not.toContain(R.facts.stepClass);
+  });
+});
 
 describe("the list of model runs", () => {
   it("filters on step, agent, run id and state, case aside", () => {
