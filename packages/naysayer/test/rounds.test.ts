@@ -252,7 +252,10 @@ describe("rounds, gates and actions", () => {
     expect(r3.status.humanDecides).toBe(true);
     expect(r3.status.checkRound).toBe(false);
     await expect(runCritic(root, CHANGE, { now: LATER })).rejects.toThrow(/the most it allows/);
-  }, 30_000);
+    // The longest test in this file: four critic runs and the actions between them. Its own
+    // timeout, because the package's covers the rest; two minutes, as the suite allows, so the
+    // parallel check on a shared two-CPU machine doesn't read slowness as a hang.
+  }, 120_000);
 
   it("reports a gate with no rounds as open and refuses unknown gates", async () => {
     const root = await forgeChangeRoot();
