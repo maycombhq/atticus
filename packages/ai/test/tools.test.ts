@@ -110,9 +110,9 @@ describe("the model runtime with tools", () => {
     expect(provider.chats).toHaveLength(2);
     expect(provider.chats[1]!.messages.at(-1)).toMatchObject({ role: "tool" });
     expect(provider.chats[0]!.system).toMatch(/tools offered/);
-    // The run record (version 2) has the calls.
+    // The run record (version 2 on; 4 now, ADR 0121 addendum) has the calls.
     const s = RunSummary.parse(toRunSummary(run));
-    expect(s.schemaVersion).toBe(3);
+    expect(s.schemaVersion).toBe(4);
     expect(s.tools?.calls[0]?.name).toBe("show");
   });
 

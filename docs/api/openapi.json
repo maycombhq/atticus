@@ -18244,7 +18244,7 @@
         "properties": {
           "schemaVersion": {
             "type": "number",
-            "const": 3
+            "const": 4
           },
           "runId": {
             "type": "string",
@@ -18522,6 +18522,20 @@
             },
             "additionalProperties": false
           },
+          "stepClass": {
+            "type": "string",
+            "enum": [
+              "read",
+              "draft",
+              "critic",
+              "knowledge",
+              "quick"
+            ]
+          },
+          "model": {
+            "type": "string",
+            "minLength": 1
+          },
           "promptPath": {
             "type": "string"
           },
@@ -18553,7 +18567,7 @@
               "properties": {
                 "schemaVersion": {
                   "type": "number",
-                  "const": 3
+                  "const": 4
                 },
                 "runId": {
                   "type": "string",
@@ -18830,6 +18844,20 @@
                   },
                   "additionalProperties": false
                 },
+                "stepClass": {
+                  "type": "string",
+                  "enum": [
+                    "read",
+                    "draft",
+                    "critic",
+                    "knowledge",
+                    "quick"
+                  ]
+                },
+                "model": {
+                  "type": "string",
+                  "minLength": 1
+                },
                 "promptPath": {
                   "type": "string"
                 },
@@ -18892,7 +18920,7 @@
             "properties": {
               "schemaVersion": {
                 "type": "number",
-                "const": 3
+                "const": 4
               },
               "runId": {
                 "type": "string",
@@ -19168,6 +19196,20 @@
                   }
                 },
                 "additionalProperties": false
+              },
+              "stepClass": {
+                "type": "string",
+                "enum": [
+                  "read",
+                  "draft",
+                  "critic",
+                  "knowledge",
+                  "quick"
+                ]
+              },
+              "model": {
+                "type": "string",
+                "minLength": 1
               },
               "promptPath": {
                 "type": "string"

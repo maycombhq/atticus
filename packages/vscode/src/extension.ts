@@ -624,7 +624,8 @@ ${view.next.why}`
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration("atticus.path")) void updateContext().then(refreshAll);
       // A model picked: the Next view's "in VS Code" says the new one.
-      else if (e.affectsConfiguration("atticus.model")) refreshAll();
+      else if (e.affectsConfiguration("atticus.model") || e.affectsConfiguration("atticus.models"))
+        refreshAll();
       // The legacy commands come and go with the setting by themselves; the app takes --full
       // only when it starts, so it starts again, and an open Atticus tab opens again on it.
       else if (e.affectsConfiguration(`atticus.${FULL_UI}`)) {

@@ -93,3 +93,44 @@ Home and the editors' Next view say which mode, assistant and model will run a s
 - Item 5, VS Code: **Atticus: Pick the model** (`vscode-model.ts` `chooseModel`, rows from `words.ts` `modelPickRows`). `atticus.model` takes `vendor/family`, a bare family (Copilot's, as before) or `atticus`. With `atticus`, the runner adds `--mode model` and doesn't ask `vscode.lm`; `atticus <step> --handoff --json` honours an explicit `--mode model` or `--mode headless-claude-code` and prints the step's end. IntelliJ: the AI step and Next step offer "Run it on Atticus's configured model" when `atticus next --json` says `modelMode` (model mode allowed, a provider set, AI not off). It runs the step with `--mode model` in a console (`Commands.withModel`), and both show the `runs` line.
 - Item 6: `@maycombhq/assistant-files` `whatRunsWhere(runtime)`. It is shown on Home (`HowStepsRunLine`), in VS Code's Next view (the `runs` row), in `atticus next --json` (`runs`) and in `GET /api/settings/ai` (`runs`). The setup checklist's optional `ai` step is done once `runtime.yaml` differs from what `atticus init` writes. IntelliJ shows it through the app's Home; its own tool window doesn't yet.
 - Item 4, built as a translator rather than as provider code. `ModelProviderPlugin` (C6, `core/src/schema/plugin.ts`) declares the settings, the hosts (templates filled from the settings, each part a plain name) and the auth. `adapters.model.type` accepts a plugin's id, a widening that keeps every v1 file valid. The plugin's `request` and `response` run in the scanner plugin sandbox (`sdk` `runTranslator`). `model-providers` `PluginProvider` makes the call, refuses any URL that isn't HTTPS to a named host, any URL with credentials, and any header Atticus reserves, and adds the key. The plugin never reaches the network, so the only network call stays the configured provider's (CLAUDE.md rule 4). `ai` `providerFactoryFor` finds the plugin, and the CLI registers the loader, which reads the pinned entry. `atticus plugin add vertex` ships Vertex, and `plugin test|pin` take model-provider plugins. Not built: tool calls (`chat`) from a plugin, and token refresh.
+
+## Addendum (2026-10-26): a model per kind of step (C5, C6)
+
+### Context
+
+One model ran every AI step: in VS Code the one `pickModel` chose (`atticus.model`, else the chat's model, else Copilot's first), in model mode `adapters.model`'s. On Copilot Business a premium request on a big model costs a multiple of one on a small model, so running the critic's lenses and the small judgments on the model that drafts the architecture spends most of an organisation's requests where they buy least.
+
+### Decision
+
+1. **Five kinds of step (C5).** `STEP_CLASSES` in `@maycombhq/core`: `read`, `draft`, `critic`, `knowledge`, `quick`. Every request has one, decided in code by `@maycombhq/ai` `stepClassOf`: the tag its call site sets (`AiRequest.stepClass`), else its agent's class (`STEP_CLASS_BY_AGENT`), else `critic` for an agent that writes findings, else `draft`. Its prompt never decides it.
+
+   | Kind      | What runs as it                                                                                                                                                                            |
+   | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+   | read      | `atticus map` (the repo reader, its batches and the fix round for rejected facts), `scan verify` (tagged at its call site)                                                                 |
+   | draft     | the feature placer, flow architect, story writers, small-change planner, change and spec drafters, scan survey and its questions, dialect and framework drafters, task runner, test writer |
+   | critic    | every lens (tagged in the critic), the hand-up lens (tagged)                                                                                                                               |
+   | knowledge | the knowledge reader (scan and find), the needs finder (which items apply), knowledge ask                                                                                                  |
+   | quick     | the judge (every closed judgment, tagged), the context expander and reranker, the feature namer, glossary definer, template writer, explainer                                              |
+
+   An organisation's own agent takes the class of the built-in agent with its id; a new id writing findings is a critic, any other a draft, so an unknown step never runs on less than the organisation's drafting model.
+
+2. **runtime.yaml version 2 (C6).** `models` gains optional `read`, `draft`, `critic`, `knowledge` and `quick`. Each is a model of runtime.yaml's provider (model mode, headless Claude Code) or `vendor/family` for a model an editor offers. A kind that names none runs on the one model, as every step did. Version 1 files still read; a version 1 file that names one is refused with "run atticus upgrade". `atticus upgrade` step `runtime-v2` writes version 2 and changes nothing else (comments and order kept, `models.recommended` left as it is); `atticus init` writes version 2.
+
+3. **The choice, in order.** In VS Code: `atticus.models.<kind>` (the person's), runtime.yaml's `models.<kind>` (the organisation's, committed in the metarepo), `atticus.model`, the chat's model, Copilot's first. In model mode and headless Claude Code: the person's setting (`ATTICUS_MODEL_<KIND>`, which both editors pass to the command line), runtime.yaml's, then `adapters.model`'s. A choice that can't be used is passed over for the next and said once: in VS Code a model `vscode.lm` doesn't offer (an admin turned it off); in model mode one `models.allowed` doesn't list, or an editor's `vendor/family`. Only the person's, the organisation's and Copilot's own are ever tried; with none left the step stops and says why. `atticus` as a kind's first choice runs the whole step in model mode; for one request of a handed-off step it is passed over, with a note.
+
+4. **Each hand-off says its kind.** `atticus <step> --handoff --json` gives `stepClass` and `orgModel` (runtime.yaml's model for it), so a stage's draft and its lenses are answered on different models; each kind is chosen once a step. The plain hand-off prints the model the run expects, for an assistant whose model Atticus can't choose.
+
+5. **The run record, version 4 (C5).** It keeps `stepClass` and `model`: the provider's model, the one given to headless Claude Code, or the editor's (`atticus handoff done <run> --model <vendor/family>`, which VS Code passes). Versions 1 to 3 read as 4 without them (`migrateRunSummary`). `atticus runs`, `runs show` and the app's Model runs page show both; a run kept before shows its kind from its agent and "Not recorded" for its model.
+
+6. **What says it.** `atticus doctor` lists each kind's model and where it came from (your setting, runtime.yaml, fallback), and why a named one was passed over. `atticus next --json` gives each AI step's `stepClass` and runtime.yaml's `orgModels`; VS Code's Next view says "in VS Code: <model> for <kind> steps".
+
+7. **Pick the model** asks "for every step, or for one kind" (each kind with what falls in it and its model now), then lists every model VS Code offers by vendor. A row shows VS Code's own note on the model when the API exposes one (Copilot's premium-request multiplier); otherwise nothing: no price is invented.
+
+8. **IntelliJ.** Copilot in IntelliJ offers plugins no model, so the plugin can't choose one. Settings → Tools → Atticus has a field per kind. The AI step's notice and the Next step's text name the model the step expects (the setting, else runtime.yaml's) for the person to pick in Copilot's own picker; the settings reach the command line as `ATTICUS_MODEL_<KIND>`, so "Run it on Atticus's configured model" and doctor use them.
+
+### Consequences
+
+- At the bank: `models: { read: copilot/claude-opus-4.5, draft: copilot/claude-opus-4.5, critic: copilot/claude-sonnet-4.5, knowledge: copilot/claude-haiku-4.5, quick: copilot/claude-haiku-4.5 }` in runtime.yaml, and nobody sets anything (docs/guide/models.md).
+- A stage's prompt is sized for its own kind's model; a lens prompt longer than the critic's model takes ends as "too long", as any prompt does.
+- The critic's note on model families still reads `models.recommended.critic` (naysayer `criticModel`); `models.critic` names the model its lenses run on. Joining the two is left to the critic's own work.
+- An editor older than this command line ignores `stepClass`; a command line older than the editor gives none, and the editor keeps one model per step and doesn't pass `--model`.

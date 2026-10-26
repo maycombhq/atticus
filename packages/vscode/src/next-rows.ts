@@ -18,8 +18,12 @@ export type NextNode =
   | { kind: "setup"; steps: SetupStep[] }
   | { kind: "setup-step"; step: SetupStep }
   | { kind: "app" }
-  /** What runs a step (ADR 0121 item 6): runtime.yaml's line, and the setting atticus.model. */
-  | { kind: "runs"; runs: string; model: string }
+  /**
+   * What runs a step (ADR 0121 item 6): runtime.yaml's line, and the model the next step will
+   * run on in VS Code (its addendum): its kind's first choice, as a setting says it (`model`),
+   * and its kind (`stepClass`) when the next step is an AI step.
+   */
+  | { kind: "runs"; runs: string; model: string; stepClass?: string }
   | { kind: "no-root" }
   /** Phase D: what waits on you, under the steps (Next and Waiting); its rows are view.ts's. */
   | { kind: "waiting" };
@@ -108,13 +112,13 @@ export function nextRow(node: NextNode, titles?: ChangeTitles): NextRow {
     case "runs": {
       const c = modelChoice(node.model);
       const here =
-        c === "configured" ? WORDS.modelConfigured : c ? modelSetting(c) : "the chat's model";
+        c === "configured" ? WORDS.modelConfigured : c ? modelSetting(c) : WORDS.modelChatOrCopilot;
       return {
         label: node.runs,
-        description: `in VS Code: ${here}`,
+        description: WORDS.runsModel(node.stepClass, here),
         icon: "hubot",
         tooltip:
-          "How AI steps run here, from runtime.yaml (Set up › AI in the app), and the model VS Code runs them on. Click to pick the model.",
+          "How AI steps run here, from runtime.yaml (Set up › AI in the app), and the model VS Code runs the next step on: its kind of step's model (atticus.models.*), else runtime.yaml's for it, else atticus.model. Click to pick the model.",
         plain: true,
         command: { command: "atticus.pickModel", title: WORDS.pickModel },
       };

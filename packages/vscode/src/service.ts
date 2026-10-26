@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import * as vscode from "vscode";
 import { AtticusApi } from "./api";
@@ -6,9 +6,24 @@ import { startApp, type RunningApp } from "./app-panel";
 import { cliRunner, resolveCommand, type CliOptions } from "./cli";
 import { codeRootFor, type Paths } from "./sidebar-data";
 import { runSpec, runStep, type RunnerDeps, type StepEnd } from "./runner";
+import { modelEnv, orgModelsFrom, type StepClass } from "./step-models";
 import { FULL_UI } from "./surface";
 import type { Cancel, Cli } from "./types";
-import { pickModel, usesConfiguredModel } from "./vscode-model";
+import { modelSettings, pickModel, usesConfiguredModel } from "./vscode-model";
+
+/** runtime.yaml's model per kind of step (ADR 0121 addendum), read from the metarepo's org pack. */
+export function orgModelsOf(root: string): Partial<Record<StepClass, string>> {
+  for (const dir of ["org-pack", join(".atticus", "org-pack")]) {
+    let text: string | undefined;
+    try {
+      text = readFileSync(join(root, dir, "runtime.yaml"), "utf8");
+    } catch {
+      continue;
+    }
+    return orgModelsFrom(text);
+  }
+  return {};
+}
 
 /**
  * What every part of the extension shares (ADR 0090): the metarepo, the `atticus` command line
@@ -51,7 +66,15 @@ export class Service {
 
   cliOptions(root: string): CliOptions {
     const atticusPath = vscode.workspace.getConfiguration("atticus").get<string>("path", "atticus");
-    return { atticusPath, cwd: root, log: (l) => this.log.appendLine(l) };
+    // ADR 0121 addendum: the person's model per kind of step reaches the command line (doctor
+    // says where each came from; model mode runs a provider model it names).
+    const env = modelEnv(modelSettings());
+    return {
+      atticusPath,
+      cwd: root,
+      log: (l) => this.log.appendLine(l),
+      ...(Object.keys(env).length ? { env: { ...process.env, ...env } } : {}),
+    };
   }
 
   cli(root: string): Cli {
@@ -133,15 +156,34 @@ export class Service {
     token: Cancel,
     chatModel?: vscode.LanguageModelChat,
   ): Promise<StepEnd> {
+    const say = (l: string) => {
+      this.log.appendLine(l);
+      progress(l);
+    };
+    // ADR 0121 addendum: the model for each kind of step, runtime.yaml's choice among them.
+    const org = orgModelsOf(root);
+    const said = new Set<string>();
+    const sayOnce = (l: string) => {
+      if (said.has(l)) return;
+      said.add(l);
+      say(l);
+    };
     const d: RunnerDeps = {
       root,
       cli: this.cli(root),
-      model: () => pickModel(chatModel),
-      ...(usesConfiguredModel() ? { mode: "model" as const } : {}),
-      progress: (l) => {
-        this.log.appendLine(l);
-        progress(l);
-      },
+      model: (want) =>
+        pickModel(
+          chatModel,
+          {
+            ...(want?.stepClass ? { stepClass: want.stepClass } : {}),
+            ...(want?.orgModel || (want?.stepClass && org[want.stepClass])
+              ? { orgModel: want.orgModel ?? org[want.stepClass!]! }
+              : {}),
+          },
+          sayOnce,
+        ),
+      ...(usesConfiguredModel(o.args, org) ? { mode: "model" as const } : {}),
+      progress: say,
     };
     try {
       return o.spec ? await runSpec(o.spec, d, token) : await runStep(o.args, d, token);

@@ -1434,7 +1434,32 @@
         "atticus.model": {
           "type": "string",
           "default": "",
-          "markdownDescription": "The model Atticus's AI steps run on in VS Code. Set it with **Atticus: Pick the model**. `vendor/family` is any model VS Code offers (for example `copilot/gpt-4o`); a bare family (`gpt-4o`) is Copilot's; `atticus` is the model provider in `runtime.yaml`, run by Atticus's command line in model mode. Empty: the model picked in the chat, or else the first Copilot model."
+          "markdownDescription": "The model Atticus's AI steps run on in VS Code, for each kind of step that names none of its own (atticus.models.*). Set it with **Atticus: Pick the model**. `vendor/family` is any model VS Code offers (for example `copilot/gpt-4o`); a bare family (`gpt-4o`) is Copilot's; `atticus` is the model provider in `runtime.yaml`, run by Atticus's command line in model mode. Empty: the model picked in the chat, or else the first Copilot model."
+        },
+        "atticus.models.read": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "The model for Atticus's read steps in VS Code: Reading repos into facts (atticus map), and scan verify. `vendor/family`, a bare Copilot family, or `atticus` (runtime.yaml's provider). It overrides runtime.yaml's `models.read` for you. Empty: runtime.yaml's, else `atticus.model`. A model VS Code doesn't offer is passed over, and the step says so."
+        },
+        "atticus.models.draft": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "The model for Atticus's draft steps in VS Code: The feature, architecture and stories drafts, small changes, spec drafts and scan surveys. `vendor/family`, a bare Copilot family, or `atticus` (runtime.yaml's provider). It overrides runtime.yaml's `models.draft` for you. Empty: runtime.yaml's, else `atticus.model`. A model VS Code doesn't offer is passed over, and the step says so."
+        },
+        "atticus.models.critic": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "The model for Atticus's critic steps in VS Code: The critic's lenses, and the hand-up lens. `vendor/family`, a bare Copilot family, or `atticus` (runtime.yaml's provider). It overrides runtime.yaml's `models.critic` for you. Empty: runtime.yaml's, else `atticus.model`. A model VS Code doesn't offer is passed over, and the step says so."
+        },
+        "atticus.models.knowledge": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "The model for Atticus's knowledge steps in VS Code: The knowledge scan and find, what a change needs, and knowledge ask. `vendor/family`, a bare Copilot family, or `atticus` (runtime.yaml's provider). It overrides runtime.yaml's `models.knowledge` for you. Empty: runtime.yaml's, else `atticus.model`. A model VS Code doesn't offer is passed over, and the step says so."
+        },
+        "atticus.models.quick": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "The model for Atticus's quick steps in VS Code: Everything small: judgments, context expansion and ordering, names and short texts. `vendor/family`, a bare Copilot family, or `atticus` (runtime.yaml's provider). It overrides runtime.yaml's `models.quick` for you. Empty: runtime.yaml's, else `atticus.model`. A model VS Code doesn't offer is passed over, and the step says so."
         },
         "atticus.codeLens": {
           "type": "boolean",

@@ -14,6 +14,8 @@ export interface Cancel {
 export interface StepModel {
   /** The model's name as a person reads it. */
   readonly name: string;
+  /** `vendor/family`, as the settings name it (ADR 0121 addendum): kept in the run record. */
+  readonly id?: string;
   /** The most tokens the model takes in one request. */
   readonly maxInputTokens: number;
   countTokens(text: string, token: Cancel): Promise<number>;
@@ -84,4 +86,6 @@ export interface NextStep {
   repo?: string;
   change?: string;
   source?: string;
+  /** The kind of AI step (ADR 0121 addendum): read, draft, critic, knowledge or quick. */
+  stepClass?: string;
 }

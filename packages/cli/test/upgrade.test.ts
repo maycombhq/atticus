@@ -82,10 +82,12 @@ describe("atticus upgrade", () => {
       ["questions-v2", ["questions/q-0f1e2d3c4b5a.yaml"]],
       // The Forge pack's sources.yaml is at version 1.
       ["sources-v2", ["org-pack/sources.yaml"]],
+      // ADR 0121 addendum: and its runtime.yaml.
+      ["runtime-v2", ["org-pack/runtime.yaml"]],
     ]);
     const r = io();
     expect(await upgradeCommand(root, { check: true }, r.io, "1.0.0")).toBe(1);
-    expect(r.out[0]).toMatch(/7 upgrade steps to run/);
+    expect(r.out[0]).toMatch(/8 upgrade steps to run/);
     // A dry run changes nothing.
     const before = await readFile(join(root, "catalog/generated/system/ledger.yaml"), "utf8");
     expect(await upgradeCommand(root, { dryRun: true }, io().io, "1.0.0")).toBe(0);
@@ -131,7 +133,14 @@ describe("atticus upgrade", () => {
       "catalog-schema-v3",
       "sources-v2",
       "stamp-committed",
+      "runtime-v2",
     ]);
+    // runtime.yaml at version 2 (ADR 0121 addendum): the number only, every line else as it was,
+    // so no step names a model of its own.
+    const runtime = await readFile(join(root, "org-pack/runtime.yaml"), "utf8");
+    const was = await readFile(join(FIXTURES, "forge/metarepo/org-pack/runtime.yaml"), "utf8");
+    expect(runtime).toBe(was.replace(/^schemaVersion: 1$/m, "schemaVersion: 2"));
+    expect(parse(runtime).models).toBeUndefined();
     // sources.yaml at version 2, its wiki as it was: every page still read.
     const sources = await readFile(join(root, "org-pack/sources.yaml"), "utf8");
     expect(sources).toMatch(/^schemaVersion: 2$/m);

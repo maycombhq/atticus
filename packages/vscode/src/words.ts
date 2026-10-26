@@ -50,6 +50,34 @@ export const WORDS = {
   modelNone:
     "VS Code offers no language models: sign in to Copilot, or add an extension that offers one.",
   modelPicked: (what: string) => `Atticus's AI steps now run on ${what}.`,
+  // ADR 0121 addendum: a model per kind of step.
+  pickScope: "Pick the model for every step, or for one kind of step?",
+  scopeEvery: "For every step",
+  scopeEveryDetail:
+    "The setting atticus.model: the model for each kind of step that names none of its own.",
+  scopeOne: "For one kind of step",
+  scopeOneDetail:
+    "atticus.models.read, .draft, .critic, .knowledge or .quick: for example the strongest model for drafts, a smaller one for quick checks.",
+  pickClass: "Which kind of step?",
+  pickClassModel: (label: string) => `Which model runs Atticus's ${label} steps in VS Code?`,
+  classNow: (what: string) => `now: ${what}`,
+  classFallback: "The next choice",
+  classFallbackDetail:
+    "runtime.yaml's model for this kind of step, else atticus.model, else the model picked in the chat.",
+  modelPickedFor: (label: string, what: string) => `Atticus's ${label} steps now run on ${what}.`,
+  modelFallbackFor: (label: string) =>
+    `Atticus's ${label} steps now take the next choice: runtime.yaml's, else atticus.model.`,
+  modelNotOffered: (model: string, where: string) =>
+    `${model} (${where}) isn't offered in VS Code: an admin may have turned it off, or its extension isn't installed.`,
+  modelConfiguredPassedOver: (where: string) =>
+    `${where} says atticus, runtime.yaml's model run by the command line, which one request of a step handed to VS Code's model can't use.`,
+  modelInstead: (stepClass: string | undefined, source: string) =>
+    `This ${stepClass ?? "AI"} step runs on ${source} instead.`,
+  modelNoneLeft:
+    "No other model you allowed is offered, so the step stops: pick one with Atticus: Pick the model.",
+  modelChatOrCopilot: "the chat's model",
+  runsModel: (stepClass: string | undefined, model: string) =>
+    stepClass ? `in VS Code: ${model} for ${stepClass} steps` : `in VS Code: ${model}`,
   startFromPick: "Start from an earlier change? Its steps read it as an example.",
   startFromNothing: "Start from nothing",
   startFromNothingDetail: "Write the brief from scratch.",
@@ -86,6 +114,46 @@ export const WORDS = {
     on
       ? "Atticus now offers Atticus 1's legacy commands too, and the app every page as a tab."
       : "Atticus now offers every view and command but Atticus 1's legacy ones; the app its six entries, with every other page under More pages.",
+};
+
+/**
+ * The kinds of step (ADR 0121 addendum), as a person reads them: in Pick the model and in the
+ * settings' descriptions.
+ */
+export const STEP_CLASS_WORDS: Record<
+  "read" | "draft" | "critic" | "knowledge" | "quick",
+  { label: string; detail: string }
+> = {
+  read: { label: "read", detail: "Reading repos into facts (atticus map), and scan verify." },
+  draft: {
+    label: "draft",
+    detail:
+      "The feature, architecture and stories drafts, small changes, spec drafts and scan surveys.",
+  },
+  critic: { label: "critic", detail: "The critic's lenses, and the hand-up lens." },
+  knowledge: {
+    label: "knowledge",
+    detail: "The knowledge scan and find, what a change needs, and knowledge ask.",
+  },
+  quick: {
+    label: "quick",
+    detail: "Everything small: judgments, context expansion and ordering, names and short texts.",
+  },
+};
+
+/**
+ * The settings' descriptions (package.json contributes.configuration), kept here with the
+ * extension's other words; a test checks the manifest says exactly these.
+ */
+export const SETTINGS_WORDS: Record<string, string> = {
+  "atticus.model":
+    "The model Atticus's AI steps run on in VS Code, for each kind of step that names none of its own (atticus.models.*). Set it with **Atticus: Pick the model**. `vendor/family` is any model VS Code offers (for example `copilot/gpt-4o`); a bare family (`gpt-4o`) is Copilot's; `atticus` is the model provider in `runtime.yaml`, run by Atticus's command line in model mode. Empty: the model picked in the chat, or else the first Copilot model.",
+  ...Object.fromEntries(
+    (["read", "draft", "critic", "knowledge", "quick"] as const).map((c) => [
+      `atticus.models.${c}`,
+      `The model for Atticus's ${c} steps in VS Code: ${STEP_CLASS_WORDS[c].detail} \`vendor/family\`, a bare Copilot family, or \`atticus\` (runtime.yaml's provider). It overrides runtime.yaml's \`models.${c}\` for you. Empty: runtime.yaml's, else \`atticus.model\`. A model VS Code doesn't offer is passed over, and the step says so.`,
+    ]),
+  ),
 };
 
 /** WP7.6: an archived change near a new one, as `atticus change similar --json` gives it. */
@@ -143,10 +211,50 @@ export function modelChoice(setting: string): ModelChoice | "configured" | undef
 
 export const modelSetting = (c: ModelChoice) => `${c.vendor}/${c.family}`;
 
-export const modelPickItem = (m: ModelChoice & { name: string }) => ({
+/**
+ * A model VS Code offers, as Pick the model lists it. `detail` is what VS Code itself says about
+ * the model (Copilot's premium-request note, such as "1x"), when it exposes one: shown as it is,
+ * and nothing in its place when it doesn't (ADR 0121 addendum: no price is invented).
+ */
+export type OfferedModel = ModelChoice & { name: string; detail?: string };
+
+export const modelPickItem = (m: OfferedModel) => ({
   label: m.name,
   description: modelSetting(m),
+  ...(m.detail?.trim() ? { detail: m.detail.trim() } : {}),
 });
+
+/**
+ * The rows of "for which steps?": every step (atticus.model), then each kind with what falls in
+ * it and its own setting now.
+ */
+export function scopeRows(
+  every: string,
+  perClass: Partial<Record<keyof typeof STEP_CLASS_WORDS, string>>,
+): { label: string; description?: string; detail: string; scope: string }[] {
+  const now = (v: string | undefined) => {
+    const c = modelChoice(v ?? "");
+    return c === "configured" ? WORDS.modelConfigured : c ? modelSetting(c) : undefined;
+  };
+  const everyNow = now(every);
+  return [
+    {
+      label: WORDS.scopeEvery,
+      ...(everyNow ? { description: WORDS.classNow(everyNow) } : {}),
+      detail: WORDS.scopeEveryDetail,
+      scope: "",
+    },
+    ...(Object.keys(STEP_CLASS_WORDS) as (keyof typeof STEP_CLASS_WORDS)[]).map((c) => {
+      const n = now(perClass[c]);
+      return {
+        label: `${WORDS.scopeOne}: ${STEP_CLASS_WORDS[c].label}`,
+        ...(n ? { description: WORDS.classNow(n) } : {}),
+        detail: STEP_CLASS_WORDS[c].detail,
+        scope: c,
+      };
+    }),
+  ];
+}
 
 /** A row of Pick the model: a vendor's heading, or a choice with the setting it writes. */
 export type ModelPickRow =
@@ -158,15 +266,17 @@ export type ModelPickRow =
  * model VS Code offers, under its vendor, Copilot's first. The current choice is marked.
  */
 export function modelPickRows(
-  models: (ModelChoice & { name: string })[],
+  models: OfferedModel[],
   current: string,
+  /** For one kind of step (ADR 0121 addendum): the first row is the next choice, not Copilot's. */
+  o: { forClass?: boolean } = {},
 ): ModelPickRow[] {
   const now = modelChoice(current);
   const nowSetting = now === "configured" ? CONFIGURED_MODEL : now ? modelSetting(now) : "";
   const rows: ModelPickRow[] = [
     {
-      label: WORDS.modelDefault,
-      detail: WORDS.modelDefaultDetail,
+      label: o.forClass ? WORDS.classFallback : WORDS.modelDefault,
+      detail: o.forClass ? WORDS.classFallbackDetail : WORDS.modelDefaultDetail,
       setting: "",
       picked: nowSetting === "",
     },

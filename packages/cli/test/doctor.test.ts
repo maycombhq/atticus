@@ -269,6 +269,65 @@ describe("atticus doctor", () => {
     expect(JSON.stringify(set)).not.toContain("sk-secret-value");
   });
 
+  it("lists the model for each kind of step and where each came from (ADR 0121 addendum)", async () => {
+    // Nothing named: each kind takes the editor's own model.
+    const none = byId(await doctorChecks(root, healthy()), "step-models");
+    expect(none).toMatchObject({ status: "ok", label: "Model for each kind of step" });
+    expect(none.detail).toBe(
+      [
+        "read: the editor's own model (fallback)",
+        "draft: the editor's own model (fallback)",
+        "critic: the editor's own model (fallback)",
+        "knowledge: the editor's own model (fallback)",
+        "quick: the editor's own model (fallback)",
+      ].join("; "),
+    );
+    const own = await mkdtemp(join(tmpdir(), "atticus-doctor-steps-"));
+    await cp(join(FIXTURES, "forge/metarepo"), own, { recursive: true });
+    const rt = (lines: string[]) =>
+      writeFile(
+        join(own, "org-pack/runtime.yaml"),
+        ["schemaVersion: 2", "assistants: { allowed: [copilot], default: copilot }", ...lines].join(
+          "\n",
+        ),
+      );
+    // Hand-off: the editors' models, the person's setting first.
+    await rt([
+      "models:",
+      "  draft: copilot/claude-opus-4.5",
+      "  critic: copilot/claude-sonnet-4.5",
+    ]);
+    const editor = byId(
+      await doctorChecks(
+        own,
+        healthy({ env: { PATH: "", ATTICUS_MODEL_CRITIC: "copilot/gpt-5-mini" } }),
+      ),
+      "step-models",
+    );
+    expect(editor.status).toBe("ok");
+    expect(editor.detail).toContain("draft: copilot/claude-opus-4.5 (runtime.yaml)");
+    expect(editor.detail).toContain("critic: copilot/gpt-5-mini (your setting)");
+    expect(editor.detail).toContain("quick: the editor's own model (fallback)");
+    // Model mode: the provider's, and a model it can't run passed over with why.
+    await rt([
+      "modes: { allowed: [hand-off, model], default: hand-off }",
+      "models:",
+      "  allowed: [claude-opus-5-5, claude-haiku-4-5]",
+      "  quick: claude-haiku-4-5",
+      "  critic: copilot/claude-sonnet-4.5",
+      "adapters:",
+      "  model: { type: anthropic, settings: { model: claude-opus-5-5, keyEnv: ATTICUS_MODEL_KEY } }",
+    ]);
+    const model = byId(await doctorChecks(own, healthy()), "step-models");
+    expect(model.status).toBe("warn");
+    expect(model.detail).toContain("quick: claude-haiku-4-5 (runtime.yaml)");
+    expect(model.detail).toContain("draft: claude-opus-5-5 (adapters.model in runtime.yaml)");
+    expect(model.detail).toContain(
+      "models.critic names copilot/claude-sonnet-4.5, which models.allowed in runtime.yaml doesn't list.",
+    );
+    expect(model.fix).toContain("docs/guide/models.md");
+  });
+
   it("says at which tier the assistant reads a repo, and how to see what the first read costs (ADR 0124 §4)", async () => {
     const tier = byId(await doctorChecks(root, healthy()), "tier");
     expect(tier.status).toBe("ok");

@@ -1,8 +1,18 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { HandoffRuntime, TOOL_LIMITS, type Run } from "@maycombhq/ai";
+import { HandoffRuntime, modelEnvOf, stepClassOf, TOOL_LIMITS, type Run } from "@maycombhq/ai";
 import { CONTEXT_TOOLS } from "@maycombhq/index";
-import { changesRelOf, listQuestions, runsDirOf, runsRelOf, type Question } from "@maycombhq/core";
+import {
+  changesRelOf,
+  listQuestions,
+  loadOrgPack,
+  orgPackDirOf,
+  runsDirOf,
+  runsRelOf,
+  stepModelsOf,
+  type Question,
+  type StepClass,
+} from "@maycombhq/core";
 import { lensRunOf } from "@maycombhq/naysayer";
 import type { Output, StepFact } from "./commands.js";
 
@@ -232,6 +242,10 @@ export async function handoffStep(
   const runsRel = runsRelOf(root);
   io.out(`Prompt: ${HandoffRuntime.promptRel(run, runsRel)}`);
   io.out(`Result file: ${HandoffRuntime.outputRel(run, changesRelOf(root), runsRel)}`);
+  // ADR 0121 addendum: where the assistant's model can't be chosen for it (IntelliJ, a chat),
+  // the person picks the model this kind of step expects in the assistant's own picker.
+  const expects = await expectedModel(root, run, process.env);
+  if (expects) io.out(expectedLine(expects));
   io.out("When the result file is written, run:");
   io.out(`  atticus handoff done ${run.runId}${rootArg(argv)}`);
   io.out(`  atticus ${[...args, "--handoff", "--resume", run.runId].map(shell).join(" ")}`);
@@ -277,6 +291,10 @@ async function printJson(
     const doneArgs = ["handoff", "done", run.runId, ...rootArgv(argv)];
     const resumeArgs = [...args, "--handoff", "--json", "--resume", run.runId];
     const lens = lensRunOf(run.request);
+    // ADR 0121 addendum: the run's kind of step, and the organisation's model for it, so the
+    // editor answering it picks that kind's model (the person's setting first).
+    const stepClass = run.stepClass ?? stepClassOf(run.request);
+    const orgModel = (await orgModels(root))[stepClass];
     io.out(
       JSON.stringify(
         {
@@ -284,6 +302,8 @@ async function printJson(
           runId: run.runId,
           // ADR 0115: one of the critic's AI lenses, reviewing what the step wrote.
           ...(lens ? { lens } : {}),
+          stepClass,
+          ...(orgModel ? { orgModel } : {}),
           root,
           ...(s.still ? { stillWaiting: true } : {}),
           promptFile: HandoffRuntime.promptRel(run, runsRel),
@@ -344,6 +364,43 @@ async function printJson(
   );
   return s.code;
 }
+
+/** runtime.yaml's model per kind of step (ADR 0121 addendum); none when it can't be read. */
+async function orgModels(root: string): Promise<Partial<Record<StepClass, string>>> {
+  return stepModelsOf(
+    await loadOrgPack(orgPackDirOf(root))
+      .then((op) => op.runtime)
+      .catch(() => undefined),
+  );
+}
+
+export interface ExpectedModel {
+  stepClass: StepClass;
+  model: string;
+  /** The person's setting (ATTICUS_MODEL_<CLASS>, which an editor passes) or runtime.yaml. */
+  from: "setting" | "runtime.yaml";
+}
+
+/**
+ * The model a handed-off run expects (ADR 0121 addendum): the person's setting for its kind of
+ * step, else runtime.yaml's `models.<class>`; none when neither names one (the assistant's own
+ * model, as before). `atticus` in a setting means runtime.yaml's.
+ */
+export async function expectedModel(
+  root: string,
+  run: Run,
+  env: Record<string, string | undefined>,
+): Promise<ExpectedModel | undefined> {
+  const stepClass = run.stepClass ?? stepClassOf(run.request);
+  const set = env[modelEnvOf(stepClass)]?.trim();
+  if (set && set !== "atticus") return { stepClass, model: set, from: "setting" };
+  const org = (await orgModels(root))[stepClass];
+  return org ? { stepClass, model: org, from: "runtime.yaml" } : undefined;
+}
+
+/** The hand-off's line that names the model to pick in the assistant's own picker. */
+export const expectedLine = (e: ExpectedModel) =>
+  `Model: this is a ${e.stepClass} step, which runs on ${e.model} (${e.from === "setting" ? "your setting" : `runtime.yaml models.${e.stepClass}`}). Pick it in your assistant's model picker before you send the prompt.`;
 
 /** The --root argument as argv, when the step was given one. */
 function rootArgv(argv: string[]): string[] {

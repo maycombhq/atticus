@@ -1,8 +1,16 @@
 import { createHash } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import { basename, join, relative, resolve, sep } from "node:path";
-import { resumedAttempt, type Run } from "@maycombhq/ai";
-import { Api, changesDirOf, RUN_SCHEMA_VERSION, runsDirOf, runsRelOf } from "@maycombhq/core";
+import { resumedAttempt, stepClassOf, type Run } from "@maycombhq/ai";
+import {
+  Api,
+  changesDirOf,
+  RUN_SCHEMA_VERSION,
+  runsDirOf,
+  runsRelOf,
+  STEP_CLASSES,
+  type StepClass,
+} from "@maycombhq/core";
 
 /**
  * The model runs under .runs/ (ADR 0106), read for the local API, `atticus runs` and the MCP tools:
@@ -107,7 +115,20 @@ export async function item(root: string, s: Stored): Promise<Api.RunListItem> {
     handedBack: back.reduce((n, b) => n + b.problems.length, 0),
     ...(r.request.pack?.manifest ? { promptTokens: r.request.pack.manifest.totalTokens } : {}),
     ...(r.tools ? { toolCalls: r.tools.calls.length } : {}),
+    // ADR 0121 addendum: the kind of step and the model that ran it. A run kept before either
+    // was recorded is given its kind from its agent; its model stays unsaid.
+    ...(classOf(r) ? { stepClass: classOf(r)! } : {}),
+    ...(r.model ? { model: r.model } : {}),
   } as Api.RunListItem;
+}
+
+/** A stored run's kind of step: as recorded, else from its agent (an older run). */
+function classOf(r: Stored["run"]): StepClass | undefined {
+  if (r.stepClass && (STEP_CLASSES as readonly string[]).includes(r.stepClass)) return r.stepClass;
+  const agent = r.request.agent as unknown;
+  return agent && typeof agent === "object" && "id" in agent
+    ? stepClassOf(r.request as Parameters<typeof stepClassOf>[0])
+    : undefined;
 }
 
 export async function allRuns(root: string, change?: string): Promise<Stored[]> {

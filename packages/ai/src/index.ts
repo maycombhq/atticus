@@ -11,3 +11,4 @@ export * from "./embed.js";
 export * from "./judge.js";
 export * from "./judge-kinds.js";
 export * from "./judge-stand-in.js";
+export * from "./step-class.js";

@@ -1,6 +1,6 @@
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { Recording, runsDirOf, type RuntimeKind } from "@maycombhq/core";
+import { Recording, runsDirOf, type RuntimeKind, type StepClass } from "@maycombhq/core";
 import { DATA_RULE, estimateTokens } from "./context.js";
 import {
   chatWithTools,
@@ -18,6 +18,7 @@ import {
   type Run,
   type Usage,
 } from "./runtime.js";
+import { stepClassOf } from "./step-class.js";
 
 // ------------------------------------------------------------------ mock
 
@@ -216,6 +217,11 @@ export class ModelRuntime extends OneShotRuntime {
       toolLimits?: Partial<ToolLimits>;
       /** The metarepo: each finished run is kept under .runs/ for Model runs. */
       root?: string;
+      /**
+       * A provider per kind of step (ADR 0121 addendum), for the kinds runtime.yaml (or the
+       * person's setting) names a model for; the other kinds run on `provider`.
+       */
+      models?: Partial<Record<StepClass, ModelProvider>>;
     } = {},
   ) {
     super(mo);
@@ -229,15 +235,25 @@ export class ModelRuntime extends OneShotRuntime {
     }
   }
 
+  /** The provider for a request: its kind's, else the one provider. */
+  private providerOf(request: AiRequest): ModelProvider {
+    return this.mo.models?.[stepClassOf(request)] ?? this.provider;
+  }
+
+  protected override modelFor(request: AiRequest): string | undefined {
+    return this.providerOf(request).model;
+  }
+
   protected async produce(run: Run, signal?: AbortSignal) {
     const { agent, pack, outputPath } = run.request;
+    const provider = this.providerOf(run.request);
     const system = `You are the ${agent.id} agent in Atticus. ${agent.description}\nWrite only the content of ${outputPath}.\n${DATA_RULE}`;
     const left = agent.tokenBudget - pack.manifest.totalTokens;
-    const box = this.provider.chat ? this.mo.tools?.(run.request) : undefined;
-    if (box && box.definitions.length && this.provider.chat) {
+    const box = provider.chat ? this.mo.tools?.(run.request) : undefined;
+    if (box && box.definitions.length && provider.chat) {
       const session = new ToolSession(box, this.mo.toolLimits);
       try {
-        const r = await chatWithTools((i) => this.provider.chat!(i), {
+        const r = await chatWithTools((i) => provider.chat!(i), {
           system,
           prompt: pack.prompt,
           session,
@@ -250,7 +266,7 @@ export class ModelRuntime extends OneShotRuntime {
         throw Object.assign(e as Error, { tools: session.record() });
       }
     }
-    const { text, usage } = await this.provider.complete({
+    const { text, usage } = await provider.complete({
       system,
       prompt: pack.prompt,
       maxOutputTokens: Math.max(256, left),

@@ -17,7 +17,12 @@ import {
   orgPackDirOf,
   readLock,
   retrievalOf,
+  STEP_CLASSES,
+  stepModelsOf,
+  type Runtime,
+  type StepClass,
 } from "@maycombhq/core";
+import { modelEnvOf, modelsByClass, modelSourceWords, type ClassModel } from "@maycombhq/ai";
 import { parse } from "yaml";
 import {
   createOpenSpec,
@@ -47,6 +52,36 @@ export { versionAtLeast };
  */
 
 export type DoctorStatus = "ok" | "warn" | "fail";
+
+/**
+ * The model each kind of step runs on here (ADR 0121 addendum), and where the choice came from:
+ * the person's setting (ATTICUS_MODEL_<CLASS>, which the editors pass), runtime.yaml's
+ * `models.<class>`, or the fallback, the one model. In model mode the provider's choice (and why
+ * a named model was passed over); otherwise the editor's, where the fallback is the editor's own
+ * model.
+ */
+export function stepModelChoices(
+  rt: Runtime,
+  env: Record<string, string | undefined>,
+): Record<StepClass, ClassModel> {
+  if (rt.modes.allowed.includes("model") && rt.adapters.model) return modelsByClass(rt, env);
+  const org = stepModelsOf(rt);
+  const out = {} as Record<StepClass, ClassModel>;
+  for (const c of STEP_CLASSES) {
+    const set = env[modelEnvOf(c)]?.trim();
+    out[c] =
+      set && set !== "atticus"
+        ? { stepClass: c, model: set, from: "setting", notes: [] }
+        : org[c]
+          ? { stepClass: c, model: org[c], from: "runtime.yaml", notes: [] }
+          : { stepClass: c, from: "fallback", notes: [] };
+  }
+  return out;
+}
+
+/** One kind of step's choice, as doctor says it: "critic: claude-sonnet-4-5 (runtime.yaml)". */
+export const stepModelLine = (m: ClassModel) =>
+  `${m.stepClass}: ${m.model ?? "the editor's own model"} (${m.from === "fallback" ? (m.model ? modelSourceWords("fallback") : "fallback") : m.from === "setting" ? "your setting" : "runtime.yaml"})`;
 
 export interface DoctorCheck {
   id: string;
@@ -527,6 +562,20 @@ export async function doctorChecks(root: string, deps: DoctorDeps = {}): Promise
       ? "Name the provider under adapters.model in runtime.yaml (docs/guide/admin.md, Calling a model directly), or leave model mode out of modes.allowed."
       : `Set the environment variable ${keyEnv ?? "the provider's key variable"} to the key on this machine (never in runtime.yaml), then open a new terminal.`,
   });
+  // ---- The model for each kind of step (ADR 0121 addendum), and where each choice came from.
+  if (rt.ai !== "off") {
+    const choices = stepModelChoices(rt, env);
+    const notes = STEP_CLASSES.flatMap((c) => choices[c].notes);
+    out.push({
+      id: "step-models",
+      label: "Model for each kind of step",
+      status: notes.length ? "warn" : "ok",
+      detail: ((line) => (notes.length ? `${line}. ${notes.join(" ")}` : line))(
+        STEP_CLASSES.map((c) => stepModelLine(choices[c])).join("; "),
+      ),
+      fix: "Name a model per kind of step under models in runtime.yaml (read, draft, critic, knowledge, quick), each one models.allowed lists; a person overrides one in their editor's settings. docs/guide/models.md has a default table.",
+    });
+  }
 
   // ---- The slash commands the assistant runs: there and current (ADR 0119)
   if (rt.ai !== "off") {

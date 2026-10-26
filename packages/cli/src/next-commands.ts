@@ -13,7 +13,9 @@ import {
   readRepoSpec,
   readSpecFindings,
   ScanVerifyProposal,
+  stepModelsOf,
 } from "@maycombhq/core";
+import { stepClassOfNextStep } from "@maycombhq/ai";
 import { changeStore, loadChangePolicy, stageCompletion } from "@maycombhq/changes";
 import { readKnowledge, snapshotDates, workingDays } from "@maycombhq/knowledge";
 import { readNeeds } from "@maycombhq/planner";
@@ -740,15 +742,23 @@ export async function nextCommand(
       runtime.modes.allowed.includes("model") &&
       !!runtime.adapters.model &&
       runtime.adapters.model.type !== "mock";
+    // ADR 0121 addendum: each AI step's kind, and runtime.yaml's model for each kind, so the
+    // editors say (and pick) the model a step will run on.
+    const classed = steps.map((x) => {
+      const c = x.person ? undefined : stepClassOfNextStep(x.step);
+      return c ? { ...x, stepClass: c } : x;
+    });
+    const orgModels = stepModelsOf(runtime);
     io.out(
       JSON.stringify(
         {
-          next: steps[0],
-          steps,
+          next: classed[0],
+          steps: classed,
           problems: state.problems,
           ...(runs ? { runs } : {}),
           modelMode,
           assistant,
+          ...(Object.keys(orgModels).length ? { orgModels } : {}),
         },
         null,
         2,

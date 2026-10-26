@@ -117,7 +117,10 @@ export async function setupSteps(
       // ADR 0121 item 6: how AI runs here is a choice, not the default left by accident.
       id: "ai",
       label: "Choose how AI runs here",
-      done: JSON.stringify(op.runtime) !== JSON.stringify(DEFAULT_RUNTIME),
+      // runtime.yaml's version alone (1 from an older init, ADR 0121 addendum) isn't a choice.
+      done:
+        JSON.stringify({ ...op.runtime, schemaVersion: DEFAULT_RUNTIME.schemaVersion }) !==
+        JSON.stringify(DEFAULT_RUNTIME),
       detail: whatRunsWhere(op.runtime, { probes }),
       fix: "Choose the assistants, the modes and the model provider on Set up › AI in the app (or in org-pack/runtime.yaml), and commit it through a pull request. As atticus init wrote it, steps are handed to Copilot, which needs nothing more.",
       optional: true,

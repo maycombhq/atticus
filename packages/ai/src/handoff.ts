@@ -17,6 +17,7 @@ import {
   type AiRuntime,
   type Run,
 } from "./runtime.js";
+import { stepClassOf } from "./step-class.js";
 
 export interface HandoffOptions {
   /** The metarepo root; runs go to .runs/<change>/<runId>/ (under .atticus/ when adopted) and output to the change folder. */
@@ -116,6 +117,8 @@ export class HandoffRuntime implements AiRuntime {
       attempt: 1,
       startedAt: now.toISOString(),
       errors: [],
+      // ADR 0121 addendum: the kind of step, so the editor answering it picks its model.
+      stepClass: stepClassOf(request),
     };
     const dir = this.runDir(request.change, run.runId);
     await mkdir(dir, { recursive: true });
@@ -142,9 +145,15 @@ export class HandoffRuntime implements AiRuntime {
     return this.load(runId);
   }
 
-  /** `atticus handoff done <runId>` or Mark done: the output is there, check it now. */
-  async done(runId: string): Promise<Run> {
+  /**
+   * `atticus handoff done <runId>` or Mark done: the output is there, check it now. `model` is
+   * the model that wrote it, when the one answering says (`--model`, ADR 0121 addendum): kept in
+   * the run record for Model runs.
+   */
+  async done(runId: string, o: { model?: string } = {}): Promise<Run> {
     let run = await this.load(runId);
+    const model = o.model?.trim();
+    if (model) run = { ...run, model };
     // A run whose last check failed (the file was missing or didn't validate) is looked at
     // again: the person fixed the file and says done once more ("run it again when it's fixed").
     if (run.state === "failed") {

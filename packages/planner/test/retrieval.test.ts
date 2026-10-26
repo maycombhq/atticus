@@ -185,7 +185,7 @@ describe("expansion and rerank in a step", () => {
     });
     expect(calls.filter((c) => c === EXPAND_AGENT)).toHaveLength(1);
     const main = r.runs.find((x) => x.agent === "feature-placer")!;
-    expect(main.schemaVersion).toBe(3);
+    expect(main.schemaVersion).toBe(4);
     expect(main.retrieval?.expansion).toMatchObject({
       cached: false,
       terms: ["fraud screen", "order risk score"],

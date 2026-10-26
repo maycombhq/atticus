@@ -277,6 +277,8 @@ export async function judge(
         pack,
         outputPath: "judgments.yaml",
         outputIn: "run",
+        // ADR 0121 addendum: a closed judgment is a quick step, whatever its agent is called.
+        stepClass: "quick",
       });
       run = await o.runtime.run(prepared.runId);
     }

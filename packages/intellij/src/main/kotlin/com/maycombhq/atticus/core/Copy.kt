@@ -110,6 +110,15 @@ object Copy {
 
     /** ADR 0121 item 6: what runs a step here, in one line. */
     fun howStepsRun(runs: String) = "How AI steps run here: $runs"
+
+    /**
+     * ADR 0121 addendum: IntelliJ can't choose Copilot's model for a plugin, so the hand-off text
+     * names the model the step expects, for the person to pick in Copilot's own picker.
+     */
+    fun expectsModel(e: ExpectedModel) =
+        "This is a ${e.stepClass.id} step: it expects ${e.model} (" +
+            (if (e.from == ModelFrom.SETTING) "your setting" else "runtime.yaml models.${e.stepClass.id}") +
+            "). Pick it in Copilot's model picker before you send the prompt."
     const val COPIED = "Copied."
 
     // Shared writes
@@ -214,4 +223,23 @@ object Copy {
             "On Windows the plugin reads atticus.cmd and runs the bin.js it names, so no shell is used."
     const val SETTINGS_CLI_NOTICE = "Say when a project opens and the atticus command line can't be found"
     const val SETTINGS_DEVELOPER = "Show the commands only Atticus's own developers use"
+
+    // ADR 0121 addendum: a model per kind of step
+    const val SETTINGS_MODELS = "Model for each kind of step"
+    const val SETTINGS_MODELS_HINT =
+        "Each overrides runtime.yaml's models.<kind> for you. vendor/family (such as copilot/claude-opus-4.5) is " +
+            "named in the hand-off text, for you to pick in Copilot's model picker: IntelliJ can't pick it for you. " +
+            "A model of runtime.yaml's provider is used when a step runs on Atticus's configured model. " +
+            "Empty: runtime.yaml's, else Copilot's own choice."
+
+    fun settingsModel(c: StepClass) = "${c.id.replaceFirstChar { it.uppercase() }} steps:"
+
+    fun settingsModelHint(c: StepClass) =
+        when (c) {
+            StepClass.READ -> "Reading repos into facts (atticus map), and scan verify."
+            StepClass.DRAFT -> "The feature, architecture and stories drafts, small changes, spec drafts and scan surveys."
+            StepClass.CRITIC -> "The critic's lenses, and the hand-up lens."
+            StepClass.KNOWLEDGE -> "The knowledge scan and find, what a change needs, and knowledge ask."
+            StepClass.QUICK -> "Everything small: judgments, context expansion and ordering, names and short texts."
+        }
 }

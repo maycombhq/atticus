@@ -51,10 +51,29 @@ export function runsHref(o: { change?: string; q?: string; run?: string }): stri
 export const stateText = (s: string) => R.states[s] ?? s;
 const when = (at: string) => at.replace("T", " ").slice(0, 16);
 
-/** The runs whose step, agent, run id, state or runtime has every word of the filter. */
+/** A kind of step in words (ADR 0121 addendum). */
+export const classText = (c: string | undefined) => (c ? (R.classes[c] ?? c) : undefined);
+
+/** Which model ran a run, and its kind of step: "claude-opus-5-5 · Draft". */
+export const modelText = (r: Pick<Item, "model" | "stepClass">) =>
+  R.modelCell(classText(r.stepClass), r.model);
+
+/** The runs whose step, agent, run id, state, runtime, model or kind has every word of the filter. */
 export function shownRuns(runs: Item[], text: string): Item[] {
   return runs.filter((r) =>
-    matchesWords([r.change, r.agent, r.runId, r.state, stateText(r.state), r.runtime], text),
+    matchesWords(
+      [
+        r.change,
+        r.agent,
+        r.runId,
+        r.state,
+        stateText(r.state),
+        r.runtime,
+        r.model ?? "",
+        classText(r.stepClass) ?? "",
+      ],
+      text,
+    ),
   );
 }
 
@@ -112,6 +131,7 @@ export function RunsTable(p: {
                       ),
                     },
                     { label: R.cols.agent, cell: (r) => r.agent, mono: true },
+                    { label: R.cols.model, cell: (r) => modelText(r) },
                     { label: R.cols.round, cell: (r) => r.attempt },
                     {
                       label: R.cols.state,
@@ -165,6 +185,13 @@ export function RunDetail(p: { of: Loaded<Api.RunTranscript> & { reload?: () => 
             rows={[
               [R.facts.agent, <span className="mono">{t.run.agent}</span>],
               [R.facts.runtime, t.run.runtime],
+              ...(t.run.stepClass
+                ? ([[R.facts.stepClass, classText(t.run.stepClass)]] as [string, ReactNode][])
+                : []),
+              [
+                R.facts.model,
+                t.run.model ? <span className="mono">{t.run.model}</span> : R.modelNotRecorded,
+              ],
               [R.facts.state, stateText(t.run.state)],
               [R.facts.started, <time dateTime={t.run.startedAt}>{when(t.run.startedAt)}</time>],
               ...(t.run.finishedAt

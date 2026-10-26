@@ -473,6 +473,8 @@ export async function verifyScan(
         pack,
         outputPath: SCAN_VERIFY_OUTPUT,
         outputIn: "run",
+        // ADR 0121 addendum: the dialect drafter checking a scan against the code is a read step.
+        stepClass: "read",
       });
       run = await o.runtime.run(prepared.runId);
     }
