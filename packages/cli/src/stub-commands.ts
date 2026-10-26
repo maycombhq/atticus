@@ -10,7 +10,7 @@ import {
 } from "@maycombhq/stubs";
 import type { Output } from "./commands.js";
 import { loadCatalog } from "./diagram-commands.js";
-import { table } from "./index-commands.js";
+import { table } from "./table.js";
 
 const EXAMPLES = new Set(["example", "examples", "schema-example", "schema-default"]);
 

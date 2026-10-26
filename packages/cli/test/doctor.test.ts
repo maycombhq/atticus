@@ -481,4 +481,32 @@ describe("default branches (ADR 0123)", () => {
     expect(c.fix).toMatch(/defaultBranch/);
     expect(byId(await doctorChecks(root, healthy()), "default-branches").status).toBe("ok");
   });
+
+  it("asks git about every base clone at once, and lists them in the manifest's order", async () => {
+    const at = await mkdtemp(join(tmpdir(), "atticus-doctor-branches-"));
+    await cp(join(FIXTURES, "forge/metarepo"), at, { recursive: true });
+    await upgradeCommand(at, { by: "pat" }, { out: () => undefined, err: () => undefined });
+    for (const id of ["forge-ledger", "forge-events", "forge-gateway"])
+      await mkdir(join(at, "workspace", id), { recursive: true });
+    const base = gitWith({ "user.name": "Pat", "user.email": "pat@example.com" });
+    let running = 0;
+    let most = 0;
+    const git: GitRunner = async (args, cwd) => {
+      if (args[0] !== "symbolic-ref") return base(args, cwd);
+      running++;
+      most = Math.max(most, running);
+      // The first asked answers last: the order must still be the manifest's.
+      await new Promise((r) => setTimeout(r, cwd?.endsWith("forge-ledger") ? 60 : 10));
+      running--;
+      return { stdout: "origin/develop\n", stderr: "" };
+    };
+    const c = byId(await doctorChecks(at, healthy({ git })), "default-branches");
+    expect(most).toBeGreaterThan(1);
+    // repos.manifest.yaml lists forge-ledger, then forge-gateway, then forge-events.
+    expect([...c.detail.matchAll(/(forge-[a-z-]+) \(manifest/g)].map((m) => m[1])).toEqual([
+      "forge-ledger",
+      "forge-gateway",
+      "forge-events",
+    ]);
+  });
 });

@@ -91,6 +91,24 @@ async function defaultAssistantFiles(root: string): Promise<AssistantFilesState>
   return { missing: of("created"), stale: of("updated"), edited: of("kept-edited") };
 }
 
+/**
+ * f for each item, a few at a time, the answers in the items' order: a check that reads a file
+ * or starts git for every repo waits for them together, not one after another (an estate has
+ * tens of repos; the app's Set up screen waits for this).
+ */
+async function eachAtOnce<T, R>(items: T[], f: (x: T) => Promise<R>, limit = 8): Promise<R[]> {
+  const out: R[] = new Array<R>(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next++;
+      out[i] = await f(items[i]!);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return out;
+}
+
 /** The commit a repo's facts were verified at (facts/<repo>.verify.yaml), if they were. */
 async function factsCommit(root: string, repo: string): Promise<string | undefined> {
   const text = await readFile(join(factsDirOf(root), `${repo}.verify.yaml`), "utf8").catch(
@@ -216,8 +234,13 @@ export async function doctorChecks(root: string, deps: DoctorDeps = {}): Promise
     fix: `Install Git ${MIN_GIT} or later and make sure \`git\` runs from a terminal.`,
   });
   if (gitVersion) {
-    const name = await gitConfig("user.name");
-    const email = await gitConfig("user.email");
+    // Asked at once (each is a git process to start), in the order they were asked one by one.
+    const [name, email, long, crlf] = await Promise.all([
+      gitConfig("user.name"),
+      gitConfig("user.email"),
+      platform === "win32" ? gitConfig("core.longpaths") : undefined,
+      gitConfig("core.autocrlf"),
+    ]);
     out.push({
       id: "git-identity",
       label: "Git identity",
@@ -227,7 +250,6 @@ export async function doctorChecks(root: string, deps: DoctorDeps = {}): Promise
       fix: 'Set them once: git config --global user.name "Your Name" and git config --global user.email you@example.com. Hand-offs and task runs commit as you.',
     });
     if (platform === "win32") {
-      const long = await gitConfig("core.longpaths");
       out.push({
         id: "git-longpaths",
         label: "Long paths (Windows)",
@@ -236,7 +258,6 @@ export async function doctorChecks(root: string, deps: DoctorDeps = {}): Promise
         fix: "Worktrees nest deep: run git config --global core.longpaths true.",
       });
     }
-    const crlf = await gitConfig("core.autocrlf");
     out.push({
       id: "line-endings",
       label: "Line endings",
@@ -379,8 +400,10 @@ export async function doctorChecks(root: string, deps: DoctorDeps = {}): Promise
   const read: string[] = [];
   const unverified: string[] = [];
   const unread: string[] = [];
-  for (const r of manifest.filter((x) => !x.archived).sort((a, b) => (a.id < b.id ? -1 : 1))) {
-    const commit = await factsCommit(root, r.id);
+  const listed = manifest.filter((x) => !x.archived).sort((a, b) => (a.id < b.id ? -1 : 1));
+  const commits = await eachAtOnce(listed, (r) => factsCommit(root, r.id));
+  for (const [i, r] of listed.entries()) {
+    const commit = commits[i];
     if (commit) read.push(`${r.id} at ${commit.slice(0, 12)}`);
     else if (existsSync(join(factsDirOf(root), `${r.id}.jsonl`)))
       unverified.push(`${r.id} read, not verified yet`);
@@ -413,8 +436,12 @@ export async function doctorChecks(root: string, deps: DoctorDeps = {}): Promise
   // ADR 0123: the branch each repo is read from, against the one its remote calls its default
   // (as the base clone last heard it at a sync: no network here).
   const differ: string[] = [];
-  for (const r of manifest.filter((x) => !x.archived && !isInPlace(x.url))) {
-    const remote = await remoteDefaultBranch(baseClonePath(root, r.id), git);
+  const cloned = manifest.filter((x) => !x.archived && !isInPlace(x.url));
+  const remotes = await eachAtOnce(cloned, (r) =>
+    remoteDefaultBranch(baseClonePath(root, r.id), git),
+  );
+  for (const [i, r] of cloned.entries()) {
+    const remote = remotes[i];
     if (remote && remote !== r.defaultBranch)
       differ.push(`${r.id} (manifest ${r.defaultBranch}, remote ${remote})`);
   }

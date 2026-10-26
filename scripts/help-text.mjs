@@ -32,9 +32,9 @@ export function topWords() {
 
 /** The catalog schema version, read from C1's source like the help itself. */
 function schemaVersion() {
-  const src = readFileSync(join(REPO, "packages/core/src/schema/common.ts"), "utf8");
+  const src = readFileSync(join(REPO, "packages/core/src/schema/version.ts"), "utf8");
   const m = /export const SCHEMA_VERSION = (\d+) as const;/.exec(src);
-  if (!m) throw new Error("SCHEMA_VERSION not found in packages/core/src/schema/common.ts");
+  if (!m) throw new Error("SCHEMA_VERSION not found in packages/core/src/schema/version.ts");
   return Number(m[1]);
 }
 

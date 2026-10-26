@@ -1,4 +1,4 @@
-import { isHandoffStep } from "./handoff-flag.js";
+import { isHandoffStep } from "./handoff-steps.js";
 import { aliasArgv, isLegacy } from "./top-commands.js";
 
 /**

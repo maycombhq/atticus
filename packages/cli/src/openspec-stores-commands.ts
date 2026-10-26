@@ -1,5 +1,5 @@
 import { openspecStores, type OpenSpecStore } from "@maycombhq/changes";
-import { table } from "./index-commands.js";
+import { table } from "./table.js";
 
 /**
  * What the CLI shows of the OpenSpec stores org-pack/openspec.yaml names (beta, ADR 0126): read

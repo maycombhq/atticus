@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
-import { join } from "node:path";
-import { catalogDirOf, createLog, DEFAULT_PORT } from "@maycombhq/core";
+import { isAbsolute, join, relative, sep } from "node:path";
+import { catalogDirOf, createLog, DEFAULT_PORT, orgPackDirOf } from "@maycombhq/core";
 import { forgetCatalogs, keepCatalogsInMemory, readCatalog } from "@maycombhq/scanner";
 import { startServer, type RunningServer } from "@maycombhq/server";
 import { uiDistDir } from "@maycombhq/ui";
@@ -25,6 +25,24 @@ import { uiCockpitRoutes } from "./ui-api-cockpit.js";
 import { uiTrustRoutes } from "./ui-api-trust.js";
 import { uiFactsRoutes } from "./ui-api-facts.js";
 import { uiStageRoutes } from "./ui-api-stages.js";
+
+/**
+ * Whether a changed file (root-relative, "/"-separated, as the server's live events name it) can
+ * change the catalog the server keeps: a file in the catalog folder, that folder or one above
+ * it (the watcher names top folders when many files change), or the org pack, whose
+ * sources.yaml says where the catalog is. Anything else (doctor's probe in .atticus/, a run, a
+ * question) leaves it kept: reading every record again for it made the app's screens slow.
+ */
+export function catalogMayHaveChanged(root: string, path: string): boolean {
+  const p = path.replace(/^\.\/?/, "").replace(/\/+$/, "");
+  const near = (dir: string) => {
+    const rel = relative(root, dir).split(sep).join("/");
+    // A folder outside the root isn't followed: any change may be the one.
+    if (rel.startsWith("..") || isAbsolute(rel)) return true;
+    return p === "" || p === rel || p.startsWith(rel + "/") || rel.startsWith(p + "/");
+  };
+  return near(catalogDirOf(root)) || near(orgPackDirOf(root));
+}
 
 /** Start the local server with the app and the write calls (ADR 0015, 0043). */
 export async function startUi(
@@ -103,7 +121,10 @@ export async function startUi(
   // Read it now, while nobody waits, so the first page doesn't pay for it.
   void readCatalog(join(catalogDirOf(root), "generated")).catch(() => undefined);
   const stop = srv.events.listen((e) => {
-    if (e.type === "file.changed" || e.type === "index.rebuilt") forgetCatalogs();
+    const changed =
+      e.type === "file.changed" &&
+      (typeof e.path !== "string" || catalogMayHaveChanged(root, e.path));
+    if (changed || e.type === "index.rebuilt") forgetCatalogs();
   });
   const close = srv.close;
   return Object.assign(srv, {

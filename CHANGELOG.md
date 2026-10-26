@@ -4,6 +4,13 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### The command line starts quickly, and the Set up screen answers sooner
+
+- **`atticus --version` answers without loading any of Atticus (about 40 ms of CPU, was about 900), and `atticus --help` loads no schema (about 75 ms, was about 900).** The editors, the app's server and the assistant's hooks run the command line often, and every run paid for loading every package before it read its arguments.
+- **A command loads only what it uses.** The model providers, the context tools and the critic's code search load for the commands that may run a model or the critic, not for `next`, `history`, `runs`, `waiting`, `mcp`, `doctor`, `setup`, `verify`, `baseline`, `upgrade`, `support`, `change list` or `change status`. Measured CPU on the 120-repo test estate: `history` 970 → 470 ms, `change list` 1,040 → 750 ms, `verify` 1,030 → 710 ms, `doctor` 2,700 → 1,600 ms.
+- **The app's Set up screen (`/api/setup`) answers sooner on a large catalog.** Checking whether `atticus upgrade` has catalog files to migrate no longer reads every record as YAML (a record whose text states its version plainly is checked from that line), and the catalog the app keeps in memory is no longer read again because `atticus doctor` wrote its probe file in `.atticus/`: only a change in the catalog or the org pack makes the app read it again. Its answer is unchanged.
+- **For contributors:** `@maycombhq/core/light` exports `SCHEMA_VERSION` and `createLog` without loading a schema; `SCHEMA_VERSION` is defined in `packages/core/src/schema/version.ts` (still exported from `schema/common.ts` and the package). `packages/cli/test/startup.test.ts` fails if `--version` loads a workspace package.
+
 ### npm installs carry search by meaning (ADR 0124 addendum D-npm)
 
 - **`npm install --global @maycombhq/cli` through a bank's npm mirror now gives search by meaning, with nothing downloaded after install and no install scripts.** `@maycombhq/embed-model` carries the model (all-MiniLM-L6-v2, 79 MB packed), its tokenizer, model card and Apache-2.0 licence; each `@maycombhq/onnxruntime-<platform>-<arch>` carries onnxruntime's CPU build for that platform and `@maycombhq/onnxruntime-wasm` its WebAssembly fallback, with onnxruntime's MIT licence. npm installs only your platform's runtime. On Linux x64 the install downloads 117 MB (141 packages). `--omit=optional` still leaves it out.

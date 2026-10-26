@@ -40,7 +40,7 @@ import { readWorkItemExports } from "@maycombhq/intake";
 import { featureCoverage } from "@maycombhq/knowledge";
 import { readCatalog } from "@maycombhq/scanner";
 import type { Output } from "./commands.js";
-import { table } from "./index-commands.js";
+import { table } from "./table.js";
 
 /**
  * atticus feature …: features found in code (ADR 0031). Every command sees the features as
