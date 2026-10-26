@@ -696,7 +696,16 @@ export function buildTestModel(
   changeRepos: ChangeRepos | undefined,
 ): TestModel {
   const required = ctx.tests.required as StrategyKind[];
+  // What the strategy's row asks, apart from what the change's risk factors add on top of it
+  // (ADR 0124 addendum B-change): a kind only a factor asks is said in the factor's own words,
+  // not as something test-strategy.yaml asked for.
+  const rowKinds = (ctx.tests.matrix ?? ctx.tests.required) as StrategyKind[];
   const row = ctx.tests.row ? `${ctx.tests.row.changeType}/${ctx.tests.row.risk}` : undefined;
+  const askedBy = new Map<StrategyKind, { factor: string; why: string }>();
+  for (const a of ctx.tests.added ?? [])
+    for (const k of a.kinds as StrategyKind[])
+      if (!rowKinds.includes(k) && !askedBy.has(k))
+        askedBy.set(k, { factor: a.factor, why: a.why });
   const kinds: TestModel["kinds"] = [
     { type: "acceptance", generated: true, why: "Every acceptance criterion gets a scenario." },
   ];
@@ -704,13 +713,23 @@ export function buildTestModel(
     Exclude<CaseType, "acceptance">,
     StrategyKind[],
   ][]) {
-    const hit = needs.filter((n) => required.includes(n));
+    const hit = needs.filter((n) => rowKinds.includes(n));
+    const added = needs.filter((n) => askedBy.has(n));
+    const fromRow = hit.length
+      ? `test-strategy.yaml${row ? ` (${row})` : ""} asks for ${hit.join(", ")}.`
+      : "";
+    const fromRisk = added
+      .map((n) => {
+        const a = askedBy.get(n)!;
+        return `The change's ${a.factor} risk asks for ${n} tests ${a.why}.`;
+      })
+      .join(" ");
     kinds.push({
       type,
-      generated: hit.length > 0,
-      why: hit.length
-        ? `test-strategy.yaml${row ? ` (${row})` : ""} asks for ${hit.join(", ")}.`
-        : `test-strategy.yaml${row ? ` (${row})` : ""} asks for ${required.join(", ") || "nothing"}, not ${needs.join(" or ")}.`,
+      generated: hit.length + added.length > 0,
+      why:
+        [fromRow, fromRisk].filter(Boolean).join(" ") ||
+        `test-strategy.yaml${row ? ` (${row})` : ""} asks for ${required.join(", ") || "nothing"}, not ${needs.join(" or ")}.`,
     });
   }
   const on = (t: CaseType) => kinds.find((k) => k.type === t)!.generated;

@@ -249,29 +249,29 @@ describe("test generation (golden on the forge change)", () => {
     );
   });
 
-  it("generates only what the test strategy asks for", async () => {
+  it("generates what the strategy's row and the change's risk ask for, each in its own words", async () => {
     const root = await forgeChangeRoot();
     await writeFile(
       join(root, "org-pack/test-strategy.yaml"),
       "schemaVersion: 1\nmatrix:\n  - { changeType: feature, risk: high, required: [unit, contract] }\n",
     );
     const r = await generateTests(root, CHANGE, S1, { now: NOW });
+    // The row asks for unit and contract; the change's own risk adds integration (ADR 0124
+    // addendum B-change: it spans three repos), so api and data are generated too, and each
+    // says which of the two asked for it.
     expect(r.model.kinds.map((k) => [k.type, k.generated])).toEqual([
       ["acceptance", true],
-      ["api", false],
+      ["api", true],
       ["contract", true],
-      ["data", false],
+      ["data", true],
       ["event", true],
     ]);
-    expect(r.model.kinds.find((k) => k.type === "api")!.why).toBe(
-      "test-strategy.yaml (feature/high) asks for unit, contract, not integration or e2e or regression or security.",
+    expect(r.model.kinds.find((k) => k.type === "contract")!.why).toBe(
+      "test-strategy.yaml (feature/high) asks for contract.",
     );
-    expect(r.model.repos.flatMap((x) => x.cases.map((c) => c.type))).toEqual([
-      "acceptance",
-      "acceptance",
-      "contract",
-      "contract",
-    ]);
+    expect(r.model.kinds.find((k) => k.type === "api")!.why).toBe(
+      "The change's spread risk asks for integration tests across the repos in their deploy order (3 repos (forge-ledger, forge-portal-bff, forge-reports-job)).",
+    );
   });
 });
 

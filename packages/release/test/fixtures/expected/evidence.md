@@ -10,7 +10,7 @@ Add a daily transfer limit. Generated 2026-10-21T09:00:00Z by Atticus from the f
 | Title | Add a daily transfer limit |
 | Type | feature |
 | State | released |
-| Risk | high (score 12) |
+| Risk | high (score 13) |
 | Systems | audit, ledger, northwind-pay, portal |
 | Owners | architect: ari, avery; business-analyst: bao; delivery-lead: dana; developer: dev, dee; product-owner: pat; qa: quinn; sre: sam; team-lead: tia |
 | Created | 2026-10-19T09:00:00Z by pat |
