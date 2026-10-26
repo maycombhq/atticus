@@ -104,7 +104,7 @@ export function runCli(
   const cmd = resolveCommand(o);
   log(`> ${commandText(args)}`);
   if (cmd.shell && args.some((a) => SHELL_UNSAFE.test(a))) {
-    const msg = `Couldn't run this through the Windows shell safely: an argument has one of " % ^ & | < > !. Set atticus.path to the atticus bin.js (for example C:\\...\\node_modules\\@maycombhq\\cli\\dist\\bin.js).`;
+    const msg = `Couldn't run this through the Windows shell safely: an argument has one of " % ^ & | < > !. Set atticus.path to the atticus bin.js (for example C:\\...\\node_modules\\@maycombhq\\atticus\\dist\\bin.js).`;
     log(msg);
     log("exit 2");
     return Promise.resolve({ code: 2, stdout: "", stderr: msg, cancelled: false });

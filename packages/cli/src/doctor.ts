@@ -256,7 +256,7 @@ export async function doctorChecks(root: string, deps: DoctorDeps = {}): Promise
     detail: osv
       ? `OpenSpec ${osv} (tested with ${OPENSPEC_PINNED})`
       : "the bundled OpenSpec CLI didn't run",
-    fix: "Reinstall Atticus (it carries a pinned OpenSpec); with the offline bundle, run its install script again.",
+    fix: "Reinstall Atticus (it carries a pinned OpenSpec): npm install -g @maycombhq/atticus from your npm mirror, or with the offline bundle run its install script again.",
   });
 
   // ADR 0126: OpenSpec's stores are beta and optional. Atticus reads the stores the org pack
@@ -442,7 +442,7 @@ export async function doctorChecks(root: string, deps: DoctorDeps = {}): Promise
           ? `up to date (last upgraded by Atticus ${up.stamp.atticus})`
           : "up to date",
     fix: up.newer
-      ? `Install Atticus ${up.stamp!.atticus} or later before working in this metarepo.`
+      ? `Install Atticus ${up.stamp!.atticus} or later before working in this metarepo (npm install -g @maycombhq/atticus@${up.stamp!.atticus} from your npm mirror, or that version's offline bundle).`
       : "Run atticus upgrade, then commit what it changed in a pull request.",
   });
 
@@ -581,7 +581,7 @@ export async function doctorChecks(root: string, deps: DoctorDeps = {}): Promise
           : model === "bundled"
             ? `not installed (@maycombhq/embed, an optional plugin), so ${lexical} (BM25 and the graph walk)`
             : `runtime.yaml names the model ${model}, but @maycombhq/embed, the optional plugin that runs it, isn't installed, so ${lexical}`,
-      fix: "Search by meaning is an optional plugin. Add it to this install with the plugin zip (atticus-<version>-embeddings-plugin.zip, built with pnpm bundle --embeddings-plugin): run its install script, then node embeddings-plugin/fetch-model.mjs for the model. Or install Atticus from the bundle built with pnpm bundle --with-embeddings, or from your npm mirror without --omit=optional (it brings @maycombhq/embed, @maycombhq/embed-model and onnxruntime as optional dependencies). Set retrieval.embeddings.model to off to say the organisation doesn't use one. Atticus itself never downloads anything.",
+      fix: "Search by meaning is an optional plugin. Add it to this install with the plugin zip (atticus-<version>-embeddings-plugin.zip, built with pnpm bundle --embeddings-plugin): run its install script, then node embeddings-plugin/fetch-model.mjs for the model. Or install Atticus from the bundle built with pnpm bundle --with-embeddings, or install @maycombhq/atticus from your npm mirror without --omit=optional (it brings @maycombhq/embed-model and onnxruntime as optional dependencies). Set retrieval.embeddings.model to off to say the organisation doesn't use one. Atticus itself never downloads anything.",
     });
   } else {
     const { embeddingState, runtimeAvailable } = embed;
@@ -608,7 +608,7 @@ export async function doctorChecks(root: string, deps: DoctorDeps = {}): Promise
             : // ADR 0124 addendum D-npm: an npm install carries the model's and onnxruntime's
               // bytes, so the default is ready with nothing fetched.
               `${ort ? "ready: " : ""}${e.id} (${((e.bytes ?? 0) / 1024 / 1024).toFixed(0)} MB, ${e.licence}), ${e.setting === "bundled" ? "installed with Atticus" : "the folder runtime.yaml names"}, in ${e.dir}; runtime: ${ort ?? `none found, so ${lexical}`}`,
-      fix: "The model is an optional plugin (@maycombhq/embed-model and its onnxruntime packages, optional dependencies of @maycombhq/cli on npm). Where the plugin zip added them, run node embeddings-plugin/fetch-model.mjs in the Atticus folder (--list names the files, --from <folder> takes them from your mirror). Otherwise reinstall Atticus from your npm mirror or from the offline bundle built with pnpm bundle --with-embeddings; in a checkout of Atticus run pnpm model:fetch; or point retrieval.embeddings.model at a model folder. Set it to off to say the organisation doesn't use one. Atticus itself never downloads anything.",
+      fix: "The model is an optional plugin (@maycombhq/embed-model and its onnxruntime packages, optional dependencies of @maycombhq/atticus on npm). Where the plugin zip added them, run node embeddings-plugin/fetch-model.mjs in the Atticus folder (--list names the files, --from <folder> takes them from your mirror). Otherwise reinstall Atticus from your npm mirror (npm install -g @maycombhq/atticus) or from the offline bundle built with pnpm bundle --with-embeddings; in a checkout of Atticus run pnpm model:fetch; or point retrieval.embeddings.model at a model folder. Set it to off to say the organisation doesn't use one. Atticus itself never downloads anything.",
     });
   }
   const live = Object.entries(rt.adapters).filter(

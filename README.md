@@ -4,7 +4,7 @@
 
 Atticus is an open-source framework for teams whose systems span many repositories, gateways, event streams and vendors. It builds on [OpenSpec](https://github.com/Fission-AI/openspec) and works with the assistant you already use: Claude Code, GitHub Copilot (VS Code or IntelliJ), Cursor, or any chat you can paste into.
 
-> **Status: beta 2.0.0-beta.1 (Atticus 2, ADR 0124).** The map now comes from the assistant's cited facts, not from Atticus's own parsers. All five parts are built and measured on public repos; several bars are not met yet (below). What is open is in [docs/build-status.md](docs/build-status.md), under "Where Atticus 2 stands".
+> **Status: beta 2.0.0-beta.2 (Atticus 2, ADR 0124).** The map now comes from the assistant's cited facts, not from Atticus's own parsers. All five parts are built and measured on public repos; several bars are not met yet (below). What is open is in [docs/build-status.md](docs/build-status.md), under "Where Atticus 2 stands".
 
 ## The five parts
 
@@ -62,7 +62,7 @@ No model cost per repo was recorded: the reading sessions ran as Claude sessions
 
 ## Get started
 
-- **Install, then a first map and a first change:** [docs/guide/install.md](docs/guide/install.md) has one page covering every tier and an offline bank laptop. You need one offline zip (about 20 MB), one script, Node.js 22.13 or later and Git 2.30 or later.
+- **Install, then a first map and a first change:** [docs/guide/install.md](docs/guide/install.md) has one page covering every tier and an offline bank laptop. From your npm mirror it is one package, `npm install -g @maycombhq/atticus@beta` (the model and this machine's onnxruntime come with it); without a registry, one offline zip (about 20 MB) and one script. Either way you need Node.js 22.13 or later and Git 2.30 or later.
 - **Set it up for a team:** [docs/guide/admin.md](docs/guide/admin.md).
 - **By kind of work:** [docs/guide/roles.md](docs/guide/roles.md).
 - **Every command:** [docs/guide/commands.md](docs/guide/commands.md).
@@ -86,6 +86,7 @@ pnpm install
 pnpm build
 pnpm check          # deny-list, lint, dependency, licence and docs checks, typecheck, tests
 pnpm bundle         # dist/atticus-<version>-offline.zip
+pnpm npm:test       # the npm packages, installed from a throwaway mirror the way a bank would
 ```
 
 ## Where things are

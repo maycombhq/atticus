@@ -9,6 +9,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { FONT_ALLOWED, licenceAllowed } from "./inventory.mjs";
 
 export const REPO = fileURLToPath(new URL("../..", import.meta.url));
 
@@ -135,9 +136,67 @@ export function tarballProblems(bytes) {
     }
   if (third && !a.names.some((n) => /^(licen[cs]e|copying)(\.(md|txt))?$/i.test(n)))
     problems.push("it carries a third party's files but not their licence text (LICENSE)");
+  if (m.atticusBundled) problems.push(...bundledProblems(m, a));
   let unpacked = 0;
   for (const n of a.names) unpacked += a.read(n).length;
   return { name: m.name, version: m.version, files: a.names.length, unpacked, problems };
+}
+
+/** Atticus packages a bundled one may still need: the model and onnxruntime (ADR 0124 D-npm2). */
+const SEPARATE = /^@maycombhq\/(embed-model|onnxruntime-[a-z0-9-]+)$/;
+
+/**
+ * ADR 0124 addendum D-npm2: a bundled package (`atticusBundled`: @maycombhq/atticus, the SDK)
+ * carries its Atticus code inside. It depends on no other Atticus package but the model and
+ * onnxruntime, and none of its JavaScript or declarations imports one. One that lists its files
+ * (dist/files.json) holds each with that sha256; one that bundles third parties
+ * (dist/third-party.json) holds each one's licence in THIRD-PARTY-LICENSES.txt, under a licence
+ * Atticus may ship (OFL-1.1 for a font only).
+ */
+function bundledProblems(m, a) {
+  const out = [];
+  for (const kind of ["dependencies", "peerDependencies", "optionalDependencies"])
+    for (const d of Object.keys(m[kind] ?? {}))
+      if (d.startsWith("@maycombhq/") && !SEPARATE.test(d))
+        out.push(
+          `it is bundled but depends on ${d}: only the model and onnxruntime stay packages of their own`,
+        );
+  const spec =
+    /^\s*(?:import|export)\b[^"';]*?\bfrom\s*["'](@maycombhq\/[^"'/]+)|^\s*import\s*["'](@maycombhq\/[^"'/]+)|\bimport\(\s*["'](@maycombhq\/[^"'/]+)/gm;
+  for (const n of a.names.filter((n) => /\.(m?js|d\.ts)$/.test(n)))
+    for (const x of a.text(n).matchAll(spec)) {
+      const d = x[1] ?? x[2] ?? x[3];
+      if (!SEPARATE.test(d))
+        out.push(`${n} imports ${d}, which a bundled package must carry inside`);
+    }
+  const listed = a.text("dist/files.json");
+  if (!listed && m.bin)
+    out.push("it is bundled (atticusBundled) but has no dist/files.json listing what it carries");
+  if (listed)
+    for (const f of JSON.parse(listed).files) {
+      const b = a.read(f.path);
+      if (!b) out.push(`${f.path}, listed in dist/files.json, isn't in the package`);
+      else if (sha256(b) !== f.sha256)
+        out.push(`${f.path} has sha256 ${sha256(b)}, not the ${f.sha256} dist/files.json lists`);
+    }
+  const thirdText = a.text("dist/third-party.json");
+  if (thirdText) {
+    const txt = a.text("THIRD-PARTY-LICENSES.txt");
+    if (txt === undefined)
+      out.push(
+        "it bundles third parties (dist/third-party.json) but has no THIRD-PARTY-LICENSES.txt",
+      );
+    for (const t of JSON.parse(thirdText)) {
+      const id = `${t.name}@${t.version}`;
+      if (!(licenceAllowed(t.licence) || (t.font && FONT_ALLOWED.has(t.licence))))
+        out.push(
+          `it bundles ${id}, under ${t.licence ?? "no stated licence"}, which isn't on the allowed list`,
+        );
+      else if (txt !== undefined && !txt.includes(`${id} (${t.licence})`))
+        out.push(`it bundles ${id} but THIRD-PARTY-LICENSES.txt doesn't hold its licence`);
+    }
+  }
+  return out;
 }
 
 /**

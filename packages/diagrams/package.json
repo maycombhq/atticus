@@ -1,6 +1,7 @@
 {
   "name": "@maycombhq/diagrams",
-  "version": "2.0.0-beta.1",
+  "version": "2.0.0-beta.2",
+  "private": true,
   "description": "Renders catalog views (context, container, data, event, sequence) as Mermaid and draw.io, and a draw.io shape library.",
   "license": "Apache-2.0",
   "type": "module",
@@ -26,8 +27,5 @@
   },
   "devDependencies": {
     "yaml": "^2.9.1"
-  },
-  "publishConfig": {
-    "access": "public"
   }
 }

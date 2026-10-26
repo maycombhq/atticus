@@ -6,9 +6,9 @@ tokenizer, the model card, the Apache License 2.0 and `atticus-model.yaml` (how 
 mean pooling, 384 dimensions, 256 tokens, its similarity floor, the model file's sha256).
 
 The model runs on the person's own machine with onnxruntime's CPU build; nothing is sent
-anywhere and nothing is downloaded at run time. `@maycombhq/embed` depends on this package, so
-installing `@maycombhq/cli` installs it, and `retrieval.embeddings.model: bundled` (the default)
-finds it.
+anywhere and nothing is downloaded at run time. `@maycombhq/atticus` lists this package as an
+optional dependency, so installing it installs this too, and `retrieval.embeddings.model: bundled`
+(the default) finds it.
 
 The model files are not in the repository; they are in the npm package (ADR 0124 addendum
 D-npm), so installing Atticus from npm, or from a bank's npm mirror, brings them with no install

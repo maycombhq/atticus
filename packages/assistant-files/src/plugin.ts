@@ -65,7 +65,7 @@ const SESSION_START = [
   "const next = read?.next;",
   "if (read === undefined) {",
   "  console.log(",
-  '    "This is an Atticus metarepo, but the atticus command line didn\'t answer. Install it (npm install -g @maycombhq/cli, or the offline bundle) to take its steps; the /atticus-* commands need it.",',
+  '    "This is an Atticus metarepo, but the atticus command line didn\'t answer. Install it (npm install -g @maycombhq/atticus, or the offline bundle) to take its steps; the /atticus-* commands need it.",',
   "  );",
   "  process.exit(0);",
   "}",

@@ -1,0 +1,43 @@
+{
+  "name": "@maycombhq/atticus",
+  "version": "2.0.0-beta.2",
+  "description": "Atticus: map a multi-repo ecosystem from its code and run every change from idea to release, with an AI critic and human approvals. The atticus command line and its app in one package.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "bin": {
+    "atticus": "./dist/bin.js"
+  },
+  "files": [
+    "dist",
+    "THIRD-PARTY-LICENSES.txt"
+  ],
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "build": "node ../../scripts/bundle/npm-atticus.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --config ../../vitest.shared.mjs --fsModuleCachePath=node_modules/.vitest-cache --testTimeout=60000"
+  },
+  "optionalDependencies": {
+    "@maycombhq/embed-model": "workspace:*",
+    "@maycombhq/onnxruntime-darwin-arm64": "workspace:*",
+    "@maycombhq/onnxruntime-linux-arm64": "workspace:*",
+    "@maycombhq/onnxruntime-linux-x64": "workspace:*",
+    "@maycombhq/onnxruntime-wasm": "workspace:*",
+    "@maycombhq/onnxruntime-win32-arm64": "workspace:*",
+    "@maycombhq/onnxruntime-win32-x64": "workspace:*"
+  },
+  "devDependencies": {
+    "@maycombhq/cli": "workspace:*",
+    "@maycombhq/extractors": "workspace:*"
+  },
+  "atticusBundled": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/maycombhq/atticus"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

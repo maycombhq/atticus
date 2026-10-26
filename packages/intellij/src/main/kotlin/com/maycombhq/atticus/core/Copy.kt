@@ -14,8 +14,9 @@ object Copy {
 
     const val CLI_MISSING_TITLE = "Atticus's command line isn't installed here"
     const val CLI_MISSING =
-        "The plugin runs the atticus command line, and couldn't start it. Install it from the offline " +
-            "bundle (no network needed), or set the path to atticus if it is installed somewhere else."
+        "The plugin runs the atticus command line, and couldn't start it. Install it with " +
+            "npm install -g @maycombhq/atticus (from your npm mirror) or from the offline bundle " +
+            "(no network needed), or set the path to atticus if it is installed somewhere else."
     const val INSTALL_GUIDE = "How to install atticus"
     const val SET_PATH = "Set the path to atticus…"
     const val CHECK_AGAIN = "Check again"

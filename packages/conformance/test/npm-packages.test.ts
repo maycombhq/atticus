@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -192,6 +193,141 @@ describe("the npm packages Atticus publishes (ADR 0124 addendum D-npm)", () => {
     ]);
   });
 
+  // ADR 0124 addendum D-npm2: an invented bundled package, as `pnpm pack` writes
+  // @maycombhq/atticus: its files listed with their sha256 in dist/files.json, the third parties
+  // inside in dist/third-party.json, their licences in THIRD-PARTY-LICENSES.txt.
+  const BIN = '#!/usr/bin/env node\nimport { a } from "./chunk-A.js";\na();\n';
+  const CHUNK = 'import { readFileSync } from "node:fs";\nexport const a = () => readFileSync;\n';
+  const TXT = "=====\ninvented-lib@1.0.0 (MIT)\n=====\nMIT License\n";
+  const bundled = (
+    o: {
+      manifest?: Partial<Manifest>;
+      drop?: string;
+      chunk?: string;
+      third?: { name: string; version: string; licence: string; font?: boolean }[];
+    } = {},
+  ) => {
+    const files: Record<string, string> = {
+      "dist/bin.js": BIN,
+      "dist/chunk-A.js": CHUNK,
+      "THIRD-PARTY-LICENSES.txt": TXT,
+    };
+    const listed = Object.entries(files).map(([path, text]) => ({ path, sha256: sha(text) }));
+    files["dist/chunk-A.js"] = o.chunk ?? CHUNK;
+    files["dist/files.json"] = JSON.stringify({ files: listed });
+    files["dist/third-party.json"] = JSON.stringify(
+      o.third ?? [{ name: "invented-lib", version: "1.0.0", licence: "MIT", licenceText: true }],
+    );
+    files["package.json"] = JSON.stringify({
+      name: "@maycombhq/atticus",
+      version: "9.9.9-beta.2",
+      bin: { atticus: "./dist/bin.js" },
+      atticusBundled: true,
+      publishConfig: { access: "public" },
+      optionalDependencies: { "@maycombhq/embed-model": "9.9.9-beta.2" },
+      ...o.manifest,
+    });
+    if (o.drop) delete files[o.drop];
+    return tgz(files);
+  };
+
+  it("accepts a bundled package that carries every file it lists and every licence", async () => {
+    const { tarballProblems } = await load();
+    expect(tarballProblems(bundled()).problems).toEqual([]);
+  });
+
+  it("refuses a bundled package missing a file it lists, or with other bytes", async () => {
+    const { tarballProblems } = await load();
+    expect(tarballProblems(bundled({ drop: "dist/chunk-A.js" })).problems).toEqual([
+      "dist/chunk-A.js, listed in dist/files.json, isn't in the package",
+    ]);
+    const other = 'export const a = () => "other";\n';
+    expect(tarballProblems(bundled({ chunk: other })).problems).toEqual([
+      `dist/chunk-A.js has sha256 ${sha(other)}, not the ${sha(CHUNK)} dist/files.json lists`,
+    ]);
+    expect(tarballProblems(bundled({ drop: "dist/files.json" })).problems).toEqual([
+      "it is bundled (atticusBundled) but has no dist/files.json listing what it carries",
+    ]);
+  });
+
+  it("refuses a bundled third party under a licence Atticus may not ship, or without its licence", async () => {
+    const { tarballProblems } = await load();
+    expect(
+      tarballProblems(
+        bundled({ third: [{ name: "invented-lib", version: "1.0.0", licence: "GPL-3.0" }] }),
+      ).problems,
+    ).toEqual(["it bundles invented-lib@1.0.0, under GPL-3.0, which isn't on the allowed list"]);
+    // A font may be OFL-1.1; code may not.
+    expect(
+      tarballProblems(
+        bundled({
+          third: [
+            { name: "invented-lib", version: "1.0.0", licence: "MIT" },
+            { name: "@fontsource/invented", version: "5.0.0", licence: "OFL-1.1", font: true },
+          ],
+        }),
+      ).problems,
+    ).toEqual([
+      "it bundles @fontsource/invented@5.0.0 but THIRD-PARTY-LICENSES.txt doesn't hold its licence",
+    ]);
+    expect(tarballProblems(bundled({ drop: "THIRD-PARTY-LICENSES.txt" })).problems).toContain(
+      "it bundles third parties (dist/third-party.json) but has no THIRD-PARTY-LICENSES.txt",
+    );
+  });
+
+  it("refuses a bundled package that still needs another Atticus package", async () => {
+    const { tarballProblems } = await load();
+    expect(
+      tarballProblems(bundled({ manifest: { dependencies: { "@maycombhq/core": "9.9.9" } } }))
+        .problems,
+    ).toEqual([
+      "it is bundled but depends on @maycombhq/core: only the model and onnxruntime stay packages of their own",
+    ]);
+    const imports = 'import { parseRecord } from "@maycombhq/core";\nexport const a = 1;\n';
+    expect(tarballProblems(bundled({ chunk: imports })).problems).toContain(
+      "dist/chunk-A.js imports @maycombhq/core, which a bundled package must carry inside",
+    );
+  });
+
+  it("deprecates every name beta.1 published that is private now, and only in a run with --yes", async () => {
+    const { RETIRED_PACKAGES, DEPRECATION_MESSAGE, deprecateArgs } = (await import(
+      pathToFileURL(join(REPO, "scripts/release-npm-deprecate.mjs")).href
+    )) as {
+      RETIRED_PACKAGES: string[];
+      DEPRECATION_MESSAGE: string;
+      deprecateArgs: (name: string, registry?: string) => string[];
+    };
+    const { publishablePackages } = await load();
+    const published = publishablePackages(REPO).map((p) => p.name);
+    // beta.1's 47: the 39 retired and the 8 still published but the new @maycombhq/atticus.
+    expect(RETIRED_PACKAGES).toHaveLength(39);
+    expect(new Set([...RETIRED_PACKAGES, ...published]).size).toBe(48);
+    expect(RETIRED_PACKAGES).toContain("@maycombhq/cli");
+    for (const n of RETIRED_PACKAGES) {
+      const m = JSON.parse(
+        readFileSync(join(REPO, "packages", n.split("/")[1]!, "package.json"), "utf8"),
+      ) as Manifest;
+      expect(m.private, n).toBe(true);
+    }
+    expect(DEPRECATION_MESSAGE).toBe(
+      "Atticus is now one package: npm install -g @maycombhq/atticus",
+    );
+    expect(deprecateArgs("@maycombhq/core")).toEqual([
+      "deprecate",
+      "@maycombhq/core",
+      DEPRECATION_MESSAGE,
+    ]);
+    // The dry run (the default) prints the commands and runs nothing: no npm on its PATH here.
+    const r = spawnSync(process.execPath, [join(REPO, "scripts/release-npm-deprecate.mjs")], {
+      encoding: "utf8",
+      env: { PATH: "" },
+    });
+    expect(r.status, r.stderr).toBe(0);
+    const lines = r.stdout.trim().split("\n");
+    expect(lines.filter((l) => l.startsWith("npm deprecate @maycombhq/"))).toHaveLength(39);
+    expect(lines.at(-1)).toMatch(/^Dry run: 39 names would be deprecated; nothing was run\./);
+  });
+
   it("makes the registry documents a mirror serves for the packed tarballs", async () => {
     const { packuments } = await load();
     const bytes = modelTarball();
@@ -215,10 +351,22 @@ describe("the npm packages Atticus publishes (ADR 0124 addendum D-npm)", () => {
     const { publishablePackages, manifestProblems } = await load();
     const pkgs = publishablePackages(REPO);
     const names = pkgs.map((p) => p.name);
-    expect(names).toContain("@maycombhq/cli");
-    expect(names).toContain("@maycombhq/embed-model");
-    expect(names).toContain("@maycombhq/onnxruntime-wasm");
-    expect(names).not.toContain("@maycombhq/fixtures"); // private
+    // ADR 0124 addendum D-npm2: about nine packages, not 47. Everything else is private.
+    expect(names.sort()).toEqual([
+      "@maycombhq/atticus",
+      "@maycombhq/embed-model",
+      "@maycombhq/onnxruntime-darwin-arm64",
+      "@maycombhq/onnxruntime-linux-arm64",
+      "@maycombhq/onnxruntime-linux-x64",
+      "@maycombhq/onnxruntime-wasm",
+      "@maycombhq/onnxruntime-win32-arm64",
+      "@maycombhq/onnxruntime-win32-x64",
+      "@maycombhq/sdk",
+    ]);
+    const { PUBLIC_PACKAGES } = (await import(
+      pathToFileURL(join(REPO, "scripts/bundle/npm-layout.mjs")).href
+    )) as { PUBLIC_PACKAGES: string[] };
+    expect([...PUBLIC_PACKAGES].sort()).toEqual(names);
     for (const p of pkgs) {
       const pinsFile = join(p.dir, "pins.json");
       let pins: { files: { path: string }[] } | undefined;
@@ -229,12 +377,18 @@ describe("the npm packages Atticus publishes (ADR 0124 addendum D-npm)", () => {
       }
       expect(manifestProblems(p.manifest, pins), p.name).toEqual([]);
     }
-    // `atticus sandbox create` builds the practice metarepo from the Forge fixtures: an npm
-    // install has no checkout, so @maycombhq/learn carries them (copied in at pack, removed after).
-    const learn = pkgs.find((p) => p.name === "@maycombhq/learn")!.manifest;
-    expect(learn.files).toContain("fixtures");
-    expect(learn.scripts?.prepack).toMatch(/scripts\/bundle\/learn-fixtures\.mjs/);
-    expect(learn.scripts?.postpack).toMatch(/scripts\/bundle\/learn-fixtures\.mjs --remove/);
+    // The one package installs the command line: bin atticus, no dependency but the model and
+    // onnxruntime (optional, separate packages), Node 22.13 or later.
+    const atticus = pkgs.find((p) => p.name === "@maycombhq/atticus")!.manifest as Manifest & {
+      bin?: Record<string, string>;
+      engines?: Record<string, string>;
+    };
+    expect(atticus.bin).toEqual({ atticus: "./dist/bin.js" });
+    expect(atticus.dependencies ?? {}).toEqual({});
+    expect(Object.keys(atticus.optionalDependencies ?? {}).sort()).toEqual(
+      names.filter((n) => /embed-model|onnxruntime-/.test(n)),
+    );
+    expect(atticus.engines?.node).toBe(">=22.13");
     // Every Atticus package a publishable one depends on is published too.
     for (const p of pkgs)
       for (const d of Object.keys({

@@ -1,6 +1,7 @@
 {
   "name": "@maycombhq/embed",
-  "version": "2.0.0-beta.1",
+  "version": "2.0.0-beta.2",
+  "private": true,
   "description": "The local embedding model (ADR 0116): a small ONNX text model run on the person's own machine with onnxruntime-node (or its WASM build), a WordPiece tokenizer, and the model manifest. Nothing is downloaded.",
   "license": "Apache-2.0",
   "type": "module",
@@ -34,8 +35,5 @@
     "@maycombhq/onnxruntime-wasm": "workspace:*",
     "@maycombhq/onnxruntime-win32-arm64": "workspace:*",
     "@maycombhq/onnxruntime-win32-x64": "workspace:*"
-  },
-  "publishConfig": {
-    "access": "public"
   }
 }

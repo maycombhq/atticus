@@ -20,3 +20,9 @@ coverage/
 # Pinned model and runtime downloads (ADR 0116 addendum); never committed
 /.cache/
 *.onnx
+
+# Built for npm (ADR 0124 addendum D-npm2): the SDK's published layout, and the files
+# @maycombhq/atticus's build copies beside its dist/
+/packages/sdk/npm/
+/packages/atticus/LICENSE
+/packages/atticus/THIRD-PARTY-LICENSES.txt

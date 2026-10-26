@@ -21,3 +21,6 @@ packages/embed-model/MODEL-CARD.md
 packages/embed-model/LICENSE
 packages/onnxruntime-*/LICENSE
 .cache/
+# Built for npm (ADR 0124 addendum D-npm2)
+packages/sdk/npm/
+packages/atticus/THIRD-PARTY-LICENSES.txt

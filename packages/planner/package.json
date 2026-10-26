@@ -1,6 +1,7 @@
 {
   "name": "@maycombhq/planner",
-  "version": "2.0.0-beta.1",
+  "version": "2.0.0-beta.2",
+  "private": true,
   "description": "Planning artifacts from an approved design: stories, tasks and service-desk drafts, the story bar, work-tracker sync, and request templates and procedures drafted from knowledge.",
   "license": "Apache-2.0",
   "type": "module",
@@ -34,8 +35,5 @@
     "@maycombhq/scanner": "workspace:*",
     "yaml": "^2.9.1",
     "zod": "^4.6.0"
-  },
-  "publishConfig": {
-    "access": "public"
   }
 }

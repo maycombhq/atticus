@@ -1,6 +1,7 @@
 {
   "name": "@maycombhq/taskrun",
-  "version": "2.0.0-beta.1",
+  "version": "2.0.0-beta.2",
+  "private": true,
   "description": "Run with AI: one task of a change at plan-only, draft or PR level, in hand-off, model or headless Claude Code mode, with build-fix attempts and run summaries.",
   "license": "Apache-2.0",
   "type": "module",
@@ -34,8 +35,5 @@
     "@maycombhq/workspace": "workspace:*",
     "yaml": "^2.9.1",
     "zod": "^4.6.0"
-  },
-  "publishConfig": {
-    "access": "public"
   }
 }

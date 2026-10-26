@@ -1,6 +1,7 @@
 {
   "name": "@maycombhq/ci",
-  "version": "2.0.0-beta.1",
+  "version": "2.0.0-beta.2",
+  "private": true,
   "description": "CI checks: the pipeline drift check of a code repo against the committed catalog, pipeline snippets, and the metarepo archive gate.",
   "license": "Apache-2.0",
   "type": "module",
@@ -30,8 +31,5 @@
     "@maycombhq/workspace": "workspace:*",
     "yaml": "^2.9.1",
     "zod": "^4.6.0"
-  },
-  "publishConfig": {
-    "access": "public"
   }
 }

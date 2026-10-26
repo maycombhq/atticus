@@ -1,6 +1,7 @@
 {
   "name": "@maycombhq/knowledge",
-  "version": "2.0.0-beta.1",
+  "version": "2.0.0-beta.2",
+  "private": true,
   "description": "Read-only knowledge sources (wikis), facts mapped from them, the integration pattern scan, coverage, freshness and owner questions for knowledge gaps.",
   "license": "Apache-2.0",
   "type": "module",
@@ -27,8 +28,5 @@
     "@maycombhq/reconcile": "workspace:*",
     "yaml": "^2.9.1",
     "zod": "^4.6.0"
-  },
-  "publishConfig": {
-    "access": "public"
   }
 }
