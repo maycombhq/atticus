@@ -172,3 +172,132 @@ describe("the knowledge that applies, on Change › Feature", () => {
     expect(stories).not.toContain(esc(K.title));
   });
 });
+
+/** B-task-knowledge (C4 2.25.0): the tasks that use an item, and the pages that disagree. */
+describe("pages that disagree, on the change's knowledge", () => {
+  const C = COPY.knowledgeConflicts;
+  const conflict: Api.KnowledgeConflictViewT = {
+    key: "sso-setup @ forge-wiki/sso-notes.md | forge-wiki/sso-setup.md",
+    about: ["sso-setup"],
+    summary: "the redirect URI",
+    pages: [
+      { source: "forge-wiki", page: "sso-setup.md", says: "Set the redirect URI to /a." },
+      { source: "forge-wiki", page: "sso-notes.md", says: "Set the redirect URI to /b." },
+    ],
+    applies: [],
+    question: { id: "q-0123456789ab", state: "open", repo: "add-limit" },
+  };
+
+  it("lists each conflict with what each page says and the question a person answers", () => {
+    const html = renderToStaticMarkup(
+      <ChangeKnowledgeView
+        change="add-limit"
+        of={{
+          state: "ready",
+          data: {
+            ...VIEW,
+            items: [{ ...VIEW.items[0]!, tasks: ["1.1", "1.2"] }],
+            conflicts: [conflict],
+          },
+        }}
+      />,
+    );
+    expect(html).toContain(esc(C.title));
+    expect(html).toContain(esc('forge-wiki/sso-setup.md says "Set the redirect URI to /a."'));
+    expect(html).toContain(esc('forge-wiki/sso-notes.md says "Set the redirect URI to /b."'));
+    expect(html).toContain(esc(C.open("q-0123456789ab")));
+    expect(html).toContain(esc(K.tasks(["1.1", "1.2"])));
+  });
+
+  it("says which page applies and who decided, a person or the code; a signal only suggests", () => {
+    const answered = renderToStaticMarkup(
+      <ChangeKnowledgeView
+        change="add-limit"
+        of={{
+          state: "ready",
+          data: {
+            ...VIEW,
+            conflicts: [
+              {
+                ...conflict,
+                applies: [{ source: "forge-wiki", page: "sso-setup.md" }],
+                decided: {
+                  by: "person",
+                  who: "sam",
+                  at: "2026-10-24T10:00:00Z",
+                  question: "q-0123456789ab",
+                },
+                question: { id: "q-0123456789ab", state: "answered", repo: "add-limit" },
+              },
+            ],
+          },
+        }}
+      />,
+    );
+    expect(answered).toContain(esc(C.applies("forge-wiki/sso-setup.md", C.byPerson("sam"))));
+    const signal = renderToStaticMarkup(
+      <ChangeKnowledgeView
+        change="add-limit"
+        of={{
+          state: "ready",
+          data: {
+            ...VIEW,
+            conflicts: [
+              {
+                ...conflict,
+                suggested: {
+                  source: "forge-wiki",
+                  page: "sso-notes.md",
+                  signal: "last-edited",
+                  detail: "sso-notes.md is newer",
+                },
+              },
+            ],
+          },
+        }}
+      />,
+    );
+    // Still a person's question, with the suggestion beside it.
+    expect(signal).toContain(esc(C.open("q-0123456789ab")));
+    expect(signal).toContain(
+      esc(C.suggested("forge-wiki/sso-notes.md", "last-edited", "sso-notes.md is newer")),
+    );
+    const code = renderToStaticMarkup(
+      <ChangeKnowledgeView
+        change="add-limit"
+        of={{
+          state: "ready",
+          data: {
+            ...VIEW,
+            conflicts: [
+              {
+                ...conflict,
+                applies: [{ source: "forge-wiki", page: "sso-setup.md" }],
+                decided: {
+                  by: "code",
+                  record: "forge-orders.get-login",
+                  kind: "Endpoint",
+                  value: "/a",
+                  at: "forge-orders:src/main/resources/application.yml:12",
+                },
+              },
+            ],
+          },
+        }}
+      />,
+    );
+    expect(code).toContain(
+      esc(
+        C.applies(
+          "forge-wiki/sso-setup.md",
+          C.byCode(
+            "Endpoint",
+            "forge-orders.get-login",
+            "/a",
+            "forge-orders:src/main/resources/application.yml:12",
+          ),
+        ),
+      ),
+    );
+  });
+});

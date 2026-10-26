@@ -38,6 +38,8 @@ import {
   SnapshotManifest,
   snapshotSources,
   writeReview,
+  readConflicts,
+  type ConflictView,
   type FindCandidate,
   type KnowledgeRecord,
   type ReviewSummary,
@@ -45,6 +47,8 @@ import {
   type Snapshot,
 } from "@maycombhq/knowledge";
 import {
+  codeFactRecords,
+  conflictTouches,
   markNeed,
   NEEDS_FILE,
   plainWhy,
@@ -115,7 +119,36 @@ function asSet(
 const keepAs = (recordKind: string): KnowledgeKind[] =>
   KNOWLEDGE_KINDS.filter((k) => KNOWLEDGE_RECORD_KIND[k] === recordKind);
 
-function itemView(r: KnowledgeRecord, review: ReviewSummary | undefined): Api.KnowledgeItemViewT {
+/** 2.25.0 (B-task-knowledge): a conflict as the app shows it. */
+export function conflictView(v: ConflictView): Api.KnowledgeConflictViewT {
+  const c = v.conflict;
+  return {
+    key: v.key,
+    about: c.about,
+    ...(c.summary ? { summary: c.summary } : {}),
+    pages: c.pages.map((p, k) => ({ source: p.source, page: p.page, says: c.says[k] ?? "" })),
+    applies: v.applies.map((p) => ({ source: p.source, page: p.page })),
+    ...(v.decided ? { decided: v.decided } : {}),
+    ...(v.suggested
+      ? {
+          suggested: {
+            source: v.suggested.source,
+            page: v.suggested.page,
+            signal: v.suggested.signal,
+            detail: v.suggested.detail,
+          },
+        }
+      : {}),
+    ...(v.question ? { question: v.question } : {}),
+  };
+}
+
+function itemView(
+  r: KnowledgeRecord,
+  review: ReviewSummary | undefined,
+  conflicts: ConflictView[] = [],
+): Api.KnowledgeItemViewT {
+  const mine = conflicts.filter((v) => v.conflict.about.includes(r.id));
   return {
     id: r.id,
     kind: knowledgeKindOf(r) ?? keepAs(r.kind)[0]!,
@@ -124,7 +157,8 @@ function itemView(r: KnowledgeRecord, review: ReviewSummary | undefined): Api.Kn
     record: r as unknown as Record<string, unknown>,
     ...(review ? { review } : {}),
     fields: correctableFields(r),
-    conflict: !!r.flags?.some((f) => f.startsWith("conflict:")),
+    conflict: !!r.flags?.some((f) => f.startsWith("conflict:")) || mine.length > 0,
+    ...(mine.length ? { conflicts: mine.map(conflictView) } : {}),
   };
 }
 
@@ -191,6 +225,16 @@ export function uiKnowledgeRoutes(
       const title = x.title ?? titles.get(x.id);
       return title ? { ...x, title } : x;
     };
+    // 2.25.0 (B-task-knowledge): the pages that disagree about what the change relies on, read
+    // only: the command (and the stages) ask a person, the app's GET never writes a question.
+    const used = new Set(
+      (doc?.items ?? []).filter((i) => i.status !== "excluded").map((i) => i.id),
+    );
+    const conflicts = used.size
+      ? (
+          await readConflicts(root, { records: await codeFactRecords(root) }).catch(() => [])
+        ).filter((v) => conflictTouches(v, used))
+      : [];
     return {
       change,
       file,
@@ -200,6 +244,7 @@ export function uiKnowledgeRoutes(
         return { ...titled(i), ...(reason ? { reason } : {}) };
       }),
       nearMisses: (doc?.nearMisses ?? []).map(titled),
+      ...(conflicts.length ? { conflicts: conflicts.map(conflictView) } : {}),
       command: `atticus change knowledge ${change}`,
     };
   };
@@ -208,7 +253,11 @@ export function uiKnowledgeRoutes(
   const reviewed = async (id: string) => {
     const k = await readKnowledge(root);
     const item = [...k.items, ...k.rejected].find((i) => i.id === id);
-    return item ? itemView(item, k.reviews[id]) : undefined;
+    const conflicts = await readConflicts(root, {
+      conflicts: k.report?.conflicts ?? [],
+      records: await codeFactRecords(root),
+    }).catch(() => []);
+    return item ? itemView(item, k.reviews[id], conflicts) : undefined;
   };
 
   const findView = (f: SavedFind): Api.SavedFindViewT => ({
@@ -391,8 +440,12 @@ export function uiKnowledgeRoutes(
           ...(kind ? { kind: kind as KnowledgeKind } : {}),
           ...(tag ? { tag } : {}),
         }).sort((a, b) => a.id.localeCompare(b.id));
+        const conflicts = await readConflicts(root, {
+          conflicts: k.report?.conflicts ?? [],
+          records: await codeFactRecords(root),
+        }).catch(() => []);
         const body: Api.KnowledgeItemListT = {
-          items: items.map((i) => itemView(i, k.reviews[i.id])),
+          items: items.map((i) => itemView(i, k.reviews[i.id], conflicts)),
           problems: k.problems.map((p) => ({
             file: `${knowledgeRelOf(root)}/${p.file.startsWith("reviews/") || p.file === "scan.yaml" ? "" : "items/"}${p.file}`,
             message: p.message,

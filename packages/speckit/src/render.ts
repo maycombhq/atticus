@@ -1,7 +1,13 @@
 import { stringify } from "yaml";
 import { changesRelOf, taskBranch, type RecordOf } from "@maycombhq/core";
 import { docOf, sectionMatching } from "@maycombhq/naysayer";
-import { mappingSections, readStory, viaOf, type TaskContext } from "./change.js";
+import {
+  mappingSections,
+  readStory,
+  readTaskKnowledge,
+  viaOf,
+  type TaskContext,
+} from "./change.js";
 
 /**
  * What hand-down writes, as pure functions of the task's context: spec.md from the stories
@@ -187,6 +193,17 @@ export function renderPlan(t: TaskContext): string {
       "### Field mappings",
       "",
       ...mapping.flatMap((m) => [`#### ${m.method} ${m.path}`, "", ...m.lines, ""]),
+    );
+  // B-task-knowledge: the organisation's pages that apply to this task, as its story lists them.
+  const knowledge = readTaskKnowledge(t.files, t.task.stories, t.task.id);
+  if (knowledge.length)
+    out.push(
+      "### Knowledge that applies",
+      "",
+      `<!-- From the task's story in change ${t.change.id}: the organisation's pages (wikis and documents) that apply to this task, quoted as data. Where pages disagree, a person or the code decides; ask rather than pick. -->`,
+      "",
+      ...knowledge,
+      "",
     );
   out.push(
     "## Constitution Check",

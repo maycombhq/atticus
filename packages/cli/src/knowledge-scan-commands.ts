@@ -13,8 +13,10 @@ import {
 import { RuntimeConfigError, runtimeForCli, type AiRuntime } from "@maycombhq/ai";
 import {
   askKnowledge,
+  conflictLine,
   correctableFields,
   fieldName,
+  readConflicts,
   findKnowledge,
   keepCandidate,
   readFind,
@@ -42,6 +44,7 @@ import {
   type Snapshot,
 } from "@maycombhq/knowledge";
 import { prepareKnowledgeBench, runKnowledgeBench, type KnowledgeScore } from "@maycombhq/evals";
+import { codeFactRecords } from "@maycombhq/planner";
 import type { Output } from "./commands.js";
 import { table } from "./index-commands.js";
 
@@ -370,7 +373,7 @@ export async function knowledgeScan(
     );
     for (const x of total.conflicts)
       io.out(
-        `  ${x.about.join(", ")}: ${x.pages.map((p, k) => `${p.page} says "${x.says[k]}"`).join("; ")}`,
+        `  ${x.about.join(", ")}: ${x.pages.map((p, k) => `${p.page} says "${x.says[k]}"`).join("; ")}. ${x.owner ? `${x.owner.page} is suggested (${x.owner.signal}: ${x.owner.detail}); a change that relies on it asks a person` : "A change that relies on it asks a person which page applies"}.`,
       );
   }
   for (const s of total.superseded)
@@ -467,7 +470,9 @@ export async function knowledgeList(
       "check again: a person reviewed it, then its page changed (atticus knowledge verify <item>)",
     );
   if (items.some((r) => r.flags?.some((f) => f.startsWith("conflict:"))))
-    io.out("! another page disagrees: see atticus knowledge ask, or knowledge/scan.yaml");
+    io.out(
+      "! another page disagrees: atticus knowledge conflicts says what each page says and which applies",
+    );
   return 0;
 }
 
@@ -701,6 +706,37 @@ export async function knowledgeKeep(
   io.out(
     `Written to ${knowledgeRelOf(root)}/items/ and reviews/: commit them through a pull request.`,
   );
+  return 0;
+}
+
+/**
+ * atticus knowledge conflicts [--json] (ADR 0124 addendum B-task-knowledge): the pages that
+ * disagree, what each says, and which applies: the page a person chose (their question and
+ * answer), the page the code settles it for (the record verified from code, cited), or nobody
+ * yet (the question waiting, or none until a change relies on it), with the page a signal
+ * suggests.
+ */
+export async function knowledgeConflicts(
+  root: string,
+  o: { json?: boolean },
+  io: Output,
+): Promise<number> {
+  const all = await readConflicts(root, { records: await codeFactRecords(root) });
+  if (o.json) {
+    io.out(JSON.stringify(all, null, 2));
+    return 0;
+  }
+  if (!all.length) {
+    io.out("No pages disagree in the last knowledge scan (knowledge/scan.yaml).");
+    return 0;
+  }
+  io.out(`${plural(all.length, "conflict")} between pages:`);
+  for (const v of all) io.out(`- ${conflictLine(v)}`);
+  const open = all.filter((v) => v.question?.state === "open");
+  if (open.length)
+    io.out(
+      `${plural(open.length, "question")} wait${open.length === 1 ? "s" : ""} for a person: atticus questions answer <id> --option <n>, or in the app.`,
+    );
   return 0;
 }
 
@@ -1118,6 +1154,8 @@ export async function knowledgeCli(
     );
   }
   if (group === "knowledge" && command === "finds") return knowledgeFinds(root, { json }, io);
+  if (group === "knowledge" && command === "conflicts")
+    return knowledgeConflicts(root, { json }, io);
   if (
     group === "knowledge" &&
     (command === "verify" || command === "correct" || command === "reject")

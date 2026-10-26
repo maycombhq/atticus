@@ -45,6 +45,7 @@ Every command under the twelve, with its options.
   atticus knowledge find "<phrase>"   Search every wiki for a term or phrase; your assistant reads the pages that mention it and proposes what isn't a knowledge item yet, each quote checked [--source s] [--mode m] [--resume run] [--json] [--max-tokens n]
   atticus knowledge keep <item>        Keep a found item as a knowledge item you verified [--find <search>] [--as <kind>] [--set <field=value>] [--note <text>]
   atticus knowledge finds [--json]     The searches saved, and how many of each were kept
+  atticus knowledge conflicts [--json]  Pages that disagree: what each says, which page applies and who decided (a person's answer, or the code: a fact verified from code that holds one page's value), the page a signal suggests, and the questions still open
   atticus knowledge verify <item>      Mark a knowledge item right as read: a green tick wherever it shows [--note <text>]
   atticus knowledge correct <item> --set field=value  Correct an item's details (a list takes a|b|c); the corrected item is what plans read [--note <text>]
   atticus knowledge reject <item> --note <why>  Mark an item wrong: plans and answers leave it out
@@ -62,7 +63,7 @@ Every command under the twelve, with its options.
   atticus change attach <change> <files...>  Attach a spec, screenshot, PDF, email export or document to a change: copied into its inputs/, read and cited by line or page, read by its steps [--replaces inputs/<file>] [--promote inputs/<file>: copy one into general knowledge] [--like <archived change>: attach an earlier change as an example] [--json]
   atticus change draft <change>        Your assistant drafts the proposal, spec and interfaces from the brief and the catalog; checked [--attempts 3] [--force] [--mode m] [--max-tokens n]
   atticus change status <id> [--json]  State, next step, what blocks it, risk, the PR to merge and test kinds
-  atticus change knowledge <id>        The patterns, standards, decisions, processes, requests and wiki and document sections that apply to the change, picked by each of its stages from the feature stage on, with near-misses; confirm one (later stages that take its kind pick it) or exclude it (they leave it out) [--confirm id] [--exclude id] [--json]
+  atticus change knowledge <id>        The patterns, standards, decisions, processes, requests and wiki and document sections that apply to the change, picked by each of its stages from the feature stage on and by each task, with near-misses and the pages that disagree (each undecided one asked of a person once); confirm one (later stages that take its kind pick it) or exclude it (they leave it out) [--confirm id] [--exclude id] [--json]
   atticus change handoff <id> --approve  Open the phase's hand-off PR; merging it approves the gate [--repo]
                                        (without --approve: say what it would open, send nothing)
   atticus change sync <id> [--approve]   Read the hand-off PR; a merged PR moves the change on (--approve merges a ready one) and keeps what Atticus drafted beside what merged (stage/<stage>.drafted/, .merged/)
@@ -77,7 +78,7 @@ Every command under the twelve, with its options.
   atticus critic <change> [--gate g] [--lens l] [--mode m] [--json] [--max-tokens n]  Review a change at a gate: rule checks, then AI lenses (--mode runs them)
   atticus critic <change> [--gate g] --resume  Read in the AI lens answers your assistant wrote (hand-off); handoff done does it per lens
   atticus critic stats [--json]        How often each rule's findings are dismissed or waived
-  atticus task context <change> <task> [--json|--markdown]  The task's context for an assistant: its story and criteria, the step it implements with today's code, what applies, the files attached and the files likely to change
+  atticus task context <change> <task> [--json|--markdown]  The task's context for an assistant: its story and criteria, the step it implements with today's code, what applies, the knowledge that applies to it (how-tos with their steps, standards, processes, decisions, each with its page, the pages that say the same and those that disagree), the files attached and the files likely to change
   atticus task run <change> <task>     Run a task with AI [--level plan|draft|pr] [--mode m] [--approve]
   atticus task <change> <task>         Run one task with your assistant, the same as task run [--level plan|draft|pr] [--mode m] [--approve]
   atticus stories <change>             The stories stage, the same as plan stories [--force] [--mode m] [--draft] [--context-tokens n] [--whole-context] [--max-tokens n]

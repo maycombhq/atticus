@@ -245,7 +245,7 @@ export async function taskContextCli(
   root: string,
   change: string | undefined,
   task: string | undefined,
-  o: { json?: boolean; markdown?: boolean },
+  o: { json?: boolean; markdown?: boolean; now?: Date },
   io: Output,
 ): Promise<number> {
   if (!change || !task) {
@@ -255,7 +255,11 @@ export async function taskContextCli(
     return 2;
   }
   try {
-    const c = await taskContext(root, change, task);
+    // B-task-knowledge: pages that disagree about the task's knowledge are asked of a person once.
+    const command = `atticus task context ${change} ${task}`;
+    const c = await taskContext(root, change, task, {
+      ask: { command, rerun: command, at: (o.now ?? new Date()).toISOString() },
+    });
     io.out(o.json && !o.markdown ? JSON.stringify(c, null, 2) : renderTaskContext(c).trimEnd());
     return 0;
   } catch (e) {

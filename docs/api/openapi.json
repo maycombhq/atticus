@@ -24157,6 +24157,12 @@
                 },
                 "conflict": {
                   "type": "boolean"
+                },
+                "conflicts": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/KnowledgeConflictView"
+                  }
                 }
               },
               "required": [
@@ -24294,6 +24300,12 @@
               },
               "conflict": {
                 "type": "boolean"
+              },
+              "conflicts": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/KnowledgeConflictView"
+                }
               }
             },
             "required": [
@@ -24656,6 +24668,12 @@
               },
               "conflict": {
                 "type": "boolean"
+              },
+              "conflicts": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/KnowledgeConflictView"
+                }
               }
             },
             "required": [
@@ -25446,6 +25464,12 @@
                 },
                 "reason": {
                   "type": "string"
+                },
+                "tasks": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
                 }
               },
               "required": [
@@ -25488,6 +25512,12 @@
               "additionalProperties": false
             }
           },
+          "conflicts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/KnowledgeConflictView"
+            }
+          },
           "command": {
             "type": "string"
           }
@@ -25499,6 +25529,189 @@
           "items",
           "nearMisses",
           "command"
+        ],
+        "additionalProperties": false
+      },
+      "KnowledgeConflictView": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "about": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "summary": {
+            "type": "string"
+          },
+          "pages": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "source": {
+                  "type": "string"
+                },
+                "page": {
+                  "type": "string"
+                },
+                "says": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "source",
+                "page",
+                "says"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "applies": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "source": {
+                  "type": "string"
+                },
+                "page": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "source",
+                "page"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "decided": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "by": {
+                    "type": "string",
+                    "const": "person"
+                  },
+                  "who": {
+                    "type": "string"
+                  },
+                  "at": {
+                    "type": "string"
+                  },
+                  "question": {
+                    "type": "string"
+                  },
+                  "words": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "by",
+                  "who",
+                  "at",
+                  "question"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "by": {
+                    "type": "string",
+                    "const": "code"
+                  },
+                  "record": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "type": "string"
+                  },
+                  "value": {
+                    "type": "string"
+                  },
+                  "at": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "by",
+                  "record",
+                  "kind",
+                  "value",
+                  "at"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          },
+          "suggested": {
+            "type": "object",
+            "properties": {
+              "source": {
+                "type": "string"
+              },
+              "page": {
+                "type": "string"
+              },
+              "signal": {
+                "type": "string",
+                "enum": [
+                  "replaces",
+                  "owner",
+                  "source-kind",
+                  "space",
+                  "last-edited"
+                ]
+              },
+              "detail": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "source",
+              "page",
+              "signal",
+              "detail"
+            ],
+            "additionalProperties": false
+          },
+          "question": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "open",
+                  "answered",
+                  "retired"
+                ]
+              },
+              "repo": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "state",
+              "repo"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "key",
+          "about",
+          "pages",
+          "applies"
         ],
         "additionalProperties": false
       },

@@ -1,0 +1,24 @@
+schemaVersion: 1
+scannedAt: 2026-10-20T09:00:00Z
+snapshots:
+  - source: forge-wiki
+    date: 2026-10-20
+    pages: 5
+conflicts:
+  - about: [sso-setup]
+    pages:
+      - { source: forge-wiki, page: sso-setup.md }
+      - { source: forge-wiki, page: sso-notes.md }
+    says:
+      - "Set the redirect URI to /login/oauth2/code/forge-identity."
+      - "Set the redirect URI to /sso/callback."
+    summary: the redirect URI
+    foundBy: ai
+    owner:
+      source: forge-wiki
+      page: sso-setup.md
+      signal: last-edited
+      detail: sso-setup.md was last edited 2026-09-14, after sso-notes.md (2026-03-02)
+superseded: []
+injections: []
+failed: []

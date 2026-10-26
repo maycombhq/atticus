@@ -114,8 +114,10 @@ const BEFORE = {
   // after B-once let a criterion accept other tasks (also in the format, one rule reworded, one added);
   // and on 2026-10-25 twice: the format's requests line (a standard is followed, never listed
   // there) and B-tasks grouping the fraud check's call-out and branch into one task (the source's
-  // two task lines became one that lists the steps it covers); and after B-place's self-check line
-  stories: "394828a20d66aa7099ec331b867272f61e6fcacc1716215e468f17209f0ec955",
+  // two task lines became one that lists the steps it covers); and after B-place's self-check line;
+  // and after B-task-knowledge: the fraud check's task has knowledge of its own (vendor
+  // onboarding), so the prompt gains the task-knowledge source and its one criteria rule
+  stories: "bb653ac6c0623666d73a9c338a941d508d96ce472263beed9a668c27a547107a",
 };
 
 const ARCHIVE = join(FIX, "corrections/changes/archive");

@@ -236,4 +236,31 @@ describe("the rules in the prompts (B2 c)", () => {
     expect(seen[0]).not.toMatch(/Pattern vendor-partner-gateway|standard vendor-partner-gateway/);
     expect(seen[0]).not.toContain("managed-file-transfer:");
   });
+
+  it("stories: each task's own knowledge, so a standard's rule becomes the task's criterion (B-task-knowledge)", async () => {
+    const root = await shop();
+    await featureStage(root, CHANGE, { runtime: assistant(PLACED, []), now: NOW });
+    await architectureStage(root, CHANGE, { runtime: assistant(DELTAS, []), now: NOW });
+    const seen: string[] = [];
+    await storiesStage(root, CHANGE, { runtime: assistant(STORIES, seen), now: NOW });
+    const block = /<atticus-data id="task-knowledge"[^>]*>\n([\s\S]*?)<\/atticus-data>/.exec(
+      seen[0]!,
+    );
+    expect(block).not.toBeNull();
+    // The call-out to the vendor: the timeouts standard applies to that task, with its rules.
+    expect(block![1]).toMatch(
+      /^task \S+ \(.+\):\n- standard outbound-call-timeouts "Outbound calls state their timeouts": Every call to another service or a vendor states its timeout and its retries\./m,
+    );
+    expect(seen[0]).toContain(
+      "- A standard's rule or a how-to's step listed for a task under task-knowledge is something that task's code must do: write an acceptance criterion on that task that checks it",
+    );
+    // The story file lists it under the task, with its page and section.
+    const story = readFileSync(
+      join(root, "openspec/changes", CHANGE, "stories", "s1-place-order.md"),
+      "utf8",
+    );
+    expect(story).toMatch(
+      /- Knowledge that applies:\n(?: {2}- .*\n(?: {4}- .*\n)*)* {2}- Outbound calls state their timeouts \(standard\), forge-wiki\/integration-standards\.md#outbound-calls, line 5: /,
+    );
+  });
 });

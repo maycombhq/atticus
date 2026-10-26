@@ -264,6 +264,28 @@ describe("hand-down (Atticus engine)", () => {
       );
       expect(existsSync(join(wt, "specs"))).toBe(false);
       expect(existsSync(join(wt, ".claude/commands/atticus-task.md"))).toBe(true);
+      // No knowledge listed under the task in its story: no section for it.
+      expect(text).not.toContain("Knowledge that applies");
+    },
+    T,
+  );
+
+  it(
+    "hands down the knowledge the task's story lists under it (B-task-knowledge)",
+    async () => {
+      const { root } = await speckitRoot();
+      const story = join(root, "openspec/changes", CHANGE, "stories/s2-show-remaining.md");
+      await writeFile(
+        story,
+        `${await read(story)}\n## Tasks\n\n### Task 2.1: Expose the remaining limit, with tests\n\n- Fields: remaining\n- Knowledge that applies:\n  - Limits are shown in the account's currency (standard), forge-wiki/limits.md#display, line 4 (updated 2026-09-01): It is about "limit", which this task changes.\n    - Also described on forge-wiki/limits-faq.md#display, line 7 (updated 2026-05-02).\n- Acceptance criteria: the 1 under Task 2.1\n`,
+      );
+      await handDown(root, CHANGE, "2.1", { git });
+      const text = await read(join(worktree(root, "forge-portal-bff"), ".atticus/tasks/2.1.md"));
+      expect(text).toContain("### Knowledge that applies");
+      expect(text).toContain(
+        '- Limits are shown in the account\'s currency (standard), forge-wiki/limits.md#display, line 4 (updated 2026-09-01): It is about "limit", which this task changes.\n  - Also described on forge-wiki/limits-faq.md#display, line 7 (updated 2026-05-02).\n',
+      );
+      expect(text).not.toContain("- Acceptance criteria: the 1 under Task 2.1");
     },
     T,
   );

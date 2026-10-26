@@ -116,10 +116,81 @@ Each `--confirm` or `--exclude` says only what changed, such as `Confirmed firew
 
 The app's Confirm and Exclude buttons write the same file and show the `git add … && git commit …` command to run. Commit `knowledge.yaml` with the change's other files.
 
+## 7. Knowledge per story and per task
+
+The change's list is the knowledge for the change as a whole. Each task gets its own, narrower list: the how-tos and runbooks (wiki and document sections, and processes with their steps), standards, requests, patterns and decisions that bear on implementing its own step. A change that adds SSO to placing an order gets the "Set up SSO for a Forge service" how-to and the token claims standard on the task that changes the entry step, not only somewhere on the change.
+
+```sh
+atticus stories add-sso --handoff        # or atticus change small add-sso for a small change
+atticus task context add-sso 1.1
+```
+
+How a task's list is chosen:
+
+- The search starts from the task's own words and walks from its flow, its components and the table it stores in.
+- An item is kept when what it is about (its title, when it applies, its rules or steps, a section's text) shares a word with **what the task changes**: the step's new words, its fields, the component it calls (and "vendor" when that is a vendor) and its table. The words of the flow the task sits in, its component and today's step don't count on their own. A pattern about publishing order events doesn't reach a task that adds SSO to placing an order, though both are about orders.
+- An item that names the component the task calls or the table it stores in is kept on that alone. Naming the task's flow, component or files whole raises it, and its why says so ("It names forge-orders, where this task works").
+- An item the change confirmed ranks higher and needs only a word in common with the task. An item it excluded never appears, nor do the sections of the page it was read from.
+- A wiki section an item was read from is shown through that item, not again on its own.
+- At most 8 entries per task.
+
+What each entry shows: the title and kind; the page, section and line (`forge-wiki/sso-setup.md#steps, line 6`) with the page's last update, author and owner when the page or snapshot says (`updated 2026-09-14 by kim, owner Identity team`); the page's title and its copy in the snapshot (`knowledge/snapshots/forge-wiki/2026-10-20/sso-setup.md`); why it applies, naming the task's words it matched and the task's places it names; its steps, rules or decision; the other pages ("Also described on …"); and the pages that disagree.
+
+### Several pages on one topic
+
+Several people may have written pages on the same thing. They are one entry, never several:
+
+- the pages an item was read from and is also described on, and
+- items that are near-duplicates of each other (the same kind, and nearly the same title or the same rules and steps).
+
+The best page leads and the others are listed as "Also described on", in this order:
+
+1. **Verified by a person** (the item was reviewed and verified or corrected).
+2. **Newer** (the page's last update).
+3. **Owned:** a page or source with an owner, or in a team's space.
+4. **The more specific match:** the page whose section says more of the task's words.
+
+A grouped entry says which items it grouped ("Grouped with sso-setup-2: they say the same").
+
+Where you see it:
+
+- **The story file**, under each task: "Knowledge that applies", one line per entry and its "also" pages and disagreements under it.
+- **`atticus task context`** (Markdown and `--json`, the MCP tool and `atticus task run`): a "Knowledge that applies" section with each entry's steps, rules or decision quoted in full, so the developer or Copilot has them inline.
+- **The hand-down to the repo** (`atticus spec hand-down`): the task's plan.md (Spec Kit) or `.atticus/tasks/<id>.md` (Atticus engine) gets a "Knowledge that applies" section, as the task's story lists it.
+- **`knowledge.yaml`** names the tasks whose own selection picked an item (`tasks: [1.1]`); `atticus change knowledge` and the change's Knowledge panel in the app show them. The app's Stories tab shows the story files.
+- **The stories stage's prompt** lists each task's standards, how-tos and decisions, so a standard's rule (an SSO token's required claims) becomes that task's criterion.
+
+## 8. Pages that disagree
+
+The scan keeps one item for a topic, with the other pages that state it the same way under "also on", and records each disagreement in `knowledge/scan.yaml`, quoting both pages. The pages' words are data: nothing a page says is followed as an instruction.
+
+**Atticus never picks a page silently.** Once a change or one of its tasks relies on the item, it asks a person once, on the change (`questions/<id>.yaml`, step `knowledge-conflict`). The question quotes both pages, with their owners and last-edited dates when the snapshot has them, and offers each page, or "Both, in different cases" (say which in your own words), with what each choice changes.
+
+The scan also reads, without a model, which page likely owns the topic, by the first of these signals that tells the pages apart, and the question names that page as **suggested**, with the signal. It is only a suggestion:
+
+1. **Replaces:** one page says it replaces the other.
+2. **Owner:** one page's owner (its front matter or an "Owner:" line, else its source's owner in `sources.yaml`) is the team that handles the item.
+3. **Source kind:** the pages are in different sources, and one source is tagged with the item's kind (`atticus sources tag <source> --kind standards`).
+4. **Space:** one page is in that team's space (front matter `space`, else its folder).
+5. **Last edited:** both pages say when they were last edited, and one is later.
+
+```sh
+atticus questions answer q-0123456789ab --option 1
+atticus questions answer q-0123456789ab --text "sso-setup.md for web services, sso-notes.md for batch jobs"
+```
+
+**A document never overrides a fact verified from code.** When the pages disagree on a value the code holds (a path such as a redirect URI, a URL, a dotted key such as a config property) and a catalog record verified from code holds one page's value and not the other's, the code settles it. Nobody is asked, and everywhere the conflict shows it says so and cites the fact: "Disagrees, not used (settled by the code: Endpoint forge-orders.get-login-oauth2-code-forge-identity has /login/oauth2/code/forge-identity, verified from code at forge-orders:src/main/resources/application.yml:12)". A bare word (a claim's name such as "email") or a name the catalog uses as an id is never enough; the code holding both values, or neither, settles nothing.
+
+The answer is used from then on. Tasks show the chosen page's words, and the other page as "Disagrees, not used (answered by sam)", or "Applies instead" when the person chose the page the item wasn't read from. The same topic and pages are never asked again, on this change or another, whatever the snapshot's date.
+
+`atticus knowledge conflicts` lists every disagreement, what each page says and who decided: a person (with their question) or the code (the fact), and the suggested page while it waits. `atticus change knowledge <id>` lists those the change relies on and asks the undecided ones; so do the stories stage and `atticus task context`. In the app, a knowledge item and the change's Knowledge panel show the same.
+
 ## What it doesn't do yet
 
 - Matching by words still picks "file transfer" items (a file-transfer pattern, its request, a file hub's retirement) for a change about a money transfer, from the model's reading of the brief. Exclude them; no later stage picks them again.
-- A story's Context doesn't yet link the items its criteria drew on.
+- A task's list is kept by shared words, not meaning: a how-to that says only "single sign-on" where the task says "SSO" is left out. Confirmed for the change, it reaches every task that shares any word with it.
+- An answer to a conflict question doesn't rewrite the story files; the next stories run, or `atticus task context`, shows it. A hand-down already in a repo isn't redone either.
+- The code settles only a value it holds exactly (a path, URL or dotted key); a disagreement on step order or a claim's name is always a person's question.
 - A real document, a diagram and a real repo are still to walk.
 
-`docs/build-status.md` (B2) has the detail.
+`docs/build-status.md` (B2 and B-task-knowledge) has the detail.

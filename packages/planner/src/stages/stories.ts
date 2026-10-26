@@ -47,8 +47,17 @@ import { mergeStoryRequests } from "../needs.js";
 import { PlannerError } from "../errors.js";
 import { instructionSource, wholeLists, type ContextReport } from "../engine.js";
 import { pastCorrectionsSource } from "./past-corrections.js";
-import { recordKnowledge } from "./knowledge-applies.js";
+import { recordKnowledge, recordTaskKnowledge } from "./knowledge-applies.js";
 import { isStandard, processLine, standardLine } from "./knowledge-lines.js";
+import {
+  conflictLines,
+  refreshTaskConflicts,
+  selectTaskKnowledge,
+  storyKnowledgeLines,
+  type TaskKnowledge,
+  type TaskKnowledgeInput,
+} from "../task-knowledge.js";
+import { askKnowledgeConflicts } from "../knowledge-conflicts.js";
 import { estateContext } from "./estate-context.js";
 import { GENERATED_MARK } from "../render.js";
 import { slug } from "../words.js";
@@ -201,6 +210,64 @@ export const partsOf = (t: DeltaTask): DeltaTask[] => t.covers ?? [t];
 
 /** A story's steps that need code, each as a task of its own, in order (B-tasks). */
 export const stepTasks = (s: DeltaStory): DeltaTask[] => s.tasks.flatMap(partsOf);
+
+/**
+ * What a task's knowledge is chosen by (B-task-knowledge): what it changes (each step's words once
+ * the change is in, its fields, the kind of a step it adds, where a call goes, a vendor's being
+ * one, the table it stores in) apart from what is there already (today's step it changes, the
+ * flow's name, its components and repo), the ids it names and the files it touches.
+ */
+export function taskKnowledgeInput(
+  s: Pick<DeltaStory, "flow" | "name" | "repo">,
+  t: DeltaTask,
+  delta: FlowDelta | undefined,
+  estate: Estate | undefined,
+  story?: string,
+): TaskKnowledgeInput {
+  const today = estate?.flowById.get(s.flow);
+  const changes: string[] = [];
+  const context: string[] = [s.name, s.flow, s.repo];
+  const ids = new Set<string>([s.flow]);
+  const targets = new Set<string>();
+  if (today) {
+    ids.add(today.flow.component);
+    context.push(today.flow.component);
+  }
+  for (const p of partsOf(t)) {
+    const d = delta?.steps[p.position - 1];
+    changes.push(p.what, ...p.fields);
+    if (p.op === "add" && p.kind) changes.push(p.kind);
+    if (p.target) changes.push(p.target);
+    if (p.store) changes.push(p.store);
+    if (p.to) {
+      ids.add(p.to.component);
+      targets.add(p.to.component);
+      const sys = estate?.byId.get(p.to.component) as { boundary?: string } | undefined;
+      if (sys?.boundary === "vendor") changes.push("vendor");
+    }
+    if (d?.store) {
+      ids.add(d.store.table);
+      targets.add(d.store.table);
+    }
+    const n = d?.op === "change" || d?.op === "remove" ? d.step : undefined;
+    const was = n && today ? today.flow.steps[n - 1] : undefined;
+    if (was) context.push(was.what);
+  }
+  return {
+    task: t.id,
+    title: t.title,
+    changes,
+    context,
+    ids: [...ids],
+    ...(targets.size ? { targets: [...targets] } : {}),
+    files: [
+      ...t.evidence,
+      ...(t.newFile ? [t.newFile] : []),
+      ...(t.files ?? []).map((f) => f.file),
+    ],
+    ...(story ? { story } : {}),
+  };
+}
 
 /** A task's fields and those of the steps it notes as done: what a criterion may say it checks. */
 const acceptsFields = (t: DeltaTask): string[] => [
@@ -2653,6 +2720,13 @@ export interface StoryFileExtras {
   requests?: RequestTask[];
   /** The estate, for a field's required the story leaves out (ADR 0125). */
   estate?: Estate;
+  /** Each task's knowledge, by task id (B-task-knowledge): listed under the task. */
+  knowledge?: ReadonlyMap<string, TaskKnowledge[]>;
+  /**
+   * The command that wrote the stories and the one to run once a question about pages that
+   * disagree is answered (B-task-knowledge). Default `atticus plan stories <change>`.
+   */
+  asker?: { command: string; rerun: string };
 }
 
 /**
@@ -3188,6 +3262,8 @@ export function renderStoryFile(
       `- Files to touch: ${files || "new code; follow the repo's patterns for its neighbours"}`,
       // B-place: the code its steps only call, apart from the files it touches.
       ...(t.uses?.length ? [`- Code it calls (unchanged): ${t.uses.join(", ")}`] : []),
+      // B-task-knowledge: the how-tos, standards, processes and decisions that bear on the task.
+      ...storyKnowledgeLines(x.knowledge?.get(t.id) ?? []),
       `- Acceptance criteria: ${criteriaWhere(s, w, t)}`,
       ...(tw?.tests?.length
         ? ["- Tests to add:", ...tw.tests.map((y) => `  - ${sentence(y)}`)]
@@ -3337,6 +3413,14 @@ export async function writeStories(
     if ((await readFile(join(dir, "stories", f), "utf8")).startsWith(GENERATED_MARK))
       await rm(join(dir, "stories", f));
   }
+  // B-task-knowledge: each task's own knowledge, listed under it, recorded in the change's list,
+  // and the pages that disagree about it asked of a person once.
+  const { byTask: knowledge } = await storiesKnowledge(root, change, stories, {
+    ...(extras.estate ? { estate: extras.estate } : {}),
+    now,
+    ...(extras.asker ? { asker: extras.asker } : {}),
+    ...(extras.knowledge ? { selected: extras.knowledge } : {}),
+  });
   const files: string[] = [];
   for (const s of stories) {
     const w = a.stories.find((x) => x.id === s.id) ?? {
@@ -3349,7 +3433,7 @@ export async function writeStories(
     };
     await writeFileAtomic(
       join(dir, "stories", `${s.id}.md`),
-      renderStoryFile(change, s, w, unjudged, { ...extras, requests }),
+      renderStoryFile(change, s, w, unjudged, { ...extras, requests, knowledge }),
     );
     files.push(`stories/${s.id}.md`);
   }
@@ -3363,6 +3447,130 @@ export async function writeStories(
     `# The story writer's last answer (ADR 0087).\n${stringify(a, { lineWidth: 0 })}`,
   );
   return [...files, "stories.md", "tasks.md", "requests.md", "needs.yaml", "needs.md"];
+}
+
+/**
+ * Each task's knowledge, selected from its own step (no story words: the stories stage selects it
+ * for its prompt before a story is worded, and the story file lists the same).
+ */
+export async function selectStoriesKnowledge(
+  root: string,
+  change: string,
+  stories: DeltaStory[],
+  estate: Estate | undefined,
+): Promise<{ byTask: Map<string, TaskKnowledge[]>; note?: string }> {
+  const deltas = (await readDeltas(changeFolder(root, change))).deltas;
+  return selectTaskKnowledge(
+    root,
+    change,
+    stories.flatMap((s) =>
+      s.tasks.map((t) =>
+        taskKnowledgeInput(
+          s,
+          t,
+          deltas.find((d) => d.flow === s.flow),
+          estate,
+        ),
+      ),
+    ),
+  );
+}
+
+const ruleSentence = (s: string) => (/[.!?]$/.test(s.trim()) ? s.trim() : `${s.trim()}.`);
+
+/**
+ * Each task's knowledge for the story writer (B-task-knowledge): what a task's criteria can check,
+ * so standards first with their rules, how-tos with their steps, decisions, then sections. A
+ * request or an integration pattern isn't listed: requests are the processes' list, and patterns
+ * the architecture's. Undefined when no task has any, so the prompt is as it was.
+ */
+export function taskKnowledgeSource(
+  stories: DeltaStory[],
+  byTask: ReadonlyMap<string, TaskKnowledge[]>,
+): SourceInput | undefined {
+  const rank = (k: TaskKnowledge) =>
+    k.knowledgeKind === "standard"
+      ? 0
+      : k.knowledgeKind === "process"
+        ? 1
+        : k.knowledgeKind === "decision" || k.knowledgeKind === "constraint"
+          ? 2
+          : 3;
+  const lines: string[] = [];
+  for (const s of stories)
+    for (const t of s.tasks) {
+      const ks = (byTask.get(t.id) ?? [])
+        .filter(
+          (k) =>
+            k.knowledgeKind === "standard" ||
+            k.knowledgeKind === "decision" ||
+            k.knowledgeKind === "constraint" ||
+            (k.knowledgeKind === "process" && !!k.steps?.length) ||
+            k.kind === "WikiSection" ||
+            k.kind === "DocumentSection",
+        )
+        .map((k, i) => ({ k, i }))
+        .sort((a, b) => rank(a.k) - rank(b.k) || a.i - b.i)
+        .map((x) => x.k);
+      if (!ks.length) continue;
+      lines.push(`task ${t.id} (${t.title}):`);
+      for (const k of ks) {
+        const head =
+          k.kind === "WikiSection" || k.kind === "DocumentSection"
+            ? `${k.knowledgeKind} ${k.id}`
+            : `${k.knowledgeKind} ${k.id} "${k.title}"`;
+        const body = k.steps?.length
+          ? `steps: ${k.steps.map((x, n) => `${n + 1}. ${ruleSentence(x)}`).join(" ")}`
+          : k.says.map((x) => ruleSentence(x.replace(/\s+/g, " ").slice(0, 600))).join(" ");
+        const disagree = k.conflicts.flatMap(conflictLines).map((l) => ` ${ruleSentence(l)}`);
+        lines.push(`- ${head}: ${body}${disagree.join("")}`);
+      }
+    }
+  if (!lines.length) return undefined;
+  return {
+    id: "task-knowledge",
+    kind: "document",
+    origin: "knowledge/items and the wikis, selected per task (B-task-knowledge)",
+    text: lines.join("\n"),
+    classification: "internal",
+    priority: 85,
+  };
+}
+
+/**
+ * Each task's own knowledge (B-task-knowledge): selected for the task's step, recorded in the
+ * change's knowledge.yaml under the task, and each undecided disagreement between pages about
+ * what a task relies on asked of a person once (the question's state is then what the tasks show).
+ */
+export async function storiesKnowledge(
+  root: string,
+  change: string,
+  stories: DeltaStory[],
+  o: {
+    estate?: Estate;
+    now: Date;
+    asker?: { command: string; rerun: string };
+    /** The selection already made (the stories stage makes it for its prompt). */
+    selected?: ReadonlyMap<string, TaskKnowledge[]>;
+  },
+): Promise<{ byTask: Map<string, TaskKnowledge[]>; note?: string }> {
+  const r = o.selected
+    ? { byTask: new Map(o.selected) }
+    : await selectStoriesKnowledge(root, change, stories, o.estate);
+  await recordTaskKnowledge(root, change, r.byTask);
+  // Once answered, the change's knowledge list and each task's context read the answer.
+  const asker = o.asker ?? {
+    command: `atticus plan stories ${change}`,
+    rerun: `atticus change knowledge ${change}`,
+  };
+  const asked = await askKnowledgeConflicts(
+    root,
+    change,
+    { ...asker, at: o.now.toISOString() },
+    { used: [...r.byTask.values()].flat().map((k) => k.id) },
+  );
+  if (asked.raised.length) await refreshTaskConflicts(root, r.byTask.values());
+  return r;
 }
 
 /** The story writer's last answer, as kept in the change folder. */
@@ -3529,7 +3737,9 @@ export async function storiesStage(
     known: knownFieldNames(estate, deltas),
     estate,
   };
-  const extras = await storyExtras(ctx, change);
+  // B-task-knowledge: each task's own knowledge, for its criteria here and its story file after.
+  const taskKnown = (await selectStoriesKnowledge(root, change.id, stories, estate)).byTask;
+  const extras = { ...(await storyExtras(ctx, change)), knowledge: taskKnown };
   let requests: RequestTask[] = [];
   const now = o.now ?? new Date();
   const store = fileJudgments(root);
@@ -3598,6 +3808,13 @@ export async function storiesStage(
     Math.floor(stageBudget(ctx, STORY_AGENT) * STORY_CODE_SHARE),
   );
   if (code) sources.push(code);
+  // B-task-knowledge: a task's standards, how-tos and decisions become its criteria. Only when a
+  // task has any: the prompt is otherwise as it was.
+  const taskSource = taskKnowledgeSource(stories, taskKnown);
+  if (taskSource) sources.push(taskSource);
+  const TASK_KNOWLEDGE_RULE = taskSource
+    ? "\n- A standard's rule or a how-to's step listed for a task under task-knowledge is something that task's code must do: write an acceptance criterion on that task that checks it (a claim a token must carry, a timeout, a header), and name the standard in its story's context. Where pages disagree, follow the page the list says applies; one a person hasn't decided yet is theirs to settle, so write no criterion on it."
+    : "";
   const FORMAT = `Reply with YAML only:
 
 stories:
@@ -3662,7 +3879,7 @@ Rules:
 - Every request field an entry of this repo gains or changes has a validation, and a criterion with outcome: error that checks it, saying the status and message the caller sees.
 - Data: every column a step adds, with its type, nullable, default, migration, classification and retention, as the target flow says them; a write that adds a column names its migration.
 - Non-functional: auth, audit, the timeout and retries of every call, and the cost per request. Dependencies: the stories and repos that land first, or empty lists.
-- Name a request only when the knowledge item's "applies when" fits the step, quoting those words. Never raise it yourself.
+- Name a request only when the knowledge item's "applies when" fits the step, quoting those words. Never raise it yourself.${TASK_KNOWLEDGE_RULE}
 - Plain, short English.`;
   // H2: the closest past corrections of this stage, when there are any (else nothing changes).
   const past = await pastCorrectionsSource(root, {
