@@ -17,6 +17,24 @@ const argv = process.argv.slice(2);
 if (argv.length === 1 && (argv[0] === "--version" || argv[0] === "-v"))
   process.stdout.write(VERSION + "\n");
 else {
+  // ATTICUS_MAX_OLD_SPACE (megabytes) is what a person is told to set when a repo's facts need
+  // more memory than Node was given (ADR 0124 addendum A-room). A running V8 can't raise the heap
+  // it already made, so the value is honoured by starting Node again with the flag, as
+  // scripts/bundle/fetch-model.mjs starts again for a proxy. Unset — the ordinary run — nothing
+  // is imported and nothing is spawned.
+  if (process.env.ATTICUS_MAX_OLD_SPACE) {
+    const { reExecForMemory } = await import("./memory-room.js");
+    const again = reExecForMemory(process.env, process.execArgv);
+    if (again) {
+      const { spawnSync } = await import("node:child_process");
+      const r = spawnSync(
+        process.execPath,
+        [`--max-old-space-size=${again.maxOldSpaceMB}`, process.argv[1]!, ...argv],
+        { stdio: "inherit", env: { ...process.env, ATTICUS_RESTARTED_FOR_MEMORY: "1" } },
+      );
+      process.exit(r.status ?? 1);
+    }
+  }
   const { main } = await import("./main.js");
   await main(argv, {
     out: (line) => process.stdout.write(line + "\n"),

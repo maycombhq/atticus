@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { CatalogRecord } from "./catalog.js";
-import { callPath, entryEndpointId, factIdPart } from "./facts.js";
+import { callPath, catalogAuth, entryEndpointId, factIdPart } from "./facts.js";
 import { hostQuestionText } from "./host-questions.js";
 import { interfaceId } from "./identity.js";
 import type { EvidenceT } from "./schema/common.js";
@@ -661,7 +661,8 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
         call: next.call,
         ...(next.tie ? { tie: next.tie } : {}),
         route: gatewayRouteId(r),
-        ...(r.fact.auth ? { auth: r.fact.auth } : {}),
+        // A-uncited: the gate on the way into C1, as the projection has it.
+        ...(catalogAuth(r.fact) ? { auth: catalogAuth(r.fact) } : {}),
         ...(scopes.length ? { scopes } : {}),
         ...(facing ? { facing } : {}),
       });
@@ -934,7 +935,7 @@ export function joinRecords(result: FactsJoinResult, repos: readonly JoinRepo[])
         ...j.gateway.flatMap((h) => [fact(h.entry), fact(h.call)]),
       ].every((f) => f?.conf === "declared");
       const confidence = declared ? "verified" : "inferred";
-      const auth = route.auth ?? entry.auth;
+      const auth = catalogAuth(route) ?? catalogAuth(entry);
       out.set(j.interface, {
         kind: "Interface",
         schemaVersion: 2,
@@ -1019,7 +1020,7 @@ export function joinRecords(result: FactsJoinResult, repos: readonly JoinRepo[])
       via: call.callType === "webhook" ? "webhook" : call.callType === "sftp" ? "sftp" : "direct",
       ...(method ? { method } : {}),
       normalizedPath: servedPath(entry),
-      ...(entry.auth ? { auth: entry.auth } : {}),
+      ...(catalogAuth(entry) ? { auth: catalogAuth(entry) } : {}),
       sync: call.sync ?? "sync",
       direction: "outbound",
       conflicts: [],

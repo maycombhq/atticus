@@ -388,6 +388,94 @@ describe("atticus verify <repo> --write (ADR 0124, A3b)", () => {
   });
 });
 
+/**
+ * ADR 0124 addendum A-uncited. A trial on a 4,900-file repo found that `verify --write` rewrote
+ * the assistant's own facts file with the facts stripped of every uncited `auth` — 221 of them —
+ * and that a second run therefore said nothing was missing. The facts file keeps what its reader
+ * wrote; only the catalog leaves the claim out; and the count is the same on every run.
+ */
+describe("atticus verify <repo> --write keeps the facts file whole (A-uncited)", () => {
+  /** The fixture's facts with the one authCite taken off: an auth resting on no cited line. */
+  const uncited = () =>
+    readFileSync(join(VERIFY, "forge-ledger.facts.jsonl"), "utf8").replace(
+      /,"authCite":\{[^}]*\}/,
+      "",
+    );
+  const factsFile = (root: string) => join(root, "facts", "forge-ledger.jsonl");
+  const reportOf = (root: string) =>
+    parse(readFileSync(join(root, "facts", "forge-ledger.verify.yaml"), "utf8")) as {
+      authUncited?: { id: string; auth: string; cite: string }[];
+    };
+  /** The auth the catalog says for the account read: on its Endpoint, and on the Interface to it. */
+  const catalogAuths = async (root: string) => {
+    const catalog = await readCatalog(join(root, "catalog", "generated"));
+    const auth = (kind: string, id: string) => {
+      const r = catalog.records.find((x) => x.kind === kind && x.id === id) as unknown as
+        { auth?: string } | undefined;
+      expect(r, `${kind} ${id}`).toBeDefined();
+      return r!.auth;
+    };
+    return {
+      endpoint: auth("Endpoint", "ledger-api.get-account"),
+      iface: auth("Interface", "if-3bbb3af22ed63158"),
+    };
+  };
+  const said = (o: ReturnType<typeof io>) => o.out.join("\n");
+
+  it("keeps the uncited auth in the facts file, leaves it out of the catalog, and says so on every run", async () => {
+    expect(uncited()).not.toContain("authCite");
+    const root = await metarepo(uncited());
+    const reviewed = join(root, "facts", "forge-ledger.reviewed.jsonl");
+    const reviewedText = `${JSON.stringify({ path: "README.md", why: "a readme holds no fact of what the repo serves" })}\n`;
+    writeFileSync(reviewed, reviewedText);
+
+    const first = io();
+    expect(await write(root, first)).toBe(0);
+    expect(said(first)).toMatch(/1 entry's auth rests on no cited line/);
+    // what to do about it, and what was and wasn't kept
+    expect(said(first)).toMatch(/give each entry an authCite/);
+    expect(said(first)).toContain("kept in facts/forge-ledger.jsonl");
+    expect(said(first)).toMatch(/left out of the catalog/);
+    expect(reportOf(root).authUncited).toEqual([
+      {
+        id: "e-get-account",
+        auth: "oauth2",
+        cite: "src/main/java/forge/ledger/AccountController.java:18",
+      },
+    ]);
+    // the claim is still in the reader's own file, and out of the catalog
+    const afterFirst = readFileSync(factsFile(root), "utf8");
+    expect(afterFirst).toContain('"auth":"oauth2"');
+    expect(afterFirst).not.toContain("authCite");
+    expect(await catalogAuths(root)).toEqual({ endpoint: undefined, iface: undefined });
+
+    // Verify again, on the file the write left behind: the same count, not nothing.
+    const second = io();
+    expect(await write(root, second)).toBe(0);
+    expect(said(second)).toMatch(/1 entry's auth rests on no cited line/);
+    expect(reportOf(root).authUncited).toHaveLength(1);
+    expect(readFileSync(factsFile(root), "utf8")).toBe(afterFirst);
+    expect(await catalogAuths(root)).toEqual({ endpoint: undefined, iface: undefined });
+
+    // A third run, in case the second were the stable one.
+    expect(await write(root, io())).toBe(0);
+    expect(reportOf(root).authUncited).toHaveLength(1);
+    expect(readFileSync(factsFile(root), "utf8")).toBe(afterFirst);
+
+    // Nothing else the run writes beside the facts was touched.
+    expect(readFileSync(reviewed, "utf8")).toBe(reviewedText);
+    expect(existsSync(join(root, "facts", "forge-ledger.rejected.jsonl"))).toBe(false);
+  });
+
+  it("puts the auth in the catalog once a line is cited, with nothing else changed", async () => {
+    const root = await metarepo();
+    expect(await write(root, io())).toBe(0);
+    expect(reportOf(root).authUncited).toBeUndefined();
+    expect(await catalogAuths(root)).toEqual({ endpoint: "oauth2", iface: "oauth2" });
+    expect(readFileSync(factsFile(root), "utf8")).toContain("authCite");
+  });
+});
+
 describe("the command line", () => {
   it("takes --write as a switch wherever it is, and routes atticus map render", async () => {
     const root = await metarepo();

@@ -129,7 +129,11 @@ export interface ReviewedProblem {
   message: string;
 }
 
-/** An entry whose `auth` was left out because no line was cited for it (`authCite`). */
+/**
+ * An entry whose `auth` rests on no cited line (`authCite`). The claim stays in the facts file,
+ * as its reader wrote it, and `catalogAuth` keeps it out of the catalog (ADR 0124 addendum
+ * A-uncited), so this says the same thing on every run until a line is cited.
+ */
 export interface UncitedAuth {
   id: string;
   auth: string;
@@ -143,6 +147,13 @@ export interface VerifyReport {
   coverage: Coverage;
   /** Quotes stored with a secret value redacted. */
   redacted: number;
+  /**
+   * Quotes left off a kept fact because the file's line can't be quoted and the quote doesn't
+   * match it: a minified bundle, a notebook, a binary or a line over 1,000 characters
+   * (`quoteNotRequired`). Counted, not silent (ADR 0124 addendum A-uncited): the claim itself is
+   * still checked on the line, and only the quote goes.
+   */
+  quotesDropped: number;
   /**
    * Facts of an earlier commit carried to `commit` (ADR 0124 addendum A-incremental): every file
    * they cite is unchanged since `from`, and their lines checked again. Their `commit` in
@@ -162,8 +173,10 @@ export interface VerifyReport {
   /** The reviewed lines refused, each with why (A-read). */
   reviewedProblems: ReviewedProblem[];
   /**
-   * A note, not a rejection (A-read): the kept entries whose `auth` was left out because no line
-   * that sets it was cited (`authCite`). In id order.
+   * A note, not a rejection (A-read, as A-uncited turns it round): the kept entries whose `auth`
+   * rests on no cited line (`authCite`). The fact keeps the claim; the catalog projection drops
+   * it. So this count is the same on every run, `--write` included, until a line is cited. In id
+   * order.
    */
   authUncited: UncitedAuth[];
   /**
@@ -245,7 +258,23 @@ export interface VerifyOptions {
    * path must be a file of the repo, or a glob matching one; coverage counts them apart.
    */
   reviewed?: readonly ReviewedEntry[];
+  /**
+   * Called once per fact and once per file of the repo (ADR 0124 addendum A-room): the caller's
+   * chance to stop the run with words of its own while it still can. `atticus verify` passes a
+   * guard that throws when the heap passes its ceiling, so a read too big for the memory Node
+   * was given ends in a message instead of the kernel's silent kill. Throw to stop; the throw is
+   * the caller's, and `verifyFacts` lets it through untouched.
+   */
+  room?: () => void;
 }
+
+/**
+ * Files whose lines are held at once while the facts are checked (ADR 0124 addendum A-room). A
+ * file's lines cost about twice its bytes, so an unbounded cache of a big repo's files was the
+ * peak that `verify --write` was killed at. 64 covers a fact's own file, its parts' files and a
+ * flow's files several times over, which is as far as consecutive facts (in id order) reach.
+ */
+const LINES_HELD = 64;
 
 const SOURCE_EXT =
   /\.(java|kt|kts|scala|groovy|cs|vb|fs|ts|tsx|js|jsx|mjs|cjs|py|rb|go|rs|php|swift|m|mm|c|cc|cpp|h|hpp|sql|graphql|gql|proto|ya?ml|json|xml|properties|toml|ini|conf|tf|tfvars|hcl|bicep|sh|ps1|bat|cmd|gradle|html?|vue|svelte|cshtml|razor|aspx|jsp|ftl|hbs|cob|cbl|cpy|jcl|avsc|wsdl|xsd|csproj|sln|config)$/i;
@@ -392,17 +421,30 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
       carriedFrom.set(f.id, f.commit);
       return { ...f, commit: o.commit } as Fact;
     });
+  // The lines of the file cited, read once and held while the facts that cite it are checked.
+  // The cache is bounded (ADR 0124 addendum A-room): a 4,900-file repo's lines, held as arrays of
+  // strings, cost about twice the repo's own bytes, and that was the peak this command died at.
+  // The facts are in id order and a fact's cite, parts, steps and error paths sit in a handful of
+  // files, so a small window keeps nearly every hit; past it, the oldest file's lines are freed.
+  const readLines = (path: string) => {
+    // a path a rule builds (`app/models/user.rb`) is read only when it stays in the repo
+    const text = insideRepo(path) && !isSecretPath(path) ? o.source.read(path) : undefined;
+    // the raw text is dropped as soon as it is split, so only one copy of a file is ever held
+    return text === undefined ? undefined : text.replace(/\r\n?/g, "\n").split("\n");
+  };
   const linesCache = new Map<string, string[] | undefined>();
   const linesOf = (path: string) => {
-    if (!linesCache.has(path)) {
-      // a path a rule builds (`app/models/user.rb`) is read only when it stays in the repo
-      const text = insideRepo(path) && !isSecretPath(path) ? o.source.read(path) : undefined;
-      linesCache.set(
-        path,
-        text === undefined ? undefined : text.replace(/\r\n?/g, "\n").split("\n"),
-      );
+    if (linesCache.has(path)) {
+      // keep it at the newest end of the window
+      const held = linesCache.get(path);
+      linesCache.delete(path);
+      linesCache.set(path, held);
+      return held;
     }
-    return linesCache.get(path);
+    const lines = readLines(path);
+    linesCache.set(path, lines);
+    if (linesCache.size > LINES_HELD) linesCache.delete(linesCache.keys().next().value!);
+    return lines;
   };
   let fileList: string[] | undefined;
   const deriveEnv: DeriveEnv = { lines: linesOf, files: () => (fileList ??= o.source.list()) };
@@ -714,13 +756,17 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
     }
   }
 
-  // the kept facts: verified by the line check unless a person or a sample already did, quotes redacted
+  // The kept facts, as their writer wrote them, with two changes to the bytes on disk: a quote's
+  // secret value is redacted, and a quote a file of this kind can't bear is dropped. Nothing a
+  // fact claims is taken out here: a claim the catalog mustn't carry is dropped on the way into
+  // the catalog instead (ADR 0124 addendum A-uncited), so the warning for it survives a `--write`.
   let redacted = 0;
+  let quotesDropped = 0;
   const fixQuote = (c: Cite): Cite => {
     if (!c.quote) return c;
-    const lines = linesOf(c.file) ?? [];
-    const line = lines[c.line - 1] ?? "";
+    const line = (linesOf(c.file) ?? [])[c.line - 1] ?? "";
     if (quoteNotRequired(c.file, line) && !quoteMatches(line, c.quote)) {
+      quotesDropped++;
       const { quote: _drop, ...rest } = c;
       return rest;
     }
@@ -732,22 +778,21 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
   const accepted: Fact[] = facts
     .filter((f) => !rejected.has(f.id))
     .map((f) => {
+      o.room?.();
       // A reader can't vouch for itself: only a fact a person made keeps a person's mark, and a
       // sample session's mark stands only on a fact a person made too (the sample check writes
       // its own results, not this file). Everything else is verified by the line check.
       const verified = f.by === "person" && f.verified !== "none" ? f.verified : "line";
       const base = { ...f, verified, cite: fixQuote(f.cite) } as Fact;
-      // A-read, problem 4: an auth no line is cited for is left out, so the catalog never says
-      // it; a person's own fact keeps it (it is their word, marked as theirs).
-      if (base.kind === "entry" && base.auth !== undefined && !base.authCite && f.by !== "person") {
+      // A-read problem 4, as A-uncited turns it round: an auth no line is cited for is said here
+      // and kept in the fact, since it is what the reader wrote; `catalogAuth` leaves it out of
+      // the catalog. A person's own fact is their word, marked as theirs, and is not listed.
+      if (base.kind === "entry" && base.auth !== undefined && !base.authCite && f.by !== "person")
         authUncited.push({
           id: base.id,
           auth: base.auth,
           cite: `${base.cite.file}:${base.cite.line}`,
         });
-        const { auth: _auth, ...rest } = base;
-        return rest as Fact;
-      }
       if (base.kind === "flow")
         return {
           ...base,
@@ -762,7 +807,10 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
   const sources: string[] = [];
   const excluded: string[] = [];
   for (const p of o.source.list()) {
-    const ls = linesOf(p) ?? [""];
+    o.room?.();
+    // A-room: every file of the repo passes through here, and only to ask whether it counts as
+    // source. Its lines are read, looked at and freed: nothing of a file nothing cites is held.
+    const ls = readLines(p) ?? [""];
     if (!isSourceFile(p, ls[0] ?? "", ls)) continue;
     if (excludeRes.some((re) => re.test(p))) excluded.push(p);
     else sources.push(p);
@@ -826,6 +874,7 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
       .sort((a, b) => (a.fact.id < b.fact.id ? -1 : a.fact.id > b.fact.id ? 1 : 0)),
     coverage: { read, reviewed: reviewedFiles, unknown, excluded: excluded.sort(), ratio },
     redacted,
+    quotesDropped,
     carried: accepted.flatMap((f) =>
       carriedFrom.has(f.id) ? [{ id: f.id, from: carriedFrom.get(f.id)! }] : [],
     ),

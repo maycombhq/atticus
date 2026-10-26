@@ -140,6 +140,25 @@ atticus map <repo> --copy --answer reply.txt # reads the answer you saved (--ans
 
 Repeat until it says the read is done, then `atticus verify <repo> --write`.
 
+### What `--write` keeps, and what the catalog leaves out
+
+`--write` rewrites `facts/<repo>.jsonl` with the facts it kept. That file stays your assistant's own: every claim it wrote is still in it, and the only changes to the bytes are that a quote carrying a secret value is redacted (so a secret never sits in the file) and that a quote the cited line can't be checked against — a minified bundle, a notebook, a binary, a line over 1,000 characters — is left off and counted. A fact that was rejected isn't in the file: it is in `<repo>.rejected.jsonl` with why, for your assistant to fix.
+
+The catalog is stricter than the facts file, and that is where a claim is dropped rather than from your assistant's work:
+
+- **An entry's `auth` reaches the catalog only when a line is cited for it** (`authCite`: the file and line that sets the auth, and what it writes there), or when you wrote the fact yourself. Without one, the claim stays in the facts file and no `Endpoint` or `Interface` record carries it, so the map never says an auth nothing shows.
+- `atticus verify` says how many entries that is, on **every** run, `--write` included, until a line is cited. If you see "N entries' auth rests on no cited line", have your assistant add an `authCite` to each and verify again; the number falls as the lines are cited, and not before.
+
+### A big repo and memory
+
+A repo of a few thousand files with a few thousand facts needs a few hundred megabytes while it is verified. If `atticus verify` says a repo's facts need more memory than Node was given, run it again with more, or a repo at a time:
+
+```bash
+ATTICUS_MAX_OLD_SPACE=4096 atticus verify <repo> --write   # megabytes Node may use
+```
+
+Closing an IDE usually frees enough on its own. Atticus checks its own memory as it reads and stops with that message, so the command never dies without saying anything.
+
 With several repos read: `atticus join` follows flows from repo to repo through the calls the facts join, and asks which repo answers a host nobody lists. `atticus ui --open` shows the map, with the Trust tab saying per repo what was verified.
 
 ## The first change

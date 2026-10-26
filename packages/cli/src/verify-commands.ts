@@ -1,13 +1,7 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import {
-  factsDirOf,
-  factsRelOf,
-  listQuestions,
-  loadOrgPack,
-  parseFactsLines,
-} from "@maycombhq/core";
+import { factsDirOf, factsRelOf, listQuestions, loadOrgPack } from "@maycombhq/core";
 import { dirSource, frameworkFacts, frameworksToLearn, verifyFacts } from "@maycombhq/verify";
 import type { GitRunner } from "@maycombhq/workspace";
 import type { Output } from "./commands.js";
@@ -23,6 +17,7 @@ import {
   writeVerifyFiles,
   type QuestionProblem,
 } from "./facts-files.js";
+import { NoRoomError, roomGuard, streamFacts } from "./memory-room.js";
 
 /**
  * atticus verify <repo> (ADR 0124): check the facts the assistant wrote for a repo against the
@@ -63,6 +58,12 @@ export interface VerifyCommandOptions {
   now?: () => Date;
   /** The git runner the diff since the facts' commit is read with (tests mock it). */
   git?: GitRunner;
+  /**
+   * The heap this read may fill, in bytes (ADR 0124 addendum A-room). The default is the lower of
+   * V8's heap limit and the memory the machine has free; tests pass a small one to prove the
+   * message. Past it the command stops with words, rather than being killed without any.
+   */
+  ceilingBytes?: number;
 }
 
 /**
@@ -103,8 +104,22 @@ export async function verifyCommand(
     );
     return 2;
   }
+  // A-room: the facts file is read a line at a time, and the read stops itself with a message
+  // once the heap is past its ceiling. The same guard is passed to the verifier below, so a big
+  // repo's read ends in words a person can act on rather than the kernel's silent kill.
+  const room = roomGuard({
+    what: `${repo}'s facts`,
+    ...(o.ceilingBytes !== undefined ? { ceilingBytes: o.ceilingBytes } : {}),
+  });
   // One bad line costs that fact, not the read: it goes to <repo>.rejected.jsonl with why.
-  const parsed = parseFactsLines(await readFile(file, "utf8"));
+  let parsed;
+  try {
+    parsed = await streamFacts(file, room);
+  } catch (e) {
+    if (!(e instanceof NoRoomError)) throw e;
+    io.err(`atticus verify ${repo}: ${e.message}`);
+    return 2;
+  }
   if (!parsed.facts.length && parsed.bad.length) {
     io.err(`${rel}/${repo}.jsonl does not read as facts:`);
     for (const b of parsed.bad.slice(0, 20))
@@ -135,15 +150,23 @@ export async function verifyCommand(
     );
   // ADR 0124 addendum A-read: the files the reader read and found nothing to record in.
   const reviewed = await readReviewed(root, repo);
-  const report = await verifyFacts({
-    facts: parsed.facts,
-    source,
-    ...(commit ? { commit, carry } : {}),
-    ...(o.routed ? { routed: o.routed } : {}),
-    exclude: await excludesOf(root, repo),
-    corrections: corrections.corrections,
-    reviewed: reviewed.entries,
-  });
+  let report;
+  try {
+    report = await verifyFacts({
+      facts: parsed.facts,
+      source,
+      ...(commit ? { commit, carry } : {}),
+      ...(o.routed ? { routed: o.routed } : {}),
+      exclude: await excludesOf(root, repo),
+      corrections: corrections.corrections,
+      reviewed: reviewed.entries,
+      room,
+    });
+  } catch (e) {
+    if (!(e instanceof NoRoomError)) throw e;
+    io.err(`atticus verify ${repo}: ${e.message}`);
+    return 2;
+  }
   const reviewedBad = reviewedProblemsOf(reviewed.bad, report).map((p) => ({
     ...p,
     message: `${rel}/${repo}.reviewed.jsonl ${p.message}`,
@@ -316,11 +339,18 @@ export async function verifyCommand(
       `The read is complete: every source file is read (${cov.read.length})${cov.reviewed.length ? ` or reviewed with nothing to record (${cov.reviewed.length}, each with why in ${rel}/${repo}.verify.yaml)` : ""}.`,
     );
   if (report.redacted) io.out(`${report.redacted} quotes had a secret value redacted.`);
-  // A-read: an auth no line is cited for is left out of the kept fact (a note, not a rejection).
+  // A-uncited: the quote a file of that kind can't bear is left off the kept fact, and counted.
+  if (report.quotesDropped)
+    io.out(
+      `${report.quotesDropped} ${report.quotesDropped === 1 ? "quote was" : "quotes were"} left off (the cited line is minified, a notebook, binary or over 1,000 characters, and the quote doesn't match it); the claim itself was still checked on the line.`,
+    );
+  // A-uncited: an auth no line is cited for stays in the facts file and out of the catalog (a
+  // note, not a rejection). The count is the same on every run, --write included, until a line
+  // is cited, so re-verifying never says an estate's auth is recorded when it isn't.
   const noAuth = report.authUncited;
   if (noAuth.length) {
     io.out(
-      `${noAuth.length} ${noAuth.length === 1 ? "entry's" : "entries'"} auth left out (no line that sets it was cited; all under authUncited in ${verifyYaml}): give each an authCite, the line that sets it and what it writes there, with its auth again:`,
+      `${noAuth.length} ${noAuth.length === 1 ? "entry's" : "entries'"} auth rests on no cited line (all under authUncited in ${verifyYaml}). ${noAuth.length === 1 ? "It is" : "They are"} kept in ${rel}/${repo}.jsonl, as the reader wrote ${noAuth.length === 1 ? "it" : "them"}, and left out of the catalog, so the map never says an auth nothing shows. To record ${noAuth.length === 1 ? "it" : "them"}: give each entry an authCite — the file and line that sets the auth and what it writes there — and run atticus verify ${repo} again:`,
     );
     show(
       noAuth.map((a) => `${a.id} (${a.auth}, ${a.cite})`),

@@ -782,3 +782,52 @@ A part's state is not anyone's word that it is finished: it is read back from wh
 **A call out of the estate is a name the catalog has.** At the architecture stage every change that called a model provider was told that `POST /chat/completions` and `POST /messages` were "names that neither the catalog, the knowledge, the specs nor the code has" — while the catalog held both, as `call` facts projected into `Interface` records with their method and normalised path. The index knew an endpoint name only from an `Endpoint` record, and a call out of the estate never has one: an `Endpoint` is read from the code that serves it, and nobody reads a vendor's code. So the gap was in the lookup, not the catalog, and every such change paid for it with a question nobody could usefully answer.
 
 An `Interface` with a method and a normalised path is now indexed under its endpoint name too (`how: "call"`), beside the `Endpoint` records. A hop inside the estate gains nothing it didn't have; a call to a vendor or a model provider is known by the method and path the facts recorded, and its own record is selected into the step's pack, so the step reads what the catalog holds about the call rather than guessing. A call the catalog does not hold is still a gap: the fix widens the lookup to what the facts say, and invents nothing. The index schema version goes to 4, so an index built before this is rebuilt once. Proved on a Forge fixture whose ledger calls Thornefield Models, an invented model provider with no `Endpoint` record of its own.
+
+## Addendum (A-uncited, A-room): what a `--write` keeps, and the memory a big read needs (no C1 to C6 change)
+
+A trial of `atticus verify --write` on a real 4,900-file repo with 2,279 facts — the single command the whole read loop ends in — found two faults. Both are fixed here test-first on the invented Forge estate (`fixtures/verify-read/`, `packages/verify/test/fixtures/metarepo/`); nothing from that repo is in this one.
+
+### A-uncited. The facts file keeps what its reader wrote; the catalog is where a claim is dropped
+
+A-read point 4 took an entry's `auth` out of the kept fact when no line was cited for it, and listed it as `authUncited`. `writeVerifyFiles` then overwrites `facts/<repo>.jsonl` with those kept facts, so `--write` rewrote the assistant's own file with 221 auth claims gone. The warning went with them: the dry run said "221 entries' auth left out", and the second `--write` said nothing, because there was no longer an `auth` to notice. A person who re-verified was told their estate's auth was fully recorded while 221 endpoints said nothing about it. The loss and the evidence of the loss disappeared together, which is the worse half.
+
+It was the right drop in the wrong place. So:
+
+- **The kept fact keeps its `auth`.** The facts file is the reader's own; nothing it claims is taken out of it by the verifier.
+- **The catalog drops it.** `catalogAuth` (core, `facts.ts`) gives an entry's `auth` only where `authCite` is set or the fact is a person's, and it is the one gate every path into C1 goes through: the projection's `Endpoint.auth`, and the three places the estate join reads an entry's auth (a `GatewayRoute` hop, a gateway Interface's `route.auth ?? entry.auth`, a direct Interface's). So an uncited auth reaches no record, in this repo's catalog or through the join from another's.
+- **So the count is the same on every run**, `--write` included, until a line is actually cited: that is what the tests assert, three runs deep, on the file each `--write` left behind.
+- **The message says what to do and what is where**: "N entries' auth rests on no cited line … kept in `facts/<repo>.jsonl`, as the reader wrote them, and left out of the catalog, so the map never says an auth nothing shows. To record them: give each entry an authCite — the file and line that sets the auth and what it writes there — and run `atticus verify <repo>` again."
+
+**What else that function changes on disk, audited.** Two rewrites stay, because they change the bytes of a quote and never a claim, and one gains a count:
+
+- **A secret in a quote is redacted** (`redactSecrets`) — kept, and the point of the exercise: a secret must not sit in a file. Its count does fall to zero on the next run, as `authUncited`'s used to, but for the opposite reason: the file now holds the right bytes and there is nothing left to do. Tested: the secret doesn't come back, and the second run claims no new redaction.
+- **A quote the cited line can't be checked against is left off** (`quoteNotRequired`: a minified bundle, a notebook, a binary, a line over 1,000 characters). This differs from the auth claim in that a quote is corroborating evidence, not a claim — the route, topic or key is still checked on the line — and in that no warning hangs on it. But it was silent, so `VerifyReport` gains `quotesDropped`, `<repo>.verify.yaml` gains it when there is one, and `atticus verify` says it with the reason.
+- **`verified` is overwritten** with `line` unless a person made the fact — deliberate (a reader can't vouch for itself), written into the file, and stable on a re-read.
+- Nothing else in `accepted` is dropped: `reviewed.jsonl` and `<repo>.rejected.jsonl` are untouched by the write, which the test checks too.
+
+### A-room. A read too big for the memory given says so
+
+On an 8 GB machine with under about 2.6 GB free, `verify --write` was killed with **exit 137 and not one byte of stdout or stderr**; three runs were wasted before the tester saw it wasn't an Atticus bug. 137 is the kernel's own SIGKILL, not V8's heap limit, so no handler runs and nothing can be printed. A bank laptop with an IDE open meets this on a repo of this size.
+
+**Where the memory went.** The verifier's line cache was unbounded, and the coverage pass asks every file of the repo whether it counts as source — so every one of the 4,900 files' lines were held, as arrays of strings, for the rest of the run. A file's lines cost about twice its bytes, which is the whole peak. Second, the facts file was read as one string and split into an array of every line, so it was held three times over (text, lines, parsed facts) before a fact was checked.
+
+- The cache is now a window of `LINES_HELD` (64) files, oldest freed first. The facts are in id order and a fact's cite, parts, steps and error paths sit in a handful of files, so nearly every hit is kept.
+- The coverage pass reads a file's lines, looks at them and frees them: nothing of a file no fact cites is held.
+- The raw text of a file is dropped as soon as it is split, so one copy of a file is ever in hand.
+- `streamFacts` (CLI, `memory-room.ts`) reads `<repo>.jsonl` a line at a time through core's new `parseFactLine`, which `parseFactsLines` now uses too, so a streamed read and a whole-text read give the same facts and the same issues.
+
+**The ceiling and the message.** `roomGuard` is passed to the reader and to `verifyFacts` as its new `room` option, and is called once per line, once per fact and once per file of the repo, reading the memory every 32nd call. Past 80% of its ceiling it throws `NoRoomError`, which `atticus verify` prints and exits 2 on: "forge-estate's facts need more memory than Node was given: 135 MB of the 148 MB ceiling is in use. Run it again with ATTICUS_MAX_OLD_SPACE=4096 (megabytes Node may use for the heap), or in parts, a repo at a time. Closing an IDE frees the memory this needs."
+
+What it watches is **resident memory**, not the heap, because resident memory is what the kernel kills on and is always the larger of the two (149 MB to 56 MB of heap on the estate measured below). The ceiling is the **lower of V8's heap limit and what this machine can hand this process** — what is free, plus what the process already holds, since `freemem()` leaves that out — because the kernel is what struck: a heap limit raised above free memory only moves the kill later.
+
+`ATTICUS_MAX_OLD_SPACE` (megabytes) is honoured by **starting Node again** with `--max-old-space-size`, as `scripts/bundle/fetch-model.mjs` starts again for a proxy, rather than by the CLI setting a flag for itself: a running V8 cannot raise a heap it has already made, so a restart is the only way to make the message's advice true. Because that advice has to work wherever a person sets the variable, a `--max-old-space-size` already in effect — which an editor's or a wrapper's launcher may have set low — is raised to it, and never lowered to it. It costs nothing on an ordinary run: unset, nothing is imported and nothing is spawned, and `--version` still answers before any of it. `reExecForMemory` is a pure function, tested on its own, with `bin.ts` doing only the spawn. End to end on the synthetic estate: at a 100 MB heap the command prints the message and exits 2; with `ATTICUS_MAX_OLD_SPACE=4096` in front of the same command it restarts and keeps all 2,300 facts.
+
+**Measured** on a synthetic Forge estate built from the fixture: 4,900 files (136 MB of invented Forge Java), 2,300 entry facts, 1.0 MB facts file. Peak heap **252–265 MB → 51–57 MB**; peak RSS (what the OOM killer watches) **351 MB → 146–150 MB**. Both runs keep all 2,300 facts and reject none.
+
+**Contracts.** `VerifyReport` gains `quotesDropped` and `VerifyOptions` gains `room` (the verifier's API, not a contract). `<repo>.verify.yaml` gains `quotesDropped`, left out when none, so existing reports are byte for byte as they were. Core gains `catalogAuth`, `parseFactLine` and `BadFactLine`, all additive; the facts schema is unchanged, so every facts file written before still parses — and one written before this now **keeps** an auth it would have lost. C1 to C6 don't change.
+
+- **Not done here:**
+  - `atticus map`'s batch loop reads its facts with `parseFacts` on the whole text and passes no `room`, so only `atticus verify` has the ceiling; a very large batch answer can still be killed.
+  - The ceiling is read once, when the command starts: memory another process takes while the read runs isn't noticed.
+  - Nothing bounds the catalog write itself, which holds every record of the estate; the trial's write fitted, but a much larger estate would need the same treatment.
+  - The bench repos' facts still have no `authCite`, so their 515 auth claims stay in their facts files and out of their catalogs.
