@@ -152,8 +152,21 @@ test("Model runs lists every run, newest first, and filters it", async ({ page }
   const table = page.getByRole("region", { name: "Model runs, newest first" });
   const rows = table.locator("tbody tr");
   await expect(rows).toHaveCount(4);
-  for (const h of ["Step or change", "Agent", "Round", "State", "Answered", "Handed back", "When"])
-    await expect(table.getByRole("columnheader", { name: h })).toBeVisible();
+  const headers = [
+    "Step or change",
+    "Agent",
+    "Model",
+    "Round",
+    "State",
+    "Answered",
+    "Handed back",
+    "When",
+  ];
+  for (const h of headers) await expect(table.getByRole("columnheader", { name: h })).toBeVisible();
+  // By name, not by number: a new column (Model, ADR 0121 addendum) moved Round along, and the
+  // name-based header checks above passed while a cell index pointed at the wrong column.
+  const cell = (row: number, header: string) =>
+    rows.nth(row).getByRole("cell").nth(headers.indexOf(header));
   // Newest first: the story run, then the scan's rounds 3, 2 and 1.
   await expect(rows.nth(0)).toContainText("add-transfer-limit");
   await expect(rows.nth(0)).toContainText("story-writer");
@@ -161,7 +174,12 @@ test("Model runs lists every run, newest first, and filters it", async ({ page }
   await expect(rows.nth(1)).toContainText("Not yet");
   await expect(rows.nth(2)).toContainText("Failed");
   await expect(rows.nth(2)).toContainText("2 problems");
-  await expect(rows.nth(2).getByRole("cell").nth(2)).toHaveText("2");
+  await expect(cell(2, "Round")).toHaveText("2");
+  // The model each run went to, and the kind of step that picked it: the story's draft, the
+  // knowledge reader's rounds (ADR 0121 addendum). These runs were recorded before a model was,
+  // so the model itself is "Not recorded".
+  await expect(cell(0, "Model")).toContainText("Draft");
+  await expect(cell(2, "Model")).toContainText("Knowledge");
   await accessible(page, "Model runs");
 
   const box = page.getByLabel("Filter");
