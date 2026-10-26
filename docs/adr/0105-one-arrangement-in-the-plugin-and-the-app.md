@@ -59,3 +59,12 @@ With many changes, a list by kind and an unfiltered list both get too long to us
 - **A filter wherever a list grows.** One box, the same words in both surfaces ("Filter: words to match, for example forge-ledger"), matching an item's title, id, change and repo, case-insensitively:
   - the extension: Waiting on you, Changes and Knowledge, through a Filter… title bar button; the view's description shows the filter, a Clear filter button removes it, and an empty result says what was filtered and offers to clear it;
   - the app: Questions (with a repo picker beside it), Manual steps, and Waiting on you's list, beside the filters the cross-change views and Knowledge items already have.
+
+## Addendum (2026-10-26): the Copilot agent-mode command in the arrangement
+
+ADR 0121's addendum of the same date adds **Atticus: Run the next step in Copilot's agent mode**
+(`atticus.runInCopilotAgent`) beside **Run the next step**: the same step, handed to Copilot's agent
+mode instead of to the `@atticus` participant. It is an everyday command of the Command Palette
+(`DEFAULT_PALETTE` in `packages/vscode/src/surface.ts`, second after **Run the next step**, so the
+order of a working day still reads "what's next, run it, run it in the agent"), not behind
+`atticus.fullUi`, and it adds no view and no menu. Nothing is removed and no existing command moves.

@@ -41,6 +41,8 @@ export const COLLAPSED_VIEWS = [
 export const DEFAULT_PALETTE = [
   "atticus.next",
   "atticus.runNext",
+  // ADR 0121 addendum (2026-10-26): the same step, handed to Copilot's agent mode.
+  "atticus.runInCopilotAgent",
   "atticus.map",
   "atticus.verify",
   "atticus.feature",

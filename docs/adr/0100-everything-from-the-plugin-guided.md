@@ -88,3 +88,14 @@ The extension was driven in a real VS Code on Windows (Playwright on VS Code's o
   - The IntelliJ plugin has no Start menu, setup checklist, onboarding list or Bring in. Its Run a Command offers `absorb accept` like every other command.
   - Absorb from a Git URL was checked only by the existing tests, not in VS Code.
   - The dialogs were checked in VS Code's in-window style. A person's VS Code on Windows shows them as native dialogs; they hold the same text and buttons.
+
+## Addendum (2026-10-26): what is packaged for Copilot
+
+ADR 0121's addendum of the same date adds `plugins/copilot/`, the committed, generated artifact of
+Atticus's steps as GitHub Copilot custom agents and instructions, beside `plugins/atticus` for
+Claude Code (ADR 0104). It is not installed the way the Claude Code plugin is: Copilot has no
+marketplace for agents, so a person copies `.github/agents/`, `.github/instructions/` and
+`.vscode/mcp.json` into the metarepo, in a pull request like any other change to it, and runs
+`atticus assistant-files` there for the prompt files and the organisation's own agents and skills.
+`docs/guide/copilot-agent-mode.md` is the guided path, and the checklist in it is what a person
+confirms in a real Copilot session.

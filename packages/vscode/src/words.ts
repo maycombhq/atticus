@@ -114,6 +114,22 @@ export const WORDS = {
     on
       ? "Atticus now offers Atticus 1's legacy commands too, and the app every page as a tab."
       : "Atticus now offers every view and command but Atticus 1's legacy ones; the app its six entries, with every other page under More pages.",
+  // ADR 0121 addendum (2026-10-26): a step handed to Copilot's agent mode, which edits files and
+  // runs commands, instead of to the @atticus chat participant, which answers.
+  copilotAgentPick: "Hand which step to Copilot's agent mode?",
+  copilotAgentButton: "Run it in Copilot's agent mode",
+  copilotAgentNoStep:
+    "Atticus has no next step to hand to Copilot. Atticus: What's next says what is waiting.",
+  copilotAgentOpened: (agent: string, stepClass: string) =>
+    `Copilot Chat is open on the ${agent} agent with the step's prompt. Press Enter to start; it writes where Atticus expects, runs Atticus's own check and fixes what comes back. This is a ${stepClass} step: pick the model your organisation names for ${stepClass} steps (atticus.models.${stepClass}).`,
+  copilotAgentNoFile: (agent: string) =>
+    `This workspace has no .github/agents/${agent}.agent.md, so the step goes to @atticus in the chat instead. The guide "Atticus's steps through Copilot agent mode" says how to add the agent files.`,
+  copilotAgentNoAgent: (step: string) =>
+    `No Copilot agent covers /${step}, so the step goes to @atticus in the chat, which runs it with the model you picked.`,
+  copilotAgentFailed: (why: string) =>
+    `Copilot Chat couldn't be opened in agent mode (${why}), so the step goes to @atticus in the chat instead.`,
+  copilotAgentFallbackFailed: (why: string) =>
+    `Neither Copilot's agent mode nor the @atticus chat could be opened (${why}). Open Copilot Chat yourself and type the command.`,
 };
 
 /**

@@ -38,6 +38,13 @@ import { checkRunStep, runEndMessage, runProgressMessage, runRefusedMessage } fr
 import type * as Api from "./api-types";
 import { Service } from "./service";
 import { attachPaths, START_WORDS, startTaskChat, TASK_PROMPT_FILE } from "./task-start";
+import {
+  agentFilePath,
+  agentForStep,
+  openForStep,
+  promptFilePath,
+  stepNameOf,
+} from "./copilot-agent";
 import { APP_HOME, FULL_UI } from "./surface";
 import { AtticusView, QuestionsView, WaitingView } from "./view";
 import type { WaitingGroup } from "./waiting-data";
@@ -1005,6 +1012,72 @@ ${view.next.why}`
         "Nothing to do next: everything is up to date.",
       );
     return takeStep(root, n);
+  });
+  /**
+   * ADR 0121 addendum (2026-10-26): the same step, handed to Copilot's agent mode, which opens
+   * and writes files and runs commands. The agent writes where Atticus expects, runs Atticus's own
+   * check and fixes what it hands back; the notice says which kind of step it is, so a person can
+   * pick the model their organisation names for it. Where the workspace has no agent file, where
+   * no agent covers the step, or where agent mode can't be opened, the step goes to the @atticus
+   * participant instead, which is unchanged.
+   */
+  reg("atticus.runInCopilotAgent", async (given?: string, givenTarget?: string) => {
+    const root = needRoot();
+    if (!root) return;
+    let step = typeof given === "string" && given ? given : undefined;
+    let target = typeof givenTarget === "string" && givenTarget ? givenTarget : undefined;
+    let command: string | undefined;
+    if (!step) {
+      let n = view.next;
+      if (!n) {
+        const r = await readNextShown(root);
+        if (!r.ok) return;
+        n = r.value.next;
+      }
+      const named = n ? stepNameOf(n) : undefined;
+      if (!n || !named) return void vscode.window.showInformationMessage(WORDS.copilotAgentNoStep);
+      step = named.step;
+      target = named.target;
+      command = n.command;
+    }
+    const open = openForStep(step, target, {
+      agentFileThere: (() => {
+        const a = agentForStep(step);
+        return !!a && existsSync(join(root, ...agentFilePath(a.agent).split("/")));
+      })(),
+      promptFileThere: (() => {
+        const a = agentForStep(step);
+        return (
+          !!a?.slash &&
+          existsSync(join(root, ...promptFilePath(a.slash.replace(/^atticus-/, "")).split("/")))
+        );
+      })(),
+      ...(command ? { command } : {}),
+    });
+    const toParticipant = async (say: string) => {
+      try {
+        await vscode.commands.executeCommand("workbench.action.chat.open", {
+          query: `@atticus /${step}${target ? ` ${target}` : ""}`,
+        });
+        void vscode.window.showWarningMessage(say);
+      } catch (e) {
+        void vscode.window.showErrorMessage(WORDS.copilotAgentFallbackFailed((e as Error).message));
+      }
+    };
+    if (open.kind === "participant")
+      return toParticipant(
+        open.why === "no-agent"
+          ? WORDS.copilotAgentNoAgent(step)
+          : WORDS.copilotAgentNoFile(agentForStep(step)!.agent),
+      );
+    try {
+      await vscode.commands.executeCommand("workbench.action.chat.open", open.chat);
+      void vscode.window.showInformationMessage(
+        WORDS.copilotAgentOpened(open.agent, open.stepClass),
+      );
+    } catch (e) {
+      await toParticipant(WORDS.copilotAgentFailed((e as Error).message));
+    }
   });
   // Any step of the Next section, the next one or one after it (ADR 0100, 0101).
   // A click passes the step; an inline Run button passes the row, which holds it.

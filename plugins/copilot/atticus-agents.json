@@ -1,0 +1,61 @@
+{
+  "name": "atticus-copilot-agents",
+  "version": "2.0.0-beta.2",
+  "description": "Atticus's AI steps as GitHub Copilot custom agents and instructions, for agent mode.",
+  "license": "Apache-2.0",
+  "agents": [
+    {
+      "id": "atticus-repo-reader",
+      "file": ".github/agents/atticus-repo-reader.agent.md",
+      "stepClass": "read",
+      "commands": [
+        "atticus-map"
+      ]
+    },
+    {
+      "id": "atticus-verifier",
+      "file": ".github/agents/atticus-verifier.agent.md",
+      "stepClass": "read",
+      "commands": [
+        "atticus-verify"
+      ]
+    },
+    {
+      "id": "atticus-repo-describer",
+      "file": ".github/agents/atticus-repo-describer.agent.md",
+      "stepClass": "read",
+      "commands": []
+    },
+    {
+      "id": "atticus-stage-drafter",
+      "file": ".github/agents/atticus-stage-drafter.agent.md",
+      "stepClass": "draft",
+      "commands": [
+        "atticus-feature",
+        "atticus-architecture",
+        "atticus-stories",
+        "atticus-small",
+        "atticus-draft"
+      ]
+    },
+    {
+      "id": "atticus-task-runner",
+      "file": ".github/agents/atticus-task-runner.agent.md",
+      "stepClass": "draft",
+      "commands": [
+        "atticus-task"
+      ]
+    },
+    {
+      "id": "atticus-knowledge-reader",
+      "file": ".github/agents/atticus-knowledge-reader.agent.md",
+      "stepClass": "knowledge",
+      "commands": [
+        "atticus-knowledge",
+        "atticus-find",
+        "atticus-knowledge-ask",
+        "atticus-needs"
+      ]
+    }
+  ]
+}

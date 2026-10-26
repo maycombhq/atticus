@@ -172,6 +172,11 @@
         "icon": "$(play)"
       },
       {
+        "command": "atticus.runInCopilotAgent",
+        "title": "Run the next step in Copilot's agent mode",
+        "category": "Atticus"
+      },
+      {
         "command": "atticus.map",
         "title": "Read a repo with Copilot (map)",
         "category": "Atticus"

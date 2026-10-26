@@ -11,6 +11,7 @@ import {
 import type { CommandUi } from "./command-ui";
 import { answersFrom, buildArgv, howToRun, matchCommand } from "./commands";
 import { changeMapMarkdown, type ChangeMapJson } from "./change-map";
+import { agentForStep, stepNameOf } from "./copilot-agent";
 import { parseJson } from "./cli";
 import { block, describeEnd, endFiles } from "./describe";
 import { ChatSessions, promptText, recordChat, recordingStream } from "./history";
@@ -90,6 +91,15 @@ async function next(
   else if (actionFor(n).kind === "person")
     stream.markdown("A person takes this step: run the command above yourself.");
   else stream.button({ command: "atticus.runNext", title: "Run it" });
+  // ADR 0121 addendum (2026-10-26): the same step in Copilot's agent mode, where an agent covers
+  // it. The command falls back here when the agent files aren't in the workspace.
+  const named = stepNameOf(n);
+  if (named && agentForStep(named.step))
+    stream.button({
+      command: "atticus.runInCopilotAgent",
+      arguments: [named.step, named.target],
+      title: WORDS.copilotAgentButton,
+    });
   if (r.value.steps.length > 1)
     stream.markdown(`\n${r.value.steps.length - 1} more after this one (atticus next --all).`);
 }
