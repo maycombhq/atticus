@@ -4,6 +4,14 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased (2.0.0-beta.2)
 
+### Cutting Atticus 1: the inventory first (ADR 0129)
+
+- **The inventory of what Atticus 1 still is, and what in Atticus 2 does its job.** The product owner approved cutting Atticus 1 on condition that nothing breaks and the app loses no depth. ADR 0129 lists every Atticus 1 package, command, screen, reader and contract surface against its Atticus 2 replacement, or records that nothing replaces it. The answer is plainer than the review's framing: **of seventeen Atticus 1 packages, none can go today.** The built-in readers are Atticus 2's own cross-check, and release, initiatives, intake, glossary, features, stubs, site, executors, ingestors, reconcile, adapters, CI and diagrams have no successor. They are listed as kept, with why. Nothing was deleted on the strength of a tidy-up.
+- **Nothing changed for you.** 52 pages, 223 commands, 7 VS Code views and 9 IntelliJ tabs, before and after. Every page still opens on a real estate, every old address still works, More pages and Ctrl+K still reach everything, and the reading and placement bench scores are untouched.
+- **A surface can no longer go missing by accident.** `pnpm check` now runs a surface census that counts and names the commands, the pages (and that each one has a screen behind it rather than a "being built" note), VS Code's views and palette commands, and IntelliJ's tabs. Retiring one is a deliberate line in that file, naming the ADR that decided it and what does the job instead — so a page or a command leaving shows up in the diff.
+- **Two things the cut is still owed**, each written down with the files it touches: the four reader-path AI steps (`scan survey`, `scan verify`, `scan review`, `spec draft`, all of which `atticus map` and `atticus verify` now do), which are wired into both editors and the AI step registry; and merging the five test-only packages into two.
+- **Fixed on the way:** a build whose outputs the cache did not carry left `packages/sdk/npm` missing, so the SDK's published layout check failed on a clean checkout that reused the cache. The codebase map held its Packages table three times and the build status its phase table twice, each copy newer in different places — damage from eleven merges in a day, now merged back into one with the newest of each.
+
 ### IntelliJ does the same work as VS Code, and Copilot runs the steps there (ADR 0105 addendum 2, ADR 0121 addendum 2)
 
 - **The IntelliJ plugin's tool window has the views VS Code's sidebar has**: **Next**, **Waiting on you**, **Changes**, **Repos**, **Knowledge**, **Model runs** and **Prompt history**, then the **App** and the **Output** as before. Each reads in the background and says what is going on while it reads, what to do when there is nothing, and why when it can't.

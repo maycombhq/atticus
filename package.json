@@ -12,7 +12,7 @@
     "build": "turbo run build",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
-    "lint": "eslint . && prettier --check . && node scripts/check-core-neutral.mjs && node scripts/check-portable-paths.mjs && node scripts/check-deps.mjs && node scripts/check-docs.mjs && node scripts/bundle/check-licences.mjs",
+    "lint": "eslint . && prettier --check . && node scripts/check-core-neutral.mjs && node scripts/check-portable-paths.mjs && node scripts/check-deps.mjs && node scripts/check-docs.mjs && node scripts/check-surfaces.mjs && node scripts/bundle/check-licences.mjs",
     "format": "prettier --write .",
     "denylist": "node scripts/check-denylist.mjs",
     "check": "pnpm denylist && pnpm lint && pnpm typecheck && pnpm test",

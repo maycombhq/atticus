@@ -14,7 +14,7 @@ Rules for every contributor and every AI coding session (Claude Code, Copilot or
 
 ## Definition of done
 
-- `pnpm check` passes (deny-list, ESLint, Prettier, the core-neutral, portable-path, dependency, docs and licence checks, typecheck, tests) on Linux and Windows CI.
+- `pnpm check` passes (deny-list, ESLint, Prettier, the core-neutral, portable-path, dependency, docs, surface-census and licence checks, typecheck, tests) on Linux and Windows CI.
 - New behaviour has unit tests; extractors and dialects have golden-file tests.
 - Screens have empty, loading and error states and pass accessibility checks (WCAG 2.1 AA).
 - User-facing words come from the copy file; docs and the changelog are updated.
