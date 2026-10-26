@@ -124,5 +124,190 @@
         <action id="Atticus.OpenInBrowser" class="com.maycombhq.atticus.ide.OpenInBrowserAction"
                 text="Atticus: Open in Browser" description="Open the Atticus app in your browser"
                 icon="AllIcons.General.Web"/>
+
+        <!--
+          ADR 0105 addendum 2 (2026-10-26): one Atticus menu under Tools, in the order of a working
+          day, with an entry per job, as the VS Code command palette lists one per command. Every
+          entry is in Find Action by its own words, so nothing needs Run a Command to be reached.
+        -->
+        <group id="Atticus.Menu" text="Atticus" description="Atticus: the estate, the changes and the steps" popup="true">
+            <add-to-group group-id="ToolsMenu" anchor="last"/>
+            <separator/>
+            <!-- What is next -->
+            <action id="Atticus.RunStep" class="com.maycombhq.atticus.ide.RunStepAction"
+                    text="Atticus: Run the Step" description="Run the step picked in the Next tab, or the next one when none is picked"
+                    icon="AllIcons.Actions.Execute"/>
+            <separator/>
+            <!-- Read a repo and check it (ADR 0124, 0128) -->
+            <action id="Atticus.ReadRepo" class="com.maycombhq.atticus.ide.ReadRepoAction"
+                    text="Atticus: Read a Repo with Copilot" description="The assistant reads a repo into facts, each citing its line (atticus map)"
+                    icon="AllIcons.Actions.Search"/>
+            <action id="Atticus.VerifyFacts" class="com.maycombhq.atticus.ide.VerifyFactsAction"
+                    text="Atticus: Verify a Repo's Facts" description="Check a repo's facts against its code and put them in the catalog (no model runs)"
+                    icon="AllIcons.Actions.Commit"/>
+            <action id="Atticus.Survey" class="com.maycombhq.atticus.ide.SurveyAction"
+                    text="Atticus: Survey a Repo" description="Draft a repo's scan settings with Copilot (atticus scan survey)"
+                    icon="AllIcons.Actions.Preview"/>
+            <action id="Atticus.ScanVerify" class="com.maycombhq.atticus.ide.ScanVerifyAction"
+                    text="Atticus: Verify a Repo's Last Scan" description="The older scanner's check of what it read (atticus scan verify)"
+                    icon="AllIcons.Actions.Preview"/>
+            <action id="Atticus.DraftSpec" class="com.maycombhq.atticus.ide.DraftSpecAction"
+                    text="Atticus: Draft a Repo's Spec" description="Draft and check a repo's spec with Copilot (atticus spec draft)"
+                    icon="AllIcons.Actions.Edit"/>
+            <action id="Atticus.DescribeRepo" class="com.maycombhq.atticus.ide.DescribeRepoAction"
+                    text="Atticus: Say What a Repo Is" description="One line in a person's words, so an opaque repo id can be read and placed (atticus repo describe)"
+                    icon="AllIcons.Actions.Annotate"/>
+            <action id="Atticus.OnboardRepo" class="com.maycombhq.atticus.ide.OnboardRepoAction"
+                    text="Atticus: Onboard a Repo..." description="Read a repo for the first time and propose what it needs (atticus onboard)"
+                    icon="AllIcons.General.Add"/>
+            <action id="Atticus.AddRepos" class="com.maycombhq.atticus.ide.AddReposAction"
+                    text="Atticus: Add Repos" description="Repos into the manifest, from a folder of clones or a Git host organisation"
+                    icon="AllIcons.General.Add"/>
+            <action id="Atticus.ScanAll" class="com.maycombhq.atticus.ide.ScanAllAction"
+                    text="Atticus: Scan Every Repo" description="Read every repo of the manifests into the catalog (atticus scan): files only"
+                    icon="AllIcons.Actions.Refresh"/>
+            <action id="Atticus.EstateJoin" class="com.maycombhq.atticus.ide.EstateJoinAction"
+                    text="Atticus: Join the Estate's Flows" description="Join each repo's call-outs to the entry points that serve them, through the gateways"
+                    icon="AllIcons.Actions.Diff"/>
+            <action id="Atticus.WorkspaceSync" class="com.maycombhq.atticus.ide.WorkspaceSyncAction"
+                    text="Atticus: Clone or Update the Base Clones" description="Fetch the repos the manifests name into workspace/ (atticus workspace sync)"
+                    icon="AllIcons.Actions.CheckOut"/>
+            <action id="Atticus.AcceptCatalog" class="com.maycombhq.atticus.ide.AcceptCatalogAction"
+                    text="Atticus: Accept the Catalog..." description="The catalog as the baseline changes are checked against (atticus baseline)"
+                    icon="AllIcons.Actions.Checked"/>
+            <separator/>
+            <!-- A change, stage by stage -->
+            <action id="Atticus.Feature" class="com.maycombhq.atticus.ide.FeatureAction"
+                    text="Atticus: Run a Change's Feature Stage" description="What the change is, drafted and reviewed with Copilot (atticus change feature)"
+                    icon="AllIcons.Actions.Edit"/>
+            <action id="Atticus.Architecture" class="com.maycombhq.atticus.ide.ArchitectureAction"
+                    text="Atticus: Run a Change's Architecture Stage" description="The target flows drawn and reviewed with Copilot (atticus change architecture)"
+                    icon="AllIcons.Actions.Edit"/>
+            <action id="Atticus.Stories" class="com.maycombhq.atticus.ide.StoriesAction"
+                    text="Atticus: Write a Change's Stories" description="The stories and their tasks, drafted with Copilot (atticus plan stories)"
+                    icon="AllIcons.Actions.Edit"/>
+            <action id="Atticus.SmallChange" class="com.maycombhq.atticus.ide.SmallChangeAction"
+                    text="Atticus: Run a Small Change's Fast Path" description="One step for a change too small for the stages (atticus change small)"
+                    icon="AllIcons.Actions.Execute"/>
+            <action id="Atticus.Critic" class="com.maycombhq.atticus.ide.CriticAction"
+                    text="Atticus: Review a Change with the Critic" description="The critic's lenses on the change's drafts, one at a time (atticus critic)"
+                    icon="AllIcons.Actions.IntentionBulb"/>
+            <action id="Atticus.FindNeeds" class="com.maycombhq.atticus.ide.FindNeedsAction"
+                    text="Atticus: Find What a Change Needs" description="What the organisation must supply before the change can ship (atticus change needs)"
+                    icon="AllIcons.General.QuestionDialog"/>
+            <action id="Atticus.RunTask" class="com.maycombhq.atticus.ide.RunTaskAction"
+                    text="Atticus: Run a Task" description="A task's code written by an assistant on its own branch (atticus task run)"
+                    icon="AllIcons.Actions.Execute"/>
+            <action id="Atticus.FindingAction" class="com.maycombhq.atticus.ide.FindingActionAction"
+                    text="Atticus: Act on the Finding" description="Apply the fix, say you fixed it, say it isn't relevant, waive it where it may be, or ask someone"
+                    icon="AllIcons.Actions.QuickfixBulb"/>
+            <action id="Atticus.NeedDone" class="com.maycombhq.atticus.ide.NeedDoneAction"
+                    text="Atticus: Need Done" description="Mark the need picked in Waiting on you as done"
+                    icon="AllIcons.Actions.Checked"/>
+            <action id="Atticus.NeedSkip" class="com.maycombhq.atticus.ide.NeedSkipAction"
+                    text="Atticus: Need Not Needed..." description="Mark the need picked in Waiting on you as not needed, with why"
+                    icon="AllIcons.Actions.Cancel"/>
+            <action id="Atticus.NeedReopen" class="com.maycombhq.atticus.ide.NeedReopenAction"
+                    text="Atticus: Reopen the Need" description="Open the need picked in Waiting on you again"
+                    icon="AllIcons.Actions.Rollback"/>
+            <action id="Atticus.RaiseNeeds" class="com.maycombhq.atticus.ide.RaiseNeedsAction"
+                    text="Atticus: Raise a Change's Open Needs..." description="Its open needs, one after another, to mark"
+                    icon="AllIcons.General.TodoDefault"/>
+            <action id="Atticus.ShowManualStep" class="com.maycombhq.atticus.ide.ShowManualStepAction"
+                    text="Atticus: Show the Manual Step" description="What a manual step says to do, and how to mark it done (atticus todo show)"
+                    icon="AllIcons.General.TodoDefault"/>
+            <separator/>
+            <!-- What the organisation knows -->
+            <action id="Atticus.AddKnowledge" class="com.maycombhq.atticus.ide.AddKnowledgeAction"
+                    text="Atticus: Add Knowledge..." description="Bring in another team's repo, add a wiki or docs repo, or add files"
+                    icon="AllIcons.General.Add"/>
+            <action id="Atticus.AddWiki" class="com.maycombhq.atticus.ide.AddWikiAction"
+                    text="Atticus: Add a Wiki or Docs Repo..." description="A wiki, a docs repo or a folder of pages, into sources.yaml (atticus sources add)"
+                    icon="AllIcons.General.Add"/>
+            <action id="Atticus.SyncSources" class="com.maycombhq.atticus.ide.SyncSourcesAction"
+                    text="Atticus: Sync the Knowledge Sources" description="Fetch every source's pages again (atticus sources sync)"
+                    icon="AllIcons.Actions.Refresh"/>
+            <action id="Atticus.SyncSource" class="com.maycombhq.atticus.ide.SyncSourceAction"
+                    text="Atticus: Sync This Source" description="Fetch the picked source's pages again"
+                    icon="AllIcons.Actions.Refresh"/>
+            <action id="Atticus.ReadSource" class="com.maycombhq.atticus.ide.ReadSourceAction"
+                    text="Atticus: Read This Source with Copilot" description="Read the picked source's pages into knowledge items, each citing its page"
+                    icon="AllIcons.Actions.Search"/>
+            <action id="Atticus.TagSource" class="com.maycombhq.atticus.ide.TagSourceAction"
+                    text="Atticus: Tag This Source..." description="What the picked source is about, so a search of the wikis can narrow"
+                    icon="AllIcons.Actions.Annotate"/>
+            <action id="Atticus.KnowledgeScan" class="com.maycombhq.atticus.ide.KnowledgeScanAction"
+                    text="Atticus: Scan the Knowledge Sources" description="Read the synced pages into knowledge items with Copilot (atticus knowledge scan)"
+                    icon="AllIcons.Actions.Search"/>
+            <action id="Atticus.AskKnowledge" class="com.maycombhq.atticus.ide.AskKnowledgeAction"
+                    text="Atticus: Ask the Knowledge" description="A question answered from the organisation's own pages, cited (atticus knowledge ask)"
+                    icon="AllIcons.General.QuestionDialog"/>
+            <action id="Atticus.AskAboutItem" class="com.maycombhq.atticus.ide.AskAboutItemAction"
+                    text="Atticus: Ask About This Item" description="A question about the knowledge item picked, answered from the pages"
+                    icon="AllIcons.General.QuestionDialog"/>
+            <action id="Atticus.VerifyItem" class="com.maycombhq.atticus.ide.VerifyItemAction"
+                    text="Atticus: Verify This Item" description="Say the knowledge item picked is right (atticus knowledge verify)"
+                    icon="AllIcons.Actions.Checked"/>
+            <action id="Atticus.CorrectItem" class="com.maycombhq.atticus.ide.CorrectItemAction"
+                    text="Atticus: Correct This Item..." description="Correct the knowledge item picked (atticus knowledge correct)"
+                    icon="AllIcons.Actions.Edit"/>
+            <action id="Atticus.RejectItem" class="com.maycombhq.atticus.ide.RejectItemAction"
+                    text="Atticus: Reject This Item..." description="Reject the knowledge item picked (atticus knowledge reject)"
+                    icon="AllIcons.Actions.Cancel"/>
+            <action id="Atticus.DraftOrgPack" class="com.maycombhq.atticus.ide.DraftOrgPackAction"
+                    text="Atticus: Draft the Org Pack from the Wikis..." description="What the wikis say about how work is done here, as a draft org pack"
+                    icon="AllIcons.Actions.Edit"/>
+            <action id="Atticus.OrgPackOwner" class="com.maycombhq.atticus.ide.OrgPackOwnerAction"
+                    text="Atticus: Name the Org Pack's Owner" description="Who answers for the org pack (atticus orgpack owner)"
+                    icon="AllIcons.General.User"/>
+            <action id="Atticus.BringIn" class="com.maycombhq.atticus.ide.BringInAction"
+                    text="Atticus: Bring In from Another Repo..." description="Another metarepo, an OpenSpec, Spec Kit or TypeSpec repo, or a repo of prompts and checklists"
+                    icon="AllIcons.Actions.Download"/>
+            <action id="Atticus.AcceptBroughtIn" class="com.maycombhq.atticus.ide.AcceptBroughtInAction"
+                    text="Atticus: Accept What Was Brought In..." description="A reviewed proposal copied in, its source followed (atticus absorb accept)"
+                    icon="AllIcons.Actions.Checked"/>
+            <separator/>
+            <!-- The catalog, the machine and the digest -->
+            <action id="Atticus.AskCatalog" class="com.maycombhq.atticus.ide.AskCatalogAction"
+                    text="Atticus: Ask the Catalog..." description="A plain question about the estate; the answer says the query it ran (atticus ask)"
+                    icon="AllIcons.General.QuestionDialog"/>
+            <action id="Atticus.CheckHealth" class="com.maycombhq.atticus.ide.CheckHealthAction"
+                    text="Atticus: Check This Machine and the Metarepo" description="What is set up, what is missing and what to do about it (atticus doctor)"
+                    icon="AllIcons.General.InspectionsOK"/>
+            <action id="Atticus.Upgrade" class="com.maycombhq.atticus.ide.UpgradeAction"
+                    text="Atticus: Upgrade the Metarepo" description="Bring the metarepo's files up to this command line's version (atticus upgrade)"
+                    icon="AllIcons.Actions.Refresh"/>
+            <action id="Atticus.Digest" class="com.maycombhq.atticus.ide.DigestAction"
+                    text="Atticus: Send What Waits on You" description="The digest of what waits on each person; it asks before it sends (atticus digest)"
+                    icon="AllIcons.General.Balloon"/>
+            <separator/>
+            <!-- The trees' own filters and grouping -->
+            <action id="Atticus.WaitingByChange" class="com.maycombhq.atticus.ide.WaitingByChangeAction"
+                    text="Atticus: Group Waiting by Change" description="Each change with its open needs, findings and manual steps under it"
+                    icon="AllIcons.Actions.GroupByPackage"/>
+            <action id="Atticus.WaitingByKind" class="com.maycombhq.atticus.ide.WaitingByKindAction"
+                    text="Atticus: Group Waiting by Kind" description="A group per kind: questions, needs, findings, manual steps, knowledge"
+                    icon="AllIcons.Actions.GroupBy"/>
+            <action id="Atticus.FilterWaiting" class="com.maycombhq.atticus.ide.FilterWaitingAction"
+                    text="Atticus: Filter Waiting on You..." description="Words to match an item's title, id, change or repo"
+                    icon="AllIcons.General.Filter"/>
+            <action id="Atticus.ClearFilterWaiting" class="com.maycombhq.atticus.ide.ClearFilterWaitingAction"
+                    text="Atticus: Clear the Waiting Filter" description="Show everything that waits again"/>
+            <action id="Atticus.FilterChanges" class="com.maycombhq.atticus.ide.FilterChangesAction"
+                    text="Atticus: Filter Changes..." description="Words to match a change's title, id, state or repo"
+                    icon="AllIcons.General.Filter"/>
+            <action id="Atticus.ClearFilterChanges" class="com.maycombhq.atticus.ide.ClearFilterChangesAction"
+                    text="Atticus: Clear the Changes Filter" description="Show every change again"/>
+            <action id="Atticus.FilterKnowledge" class="com.maycombhq.atticus.ide.FilterKnowledgeAction"
+                    text="Atticus: Filter Knowledge..." description="Words to match a knowledge item's title, id or kind"
+                    icon="AllIcons.General.Filter"/>
+            <action id="Atticus.ClearFilterKnowledge" class="com.maycombhq.atticus.ide.ClearFilterKnowledgeAction"
+                    text="Atticus: Clear the Knowledge Filter" description="Show every knowledge item again"/>
+            <action id="Atticus.FilterRuns" class="com.maycombhq.atticus.ide.FilterRunsAction"
+                    text="Atticus: Filter Model Runs..." description="Words to match a run's id, change, agent or state"
+                    icon="AllIcons.General.Filter"/>
+            <action id="Atticus.ClearFilterRuns" class="com.maycombhq.atticus.ide.ClearFilterRunsAction"
+                    text="Atticus: Clear the Model Runs Filter" description="Show every model run again"/>
+        </group>
     </actions>
 </idea-plugin>

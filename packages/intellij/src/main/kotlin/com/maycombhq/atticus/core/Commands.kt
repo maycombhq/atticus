@@ -56,10 +56,23 @@ object Commands {
     /** The AI steps, by their first two words: each has a slash command (ADR 0119). */
     val AI_STEPS: Set<String> = SLASH.keys
 
-    /** An AI step's words: one of AI_STEPS, or `critic <change>`, its lenses one at a time (ADR 0106 addendum). */
+    /**
+     * `critic <change>`: its AI lenses, one at a time (ADR 0106 addendum); `critic stats` and a
+     * resumed run only read.
+     */
+    fun isCriticStep(args: List<String>): Boolean =
+        args.firstOrNull() == "critic" && args.size > 1 && args[1] != "stats" && !args[1].startsWith("--") && "--resume" !in args
+
+    /**
+     * `map <repo>`: the batched read of a repo, a batch a hand-off (ADR 0124 §4). Its estimate
+     * and the rendered map only read, as the VS Code extension's actionFor says.
+     */
+    fun isMapStep(args: List<String>): Boolean =
+        args.firstOrNull() == "map" && args.size > 1 && !args[1].startsWith("-") && args[1] != "render" && "--estimate" !in args
+
+    /** An AI step's words: one of AI_STEPS, or the critic's lenses, or the read of a repo. */
     fun isAiStep(args: List<String>): Boolean =
-        args.take(2).joinToString(" ") in AI_STEPS ||
-            (args.firstOrNull() == "critic" && args.size > 1 && args[1] != "stats" && "--resume" !in args)
+        args.take(2).joinToString(" ") in AI_STEPS || isCriticStep(args) || isMapStep(args)
 
     private val HOW =
         mapOf(
@@ -139,6 +152,31 @@ object Commands {
         return Regex("$n[^|-]*\\|").containsMatchIn(cmd.usage) || Regex("\\|\\s*$n").containsMatchIn(cmd.usage)
     }
 
+    /**
+     * Options an action adds to a command, as a map: `--source x --full` becomes
+     * `--source` to `x` and `--full` to null. Anything that isn't an option is left out.
+     */
+    fun optionPairs(words: List<String>): Map<String, String?> {
+        val out = LinkedHashMap<String, String?>()
+        var i = 0
+        while (i < words.size) {
+            val w = words[i]
+            if (!w.startsWith("-")) {
+                i++
+                continue
+            }
+            val next = words.getOrNull(i + 1)
+            if (next != null && !next.startsWith("-")) {
+                out[w] = next
+                i += 2
+            } else {
+                out[w] = null
+                i++
+            }
+        }
+        return out
+    }
+
     /** ADR 0113: attach files to a change, as `atticus change attach` takes them. */
     fun attachArgv(change: String, paths: List<String>): List<String> = listOf("change", "attach", change) + paths
 
@@ -154,8 +192,9 @@ object Commands {
     /** The slash command that runs an AI step in Copilot Chat, with its repo or change. */
     fun slashFor(argv: List<String>): String? {
         // `critic <change>`: its AI lenses, one at a time (ADR 0119).
-        if (argv.firstOrNull() == "critic" && argv.size > 1 && argv[1] != "stats" && !argv[1].startsWith("--"))
-            return "/atticus-critic ${argv[1]}"
+        if (isCriticStep(argv)) return "/atticus-critic ${argv[1]}"
+        // ADR 0124 §4: the assistant reads a repo into facts (`atticus map <repo>`).
+        if (isMapStep(argv)) return "/atticus-map ${argv[1]}"
         val slash = SLASH[argv.take(2).joinToString(" ")] ?: return null
         val target = argv.getOrNull(2)?.takeIf { !it.startsWith("--") }
         return if (target != null) "$slash $target" else slash

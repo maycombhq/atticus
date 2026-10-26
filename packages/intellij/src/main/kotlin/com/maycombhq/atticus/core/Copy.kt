@@ -9,6 +9,89 @@ object Copy {
     const val OUTPUT_TAB = "Output"
     const val APP_TAB = "App"
 
+    // ADR 0105 addendum 2 (2026-10-26): the tool window's tabs, what VS Code's sidebar offers.
+    const val NEXT_TAB = "Next"
+    const val CHANGES_TAB = "Changes"
+    const val REPOS_TAB = "Repos"
+    const val KNOWLEDGE_TAB = "Knowledge"
+    const val RUNS_TAB = "Model runs"
+    const val HISTORY_TAB = "Prompt history"
+
+    // The filter and the grouping each tree's toolbar offers.
+    const val FILTER = "Filter…"
+    const val FILTER_HINT = "Filter: words to match, for example forge-ledger"
+    const val CLEAR_FILTER = "Clear filter"
+    const val GROUP_BY_CHANGE = "By change"
+    const val GROUP_BY_KIND = "By kind"
+
+    fun filtered(filter: String) = "Filtered by “$filter”."
+
+    fun nothingMatched(filter: String) = "Nothing matches “$filter”. Clear the filter to see everything."
+
+    // Repos (ADR 0128: what a repo is, in a person's words)
+    const val REPO_NO_DESCRIPTION = "Nothing says what it is yet"
+    const val REPOS_READING = "Reading the repos…"
+    const val REPOS_NONE = "No repos yet: add them to a repos.manifest.yaml in org-pack/profiles."
+
+    fun repoDraftDescription(text: String) = "$text — drafted by your assistant, unconfirmed"
+
+    // Changes
+    const val CHANGES_READING = "Reading the changes…"
+
+    fun fromStore(store: String) = "OpenSpec store $store (read-only)"
+
+    fun riskLine(level: String, score: Int?) = "risk $level${score?.let { " ($it)" } ?: ""}"
+
+    fun testKinds(kinds: List<String>) = "tests: ${kinds.joinToString(", ")}"
+
+    fun tasksLine(done: Int, total: Int) = "$done/$total tasks"
+
+    // A task's knowledge (B-task-knowledge)
+    const val TASK_KNOWLEDGE = "Knowledge for this task"
+    const val KNOWLEDGE_VERIFIED = "verified"
+    const val KNOWLEDGE_UNVERIFIED = "not verified"
+
+    fun alsoOn(n: Int) = "also on $n other page${if (n == 1) "" else "s"}"
+
+    fun conflictAsked(question: String) = "Pages disagree, so a person is asked: $question"
+
+    // A call's path through gateways (ADR 0124 addendum A-gateway2)
+    const val CALL_PATHS = "Calls through gateways"
+    const val CALL_PATHS_NONE = "No joined call-out goes through a gateway: run atticus estate join."
+
+    fun throughGateways(n: Int) = "$n gateway hop${if (n == 1) "" else "s"}"
+
+    fun gatewayAuth(auth: String) = "auth $auth"
+
+    fun gatewayScopes(scopes: List<String>) = "scopes ${scopes.joinToString(", ")}"
+
+    fun gatewayFacing(facing: String) = facing
+
+    // Knowledge (ADR 0101, 0105)
+    const val KNOWLEDGE_SOURCES = "Wikis and docs repos"
+
+    fun sourceOwner(owner: String) = "owned by $owner"
+
+    const val KNOWLEDGE_TO_CHECK = "No one has checked these"
+    const val KNOWLEDGE_CHECKED = "Checked"
+    const val OPENSPEC_ARTIFACTS = "OpenSpec stores (read-only, beta)"
+
+    // Model runs and prompt history
+    const val RUNS_READING = "Reading the model runs…"
+    const val RUNS_NONE = "No model runs yet: an AI step makes one, and its prompt and answer are kept under .runs/."
+    const val RUN_NOT_ANSWERED = "no answer yet"
+
+    fun runRound(n: Int) = "round $n"
+
+    fun handedBack(n: Int) = "$n handed back"
+
+    const val HISTORY_READING = "Reading the prompt history…"
+    const val HISTORY_NONE =
+        "No prompts yet. Claude Code's (with the Atticus plugin) and @atticus's in VS Code are recorded here; " +
+            "Copilot's chats in IntelliJ can't be, because its plugin gives a plugin no way to read them."
+    const val NO_RESPONSE_YET = "no response yet"
+    const val HISTORY_OFF = "Recording is off: atticus history off turned it off."
+
     const val CHECKING = "Checking for the atticus command line…"
     const val STARTING = "Starting the Atticus app…"
 
@@ -94,6 +177,66 @@ object Copy {
     // AI steps
     const val AI_TITLE = "Run this step in Copilot Chat"
 
+    // ADR 0121 addendum 2 (2026-10-26): the Copilot path in IntelliJ, said plainly.
+    fun pasteSlash(slash: String) = "<b>$slash</b> is on the clipboard. Open Copilot Chat (⌥⇧C / Alt+Shift+C) and paste it."
+
+    fun pastePrompt(path: String) =
+        "The step's prompt is on the clipboard (Atticus wrote it to $path). Open Copilot Chat, paste it and send it."
+
+    const val COPILOT_NO_API =
+        "GitHub Copilot's IntelliJ plugin publishes nothing a plugin can call, so Atticus can't open its chat, " +
+            "send the prompt or pick its model for you. The clipboard and this notice are the whole of it."
+    const val COPILOT_API = "Atticus opened Copilot Chat for you; the prompt is on the clipboard either way."
+    const val CLI_CHECKS_THE_ANSWER =
+        "Copilot writes the answer where the prompt says; atticus then checks it as it always does, " +
+            "so nothing is taken on trust because Copilot said it."
+    const val RUN_IN_CLAUDE_CODE = "Run it in Claude Code in a terminal"
+    const val CLAUDE_CODE_WHY =
+        "Opens claude in the metarepo with the same slash command: the Atticus plugin for Claude Code answers it (ADR 0104)."
+    const val OPEN_COPILOT_CHAT = "Open Copilot Chat"
+    const val COPILOT_MISSING =
+        "GitHub Copilot isn't installed in this IDE. Install it from Settings → Plugins (GitHub Copilot), " +
+            "or run the step in Claude Code or on Atticus's configured model instead."
+
+    // The native actions' own words (ADR 0105 addendum 2)
+    const val WHICH_REPO = "Which repo?"
+    const val WHICH_CHANGE = "Which change?"
+    const val ASK_CATALOG_TITLE = "Atticus: ask the catalog"
+    const val ASK_CATALOG_PROMPT =
+        "A plain question, for example: which systems call forge-ledger? The answer says the query it ran."
+    const val NOTHING_SELECTED = "Pick a row in the Atticus tool window first."
+    const val FINDING_ACTION_TITLE = "Atticus: act on a finding"
+    const val FINDING_WHICH_ACTION = "What do you want to do with this finding?"
+    const val FINDING_APPLY = "Apply the fix"
+    const val FINDING_FIXED_BY_HAND = "I fixed it by hand"
+    const val FINDING_NOT_RELEVANT = "Not relevant"
+    const val FINDING_WAIVE = "Waive it"
+    const val FINDING_ASK_SOMEONE = "Ask someone"
+    const val FINDING_WROTE_IT_IN = "I wrote the fact in"
+    const val FINDING_REASON = "Why? It is recorded with the finding, under your name."
+    const val FINDING_ASKED_OF = "Who should answer? A person's handle or a role."
+
+    fun findingAsk(owner: String) = "Ask $owner"
+    const val NEED_NOTE = "Why isn't it needed? The note goes on the need."
+    const val RAISE_NEEDS_TITLE = "Atticus: raise a change's open needs"
+    const val NEED_NOT_NEEDED = "Atticus: not needed"
+    const val ADD_KNOWLEDGE_TITLE = "Atticus: add knowledge"
+    const val ADD_KNOWLEDGE_HOW = "Where does the knowledge come from?"
+    const val ADD_KNOWLEDGE_BRING_IN = "Bring in from another repo"
+    const val ADD_KNOWLEDGE_WIKI = "Add a wiki or docs repo…"
+    const val ADD_KNOWLEDGE_FILES = "Add files from the Project view"
+
+    /** The title of the dialog a native step asks its target in: the command it runs. */
+    fun stepTitle(words: List<String>) = "Atticus: ${words.joinToString(" ")}"
+
+    fun raiseNeeds(change: String) =
+        "$change's open needs are on its page, each with Done, Not needed and Reopen. Mark them there, or pick one in Waiting on you."
+
+    fun taskKnowledgeTitle(task: String) = "Atticus: knowledge for task $task"
+
+    fun noTaskKnowledge(task: String) =
+        "No knowledge page applies to task $task yet. Sync the sources and read them (/atticus-knowledge), then try again."
+
     fun aiStep(slash: String?) =
         if (slash != null) {
             "This is an AI step. In Copilot Chat, type <b>$slash</b>. The prompt files come from atticus assistant-files."
@@ -119,6 +262,7 @@ object Copy {
         "This is a ${e.stepClass.id} step: it expects ${e.model} (" +
             (if (e.from == ModelFrom.SETTING) "your setting" else "runtime.yaml models.${e.stepClass.id}") +
             "). Pick it in Copilot's model picker before you send the prompt."
+    const val THE_PROMPT = "the prompt"
     const val COPIED = "Copied."
 
     // Shared writes
@@ -162,6 +306,13 @@ object Copy {
     const val WAITING_TAB = "Waiting on you"
     const val WAITING_QUESTIONS = "Questions to answer"
     const val WAITING_CHANGES = "Changes"
+
+    // ADR 0105 addendum: the kinds of thing that wait, and the group for what belongs to no change.
+    const val WAITING_NEEDS = "Needs still open"
+    const val WAITING_FINDINGS = "Findings open"
+    const val WAITING_MANUAL = "Manual steps to do"
+    const val WAITING_KNOWLEDGE = "Knowledge to check"
+    const val WAITING_NO_CHANGE = "Not on any change"
     const val WAITING_NOTHING = "Nothing waits on you."
     const val WAITING_READING = "Reading what waits on you…"
 

@@ -1,11 +1,14 @@
 package com.maycombhq.atticus.core
 
-/** Where a VS Code command's job is done in IntelliJ (WP6.3). */
+/** Where a VS Code command's job is done in IntelliJ (WP6.3, ADR 0105 addendum 2). */
 sealed interface InIntelliJ {
-    /** An action of the plugin (plugin.xml). */
+    /** An action of the plugin (plugin.xml): its own entry in the Tools menu and Find Action. */
     data class Action(val id: String) : InIntelliJ
 
-    /** Tools → Atticus: Run a Command…, which runs any command as its kind needs. */
+    /**
+     * Tools → Atticus: Run a Command…, which runs any command as its kind needs. Only where
+     * running a command is genuinely the job: the ADR names each one that is left.
+     */
     data object RunCommand : InIntelliJ
 
     /** A screen of the app in the tool window. */
@@ -14,121 +17,140 @@ sealed interface InIntelliJ {
     /** A tab of the tool window. */
     data class Tab(val name: String) : InIntelliJ
 
+    /** A part of a dialog or a flow here, not a command of its own; [where] says which. */
+    data class Dialog(val where: String) : InIntelliJ
+
     /** VS Code only, and why: a limit said up front, not a gap left unsaid. */
     data class VsCodeOnly(val why: String) : InIntelliJ
 }
 
 /**
- * Every VS Code command and where IntelliJ does the same job (WP6.3). ParityTest fails when VS Code
- * gains a command this doesn't place, or names an action or screen that doesn't exist.
+ * Every VS Code command and where IntelliJ does the same job (WP6.3, ADR 0105 addendum 2).
+ * ParityTest fails when VS Code gains a command this doesn't place, or names an action or screen
+ * that doesn't exist; ParityBudgetTest fails when the Run a Command entries grow past what the
+ * ADR records.
  */
 object Parity {
-    private val run = InIntelliJ.RunCommand
     private fun action(id: String) = InIntelliJ.Action(id)
+
     private fun app(hash: String) = InIntelliJ.App(hash)
-    private val sidebar = InIntelliJ.VsCodeOnly("a filter or grouping of VS Code's sidebar views; the app's screens and the Waiting tree have their own")
+
+    private fun tab(name: String) = InIntelliJ.Tab(name)
+
+    /** The number of Run a Command entries ADR 0105 addendum 2 records, and what each one is. */
+    const val RUN_COMMAND_BUDGET = 2
+
+    /**
+     * Each action a step of [Steps] does, by the VS Code command it answers: the AI steps handed
+     * to Copilot Chat, and the commands Atticus runs itself.
+     */
+    private val FROM_STEPS: Map<String, InIntelliJ> = Steps.ALL.associate { it.vsCode to action(it.actionId) }
 
     val MAP: Map<String, InIntelliJ> =
-        linkedMapOf(
-            "atticus.next" to action("Atticus.NextStep"),
-            "atticus.runNext" to action("Atticus.NextStep"),
-            // Phase D: the read of a repo and the critic, VS Code's steps; here, as every AI step,
-            // their slash command (/atticus-map, /atticus-critic) to copy into Copilot Chat.
-            "atticus.map" to run,
-            "atticus.critic" to run,
-            "atticus.survey" to run,
-            "atticus.verify" to run,
-            // The older scanner's check (`atticus scan verify`), kept beside the facts' verify.
-            "atticus.scanverify" to run,
-            "atticus.spec" to run,
-            "atticus.feature" to run,
-            "atticus.architecture" to run,
-            "atticus.stories" to run,
-            "atticus.small" to run,
-            "atticus.answer" to action("Atticus.AnswerQuestion"),
-            "atticus.ask" to run,
-            "atticus.showApp" to app("#/home"),
-            "atticus.diagram" to app("#/diagrams"),
-            "atticus.changeDiagram" to action("Atticus.ChangeDiagram"),
-            "atticus.estimate" to action("Atticus.Estimate"),
-            "atticus.promptHistory" to action("Atticus.PromptHistory"),
-            "atticus.openApp" to action("Atticus.OpenInBrowser"),
-            "atticus.refresh" to action("Atticus.Refresh"),
-            "atticus.waitingByKind" to sidebar,
-            "atticus.waitingByChange" to sidebar,
-            "atticus.filterWaiting" to sidebar,
-            "atticus.clearFilterWaiting" to sidebar,
-            "atticus.filterChanges" to sidebar,
-            "atticus.clearFilterChanges" to sidebar,
-            "atticus.filterKnowledge" to sidebar,
-            "atticus.clearFilterKnowledge" to sidebar,
-            "atticus.filterRuns" to sidebar,
-            "atticus.clearFilterRuns" to sidebar,
-            "atticus.openRunAnswer" to action("Atticus.ModelRuns"),
-            "atticus.showLog" to InIntelliJ.Tab(Copy.OUTPUT_TAB),
-            "atticus.openItem" to InIntelliJ.Tab(Copy.WAITING_TAB),
-            "atticus.showStep" to app("#/flows"),
-            "atticus.showFlow" to app("#/flows"),
-            "atticus.findingAction" to run,
-            "atticus.runCommand" to action("Atticus.RunCommand"),
-            "atticus.newChange" to action("Atticus.NewChange"),
-            "atticus.repoCommand" to run,
-            "atticus.changeCommand" to run,
-            "atticus.runTask" to run,
-            "atticus.startTask" to action("Atticus.StartTask"),
-            "atticus.attachToChange" to action("Atticus.AttachToChange"),
-            "atticus.watchChange" to action("Atticus.WatchChange"),
-            "atticus.addToKnowledge" to action("Atticus.AddToKnowledge"),
-            "atticus.checkHealth" to run,
-            "atticus.scanAll" to run,
-            "atticus.estateJoin" to run,
-            "atticus.workspaceSync" to run,
-            "atticus.sourcesSync" to run,
-            "atticus.knowledgeScan" to run,
-            "atticus.knowledgeAsk" to run,
-            "atticus.upgrade" to run,
-            "atticus.setup" to run,
-            "atticus.digest" to run,
-            "atticus.runApproved" to run,
-            "atticus.createMetarepo" to action("Atticus.CreateMetarepo"),
-            "atticus.adoptRepo" to action("Atticus.Adopt"),
-            "atticus.practiceSandbox" to action("Atticus.Sandbox"),
-            "atticus.addRepos" to run,
-            // ADR 0128: saying what a repo is. In IntelliJ, Run a Command: atticus repo describe.
-            "atticus.describeRepo" to run,
-            "atticus.draftSpec" to run,
-            "atticus.answerRepo" to action("Atticus.AnswerQuestion"),
-            "atticus.installCopilot" to InIntelliJ.VsCodeOnly("installs GitHub Copilot in VS Code; in IntelliJ it is installed from the Marketplace"),
-            "atticus.pickModel" to
-                InIntelliJ.VsCodeOnly("picks one of VS Code's language models; IntelliJ offers plugins none, so a step runs in Copilot Chat or on runtime.yaml's model"),
-            "atticus.absorb" to run,
-            "atticus.absorbAccept" to run,
-            "atticus.onboardRepo" to run,
-            "atticus.addKnowledge" to run,
-            "atticus.acceptCatalog" to run,
-            "atticus.setupStep" to run,
-            "atticus.runStep" to run,
-            "atticus.openOrgPackOwner" to app("#/orgpack"),
-            "atticus.addWiki" to run,
-            "atticus.searchWikis" to app("#/wiki-search"),
-            "atticus.keepFound" to app("#/wiki-search"),
-            "atticus.keepCandidate" to app("#/wiki-search"),
-            "atticus.syncSource" to run,
-            "atticus.readSource" to run,
-            "atticus.tagSource" to run,
-            "atticus.verifyItem" to app("#/knowledge"),
-            "atticus.correctItem" to app("#/knowledge"),
-            "atticus.rejectItem" to app("#/knowledge"),
-            "atticus.openLinks" to app("#/knowledge"),
-            "atticus.askAboutItem" to run,
-            "atticus.findNeeds" to run,
-            "atticus.needDone" to run,
-            "atticus.needSkip" to run,
-            "atticus.needReopen" to run,
-            "atticus.openNeedPage" to app("#/home"),
-            "atticus.raiseNeeds" to run,
-            "atticus.draftOrgPack" to run,
-            "atticus.reviewUnverified" to app("#/knowledge"),
-            "atticus.showManualStep" to app("#/todo"),
+        linkedMapOf<String, InIntelliJ>().apply {
+            // ---------------------------------------------------------- what is next
+            put("atticus.next", action("Atticus.NextStep"))
+            put("atticus.runNext", action("Atticus.NextStep"))
+            // The Next tab lists the next step and the setup checklist, each row with Run the step.
+            put("atticus.setup", tab(Copy.NEXT_TAB))
+            put("atticus.runStep", action("Atticus.RunStep"))
+            put("atticus.setupStep", action("Atticus.RunStep"))
+
+            // ---------------------------------------------------------- what waits on you
+            put("atticus.openItem", tab(Copy.WAITING_TAB))
+            put("atticus.answer", action("Atticus.AnswerQuestion"))
+            put("atticus.answerRepo", action("Atticus.AnswerQuestion"))
+            put("atticus.waitingByChange", action("Atticus.WaitingByChange"))
+            put("atticus.waitingByKind", action("Atticus.WaitingByKind"))
+            put("atticus.filterWaiting", action("Atticus.FilterWaiting"))
+            put("atticus.clearFilterWaiting", action("Atticus.ClearFilterWaiting"))
+            put("atticus.findingAction", action("Atticus.FindingAction"))
+            put("atticus.raiseNeeds", action("Atticus.RaiseNeeds"))
+            put("atticus.openNeedPage", app("#/home"))
+
+            // ---------------------------------------------------------- my changes
+            put("atticus.newChange", action("Atticus.NewChange"))
+            put("atticus.watchChange", action("Atticus.WatchChange"))
+            put("atticus.attachToChange", action("Atticus.AttachToChange"))
+            put("atticus.startTask", action("Atticus.StartTask"))
+            put("atticus.changeDiagram", action("Atticus.ChangeDiagram"))
+            put("atticus.estimate", action("Atticus.Estimate"))
+            put("atticus.filterChanges", action("Atticus.FilterChanges"))
+            put("atticus.clearFilterChanges", action("Atticus.ClearFilterChanges"))
+
+            // ---------------------------------------------------------- what the organisation knows
+            put("atticus.addToKnowledge", action("Atticus.AddToKnowledge"))
+            // One action offering the three ways in: bring in a repo, add a wiki, add files.
+            put("atticus.addKnowledge", action("Atticus.AddKnowledge"))
+            put("atticus.filterKnowledge", action("Atticus.FilterKnowledge"))
+            put("atticus.clearFilterKnowledge", action("Atticus.ClearFilterKnowledge"))
+            // The Knowledge tab's own list is what no one has checked, newest first.
+            put("atticus.reviewUnverified", tab(Copy.KNOWLEDGE_TAB))
+            put("atticus.searchWikis", app("#/wiki-search"))
+            put("atticus.keepFound", app("#/wiki-search"))
+            put("atticus.keepCandidate", app("#/wiki-search"))
+            put("atticus.openLinks", app("#/knowledge"))
+
+            // ---------------------------------------------------------- the estate and its setup
+            put("atticus.showApp", app("#/home"))
+            put("atticus.openApp", action("Atticus.OpenInBrowser"))
+            put("atticus.refresh", action("Atticus.Refresh"))
+            put("atticus.diagram", app("#/diagrams"))
+            put("atticus.showStep", app("#/flows"))
+            put("atticus.showFlow", app("#/flows"))
+            put("atticus.createMetarepo", action("Atticus.CreateMetarepo"))
+            put("atticus.adoptRepo", action("Atticus.Adopt"))
+            put("atticus.practiceSandbox", action("Atticus.Sandbox"))
+
+            // ---------------------------------------------------------- the model's own work
+            put("atticus.promptHistory", tab(Copy.HISTORY_TAB))
+            put("atticus.openRunAnswer", tab(Copy.RUNS_TAB))
+            put("atticus.filterRuns", action("Atticus.FilterRuns"))
+            put("atticus.clearFilterRuns", action("Atticus.ClearFilterRuns"))
+            put("atticus.showLog", tab(Copy.OUTPUT_TAB))
+
+            // ---------------------------------------------------------- the steps and the commands
+            putAll(FROM_STEPS)
+
+            // ---------------------------------------------------------- what is not a command here
+            // The dry run's yes, inside the dialog that shows what the dry run said (ADR 0099).
+            put("atticus.runApproved", InIntelliJ.Dialog(Copy.APPROVE))
+
+            // Running a command on a repo or a change is the job itself: the two that are left.
+            put("atticus.repoCommand", InIntelliJ.RunCommand)
+            put("atticus.changeCommand", InIntelliJ.RunCommand)
+            put("atticus.runCommand", action("Atticus.RunCommand"))
+
+            // ---------------------------------------------------------- VS Code only, and why
+            put(
+                "atticus.installCopilot",
+                InIntelliJ.VsCodeOnly(
+                    "installs GitHub Copilot in VS Code, which has it built in from 1.143; IntelliJ's is a " +
+                        "Marketplace plugin a plugin can't install, so Atticus says where to get it instead",
+                ),
+            )
+            put(
+                "atticus.pickModel",
+                InIntelliJ.VsCodeOnly(
+                    "picks one of VS Code's language models for the extension to call. IntelliJ offers plugins " +
+                        "none, and Copilot's IntelliJ plugin exposes no model picker, so a step says the model " +
+                        "its class expects and the person picks it in Copilot's own picker, or it runs on " +
+                        "runtime.yaml's model (ADR 0121 addendum 2)",
+                ),
+            )
+        }
+
+    /** The Run a Command entries that are left, for the test and the ADR. */
+    val RUN_COMMANDS: List<String> = MAP.filterValues { it is InIntelliJ.RunCommand }.keys.toList()
+
+    /** How many commands land on each kind, for the ADR's table and the budget test. */
+    fun counts(): Map<String, Int> =
+        mapOf(
+            "action" to MAP.values.count { it is InIntelliJ.Action },
+            "app" to MAP.values.count { it is InIntelliJ.App },
+            "tab" to MAP.values.count { it is InIntelliJ.Tab },
+            "dialog" to MAP.values.count { it is InIntelliJ.Dialog },
+            "runCommand" to MAP.values.count { it is InIntelliJ.RunCommand },
+            "vsCodeOnly" to MAP.values.count { it is InIntelliJ.VsCodeOnly },
         )
 }

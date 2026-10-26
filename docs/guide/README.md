@@ -6,6 +6,7 @@
 - [Teaching Atticus your house frameworks](frameworks.md): framework models from source, JARs, documents or an assistant's draft, and the tests that gate them.
 - [Org knowledge](knowledge.md): add a wiki, a document or an API guide, scan it, ask it, and see, confirm or exclude what applies to a change.
 - [Atticus by kind of work](roles.md): who you are in Atticus (your Git user), approving by pull request, and the screens and first steps for each kind of work.
+- [Atticus in IntelliJ IDEA](intellij.md): the tool window's tabs, what is native, how an AI step runs through Copilot Chat or Claude Code there, and the two things only VS Code does.
 - [A change in OpenSpec](openspec.md): the artifacts each stage writes, how a change's specs accumulate in openspec/specs, and exporting the stories to Azure DevOps or Jira.
 - [Troubleshooting](troubleshooting.md): what an error means and what to do.
 - [Command reference](commands.md): the twelve commands `atticus help` shows, then every other `atticus` command, generated from its help.
