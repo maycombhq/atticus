@@ -193,8 +193,11 @@ describe("M3 exit step 4: the absorb bar", () => {
           expect(["adopt", "link", "ignore"]).toContain(item.action);
           expect(item.reason.length, item.id).toBeGreaterThan(10);
         }
-        // Every file of the source is in some item (a file, a folder, or the counted code).
-        const files = await walk(src);
+        // Every file of the source is in some item (a file, a folder, or the counted code),
+        // apart from this machine's own files inside a metarepo's .atticus/ (LOCAL_ONLY: the
+        // kept parses, logs, locks, me.yaml), which absorb leaves out: they are its state, not
+        // its content. A test that reads a fixture in place can leave them there.
+        const files = (await walk(src)).filter((f) => !/(^|\/)\.atticus\//.test(`/${f}`));
         const covered = (f: string) =>
           r.items.some((x) => x.kind !== "code" && (x.path === f || f.startsWith(`${x.path}/`)));
         const code = r.items.find((x) => x.kind === "code");
