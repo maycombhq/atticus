@@ -1,0 +1,3 @@
+{"kind":"framework","id":"fw.rails","repo":"forge-audit","commit":"4f1d2a9c8b7e6f5a4d3c2b1a0978563412fedcba","name":"rails","version":"7.1.4","cite":{"file":"Gemfile","line":3,"value":"rails","quote":"gem \"rails\", \"7.1.4\""}}
+{"kind":"framework","id":"fw.sidekiq","repo":"forge-audit","commit":"4f1d2a9c8b7e6f5a4d3c2b1a0978563412fedcba","name":"sidekiq","version":"7.3.2","cite":{"file":"Gemfile","line":5,"value":"sidekiq","quote":"gem \"sidekiq\", \"7.3.2\""}}
+{"kind":"entry","id":"entry.get.trails","repo":"forge-audit","commit":"4f1d2a9c8b7e6f5a4d3c2b1a0978563412fedcba","entryType":"rest","method":"GET","path":"/trails","handler":"trails#index","cite":{"file":"config/routes.rb","line":2,"value":"/trails","quote":"get \"/trails\", to: \"trails#index\""}}

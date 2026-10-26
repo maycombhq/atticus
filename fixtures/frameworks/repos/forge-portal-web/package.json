@@ -1,0 +1,10 @@
+{
+  "name": "forge-portal-web",
+  "version": "3.0.1",
+  "private": true,
+  "dependencies": {
+    "@angular/core": "18.2.3",
+    "@angular/router": "18.2.3",
+    "rxjs": "7.8.1"
+  }
+}

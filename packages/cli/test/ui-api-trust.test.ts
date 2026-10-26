@@ -123,6 +123,13 @@ beforeAll(async () => {
   );
   await checkout("forge-reports-job", SHA, true);
 
+  // forge-cards-api: what a repo is built on, and a framework whose patterns the facts show
+  // none of (ADR 0124 addendum A-framework). Its facts are the hand-written fixture's.
+  await cp(
+    join(FIXTURES, "frameworks/facts/forge-cards-api.jsonl"),
+    join(root, "facts/forge-cards-api.jsonl"),
+  );
+
   // forge-infra: a report that isn't YAML.
   await writeFile(
     join(root, "facts/forge-infra.jsonl"),
@@ -240,6 +247,22 @@ describe("GET /api/trust (ADR 0124)", () => {
     // Manifest order, then a repo only the facts name.
     expect(v.repos.map((r) => r.repo).at(-1)).toBe("side-tool");
     expect(of("side-tool")).toMatchObject({ checkout: { present: false }, state: "unverified" });
+  });
+
+  it("says what each repo is built on, and where its patterns are missing (A-framework)", async () => {
+    const v = await view(srv);
+    const cards = v.repos.find((r) => r.repo === "forge-cards-api")!;
+    expect(cards.frameworks).toEqual([
+      { name: "forge-card-starter", version: "4.2.0", cite: "pom.xml:15" },
+      {
+        name: "spring-boot",
+        version: "3.2.9",
+        cite: "pom.xml:6",
+        gap: expect.stringContaining("no REST entry"),
+      },
+    ]);
+    // A repo whose facts name no framework says nothing here: nothing is guessed.
+    expect(v.repos.find((r) => r.repo === "forge-ledger")!.frameworks).toBeUndefined();
   });
 
   it("answers with nothing, not an error, on a metarepo with no manifest and no facts", async () => {

@@ -1,0 +1,2 @@
+{"kind":"framework","id":"fw.express","repo":"forge-notify","commit":"4f1d2a9c8b7e6f5a4d3c2b1a0978563412fedcba","name":"express","version":"4.19.2","cite":{"file":"package.json","line":8,"value":"express","quote":"\"express\": \"4.19.2\","}}
+{"kind":"entry","id":"entry.post.notices","repo":"forge-notify","commit":"4f1d2a9c8b7e6f5a4d3c2b1a0978563412fedcba","entryType":"rest","method":"POST","path":"/notices","cite":{"file":"src/routes.js","line":5,"value":"/notices","quote":"routes.post(\"/notices\", (req, res) => {"}}

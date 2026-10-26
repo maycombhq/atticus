@@ -51,6 +51,9 @@ export function factLabel(f: Fact): string {
       return `${f.platform}${f.resourceName ? ` ${f.resourceName}` : ""}`;
     case "config":
       return `${f.key}${f.value !== undefined ? ` = ${f.value}` : ""}`;
+    // ADR 0124 addendum A-framework: what the repo or the module is built on.
+    case "framework":
+      return `${f.name}${f.version ? ` ${f.version}` : ""}`;
     case "flow":
       return f.name;
   }

@@ -13,6 +13,20 @@ Pick the way in that matches what you have. They combine: each keeps what the ot
 | The source, and repos that use it        | `atticus onboard framework <name> --from <source, JAR or package> --users <repos>`: learned first, your assistant drafts the rest, checks decide (below).       |
 | Nothing yet                              | `atticus frameworks survey --package <your prefixes>` shows which house modules the repos import and how they call them. Start with the most used.              |
 
+## What each repo is built on
+
+A read records the frameworks a repo is built on, one fact each, cited on the line of the build file that declares it (ADR 0124 addendum A-framework). `spring-boot 3.3.4` on the parent pom's `<artifactId>`, `asp.net net8.0` on a csproj's `Sdk=`, `express 4.19.2` on a `package.json` line, `rails 7.1.4` on a Gemfile's `gem`, `django 5.1.1` on a requirement. Where the version isn't on that line — a `<properties>` entry, a parent pom, a `<TargetFramework>` — the line that writes it is cited beside it, and the verifier checks both. A module that declares its own framework (ADR 0057) records it against that module.
+
+You see it in three places: `map.md` says **Built on** above the trust line, each framework linking to the line that declares it; the Map's Trust tab says it for every repo in the estate; and `atticus verify <repo>` prints it with the report. Nothing is guessed: a repo nobody has read yet says nothing at all.
+
+Three things follow from it.
+
+- **The reading prompts carry the rules of your frameworks, and not of the others.** A batch's prompt already carried only the rules its kinds of file need; now it carries only the frameworks the repo declares too. A Spring repo gets JPA's table naming and Spring Data REST's paths; it no longer carries Django's `app_label`, Rails' pluralisation, ASP.NET's MVC route or TypeORM's join tables. A front end gets its own router's rules and nothing of the back end's frameworks. Before the first read, when no fact says yet, the repo's `type` in `repos.manifest.yaml` is the hint; once a framework fact is on file, the facts say and the manifest doesn't.
+- **A framework whose patterns are nowhere in the facts is a question for a person.** A Spring Boot repo with no REST entry, a React app with no screen, a Sidekiq dependency with no `batch-job`: `atticus verify` says so (under `frameworkGaps` in the report), the map puts it in the open and the Trust tab marks it. It usually means the real entry points were missed. It is never a rejection and never a fact about the repo: the facts can't say which it is, so a person does.
+- **A house framework becomes a prompt to learn it.** A framework fact whose artifact is neither one Atticus knows nor one your org pack's framework files cover is offered to you as `atticus frameworks learn <name> --from <repo>` — the paths above. Until then the reading prompts tell the assistant that one of its annotations, base classes or wrapper clients may serve a route or read a table with nothing in the repo's own code to show it, and to write a question naming the annotation rather than a guess.
+
+A repo's type in the manifest follows the facts too: a framework a repo's own facts declare settles the type (`spring-boot`, `dotnet`, `frontend`, `node`, `python`) ahead of anything guessed from the files, because it was read from a build file's line and that line was checked.
+
 ## Cloud resources in Terraform
 
 Atticus reads common AWS, Azure and Google Cloud resources from Terraform in any repo with a `.tf` file, through three dialects it ships: `terraform-aws`, `terraform-azure` and `terraform-gcp` (ADR 0063). Each file's header in `packages/extractors/dialects/` lists the resource types it reads and the records they give: topics, queues, databases and other stores, functions, deployments and gateway routes. Names are resolved from variables, `terraform.tfvars`, `*.auto.tfvars` and locals, and through your local modules: `module "orders_queue" { source = "../modules/queue" name = "orders" }` gives the module's resources named with `orders`, once per instantiation.

@@ -1,8 +1,14 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { factsDirOf, factsRelOf, listQuestions, parseFactsLines } from "@maycombhq/core";
-import { dirSource, verifyFacts } from "@maycombhq/verify";
+import {
+  factsDirOf,
+  factsRelOf,
+  listQuestions,
+  loadOrgPack,
+  parseFactsLines,
+} from "@maycombhq/core";
+import { dirSource, frameworkFacts, frameworksToLearn, verifyFacts } from "@maycombhq/verify";
 import type { GitRunner } from "@maycombhq/workspace";
 import type { Output } from "./commands.js";
 import {
@@ -29,6 +35,16 @@ import {
  * A-read), are counted apart from read and listed with why; a line naming no file is rejected too.
  * Exit code 1 while anything is rejected, so a reading loop knows to go again.
  */
+/**
+ * What the org pack's framework files already teach Atticus (ADR 0054): each file's name and the
+ * artifacts it ships as, so a house starter already on file isn't offered to be learned again.
+ * None when there is no org pack here.
+ */
+async function frameworksKnownTo(root: string): Promise<string[]> {
+  const op = await loadOrgPack(root).catch(() => undefined);
+  return (op?.frameworks ?? []).flatMap((f) => [f.name, ...f.artifacts]);
+}
+
 export interface VerifyCommandOptions {
   /** The repo's checkout, when not the base clone or (adopted in place) the root itself. */
   dir?: string;
@@ -323,6 +339,33 @@ export async function verifyCommand(
           `${e.entryType === "rest" && e.method ? e.method : e.entryType} ${e.path} (${e.id}, ${e.cite})`,
       ),
       `(entriesNoFlowFollows in ${verifyYaml})`,
+    );
+  }
+  // A-framework: what the repo is built on, a framework whose patterns nothing shows, and a
+  // framework of the house nothing here can read. Notes and questions, never rejections.
+  const fws = frameworkFacts(report.accepted);
+  if (fws.length)
+    io.out(
+      `Built on ${fws.map((f) => `${f.name}${f.version ? ` ${f.version}` : ""}`).join(", ")} (frameworks in ${verifyYaml}).`,
+    );
+  const gaps = report.frameworkGaps;
+  if (gaps.length) {
+    io.out(
+      `${gaps.length} ${gaps.length === 1 ? "framework" : "frameworks"} this repo declares ${gaps.length === 1 ? "shows" : "show"} none of its patterns in the facts (a question for a person, not a rejection; under frameworkGaps in ${verifyYaml}):`,
+    );
+    show(
+      gaps.map((g) => g.question),
+      `(frameworkGaps in ${verifyYaml})`,
+    );
+  }
+  const learn = frameworksToLearn(report.accepted, await frameworksKnownTo(root));
+  if (learn.length) {
+    io.out(
+      `${learn.length} ${learn.length === 1 ? "framework" : "frameworks"} of the house nothing here can read yet: teach ${learn.length === 1 ? "it" : "them"} once, rather than having each repo's annotations read as ordinary code.`,
+    );
+    show(
+      learn.map((l) => `${l.why} Learn it: ${l.command}`),
+      "",
     );
   }
   if (failed) {

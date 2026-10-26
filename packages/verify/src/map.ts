@@ -66,6 +66,15 @@ export interface RenderMapInput {
   trust?: MapTrust;
   /** What the repo is, as the manifest says (ADR 0128); left out when nothing says. */
   about?: { text: string; trust: "suggested" | "verified"; by?: string };
+  /**
+   * What the repo is built on, from its framework facts (ADR 0124 addendum A-framework), with
+   * the frameworks whose patterns the facts show none of. Read from the facts, not the catalog:
+   * no C1 record holds a framework. Left out when the facts name none.
+   */
+  frameworks?: {
+    built: readonly { name: string; version?: string; component?: string; cite: Ev }[];
+    gaps?: readonly { framework: string; question: string }[];
+  };
   /** The open questions about the repo. */
   questions?: readonly MapQuestion[];
   /** Folders relative to the metarepo root: the map's (`map/<repo>`), questions/ and the repo's specs. */
@@ -443,6 +452,30 @@ function aboutLine(a: RenderMapInput["about"], repo: string): string[] {
   ];
 }
 
+/**
+ * What the repo is built on (ADR 0124 addendum A-framework), beside what it is: each framework
+ * with its version as declared and a link to the build file's line, and, where the facts show
+ * none of a framework's patterns, the question that raises.
+ */
+function builtOnLine(c: Ctx): string[] {
+  const f = c.i.frameworks;
+  if (!f?.built.length) return [];
+  const one = (b: NonNullable<RenderMapInput["frameworks"]>["built"][number]) =>
+    `${b.name}${b.version ? ` ${b.version}` : ""}${b.component ? ` (${b.component})` : ""} ${cite(c, b.cite)}`;
+  return [
+    `**Built on:** ${f.built.map(one).join(", ")} — read from the build files, each on the line that declares it.`,
+    "",
+    ...(f.gaps?.length
+      ? [
+          ...f.gaps.map(
+            (g) => `**Open: ${g.framework} shows none of its patterns here.** ${g.question}`,
+          ),
+          "",
+        ]
+      : []),
+  ];
+}
+
 function trustLine(t: MapTrust | undefined, repo: string): string {
   if (!t) return `**Trust:** No verify report yet: run \`atticus verify ${repo}\`.`;
   return `**Trust:** ${plural(t.accepted, "fact")} verified on their lines; coverage ${pct(t.ratio)} of source files (${plural(t.unknown, "unknown file")}: cited by no fact and opened through no Atticus tool)${t.reviewed ? `; ${plural(t.reviewed, "file")} reviewed by the reader with nothing to record (each with why, in the verify report)` : ""}; ${t.rejected} rejected.${t.commit ? ` Commit ${t.commit}.` : ""}`;
@@ -634,6 +667,7 @@ export function renderMap(i: RenderMapInput): Record<string, string> {
     HEADER(i.repo, "the catalog and its specs"),
     "",
     ...aboutLine(i.about, i.repo),
+    ...builtOnLine(base),
     trustLine(i.trust, i.repo),
     "",
     ...section("What it serves", serves(base)),

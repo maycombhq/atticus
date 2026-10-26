@@ -646,6 +646,15 @@ export const COPY = {
       trusted:
         "Every fact is verified at the checkout's commit, every source file is read, and the catalog is built from the facts.",
     },
+    /** ADR 0124 addendum A-framework: what each repo is built on, read from its build files. */
+    builtOn: "Built on",
+    builtOnNone: "Not read yet",
+    builtOnOne: (name: string, version: string | undefined, where: string) =>
+      `${name}${version ? ` ${version}` : ""} (${where})`,
+    builtOnModule: (name: string, module: string) => `${name}, in ${module}`,
+    builtOnGap: (name: string) => `${name}: none of its patterns are in the facts`,
+    builtOnIntro:
+      "What each repo's build files declare it is built on, each read from the line that declares it. Where a repo declares a framework and its facts show none of that framework's patterns — a Spring Boot service with no route, a React app with no screen — the entry points were probably missed, and that is a question for a person rather than something to be decided here.",
     kept: "Facts kept",
     rejected: "Rejected",
     redacted: (n: number) => `${n} quote${n === 1 ? "" : "s"} redacted`,

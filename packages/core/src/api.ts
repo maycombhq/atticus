@@ -68,8 +68,11 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  * 2.28.0 (ADR 0128): what a repo is, in a person's words. `description` on a repo in GET
  *   /api/onboarding and GET /api/repos/branches, and PUT /api/repos/{repo}/description, which
  *   sets, confirms or drops it. Additive only.
+ * 2.29.0 (ADR 0124 addendum A-framework): what each repo is built on. `frameworks` on a repo in
+ *   GET /api/trust — the framework its facts declare, the version as declared, where it is
+ *   cited, and the frameworks whose patterns the facts show none of. Additive only.
  */
-export const API_VERSION = "2.28.0";
+export const API_VERSION = "2.29.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -655,6 +658,25 @@ export const TrustRepo = z.object({
   state: TrustState,
   /** The command to run next (and the assistant's slash command), absent when trusted. */
   next: z.object({ command: z.string(), slash: z.string().optional() }).optional(),
+  /**
+   * 2.29.0 (ADR 0124 addendum A-framework): what the repo is built on, from its framework facts
+   * — one entry per framework, with the version as declared, the module when a module declares
+   * its own, where it is cited (`file:line`), and whether the facts show none of its patterns,
+   * which is a question for a person rather than a fact about the repo. Empty until the repo is
+   * read; a framework is never guessed here.
+   */
+  frameworks: z
+    .array(
+      z.object({
+        name: z.string(),
+        version: z.string().optional(),
+        component: z.string().optional(),
+        cite: z.string(),
+        /** The question its missing patterns raise, when the facts show none of them. */
+        gap: z.string().optional(),
+      }),
+    )
+    .optional(),
 });
 export const TrustView = z.object({
   /** Where the facts files are, relative to the metarepo. */

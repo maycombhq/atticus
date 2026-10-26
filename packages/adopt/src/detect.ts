@@ -91,9 +91,68 @@ export function typeFromDescription(text: string | undefined): RepoType | undefi
   return undefined;
 }
 
+/**
+ * The repo type a framework the repo's facts declare says it is (ADR 0124 addendum A-framework).
+ * A framework fact is read from a build file's line and checked against it, so it is a stronger
+ * signal than any guess here: it is taken before the files are looked at again, and its
+ * citation is the signal. Nothing is read; the caller passes the names and where each is cited.
+ */
+const TYPE_OF_FRAMEWORK: readonly (readonly [string, RepoType])[] = [
+  ["spring-boot", "spring-boot"],
+  ["spring", "spring-boot"],
+  ["quarkus", "java"],
+  ["micronaut", "java"],
+  ["hibernate", "java"],
+  ["asp.net", "dotnet"],
+  ["entity-framework", "dotnet"],
+  ["angular", "frontend"],
+  ["react", "frontend"],
+  ["vue", "frontend"],
+  ["svelte", "frontend"],
+  ["next", "frontend"],
+  ["express", "node"],
+  ["nest", "node"],
+  ["typeorm", "node"],
+  ["prisma", "node"],
+  ["django", "python"],
+  ["django-rest-framework", "python"],
+  ["flask", "python"],
+  ["fastapi", "python"],
+  ["celery", "python"],
+];
+
+/** A framework fact as this module reads it: the name, and `file:line` where it is cited. */
+export interface DeclaredFramework {
+  name: string;
+  cite: string;
+}
+
+/**
+ * The type the repo's own framework facts settle, with the citations as its signals, or
+ * undefined when they name no framework this maps. `high`: a build file declares it and the
+ * verifier checked the line.
+ */
+export function typeFromFrameworks(
+  declared: readonly DeclaredFramework[],
+): { type: RepoType; signals: string[] } | undefined {
+  for (const [name, type] of TYPE_OF_FRAMEWORK) {
+    const hit = declared.filter((d) => d.name.trim().toLowerCase() === name);
+    if (hit.length) return { type, signals: hit.map((d) => d.cite) };
+  }
+  return undefined;
+}
+
 export async function detectRepoType(
   repo: RepoHandle,
-  o: { description?: string } = {},
+  o: {
+    description?: string;
+    /**
+     * What the repo's verified facts say it is built on (ADR 0124 addendum A-framework). Taken
+     * before anything is guessed from the files: a framework fact is read from a build file's
+     * line and its line was checked, so it settles the type where it maps to one.
+     */
+    frameworks?: readonly DeclaredFramework[];
+  } = {},
 ): Promise<Detection> {
   const comp = await runExtractor(componentExtractor, repo, {
     scannedAt: "1970-01-01T00:00:00Z",
@@ -106,7 +165,14 @@ export async function detectRepoType(
     confidence,
   });
 
-  const apigee = await all(repo, ["**/apiproxy/*.xml", "**/apiproxy/proxies/*.xml"]);
+  // A-framework: a framework the repo's facts declare, each cited on a build file's line the
+  // verifier checked, beats every guess below — a gateway's bundle aside, which is a repo of
+  // another kind altogether and is looked for first.
+  const apigeeFirst = await all(repo, ["**/apiproxy/*.xml", "**/apiproxy/proxies/*.xml"]);
+  const declared = apigeeFirst.length ? undefined : typeFromFrameworks(o.frameworks ?? []);
+  if (declared) return d(declared.type, declared.signals, "high");
+
+  const apigee = apigeeFirst;
   const kong = await first(repo, ["kong.yaml", "kong.yml", "**/kong.yaml", "**/kong.yml"]);
   if (apigee.length || kong) return d("gateway", apigee.length ? apigee : [kong!], "high");
 

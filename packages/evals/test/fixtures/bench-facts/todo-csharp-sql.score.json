@@ -198,6 +198,7 @@
       "field": 10,
       "deploy": 1,
       "config": 4,
+      "framework": 0,
       "flow": 1
     },
     "left": {
@@ -205,6 +206,7 @@
       "screenFields": 1,
       "batchJobs": 0,
       "keyPatterns": 0,
+      "frameworks": 0,
       "flows": 1
     }
   },

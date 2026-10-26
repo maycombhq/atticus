@@ -1,12 +1,14 @@
-import { stat } from "node:fs/promises";
-import { basename, resolve } from "node:path";
+import { readFile, stat } from "node:fs/promises";
+import { basename, join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 import {
   addManifestRepo,
   descriptionLine,
+  factsDirOf,
   ManifestEditError,
   manifestFiles,
+  parseFacts,
   RecordId,
   REPO_DESCRIPTION_MAX,
   RepoDescription,
@@ -83,6 +85,26 @@ function written(text: string, by: string, now: Date): RepoDescription {
 }
 
 /**
+ * What a repo's verified facts say it is built on (ADR 0124 addendum A-framework): the framework
+ * facts of `facts/<repo>.jsonl`, each with where it is cited. None when the repo has no facts
+ * yet, which is the usual case for a repo being added.
+ */
+async function declaredFrameworks(
+  root: string,
+  repo: string,
+): Promise<{ name: string; cite: string }[]> {
+  const text = await readFile(join(factsDirOf(root), `${repo}.jsonl`), "utf8").catch(
+    () => undefined,
+  );
+  if (text === undefined) return [];
+  const p = parseFacts(text);
+  if (!p.ok) return [];
+  return p.facts.flatMap((f) =>
+    f.kind === "framework" ? [{ name: f.name, cite: `${f.cite.file}:${f.cite.line}` }] : [],
+  );
+}
+
+/**
  * The repo's type, when `--type` isn't given and the URL is a folder on this machine: read from
  * its own files, and only where they say nothing, from what the person wrote about it (ADR 0128).
  * Nothing for a URL there is no clone of yet; the type is then `unknown`, which is a question.
@@ -90,6 +112,12 @@ function written(text: string, by: string, now: Date): RepoDescription {
 async function typeOf(
   url: string,
   description: string | undefined,
+  /**
+   * What the repo's own verified facts say it is built on (ADR 0124 addendum A-framework), when
+   * it has been read before: each framework is cited on a build file's line the verifier
+   * checked, so it settles the type where the guess below would only lean.
+   */
+  frameworks: readonly { name: string; cite: string }[] = [],
 ): Promise<{ type: string; signals: string[]; confidence: string } | undefined> {
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(url) || /^[^/\\]+@/.test(url)) return undefined;
   const dir = resolve(url);
@@ -106,6 +134,7 @@ async function typeOf(
   ]);
   const d = await detectRepoType(fsRepo(basename(dir), dir, "0".repeat(40)), {
     ...(description ? { description } : {}),
+    ...(frameworks.length ? { frameworks } : {}),
   });
   return d.type === "unknown"
     ? undefined
@@ -175,7 +204,11 @@ export async function repoAdd(
   const description = text ? written(text, by, deps.now ?? new Date()) : undefined;
   // No --type: read it from the clone's own files, and only where they say nothing, from what
   // the person just wrote (ADR 0128). Files always win, and `unknown` becomes a question.
-  const detected = o.type?.trim() ? undefined : await typeOf(url.trim(), text);
+  // A framework its own facts declare (A-framework) comes first: it was cited on a build file's
+  // line and checked. A repo nobody has read yet has none, and the files are read as before.
+  const detected = o.type?.trim()
+    ? undefined
+    : await typeOf(url.trim(), text, await declaredFrameworks(root, id));
   try {
     const file = await addManifestRepo(root, platform, {
       id,

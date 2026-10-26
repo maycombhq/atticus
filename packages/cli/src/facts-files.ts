@@ -16,6 +16,7 @@ import {
   type Question,
 } from "@maycombhq/core";
 import {
+  frameworkFacts,
   insideRepo,
   parseReviewed,
   type CarryChanges,
@@ -176,6 +177,16 @@ export interface VerifySummary {
   reviewed?: VerifyReport["reviewed"];
   /** A note: the entries whose `auth` was left out, no line being cited for it. Left out when none. */
   authUncited?: VerifyReport["authUncited"];
+  /**
+   * What the repo is built on, as its framework facts say (ADR 0124 addendum A-framework): the
+   * name, the version when one is declared, and where. Left out when the facts name none.
+   */
+  frameworks?: { name: string; version?: string; cite: string; component?: string }[];
+  /**
+   * A note, not a rejection (A-framework): a framework the repo declares whose patterns none of
+   * the facts show, which is usually a missed read. Left out when there are none.
+   */
+  frameworkGaps?: VerifyReport["frameworkGaps"];
 }
 
 /** A line of `<repo>.reviewed.jsonl` refused: not an entry, or naming no file of the repo. */
@@ -258,6 +269,16 @@ export async function writeVerifyFiles(
     summary.entriesNoFlowFollows = report.entriesNoFlowFollows;
   if (report.reviewed.length) summary.reviewed = report.reviewed;
   if (report.authUncited.length) summary.authUncited = report.authUncited;
+  // A-framework: what the repo is built on, and the frameworks whose patterns nothing shows.
+  const fws = frameworkFacts(report.accepted);
+  if (fws.length)
+    summary.frameworks = fws.map((f) => ({
+      name: f.name,
+      ...(f.version ? { version: f.version } : {}),
+      cite: `${f.cite.file}:${f.cite.line}`,
+      ...(f.component ? { component: f.component } : {}),
+    }));
+  if (report.frameworkGaps.length) summary.frameworkGaps = report.frameworkGaps;
   await writeFile(join(dir, `${repo}.verify.yaml`), stringify(summary), "utf8");
   return summary;
 }

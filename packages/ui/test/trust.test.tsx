@@ -78,6 +78,42 @@ describe("Map › Trust (ADR 0124)", () => {
     expect(out).toContain('aria-labelledby="trust-forge-ledger"');
   });
 
+  // ADR 0124 addendum A-framework: what each repo is built on, across the estate.
+  it("says what a repo is built on, with the module and where, and the patterns it shows none of", () => {
+    const out = renderToStaticMarkup(
+      <TrustRow
+        r={{
+          ...LEDGER,
+          frameworks: [
+            { name: "spring-boot", version: "3.3.4", cite: "pom.xml:6" },
+            {
+              name: "forge-web-starter",
+              version: "2.8.1",
+              component: "ledger-web",
+              cite: "web/pom.xml:17",
+            },
+            { name: "react", cite: "package.json:6", gap: "Were its screens missed?" },
+          ],
+        }}
+      />,
+    );
+    expect(out).toContain(esc(T.builtOn));
+    expect(out).toContain(esc(T.builtOnOne("spring-boot", "3.3.4", "pom.xml:6")));
+    expect(out).toContain(
+      esc(
+        T.builtOnModule(T.builtOnOne("forge-web-starter", "2.8.1", "web/pom.xml:17"), "ledger-web"),
+      ),
+    );
+    expect(out).toContain(esc(T.builtOnGap("react")));
+    expect(out).toContain(esc("Were its screens missed?"));
+  });
+
+  it("says a repo nobody has read yet is built on nothing it knows of, and guesses nothing", () => {
+    const out = renderToStaticMarkup(<TrustRow r={GATEWAY} />);
+    expect(out).toContain(esc(T.builtOnNone));
+    expect(out).not.toContain(esc(T.builtOnGap("react")));
+  });
+
   it("says a repo not read yet is mapped by the readers, with no report", () => {
     const out = renderToStaticMarkup(<TrustRow r={GATEWAY} />);
     expect(out).toContain(esc(T.why.notRead));

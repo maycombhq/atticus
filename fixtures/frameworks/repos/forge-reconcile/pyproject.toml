@@ -1,0 +1,11 @@
+[project]
+name = "forge-reconcile"
+version = "2.1.0"
+requires-python = ">=3.12"
+dependencies = [
+  "django==5.1.1",
+  "psycopg[binary]==3.2.1",
+]
+
+[tool.setuptools]
+packages = ["reconcile"]
