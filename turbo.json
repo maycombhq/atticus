@@ -4,7 +4,7 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": ["dist/**", "dist-lib/**", "npm/**"]
+      "outputs": ["dist/**", "dist-lib/**", "npm/**", "THIRD-PARTY-LICENSES.txt"]
     },
     "typecheck": {
       "dependsOn": ["^build"]
