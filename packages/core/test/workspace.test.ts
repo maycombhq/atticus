@@ -3,6 +3,7 @@ import { parse } from "yaml";
 import {
   ChangeOutcomes,
   ChangeRepos,
+  REPO_DESCRIPTION_MAX,
   RepoManifest,
   changeBranch,
   handoffBranch,
@@ -104,6 +105,62 @@ describe("repos.manifest.yaml (RepoManifest)", () => {
     ).toBe(false);
   });
 
+  it("reads a version-1 manifest as version 2, so nothing a person wrote stops reading (ADR 0128)", () => {
+    expect(RepoManifest.parse({ ...manifest, schemaVersion: 1 }).schemaVersion).toBe(2);
+    expect(RepoManifest.parse({ ...manifest, schemaVersion: 2 }).schemaVersion).toBe(2);
+    expect(RepoManifest.safeParse({ ...manifest, schemaVersion: 3 }).success).toBe(false);
+  });
+
+  it("takes a repo's description with who wrote it, when, and whether a person confirmed it", () => {
+    const m = RepoManifest.parse({
+      ...manifest,
+      repos: [
+        {
+          ...manifest.repos[0],
+          description: {
+            text: "The ledger: holds every posting and the balances read from them.",
+            by: "pat",
+            at: "2026-10-26T09:00:00Z",
+          },
+        },
+        {
+          ...manifest.repos[1],
+          description: {
+            text: "The gateway in front of the Forge APIs.",
+            trust: "suggested",
+            by: "assistant",
+            cites: [{ file: "README.md", line: 3 }],
+          },
+        },
+      ],
+    });
+    // A description is a person's words unless it says it is a draft.
+    expect(m.repos[0]!.description).toMatchObject({ trust: "verified", by: "pat", cites: [] });
+    expect(m.repos[1]!.description!.trust).toBe("suggested");
+    expect(m.repos[1]!.description!.cites).toEqual([{ file: "README.md", line: 3 }]);
+    expect(manifest.repos[0]).not.toHaveProperty("description");
+    expect(RepoManifest.parse(manifest).repos[0]!.description).toBeUndefined();
+  });
+
+  it("trims a description and refuses an empty, over-long or oddly-trusted one", () => {
+    const withText = (description: unknown) =>
+      RepoManifest.safeParse({
+        ...manifest,
+        repos: [{ ...manifest.repos[0], description }],
+      });
+    expect(withText({ text: "  The ledger.  " }).data?.repos[0]!.description!.text).toBe(
+      "The ledger.",
+    );
+    expect(withText({ text: "   " }).success).toBe(false);
+    expect(withText({ text: "x".repeat(REPO_DESCRIPTION_MAX) }).success).toBe(true);
+    expect(withText({ text: "x".repeat(REPO_DESCRIPTION_MAX + 1) }).success).toBe(false);
+    expect(withText({ text: "The ledger.", trust: "maybe" }).success).toBe(false);
+    expect(withText({ text: "The ledger.", note: "x" }).success).toBe(false);
+    expect(withText({ text: "The ledger.", cites: [{ file: "README.md", line: 0 }] }).success).toBe(
+      false,
+    );
+  });
+
   it("takes a host with a port, so two services on one host are told apart (ADR 0088)", () => {
     const ok = (hosts: string[]) =>
       RepoManifest.safeParse({ ...manifest, repos: [{ ...manifest.repos[0], hosts }] }).success;
@@ -180,7 +237,7 @@ describe("change repos.yaml (ChangeRepos)", () => {
     const once = toCanonicalYaml(ChangeRepos.parse(repos), leading);
     const twice = toCanonicalYaml(ChangeRepos.parse(parse(once)), leading);
     expect(twice).toBe(once);
-    expect(once.startsWith("schemaVersion: 1\nchange: add-transfer-limit\n")).toBe(true);
+    expect(once.startsWith("schemaVersion: 2\nchange: add-transfer-limit\n")).toBe(true);
   });
 });
 

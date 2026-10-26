@@ -57,8 +57,8 @@ describe("the app's six entries in the local API (C4 2.22.0)", () => {
 /** API 2.24.0 (ADR 0124 addendum B2): a change's knowledge with titles and why in plain words. */
 describe("a change's knowledge with titles and a plain why (C4 2.24.0)", () => {
   it("an item and a near-miss may carry a title and a reason; older answers still parse", () => {
-    // The version has moved on (2.25.0, ADR 0124 addendum B-change, below).
-    expect(API_VERSION).toBe("2.25.0");
+    // The version has moved on (2.26.0, ADR 0128, below).
+    expect(API_VERSION).toBe("2.26.0");
     expect(doc.info.version).toBe(API_VERSION);
     const item = {
       id: "forge-wiki/fraud.md#Timeouts",

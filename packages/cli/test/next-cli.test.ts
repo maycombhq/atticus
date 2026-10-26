@@ -112,10 +112,12 @@ describe("atticus next", () => {
     const r = await run(["next", "--root", root]);
     expect(r.out[0]).toBe("Next: atticus workspace sync");
     expect(r.out[1]).toBe("Why: 2 repos aren't cloned yet: forge-notes, forge-notes-ui.");
-    expect(r.out[2]).toBe("1 more step after this one: atticus next --all");
+    expect(r.out[2]).toBe("2 more steps after this one: atticus next --all");
     const all = await run(["next", "--all", "--root", root]);
     expect(all.out[0]).toBe("1. atticus workspace sync");
-    expect(all.out[2]).toBe('2. atticus change new "<title>" --type <type>');
+    // ADR 0128: no repo says what it is yet, so a person is asked for one line.
+    expect(all.out[2]).toBe('2. atticus repo describe forge-notes --description "what it is"');
+    expect(all.out[4]).toBe('3. atticus change new "<title>" --type <type>');
   });
 
   it("with repos cloned but never read, has the assistant read each (/atticus-map), then verify --write: not a survey and a scan (ADR 0124)", async () => {
@@ -130,6 +132,8 @@ describe("atticus next", () => {
     expect(commands(j.steps)).toEqual([
       ["atticus map forge-notes", "/atticus-map forge-notes"],
       ["atticus map forge-notes-ui", "/atticus-map forge-notes-ui"],
+      // ADR 0128: no repo says what it is yet, so a person is asked for one line.
+      ['atticus repo describe forge-notes --description "what it is"', null],
       ['atticus change new "<title>" --type <type>', null],
     ]);
     expect(j.steps[0]!.why).toBe(
@@ -191,13 +195,15 @@ settings:
     expect(commands(j.steps)).toEqual([
       ["atticus scan verify forge-notes --accept", null],
       ["atticus scan verify forge-notes-ui", "/atticus-verify forge-notes-ui"],
+      // ADR 0128: no repo says what it is yet, so a person is asked for one line.
+      ['atticus repo describe forge-notes --description "what it is"', null],
       ["atticus questions list --state open", "/atticus-answer"],
       ["atticus spec draft forge-notes", "/atticus-spec forge-notes"],
       ["atticus spec draft forge-notes-ui", "/atticus-spec forge-notes-ui"],
       ['atticus change new "<title>" --type <type>', null],
     ]);
     expect(j.next.person).toBe(true);
-    expect(j.steps[2]!.why).toContain(q);
+    expect(j.steps.find((s) => s.step === "answer")!.why).toContain(q);
   });
 
   it("after verify --write, a repo whose spec comes from its verified facts skips the reader path (B-run2-fixes 7)", async () => {
@@ -214,6 +220,8 @@ settings:
     await component(root, "forge-notes");
     await component(root, "forge-notes-ui");
     expect(commands((await json(root)).steps)).toEqual([
+      // ADR 0128: no repo says what it is yet, so a person is asked for one line.
+      ['atticus repo describe forge-notes --description "what it is"', null],
       ['atticus change new "<title>" --type <type>', null],
     ]);
     await cp(
@@ -222,6 +230,8 @@ settings:
       { recursive: true },
     );
     expect(commands((await json(root)).steps)).toEqual([
+      // ADR 0128: no repo says what it is yet, so a person is asked for one line.
+      ['atticus repo describe forge-notes --description "what it is"', null],
       ["atticus plan stories add-transfer-limit", "/atticus-stories add-transfer-limit"],
     ]);
   });
@@ -258,6 +268,7 @@ describe("nextSteps (pure)", () => {
         flows: 3,
         checked: true,
         findings: 0,
+        described: "said",
       },
     ],
     catalogRecords: 10,

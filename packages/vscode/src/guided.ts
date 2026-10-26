@@ -9,12 +9,20 @@ import { argsOf } from "./atticus";
 
 /** The guided screens the extension has for a command a step names. */
 export type Guided =
-  "addRepos" | "newChange" | "absorb" | "absorbAccept" | "createMetarepo" | "adoptRepo";
+  | "addRepos"
+  | "describeRepo"
+  | "newChange"
+  | "absorb"
+  | "absorbAccept"
+  | "createMetarepo"
+  | "adoptRepo";
 
 /** The guided screen for a printed command, when the extension has one for it. */
 export function guidedFor(command: string): Guided | undefined {
   const [a, b] = argsOf(command);
   if (a === "repos" && b === "discover") return "addRepos";
+  // ADR 0128: saying what a repo is, asked one repo at a time with a skip.
+  if (a === "repo" && b === "describe") return "describeRepo";
   if (a === "change" && b === "new") return "newChange";
   if (a === "absorb") return b === "accept" ? "absorbAccept" : "absorb";
   if (a === "init") return "createMetarepo";
@@ -34,6 +42,7 @@ const GUIDED_COMMANDS: Record<string, string> = {
   "orgpack draft": "atticus.draftOrgPack",
   "orgpack accept": "atticus.draftOrgPack",
   "repos discover": "atticus.addRepos",
+  "repo describe": "atticus.describeRepo",
   absorb: "atticus.absorb",
   "absorb accept": "atticus.absorbAccept",
   "questions answer": "atticus.answerQuestion",

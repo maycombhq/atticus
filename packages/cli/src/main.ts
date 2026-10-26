@@ -368,6 +368,7 @@ const scanReview: typeof import("./onboard-commands.js").scanReview = (...a) =>
 const scanSurvey: typeof import("./onboard-commands.js").scanSurvey = (...a) =>
   loadOnboardCommands().then((m) => m.scanSurvey(...a));
 const loadRepoTypeCommands = () => import("./repo-type-commands.js");
+const loadRepoCommands = () => import("./repo-commands.js");
 const loadSpecCommands = () => import("./spec-commands.js");
 const loadEstateCommands = () => import("./estate-commands.js");
 const onboardEval: typeof import("./onboard-commands.js").onboardEval = (...a) =>
@@ -581,6 +582,9 @@ Usage:
   atticus adopt <path>                 Use Atticus in an existing repo; writes only .atticus/ [--platform p] [--name n]
   atticus unadopt <path>               Remove Atticus from an adopted repo, leaving it as it was
   atticus repos discover <folder> | --org <org>  Propose repos.manifest.yaml entries [--platform p] [--dry-run]
+  atticus repo add <url|path>          Add one repo to the manifest, with what it is in your own words; with a folder and no --type, its type is read from its files (or, where they say nothing, from what you wrote) [--id x] [--type t] [--owner team] [--system s] [--component c] [--platform p] [--description "what it is"] [--no-description] [--json]
+  atticus repo describe [<repo>]       Say what a repo is, in one line, for a repo that has none (or edit what it says); with no repo, the repos with no description and the drafts waiting for a person [--description "..."] [--accept] [--reject] [--json]
+          [--drafted "..." --cites f:n]  Your assistant hands over the line it drafted, with the lines it read it from; kept unconfirmed until a person confirms it
   atticus absorb <git-url|path> --id <id>  Translate another team's prompts, agents, checklists, OpenSpec, Spec Kit, TypeSpec or Atticus repo
           [--mode adopt|link|ignore] [--ref r] [--dry-run]
   atticus absorb --refresh <id>        Fetch an absorbed source again and update its proposal
@@ -931,6 +935,12 @@ const OPTIONS = {
   specs: { type: "boolean" },
   estate: { type: "string" },
   accept: { type: "boolean" },
+  // atticus repo add / repo describe (ADR 0128)
+  reject: { type: "boolean" },
+  cites: { type: "string" },
+  drafted: { type: "string" },
+  "no-description": { type: "boolean" },
+  component: { type: "string" },
   tag: { type: "string" },
   source: { type: "string" },
   "from-figma": { type: "string" },
@@ -1171,6 +1181,42 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
   ) {
     const handled = await stageCli(root, positionals, values, io);
     if (handled !== undefined) return handled;
+  }
+  if (group === "repo" && (command === "add" || command === "describe")) {
+    const m = await loadRepoCommands();
+    const str = (v: unknown) => (typeof v === "string" ? v : undefined);
+    const pick = (...names: string[]) =>
+      Object.fromEntries(
+        names.flatMap((n) => {
+          const v = str(values[n]);
+          return v ? [[n, v]] : [];
+        }),
+      );
+    const first = (v: unknown) => (Array.isArray(v) ? (v[0] as string | undefined) : str(v));
+    if (command === "add")
+      return m.repoAdd(
+        root,
+        arg,
+        {
+          ...pick("id", "type", "platform", "component", "description"),
+          ...(first(values.owner) ? { owner: first(values.owner)! } : {}),
+          ...(first(values.system) ? { system: first(values.system)! } : {}),
+          noDescription: values["no-description"] === true,
+          json: values.json === true,
+        },
+        io,
+      );
+    return m.repoDescribe(
+      root,
+      arg,
+      {
+        ...pick("description", "drafted", "cites"),
+        accept: values.accept === true,
+        reject: values.reject === true,
+        json: values.json === true,
+      },
+      io,
+    );
   }
   if (group === "repo-type" && (command === "detect" || command === "new")) {
     const m = await loadRepoTypeCommands();

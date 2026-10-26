@@ -25,6 +25,7 @@ import {
   migrateCatalog,
   migrateChangeTypesText,
   migrateGatesText,
+  migrateManifests,
   migrateQuestions,
   migrateSourcesText,
   orgPackDirOf,
@@ -209,6 +210,13 @@ export const MIGRATIONS: Migration[] = [
       );
       return [".gitignore"];
     },
+  },
+  {
+    id: "manifest-schema-v2",
+    summary:
+      "repos.manifest.yaml at version 2: a repo can say what it is, in a person's words (ADR 0128)",
+    pending: (root) => migrateManifests(root, { dryRun: true }),
+    apply: (root) => migrateManifests(root),
   },
 ];
 

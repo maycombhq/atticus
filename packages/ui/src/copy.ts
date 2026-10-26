@@ -1044,6 +1044,8 @@ export const COPY = {
     stepPick: "Pick the repos: edit the manifest. Each repo is one entry.",
     stepPickNone:
       "There is no manifest yet. Propose one from a folder of clones or your Git host's organisation:",
+    stepAddOne:
+      "Or add one repo at a time, saying what it is in your own words. That line goes into every reading prompt, the questions a join asks and these views:",
     stepSync: "Clone the repos, or bring the clones up to date:",
     stepRead: "Have your assistant read each repo and write its facts, each citing its line:",
     stepWrite: "Check the facts against the code and put them in the catalog:",
@@ -1055,6 +1057,10 @@ export const COPY = {
     repos: "Repos",
     noRepos: "No repos in any manifest yet.",
     repoCol: "Repo",
+    // ADR 0128: what each repo is, in a person's words, beside its id.
+    aboutCol: "What it is",
+    aboutDraft: "Unconfirmed draft",
+    aboutMissing: "Nothing says yet. Say what it is, in one line:",
     typeCol: "Type in the manifest",
     matchCol: "Matched repo type",
     matchHint: "Run to see the match and its evidence:",
@@ -2554,6 +2560,28 @@ export const COPY = {
     empty:
       "No repo is listed yet: run atticus repos discover <folder>, or add one to a repos.manifest.yaml.",
     typeOwner: (type: string, owner: string) => `${type} · ${owner}`,
+    // ADR 0128: what a repo is, in a person's words.
+    about: "What it is",
+    noAbout: "Nothing says yet",
+    aboutHint:
+      "One line: what it is for, who uses it. It goes into every reading prompt, the questions a join asks and these views, so a repo whose id says nothing can still be read and placed. Up to 300 characters.",
+    aboutWhy:
+      "A person's note, not read from the code: where the two disagree, the facts read from the code are what counts.",
+    aboutBy: (by: string) => `said by ${by}`,
+    aboutDraft: "Unconfirmed draft",
+    aboutDraftWhy: (by: string) =>
+      `${by} drafted this from what it read. Until a person confirms it, it is marked unconfirmed everywhere it is used.`,
+    aboutCites: "Read from",
+    editAbout: "Say what it is",
+    editAboutDraft: "Confirm, change or drop",
+    acceptAbout: "Confirm it",
+    rejectAbout: "Drop it",
+    aboutSaved:
+      "Saved to the manifest: commit it in a pull request. Every reading prompt, question and view now says what this repo is.",
+    aboutDropped:
+      "Dropped from the manifest: commit it in a pull request. Nothing says what this repo is now.",
+    aboutTooLong: (max: number) => `One line, up to ${max} characters.`,
+    aboutEmpty: "Say what it is, in one line, before saving.",
     url: "URL",
     defaultBranch: "Default branch",
     atCommit: (c: string) => `read at ${c}`,

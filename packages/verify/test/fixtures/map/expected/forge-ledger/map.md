@@ -2,6 +2,8 @@
 
 <!-- Rendered by atticus map render forge-ledger from the catalog and its specs (ADR 0124). Don't edit: correct the facts and run atticus verify forge-ledger --write. -->
 
+**What it is:** Nothing says yet: `atticus repo describe forge-ledger`.
+
 **Trust:** 17 facts verified on their lines; coverage 92% of source files (1 unknown file: cited by no fact and opened through no Atticus tool); 0 rejected. Commit 0123abc.
 
 ## What it serves

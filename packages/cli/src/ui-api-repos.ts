@@ -41,5 +41,31 @@ export function uiRepoRoutes(r: Router, ctx: ServerContext): Router {
           throw e.code === "not-found" ? notFound(e.message) : badRequest(e.message);
         throw e;
       }
+    })
+    .add("PUT", "/api/repos/{repoId}/description", async ({ params, body }) => {
+      const b = Api.EditRepoDescriptionRequest.safeParse(body ?? {});
+      if (!b.success)
+        throw badRequest(
+          "Send what the repo is as text, or accept: true to confirm the draft, or reject: true to drop it.",
+        );
+      const { editRepoDescription, RepoEditError } = await import("./repo-branches.js");
+      try {
+        const r = await editRepoDescription(root, params.repoId!, b.data);
+        ctx.events.publish({ type: "file.changed", path: r.file });
+        return {
+          status: 200,
+          body: {
+            file: r.file,
+            ...(r.description ? { description: r.description } : {}),
+            note: r.description
+              ? `${r.file} changed: commit it in a pull request. Every reading prompt, question and view of ${params.repoId} now says what it is.`
+              : `${r.file} changed: commit it in a pull request. Nothing says what ${params.repoId} is now.`,
+          },
+        };
+      } catch (e) {
+        if (e instanceof RepoEditError)
+          throw e.code === "not-found" ? notFound(e.message) : badRequest(e.message);
+        throw e;
+      }
     });
 }

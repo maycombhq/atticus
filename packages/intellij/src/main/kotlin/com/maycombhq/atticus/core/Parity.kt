@@ -94,6 +94,8 @@ object Parity {
             "atticus.adoptRepo" to action("Atticus.Adopt"),
             "atticus.practiceSandbox" to action("Atticus.Sandbox"),
             "atticus.addRepos" to run,
+            // ADR 0128: saying what a repo is. In IntelliJ, Run a Command: atticus repo describe.
+            "atticus.describeRepo" to run,
             "atticus.draftSpec" to run,
             "atticus.answerRepo" to action("Atticus.AnswerQuestion"),
             "atticus.installCopilot" to InIntelliJ.VsCodeOnly("installs GitHub Copilot in VS Code; in IntelliJ it is installed from the Marketplace"),

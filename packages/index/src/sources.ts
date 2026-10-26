@@ -311,8 +311,15 @@ export async function listSources(root: string): Promise<SourceFile[]> {
     }
   }
   {
+    // The platform profiles, and each one's repos.manifest.yaml: a repo is something a change,
+    // a story and a knowledge item are matched against, and what it is in a person's words is
+    // part of what it is matched on (ADR 0128).
     const files: string[] = [];
-    await walk(join(orgPackDirOf(root), "profiles"), (n) => n === "profile.yaml", files);
+    await walk(
+      join(orgPackDirOf(root), "profiles"),
+      (n) => n === "profile.yaml" || n === "repos.manifest.yaml",
+      files,
+    );
     add("profile")(files);
   }
   {
@@ -1064,7 +1071,72 @@ export async function documentNodes(path: string, bytes: Uint8Array): Promise<Fi
   return out;
 }
 
+/**
+ * A repos.manifest.yaml read as one node per repo that says what it is (ADR 0128): its id, the
+ * system and component it is part of, and what a person says it is, in `names` and `body` — so a
+ * repo is found by what it is as well as by its id, which often says nothing on its own. A
+ * description nobody has confirmed says so in its line, and the node is never `verified`.
+ *
+ * A repo with no description gets no node: its id, type, owner and system are already in the
+ * catalog's Component record, so a node holding only those adds nothing to match on and only
+ * crowds the retrieval (measured on the context bench: adding them cost recall).
+ */
+function manifestNodes(path: string, text: string): FileRead {
+  let d: Record<string, unknown>;
+  try {
+    d = (parse(text) ?? {}) as Record<string, unknown>;
+  } catch (e) {
+    return { nodes: [], names: [], links: [], problem: (e as Error).message.split("\n")[0]! };
+  }
+  const out: FileRead = { nodes: [], names: [], links: [] };
+  const platform = str(d.platform);
+  for (const r of arr(d.repos) as Record<string, unknown>[]) {
+    const id = str(r.id);
+    if (!id) continue;
+    const about = (r.description ?? undefined) as Record<string, unknown> | undefined;
+    const text = str(about?.text);
+    if (!text) continue;
+    const suggested = str(about?.trust) === "suggested";
+    const what = `${text}${suggested ? " (unconfirmed: drafted by the assistant)" : ""}`;
+    const where = [
+      str(r.system) ? `system ${String(r.system)}` : undefined,
+      str(r.component) ? `component ${String(r.component)}` : undefined,
+      str(r.type) ? String(r.type) : undefined,
+      str(r.owner) ? `owner ${String(r.owner)}` : undefined,
+    ]
+      .filter(Boolean)
+      .join(", ");
+    out.nodes.push({
+      key: `org-pack:Repo:${id}`,
+      kind: "Repo",
+      id,
+      grp: "org-pack",
+      name: id,
+      file: path,
+      verified: false,
+      line: `repo ${id}${platform ? ` (${platform})` : ""}${where ? `: ${where}` : ""} — ${what} [${path}]`,
+      detail: `Repo ${id} of the ${platform ?? "?"} platform (${path})${where ? `: ${where}` : ""}. What it is, in a person's words: ${what}. That is a note, not read from the code.`,
+      names: [id, text].join("\n"),
+      ids: idWords(id),
+      body: [what, where].filter(Boolean).join("\n"),
+      mentions: false,
+    });
+    out.names.push({ name: foldName(id), id, kind: "Repo", how: "id" });
+    for (const link of [str(r.system), str(r.component)])
+      if (link)
+        out.links.push({
+          from: `org-pack:Repo:${id}`,
+          to: link,
+          by: "id",
+          type: "part-of",
+          how: "manifest",
+        });
+  }
+  return out;
+}
+
 function profileNodes(path: string, text: string): FileRead {
+  if (path.endsWith("repos.manifest.yaml")) return manifestNodes(path, text);
   let d: Record<string, unknown>;
   try {
     d = (parse(text) ?? {}) as Record<string, unknown>;

@@ -500,6 +500,12 @@
         "icon": "$(add)"
       },
       {
+        "command": "atticus.describeRepo",
+        "title": "Say what a repo is",
+        "category": "Atticus",
+        "icon": "$(edit)"
+      },
+      {
         "command": "atticus.draftSpec",
         "title": "Draft a repo's spec with Copilot",
         "category": "Atticus"

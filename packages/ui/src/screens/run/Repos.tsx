@@ -53,6 +53,138 @@ function Compare({ c }: { c: Api.BranchCompareT }) {
   );
 }
 
+/** The longest a repo's description may be (ADR 0128, the manifest schema). */
+export const ABOUT_MAX = 300;
+
+/**
+ * What a repo is, in a person's words (ADR 0128): shown with who said it, or marked an
+ * unconfirmed draft when the assistant wrote it and nobody has confirmed it; editable here, with
+ * the lines a draft was read from so a person can judge it.
+ */
+function About({ r, onChanged }: { r: Repo; onChanged?: () => void }) {
+  const d = r.description;
+  const draft = d?.trust === "suggested";
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState(d?.text ?? "");
+  const save = useAction();
+  const put = (body: { text?: string; accept?: boolean; reject?: boolean }, ok: string) =>
+    save.run(async () => {
+      const res = await api<{ note: string }>(`/api/repos/${r.id}/description`, {
+        method: "PUT",
+        body,
+      });
+      setEditing(false);
+      onChanged?.();
+      return res;
+    }, ok);
+  const tooLong = text.trim().length > ABOUT_MAX;
+  const empty = !text.trim();
+  return (
+    <div className="stack" style={{ gap: 4, margin: "8px 0" }}>
+      <div className="row" style={{ gap: 8, flexWrap: "wrap", alignItems: "baseline" }}>
+        <span className="muted" style={{ fontSize: 12 }}>
+          {R.about}
+        </span>
+        {draft && (
+          <span className="chip warn" title={R.aboutDraftWhy(d!.by ?? "Your assistant")}>
+            {R.aboutDraft}
+          </span>
+        )}
+      </div>
+      <p style={{ margin: 0, maxWidth: "70ch" }}>
+        {d ? d.text : <span className="muted">{R.noAbout}</span>}
+        {d?.by && !draft && <span className="muted">{` · ${R.aboutBy(d.by)}`}</span>}
+      </p>
+      {d && (
+        <p className="muted" style={{ margin: 0, fontSize: 12, maxWidth: "70ch" }}>
+          {draft ? R.aboutDraftWhy(d.by ?? "Your assistant") : R.aboutWhy}
+        </p>
+      )}
+      {draft && !!d?.cites?.length && (
+        <p className="muted mono" style={{ margin: 0, fontSize: 12 }}>
+          {`${R.aboutCites}: ${d.cites.map((c) => `${c.file}:${c.line}`).join(", ")}`}
+        </p>
+      )}
+      <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
+        <button
+          type="button"
+          className="btn"
+          aria-expanded={editing}
+          aria-controls={`repo-${r.id}-about-form`}
+          onClick={() => setEditing(!editing)}
+        >
+          {d ? R.editAboutDraft : R.editAbout}
+        </button>
+        {draft && (
+          <button
+            type="button"
+            className="btn primary"
+            disabled={save.busy}
+            onClick={() => void put({ accept: true }, R.aboutSaved)}
+          >
+            {R.acceptAbout}
+          </button>
+        )}
+        {d && (
+          <button
+            type="button"
+            className="btn"
+            disabled={save.busy}
+            onClick={() => void put({ reject: true }, R.aboutDropped)}
+          >
+            {R.rejectAbout}
+          </button>
+        )}
+      </div>
+      {editing && (
+        <form
+          id={`repo-${r.id}-about-form`}
+          className="stack"
+          style={{ gap: 4 }}
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (empty || tooLong) return;
+            void put({ text: text.trim() }, R.aboutSaved);
+          }}
+        >
+          <label className="stack" htmlFor={`repo-${r.id}-about`}>
+            <span>{R.about}</span>
+            <span className="muted" id={`repo-${r.id}-about-hint`}>
+              {R.aboutHint}
+            </span>
+          </label>
+          <textarea
+            id={`repo-${r.id}-about`}
+            className="field"
+            rows={2}
+            maxLength={ABOUT_MAX}
+            value={text}
+            aria-describedby={`repo-${r.id}-about-hint`}
+            aria-invalid={tooLong || undefined}
+            onChange={(e) => setText(e.target.value)}
+          />
+          {tooLong && (
+            <p role="alert" style={{ margin: 0 }}>
+              {R.aboutTooLong(ABOUT_MAX)}
+            </p>
+          )}
+          <div className="row" style={{ gap: 8 }}>
+            <button type="submit" className="btn primary" disabled={save.busy || empty || tooLong}>
+              {R.save}
+            </button>
+          </div>
+          {empty && (
+            <p className="muted" style={{ margin: 0, fontSize: 12 }}>
+              {R.aboutEmpty}
+            </p>
+          )}
+        </form>
+      )}
+      <Note note={save.note} />
+    </div>
+  );
+}
+
 export function RepoRow({ r, onChanged }: { r: Repo; onChanged?: () => void }) {
   const [editing, setEditing] = useState(false);
   const [def, setDef] = useState(r.defaultBranch);
@@ -71,6 +203,7 @@ export function RepoRow({ r, onChanged }: { r: Repo; onChanged?: () => void }) {
           {R.typeOwner(r.type, r.owner)}
         </span>
       </div>
+      <About r={r} onChanged={onChanged} />
       <dl className="run-facts" style={{ margin: "8px 0" }}>
         <dt>{R.url}</dt>
         <dd className="mono" style={{ wordBreak: "break-all" }}>

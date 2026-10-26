@@ -1279,6 +1279,91 @@ export class CommandUi {
     if (ok !== "Add them") return;
     const p = await this.captured(root, argv);
     this.showPrinted(argv, p);
+    if (p.code === 0)
+      await this.describeRepos(
+        root,
+        found.repos.map((r) => r.id),
+      );
+    this.d.refreshAll();
+  }
+
+  /**
+   * What each repo is, in one line (ADR 0128), asked after a bulk add and from the Describe repo
+   * command. Nothing blocks on typing: Escape skips one, "Skip the rest" stops, and what is left
+   * is listed by `atticus repo describe` and by the next step.
+   */
+  async describeRepos(root: string, ids: readonly string[]) {
+    const left = [...ids];
+    if (!left.length) return;
+    const start = await vscode.window.showInformationMessage(
+      `Say what ${left.length === 1 ? `${left[0]} is` : `each of the ${left.length} repos is`}, in one line?`,
+      {
+        modal: true,
+        detail:
+          "A repo id often says nothing. One line goes into every reading prompt, the questions a join asks and the views, so the repo can be read and placed. You can skip and write them later (atticus repo describe).",
+      },
+      "Write them now",
+    );
+    if (start !== "Write them now") return;
+    const skipped: string[] = [];
+    for (const [i, id] of left.entries()) {
+      const text = await vscode.window.showInputBox({
+        title: `What is ${id}? (${i + 1} of ${left.length})`,
+        prompt: "One line: what it is for, who uses it. Escape to skip it.",
+        ignoreFocusOut: true,
+        validateInput: (v) =>
+          v.trim().length > 300 ? "One line, up to 300 characters." : undefined,
+      });
+      if (text === undefined) {
+        skipped.push(...left.slice(i));
+        break;
+      }
+      if (!text.trim()) {
+        skipped.push(id);
+        continue;
+      }
+      const argv = ["repo", "describe", id, "--description", text.trim()];
+      const r = await this.captured(root, argv);
+      if (r.code !== 0) this.showPrinted(argv, r);
+    }
+    if (skipped.length)
+      void vscode.window.showInformationMessage(
+        `${skipped.length === 1 ? `${skipped[0]} has` : `${skipped.length} repos have`} no description yet: atticus repo describe lists ${skipped.length === 1 ? "it" : "them"}, and so does the next step.`,
+      );
+  }
+
+  /** Describe repo: the repos with no description, or the drafts waiting for a person. */
+  async describeRepoPicked(root: string) {
+    const p = await this.captured(root, ["repo", "describe", "--json"]);
+    if (p.code !== 0) return this.showPrinted(["repo", "describe"], p);
+    let listed: { missing?: string[]; unconfirmed?: { id: string; text: string }[] };
+    try {
+      listed = JSON.parse(p.lines.join("\n")) as typeof listed;
+    } catch {
+      return this.showPrinted(["repo", "describe"], p);
+    }
+    const missing = listed.missing ?? [];
+    const unconfirmed = listed.unconfirmed ?? [];
+    if (!missing.length && !unconfirmed.length)
+      return void vscode.window.showInformationMessage(
+        "Every repo of the manifests says what it is.",
+      );
+    const pick = await vscode.window.showQuickPick(
+      [
+        ...missing.map((id) => ({ label: id, detail: "Nothing says what it is", id })),
+        ...unconfirmed.map((u) => ({
+          label: u.id,
+          detail: `Unconfirmed draft: ${u.text}`,
+          id: u.id,
+        })),
+      ],
+      { title: "Atticus: say what a repo is", ignoreFocusOut: true, canPickMany: true },
+    );
+    if (pick?.length)
+      await this.describeRepos(
+        root,
+        pick.map((x) => x.id),
+      );
     this.d.refreshAll();
   }
 
@@ -1311,6 +1396,9 @@ export class CommandUi {
     switch (guidedFor(command)) {
       case "addRepos":
         await this.addRepos(root);
+        return true;
+      case "describeRepo":
+        await this.describeRepoPicked(root);
         return true;
       case "newChange":
         await this.newChange(root);

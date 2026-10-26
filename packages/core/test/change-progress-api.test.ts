@@ -3,8 +3,9 @@ import { API_VERSION, Api } from "../src/index.js";
 
 /** API 2.25.0 (ADR 0124 addendum B-change): where a change's stages are against its state. */
 describe("a change read from its stages' files (C4 2.25.0)", () => {
-  it("is 2.25.0, and the cockpit may say where the work is; an older cockpit still parses", () => {
-    expect(API_VERSION).toBe("2.25.0");
+  it("is at least 2.25.0, and the cockpit may say where the work is; an older cockpit still parses", () => {
+    // The version has moved on (2.26.0, ADR 0128): what this added is still there.
+    expect(API_VERSION).toBe("2.26.0");
     const cockpit = {
       id: "screen-orders",
       state: "define",

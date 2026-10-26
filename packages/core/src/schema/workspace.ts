@@ -11,8 +11,24 @@ import { RecordId } from "./common.js";
  *   change across repos, so this file is Atticus's own.
  *
  * See ADR 0009.
+ *
+ * Version 2 (ADR 0128) added `description` on a repo, optional, and changed no other field.
  */
-export const WORKSPACE_SCHEMA_VERSION = 1 as const;
+export const WORKSPACE_SCHEMA_VERSION = 2 as const;
+
+/** Every workspace-file schema version a reader accepts, oldest first. */
+export const SUPPORTED_WORKSPACE_SCHEMA_VERSIONS = [1, 2] as const;
+
+/**
+ * A workspace file's schema version. Version-1 files differ from version 2 only in this number
+ * (nothing they hold changed meaning), so they are read as they are and come back as version 2
+ * in memory; writers always write the current version, and `atticus upgrade` rewrites old files.
+ */
+export const WorkspaceSchemaVersion = z
+  .union([z.literal(1), z.literal(2)], {
+    error: "schemaVersion must be 1 or 2 (version-1 files are read as version 2; ADR 0009, 0128)",
+  })
+  .overwrite((): 1 | 2 => WORKSPACE_SCHEMA_VERSION);
 
 /** A Git branch name segment Atticus generates: no slashes, safe on every platform. */
 const BranchSegment = RecordId;
@@ -99,6 +115,39 @@ export function hostMatches(pattern: string, host: string, port?: number): boole
 /** Whether a host pattern names a port. */
 export const hostHasPort = (pattern: string) => /:\d+$/.test(pattern);
 
+/** The longest a repo's description may be: one line a person reads at a glance. */
+export const REPO_DESCRIPTION_MAX = 300;
+
+/**
+ * Where a drafted description was read from, cited the way a fact is (ADR 0124): the file and
+ * the line. A description is prose, not a claim on one line, so there is no value to check; the
+ * cites say where to look when a person judges it.
+ */
+export const RepoDescriptionCite = z.strictObject({
+  file: z.string().min(1),
+  line: z.number().int().positive(),
+});
+export type RepoDescriptionCite = z.infer<typeof RepoDescriptionCite>;
+
+/**
+ * What a repo is, in a person's words (ADR 0128): one line, so an opaque repo id can be read,
+ * placed and joined. `trust` follows how knowledge is trusted here: `verified` means a person
+ * wrote it or confirmed what the assistant drafted; `suggested` means the assistant drafted it
+ * from what it read and nobody has confirmed it yet. A suggested description is shown as
+ * unconfirmed wherever it is used and is never presented as a person's words, and it never
+ * overrides what a fact verified from code says.
+ */
+export const RepoDescription = z.strictObject({
+  text: z.string().trim().min(1).max(REPO_DESCRIPTION_MAX),
+  trust: z.enum(["suggested", "verified"]).default("verified"),
+  /** Who wrote or confirmed it: a handle, or the assistant that drafted it. */
+  by: z.string().trim().min(1).max(100).optional(),
+  at: z.iso.datetime({ offset: true }).optional(),
+  /** Where a drafted description was read from; empty for a person's own words. */
+  cites: z.array(RepoDescriptionCite).max(6).default([]),
+});
+export type RepoDescription = z.infer<typeof RepoDescription>;
+
 export const ManifestRepo = z.strictObject({
   /** Repo id; also the base clone's folder name under workspace/. */
   id: RecordId,
@@ -110,6 +159,8 @@ export const ManifestRepo = z.strictObject({
       (u) => !/^[a-z][a-z0-9+.-]*:\/\/[^/@]+:[^/@]*@/i.test(u),
       "remove the password from the URL",
     ),
+  /** What this repo is, in a person's words (ADR 0128). Left out until someone says. */
+  description: RepoDescription.optional(),
   defaultBranch: GitRef.default("main"),
   /**
    * Other branches people work on (develop, release/2026.11...), scanned on request beside the
@@ -159,7 +210,7 @@ export type ManifestRepo = z.infer<typeof ManifestRepo>;
 
 export const RepoManifest = z
   .strictObject({
-    schemaVersion: z.literal(WORKSPACE_SCHEMA_VERSION),
+    schemaVersion: WorkspaceSchemaVersion,
     platform: RecordId,
     repos: z.array(ManifestRepo),
   })
@@ -222,7 +273,7 @@ export type ChangeRepo = z.infer<typeof ChangeRepo>;
 
 export const ChangeRepos = z
   .strictObject({
-    schemaVersion: z.literal(WORKSPACE_SCHEMA_VERSION),
+    schemaVersion: WorkspaceSchemaVersion,
     change: BranchSegment,
     repos: z.array(ChangeRepo),
   })
@@ -270,7 +321,7 @@ export type OutcomeMeasure = z.infer<typeof OutcomeMeasure>;
 
 export const ChangeOutcomes = z
   .strictObject({
-    schemaVersion: z.literal(WORKSPACE_SCHEMA_VERSION),
+    schemaVersion: WorkspaceSchemaVersion,
     change: BranchSegment,
     measures: z.array(OutcomeMeasure),
   })
@@ -294,7 +345,7 @@ export type ChangeOutcomes = z.infer<typeof ChangeOutcomes>;
  * Home shows the setup checklist.
  */
 export const CatalogBaseline = z.strictObject({
-  schemaVersion: z.literal(WORKSPACE_SCHEMA_VERSION),
+  schemaVersion: WorkspaceSchemaVersion,
   acceptedBy: z.string().min(1),
   acceptedAt: z.iso.datetime({ offset: true }),
   /** Records per kind at acceptance. */
@@ -309,7 +360,7 @@ export type CatalogBaseline = z.infer<typeof CatalogBaseline>;
  * the migrations it has had. An older Atticus refuses to upgrade a metarepo a newer one wrote.
  */
 export const MetarepoStamp = z.strictObject({
-  schemaVersion: z.literal(WORKSPACE_SCHEMA_VERSION),
+  schemaVersion: WorkspaceSchemaVersion,
   atticus: z.string().min(1),
   upgradedAt: z.iso.datetime({ offset: true }),
   upgradedBy: z.string().min(1),

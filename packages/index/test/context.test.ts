@@ -425,3 +425,61 @@ describe("gaps (ADR 0107 point 5)", () => {
     ix.close();
   });
 });
+
+describe("a repo is matched on what it is, not only its id (ADR 0128)", () => {
+  it("indexes each manifest repo as a node whose description is searchable", async () => {
+    const root = await contextRoot();
+    const manifest = join(root, "org-pack/profiles/forge/repos.manifest.yaml");
+    await mkdir(dirname(manifest), { recursive: true });
+    await writeFile(
+      manifest,
+      stringify({
+        schemaVersion: 2,
+        platform: "forge",
+        repos: [
+          {
+            id: "forge-ledger",
+            url: "https://git.example.com/forge/forge-ledger.git",
+            type: "spring-boot",
+            owner: "team-ledger",
+            system: "forge",
+            description: {
+              text: "The ledger: every posting and the balances read from them.",
+              trust: "verified",
+              by: "pat",
+            },
+          },
+          {
+            id: "forge-edge",
+            url: "https://git.example.com/forge/forge-edge.git",
+            type: "gateway",
+            owner: "team-platform",
+            description: { text: "The gateway in front of the Forge APIs.", trust: "suggested" },
+          },
+        ],
+      }),
+    );
+    const ix = await openIndex(root);
+    const all = ix.db
+      .prepare("SELECT key, kind, line, body, verified FROM nodes WHERE kind = 'Repo' ORDER BY key")
+      .all() as { key: string; kind: string; line: string; body: string; verified: number }[];
+    expect(all.map((n) => n.key)).toEqual([
+      "org-pack:Repo:forge-edge",
+      "org-pack:Repo:forge-ledger",
+    ]);
+    const node = all.find((n) => n.key === "org-pack:Repo:forge-ledger")!;
+    expect(node.kind).toBe("Repo");
+    expect(node.verified).toBe(0);
+    expect(node.line).toContain("The ledger: every posting and the balances read from them.");
+    expect(node.body).toContain("The ledger");
+    // A draft says it is one wherever it is read.
+    expect(all.find((n) => n.key === "org-pack:Repo:forge-edge")!.line).toContain(
+      "(unconfirmed: drafted by the assistant)",
+    );
+    // It is linked to the system the manifest places it in.
+    expect(
+      ix.links("org-pack:Repo:forge-ledger").map((l) => `${l.dir} ${l.id} ${l.type}`),
+    ).toContain("out forge part-of");
+    ix.close();
+  });
+});

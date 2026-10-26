@@ -73,6 +73,39 @@ describe("repo types: matching by fingerprint (ADR 0077)", () => {
     expect(r.tied).toEqual(["forge-spring-service", "forge-spring-twin"]);
     expect(r.best).toBeUndefined();
   });
+
+  it("leans a tie and suggests where nothing matched, by the repo's description (ADR 0128)", async () => {
+    const spring = await load("forge-spring-service");
+    const twin = { ...spring, id: "forge-spring-twin", name: "Twin" };
+    // A tie the description leans: the verdict is still a tie; a person still decides.
+    const leaned = await matchRepoType(forge("forge-portal-bff"), [spring, twin], {
+      description: "The portal's back end for front end, a Twin service of the usual shape.",
+    });
+    expect(leaned.verdict).toBe("tie");
+    expect(leaned.fromDescription).toEqual({ type: "forge-spring-twin", words: "twin" });
+    expect(leaned.best).toBeUndefined();
+
+    // Where no fingerprint matched, it suggests; the verdict is still none.
+    const none = await matchRepoType(forge("forge-infra"), await types(), {
+      description: "Terraform and the Forge web ui helm charts.",
+    });
+    expect(none.verdict).toBe("none");
+    expect(none.fromDescription?.type).toBe("forge-web-ui");
+
+    // It never introduces a type the fingerprints ruled out of a tie, nor names two at once.
+    const ruledOut = await matchRepoType(forge("forge-portal-bff"), [spring, twin], {
+      description: "The portal's Forge web ui.",
+    });
+    expect(ruledOut.fromDescription).toBeUndefined();
+    const both = await matchRepoType(forge("forge-infra"), await types(), {
+      description: "A Forge web ui and a Forge spring service in one repo.",
+    });
+    expect(both.fromDescription).toBeUndefined();
+    // And nothing at all without a description.
+    expect(
+      (await matchRepoType(forge("forge-infra"), await types())).fromDescription,
+    ).toBeUndefined();
+  });
 });
 
 describe("repo types: the settings template on one repo", () => {

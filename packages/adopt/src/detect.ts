@@ -70,7 +70,31 @@ async function text(repo: RepoHandle, path: string): Promise<string> {
   }
 }
 
-export async function detectRepoType(repo: RepoHandle): Promise<Detection> {
+/**
+ * The words a description uses for a kind of repo (ADR 0128). Read only when the files say
+ * nothing at all: a repo's own build files always win, and a guess from a description is marked
+ * `low`, with the description named as its signal, so nobody mistakes it for something read.
+ */
+const TYPE_WORDS: readonly (readonly [RepoType, readonly string[]])[] = [
+  ["gateway", ["api gateway", "gateway", "api proxy", "reverse proxy"]],
+  ["infra", ["infrastructure", "terraform", "kubernetes manifests", "helm chart", "deployment"]],
+  ["event-config", ["topic definitions", "event topics", "topic config", "event catalogue"]],
+  ["mainframe", ["mainframe", "cobol", "batch jobs"]],
+  ["frontend", ["web app", "single-page app", "front end", "frontend", "the pages"]],
+];
+
+/** The type a description names, when the files name none. */
+export function typeFromDescription(text: string | undefined): RepoType | undefined {
+  const t = (text ?? "").toLowerCase();
+  if (!t) return undefined;
+  for (const [type, words] of TYPE_WORDS) if (words.some((w) => t.includes(w))) return type;
+  return undefined;
+}
+
+export async function detectRepoType(
+  repo: RepoHandle,
+  o: { description?: string } = {},
+): Promise<Detection> {
   const comp = await runExtractor(componentExtractor, repo, {
     scannedAt: "1970-01-01T00:00:00Z",
   });
@@ -135,5 +159,9 @@ export async function detectRepoType(repo: RepoHandle): Promise<Detection> {
   if (infra.length) return d("infra", infra, "medium");
   const topics = await all(repo, ["**/topics/*.yaml", "**/topics/*.yml", "**/topics/**/*.yaml"]);
   if (topics.length) return d("event-config", topics, "medium");
+  // Nothing in the files says what this is. What a person wrote about it is better than nothing,
+  // and is said to be where the guess came from (ADR 0128).
+  const said = typeFromDescription(o.description);
+  if (said) return d(said, ["the repo's description in repos.manifest.yaml"], "low");
   return d("unknown", [], "low");
 }

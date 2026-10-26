@@ -43,6 +43,12 @@ export function OnboardingSteps({
           </p>
         ))}
         <Command text="atticus repos discover <folder>" label={COPY.runNext.copy} />
+        {/* ADR 0128: one repo at a time, with what it is in the person's own words. */}
+        <p className="work-say">{W.stepAddOne}</p>
+        <Command
+          text={'atticus repo add <url> --description "what it is"'}
+          label={COPY.runNext.copy}
+        />
       </li>
       <li>
         <p>
@@ -88,6 +94,28 @@ export function RepoTable({ v }: { v: OnboardingData }) {
       rowKey={(r) => r.id}
       cols={[
         { label: W.repoCol, cell: (r) => r.id, mono: true },
+        {
+          // ADR 0128: what the repo is, so a list of opaque ids can be read.
+          label: W.aboutCol,
+          cell: (r) =>
+            r.description ? (
+              <>
+                <span>{r.description.text}</span>
+                {r.description.trust === "suggested" && (
+                  <span className="chip warn" style={{ marginLeft: 6 }}>
+                    {W.aboutDraft}
+                  </span>
+                )}
+              </>
+            ) : (
+              <>
+                <span className="muted" style={{ fontSize: 11.5 }}>
+                  {W.aboutMissing}
+                </span>
+                <Command text={`atticus repo describe ${r.id}`} label={COPY.runNext.copy} />
+              </>
+            ),
+        },
         { label: W.typeCol, cell: (r) => r.type, mono: true },
         {
           label: W.matchCol,
