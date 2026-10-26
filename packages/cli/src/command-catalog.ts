@@ -105,6 +105,7 @@ const AREA_BY_WORD: Record<string, string> = {
   spec: "repos",
   estate: "repos",
   "repo-type": "repos",
+  repo: "repos",
   repos: "repos",
   workspace: "repos",
   frameworks: "repos",

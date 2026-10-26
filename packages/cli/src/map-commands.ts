@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import {
   assistantTier,
+  ABOUT_RULE,
   mapBatchInstructions,
   readProbes,
   tierSource,
@@ -12,6 +13,10 @@ import {
 import {
   AgentDefinition,
   citedFiles,
+  descriptionNote,
+  descriptionTrust,
+  REPO_DESCRIPTION_MAX,
+  saysNotProduct,
   Fact,
   factsDirOf,
   factsRelOf,
@@ -23,6 +28,8 @@ import {
   writeFileAtomic,
   type OrgPack,
   type Question,
+  type RepoDescription,
+  type RepoDescriptionCite,
 } from "@maycombhq/core";
 import {
   buildContextPack,
@@ -32,6 +39,7 @@ import {
   HandoffRuntime,
   promptBudget,
   PromptTooLong,
+  wrapData,
   type AiRuntime,
   type Run,
   type SourceInput,
@@ -59,7 +67,7 @@ import {
   type Rejected,
   type RereadPlan,
 } from "@maycombhq/verify";
-import type { GitRunner } from "@maycombhq/workspace";
+import { loadRepos, type GitRunner } from "@maycombhq/workspace";
 import type { Output } from "./commands.js";
 import {
   carryOf,
@@ -127,6 +135,8 @@ export const REPO_READER = "repo-reader";
 const OUTPUT = "facts.jsonl";
 /** Tokens kept in each prompt for the facts already kept, the answers on file and the feedback. */
 const KEPT_RESERVE = 1500;
+/** The smallest the kept-facts reserve may shrink to when a description is paid out of it. */
+const MIN_KEPT_RESERVE = 1200;
 /** The smallest room for files that is worth a prompt. */
 const MIN_ROOM = 300;
 /** The limit a batch estimate uses when none is given: GPT-4o mini through Copilot (ADR 0112). */
@@ -198,12 +208,45 @@ const LEVELS = ["public", "internal", "confidential", "restricted"];
  */
 function instructionTokens(repo: string, commit: string, kinds: readonly FileKind[] = []): number {
   return (
+    // The rule asking what the repo is (ADR 0128) isn't counted here: it is paid for out of the
+    // reserve below (`reserveFor`), so the room planned for files is what it always was.
     estimateTokens(mapBatchInstructions({ repo, commit, batch: 999, of: 999, kinds })) +
     estimateTokens(DATA_RULE) +
     // the <atticus-data> wrapper around the batch's files
     60
   );
 }
+
+/**
+ * The repo's description as the manifest holds it (ADR 0128), read for every prompt, so a line
+ * a person adds part-way through a read is carried by the batches after it.
+ */
+async function aboutOf(root: string, repo: string): Promise<RepoDescription | undefined> {
+  return (await loadRepos(root).catch(() => [])).find((r) => r.id === repo)?.description;
+}
+
+/** The source a repo's description goes in as: untrusted, so the pack wraps it as data. */
+function aboutSource(repo: string, d: RepoDescription): SourceInput {
+  return {
+    id: "6-about",
+    kind: "document",
+    origin: "repos.manifest.yaml",
+    text: descriptionNote(repo, d),
+    classification: "internal",
+    priority: 9,
+  };
+}
+
+/** What a description costs a prompt, wrapper and all, so the batch planner leaves room for it. */
+const aboutTokens = (repo: string, d?: RepoDescription): number =>
+  d
+    ? estimateTokens(
+        wrapData(
+          { id: "6-about", origin: "repos.manifest.yaml", kind: "document" },
+          descriptionNote(repo, d),
+        ),
+      )
+    : 0;
 
 /** What a batch's topic rules add to the core's instructions, for the batch planner. */
 const overheadOf = (repo: string, commit: string) => {
@@ -238,10 +281,17 @@ export function readAnswer(
   text: string,
   repo: string,
   commit: string,
-): { facts: Fact[]; questions: unknown[]; problems: string[] } {
+): {
+  facts: Fact[];
+  questions: unknown[];
+  problems: string[];
+  /** The one-line description the reader drafted, when it wrote one (ADR 0128). */
+  about?: { text: string; cites: RepoDescriptionCite[] };
+} {
   const facts = new Map<string, Fact>();
   const questions: unknown[] = [];
   const problems: string[] = [];
+  let about: { text: string; cites: RepoDescriptionCite[] } | undefined;
   text.split(/\r?\n/).forEach((raw, i) => {
     const line = raw.trim();
     if (!line || line.startsWith("```")) return;
@@ -261,6 +311,31 @@ export function readAnswer(
       questions.push(o);
       return;
     }
+    // One line saying what the repo is (ADR 0128): a draft for a person, never a fact. The
+    // first one wins, so a reader that writes it in every batch doesn't flip-flop.
+    if ("about" in o && !("kind" in o)) {
+      const text = typeof o.about === "string" ? o.about.trim() : "";
+      if (!text) {
+        problems.push(`line ${i + 1}: "about" needs one line saying what the repo is`);
+        return;
+      }
+      const cites: RepoDescriptionCite[] = (Array.isArray(o.cites) ? o.cites : [])
+        .flatMap((c) => {
+          const x = c as { file?: unknown; line?: unknown };
+          return typeof x.file === "string" && Number.isInteger(x.line) && Number(x.line) > 0
+            ? [{ file: x.file, line: Number(x.line) }]
+            : [];
+        })
+        .slice(0, 6);
+      if (!cites.length) {
+        problems.push(
+          `line ${i + 1}: "about" needs "cites": the file and line it was read from, as a fact cites its line`,
+        );
+        return;
+      }
+      about ??= { text: text.slice(0, REPO_DESCRIPTION_MAX), cites };
+      return;
+    }
     // Only the verifier says a fact is verified, and only a person's edit says a person did.
     const r = Fact.safeParse({ repo, commit, ...o, verified: "none", by: "assistant" });
     if (r.success) facts.set(r.data.id, r.data);
@@ -271,7 +346,7 @@ export function readAnswer(
           .join("; ")}`,
       );
   });
-  return { facts: [...facts.values()], questions, problems };
+  return { facts: [...facts.values()], questions, problems, ...(about ? { about } : {}) };
 }
 
 /** A rejected fact as the reader gets it back: why, the fact, and the lines around its cite. */
@@ -376,6 +451,9 @@ async function packFor(
   const agent = repoReaderAgent(op);
   const budget = op.runtime.budgets.perAgent[agent.id] ?? agent.tokenBudget;
   const fix = batch >= s.batches.length;
+  const about = await aboutOf(root, s.repo);
+  // What the description (or the line asking for one) leaves for the facts on file (ADR 0128).
+  const reserve = reserveFor(s.repo, about);
   const kept = await readFactsFile(root, s.repo);
   const facts = typeof kept === "string" ? [] : kept;
   const onFile = (await listQuestions(root, { repo: s.repo })).questions.filter(
@@ -393,7 +471,7 @@ async function packFor(
     instructionTokens(s.repo, s.commit, both) - instructionTokens(s.repo, s.commit, own);
   const kinds = fix
     ? theirs
-    : extra + rejected.reduce((n, t) => n + estimateTokens(t), 0) <= KEPT_RESERVE
+    : extra + rejected.reduce((n, t) => n + estimateTokens(t), 0) <= reserve
       ? both
       : own;
   const sources: SourceInput[] = [
@@ -408,6 +486,8 @@ async function packFor(
         of: s.batches.length,
         ...(fix ? { fix: true } : {}),
         kinds,
+        // Nothing says what this repo is: ask for one line, cited, for a person to confirm.
+        ...(about ? {} : { askAbout: true }),
       }),
       classification: "public",
       trusted: true,
@@ -468,13 +548,15 @@ async function packFor(
           },
         ]
       : []),
+    // What a person says the repo is (ADR 0128), as data: it orients the read, never leads it.
+    ...(about ? [aboutSource(s.repo, about)] : []),
     ...(facts.length
       ? [
           {
             id: "5-kept",
             kind: "document" as const,
             origin: `${factsRelOf(root)}/${s.repo}.jsonl`,
-            text: keptText(facts, KEPT_RESERVE),
+            text: keptText(facts, reserve),
             classification: "internal",
             priority: 3,
           },
@@ -526,11 +608,26 @@ async function tierHere(root: string, op: OrgPack): Promise<TierReport> {
   return assistantTier(op.runtime, { probes: (await readProbes(root)).results });
 }
 
+/**
+ * The room a batch's files have. ADR 0128 changes nothing here: a prompt either carries the
+ * repo's description or asks for one, never both, and either is paid for out of KEPT_RESERVE
+ * (`reserveFor`), not out of the files' room — so a repo that says what it is reads in the same
+ * batches as one that doesn't.
+ */
 function roomFor(limit: number | undefined, op: OrgPack, repo: string, commit: string): number {
   const agent = repoReaderAgent(op);
   const budget = op.runtime.budgets.perAgent[agent.id] ?? agent.tokenBudget;
   const fitted = limit === undefined ? budget : Math.min(budget, promptBudget(limit));
   return fitted - instructionTokens(repo, commit) - KEPT_RESERVE;
+}
+
+/**
+ * What a prompt keeps for the facts on file, the questions and the feedback, once the repo's
+ * description (or the line asking for one) is paid for out of it (ADR 0128).
+ */
+function reserveFor(repo: string, about?: RepoDescription): number {
+  const cost = about ? aboutTokens(repo, about) : estimateTokens(ABOUT_RULE);
+  return Math.max(MIN_KEPT_RESERVE, KEPT_RESERVE - cost);
 }
 
 export async function mapCommand(
@@ -836,6 +933,17 @@ async function takeAnswer(
     [],
     reviewedProblemsOf(reviewed.bad, report),
   );
+  // The one line the reader drafted about the repo (ADR 0128): kept as a draft, marked
+  // unconfirmed wherever it is shown, for a person to confirm, edit or reject.
+  if (answer.about) {
+    const { keepDraftedDescription } = await import("./repo-commands.js");
+    const d = await keepDraftedDescription(root, s.repo, answer.about, now());
+    if (d.kept)
+      io.out(
+        `Your assistant says ${s.repo} is: "${answer.about.text}" — written to the manifest as a draft, unconfirmed. Confirm it (atticus repo describe ${s.repo} --accept), change it (--description "...") or drop it (--reject).`,
+      );
+    else if (d.why) io.out(`The description your assistant drafted wasn't kept: ${d.why}.`);
+  }
   const fresh = new Set(answer.facts.map((f) => f.id));
   const kept = report.accepted.filter((f) => fresh.has(f.id)).length;
   io.out(
@@ -946,6 +1054,7 @@ async function estimate(
   const tier: TierReport = await tierHere(root, c.op);
   const { limit: given, from } = limitOf(c.o, c.op, tier);
   const limit = given ?? EXAMPLE_LIMIT;
+  const about = await aboutOf(root, repo);
   const room = roomFor(limit, c.op, repo, c.commit);
   // A moved checkout (ADR 0124 addendum A-incremental): the read is the files changed since the
   // facts' commit and the facts citing them, not the whole repo.
@@ -979,7 +1088,10 @@ async function estimate(
   const files = whole.batches.flat().map((s) => ({ path: s.path, tokens: s.tokens }));
   const proposed = reread
     ? { proposals: [], before: whole.tokens, after: whole.tokens }
-    : proposeExclusions(files, c.source.list(), (p) => c.source.read(p));
+    : proposeExclusions(files, c.source.list(), (p) => c.source.read(p), {
+        // What the person's description plainly says this repo holds (ADR 0128).
+        saysNotProduct: saysNotProduct(about),
+      });
   const left = proposed.proposals.map((p) => p.path.slice(0, -2));
   const session = Math.max(SESSION_TOKENS, Math.floor(0.75 * (given ?? 0)));
   // A-big2: the parts are of the product code left with every proposal out.
@@ -1005,6 +1117,10 @@ async function estimate(
           maxTokensFrom: from ?? "example",
           batches: plan?.batches.length ?? null,
           order: whole.batches.flat().map((x) => x.path),
+          // ADR 0128: what a person says the repo is, and whether that eased the proposals.
+          about: about
+            ? { text: about.text, trust: about.trust, eased: saysNotProduct(about) }
+            : null,
           proposals: {
             before: proposed.before,
             after: proposed.after,
@@ -1038,6 +1154,12 @@ async function estimate(
     return 0;
   }
   io.out(`${repo} at ${c.commit} in ${c.dir}`);
+  // ADR 0128: what the repo is, for the reader to orient by — a note, not a finding.
+  io.out(
+    about
+      ? `What it is (${descriptionTrust(about)}${about.by ? `, ${about.by}` : ""}): ${about.text} — a person's note from the manifest, not read from the code: where the code says otherwise, the code is right.`
+      : `What it is: nothing says yet. A person writes one line (atticus repo describe ${repo} --description "..."); if the files say plainly, hand yours over with atticus repo describe ${repo} --drafted "..." --cites <file>:<line>, and it waits for a person.`,
+  );
   io.out(`Facts file: ${c.factsFile}`);
   if (reread) for (const l of rereadLines(repo, reread)) io.out(l);
   for (const m of re.missing)
@@ -1055,6 +1177,10 @@ async function estimate(
     io.out(
       `Folders that look like data, documentation or vendored code, not the product (${proposed.proposals.length}):`,
     );
+    if (saysNotProduct(about))
+      io.out(
+        `  (${repo}'s description says it is mostly not product code, so a smaller folder is proposed than would be otherwise. Each is still a proposal a person accepts.)`,
+      );
     for (const p of proposed.proposals.slice(0, SHOWN_PROPOSALS))
       io.out(`  ${p.path} (about ${p.tokens} tokens, ${plural(p.files, "file")}): ${p.why}`);
     if (proposed.proposals.length > SHOWN_PROPOSALS)

@@ -17,3 +17,7 @@ OpenSpec does not clone, track a change across repos, or know about worktrees, s
 ## Consequences
 
 Several changes run side by side without touching base clones or each other. Everything in `workspace/` can be deleted and rebuilt from the manifest and the repos files.
+
+## Addendum (2026-10-26): what a repo is, in a person's words (ADR 0128, C6 workspace schema 2)
+
+A manifest repo gains an optional `description`: one line (at most 300 characters) saying what the repo is, with `trust` (`verified` when a person wrote or confirmed it, `suggested` when the assistant drafted it and nobody has), `by`, `at`, and `cites` for a draft. `WORKSPACE_SCHEMA_VERSION` is 2, and `schemaVersion` on all five workspace files is now the union of 1 and 2 overwritten to 2 in memory, so every version-1 file stays valid and readers accept it as it is; `atticus upgrade`'s `manifest-schema-v2` rewrites the number, keeping comments. See ADR 0128 for where it is entered, how a draft is confirmed, and what reads it.

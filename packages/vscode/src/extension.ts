@@ -671,6 +671,10 @@ ${view.next.why}`
     withRoot((root) => commands.addRepos(root)),
   );
   reg(
+    "atticus.describeRepo",
+    withRoot((root) => commands.describeRepoPicked(root)),
+  );
+  reg(
     "atticus.draftSpec",
     withRoot((root) => commands.pickAndRun(root, "spec draft")),
   );

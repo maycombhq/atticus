@@ -22,6 +22,8 @@ export interface HostRepo {
   component?: string;
   hosts: readonly string[];
   modules?: readonly { component: string; hosts: readonly string[] }[];
+  /** What the repo is, in a person's words (ADR 0128), so the options can be told apart. */
+  description?: { text: string; trust: "suggested" | "verified" };
 }
 
 export interface HostAsk {
@@ -33,6 +35,11 @@ export interface HostAsk {
   servers: string[];
   /** The repo whose config sets the port, when exactly one does. */
   suggest?: { repo: string; at: string; line: string };
+  /**
+   * What each repo of `servers` is, in a person's words (ADR 0128), so a person choosing between
+   * two opaque ids reads what they are. A draft nobody has confirmed is marked.
+   */
+  about?: Record<string, { text: string; trust: "suggested" | "verified" }>;
 }
 
 /** Entry point types a call over HTTP reaches. */
@@ -159,14 +166,33 @@ export async function unknownHosts(o: {
     const calls = entry.calls.sort(
       (a, b) => a.repo.localeCompare(b.repo) || a.at.localeCompare(b.at, "en", { numeric: true }),
     );
+    const about = Object.fromEntries(
+      servers.flatMap((s) => {
+        const d = o.repos.find((r) => r.id === s)?.description;
+        return d ? [[s, { text: d.text, trust: d.trust }] as const] : [];
+      }),
+    );
     asks.push({
       host,
       calls,
       servers: suggest ? [suggest.repo, ...servers.filter((s) => s !== suggest.repo)] : servers,
       ...(suggest ? { suggest } : {}),
+      ...(Object.keys(about).length ? { about } : {}),
     });
   }
   return asks;
+}
+
+/**
+ * What an option's repo is, in a person's words (ADR 0128), after what the code says about it. A
+ * draft nobody has confirmed is said to be one, so nobody reads it as a person's words.
+ */
+function aboutOf(a: HostAsk, repo: string): string {
+  const d = a.about?.[repo];
+  if (!d) return "";
+  return d.trust === "suggested"
+    ? `. What it is, as your assistant drafted it (unconfirmed): ${d.text}`
+    : `. What it is: ${d.text}`;
 }
 
 /**
@@ -186,9 +212,9 @@ export function hostQuestionDrafts(
           ...a.servers.map((s) => ({
             label: s,
             means:
-              a.suggest?.repo === s
+              (a.suggest?.repo === s
                 ? `${s} serves HTTP, and its ${a.suggest.at} sets the port ${a.host.split(":").pop()} (${a.suggest.line})`
-                : `${s} serves HTTP`,
+                : `${s} serves HTTP`) + aboutOf(a, s),
             changes: `${a.host} goes under hosts for ${s} in repos.manifest.yaml, and the calls to it join ${s} on the next scan`,
           })),
           {

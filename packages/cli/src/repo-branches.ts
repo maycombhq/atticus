@@ -4,8 +4,12 @@ import { isMap, isSeq, parseDocument } from "yaml";
 import { parse } from "yaml";
 import {
   catalogDirOf,
+  ManifestEditError,
   orgPackDirOf,
+  REPO_DESCRIPTION_MAX,
+  RepoDescription,
   RepoManifest,
+  setManifestDescription,
   writeFileAtomic,
   type CatalogRecord,
 } from "@maycombhq/core";
@@ -14,6 +18,7 @@ import {
   baseClonePath,
   branchSlug,
   checkoutState,
+  gitUser,
   loadRepos,
   remoteDefaultBranch,
 } from "@maycombhq/workspace";
@@ -61,6 +66,8 @@ export async function repoBranches(root: string) {
       url: r.url,
       type: r.type,
       owner: r.owner,
+      // What it is, in a person's words, or a draft nobody has confirmed (ADR 0128).
+      ...(r.description ? { description: r.description } : {}),
       defaultBranch: r.defaultBranch,
       ...(remoteDefault ? { remoteDefault } : {}),
       branches: r.branches,
@@ -145,4 +152,57 @@ export async function editRepoBranches(
     );
   await writeFileAtomic(file, doc.toString({ flowCollectionPadding: true }));
   return rel;
+}
+
+/**
+ * Say what a repo is, confirm the draft the assistant wrote, or drop it (ADR 0128). A line a
+ * person types or confirms is theirs: it is written as `verified` with their handle and the
+ * time, so a draft stops being marked unconfirmed. Returns the manifest's path and the line.
+ */
+export async function editRepoDescription(
+  root: string,
+  repoId: string,
+  set: { text?: string; accept?: boolean; reject?: boolean },
+  o: { by?: string; now?: Date } = {},
+): Promise<{ file: string; description?: RepoDescription }> {
+  const repo = (await loadRepos(root)).find((r) => r.id === repoId);
+  if (!repo) throw new RepoEditError("not-found", `There is no repo ${repoId} in any manifest.`);
+  const now = o.now ?? new Date();
+  let next: RepoDescription | undefined;
+  if (!set.reject) {
+    const text = set.text?.trim() || (set.accept ? repo.description?.text : undefined);
+    if (!text)
+      throw new RepoEditError(
+        "invalid",
+        set.accept
+          ? `${repoId} has no drafted description to confirm. Write one instead.`
+          : `Say what ${repoId} is, in one line.`,
+      );
+    if (text.length > REPO_DESCRIPTION_MAX)
+      throw new RepoEditError(
+        "invalid",
+        `That is ${text.length} characters; a description is one line, up to ${REPO_DESCRIPTION_MAX}.`,
+      );
+    const by =
+      o.by ??
+      (await gitUser(root).then(
+        (u) => u.handle,
+        () => "someone",
+      ));
+    next = RepoDescription.parse({
+      text,
+      trust: "verified",
+      by,
+      at: now.toISOString().replace(/\.\d{3}Z$/, "Z"),
+    });
+  } else if (!repo.description)
+    throw new RepoEditError("invalid", `${repoId} has no description to drop.`);
+  try {
+    const f = await setManifestDescription(root, repoId, next);
+    return { file: f.rel, ...(next ? { description: next } : {}) };
+  } catch (e) {
+    if (e instanceof ManifestEditError)
+      throw new RepoEditError(e.code === "not-found" ? "not-found" : "invalid", e.message);
+    throw e;
+  }
 }

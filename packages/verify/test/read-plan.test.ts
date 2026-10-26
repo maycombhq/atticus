@@ -202,6 +202,37 @@ describe("proposed exclusions: folders that hold data, docs or vendored code (A-
     ).toEqual({ proposals: [], before: 50_900, after: 50_900 });
   });
 
+  it("proposes a smaller folder when the repo's description says it is not product code (ADR 0128)", () => {
+    // A folder of data too small to propose on its own: 4,000 tokens, under the 10,000 floor.
+    const files: FileTokens[] = [
+      { path: "pom.xml", tokens: 900 },
+      { path: "src/main/java/forge/atlas/Atlas.java", tokens: 60_000 },
+      ...Array.from({ length: 8 }, (_, i) => ({
+        path: `corpus/texts/t${i}.json`,
+        tokens: 500,
+      })),
+    ];
+    const all = files.map((f) => f.path);
+    expect(proposeExclusions(files, all).proposals).toEqual([]);
+    // What a person said the repo mostly holds lowers the floor to a quarter, and no further.
+    const eased = proposeExclusions(files, all, undefined, { saysNotProduct: true });
+    expect(eased.proposals.map((p) => p.path)).toEqual(["corpus/**"]);
+    expect(eased.after).toBe(eased.before - 4_000);
+    // It still never proposes a folder that holds the product's build, deploy or config files.
+    const product: FileTokens[] = [
+      { path: "src/main/resources/application.yml", tokens: 400 },
+      { path: "src/main/resources/data/small.json", tokens: 3_000 },
+    ];
+    expect(
+      proposeExclusions(
+        product,
+        product.map((f) => f.path),
+        undefined,
+        { saysNotProduct: true },
+      ).proposals.map((p) => p.path),
+    ).toEqual(["src/main/resources/data/**"]);
+  });
+
   it("gives a ready exclude: block for org-pack/scan/<repo>.yaml, every entry citing a file", () => {
     const { files, all } = atlas();
     expect(exclusionYaml(proposeExclusions(files, all).proposals)).toBe(

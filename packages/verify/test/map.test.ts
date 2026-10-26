@@ -113,6 +113,32 @@ describe("renderMap: the map of one repo, from its C1 records", () => {
     expect(md).toMatch(/\]\(\.\.\/\.\.\/questions\/q-[0-9a-f]{12}\.yaml\)/);
   });
 
+  it("says what the repo is above the trust line, whose words it is, and that the code wins (ADR 0128)", () => {
+    const text = "The ledger: every posting and the balances read from them.";
+    const said = renderMap({ ...input(), about: { text, trust: "verified", by: "pat" } })[
+      "map.md"
+    ]!;
+    const lines = said.split("\n");
+    expect(lines.findIndex((l) => l.startsWith("**What it is"))).toBeLessThan(
+      lines.findIndex((l) => l.startsWith("**Trust:**")),
+    );
+    expect(said).toContain(`**What it is (pat):** ${text}`);
+    expect(said).toContain("the facts below are what the code says");
+    expect(said).not.toContain("unconfirmed");
+
+    const draft = renderMap({
+      ...input(),
+      about: { text, trust: "suggested", by: "assistant" },
+    })["map.md"]!;
+    expect(draft).toContain("unconfirmed draft, assistant");
+    expect(draft).toContain("atticus repo describe forge-ledger --accept");
+
+    // Nothing says: the line says so, and how to say it.
+    expect(renderMap(input())["map.md"]!).toContain(
+      "**What it is:** Nothing says yet: `atticus repo describe forge-ledger`.",
+    );
+  });
+
   it("says what is missing instead of leaving a section blank", () => {
     const md = renderMap({ ...input(), records: [], flows: [], questions: [], trust: undefined })[
       "map.md"

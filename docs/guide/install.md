@@ -59,6 +59,35 @@ atticus doctor                                           # each line [ok], [warn
 
 `atticus init` makes the folder a git repository (`git init`, branch `main`) when it isn't inside one, so the metarepo's changes go through pull requests; a folder already inside a repository is left as it is. `atticus repos discover` never looks inside hidden folders (an assistant's worktrees under `.claude/`), `node_modules` or a nested worktree.
 
+### Say what each repo is
+
+A repo id often says nothing — three repos differ by a suffix, one is named after a programme that was renamed. So each entry in the manifest can carry one line saying what the repo is, in your own words:
+
+```bash
+atticus repo add https://git.example.com/forge/forge-ledger.git \
+  --type forge-service --owner team-ledger \
+  --description "The ledger: every posting and the balances read from them. Northwind Pay settles against it nightly."
+
+atticus repo describe forge-gateway \
+  --description "The gateway in front of the Forge APIs: it checks the OAuth token and forwards to orders, ledger and customers."
+
+atticus repo describe            # the repos that say nothing, and the drafts waiting for you
+```
+
+Write what it is **for** and **who uses it**, in one line of up to 300 characters: "the gateway in front of the Forge APIs", "a vendored text corpus the parser is tested against", "the batch that closes the day". Don't write what the code would tell you anyway (the language, the framework, the endpoints) — Atticus reads that from the code and it goes stale. Don't put anything in it you wouldn't put in the repo's README.
+
+That line is carried into every reading prompt (clearly marked as your note, which the code beats), into the question a join asks when two repos could answer on a host, into what `map --estimate` proposes leaving out, into what a repo is matched on when knowledge and stories are placed, and into `map.md` and the app's repo and estate views.
+
+`atticus repos discover` and a bulk add from the editor never stop to ask: the repos that say nothing turn up as a step in `atticus next` and in `atticus repo describe`, to fill in when you have a minute.
+
+**Your assistant can draft one.** On the first read of a repo that says nothing, your assistant drafts a line from what it read, citing the lines it read it from. Atticus keeps it marked unconfirmed everywhere it is used until you decide:
+
+```bash
+atticus repo describe forge-ledger --accept                  # it is right: it becomes your words
+atticus repo describe forge-ledger --description "..."       # it isn't quite: yours replaces it
+atticus repo describe forge-ledger --reject                  # drop it
+```
+
 One repo instead of an estate: `atticus adopt <path>` writes only `.atticus/` in it (`atticus unadopt <path>` leaves it byte for byte as it was). To practise first: `atticus sandbox create ./practice`, then work in `practice/metarepo`.
 
 ## Minute 10: measure your assistant

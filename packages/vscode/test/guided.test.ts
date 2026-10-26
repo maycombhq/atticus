@@ -28,6 +28,12 @@ describe("a next step with a part to fill in", () => {
     expect(guidedFor("atticus absorb accept <id>")).toBe("absorbAccept");
     expect(guidedFor("atticus init <folder> --platform <p>")).toBe("createMetarepo");
     expect(guidedFor("atticus adopt <path>")).toBe("adoptRepo");
+    // ADR 0128: saying what a repo is, asked one repo at a time with a skip.
+    expect(guidedFor('atticus repo describe forge-ledger --description "what it is"')).toBe(
+      "describeRepo",
+    );
+    expect(guidedFor("atticus repo describe")).toBe("describeRepo");
+    expect(guidedFor("atticus repo-type detect <repo>")).toBeUndefined();
     expect(guidedFor("atticus spec draft <repo>")).toBeUndefined();
   });
 

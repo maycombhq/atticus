@@ -320,6 +320,14 @@ export const FACT_RULES = factRulesFor();
  * these words (ADR 0124 addendum A-lean), so a batch carries the core rules and only the topic
  * rules its files' kinds need.
  */
+/**
+ * Asked once, when the manifest says nothing about what a repo is (ADR 0128): one line drafted
+ * from what was read, cited the way a fact is. It is a draft for a person, never a fact: Atticus
+ * keeps it marked unconfirmed until a person confirms, edits or rejects it.
+ */
+export const ABOUT_RULE =
+  '- Nothing says what this repo is for. If these files say plainly, add one line: {"about": "<one sentence>", "cites": [{"file": "...", "line": n}]}. Else leave it out.';
+
 export function mapBatchInstructions(o: {
   repo: string;
   commit: string;
@@ -332,6 +340,11 @@ export function mapBatchInstructions(o: {
    * @maycombhq/verify. Left out, every rule goes in.
    */
   kinds?: readonly RuleTopic[];
+  /**
+   * Nothing says what this repo is (ADR 0128): ask for one line, cited, which a person then
+   * confirms, edits or rejects. Left out when the manifest already says.
+   */
+  askAbout?: boolean;
 }): string {
   return [
     `Read the repo ${o.repo} at commit ${o.commit} into facts: what it answers to and calls, the data it reads and writes, the fields crossing those boundaries, its deployment and the config it depends on.`,
@@ -346,5 +359,6 @@ export function mapBatchInstructions(o: {
     factRulesFor(o.kinds),
     "- Cite only the numbered lines in this prompt. A reference may name a fact already kept (listed below) or one in your answer. Don't write a kept fact again, unless you correct it under the same `id`.",
     "- When these files hold no fact, answer with nothing.",
+    ...(o.askAbout ? [ABOUT_RULE] : []),
   ].join("\n");
 }

@@ -66,4 +66,50 @@ describe("Set up › Repos (ADR 0123)", () => {
       "release/2026.11",
     ]);
   });
+
+  it("says what the repo is, who said it, and that the code wins (ADR 0128)", () => {
+    const text = "Notes a customer pins to an order.";
+    const out = renderToStaticMarkup(
+      <RepoRow r={{ ...REPO, description: { text, trust: "verified", by: "pat" } }} />,
+    );
+    expect(out).toContain(esc(R.about));
+    expect(out).toContain(esc(text));
+    expect(out).toContain(esc(R.aboutBy("pat")));
+    expect(out).toContain(esc(R.aboutWhy));
+    expect(out).toContain(esc(R.editAboutDraft));
+    expect(out).toContain(esc(R.rejectAbout));
+    expect(out).not.toContain(esc(R.aboutDraft));
+    expect(out).not.toContain(esc(R.acceptAbout));
+  });
+
+  it("marks a draft nobody has confirmed, shows the lines it came from, and offers to confirm it", () => {
+    const out = renderToStaticMarkup(
+      <RepoRow
+        r={{
+          ...REPO,
+          description: {
+            text: "Notes a customer pins to an order.",
+            trust: "suggested",
+            by: "assistant",
+            cites: [{ file: "README.md", line: 3 }],
+          },
+        }}
+      />,
+    );
+    expect(out).toContain(esc(R.aboutDraft));
+    expect(out).toContain(esc(R.aboutDraftWhy("assistant")));
+    expect(out).toContain(esc(`${R.aboutCites}: README.md:3`));
+    expect(out).toContain(esc(R.acceptAbout));
+  });
+
+  it("says nothing says yet, and the form has a label, a hint and a length cap", () => {
+    const out = renderToStaticMarkup(<RepoRow r={REPO} />);
+    expect(out).toContain(esc(R.noAbout));
+    expect(out).toContain(esc(R.editAbout));
+    // Empty state only: no confirm or drop for a repo that says nothing.
+    expect(out).not.toContain(esc(R.acceptAbout));
+    expect(out).not.toContain(esc(R.rejectAbout));
+    // The hint is tied to the field it describes (WCAG 2.1 AA: labels and descriptions).
+    expect(out).toContain('aria-controls="repo-forge-notes-about-form"');
+  });
 });

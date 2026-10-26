@@ -341,6 +341,16 @@ async function renderRepoMap(
     records,
     flows: spec.flows,
     ...(trust ? { trust } : {}),
+    // What a person says the repo is (ADR 0128), above the trust line.
+    ...(manifest?.description
+      ? {
+          about: {
+            text: manifest.description.text,
+            trust: manifest.description.trust,
+            ...(manifest.description.by ? { by: manifest.description.by } : {}),
+          },
+        }
+      : {}),
     questions: open.map((q) => ({ id: q.id, question: q.question, evidence: q.evidence })),
     paths: { map: rel, questions: questionsRelOf(root), specs: specRelOf(root, repo) },
     codeLink,

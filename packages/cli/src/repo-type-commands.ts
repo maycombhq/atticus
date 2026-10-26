@@ -24,9 +24,9 @@ function verdictLine(id: string, r: RepoTypeMatches): string {
     case "partial":
       return `${id} is a partial match for ${best!.name} (${best!.type}), ${pct(best!.score)}. Reuse it, and extend the type with what this repo does differently.`;
     case "tie":
-      return `${id} matches ${r.tied!.join(" and ")} about as well. A person decides which it is; then change the types so their fingerprints tell them apart.`;
+      return `${id} matches ${r.tied!.join(" and ")} about as well.${r.fromDescription ? ` Its description says "${r.fromDescription.words}", so ${r.fromDescription.type} is the likelier of them; a person still decides.` : ""} A person decides which it is; then change the types so their fingerprints tell them apart.`;
     case "none":
-      return `${id} matches no known repo type. Draft one: atticus repo-type new <id> --from ${id}`;
+      return `${id} matches no known repo type.${r.fromDescription ? ` Its description says "${r.fromDescription.words}", so ${r.fromDescription.type} may be it, though nothing in its files says so.` : ""} Draft one: atticus repo-type new <id> --from ${id}`;
   }
 }
 
@@ -54,7 +54,13 @@ export async function repoTypeDetect(
     return 2;
   }
   const op = await loadOrgPack(orgPackDirOf(root));
-  const r = await matchRepoType(fsRepo(repo.id, repo.dir, "0".repeat(40)), op.repoTypes);
+  // What a person says the repo is (ADR 0128): read only to lean a tie or suggest where the
+  // fingerprints found nothing, never to overrule what the files say.
+  const said = op.profiles.flatMap((p) => p.repos?.repos ?? []).find((x) => x.id === repo.id)
+    ?.description?.text;
+  const r = await matchRepoType(fsRepo(repo.id, repo.dir, "0".repeat(40)), op.repoTypes, {
+    ...(said ? { description: said } : {}),
+  });
   if (o.json) {
     io.out(JSON.stringify({ repo: repo.id, ...r }, null, 2));
     return 0;

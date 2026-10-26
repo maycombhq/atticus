@@ -3,6 +3,7 @@ import { mkdir, rm } from "node:fs/promises";
 import { dirname } from "node:path";
 import {
   changeBranch,
+  WORKSPACE_SCHEMA_VERSION,
   type ChangeRepo,
   type ChangeRepos,
   type ManifestRepo,
@@ -234,7 +235,7 @@ export function createWorkspace(root: string, git: GitRunner = createGit()): Wor
         byId.set(repo.id, prior ? { ...fresh, ...prior, worktree: fresh.worktree } : fresh);
       }
       const value: ChangeRepos = {
-        schemaVersion: 1,
+        schemaVersion: WORKSPACE_SCHEMA_VERSION,
         change,
         repos: [...byId.values()].sort((a, b) => a.id.localeCompare(b.id)),
       };

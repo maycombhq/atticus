@@ -64,6 +64,8 @@ export interface RenderMapInput {
   /** The repo's flows (specs/<repo>/). */
   flows: readonly FlowRecord[];
   trust?: MapTrust;
+  /** What the repo is, as the manifest says (ADR 0128); left out when nothing says. */
+  about?: { text: string; trust: "suggested" | "verified"; by?: string };
   /** The open questions about the repo. */
   questions?: readonly MapQuestion[];
   /** Folders relative to the metarepo root: the map's (`map/<repo>`), questions/ and the repo's specs. */
@@ -424,6 +426,23 @@ function openQuestions(c: Ctx): string[] {
   );
 }
 
+/**
+ * What the repo is, in a person's words (ADR 0128), above the trust line: said to be a note, and
+ * marked unconfirmed when it is a draft the assistant wrote and nobody has confirmed.
+ */
+function aboutLine(a: RenderMapInput["about"], repo: string): string[] {
+  if (!a) return [`**What it is:** Nothing says yet: \`atticus repo describe ${repo}\`.`, ""];
+  const who = a.by ? `, ${a.by}` : "";
+  return [
+    a.trust === "suggested"
+      ? `**What it is (unconfirmed draft${who}):** ${a.text} — drafted from the code and waiting for a person: \`atticus repo describe ${repo} --accept\`.`
+      : `**What it is${who ? ` (${a.by})` : ""}:** ${a.text}`,
+    "",
+    "A person's note from the manifest, not read from the code: where the two disagree, the facts below are what the code says.",
+    "",
+  ];
+}
+
 function trustLine(t: MapTrust | undefined, repo: string): string {
   if (!t) return `**Trust:** No verify report yet: run \`atticus verify ${repo}\`.`;
   return `**Trust:** ${plural(t.accepted, "fact")} verified on their lines; coverage ${pct(t.ratio)} of source files (${plural(t.unknown, "unknown file")}: cited by no fact and opened through no Atticus tool)${t.reviewed ? `; ${plural(t.reviewed, "file")} reviewed by the reader with nothing to record (each with why, in the verify report)` : ""}; ${t.rejected} rejected.${t.commit ? ` Commit ${t.commit}.` : ""}`;
@@ -614,6 +633,7 @@ export function renderMap(i: RenderMapInput): Record<string, string> {
     "",
     HEADER(i.repo, "the catalog and its specs"),
     "",
+    ...aboutLine(i.about, i.repo),
     trustLine(i.trust, i.repo),
     "",
     ...section("What it serves", serves(base)),

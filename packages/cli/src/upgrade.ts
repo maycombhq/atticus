@@ -31,6 +31,7 @@ import {
   migrateCatalog,
   migrateChangeTypesText,
   migrateGatesText,
+  migrateManifests,
   migrateQuestions,
   migrateRuntimeText,
   migrateSourcesText,
@@ -271,6 +272,13 @@ export const MIGRATIONS: Migration[] = [
           out.push(`${changesRelOf(root)}/${c}/${f}`);
       return out;
     },
+  },
+  {
+    id: "manifest-schema-v2",
+    summary:
+      "repos.manifest.yaml at version 2: a repo can say what it is, in a person's words (ADR 0128)",
+    pending: (root) => migrateManifests(root, { dryRun: true }),
+    apply: (root) => migrateManifests(root),
   },
 ];
 

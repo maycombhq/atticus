@@ -113,4 +113,66 @@ describe("which repo answers on a host the calls name (ADR 0088)", () => {
       "None of these",
     ]);
   });
+
+  it("puts what each repo is in the question's options, a draft marked (ADR 0128)", async () => {
+    const api2 = {
+      kind: "Endpoint",
+      schemaVersion: 2,
+      id: "forge-billing.get-bills",
+      status: "current",
+      confidence: "verified",
+      evidence: [{ source: "code", repo: "forge-billing", path: "src/Bills.java", line: 3 }],
+      component: "forge-billing",
+      endpointType: "rest",
+      method: "GET",
+      pathOrTopic: "/bills",
+    };
+    const p = parseRecord(api2);
+    if (!p.ok) throw new Error(JSON.stringify(p.issues));
+    const asks = await unknownHosts({
+      records: [...records(), p.record],
+      repos: [
+        ...repos.map((r) =>
+          r.id === "forge-customers"
+            ? {
+                ...r,
+                description: {
+                  text: "Customer records and the API the web app reads them through.",
+                  trust: "verified" as const,
+                },
+              }
+            : r,
+        ),
+        {
+          id: "forge-billing",
+          hosts: [],
+          description: { text: "Bills a customer can download.", trust: "suggested" as const },
+        },
+      ],
+      handle: () => undefined,
+    });
+    expect(asks[0]!.about).toEqual({
+      "forge-billing": { text: "Bills a customer can download.", trust: "suggested" },
+      "forge-customers": {
+        text: "Customer records and the API the web app reads them through.",
+        trust: "verified",
+      },
+    });
+    const options = hostQuestionDrafts(asks)[0]!.draft.options;
+    // What the code says comes first; what a person says follows it.
+    expect(options[0]!.means).toBe(
+      "forge-billing serves HTTP. What it is, as your assistant drafted it (unconfirmed): Bills a customer can download.",
+    );
+    expect(options[1]!.means).toBe(
+      "forge-customers serves HTTP. What it is: Customer records and the API the web app reads them through.",
+    );
+    // A repo that says nothing reads as it did before.
+    const quiet = await unknownHosts({
+      records: [...records(), p.record],
+      repos: [...repos, { id: "forge-billing", hosts: [] }],
+      handle: () => undefined,
+    });
+    expect(quiet[0]!.about).toBeUndefined();
+    expect(hostQuestionDrafts(quiet)[0]!.draft.options[0]!.means).toBe("forge-billing serves HTTP");
+  });
 });

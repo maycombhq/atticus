@@ -62,6 +62,13 @@ export interface RepoTypeMatches {
   tied?: string[];
   /** Every type, best first. */
   matches: TypeMatch[];
+  /**
+   * The type the repo's description names (ADR 0128), when it names one of the org pack's types
+   * and the fingerprints don't settle it: a tie it leans, or a suggestion where nothing matched.
+   * The words it was read from are given, so a person sees why. Never a match on its own: the
+   * fingerprints are read from the files, and the verdict stays a tie or none.
+   */
+  fromDescription?: { type: string; words: string };
 }
 
 const SKIP = /(^|\/)(node_modules|\.git|target|bin|obj|dist|build|\.atticus|vendor)\//;
@@ -175,12 +182,34 @@ async function scoreType(t: RepoType, files: RepoFiles): Promise<TypeMatch> {
 }
 
 /**
+ * The org pack's type a description names (ADR 0128): its id, or its name, as words of the
+ * description. Matched on whole words, longest name first, so "gateway" doesn't beat "api
+ * gateway"; nothing when the description names none or names two.
+ */
+function typeFromWords(
+  description: string | undefined,
+  types: readonly RepoType[],
+): { type: string; words: string } | undefined {
+  const text = (description ?? "").toLowerCase();
+  if (!text) return undefined;
+  const hits: { type: string; words: string }[] = [];
+  for (const t of types)
+    for (const words of [t.name.toLowerCase(), t.id.replace(/[-_.]+/g, " ")])
+      if (words.length > 2 && new RegExp(`(^|[^a-z0-9])${escapeRe(words)}([^a-z0-9]|$)`).test(text))
+        hits.push({ type: t.id, words });
+  const ids = new Set(hits.map((h) => h.type));
+  if (ids.size !== 1) return undefined;
+  return [...hits].sort((a, b) => b.words.length - a.words.length)[0];
+}
+
+/**
  * Score every type's fingerprint against the repo, best first, and say what to do: a clear
  * match (reuse the type), partial (reuse and extend), none (a new type) or a tie (ask).
  */
 export async function matchRepoType(
   repo: RepoHandle,
   types: readonly RepoType[],
+  o: { description?: string } = {},
 ): Promise<RepoTypeMatches> {
   const files = new RepoFiles(repo);
   const matches: TypeMatch[] = [];
@@ -190,11 +219,22 @@ export async function matchRepoType(
     (a, b) =>
       Number(a.ruledOut) - Number(b.ruledOut) || pct(b) - pct(a) || a.type.localeCompare(b.type),
   );
+  const said = typeFromWords(o.description, types);
   const eligible = matches.filter((m) => !m.ruledOut && pct(m) >= PARTIAL_MATCH * 100);
   const top = eligible[0];
-  if (!top) return { verdict: "none", matches };
+  if (!top) return { verdict: "none", matches, ...(said ? { fromDescription: said } : {}) };
   const tied = eligible.filter((m) => pct(top) - pct(m) < TIE_MARGIN * 100);
-  if (tied.length > 1) return { verdict: "tie", tied: tied.map((m) => m.type), matches };
+  if (tied.length > 1) {
+    const ids = tied.map((m) => m.type);
+    return {
+      verdict: "tie",
+      tied: ids,
+      matches,
+      // Only a tie among the types that actually tie is leaned: the description never introduces
+      // a type the fingerprints ruled out or never reached.
+      ...(said && ids.includes(said.type) ? { fromDescription: said } : {}),
+    };
+  }
   return {
     verdict: pct(top) >= CLEAR_MATCH * 100 ? "clear" : "partial",
     best: top.type,

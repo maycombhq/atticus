@@ -1,7 +1,12 @@
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { parse } from "yaml";
-import { ChangeOutcomes, toCanonicalYaml, type OutcomeValue } from "@maycombhq/core";
+import {
+  ChangeOutcomes,
+  toCanonicalYaml,
+  WORKSPACE_SCHEMA_VERSION,
+  type OutcomeValue,
+} from "@maycombhq/core";
 import { docOf, sectionLines } from "@maycombhq/naysayer";
 import type { ReleaseContext } from "./context.js";
 import { ReleaseError } from "./errors.js";
@@ -186,7 +191,7 @@ export async function recordOutcome(
     ...(input.note?.trim() ? { note: input.note.trim() } : {}),
   };
   const file = (await readOutcomes(ctx.dir)) ?? {
-    schemaVersion: 1 as const,
+    schemaVersion: WORKSPACE_SCHEMA_VERSION,
     change: ctx.change.id,
     measures: [],
   };

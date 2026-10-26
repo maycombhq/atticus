@@ -65,8 +65,11 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  * 2.27.0 (ADR 0115 addendum, 2026-10-25): a stage tab's finding carries what an assistant
  *   proposed about it (`proposal`: not relevant or fixed, by whom, why), waiting on a person.
  *   Additive only.
+ * 2.28.0 (ADR 0128): what a repo is, in a person's words. `description` on a repo in GET
+ *   /api/onboarding and GET /api/repos/branches, and PUT /api/repos/{repo}/description, which
+ *   sets, confirms or drops it. Additive only.
  */
-export const API_VERSION = "2.27.0";
+export const API_VERSION = "2.28.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -512,11 +515,37 @@ export const RepoView = ManifestRepo.extend({
  * of every manifest, whether its base clone and scan settings are there, and what the last
  * scan wrote for it (counted from the evidence of catalog/generated); and the knowledge sources.
  */
+/**
+ * 2.28.0 (ADR 0128): what a repo is, in a person's words, as every screen shows it: the line,
+ * whether a person wrote or confirmed it (`verified`) or the assistant drafted it and nobody has
+ * (`suggested`), who, when, and the lines a draft was read from.
+ */
+export const RepoAbout = z.object({
+  text: z.string(),
+  trust: z.enum(["suggested", "verified"]),
+  by: z.string().optional(),
+  at: z.string().optional(),
+  cites: z.array(z.object({ file: z.string(), line: z.number().int().positive() })).optional(),
+});
+export type RepoAboutT = z.infer<typeof RepoAbout>;
+
+/** PUT /api/repos/{repo}/description (2.28.0): set or replace the line, confirm a draft, or drop it. */
+export const EditRepoDescriptionRequest = z.object({
+  /** The line a person typed; left out with `accept` to confirm the draft as it stands. */
+  text: z.string().optional(),
+  /** Confirm the draft on file as a person's own words. */
+  accept: z.boolean().optional(),
+  /** Drop the description: nothing then says what the repo is. */
+  reject: z.boolean().optional(),
+});
+
 export const OnboardingRepo = z.object({
   id: RecordId,
   platform: RecordId,
   type: RecordId,
   owner: RecordId,
+  /** 2.28.0: what it is, in a person's words (ADR 0128); left out when nothing says. */
+  description: RepoAbout.optional(),
   /** The manifest file that lists it, relative to the metarepo. */
   manifest: z.string(),
   /** The branch the catalog is read from, and the others scanned beside it (ADR 0123). */
@@ -1275,6 +1304,8 @@ export const RepoBranchesView = z.object({
   url: z.string(),
   type: z.string(),
   owner: z.string(),
+  /** 2.28.0: what it is, in a person's words (ADR 0128); left out when nothing says. */
+  description: RepoAbout.optional(),
   defaultBranch: z.string(),
   /** The branch the remote calls its default, as the base clone last heard it. */
   remoteDefault: z.string().optional(),
@@ -2439,6 +2470,18 @@ const OPS: Record<string, Record<string, Op>> = {
       tag: "workspace",
       params: [p("repoId")],
       body: EditRepoBranchesRequest,
+      ok: { status: 200, schema: { type: "object" }, description: "Written" },
+      errors: [400, 404],
+    },
+  },
+  "/api/repos/{repoId}/description": {
+    put: {
+      id: "editRepoDescription",
+      summary:
+        "Say what a repo is in one line, confirm the draft your assistant wrote, or drop it; written to the manifest, which you commit in a pull request (ADR 0128)",
+      tag: "workspace",
+      params: [p("repoId")],
+      body: EditRepoDescriptionRequest,
       ok: { status: 200, schema: { type: "object" }, description: "Written" },
       errors: [400, 404],
     },

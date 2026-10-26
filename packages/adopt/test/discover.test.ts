@@ -49,6 +49,25 @@ describe("detectRepoType", () => {
     const d = await detectRepoType(fsRepo("docs", fixture("plain-multi/docs"), "0"));
     expect(d).toMatchObject({ type: "unknown", confidence: "low", component: false });
   });
+
+  it("falls back to the repo's description only where the files say nothing (ADR 0128)", async () => {
+    const notes = fsRepo("docs", fixture("plain-multi/docs"), "0");
+    const said = await detectRepoType(notes, {
+      description: "The API gateway in front of the shop's services.",
+    });
+    // Nothing in the files said: the guess comes from the description, marked low and named.
+    expect(said).toMatchObject({ type: "gateway", confidence: "low" });
+    expect(said.signals).toEqual(["the repo's description in repos.manifest.yaml"]);
+    // A description that names no kind of repo leaves it unknown.
+    expect((await detectRepoType(notes, { description: "Notes we keep for the team." })).type).toBe(
+      "unknown",
+    );
+    // The files always win: a description never changes a type read from them.
+    const built = await detectRepoType(fsRepo("o", fixture("plain-multi/orders-api"), "0"), {
+      description: "An api gateway, honestly.",
+    });
+    expect(built.type).toBe(EXPECTED_TYPES["orders-api"]);
+  });
 });
 
 async function metarepo(): Promise<string> {

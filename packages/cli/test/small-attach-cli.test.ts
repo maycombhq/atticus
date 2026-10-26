@@ -69,6 +69,7 @@ describe("atticus change small", () => {
       flows: 1,
       checked: true,
       findings: 0,
+      described: "said" as const,
     };
     const next = nextSteps({ ...state, repos: [done], catalogRecords: 10, sources: [] });
     expect(next.find((s) => s.change === CHANGE)).toMatchObject({

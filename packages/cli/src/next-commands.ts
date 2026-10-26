@@ -74,6 +74,11 @@ export interface RepoState {
   facts?: boolean;
   /** Its assistant wrote its facts (facts/<repo>.jsonl), whether or not they are written yet. */
   read?: boolean;
+  /**
+   * What it is, in a person's words (ADR 0128): `none` when nothing says, `draft` when the
+   * assistant wrote one and nobody has confirmed it, `said` when a person did.
+   */
+  described: "none" | "draft" | "said";
 }
 
 export interface NextState {
@@ -158,6 +163,7 @@ export async function readNextState(root: string): Promise<NextState> {
       flows: spec.flows.length,
       checked: !!findings && findings.draftedAt === spec.header?.drafted?.at,
       findings: findings?.findings.filter((f) => !f.question).length ?? 0,
+      described: !r.description ? "none" : r.description.trust === "suggested" ? "draft" : "said",
       ...(spec.header?.template.startsWith("facts@") ? { facts: true } : {}),
       ...(existsSync(join(factsDirOf(root), `${r.id}.jsonl`)) ? { read: true } : {}),
     });
@@ -632,6 +638,27 @@ export function nextSteps(s: NextState): NextStep[] {
         person: true,
         repo: r.id,
       });
+  // ADR 0128: a repo id often says nothing, so one line from a person is worth asking for. It
+  // never blocks a read: the step sits beside the others, and the drafts the assistant wrote are
+  // listed for a person to confirm.
+  const undescribed = s.repos.filter((r) => r.described === "none");
+  if (undescribed.length)
+    out.push({
+      step: "describe",
+      command: `atticus repo describe ${undescribed[0]!.id} --description "what it is"`,
+      why: `${plural(undescribed.length, "repo")} ${undescribed.length === 1 ? "doesn't say" : "don't say"} what ${undescribed.length === 1 ? "it is" : "they are"}: ${undescribed.map((r) => r.id).join(", ")}. One line each is carried into every reading prompt, the join's questions and the views, so an opaque id can be read and placed.`,
+      person: true,
+      ...(undescribed.length === 1 ? { repo: undescribed[0]!.id } : {}),
+    });
+  const drafted = s.repos.filter((r) => r.described === "draft");
+  if (drafted.length)
+    out.push({
+      step: "describe-accept",
+      command: `atticus repo describe ${drafted[0]!.id} --accept`,
+      why: `Your assistant drafted what ${drafted.length === 1 ? "this repo is" : "these repos are"} and nobody has confirmed ${drafted.length === 1 ? "it" : "them"}: ${drafted.map((r) => r.id).join(", ")}. Until a person does, each is shown as unconfirmed everywhere it is used.`,
+      person: true,
+      ...(drafted.length === 1 ? { repo: drafted[0]!.id } : {}),
+    });
   if (repoQuestions.length)
     out.push({
       step: "answer",

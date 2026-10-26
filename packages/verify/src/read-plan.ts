@@ -100,9 +100,16 @@ export function proposeExclusions(
   files: readonly FileTokens[],
   all: readonly string[],
   read?: (path: string) => string | undefined,
+  o: { saysNotProduct?: boolean } = {},
 ): ExclusionProposals {
   const before = sum(files);
-  const min = Math.max(PROPOSE_MIN_TOKENS, PROPOSE_MIN_SHARE * before);
+  // ADR 0128: a person who says the repo is a documentation site, a text corpus or vendored code
+  // has told us something the file shapes can only guess at, so a smaller folder is worth
+  // proposing. It lowers the bar for a proposal a person still accepts; nothing else changes, and
+  // a folder holding a build, deploy or config file is still never proposed.
+  const floor = o.saysNotProduct ? PROPOSE_MIN_TOKENS / 4 : PROPOSE_MIN_TOKENS;
+  const share = o.saysNotProduct ? PROPOSE_MIN_SHARE / 4 : PROPOSE_MIN_SHARE;
+  const min = Math.max(floor, share * before);
   const vendored = vendoredProjects(all, read);
   const vendoredOf = (path: string) => vendored.find((v) => under(path, v.dir));
   const folders = new Map<string, Folder>();
