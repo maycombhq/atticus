@@ -1,0 +1,64 @@
+# What joinFacts gives for the three repos' facts (ADR 0124 addendum A-gateway), written by hand
+# from the facts: the portal's API calls the gateway at /forge/v1/..., and each call lands on the
+# accounts service at the path the gateway forwards (the base path dropped; the transfer rewritten
+# by AM-RewriteTransfers to /transfers), with the route and its forwarding call kept as the hop.
+joins:
+  # The gateway's own forwarding calls: the TargetServer accounts-backend names the host the
+  # accounts service answers on.
+  - call: { repo: forge-gateway, fact: call.get.accounts-id, component: api-gateway, at: "proxies/forge-accounts-v1/apiproxy/proxies/default.xml:15" }
+    entry: { repo: forge-accounts, fact: entry.get.accounts-id, component: accounts-api, at: "src/main/java/forge/accounts/AccountsController.java:18" }
+    tie: { repo: forge-gateway, fact: config.targetserver.accounts-backend, component: api-gateway, at: "environments/prod/targetservers.json:4" }
+    how: host
+    callType: rest
+    method: GET
+    path: "/accounts/{id}"
+    interface: if-eed0914bedf1dd23
+  - call: { repo: forge-gateway, fact: call.post.transfers, component: api-gateway, at: "proxies/forge-accounts-v1/apiproxy/policies/AM-RewriteTransfers.xml:8" }
+    entry: { repo: forge-accounts, fact: entry.post.transfers, component: accounts-api, at: "src/main/java/forge/accounts/AccountsController.java:23" }
+    tie: { repo: forge-gateway, fact: config.targetserver.accounts-backend, component: api-gateway, at: "environments/prod/targetservers.json:4" }
+    how: host
+    callType: rest
+    method: POST
+    path: /transfers
+    interface: if-223ddc230834fe66
+  # The portal's calls, through the gateway: GET /forge/v1/accounts/{id} lands on /accounts/{id}.
+  - call: { repo: forge-portal-api, fact: call.get.forge-v1-accounts-id, component: portal-api, at: "src/main/java/forge/portal/AccountsGatewayClient.java:17" }
+    entry: { repo: forge-accounts, fact: entry.get.accounts-id, component: accounts-api, at: "src/main/java/forge/accounts/AccountsController.java:18" }
+    tie: { repo: forge-portal-api, fact: config.gateway-base-url, component: portal-api, at: "src/main/resources/application.yml:3" }
+    how: host
+    gateway:
+      entry: { repo: forge-gateway, fact: entry.get.forge-v1-accounts-id, component: api-gateway, at: "proxies/forge-accounts-v1/apiproxy/proxies/default.xml:15" }
+      call: { repo: forge-gateway, fact: call.get.accounts-id, component: api-gateway, at: "proxies/forge-accounts-v1/apiproxy/proxies/default.xml:15" }
+      tie: { repo: forge-gateway, fact: config.targetserver.accounts-backend, component: api-gateway, at: "environments/prod/targetservers.json:4" }
+      route: gw-api-gateway-get-forge-v1-accounts-id
+    callType: rest
+    method: GET
+    path: "/accounts/{id}"
+    interface: if-1d1553e8f834ec02
+  # POST /forge/v1/accounts/{id}/transfers is rewritten: the service receives POST /transfers.
+  - call: { repo: forge-portal-api, fact: call.post.forge-v1-accounts-id-transfers, component: portal-api, at: "src/main/java/forge/portal/AccountsGatewayClient.java:22" }
+    entry: { repo: forge-accounts, fact: entry.post.transfers, component: accounts-api, at: "src/main/java/forge/accounts/AccountsController.java:23" }
+    tie: { repo: forge-portal-api, fact: config.gateway-base-url, component: portal-api, at: "src/main/resources/application.yml:3" }
+    how: host
+    gateway:
+      entry: { repo: forge-gateway, fact: entry.post.forge-v1-accounts-id-transfers, component: api-gateway, at: "proxies/forge-accounts-v1/apiproxy/proxies/default.xml:26" }
+      call: { repo: forge-gateway, fact: call.post.transfers, component: api-gateway, at: "proxies/forge-accounts-v1/apiproxy/policies/AM-RewriteTransfers.xml:8" }
+      tie: { repo: forge-gateway, fact: config.targetserver.accounts-backend, component: api-gateway, at: "environments/prod/targetservers.json:4" }
+      route: gw-api-gateway-post-forge-v1-accounts-id-transfers
+    callType: rest
+    method: POST
+    path: /transfers
+    interface: if-0136b1d1afc3441f
+asks: []
+misses: []
+# The transfer's fields cross the gateway to the service's request.
+lineage:
+  - interface: if-0136b1d1afc3441f
+    side: request
+    from: { repo: forge-portal-api, fact: field.transfer.amount, name: amount }
+    to: { repo: forge-accounts, fact: field.transfer-request.amount, name: amount }
+  - interface: if-0136b1d1afc3441f
+    side: request
+    from: { repo: forge-portal-api, fact: field.transfer.to-account, name: toAccount }
+    to: { repo: forge-accounts, fact: field.transfer-request.to-account, name: toAccount }
+gaps: []

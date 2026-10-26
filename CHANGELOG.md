@@ -21,6 +21,13 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - **Fixed: Atticus 1's pages failed on an Atticus 2 change.** The feature brief, prototypes, architecture review and API mappings asked for files an Atticus 2 change never has, and reconcile ran with no diagrams; each now says what is missing (and what Atticus 2 writes instead) without an error.
 - **The VS Code extension offers everything by default**: the Knowledge, Repos, Catalog and Model runs views (collapsed below the three), Open the prompt history and every other command. `atticus.fullUi` now only adds Atticus 1's legacy commands and starts the app with `--full`.
 
+### Calls through an Apigee gateway land on the service behind it (ADR 0124 addendum A-gateway)
+
+- **`/atticus-map` reads an Apigee gateway.** A batch holding a proxy or shared flow bundle, a `targetservers.json` or a `kvms.json` gets the gateway's rules (and no other batch does): each conditional flow is a route at its base path and suffix, its auth the policy attached before the target (shared flows followed), and its forwarding call the path the service receives after `target.copy.pathsuffix` and AssignMessage or JavaScript rewrites, with its host from the TargetServer or KVM entry. Every part is cited and checked like any other line.
+- **The join follows the route.** Type the gateway's repo `gateway` in `repos.manifest.yaml` (an Apigee bundle is recognised anyway): a UI back end's `GET /forge/v1/accounts/{id}` to the gateway joins the service's `GET /accounts/{id}`, `via: gateway`, with the route's auth and a GatewayRoute made from the facts, and the fields that cross. A TargetServer whose hosts differ by environment and belong to different repos is asked, not guessed.
+- **The critic's auth check needs no legacy reader for it:** it reads the auth the joined Interface carries from the gateway's facts.
+- **`/atticus-map` changed:** run `atticus assistant-files` (or update the Claude Code plugin) to get the new rule.
+
 ### npm installs carry search by meaning (ADR 0124 addendum D-npm)
 
 - **`npm install --global @maycombhq/cli` through a bank's npm mirror now gives search by meaning, with nothing downloaded after install and no install scripts.** `@maycombhq/embed-model` carries the model (all-MiniLM-L6-v2, 79 MB packed), its tokenizer, model card and Apache-2.0 licence; each `@maycombhq/onnxruntime-<platform>-<arch>` carries onnxruntime's CPU build for that platform and `@maycombhq/onnxruntime-wasm` its WebAssembly fallback, with onnxruntime's MIT licence. npm installs only your platform's runtime. On Linux x64 the install downloads 117 MB (141 packages). `--omit=optional` still leaves it out.

@@ -1,0 +1,36 @@
+<ProxyEndpoint name="default">
+  <Description>Forge accounts for the portal, version 1</Description>
+  <PreFlow name="PreFlow">
+    <Request>
+      <Step>
+        <Name>FC-Security</Name>
+      </Step>
+      <Step>
+        <Name>SA-Accounts</Name>
+      </Step>
+    </Request>
+  </PreFlow>
+  <Flows>
+    <Flow name="GetAccount">
+      <Condition>(proxy.pathsuffix MatchesPath "/accounts/*") and (request.verb = "GET")</Condition>
+    </Flow>
+    <Flow name="CreateTransfer">
+      <Request>
+        <Step>
+          <Name>OAuth-VerifyToken</Name>
+        </Step>
+        <Step>
+          <Name>AM-RewriteTransfers</Name>
+        </Step>
+      </Request>
+      <Condition>(proxy.pathsuffix MatchesPath "/accounts/*/transfers") and (request.verb = "POST")</Condition>
+    </Flow>
+  </Flows>
+  <HTTPProxyConnection>
+    <BasePath>/forge/v1</BasePath>
+    <VirtualHost>secure</VirtualHost>
+  </HTTPProxyConnection>
+  <RouteRule name="accounts">
+    <TargetEndpoint>accounts</TargetEndpoint>
+  </RouteRule>
+</ProxyEndpoint>

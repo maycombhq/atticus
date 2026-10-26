@@ -70,8 +70,9 @@ export function factsReference(): string {
  * The topics of the reading protocol's rules (ADR 0124 addendum A-lean), one per kind of file a
  * batch can hold (`FILE_KINDS` in @maycombhq/verify, which derives a file's kinds from its path):
  * front-end and page files, server-side code, routes, stores (ORM, migrations, schemas), deploy
- * and infrastructure files, config, contracts and messaging (gRPC, SOAP, GraphQL, events), and
- * flows.
+ * and infrastructure files, config, contracts and messaging (gRPC, SOAP, GraphQL, events),
+ * flows, and an API gateway's bundles (Apigee proxies, shared flows, TargetServers and KVMs:
+ * ADR 0124 addendum A-gateway).
  */
 export const RULE_TOPICS = [
   "frontend",
@@ -82,6 +83,7 @@ export const RULE_TOPICS = [
   "config",
   "protocols",
   "flows",
+  "gateway",
 ] as const;
 export type RuleTopic = (typeof RULE_TOPICS)[number];
 
@@ -117,7 +119,7 @@ export const FACT_RULE_PARTS: readonly (readonly RulePart[])[] = [
       text: "An entry's `path` is the full path a caller uses: class-level and group prefixes, and a context or base path the code or config sets (`server.servlet.context-path`, `UsePathBase`), joined; record that base as a `config` fact too. A route served as HTML (a server-rendered page or form post) is `entryType: rest` with its method, and so is a route that receives webhooks; `screen` is for a front end's own routes.",
     },
     {
-      when: ["routes", "protocols"],
+      when: ["routes", "protocols", "gateway"],
       text: "An entry's `auth` goes with `authCite`: the line that sets it (an annotation, a middleware, a policy, a security setting) and what it writes there. An `auth` without one is left out.",
     },
     {
@@ -183,12 +185,26 @@ export const FACT_RULE_PARTS: readonly (readonly RulePart[])[] = [
       text: "A gRPC entry or call's `path` is `package.Service/Method` as the proto declares it. An event's `path` is its topic, queue or routing key (the event type name when that is the routing key).",
     },
     {
-      when: ["routes", "deploy", "config"],
+      when: ["routes", "deploy", "config", "gateway"],
       text: "A gateway's routes (YARP, an API gateway) are the gateway's own entries; a service's path is never prefixed with the gateway's route, and the gateway's call to the service is the path the service receives (after any rewrite).",
     },
     {
       when: ["protocols"],
       text: "A SOAP or WCF operation's `path` is `Service/Operation`, the service contract's name and the operation's.",
+    },
+  ],
+  [
+    {
+      when: ["gateway"],
+      text: "An Apigee proxy (`apiproxy/`): each conditional `<Flow>` is a `rest` entry, `method` from `request.verb` (`ANY` without one), `path` the `<BasePath>` and the `proxy.pathsuffix` pattern joined, each `*` a parameter (`/forge/v1/accounts/{id}`), `handler` `<proxy>/<flow>`, cited on the `<Condition>` with the `<BasePath>` line in `cite.with`; a proxy with no conditional flow is one `ANY` entry at `<BasePath>/**`.",
+    },
+    {
+      when: ["gateway"],
+      text: "Its `auth` is the strongest check run before the target, in its flow, the PreFlow, or a shared flow a `FlowCallout` there names (follow it): `OAuthV2` or `VerifyJWT` is `oauth2`, `VerifyAPIKey` `api-key`, `BasicAuthentication` `basic`; `authCite` is the `<Step><Name>` line that attaches it. A `SpikeArrest` or `Quota` is a `rate-limit` config fact cited in its policy.",
+    },
+    {
+      when: ["gateway"],
+      text: "Each route has a forwarding `call` (`from` the entry, no `to`) to its `RouteRule`'s target. Its `path` is what the service receives: the target's `<Path>` and the suffix (base path dropped), or, when `target.copy.pathsuffix` is false or an AssignMessage or JavaScript policy sets the path, the path set there. Cite it where the path comes from (the rewrite, else the `<Condition>`), with the target's `<Server>` or `<URL>` line and the rewrite's other lines in `cite.with`. `base` is the TargetServer's name (or the KVM key), with a `config` fact of that `key` whose `value` is its host, cited on the host line; a `<URL>`'s host goes in `host`.",
     },
   ],
   [

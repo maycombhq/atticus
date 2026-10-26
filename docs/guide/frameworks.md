@@ -19,6 +19,16 @@ Atticus reads common AWS, Azure and Google Cloud resources from Terraform in any
 
 To change what a resource type gives, copy the shipped file into `org-pack/dialects/` under the same name and edit it: the org pack's replaces the shipped one. A house module from a registry or a git URL is a `module` block a dialect of your own matches (`hclBlock: module` with a `where` on its `source`).
 
+## Apigee gateways
+
+You don't need a model or a dialect for an Apigee gateway: `/atticus-map` (and each `atticus map` batch holding a bundle's files) tells the assistant how to read one (ADR 0124 addendum A-gateway). Type the gateway's repo `gateway` in `repos.manifest.yaml` and list the host callers use under `hosts:`.
+
+- **Routes.** Each conditional `<Flow>` of a proxy is an entry of the gateway: the method from `request.verb`, the path the `<BasePath>` and the `proxy.pathsuffix` pattern joined (`/forge/v1/accounts/{id}`), cited on the `<Condition>` with the `<BasePath>` line beside it.
+- **Auth.** The strongest check that runs before the target, in the flow, the PreFlow or a shared flow a FlowCallout calls: OAuthV2 or VerifyJWT is `oauth2`, VerifyAPIKey `api-key`, BasicAuthentication `basic`, cited on the `<Step>` that attaches it. SpikeArrest and Quota are rate-limit settings.
+- **Where it goes.** Each route's forwarding call has the path the service receives: the base path dropped, or the path an AssignMessage or JavaScript policy sets when `target.copy.pathsuffix` is false. Its host comes from the TargetServer (`targetservers.json`) or KVM entry it names.
+
+Once the gateway, its callers and the services behind it are read and verified, `atticus join` links a UI back end's call to the service the route forwards to, at the rewritten path, `via: gateway` with the route's auth. When a TargetServer's hosts differ by environment and point at different repos, you're asked which one is meant. The critic's auth check reads that auth; nothing from the old gateway reader is needed.
+
 ## Repos Atticus can't read yet: onboard them
 
 `atticus scan` names the repos it read nothing from though they have config files no reader knows (a gateway's routes, a house Terraform module, a pipeline template). For each:

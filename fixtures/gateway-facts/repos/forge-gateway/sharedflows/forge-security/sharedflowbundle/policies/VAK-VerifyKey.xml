@@ -1,0 +1,3 @@
+<VerifyAPIKey name="VAK-VerifyKey">
+  <APIKey ref="request.header.x-forge-key"/>
+</VerifyAPIKey>

@@ -1,4 +1,5 @@
 import {
+  APIGEE_BUNDLE,
   citedFiles,
   claimOnLines,
   lineNamesClaim,
@@ -175,7 +176,11 @@ export function entriesNoFlowFollows(facts: readonly Fact[]): UnfollowedEntry[] 
   const started = new Set(facts.flatMap((f) => (f.kind === "flow" ? [f.entry] : [])));
   return facts
     .flatMap((f) =>
-      f.kind === "entry" && FOLLOWED_TYPES.includes(f.entryType) && !started.has(f.id)
+      f.kind === "entry" &&
+      FOLLOWED_TYPES.includes(f.entryType) &&
+      !started.has(f.id) &&
+      // An Apigee route forwards; its forwarding call is its flow (ADR 0124 addendum A-gateway).
+      !APIGEE_BUNDLE.test(f.cite.file)
         ? [
             {
               id: f.id,

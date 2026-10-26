@@ -1,0 +1,11 @@
+<AssignMessage name="AM-RewriteTransfers">
+  <!-- The ledger takes a transfer at its own path; the account id travels in the body. -->
+  <AssignVariable>
+    <Name>target.copy.pathsuffix</Name>
+    <Value>false</Value>
+  </AssignVariable>
+  <Set>
+    <Path>/transfers</Path>
+  </Set>
+  <AssignTo createNew="false" transport="http" type="request"/>
+</AssignMessage>

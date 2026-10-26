@@ -1,0 +1,25 @@
+# Three invented Forge repos (ADR 0124 addendum A-gateway): the portal's API, the Apigee gateway
+# it calls (typed gateway, so the join follows its routes), and the accounts service behind it.
+schemaVersion: 1
+platform: forge
+repos:
+  - id: forge-portal-api
+    url: https://git.forge.example/forge/forge-portal-api.git
+    type: spring-boot
+    owner: team-portal
+    component: portal-api
+    system: portal
+  - id: forge-gateway
+    url: https://git.forge.example/forge/forge-gateway.git
+    type: gateway
+    owner: team-platform
+    component: api-gateway
+    system: platform
+    hosts: [api.forge.example]
+  - id: forge-accounts
+    url: https://git.forge.example/forge/forge-accounts.git
+    type: spring-boot
+    owner: team-accounts
+    component: accounts-api
+    system: accounts
+    hosts: [accounts.forge.internal]

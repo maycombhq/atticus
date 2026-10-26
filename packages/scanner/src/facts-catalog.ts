@@ -419,6 +419,8 @@ export function joinReposOf(
       ...(modules.length
         ? { modules: modules.map((x) => ({ component: x.component, hosts: x.hosts })) }
         : {}),
+      // An API gateway's entries are routes the join follows through (ADR 0124 addendum A-gateway).
+      ...(m?.type === "gateway" ? { gateway: true } : {}),
     };
   });
 }

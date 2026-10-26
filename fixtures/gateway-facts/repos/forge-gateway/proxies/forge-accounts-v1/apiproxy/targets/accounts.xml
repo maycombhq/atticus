@@ -1,0 +1,11 @@
+<TargetEndpoint name="accounts">
+  <HTTPTargetConnection>
+    <LoadBalancer>
+      <Server name="accounts-backend"/>
+    </LoadBalancer>
+    <Path>/</Path>
+    <Properties>
+      <Property name="io.timeout.millis">5000</Property>
+    </Properties>
+  </HTTPTargetConnection>
+</TargetEndpoint>

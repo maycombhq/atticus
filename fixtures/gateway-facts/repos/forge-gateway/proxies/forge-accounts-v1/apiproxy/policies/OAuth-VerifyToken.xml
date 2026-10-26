@@ -1,0 +1,4 @@
+<OAuthV2 name="OAuth-VerifyToken">
+  <Operation>VerifyAccessToken</Operation>
+  <Scope>accounts.transfer</Scope>
+</OAuthV2>

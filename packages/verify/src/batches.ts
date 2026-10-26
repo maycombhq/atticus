@@ -104,8 +104,20 @@ export const FILE_KINDS = [
   "config",
   "protocols",
   "flows",
+  "gateway",
 ] as const;
 export type FileKind = (typeof FILE_KINDS)[number];
+
+/**
+ * An API gateway's bundle (ADR 0124 addendum A-gateway): an Apigee proxy or shared flow (its XML
+ * and its JavaScript), or the TargetServers, KVMs and environment config deployed with them. Its
+ * path says what it is, so no other file gets the gateway's rules.
+ */
+const GATEWAY_FILE =
+  /(^|\/)(apiproxy|sharedflowbundle)\/|(^|\/)(targetservers?|kvms?)\.json$|(^|\/)resources\/edge\/(env|org|api)\//i;
+const GATEWAY_KINDS: readonly FileKind[] = ["config", "gateway"];
+/** A file of no kind the path says: every kind it might be but the gateway's, which paths always say. */
+const ANY_KINDS: readonly FileKind[] = FILE_KINDS.filter((k) => k !== "gateway");
 
 /** Server-side code, every code topic but the front end's. */
 const BACKEND_KINDS: readonly FileKind[] = ["backend", "routes", "data", "protocols", "flows"];
@@ -163,6 +175,7 @@ const STRUCTURED = /\.(ya?ml|json|xml|config|properties|toml|ini|conf)$/i;
  * goes without a rule its files need.
  */
 export function fileKinds(path: string): FileKind[] {
+  if (GATEWAY_FILE.test(path)) return [...GATEWAY_KINDS];
   const k = new Set<FileKind>();
   const add = (ks: readonly FileKind[]) => ks.forEach((x) => k.add(x));
   if (BUILD.test(path) || DEPLOY_DIR.test(path)) {
@@ -185,7 +198,7 @@ export function fileKinds(path: string): FileKind[] {
       BACK_SCRIPT.test(path) ? BACKEND_KINDS : FRONT_DIR.test(path) ? FRONTEND_KINDS : CODE_KINDS,
     );
   if (isCode && CONFIG_CODE.test(path)) add(["config"]);
-  if (!k.size) add(STRUCTURED.test(path) ? DATAFILE_KINDS : FILE_KINDS);
+  if (!k.size) add(STRUCTURED.test(path) ? DATAFILE_KINDS : ANY_KINDS);
   return FILE_KINDS.filter((x) => k.has(x));
 }
 
