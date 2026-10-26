@@ -1,6 +1,7 @@
 {
   "name": "@maycombhq/core",
-  "version": "2.0.0-beta.1",
+  "version": "2.0.0-beta.2",
+  "private": true,
   "description": "Atticus core: catalog record contracts (C1), canonical serialization and identity rules.",
   "license": "Apache-2.0",
   "type": "module",
@@ -27,8 +28,5 @@
   },
   "devDependencies": {
     "@apidevtools/swagger-parser": "13.1.0"
-  },
-  "publishConfig": {
-    "access": "public"
   }
 }

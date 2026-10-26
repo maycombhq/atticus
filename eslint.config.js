@@ -5,6 +5,8 @@ export default tseslint.config(
   {
     ignores: [
       "**/dist/**",
+      // The SDK as npm publishes it, bundled by its build (ADR 0124 addendum D-npm2).
+      "packages/sdk/npm/**",
       // Pinned downloads (ADR 0116 addendum).
       ".cache/**",
       "**/dist-test/**",

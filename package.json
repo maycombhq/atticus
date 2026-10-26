@@ -26,11 +26,13 @@
     "model:fetch": "node scripts/model/fetch.mjs --all",
     "model:pins": "node scripts/model/write-pins.mjs",
     "release:npm": "node scripts/release-npm.mjs",
+    "release:npm:deprecate": "node scripts/release-npm-deprecate.mjs",
     "npm:test": "node scripts/bundle/test-npm-install.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.0",
     "@types/node": "^22.10.0",
+    "esbuild": "0.28.2",
     "eslint": "^10.0.0",
     "prettier": "^3.9.0",
     "turbo": "^2.11.0",

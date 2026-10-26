@@ -315,7 +315,13 @@ Install the new version on every machine, then one person runs `atticus upgrade`
 
 ## Publishing to npm
 
-For whoever releases Atticus (ADR 0124 addendum D-npm). Every package under `packages/` that isn't private is published to the public npm registry under the `maycombhq` scope, so a bank's mirror (Artifactory, Nexus) can proxy it and `npm install --global @maycombhq/cli` brings everything, search by meaning included. The model's and onnxruntime's packages carry their files: each one's `prepack` fills it from `.cache/pinned` with no network, checks every file against its `pins.json`, and refuses to pack when one is missing or wrong. No package has an install script.
+For whoever releases Atticus (ADR 0124 addenda D-npm and D-npm2). Nine packages are published to the public npm registry under the `maycombhq` scope, so a bank's mirror (Artifactory, Nexus) can proxy them and `npm install -g @maycombhq/atticus` brings everything, search by meaning included:
+
+- **`@maycombhq/atticus`**: the command line (`bin` `atticus`) and its app, self-contained. Its build (`packages/atticus`, `scripts/bundle/npm-atticus.mjs`) bundles the CLI's workspace packages and their third-party JavaScript with esbuild, and OpenSpec as a program of its own, and copies what they read at run time (rules, the constitution, schemas, the assistant kits, lessons, the app's web files, the Forge fixtures, tree-sitter's grammars). `dist/files.json` lists every file with its sha256; `THIRD-PARTY-LICENSES.txt` holds every bundled third party's licence.
+- **`@maycombhq/sdk`**: the plugin SDK (C4), with what it uses of the core bundled in and its types beside it; it depends only on `zod` and `yaml`.
+- **`@maycombhq/embed-model`** and the six **`@maycombhq/onnxruntime-*`** packages: optional dependencies of `@maycombhq/atticus`, carrying their files. Each one's `prepack` fills it from `.cache/pinned` with no network, checks every file against its `pins.json`, and refuses to pack when one is missing or wrong.
+
+Every other workspace package is private: built and tested in the monorepo, never published. No package has an install script.
 
 Once:
 
@@ -327,14 +333,24 @@ Each release, from a clean checkout of the release tag:
 
 ```bash
 pnpm install --frozen-lockfile
-pnpm build
+pnpm build                        # builds @maycombhq/atticus and the SDK's npm/ too
 pnpm model:fetch                  # the model and onnxruntime into .cache/pinned, each checked against pins.json
-pnpm npm:test                     # pack everything, a throwaway mirror, npm install -g --ignore-scripts, search by meaning offline
-pnpm release:npm --dry-run        # the pack check, then pnpm -r publish --dry-run: what would be published, nothing uploaded
-pnpm release:npm                  # the pack check, then pnpm -r publish --access public --tag beta --no-git-checks
+pnpm licences                     # every licence, the bundled third parties' too
+pnpm npm:test                     # pack, a throwaway mirror, npm install -g --ignore-scripts, used offline
+pnpm release:npm --dry-run        # the pack check, then pnpm publish --dry-run of the nine: nothing uploaded
+pnpm release:npm                  # the pack check, then pnpm publish --access public --tag beta --no-git-checks
 ```
 
-`pnpm release:npm` publishes each package whose version npm doesn't have yet, dependencies first; `--tag <tag>` picks the dist-tag (by default the CLI version's prerelease word, `beta`, else `latest`), and `--pack-only` stops after the check. The onnxruntime packages keep onnxruntime's version (1.30.0), so they are published once and then only when onnxruntime moves. The same steps run in `.github/workflows/publish-npm.yml` when a GitHub release is published (started by hand, it is a dry run unless you untick it). About 162 MB is uploaded in all, the model's package 79 MB of it.
+`pnpm release:npm` publishes, of the nine, each package whose version npm doesn't have yet, dependencies first; `--tag <tag>` picks the dist-tag (by default the prerelease word of `@maycombhq/atticus`'s version, `beta`, else `latest`), and `--pack-only` stops after the check. On npm's rate limit (429) it waits and publishes what is still missing. The onnxruntime packages keep onnxruntime's version (1.30.0), so they are published once and then only when onnxruntime moves. The same steps run in `.github/workflows/publish-npm.yml` when a GitHub release is published (started by hand, it is a dry run unless you untick it). About 162 MB is uploaded in all, the model's package 79 MB of it and `@maycombhq/atticus` 6 MB.
+
+**The names 2.0.0-beta.1 published** (`@maycombhq/cli`, `@maycombhq/core` and 37 more) are private from 2.0.0-beta.2. Once `@maycombhq/atticus` is on npm, mark them deprecated so an install of an old name says where Atticus went:
+
+```bash
+pnpm release:npm:deprecate        # a dry run: prints the 39 npm deprecate commands, runs nothing
+pnpm release:npm:deprecate --yes  # runs them: "Atticus is now one package: npm install -g @maycombhq/atticus"
+```
+
+A name npm doesn't have (beta.1's publish stopped at 25 of 47) is skipped. **Release notes** for a version say how to install it: `npm install -g @maycombhq/atticus@<version>` from the mirror, or the offline bundle `atticus-<version>-offline.zip`.
 
 ## Security
 

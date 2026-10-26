@@ -2,7 +2,15 @@
 
 All notable changes to Atticus. Versions follow [Semantic Versioning](https://semver.org); contracts C1 to C6 change only with an ADR, a schema version and a migration (`atticus upgrade`).
 
-## Unreleased
+## Unreleased (2.0.0-beta.2)
+
+### One npm package: `npm install -g @maycombhq/atticus` (ADR 0124 addendum D-npm2)
+
+- **Atticus is installed from npm as one package, `@maycombhq/atticus`** (`npm install -g @maycombhq/atticus@beta`), instead of `@maycombhq/cli` and 46 others. It carries the command line and its app, self-contained: Atticus's own code and the third-party JavaScript it uses are bundled inside (esbuild), with OpenSpec as a program of its own, everything the commands read at run time, and one `THIRD-PARTY-LICENSES.txt` for the 95 third parties inside. The model (`@maycombhq/embed-model`) and onnxruntime (the six `@maycombhq/onnxruntime-*` packages) stay packages of their own, optional dependencies as before. On Linux x64 npm now installs 5 packages, 106 MB from the mirror and 179 MB on disk, against 141 packages, 117 MB and 250 MB for 2.0.0-beta.1; without the model (`--omit=optional`) it is one package of 6 MB.
+- **Why:** npm rate-limits a new account creating many package names, so beta.1's publish stalled at 25 of 47; a bank's mirror scanned 141 packages for one install; and the install is quicker.
+- **Published from now on:** `@maycombhq/atticus`, `@maycombhq/sdk` (the plugin SDK, C4, now with what it uses of the core bundled in, depending only on `zod` and `yaml`), `@maycombhq/embed-model` and the six `@maycombhq/onnxruntime-*`. Every other workspace package is private. The 39 names beta.1 published that are now private are deprecated on npm with "Atticus is now one package: npm install -g @maycombhq/atticus" (`pnpm release:npm:deprecate`, a dry run unless given `--yes`).
+- **Where it said `@maycombhq/cli`**, it says `@maycombhq/atticus`: `atticus doctor`'s fixes and upgrade advice, the VS Code and IntelliJ plugins' install hints, the Claude Code plugin's hook, `atticus ci snippet` (`npx --yes @maycombhq/atticus@…`), the install and admin guides and the README.
+- **For whoever releases Atticus:** `pnpm build` builds `packages/atticus` (`scripts/bundle/npm-atticus.mjs`); `pnpm release:npm` publishes only the nine, after a pack check that also holds every file `@maycombhq/atticus` lists in `dist/files.json` to its sha256 and every bundled third party to an allowed licence present in `THIRD-PARTY-LICENSES.txt`; `pnpm licences` checks the built package too; `pnpm npm:test` installs `@maycombhq/atticus` from a throwaway mirror with scripts off and, with the network blocked, runs doctor, init, a practice metarepo, `index embed`, a search by meaning, `map <repo> --estimate` and `atticus ui` answering its API.
 
 ### More pages: every page in the menu again (ADR 0124 addendum D-app, follow-up)
 

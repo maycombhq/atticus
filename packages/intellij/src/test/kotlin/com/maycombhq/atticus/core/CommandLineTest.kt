@@ -29,7 +29,7 @@ class CommandLineTest {
 
     @Test
     fun `reads the bin js out of npm's command shim and runs it with node`() {
-        val js = write("npm/node_modules/@maycombhq/cli/dist/bin.js")
+        val js = write("npm/node_modules/@maycombhq/atticus/dist/bin.js")
         write(
             "npm/atticus.cmd",
             "@ECHO off\r\nGOTO start\r\n:start\r\nendLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & \"%_prog%\"  \"%dp0%\\node_modules\\@maycombhq\\cli\\dist\\bin.js\" %*\r\n",
@@ -40,9 +40,9 @@ class CommandLineTest {
 
     @Test
     fun `skips npm's shell script for Git Bash beside the cmd shim, as Windows does`() {
-        val js = write("npm/node_modules/@maycombhq/cli/dist/bin.js")
+        val js = write("npm/node_modules/@maycombhq/atticus/dist/bin.js")
         // npm writes three: atticus (for sh), atticus.cmd and atticus.ps1.
-        write("npm/atticus", "#!/bin/sh\nexec node \"\$basedir/node_modules/@maycombhq/cli/dist/bin.js\" \"\$@\"\n")
+        write("npm/atticus", "#!/bin/sh\nexec node \"\$basedir/node_modules/@maycombhq/atticus/dist/bin.js\" \"\$@\"\n")
         write("npm/atticus.ps1", "#!/usr/bin/env pwsh\n")
         write("npm/atticus.cmd", "@ECHO off\r\n\"%_prog%\"  \"%dp0%\\node_modules\\@maycombhq\\cli\\dist\\bin.js\" %*\r\n")
         val l = windows(dir.resolve("npm")).resolve("atticus", dir.toString())
@@ -51,7 +51,7 @@ class CommandLineTest {
 
     @Test
     fun `reads pnpm's shim, and uses the node beside the shim when there is one`() {
-        val js = write("pn/node_modules/@maycombhq/cli/dist/bin.js")
+        val js = write("pn/node_modules/@maycombhq/atticus/dist/bin.js")
         val node = write("pn/node.exe")
         write("pn/atticus.CMD", "@IF EXIST \"%~dp0\\node.exe\" (\r\n  \"%~dp0\\node.exe\"  \"%~dp0\\node_modules\\@maycombhq\\cli\\dist\\bin.js\" %*\r\n)\r\n")
         val l = windows(dir.resolve("pn")).resolve("atticus", dir.toString())

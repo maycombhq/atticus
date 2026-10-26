@@ -1,6 +1,7 @@
 {
   "name": "@maycombhq/adopt",
-  "version": "2.0.0-beta.1",
+  "version": "2.0.0-beta.2",
+  "private": true,
   "description": "Set Atticus up: init a metarepo, discover repos, adopt an existing repo in place, absorb another team's work and federate another Atticus metarepo.",
   "license": "Apache-2.0",
   "type": "module",
@@ -32,8 +33,5 @@
     "@maycombhq/workspace": "workspace:*",
     "yaml": "^2.9.1",
     "zod": "^4.6.0"
-  },
-  "publishConfig": {
-    "access": "public"
   }
 }

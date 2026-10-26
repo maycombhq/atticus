@@ -1,6 +1,7 @@
 {
   "name": "@maycombhq/ui",
-  "version": "2.0.0-beta.1",
+  "version": "2.0.0-beta.2",
+  "private": true,
   "description": "The Atticus app: the screens the local server serves, built against the local API (C4).",
   "license": "Apache-2.0",
   "type": "module",
@@ -39,8 +40,5 @@
   "dependencies": {
     "@xyflow/react": "12.3.6",
     "elkjs": "0.9.3"
-  },
-  "publishConfig": {
-    "access": "public"
   }
 }

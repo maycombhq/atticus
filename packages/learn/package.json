@@ -1,6 +1,7 @@
 {
   "name": "@maycombhq/learn",
-  "version": "2.0.0-beta.1",
+  "version": "2.0.0-beta.2",
+  "private": true,
   "description": "Learning tools: role lessons as data with verifiable checks, a throwaway practice sandbox built from the Forge fixture, local progress, and plain-words explanations of records, findings and commands.",
   "license": "Apache-2.0",
   "type": "module",
@@ -14,15 +15,12 @@
   },
   "files": [
     "dist",
-    "lessons",
-    "fixtures"
+    "lessons"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run --config ../../vitest.shared.mjs --fsModuleCachePath=node_modules/.vitest-cache --testTimeout=60000 --hookTimeout=60000",
-    "prepack": "node ../../scripts/bundle/learn-fixtures.mjs",
-    "postpack": "node ../../scripts/bundle/learn-fixtures.mjs --remove"
+    "test": "vitest run --config ../../vitest.shared.mjs --fsModuleCachePath=node_modules/.vitest-cache --testTimeout=60000 --hookTimeout=60000"
   },
   "dependencies": {
     "@maycombhq/adapters": "workspace:*",
@@ -32,8 +30,5 @@
     "@maycombhq/scanner": "workspace:*",
     "yaml": "^2.9.1",
     "zod": "^4.6.0"
-  },
-  "publishConfig": {
-    "access": "public"
   }
 }

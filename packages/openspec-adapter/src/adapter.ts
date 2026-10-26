@@ -1,7 +1,8 @@
 import { execFile } from "node:child_process";
-import { realpathSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import {
   ApplyInstructions,
@@ -48,8 +49,19 @@ export function openspecEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.Proce
   };
 }
 
-/** Path of the bundled OpenSpec CLI script, run with the current Node so it works the same on Windows. */
-export function bundledOpenSpecBin(): string {
+/**
+ * Path of the bundled OpenSpec CLI script, run with the current Node so it works the same on
+ * Windows. Installed from npm, Atticus is one bundled package (@maycombhq/atticus, ADR 0124
+ * addendum D-npm2) that carries OpenSpec bundled as a program of its own at
+ * vendor/@fission-ai/openspec/bin/openspec.js, three folders up from this module's place
+ * (packages/openspec-adapter/dist/); elsewhere (a checkout, the offline bundle) it is the pinned
+ * package in node_modules. `here` is this module's URL (a test passes another).
+ */
+export function bundledOpenSpecBin(here: string = import.meta.url): string {
+  const shipped = fileURLToPath(
+    new URL("../../../vendor/@fission-ai/openspec/bin/openspec.js", here),
+  );
+  if (existsSync(shipped)) return shipped;
   const require = createRequire(import.meta.url);
   const entry = require.resolve("@fission-ai/openspec");
   // entry is <pkg>/dist/index.js

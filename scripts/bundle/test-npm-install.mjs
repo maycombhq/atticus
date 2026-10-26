@@ -1,21 +1,26 @@
 /* global fetch, Buffer */
 // pnpm npm:test [--packs <folder>] [--offline] [--mirror-cache <folder>] [--upstream <url>] [--keep]
 //
-// Install Atticus the way a bank with an npm mirror would (ADR 0124 addendum D-npm), and use it.
-// 1. Pack every publishable package (the pack check of `pnpm release:npm`: the model and
-//    onnxruntime filled from .cache/pinned, offline), or take the tarballs in --packs.
+// Install Atticus the way a bank with an npm mirror would (ADR 0124 addenda D-npm and D-npm2),
+// and use it.
+// 1. Pack the public packages (the pack check of `pnpm release:npm`: @maycombhq/atticus with every
+//    file its dist/files.json lists, the SDK, the model and onnxruntime filled from .cache/pinned,
+//    offline), or take the tarballs in --packs.
 // 2. Start a throwaway mirror on 127.0.0.1, as Artifactory or Nexus would be: Atticus's packages
 //    from those tarballs, every other package from --upstream (default the npm registry) through
 //    the mirror, kept in --mirror-cache (default .cache/npm-mirror). --offline: the mirror serves
 //    only what it already holds.
-// 3. `npm install --global @maycombhq/cli --ignore-scripts` into a new prefix, with a new HOME,
-//    an empty npm cache and config, and no proxy: npm reaches nothing but the mirror.
-// 4. With the network blocked (Linux: a new network namespace through `unshare -rn`; elsewhere a
-//    proxy that goes nowhere): atticus --version, a licence check of what npm installed, atticus
-//    init and doctor (Embedding model: ready, runtime native), a Forge practice metarepo, a scan,
-//    atticus index embed, and a search by meaning for a paraphrase.
-// Prints what npm downloaded: Atticus's packages (the model, this machine's onnxruntime) and the
-// third-party ones. Needs `pnpm build` (and `pnpm model:fetch` unless --packs is given).
+// 3. `npm install --global --ignore-scripts @maycombhq/atticus@<version>` into a new prefix, with
+//    a new HOME, an empty npm cache and config, and no proxy: npm reaches nothing but the mirror.
+// 4. With the network blocked (Linux: a new network namespace through `unshare -rn`; elsewhere,
+//    or with ATTICUS_NPM_TEST_PROXY_ONLY=1, a proxy that goes nowhere): atticus --version, a
+//    licence check of what npm installed (the bundled third parties too), atticus init and doctor
+//    (Embedding model: ready, runtime native), a Forge practice metarepo, a scan, atticus index
+//    embed, a search by meaning for a paraphrase, `atticus map <repo> --estimate` on one of its
+//    repos, and `atticus ui` started and answering one API call (in the namespace, its own
+//    loopback brought up: ip, else Python's ioctl).
+// Prints how many packages npm installed, what it downloaded and the size on disk. Needs
+// `pnpm build` (and `pnpm model:fetch` unless --packs is given).
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
@@ -32,7 +37,7 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { rerunWithEnvProxy } from "../model/paths.mjs";
-import { inventory, licenceAllowed, unlicensedThirdParty } from "./inventory.mjs";
+import { inventory, itemAllowed, unlicensedThirdParty } from "./inventory.mjs";
 import { packAndCheck, packuments, REPO } from "./npm-packages.mjs";
 
 const argv = process.argv.slice(2);
@@ -48,6 +53,7 @@ const mirrorCache = option("--mirror-cache") ?? join(REPO, ".cache", "npm-mirror
 // The mirror's own downloads go through the machine's proxy, as the bank's mirror's would.
 rerunWithEnvProxy(import.meta.url, argv, !offline);
 
+const MAIN = "@maycombhq/atticus";
 const win = process.platform === "win32";
 const mb = (n) => `${(n / 1024 / 1024).toFixed(1)} MB`;
 const work = mkdtempSync(join(tmpdir(), "atticus-npm-test-"));
@@ -58,7 +64,7 @@ const fail = (msg) => {
 
 // ---- 1. The tarballs
 console.log(
-  packsDir ? `Checking the tarballs in ${packsDir}...` : "Packing every publishable package...",
+  packsDir ? `Checking the tarballs in ${packsDir}...` : "Packing the public packages...",
 );
 let tarballs;
 try {
@@ -66,8 +72,8 @@ try {
 } catch (e) {
   fail(e instanceof Error ? e.message : String(e));
 }
-const cli = tarballs.find((t) => t.name === "@maycombhq/cli");
-if (!cli) fail("@maycombhq/cli wasn't packed");
+const main = tarballs.find((t) => t.name === MAIN);
+if (!main) fail(`${MAIN} wasn't packed`);
 
 // ---- 2. The mirror
 const served = []; // { name, bytes, ours }
@@ -137,7 +143,7 @@ const server = createServer(async (req, res) => {
 });
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
 const base = `http://127.0.0.1:${server.address().port}`;
-const tag = /-([a-z]+)/i.exec(cli.version)?.[1];
+const tag = /-([a-z]+)/i.exec(main.version)?.[1];
 docs = packuments(
   tarballs.map((t) => ({ file: t.file, bytes: readFileSync(t.file) })),
   base,
@@ -191,7 +197,7 @@ const install = [
   "--update-notifier=false",
   "--loglevel",
   "warn",
-  `@maycombhq/cli@${cli.version}`,
+  `${MAIN}@${main.version}`,
 ];
 console.log(`npm ${install.join(" ")}`);
 const t0 = Date.now();
@@ -211,42 +217,65 @@ server.close();
 console.log(npm.out.trim().split("\n").slice(-3).join("\n"));
 if (npm.status !== 0) fail(`npm install failed (exit ${npm.status})`);
 console.log(`Installed in ${((Date.now() - t0) / 1000).toFixed(0)} s.`);
+// The tarballs and npm's cache aren't needed any more: room on a small runner's disk.
+if (!packsDir) rmSync(join(work, "packs"), { recursive: true, force: true, maxRetries: 5 });
+rmSync(join(home, ".npm"), { recursive: true, force: true, maxRetries: 5 });
 
-// ---- What was downloaded
+// ---- What was installed and downloaded
 const ours = served.filter((s) => s.ours);
 const theirs = served.filter((s) => !s.ours);
 const sum = (xs) => xs.reduce((s, x) => s + x.bytes, 0);
-const model = sum(ours.filter((s) => s.name === "@maycombhq/embed-model"));
-const runtimes = ours.filter((s) => /^@maycombhq\/onnxruntime-/.test(s.name));
-console.log(
-  `npm downloaded ${served.length} packages, ${mb(sum(served))}: Atticus's ${ours.length} (${mb(sum(ours))}; the model ${mb(model)}, ${runtimes.map((r) => `${r.name.slice("@maycombhq/".length)} ${mb(r.bytes)}`).join(", ")}) and ${theirs.length} third-party (${mb(sum(theirs))}).`,
-);
-
-// ---- 4. The install, used with the network blocked
 const pkgDir = win
-  ? join(prefix, "node_modules", "@maycombhq", "cli")
-  : join(prefix, "lib", "node_modules", "@maycombhq", "cli");
-const nm = join(pkgDir, "node_modules", "@maycombhq");
-const here = `onnxruntime-${process.platform}-${process.arch}`;
-const others = readdirSync(nm).filter((n) => /^onnxruntime-(?!wasm$)/.test(n) && n !== here);
-if (others.length) fail(`npm installed other platforms' runtimes: ${others.join(", ")}`);
-if (!existsSync(join(nm, "embed-model", "model.onnx")))
-  fail("the installed @maycombhq/embed-model has no model.onnx");
-const native = existsSync(join(nm, here, "dist", "index.js"));
+  ? join(prefix, "node_modules", "@maycombhq", "atticus")
+  : join(prefix, "lib", "node_modules", "@maycombhq", "atticus");
+const installed = [];
+const walkModules = (nm) => {
+  if (!existsSync(nm)) return;
+  for (const n of readdirSync(nm).filter((n) => !n.startsWith("."))) {
+    const dirs = n.startsWith("@")
+      ? readdirSync(join(nm, n)).map((m) => join(nm, n, m))
+      : [join(nm, n)];
+    for (const d of dirs) {
+      if (!existsSync(join(d, "package.json"))) continue;
+      installed.push(JSON.parse(readFileSync(join(d, "package.json"), "utf8")).name);
+      walkModules(join(d, "node_modules"));
+    }
+  }
+};
+walkModules(join(pkgDir, "..", ".."));
 const du = (d) =>
   readdirSync(d, { withFileTypes: true }).reduce(
     (s, e) =>
       s + (e.isDirectory() ? du(join(d, e.name)) : e.isFile() ? statSync(join(d, e.name)).size : 0),
     0,
   );
-console.log(`On disk: ${mb(du(prefix))}.`);
+const sizeOf = (name) => mb(sum(ours.filter((s) => s.name === name)));
+console.log(
+  `npm installed ${installed.length} packages (${installed.join(", ")}) and downloaded ${served.length} tarballs, ${mb(sum(served))}: ${MAIN} ${sizeOf(MAIN)}, the model ${sizeOf("@maycombhq/embed-model")}, ${ours
+    .filter((s) => /^@maycombhq\/onnxruntime-/.test(s.name))
+    .map((r) => `${r.name.slice("@maycombhq/".length)} ${mb(r.bytes)}`)
+    .join(
+      ", ",
+    )}${theirs.length ? `, and ${theirs.length} third-party (${theirs.map((t) => t.name).join(", ")}, ${mb(sum(theirs))})` : ""}. On disk: ${mb(du(prefix))}.`,
+);
 
-// Every package npm installed: under a licence Atticus may ship, the model and onnxruntime with
-// their licence text.
+// ---- 4. The install, used with the network blocked
+const nm = join(pkgDir, "node_modules", "@maycombhq");
+const here = `onnxruntime-${process.platform}-${process.arch}`;
+const others = existsSync(nm)
+  ? readdirSync(nm).filter((n) => /^onnxruntime-(?!wasm$)/.test(n) && n !== here)
+  : [];
+if (others.length) fail(`npm installed other platforms' runtimes: ${others.join(", ")}`);
+if (!existsSync(join(nm, "embed-model", "model.onnx")))
+  fail("the installed @maycombhq/embed-model has no model.onnx");
+const native = existsSync(join(nm, here, "dist", "index.js"));
+
+// Every package npm installed, and every third party bundled inside @maycombhq/atticus: under a
+// licence Atticus may ship, with its licence text where it carries a third party's files.
 const items = inventory(pkgDir);
 const third = items.filter((i) => !i.own);
 const badLicence = third
-  .filter((i) => !licenceAllowed(i.licence))
+  .filter((i) => !itemAllowed(i))
   .map((i) => `${i.name}@${i.version}: ${i.licence}`);
 const unlicensed = unlicensedThirdParty(items);
 if (badLicence.length || unlicensed.length)
@@ -254,9 +283,9 @@ if (badLicence.length || unlicensed.length)
     `The licence check of the install failed:\n  ${[...badLicence, ...unlicensed].join("\n  ")}`,
   );
 console.log(
-  `Licence check of the install passed: ${third.length} third-party packages; ${third
-    .filter((i) => i.carriesPinned)
-    .map((i) => `${i.name} (${i.licence}) with its licence text`)
+  `Licence check of the install passed: ${third.filter((i) => i.bundled).length} third parties bundled in ${MAIN}, each in THIRD-PARTY-LICENSES.txt; installed beside it ${third
+    .filter((i) => !i.bundled)
+    .map((i) => `${i.name} (${i.licence})${i.carriesPinned ? " with its licence text" : ""}`)
     .join(", ")}.`,
 );
 
@@ -290,8 +319,8 @@ const v = atticus("--version");
 show("--version", v);
 // stdout alone: with the proxy pointing nowhere, Node warns on stderr that NODE_USE_ENV_PROXY's
 // agent is experimental (a GitHub runner has no network namespace to block the network instead).
-if (v.stdout.trim() !== cli.version)
-  fail(`atticus --version printed ${v.stdout.trim()}, not ${cli.version}`);
+if (v.stdout.trim() !== main.version)
+  fail(`atticus --version printed ${v.stdout.trim()}, not ${main.version}`);
 
 const meta = join(work, "bank-meta");
 const init = atticus("init", meta, "--platform", "forge", "--owner", "tester");
@@ -300,8 +329,10 @@ console.log(
   `$ atticus init bank-meta --platform forge --owner tester\n${init.out.trim().split("\n").slice(0, 2).join("\n")}`,
 );
 const doctor = atticus("doctor", "--root", meta);
-const embedLine = doctor.out.split("\n").find((l) => /Embedding model/.test(l)) ?? "";
-console.log(`$ atticus doctor\n${embedLine}`);
+const doctorLines = doctor.out.split("\n");
+const embedLine = doctorLines.find((l) => /Embedding model/.test(l)) ?? "";
+const openspecLine = doctorLines.find((l) => /OpenSpec CLI/.test(l)) ?? "";
+console.log(`$ atticus doctor\n${openspecLine}\n${embedLine}`);
 const want = native ? "native" : "wasm";
 if (
   !new RegExp(
@@ -311,6 +342,8 @@ if (
   fail(
     `doctor didn't say the model installed with Atticus is ready with the ${want} runtime:\n${doctor.out}`,
   );
+if (!/\[ok\]\s+OpenSpec CLI: OpenSpec \d/.test(openspecLine))
+  fail(`doctor didn't run the OpenSpec CLI bundled in ${MAIN}:\n${doctor.out}`);
 
 const practice = join(work, "practice");
 const sandbox = atticus("sandbox", "create", practice);
@@ -319,6 +352,7 @@ const root = join(practice, "metarepo");
 console.log(`$ atticus sandbox create practice\n${sandbox.out.trim().split("\n")[0]}`);
 const scan = atticus("scan", "--root", root);
 if (scan.status !== 0) fail(`atticus scan failed:\n${scan.out}`);
+console.log(`$ atticus scan\n${scan.stdout.trim().split("\n").at(-1)}`);
 const embed = atticus("index", "embed", "--root", root);
 show("index embed", embed);
 if (embed.status !== 0) fail("atticus index embed failed");
@@ -326,13 +360,72 @@ if (embed.status !== 0) fail("atticus index embed failed");
 const question = "how much money is left";
 const query = atticus("query", question, "--search", "--by", "meaning", "--root", root);
 console.log(
-  `$ atticus query "${question}" --search --by meaning\n${query.out.trim().split("\n").slice(0, 4).join("\n")}`,
+  `$ atticus query "${question}" --search --by meaning\n${query.out.trim().split("\n").slice(0, 2).join("\n")}`,
 );
 if (query.status !== 0 || !/similar in meaning, cos/.test(query.out))
   fail("the search by meaning found nothing");
 
+const map = atticus("map", "forge-ledger", "--estimate", "--root", root);
 console.log(
-  `npm install test passed: npm install -g @maycombhq/cli on ${process.platform}-${process.arch}, scripts off, nothing downloaded after install, searches by meaning (${want}).`,
+  `$ atticus map forge-ledger --estimate\n${map.out.trim().split("\n").slice(0, 3).join("\n")}`,
+);
+if (map.status !== 0 || !/source files/.test(map.out)) fail("atticus map --estimate failed");
+
+// The app: started, and one call to its local API answered. In the network namespace its own
+// loopback is down until brought up; nothing outside the machine is reachable either way.
+const uiCheck = join(work, "ui-check.mjs");
+writeFileSync(
+  uiCheck,
+  `import { spawn } from "node:child_process";
+import { request } from "node:http";
+const [bin, root] = process.argv.slice(2);
+const { NO_PROXY: _n, no_proxy: _m, ...env } = process.env;
+const ui = spawn(bin, ["ui", "--port", "0", "--show-token", "--root", root], { env, shell: ${win} });
+let text = "";
+const t = setTimeout(() => { console.log("atticus ui didn't start: " + text); ui.kill(); process.exit(1); }, 60000);
+ui.stdout.on("data", (b) => {
+  text += b;
+  const m = /running at (http:\\/\\/127\\.0\\.0\\.1:(\\d+))/.exec(text);
+  const k = /session token is (\\S+)/.exec(text);
+  if (!m || !k) return;
+  clearTimeout(t);
+  const req = request({ host: "127.0.0.1", port: Number(m[2]), path: "/api/health", headers: { "X-Atticus-Token": k[1] } }, (res) => {
+    let body = "";
+    res.on("data", (c) => (body += c));
+    res.on("end", () => {
+      console.log(m[1] + "; GET /api/health: " + res.statusCode + " " + body.slice(0, 120));
+      ui.kill();
+      process.exit(res.statusCode === 200 ? 0 : 1);
+    });
+  });
+  req.on("error", (e) => { console.log("the app didn't answer: " + e.message); ui.kill(); process.exit(1); });
+  req.end();
+});
+`,
+);
+const loUp = [
+  "ip link set lo up 2>/dev/null || python3 -c 'import socket,fcntl,struct",
+  "s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM)",
+  'f=struct.unpack("16sH14s",fcntl.ioctl(s,0x8913,struct.pack("16sH14s",b"lo",0,b"")))[1]',
+  'fcntl.ioctl(s,0x8914,struct.pack("16sH14s",b"lo",f|1,b""))\' 2>/dev/null || true',
+  'exec "$@"',
+].join("\n");
+const uiRun = blocked
+  ? spawnSync("unshare", ["-rn", "sh", "-c", loUp, "sh", process.execPath, uiCheck, bin, root], {
+      encoding: "utf8",
+      env: netEnv,
+      cwd: work,
+    })
+  : spawnSync(process.execPath, [uiCheck, bin, root], {
+      encoding: "utf8",
+      env: { ...netEnv, NO_PROXY: "127.0.0.1,localhost" },
+      cwd: work,
+    });
+console.log(`$ atticus ui --port 0 --show-token\n${(uiRun.stdout ?? "").trim()}`);
+if (uiRun.status !== 0) fail(`atticus ui didn't answer:\n${uiRun.stdout}${uiRun.stderr}`);
+
+console.log(
+  `npm install test passed: npm install -g ${MAIN} on ${process.platform}-${process.arch}, scripts off, ${installed.length} packages installed, nothing downloaded after install, searches by meaning (${want}).`,
 );
 if (!keep) rmSync(work, { recursive: true, force: true, maxRetries: 5 });
 else console.log(`Kept: ${work}`);

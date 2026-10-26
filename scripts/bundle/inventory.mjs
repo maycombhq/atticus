@@ -1,7 +1,7 @@
 // What a deployed Atticus contains: every package under node_modules with its version, licence
 // and licence text. Used by the licence check, the SBOM and the offline bundle's LICENSES file.
 import { execFileSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync, mkdtempSync, rmSync } from "node:fs";
+import { cpSync, existsSync, readdirSync, readFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -42,6 +42,10 @@ export function licenceAllowed(expr) {
     .some((alt) => alt.split(/\s+AND\s+/i).every((id) => ALLOWED.has(id.trim())));
 }
 
+/** Whether an inventory item's licence is allowed: ALLOWED, or OFL-1.1 for a font package. */
+export const itemAllowed = (i) =>
+  licenceAllowed(i.licence) || (i.font === true && FONT_ALLOWED.has(i.licence));
+
 /**
  * Run pnpm: the pnpm running this script when it was started by `pnpm <script>`, else the one on
  * PATH. On Windows that one is pnpm.cmd, which Node only starts through a shell.
@@ -72,7 +76,35 @@ export function deploy(dir = join(mkdtempSync(join(tmpdir(), "atticus-deploy-"))
     ],
     { cwd: REPO, stdio: "pipe" },
   );
+  workspaceShaped(dir);
   return dir;
+}
+
+/**
+ * ADR 0124 addendum D-npm2: a package npm publishes bundled (the SDK: its `files` is the npm/
+ * layout, which carries its own copy of the core) is deployed as the workspace builds it: its
+ * compiled folder, against the deploy's one @maycombhq/core, so the offline bundle runs one copy
+ * of each package (the core keeps per-process state). The folders copied, as package names.
+ */
+export function workspaceShaped(deployDir, repo = REPO) {
+  const done = [];
+  for (const d of readdirSync(join(repo, "packages"))) {
+    const f = join(repo, "packages", d, "package.json");
+    if (!existsSync(f)) continue;
+    const m = JSON.parse(readFileSync(f, "utf8"));
+    if (!m.atticusBundled || !m.main) continue;
+    const target = join(deployDir, "node_modules", ...m.name.split("/"));
+    const main = m.main.replace(/^\.\//, "");
+    // npm's file list always takes `main` itself, so the rest of its folder is what is missing.
+    if (!existsSync(target)) continue;
+    const top = main.split("/")[0];
+    cpSync(join(repo, "packages", d, top), join(target, top), {
+      recursive: true,
+      filter: (p) => !p.endsWith(".map"),
+    });
+    done.push(m.name);
+  }
+  return done;
 }
 
 /** Remove a folder deploy() made (its atticus-deploy-* parent in the temp folder). */
@@ -117,14 +149,16 @@ export function removePackages(deployDir, drop) {
   return [...gone].sort();
 }
 
-function licenceOf(pkg) {
+/** A manifest's licence (SPDX), from `license` or the old `licenses` list. */
+export function licenceOf(pkg) {
   if (typeof pkg.license === "string") return pkg.license;
   if (pkg.license && typeof pkg.license.type === "string") return pkg.license.type;
   if (Array.isArray(pkg.licenses)) return pkg.licenses.map((l) => l.type ?? l).join(" OR ");
   return undefined;
 }
 
-function licenceText(dir) {
+/** The text of a package folder's LICENSE (LICENCE, COPYING), if it has one. */
+export function licenceText(dir) {
   const f = readdirSync(dir).find((n) => /^(licen[cs]e|copying)(\.(md|txt))?$/i.test(n));
   return f ? readFileSync(join(dir, f), "utf8") : undefined;
 }
@@ -152,7 +186,7 @@ export function forbiddenFiles(deployDir) {
 }
 
 /** Every package in a deployed folder: { name, version, licence, text, own }. */
-export function inventory(deployDir) {
+export function inventory(deployDir, o = {}) {
   const out = new Map();
   const add = (dir) => {
     const pj = join(dir, "package.json");
@@ -223,8 +257,36 @@ export function inventory(deployDir) {
       }
     }
   };
-  walk(join(deployDir, "node_modules"));
+  // modules: false reads a built package alone (packages/atticus: its node_modules are the
+  // workspace's links, not what npm installs).
+  if (o.modules !== false) walk(join(deployDir, "node_modules"));
   add(deployDir);
+  // ADR 0124 addendum D-npm2: the third parties a bundled package (@maycombhq/atticus) carries
+  // inside, as its build listed them, each with its section of THIRD-PARTY-LICENSES.txt.
+  const listed = join(deployDir, "dist", "third-party.json");
+  const txtFile = join(deployDir, "THIRD-PARTY-LICENSES.txt");
+  if (existsSync(listed)) {
+    const txt = existsSync(txtFile) ? readFileSync(txtFile, "utf8") : "";
+    for (const t of JSON.parse(readFileSync(listed, "utf8"))) {
+      const key = `${t.name}@${t.version}`;
+      if (out.has(key)) continue;
+      // Each section: a rule, `name@version (licence)`, a rule, the text.
+      const rule = `${"=".repeat(72)}\n`;
+      const head = `${key} (${t.licence})\n${rule}`;
+      const at = txt.indexOf(head);
+      const start = at + head.length;
+      const end = txt.indexOf(`\n${rule}`, start);
+      out.set(key, {
+        name: t.name,
+        version: t.version,
+        licence: t.licence,
+        text: at < 0 ? undefined : txt.slice(start, end < 0 ? undefined : end).trim() || undefined,
+        own: false,
+        bundled: true,
+        ...(t.font ? { font: true } : {}),
+      });
+    }
+  }
   return [...out.values()].sort(
     (a, b) => a.name.localeCompare(b.name) || a.version.localeCompare(b.version),
   );
@@ -235,12 +297,21 @@ export function inventory(deployDir) {
  * builds) ships their licence text with them. Each one that doesn't, as a sentence.
  */
 export function unlicensedThirdParty(items) {
-  return items
-    .filter((i) => i.carriesPinned && !i.text)
-    .map(
-      (i) =>
-        `${i.name}@${i.version} ships ${i.repackagedFrom ?? i.model ?? "a third party"}'s files without their licence text`,
-    );
+  return [
+    ...items
+      .filter((i) => i.carriesPinned && !i.text)
+      .map(
+        (i) =>
+          `${i.name}@${i.version} ships ${i.repackagedFrom ?? i.model ?? "a third party"}'s files without their licence text`,
+      ),
+    // ADR 0124 addendum D-npm2: a third party bundled inside @maycombhq/atticus.
+    ...items
+      .filter((i) => i.bundled && !i.text)
+      .map(
+        (i) =>
+          `${i.name}@${i.version} is bundled but THIRD-PARTY-LICENSES.txt doesn't hold its licence`,
+      ),
+  ];
 }
 
 /** A CycloneDX 1.5 SBOM of the inventory. */

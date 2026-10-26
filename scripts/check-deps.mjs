@@ -46,8 +46,9 @@ for (const p of pkgs) {
       else if (/\.(ts|tsx|mts|js|mjs)$/.test(e) && !/\.d\.ts$/.test(e)) check(f, test);
     }
   };
-  // A package whose src is bundled at build time (the app) ships no imports: devDependencies do.
-  const bundled = /\bvite\b/.test(pkg.scripts?.build ?? "");
+  // A package whose src is bundled at build time (the app; the SDK, which carries
+  // @maycombhq/core inside, ADR 0124 addendum D-npm2) ships no imports: devDependencies do.
+  const bundled = /\bvite\b/.test(pkg.scripts?.build ?? "") || pkg.atticusBundled === true;
   const check = (file, test) => {
     // The file's real imports, from TypeScript's own scanner: comments and the code samples
     // inside strings and templates aren't imports.

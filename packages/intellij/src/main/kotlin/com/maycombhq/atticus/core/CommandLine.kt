@@ -38,7 +38,7 @@ class CommandLine(
             if (l.viaShell && args.any { SHELL_UNSAFE.containsMatchIn(it) }) {
                 "Couldn't run this through the Windows shell safely: an argument has one of \" % ^ & | < > !. " +
                     "Set the path to atticus (Settings → Tools → Atticus) to its bin.js, for example " +
-                    "C:\\…\\node_modules\\@maycombhq\\cli\\dist\\bin.js."
+                    "C:\\…\\node_modules\\@maycombhq\\atticus\\dist\\bin.js."
             } else {
                 null
             }

@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { setFlagsFromString } from "node:v8";
@@ -75,17 +76,24 @@ function baselineWasmOnly(): void {
 async function language(lang: SyntaxLanguage): Promise<Parser.Language> {
   ready ??= (baselineWasmOnly(), Parser.init());
   await ready;
-  if (!languages.has(lang))
-    languages.set(
-      lang,
-      Parser.Language.load(
-        // Groovy is vendored in grammars/ (its package brings a native build we don't need).
-        lang === "groovy"
-          ? fileURLToPath(new URL("../../grammars/tree-sitter-groovy.wasm", import.meta.url))
-          : require.resolve(`tree-sitter-wasms/out/tree-sitter-${lang}.wasm`),
-      ),
-    );
+  if (!languages.has(lang)) languages.set(lang, Parser.Language.load(grammarFile(lang)));
   return languages.get(lang)!;
+}
+
+/**
+ * Where a grammar's WebAssembly is. Groovy's is vendored in grammars/ (its package brings a
+ * native build we don't need). The others are tree-sitter-wasms': installed from npm, Atticus is
+ * one bundled package (@maycombhq/atticus, ADR 0124 addendum D-npm2) in which this module keeps
+ * its place, packages/extractors/dist/lang/, and the grammars are copied to
+ * vendor/tree-sitter-wasms/out/ four folders up; elsewhere (a checkout, the offline bundle) they
+ * come from node_modules. `here` is this module's URL (a test passes another).
+ */
+export function grammarFile(lang: SyntaxLanguage, here: string = import.meta.url): string {
+  if (lang === "groovy")
+    return fileURLToPath(new URL("../../grammars/tree-sitter-groovy.wasm", here));
+  const name = `tree-sitter-${lang}.wasm`;
+  const shipped = fileURLToPath(new URL(`../../../../vendor/tree-sitter-wasms/out/${name}`, here));
+  return existsSync(shipped) ? shipped : require.resolve(`tree-sitter-wasms/out/${name}`);
 }
 
 /** A file's syntax tree. */

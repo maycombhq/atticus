@@ -223,7 +223,7 @@ ${view.next.why}`
     else if (!svc.cliOk)
       void vscode.window
         .showWarningMessage(
-          "Atticus can't run its command line (atticus). Install it, or set its path in the setting atticus.path.",
+          "Atticus can't run its command line (atticus). Install it (npm install -g @maycombhq/atticus, from your npm mirror, or the offline bundle), or set its path in the setting atticus.path.",
           "Check again",
         )
         .then((p) => p && vscode.commands.executeCommand("atticus.checkHealth"));
@@ -643,7 +643,7 @@ ${view.next.why}`
     refreshAll();
     if (!svc.cliOk) {
       const pick = await vscode.window.showWarningMessage(
-        "Atticus can't run its command line (atticus). Install it, or set its path in the setting atticus.path.",
+        "Atticus can't run its command line (atticus). Install it (npm install -g @maycombhq/atticus, from your npm mirror, or the offline bundle), or set its path in the setting atticus.path.",
         "How to install",
         "Set the path",
       );

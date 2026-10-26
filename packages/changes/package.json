@@ -1,6 +1,7 @@
 {
   "name": "@maycombhq/changes",
-  "version": "2.0.0-beta.1",
+  "version": "2.0.0-beta.2",
+  "private": true,
   "description": "The change lifecycle: change state, change types and templates, hand-off PRs, separation of duties, privacy impact, risk scoring, test strategy and conflict detection.",
   "license": "Apache-2.0",
   "type": "module",
@@ -28,8 +29,5 @@
     "@maycombhq/workspace": "workspace:*",
     "yaml": "^2.9.1",
     "zod": "^4.6.0"
-  },
-  "publishConfig": {
-    "access": "public"
   }
 }

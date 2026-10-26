@@ -1,6 +1,7 @@
 {
   "name": "@maycombhq/glossary",
-  "version": "2.0.0-beta.1",
+  "version": "2.0.0-beta.2",
+  "private": true,
   "description": "The business glossary: terms from wiki pages, code and people, links to columns, schema fields and features, conflicts and synonyms.",
   "license": "Apache-2.0",
   "type": "module",
@@ -26,8 +27,5 @@
     "@maycombhq/knowledge": "workspace:*",
     "yaml": "^2.9.1",
     "zod": "^4.6.0"
-  },
-  "publishConfig": {
-    "access": "public"
   }
 }
