@@ -140,9 +140,10 @@ describe("lean batch prompts: the core and the topic rules a batch needs (ADR 01
   it("leaves /atticus-map's rules as they were, byte for byte (tier 1)", () => {
     // sha256 of FACT_RULES: every rule, in the same words and order. Re-pinned since the split for
     // two added sentences: what `to` is for a relative call (C-join) and an entry's auth goes with
-    // authCite (A-read); and for the Apigee rule's three parts (A-gateway).
+    // authCite (A-read); for the Apigee rule's three parts (A-gateway); and for its fourth, the
+    // scopes a route demands and the proxy's virtual host (A-gateway2).
     expect(createHash("sha256").update(FACT_RULES).digest("hex")).toBe(
-      "7af3b336f075363977766a780ca305446296817e7cafddfa0b844a67a99cb074",
+      "1284a653ed9e361a42cc412ed17662076b26478e72dbe9d844d003ce226f4042",
     );
     expect(FACT_RULES).toBe(factRulesFor());
     expect(mapCommand().body).toContain(FACT_RULES);
@@ -210,9 +211,17 @@ describe("lean batch prompts: the core and the topic rules a batch needs (ADR 01
     const APIGEE = "An Apigee proxy (`apiproxy/`)";
     const AUTH = "Its `auth` is the strongest check run before the target";
     const FORWARD = "Each route has a forwarding `call`";
+    const SCOPES = "The scopes the route demands go in `scopes`";
     // An Apigee file's kinds (fileKinds in @maycombhq/verify): config and gateway.
     const gw = batch(["config", "gateway"]);
-    for (const r of [APIGEE, AUTH, FORWARD, "A gateway's routes", "An entry's `auth` goes with"])
+    for (const r of [
+      APIGEE,
+      AUTH,
+      FORWARD,
+      SCOPES,
+      "A gateway's routes",
+      "An entry's `auth` goes with",
+    ])
       expect(gw).toContain(r);
     for (const r of [FLOW, STORE, FRONT, GRPC, DEPLOY]) expect(gw).not.toContain(r);
     for (const kinds of [
@@ -220,7 +229,8 @@ describe("lean batch prompts: the core and the topic rules a batch needs (ADR 01
       ["frontend", "flows"],
       ["deploy", "config"],
     ] as RuleTopic[][])
-      for (const r of [APIGEE, AUTH, FORWARD]) expect(batch(kinds), kinds.join()).not.toContain(r);
+      for (const r of [APIGEE, AUTH, FORWARD, SCOPES])
+        expect(batch(kinds), kinds.join()).not.toContain(r);
     // Smaller than a back end's batch, so a gateway batch never has less room for its files.
     expect(gw.length).toBeLessThan(
       batch(["backend", "routes", "data", "protocols", "flows"]).length,
@@ -241,6 +251,27 @@ describe("lean batch prompts: the core and the topic rules a batch needs (ADR 01
       "cited on the host line",
     ])
       expect(rule, words).toContain(words);
+  });
+
+  it("says how a route's scopes and its virtual host are read and cited (A-gateway2)", () => {
+    // The Apigee rule's parts (now four) stay in order on its own line.
+    const rule = FACT_RULES.split("\n").find((l) => l.startsWith("- An Apigee proxy")) ?? "";
+    for (const words of [
+      "The scopes the route demands go in `scopes`",
+      "one citation each on the line that names it",
+      "a space-separated list is one fact per scope, all citing that line",
+      "a `VerifyJWT` or `VerifyAccessToken` scope claim",
+      "a scope a `Condition` asserts on the token's claims",
+      "the scopes a shared flow it calls checks",
+      "a route that demands none leaves `scopes` out",
+      "Record the proxy's `<VirtualHost>` as a `config` fact",
+    ])
+      expect(rule, words).toContain(words);
+    // Only a gateway batch is asked for scopes: the field is on every entry, but the prompt
+    // budget buys the sentence once (A-gateway2). A back-end batch's rules don't mention them.
+    expect(batch(["backend", "routes", "data", "protocols", "flows"])).not.toContain(
+      "The scopes the route demands",
+    );
   });
 });
 

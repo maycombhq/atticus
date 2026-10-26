@@ -1,0 +1,50 @@
+# Six invented Forge repos (ADR 0124 addendum A-gateway2): a shop's back end, the internal edge
+# gateway it calls, the orders service behind it, the partner gateway the orders service calls
+# through, and Northwind Pay's charge API (an invented vendor) behind that, plus the orders
+# sandbox the edge gateway's dev TargetServer names (the ambiguous-host case).
+# The two gateways are typed `gateway` and `gateway-external`, so the join knows which hop faces
+# a partner and which stays inside.
+schemaVersion: 1
+platform: forge
+repos:
+  - id: forge-shop-bff
+    url: https://git.forge.example/forge/forge-shop-bff.git
+    type: spring-boot
+    owner: team-shop
+    component: shop-bff
+    system: shop
+  - id: forge-edge-gateway
+    url: https://git.forge.example/forge/forge-edge-gateway.git
+    type: gateway
+    owner: team-platform
+    component: edge-gateway
+    system: platform
+    hosts: [api.forge.example]
+  - id: forge-orders
+    url: https://git.forge.example/forge/forge-orders.git
+    type: spring-boot
+    owner: team-orders
+    component: orders-api
+    system: orders
+    hosts: [orders.forge.internal]
+  - id: forge-partner-gateway
+    url: https://git.forge.example/forge/forge-partner-gateway.git
+    type: gateway-external
+    owner: team-platform
+    component: partner-gateway
+    system: platform
+    hosts: [partner.forge.example]
+  - id: northwind-pay-api
+    url: https://git.forge.example/vendors/northwind-pay-api.git
+    type: spring-boot
+    owner: team-payments
+    component: northwind-pay-api
+    system: northwind-pay
+    hosts: [api.northwindpay.example]
+  - id: forge-orders-sandbox
+    url: https://git.forge.example/forge/forge-orders-sandbox.git
+    type: spring-boot
+    owner: team-orders
+    component: orders-sandbox-api
+    system: orders
+    hosts: [orders-sandbox.forge.internal]

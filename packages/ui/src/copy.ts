@@ -1711,6 +1711,14 @@ export const COPY = {
     noInTheCatalog: (v: string | number) => `No ${v} in the catalog.`,
     evidence: "Evidence",
     noEvidenceTreatIt: "No evidence: treat it as unconfirmed.",
+    // The path of a call through the gateways (ADR 0124 addendum A-gateway2).
+    thePathOfTheCall: "The path of the call",
+    scopesIt: (scopes: string) => `scopes ${scopes}`,
+    noScopeDemanded: "no scope demanded",
+    theCallerMeets: (auth: string) => `the caller meets ${auth}`,
+    thenReaches: (to: string) => `then reaches ${to}`,
+    noRouteRecordedFor:
+      "The catalog has no gateway route for this call: only that it goes through a gateway.",
     consumersAndDependants: "Consumers and dependants",
     seeImpact: "See impact",
     nothingInTheCatalog: "Nothing in the catalog depends on it.",

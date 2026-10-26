@@ -1,0 +1,8 @@
+<TargetEndpoint name="partner">
+  <HTTPTargetConnection>
+    <LoadBalancer>
+      <Server name="partner-gateway"/>
+    </LoadBalancer>
+    <Path>/</Path>
+  </HTTPTargetConnection>
+</TargetEndpoint>

@@ -27,10 +27,12 @@ joins:
     tie: { repo: forge-portal-api, fact: config.gateway-base-url, component: portal-api, at: "src/main/resources/application.yml:3" }
     how: host
     gateway:
-      entry: { repo: forge-gateway, fact: entry.get.forge-v1-accounts-id, component: api-gateway, at: "proxies/forge-accounts-v1/apiproxy/proxies/default.xml:15" }
-      call: { repo: forge-gateway, fact: call.get.accounts-id, component: api-gateway, at: "proxies/forge-accounts-v1/apiproxy/proxies/default.xml:15" }
-      tie: { repo: forge-gateway, fact: config.targetserver.accounts-backend, component: api-gateway, at: "environments/prod/targetservers.json:4" }
-      route: gw-api-gateway-get-forge-v1-accounts-id
+      # One hop, with the auth a caller meets there; the API key check demands no scope.
+      - entry: { repo: forge-gateway, fact: entry.get.forge-v1-accounts-id, component: api-gateway, at: "proxies/forge-accounts-v1/apiproxy/proxies/default.xml:15" }
+        call: { repo: forge-gateway, fact: call.get.accounts-id, component: api-gateway, at: "proxies/forge-accounts-v1/apiproxy/proxies/default.xml:15" }
+        tie: { repo: forge-gateway, fact: config.targetserver.accounts-backend, component: api-gateway, at: "environments/prod/targetservers.json:4" }
+        route: gw-api-gateway-get-forge-v1-accounts-id
+        auth: api-key
     callType: rest
     method: GET
     path: "/accounts/{id}"
@@ -41,10 +43,14 @@ joins:
     tie: { repo: forge-portal-api, fact: config.gateway-base-url, component: portal-api, at: "src/main/resources/application.yml:3" }
     how: host
     gateway:
-      entry: { repo: forge-gateway, fact: entry.post.forge-v1-accounts-id-transfers, component: api-gateway, at: "proxies/forge-accounts-v1/apiproxy/proxies/default.xml:26" }
-      call: { repo: forge-gateway, fact: call.post.transfers, component: api-gateway, at: "proxies/forge-accounts-v1/apiproxy/policies/AM-RewriteTransfers.xml:8" }
-      tie: { repo: forge-gateway, fact: config.targetserver.accounts-backend, component: api-gateway, at: "environments/prod/targetservers.json:4" }
-      route: gw-api-gateway-post-forge-v1-accounts-id-transfers
+      # One hop: OAuth, and the scope the OAuthV2 policy's <Scope> demands.
+      - entry: { repo: forge-gateway, fact: entry.post.forge-v1-accounts-id-transfers, component: api-gateway, at: "proxies/forge-accounts-v1/apiproxy/proxies/default.xml:26" }
+        call: { repo: forge-gateway, fact: call.post.transfers, component: api-gateway, at: "proxies/forge-accounts-v1/apiproxy/policies/AM-RewriteTransfers.xml:8" }
+        tie: { repo: forge-gateway, fact: config.targetserver.accounts-backend, component: api-gateway, at: "environments/prod/targetservers.json:4" }
+        route: gw-api-gateway-post-forge-v1-accounts-id-transfers
+        auth: oauth2
+        scopes: [accounts.transfer]
+    scopes: [accounts.transfer]
     callType: rest
     method: POST
     path: /transfers

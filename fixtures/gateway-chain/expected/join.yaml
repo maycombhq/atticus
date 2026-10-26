@@ -1,0 +1,368 @@
+# What joinFacts gives for the six repos' facts (ADR 0124 addendum A-gateway2), derived by hand
+# from them: the shop's read and its dispatch go through the edge gateway's routes (the dispatch
+# rewritten to /dispatch), and the orders service's charge goes out through two gateways, the
+# internal edge one and then the external partner one, to land on Northwind Pay's POST /v2/charges.
+# Each hop keeps its own auth, the scopes its route demands and which side it faces; the two loop
+# proxies forward into each other, so each call into the ring is asked instead of walked.
+joins:
+  - call:
+      repo: forge-edge-gateway
+      fact: call.get.orders-id
+      component: edge-gateway
+      at: proxies/forge-orders-v2/apiproxy/proxies/default.xml:17
+    entry:
+      repo: forge-orders
+      fact: entry.get.orders-id
+      component: orders-api
+      at: src/main/java/forge/orders/OrdersController.java:18
+    tie:
+      repo: forge-edge-gateway
+      fact: config.targetserver.orders-backend
+      component: edge-gateway
+      at: environments/prod/targetservers.json:4
+    how: host
+    callType: rest
+    method: GET
+    path: /orders/{id}
+    interface: if-d864f9a9c9c20357
+  - call:
+      repo: forge-edge-gateway
+      fact: call.get.pay-loop-ping
+      component: edge-gateway
+      at: proxies/forge-loop-v1/apiproxy/targets/partner.xml:3
+    entry:
+      repo: forge-partner-gateway
+      fact: entry.get.pay-loop-ping
+      component: partner-gateway
+      at: proxies/northwind-loop-v1/apiproxy/proxies/default.xml:5
+    how: host
+    callType: rest
+    method: GET
+    path: /pay/loop/ping
+    interface: if-58341bc8444c76fd
+  - call:
+      repo: forge-edge-gateway
+      fact: call.post.dispatch
+      component: edge-gateway
+      at: proxies/forge-orders-v2/apiproxy/policies/AM-RewriteDispatch.xml:8
+    entry:
+      repo: forge-orders
+      fact: entry.post.dispatch
+      component: orders-api
+      at: src/main/java/forge/orders/OrdersController.java:23
+    tie:
+      repo: forge-edge-gateway
+      fact: config.targetserver.orders-backend
+      component: edge-gateway
+      at: environments/prod/targetservers.json:4
+    how: host
+    callType: rest
+    method: POST
+    path: /dispatch
+    interface: if-fa8269aed2339187
+  - call:
+      repo: forge-edge-gateway
+      fact: call.post.partner-pay-v1-charges
+      component: edge-gateway
+      at: proxies/forge-pay-v1/apiproxy/policies/AM-RewritePay.xml:8
+    entry:
+      repo: northwind-pay-api
+      fact: entry.post.v2-charges
+      component: northwind-pay-api
+      at: src/main/java/northwind/pay/ChargesController.java:16
+    tie:
+      repo: forge-edge-gateway
+      fact: config.targetserver.partner-gateway
+      component: edge-gateway
+      at: environments/prod/targetservers.json:10
+    how: host
+    gateway:
+      - entry:
+          repo: forge-partner-gateway
+          fact: entry.post.pay-v1-charges
+          component: partner-gateway
+          at: proxies/northwind-pay-v1/apiproxy/proxies/default.xml:10
+        call:
+          repo: forge-partner-gateway
+          fact: call.post.v2-charges
+          component: partner-gateway
+          at: proxies/northwind-pay-v1/apiproxy/proxies/default.xml:10
+        tie:
+          repo: forge-partner-gateway
+          fact: config.targetserver.northwind-pay
+          component: partner-gateway
+          at: environments/prod/targetservers.json:4
+        route: gw-partner-gateway-post-pay-v1-charges
+        auth: oauth2
+        scopes:
+          - northwind.charges.write
+        facing: external
+    scopes:
+      - northwind.charges.write
+    callType: rest
+    method: POST
+    path: /v2/charges
+    interface: if-987f78c2ed2733bb
+  - call:
+      repo: forge-orders
+      fact: call.post.forge-pay-v1-charges
+      component: orders-api
+      at: src/main/java/forge/orders/PayGatewayClient.java:17
+    entry:
+      repo: northwind-pay-api
+      fact: entry.post.v2-charges
+      component: northwind-pay-api
+      at: src/main/java/northwind/pay/ChargesController.java:16
+    tie:
+      repo: forge-orders
+      fact: config.edge-base-url
+      component: orders-api
+      at: src/main/resources/application.yml:3
+    how: host
+    gateway:
+      - entry:
+          repo: forge-edge-gateway
+          fact: entry.post.forge-pay-v1-charges
+          component: edge-gateway
+          at: proxies/forge-pay-v1/apiproxy/proxies/default.xml:13
+        call:
+          repo: forge-edge-gateway
+          fact: call.post.partner-pay-v1-charges
+          component: edge-gateway
+          at: proxies/forge-pay-v1/apiproxy/policies/AM-RewritePay.xml:8
+        tie:
+          repo: forge-edge-gateway
+          fact: config.targetserver.partner-gateway
+          component: edge-gateway
+          at: environments/prod/targetservers.json:10
+        route: gw-edge-gateway-post-forge-pay-v1-charges
+        auth: oauth2
+        scopes:
+          - payments.charge
+        facing: internal
+      - entry:
+          repo: forge-partner-gateway
+          fact: entry.post.pay-v1-charges
+          component: partner-gateway
+          at: proxies/northwind-pay-v1/apiproxy/proxies/default.xml:10
+        call:
+          repo: forge-partner-gateway
+          fact: call.post.v2-charges
+          component: partner-gateway
+          at: proxies/northwind-pay-v1/apiproxy/proxies/default.xml:10
+        tie:
+          repo: forge-partner-gateway
+          fact: config.targetserver.northwind-pay
+          component: partner-gateway
+          at: environments/prod/targetservers.json:4
+        route: gw-partner-gateway-post-pay-v1-charges
+        auth: oauth2
+        scopes:
+          - northwind.charges.write
+        facing: external
+    scopes:
+      - payments.charge
+      - northwind.charges.write
+    callType: rest
+    method: POST
+    path: /v2/charges
+    interface: if-ed9f9d07234fd896
+  - call:
+      repo: forge-partner-gateway
+      fact: call.get.forge-loop-ping
+      component: partner-gateway
+      at: proxies/northwind-loop-v1/apiproxy/targets/edge.xml:3
+    entry:
+      repo: forge-edge-gateway
+      fact: entry.get.forge-loop-ping
+      component: edge-gateway
+      at: proxies/forge-loop-v1/apiproxy/proxies/default.xml:5
+    how: host
+    callType: rest
+    method: GET
+    path: /forge/loop/ping
+    interface: if-d87a86944ed92950
+  - call:
+      repo: forge-partner-gateway
+      fact: call.post.v2-charges
+      component: partner-gateway
+      at: proxies/northwind-pay-v1/apiproxy/proxies/default.xml:10
+    entry:
+      repo: northwind-pay-api
+      fact: entry.post.v2-charges
+      component: northwind-pay-api
+      at: src/main/java/northwind/pay/ChargesController.java:16
+    tie:
+      repo: forge-partner-gateway
+      fact: config.targetserver.northwind-pay
+      component: partner-gateway
+      at: environments/prod/targetservers.json:4
+    how: host
+    callType: rest
+    method: POST
+    path: /v2/charges
+    interface: if-de5bdc97d8b72f83
+  - call:
+      repo: forge-shop-bff
+      fact: call.get.forge-v2-orders-id
+      component: shop-bff
+      at: src/main/java/forge/shop/OrdersGatewayClient.java:17
+    entry:
+      repo: forge-orders
+      fact: entry.get.orders-id
+      component: orders-api
+      at: src/main/java/forge/orders/OrdersController.java:18
+    tie:
+      repo: forge-shop-bff
+      fact: config.edge-base-url
+      component: shop-bff
+      at: src/main/resources/application.yml:3
+    how: host
+    gateway:
+      - entry:
+          repo: forge-edge-gateway
+          fact: entry.get.forge-v2-orders-id
+          component: edge-gateway
+          at: proxies/forge-orders-v2/apiproxy/proxies/default.xml:17
+        call:
+          repo: forge-edge-gateway
+          fact: call.get.orders-id
+          component: edge-gateway
+          at: proxies/forge-orders-v2/apiproxy/proxies/default.xml:17
+        tie:
+          repo: forge-edge-gateway
+          fact: config.targetserver.orders-backend
+          component: edge-gateway
+          at: environments/prod/targetservers.json:4
+        route: gw-edge-gateway-get-forge-v2-orders-id
+        auth: oauth2
+        scopes:
+          - orders.read
+        facing: internal
+    scopes:
+      - orders.read
+    callType: rest
+    method: GET
+    path: /orders/{id}
+    interface: if-9575902aa3162e4a
+  - call:
+      repo: forge-shop-bff
+      fact: call.post.forge-v2-orders-id-dispatch
+      component: shop-bff
+      at: src/main/java/forge/shop/OrdersGatewayClient.java:22
+    entry:
+      repo: forge-orders
+      fact: entry.post.dispatch
+      component: orders-api
+      at: src/main/java/forge/orders/OrdersController.java:23
+    tie:
+      repo: forge-shop-bff
+      fact: config.edge-base-url
+      component: shop-bff
+      at: src/main/resources/application.yml:3
+    how: host
+    gateway:
+      - entry:
+          repo: forge-edge-gateway
+          fact: entry.post.forge-v2-orders-id-dispatch
+          component: edge-gateway
+          at: proxies/forge-orders-v2/apiproxy/proxies/default.xml:28
+        call:
+          repo: forge-edge-gateway
+          fact: call.post.dispatch
+          component: edge-gateway
+          at: proxies/forge-orders-v2/apiproxy/policies/AM-RewriteDispatch.xml:8
+        tie:
+          repo: forge-edge-gateway
+          fact: config.targetserver.orders-backend
+          component: edge-gateway
+          at: environments/prod/targetservers.json:4
+        route: gw-edge-gateway-post-forge-v2-orders-id-dispatch
+        auth: oauth2
+        scopes:
+          - orders.dispatch
+          - orders.write
+        facing: internal
+    scopes:
+      - orders.dispatch
+      - orders.write
+    callType: rest
+    method: POST
+    path: /dispatch
+    interface: if-64a2b78b123c7416
+asks:
+  - call:
+      repo: forge-edge-gateway
+      fact: call.get.pay-loop-ping
+      component: edge-gateway
+      at: proxies/forge-loop-v1/apiproxy/targets/partner.xml:3
+    reason: cycle
+    question: Where does GET /pay/loop/ping, which edge-gateway calls, end? Its gateway routes lead back into partner-gateway, which it has already been through, so the facts can't say.
+    candidates:
+      - repo: forge-edge-gateway
+        fact: entry.get.forge-loop-ping
+        component: edge-gateway
+        at: proxies/forge-loop-v1/apiproxy/proxies/default.xml:5
+      - repo: forge-partner-gateway
+        fact: entry.get.pay-loop-ping
+        component: partner-gateway
+        at: proxies/northwind-loop-v1/apiproxy/proxies/default.xml:5
+  - call:
+      repo: forge-partner-gateway
+      fact: call.get.forge-loop-ping
+      component: partner-gateway
+      at: proxies/northwind-loop-v1/apiproxy/targets/edge.xml:3
+    reason: cycle
+    question: Where does GET /forge/loop/ping, which partner-gateway calls, end? Its gateway routes lead back into edge-gateway, which it has already been through, so the facts can't say.
+    candidates:
+      - repo: forge-edge-gateway
+        fact: entry.get.forge-loop-ping
+        component: edge-gateway
+        at: proxies/forge-loop-v1/apiproxy/proxies/default.xml:5
+      - repo: forge-partner-gateway
+        fact: entry.get.pay-loop-ping
+        component: partner-gateway
+        at: proxies/northwind-loop-v1/apiproxy/proxies/default.xml:5
+misses: []
+lineage:
+  - interface: if-64a2b78b123c7416
+    side: request
+    from:
+      repo: forge-shop-bff
+      fact: field.dispatch.amount
+      name: amount
+    to:
+      repo: forge-orders
+      fact: field.dispatch-request.amount
+      name: amount
+  - interface: if-64a2b78b123c7416
+    side: request
+    from:
+      repo: forge-shop-bff
+      fact: field.dispatch.courier
+      name: courier
+    to:
+      repo: forge-orders
+      fact: field.dispatch-request.courier
+      name: courier
+  - interface: if-ed9f9d07234fd896
+    side: request
+    from:
+      repo: forge-orders
+      fact: field.charge.amount
+      name: amount
+    to:
+      repo: northwind-pay-api
+      fact: field.charge-request.amount
+      name: amount
+  - interface: if-ed9f9d07234fd896
+    side: request
+    from:
+      repo: forge-orders
+      fact: field.charge.reference
+      name: reference
+    to:
+      repo: northwind-pay-api
+      fact: field.charge-request.reference
+      name: reference
+gaps: []

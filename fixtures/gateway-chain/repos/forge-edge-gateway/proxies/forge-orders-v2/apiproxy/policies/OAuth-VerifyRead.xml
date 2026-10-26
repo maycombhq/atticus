@@ -1,0 +1,4 @@
+<OAuthV2 name="OAuth-VerifyRead">
+  <Operation>VerifyAccessToken</Operation>
+  <Scope>orders.read</Scope>
+</OAuthV2>

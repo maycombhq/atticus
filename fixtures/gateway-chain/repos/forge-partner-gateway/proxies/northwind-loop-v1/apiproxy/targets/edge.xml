@@ -1,0 +1,5 @@
+<TargetEndpoint name="edge">
+  <HTTPTargetConnection>
+    <URL>https://api.forge.example/forge/loop/ping</URL>
+  </HTTPTargetConnection>
+</TargetEndpoint>

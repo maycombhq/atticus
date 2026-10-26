@@ -1,0 +1,3 @@
+<SpikeArrest name="SA-Orders">
+  <Rate>100ps</Rate>
+</SpikeArrest>

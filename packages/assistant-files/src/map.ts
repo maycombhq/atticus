@@ -206,6 +206,10 @@ export const FACT_RULE_PARTS: readonly (readonly RulePart[])[] = [
       when: ["gateway"],
       text: "Each route has a forwarding `call` (`from` the entry, no `to`) to its `RouteRule`'s target. Its `path` is what the service receives: the target's `<Path>` and the suffix (base path dropped), or, when `target.copy.pathsuffix` is false or an AssignMessage or JavaScript policy sets the path, the path set there. Cite it where the path comes from (the rewrite, else the `<Condition>`), with the target's `<Server>` or `<URL>` line and the rewrite's other lines in `cite.with`. `base` is the TargetServer's name (or the KVM key), with a `config` fact of that `key` whose `value` is its host, cited on the host line; a `<URL>`'s host goes in `host`.",
     },
+    {
+      when: ["gateway"],
+      text: "The scopes the route demands go in `scopes`, one citation each on the line that names it: an `OAuthV2`'s `<Scope>` (a space-separated list is one fact per scope, all citing that line), a `VerifyJWT` or `VerifyAccessToken` scope claim, a scope a `Condition` asserts on the token's claims, or the scopes a shared flow it calls checks. Write the scope as the policy writes it, never a guess; a route that demands none leaves `scopes` out. Record the proxy's `<VirtualHost>` as a `config` fact (`key` `VirtualHost`, `target` the proxy) so the join can say whether the hop faces a partner.",
+    },
   ],
   [
     {

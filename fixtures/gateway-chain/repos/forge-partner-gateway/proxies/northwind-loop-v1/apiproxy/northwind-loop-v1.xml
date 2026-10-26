@@ -1,0 +1,3 @@
+<APIProxy name="northwind-loop-v1">
+  <Description>The echo the edge gateway calls, which answers back through the edge gateway</Description>
+</APIProxy>

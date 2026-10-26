@@ -1,0 +1,15 @@
+<ProxyEndpoint name="default">
+  <Description>The echo, routed back into the edge gateway (nobody meant it to be a ring)</Description>
+  <Flows>
+    <Flow name="Ping">
+      <Condition>(proxy.pathsuffix MatchesPath "/ping") and (request.verb = "GET")</Condition>
+    </Flow>
+  </Flows>
+  <HTTPProxyConnection>
+    <BasePath>/pay/loop</BasePath>
+    <VirtualHost>external</VirtualHost>
+  </HTTPProxyConnection>
+  <RouteRule name="edge">
+    <TargetEndpoint>edge</TargetEndpoint>
+  </RouteRule>
+</ProxyEndpoint>

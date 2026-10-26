@@ -1,0 +1,5 @@
+<TargetEndpoint name="partner">
+  <HTTPTargetConnection>
+    <URL>https://partner.forge.example/pay/loop/ping</URL>
+  </HTTPTargetConnection>
+</TargetEndpoint>

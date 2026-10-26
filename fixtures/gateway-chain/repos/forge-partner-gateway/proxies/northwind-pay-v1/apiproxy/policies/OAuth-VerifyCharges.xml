@@ -1,0 +1,4 @@
+<OAuthV2 name="OAuth-VerifyCharges">
+  <Operation>VerifyAccessToken</Operation>
+  <Scope>northwind.charges.write</Scope>
+</OAuthV2>

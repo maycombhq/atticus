@@ -1,0 +1,14 @@
+[
+  {
+    "name": "orders-backend",
+    "host": "orders.forge.internal",
+    "port": 8443,
+    "isEnabled": true
+  },
+  {
+    "name": "partner-gateway",
+    "host": "partner.forge.example",
+    "port": 443,
+    "isEnabled": true
+  }
+]

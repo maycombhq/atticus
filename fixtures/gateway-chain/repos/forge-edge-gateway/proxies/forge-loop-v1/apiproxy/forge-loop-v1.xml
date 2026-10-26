@@ -1,0 +1,3 @@
+<APIProxy name="forge-loop-v1">
+  <Description>A health echo the partner gateway calls back through the edge gateway</Description>
+</APIProxy>

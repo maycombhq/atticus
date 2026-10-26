@@ -19,6 +19,7 @@ import {
   type FactCorrection,
 } from "@maycombhq/core";
 import { globToRegExp } from "@maycombhq/sdk";
+import { authChecks, authPolicyMismatch } from "./apigee-policy.js";
 import { applyCorrections, type AppliedCorrection, type StaleCorrection } from "./corrections.js";
 import { derivedHolds, derivedNamesAt, type DeriveEnv, type DerivedName } from "./derived.js";
 import { isDataFile, isLocaleBundle } from "./not-product.js";
@@ -58,7 +59,12 @@ export type RejectCode =
    * A fact of an earlier commit that cites a file edited, renamed or deleted since (ADR 0124
    * addendum A-incremental): a changed file invalidates what cites it, so it is read again.
    */
-  | "cite-changed";
+  | "cite-changed"
+  /**
+   * An entry whose `authCite` attaches a policy of a kind that cannot produce the `auth` claimed
+   * (ADR 0124 addendum A-gateway2): a `VerifyAPIKey` never makes `oauth2`.
+   */
+  | "auth-policy-kind";
 
 /** One thing wrong with a fact. */
 export interface Problem {
@@ -559,6 +565,28 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
           [{ kind: "word", value: f.authCite.value }],
           `${label} authCite${f.auth ? ` (auth ${f.auth})` : ""}`,
           false,
+        ),
+      );
+    // A-gateway2: and the policy attached there must be of a kind that can set that auth.
+    if (f.kind === "entry" && f.authCite && f.auth) {
+      const bad = authPolicyMismatch(f.auth, f.authCite.file, f.authCite.value, linesOf);
+      if (bad)
+        problem(
+          f,
+          "auth-policy-kind",
+          `${label} claims auth ${f.auth} on a line that attaches ${f.authCite.value}, a ${bad.element} policy (${bad.path}), which ${bad.makes ? `checks ${bad.makes.map(authChecks).join(" or ")}, not ${authChecks(f.auth)}` : "authenticates nobody"}; cite the line that attaches the check, or write the auth the policy makes`,
+        );
+    }
+    // A-gateway2: each scope the entry demands rests on the line that names it.
+    if (f.kind === "entry")
+      (f.scopes ?? []).forEach((s, i) =>
+        add(
+          f,
+          checkCite(
+            s,
+            [{ kind: "word", value: s.value }],
+            `${label} scope ${i + 1} ("${s.value}")`,
+          ),
         ),
       );
     if (f.kind === "flow") {

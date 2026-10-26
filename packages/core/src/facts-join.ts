@@ -29,11 +29,21 @@ import { hostHasPort, hostMatches, urlHostPort } from "./schema/workspace.js";
  * Through a gateway (ADR 0124 addendum A-gateway): a call that lands on a gateway's route (an
  * entry of a repo the manifest types `gateway`, or one cited in an Apigee bundle) whose
  * forwarding calls (`from` the route) all join one entry joins that entry, with the path the
- * service receives after the gateway's rewrite, and keeps the hop (`gateway`: the route, its
- * forwarding call and the TargetServer or KVM config that ties it to a host). A route whose
- * forwarding call is asked or missed, or that forwards to several services, is joined at the
- * gateway, as before. A base whose config values (one per environment) are hosts different
- * repos answer on is asked, never one of them guessed.
+ * service receives after the gateway's rewrite, and keeps the hop (the route, its forwarding
+ * call and the TargetServer or KVM config that ties it to a host). A route whose forwarding call
+ * is asked or missed, or that forwards to several services, is joined at the gateway, as before.
+ * A base whose config values (one per environment) are hosts different repos answer on is asked,
+ * never one of them guessed.
+ *
+ * Through several gateways (A-gateway2): where a route forwards into another gateway's route, the
+ * walk goes on, so `gateway` is the hops in order (caller → gateway A → gateway B → service) and
+ * `path` is what the last one's target receives. Each hop keeps its own auth and the `scopes` its
+ * route demands, and is marked `internal` or `external` when something says which: the repo's
+ * manifest type (`gateway-external`, `gateway-internal`), else the proxy's own `VirtualHost`
+ * config fact. Nothing says, the hop is just a gateway. The walk is bounded (`MAX_GATEWAY_HOPS`)
+ * and a route that forwards back into a gateway already in the path is a question (`cycle`), not
+ * a loop; a walk that runs past the bound is a question too. The join stops at the last gateway
+ * whose next hop is asked, missed or forwards to several services, exactly as one hop does.
  *
  * Pure: the same facts and answers give the same result, whatever order the repos come in.
  */
@@ -49,21 +59,59 @@ export interface JoinRepo {
   modules?: readonly { component: string; hosts: readonly string[] }[];
   /** An API gateway (the manifest's `type: gateway`): its entries are routes it forwards. */
   gateway?: boolean;
+  /**
+   * Which side of the organisation this gateway faces, when the manifest's repo type says
+   * (`gateway-external`, `gateway-internal`): a hop through it is marked so (A-gateway2). Left
+   * out, the proxy's own `VirtualHost` config fact is read instead, and failing that the hop is
+   * just a gateway.
+   */
+  facing?: GatewayFacing;
 }
 
 /** An Apigee proxy or shared flow bundle's file: its entries are gateway routes whatever the repo. */
 export const APIGEE_BUNDLE = /(^|\/)(apiproxy|sharedflowbundle)\//;
 
+/** Whether a gateway hop stays inside the organisation or faces a partner or the internet. */
+export type GatewayFacing = "internal" | "external";
+
+/**
+ * How far the walk through gateways goes before it gives up and asks (A-gateway2). Four is a
+ * gateway at each of three boundaries and one more: past that, nobody means it.
+ */
+export const MAX_GATEWAY_HOPS = 4;
+
+/** The words a `VirtualHost` (or a manifest repo type) uses for each side (A-gateway2). */
+export interface FacingWords {
+  internal: readonly string[];
+  external: readonly string[];
+}
+
+/**
+ * The default words, overridable per estate (`joinFacts`'s `facing`), because which virtual host
+ * means which side is each estate's own convention. A value that says neither leaves the hop a
+ * plain gateway: the join never guesses from a basepath or a host's shape.
+ */
+export const FACING_WORDS: FacingWords = {
+  internal: ["internal", "private", "intranet", "inside"],
+  external: ["external", "partner", "public", "internet", "egress"],
+};
+
 /** The hop a call takes through a gateway: the route it lands on and the call that forwards it. */
 export interface GatewayHop {
   /** The gateway's route (its entry fact). */
   entry: FactEnd;
-  /** The gateway's forwarding call, whose path is the one the service receives. */
+  /** The gateway's forwarding call, whose path is the one the next hop or the service receives. */
   call: FactEnd;
   /** The config fact (a TargetServer, a KVM entry) that ties the forwarding call to its host. */
   tie?: FactEnd;
   /** The catalog GatewayRoute of the route. */
   route: string;
+  /** The auth a caller meets at this hop, when the route's facts say (A-gateway2). */
+  auth?: string;
+  /** The scopes this hop's route demands of the caller's token, in the facts' order (A-gateway2). */
+  scopes?: string[];
+  /** Which side this gateway faces, when the manifest or the proxy's virtual host says. */
+  facing?: GatewayFacing;
 }
 
 /** One end of a join: a fact, its repo and component, and the line it cites. */
@@ -95,8 +143,17 @@ export interface FactJoin {
    * the estate; `named` is the target the call gave, when it named one the estate doesn't have.
    */
   inferred?: { within: "repo" | "estate"; named?: string };
-  /** The call went through a gateway's route to `entry` (A-gateway); `path` is the rewritten one. */
-  gateway?: GatewayHop;
+  /**
+   * The gateway hops the call went through to reach `entry`, in the order it meets them
+   * (A-gateway, many hops in A-gateway2); `path` is what the last hop's target receives. Left
+   * out when the call reaches the entry directly.
+   */
+  gateway?: GatewayHop[];
+  /**
+   * Every scope the call's token must hold to get through, the hops' in order, each once
+   * (A-gateway2). Left out when no hop demands one.
+   */
+  scopes?: string[];
   callType: string;
   method?: string;
   /** The path, gRPC or SOAP name, or topic the entry serves, as the entry writes it. */
@@ -107,8 +164,12 @@ export interface FactJoin {
 
 export interface FactJoinAsk {
   call: FactEnd;
-  /** `unknown-host`: no repo lists the host; `ambiguous`: more than one entry could answer. */
-  reason: "unknown-host" | "ambiguous";
+  /**
+   * `unknown-host`: no repo lists the host; `ambiguous`: more than one entry could answer;
+   * `cycle`: the gateway routes the call passes through lead back into a gateway it has already
+   * been through, so where the call ends can't be read from the facts (A-gateway2).
+   */
+  reason: "unknown-host" | "ambiguous" | "cycle";
   host?: string;
   question: string;
   /** The entries that could answer (none for an unknown host). */
@@ -162,6 +223,12 @@ export interface JoinFactsInput {
    * is never joined by path to an entry of the estate.
    */
   outside?: readonly string[];
+  /**
+   * The words this estate's virtual hosts and gateway repo types use for each side of the
+   * organisation (A-gateway2). The defaults are `FACING_WORDS`; a value matching neither list
+   * leaves the hop a plain gateway.
+   */
+  facing?: FacingWords;
 }
 
 type Entry = FactOf<"entry">;
@@ -270,6 +337,12 @@ const sameMethod = (a: string | undefined, b: string | undefined) => {
 export function callTargetQuestion(f: Call, component: string): string {
   const what = [f.method?.toUpperCase(), f.path].filter(Boolean).join(" ");
   return `Which repo or system answers ${what}, which ${component} calls${f.base ? ` through ${f.base}` : ""}?`;
+}
+
+/** The question for a call whose gateway routes lead back where they came from (A-gateway2). */
+export function gatewayCycleQuestion(f: Call, component: string, gateway: string): string {
+  const what = [f.method?.toUpperCase(), f.path].filter(Boolean).join(" ");
+  return `Where does ${what}, which ${component} calls, end? Its gateway routes lead back into ${gateway}, which it has already been through, so the facts can't say.`;
 }
 
 const SECRETISH = /^(env:|vault:|secret:|ref:|\$\{|\{\{)/i;
@@ -507,8 +580,32 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
     }
   }
 
-  // ---- through a gateway (A-gateway): a call that lands on a route joins where the route forwards
+  // ---- through the gateways (A-gateway; a chain of them, A-gateway2): a call that lands on a
+  // route joins where the route forwards, and on through every further gateway it reaches.
   const gateways = new Set(repos.filter((r) => r.gateway).map((r) => r.repo));
+  const facingOf = new Map(repos.flatMap((r) => (r.facing ? [[r.repo, r.facing] as const] : [])));
+  const words = input.facing ?? FACING_WORDS;
+  const saysFacing = (value: string | undefined): GatewayFacing | undefined => {
+    const v = (value ?? "").toLowerCase();
+    if (!v) return undefined;
+    const has = (list: readonly string[]) => list.some((w) => v.includes(w.toLowerCase()));
+    // Internal first: a word list that claims both is read as the inside, never as both.
+    return has(words.internal) ? "internal" : has(words.external) ? "external" : undefined;
+  };
+  /** The proxy's own `VirtualHost` config fact, when the route's handler names its proxy. */
+  const virtualHostOf = (route: Node & { fact: Entry }): string | undefined => {
+    const proxy = route.fact.handler?.split("/")[0];
+    if (!proxy) return undefined;
+    return nodes
+      .filter(
+        (n): n is Node & { fact: Config } =>
+          n.repo === route.repo &&
+          n.fact.kind === "config" &&
+          /^virtualhost$/i.test(n.fact.key) &&
+          n.fact.target === proxy,
+      )
+      .sort((x, y) => cmp(x.fact.id, y.fact.id))[0]?.fact.value;
+  };
   const isRoute = (n: Node) =>
     n.fact.kind === "entry" && (gateways.has(n.repo) || APIGEE_BUNDLE.test(n.fact.cite.file));
   const joinsOf = new Map<string, FactJoin[]>();
@@ -516,10 +613,11 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
     const k = key(j.call.repo, j.call.fact);
     joinsOf.set(k, [...(joinsOf.get(k) ?? []), j]);
   }
-  for (const [i, j] of joins.entries()) {
-    if (j.how === "topic") continue;
-    const route = byKey.get(key(j.entry.repo, j.entry.fact))!;
-    if (!isRoute(route)) continue;
+  /**
+   * Where the route a join lands on forwards to, when the facts say it exactly: every forwarding
+   * call joined, and all to the same entry. Else undefined: the call stays at the gateway.
+   */
+  const forwardedTo = (route: Node & { fact: Entry }): FactJoin | undefined => {
     const forwards = nodes.filter(
       (n): n is Node & { fact: Call } =>
         n.repo === route.repo &&
@@ -527,36 +625,84 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
         n.fact.from === route.fact.id &&
         !EVENTS.has(n.fact.callType),
     );
-    // Each forwarding call joined to one entry, and all to the same one; else joined at the gateway.
-    const hops = forwards.map((n) => joinsOf.get(key(n.repo, n.fact.id)) ?? []);
-    if (!hops.length || hops.some((h) => h.length !== 1)) continue;
-    const lands = hops.map((h) => h[0]!);
-    const hop = lands[0]!;
-    if (lands.some((l) => l.entry.repo !== hop.entry.repo || l.entry.fact !== hop.entry.fact))
-      continue;
-    const callee = byKey.get(key(hop.entry.repo, hop.entry.fact))! as Node & { fact: Entry };
+    const got = forwards.map((n) => joinsOf.get(key(n.repo, n.fact.id)) ?? []);
+    if (!got.length || got.some((h) => h.length !== 1)) return undefined;
+    const lands = got.map((h) => h[0]!);
+    const first = lands[0]!;
+    return lands.some((l) => l.entry.repo !== first.entry.repo || l.entry.fact !== first.entry.fact)
+      ? undefined
+      : first;
+  };
+  const cycles: FactJoinAsk[] = [];
+  for (const [i, j] of joins.entries()) {
+    if (j.how === "topic") continue;
+    let route = byKey.get(key(j.entry.repo, j.entry.fact))!;
+    if (!isRoute(route)) continue;
     const caller = byKey.get(key(j.call.repo, j.call.fact))! as Node & { fact: Call };
+    const hops: GatewayHop[] = [];
+    const seen = new Set<string>();
+    let landed: FactJoin | undefined;
+    let looped: { at: Node; hop: FactJoin } | undefined;
+    while (isRoute(route)) {
+      const r = route as Node & { fact: Entry };
+      const next = forwardedTo(r);
+      if (!next) break;
+      if (seen.has(key(r.repo, r.fact.id)) || hops.length >= MAX_GATEWAY_HOPS) {
+        looped = { at: r, hop: next };
+        break;
+      }
+      seen.add(key(r.repo, r.fact.id));
+      // What the manifest's repo type says, else the proxy's own virtual host; nothing else is
+      // read as a boundary, so a proxy or basepath whose name hints at one is not taken for it.
+      const facing = facingOf.get(r.repo) ?? saysFacing(virtualHostOf(r));
+      const scopes = (r.fact.scopes ?? []).map((s) => s.value);
+      hops.push({
+        entry: end(r),
+        call: next.call,
+        ...(next.tie ? { tie: next.tie } : {}),
+        route: gatewayRouteId(r),
+        ...(r.fact.auth ? { auth: r.fact.auth } : {}),
+        ...(scopes.length ? { scopes } : {}),
+        ...(facing ? { facing } : {}),
+      });
+      landed = next;
+      route = byKey.get(key(next.entry.repo, next.entry.fact))!;
+    }
+    // A ring of routes: where the call ends can't be read from the facts, so it is asked.
+    if (looped) {
+      const q = {
+        call: end(caller),
+        reason: "cycle" as const,
+        question: gatewayCycleQuestion(caller.fact, caller.component, looped.at.component),
+        candidates: [end(looped.at), looped.hop.entry].sort(
+          (x, y) => cmp(x.repo, y.repo) || cmp(x.fact, y.fact),
+        ),
+      };
+      if (!cycles.some((c) => c.call.repo === q.call.repo && c.call.fact === q.call.fact))
+        cycles.push(q);
+      continue;
+    }
+    if (!landed || !hops.length) continue;
+    const callee = byKey.get(key(landed.entry.repo, landed.entry.fact))! as Node & { fact: Entry };
     if (callee.component === caller.component) continue;
-    const forward = byKey.get(key(hop.call.repo, hop.call.fact))!.fact as Call;
+    const forward = byKey.get(key(landed.call.repo, landed.call.fact))!.fact as Call;
     const method = (forward.method ?? caller.fact.method ?? callee.fact.method)?.toUpperCase();
+    const scopes = [...new Set(hops.flatMap((h) => h.scopes ?? []))];
     joins[i] = {
       call: j.call,
-      entry: hop.entry,
+      entry: landed.entry,
       ...(j.tie ? { tie: j.tie } : {}),
       how: j.how,
       ...(j.inferred ? { inferred: j.inferred } : {}),
-      gateway: {
-        entry: j.entry,
-        call: hop.call,
-        ...(hop.tie ? { tie: hop.tie } : {}),
-        route: gatewayRouteId(route as Node & { fact: Entry }),
-      },
+      gateway: hops,
+      ...(scopes.length ? { scopes } : {}),
       callType: j.callType,
       ...(method ? { method } : {}),
       path: callee.fact.path,
       interface: interfaceId(caller.component, callee.component, method, servedPath(callee.fact)),
     };
   }
+  asks.push(...cycles);
 
   // ---- the fields that cross each join
   const fieldsOf = (repo: string, owner: string) =>
@@ -775,13 +921,18 @@ export function joinRecords(result: FactsJoinResult, repos: readonly JoinRepo[])
     }
     const call = fact(j.call) as Call;
     const entry = fact(j.entry) as Entry;
-    if (j.gateway) {
-      // Through a gateway (A-gateway): the caller to the service, via the route, which the
-      // GatewayRoute records; the auth a caller meets is the route's, else the service's.
-      const g = j.gateway;
+    if (j.gateway?.length) {
+      // Through the gateways (A-gateway; a chain of them, A-gateway2): the caller to the service,
+      // via the first route the caller meets, which the Interface names and a GatewayRoute per hop
+      // records with the scopes it demands; the auth a caller meets is that route's, else the
+      // service's. Every hop is cited, in order.
+      const g = j.gateway[0]!;
       const route = fact(g.entry) as Entry;
-      const forward = fact(g.call) as Call;
-      const declared = [call, entry, route, forward].every((f) => f.conf === "declared");
+      const declared = [
+        call,
+        entry,
+        ...j.gateway.flatMap((h) => [fact(h.entry), fact(h.call)]),
+      ].every((f) => f?.conf === "declared");
       const confidence = declared ? "verified" : "inferred";
       const auth = route.auth ?? entry.auth;
       out.set(j.interface, {
@@ -806,44 +957,50 @@ export function joinRecords(result: FactsJoinResult, repos: readonly JoinRepo[])
         evidence: once([
           ...ev(j.call, "code", "caller"),
           ...(j.tie ? ev(j.tie, "config", "caller") : []),
-          ...ev(g.entry, "gateway", "gateway"),
-          ...ev(g.call, "gateway", "gateway"),
-          ...(g.tie ? ev(g.tie, "config", "gateway") : []),
+          ...j.gateway.flatMap((h) => [
+            ...ev(h.entry, "gateway", "gateway"),
+            ...ev(h.call, "gateway", "gateway"),
+            ...(h.tie ? ev(h.tie, "config", "gateway") : []),
+          ]),
           ...ev(j.entry, "code", "callee"),
         ]),
       } as CatalogRecord);
-      if (!out.has(g.route)) {
-        const authAt = route.authCite
-          ? [
-              {
-                source: "gateway" as const,
-                repo: g.entry.repo,
-                path: route.authCite.file,
-                line: route.authCite.line,
-                commit: route.commit,
-                side: "gateway" as const,
-                by: route.by,
-              },
-            ]
-          : [];
-        out.set(g.route, {
+      // One GatewayRoute per hop, each with the scopes its own route demands and the component it
+      // forwards to (the next gateway for a middle hop, the service for the last).
+      j.gateway.forEach((h, k) => {
+        if (out.has(h.route)) return;
+        const hopRoute = fact(h.entry) as Entry | undefined;
+        if (!hopRoute || hopRoute.kind !== "entry") return;
+        const at = (p: { file: string; line: number }) => [
+          {
+            source: "gateway" as const,
+            repo: h.entry.repo,
+            path: p.file,
+            line: p.line,
+            commit: hopRoute.commit,
+            side: "gateway" as const,
+            by: hopRoute.by,
+          },
+        ];
+        out.set(h.route, {
           kind: "GatewayRoute",
           schemaVersion: 2,
-          id: g.route,
+          id: h.route,
           status: "current",
-          confidence: route.conf === "declared" ? "verified" : "inferred",
-          proxy: route.handler?.split("/")[0] || g.entry.component,
-          basepath: basePathOf(route),
-          target: j.entry.component,
-          policies: route.authCite ? [route.authCite.value] : [],
-          scopes: [],
+          confidence: hopRoute.conf === "declared" ? "verified" : "inferred",
+          proxy: hopRoute.handler?.split("/")[0] || h.entry.component,
+          basepath: basePathOf(hopRoute),
+          target: (j.gateway![k + 1]?.entry.component ?? j.entry.component)!,
+          policies: hopRoute.authCite ? [hopRoute.authCite.value] : [],
+          scopes: (hopRoute.scopes ?? []).map((s) => s.value),
           evidence: once([
-            ...ev(g.entry, "gateway", "gateway"),
-            ...authAt,
-            ...ev(g.call, "gateway", "gateway"),
+            ...ev(h.entry, "gateway", "gateway"),
+            ...(hopRoute.authCite ? at(hopRoute.authCite) : []),
+            ...(hopRoute.scopes ?? []).flatMap(at),
+            ...ev(h.call, "gateway", "gateway"),
           ]),
         } as CatalogRecord);
-      }
+      });
       continue;
     }
     const declared = call.conf === "declared" && entry.conf === "declared";

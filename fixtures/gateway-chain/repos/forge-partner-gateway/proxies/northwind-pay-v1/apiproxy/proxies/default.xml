@@ -1,0 +1,20 @@
+<ProxyEndpoint name="default">
+  <Description>Northwind Pay charges, for the orders service</Description>
+  <Flows>
+    <Flow name="CreateCharge">
+      <Request>
+        <Step>
+          <Name>OAuth-VerifyCharges</Name>
+        </Step>
+      </Request>
+      <Condition>(proxy.pathsuffix MatchesPath "/charges") and (request.verb = "POST")</Condition>
+    </Flow>
+  </Flows>
+  <HTTPProxyConnection>
+    <BasePath>/pay/v1</BasePath>
+    <VirtualHost>external</VirtualHost>
+  </HTTPProxyConnection>
+  <RouteRule name="northwind">
+    <TargetEndpoint>northwind</TargetEndpoint>
+  </RouteRule>
+</ProxyEndpoint>

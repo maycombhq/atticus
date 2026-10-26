@@ -39,6 +39,16 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - **The critic's auth check needs no legacy reader for it:** it reads the auth the joined Interface carries from the gateway's facts.
 - **`/atticus-map` changed:** run `atticus assistant-files` (or update the Claude Code plugin) to get the new rule.
 
+### Scopes, and a call through a chain of gateways (ADR 0124 addendum A-gateway2)
+
+- **The scopes a route demands are read, cited and checked.** `/atticus-map` asks for them with the route: an OAuthV2's `<Scope>` (a space-separated list is one scope each), a VerifyJWT or VerifyAccessToken scope claim, a scope a `Condition` asserts on the token's claims, or the scopes a shared flow checks. Each rests on the line that names it and is verified like any other claim, so an invented scope or one cited on the wrong line is refused, with the message saying which. They fill the GatewayRoute's `scopes`, which used to be empty.
+- **The critic reads them.** A route through the gateway that demands no scope is a finding ("checks who the caller is and nothing about what they may do"); a scope a story's acceptance criteria name that no route of the change demands is a finding; and a caller whose own callers' routes demand scopes, none of which the route downstream demands, is a question about how it gets a token. The four questions and the existing checks are unchanged.
+- **A call is followed through every gateway on its way.** Where a route forwards into another gateway's route, the join goes on, so `caller → internal gateway → partner gateway → the vendor's service` reads as one call with its hops in order, each with its own auth, its scopes and whether it faces inside or out. Each hop is a GatewayRoute whose target is the next hop. `map.md`'s call lines and the app's Interface page ("The path of the call") print the whole path.
+- **Internal or external is read, never guessed:** from the repo's manifest type (`gateway-external`, `gateway-internal`), else the proxy's `<VirtualHost>`, which `/atticus-map` now asks for as a config fact. A word neither known list covers leaves the hop a plain gateway.
+- **A ring of routes is a question, not a loop.** A route that forwards back into a gateway the call has already been through, or a chain longer than four gateways, raises a question and leaves the call joined at the gateway it does reach.
+- **The verifier checks an `authCite`'s policy kind.** It opens the policy the cited line attaches and refuses an auth that policy cannot set: a `VerifyAPIKey` is not `oauth2`, and a `SpikeArrest` authenticates nobody (`auth-policy-kind`). A policy Atticus doesn't know, or a citation outside a bundle, is not judged.
+- **`/atticus-map` changed:** run `atticus assistant-files` (or update the Claude Code plugin) to get the new rules.
+
 ### A change is read from what its stages write (ADR 0124 addendum B-change, C4 2.25.0)
 
 - **A change's footprint comes from its feature placement, target flows and tasks**, not from `proposal.md`, `interfaces.md` and `data.md`, which the stages never write. Risk, test kinds, conflicts between open changes, the critic's catalog slice and the stories' definition of done all read it. A legacy change's files are still read.
