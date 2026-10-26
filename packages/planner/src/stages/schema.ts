@@ -492,6 +492,15 @@ export const StageLoop = z.strictObject({
               .array(z.strictObject({ field: text(), criterion: text(), task: text() }))
               .optional(),
             risk: z.boolean().optional(),
+            // An assistant's proposal waiting on a person (ADR 0115 addendum, 2026-10-25).
+            proposed: z
+              .strictObject({
+                finding: text(),
+                gate: text(),
+                by: text(),
+                reason: z.string().optional(),
+              })
+              .optional(),
           }),
         )
         .default([]),

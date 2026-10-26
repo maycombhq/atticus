@@ -179,9 +179,11 @@ describe("rounds, gates and actions", () => {
   });
 
   it("allows one checking round past the limit once a person acted on every blocking finding, and only one", async () => {
+    // Kept well inside the timeout on a shared runner: the checking round is the critic's own rule
+    // (layer 1 decides it), so the rounds run without the lenses, and the actions run at once.
     const root = await forgeChangeRoot();
-    await runCritic(root, CHANGE, { now: NOW, runtime: await replay() });
-    const r2 = await runCritic(root, CHANGE, { now: LATER, runtime: await replay() });
+    await runCritic(root, CHANGE, { now: NOW });
+    const r2 = await runCritic(root, CHANGE, { now: LATER });
     expect(r2.status.humanDecides).toBe(true);
     expect(r2.status.checkRound).toBe(false);
     const blocking = r2.findings.filter(
@@ -202,27 +204,38 @@ describe("rounds, gates and actions", () => {
     );
 
     // Every blocking finding of the newest round acted on by a person: one checking round.
-    let last = first;
-    for (const f of blocking.slice(1))
-      last = await act(root, CHANGE, f.finding.id, "apply", { by: "ari", now: LATER });
+    // The ones between act at once (each writes only its own finding's file); the last one, on
+    // its own, sees every other acted on.
+    await Promise.all(
+      blocking
+        .slice(1, -1)
+        .map((f) => act(root, CHANGE, f.finding.id, "apply", { by: "ari", now: LATER })),
+    );
+    const last = await act(root, CHANGE, blocking.at(-1)!.finding.id, "apply", {
+      by: "ari",
+      now: LATER,
+    });
     expect(last.message).toContain(
       `a person acted since round 2, so one more checking round is due: run atticus critic ${CHANGE} --gate plan`,
     );
     // The knowledge gaps still open are asked of their owners.
-    for (const g of r2.findings.filter(
-      (f) => f.finding.state === "open" && f.finding.severity === "gap",
-    ))
-      await act(root, CHANGE, g.finding.id, "ask", {
-        by: "bao",
-        askedOf: "team-ledger",
-        now: LATER,
-      });
+    await Promise.all(
+      r2.findings
+        .filter((f) => f.finding.state === "open" && f.finding.severity === "gap")
+        .map((g) =>
+          act(root, CHANGE, g.finding.id, "ask", {
+            by: "bao",
+            askedOf: "team-ledger",
+            now: LATER,
+          }),
+        ),
+    );
     const s = await gateStatus(root, CHANGE, "plan");
     expect(s.humanDecides).toBe(false);
     expect(s.checkRound).toBe(true);
 
     // The fixes weren't real, so the checking round finds them again: a person decides again.
-    const r3 = await runCritic(root, CHANGE, { now: LATER, runtime: await replay() });
+    const r3 = await runCritic(root, CHANGE, { now: LATER });
     expect(r3.round).toBe(3);
     expect(r3.checkRound).toBe(true);
     const meta = parse(await readText(join(changeDir(root), "review/plan/3/meta/round.yaml"))) as {

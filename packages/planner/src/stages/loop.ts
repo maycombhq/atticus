@@ -21,6 +21,7 @@ import {
 import {
   buildContextPack,
   fitBudget,
+  pruneRuns,
   quarantineItems,
   toRunSummary,
   type AiRuntime,
@@ -45,6 +46,8 @@ import {
   CriticError,
   failLens,
   fingerprint as criticFingerprint,
+  assistantClosed,
+  readProposals,
   readRound,
   readRoundMeta,
   runCritic,
@@ -120,6 +123,11 @@ export interface StageIssue {
   judged?: { field: string; criterion: string; task: string }[];
   /** A critic's risk: never blocking, handed back with its fix for one more draft. */
   risk?: boolean;
+  /**
+   * An assistant proposed the critic's finding is not relevant (ADR 0115 addendum, 2026-10-25):
+   * it waits on a person, never on another draft.
+   */
+  proposed?: { finding: string; gate: string; by: string; reason?: string };
 }
 
 export const issueFingerprint = (rule: string, target: string, evidence = "") =>
@@ -472,6 +480,10 @@ export async function runStageLoop<A>(
     };
   }
   const loop = await readLoop(dir, change.id, spec.stage);
+  // The change's run records past runtime.yaml's retention go (ADR 0115 addendum, 2026-10-25):
+  // .runs/ keeps every prompt and answer on this machine, but not for ever. A run the stage waits
+  // on that is pruned is drafted or reviewed again, as for any run that is gone.
+  await pruneRuns(root, ctx.orgPack.runtime.retention.runsDays, now, change.id).catch(() => []);
   const agent = agentFor(ctx, spec as StageSpec<unknown>);
   const levels = ctx.orgPack.pack?.classification ?? [
     "public",
@@ -572,6 +584,24 @@ export async function runStageLoop<A>(
     loop.updatedAt = at;
     await writeLoop(dir, loop);
     throw new PlannerError("stopped", [message, ...lines].join("\n"), lines);
+  };
+
+  // ADR 0115 addendum (2026-10-25): a blocking finding an assistant proposed is not relevant
+  // waits on a person. Drafting again won't decide it, and the stage isn't done while it waits.
+  const stopOnProposed = async (found: StageIssue[], n: number): Promise<void> => {
+    const proposed = found.filter((i) => i.blocking && i.proposed);
+    if (!proposed.length) return;
+    const one = proposed.length === 1;
+    await stopNow(
+      `The ${spec.stage} stage stopped after ${n} draft${n === 1 ? "" : "s"}: an assistant proposed that ${one ? "a blocking finding" : `${proposed.length} blocking findings`} of the critic ${one ? "is" : "are"} not relevant, and only a person's decision closes ${one ? "it" : "them"}.`,
+      [
+        ...proposed.map(
+          (i) =>
+            `  - ${i.proposed!.finding} (${i.proposed!.gate} gate): ${i.message} Proposed by the assistant (${i.proposed!.by}), waiting on a person${i.proposed!.reason ? `: "${i.proposed!.reason}"` : ""}.`,
+        ),
+        `Decide ${one ? "it" : "each"} as yourself: atticus finding ${change.id} <id> not-relevant (with no --reason, the assistant's reason is kept, saying you accepted it), or fix the draft; then run ${rerunOf(spec.stage, change.id)} again.`,
+      ],
+    );
   };
 
   // What the lenses read with the draft: the drafter's sources and what the stage works out (S3).
@@ -842,6 +872,8 @@ export async function runStageLoop<A>(
         if (c.stop) await stopNow(c.stop.message, c.stop.lines);
         if (c.waiting)
           return handedToLens(c.waiting, { files, issues: [] }, { files, answer: cur });
+        // Still waiting on a person's decision: stop again rather than draft over it.
+        await stopOnProposed(c.issues, loop.iteration);
         issues = c.issues.filter((i) => i.blocking);
         if (issues.length === 0) {
           loop.state = "done";
@@ -1177,6 +1209,8 @@ export async function runStageLoop<A>(
         ignored.push(f);
         continue;
       }
+      // Waiting on a person's decision already: never a question, never a drafting stop.
+      if (i.proposed) continue;
       // Sightings up to a stop a person has since dealt with don't count again.
       const seen = f.seenIn.filter((x) => x > (f.stoppedAt ?? 0));
       const repeated = seen.length >= 3 && seen.at(-3) === n - 2 && seen.at(-2) === n - 1;
@@ -1189,6 +1223,10 @@ export async function runStageLoop<A>(
     loop.updatedAt = at;
     loop.state = "drafting";
     await writeLoop(dir, loop);
+
+    // ADR 0115 addendum (2026-10-25): a blocking finding an assistant proposed is not relevant
+    // waits on a person. Drafting again won't decide it, and the stage isn't done while it waits.
+    await stopOnProposed(found, n);
 
     // The loop's own questions are about the repo a finding names; the assistant's are the
     // change's. Each is raised for its own repo, so an answered one is found again (a question
@@ -1864,14 +1902,19 @@ async function criticIssues(
 ): Promise<StageIssue[]> {
   const rel = `${changesRelOf(root)}/${change}`;
   const out: StageIssue[] = [];
+  // What an assistant proposed about the round's findings waits on a person (ADR 0115 addendum,
+  // 2026-10-25), and an assistant's resolution of a blocking or risk finding closed nothing.
+  const first = findings[0]?.finding;
+  const proposals = first ? await readProposals(root, change, first.gate, first.round) : [];
   // Open blocking findings, and risks (ADR 0115 addendum, 2026-10-25), except a risk about what a
   // person decided by answering: they already made that decision.
   for (const f of findings.filter(
     (x) =>
-      x.finding.state === "open" &&
+      (x.finding.state === "open" || assistantClosed(x.finding)) &&
       (x.finding.severity === "blocking" || (x.finding.severity === "risk" && !x.finding.answered)),
   )) {
     const risk = f.finding.severity === "risk";
+    const p = proposals.find((x) => x.finding === f.finding.id && x.claim === "not-relevant");
     // What to fix goes with it, so the next draft has it without remembering the round.
     const fix = f.finding.fix.text.trim();
     out.push({
@@ -1881,6 +1924,16 @@ async function criticIssues(
       message: `The critic (${f.finding.rule}): ${f.finding.summary}${fix && fix !== "See why." ? ` What to fix: ${/[.!?]$/.test(fix) ? fix : `${fix}.`}` : ` Why: ${f.finding.why.trim()}`}`,
       blocking: !risk,
       ...(risk ? { risk: true } : { kind: await kindOf(f.finding) }),
+      ...(p
+        ? {
+            proposed: {
+              finding: f.finding.id,
+              gate: f.finding.gate,
+              by: p.by,
+              ...(p.reason ? { reason: p.reason } : {}),
+            },
+          }
+        : {}),
     });
   }
   return out;

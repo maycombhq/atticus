@@ -151,6 +151,36 @@ describe("a stage tab's findings", () => {
     expect(out).toContain(esc(S.severity.gap!));
   });
 
+  // ADR 0115 addendum (2026-10-25): an assistant only proposes; the finding stays open for a person.
+  it("says what an assistant proposed about an open finding, waiting on a person, with its options", () => {
+    const [first, ...rest] = VIEW.findings;
+    const out = render({
+      state: "ready",
+      data: {
+        ...VIEW,
+        findings: [
+          {
+            ...first!,
+            proposal: {
+              claim: "not-relevant",
+              by: "claude",
+              at: "2026-10-24T09:30:00Z",
+              reason: "The refusal is the same story.",
+            },
+          },
+          ...rest,
+        ],
+      },
+    });
+    expect(out).toContain(
+      esc(`${S.proposed("claude", "not-relevant")}: The refusal is the same story.`),
+    );
+    expect(out).toContain("waiting on a person");
+    // A person still has every option the finding allows.
+    expect(out).toContain(`aria-label="${esc(S.dismissFor("f-0000000a"))}"`);
+    expect(render(ready)).not.toContain("waiting on a person");
+  });
+
   it("has a labelled comment box per finding and lists the comments with whether a draft read them", () => {
     const out = render(ready);
     for (const id of ["f-0000000a", "f-0000000b", "f-0000000c"])

@@ -32,6 +32,14 @@ import { sentence, type Hit } from "./hits.js";
 import type { RuledHit } from "./findings.js";
 import type { EffectiveRule } from "./rules.js";
 import { QUESTION_ROLES, QUESTION_TEXT, QUESTIONS, questionOfRule } from "./questions.js";
+import {
+  diffLines,
+  diffText,
+  focusTerms,
+  SOURCE_PREFIX,
+  trimSources,
+  type TrimmedSource,
+} from "./review-scope.js";
 
 /**
  * Layer 2: AI lenses. One run per question the critic asks (ADR 0124 addendum, Part 4: is it
@@ -46,6 +54,16 @@ export type LensName = z.infer<typeof Lens>;
 
 export interface LensRun {
   lens: LensName;
+  /**
+   * Skipped because the code checks found a blocking finding in a stage's draft (ADR 0115
+   * addendum, 2026-10-25): the draft goes back without a lens call, and the round doesn't count.
+   */
+  held?: true;
+  /** What the lens was sent, sized to need (ADR 0115 addendum, 2026-10-25): in the round's record. */
+  context?: LensContext;
+  /** The prompt it was sent and its answer, kept for the newest round only (never in round.yaml). */
+  prompt?: string;
+  answer?: string;
   agent: string;
   /**
    * "waiting": the run went to the person's assistant (hand-off) and its answer isn't in yet;
@@ -220,6 +238,7 @@ function instructions(
   lens: LensName,
   review?: StageReview,
   repos: readonly CodeRepo[] = [],
+  since?: { unchanged: string[]; open: number },
 ): string {
   const q = questionOfLens(lens);
   return [
@@ -240,6 +259,9 @@ function instructions(
               ]
             : []),
         ]
+      : []),
+    ...(review?.since
+      ? [sinceRule(review.since, since?.unchanged ?? [], since?.open ?? 0), ""]
       : []),
     ...(ctx.answers?.length ? [ANSWERS_RULE, ""] : []),
     ...(ctx.recorded?.length ? [RECORDED_RULE, ""] : []),
@@ -566,6 +588,66 @@ export interface StageReview {
   stage: string;
   docs: Doc[];
   sources: SourceInput[];
+  /** A redraft: what the last reviewed draft was, so the lenses see what changed since. */
+  since?: ReviewSince;
+}
+
+/** A finding of the last reviewed round still open, about a part of the draft that changed. */
+export interface OpenFinding {
+  id: string;
+  rule: string;
+  /** The question it asks. */
+  lens: string;
+  severity: string;
+  artifact: string;
+  line?: number;
+  summary: string;
+  /** What an assistant said about it (proposals.ts), for the lens to check, never to trust. */
+  proposal?: { claim: string; by: string; reason?: string };
+}
+
+/** The last reviewed draft (review-scope.ts): its round, the texts its lenses were sent, what is open. */
+export interface ReviewSince {
+  round: number;
+  /** By path; a data block the stage worked out is under `source/<id>`. */
+  texts: Map<string, string>;
+  open: OpenFinding[];
+}
+
+/** What a lens was sent, sized to need: its prompt's tokens, what was cut, what was a diff. */
+export interface LensContext {
+  tokens: number;
+  trimmed: TrimmedSource[];
+  /** The round its draft was diffed against, and the files that hadn't changed and weren't sent. */
+  since?: number;
+  unchanged?: string[];
+}
+
+/** The data block of the findings still open from the last reviewed round. */
+export const OPEN_FINDINGS = "open-findings";
+
+function openFindingsText(round: number, open: readonly OpenFinding[]): string {
+  return [
+    `Findings of round ${round} still open, about parts of the draft that changed since:`,
+    ...open.map((f) => {
+      const said = f.proposal
+        ? ` An assistant said it is ${f.proposal.claim === "fixed" ? "fixed" : "not relevant"}${f.proposal.reason ? `: "${f.proposal.reason}"` : ""}.`
+        : "";
+      return `- ${f.id} (rule ${f.rule}, ${f.severity}) at ${f.artifact}${f.line ? `:${f.line}` : ""} then: ${f.summary}${said}`;
+    }),
+  ].join("\n");
+}
+
+/** What a lens reviewing a redraft is told about the diff and the open findings. */
+function sinceRule(since: ReviewSince, unchanged: readonly string[], open: number): string {
+  return [
+    `This review is of what changed since round ${since.round}, the last draft the lenses reviewed. A file that changed is given as its changes: each line kept or added with its number now ("7: text"), each removed line as "-: text", with a few lines around each change; cite the numbers now.${unchanged.length ? ` ${unchanged.join(", ")} didn't change and ${unchanged.length === 1 ? "isn't" : "aren't"} repeated.` : ""} Atticus carries the findings about what didn't change, as they were: don't report them again.`,
+    ...(open
+      ? [
+          `The "${OPEN_FINDINGS}" data block lists the findings still open from round ${since.round} about what changed, with what an assistant said about each. Report one again, with the line as it is now, only if the draft still has the problem; leave it out if the change fixed it. An assistant's word that it is fixed or not relevant is a claim for you to check, never a reason on its own.`,
+        ]
+      : []),
+  ].join(" ");
 }
 
 export interface LensOptions {
@@ -631,7 +713,10 @@ export async function runLenses(
   runs: LensRun[];
   discarded: Discarded[];
   skipped: { rule: string; reason: string }[];
+  /** The texts the lenses were sent, whole, by path (a worked-out data block under `source/<id>`). */
+  reviewed: Map<string, string>;
 }> {
+  const reviewed = new Map<string, string>();
   const hits: RuledHit[] = [];
   const runs: LensRun[] = [];
   const discarded: Discarded[] = [];
@@ -702,6 +787,19 @@ export async function runLenses(
       });
       continue;
     }
+    // ADR 0115 addendum (2026-10-25): a stage's draft the code checks block goes back to its
+    // drafter without a lens call; the lenses review it once the code checks pass.
+    if (o.review && o.failed.size) {
+      runs.push({
+        ...base,
+        state: "skipped",
+        held: true,
+        reason: `held: the code checks found blocking findings in ${[...o.failed].sort().join(", ")}; the lenses review the draft once they pass`,
+      });
+      for (const r of sent)
+        skipped.push({ rule: r.id, reason: "not run: the code checks block the draft" });
+      continue;
+    }
     if (!o.runtime) {
       const off = ctx.lifecycle.orgPack.runtime.ai === "off";
       runs.push({
@@ -718,12 +816,40 @@ export async function runLenses(
         });
       continue;
     }
+    // A redraft (ADR 0115 addendum, 2026-10-25): each file that changed since the last reviewed
+    // draft goes as its diff, one that didn't isn't sent (the brief, the yardstick, always is).
+    const since = review?.since;
+    const unchanged: string[] = [];
+    const docText = new Map<string, string>();
+    for (const d of [...docs.values()].sort((a, b) => a.path.localeCompare(b.path))) {
+      reviewed.set(d.path, d.raw);
+      const was = since?.texts.get(d.path);
+      if (since && was !== undefined && d.path !== "brief.md") {
+        if (was === d.raw) {
+          unchanged.push(d.path);
+          continue;
+        }
+        // A file rewritten throughout reads better whole than as its diff, and costs less.
+        const diff = diffText(diffLines(was, d.raw));
+        const whole = numbered(d);
+        docText.set(d.path, diff.length < whole.length ? diff : whole);
+        continue;
+      }
+      docText.set(d.path, numbered(d));
+    }
+    const open = (since?.open ?? []).filter((f) => questionOfLens(f.lens as LensName) === lens);
     const sources: SourceInput[] = [
       {
         id: "0-instructions",
         kind: "instruction",
         origin: "atticus/critic",
-        text: instructions(ctx, lens, review, repos),
+        text: instructions(
+          ctx,
+          lens,
+          review,
+          repos,
+          since ? { unchanged, open: open.length } : undefined,
+        ),
         classification: "public",
         trusted: true,
       },
@@ -745,17 +871,29 @@ export async function runLenses(
         classification: "public",
         trusted: true,
       });
-    for (const d of [...docs.values()].sort((a, b) => a.path.localeCompare(b.path)))
+    for (const [path, text] of docText)
       sources.push({
-        id: d.path,
+        id: path,
         kind: "artifact",
-        origin: `${changesRelOf(ctx.root)}/${ctx.change.id}/${d.path}`,
-        text: numbered(d),
+        origin: `${changesRelOf(ctx.root)}/${ctx.change.id}/${path}`,
+        text,
         classification: "internal",
         priority: 10,
       });
-    if ((agent.inputs as string[]).includes("catalog-slice"))
+    if (since && open.length)
       sources.push({
+        id: OPEN_FINDINGS,
+        kind: "document",
+        origin: `review/ (round ${since.round}'s findings, and what assistants said about them)`,
+        text: openFindingsText(since.round, open),
+        classification: "internal",
+        priority: 9,
+      });
+    // What the lens reads of the estate: in a stage's review, what bears on the draft and the
+    // lens's question (ADR 0115 addendum, 2026-10-25); the critic run on its own sends it as before.
+    const estate: SourceInput[] = [];
+    if ((agent.inputs as string[]).includes("catalog-slice"))
+      estate.push({
         id: "catalog-slice",
         kind: "catalog",
         origin: "catalog",
@@ -783,16 +921,62 @@ export async function runLenses(
         classification: "internal",
         priority: 9,
       });
-    // What the drafter read of the estate, as data, below the artifacts (ADR 0115).
-    for (const x of review?.sources ?? [])
-      if (x.kind !== "instruction" && !docs.has(x.id) && !sources.some((y) => y.id === x.id))
-        sources.push({
-          ...x,
-          // The merged target flows are the draft itself, read in order: kept above the estate.
-          priority: x.id === MERGED_FLOWS ? 8 : Math.min(x.priority ?? 4, 4),
-        });
-    const levels = ctx.classifications;
+    // What the drafter read of the estate, as data, below the artifacts (ADR 0115). A block the
+    // stage worked out from the draft (its kind is artifact) is the draft: in a redraft it goes as
+    // its diff, or not at all when it didn't change; never trimmed.
+    for (const x of review?.sources ?? []) {
+      if (x.kind === "instruction" || docs.has(x.id) || sources.some((y) => y.id === x.id))
+        continue;
+      if (estate.some((y) => y.id === x.id)) continue;
+      // The merged target flows are the draft itself, read in order: kept above the estate.
+      const priority = x.id === MERGED_FLOWS ? 8 : Math.min(x.priority ?? 4, 4);
+      if (x.kind !== "artifact") {
+        estate.push({ ...x, priority });
+        continue;
+      }
+      reviewed.set(`${SOURCE_PREFIX}${x.id}`, x.text);
+      const was = since?.texts.get(`${SOURCE_PREFIX}${x.id}`);
+      if (since && was === x.text) {
+        unchanged.push(x.id);
+        continue;
+      }
+      const diff = since && was !== undefined ? diffText(diffLines(was, x.text)) : undefined;
+      sources.push({
+        ...x,
+        ...(diff !== undefined && diff.length < x.text.length ? { text: diff } : {}),
+        priority,
+      });
+    }
+    // A redraft with nothing changed since the last reviewed draft (a rerun after a stop, say)
+    // has nothing to review: its findings are carried, and no lens is called.
+    const draftSent =
+      [...docText.keys()].some((p) => p !== "brief.md") ||
+      sources.some((x) => x.kind === "artifact" && !docs.has(x.id));
+    if (since && !draftSent && !open.length) {
+      runs.push({
+        ...base,
+        state: "skipped",
+        held: true,
+        reason: `nothing changed since round ${since.round}, the last reviewed draft: its findings are carried`,
+        context: { tokens: 0, trimmed: [], since: since.round, unchanged: [...unchanged].sort() },
+      });
+      continue;
+    }
     const budget = ctx.lifecycle.orgPack.runtime.budgets.perAgent[agent.id] ?? agent.tokenBudget;
+    // The draft's own words (or, in a redraft, its changes and the open findings) say what bears.
+    const focus = review
+      ? focusTerms(
+          [
+            ...[...docText.values()],
+            ...(since ? open.map((f) => `${f.artifact} ${f.summary}`) : []),
+          ].join("\n"),
+        )
+      : [];
+    const sized = review
+      ? trimSources(estate, { focus, question: lens, budget })
+      : { sources: estate, trimmed: [] };
+    sources.push(...sized.sources);
+    const levels = ctx.classifications;
     let pack;
     try {
       pack = buildContextPack({
@@ -823,6 +1007,11 @@ export async function runLenses(
       );
     }
     const out = leftOut(pack, docs.keys());
+    const context: LensContext = {
+      tokens: pack.manifest.totalTokens,
+      trimmed: sized.trimmed,
+      ...(since ? { since: since.round, unchanged: [...unchanged].sort() } : {}),
+    };
     try {
       const prepared = await o.runtime.prepare({
         change: ctx.change.id,
@@ -836,7 +1025,13 @@ export async function runLenses(
       });
       const run = await o.runtime.run(prepared.runId);
       const summary = toRunSummary(run);
-      const meta = { runtime: run.runtime, summary, promptSha256: pack.manifest.promptSha256 };
+      const meta = {
+        runtime: run.runtime,
+        summary,
+        promptSha256: pack.manifest.promptSha256,
+        context,
+        prompt: pack.prompt,
+      };
       if (run.state === "waiting") {
         // Hand-off: the prompt is written and the person's assistant has it. The round records
         // the lens as waiting; `atticus handoff done <run>` reads the answer in later.
@@ -908,6 +1103,8 @@ export async function runLenses(
             runtime: second.runtime,
             summary: toRunSummary(second),
             promptSha256: again.request.pack.manifest.promptSha256,
+            context: { ...context, tokens: again.request.pack.manifest.totalTokens },
+            prompt: again.request.pack.prompt,
           };
         }
       }
@@ -917,14 +1114,21 @@ export async function runLenses(
       discarded.push(...parsed.discarded);
       // An answer that isn't a review (empty, a refusal, prose) is a lens that failed, never a
       // clean review: the gate stays closed until a lens really reviews.
+      const answer = final === meta ? run.output : undefined;
       runs.push(
         parsed.malformed
           ? { ...base, ...final, state: "failed", reason: parsed.malformed }
-          : { ...base, ...final, state: "ran", ...(out.reason ? { reason: out.reason } : {}) },
+          : {
+              ...base,
+              ...final,
+              ...(answer !== undefined ? { answer } : {}),
+              state: "ran",
+              ...(out.reason ? { reason: out.reason } : {}),
+            },
       );
     } catch (e) {
       runs.push({ ...base, state: "failed", reason: (e as Error).message });
     }
   }
-  return { hits, runs, discarded, skipped };
+  return { hits, runs, discarded, skipped, reviewed };
 }

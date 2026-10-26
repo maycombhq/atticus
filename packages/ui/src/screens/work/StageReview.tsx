@@ -122,6 +122,12 @@ export function FindingCard(p: { item: Item; wrote?: Wrote } & StageReviewHandle
           </>
         )}
       </dl>
+      {open && p.item.proposal && (
+        <p role="note" className="work-say">
+          {S.proposed(p.item.proposal.by, p.item.proposal.claim)}
+          {p.item.proposal.reason ? `: ${p.item.proposal.reason}` : ""}
+        </p>
+      )}
       {f.resolution && (
         <p className="work-say">
           {S.resolved(S.state[f.state] ?? f.state, f.resolution.by)}

@@ -991,17 +991,11 @@ describe("the starter review at each stage (ADR 0120)", () => {
     expect(arch.state).toBe("done");
     // The starter rules' risk on the call to Northwind Pay (no timeout stated) gets one more
     // draft, handed back with its fix (ADR 0115 addendum, 2026-10-25); the same draft again
-    // leaves it a risk, and the stage is done: two rounds of the same three lenses.
+    // leaves it a risk, and the stage is done. Nothing changed in that draft, so its round calls
+    // no lens (ADR 0115 addendum, 2026-10-25, critic cost): one round of the three lenses.
     expect(arch.drafts).toBe(2);
     expect(arch.notes.join("\n")).toContain("back to your assistant for one more draft");
-    expect(lenses.map((l) => l.lens)).toEqual([
-      "true",
-      "complete",
-      "safe",
-      "true",
-      "complete",
-      "safe",
-    ]);
+    expect(lenses.map((l) => l.lens)).toEqual(["true", "complete", "safe"]);
     expect(lenses[0]!.prompt).toContain("review.shown-data-has-a-source");
     expect(lenses[1]!.prompt).toContain("review.outcome-has-target-steps");
     expect(lenses[2]!.prompt).toContain("review.new-column-complete");
@@ -1009,10 +1003,10 @@ describe("the starter review at each stage (ADR 0120)", () => {
     lenses = [];
     const stories = await storiesStage(root, CHANGE, { runtime: rt([STORIES]), now: NOW });
     expect(stories.state).toBe("done");
-    // A starter rule's risk gets its one more draft here too.
+    // A starter rule's risk gets its one more draft here too; the same draft again calls no lens.
     expect(stories.drafts).toBe(2);
     const four = ["true", "complete", "safe", "ship"];
-    expect(lenses.map((l) => l.lens)).toEqual([...four, ...four]);
+    expect(lenses.map((l) => l.lens)).toEqual(four);
     const complete = lenses.find((l) => l.lens === "complete")!.prompt;
     expect(complete).toContain("review.outcome-has-story");
     // The story rules read the stories only; the lens judges them against the brief all the same.

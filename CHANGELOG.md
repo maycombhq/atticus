@@ -4,6 +4,15 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### The critic costs less, and only a person closes its findings (ADR 0115 addendum, 2026-10-25)
+
+- **An assistant can't silence the critic.** A live run's drafting assistant dismissed a finding itself (`resolution.by: claude`). Now an AI (an assistant, an agent, a runtime, a bot account: `assistantActor`) that dismisses, applies or edits a blocking or risk finding only proposes it: the finding stays open, "proposed by the assistant (claude) as not relevant, waiting on a person", in `atticus findings`, the gate's reasons and the app's stage tab. An assistant never waives. The stage stops for the person rather than draft again, and a person's `atticus finding <change> <id> not-relevant` closes it (with no reason, the assistant's is kept, saying who accepted it). `atticus finding` run in a coding assistant's terminal with no `--by` records the assistant. Older finding files an AI resolved are read as open.
+- **Lenses once per draft worth reviewing.** A stage's draft that fails the critic's code checks goes back without a lens call, and the round doesn't count toward the gate's limit; a draft with nothing changed calls no lens and keeps its findings.
+- **A redraft's lenses see the diff.** The lenses get what changed since the last reviewed draft and the findings still open about it; findings about parts that didn't change are carried as they were.
+- **Each lens gets the estate that bears on its question,** cut to the entries naming what the draft names and capped at a share of its token budget; the round's record says each lens's size and what was cut. On the real change's 40 recorded lens prompts this halves the tokens (2.21M to 1.10M), before the calls no longer made.
+- **Run records.** Only the newest round at a gate keeps its lenses' prompts and answers in review/; `.runs/` is pruned per runtime.yaml `retention.runsDays` as a stage runs.
+- Contracts: C3 unchanged (proposals sit beside findings); C4 2.25.0 adds a stage finding's optional `proposal`.
+
 ### npm installs carry search by meaning (ADR 0124 addendum D-npm)
 
 - **`npm install --global @maycombhq/cli` through a bank's npm mirror now gives search by meaning, with nothing downloaded after install and no install scripts.** `@maycombhq/embed-model` carries the model (all-MiniLM-L6-v2, 79 MB packed), its tokenizer, model card and Apache-2.0 licence; each `@maycombhq/onnxruntime-<platform>-<arch>` carries onnxruntime's CPU build for that platform and `@maycombhq/onnxruntime-wasm` its WebAssembly fallback, with onnxruntime's MIT licence. npm installs only your platform's runtime. On Linux x64 the install downloads 117 MB (141 packages). `--omit=optional` still leaves it out.

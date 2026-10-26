@@ -24,6 +24,7 @@ import { buildContext, type CriticContext, type GateDef } from "./context.js";
 import type { DeterministicCheckDef } from "./hits.js";
 import { questionOfRule, typeTakes } from "./questions.js";
 import { CriticError } from "./errors.js";
+import { assistantClosed, readProposals, writeProposals, type Proposal } from "./proposals.js";
 import {
   askedElsewhere,
   decidedElsewhere,
@@ -202,6 +203,11 @@ export interface CriticFinding {
   layer: Layer;
   /** True when its state came from the previous round (dismissed, waived or asked before). */
   carried: boolean;
+  /**
+   * Carried from the last reviewed draft because the part it is about didn't change (ADR 0115
+   * addendum, 2026-10-25), open or decided.
+   */
+  unchanged?: boolean;
 }
 
 /**
@@ -220,23 +226,43 @@ export async function writeHits(
     now: string;
     priorRound?: number | undefined;
     taken?: Set<string>;
+    /**
+     * Fingerprints already in the round, carried from the last reviewed draft because the part
+     * they are about didn't change (ADR 0115 addendum, 2026-10-25): a lens's hit about the same
+     * problem isn't written twice.
+     */
+    skip?: ReadonlySet<string>;
   },
 ): Promise<CriticFinding[]> {
   const prior = new Map<string, Finding>();
+  const proposed = new Map<string, Proposal>();
   if (o.priorRound !== undefined) {
     const last = await readRound(root, o.change, o.gate, o.priorRound);
     for (const s of last.findings)
-      if (["dismissed", "waived", "asked"].includes(s.finding.state) || wroteIn(s.finding))
+      if (
+        (["dismissed", "waived", "asked"].includes(s.finding.state) || wroteIn(s.finding)) &&
+        // An assistant's resolution of a blocking or risk finding is never carried as a decision.
+        !assistantClosed(s.finding)
+      )
         prior.set(fingerprint(s.finding), s.finding);
+    // What an assistant proposed about a finding that comes back unchanged waits on a person still;
+    // a claim that it was fixed, about a finding that came back, is answered by this round.
+    for (const p of await readProposals(root, o.change, o.gate, o.priorRound))
+      if (p.claim === "not-relevant") proposed.set(p.fingerprint, p);
   }
   const elsewhere = await askedElsewhere(root, o.change, o.gate);
   // A person's decision at another gate holds here too (W2), as it does within a gate.
   const decided = await decidedElsewhere(root, o.change, o.gate);
   const taken = o.taken ?? new Set<string>();
   const findings: CriticFinding[] = [];
+  const carriedProposals: Proposal[] = [];
   for (const h of hits) {
     const id = findingIdFor(h, taken);
     let f = toFinding(h, { id, change: o.change, gate: o.gate, round: o.round, now: o.now });
+    if (o.skip?.has(fingerprint(f))) {
+      taken.delete(id);
+      continue;
+    }
     const before = prior.get(fingerprint(f)) ?? decided.get(fingerprint(f));
     let carried = false;
     if (before?.resolution) {
@@ -255,6 +281,8 @@ export async function writeHits(
       }
     }
     await writeFinding(root, f);
+    const p = f.state === "open" ? proposed.get(fingerprint(f)) : undefined;
+    if (p) carriedProposals.push({ ...p, finding: f.id });
     findings.push({
       finding: f,
       path: `review/${o.gate}/${o.round}/${id}.yaml`,
@@ -262,5 +290,10 @@ export async function writeHits(
       carried,
     });
   }
+  if (carriedProposals.length)
+    await writeProposals(root, o.change, o.gate, o.round, [
+      ...(await readProposals(root, o.change, o.gate, o.round)),
+      ...carriedProposals,
+    ]);
   return findings;
 }
