@@ -5,7 +5,7 @@ import {
   changeTypeOf,
   loadChangeContext,
   scoreRisk,
-  testsFor,
+  testPlanFor,
   type ChangeContext,
   type Footprint,
   type Risk,
@@ -190,7 +190,7 @@ export async function loadPlanContext(
   const files = await readChangeFiles(dir);
   const footprint = await changeFootprint(lifecycle, change);
   const risk = scoreRisk({ type: change.type, footprint }, lifecycle.policy);
-  const tests = testsFor(lifecycle.orgPack.testStrategy, change.type, risk.level);
+  const tests = testPlanFor(lifecycle, change.type, risk);
   const records = lifecycle.records;
   const byId = new Map(records.map((r) => [r.id, r]));
   const get = <K extends CatalogRecord["kind"]>(kind: K, id: string) => {

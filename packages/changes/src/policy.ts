@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parse } from "yaml";
 import { z } from "zod";
-import { ChangeArtifact, Phase, RecordId } from "@maycombhq/core";
+import { ChangeArtifact, Phase, RecordId, TestType } from "@maycombhq/core";
 
 /**
  * The change policy: how Atticus turns the org pack into lifecycle rules where C6 has no
@@ -13,7 +13,8 @@ import { ChangeArtifact, Phase, RecordId } from "@maycombhq/core";
  * - `privacy`: which catalog classifications count as personal, and the phase whose hand-off
  *   PR says so.
  * - `risk`: weights for the deterministic risk score and the score at which a change becomes
- *   medium or high risk.
+ *   medium or high risk; the words that mark a delta step as an authorisation change or personal
+ *   data, and the test kinds each factor asks (ADR 0124 addendum B-change).
  * - `stages`: the stage path (ADR 0087): each stage, the phase it serves, the loop state it
  *   keeps, the command that runs it, the files it writes and the type's artifacts it writes. A
  *   change whose folder holds any stage's loop state is on the stage path: each phase is due
@@ -92,6 +93,89 @@ const Privacy = z.strictObject({
   phases: z.array(Phase).min(1).default(["design"]),
 });
 
+/** The factors a stage's deltas raise (ADR 0124 addendum B-change). */
+export const SIGNAL_FACTORS = [
+  "outside-call",
+  "auth",
+  "personal-data",
+  "schema",
+  "breaking",
+  "spread",
+] as const;
+export type SignalFactor = (typeof SIGNAL_FACTORS)[number];
+
+const DEFAULT_WEIGHTS = {
+  extraSystem: 1,
+  dataStore: 2,
+  vendor: 3,
+  interfaceModify: 1,
+  interfaceRetire: 2,
+  outsideCall: 3,
+  auth: 3,
+  personalData: 2,
+  schema: 2,
+  breaking: 3,
+  extraRepo: 1,
+};
+
+/** Words of a step that change who may do what. */
+const AUTH_WORDS = [
+  "401",
+  "403",
+  "auth",
+  "authn",
+  "authz",
+  "authenticate",
+  "authentication",
+  "authorise",
+  "authorize",
+  "authorisation",
+  "authorization",
+  "unauthorised",
+  "unauthorized",
+  "forbidden",
+  "permission",
+  "permissions",
+  "role",
+  "roles",
+  "scope",
+  "scopes",
+  "entitlement",
+  "entitlements",
+  "acl",
+  "rbac",
+];
+
+/** Words of a table, column or field that hold personal or consent data. */
+const PERSONAL_WORDS = [
+  "consent",
+  "consents",
+  "pii",
+  "personal",
+  "ssn",
+  "passport",
+  "dob",
+  "birth",
+  "birthdate",
+  "email",
+  "phone",
+  "nationality",
+  "gender",
+  "health",
+  "biometric",
+  "salary",
+];
+
+/** What each factor asks of the tests, on top of the test strategy's row. */
+const DEFAULT_FACTOR_TESTS: Partial<Record<SignalFactor, z.infer<typeof TestType>[]>> = {
+  "outside-call": ["contract", "integration"],
+  auth: ["security"],
+  "personal-data": ["security"],
+  schema: ["data-migration", "integration"],
+  breaking: ["contract", "regression"],
+  spread: ["integration"],
+};
+
 const Risk = z.strictObject({
   typeWeights: z
     .record(RecordId, z.number().int().min(0))
@@ -106,8 +190,41 @@ const Risk = z.strictObject({
       vendor: z.number().int().min(0).default(3),
       interfaceModify: z.number().int().min(0).default(1),
       interfaceRetire: z.number().int().min(0).default(2),
+      // What the stages' deltas do (ADR 0124 addendum B-change): each factor counts once however
+      // many steps raise it, and cites every step. Optional and additive (still version 1).
+      /** A step calls a system outside the estate: a vendor, a model provider. */
+      outsideCall: z.number().int().min(0).default(3),
+      /** A step changes who may do what: an authorisation or authentication rule. */
+      auth: z.number().int().min(0).default(3),
+      /** A step reads or writes personal, consent or classified data. */
+      personalData: z.number().int().min(0).default(2),
+      /** A step adds a table, columns or a migration. */
+      schema: z.number().int().min(0).default(2),
+      /** A step breaks who calls or reads it today. */
+      breaking: z.number().int().min(0).default(3),
+      /** Per repo the change spans beyond the first: the deploy order matters. */
+      extraRepo: z.number().int().min(0).default(1),
     })
-    .default({ extraSystem: 1, dataStore: 2, vendor: 3, interfaceModify: 1, interfaceRetire: 2 }),
+    .default({ ...DEFAULT_WEIGHTS }),
+  /**
+   * The words that mark a delta step as an authorisation change or as personal data (B-change).
+   * A step's words, field names, table and column names and file paths are split into words and
+   * compared whole. Optional and additive; a list a team writes replaces the built-in one.
+   */
+  signals: z
+    .strictObject({
+      auth: z.array(z.string().min(1)).default([...AUTH_WORDS]),
+      personal: z.array(z.string().min(1)).default([...PERSONAL_WORDS]),
+    })
+    .default({ auth: [...AUTH_WORDS], personal: [...PERSONAL_WORDS] }),
+  /**
+   * The test kinds each factor asks on top of the test strategy's row (B-change). Optional and
+   * additive; a factor a team lists replaces the built-in kinds for it.
+   */
+  tests: z
+    .partialRecord(z.enum(SIGNAL_FACTORS), z.array(TestType).min(1))
+    .default({})
+    .transform((t) => ({ ...DEFAULT_FACTOR_TESTS, ...t })),
   /** Lowest score of each level; below medium is low. */
   levels: z
     .strictObject({

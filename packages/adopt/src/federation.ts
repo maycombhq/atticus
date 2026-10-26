@@ -133,6 +133,11 @@ export async function federationConflicts(
         tables: both(m.tables, fp.tables),
         records: both(m.records, fp.records),
         repos: both(m.repos, fp.repos),
+        // Flows both change (ADR 0124 addendum B-change).
+        flows: both(
+          m.flows.filter((x) => x.change !== "read").map((x) => x.id),
+          fp.flows.filter((x) => x.change !== "read").map((x) => x.id),
+        ),
       };
       if (Object.values(overlap).some((v) => v.length > 0))
         out.push({ changes: [id, `${t.origin}:${t.change.id}`], overlap });

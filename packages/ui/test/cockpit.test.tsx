@@ -107,6 +107,13 @@ describe("the change cockpit (WP7.1)", () => {
     expect(out).not.toContain(esc(C.blocks));
     expect(stageMark({ ...DATA.stages[0]!, state: "done" })).toBe("done");
   });
+
+  it("says where the stages' work is when it ran ahead of the state (B-change), and nothing when it didn't", () => {
+    const work =
+      'Stories done; the change is still in define: raise "Send to architecture" (the define hand-off), then the design and plan hand-offs.';
+    expect(renderToStaticMarkup(<CockpitView c={{ ...DATA, work }} />)).toContain(esc(work));
+    expect(renderToStaticMarkup(<CockpitView c={DATA} />)).not.toContain("still in define");
+  });
 });
 
 describe("watching a change from its cockpit (WP7.5)", () => {

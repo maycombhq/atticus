@@ -12,15 +12,19 @@ export interface ChangeConflict {
     tables: string[];
     records: string[];
     repos: string[];
+    /** Flows both change (ADR 0124 addendum B-change); a flow one of them only reads isn't one. */
+    flows: string[];
   };
 }
 
 const both = (a: string[], b: string[]) => a.filter((x) => b.includes(x));
+const changed = (f: Footprint) => f.flows.filter((x) => x.change !== "read").map((x) => x.id);
 
 /**
  * Open changes (anything not archived) that touch the same catalog records (systems,
- * interfaces, data stores, tables, other records) or the same repos, as pairs with the ids
- * they share. Deterministic: catalog and change files only.
+ * interfaces, data stores, tables, other records), the same repos or change the same flows, as
+ * pairs with the ids they share. Deterministic: catalog and change files only; a change on the
+ * stage path is read from its stages' files (B-change).
  */
 export async function detectConflicts(root: string): Promise<ChangeConflict[]> {
   const ctx = await loadChangeContext(root);
@@ -42,6 +46,7 @@ export async function detectConflicts(root: string): Promise<ChangeConflict[]> {
         tables: both(a.tables, b.tables),
         records: both(a.records, b.records),
         repos: both(a.repos, b.repos),
+        flows: both(changed(a), changed(b)),
       };
       if (Object.values(overlap).some((v) => v.length > 0))
         out.push({ changes: [ia, ib], overlap });

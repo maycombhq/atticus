@@ -28,6 +28,13 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - **The critic's auth check needs no legacy reader for it:** it reads the auth the joined Interface carries from the gateway's facts.
 - **`/atticus-map` changed:** run `atticus assistant-files` (or update the Claude Code plugin) to get the new rule.
 
+### A change is read from what its stages write (ADR 0124 addendum B-change, C4 2.25.0)
+
+- **A change's footprint comes from its feature placement, target flows and tasks**, not from `proposal.md`, `interfaces.md` and `data.md`, which the stages never write. Risk, test kinds, conflicts between open changes, the critic's catalog slice and the stories' definition of done all read it. A legacy change's files are still read.
+- **Risk sees what matters, and says where:** a call to an outside system (a vendor, a model provider), a change to who may do what, personal or consent data, a schema change, a breaking change and a change across repos each add a factor citing the target-flow steps that raised it. Each asks its own tests on top of the test strategy's row, with why: an outside call, contract and integration tests against a stub with its failure paths; an authorisation change or personal data, security tests. Weights, words and kinds are the change policy's to change.
+- **The state shown follows the work:** `atticus change status` says "Stories done; the change is still in define: raise "Send to architecture"…", the app's cockpit and status API say the same, and `atticus next` gives the hand-off instead of running a done stage again. The hand-off PR still moves the state.
+- **Conflicts** now also name the flows two open changes both change.
+
 ### npm installs carry search by meaning (ADR 0124 addendum D-npm)
 
 - **`npm install --global @maycombhq/cli` through a bank's npm mirror now gives search by meaning, with nothing downloaded after install and no install scripts.** `@maycombhq/embed-model` carries the model (all-MiniLM-L6-v2, 79 MB packed), its tokenizer, model card and Apache-2.0 licence; each `@maycombhq/onnxruntime-<platform>-<arch>` carries onnxruntime's CPU build for that platform and `@maycombhq/onnxruntime-wasm` its WebAssembly fallback, with onnxruntime's MIT licence. npm installs only your platform's runtime. On Linux x64 the install downloads 117 MB (141 packages). `--omit=optional` still leaves it out.

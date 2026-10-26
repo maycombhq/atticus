@@ -90,7 +90,7 @@ Added, additive: A new call to the vendor. Consumers: forge-orders.
 
 ## Tests
 
-unit, contract, integration, regression
+unit, contract, integration, e2e, regression, performance, security, data-migration
 
 ## Test notes
 
@@ -106,7 +106,9 @@ The V4 migration runs before forge-orders is released.
 - Every acceptance criterion has a test, and the repo's build and tests pass.
 - The interface and data changes are in the code as written here, and no other entry, field or column changed.
 - A person reviewed and merged each task's pull request; nothing was pushed to a protected branch.
-- Tests of each kind test-strategy.yaml asks of a feature change at medium risk: unit, contract, integration, regression.
+- Tests of each kind test-strategy.yaml asks of a feature change at high risk: unit, contract, integration, e2e, regression, performance, security.
+- Contract and integration tests against a stub of northwind-pay (POST /v1/screenings, new), with its failure paths (an error, a timeout, an answer it can't use) (target-flows/forge-orders.place-order.yaml:8).
+- Data-migration and integration tests that the migration runs on today's data and the code reads what it writes (target-flows/forge-orders.place-order.yaml:30).
 - The build gate (gates.yaml) passes: tests-pass.
 - The qa gate (gates.yaml) passes: tests-pass.
 - A person has raised R1 Network firewall rule and R2 Vendor onboarding (requests.md).

@@ -181,6 +181,7 @@ describe("federated changes for conflict detection", () => {
           tables: [],
           records: [],
           repos: [],
+          flows: [],
         },
       },
     ]);

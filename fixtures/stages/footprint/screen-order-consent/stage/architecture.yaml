@@ -1,0 +1,12 @@
+# The architecture stage's loop (ADR 0087). Atticus writes this file.
+schemaVersion: 1
+change: screen-order-consent
+stage: architecture
+iteration: 1
+state: done
+updatedAt: 2026-10-24T11:00:00Z
+critic:
+  - gate: design
+    round: 1
+findings: []
+questions: []

@@ -218,6 +218,7 @@ export async function changeStatus(
           state: r.state,
           phase: r.phase,
           next: r.next,
+          ...(r.progress ? { progress: r.progress } : {}),
           nextStep: r.nextStep,
           reasons: r.reasons,
           risk: r.risk,
@@ -235,10 +236,12 @@ export async function changeStatus(
   }
   io.out(`${r.change.id}: ${r.change.title} (${r.change.type})`);
   io.out(`State: ${r.state}`);
+  // B-change: where the stages' work is, when it ran ahead of the gates.
+  if (r.progress) io.out(`Work: ${r.progress.summary}`);
   io.out(`Next: ${r.nextStep}`);
   io.out(
     `Risk: ${r.risk.level} (${r.risk.score})${r.risk.factors.length ? ": " : ""}${r.risk.factors
-      .map((f) => `${f.detail} +${f.points}`)
+      .map((f) => `${f.detail} +${f.points}${f.cites?.length ? ` (${f.cites.join(", ")})` : ""}`)
       .join("; ")}`,
   );
   if (r.phase)
@@ -251,12 +254,16 @@ export async function changeStatus(
     );
   io.out(`Tests: ${r.tests.required.length ? r.tests.required.join(", ") : "none listed"}`);
   if (r.tests.note) io.out(`  (${r.tests.note})`);
+  for (const a of r.tests.added ?? [])
+    io.out(`  ${a.kinds.join(" and ")}, for ${a.factor}: tests ${a.why} (${a.cites.join(", ")})`);
   // R5: which classifications counted as personal, and from where, said on the line.
   const counted = `counted as personal: ${r.privacy.counted.levels.join(", ")}; from ${r.privacy.counted.from === "change-policy" ? "the change policy's privacy.classifications" : "the change policy's privacy.classifications and the org pack's levels above internal"}`;
   io.out(
     r.privacy.touched
       ? `Privacy: touches personal data (${r.privacy.records.map((x) => (x.field ? `${x.id}.${x.field} ${x.classification}` : `${x.id} ${x.classification}`)).join(", ")}); review it with the ${r.privacy.phase} hand-off (${counted}).`
-      : `Privacy: no personal data touched (${counted}).`,
+      : r.risk.factors.some((f) => f.factor === "personal-data")
+        ? `Privacy: no data classified personal touched (${counted}), but its steps touch personal or consent data by name: see the risk's personal-data factor.`
+        : `Privacy: no personal data touched (${counted}).`,
   );
   if (r.reasons.length > 0) {
     io.out("Blocked by:");

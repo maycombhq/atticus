@@ -1,0 +1,22 @@
+schemaVersion: 1
+id: screen-order-consent
+title: Screen consenting customers' orders for fraud
+type: feature
+template: feature
+state: define
+createdAt: 2026-10-24T09:00:00Z
+createdBy: pat
+handoffs: []
+history:
+  - from: draft
+    to: define
+    at: 2026-10-24T09:00:00Z
+    by: pat
+    reason: Created from the feature template
+systems: []
+touches:
+  dataStores: []
+  interfaces: []
+  records: []
+  repos: []
+  tables: []

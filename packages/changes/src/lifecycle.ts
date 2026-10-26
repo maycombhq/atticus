@@ -93,7 +93,12 @@ export function requiredArtifacts(
 ): Artifact[] {
   return phaseArtifacts(ctx, type, phase).filter((a) => {
     if (!type.artifacts.includes(a)) return false;
-    if (a === "data") return footprint.dataStores.length + footprint.tables.length > 0;
+    // On the stage path the architecture stage writes data.md only for data changes (a new table,
+    // new or retyped columns), so a read of a table doesn't make it due (B-change).
+    if (a === "data")
+      return footprint.from.some((f) => f.startsWith("target-flows/"))
+        ? footprint.signals.some((s) => s.factor === "schema")
+        : footprint.dataStores.length + footprint.tables.length > 0;
     return true;
   });
 }

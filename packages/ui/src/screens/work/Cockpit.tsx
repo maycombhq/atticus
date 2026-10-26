@@ -39,6 +39,12 @@ export function CockpitView({ c }: { c: Cockpit }) {
           {C.where}
         </h3>
         <p style={{ margin: 0 }}>{C.state(c.state, c.risk.level)}</p>
+        {/* Where the stages' work is when it ran ahead of the gates (ADR 0124 addendum B-change). */}
+        {c.work && (
+          <p className="muted" style={{ margin: 0 }}>
+            {c.work}
+          </p>
+        )}
         <ol
           className="row"
           style={{ gap: 6, flexWrap: "wrap", listStyle: "none", padding: 0, margin: 0 }}

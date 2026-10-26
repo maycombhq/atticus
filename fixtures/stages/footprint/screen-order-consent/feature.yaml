@@ -1,0 +1,21 @@
+# The feature placed against the estate (ADR 0087). Drafted by atticus change feature.
+schemaVersion: 1
+change: screen-order-consent
+entry: brief
+summary: Every order of a customer who consented is screened by Northwind Pay before stock is reserved, and only the customer's own token may place an order.
+features:
+  - id: cap-ordering
+    why: Placing an order is the feature that gains the screen.
+flows:
+  - id: forge-orders.place-order
+    how: changed
+    why: The consent check, the screen and the narrower rule of who may place an order go before stock is reserved.
+  - id: forge-stock.reserve-stock
+    how: read
+    why: Reserving stock happens only after the screen passes.
+newFlows: []
+gaps:
+  - what: No call to Northwind Pay exists yet.
+    why: The estate never talks to the fraud screen today.
+conflicts: []
+questions: []
