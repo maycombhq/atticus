@@ -260,7 +260,11 @@ console.log(
     .join(", ")}.`,
 );
 
-const blocked = !win && spawnSync("unshare", ["-rn", "true"]).status === 0;
+// ATTICUS_NPM_TEST_PROXY_ONLY=1 takes the GitHub-runner path (the proxy pointing nowhere) here too.
+const blocked =
+  !win &&
+  !process.env.ATTICUS_NPM_TEST_PROXY_ONLY &&
+  spawnSync("unshare", ["-rn", "true"]).status === 0;
 const netEnv = blocked
   ? env
   : {
@@ -278,14 +282,16 @@ const bin = win ? join(prefix, "atticus.cmd") : join(prefix, "bin", "atticus");
 const atticus = (...args) => {
   const [cmd, a] = blocked ? ["unshare", ["-rn", bin, ...args]] : [bin, args];
   const r = spawnSync(cmd, a, { encoding: "utf8", env: netEnv, cwd: work, shell: win && !blocked });
-  return { status: r.status, out: `${r.stdout ?? ""}${r.stderr ?? ""}` };
+  return { status: r.status, stdout: r.stdout ?? "", out: `${r.stdout ?? ""}${r.stderr ?? ""}` };
 };
 const show = (label, r) => console.log(`$ atticus ${label}\n${r.out.trim()}`);
 
 const v = atticus("--version");
 show("--version", v);
-if (v.out.trim() !== cli.version)
-  fail(`atticus --version printed ${v.out.trim()}, not ${cli.version}`);
+// stdout alone: with the proxy pointing nowhere, Node warns on stderr that NODE_USE_ENV_PROXY's
+// agent is experimental (a GitHub runner has no network namespace to block the network instead).
+if (v.stdout.trim() !== cli.version)
+  fail(`atticus --version printed ${v.stdout.trim()}, not ${cli.version}`);
 
 const meta = join(work, "bank-meta");
 const init = atticus("init", meta, "--platform", "forge", "--owner", "tester");
