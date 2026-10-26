@@ -360,6 +360,47 @@ describe("Knowledge items", () => {
     // A conflict is said; a rejected item shows its reason.
     expect(html(<ItemDetail item={logging} />)).toContain(esc(K.items.conflict));
     expect(html(<ItemDetail item={northwind} />)).toContain("Replaced last year.");
+    // B-task-knowledge (C4 2.25.0): what each page says, and who decided which applies.
+    const C = COPY.knowledgeConflicts;
+    const disputed = html(
+      <ItemDetail
+        item={{
+          ...logging,
+          conflicts: [
+            {
+              key: "json-logging @ forge-wiki/a.md | forge-wiki/b.md",
+              about: ["json-logging"],
+              pages: [
+                { source: "forge-wiki", page: "a.md", says: "Log as JSON." },
+                { source: "forge-wiki", page: "b.md", says: "Log as plain text." },
+              ],
+              applies: [{ source: "forge-wiki", page: "a.md" }],
+              decided: {
+                by: "code",
+                record: "forge-orders.logging",
+                kind: "Component",
+                value: "logback.json",
+                at: "forge-orders:src/main/resources/logback.xml:3",
+              },
+            },
+          ],
+        }}
+      />,
+    );
+    expect(disputed).toContain(esc('forge-wiki/b.md says "Log as plain text."'));
+    expect(disputed).toContain(
+      esc(
+        C.applies(
+          "forge-wiki/a.md",
+          C.byCode(
+            "Component",
+            "forge-orders.logging",
+            "logback.json",
+            "forge-orders:src/main/resources/logback.xml:3",
+          ),
+        ),
+      ),
+    );
   });
 
   it("corrects only the fields the record allows: lists as lists, links as label and address", () => {

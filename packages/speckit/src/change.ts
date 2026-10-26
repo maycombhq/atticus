@@ -125,6 +125,28 @@ export function readStory(files: ChangeFiles, id: string): Story | undefined {
   return { id, title, text: text[0] === "" ? [] : text, criteria, path: doc.path };
 }
 
+/**
+ * The knowledge that applies to a task, as its story file lists it under the task (ADR 0124
+ * addendum B-task-knowledge): the lines under "- Knowledge that applies:" in the task's section,
+ * one level less indented. Data read from the metarepo, handed down as it is.
+ */
+export function readTaskKnowledge(files: ChangeFiles, storyIds: string[], task: string): string[] {
+  const out: string[] = [];
+  for (const id of storyIds) {
+    const doc = files.docs.get(`stories/${id}.md`);
+    if (!doc) continue;
+    const head = new RegExp(`^###\\s+Task\\s+${task.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}:`, "i");
+    const lines = doc.rawLines;
+    const at = lines.findIndex((l) => head.test(l));
+    if (at < 0) continue;
+    let k = lines.findIndex((l, j) => j > at && /^- Knowledge that applies:\s*$/.test(l));
+    const next = lines.findIndex((l, j) => j > at && /^#{1,3}\s/.test(l));
+    if (k < 0 || (next >= 0 && k > next)) continue;
+    for (k += 1; k < lines.length && /^\s{2,}\S/.test(lines[k]!); k++) out.push(lines[k]!.slice(2));
+  }
+  return out;
+}
+
 /** Everything about one task that hand-down, hand-up and Run with AI need. */
 export interface TaskContext {
   root: string;

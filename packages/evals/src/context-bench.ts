@@ -44,6 +44,11 @@ import {
   storiesStage,
   type ContextStep,
 } from "@maycombhq/planner";
+import {
+  renderTaskKnowledgeTable,
+  runTaskKnowledgeBench,
+  type TaskKnowledgeRow,
+} from "./task-knowledge-bench.js";
 
 /**
  * The context engine's eval (ADR 0107 point 6). Each step that used to send a whole list runs
@@ -1068,6 +1073,8 @@ export function renderRetrievalTable(rows: RetrievalRow[], notes: string[] = [])
 export interface ContextEval {
   steps: ContextRow[];
   retrieval: RetrievalRow[];
+  /** Each task's knowledge, before and per task (ADR 0124 addendum B-task-knowledge). */
+  tasks?: TaskKnowledgeRow[];
   /** Said above the retrieval table: what each mode replays. */
   notes: string[];
 }
@@ -1115,9 +1122,10 @@ export async function runContextEval(fixtures: string): Promise<ContextEval> {
       `The other model measured, ${av.model} (floor ${av.floor ?? "default"}), in place of ${v?.model ?? "it"}: all answered cases ${summary(rows, "normal")} normal, ${summary(rows, "tight")} tight; ${none.reduce((n, r) => n + r.picked, 0)} records picked for the inputs nothing answers.`,
     );
   }
-  return { steps, retrieval, notes };
+  const tasks = await runTaskKnowledgeBench(fixtures);
+  return { steps, retrieval, notes, tasks };
 }
 
 export function renderContextEval(e: ContextEval): string {
-  return `${renderContextTable(e.steps)}\n${renderRetrievalTable(e.retrieval, e.notes)}`;
+  return `${renderContextTable(e.steps)}\n${renderRetrievalTable(e.retrieval, e.notes)}${e.tasks?.length ? `\n${renderTaskKnowledgeTable(e.tasks)}` : ""}`;
 }

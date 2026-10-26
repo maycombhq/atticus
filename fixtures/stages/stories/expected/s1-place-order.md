@@ -130,6 +130,9 @@ Build and test with `./gradlew test`.
 - Fields: sku, quantity, cardToken, verdict
 - Where it goes: not said by the target flow; after the step before it (forge-orders:src/main/java/forge/orders/OrderController.java:4, forge-orders:src/main/java/forge/orders/OrderController.java:9), where it fits: items 1 and 2
 - Files to touch: forge-orders:src/main/java/forge/orders/OrderController.java (lines 4 and 9)
+- Knowledge that applies:
+  - Vendor onboarding (process), forge-wiki/vendor-onboarding.md#when-it-applies, line 3: It is about "vendor", which this task changes.
+  - Network firewall rule (request), forge-wiki/service-desk-catalogue.md#network-firewall-rule, line 14: It is about "vendor", which this task changes.
 - Acceptance criteria: the 5 under Task 1.1 in Acceptance criteria
 - Tests to add:
   - FraudClientTest sends sku, quantity and cardToken and reads the verdict.

@@ -1,0 +1,35 @@
+summary: Placing an order takes only a caller signed in with Forge SSO, and reads who the caller is from the token.
+features:
+  - id: cap-ordering
+    why: Placing an order is the feature whose entry gains the SSO check.
+flows:
+  - id: forge-orders.place-order
+    how: changed
+    why: Its entry step checks the caller's SSO token first.
+targetFlows:
+  - flow: forge-orders.place-order
+    repo: forge-orders
+    change: modify
+    why: Only a caller signed in with Forge SSO places an order.
+    steps:
+      - op: change
+        step: 1
+        kind: entry
+        what: OrderController.place takes the order only with a valid Forge SSO token and reads the caller from its claims
+        fields: { checks: [aud, sub, email] }
+stories:
+  - flow: forge-orders.place-order
+    title: Only a signed-in caller places an order
+    asA: shopper
+    iWant: to place an order signed in with Forge SSO
+    soThat: the order is mine and no one else can place it for me
+    tasks:
+      - step: 1
+        criteria:
+          - text: "Given a caller with a valid Forge SSO token, when they place an order, then the order is taken with the token's sub and email"
+            checks: [sub, email]
+          - text: "Given a token whose aud claim doesn't name forge-orders, when the caller places an order, then the call is refused with 401"
+            checks: [aud]
+            outcome: error
+            status: "401"
+            rule: forbidden

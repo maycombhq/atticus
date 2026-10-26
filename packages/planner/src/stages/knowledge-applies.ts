@@ -54,6 +54,11 @@ export const KnowledgeApplies = z.strictObject({
         file: z.string().optional(),
         /** What a person knows it by: an item's title, a section's heading path (B2). */
         title: z.string().optional(),
+        /**
+         * The tasks whose own selection picked it (B-task-knowledge): the story file lists it
+         * under each. Optional and additive.
+         */
+        tasks: z.array(z.string()).optional(),
       }),
     )
     .default([]),
@@ -151,6 +156,61 @@ export async function recordKnowledge(
         ...(l.name ? { title: l.name } : {}),
       })),
   ];
+  await write(root, doc);
+}
+
+/** Why an item is listed when only a task's selection picked it (B-task-knowledge). */
+export const TASK_PICK = "a task's selection";
+
+const byTaskId = (a: string, b: string) => a.localeCompare(b, "en", { numeric: true });
+
+/**
+ * Record what each task's own selection picked (B-task-knowledge): the item's `tasks`, added to
+ * the list when no stage picked it. The tasks given replace what they had; an item only a task
+ * had picked, that no task picks now, leaves the list. A person's status is never overwritten.
+ */
+export async function recordTaskKnowledge(
+  root: string,
+  change: string,
+  byTask: ReadonlyMap<
+    string,
+    { id: string; kind: string; score: number; title?: string; page?: { file?: string } }[]
+  >,
+): Promise<void> {
+  const before = await readKnowledgeApplies(root, change);
+  if (!before && ![...byTask.values()].some((l) => l.length)) return;
+  const doc: KnowledgeApplies = before ?? { schemaVersion: 1, change, items: [], nearMisses: [] };
+  const tasks = new Set(byTask.keys());
+  for (const i of doc.items)
+    if (i.tasks) {
+      const left = i.tasks.filter((t) => !tasks.has(t));
+      if (left.length) i.tasks = left;
+      else delete i.tasks;
+    }
+  doc.items = doc.items.filter(
+    (i) => i.stages.length || i.tasks?.length || i.status !== "suggested" || i.why !== TASK_PICK,
+  );
+  const byId = new Map(doc.items.map((i) => [i.id, i] as const));
+  for (const [task, list] of byTask)
+    for (const k of list) {
+      let cur = byId.get(k.id);
+      if (!cur) {
+        cur = {
+          id: k.id,
+          kind: k.kind,
+          status: "suggested",
+          stages: [],
+          score: k.score,
+          why: TASK_PICK,
+          ...(k.page?.file ? { file: k.page.file } : {}),
+          ...(k.title ? { title: k.title } : {}),
+        };
+        byId.set(k.id, cur);
+        doc.items.push(cur);
+      }
+      cur.tasks = [...new Set([...(cur.tasks ?? []), task])].sort(byTaskId);
+    }
+  doc.nearMisses = doc.nearMisses.filter((n) => !byId.has(n.id));
   await write(root, doc);
 }
 
@@ -269,6 +329,7 @@ export function plainWhy(i: { id: string; why?: string | undefined }): string | 
   if (!w) return undefined;
   if (w.startsWith("named in the input")) return "The change names it.";
   if (w === "a person") return "A person added it.";
+  if (w === TASK_PICK) return "A task's own selection picked it.";
   const search = /^search \((.*)\)$/s.exec(w);
   if (search) {
     const own = new Set<string>();
@@ -319,7 +380,14 @@ export function knowledgeAppliesMarkdown(doc: KnowledgeApplies): string {
   const lines = ["### Applies to this change", ""];
   if (!shown.length) lines.push("Nothing in the org's knowledge was picked for this change.");
   for (const i of shown) {
-    const why = [i.status, i.stages.join(", "), plainWhy(i)].filter(Boolean).join("; ");
+    const why = [
+      i.status,
+      i.stages.join(", "),
+      i.tasks?.length ? `task${i.tasks.length === 1 ? "" : "s"} ${i.tasks.join(", ")}` : "",
+      plainWhy(i),
+    ]
+      .filter(Boolean)
+      .join("; ");
     const name = i.title ? `${i.title} [${i.id}]` : i.id;
     lines.push(`- ${i.kind} ${name} (${why})${i.file ? `: ${i.file}` : ""}`);
   }

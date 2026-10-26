@@ -13,4 +13,5 @@ export * from "./estate-bench.js";
 export * from "./knowledge-bench.js";
 export * from "./design-bench.js";
 export * from "./context-bench.js";
+export * from "./task-knowledge-bench.js";
 export * from "./judgment-bench.js";

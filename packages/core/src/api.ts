@@ -55,8 +55,11 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   the stage's questions (GET /api/changes/{id}/stages/{stage}, POST .../comments). Additive only.
  * 2.24.0 (ADR 0124 addendum B2): a change's knowledge with a title for each item and near-miss
  *   and why each was picked in plain words (title, reason). Additive only.
+ * 2.25.0 (ADR 0124 addendum B-task-knowledge): the tasks whose own selection picked a change's
+ *   item (tasks), and the pages that disagree with who decided which applies (conflicts, on a
+ *   change's knowledge and on a knowledge item). Additive only.
  */
-export const API_VERSION = "2.24.0";
+export const API_VERSION = "2.25.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -643,7 +646,59 @@ export const ChangeKnowledgeItem = z.object({
   title: z.string().optional(),
   /** 2.24.0: why it was picked, in plain words (`why` is the selection's own account). */
   reason: z.string().optional(),
+  /** 2.25.0: the tasks whose own selection picked it (B-task-knowledge). */
+  tasks: z.array(z.string()).optional(),
 });
+
+/**
+ * 2.25.0 (ADR 0124 addendum B-task-knowledge): pages that disagree about a knowledge item, what
+ * each says, the pages that apply (none while undecided, every one for "both, in different
+ * cases") and who decided: a person's answer to the question about it, or the code (a record
+ * verified from code holds one page's value: a document never overrides it). The page an
+ * ownership signal suggests is shown as a suggestion, never as a decision.
+ */
+export const KnowledgeConflictView = z.object({
+  /** The items it is about and its pages, each sorted: the same key is never asked twice. */
+  key: z.string(),
+  about: z.array(z.string()),
+  summary: z.string().optional(),
+  pages: z.array(z.object({ source: z.string(), page: z.string(), says: z.string() })),
+  applies: z.array(z.object({ source: z.string(), page: z.string() })),
+  decided: z
+    .discriminatedUnion("by", [
+      z.object({
+        by: z.literal("person"),
+        who: z.string(),
+        at: z.string(),
+        question: z.string(),
+        /** "Both, in different cases" in the person's own words. */
+        words: z.string().optional(),
+      }),
+      z.object({
+        by: z.literal("code"),
+        /** The catalog record verified from code, its kind, the value and where: repo:path:line. */
+        record: z.string(),
+        kind: z.string(),
+        value: z.string(),
+        at: z.string(),
+      }),
+    ])
+    .optional(),
+  /** The page an ownership signal suggests, and which signal: a suggestion only. */
+  suggested: z
+    .object({
+      source: z.string(),
+      page: z.string(),
+      signal: z.enum(["replaces", "owner", "source-kind", "space", "last-edited"]),
+      detail: z.string(),
+    })
+    .optional(),
+  question: z
+    .object({ id: z.string(), state: z.enum(["open", "answered", "retired"]), repo: z.string() })
+    .optional(),
+});
+export type KnowledgeConflictViewT = z.infer<typeof KnowledgeConflictView>;
+
 export const ChangeKnowledgeView = z.object({
   change: z.string(),
   file: z.string(),
@@ -660,6 +715,8 @@ export const ChangeKnowledgeView = z.object({
       title: z.string().optional(),
     }),
   ),
+  /** 2.25.0: the pages that disagree about what the change or one of its tasks relies on. */
+  conflicts: z.array(KnowledgeConflictView).optional(),
   /** The command that lists it (and confirms or excludes with --confirm, --exclude). */
   command: z.string(),
 });
@@ -1607,6 +1664,8 @@ export const KnowledgeItemView = z.object({
   fields: z.record(z.string(), z.enum(["text", "list", "links"])),
   /** Another page disagrees with it. */
   conflict: z.boolean(),
+  /** 2.25.0: the pages that disagree about it, and who decided which applies. */
+  conflicts: z.array(KnowledgeConflictView).optional(),
 });
 
 export const KnowledgeItemList = z.object({
@@ -3582,6 +3641,7 @@ export function openApiDocument(): Record<string, unknown> {
     MarkedNeed,
     TrustView,
     ChangeKnowledgeView,
+    KnowledgeConflictView,
     SetChangeKnowledgeResult,
     RepoFactsView,
     FactCorrectionResult,

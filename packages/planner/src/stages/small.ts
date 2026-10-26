@@ -543,7 +543,13 @@ export async function smallStage(
           o.now ?? new Date(),
           await unjudgedChecks(unwrittenChecks(d.wording, d.stories), judging),
           // ADR 0125: a field's required the story leaves out is the catalog's.
-          { estate },
+          {
+            estate,
+            asker: {
+              command: `atticus change small ${change.id}`,
+              rerun: `atticus change knowledge ${change.id}`,
+            },
+          },
         )),
       ];
       const own = await readFile(join(dir, "proposal.md"), "utf8").catch(() => undefined);

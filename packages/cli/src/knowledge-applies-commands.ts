@@ -1,21 +1,25 @@
 import {
+  askKnowledgeConflicts,
   knowledgeAppliesMarkdown,
   readKnowledgeApplies,
   setKnowledgeStatus,
 } from "@maycombhq/planner";
 import { changesRelOf } from "@maycombhq/core";
+import { conflictLine } from "@maycombhq/knowledge";
 import type { Output } from "./commands.js";
 
 /**
  * atticus change knowledge <id> (ADR 0124, Part 5): the org knowledge that applies to a change,
  * as its stages picked it, with the near-misses; `--confirm` or `--exclude` any knowledge item,
  * listed or not (then it says just that). A confirmed item is selected by every later stage that
- * takes its kind; an excluded one is kept out of every later stage's selection.
+ * takes its kind; an excluded one is kept out of every later stage's selection. B-task-knowledge:
+ * the list names the tasks whose own selection picked an item, and the pages that disagree about
+ * what the change relies on, each undecided one asked of a person once.
  */
 export async function changeKnowledge(
   root: string,
   change: string,
-  o: { confirm?: string; exclude?: string; json?: boolean },
+  o: { confirm?: string; exclude?: string; json?: boolean; now?: Date },
   io: Output,
 ): Promise<number> {
   // A person confirms or excludes any knowledge item, listed or not; what changed is said, not
@@ -56,9 +60,27 @@ export async function changeKnowledge(
     );
     return 2;
   }
-  if (o.json) io.out(JSON.stringify(doc, null, 2));
+  // B-task-knowledge: pages that disagree about what the change relies on; an undecided one is
+  // asked of a person once (the same topic and pages are never asked again).
+  const command = `atticus change knowledge ${change}`;
+  const asked = await askKnowledgeConflicts(root, change, {
+    command,
+    rerun: command,
+    at: (o.now ?? new Date()).toISOString(),
+  });
+  if (o.json) io.out(JSON.stringify({ ...doc, conflicts: asked.touching }, null, 2));
   else {
     for (const l of knowledgeAppliesMarkdown(doc).trimEnd().split("\n")) io.out(l);
+    if (asked.touching.length) {
+      io.out("");
+      io.out("### Pages that disagree");
+      io.out("");
+      for (const v of asked.touching) io.out(`- ${conflictLine(v)}`);
+      for (const q of asked.raised)
+        io.out(
+          `Asked a person which page applies: question ${q.id} (atticus questions answer ${q.id} --option <n>).`,
+        );
+    }
     io.out(
       `Confirm or exclude an item: atticus change knowledge ${change} --confirm <id> (or --exclude <id>); an excluded one stays out of later stages.`,
     );

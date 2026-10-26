@@ -454,6 +454,21 @@ describe("the knowledge scan", () => {
     ]);
   });
 
+  it("records which page owns a disagreement by a signal the snapshot gives, not the model's pick (B-task-knowledge)", async () => {
+    const r = await scanKnowledge([snap], { runtime, now: new Date(NOW) });
+    // The reader took the item from the service desk catalogue; the firewall guide's owner is the
+    // Network team, the team that handles the request, so the guide owns the topic.
+    expect(r.items.find((i) => i.id === "firewall-rule-request")!.quote!.page).toBe(
+      "service-desk-catalogue.md",
+    );
+    expect(r.conflicts[0]!.owner).toEqual({
+      source: "forge-wiki",
+      page: "network-firewall-guide.md",
+      signal: "owner",
+      detail: "network-firewall-guide.md's owner is Network team, the team that handles it",
+    });
+  });
+
   it("refuses a conflict whose pages say the same words: that is no conflict", async () => {
     const same = SECOND.replace(
       /conflicts:\n[\s\S]*?\nsuperseded:/,

@@ -1,0 +1,41 @@
+schemaVersion: 1
+source: forge-wiki
+date: 2026-10-20
+takenAt: 2026-10-20T08:00:00Z
+type: markdown-folder
+location: ../forge-wiki
+tags:
+  kinds: []
+  frameworks: []
+pages:
+  - page: order-events-pattern.md
+    file: order-events-pattern.md
+    sha256: cbc27f06658756276de35dba0f3290ec9f1a6dfe5341456dbcae8c4d7138d7f1
+    title: Order events pattern
+    date: 2026-05-05
+    classification: internal
+  - page: sso-notes.md
+    file: sso-notes.md
+    sha256: 57b2aaf99ec37ef456f80fb01e4e2c6a59ed727513dc112c5fd322d65096beec
+    title: SSO notes for Forge services
+    date: 2026-03-02
+    classification: internal
+  - page: sso-quickstart.md
+    file: sso-quickstart.md
+    sha256: a8e8f5691e2b848dfd9edc9be07286d242c69a227366f3723f9221fb8ad7258c
+    title: SSO quick start
+    date: 2026-08-01
+    classification: internal
+  - page: sso-setup.md
+    file: sso-setup.md
+    sha256: 6750a839049e52f66e3b2009c02981b92c7c12c9a88467a8188d9b08f3fadcd3
+    title: Set up SSO for a Forge service
+    date: 2026-09-14
+    classification: internal
+  - page: token-claims-standard.md
+    file: token-claims-standard.md
+    sha256: f80b692f857c168199d5a0dba1805ba41981ef6d0b6d241ea3566a9b5f7af458
+    title: Token claims standard
+    date: 2026-07-10
+    classification: internal
+skipped: []

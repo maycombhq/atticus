@@ -4,6 +4,7 @@ import { api, useApi, useReloadOnFiles, type Loaded } from "../../api/client.js"
 import { Panel, View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
 import { message, Table } from "../know/common.js";
+import { ConflictList } from "../knowledge/shared.js";
 import { Command } from "./RunNext.js";
 import "./work.css";
 
@@ -143,9 +144,16 @@ export function ChangeKnowledgeView(p: {
                   },
                   {
                     label: K.why,
-                    // Why in plain words (the API's reason), never the search's own account.
+                    // Why in plain words (the API's reason), never the search's own account;
+                    // B-task-knowledge: the tasks whose own selection picked it.
                     cell: (i) =>
-                      [i.reason, i.stages.join(", ") || K.noStages].filter(Boolean).join(" · "),
+                      [
+                        i.reason,
+                        i.stages.join(", ") || (i.tasks?.length ? "" : K.noStages),
+                        i.tasks?.length ? K.tasks(i.tasks) : "",
+                      ]
+                        .filter(Boolean)
+                        .join(" · "),
                   },
                   {
                     label: K.status,
@@ -182,6 +190,15 @@ export function ChangeKnowledgeView(p: {
                 </ul>
               </details>
             )}
+            {v.conflicts?.length ? (
+              <section aria-label={COPY.knowledgeConflicts.title} style={{ marginTop: 12 }}>
+                <h3 style={{ margin: "0 0 4px" }}>{COPY.knowledgeConflicts.title}</h3>
+                <p className="work-why" style={{ marginTop: 0 }}>
+                  {COPY.knowledgeConflicts.intro}
+                </p>
+                <ConflictList conflicts={v.conflicts} />
+              </section>
+            ) : null}
             <WrittenNote w={w} named={named} />
           </>
         )}

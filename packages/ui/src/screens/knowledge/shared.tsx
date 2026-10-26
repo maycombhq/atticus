@@ -100,6 +100,57 @@ export function NoKnowledgeYet({ text }: { text: string }) {
   );
 }
 
+/**
+ * Pages that disagree (B-task-knowledge, C4 2.25.0): what each page says, and which applies, as
+ * a person answered or the code settled it, or the question still waiting, with the page a
+ * signal suggests. Read only: a person answers on the Questions page or with the command it names.
+ */
+export function ConflictList({ conflicts }: { conflicts: Api.KnowledgeConflictViewT[] }) {
+  const C = COPY.knowledgeConflicts;
+  if (!conflicts.length) return null;
+  const ref = (p: { source: string; page: string }) => `${p.source}/${p.page}`;
+  return (
+    <ul className="stack" style={{ listStyle: "none", padding: 0, margin: 0, gap: 8 }}>
+      {conflicts.map((c) => {
+        const d = c.decided;
+        const by = d
+          ? d.by === "person"
+            ? C.byPerson(d.who)
+            : C.byCode(d.kind, d.record, d.value, d.at)
+          : undefined;
+        const s = !d ? c.suggested : undefined;
+        return (
+          <li key={c.key} role="note">
+            <p style={{ margin: 0 }}>
+              <span className="mono">{c.about.join(", ")}</span>
+              {c.summary ? <span className="muted"> · {c.summary}</span> : null}
+            </p>
+            <ul style={{ margin: "4px 0", paddingLeft: 18 }}>
+              {c.pages.map((p) => (
+                <li key={ref(p)}>{C.says(ref(p), p.says)}</li>
+              ))}
+            </ul>
+            <p className="work-say" style={{ margin: 0 }}>
+              {by
+                ? c.applies.length > 1
+                  ? C.both(by, d?.by === "person" ? d.words : undefined)
+                  : C.applies(c.applies.map(ref).join(", "), by)
+                : c.question?.state === "open"
+                  ? C.open(c.question.id)
+                  : C.notAsked}
+            </p>
+            {s ? (
+              <p className="muted" style={{ margin: 0 }}>
+                {C.suggested(ref(s), s.signal, s.detail)}
+              </p>
+            ) : null}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 /** The links a page gives for an item; each opens in a new tab and says where it goes. */
 export function Links({ urls }: { urls: Link[] }) {
   if (!urls.length) return null;

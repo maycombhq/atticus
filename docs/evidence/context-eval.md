@@ -31,12 +31,12 @@ With tools (ADR 0107 addendum) the model is a scripted mock, the same on every r
 | architecture | shop: add-fraud-check | tight | whole lists | 0.00 | 0.00 | 0 / 3 | 3140 | 0 | - | forge-orders-db.orders, forge-orders.place-order, northwind-pay |
 | architecture | shop: add-fraud-check | tight | engine | 1.00 | 0.25 | 12 / 3 | 3293 | 153 | - | none |
 | architecture | shop: add-fraud-check | tight | engine + tools | 1.00 | 0.21 | 14 / 3 | 5298 | 2158 | 12 | none |
-| stories | shop: add-fraud-check | org pack | whole lists | 1.00 | 0.67 | 3 / 2 | 2731 | 149 | - | none |
-| stories | shop: add-fraud-check | org pack | engine | 1.00 | 1.00 | 2 / 2 | 2788 | 112 | - | none |
-| stories | shop: add-fraud-check | org pack | engine + tools | 1.00 | 1.00 | 2 / 2 | 2788 | 112 | 0 | none |
-| stories | shop: add-fraud-check | tight | whole lists | 1.00 | 0.67 | 3 / 2 | 2311 | 149 | - | none |
-| stories | shop: add-fraud-check | tight | engine | 1.00 | 1.00 | 2 / 2 | 2491 | 71 | - | none |
-| stories | shop: add-fraud-check | tight | engine + tools | 1.00 | 0.22 | 9 / 2 | 3316 | 896 | 6 | none |
+| stories | shop: add-fraud-check | org pack | whole lists | 1.00 | 0.67 | 3 / 2 | 2932 | 149 | - | none |
+| stories | shop: add-fraud-check | org pack | engine | 1.00 | 1.00 | 2 / 2 | 2989 | 112 | - | none |
+| stories | shop: add-fraud-check | org pack | engine + tools | 1.00 | 1.00 | 2 / 2 | 2989 | 112 | 0 | none |
+| stories | shop: add-fraud-check | tight | whole lists | 1.00 | 0.67 | 3 / 2 | 2512 | 149 | - | none |
+| stories | shop: add-fraud-check | tight | engine | 1.00 | 1.00 | 2 / 2 | 2719 | 71 | - | none |
+| stories | shop: add-fraud-check | tight | engine + tools | 1.00 | 0.17 | 12 / 2 | 4068 | 1420 | 6 | none |
 
 A step uses the engine by default only where its recall is at least the whole lists' on every case and budget:
 
@@ -50,7 +50,7 @@ With tools, a step's pack may start smaller only where the engine with tools at 
 - needs: recall holds with the tight pack and tools; 2560 tokens in all with tools against 1496 for the engine's full pack, so the pack stays as it is
 - feature: recall holds with the tight pack and tools; 6599 tokens in all with tools against 3189 for the engine's full pack, so the pack stays as it is
 - architecture: recall holds with the tight pack and tools; 5298 tokens in all with tools against 3562 for the engine's full pack, so the pack stays as it is
-- stories: recall holds with the tight pack and tools; 3316 tokens in all with tools against 2788 for the engine's full pack, so the pack stays as it is
+- stories: recall holds with the tight pack and tools; 4068 tokens in all with tools against 2989 for the engine's full pack, so the pack stays as it is
 
 ## Retrieval cases (ADR 0116)
 
@@ -148,3 +148,18 @@ A mode becomes a step's default only where its recall is at least the lexical en
 | shop-nwp-alias | exact | 1 | 1 | 1 | 1 | 1 | none |
 | shop-stock-reservation | exact | 1 | 1 | 1 | 1 | 1 | none |
 | shop-none-parking | no-answer | 0 picked | 0 picked | 0 picked | 0 picked | 0 picked | none |
+
+## Knowledge per task (ADR 0124 addendum B-task-knowledge)
+
+Each case is a small change on the invented Forge fixtures, planned through the fast path; the row is what `atticus task context` lists for its task. Before: patterns and decisions only, 1,500 tokens, everything the search found kept (the task context of ADR 0113). Per task: every kind (how-tos and runbooks, standards, processes, requests, patterns, decisions), kept by what the task changes. Recall: the share of the items the task needs that it lists. Precision: the share of what it lists that the task needs.
+
+| Case | Task | Selection | Recall | Precision | Listed / needed | Missing | Not needed |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| sso: add-sso | 1.1 | before | 0.50 | 0.50 | 2 / 2 | sso-setup | order-events-topic |
+| sso: add-sso | 1.1 | per task | 1.00 | 1.00 | 2 / 2 | none | none |
+| small: return-order-time | 1.1 | before | 1.00 | 1.00 | 1 / 1 | none | none |
+| small: return-order-time | 1.1 | per task | 1.00 | 1.00 | 1 / 1 | none | none |
+| sso, with every other wiki item | 1.1 | before | 0.50 | 0.50 | 2 / 2 | sso-setup | order-events-topic |
+| sso, with every other wiki item | 1.1 | per task | 1.00 | 1.00 | 2 / 2 | none | none |
+| small, with every other wiki item | 1.1 | before | 1.00 | 0.33 | 3 / 1 | none | order-events-topic, sso-token-claims |
+| small, with every other wiki item | 1.1 | per task | 1.00 | 1.00 | 1 / 1 | none | none |

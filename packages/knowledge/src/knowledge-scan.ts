@@ -34,6 +34,7 @@ import { groundValues, type ValueClaim } from "./grounding.js";
 import { settleClaims } from "./value-claims.js";
 import type { Snapshot } from "./snapshot.js";
 import type { KnowledgePage } from "./sources.js";
+import { conflictOwner, pageFacts, type ConflictOwner } from "./conflict-owner.js";
 
 /**
  * The knowledge scan (ADR 0083, revamp plan 4.3): AI → check → AI over dated snapshots.
@@ -186,6 +187,14 @@ export interface KnowledgeConflict {
   summary?: string;
   /** Who found it: the AI, or the check (two items about the same thing that disagree). */
   foundBy: "ai" | "check";
+  /**
+   * The page that likely owns the topic, when a signal the scan reads without a model says so
+   * (conflicts.ts, ADR 0124 addendum B-task-knowledge): it replaces the other, its owner is the
+   * team that handles it, its source is tagged with the item's kind, it is in that team's space,
+   * or it was edited last. A suggestion only: a change that relies on the item still asks a
+   * person which page applies, with this page suggested.
+   */
+  owner?: ConflictOwner;
 }
 
 export interface SupersededPage {
@@ -1197,7 +1206,7 @@ export async function scanKnowledge(
         problems: [],
       });
       result.status = "waiting";
-      return finish(result, kept, failed, conflicts, superseded, aiInjections);
+      return finish(result, kept, failed, conflicts, superseded, aiInjections, pages);
     }
     if (run.output === undefined || (run.state !== "validated" && run.state !== "produced")) {
       result.attempts.push({
@@ -1327,7 +1336,7 @@ export async function scanKnowledge(
     feedback = handBack(run.output, problems, attempt);
   }
   result.status = answered ? "scanned" : "failed";
-  return finish(result, kept, failed, conflicts, superseded, aiInjections);
+  return finish(result, kept, failed, conflicts, superseded, aiInjections, pages);
 
   /** A resumed answer word for word the last one: it fails as that did, so it isn't asked again. */
   function repeats(run: Run, attempt: number, problems: string[]): boolean {
@@ -1435,12 +1444,29 @@ function finish(
   aiConflicts: KnowledgeConflict[],
   superseded: SupersededPage[],
   aiInjections: Injection[],
+  pages: PreparedPage[],
 ): KnowledgeScanResult {
   const items = [...kept.values()];
   const found = checkConflicts(items).filter(
     (c) => !aiConflicts.some((x) => x.about.some((a) => c.about.includes(a))),
   );
-  const conflicts = [...aiConflicts, ...found];
+  // B-task-knowledge: which page likely owns each topic, by the signals the snapshot gives (never
+  // the model's pick alone); a suggestion to the person asked, never a decision.
+  const facts = pages.map((p) => pageFacts(p.page, p.snapshot.manifest));
+  const conflicts = [...aiConflicts, ...found].map((c) => {
+    const about = c.about.map((id) => kept.get(id)?.item).filter((x) => x !== undefined);
+    const team = [...new Set(about.map((i) => i.handled_by).filter((h) => h !== undefined))];
+    const owner = conflictOwner(
+      c,
+      facts,
+      {
+        ...(about[0] ? { kind: about[0].kind } : {}),
+        ...(team.length === 1 ? { handledBy: team[0]! } : {}),
+      },
+      superseded,
+    );
+    return owner ? { ...c, owner } : c;
+  });
   const flagsOf = (id: string) =>
     conflicts
       .filter((c) => c.about.includes(id))

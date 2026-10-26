@@ -713,6 +713,29 @@ export const COPY = {
       `${id} is ${status}, in ${file}. Commit it with the change's files:`,
     copyCommit: "Copy the git command",
     noStages: "a person",
+    /** B-task-knowledge: the tasks whose own selection picked it. */
+    tasks: (ids: string[] | string) => {
+      const all = typeof ids === "string" ? [ids] : ids;
+      return `task${all.length === 1 ? "" : "s"} ${all.join(", ")}`;
+    },
+  },
+  /** B-task-knowledge (C4 2.25.0): pages that disagree, and who decided which applies. */
+  knowledgeConflicts: {
+    title: "Pages that disagree",
+    intro:
+      "Two pages say different things about the same item. A person decides which applies (or both, in different cases); nothing is picked for them. A signal may suggest a page (it replaces the other, its owner handles the item, its source is tagged for the kind, it is in the team's space, or it was edited last), but only suggests. When code verified in a repo holds one page's value, the code settles it: a document never overrides a fact verified from code.",
+    says: (page: string, words: string) => `${page} says "${words}"`,
+    open: (id: string) =>
+      `Waiting for a person: question ${id} (atticus questions answer ${id} --option <n>, or on the Questions page).`,
+    notAsked: "No one has been asked yet; a change that relies on it asks a person which applies.",
+    applies: (pages: string, by: string) => `${pages} applies (${by}).`,
+    both: (by: string, words?: string) =>
+      `Both apply, in different cases (${by}${words ? `: "${words}"` : ""}).`,
+    byPerson: (who: string) => `answered by ${who}`,
+    byCode: (kind: string, record: string, value: string, at: string) =>
+      `settled by the code: ${kind} ${record} has ${value}, verified at ${at}`,
+    suggested: (page: string, signal: string, detail: string) =>
+      `Suggested, not decided: ${page}, by ${signal} (${detail}).`,
   },
   /** ADR 0114: does the code do what the design says? */
   conformance: {

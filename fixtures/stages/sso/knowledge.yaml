@@ -1,0 +1,81 @@
+# Knowledge items read from the wiki snapshot beside this file, as a knowledge scan of the
+# invented Forge wiki would write them (ADR 0083 records). Invented, written by hand: the SSO
+# how-to read from sso-setup.md (sso-quickstart.md says the same, so it is also on it), the token
+# claims standard, and an order events pattern no SSO task needs.
+- kind: ProcessDefinition
+  schemaVersion: 2
+  id: sso-setup
+  status: current
+  confidence: inferred
+  evidence:
+    - { source: document, path: knowledge/snapshots/forge-wiki/2026-10-20/sso-setup.md, line: 6, side: document }
+    - { source: document, path: knowledge/snapshots/forge-wiki/2026-10-20/sso-quickstart.md, line: 5, side: document }
+  flags: ["conflict:sso-setup.md|sso-notes.md"]
+  title: Set up SSO for a Forge service
+  processKind: process
+  appliesWhen: A Forge service adds single sign-on (SSO) with Forge Identity for its callers.
+  inputs: []
+  steps:
+    - Register the service as a client in Forge Identity and note its client id.
+    - Set the redirect URI to /login/oauth2/code/forge-identity.
+    - Read the client secret from the Forge vault at start-up, never from a file in the repo.
+    - Check the signature of every token against the Forge Identity keys before reading its claims.
+  tags: []
+  quote:
+    source: forge-wiki
+    page: sso-setup.md
+    section: Steps
+    text: "Set the redirect URI to /login/oauth2/code/forge-identity."
+    snapshot: 2026-10-20
+    line: 6
+  alsoOn:
+    - source: forge-wiki
+      page: sso-quickstart.md
+      section: Redirect URI
+      text: "Set the redirect URI to /login/oauth2/code/forge-identity, as the setup page says."
+      snapshot: 2026-10-20
+      line: 5
+  urls: []
+- kind: Pattern
+  schemaVersion: 2
+  id: sso-token-claims
+  status: current
+  confidence: inferred
+  evidence: [{ source: document, path: knowledge/snapshots/forge-wiki/2026-10-20/token-claims-standard.md, line: 5, side: document }]
+  code: sso-token-claims
+  name: SSO tokens carry the claims a service checks
+  patternKind: standard
+  patternStatus: to-review
+  appliesWhen: A Forge service accepts Forge SSO tokens.
+  rules:
+    - "A service that accepts Forge SSO tokens refuses a token whose aud claim doesn't name the service."
+    - "A service reads who the caller is from the sub and email claims, never from a request header."
+  tags: []
+  quote:
+    source: forge-wiki
+    page: token-claims-standard.md
+    section: Required claims
+    text: "A service that accepts Forge SSO tokens refuses a token whose aud claim doesn't name the service."
+    snapshot: 2026-10-20
+    line: 5
+- kind: Pattern
+  schemaVersion: 2
+  id: order-events-topic
+  status: current
+  confidence: inferred
+  evidence: [{ source: document, path: knowledge/snapshots/forge-wiki/2026-10-20/order-events-pattern.md, line: 5, side: document }]
+  code: order-events-topic
+  name: Order changes are published as events
+  patternKind: integration-pattern
+  patternStatus: to-review
+  appliesWhen: A Forge service changes an order and other services need to know.
+  rules:
+    - "A Forge service that changes an order publishes an order event to the order-events topic after the order is saved."
+  tags: []
+  quote:
+    source: forge-wiki
+    page: order-events-pattern.md
+    section: Publishing order events
+    text: "A Forge service that changes an order publishes an order event to the order-events topic after the order is saved."
+    snapshot: 2026-10-20
+    line: 5

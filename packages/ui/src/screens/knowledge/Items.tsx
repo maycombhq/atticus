@@ -8,6 +8,7 @@ import { message, Note, queryParam } from "../know/common.js";
 import { Problems } from "../work/RunNext.js";
 import { RunsLink } from "../runs/Runs.js";
 import {
+  ConflictList,
   correctionBody,
   fieldLabel,
   formOf,
@@ -426,11 +427,19 @@ export function ItemDetail(p: {
           {K.review.correctedFields(i.review.corrected.map(fieldLabel).join(", "))}
         </p>
       ) : null}
-      {i.conflict && (
+      {i.conflict && !i.conflicts?.length && (
         <p role="note" className="chip warn" style={{ margin: 0 }}>
           {I.conflict}
         </p>
       )}
+      {i.conflicts?.length ? (
+        <section aria-label={COPY.knowledgeConflicts.title}>
+          <p role="note" className="chip warn" style={{ margin: "0 0 6px" }}>
+            {COPY.knowledgeConflicts.title}
+          </p>
+          <ConflictList conflicts={i.conflicts} />
+        </section>
+      ) : null}
       <dl className="run-facts" style={{ margin: 0 }}>
         {fields.map((f) => (
           <div key={f} style={{ display: "contents" }}>
