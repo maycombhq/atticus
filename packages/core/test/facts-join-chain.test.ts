@@ -74,7 +74,6 @@ const swap = (repos: JoinRepo[], repo: string, facts: (fs: Fact[]) => Fact[]): J
   repos.map((r) => (r.repo === repo ? { ...r, facts: facts([...r.facts]) } : r));
 const SHOP_DISPATCH = "call.post.forge-v2-orders-id-dispatch";
 const ORDERS_CHARGE = "call.post.forge-pay-v1-charges";
-const EDGE_CHARGE = "call.post.partner-pay-v1-charges";
 
 describe("joinFacts through a chain of gateways", () => {
   it("gives the golden joins, asks and lineage", () => {

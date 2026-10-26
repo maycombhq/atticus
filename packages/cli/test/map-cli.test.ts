@@ -10,7 +10,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { parse } from "yaml";
+import { parse, stringify } from "yaml";
 import {
   HandoffRuntime,
   MockRuntime,
@@ -407,7 +407,9 @@ describe("atticus map <repo> in model mode: every batch in one call", () => {
     for (const prompt of prompts) {
       const kinds = kindsOf(filesIn(prompt));
       for (const p of parts) {
-        const needed = !p.when || p.when.some((k) => kinds.includes(k));
+        // A-framework: this fixture has no manifest and no facts yet, so nothing says which
+        // frameworks it declares and no framework's rules are bought; see the test below.
+        const needed = (!p.when || p.when.some((k) => kinds.includes(k))) && !p.on;
         // A rule the files need is always there; one they don't is left out, unless a rejected
         // fact shown in the prompt cites a file that needs it.
         if (needed) expect(prompt, p.text.slice(0, 40)).toContain(p.text);
@@ -431,6 +433,49 @@ describe("atticus map <repo> in model mode: every batch in one call", () => {
       expect(p).not.toContain(deploy);
       expect(p).not.toContain("A front end's model and client types");
     }
+  });
+
+  it("carries the rules of the frameworks the repo declares, and no others (A-framework)", async () => {
+    // Nothing is read here to find a framework: before the first read, the repo's type in the
+    // manifest is the hint; once a framework fact is on file it is the facts that say.
+    const root = adoptedRepo();
+    mkdirSync(join(root, ".atticus", "org-pack", "profiles", "forge"), { recursive: true });
+    writeFileSync(
+      join(root, ".atticus", "org-pack", "profiles", "forge", "repos.manifest.yaml"),
+      stringify({
+        schemaVersion: 2,
+        platform: "forge",
+        repos: [{ id: REPO, url: ".", type: "spring-boot", owner: "team-ledger" }],
+      }),
+      "utf8",
+    );
+    const reader = honestReader();
+    const prompts: string[] = [];
+    const runtime = new MockRuntime(
+      (r) => {
+        prompts.push(r.pack.prompt);
+        return reader(r.pack.prompt);
+      },
+      { now: NOW },
+    );
+    expect(
+      await mapCommand(root, REPO, { commit: COMMIT, maxTokens: 7000 }, io().io, {
+        runtime,
+        now: NOW,
+      }),
+    ).toBe(0);
+    const back = prompts.filter((p) => [...filesIn(p)].some((f) => f.endsWith(".java")));
+    expect(back.length).toBeGreaterThan(0);
+    for (const p of back) {
+      expect(p).toContain("A JPA `@Entity` without `@Table(name)`");
+      expect(p).not.toContain("A Django model in an app's models module");
+      expect(p).not.toContain("An MVC route from controller and action names");
+      expect(p).not.toContain("A top-level ActiveRecord model");
+    }
+    // And the build and deploy batch asks for the framework fact itself.
+    expect(prompts.find((p) => filesIn(p).has("k8s/ledger-api.yaml"))).toContain(
+      "A `framework` fact is what the repo, or one of its modules, is built on",
+    );
   });
 
   it("replays recorded answers to the same prompts, byte for byte the same facts", async () => {

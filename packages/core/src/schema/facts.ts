@@ -3,7 +3,7 @@ import { Auth, FLOW_STEP_KINDS } from "./kinds.js";
 
 /**
  * The facts file: what the assistant writes when it reads a repo (ADR 0124). One JSON line
- * per fact, in six kinds plus flows, every one with a citation. It is the assistant's input
+ * per fact, in seven kinds plus flows, every one with a citation. It is the assistant's input
  * format, projected into catalog C1 by `projectFacts`; it is not a catalog contract of its own.
  *
  * A fact without a citation is not a fact; it is a question.
@@ -11,7 +11,16 @@ import { Auth, FLOW_STEP_KINDS } from "./kinds.js";
 
 const str = () => z.string().min(1);
 
-export const FACT_KINDS = ["entry", "call", "store", "field", "deploy", "config", "flow"] as const;
+export const FACT_KINDS = [
+  "entry",
+  "call",
+  "store",
+  "field",
+  "deploy",
+  "config",
+  "framework",
+  "flow",
+] as const;
 export type FactKind = (typeof FACT_KINDS)[number];
 
 /** A fact's id: any slug the assistant chooses; the projection makes catalog ids from the claim. */
@@ -44,8 +53,10 @@ export const Cite = z.strictObject({
   value: str(),
   quote: z.string().max(200).optional(),
   /**
-   * The other lines a path is put together from (ADR 0124 addendum A4): every plain part of the
-   * path must be written on the cited line or one of these, each part on its own line.
+   * The other lines a claim is put together from (ADR 0124 addendum A4): every plain part of a
+   * path must be written on the cited line or one of these, each part on its own line. A
+   * framework fact's version, where the declaring line doesn't write it, is such a part too
+   * (addendum A-framework).
    */
   with: z.array(CitePart).max(6).optional(),
 });
@@ -250,6 +261,42 @@ export const ConfigFact = z
     }
   });
 
+/**
+ * What a repo or one of its modules is built on (ADR 0124 addendum A-framework): a framework the
+ * build file declares, cited on the line that declares it. A kind of its own, not a field on
+ * another kind: its subject is the repo or the module (`repo` and `component`, which `common`
+ * already carries), no other fact owns it, and it is read first and on its own — the rules a
+ * batch's prompt carries are chosen from it before any entry is read. See the addendum for the
+ * decision.
+ *
+ * Nothing is projected into catalog C1 from it: there is no field there to hold it, and a C1
+ * field would be a schema bump with a migration. The views read the facts (`map.md`, the Map's
+ * repo page, the Trust tab) as the gateway join's hops do.
+ */
+export const FrameworkFact = z.strictObject({
+  kind: z.literal("framework"),
+  ...common,
+  /**
+   * The framework's name as Atticus knows it (`spring-boot`, `asp.net`, `express`, `angular`,
+   * `react`, `quarkus`, `django`, `rails`), or, for a house starter or platform library Atticus
+   * doesn't know, the artifact or package as the build file declares it. The verifier checks the
+   * name against the declaration on the cited line, so a name no declaration gives is rejected.
+   */
+  name: str(),
+  /**
+   * The version as declared, when the build file says. Left out when it doesn't (a BOM, a parent
+   * pom or a lock file manages it and no line here names a version).
+   *
+   * Where the version is not written on the cited line — a `<properties>` entry, a parent pom's
+   * `<version>`, a `<TargetFramework>`, a dependency-management block — that line goes in
+   * `cite.with`, as any other part of a claim built across lines does (ADR 0124 addendum A4),
+   * and the verifier checks it there. No field of its own: the version is part of this claim,
+   * not a claim about something else, and `cite.with` is already the place a claim's other
+   * lines go.
+   */
+  version: z.string().optional(),
+});
+
 export const FlowFactStep = z.strictObject({
   kind: z.enum(FLOW_STEP_KINDS),
   what: str(),
@@ -282,6 +329,7 @@ export const Fact = z.discriminatedUnion("kind", [
   FieldFact,
   DeployFact,
   ConfigFact,
+  FrameworkFact,
   FlowFact,
 ]);
 export type Fact = z.infer<typeof Fact>;

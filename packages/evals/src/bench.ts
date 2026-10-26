@@ -520,6 +520,8 @@ export interface FactsScore extends RepoScore {
       screenFields: number;
       batchJobs: number;
       keyPatterns: number;
+      /** Framework facts: no reference turns one on (A-framework), so they are not scored. */
+      frameworks: number;
       flows: number;
     };
   };
@@ -554,14 +556,29 @@ export function scoreFacts(ref: BenchReference, facts: readonly Fact[]): FactsSc
     facts.filter((f) => f.kind === "store" && f.tableKind === "key-pattern").map((f) => f.id),
   );
   const leftOut = new Set([...screenFields.map((f) => f.id), ...jobs, ...keys]);
-  const kept = facts.filter((f) => !screens.has(f.id) && !leftOut.has(f.id) && f.kind !== "flow");
+  // No reference says what a repo is built on (ADR 0124 addendum A-framework), so a framework
+  // fact is left out of the projection and counted, as a screen and a job are: nothing here
+  // scores it, and a read that writes one is neither better nor worse on this bench for it.
+  const frameworks = new Set(facts.filter((f) => f.kind === "framework").map((f) => f.id));
+  const kept = facts.filter(
+    (f) => !screens.has(f.id) && !leftOut.has(f.id) && !frameworks.has(f.id) && f.kind !== "flow",
+  );
   const { records, issues, ids } = projectFacts(kept);
   const soap = new Set(
     kept.flatMap((f) =>
       f.kind === "call" && f.callType === "soap" && ids[f.id] ? [ids[f.id]!] : [],
     ),
   );
-  const byKind = { entry: 0, call: 0, store: 0, field: 0, deploy: 0, config: 0, flow: 0 };
+  const byKind = {
+    entry: 0,
+    call: 0,
+    store: 0,
+    field: 0,
+    deploy: 0,
+    config: 0,
+    framework: 0,
+    flow: 0,
+  };
   for (const f of facts) byKind[f.kind]++;
   return {
     ...scoreRepo(ref, records, soap),
@@ -574,6 +591,7 @@ export function scoreFacts(ref: BenchReference, facts: readonly Fact[]): FactsSc
         screenFields: screenFields.length,
         batchJobs: jobs.size,
         keyPatterns: keys.size,
+        frameworks: frameworks.size,
         flows: byKind.flow,
       },
     },

@@ -88,12 +88,40 @@ export const RULE_TOPICS = [
 export type RuleTopic = (typeof RULE_TOPICS)[number];
 
 /**
- * One sentence (or a few) of a rule. A part with no `when` is core: every prompt carries it. A
- * part with `when` is a topic rule: a batch prompt carries it when the batch holds a file of one
- * of those kinds.
+ * The frameworks the protocol has a rule part for (ADR 0124 addendum A-framework): a batch's
+ * prompt carries the parts of the frameworks its repo's facts say it is built on, so a Spring
+ * repo no longer carries ASP.NET's and Rails' rules and a front end carries neither side's. The
+ * same words as `FRAMEWORKS` in @maycombhq/verify, which reads them off the framework facts; a
+ * test holds them equal. `house` stands for a framework of the organisation's own, known or not:
+ * its annotations may hide a route no reader here can see.
+ */
+export const FRAMEWORK_TOPICS = [
+  "spring",
+  "aspnet",
+  "express",
+  "nest",
+  "angular",
+  "react",
+  "vue",
+  "next",
+  "quarkus",
+  "django",
+  "rails",
+  "laravel",
+  "house",
+] as const;
+export type FrameworkTopic = (typeof FRAMEWORK_TOPICS)[number];
+
+/**
+ * One sentence (or a few) of a rule. A part with no `when` and no `on` is core: every prompt
+ * carries it. A part with `when` is a topic rule: a batch prompt carries it when the batch holds
+ * a file of one of those kinds. A part with `on` is a framework rule: a batch prompt carries it
+ * when the repo declares one of those frameworks, or when nothing says yet which it declares.
+ * A part may have both, and then needs a kind and a framework.
  */
 export interface RulePart {
   when?: readonly RuleTopic[];
+  on?: readonly FrameworkTopic[];
   text: string;
 }
 
@@ -124,14 +152,32 @@ export const FACT_RULE_PARTS: readonly (readonly RulePart[])[] = [
     },
     {
       when: ["frontend"],
+      on: ["aspnet", "next"],
       text: "A route given by the file's place is cited on the line that makes the file a page: a Razor Page (`@page`; `Index` is its folder), a WebForms page (`GET /<path>.aspx` from the folder with `Web.config`, on its Page directive), a Next.js `app/**/page.tsx` or `pages/**`.",
     },
     {
+      when: ["frontend", "routes"],
+      on: ["angular"],
+      text: "An Angular screen's path is the `path` of a `Routes` entry, with its parent route's `path` and any `loadChildren` prefix in `cite.with`; `''` is its parent's own path.",
+    },
+    {
+      when: ["frontend", "routes"],
+      on: ["react", "next"],
+      text: "A React Router screen's path is a `<Route path>` or a route object's `path`, with its parent's in `cite.with`; an `index` route is its parent's path.",
+    },
+    {
+      when: ["frontend", "routes"],
+      on: ["vue"],
+      text: "A Vue Router screen's path is the `path` of a `routes` entry; a nested path written without a leading `/` hangs off its parent's, which goes in `cite.with`.",
+    },
+    {
       when: ["routes"],
+      on: ["aspnet"],
       text: "When routes are slugified (`SlugifyParameterTransformer`), the path is the slug (`/manage/my-account`) with the transformer's line in `cite.with`.",
     },
     {
       when: ["routes", "protocols"],
+      on: ["aspnet"],
       text: "An ASMX or `[ScriptService]` method called as JSON is `rest`.",
     },
     {
@@ -157,8 +203,19 @@ export const FACT_RULE_PARTS: readonly (readonly RulePart[])[] = [
   ],
   [
     {
+      when: ["deploy"],
+      text: "A `framework` fact is what the repo, or one of its modules, is built on: one per framework its build file declares. `name` is the framework (spring-boot, spring, quarkus, asp.net, entity-framework, express, nest, angular, react, vue, next, django, celery, rails, sidekiq, laravel), or, for one of the organisation's own starters or platform libraries, the artifact or package as the file writes it; `cite.value` is the declaration as the line writes it (`spring-boot-starter-parent`, `Microsoft.NET.Sdk.Web`, `express`, `gem \"rails\"`); `version` is the version as declared, and where that isn't written on the cited line (a `<properties>` entry, a parent pom's version, a `<TargetFramework>`, a dependency-management block) that line goes in `cite.with`; `component` is the module when a module declares its own. A library the code merely calls is not a framework: record what the repo is built on.",
+    },
+  ],
+  [
+    {
       when: ["backend", "frontend", "routes"],
-      text: "A path put together in code (a base URL, a group or class prefix, a context path, a proto's package, service and method, an MVC route from controller and action names: cite the action, with its controller's class line and the route template in `with`; the path keeps the template's parameters the action takes, `/Catalog/Edit/{id}`, and the default route's default action is `/`) is cited on the line that makes the call or serves the route, with each other part in `cite.with`: `[{file, line, value}]`, the part as written on that line. Every plain part of the path must be written on one of those lines.",
+      text: "A path put together in code (a base URL, a group or class prefix, a context path, a proto's package, service and method) is cited on the line that makes the call or serves the route, with each other part in `cite.with`: `[{file, line, value}]`, the part as written on that line. Every plain part of the path must be written on one of those lines.",
+    },
+    {
+      when: ["backend", "routes"],
+      on: ["aspnet"],
+      text: "An MVC route from controller and action names is cited on the action, with its controller's class line and the route template in `with`; the path keeps the template's parameters the action takes, `/Catalog/Edit/{id}`, and the default route's default action is `/`.",
     },
     {
       when: ["backend", "frontend"],
@@ -176,7 +233,37 @@ export const FACT_RULE_PARTS: readonly (readonly RulePart[])[] = [
   [
     {
       when: ["backend"],
-      text: "A name a framework derives (ORM tables and join tables, Django's `app_model`, Rails' root and Devise routes, Spring Data REST paths) is written as the framework makes it, cited on the line that declares its source; a name built from parts (a rake `namespace:task`) has them in `cite.with`. A background job worker (Sidekiq, Celery, ActiveJob) is a `batch-job` entry named by its job.",
+      text: "A name a framework derives is written as the framework makes it, cited on the line that declares its source, never as the class is called; a name built from parts (a rake `namespace:task`) has them in `cite.with`.",
+    },
+    {
+      when: ["backend", "data"],
+      on: ["spring", "quarkus"],
+      text: "A JPA `@Entity` without `@Table(name)` is its snake_case table, and a `@OneToMany` without `mappedBy`, an owning `@ManyToMany` or an `@ElementCollection` has a join table named as the ORM makes it. A Spring Data REST `@RepositoryRestResource` serves `/<path>`, `/<path>/{id}` and its search methods.",
+    },
+    {
+      when: ["backend", "data"],
+      on: ["django"],
+      text: "A Django model in an app's models module is the table `<app_label>_<model>`, unless it is abstract, a proxy or sets `db_table`; a `ManyToManyField` without `through` makes `<model table>_<field>`, and a `ForeignKey` without `db_column` is the column `<field>_id`. A Celery `@shared_task` or `@app.task` without `name=` is a `batch-job` entry named `<module>.<function>`.",
+    },
+    {
+      when: ["backend", "data", "routes"],
+      on: ["rails"],
+      text: "A top-level ActiveRecord model is the plural of its underscored name, `root` is `/` under its namespace or scope, and `devise_for` gives the routes of the modules the model's `devise` call lists. An ActiveJob or Sidekiq class is a `batch-job` entry named with its modules.",
+    },
+    {
+      when: ["backend", "data"],
+      on: ["laravel"],
+      text: "An Eloquent model's table is the snake_case of its plural, and `belongsToMany(X::class)` is the two snake_case names in alphabetical order; neither applies when the table is set.",
+    },
+    {
+      when: ["backend", "data"],
+      on: ["express", "nest", "next"],
+      text: "A TypeORM `@Entity()` is the snake_case of its class and a nameless `@JoinTable()` is `<owner>_<property>_<target>`; Prisma's implicit many-to-many, with list fields on both sides, is `_<A>To<B>` in alphabetical order.",
+    },
+    {
+      when: ["backend", "frontend", "routes", "data"],
+      on: ["house"],
+      text: "Where the repo is built on a framework of the organisation's own, one of its annotations, base classes or wrapper clients may serve a route, read a table or call another system with nothing in this repo's own code to show it. Write what the code itself says; where only the framework would know, write a question naming the annotation or class, never a guess.",
     },
   ],
   [
@@ -303,8 +390,13 @@ export const FACT_RULE_PARTS: readonly (readonly RulePart[])[] = [
  * The rules for a batch of these kinds: the core and each topic part one of the kinds needs, a
  * rule's parts kept in order on its line. Without kinds, every rule (FACT_RULES).
  */
-export function factRulesFor(kinds?: readonly RuleTopic[]): string {
-  const has = (p: RulePart) => !p.when || !kinds || p.when.some((k) => kinds.includes(k));
+export function factRulesFor(
+  kinds?: readonly RuleTopic[],
+  frameworks?: readonly FrameworkTopic[],
+): string {
+  const has = (p: RulePart) =>
+    (!p.when || !kinds || p.when.some((k) => kinds.includes(k))) &&
+    (!p.on || !frameworks || p.on.some((f) => frameworks.includes(f)));
   return FACT_RULE_PARTS.map((r) => r.filter(has))
     .filter((r) => r.length)
     .map((r) => `- ${r.map((p) => p.text).join(" ")}`)
@@ -341,6 +433,13 @@ export function mapBatchInstructions(o: {
    */
   kinds?: readonly RuleTopic[];
   /**
+   * The frameworks the repo's facts say it is built on (`frameworkTopics` in @maycombhq/verify),
+   * from the framework facts kept so far — the build files are read first, so the batches after
+   * the first know them. Left out (or empty) when nothing says yet: every framework's rules go
+   * in, as they always did.
+   */
+  frameworks?: readonly FrameworkTopic[];
+  /**
    * Nothing says what this repo is (ADR 0128): ask for one line, cited, which a person then
    * confirms, edits or rejects. Left out when the manifest already says.
    */
@@ -356,7 +455,7 @@ export function mapBatchInstructions(o: {
     "",
     factsReference(),
     "",
-    factRulesFor(o.kinds),
+    factRulesFor(o.kinds, o.frameworks),
     "- Cite only the numbered lines in this prompt. A reference may name a fact already kept (listed below) or one in your answer. Don't write a kept fact again, unless you correct it under the same `id`.",
     "- When these files hold no fact, answer with nothing.",
     ...(o.askAbout ? [ABOUT_RULE] : []),

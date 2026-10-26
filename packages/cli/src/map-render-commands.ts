@@ -13,6 +13,7 @@ import {
   mapDirOf,
   mapRelOf,
   orgPackDirOf,
+  parseFacts,
   parseRecord,
   questionsRelOf,
   raiseQuestions,
@@ -41,7 +42,14 @@ import {
   writeCatalog,
   type CatalogDiff,
 } from "@maycombhq/scanner";
-import { codeLinkerFor, renderMap, trustOf } from "@maycombhq/verify";
+import {
+  codeLinkerFor,
+  frameworkFacts,
+  frameworkGaps,
+  renderMap,
+  trustOf,
+  type RenderMapInput,
+} from "@maycombhq/verify";
 import { baseClonePath, loadRepos } from "@maycombhq/workspace";
 import type { Output } from "./commands.js";
 import { askHosts } from "./host-questions.js";
@@ -351,6 +359,9 @@ async function renderRepoMap(
           },
         }
       : {}),
+    // What the repo is built on (ADR 0124 addendum A-framework): read from the facts, since no
+    // catalog record holds a framework.
+    ...builtOnOf(await factsOf(root, repo)),
     questions: open.map((q) => ({ id: q.id, question: q.question, evidence: q.evidence })),
     paths: { map: rel, questions: questionsRelOf(root), specs: specRelOf(root, repo) },
     codeLink,
@@ -367,6 +378,33 @@ async function renderRepoMap(
   const paths = Object.keys(files).map((p) => `${rel}/${p}`);
   io.out(`Map: ${rel}/map.md (${Object.keys(files).length} files; review them in the PR).`);
   return paths;
+}
+
+/** The repo's kept facts, for what the map says it is built on. None when there are none. */
+async function factsOf(root: string, repo: string): Promise<Fact[]> {
+  const text = await readFile(join(factsDirOf(root), `${repo}.jsonl`), "utf8").catch(
+    () => undefined,
+  );
+  if (text === undefined) return [];
+  const p = parseFacts(text);
+  return p.ok ? p.facts : [];
+}
+
+/**
+ * What the map says a repo is built on (ADR 0124 addendum A-framework): each framework fact as a
+ * line with its version and the build file's line, and the frameworks whose patterns the facts
+ * show none of. Nothing when the facts name no framework.
+ */
+export function builtOnOf(facts: readonly Fact[]): Pick<RenderMapInput, "frameworks"> {
+  const built = frameworkFacts(facts).map((f) => ({
+    name: f.name,
+    ...(f.version ? { version: f.version } : {}),
+    ...(f.component ? { component: f.component } : {}),
+    cite: { path: f.cite.file, line: f.cite.line, commit: f.commit },
+  }));
+  if (!built.length) return {};
+  const gaps = frameworkGaps(facts).map((g) => ({ framework: g.framework, question: g.question }));
+  return { frameworks: { built, ...(gaps.length ? { gaps } : {}) } };
 }
 
 async function listFiles(dir: string): Promise<string[]> {

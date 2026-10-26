@@ -1,0 +1,2 @@
+{"kind":"framework","id":"fw.angular","repo":"forge-portal-web","commit":"4f1d2a9c8b7e6f5a4d3c2b1a0978563412fedcba","name":"angular","version":"18.2.3","cite":{"file":"package.json","line":6,"value":"@angular/core","quote":"\"@angular/core\": \"18.2.3\","}}
+{"kind":"entry","id":"entry.screen.statements","repo":"forge-portal-web","commit":"4f1d2a9c8b7e6f5a4d3c2b1a0978563412fedcba","entryType":"screen","path":"/statements","cite":{"file":"src/app/app.routes.ts","line":5,"value":"statements","quote":"{ path: \"statements\", component: StatementsPage },"}}

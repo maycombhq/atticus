@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-parent</artifactId>
+    <version>3.2.9</version>
+  </parent>
+  <groupId>com.forge.cards</groupId>
+  <artifactId>forge-cards-api</artifactId>
+  <version>5.0.0</version>
+  <dependencies>
+    <dependency>
+      <groupId>com.forge.platform</groupId>
+      <artifactId>forge-card-starter</artifactId>
+      <version>4.2.0</version>
+    </dependency>
+  </dependencies>
+</project>

@@ -349,9 +349,24 @@ export const ALLOW = [
   },
   {
     file: "packages/adopt/src/detect.ts",
-    names: ["angular", "apigee", "dotnet", "kong", "react", "spring", "vue"],
+    names: [
+      "angular",
+      "apigee",
+      "django",
+      "dotnet",
+      "express",
+      "fastapi",
+      "flask",
+      "hibernate",
+      "kong",
+      "micronaut",
+      "quarkus",
+      "react",
+      "spring",
+      "vue",
+    ],
     reason:
-      "repo-type detection from named build files, an extractor's job living in adopt (ADR 0038); should move to extractors",
+      "repo-type detection from named build files, an extractor's job living in adopt (ADR 0038); should move to extractors. The table of framework names a repo's facts declare (ADR 0124 addendum A-framework) is the same job: what each framework means lives in verify, and this maps its name to a repo type",
   },
   {
     file: "packages/ci/src/snippets.ts",

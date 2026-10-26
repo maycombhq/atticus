@@ -1,0 +1,4 @@
+forge:
+  cards:
+    issuer-base-url: https://issuer.forge.invalid/v2
+    read-timeout: 4s

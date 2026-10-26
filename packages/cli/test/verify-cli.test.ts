@@ -412,3 +412,74 @@ describe("atticus verify: files read with nothing to record, and a read that is 
     expect(readFileSync(facts, "utf8")).not.toContain('"auth":"mtls"');
   });
 });
+
+/**
+ * What a repo is built on (ADR 0124 addendum A-framework), on `fixtures/frameworks/`: the report
+ * says it, a framework whose patterns the facts show none of is a question in the report and in
+ * the words the command prints, and a house framework nothing can read is offered to be learned.
+ */
+describe("atticus verify <repo>: what the repo is built on", () => {
+  const FW = join(__dirname, "..", "..", "..", "fixtures", "frameworks");
+  const COMMIT = "4f1d2a9c8b7e6f5a4d3c2b1a0978563412fedcba";
+  function repoWithFacts(repo: string): string {
+    const root = mkdtempSync(join(tmpdir(), "atticus-verify-fw-"));
+    cpSync(join(FW, "repos", repo), root, { recursive: true });
+    mkdirSync(join(root, ".atticus", "org-pack"), { recursive: true });
+    mkdirSync(join(root, ".atticus", "facts"), { recursive: true });
+    cpSync(join(FW, "facts", `${repo}.jsonl`), join(root, ".atticus", "facts", `${repo}.jsonl`));
+    return root;
+  }
+  const reportOf = (root: string, repo: string) =>
+    parse(readFileSync(join(root, ".atticus", "facts", `${repo}.verify.yaml`), "utf8"));
+
+  it("says what it is built on, with the version and where", async () => {
+    const root = repoWithFacts("forge-ledger-api");
+    const o = io();
+    expect(await verifyCommand(root, "forge-ledger-api", { commit: COMMIT }, o.io)).toBe(0);
+    expect(o.out.join("\n")).toContain("Built on forge-web-starter 2.8.1, spring-boot 3.3.4");
+    expect(reportOf(root, "forge-ledger-api").frameworks).toEqual([
+      {
+        name: "forge-web-starter",
+        version: "2.8.1",
+        cite: "web/pom.xml:17",
+        component: "ledger-web",
+      },
+      { name: "spring-boot", version: "3.3.4", cite: "pom.xml:6" },
+    ]);
+  });
+
+  it("asks a person about a framework whose patterns none of the facts show", async () => {
+    const root = repoWithFacts("forge-cards-api");
+    const o = io();
+    expect(await verifyCommand(root, "forge-cards-api", { commit: COMMIT }, o.io)).toBe(0);
+    const text = o.out.join("\n");
+    expect(text).toContain("shows none of its patterns in the facts");
+    expect(text).toContain("Were its entry points missed");
+    const gaps = reportOf(root, "forge-cards-api").frameworkGaps;
+    expect(gaps).toHaveLength(1);
+    expect(gaps[0].framework).toBe("spring-boot");
+    expect(gaps[0].expected).toBe("rest");
+  });
+
+  it("offers to learn a house framework rather than read it as ordinary code", async () => {
+    const root = repoWithFacts("forge-cards-api");
+    const o = io();
+    expect(await verifyCommand(root, "forge-cards-api", { commit: COMMIT }, o.io)).toBe(0);
+    const text = o.out.join("\n");
+    expect(text).toContain("nothing here can read yet");
+    expect(text).toContain("atticus frameworks learn forge-card-starter --from forge-cards-api");
+  });
+
+  it("says nothing about frameworks for a repo whose facts name none", async () => {
+    const root = adoptedRepo(readFileSync(join(fixtures, "forge-ledger.facts.jsonl"), "utf8"));
+    const o = io();
+    expect(await verifyCommand(root, "forge-ledger", { commit: "0123abc" }, o.io)).toBe(0);
+    const text = o.out.join("\n");
+    expect(text).not.toContain("Built on");
+    const r = parse(
+      readFileSync(join(root, ".atticus", "facts", "forge-ledger.verify.yaml"), "utf8"),
+    );
+    expect(r.frameworks).toBeUndefined();
+    expect(r.frameworkGaps).toBeUndefined();
+  });
+});

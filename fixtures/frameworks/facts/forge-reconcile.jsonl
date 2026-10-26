@@ -1,0 +1,2 @@
+{"kind":"framework","id":"fw.django","repo":"forge-reconcile","commit":"4f1d2a9c8b7e6f5a4d3c2b1a0978563412fedcba","name":"django","version":"5.1.1","cite":{"file":"pyproject.toml","line":6,"value":"django==5.1.1","quote":"\"django==5.1.1\","}}
+{"kind":"entry","id":"entry.get.breaks","repo":"forge-reconcile","commit":"4f1d2a9c8b7e6f5a4d3c2b1a0978563412fedcba","entryType":"rest","method":"GET","path":"/breaks/","handler":"reconcile.views.breaks","cite":{"file":"reconcile/urls.py","line":6,"value":"breaks/","quote":"path(\"breaks/\", breaks, name=\"breaks\"),"}}

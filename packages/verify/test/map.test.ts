@@ -139,6 +139,56 @@ describe("renderMap: the map of one repo, from its C1 records", () => {
     );
   });
 
+  it("says what the repo is built on, beside what it is (A-framework)", () => {
+    const md = renderMap({
+      ...input(),
+      frameworks: {
+        built: [
+          {
+            name: "spring-boot",
+            version: "3.3.4",
+            cite: { path: "pom.xml", line: 6, commit: "0123abc" },
+          },
+          {
+            name: "forge-web-starter",
+            version: "2.8.1",
+            component: "ledger-web",
+            cite: { path: "web/pom.xml", line: 17, commit: "0123abc" },
+          },
+        ],
+      },
+    })["map.md"]!;
+    const lines = md.split("\n");
+    expect(lines.findIndex((l) => l.startsWith("**Built on:**"))).toBeLessThan(
+      lines.findIndex((l) => l.startsWith("**Trust:**")),
+    );
+    expect(md).toContain("spring-boot 3.3.4");
+    expect(md).toContain("forge-web-starter 2.8.1 (ledger-web)");
+    // Each links to the line that declares it, as every other line of the map does.
+    expect(md).toContain("[pom.xml:6](");
+    expect(md).toContain("[web/pom.xml:17](");
+    expect(md).toContain("read from the build files");
+    // Nothing says: no line at all, rather than a line saying nothing.
+    expect(renderMap(input())["map.md"]!).not.toContain("**Built on:**");
+  });
+
+  it("puts a framework whose patterns the facts show none of in the open (A-framework)", () => {
+    const md = renderMap({
+      ...input(),
+      frameworks: {
+        built: [{ name: "spring-boot", cite: { path: "pom.xml", line: 6, commit: "0123abc" } }],
+        gaps: [
+          {
+            framework: "spring-boot",
+            question: "Were its entry points missed, or does this repo really have none?",
+          },
+        ],
+      },
+    })["map.md"]!;
+    expect(md).toContain("**Open: spring-boot shows none of its patterns here.**");
+    expect(md).toContain("Were its entry points missed");
+  });
+
   it("says what is missing instead of leaving a section blank", () => {
     const md = renderMap({ ...input(), records: [], flows: [], questions: [], trust: undefined })[
       "map.md"

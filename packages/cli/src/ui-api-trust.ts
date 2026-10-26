@@ -12,6 +12,7 @@ import {
   type CatalogRecord,
 } from "@maycombhq/core";
 import { readCatalog } from "@maycombhq/scanner";
+import { frameworkFacts, frameworkGaps } from "@maycombhq/verify";
 import type { Router, ServerContext } from "@maycombhq/server";
 import { baseClonePath, loadRepos } from "@maycombhq/workspace";
 
@@ -181,6 +182,7 @@ export async function trustView(root: string): Promise<View> {
       count: 0,
       unverified: 0,
     };
+    let frameworks: Repo["frameworks"];
     if (raw !== undefined && raw.trim()) {
       const parsed = parseFacts(raw);
       if (parsed.ok) {
@@ -188,6 +190,17 @@ export async function trustView(root: string): Promise<View> {
         facts.unverified = parsed.facts.filter((f) => f.verified === "none").length;
         const commit = parsed.facts[0]?.commit;
         if (commit) facts.commit = commit;
+        // A-framework: what the repo is built on, and the frameworks whose patterns the facts
+        // show none of. From the facts: no catalog record holds a framework.
+        const gaps = new Map(frameworkGaps(parsed.facts).map((g) => [g.id, g.question] as const));
+        const built = frameworkFacts(parsed.facts).map((f) => ({
+          name: f.name,
+          ...(f.version ? { version: f.version } : {}),
+          ...(f.component ? { component: f.component } : {}),
+          cite: `${f.cite.file}:${f.cite.line}`,
+          ...(gaps.has(f.id) ? { gap: gaps.get(f.id)! } : {}),
+        }));
+        if (built.length) frameworks = built;
       } else
         problems.push({
           file: rel(factsPath),
@@ -240,7 +253,12 @@ export async function trustView(root: string): Promise<View> {
       catalog: { from, fromFacts: c.facts, fromReaders: c.readers },
     };
     const { state, next } = nextOf(repo, base);
-    repos.push({ ...base, state, ...(next ? { next } : {}) });
+    repos.push({
+      ...base,
+      state,
+      ...(next ? { next } : {}),
+      ...(frameworks ? { frameworks } : {}),
+    });
   }
   return { factsDir: factsRel, repos, problems };
 }

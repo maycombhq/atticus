@@ -1,0 +1,2 @@
+{"kind":"framework","id":"fw.react","repo":"forge-admin-web","commit":"4f1d2a9c8b7e6f5a4d3c2b1a0978563412fedcba","name":"react","version":"18.3.1","cite":{"file":"package.json","line":6,"value":"react","quote":"\"react\": \"18.3.1\","}}
+{"kind":"entry","id":"entry.screen.limits","repo":"forge-admin-web","commit":"4f1d2a9c8b7e6f5a4d3c2b1a0978563412fedcba","entryType":"screen","path":"/limits","cite":{"file":"src/App.tsx","line":7,"value":"/limits","quote":"<Route path=\"/limits\" element={<Limits />} />"}}

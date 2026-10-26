@@ -95,7 +95,7 @@ const CONTRACTS: Contract[] = [
       "",
       "## The facts file (ADR 0124)",
       "",
-      "What an assistant writes when it reads a repo: one JSON line per fact, in six kinds plus flows, every one with a citation (`cite`: file, line, the claimed value, a short quote). The facts file is the assistant's input format, projected deterministically into the record kinds above by `projectFacts`; it is additive to C1 and changes the same way. A fact without a citation is not a fact; it is a question.",
+      "What an assistant writes when it reads a repo: one JSON line per fact, in seven kinds plus flows, every one with a citation (`cite`: file, line, the claimed value, a short quote). The facts file is the assistant's input format, projected deterministically into the record kinds above by `projectFacts`; it is additive to C1 and changes the same way. A fact without a citation is not a fact; it is a question.",
       "",
       `Fact kinds: ${(core.FACT_KINDS as readonly string[]).map((k) => `\`${k}\``).join(", ")}.`,
     ],

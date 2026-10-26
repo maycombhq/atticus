@@ -68,6 +68,35 @@ describe("detectRepoType", () => {
     });
     expect(built.type).toBe(EXPECTED_TYPES["orders-api"]);
   });
+
+  // ADR 0124 addendum A-framework: a framework the repo's own facts declare is read from a build
+  // file's line and the verifier checked that line, so it settles the type.
+  it("takes a framework the repo's facts declare over any guess from the files", async () => {
+    const notes = fsRepo("docs", fixture("plain-multi/docs"), "0");
+    const said = await detectRepoType(notes, {
+      frameworks: [{ name: "django", cite: "pyproject.toml:6" }],
+    });
+    expect(said).toMatchObject({ type: "python", confidence: "high" });
+    expect(said.signals).toEqual(["pyproject.toml:6"]);
+    // It beats a description, and a type the files would have guessed.
+    const over = await detectRepoType(fsRepo("o", fixture("plain-multi/orders-api"), "0"), {
+      description: "An api gateway, honestly.",
+      frameworks: [{ name: "react", cite: "package.json:6" }],
+    });
+    expect(over).toMatchObject({ type: "frontend", confidence: "high" });
+    // A framework nothing here maps (a house starter) leaves the files to say.
+    const house = await detectRepoType(fsRepo("o", fixture("plain-multi/orders-api"), "0"), {
+      frameworks: [{ name: "forge-card-starter", cite: "pom.xml:15" }],
+    });
+    expect(house.type).toBe(EXPECTED_TYPES["orders-api"]);
+  });
+
+  it("still reads a gateway's bundle as a gateway, whatever its facts declare", async () => {
+    const d = await detectRepoType(fsRepo("g", fixture("plain-multi/edge-gateway"), "0"), {
+      frameworks: [{ name: "spring-boot", cite: "pom.xml:6" }],
+    });
+    expect(d.type).toBe(EXPECTED_TYPES["edge-gateway"]);
+  });
 });
 
 async function metarepo(): Promise<string> {

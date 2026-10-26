@@ -22,6 +22,7 @@ import { globToRegExp } from "@maycombhq/sdk";
 import { authChecks, authPolicyMismatch } from "./apigee-policy.js";
 import { applyCorrections, type AppliedCorrection, type StaleCorrection } from "./corrections.js";
 import { derivedHolds, derivedNamesAt, type DeriveEnv, type DerivedName } from "./derived.js";
+import { frameworkGaps, frameworkNameProblem, type FrameworkGap } from "./frameworks.js";
 import { isDataFile, isLocaleBundle } from "./not-product.js";
 import { pageRouteMatches } from "./pages.js";
 import { isGlob, type ReviewedEntry } from "./reviewed.js";
@@ -64,7 +65,12 @@ export type RejectCode =
    * An entry whose `authCite` attaches a policy of a kind that cannot produce the `auth` claimed
    * (ADR 0124 addendum A-gateway2): a `VerifyAPIKey` never makes `oauth2`.
    */
-  | "auth-policy-kind";
+  | "auth-policy-kind"
+  /**
+   * A framework fact whose `name` is not the framework the declaration on its cited line means
+   * (ADR 0124 addendum A-framework): a reader can't rename an artifact.
+   */
+  | "framework-name";
 
 /** One thing wrong with a fact. */
 export interface Problem {
@@ -160,6 +166,13 @@ export interface VerifyReport {
    * that sets it was cited (`authCite`). In id order.
    */
   authUncited: UncitedAuth[];
+  /**
+   * A note, not a rejection (ADR 0124 addendum A-framework): the frameworks the kept facts say
+   * the repo is built on whose patterns none of those facts show — a Spring Boot repo with no
+   * REST entry, a React repo with no screen. Usually the reader missed the real entry points, so
+   * it is a question for a person. In fact-id order.
+   */
+  frameworkGaps: FrameworkGap[];
 }
 
 /** An entry no flow starts: its id, type, method and path, and where it is cited (`file:line`). */
@@ -293,6 +306,14 @@ function claimsOf(f: Fact): Claim[] {
       return [{ kind: "field", value: f.name }];
     case "deploy":
       return [{ kind: "word", value: f.resourceName ?? f.cite.value }];
+    // A-framework: the declaration as the build file writes it (`spring-boot-starter-parent`,
+    // `Microsoft.NET.Sdk.Web`, `express`). The framework's own name follows from it, and is
+    // checked against what Atticus knows that declaration to mean, not against the line.
+    case "framework":
+      return [
+        { kind: "word", value: f.cite.value },
+        { kind: "word", value: f.name },
+      ];
     case "config": {
       // A key as written on the line, or the last part of a dotted path or a flag (a YAML path
       // `livenessProbe.httpGet.path` names `path:` on its line; `kubectl wait --timeout`, `timeout`).
@@ -589,6 +610,15 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
           ),
         ),
       );
+    // A-framework: the name follows from the declaration on the cited line, and a version, where
+    // one is claimed, is written on that line or on one of its `cite.with` parts (a property, a
+    // parent pom's version, a <TargetFramework>, a dependency-management block).
+    if (f.kind === "framework") {
+      const bad = frameworkNameProblem(f);
+      if (bad) problem(f, "framework-name", `${label} ${bad}`);
+      if (f.version !== undefined)
+        add(f, checkCite(f.cite, [{ kind: "word", value: f.version }], `${label} version`, false));
+    }
     if (f.kind === "flow") {
       f.steps.forEach((s, i) =>
         add(f, checkCite(s.cite, stepClaims(s.kind, s.cite.value), `${label} step ${i + 1}`)),
@@ -804,5 +834,6 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
     reviewed,
     reviewedProblems,
     authUncited: authUncited.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)),
+    frameworkGaps: frameworkGaps(accepted),
   };
 }

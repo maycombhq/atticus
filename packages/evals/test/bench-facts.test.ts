@@ -293,8 +293,17 @@ describe("bench: an assistant's facts file, projected and scored", () => {
     expect(s.facts).toEqual({
       total: 16,
       verified: 16,
-      byKind: { entry: 3, call: 1, store: 1, field: 6, deploy: 1, config: 3, flow: 1 },
-      left: { screens: 1, screenFields: 1, batchJobs: 0, keyPatterns: 0, flows: 1 },
+      byKind: {
+        entry: 3,
+        call: 1,
+        store: 1,
+        field: 6,
+        deploy: 1,
+        config: 3,
+        framework: 0,
+        flow: 1,
+      },
+      left: { screens: 1, screenFields: 1, batchJobs: 0, keyPatterns: 0, frameworks: 0, flows: 1 },
     });
     expect(s.issues).toEqual([]);
   });

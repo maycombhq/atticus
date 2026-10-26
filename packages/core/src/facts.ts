@@ -555,6 +555,11 @@ export function projectFacts(input: readonly Fact[], opts: ProjectOptions = {}):
     } as CatalogRecord);
   }
 
+  // ---- framework -> nothing of its own (ADR 0124 addendum A-framework): no C1 record holds
+  // what a repo is built on, and a field on Component would be a C1 bump with a migration. A
+  // framework fact still gives its repo or module a Component above, as every other kind does;
+  // the views read the framework facts themselves.
+
   // ---- flow -> Flow
   /** A call's request fields, by name. */
   const sentBy = new Map<string, string[]>();

@@ -16,7 +16,9 @@ import {
   mapCommand,
   metarepoCommands,
   renderAssistantFiles,
+  FRAMEWORK_TOPICS,
   RULE_TOPICS,
+  type FrameworkTopic,
   type RuleTopic,
 } from "../src/index.js";
 
@@ -140,10 +142,11 @@ describe("lean batch prompts: the core and the topic rules a batch needs (ADR 01
   it("leaves /atticus-map's rules as they were, byte for byte (tier 1)", () => {
     // sha256 of FACT_RULES: every rule, in the same words and order. Re-pinned since the split for
     // two added sentences: what `to` is for a relative call (C-join) and an entry's auth goes with
-    // authCite (A-read); for the Apigee rule's three parts (A-gateway); and for its fourth, the
-    // scopes a route demands and the proxy's virtual host (A-gateway2).
+    // authCite (A-read); for the Apigee rule's three parts (A-gateway); for its fourth, the
+    // scopes a route demands and the proxy's virtual host (A-gateway2); and for the framework
+    // fact and the per-framework parts of the derived-names rule (A-framework).
     expect(createHash("sha256").update(FACT_RULES).digest("hex")).toBe(
-      "1284a653ed9e361a42cc412ed17662076b26478e72dbe9d844d003ce226f4042",
+      "ed717899db61628851624050ba8e72aa96ca887fa868aec724edc5d0a728b1bd",
     );
     expect(FACT_RULES).toBe(factRulesFor());
     expect(mapCommand().body).toContain(FACT_RULES);
@@ -205,6 +208,84 @@ describe("lean batch prompts: the core and the topic rules a batch needs (ADR 01
     const all = batch().length;
     for (const k of RULE_TOPICS) expect(batch([k]).length, k).toBeLessThan(all);
     expect(batch(["deploy", "config"]).length).toBeLessThan(all * 0.6);
+  });
+
+  // ADR 0124 addendum A-framework: a batch also carries the rules of the frameworks its repo
+  // declares, and only those; a prompt told nothing carries every framework's, as before.
+  const BACK: RuleTopic[] = ["backend", "routes", "data", "protocols", "flows"];
+  const FRONT_KINDS: RuleTopic[] = ["frontend", "flows"];
+  const fw = (kinds: RuleTopic[], frameworks?: FrameworkTopic[]) =>
+    mapBatchInstructions({
+      repo: "forge-ledger",
+      commit: "0123abc",
+      batch: 1,
+      of: 3,
+      kinds,
+      ...(frameworks ? { frameworks } : {}),
+    });
+  const JPA = "A JPA `@Entity` without `@Table(name)`";
+  const DJANGO = "A Django model in an app's models module";
+  const RAILS = "A top-level ActiveRecord model";
+  const MVC = "An MVC route from controller and action names";
+  const SLUG = "SlugifyParameterTransformer";
+  const PAGE = "A route given by the file's place";
+  const HOUSE = "one of its annotations, base classes or wrapper clients may serve a route";
+
+  it("carries a Spring repo's rules and not a Django or Rails repo's", () => {
+    const spring = fw(BACK, ["spring"]);
+    expect(spring).toContain(JPA);
+    for (const r of [DJANGO, RAILS, MVC, HOUSE]) expect(spring).not.toContain(r);
+    const django = fw(BACK, ["django"]);
+    expect(django).toContain(DJANGO);
+    for (const r of [JPA, RAILS, MVC]) expect(django).not.toContain(r);
+  });
+
+  it("carries ASP.NET's route rules only where ASP.NET is declared", () => {
+    const dotnet = fw(BACK, ["aspnet"]);
+    expect(dotnet).toContain(MVC);
+    expect(dotnet).toContain(SLUG);
+    expect(fw(BACK, ["spring"])).not.toContain(SLUG);
+    // A page's route by its file's place is ASP.NET's and Next.js's, on a front-end batch.
+    expect(fw(FRONT_KINDS, ["aspnet"])).toContain(PAGE);
+    expect(fw(FRONT_KINDS, ["next"])).toContain(PAGE);
+    expect(fw(FRONT_KINDS, ["angular"])).not.toContain(PAGE);
+  });
+
+  it("tells a repo built on a house framework that its annotations may hide a route", () => {
+    expect(fw(BACK, ["spring", "house"])).toContain(HOUSE);
+    expect(fw(BACK, ["spring"])).not.toContain(HOUSE);
+  });
+
+  it("carries every framework's rules when nothing says which the repo declares", () => {
+    const unknown = fw(BACK);
+    for (const r of [JPA, DJANGO, RAILS, MVC, HOUSE]) expect(unknown).toContain(r);
+    // An empty list is not the same as nothing said: it means none are declared.
+    const none = fw(BACK, []);
+    for (const r of [JPA, DJANGO, RAILS, MVC, HOUSE]) expect(none).not.toContain(r);
+  });
+
+  it("is smaller for a repo that declares its frameworks than for one that says nothing", () => {
+    for (const f of ["spring", "aspnet", "django", "rails", "express"] as FrameworkTopic[])
+      expect(fw(BACK, [f]).length, f).toBeLessThan(fw(BACK).length);
+    expect(fw(FRONT_KINDS, ["angular"]).length).toBeLessThan(fw(FRONT_KINDS).length);
+  });
+
+  it("asks for the framework fact in a build or deploy batch, and nowhere else", () => {
+    const RULE = "A `framework` fact is what the repo, or one of its modules, is built on";
+    expect(fw(["deploy", "config"])).toContain(RULE);
+    expect(fw(BACK)).not.toContain(RULE);
+    expect(fw(FRONT_KINDS)).not.toContain(RULE);
+    // It doesn't wait on a framework being known: it is how one comes to be known.
+    expect(fw(["deploy", "config"], [])).toContain(RULE);
+  });
+
+  it("every framework topic is some part's, and the words match the verifier's", () => {
+    for (const f of FRAMEWORK_TOPICS)
+      expect(
+        parts.some((p) => p.on?.includes(f)),
+        f,
+      ).toBe(true);
+    for (const p of parts) if (p.on) expect(p.when, p.text.slice(0, 50)).toBeDefined();
   });
 
   it("gives an Apigee bundle's batch the gateway's rules, and no other batch (A-gateway)", () => {
@@ -342,11 +423,16 @@ describe("names a framework derives, workers and ops routes (ADR 0124 addendum A
     const r =
       FACT_RULES.split("\n").find((l) => l.startsWith("- A name a framework derives")) ?? "";
     expect(r).toContain(
-      "(ORM tables and join tables, Django's `app_model`, Rails' root and Devise routes, Spring Data REST paths) is written as the framework makes it, cited on the line that declares its source",
+      "is written as the framework makes it, cited on the line that declares its source",
     );
-    expect(r).toContain(
-      "A background job worker (Sidekiq, Celery, ActiveJob) is a `batch-job` entry named by its job",
-    );
+    // A-framework: each framework's own derivations are its own part of that rule, carried by a
+    // batch whose repo declares it; tier 1 has every one, in order.
+    expect(r).toContain("A JPA `@Entity` without `@Table(name)` is its snake_case table");
+    expect(r).toContain("A Django model in an app's models module is the table");
+    expect(r).toContain("A Celery `@shared_task` or `@app.task` without `name=`");
+    expect(r).toContain("An ActiveJob or Sidekiq class is a `batch-job` entry named with its");
+    expect(r).toContain("An Eloquent model's table is the snake_case of its plural");
+    expect(r).toContain("A TypeORM `@Entity()` is the snake_case of its class");
     expect(r).toContain("a rake `namespace:task`");
     expect(FACT_RULES).toContain(
       "framework admin, health and ops routes (`/up`, `/admin`, a queue's web UI) unless the repo's own code handles them",

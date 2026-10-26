@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>com.forge.ledger</groupId>
+    <artifactId>forge-ledger-api</artifactId>
+    <version>1.4.0</version>
+  </parent>
+  <artifactId>ledger-web</artifactId>
+  <dependencies>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-web</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.forge.platform</groupId>
+      <artifactId>forge-web-starter</artifactId>
+      <version>${forge-platform.version}</version>
+    </dependency>
+  </dependencies>
+</project>

@@ -84,6 +84,18 @@ export function TrustRow({ r }: { r: Repo }) {
               )
             : T.noReport}
         </dd>
+        <dt>{T.builtOn}</dt>
+        <dd>
+          {r.frameworks?.length
+            ? r.frameworks
+                .map((f) =>
+                  f.component
+                    ? T.builtOnModule(T.builtOnOne(f.name, f.version, f.cite), f.component)
+                    : T.builtOnOne(f.name, f.version, f.cite),
+                )
+                .join(", ")
+            : T.builtOnNone}
+        </dd>
         <dt>{T.commit}</dt>
         <dd className="mono">{commitWords(r)}</dd>
         <dt>{T.catalogFrom}</dt>
@@ -91,6 +103,14 @@ export function TrustRow({ r }: { r: Repo }) {
           {T.from[r.catalog.from]} · {T.records(r.catalog.fromFacts, r.catalog.fromReaders)}
         </dd>
       </dl>
+      {/* A-framework: a framework the repo declares whose patterns the facts show none of. */}
+      {(r.frameworks ?? [])
+        .filter((f) => f.gap)
+        .map((f) => (
+          <p className="work-say" key={`gap-${f.name}-${f.cite}`}>
+            <strong>{T.builtOnGap(f.name)}</strong> {f.gap}
+          </p>
+        ))}
       {report && report.unknownFiles.length > 0 && (
         <details>
           <summary>{T.unknownFiles(report.coverage.unknown)}</summary>

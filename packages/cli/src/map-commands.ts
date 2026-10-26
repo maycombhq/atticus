@@ -48,6 +48,8 @@ import {
   dirSource,
   exclusionYaml,
   FILE_KINDS,
+  frameworkTopics,
+  frameworkTopicsOfType,
   kindsOf,
   numberedSlice,
   onlyFiles,
@@ -62,6 +64,7 @@ import {
   staleMessage,
   verifyFacts,
   type FileKind,
+  type FrameworkTopic,
   type FileSlice,
   type FileSource,
   type Rejected,
@@ -206,11 +209,21 @@ const LEVELS = ["public", "internal", "confidential", "restricted"];
  * with the core rules alone, or with the topic rules of these kinds of file too (ADR 0124
  * addendum A-lean).
  */
-function instructionTokens(repo: string, commit: string, kinds: readonly FileKind[] = []): number {
+function instructionTokens(
+  repo: string,
+  commit: string,
+  kinds: readonly FileKind[] = [],
+  /**
+   * The frameworks the prompts of this read carry rules for (ADR 0124 addendum A-framework).
+   * Left out, every framework's rules are counted, as `FACT_RULES` has them; the planner passes
+   * what the read will really carry, so the plan and the prompts agree.
+   */
+  frameworks?: readonly FrameworkTopic[],
+): number {
   return (
     // The rule asking what the repo is (ADR 0128) isn't counted here: it is paid for out of the
     // reserve below (`reserveFor`), so the room planned for files is what it always was.
-    estimateTokens(mapBatchInstructions({ repo, commit, batch: 999, of: 999, kinds })) +
+    estimateTokens(mapBatchInstructions({ repo, commit, batch: 999, of: 999, kinds, frameworks })) +
     estimateTokens(DATA_RULE) +
     // the <atticus-data> wrapper around the batch's files
     60
@@ -248,11 +261,33 @@ const aboutTokens = (repo: string, d?: RepoDescription): number =>
       )
     : 0;
 
-/** What a batch's topic rules add to the core's instructions, for the batch planner. */
-const overheadOf = (repo: string, commit: string) => {
-  const core = instructionTokens(repo, commit);
-  return (kinds: readonly FileKind[]) => instructionTokens(repo, commit, kinds) - core;
+/**
+ * What a batch's topic rules add to the core's instructions, for the batch planner. The
+ * frameworks the read will carry rules for are counted in (A-framework), so the room the plan
+ * leaves each batch is the room its prompt really has.
+ */
+const overheadOf = (repo: string, commit: string, frameworks: readonly FrameworkTopic[]) => {
+  const core = instructionTokens(repo, commit, [], frameworks);
+  return (kinds: readonly FileKind[]) => instructionTokens(repo, commit, kinds, frameworks) - core;
 };
+
+/**
+ * The frameworks a read carries rules for (ADR 0124 addendum A-framework): what the repo's own
+ * framework facts say it is built on, else — for the first read, before any build file has been
+ * read — what its type in the manifest suggests, which is a hint and never a fact. Nothing at
+ * all means no framework rule goes in a prompt: a framework's rule refines a rule that is
+ * already there, and is bought by evidence.
+ */
+async function frameworksFor(
+  root: string,
+  repo: string,
+  facts: readonly Fact[],
+): Promise<FrameworkTopic[]> {
+  const fromFacts = frameworkTopics(facts);
+  if (fromFacts) return fromFacts;
+  const type = (await loadRepos(root).catch(() => [])).find((r) => r.id === repo)?.type;
+  return frameworkTopicsOfType(type);
+}
 
 const joinKinds = (a: readonly FileKind[], b: readonly FileKind[]) =>
   FILE_KINDS.filter((k) => a.includes(k) || b.includes(k));
@@ -271,6 +306,8 @@ function claimOf(f: Fact): string {
       return `${f.platform}${f.resourceName ? ` ${f.resourceName}` : ""}`;
     case "config":
       return f.key;
+    case "framework":
+      return `${f.name}${f.version ? ` ${f.version}` : ""}`;
     case "flow":
       return f.name;
   }
@@ -486,6 +523,9 @@ async function packFor(
         of: s.batches.length,
         ...(fix ? { fix: true } : {}),
         kinds,
+        // A-framework: the frameworks the repo's own facts declare, else its type's hint. The
+        // build files are read first, so from the second batch on this is what the code says.
+        frameworks: await frameworksFor(root, s.repo, facts),
         // Nothing says what this repo is: ask for one line, cited, for a person to confirm.
         ...(about ? {} : { askAbout: true }),
       }),
@@ -760,6 +800,9 @@ export async function mapCommand(
     if (room < MIN_ROOM) return tooSmall(0);
     // A moved checkout (ADR 0124 addendum A-incremental): only the files changed since the facts'
     // commit are read, and the facts citing them handed back to rewrite; the rest are carried.
+    // What the prompts of this read will carry framework rules for (A-framework), counted into
+    // the room the plan leaves each batch.
+    const frameworks = await frameworksFor(root, repo, existing);
     const re = await rereadOf(dir, existing, commit, source, exclude, deps.git);
     const reread = re.plan && !re.plan.unknown.length ? re.plan : undefined;
     const since = reread?.from.map((x) => x.commit.slice(0, 12)).join(", ");
@@ -776,7 +819,7 @@ export async function mapCommand(
             reread.files.map((f) => f.path),
           )
         : source,
-      { room, exclude, overhead: overheadOf(repo, commit) },
+      { room, exclude, overhead: overheadOf(repo, commit, frameworks) },
     );
     // A file whose topic rules leave too little room beside them (A-lean).
     if (plan.leastRoom < MIN_ROOM) return tooSmall(room - plan.leastRoom);
@@ -1079,7 +1122,11 @@ async function estimate(
       ? planBatches(readSource, {
           room,
           exclude: c.exclude,
-          overhead: overheadOf(repo, c.commit),
+          overhead: overheadOf(
+            repo,
+            c.commit,
+            await frameworksFor(root, repo, typeof existing === "string" ? [] : existing),
+          ),
         })
       : undefined;
   const plan = planned && planned.leastRoom >= MIN_ROOM ? planned : undefined;
