@@ -15,6 +15,8 @@ packages/intellij/.gradle/
 packages/intellij/.kotlin/
 packages/intellij/.intellijPlatform/
 plugins/atticus/
+# Generated for Copilot's agent mode (ADR 0121 addendum, 2026-10-26): byte for byte as the generator writes it
+plugins/copilot/
 # Pinned third-party files (ADR 0116 addendum): byte for byte as pinned, never reformatted
 packages/embed-model/tokenizer.json
 packages/embed-model/MODEL-CARD.md

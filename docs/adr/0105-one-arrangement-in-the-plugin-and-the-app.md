@@ -112,3 +112,12 @@ What the last few days' work shows in them:
 - 47 Run a Command entries became 2. Every other command has a name, a place and a test.
 - A new VS Code command fails `ParityTest`, and placing it in Run a Command fails `ParityTest` too, so the next ticket has to choose a real place for it.
 - Tools → Atticus has about sixty entries. That is the same order of magnitude as VS Code's command palette, and it is why they are in one submenu, grouped with separators, rather than in the Tools menu itself.
+
+## Addendum 3 (2026-10-26): the Copilot agent-mode command in the arrangement
+
+ADR 0121's addendum of the same date adds **Atticus: Run the next step in Copilot's agent mode**
+(`atticus.runInCopilotAgent`) beside **Run the next step**: the same step, handed to Copilot's agent
+mode instead of to the `@atticus` participant. It is an everyday command of the Command Palette
+(`DEFAULT_PALETTE` in `packages/vscode/src/surface.ts`, second after **Run the next step**, so the
+order of a working day still reads "what's next, run it, run it in the agent"), not behind
+`atticus.fullUi`, and it adds no view and no menu. Nothing is removed and no existing command moves.

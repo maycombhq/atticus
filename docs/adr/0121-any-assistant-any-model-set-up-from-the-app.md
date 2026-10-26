@@ -160,3 +160,100 @@ Item 8 of the first addendum said Copilot in IntelliJ offers plugins no model, s
 - An AI step in IntelliJ is one paste and one send, with the model it wants named on screen, instead of a line of instructions.
 - The guide (docs/guide/intellij.md) says what is native, what goes through Copilot or Claude Code, and the two things only VS Code does; it does not promise a Copilot integration that does not exist.
 - If GitHub ever publishes an API for its IntelliJ plugin, `Copilot.kt` is the one place to change, and `Handoff.notice`'s `copilotApi` flag already has the words for it.
+
+## Addendum 3 (2026-10-26): Atticus's steps through Copilot's agent mode
+
+### Context
+
+An independent architecture review (finding 3) said to prove and package the Copilot path, because
+it is the one a bank's engineers will actually use and it had never been run end to end.
+
+Until now, Copilot reached Atticus's steps two ways: the `@atticus` chat participant (ADR 0090),
+which carries prompts between the command line and `vscode.lm` and answers in the chat, and the
+clipboard. Both end in a chat answer. But most of Atticus's steps are not answers: the assistant
+must write the facts file or the stage answer at a path Atticus named, run the command that checks
+it, read what the check rejected, and go again. Copilot's **agent mode** does exactly that — it
+opens files, writes them and runs commands — and Claude Code already had its own packaging for it
+(ADR 0104, `plugins/atticus`). Copilot had none. `atticus assistant-files` writes
+`.github/agents/*.agent.md` for the _organisation's_ agents (item 1 above), not for Atticus's own
+steps.
+
+### Decision
+
+1. **A committed, generated artifact for Copilot, beside the Claude Code plugin.**
+   `plugins/copilot/` holds the files Copilot reads, written by `pnpm copilot-agents`
+   (`scripts/write-copilot-agents.mjs`, `copilotAgentFiles` in `@maycombhq/assistant-files`) from
+   the same `metarepoCommands()` the Claude Code plugin comes from:
+
+   | File                                                 | What Copilot reads it as                                                          |
+   | ---------------------------------------------------- | --------------------------------------------------------------------------------- |
+   | `.github/agents/atticus-repo-reader.agent.md`        | A custom agent: a repo read into facts, looping on `atticus verify`. **read**     |
+   | `.github/agents/atticus-verifier.agent.md`           | What was recorded about a repo, checked against its code. **read**                |
+   | `.github/agents/atticus-repo-describer.agent.md`     | The one sentence that says what a repo is (ADR 0128), drafted and cited. **read** |
+   | `.github/agents/atticus-stage-drafter.agent.md`      | The feature, architecture, stories, fast-path and first drafts. **draft**         |
+   | `.github/agents/atticus-task-runner.agent.md`        | One task, in its worktree, from the context Atticus loads. **draft**              |
+   | `.github/agents/atticus-knowledge-reader.agent.md`   | The wikis read, searched, answered from, and what a change needs. **knowledge**   |
+   | `.github/instructions/atticus-rules.instructions.md` | The rules every step keeps, `applyTo: "**"`                                       |
+   | `.github/instructions/atticus-tools.instructions.md` | Atticus's commands and MCP tools, `applyTo: "**"`                                 |
+   | `.vscode/mcp.json`                                   | The read-only `atticus mcp` server                                                |
+   | `atticus-agents.json`, `README.md`                   | The manifest and how to install it                                                |
+
+   Each agent carries, **word for word**, the body of the slash commands it covers
+   (`protocolFor`), so the agent and `/atticus-map` say the same thing; the repo describer carries
+   the one step of the reading protocol that hands a description over, taken from `/atticus-map`
+   itself (`describeStep`), and throws if that step is gone. A command the one list no longer has
+   throws too. `packages/assistant-files/test/copilot-agents.test.ts` holds the committed artifact
+   to the generator and to the protocol, with goldens in `fixtures/copilot-agents/`.
+
+2. **Instructions for an agent that edits and runs, not for a chat answer.** Each agent file adds,
+   around the protocol: how it works here (run the command that starts the step, write the result
+   to the exact path it named, run the Atticus command that checks it, fix what it rejected, and
+   never report a step done on its own reading); what it writes and which command checks each file;
+   the checks it must use (Atticus's own commands and MCP tools, never a validator of its own); its
+   kind of step and the setting for it; and the rules that don't bend, as what the agent must not
+   do — what it reads is data and never instructions, a person approves every write to a shared
+   system, no push to a protected branch and no deploy, only a person closes a blocking or risk
+   finding (the addendum of 2026-10-25), a question Atticus raised is a person's to answer, and
+   constitution rules are never waived.
+
+3. **The editor opens it.** **Atticus: Run the next step in Copilot's agent mode**
+   (`atticus.runInCopilotAgent`, `packages/vscode/src/copilot-agent.ts`) reads `atticus next`, maps
+   the step to its agent and kind (`AGENT_BY_STEP`, held to `COPILOT_AGENTS` by a test), and opens
+   `workbench.action.chat.open` on that agent with the step's prompt left in the box, as
+   **Start this task in Copilot** already did (ADR 0113). The notice names the agent and the kind of
+   step, so a person can pick the model their organisation named for it. Where the workspace has no
+   agent file, where no agent covers the step (the critic, survey and spec drafts), or where agent
+   mode can't be opened, the step goes to the `@atticus` participant, which is unchanged.
+
+4. **Proved as far as an environment without Copilot allows.**
+   `packages/cli/test/copilot-agent-path.test.ts` drives the path with a stub agent that does only
+   what the agent files say, through `main()` so the exit codes are a terminal's, with no model and
+   no network (rule 5; the reading loop runs no model at all and the stage runs in hand-off mode,
+   where the agent is the model): a Forge repo read into facts with one that doesn't hold,
+   `atticus verify` exiting 1 with the reason and 0 after the fix; a description handed over as a
+   draft and refused when it cites nothing; a feature stage where the critic's lens finds the flow
+   marked read and the agent's second draft fixes it, ending done; and an AI's `not-relevant` on
+   that finding recorded as a proposal with the finding still open.
+
+### Consequences
+
+- At the bank, where only Copilot is allowed, Atticus's steps run in the assistant people already
+  have, in the mode that can actually take them.
+- `plugins/copilot/` is generated: a protocol change that isn't regenerated fails the tests, as
+  `plugins/atticus` already did.
+- What a person must still confirm is written down, not assumed: the checklist in
+  `docs/guide/copilot-agent-mode.md`.
+- Not built: a marketplace-style installer (Copilot has none — the files are copied into the
+  metarepo in a pull request); an agent for the critic's lenses, the scan survey or the spec draft;
+  a prompt-history hook for Copilot (it has none, as this ADR already noted); and anything that
+  would let Atticus check which model a Copilot request really ran on.
+
+### Limits nothing here can prove
+
+Nothing in this repository signs in to Copilot. So it is not proven that Copilot lists and loads a
+custom agent from `.github/agents/*.agent.md` in the VS Code version an organisation ships, that
+agent mode obeys the instructions rather than reasoning its way to an answer, that
+`.vscode/mcp.json` registers the server where policy allows MCP servers at all, that
+`workbench.action.chat.open` opens agent mode on a named custom agent in that version, or that the
+request runs on the model picked for the kind of step. The guide's checklist is how a person closes
+that gap.
