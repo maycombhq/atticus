@@ -7,6 +7,7 @@ import {
   criteriaFor,
   renderStoryFile,
   StoriesAnswerSchema,
+  taskPromptFiles,
   unwrittenChecks,
   type DeltaStory,
   type StoriesAnswer,
@@ -142,10 +143,15 @@ describe("a criterion written once accepts several tasks (B-once)", () => {
     expect(md).toContain(
       "- Acceptance criteria: the one under Task 1.2 in Acceptance criteria, and 2 written on task 1.1 that also accept it\n",
     );
-    const prompt1_4 = md.slice(md.indexOf("Implement task 1.4"));
-    expect(prompt1_4.slice(0, prompt1_4.indexOf("```"))).toContain(
-      "Acceptance criteria: the one written on task 1.1 that also accepts it (stories/s1-deliver-by.md).",
-    );
+    // B-short: the prompt is a file of its own, sent as it is, so it lists the criteria that
+    // accept the task in full, the shared one included; the story file lists each once.
+    expect(md).not.toContain("Implement task");
+    expect(md).toContain("- Prompt: tasks/1.4.prompt.md (atticus task add-deliver-by 1.4)");
+    const prompt1_4 = taskPromptFiles("add-deliver-by", STORIES[0]!, story(answer()))[
+      "tasks/1.4.prompt.md"
+    ]!;
+    expect(prompt1_4).toContain("Implement task 1.4 of the change add-deliver-by");
+    expect(prompt1_4).toContain(`- ${SHARED}`);
   });
 
   it("asks the judge of a shared criterion's check once, on the task it is written on", () => {

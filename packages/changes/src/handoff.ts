@@ -209,6 +209,8 @@ export interface HandoffOptions extends HostOptions {
    * findings, so an approver reads one page. The caller composes it.
    */
   review?: string;
+  /** The metarepo's OpenSpec: the plan hand-off runs `openspec validate --strict` first. */
+  openspec?: OpenSpec;
 }
 
 /**
@@ -242,6 +244,9 @@ export async function handoff(
       `${id} isn't ready for "${handoffName(a.type, phase)}".`,
       a.blockers,
     );
+  // ADR 0006 addendum: the stories' hand-off (the plan phase, whose files hold the specs) passes
+  // OpenSpec's own validation first.
+  if (opts.openspec && phase === "plan") await requireValid(opts.openspec, id);
 
   const { files, artifacts } = await handoffFiles(ctx, a, phase);
   const dir = changeFolder(root, id);
@@ -618,6 +623,23 @@ export async function returnToPo(
 }
 
 /**
+ * `openspec validate <change> --strict` as a gate (ADR 0006 addendum, 2026-10-25): before the
+ * stories' hand-off and before archive. Each error or warning is a reason the step is refused.
+ */
+export async function requireValid(openspec: OpenSpec, id: string): Promise<void> {
+  const r = await openspec.validate({ item: id, type: "change", strict: true });
+  const item = r.items[0];
+  if (!item || item.valid) return;
+  throw new ChangeError(
+    "refused",
+    `${id} doesn't pass openspec validate --strict.`,
+    item.issues
+      .filter((i) => i.level !== "INFO")
+      .map((i) => ({ code: "openspec-invalid", message: `${i.path}: ${i.message}` })),
+  );
+}
+
+/**
  * Archive a released change (or one whose post-release review is clear). With an OpenSpec
  * adapter the change folder is archived by OpenSpec too, after change.yaml is written.
  */
@@ -636,6 +658,8 @@ export async function archiveChange(
     );
   if (a.reasons.length > 0)
     throw new ChangeError("refused", `${id} can't be archived yet.`, a.reasons);
+  // ADR 0006 addendum: OpenSpec's own gate before its archive merges the specs.
+  if (opts.openspec) await requireValid(opts.openspec, id);
   const now = opts.now ?? nowIso();
   const updated: ChangeLifecycle = {
     ...change,

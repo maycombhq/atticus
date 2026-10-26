@@ -16,7 +16,7 @@ import {
 } from "@maycombhq/core";
 import { changeStore } from "@maycombhq/changes";
 import { readKnowledge, snapshotDates, workingDays } from "@maycombhq/knowledge";
-import { readNeeds } from "@maycombhq/planner";
+import { metarepoOpenSpec, openspecProgress, readNeeds } from "@maycombhq/planner";
 import { readChangeFiles } from "@maycombhq/naysayer";
 import { readChangeTasks } from "@maycombhq/speckit";
 import type { Output } from "./commands.js";
@@ -106,6 +106,11 @@ export interface NextState {
     fast?: boolean;
     /** ADR 0113: its one step is done (stage/small.yaml): the pull request is next. */
     fastDone?: boolean;
+    /**
+     * ADR 0006 addendum: the stage whose OpenSpec artifacts come next, from `openspec status`
+     * (org-flow v2), in a metarepo set up with OpenSpec. Left out when every artifact is done.
+     */
+    openspecStage?: "feature" | "architecture" | "stories";
   }[];
   problems: { file: string; message: string }[];
 }
@@ -217,6 +222,7 @@ export async function readNextState(root: string): Promise<NextState> {
     (op) => op.changeTypes.types,
     () => [],
   );
+  const os = metarepoOpenSpec(root);
   try {
     for (const c of await changeStore(root).list()) {
       const files = await readChangeFiles(join(changesDirOf(root), c.id)).catch(() => undefined);
@@ -233,6 +239,8 @@ export async function readNextState(root: string): Promise<NextState> {
           days: n.leadTimeDays ? workingDays(n.leadTimeDays) : 0,
         }))
         .sort((a, b) => b.days - a.days)[0];
+      // ADR 0006 addendum: which stage's artifacts are written comes from OpenSpec's status.
+      const progress = os ? await openspecProgress(os, c.id).catch(() => undefined) : undefined;
       const busy = await stageInProgress(root, c.id);
       if (busy && stageOf(c.state) !== "done" && (!active || busy > active.at))
         active = { id: c.id, at: busy };
@@ -243,6 +251,7 @@ export async function readNextState(root: string): Promise<NextState> {
           ? readChangeTasks(files).map((t) => ({ id: t.id, repo: t.repo, done: t.done }))
           : [],
         feature: existsSync(join(changesDirOf(root), c.id, "feature.yaml")),
+        ...(progress?.next ? { openspecStage: progress.next } : {}),
         ...((await isFast(root, c, types))
           ? {
               fast: true,
@@ -381,9 +390,19 @@ export function changeSteps(c: NextState["changes"][number]): NextStep[] {
   return [...find, ...stage, ...raise];
 }
 
+/** The drafting stages in order: OpenSpec's status may move a change on among them, never past. */
+const DRAFTING = ["feature", "architecture", "stories"] as const;
+
 function stageSteps(c: NextState["changes"][number]): NextStep[] {
   const id = c.id;
-  const stage = stageOf(c.state);
+  const byState = stageOf(c.state);
+  // ADR 0006 addendum: in a drafting stage, the stage whose artifacts OpenSpec says come next
+  // (a later one only: the hand-off PRs a person merges still move the state).
+  const at = (s: string) => DRAFTING.indexOf(s as (typeof DRAFTING)[number]);
+  const stage =
+    c.openspecStage && at(byState) >= 0 && at(c.openspecStage) > at(byState)
+      ? c.openspecStage
+      : byState;
   // ADR 0113: a small change goes from brief to tasks in one step, before it is built.
   if (c.fast && (stage === "feature" || stage === "architecture" || stage === "stories"))
     return c.fastDone

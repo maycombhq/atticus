@@ -114,8 +114,11 @@ const BEFORE = {
   // after B-once let a criterion accept other tasks (also in the format, one rule reworded, one added);
   // and on 2026-10-25 twice: the format's requests line (a standard is followed, never listed
   // there) and B-tasks grouping the fraud check's call-out and branch into one task (the source's
-  // two task lines became one that lists the steps it covers); and after B-place's self-check line
-  stories: "394828a20d66aa7099ec331b867272f61e6fcacc1716215e468f17209f0ec955",
+  // two task lines became one that lists the steps it covers); and after B-place's self-check line;
+  // and after the feature stage began writing OpenSpec's proposal.md (ADR 0006 addendum,
+  // 2026-10-25): the estate index ranks with the change folder's words, so two of its lines
+  // (system forge, endpoint forge-orders.get-orders-orderid) changed places (diffed: only that)
+  stories: "4427d90c0b1849276bad3bdbd5d2dd59f703963e3201d16893320a3e0060db17",
 };
 
 const ARCHIVE = join(FIX, "corrections/changes/archive");

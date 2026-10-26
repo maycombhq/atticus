@@ -10,9 +10,12 @@ import { selectFor } from "./engine.js";
 import { readNeeds } from "./needs.js";
 import { isEmptyDelta, readDeltas, TARGET_DIR } from "./stages/architecture.js";
 import { loadEstate, type Estate } from "./stages/estate.js";
+import { metarepoOpenSpec } from "./stages/openspec-files.js";
 import {
   criteriaFor,
+  findTask,
   foldWords,
+  taskLabel,
   partsOf,
   readStoriesAnswer,
   storiesFromDeltas,
@@ -220,8 +223,20 @@ export async function taskContext(
   const rel = `${changesRelOf(root)}/${change.id}`;
   const notes: string[] = [];
   const tasks = readTasks(await readFile(join(dir, "tasks.md"), "utf8").catch(() => ""));
-  const id = taskId.toLowerCase();
-  const line = tasks.find((t) => t.id === id);
+  // The task as the target flows give it: its flow, steps, fields and today's code.
+  const ctx = await loadChangeContext(root);
+  const estate = await loadEstate(root, ctx.records);
+  const deltas = (await readDeltas(dir)).deltas.filter((d) => !isEmptyDelta(d));
+  const stories: DeltaStory[] = deltas.length ? storiesFromDeltas(deltas, estate) : [];
+  // B-short: tasks.md numbers tasks per story (1.1, 1.2, 2.1); the task's id (its first step's)
+  // stays the key of the answer and the judgments, and still names it here.
+  const asked = taskId.toLowerCase();
+  const named = tasks.some((t) => t.id === asked) ? undefined : findTask(stories, asked);
+  const line = tasks.find(
+    (t) =>
+      t.id === (named ? taskLabel(named.s, named.t) : asked) &&
+      (!named || !t.story || t.story === named.s.id),
+  );
   if (!line)
     throw new PlannerError(
       "not-found",
@@ -229,14 +244,11 @@ export async function taskContext(
         ? `There is no task ${taskId} in ${change.id}'s tasks.md. Tasks: ${tasks.map((t) => t.id).join(", ")}.`
         : `${change.id} has no tasks yet: plan its stories first (atticus next says how).`,
     );
-
-  // The task as the target flows give it: its flow, steps, fields and today's code.
-  const ctx = await loadChangeContext(root);
-  const estate = await loadEstate(root, ctx.records);
-  const deltas = (await readDeltas(dir)).deltas.filter((d) => !isEmptyDelta(d));
-  const stories: DeltaStory[] = deltas.length ? storiesFromDeltas(deltas, estate) : [];
-  const dt = stories.flatMap((s) => s.tasks).find((t) => t.id === id);
-  const ds = dt ? stories.find((s) => s.id === dt.story) : undefined;
+  const id = line.id;
+  const found0 = named ?? findTask(stories, id, line.story);
+  const dt = found0?.t;
+  const ds = found0?.s;
+  const key = dt?.id ?? id;
   const delta = dt ? deltas.find((d) => d.flow === dt.flow) : undefined;
   const step = delta && dt ? delta.steps[dt.position - 1] : undefined;
   const today = delta ? estate.flowById.get(delta.flow) : undefined;
@@ -257,9 +269,9 @@ export async function taskContext(
   // B-tasks: an answer kept per step reads per task.
   const found =
     answer?.stories.find((s) => s.id === storyId) ??
-    answer?.stories.find((s) => s.tasks.some((t) => t.id === id));
+    answer?.stories.find((s) => s.tasks.some((t) => t.id === key));
   const words = found && ds ? foldWords(ds, found) : found;
-  const ownCriteria = words ? criteriaFor(words, id) : undefined;
+  const ownCriteria = words ? criteriaFor(words, key) : undefined;
   const own = ownCriteria?.map((c) => c.text);
   const criteria = own?.length ? own : (sf?.criteria ?? []);
 
@@ -440,6 +452,15 @@ export async function taskContext(
   if (!worktree)
     notes.push(
       `${line.repo} has no worktree for ${change.id} yet: open one with atticus workspace open ${change.id} --repos ${line.repo}.`,
+    );
+  // ADR 0006 addendum: the task phase's progress is OpenSpec's (`openspec instructions apply`
+  // counts tasks.md's boxes), in a metarepo set up with it.
+  const apply = await metarepoOpenSpec(root)
+    ?.applyInstructions(change.id)
+    .catch(() => undefined);
+  if (apply)
+    notes.push(
+      `OpenSpec counts ${apply.progress.complete} of ${apply.progress.total} task${apply.progress.total === 1 ? "" : "s"} done (openspec instructions apply); tick this one in tasks.md when its tests pass.`,
     );
   const flowName = ds?.name ?? today?.flow.name ?? delta?.flow;
   return {

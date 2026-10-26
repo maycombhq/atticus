@@ -48,8 +48,14 @@ export function openspecEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.Proce
   };
 }
 
-/** Path of the bundled OpenSpec CLI script, run with the current Node so it works the same on Windows. */
+/**
+ * Path of the bundled OpenSpec CLI script, run with the current Node so it works the same on
+ * Windows. ATTICUS_OPENSPEC_BIN names another script instead: the weekly compatibility job runs
+ * the adapter's suite against the newest OpenSpec with it (ADR 0006 addendum).
+ */
 export function bundledOpenSpecBin(): string {
+  const other = process.env.ATTICUS_OPENSPEC_BIN?.trim();
+  if (other) return other;
   const require = createRequire(import.meta.url);
   const entry = require.resolve("@fission-ai/openspec");
   // entry is <pkg>/dist/index.js

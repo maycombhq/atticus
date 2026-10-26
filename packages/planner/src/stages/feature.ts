@@ -30,6 +30,7 @@ import {
 } from "./loop.js";
 import { FeaturePlacement, STAGE_SCHEMA_VERSION } from "./schema.js";
 import { dropUncitedQuestions } from "./uncited.js";
+import { openspecInstructionSource, renderProposal, writeProposal } from "./openspec-files.js";
 import { pastCorrectionsSource } from "./past-corrections.js";
 
 /**
@@ -199,7 +200,14 @@ export async function writePlacement(
     `# The feature placed against the estate (ADR 0087). Drafted by ${by}; review it in the feature PR.\n${stringify(full, { lineWidth: 0 })}`,
   );
   await writeFileAtomic(join(dir, "feature.md"), renderFeature(full));
-  return [FEATURE_FILE, "feature.md"];
+  // ADR 0006 addendum: OpenSpec's proposal.md, generated from the brief and the placement (the
+  // stories stage adds the capabilities); one a person wrote is kept.
+  const brief = await readFile(join(dir, "brief.md"), "utf8").catch(() => "");
+  const proposal = renderProposal(change.title, full, brief, {
+    repoOf: (f) => estate.flowById.get(f)?.repo,
+  });
+  const wrote = await writeProposal(dir, proposal);
+  return [FEATURE_FILE, "feature.md", ...(wrote ? ["proposal.md"] : [])];
 }
 
 export function checkPlacement(p: FeaturePlacement, e: Estate, design?: DesignRead): StageIssue[] {
@@ -362,6 +370,9 @@ export async function featureStage(
     );
 
   const sources: SourceInput[] = [];
+  // ADR 0006 addendum: OpenSpec's instructions for the proposal come first, when set up.
+  const osInstructions = await openspecInstructionSource(root, change.id, "feature");
+  if (osInstructions) sources.push(osInstructions);
   if (hasBrief)
     sources.push({
       id: "brief.md",

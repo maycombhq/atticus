@@ -55,6 +55,38 @@ const io = () => {
   return { out, err, io: { out: (l: string) => out.push(l), err: (l: string) => err.push(l) } };
 };
 
+describe("atticus upgrade: OpenSpec's org-flow schema (ADR 0006 addendum)", () => {
+  it("moves an org-flow version 1 schema to version 2, Atticus 1's templates removed", async () => {
+    const root = await oldMetarepo();
+    const dir = join(root, "openspec/schemas/org-flow");
+    await mkdir(join(dir, "templates"), { recursive: true });
+    await writeFile(join(root, "openspec/config.yaml"), "schema: org-flow\n");
+    await writeFile(join(dir, "schema.yaml"), "name: org-flow\nversion: 1\nartifacts: []\n");
+    await writeFile(join(dir, "templates/snow.md"), "# snow\n");
+    const c = await upgradeCheck(root, "1.0.0");
+    expect(c.pending.find((p) => p.id === "org-flow-v2")?.files).toEqual([
+      "openspec/schemas/org-flow/schema.yaml",
+    ]);
+    expect(await upgradeCommand(root, {}, io().io, "1.0.0")).toBe(0);
+    const schema = parse(await readFile(join(dir, "schema.yaml"), "utf8")) as {
+      version: number;
+      artifacts: { id: string }[];
+    };
+    expect(schema.version).toBe(2);
+    expect(schema.artifacts.map((a) => a.id)).toEqual([
+      "proposal",
+      "design",
+      "stories",
+      "specs",
+      "tasks",
+    ]);
+    expect(await readdir(join(dir, "templates"))).not.toContain("snow.md");
+    expect((await upgradeCheck(root, "1.0.0")).pending.map((p) => p.id)).not.toContain(
+      "org-flow-v2",
+    );
+  });
+});
+
 describe("atticus upgrade", () => {
   it("lets the stamp it asks a person to commit be committed: init's whole-folder ignore becomes all but it (B-place)", async () => {
     const root = await oldMetarepo();
@@ -131,6 +163,9 @@ describe("atticus upgrade", () => {
       "catalog-schema-v3",
       "sources-v2",
       "stamp-committed",
+      // ADR 0006 addendum: no OpenSpec here, so nothing to do, but recorded as done.
+      "org-flow-v2",
+      "stories-b-short",
     ]);
     // sources.yaml at version 2, its wiki as it was: every page still read.
     const sources = await readFile(join(root, "org-pack/sources.yaml"), "utf8");

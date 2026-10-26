@@ -31,6 +31,7 @@
     "@maycombhq/intake": "workspace:*",
     "@maycombhq/knowledge": "workspace:*",
     "@maycombhq/naysayer": "workspace:*",
+    "@maycombhq/openspec-adapter": "workspace:*",
     "@maycombhq/scanner": "workspace:*",
     "yaml": "^2.9.1",
     "zod": "^4.6.0"

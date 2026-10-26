@@ -20,12 +20,16 @@ import {
 } from "@maycombhq/core";
 import { parse } from "yaml";
 import {
+  BETA_FEATURES,
   createOpenSpec,
   isSupportedVersion,
   OPENSPEC_PINNED,
+  openspecFeatures,
   openspecHasStores,
   readStoreMarker,
   STORE_MARKER,
+  type BetaFeature,
+  type OpenSpecFeatures,
 } from "@maycombhq/openspec-adapter";
 import {
   baseClonePath,
@@ -66,6 +70,8 @@ export interface DoctorDeps {
   openspecVersion?: () => Promise<string | undefined>;
   /** Whether the OpenSpec CLI has stores (beta, ADR 0126). */
   openspecStores?: () => Promise<boolean>;
+  /** The OpenSpec CLI's beta features, from its own help (ADR 0006 addendum). */
+  openspecFeatures?: () => Promise<OpenSpecFeatures>;
   /** Whether a TCP port on 127.0.0.1 is free. */
   portFree?: (port: number) => Promise<boolean>;
   /** Free bytes on the metarepo's disk. */
@@ -292,6 +298,27 @@ export async function doctorChecks(root: string, deps: DoctorDeps = {}): Promise
       ? "Fix org-pack/openspec.yaml (ADR 0126); until then Atticus reads no store and hand-down adds no reference."
       : "Plain OpenSpec can't register this metarepo or read it as a reference until it has stores; Atticus still reads the stores org-pack/openspec.yaml names. Install an Atticus whose pinned OpenSpec has stores (1.14.0 does).",
   });
+
+  // ADR 0006 addendum ("Compatibility"): the beta and experimental features the installed OpenSpec
+  // has, found from its own help, and which path Atticus takes for each.
+  const features = await (deps.openspecFeatures ?? (() => openspecFeatures()))().catch(
+    () => undefined,
+  );
+  if (features) {
+    const has = (f: BetaFeature) => features.beta[f].present;
+    const present = BETA_FEATURES.filter(has);
+    out.push({
+      id: "openspec-features",
+      label: "OpenSpec beta features",
+      status: "ok",
+      detail: [
+        `${osv ? `OpenSpec ${osv}` : "OpenSpec"} has ${present.length ? present.join(", ") : "none of them"}`,
+        `through OpenSpec: status, instructions, validate, list, show, archive${has("store") ? ", each store read with openspec list in it" : ""}`,
+        `Atticus's own: the OpenSpec root from the metarepo's layout${has("context") ? " (context --json not used yet)" : ""}, the org-flow schema from the org pack`,
+        `not used: ${["workset", "doctor", "store doctor"].filter((f) => has(f as BetaFeature)).join(", ") || "none"}`,
+      ].join("; "),
+    });
+  }
 
   // ---- Network: proxy and TLS, read from the environment only
   const proxy = envName(env, "HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy");

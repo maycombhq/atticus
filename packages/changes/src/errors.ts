@@ -18,7 +18,9 @@ export type ReasonCode =
   | "changes-requested"
   | "no-handoff"
   | "host-refused"
-  | "pr-closed";
+  | "pr-closed"
+  /** `openspec validate --strict` refused the change (ADR 0006 addendum). */
+  | "openspec-invalid";
 
 export interface Reason {
   code: ReasonCode;

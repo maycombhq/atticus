@@ -5,7 +5,7 @@ import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { loadOpenSpecSettings, orgPackDirOf } from "@maycombhq/core";
 import {
   addStoreReference,
-  readStore,
+  readStoreVia,
   readStoreMarker,
   STORE_MARKER,
   type StoreSpecEntry,
@@ -48,7 +48,8 @@ export async function openspecStores(
   const stores: OpenSpecStore[] = [];
   for (const s of settings.stores) {
     const dir = storeDirOf(root, s.path);
-    const view = await readStore(dir);
+    // ADR 0006 addendum: through `openspec list` in the store where it runs; its files if not.
+    const view = await readStoreVia(dir);
     stores.push({ ...view, label: s.label ?? view.id ?? basename(dir), path: s.path });
   }
   const seen = new Set<string>();

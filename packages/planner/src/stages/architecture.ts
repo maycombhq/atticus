@@ -24,6 +24,7 @@ import {
   type Estate,
 } from "./estate.js";
 import { baseProblem, deltaBase, flowBase, mergeDelta } from "./merge.js";
+import { openspecInstructionSource } from "./openspec-files.js";
 import { readPlacement } from "./feature.js";
 import { instructionSource, wholeLists, type ContextReport } from "../engine.js";
 import { pastCorrectionsSource } from "./past-corrections.js";
@@ -2176,8 +2177,53 @@ export function renderArchitecture(
   else lines.push("None.");
   lines.push("");
   // B-arch: the breaking contract changes with who they break, and the deploy order drafted.
-  lines.push(...renderBreaking(deltas, e), ...renderDeploy(deploy));
+  lines.push(...renderBreaking(deltas, e), ...renderDeploy(deploy), ...renderRollback(deltas, e));
   return lines.join("\n");
+}
+
+/**
+ * design.md's Rollout and rollback (ADR 0006 addendum, 2026-10-25; OpenSpec's design artifact asks
+ * for it): a line per table the change writes or alters, saying what a redeploy of the old code
+ * undoes and what it leaves, from the target flows alone. An added column or a new table is
+ * expand-only; a write with no schema change leaves the rows the new code wrote. A person
+ * confirms each line in the architecture PR; the critic's rollback check reads this section.
+ */
+export function renderRollback(deltas: FlowDelta[], e: Estate): string[] {
+  const data = dataChanges(deltas, e);
+  const rows = new Map<string, string>();
+  for (const c of data) {
+    const m = c.migration ? ` (${c.migration})` : "";
+    rows.set(
+      c.table,
+      c.change === "new table"
+        ? `| ${c.table} | new table${m} | Expand-only: the old code never reads it; a down migration drops it only if the change is abandoned | Rows stay in the new table until it is dropped |`
+        : c.change === "new columns"
+          ? `| ${c.table} | adds ${c.columns.join(", ")}${m} | Expand-only: the old code ignores the new columns; keep them, or drop them with a down migration once nothing reads them | They keep their values; the old code doesn't read them |`
+          : `| ${c.table} | changes the type of ${Object.keys(c.retyped ?? {}).join(", ")}${m} | Not expand-only: roll back the code first, then a down migration restores the old type | Values written in the new type must fit the old one, or the down migration fails |`,
+    );
+  }
+  for (const d of deltas)
+    for (const s of d.steps) {
+      if (!s.store || (s.op !== "add" && s.op !== "change")) continue;
+      const kind =
+        s.kind ?? (s.step ? e.flowById.get(d.flow)?.flow.steps[s.step - 1]?.kind : undefined);
+      if (kind !== "write" || rows.has(s.store.table)) continue;
+      rows.set(
+        s.store.table,
+        `| ${s.store.table} | writes ${s.store.columns.join(", ") || "rows"} (flow ${d.flow}) | A redeploy of the old code stops the new writes; no schema to undo | The rows the new code wrote stay; a person decides whether to keep them |`,
+      );
+    }
+  if (!rows.size) return [];
+  return [
+    "## Rollout and rollback",
+    "",
+    "Deploy in the order above and roll back in reverse. Atticus wrote these lines from the target flows; a person confirms each in the architecture PR.",
+    "",
+    "| Store | Change | How it is undone | Rows written in between |",
+    "| --- | --- | --- | --- |",
+    ...rows.values(),
+    "",
+  ];
 }
 
 /**
@@ -2340,7 +2386,10 @@ export async function architectureStage(
         `# ${f!.flow.id} (repo ${f!.repo}). Steps are numbered from 1 in the order listed.\n${serializeRecord(f!.flow)}`,
     )
     .join("\n---\n");
+  // ADR 0006 addendum: OpenSpec's instructions for the design come first, when set up.
+  const osInstructions = await openspecInstructionSource(root, change.id, "architecture");
   const sources: SourceInput[] = [
+    ...(osInstructions ? [osInstructions] : []),
     {
       // As it is on disk, so a line the drafter cites (feature.yaml:N) is the file's line N.
       id: "feature.yaml",

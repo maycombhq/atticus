@@ -239,12 +239,6 @@ export const ALLOW = [
     reason:
       "a feature can start from a Figma file export (plan 4.4, ADR 0087): the design entry names the format it reads",
   },
-  {
-    file: "packages/planner/src/stages/stories.ts",
-    names: ["copilot", "claude"],
-    reason:
-      "each task carries the prompt to implement it in Copilot or Claude Code (plan 4.4, ADR 0087): the words a person reads name the assistants",
-  },
   ...[
     "packages/planner/src/stages/index.ts",
     "packages/planner/src/stages/figma.ts",

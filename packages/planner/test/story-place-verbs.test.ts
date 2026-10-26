@@ -316,10 +316,9 @@ describe("B. stories say where code goes, with the verb", () => {
     } as unknown as StoryWords;
     const md = renderStoryFile("order-story", s, words);
     expect(md).not.toMatch(/new code beside|Where it goes: .*beside/i);
-    expect(md).toContain(
-      `- Where it goes: new file ${SERVICE} (uses ${O}/OrderEventReader.java:18): item 3`,
-    );
-    expect(md).toContain(`- Where it goes: new file ${SERVICE}: items 5 and 9`);
+    // B-short: the new file is said once, in Files to touch, and the code it calls under Code it
+    // calls; a Where it goes line is left only for a place the target flow leaves open.
+    expect(md).not.toContain(`- Where it goes: new file ${SERVICE}`);
     expect(md).toContain(`- Files to touch: ${SERVICE} (new file)`);
     expect(md).toContain(
       `- Code it calls (unchanged): ${O}/OrderEventReader.java:18, ${O}/text/Plain.java:9, ${CLIENT}:27`,

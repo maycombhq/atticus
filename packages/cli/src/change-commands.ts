@@ -29,6 +29,7 @@ import {
   type GitRunner,
 } from "@maycombhq/workspace";
 import { gateStatus, ownerWaitsLine, reviewedGates } from "@maycombhq/naysayer";
+import { metarepoOpenSpec } from "@maycombhq/planner";
 import type { Output } from "./commands.js";
 import { statusLine } from "./critic-commands.js";
 import { table } from "./index-commands.js";
@@ -313,6 +314,7 @@ export async function changeHandoff(
       ...(deps.publisher ? { publisher: deps.publisher } : {}),
       // WP7.4: the PR reviews itself: the change as a picture, its estimate, its open findings.
       review: await (await import("./handoff-review.js")).handoffReview(root, id),
+      ...(metarepoOpenSpec(root) ? { openspec: metarepoOpenSpec(root)! } : {}),
     });
     io.out(`Hand-off PR #${h.pr.number} (${h.branch}) is open: ${h.pr.url}`);
     io.out(
@@ -577,7 +579,14 @@ export async function changeArchive(
     return 2;
   }
   try {
-    await archiveChange(root, id, { by: o.by, ...(deps.now ? { now: deps.now } : {}) });
+    // ADR 0006 addendum: in a metarepo set up with OpenSpec, `openspec validate --strict` then
+    // `openspec archive`, which merges the change's spec deltas into openspec/specs/.
+    const os = metarepoOpenSpec(root);
+    await archiveChange(root, id, {
+      by: o.by,
+      ...(deps.now ? { now: deps.now } : {}),
+      ...(os ? { openspec: os } : {}),
+    });
     io.out(`Archived ${id}.`);
     if (o.rescan === false) return 0;
     return await rescanAfterArchive(root, id, io, deps);
@@ -599,11 +608,30 @@ export async function changeList(root: string, o: { json?: boolean }, io: Output
   const all = await changeStore(root).list();
   const stores = await storeChangeRows(root);
   for (const l of stores.err) io.err(l);
+  // ADR 0006 addendum: task progress is OpenSpec's (`openspec list --json` counts tasks.md's
+  // boxes), in a metarepo set up with it; Atticus adds the type, state and hand-off.
+  const progress = new Map(
+    (
+      await metarepoOpenSpec(root)
+        ?.listChanges()
+        .catch(() => undefined)
+    )?.map((c) => [c.name, c]) ?? [],
+  );
+  const tasksOf = (id: string) => {
+    const p = progress.get(id);
+    return p ? { completedTasks: p.completedTasks, totalTasks: p.totalTasks } : undefined;
+  };
   if (o.json) {
     io.out(
       JSON.stringify(
         [
-          ...all.map((c) => ({ id: c.id, title: c.title, type: c.type, state: c.state })),
+          ...all.map((c) => ({
+            id: c.id,
+            title: c.title,
+            type: c.type,
+            state: c.state,
+            ...(tasksOf(c.id) ? { tasks: tasksOf(c.id) } : {}),
+          })),
           ...stores.json,
         ],
         null,
@@ -614,11 +642,21 @@ export async function changeList(root: string, o: { json?: boolean }, io: Output
   }
   if (all.length === 0) io.out("No changes yet. Start one with atticus change new.");
   else {
+    const withTasks = progress.size > 0;
     const rows = all.map((c) => {
       const live = c.handoffs.find((h) => h.state === "open" || h.state === "changes-requested");
-      return [c.id, c.type, c.state, live ? `#${live.pr.number} ${live.state}` : "", c.title];
+      const t = tasksOf(c.id);
+      return [
+        c.id,
+        c.type,
+        c.state,
+        ...(withTasks ? [t ? `${t.completedTasks}/${t.totalTasks}` : ""] : []),
+        live ? `#${live.pr.number} ${live.state}` : "",
+        c.title,
+      ];
     });
-    for (const l of table(["ID", "TYPE", "STATE", "HAND-OFF", "TITLE"], rows)) io.out(l);
+    const head = ["ID", "TYPE", "STATE", ...(withTasks ? ["TASKS"] : []), "HAND-OFF", "TITLE"];
+    for (const l of table(head, rows)) io.out(l);
   }
   for (const l of stores.lines) io.out(l);
   return 0;

@@ -1,4 +1,4 @@
-import { readdir, readFile, rm } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { parse, stringify } from "yaml";
 import { z } from "zod";
@@ -71,6 +71,14 @@ import {
   type SpecFlow,
 } from "./estate.js";
 import { mergeDelta } from "./merge.js";
+import {
+  openspecFiles,
+  openspecInstructionSource,
+  openspecRootOf,
+  validateDraft,
+  writeProposal,
+  writeSpecFiles,
+} from "./openspec-files.js";
 import { storyCodeSource, STORY_CODE_SHARE } from "./story-code.js";
 // A cycle (task-context reads the stories), safe: only functions are used, and only when called.
 import { migrationPath } from "../task-context.js";
@@ -194,6 +202,36 @@ export interface DoneStep {
   /** The existing flow and its step that does it. */
   flow: string;
   step: number;
+}
+
+/**
+ * A task's number as people see it (ADR 0124 addendum B-short): `<story>.<task>`, numbered per
+ * story without gaps (1.1, 1.2, 2.1 …), in the story files, tasks.md, the prompts and the ADO
+ * export. The task's id (`DeltaTask.id`, the first step's, with gaps) stays the stable key of the
+ * story writer's answer, the judgments and the critic's findings.
+ */
+export function taskLabel(s: DeltaStory, t: DeltaTask | string): string {
+  const id = typeof t === "string" ? t : t.id;
+  const k = s.tasks.findIndex((x) => x.id === id);
+  const n = /^s(\d+)-/.exec(s.id)?.[1] ?? "1";
+  return k < 0 ? id : `${n}.${k + 1}`;
+}
+
+/**
+ * The task a person names: by its number (`taskLabel`) in the story tasks.md says it is in, else
+ * by its id (a tasks.md written before B-short, with the ids).
+ */
+export function findTask(
+  stories: DeltaStory[],
+  name: string,
+  story?: string,
+): { s: DeltaStory; t: DeltaTask } | undefined {
+  const n = name.toLowerCase();
+  for (const s of stories)
+    for (const t of s.tasks)
+      if (taskLabel(s, t) === n && (!story || story === s.id)) return { s, t };
+  for (const s of stories) for (const t of s.tasks) if (t.id === n) return { s, t };
+  return undefined;
 }
 
 /** The steps a task covers, each as a task of its own: the task itself when it covers one. */
@@ -2601,7 +2639,7 @@ export function taskPrompt(
   const parts = partsOf(t);
   const one = parts.length === 1;
   return [
-    `Implement task ${t.id} of the change ${change} in the repo ${t.repo}.`,
+    `Implement task ${taskLabel(s, t)} of the change ${change} in the repo ${t.repo}.`,
     one
       ? `Flow ${s.flow} (${s.name}): ${stepWords(t)}`
       : `Flow ${s.flow} (${s.name}): ${parts.length} steps of the target flow, in one change.`,
@@ -2653,6 +2691,10 @@ export interface StoryFileExtras {
   requests?: RequestTask[];
   /** The estate, for a field's required the story leaves out (ADR 0125). */
   estate?: Estate;
+  /** B-short: the OpenSpec capability the story's flow is (specs/<capability>/spec.md). */
+  capability?: string;
+  /** Knowledge lines a task carries, by task id, when the knowledge that applies names them. */
+  knowledge?: Record<string, string[]>;
 }
 
 /**
@@ -2813,22 +2855,17 @@ function changeCount(s: DeltaStory): string {
  * the target flow that has it in full, then today's error paths, which the change passes through.
  * The numbered listings stay in the target flow and the map, not in every story file.
  */
-function flowSummary(s: DeltaStory): string[] {
+function flowSummary(s: DeltaStory): string {
   const started = s.entry ? `, started by ${s.entry},` : "";
   const link = `target-flows/${s.flow}.yaml`;
   const today = s.before?.length ?? 0;
   const errors = s.errors?.length ?? 0;
-  const head =
-    s.change === "new"
-      ? `The new flow ${s.flow} (${s.name})${started} has ${s.after?.length ?? 0} step${s.after?.length === 1 ? "" : "s"}; ${link} has them in full.`
-      : s.change === "remove"
-        ? `Once the change is in, flow ${s.flow} (${s.name}) is removed; ${link} says how.`
-        : `Today, ${s.flow} (${s.name})${started} has ${today} step${today === 1 ? "" : "s"}${errors ? ` and ${errors} error path${errors === 1 ? "" : "s"}` : ""}; the change ${changeCount(s)}. The full flow, today's and once the change is in, is in ${link}.`;
-  return [
-    head,
-    "",
-    ...(errors ? ["Its error paths today:", "", ...s.errors!.map((e) => `- ${e}`), ""] : []),
-  ];
+  // B-short: the error paths are in the target flow, with the rest of it; not pasted here.
+  return s.change === "new"
+    ? `The new flow ${s.flow} (${s.name})${started} has ${s.after?.length ?? 0} step${s.after?.length === 1 ? "" : "s"}; ${link} has them in full.`
+    : s.change === "remove"
+      ? `Once the change is in, flow ${s.flow} (${s.name}) is removed; ${link} says how.`
+      : `Today, ${s.flow} (${s.name})${started} has ${today} step${today === 1 ? "" : "s"}${errors ? ` and ${errors} error path${errors === 1 ? "" : "s"}` : ""}; the change ${changeCount(s)}. The full flow, today's and once the change is in${errors ? ", with its error paths," : ""} is in ${link}.`;
 }
 
 /** "the 3 under Task 1.1 above, and 1 written on task 1.3 that also accepts it" (B-tasks). */
@@ -2836,10 +2873,12 @@ function criteriaWhere(s: DeltaStory, w: StoryWords, t: DeltaTask): string {
   const accepting = acceptingCriteria(w, t.id);
   const own = accepting.filter((x) => x.owner === t.id).length;
   const shared = accepting.filter((x) => x.owner !== t.id);
-  const owners = [...new Set(shared.map((x) => x.owner))];
+  const owners = [...new Set(shared.map((x) => taskLabel(s, x.owner)))];
   if (!accepting.length) return "none yet";
   const where =
-    s.tasks.length > 1 ? `under Task ${t.id} in Acceptance criteria` : "under Acceptance criteria";
+    s.tasks.length > 1
+      ? `under Task ${taskLabel(s, t)} in Acceptance criteria`
+      : "under Acceptance criteria";
   return [
     ...(own ? [`${own === 1 ? "the one" : `the ${own}`} ${where}`] : []),
     ...(shared.length
@@ -2905,10 +2944,54 @@ function filesLine(t: DeltaTask): string {
   ].join(", ");
 }
 
+/** Where a task's prompt file is, in the change folder (B-short). */
+export const promptFileOf = (s: DeltaStory, t: DeltaTask) => `tasks/${taskLabel(s, t)}.prompt.md`;
+
+/** The requests a task waits for: those at a step it covers or notes as done. */
+function waitsOf(s: DeltaStory, t: DeltaTask, requests: RequestTask[]): RequestTask[] {
+  const at = new Set([
+    ...partsOf(t).map((p) => p.position),
+    ...(t.done ?? []).map((d) => d.position),
+  ]);
+  return requests.filter((r) => r.flow === s.flow && at.has(r.step));
+}
+
 /**
- * A story's file (B-tasks: shorter): its sections, the flow in a few lines with a link, each
- * criterion once (under its task when there are several), then each task with the steps it
- * covers, where they go, the files and its prompt, which points at the criteria above.
+ * Each task's prompt for Copilot or Claude Code, as a file of its own (B-short): the story file
+ * names it and stays short, and the prompt lists its criteria in full, so it can be pasted or sent
+ * as it is. Keyed by the path in the change folder.
+ */
+export function taskPromptFiles(
+  change: string,
+  s: DeltaStory,
+  words: StoryWords,
+  x: StoryFileExtras = {},
+): Record<string, string> {
+  const w = foldWords(s, words);
+  const command = x.commands?.[s.repo];
+  const out: Record<string, string> = {};
+  for (const t of s.tasks) {
+    const tw = w.tasks.find((y) => y.id === t.id);
+    out[promptFileOf(s, t)] = [
+      `${GENERATED_MARK} stories: the prompt of task ${taskLabel(s, t)} of stories/${s.id}.md. -->`,
+      "",
+      taskPrompt(change, s, t, criteriaFor(w, t.id), {
+        contract: contractOf(s, w, t, x.estate),
+        ...(tw?.tests?.length ? { tests: tw.tests } : {}),
+        ...(command ? { command } : {}),
+      }),
+      "",
+    ].join("\n");
+  }
+  return out;
+}
+
+/**
+ * A story's file (ADR 0124 addendum B-short, about 100 to 150 lines): the statement, the context in
+ * a few lines with a link to the target flow, each task once (its steps, where they go, the files,
+ * where its criteria are, its tests, what it waits for and its prompt file), each criterion once
+ * under the task it is written on, then the interface and data tables, non-functional, tests,
+ * dependencies and the definition of done. Tasks are numbered per story (`taskLabel`).
  */
 export function renderStoryFile(
   change: string,
@@ -2918,6 +3001,7 @@ export function renderStoryFile(
   x: StoryFileExtras = {},
 ): string {
   const w = foldWords(s, words);
+  const label = (t: DeltaTask | string) => taskLabel(s, t);
   const lines = [
     `${GENERATED_MARK} stories from the target flows (target-flows/). Edit the wording freely; tasks, fields and evidence come from the flows. -->`,
     `# ${w.title}`,
@@ -2926,12 +3010,12 @@ export function renderStoryFile(
     "",
   ];
 
-  // ---- Context: the story's words, then the flow in a few lines (B-tasks).
+  // ---- Context: the story's words, then the flow in a line with its link (B-short).
   lines.push("## Context", "");
   if (w.context) lines.push(sentence(w.context), "");
-  lines.push(...flowSummary(s));
+  lines.push(flowSummary(s), "");
 
-  // ---- Scope
+  // ---- Scope: the tasks are the in-scope work; the story's other words beside them.
   const kept = s.change === "modify" && s.kept?.length ? s.kept : [];
   const out = [
     ...(kept.length
@@ -2941,38 +3025,71 @@ export function renderStoryFile(
       : []),
     ...(w.scope?.out ?? []).map(sentence),
   ];
+  const ins = w.scope?.in ?? [];
+  const tasks = `task${s.tasks.length === 1 ? "" : "s"} ${andList(s.tasks.map((t) => label(t)))} below`;
   lines.push(
     "## Scope",
     "",
-    "In:",
+    ins.length ? `In: ${tasks}, and:` : `In: ${tasks}.`,
     "",
-    ...s.tasks.map((t) => `- Task ${t.id}: ${sentence(t.title)}`),
-    ...(w.scope?.in ?? []).map((i) => `- ${sentence(i)}`),
-    "",
+    ...(ins.length ? [...ins.map((i) => `- ${sentence(i)}`), ""] : []),
     "Out:",
     "",
     ...(out.length ? out.map((o) => `- ${o}`) : [`- ${NOT_WRITTEN}`]),
     "",
   );
 
-  // ---- Implementation steps (B-steps): the places in the code the tasks change, in order
-  const steps = storySteps(s);
-  if (steps.length)
+  // ---- Tasks, each once (B-short).
+  const command = x.commands?.[s.repo];
+  lines.push("## Tasks", "");
+  for (const t of s.tasks) {
+    const tw = w.tasks.find((y) => y.id === t.id);
+    const stepLines = [
+      ...partsOf(t).map((p) => ({
+        n: p.position,
+        line: `- Step: ${p.op} (${p.kind ?? "step"}), item ${p.position} of target-flows/${s.flow}.yaml${partsOf(t).length > 1 ? `: ${p.what.replace(/[.\s]+$/, "")}` : ""}${p.target ? `; goes to ${p.target}` : ""}${p.store ? `; store ${p.store}` : ""}`,
+      })),
+      ...(t.done ?? []).map((d) => ({
+        n: d.position,
+        line: `- Step: add (${d.kind ?? "step"}), item ${d.position} of target-flows/${s.flow}.yaml: ${d.what.replace(/[.\s]+$/, "")}; already done by ${d.by} (step ${d.step} of ${d.flow}), no code`,
+      })),
+    ]
+      .sort((a, b) => a.n - b.n)
+      .map((y) => y.line);
+    const files = filesLine(t);
+    const waits = waitsOf(s, t, x.requests ?? []);
     lines.push(
-      "## Implementation steps",
+      `### Task ${label(t)}: ${t.title}`,
       "",
-      ...steps.map((p) => {
-        const ls = `line${p.lines.length === 1 ? "" : "s"} ${andList(p.lines.map(String))}`;
-        const at = p.newFile
-          ? `New file ${p.file}`
-          : p.file
-            ? `${p.file}${p.kind === "migration" ? " (new)" : p.lines.length ? ` (${ls})` : ""}`
-            : "New code the target flow places in no file yet";
-        const what = p.newFile ? p.what.replace(/^a new file: /, "") : p.what;
-        return `${p.n}. ${at}, task${p.tasks.length === 1 ? "" : "s"} ${andList(p.tasks)}: ${sentence(what)}`;
-      }),
+      ...stepLines,
+      `- Fields: ${t.fields.join(", ") || "none"}`,
+      // B-short: a place Files to touch already names (a file to change, a new file), with the
+      // code it calls said under Code it calls, isn't said twice; a place the flow leaves open is.
+      ...whereLines(t).filter((l) => !/^- Where it goes: (change |new file )/.test(l)),
+      ...partsOf(t).flatMap((p) =>
+        p.reuses
+          ? [
+              `- Reuses: ${p.reuses.at}, step ${p.reuses.step} of ${p.reuses.flow}; item ${p.position} calls it`,
+            ]
+          : [],
+      ),
+      `- Files to touch: ${files || "new code; follow the repo's patterns for its neighbours"}`,
+      // B-place: the code its steps only call, apart from the files it touches.
+      ...(t.uses?.length ? [`- Code it calls (unchanged): ${t.uses.join(", ")}`] : []),
+      `- Acceptance criteria: ${criteriaWhere(s, w, t)}`,
+      ...(tw?.tests?.length
+        ? ["- Tests to add:", ...tw.tests.map((y) => `  - ${sentence(y)}`)]
+        : [
+            `- Tests to add: a test for each criterion${t.evidence[0] ? `, beside the tests of ${t.evidence[0].split(":")[1]}` : ""}.`,
+          ]),
+      ...(waits.length
+        ? [`- Waits for: ${andList(waits.map((r) => `${r.id} ${r.title}`))} (requests.md)`]
+        : []),
+      ...(x.knowledge?.[t.id]?.length ? x.knowledge[t.id]!.map((k) => `- Knowledge: ${k}`) : []),
+      `- Prompt: ${promptFileOf(s, t)} (atticus task ${change} ${label(t)})`,
       "",
     );
+  }
 
   // ---- Acceptance criteria (the critic and test generation read this list): each once, under
   // the task it is written on when the story has several, naming the other tasks it accepts.
@@ -2982,10 +3099,10 @@ export function renderStoryFile(
     t,
     cs: w.tasks.find((y) => y.id === t.id)?.criteria ?? [],
   }));
-  if (!crit.some((x) => x.cs.length)) lines.push("- None yet.", "");
+  if (!crit.some((y) => y.cs.length)) lines.push("- None yet.", "");
   for (const { t, cs } of crit) {
     if (!cs.length) continue;
-    if (many) lines.push(`Task ${t.id}:`, "");
+    if (many) lines.push(`Task ${label(t)}:`, "");
     // Its entry (unless it is the story's own, said in Context), validation and error on a line
     // of their own under it, not a bullet: the readers of this list (test generation, the story
     // bar, the learn measure) take the bullets.
@@ -2996,7 +3113,7 @@ export function renderStoryFile(
         const { entry: _entry, ...bare } = c;
         const details = criterionDetails(ownEntry ? bare : c);
         return [
-          `- ${sentence(c.text)}${also.length ? ` (also accepts task${also.length === 1 ? "" : "s"} ${andList(also.map((y) => y.id))})` : ""}`,
+          `- ${sentence(c.text)}${also.length ? ` (also accepts task${also.length === 1 ? "" : "s"} ${andList(also.map((y) => label(y)))})` : ""}`,
           ...(details ? [`  ${details.replace(/^ \((.*)\)$/, "$1")}.`] : []),
         ];
       }),
@@ -3021,7 +3138,7 @@ export function renderStoryFile(
     }
     const n = notJudged.length;
     lines.push(
-      `Not judged yet: ${n === 1 ? "1 criterion says it checks a field" : `${n} criteria say they check a field`} without naming it (${[...byTask].map(([id, fs]) => `task ${id}: ${fs.join(", ")}`).join("; ")}). The story lens and the reviewer confirm ${n === 1 ? "it does" : "they do"} (judgments/covers-field/ keeps a verdict).`,
+      `Not judged yet: ${n === 1 ? "1 criterion says it checks a field" : `${n} criteria say they check a field`} without naming it (${[...byTask].map(([id, fs]) => `task ${label(id)}: ${fs.join(", ")}`).join("; ")}). The story lens and the reviewer confirm ${n === 1 ? "it does" : "they do"} (judgments/covers-field/ keeps a verdict).`,
       "",
     );
   }
@@ -3122,11 +3239,10 @@ export function renderStoryFile(
   lines.push(
     "## Traces to",
     "",
-    `target-flows/${s.flow}.yaml (${s.change} flow ${s.flow}: ${s.name})`,
+    `target-flows/${s.flow}.yaml (${s.change} flow ${s.flow}: ${s.name})${x.capability ? `; specs/${x.capability}/spec.md` : ""}`,
     "",
   );
   // The repo first, alone on its line (the learn measure reads it); its command once, not per task.
-  const command = x.commands?.[s.repo];
   lines.push(
     "## Systems and repos",
     "",
@@ -3136,63 +3252,7 @@ export function renderStoryFile(
       ? `Build and test with \`${command}\`.`
       : `repos.manifest.yaml names no build command for ${s.repo}: use the repo's own build and tests.`,
     "",
-    "## Tasks",
-    "",
   );
-  for (const t of s.tasks) {
-    const tw = w.tasks.find((y) => y.id === t.id);
-    // B-once: the criteria that accept the task, its own and those written on another task.
-    const accepting = acceptingCriteria(w, t.id);
-    const c = accepting.map((y) => y.c);
-    const stepLines = [
-      ...partsOf(t).map((p) => ({
-        n: p.position,
-        line: `- Step: ${p.op} (${p.kind ?? "step"}), item ${p.position} of target-flows/${s.flow}.yaml${partsOf(t).length > 1 ? `: ${p.what.replace(/[.\s]+$/, "")}` : ""}${p.target ? `; goes to ${p.target}` : ""}${p.store ? `; store ${p.store}` : ""}`,
-      })),
-      ...(t.done ?? []).map((d) => ({
-        n: d.position,
-        line: `- Step: add (${d.kind ?? "step"}), item ${d.position} of target-flows/${s.flow}.yaml: ${d.what.replace(/[.\s]+$/, "")}; already done by ${d.by} (step ${d.step} of ${d.flow}), no code`,
-      })),
-    ]
-      .sort((a, b) => a.n - b.n)
-      .map((y) => y.line);
-    const files = filesLine(t);
-    lines.push(
-      `### Task ${t.id}: ${t.title}`,
-      "",
-      ...stepLines,
-      `- Fields: ${t.fields.join(", ") || "none"}`,
-      ...whereLines(t),
-      ...partsOf(t).flatMap((p) =>
-        p.reuses
-          ? [
-              `- Reuses: ${p.reuses.at}, step ${p.reuses.step} of ${p.reuses.flow}; item ${p.position} calls it`,
-            ]
-          : [],
-      ),
-      `- Files to touch: ${files || "new code; follow the repo's patterns for its neighbours"}`,
-      // B-place: the code its steps only call, apart from the files it touches.
-      ...(t.uses?.length ? [`- Code it calls (unchanged): ${t.uses.join(", ")}`] : []),
-      `- Acceptance criteria: ${criteriaWhere(s, w, t)}`,
-      ...(tw?.tests?.length
-        ? ["- Tests to add:", ...tw.tests.map((y) => `  - ${sentence(y)}`)]
-        : [
-            `- Tests to add: a test for each criterion${t.evidence[0] ? `, beside the tests of ${t.evidence[0].split(":")[1]}` : ""}.`,
-          ]),
-      "",
-      "Prompt for Copilot or Claude Code:",
-      "",
-      "```text",
-      taskPrompt(change, s, t, c, {
-        contract: contractOf(s, w, t, x.estate),
-        ...(tw?.tests?.length ? { tests: tw.tests } : {}),
-        ...(command ? { command } : {}),
-        criteriaIn: `${criteriaWhere(s, w, t)} (stories/${s.id}.md).`,
-      }),
-      "```",
-      "",
-    );
-  }
   return lines.join("\n");
 }
 
@@ -3218,7 +3278,21 @@ function renderIndex(stories: DeltaStory[], a: StoriesAnswer): string {
   ].join("\n");
 }
 
-function renderTasks(stories: DeltaStory[], requests: RequestTask[]): string {
+/**
+ * The task lines tasks.md has ticked, as written after the box ("1.2 <title> (story <id>)"), so a
+ * rerun keeps a person's ticks on the same task and never moves one to a renumbered task.
+ */
+export function tickedTasks(text: string): Set<string> {
+  const out = new Set<string>();
+  for (const m of text.matchAll(/^\s*[-*]\s+\[[xX]\]\s+(.+?)\s*$/gm)) out.add(m[1]!);
+  return out;
+}
+
+function renderTasks(
+  stories: DeltaStory[],
+  requests: RequestTask[],
+  ticked?: ReadonlySet<string>,
+): string {
   const lines = [
     `${GENERATED_MARK} tasks from the stories. Tick them as they are done. -->`,
     "# Tasks",
@@ -3228,13 +3302,11 @@ function renderTasks(stories: DeltaStory[], requests: RequestTask[]): string {
     lines.push(`## ${repo}`, "");
     for (const s of stories.filter((x) => x.repo === repo))
       for (const t of s.tasks) {
-        lines.push(`- [ ] ${t.id} ${t.title} (story ${s.id})`);
+        // B-short: numbered per story without gaps; ticked as before (a person's ticks are kept).
+        const line = `${taskLabel(s, t)} ${t.title} (story ${s.id})`;
+        lines.push(`- [${ticked?.has(line) ? "x" : " "}] ${line}`);
         // B-tasks: a request for any step the task covers or notes as done waits on it.
-        const at = new Set([
-          ...partsOf(t).map((p) => p.position),
-          ...(t.done ?? []).map((d) => d.position),
-        ]);
-        const waits = requests.filter((r) => r.flow === s.flow && at.has(r.step));
+        const waits = waitsOf(s, t, requests);
         if (waits.length)
           lines.push(
             `  - Waits for: ${waits.map((r) => `${r.id} ${r.title}${r.leadTime ? ` (${r.leadTime})` : ""}`).join("; ")}`,
@@ -3322,6 +3394,15 @@ export async function writeStories(
     if ((await readFile(join(dir, "stories", f), "utf8")).startsWith(GENERATED_MARK))
       await rm(join(dir, "stories", f));
   }
+  // B-short: the task prompt files Atticus wrote before go; this run writes the current ones.
+  for (const p of await readdir(join(dir, "tasks")).catch(() => [] as string[]))
+    if (
+      p.endsWith(".prompt.md") &&
+      (await readFile(join(dir, "tasks", p), "utf8")).startsWith(GENERATED_MARK)
+    )
+      await rm(join(dir, "tasks", p));
+  // ADR 0006 addendum: the OpenSpec specs the stories make, and the proposal naming them.
+  const spec = await openspecFiles(root, change, stories, a, extras.estate);
   const files: string[] = [];
   for (const s of stories) {
     const w = a.stories.find((x) => x.id === s.id) ?? {
@@ -3332,14 +3413,27 @@ export async function writeStories(
       soThat: "the change works",
       tasks: [],
     };
+    const x = {
+      ...extras,
+      requests,
+      ...(spec.capabilityOf.get(s.flow) ? { capability: spec.capabilityOf.get(s.flow)! } : {}),
+    };
     await writeFileAtomic(
       join(dir, "stories", `${s.id}.md`),
-      renderStoryFile(change, s, w, unjudged, { ...extras, requests }),
+      renderStoryFile(change, s, w, unjudged, x),
     );
     files.push(`stories/${s.id}.md`);
+    for (const [rel, text] of Object.entries(taskPromptFiles(change, s, w, x))) {
+      await mkdir(join(dir, ...rel.split("/").slice(0, -1)), { recursive: true });
+      await writeFileAtomic(join(dir, ...rel.split("/")), text);
+      files.push(rel);
+    }
   }
   await writeFileAtomic(join(dir, "stories.md"), renderIndex(stories, a));
-  await writeFileAtomic(join(dir, "tasks.md"), renderTasks(stories, requests));
+  const ticked = tickedTasks(await readFile(join(dir, "tasks.md"), "utf8").catch(() => ""));
+  await writeFileAtomic(join(dir, "tasks.md"), renderTasks(stories, requests, ticked));
+  files.push(...(await writeSpecFiles(dir, spec.files)));
+  if (spec.proposal && (await writeProposal(dir, spec.proposal))) files.push("proposal.md");
   await writeFileAtomic(join(dir, "requests.md"), renderRequests(requests));
   // ADR 0101: the same requests join the change's needs, beside what change needs found.
   await mergeStoryRequests(root, change, requests, now);
@@ -3456,6 +3550,31 @@ export async function draftedStories(root: string, changeId: string): Promise<Dr
     extras: await storyExtras(ctx, change),
     requests: mergeRequests(answer, deltas, items),
   };
+}
+
+/**
+ * Write a change's stories again from its kept answer, with no model call (ADR 0124 addendum
+ * B-short, `atticus upgrade`): the story files, task prompts, tasks.md, the OpenSpec specs and
+ * proposal in this Atticus's shape. The answer, the target flows and the judgments are read, not
+ * changed; claims no judgment settled are noted as the stage would.
+ */
+export async function rewriteStories(
+  root: string,
+  changeId: string,
+  now: Date = new Date(),
+): Promise<string[]> {
+  const d = await draftedStories(root, changeId);
+  const ctx = await loadChangeContext(root);
+  const estate = await loadEstate(root, ctx.records);
+  const open = await unjudgedChecks(unwrittenChecks(d.answer, d.stories), {
+    store: fileJudgments(root),
+    change: d.change.id,
+    now,
+  });
+  return writeStories(root, d.change.id, d.stories, d.answer, d.requests, now, open, {
+    ...d.extras,
+    estate,
+  });
 }
 
 export interface StoriesStageResult extends StageResult<StoriesAnswer> {
@@ -3585,6 +3704,9 @@ export async function storiesStage(
     Math.floor(stageBudget(ctx, STORY_AGENT) * STORY_CODE_SHARE),
   );
   if (code) sources.push(code);
+  // ADR 0006 addendum: OpenSpec's instructions for the artifacts this stage writes come first.
+  const osInstructions = await openspecInstructionSource(root, change.id, "stories");
+  if (osInstructions) sources.unshift(osInstructions);
   const FORMAT = `Reply with YAML only:
 
 stories:
@@ -3783,6 +3905,14 @@ Rules:
           locate: (words) => locateInStories(dir, rel, words),
           rerun: `atticus plan stories ${change.id}`,
         });
+  const openspecGate = async (a: StoriesAnswer): Promise<StageIssue[]> => {
+    if (!openspecRootOf(root)) return [];
+    const f = await openspecFiles(root, change.id, stories, foldAnswer(a, stories), estate);
+    return validateDraft(root, change.id, dir, {
+      ...f.files,
+      ...(f.proposal ? { "proposal.md": f.proposal } : {}),
+    });
+  };
   const spec: StageSpec<StoriesAnswer> = {
     stage: "stories",
     agent: STORY_AGENT,
@@ -3810,6 +3940,8 @@ Rules:
         now,
         decided: settled.decided,
       })),
+      // ADR 0006 addendum: the specs and proposal the draft makes pass openspec validate --strict.
+      ...(await openspecGate(a)),
     ],
     write: async (a) => {
       requests = await merge(a);

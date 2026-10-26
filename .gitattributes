@@ -3,3 +3,4 @@
 *.tgz binary
 *.wasm binary
 packages/intellij/gradlew.bat text eol=crlf
+fixtures/stages/stories/expected/*.csv -text

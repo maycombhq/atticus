@@ -411,7 +411,12 @@ describe("the Interface changes show the catalog's required when the story doesn
     );
     const stories = storiesFromDeltas(deltas, estate);
     await writeStories(root, CHANGE, stories, a, [], NOW, [], { estate });
-    return readFile(join(root, "openspec/changes", CHANGE, "stories/s1-place-order.md"), "utf8");
+    // B-short: the story file, then task 1.1's prompt file (where the prompt's words now are).
+    const dir = join(root, "openspec/changes", CHANGE);
+    return [
+      await readFile(join(dir, "stories/s1-place-order.md"), "utf8"),
+      await readFile(join(dir, "tasks/1.1.prompt.md"), "utf8"),
+    ].join("\n");
   }
 
   it("reads a field's required from the story, else the catalog's, else says it isn't said", async () => {
@@ -492,6 +497,22 @@ describe("the stories stage writes every section", () => {
     const dir = join(root, "openspec/changes", CHANGE);
     const story = await readFile(join(dir, "stories/s1-place-order.md"), "utf8");
     expect(story).toBe(fixture("expected/s1-place-order.md"));
+    // ADR 0006 addendum: the story's criteria as OpenSpec's delta for the flow's capability.
+    expect(await readFile(join(dir, "specs/forge-orders-place-order/spec.md"), "utf8")).toBe(
+      fixture("expected/specs/forge-orders-place-order/spec.md"),
+    );
+    // B-short: tasks numbered per story, gapless (task 1.3, its id, is 1.2 to a person).
+    const tasksMd = await readFile(join(dir, "tasks.md"), "utf8");
+    expect(tasksMd).toContain(
+      "- [ ] 1.2 Change the write step: The order is inserted with the screen's verdict (story s1-place-order)",
+    );
+    expect(tasksMd).not.toContain("1.3");
+    // The proposal names the capability once the stories stage has its delta.
+    const proposal = await readFile(join(dir, "proposal.md"), "utf8");
+    expect(proposal).toContain("## Why\n\nStolen cards are used to place orders");
+    expect(proposal).toContain(
+      "### New Capabilities\n- `forge-orders-place-order`: flow `forge-orders.place-order` (A client places an order)",
+    );
     const index = await readFile(join(dir, "stories.md"), "utf8");
     // No story of the change lands first, so the index's Depends on stays empty (the critic
     // reads its cells as story ids).

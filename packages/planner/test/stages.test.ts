@@ -829,11 +829,18 @@ describe("the stories stage", () => {
       "forge-orders:src/main/java/forge/orders/OrderController.java:13",
     ]);
     const story = await readFile(join(dir(root), "stories/s1-place-order.md"), "utf8");
-    expect(story).toContain("Prompt for Copilot or Claude Code:");
-    expect(story).toContain(
+    // B-short: the story names each task's prompt file; the prompt is in it, once.
+    expect(story).toContain("- Prompt: tasks/1.1.prompt.md (atticus task add-fraud-check 1.1)");
+    expect(story).not.toContain("Implement task");
+    const prompt = await readFile(join(dir(root), "tasks/1.1.prompt.md"), "utf8");
+    expect(prompt).toContain(
       "Implement task 1.1 of the change add-fraud-check in the repo forge-orders.",
     );
-    expect(story).toContain("It goes to northwind-pay POST /v1/screenings (new).");
+    expect(prompt).toContain("It goes to northwind-pay POST /v1/screenings (new).");
+    // Task 1.3 (its id) is the story's second task: 1.2 to a person, in every file.
+    expect(await readFile(join(dir(root), "tasks/1.2.prompt.md"), "utf8")).toContain(
+      "Implement task 1.2 of the change add-fraud-check",
+    );
     const tasks = await readFile(join(dir(root), "tasks.md"), "utf8");
     expect(tasks).toContain(
       "- [ ] 1.1 Add the call-out step: Northwind Pay screens the order for fraud, and 1 more step in OrderController.java (story s1-place-order)",
@@ -896,7 +903,7 @@ describe("a criterion that checks a field without naming it", () => {
     // B-place: one line for the story, with the count and the fields by task; not a bullet, so
     // the readers of the criteria list don't take it for one.
     expect(story).toContain(
-      "\nNot judged yet: 1 criterion says it checks a field without naming it (task 1.3: fraud_verdict). The story lens and the reviewer confirm it does (judgments/covers-field/ keeps a verdict).\n",
+      "\nNot judged yet: 1 criterion says it checks a field without naming it (task 1.2: fraud_verdict). The story lens and the reviewer confirm it does (judgments/covers-field/ keeps a verdict).\n",
     );
     expect(story).not.toMatch(/^- Not judged yet/m);
   });
@@ -989,19 +996,12 @@ describe("the starter review at each stage (ADR 0120)", () => {
     lenses = [];
     const arch = await architectureStage(root, CHANGE, { runtime: rt([DELTAS]), now: NOW });
     expect(arch.state).toBe("done");
-    // The starter rules' risk on the call to Northwind Pay (no timeout stated) gets one more
-    // draft, handed back with its fix (ADR 0115 addendum, 2026-10-25); the same draft again
-    // leaves it a risk, and the stage is done: two rounds of the same three lenses.
-    expect(arch.drafts).toBe(2);
-    expect(arch.notes.join("\n")).toContain("back to your assistant for one more draft");
-    expect(lenses.map((l) => l.lens)).toEqual([
-      "true",
-      "complete",
-      "safe",
-      "true",
-      "complete",
-      "safe",
-    ]);
+    // ADR 0006 addendum: design.md now says how the write to forge-orders-db.orders is undone
+    // (Rollout and rollback), so the ship question's rollback check, which used to send this
+    // draft back once on every run, finds nothing: one draft, one round of the three lenses.
+    expect(arch.drafts).toBe(1);
+    expect(arch.notes.join("\n")).not.toContain("back to your assistant for one more draft");
+    expect(lenses.map((l) => l.lens)).toEqual(["true", "complete", "safe"]);
     expect(lenses[0]!.prompt).toContain("review.shown-data-has-a-source");
     expect(lenses[1]!.prompt).toContain("review.outcome-has-target-steps");
     expect(lenses[2]!.prompt).toContain("review.new-column-complete");
@@ -1009,10 +1009,11 @@ describe("the starter review at each stage (ADR 0120)", () => {
     lenses = [];
     const stories = await storiesStage(root, CHANGE, { runtime: rt([STORIES]), now: NOW });
     expect(stories.state).toBe("done");
-    // A starter rule's risk gets its one more draft here too.
-    expect(stories.drafts).toBe(2);
+    // The rollback risk was the one that sent this draft back too; with design.md's rollback
+    // lines it is gone, so one draft and one round of the four lenses.
+    expect(stories.drafts).toBe(1);
     const four = ["true", "complete", "safe", "ship"];
-    expect(lenses.map((l) => l.lens)).toEqual([...four, ...four]);
+    expect(lenses.map((l) => l.lens)).toEqual(four);
     const complete = lenses.find((l) => l.lens === "complete")!.prompt;
     expect(complete).toContain("review.outcome-has-story");
     // The story rules read the stories only; the lens judges them against the brief all the same.

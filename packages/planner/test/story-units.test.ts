@@ -244,7 +244,10 @@ describe("B. new code goes where the target flow says (B-place)", () => {
       `It calls existing code, which doesn't change: ${READER} (item 4). Read it first.`,
     );
     const md = renderStoryFile("order-summary", s, foldAnswer(answer(), stories).stories[1]!);
-    expect(md).toContain(`- Where it goes: new file ${SERVICE} (uses ${READER}): item 4`);
+    // B-short: said once, in Files to touch and Code it calls (no Where it goes line repeats them)
+    expect(md).toContain(`(new file)`);
+    expect(md).toContain(`- Code it calls (unchanged): ${READER}`);
+    expect(md).not.toContain(`- Where it goes: new file ${SERVICE}`);
     expect(md).not.toContain("new code beside");
     // the new files are places; the reader they call isn't
     expect(
@@ -296,17 +299,19 @@ describe("C. shorter story files", () => {
     await mkdir(join(dir, "stories"));
     await writeFile(join(dir, "stories", `${s.id}.md`), md);
     const steps = await readTaskSteps(dir);
+    // B-short: task 2.3 (its id) is the server story's second task, 2.2 in the files conform reads.
+    expect(s.tasks.map((t) => t.id)).toContain("2.3");
     expect([3, 4, 5, 6, 7, 8, 9, 11].map((n) => steps.get(`${SERVER}#${n}`))).toEqual(
-      Array(8).fill("2.3"),
+      Array(8).fill("2.2"),
     );
     const web = story(stories, WEB);
     const webMd = renderStoryFile("order-summary", web, foldAnswer(answer(), stories).stories[2]!);
     expect(webMd).not.toContain("Today, flow");
+    // B-short: the error paths are in the target flow the line links to, not pasted in the story.
     expect(webMd).toContain(
-      "Today, forge-web.view-order (A shop owner views an order) has 3 steps and 1 error path; the change adds 2 steps and changes 1. The full flow, today's and once the change is in, is in target-flows/forge-web.view-order.yaml.",
+      "Today, forge-web.view-order (A shop owner views an order) has 3 steps and 1 error path; the change adds 2 steps and changes 1. The full flow, today's and once the change is in, with its error paths, is in target-flows/forge-web.view-order.yaml.",
     );
-    // the error paths the change passes through stay: they are short and a developer needs them
-    expect(webMd).toContain(
+    expect(webMd).not.toContain(
       "- GET /orders/{orderId} answers 404: the page says the order isn't found",
     );
   });
