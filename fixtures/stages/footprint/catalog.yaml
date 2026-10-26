@@ -1,0 +1,40 @@
+# Added to the stage estate for the footprint tests (ADR 0124 addendum B-change): the customers'
+# consents, which forge-orders keeps beside the orders. Invented, written by hand. No column is
+# classified, as in a catalog read from code: the table's name is what says it holds consent.
+- kind: Table
+  schemaVersion: 2
+  id: forge-orders-db.customer_consent
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-orders, path: src/main/resources/schema.sql, line: 8 }]
+  dataStore: forge-orders-db
+  name: customer_consent
+  tableKind: table
+  ownerComponent: forge-orders
+- kind: Column
+  schemaVersion: 2
+  id: forge-orders-db.customer_consent.customer_id
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-orders, path: src/main/resources/schema.sql, line: 9 }]
+  table: forge-orders-db.customer_consent
+  name: customer_id
+  type: BIGINT
+- kind: Column
+  schemaVersion: 2
+  id: forge-orders-db.customer_consent.purpose
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-orders, path: src/main/resources/schema.sql, line: 10 }]
+  table: forge-orders-db.customer_consent
+  name: purpose
+  type: VARCHAR(40)
+- kind: Column
+  schemaVersion: 2
+  id: forge-orders-db.customer_consent.revoked_at
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-orders, path: src/main/resources/schema.sql, line: 11 }]
+  table: forge-orders-db.customer_consent
+  name: revoked_at
+  type: TIMESTAMP

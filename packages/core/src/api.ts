@@ -55,8 +55,12 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   the stage's questions (GET /api/changes/{id}/stages/{stage}, POST .../comments). Additive only.
  * 2.24.0 (ADR 0124 addendum B2): a change's knowledge with a title for each item and near-miss
  *   and why each was picked in plain words (title, reason). Additive only.
+ * 2.25.0 (ADR 0124 addendum B-change): a change read from its stages' files. In GET
+ *   /api/changes/{id}/status, `progress` (the stages done, the phases ahead of the gate and a
+ *   sentence), each risk factor's `cites` and the new factors, and in `tests` `matrix` and
+ *   `added`; `work` in the cockpit; `flows` in a release's conflict overlap. Additive only.
  */
-export const API_VERSION = "2.24.0";
+export const API_VERSION = "2.25.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -1254,6 +1258,8 @@ export const ChangeCockpit = z.object({
   nextStep: z.string(),
   reasons: z.array(z.object({ code: z.string(), message: z.string() })),
   risk: z.object({ level: z.string(), score: z.number() }),
+  /** Where the stages' work is against the state (ADR 0124 addendum B-change, 2.25.0). */
+  work: z.string().optional(),
   stages: z.array(
     z.object({
       stage: z.enum(["feature", "architecture", "stories"]),

@@ -294,6 +294,7 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
             state: rep.state,
             ...(rep.phase ? { phase: rep.phase } : {}),
             ...(rep.next ? { next: rep.next } : {}),
+            ...(rep.progress ? { progress: rep.progress } : {}),
             nextStep: rep.nextStep,
             risk: rep.risk,
             tests: rep.tests,

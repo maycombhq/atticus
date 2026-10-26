@@ -14,7 +14,7 @@ import {
   readSpecFindings,
   ScanVerifyProposal,
 } from "@maycombhq/core";
-import { changeStore } from "@maycombhq/changes";
+import { changeStore, loadChangePolicy, stageCompletion } from "@maycombhq/changes";
 import { readKnowledge, snapshotDates, workingDays } from "@maycombhq/knowledge";
 import { readNeeds } from "@maycombhq/planner";
 import { readChangeFiles } from "@maycombhq/naysayer";
@@ -106,6 +106,11 @@ export interface NextState {
     fast?: boolean;
     /** ADR 0113: its one step is done (stage/small.yaml): the pull request is next. */
     fastDone?: boolean;
+    /**
+     * The stages of its stage path that are done, in order (ADR 0124 addendum B-change): the
+     * stages can run ahead of the gates, so the state alone doesn't say what is next.
+     */
+    stagesDone?: string[];
   }[];
   problems: { file: string; message: string }[];
 }
@@ -217,9 +222,14 @@ export async function readNextState(root: string): Promise<NextState> {
     (op) => op.changeTypes.types,
     () => [],
   );
+  // B-change: which stages each change has done, read the way the lifecycle reads them.
+  const { policy } = await loadChangePolicy(orgPackDirOf(root));
   try {
     for (const c of await changeStore(root).list()) {
       const files = await readChangeFiles(join(changesDirOf(root), c.id)).catch(() => undefined);
+      const stagesDone = (await stageCompletion({ root, policy }, c))
+        .filter((s) => s.state === "done")
+        .map((s) => s.stage);
       const needs = await readNeeds(root, c.id);
       const open = needs?.needs.filter((n) => n.status === "open") ?? [];
       unverifiedNeeds += open.filter((n) => {
@@ -243,6 +253,7 @@ export async function readNextState(root: string): Promise<NextState> {
           ? readChangeTasks(files).map((t) => ({ id: t.id, repo: t.repo, done: t.done }))
           : [],
         feature: existsSync(join(changesDirOf(root), c.id, "feature.yaml")),
+        ...(stagesDone.length ? { stagesDone } : {}),
         ...((await isFast(root, c, types))
           ? {
               fast: true,
@@ -407,6 +418,25 @@ function stageSteps(c: NextState["changes"][number]): NextStep[] {
             change: id,
           },
         ];
+  // B-change: the state's own stage is done, so its hand-off is next, not the stage again; say
+  // too which later stages ran ahead of the gate.
+  if (
+    (stage === "feature" || stage === "architecture" || stage === "stories") &&
+    c.stagesDone?.includes(stage)
+  ) {
+    const later = c.stagesDone.slice(c.stagesDone.indexOf(stage) + 1);
+    const gate = c.state === "returned" ? "define" : c.state;
+    return [
+      {
+        step: "handoff",
+        command: `atticus change handoff ${id} --approve`,
+        where: METAREPO,
+        why: `${id}'s ${stage} stage is done${later.length ? ` (and ${later.join(" and ")} ran ahead)` : ""}, but the change is still in ${c.state}: a person raises its ${gate} hand-off PR, and merging it approves the ${gate} gate and moves it on (ADR 0073).`,
+        change: id,
+        person: true,
+      },
+    ];
+  }
   switch (stage) {
     case "feature":
       return [

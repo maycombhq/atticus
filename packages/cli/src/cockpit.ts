@@ -34,6 +34,8 @@ export interface Cockpit {
   nextStep: string;
   reasons: { code: string; message: string }[];
   risk: { level: string; score: number };
+  /** Where the stages' work is against the state, in one sentence (B-change, C4 2.25.0). */
+  work?: string;
   stages: StageProgress[];
   openQuestions: number;
   repos: { id: string; branch: string; base: string; pr?: string }[];
@@ -87,6 +89,7 @@ export async function cockpit(root: string, id: string): Promise<Cockpit> {
     nextStep: report.nextStep,
     reasons: report.reasons,
     risk: { level: report.risk.level, score: report.risk.score },
+    ...(report.progress ? { work: report.progress.summary } : {}),
     stages: stages.map(({ asked: _asked, ...rest }) => rest),
     openQuestions: ofChange.size,
     repos: (repos?.repos ?? []).map((r) => ({

@@ -325,6 +325,29 @@ describe("nextSteps (pure)", () => {
     expect(steps[2]!.repo).toBe("forge-ledger");
   });
 
+  it("once the state's stage is done, has a person raise its hand-off, not run the stage again (B-change)", () => {
+    const steps = nextSteps({
+      ...base,
+      changes: [
+        {
+          id: "screen-orders",
+          state: "define",
+          tasks: [],
+          stagesDone: ["feature", "architecture", "stories"],
+        },
+        { id: "move-ledger", state: "design", tasks: [], stagesDone: ["feature"] },
+      ],
+    });
+    expect(commands(steps)).toEqual([
+      ["atticus change handoff screen-orders --approve", null],
+      ["atticus change architecture move-ledger", "/atticus-architecture move-ledger"],
+    ]);
+    expect(steps[0]).toMatchObject({ step: "handoff", person: true });
+    expect(steps[0]!.why).toBe(
+      "screen-orders's feature stage is done (and architecture and stories ran ahead), but the change is still in define: a person raises its define hand-off PR, and merging it approves the define gate and moves it on (ADR 0073).",
+    );
+  });
+
   it("gives a small change the fast path's one step until it is built (ADR 0113)", () => {
     const steps = nextSteps({
       ...base,

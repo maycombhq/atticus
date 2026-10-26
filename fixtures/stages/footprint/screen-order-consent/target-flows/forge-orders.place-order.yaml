@@ -1,0 +1,55 @@
+# The target of flow forge-orders.place-order (ADR 0087). Drafted by atticus change architecture.
+schemaVersion: 2
+flow: forge-orders.place-order
+repo: forge-orders
+change: modify
+why: Only the customer's own token places an order; a consenting customer's order is screened by Northwind Pay before stock is reserved.
+steps:
+  - op: add
+    after: 1
+    at: src/main/java/forge/orders/OrderController.java:9
+    kind: validate
+    what: Refuse with 403 unless the caller's token holds the orders:place scope for the customer it names; a support agent's token no longer places orders.
+    fields:
+      checks:
+        - scope
+        - customerId
+    why: The brief narrows who may place an order.
+  - op: add
+    after: 1
+    kind: read
+    what: Read whether the customer consented to fraud screening.
+    store:
+      table: forge-orders-db.customer_consent
+      columns:
+        - customer_id
+        - purpose
+        - revoked_at
+    fields:
+      checks:
+        - customerId
+    why: Only a consenting customer's order goes to the screen.
+  - op: add
+    after: 1
+    kind: call-out
+    what: Northwind Pay screens the order for fraud.
+    to:
+      component: northwind-pay
+      entry: POST /v1/screenings
+      new: true
+    fields:
+      sends:
+        - sku
+        - quantity
+        - cardToken
+      returns:
+        - verdict
+    why: The screen the brief asks for.
+  - op: add
+    after: 1
+    kind: branch
+    what: A rejected order is refused with 422 and nothing is reserved.
+    fields:
+      reads:
+        - verdict
+    why: Nothing is reserved for a rejected order.

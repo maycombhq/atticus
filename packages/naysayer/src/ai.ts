@@ -266,28 +266,43 @@ function rulesText(rules: EffectiveRule[]): string {
 
 const numbered = (doc: Doc) => doc.rawLines.map((l, i) => `${i + 1}: ${l}`).join("\n");
 
-/** The catalog records the change touches, without evidence, for the AI's context. */
-function catalogSlice(ctx: CriticContext): string {
+/**
+ * The catalog records the change touches, without evidence, for the AI's context. On the stage
+ * path (ADR 0124 addendum B-change) the footprint names the entries, calls and columns the target
+ * flows touch, so the slice keeps those rather than every entry and setting of a component.
+ */
+export function catalogSlice(ctx: CriticContext): string {
   const fp = ctx.footprint;
   const comps = new Set(fp.components);
+  const staged = fp.from.some((f) => f.startsWith("target-flows/") || f === "feature.yaml");
   const routes = new Set(ctx.hops.flatMap((h) => hopRoutes(ctx.files, h)));
   const keep = (r: CatalogRecord): boolean => {
     switch (r.kind) {
       case "System":
-        return fp.systems.includes(r.id);
+        return fp.systems.includes(r.id) || fp.outside.some((o) => o.id === r.id);
       case "Component":
         return comps.has(r.id);
       case "Interface":
-        return fp.interfaces.some((i) => i.id === r.id) || (comps.has(r.from) && comps.has(r.to));
+        return (
+          fp.interfaces.some((i) => i.id === r.id) ||
+          fp.calls.includes(r.id) ||
+          (!staged && comps.has(r.from) && comps.has(r.to))
+        );
       case "Endpoint":
+        return staged
+          ? fp.entries.includes(r.id)
+          : comps.has(r.component) || fp.systems.includes(r.component);
       case "Setting":
       case "ObservabilityAsset":
+        return !staged && (comps.has(r.component) || fp.systems.includes(r.component));
       case "Deployment":
         return comps.has(r.component) || fp.systems.includes(r.component);
       case "DataStore":
         return fp.dataStores.includes(r.id);
       case "Table":
         return fp.tables.includes(r.id);
+      case "Column":
+        return fp.columns.includes(r.id);
       case "GatewayRoute":
         return routes.has(r.id);
       case "Obligation":

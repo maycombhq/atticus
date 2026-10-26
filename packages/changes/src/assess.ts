@@ -18,7 +18,8 @@ import {
   requiredArtifacts,
   statePhase,
 } from "./lifecycle.js";
-import { scoreRisk, testsFor, type Risk, type TestPlan } from "./risk.js";
+import { stageCompletion, workProgress, type WorkProgress } from "./progress.js";
+import { scoreRisk, testPlanFor, type Risk, type TestPlan } from "./risk.js";
 import { changeStore } from "./store.js";
 import type { PhaseId } from "./types.js";
 
@@ -35,6 +36,11 @@ export interface Assessment {
   risk: Risk;
   tests: TestPlan;
   privacy: PrivacyImpact;
+  /**
+   * On the stage path, where the work is against the state (ADR 0124 addendum B-change): the
+   * stages can run ahead of the gates, and this says so instead of leaving only the state.
+   */
+  progress?: WorkProgress;
   /** The open hand-off PR, if any. Merging it approves the phase's gate (ADR 0073). */
   handoff?: ChangeHandoff;
   /** What stops a hand-off from being raised: artifacts, findings, critic rounds. */
@@ -50,9 +56,24 @@ export async function assess(ctx: ChangeContext, change: ChangeLifecycle): Promi
   const type = changeTypeOf(ctx, change.type);
   const footprint = await changeFootprint(ctx, change);
   const risk = scoreRisk({ type: type.id, footprint }, ctx.policy);
-  const tests = testsFor(ctx.orgPack.testStrategy, type.id, risk.level);
+  const tests = testPlanFor(ctx, type.id, risk);
   const privacy = privacyImpact(ctx, type, footprint);
-  const base = { change, type, state: change.state, footprint, risk, tests, privacy };
+  const progress = workProgress(
+    type,
+    change.state,
+    await stageCompletion(ctx, change),
+    change.state !== "returned" && liveHandoff(change) !== undefined,
+  );
+  const base = {
+    change,
+    type,
+    state: change.state,
+    footprint,
+    risk,
+    tests,
+    privacy,
+    ...(progress ? { progress } : {}),
+  };
 
   const phase = change.state === "returned" ? type.phases[0]! : statePhase(change.state);
   if (!phase) {

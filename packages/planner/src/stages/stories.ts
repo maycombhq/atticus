@@ -38,7 +38,7 @@ import {
   changeStore,
   loadChangeContext,
   scoreRisk,
-  testsFor,
+  testPlanFor,
   writeFileAtomic,
   type ChangeContext,
 } from "@maycombhq/changes";
@@ -2767,20 +2767,35 @@ export const DEFAULT_DONE = [
   "A person reviewed and merged each task's pull request; nothing was pushed to a protected branch",
 ];
 
+/** The test kinds the definition of done names: the strategy's row and the risk factors' own. */
+type DoneKinds = {
+  required: string[];
+  row?: { changeType: string; risk: string };
+  matrix?: string[];
+  added?: { kinds: string[]; why: string; cites: string[] }[];
+};
+
+const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
 /**
  * The definition of done (B-stories): Atticus's own items, the test kinds the org pack's test
- * strategy asks of the change, and the checks of its build and qa gates (gates.yaml).
+ * strategy asks of the change, what its risk factors add (B-change), and the checks of its build
+ * and qa gates (gates.yaml).
  */
 export function definitionOfDone(
   ctx: Pick<ChangeContext, "orgPack">,
   change: Pick<ChangeLifecycle, "type">,
-  kinds: { required: string[]; row?: { changeType: string; risk: string } },
+  kinds: DoneKinds,
 ): string[] {
   const out = [...DEFAULT_DONE];
-  if (kinds.required.length)
+  const row = kinds.matrix ?? kinds.required;
+  if (row.length)
     out.push(
-      `Tests of each kind test-strategy.yaml asks of a ${kinds.row?.changeType ?? change.type} change${kinds.row ? ` at ${kinds.row.risk} risk` : ""}: ${kinds.required.join(", ")}`,
+      `Tests of each kind test-strategy.yaml asks of a ${kinds.row?.changeType ?? change.type} change${kinds.row ? ` at ${kinds.row.risk} risk` : ""}: ${row.join(", ")}`,
     );
+  // What the change's risk factors ask of its tests (ADR 0124 addendum B-change), with why.
+  for (const a of kinds.added ?? [])
+    out.push(`${cap(a.kinds.join(" and "))} tests ${a.why} (${a.cites.join(", ")})`);
   for (const g of ctx.orgPack.gates.gates.filter((x) => x.phase === "build" || x.phase === "qa"))
     if (g.checks.length || g.checklists.length)
       out.push(
@@ -3381,13 +3396,11 @@ export async function storyExtras(
   ctx: ChangeContext,
   change: ChangeLifecycle,
 ): Promise<Omit<StoryFileExtras, "requests">> {
-  let kinds: { required: string[]; row?: { changeType: string; risk: string } } = {
-    required: [],
-  };
+  let kinds: DoneKinds = { required: [] };
   try {
     const footprint = await changeFootprint(ctx, change);
     const risk = scoreRisk({ type: change.type, footprint }, ctx.policy);
-    kinds = testsFor(ctx.orgPack.testStrategy, change.type, risk.level);
+    kinds = testPlanFor(ctx, change.type, risk);
   } catch {
     // The test kinds are a convenience: the definition of done says what it can without them.
   }

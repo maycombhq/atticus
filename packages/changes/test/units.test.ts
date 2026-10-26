@@ -279,6 +279,15 @@ describe("risk scoring and test strategy", () => {
     repos: [],
     vendors: [],
     personal: [],
+    flows: [],
+    entries: [],
+    newEntries: [],
+    calls: [],
+    columns: [],
+    fields: [],
+    outside: [],
+    signals: [],
+    from: [],
     ...over,
   });
 
@@ -397,7 +406,7 @@ describe("conflict detection", () => {
       history: [...old.history, { from: "define", to: "archived", at: T0, by: "pat" }],
     });
 
-    const none = { interfaces: [], records: [] };
+    const none = { interfaces: [], records: [], flows: [] };
     expect(await detectConflicts(root)).toEqual([
       {
         changes: ["add-transfer-limit", "fix-northwind-timeout"],
