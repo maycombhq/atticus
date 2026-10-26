@@ -15,6 +15,7 @@ import {
   reviewedGates,
   roundsOf,
 } from "@maycombhq/naysayer";
+import { fieldNames, readDeltas } from "@maycombhq/planner";
 import { readServiceRequests } from "@maycombhq/release";
 import { readChangeTasks, readStory } from "@maycombhq/speckit";
 import { traceMatrix } from "@maycombhq/testgen";
@@ -194,6 +195,12 @@ export interface MappingHop {
   rows: { line: number; source: string; target: string; rule: string; whenMissing: string }[];
   /** The catalog's FieldMapping records for this hop's interface: what is mapped today. */
   asIs: { id: string; interface: string; source: string; target: string; transform?: string }[];
+  /**
+   * The change's file the hop was read from: `mappings.md` on a change that has one, or
+   * `target-flows/<flow>.yaml` on a change taken through the stages (ADR 0129 §2.3). Optional
+   * and additive, so an app or editor that doesn't read it is unaffected.
+   */
+  from?: string;
 }
 
 /** "GET /accounts/{id}/limit" and "/accounts/:id/limit" become the same key. */
@@ -261,18 +268,86 @@ export async function mappingGrid(
       noChange,
       ...(note ? { note } : {}),
       rows,
-      asIs: mappings
-        .filter((m) => ifIds.has(m.interface))
-        .map((m) => ({
-          id: m.id,
-          interface: m.interface,
-          source: m.sourceField,
-          target: m.targetField,
-          ...(m.transform ? { transform: m.transform } : {}),
-        })),
+      asIs: asIsFor(mappings, ifIds),
+      from: "mappings.md",
     });
   }
+  // An Atticus 2 change has no mappings.md: its fields are in the architecture stage's target
+  // flows (ADR 0129 §2.3). Read there only when mappings.md gave nothing, so a change that has
+  // the file reads exactly as before.
+  if (!hops.length)
+    hops.push(...(await hopsFromTargetFlows(changeFolder(root, change), mappings, interfaces)));
   return { change, hops, catalogMappings: mappings.length };
+}
+
+/** The catalog's FieldMapping records on one hop's interfaces: what is mapped today. */
+const asIsFor = (
+  mappings: Extract<CatalogRecord, { kind: "FieldMapping" }>[],
+  ifIds: Set<string>,
+): MappingHop["asIs"] =>
+  mappings
+    .filter((m) => ifIds.has(m.interface))
+    .map((m) => ({
+      id: m.id,
+      interface: m.interface,
+      source: m.sourceField,
+      target: m.targetField,
+      ...(m.transform ? { transform: m.transform } : {}),
+    }));
+
+/**
+ * The hops of a change taken through the stages, from `target-flows/<flow>.yaml` (ADR 0129
+ * §2.3). A step that moves data is a hop: a call out or publish is headed by the entry it
+ * reaches, so the catalog's Interfaces still match it by method and path; a read, write or
+ * lookup by its table. Each field the step sends, returns or reads is a row, mapped to the name
+ * it is stored or sent as (`fields.as`), with how it is worked out (`fields.derived`) as the
+ * rule. A step that moves no data (a branch, a validate) is not a hop. Nothing is guessed: a
+ * change with neither file gets no hops, and the page says so in its own words.
+ */
+async function hopsFromTargetFlows(
+  dir: string,
+  mappings: Extract<CatalogRecord, { kind: "FieldMapping" }>[],
+  interfaces: Extract<CatalogRecord, { kind: "Interface" }>[],
+): Promise<MappingHop[]> {
+  const { deltas } = await readDeltas(dir);
+  const hops: MappingHop[] = [];
+  for (const d of deltas) {
+    let at = 0;
+    for (const s of d.steps) {
+      at += 1;
+      const heading = s.to ? s.to.entry : s.store ? s.store.table : undefined;
+      if (!heading) continue;
+      const as = s.fields?.as ?? {};
+      const derived = s.fields?.derived ?? {};
+      const names = fieldNames(s.fields);
+      if (!names.length) continue;
+      const k = hopKey(heading);
+      const ifIds = new Set(
+        interfaces
+          .filter(
+            (i) =>
+              pathKey(i.normalizedPath) === k.path &&
+              (!k.method || !i.method || i.method.toUpperCase() === k.method),
+          )
+          .map((i) => i.id),
+      );
+      hops.push({
+        heading,
+        line: at,
+        noChange: false,
+        rows: names.map((name, i) => ({
+          line: i + 1,
+          source: name,
+          target: as[name] ?? name,
+          rule: derived[name] ?? "",
+          whenMissing: "",
+        })),
+        asIs: asIsFor(mappings, ifIds),
+        from: `target-flows/${d.flow}.yaml`,
+      });
+    }
+  }
+  return hops;
 }
 
 export function uiAcrossRoutes(r: Router, ctx: ServerContext): Router {

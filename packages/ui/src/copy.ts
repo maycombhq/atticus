@@ -2089,7 +2089,10 @@ export const COPY = {
     catalogFieldMappingsFor: (heading: string | number) => `Catalog field mappings for ${heading}`,
     theCatalogHasNo: "The catalog has no field mappings yet, so there is nothing to compare with.",
     noHopsInMappings:
-      "No hops in mappings.md yet. Add a section per new or modified hop: source field, target field, rule, and what happens when it is missing.",
+      "No hops yet. A change taken through the stages gets these from its target flows, in Architecture; a change with a mappings.md gets them from there \u2014 a section per hop: source field, target field, rule, and what happens when it is missing.",
+    /** Where a hop's rows were read from: mappings.md, or the architecture stage's target flow (ADR 0129). */
+    readFromMappingsFile: "from mappings.md",
+    readFromTargetFlow: (flow: string) => `from the target flow ${flow}`,
     fieldMappings: "Field mappings",
     byHopWithThe: "by hop, with the catalog",
     apiMappings: "API mappings",
