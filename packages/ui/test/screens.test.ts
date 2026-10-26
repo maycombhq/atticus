@@ -4,14 +4,13 @@ import {
   FULL_SECTIONS,
   groupLabel,
   landingOf,
-  offered,
+  morePages,
   OLD_ADDRESSES,
   PHASES,
   SCREENS,
   screenOf,
   sectionLabel,
   SECTIONS,
-  sectionsShown,
   tabHref,
   tabsOf,
   type Section,
@@ -73,8 +72,11 @@ const BEFORE = [
   "words",
 ];
 
-/** What the product owner's design keeps behind --full until a need brings it back. */
-const BEHIND_FULL = [
+/**
+ * What the six entries' tabs don't show: under More pages, at the bottom of the menu (2026-10-25),
+ * and a tab with --full. Model runs isn't: it is a tab of Set up.
+ */
+const UNDER_MORE = [
   "map",
   "features",
   "mappings",
@@ -98,7 +100,6 @@ const BEHIND_FULL = [
   "scans",
   "intake",
   "settings",
-  "runs",
   "history",
   "evals",
   "learning",
@@ -116,7 +117,6 @@ describe("the app's map: six entries (the Surfaces design)", () => {
       "Knowledge",
       "Set up",
     ]);
-    expect(sectionsShown()).toEqual(SECTIONS);
     expect(SECTIONS.map((s) => landingOf(s).id)).toEqual([
       "home",
       "canvas",
@@ -141,18 +141,39 @@ describe("the app's map: six entries (the Surfaces design)", () => {
     ]);
     expect(of("Questions")).toEqual(["questions"]);
     expect(of("Knowledge")).toEqual(["knowledge", "wikis", "documents", "wiki-search"]);
-    expect(of("SetUp")).toEqual(["repos", "ai", "orgpack"]);
+    // Model runs beside AI: what the AI was asked, where a person looks for it (2026-10-25).
+    expect(of("SetUp")).toEqual(["repos", "ai", "runs", "orgpack"]);
     expect(of("Atticus")).toEqual([]);
   });
 
-  it("keeps the pages the design names behind --full out of the menu, the tabs and Ctrl+K", () => {
+  it("puts every page the six's tabs don't show under More pages, once, by section", () => {
     const full = SCREENS.filter((s) => s.full).map((s) => s.id);
-    expect([...full].sort()).toEqual([...BEHIND_FULL].sort());
+    expect([...full].sort()).toEqual([...UNDER_MORE].sort());
     const tabs = new Set(SECTIONS.flatMap((s) => of(s)));
-    for (const id of BEHIND_FULL) {
-      expect(tabs.has(id), id).toBe(false);
-      expect(offered(SCREENS.find((s) => s.id === id)!), id).toBe(false);
-    }
+    for (const id of UNDER_MORE) expect(tabs.has(id), id).toBe(false);
+    const more = morePages();
+    expect(more.map((g) => g.section)).toEqual(["Map", "Change", "Knowledge", "SetUp", "Atticus"]);
+    const listed = more.flatMap((g) => g.pages.map((p) => p.id));
+    expect([...listed].sort()).toEqual([...UNDER_MORE].sort());
+    expect(new Set(listed).size).toBe(listed.length);
+    expect(listed).not.toContain("runs");
+    const byId = (s: string) => more.find((g) => g.section === s)!.pages.map((p) => p.id);
+    expect(byId("Knowledge")).toEqual(["parties", "orgpack-draft"]);
+    expect(byId("SetUp")).toEqual(["scans", "intake", "settings"]);
+    expect(byId("Atticus")).toEqual(["history", "evals", "learning"]);
+    // Change's by phase, in the order of a change.
+    const change = more.find((g) => g.section === "Change")!;
+    expect(change.phases!.map((p) => [p.phase, p.pages.map((x) => x.id)])).toEqual([
+      ["Define", ["brief", "ux"]],
+      ["Design", ["arch-review"]],
+      ["Plan", ["breakdown", "estimate"]],
+      ["Build", ["tasks", "conformance", "trace", "todo"]],
+      ["Release", ["release", "service-desk"]],
+    ]);
+    expect(change.pages.map((p) => p.id)).toEqual(
+      change.phases!.flatMap((p) => p.pages.map((x) => x.id)),
+    );
+    for (const g of more) if (g.section !== "Change") expect(g.phases).toBeUndefined();
   });
 
   it("reaches a change's picture, Ask, a system, the first steps and the words by link", () => {
@@ -160,13 +181,11 @@ describe("the app's map: six entries (the Surfaces design)", () => {
     expect(aside.sort()).toEqual(
       ["change-diagram", "explore", "onboarding", "systems", "words"].sort(),
     );
-    for (const id of aside) expect(offered(SCREENS.find((s) => s.id === id)!), id).toBe(true);
   });
 
-  it("with --full: every page is a tab, Atticus's own pages a seventh entry, a change's by phase", () => {
-    expect(sectionsShown(true)).toEqual(FULL_SECTIONS);
+  it("with --full: every page is a tab of its section, a change's by phase", () => {
     expect(sectionLabel("Atticus")).toBe("Atticus");
-    expect(of("Atticus", true)).toEqual(["runs", "history", "evals", "learning"]);
+    expect(of("Atticus", true)).toEqual(["history", "evals", "learning"]);
     const all = new Set(FULL_SECTIONS.flatMap((s) => of(s, true)));
     expect(SCREENS.filter((s) => !s.under && !all.has(s.id)).map((s) => s.id)).toEqual([]);
     expect(of("Map", true).slice(0, 5)).toEqual([

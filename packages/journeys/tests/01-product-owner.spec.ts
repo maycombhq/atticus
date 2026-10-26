@@ -25,7 +25,8 @@ test("starts from the same home as everyone, as their Git user (ADR 0073)", asyn
   await expect(page.getByRole("dialog")).toHaveCount(0);
   // No view to pick: one navigation, every screen in its group.
   await expect(page.getByLabel("View", { exact: true })).toHaveCount(0);
-  // The Surfaces design: six entries; Home is one page, so it has no tabs.
+  // The Surfaces design: six entries, then More pages (2026-10-25); Home is one page, so it has
+  // no tabs.
   const nav = page.getByRole("navigation", { name: "Main" });
   const main = nav.getByRole("group", { name: "Main" });
   await expect(main.getByRole("link")).toHaveText([
@@ -37,10 +38,13 @@ test("starts from the same home as everyone, as their Git user (ADR 0073)", asyn
     "Set up",
   ]);
   await expect(main.getByRole("link", { name: "Home" })).toHaveAttribute("aria-current", "page");
-  await expect(nav.getByRole("button", { name: "More" })).toHaveCount(0);
+  await expect(nav.getByRole("button", { name: /^More pages \d+$/ })).toHaveAttribute(
+    "aria-expanded",
+    "false",
+  );
   await expect(page.getByRole("navigation", { name: "Home pages" })).toHaveCount(0);
-  // Change opens on All changes; At a glance, then a tab per stage. The separate brief is behind
-  // --full, its address still opens.
+  // Change opens on All changes; At a glance, then a tab per stage. The separate brief is under
+  // More pages, not a tab; its address still opens.
   await main.getByRole("link", { name: "Change" }).click();
   await expect(page).toHaveURL(/#\/changes$/);
   const tabs = page.getByRole("navigation", { name: "Change pages" });

@@ -26,8 +26,8 @@ test("the command palette is accessible and takes you anywhere", async ({ page }
   await page.keyboard.type("all changes");
   await page.keyboard.press("Enter");
   await expect(page).toHaveURL(/#\/changes$/);
-  // A page behind `atticus ui --full` (Governance) isn't offered without it: what was typed
-  // becomes a question for Ask instead. Its address still opens it.
+  // A page under More pages (Governance) is offered too, without `atticus ui --full`
+  // (2026-10-25: anything that exists is findable), then the question for Ask.
   await page.keyboard.press("Control+k");
   await expect(dialog).toBeVisible();
   // The box opens empty and focused (the palette clears what was typed last time as it opens).
@@ -35,8 +35,8 @@ test("the command palette is accessible and takes you anywhere", async ({ page }
   await expect(box).toBeFocused();
   await expect(box).toHaveValue("");
   await page.keyboard.type("governance");
-  await expect(dialog.getByRole("option").first()).toContainText("Ask: governance");
-  await expect(dialog.getByRole("option", { name: /^Governance/ })).toHaveCount(0);
+  await expect(dialog.getByRole("option").first()).toContainText("Governance");
+  await expect(dialog.getByRole("option").last()).toContainText("Ask: governance");
   await page.keyboard.press("Enter");
-  await expect(page).toHaveURL(/#\/explore\?ask=governance$/);
+  await expect(page).toHaveURL(/#\/governance$/);
 });

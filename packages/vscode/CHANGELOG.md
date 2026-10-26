@@ -2,6 +2,12 @@
 
 The Atticus extension for VS Code. The command line's own changes are in the repository's [CHANGELOG](https://github.com/maycombhq/atticus/blob/main/CHANGELOG.md).
 
+## Unreleased
+
+- **Every view and command, by default** (the product owner: "I see only 3 tabs... knowledge, model calls etc. are gone"). The sidebar opens on Next and Waiting, Questions and Changes, with **Knowledge**, **Repos**, **Catalog** and **Model runs** collapsed below them. The Command Palette and `@atticus` offer every command (Open the prompt history, Ask the catalog, the diagrams, the estimate, the knowledge commands, Run a command… and its key, `/new`, `/ask`, `/run` and the rest), as do a repo's and a change's play buttons, Run the task and Start or bring in.
+- **`atticus.fullUi` now offers only Atticus 1's legacy commands** (Survey a repo, Verify a repo's last scan, Draft and check a repo's spec, Run a small change's fast path, Scan every repo, Accept the catalog, and `@atticus` /survey, /scanverify, /spec, /small), and starts the app with `atticus ui --full`.
+- **The app in the tab has More pages and Ctrl+K for every page**, as in the browser; Model runs is a tab of Set up. A click on the menu's "Ctrl+K: any page" opens it, for when VS Code keeps the keys.
+
 ## 0.6.0 (pre-release, with Atticus 2.0.0-beta.1)
 
 - **The twelve commands first** (ADR 0124 addendum D-cli): Run a command…, a repo's and a change's commands and `@atticus /run` list the command line's twelve (those `atticus commands --json` marks `legacy: false`) first, in `atticus help`'s order, then every other command by area under **Legacy**. With an older command line they are listed by area as before.

@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api/client.js";
-import { groupLabel, offered, sectionLabel, SCREENS } from "./screens.js";
+import { groupLabel, sectionLabel, SCREENS } from "./screens.js";
 import { COPY } from "../copy.js";
 
 const T = COPY.palette;
+
+/** The event that opens Ctrl+K without the keys: the menu's hint (an editor's panel may take them). */
+export const OPEN_PALETTE = "atticus:open-palette";
 
 interface Item {
   kind: "screen" | "change" | "record" | "ask";
@@ -12,20 +15,19 @@ interface Item {
   href: string;
 }
 
-/** Pure: the palette's items for what was typed, screens first. Exported for tests. */
+/**
+ * Pure: the palette's items for what was typed, screens first. Every page, More pages' too, with
+ * or without `atticus ui --full` (2026-10-25: anything that exists is findable). Exported for tests.
+ */
 export function paletteItems(
   text: string,
   changes: { id: string; title: string; state: string }[],
   records: { kind: string; id: string; name?: string }[],
-  /** With `atticus ui --full`: the pages behind it too. */
-  full = false,
 ): Item[] {
   const t = text.trim().toLowerCase();
   const hit = (s: string) => !t || s.toLowerCase().includes(t);
   const out: Item[] = [
-    ...SCREENS.filter(
-      (s) => offered(s, full) && (hit(s.label) || hit(s.id) || (s.also ?? []).some(hit)),
-    ).map((s) => ({
+    ...SCREENS.filter((s) => hit(s.label) || hit(s.id) || (s.also ?? []).some(hit)).map((s) => ({
       kind: "screen" as const,
       label: s.label,
       detail: s.group
@@ -62,7 +64,7 @@ export function paletteItems(
 }
 
 /** Ctrl+K (Cmd+K): jump to any screen, change or catalog record, or ask a question. */
-export function CommandPalette({ full = false }: { full?: boolean }) {
+export function CommandPalette() {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
   const [sel, setSel] = useState(0);
@@ -79,8 +81,16 @@ export function CommandPalette({ full = false }: { full?: boolean }) {
         setOpen((o) => !o);
       }
     };
+    const ask = () => {
+      back.current = document.activeElement;
+      setOpen(true);
+    };
     addEventListener("keydown", on);
-    return () => removeEventListener("keydown", on);
+    addEventListener(OPEN_PALETTE, ask);
+    return () => {
+      removeEventListener("keydown", on);
+      removeEventListener(OPEN_PALETTE, ask);
+    };
   }, []);
 
   useEffect(() => {
@@ -109,10 +119,7 @@ export function CommandPalette({ full = false }: { full?: boolean }) {
     return () => clearTimeout(timer);
   }, [text, open]);
 
-  const items = useMemo(
-    () => paletteItems(text, changes, records, full),
-    [text, changes, records, full],
-  );
+  const items = useMemo(() => paletteItems(text, changes, records), [text, changes, records]);
   const close = () => {
     setOpen(false);
     (back.current as HTMLElement | null)?.focus?.();

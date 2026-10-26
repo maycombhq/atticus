@@ -145,17 +145,38 @@ function GateHeader(p: {
   return p.part === "hero" ? hero : gate;
 }
 
-/** One artifact, rendered; Edit opens the editor in place. */
+/**
+ * Whether a change has an artifact to show: the ones its detail lists (an Atticus 2 change lists
+ * the stages' and only the others that are there). Undefined while the detail loads; true when it
+ * can't be read, so the artifact is asked for as before. Exported for tests.
+ */
+export function listsArtifact(
+  detail: Pick<ChangeDetail, "artifacts"> | "error" | undefined,
+  artifact: string,
+): boolean | undefined {
+  if (detail === "error") return true;
+  return detail ? detail.artifacts.some((a) => a.artifact === artifact) : undefined;
+}
+
+/**
+ * One artifact, rendered; Edit opens the editor in place. One the change doesn't have (an
+ * Atticus 1 artifact on an Atticus 2 change) says so, without asking the server for it.
+ */
 function ArtifactPanel({
   change,
   artifact,
+  listed,
   span,
 }: {
   change: string;
   artifact: string;
+  /** Whether the change lists it (listsArtifact). */
+  listed: boolean | undefined;
   span?: string;
 }) {
-  const a = useApi<Artifact & { artifact: string }>(`/api/changes/${change}/artifacts/${artifact}`);
+  const a = useApi<Artifact & { artifact: string }>(
+    listed ? `/api/changes/${change}/artifacts/${artifact}` : undefined,
+  );
   const [edit, setEdit] = useState(false);
   // Closing the editor puts the keyboard back on Edit, which comes back with the panel.
   const editBtn = useRef<HTMLButtonElement>(null);
@@ -175,10 +196,17 @@ function ArtifactPanel({
         }}
       />
     );
+  const title = artifact[0]!.toUpperCase() + artifact.slice(1);
+  if (listed === false)
+    return (
+      <Panel title={title} span={span}>
+        <div className="state">{T.noSuchArtifact(artifact)}</div>
+      </Panel>
+    );
   const missing = a.state === "error";
   return (
     <Panel
-      title={artifact[0]!.toUpperCase() + artifact.slice(1)}
+      title={title}
       span={span}
       meta={
         missing ? undefined : (
@@ -322,6 +350,10 @@ function PhaseScreen(p: {
 }) {
   const c = useChange(p.hash, p.screen);
   const [tick, setTick] = useState(0);
+  // Which of its artifacts the change has: an Atticus 1 page asks only for those (2026-10-25).
+  const detail = useApi<ChangeDetail>(c.id ? `/api/changes/${c.id}` : undefined);
+  const known =
+    detail.state === "ready" ? detail.data : detail.state === "error" ? "error" : undefined;
   if (c.none) return <NoChange />;
   if (!c.id) return <ChangeWaiting list={c.list} title={p.title} />;
   const header = {
@@ -337,7 +369,7 @@ function PhaseScreen(p: {
         <GateHeader part="hero" {...header} />
         {p.main?.(c.id)}
         {p.artifacts.map((a) => (
-          <ArtifactPanel key={a} change={c.id!} artifact={a} />
+          <ArtifactPanel key={a} change={c.id!} artifact={a} listed={listsArtifact(known, a)} />
         ))}
       </div>
       <div className="column" style={{ gridColumn: "span 4" }}>

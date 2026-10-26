@@ -8,18 +8,20 @@ import { COPY } from "../copy.js";
  * and documents, cited) and Set up (what the files hold, as forms). The app shows files and asks
  * questions; it runs no scans, model calls or git.
  *
- * Every other page stays, working as it did, behind `atticus ui --full` until a need brings it
- * back: with the flag it is a tab of its section (and Atticus's own pages a seventh entry);
- * without it, it is in neither the menu, the tabs nor Ctrl+K, but its address still opens it.
- * No route is removed or renamed, so every old address still opens its page.
+ * Every other page is under More pages, at the bottom of the menu (the D-app addendum's
+ * follow-up, 2026-10-25: hidden behind `atticus ui --full` they were too hard to find, and seeing
+ * what the AI was asked is part of trusting it), grouped by section, and Ctrl+K finds every page.
+ * With `atticus ui --full` More pages starts open and every page is a tab of its section too.
+ * Model runs is a tab of Set up, beside AI. No route is removed or renamed, so every old address
+ * still opens its page.
  */
 
 export const SECTIONS = ["Home", "Map", "Change", "Questions", "Knowledge", "SetUp"] as const;
-/** The sections with --full: the six, then Atticus's own pages. */
+/** Every section a page belongs to: the six, then Atticus's own pages (under More pages). */
 export const FULL_SECTIONS = [...SECTIONS, "Atticus"] as const;
 export type Section = (typeof FULL_SECTIONS)[number];
 
-/** The phases a change's pages are grouped by, within Change, with --full. */
+/** The phases a change's pages are grouped by, within Change (More pages, and the tabs with --full). */
 export const PHASES = ["Define", "Design", "Plan", "Build", "Release"] as const;
 export type Phase = (typeof PHASES)[number];
 
@@ -36,7 +38,7 @@ export interface ScreenDef {
    * system's page, the words, the first steps): not a tab, but in Ctrl+K. A tab with --full.
    */
   aside?: true;
-  /** Behind --full: a tab only when the app runs with `atticus ui --full`. */
+  /** Under More pages: not a tab of its section unless the app runs with `atticus ui --full`. */
   full?: true;
   /** Other words Ctrl+K finds the page by: the names of pages merged into it. */
   also?: readonly string[];
@@ -114,6 +116,9 @@ export const SCREENS: ScreenDef[] = [
   { id: "repos", label: S.repos, section: "SetUp" },
   // ADR 0121: how AI runs here, chosen in a form.
   { id: "ai", label: S.ai, section: "SetUp" },
+  // What Atticus asked a model and what came back (ADR 0106), beside how AI runs here: the first
+  // place a person looking for "what was the AI asked" opens (2026-10-25).
+  { id: "runs", label: S.runs, section: "SetUp" },
   { id: "orgpack", label: S.orgpack, section: "SetUp" },
   // The first steps, from Home's next step.
   { id: "onboarding", label: N.onboarding, section: "SetUp", aside: true },
@@ -121,17 +126,12 @@ export const SCREENS: ScreenDef[] = [
   { id: "intake", label: S.intake, section: "SetUp", full: true },
   { id: "settings", label: S.settings, section: "SetUp", full: true },
 
-  // Atticus itself, with --full: what it asked a model (ADR 0106), what people asked theirs
-  // (ADR 0110), its quality and what it learned.
-  { id: "runs", label: S.runs, section: "Atticus", full: true },
+  // Atticus itself, under More pages: what people asked their assistant (ADR 0110), its quality
+  // and what it learned.
   { id: "history", label: S.history, section: "Atticus", full: true },
   { id: "evals", label: S.evals, section: "Atticus", full: true },
   { id: "learning", label: S.learning, section: "Atticus", full: true },
 ];
-
-/** The menu's entries: the six, and Atticus's own pages with --full. */
-export const sectionsShown = (full = false): readonly Section[] =>
-  full ? FULL_SECTIONS : SECTIONS;
 
 /** A section's name as the menu shows it. */
 export const sectionLabel = (s: Section): string => N.sections[s];
@@ -139,18 +139,39 @@ export const sectionLabel = (s: Section): string => N.sections[s];
 /** A phase's name, as a group of a change's pages. */
 export const groupLabel = (g: Phase): string => N.groups[g];
 
-/** Whether a page is offered (menu, tabs, Ctrl+K): every page with --full, else not those behind it. */
-export const offered = (s: ScreenDef, full = false): boolean => full || !s.full;
-
 /**
  * The tabs of a section, in order: every page of it but those that are part of another; without
- * --full, only the six's own tabs (no page behind --full, no page reached by a link).
+ * --full, only the six's own tabs (no page under More pages, no page reached by a link).
  */
 export const tabsOf = (s: Section, full = false): ScreenDef[] =>
   SCREENS.filter((x) => x.section === s && !x.under && (full || (!x.full && !x.aside)));
 
 /** Where a section opens: its first tab. */
 export const landingOf = (s: Section, full = false): ScreenDef => tabsOf(s, full)[0]!;
+
+/** One section's pages under More pages; Change's grouped by phase too. */
+export interface MoreGroup {
+  section: Section;
+  pages: ScreenDef[];
+  phases?: { phase: Phase; pages: ScreenDef[] }[];
+}
+
+/**
+ * More pages, at the bottom of the menu: every page the six entries' tabs don't show, by section
+ * in the menu's order (Map's, Change's by phase, Knowledge's, Set up's, then Atticus's own).
+ */
+export function morePages(): MoreGroup[] {
+  return FULL_SECTIONS.flatMap((section): MoreGroup[] => {
+    const pages = SCREENS.filter((s) => s.section === section && s.full);
+    if (!pages.length) return [];
+    if (section !== "Change") return [{ section, pages }];
+    const phases = PHASES.map((phase) => ({
+      phase,
+      pages: pages.filter((s) => s.group === phase),
+    })).filter((g) => g.pages.length);
+    return [{ section, pages: phases.flatMap((g) => g.pages), phases }];
+  });
+}
 
 /**
  * Addresses of pages merged into another: the old address opens the page it is part of now, so

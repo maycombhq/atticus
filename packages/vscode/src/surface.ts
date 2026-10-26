@@ -1,34 +1,43 @@
 /**
- * What the extension offers by default (Phase D, the design's Surfaces; ADR 0124 addendum
- * D-app): three views, about fifteen commands in the Command Palette, and the @atticus steps that
- * run with the editor's model. Everything else stays registered and comes back with the setting
- * atticus.fullUi, as `atticus ui --full` does for the app: nothing is removed, it goes behind the
- * setting. package.json says the same, and test/manifest.test.ts holds the two together. No
- * `vscode` here.
+ * What the extension offers (Phase D, the design's Surfaces; ADR 0124 addendum D-app, and its
+ * follow-up of 2026-10-25: nothing is hidden by default). Every view: Next and Waiting, Questions
+ * and Changes open, then Knowledge, Repos, Catalog and Model runs collapsed below them. Every
+ * command in the Command Palette and every @atticus command, but Atticus 1's legacy ones (the
+ * older scanner, survey, spec and the small change's fast path), which the setting atticus.fullUi
+ * offers again; with it the Atticus tab also starts as `atticus ui --full`. Nothing is removed.
+ * package.json says the same, and test/manifest.test.ts holds the two together. No `vscode` here.
  */
 
-/** The setting, under `atticus.`, that offers every view and command again. */
+/** The setting, under `atticus.`, that offers Atticus 1's legacy commands and `ui --full`. */
 export const FULL_UI = "fullUi";
 
-/** The `when` clause of everything only the full arrangement offers. */
+/** The `when` clause of everything only the setting offers: Atticus 1's legacy commands. */
 export const FULL_WHEN = "config.atticus.fullUi";
 
-/** The sidebar by default, in its order. */
+/** The sidebar, in its order: the three a day starts from, then the four collapsed below. */
 export const DEFAULT_VIEWS = [
   { id: "atticus.view", name: "Next and Waiting" },
   { id: "atticus.questions", name: "Questions" },
   { id: "atticus.changes", name: "Changes" },
-];
-
-/** The views behind atticus.fullUi, in the order they had (ADR 0105, 0106). */
-export const FULL_VIEWS = [
   { id: "atticus.knowledge", name: "Knowledge" },
   { id: "atticus.repos", name: "Repos" },
   { id: "atticus.catalog", name: "Catalog" },
+  // ADR 0106: the model runs at the bottom: what the AI was asked is part of trusting it.
   { id: "atticus.runs", name: "Model runs" },
 ];
 
-/** The commands the Command Palette offers by default, in package.json's order. */
+/** The views that start collapsed, so the sidebar opens on Next and Waiting. */
+export const COLLAPSED_VIEWS = [
+  "atticus.knowledge",
+  "atticus.repos",
+  "atticus.catalog",
+  "atticus.runs",
+];
+
+/**
+ * The everyday commands of the Command Palette, in package.json's order: the ones the real-VS-Code
+ * suite runs as a person would (test-vscode/person.ts). Every other command is offered too.
+ */
 export const DEFAULT_PALETTE = [
   "atticus.next",
   "atticus.runNext",
@@ -40,6 +49,8 @@ export const DEFAULT_PALETTE = [
   "atticus.critic",
   "atticus.answer",
   "atticus.showApp",
+  // What people asked their assistant (ADR 0110).
+  "atticus.promptHistory",
   "atticus.showLog",
   "atticus.newChange",
   "atticus.startTask",
@@ -47,7 +58,17 @@ export const DEFAULT_PALETTE = [
   "atticus.pickModel",
 ];
 
-/** The @atticus commands offered by default: the steps, run with the editor's model. */
+/** Atticus 1's legacy commands, in package.json's order: offered only with atticus.fullUi. */
+export const LEGACY_PALETTE = [
+  "atticus.survey",
+  "atticus.scanverify",
+  "atticus.spec",
+  "atticus.small",
+  "atticus.scanAll",
+  "atticus.acceptCatalog",
+];
+
+/** The @atticus commands offered, in package.json's order: the steps first, then the rest. */
 export const DEFAULT_CHAT = [
   "next",
   "map",
@@ -58,7 +79,16 @@ export const DEFAULT_CHAT = [
   "task",
   "critic",
   "answer",
+  "new",
+  "diagram",
+  "changemap",
+  "estimate",
+  "ask",
+  "run",
 ];
+
+/** Atticus 1's legacy @atticus commands: offered only with atticus.fullUi. */
+export const LEGACY_CHAT = ["scanverify", "survey", "spec", "small"];
 
 /** Where the Atticus tab opens: Home, the first of the app's six entries. */
 export const APP_HOME = "#/home";
