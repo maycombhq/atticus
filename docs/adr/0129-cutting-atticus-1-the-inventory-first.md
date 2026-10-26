@@ -101,6 +101,8 @@ No reader is retired. ADR 0124 §3 is explicit that the readers are never the pa
 
 C1 to C6 are untouched, and so is the facts file (`packages/core/src/schema/facts.ts`, additive to C1 since ADR 0124). This ADR changes no schema and needs no version bump or migration.
 
+Nor does it change any file Atticus writes into a metarepo, so `atticus upgrade` has nothing to carry and an existing metarepo is unaffected. The one API change, `MappingHop.from` (§2.3), is a new optional field inside a response the API document already describes as an opaque object, so C4 is unchanged and an older client reads the answer as before. When a command in §2.2 is retired, §4 says how an old metarepo keeps working.
+
 ### 3. What the cut actually buys, honestly
 
 No packages, no commands, no screens, no readers and no contracts. That is a small result against finding 7's framing, and it is the true one: the inventory shows that most of what the review counted as a second generation is either Atticus 2's own cross-check or capability with no successor.
