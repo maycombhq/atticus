@@ -12,7 +12,8 @@ import {
   QuestionState,
   type Question,
 } from "@maycombhq/core";
-import { waitingQuestions } from "@maycombhq/planner";
+// The light entry: listing the questions needn't load the whole planner (waiting.ts).
+import { waitingQuestions } from "@maycombhq/planner/waiting";
 import { gitUser } from "@maycombhq/workspace";
 import type { Output } from "./commands.js";
 

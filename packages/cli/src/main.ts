@@ -76,6 +76,9 @@ const NO_AI = new Set([
   "support",
   "change list",
   "change status",
+  // Reading the questions on file and printing one: files only, no model (question-commands.ts).
+  "questions list",
+  "questions show",
 ]);
 const runsNoAi = (group: string, command: string | undefined) =>
   NO_AI.has(group) || NO_AI.has(`${group} ${command ?? ""}`);

@@ -11,6 +11,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./waiting": {
+      "types": "./dist/stages/waiting.d.ts",
+      "import": "./dist/stages/waiting.js"
     }
   },
   "files": [

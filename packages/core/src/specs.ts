@@ -3,9 +3,16 @@ import { readdir, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { parse } from "yaml";
 import { parseRecord, type RecordOf } from "./catalog.js";
+import { FLOW_SCHEMA_VERSION } from "./schema/kinds.js";
 import { writeFileAtomic } from "./fs.js";
+import { readParsedFiles, type ParseOutcome } from "./record-cache.js";
 import { specDirOf, specRelOf, specsDirOf, specsRelOf } from "./metarepo.js";
-import { EstateJoins, SpecFindings, SpecHeader } from "./schema/spec.js";
+import {
+  EstateJoins,
+  SPEC_HEADER_SCHEMA_VERSION,
+  SpecFindings,
+  SpecHeader,
+} from "./schema/spec.js";
 import { serializeRecord, toCanonicalYaml } from "./serialize.js";
 
 /**
@@ -29,6 +36,39 @@ export interface RepoSpec {
 const issues = (r: { error: { issues: { path: PropertyKey[]; message: string }[] } }) =>
   r.error.issues.map((i) => `${i.path.map(String).join(".") || "(top)"}: ${i.message}`).join("; ");
 
+/**
+ * Bumped when what a kept parse of a spec file holds changes, so a cache an older Atticus
+ * wrote is read from the files again (record-cache.ts).
+ */
+const SPEC_CACHE_VERSION = `spec@${FLOW_SCHEMA_VERSION}.${SPEC_HEADER_SCHEMA_VERSION}`;
+
+/** One spec file's parse: the header, or a flow, as `readRepoSpec` reads them. */
+type SpecFile = { header: SpecHeader; flow?: never } | { flow: FlowRecord; header?: never };
+
+/** What a spec file's name means, and what its text says, in the words `readRepoSpec` uses. */
+function parseSpecFile(text: string, name: string, rel: string): ParseOutcome<SpecFile> {
+  let data: unknown;
+  try {
+    data = parse(text);
+  } catch (e) {
+    return { ok: false, message: (e as Error).message.split("\n")[0]! };
+  }
+  if (name === SPEC_HEADER_FILE) {
+    const h = SpecHeader.safeParse(data);
+    return h.success ? { ok: true, value: { header: h.data } } : { ok: false, message: issues(h) };
+  }
+  const r = parseRecord(data);
+  if (!r.ok)
+    return {
+      ok: false,
+      message: r.issues.map((i) => `${i.path || "(top)"}: ${i.message}`).join("; "),
+    };
+  if (r.record.kind !== "Flow") return { ok: false, message: `is a ${r.record.kind}, not a Flow` };
+  if (`${r.record.id}.yaml` !== name)
+    return { ok: false, message: `holds ${r.record.id}; put it in ${rel}/${r.record.id}.yaml` };
+  return { ok: true, value: { flow: r.record } };
+}
+
 /** Read a repo's spec: header, flows (sorted by id) and the files that didn't read. */
 export async function readRepoSpec(root: string, repo: string): Promise<RepoSpec> {
   const dir = specDirOf(root, repo);
@@ -40,37 +80,62 @@ export async function readRepoSpec(root: string, repo: string): Promise<RepoSpec
     return { flows: [], problems: [] };
   }
   const out: RepoSpec = { flows: [], problems: [] };
-  for (const n of names) {
-    if (n === SPEC_FINDINGS_FILE) continue;
-    let data: unknown;
-    try {
-      data = parse(await readFile(join(dir, n), "utf8"));
-    } catch (e) {
-      out.problems.push({ file: `${rel}/${n}`, message: (e as Error).message.split("\n")[0]! });
+  // The files are read at once, and one whose size and time haven't changed since the last run
+  // isn't parsed again (record-cache.ts): a metarepo's specs hold hundreds of flows.
+  const read = await readParsedFiles<SpecFile>({
+    dir,
+    files: names.filter((n) => n !== SPEC_FINDINGS_FILE),
+    name: "spec",
+    version: SPEC_CACHE_VERSION,
+    parse: (text, name) => parseSpecFile(text, name, rel),
+  });
+  for (const p of read) {
+    if (p.problem !== undefined) {
+      out.problems.push({ file: `${rel}/${p.rel}`, message: p.problem });
       continue;
     }
-    if (n === SPEC_HEADER_FILE) {
-      const h = SpecHeader.safeParse(data);
-      if (h.success) out.header = h.data;
-      else out.problems.push({ file: `${rel}/${n}`, message: issues(h) });
-      continue;
-    }
-    const r = parseRecord(data);
-    if (!r.ok)
-      out.problems.push({
-        file: `${rel}/${n}`,
-        message: r.issues.map((i) => `${i.path || "(top)"}: ${i.message}`).join("; "),
-      });
-    else if (r.record.kind !== "Flow")
-      out.problems.push({ file: `${rel}/${n}`, message: `is a ${r.record.kind}, not a Flow` });
-    else if (`${r.record.id}.yaml` !== n)
-      out.problems.push({
-        file: `${rel}/${n}`,
-        message: `holds ${r.record.id}; put it in ${rel}/${r.record.id}.yaml`,
-      });
-    else out.flows.push(r.record);
+    if (p.value!.header) out.header = p.value!.header;
+    else out.flows.push(p.value!.flow!);
   }
   return out;
+}
+
+/**
+ * Every flow file in specs/, by flow id, from the file names alone — no file is read (ADR 0079:
+ * a flow lives at specs/<repo>/<id>.yaml, and a file holding another id is a problem
+ * `readRepoSpec` reports and leaves out). A command that needs a handful of flows out of
+ * hundreds reads those with `readFlow` instead of parsing every one.
+ */
+export async function specFlowFiles(
+  root: string,
+): Promise<Map<string, { repo: string; file: string }>> {
+  const out = new Map<string, { repo: string; file: string }>();
+  for (const repo of await specRepos(root)) {
+    const dir = specDirOf(root, repo);
+    const names = await readdir(dir).catch(() => [] as string[]);
+    for (const n of names.sort()) {
+      if (!n.endsWith(".yaml") || n === SPEC_HEADER_FILE || n === SPEC_FINDINGS_FILE) continue;
+      const id = n.slice(0, -".yaml".length);
+      if (!out.has(id)) out.set(id, { repo, file: join(dir, n) });
+    }
+  }
+  return out;
+}
+
+/**
+ * One flow of a repo's spec, or undefined when there is no such file, it isn't valid, or it
+ * holds another flow — exactly the flows `readRepoSpec` returns, one at a time.
+ */
+export async function readFlow(
+  root: string,
+  repo: string,
+  id: string,
+): Promise<FlowRecord | undefined> {
+  const name = `${id}.yaml`;
+  const text = await readFile(join(specDirOf(root, repo), name), "utf8").catch(() => undefined);
+  if (text === undefined) return undefined;
+  const r = parseSpecFile(text, name, specRelOf(root, repo));
+  return r.ok ? r.value.flow : undefined;
 }
 
 /** Write one flow at specs/<repo>/<id>.yaml in canonical YAML. */
