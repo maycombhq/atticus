@@ -46,7 +46,7 @@ import {
 import { prepareKnowledgeBench, runKnowledgeBench, type KnowledgeScore } from "@maycombhq/evals";
 import { codeFactRecords } from "@maycombhq/planner";
 import type { Output } from "./commands.js";
-import { table } from "./index-commands.js";
+import { table } from "./table.js";
 
 /**
  * Knowledge sources tagged, snapshot, scanned and queried (ADR 0083, revamp plan 4.3):

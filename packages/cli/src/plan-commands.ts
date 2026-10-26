@@ -17,7 +17,7 @@ import {
 } from "@maycombhq/planner";
 import type { Output } from "./commands.js";
 import { judgingRuntime } from "./judging.js";
-import { table } from "./index-commands.js";
+import { table } from "./table.js";
 
 /**
  * atticus plan stories / plan bar / plan snow / plan submit / ado sync / templates draft.

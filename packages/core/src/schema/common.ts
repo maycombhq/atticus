@@ -1,11 +1,8 @@
 import { z } from "zod";
+import { SCHEMA_VERSION } from "./version.js";
 
-/**
- * Current catalog schema version. Bumping it requires an ADR and a migration.
- * Version 2 (ADR 0031) added the Capability kind and changed no existing field.
- * Version 3 (ADR 0125) added `required` on a Schema field, optional, and changed no other field.
- */
-export const SCHEMA_VERSION = 3 as const;
+/** Current catalog schema version (defined in ./version.js, which loads no schema). */
+export { SCHEMA_VERSION };
 
 /** Every catalog schema version a reader accepts, oldest first. */
 export const SUPPORTED_SCHEMA_VERSIONS = [1, 2, 3] as const;

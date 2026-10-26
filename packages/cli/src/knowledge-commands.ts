@@ -28,7 +28,7 @@ import { createGit } from "@maycombhq/workspace";
 import { isSeq, parseDocument } from "yaml";
 import type { Output } from "./commands.js";
 import { judgingRuntime } from "./judging.js";
-import { table } from "./index-commands.js";
+import { table } from "./table.js";
 import { INPUTS_SOURCE, INPUTS_SOURCE_ID, inputsPages } from "./inputs-knowledge.js";
 
 const WIKI_TYPES = ["confluence", "ado-wiki", "sharepoint", "markdown-folder", "git"] as const;

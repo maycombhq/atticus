@@ -14,7 +14,7 @@ import {
   type ExecutorClient,
 } from "@maycombhq/executors";
 import type { Output } from "./commands.js";
-import { table } from "./index-commands.js";
+import { table } from "./table.js";
 
 /**
  * atticus todo / todo show / todo done / todo run / executors check: the manual steps a

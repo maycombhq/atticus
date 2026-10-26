@@ -1,26 +1,84 @@
 import { parseArgs, type ParseArgsOptionsConfig } from "node:util";
-import { createLog, SCHEMA_VERSION, orgPackDirOf } from "@maycombhq/core";
-import { gitUser } from "@maycombhq/workspace";
+// Only what every command needs before it knows which one runs: no schema, no workspace package
+// (test/startup.test.ts holds this). The rest loads below, when its command runs.
+import { createLog, SCHEMA_VERSION } from "@maycombhq/core/light";
 import { basename, join, resolve } from "node:path";
-import { registerCodeSearch } from "@maycombhq/naysayer";
-import { criticCodeSearch, metarepoToolBox } from "./code-tools.js";
-import { bothTools, draftCheckTool } from "./draft-check-tool.js";
-import { type Output } from "./commands.js";
-import {
-  AiOffError,
-  PromptTooLong,
-  registerToolSource,
-  runtimeForCli,
-  RuntimeConfigError,
-  withPromptLimit,
-  type AiRuntime,
-} from "@maycombhq/ai";
-import { registerBuiltInModelProviders } from "@maycombhq/model-providers";
-import { registerModelProviderPlugins } from "./model-plugins.js";
+import type { Output } from "./commands.js";
+import type { AiRuntime } from "@maycombhq/ai";
 import { existsSync } from "node:fs";
 
 import { VERSION } from "./version.js";
 import { aliasArgv } from "./top-commands.js";
+
+/**
+ * The model runtime, loaded when a command uses it. Its error classes are read from the same
+ * module (`instanceof (await loadAi()).RuntimeConfigError`): one module, one class.
+ */
+const loadAi = () => import("@maycombhq/ai");
+const runtimeForCli: typeof import("@maycombhq/ai").runtimeForCli = async (...a) => {
+  await setUpAi();
+  return (await loadAi()).runtimeForCli(...a);
+};
+const gitUser: typeof import("@maycombhq/workspace").gitUser = (...a) =>
+  import("@maycombhq/workspace").then((m) => m.gitUser(...a));
+
+/**
+ * What a command that runs a model or the critic needs registered first (ADR 0065, 0107, 0121,
+ * W1, W3a): the built-in model providers, an org pack's provider plugins, the context tools a
+ * provider that calls tools is offered (and a stage's check_draft), and the code search the
+ * critic checks a missing name against. They load the providers' HTTP client, the index and
+ * the critic, so they load when a command may use them (see NO_AI), not at start. They are
+ * registered again on every call, as main registered them on every run before.
+ */
+const loadAiSetUp = () =>
+  Promise.all([
+    loadAi(),
+    import("@maycombhq/model-providers"),
+    import("./model-plugins.js"),
+    import("@maycombhq/naysayer"),
+    import("./code-tools.js"),
+    import("./draft-check-tool.js"),
+  ]);
+export async function setUpAi(): Promise<void> {
+  const [ai, providers, plugins, naysayer, codeTools, draftCheck] = await loadAiSetUp();
+  // runtime.yaml adapters.model.type anthropic, openai-compatible, azure-openai and bedrock work
+  // out of the box (ADR 0065); every command that builds a runtime finds them registered.
+  providers.registerBuiltInModelProviders();
+  // ADR 0121 item 4: and an org pack's own, from plugins/model-providers/<id>/ once pinned.
+  plugins.registerModelProviderPlugins();
+  // ADR 0107 addendum: the model runtime offers the context tools to a provider that calls tools.
+  // W3a: and a stage's draft its own check, check_draft (the stage's checks on its text).
+  ai.registerToolSource(
+    (at) => (req) =>
+      draftCheck.bothTools(codeTools.metarepoToolBox(at), draftCheck.draftCheckTool(at, req)),
+  );
+  // W1: the critic checks a name a lens's finding says is missing against the repos' code.
+  naysayer.registerCodeSearch(codeTools.criticCodeSearch);
+}
+
+/**
+ * Commands that never run a model or the critic, so they start without setUpAi: the ones the
+ * editors, the app and the assistant's hooks run often. Every other command sets it up before
+ * it runs, as every command did at start before. `waiting` and `mcp` run other commands through
+ * main, which sets up each of those as it needs.
+ */
+const NO_AI = new Set([
+  "next",
+  "runs",
+  "history",
+  "waiting",
+  "mcp",
+  "doctor",
+  "setup",
+  "verify",
+  "baseline",
+  "upgrade",
+  "support",
+  "change list",
+  "change status",
+]);
+const runsNoAi = (group: string, command: string | undefined) =>
+  NO_AI.has(group) || NO_AI.has(`${group} ${command ?? ""}`);
 
 /**
  * Command modules load when their command runs, not at start: loading all of them took most
@@ -711,16 +769,6 @@ export async function main(
   o: { quiet?: boolean } = {},
 ): Promise<number> {
   const started = Date.now();
-  // runtime.yaml adapters.model.type anthropic, openai-compatible, azure-openai and bedrock work
-  // out of the box (ADR 0065); every command that builds a runtime finds them registered.
-  registerBuiltInModelProviders();
-  // ADR 0121 item 4: and an org pack's own, from plugins/model-providers/<id>/ once pinned.
-  registerModelProviderPlugins();
-  // ADR 0107 addendum: the model runtime offers the context tools to a provider that calls tools.
-  // W3a: and a stage's draft its own check, check_draft (the stage's checks on its text).
-  registerToolSource((at) => (req) => bothTools(metarepoToolBox(at), draftCheckTool(at, req)));
-  // W1: the critic checks a name a lens's finding says is missing against the repos' code.
-  registerCodeSearch(criticCodeSearch);
   // ADR 0124 addendum D-cli: `legacy <words>`, `join`, `stories` and `task <change> <task>` are
   // the commands that exist, so everything after this (flags, hand-off, the log) sees those.
   const argv = aliasArgv(given, positionalsAt(given));
@@ -777,6 +825,7 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
     );
     return 2;
   }
+  const { withPromptLimit, PromptTooLong } = await loadAi();
   try {
     return await withPromptLimit(n, () => dispatchCommand(argv, io));
   } catch (e) {
@@ -1025,17 +1074,16 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
     return catalogDiff(resolve(arg), resolve(b), values.json === true, io);
   }
   const root = resolve(typeof values.root === "string" ? values.root : process.cwd());
+  if (!runsNoAi(group, command)) await setUpAi();
   // ADR 0086: atticus next, and --handoff on the AI steps (the prompt, result file and finish).
-  if (group === "next" || values.handoff === true) {
-    const h = await import("./handoff-flag.js");
-    if (group === "next")
-      return (await import("./next-commands.js")).nextCommand(
-        root,
-        { json: values.json === true, all: values.all === true },
-        io,
-      );
-    if (h.isHandoffStep(group, command)) return h.handoffStep(root, argv, io, dispatch);
-  }
+  if (group === "next")
+    return (await import("./next-commands.js")).nextCommand(
+      root,
+      { json: values.json === true, all: values.all === true },
+      io,
+    );
+  if (values.handoff === true && (await import("./handoff-steps.js")).isHandoffStep(group, command))
+    return (await import("./handoff-flag.js")).handoffStep(root, argv, io, dispatch);
   // Who is acting (ADR 0073): --by when given, else the metarepo's Git user, read once for the
   // commands that record a person. A fallback to the OS user is said once, on stderr, when used.
   const given = typeof values.by === "string" && values.by.trim() ? values.by : undefined;
@@ -1222,7 +1270,7 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
         io,
       );
     } catch (e) {
-      if (e instanceof RuntimeConfigError) {
+      if (e instanceof (await loadAi()).RuntimeConfigError) {
         io.err(e.message);
         return 2;
       }
@@ -1280,7 +1328,7 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
         io,
       );
     } catch (e) {
-      if (e instanceof RuntimeConfigError) {
+      if (e instanceof (await loadAi()).RuntimeConfigError) {
         io.err(e.message);
         return 2;
       }
@@ -1327,7 +1375,7 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
       });
       return await mapCommand(root, repo, o, io, { runtime });
     } catch (e) {
-      if (e instanceof RuntimeConfigError) {
+      if (e instanceof (await loadAi()).RuntimeConfigError) {
         io.err(e.message);
         return 2;
       }
@@ -1409,7 +1457,7 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
         io,
       );
     } catch (e) {
-      if (e instanceof RuntimeConfigError) {
+      if (e instanceof (await loadAi()).RuntimeConfigError) {
         io.err(e.message);
         return 2;
       }
@@ -1446,7 +1494,7 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
         io,
       );
     } catch (e) {
-      if (e instanceof RuntimeConfigError) {
+      if (e instanceof (await loadAi()).RuntimeConfigError) {
         io.err(e.message);
         return 2;
       }
@@ -2350,7 +2398,7 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
         });
         return await featureSuggestNames(root, { runtime, json }, io);
       } catch (e) {
-        if (e instanceof RuntimeConfigError) {
+        if (e instanceof (await loadAi()).RuntimeConfigError) {
           io.err(e.message);
           return 2;
         }
@@ -2757,9 +2805,9 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
             await runtimeForCli(root, { ...(str(values.mode) ? { mode: str(values.mode)! } : {}) })
           ).runtime;
         } catch (e) {
-          if (e instanceof AiOffError)
+          if (e instanceof (await loadAi()).AiOffError)
             io.out("AI is off here: the learned model alone is checked.");
-          else if (e instanceof RuntimeConfigError) {
+          else if (e instanceof (await loadAi()).RuntimeConfigError) {
             io.err(e.message);
             return 2;
           } else throw e;
@@ -2802,7 +2850,7 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
         });
         return await onboardEval(root, arg, { json }, { runtime }, io);
       } catch (e) {
-        if (e instanceof RuntimeConfigError) {
+        if (e instanceof (await loadAi()).RuntimeConfigError) {
           io.err(e.message);
           return 2;
         }
@@ -2832,7 +2880,7 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
         io,
       );
     } catch (e) {
-      if (e instanceof RuntimeConfigError) {
+      if (e instanceof (await loadAi()).RuntimeConfigError) {
         io.err(e.message);
         return 2;
       }
@@ -3025,7 +3073,10 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
   if (group === "orgpack" && command === "owner")
     return (await import("./orgpack-owner.js")).orgPackOwnerCli(root, arg, io);
   if (group === "orgpack" && command === "validate")
-    return orgPackValidate(arg ? resolve(arg) : join(orgPackDirOf(root)), io);
+    return orgPackValidate(
+      arg ? resolve(arg) : join((await import("@maycombhq/core")).orgPackDirOf(root)),
+      io,
+    );
   // W3a: a stage's checks on a draft's file, for a drafter checking its own draft.
   if (group === "stage" && command === "check")
     return (await import("./stage-commands.js")).stageCheck(

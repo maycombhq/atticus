@@ -26,7 +26,7 @@ import {
 } from "@maycombhq/evals";
 import { readDocument, readZip } from "@maycombhq/ingestors";
 import type { Output } from "./commands.js";
-import { table } from "./index-commands.js";
+import { table } from "./table.js";
 
 /**
  * atticus eval run|report: the AI eval harness. atticus defences scan: what the

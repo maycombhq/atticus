@@ -30,6 +30,7 @@ Atticus 2 (ADR 0124): the assistant reads the code and writes cited facts; `veri
   - The twelve commands `atticus help` shows are `TOP_WORDS` and `TOP_HELP` in `top-commands.ts`, with `aliasArgv` for `join`, `stories` and `task`.
   - Every other command is legacy. `atticus legacy` lists them (`help-commands.ts`), and each still runs by its own name.
   - The full `HELP` text in `main.ts` is the command catalogue (`atticus commands --json`, `pnpm docs:commands`, the docs check).
+  - Start time: `bin.ts` answers `--version` itself and dynamic-imports `main.ts`, which statically imports only `@maycombhq/core/light` (`SCHEMA_VERSION`, `createLog`) and its own small files; every command module, and `setUpAi` (model providers, context tools, the critic's code search), loads when a command needs it (`NO_AI` lists the commands that skip it). `test/startup.test.ts` holds this. Import a helper like `table` from its own small file (`table.ts`), not from a command module.
   - Tests are in `packages/cli/test/`.
 - **Fixtures** (hand-written, byte-exact, never regenerated):
   - `fixtures/forge`: the bank-like reference ecosystem; its expected catalog is `expected/scan.yaml`.

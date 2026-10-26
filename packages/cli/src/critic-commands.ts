@@ -35,7 +35,7 @@ import {
 } from "@maycombhq/naysayer";
 import type { Output } from "./commands.js";
 import { yamlAnswerProblems } from "./handoff-yaml.js";
-import { table } from "./index-commands.js";
+import { table } from "./table.js";
 
 /**
  * atticus critic …, atticus findings, atticus finding <id> <action>, atticus critic stats.

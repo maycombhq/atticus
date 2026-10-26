@@ -31,10 +31,8 @@ import {
 import { gateStatus, ownerWaitsLine, reviewedGates } from "@maycombhq/naysayer";
 import { metarepoOpenSpec } from "@maycombhq/planner";
 import type { Output } from "./commands.js";
-import { statusLine } from "./critic-commands.js";
-import { table } from "./index-commands.js";
+import { table } from "./table.js";
 import { storeChangeRows } from "./openspec-stores-commands.js";
-import { scanCommand } from "./scan-commands.js";
 
 /**
  * atticus change …: the change lifecycle. A gate is approved when its hand-off PR merges
@@ -281,7 +279,9 @@ async function usedUpGates(root: string, id: string): Promise<string[]> {
   for (const g of await reviewedGates(root, id).catch(() => [] as string[])) {
     const s = await gateStatus(root, id, g).catch(() => undefined);
     // An open gap waiting on its owner is said too, in the words the stage's done uses.
-    if (s && (s.humanDecides || s.checkRound || ownerWaitsLine(s, id))) out.push(statusLine(s, id));
+    if (s && (s.humanDecides || s.checkRound || ownerWaitsLine(s, id)))
+      // The critic's commands load only for a gate to report (change status runs often).
+      out.push((await import("./critic-commands.js")).statusLine(s, id));
   }
   return out;
 }
@@ -568,7 +568,7 @@ async function rescanAfterArchive(
       );
   }
   io.out(`Rescanning for ${id}'s repos: ${here.join(", ")}.`);
-  const code = await scanCommand(root, {}, io);
+  const code = await (await import("./scan-commands.js")).scanCommand(root, {}, io);
   if (away.length)
     io.out(`Not in a base clone here: ${away.join(", ")}. To add them, run: ${command(away)}`);
   return code;

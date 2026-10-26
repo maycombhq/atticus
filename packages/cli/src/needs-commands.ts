@@ -5,7 +5,7 @@ import { readKnowledge } from "@maycombhq/knowledge";
 import { findNeeds, markNeed, readNeeds, type ContextOptions, type Need } from "@maycombhq/planner";
 import type { Output } from "./commands.js";
 import { contextFlags, contextLines } from "./context-flags.js";
-import { table } from "./index-commands.js";
+import { table } from "./table.js";
 
 /**
  * What a change needs from the organisation (ADR 0101):

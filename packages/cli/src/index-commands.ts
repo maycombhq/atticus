@@ -8,17 +8,9 @@ import {
   type CatalogIndex,
 } from "@maycombhq/index";
 import type { Output } from "./commands.js";
+import { table } from "./table.js";
 
-/** Lay rows out in columns, with a header. */
-export function table(header: string[], rows: string[][]): string[] {
-  const widths = header.map((h, i) => Math.max(h.length, ...rows.map((r) => (r[i] ?? "").length)));
-  const line = (cells: string[]) =>
-    cells
-      .map((c, i) => (i === cells.length - 1 ? c : c.padEnd(widths[i]!)))
-      .join("  ")
-      .trimEnd();
-  return [line(header), ...rows.map(line)];
-}
+export { table };
 
 async function withIndex<T>(
   root: string,

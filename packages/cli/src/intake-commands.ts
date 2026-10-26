@@ -22,7 +22,7 @@ import {
 import { readDrawio, reconcile } from "@maycombhq/reconcile";
 import { readCatalog } from "@maycombhq/scanner";
 import type { Output } from "./commands.js";
-import { table } from "./index-commands.js";
+import { table } from "./table.js";
 
 /** The inbox relative to the root, with forward slashes: inputs/inbox, or .atticus/inputs/inbox when adopted. */
 const inboxRelOf = (root: string) =>

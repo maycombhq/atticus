@@ -39,6 +39,18 @@ async function yamlFiles(dir: string): Promise<string[]> {
 }
 
 /**
+ * The schemaVersion a record file's text states, when the text alone settles it: the word once,
+ * on a top-level line of its own with a plain number, and no backslash anywhere (an escape in a
+ * quoted key could spell the word another way). Anything else is undefined: read the YAML.
+ */
+function statedVersion(text: string): number | undefined {
+  if (text.includes("\\") || text.indexOf("schemaVersion") !== text.lastIndexOf("schemaVersion"))
+    return undefined;
+  const m = /^schemaVersion:[ \t]*(\d+)[ \t]*\r?$/m.exec(text);
+  return m ? Number(m[1]) : undefined;
+}
+
+/**
  * Rewrite every older record file under a catalog folder (generated and curated) at the
  * current schema version, in canonical form. Readers accept old files anyway; migrating once
  * keeps diffs clean afterwards. A file that isn't a catalog record (no known `kind`) is not
@@ -48,15 +60,23 @@ async function yamlFiles(dir: string): Promise<string[]> {
  * canonical form also writes list defaults a hand-written file left out, exactly as a scan
  * would write the record. `versions` limits it to files at those versions (each `atticus
  * upgrade` step lists its own); what it writes is always the current version.
+ *
+ * `pendingOnly` is for a question about what is to do (`atticus doctor`, the app's Set up
+ * screen): `current` stays empty, and with `versions` a file whose text alone says it is at
+ * another version is not read as YAML. `migrated` and `problems` are the same as without it.
  */
 export async function migrateCatalog(
   dir: string,
-  o: { dryRun?: boolean; versions?: readonly number[] } = {},
+  o: { dryRun?: boolean; versions?: readonly number[]; pendingOnly?: boolean } = {},
 ): Promise<MigrationResult> {
   const res: MigrationResult = { migrated: [], current: [], problems: [] };
   for (const full of await yamlFiles(dir)) {
     const file = relative(dir, full).split(sep).join("/");
     const text = await readFile(full, "utf8");
+    if (o.pendingOnly && o.versions) {
+      const stated = statedVersion(text);
+      if (stated !== undefined && !o.versions.includes(stated)) continue;
+    }
     let data: unknown;
     try {
       data = parse(text);
@@ -73,7 +93,7 @@ export async function migrateCatalog(
     const kind = (data as { kind?: unknown }).kind;
     // A Flow has its own schema version (ADR 0079); version 1 is current.
     if (version === (kind === "Flow" ? FLOW_SCHEMA_VERSION : SCHEMA_VERSION)) {
-      res.current.push(file);
+      if (!o.pendingOnly) res.current.push(file);
       continue;
     }
     if (o.versions && !(typeof version === "number" && o.versions.includes(version))) continue;

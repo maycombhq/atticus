@@ -33,7 +33,7 @@ import {
 } from "@maycombhq/testgen";
 import { createGit, type GitRunner } from "@maycombhq/workspace";
 import type { Output } from "./commands.js";
-import { table } from "./index-commands.js";
+import { table } from "./table.js";
 
 /**
  * atticus tests generate / trace / ci drift / ci snippet / ci archive-gate / glossary

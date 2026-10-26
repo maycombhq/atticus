@@ -14,7 +14,7 @@ import {
   type LessonStep,
 } from "@maycombhq/learn";
 import type { Output } from "./commands.js";
-import { table } from "./index-commands.js";
+import { table } from "./table.js";
 
 /**
  * atticus learn, atticus sandbox, atticus explain: the learning tools. Lessons run only in a

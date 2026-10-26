@@ -316,6 +316,32 @@ describe("migrateCatalog", () => {
     expect(await readFile(join(dir, SCHEMA_FILE), "utf8")).toBe(v2Schema);
   });
 
+  it("lists the same files to migrate when asked for those only, without reading every file's YAML", async () => {
+    const dir = await catalog();
+    // Files whose version the text alone can't settle are read as YAML, as always: a quoted
+    // key, a comment after the number, an escape, the word twice.
+    await mkdir(join(dir, "curated/system"), { recursive: true });
+    const odd = {
+      "curated/system/quoted.yaml": v1System.replace("schemaVersion: 1", '"schemaVersion": 2'),
+      "curated/system/comment.yaml": v1System.replace("schemaVersion: 1", "schemaVersion: 2 # old"),
+      "curated/system/escape.yaml": v1System.replace("name: Ledger", 'name: "Led\\u0067er"'),
+      "curated/system/twice.yaml": v1System.replace("name: Ledger", "name: schemaVersion"),
+      "curated/system/flow.yaml": "{schemaVersion: 2, kind: System, id: flow}\n",
+    };
+    for (const [f, text] of Object.entries(odd)) await writeFile(join(dir, f), text);
+    for (const versions of [[1], [2], [1, 2]]) {
+      const full = await migrateCatalog(dir, { dryRun: true, versions });
+      const quick = await migrateCatalog(dir, { dryRun: true, versions, pendingOnly: true });
+      expect(quick.migrated, String(versions)).toEqual(full.migrated);
+      expect(quick.problems, String(versions)).toEqual(full.problems);
+      // It doesn't list the files already current: it never reads them.
+      expect(quick.current).toEqual([]);
+    }
+    expect(
+      (await migrateCatalog(dir, { dryRun: true, versions: [2], pendingOnly: true })).migrated,
+    ).toEqual(["curated/system/comment.yaml", "curated/system/quoted.yaml", SCHEMA_FILE]);
+  });
+
   it("changes nothing on a dry run", async () => {
     const dir = await catalog();
     const res = await migrateCatalog(dir, { dryRun: true });

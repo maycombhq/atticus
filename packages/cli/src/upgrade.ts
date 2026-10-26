@@ -313,7 +313,13 @@ function catalogStep(id: string, summary: string, versions: readonly number[]): 
   const run = async (root: string, dryRun: boolean) => {
     const out: string[] = [];
     for (const sub of ["generated", "curated"]) {
-      const r = await migrateCatalog(join(catalogDirOf(root), sub), { dryRun, versions });
+      // A dry run asks only what is to do: a file at another version isn't read as YAML (doctor
+      // and the Set up screen ask this on every metarepo, of every record).
+      const r = await migrateCatalog(join(catalogDirOf(root), sub), {
+        dryRun,
+        versions,
+        pendingOnly: dryRun,
+      });
       out.push(...rel(`catalog/${sub}`, r.migrated));
     }
     return out;

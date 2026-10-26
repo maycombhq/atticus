@@ -8,7 +8,7 @@ import {
   requestFromTeam as sendRequest,
 } from "@maycombhq/initiatives";
 import type { Output } from "./commands.js";
-import { table } from "./index-commands.js";
+import { table } from "./table.js";
 
 /**
  * atticus initiative …: initiatives and guided journeys (changes across teams and vendors

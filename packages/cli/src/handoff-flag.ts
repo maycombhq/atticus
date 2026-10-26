@@ -15,6 +15,7 @@ import {
 } from "@maycombhq/core";
 import { lensRunOf } from "@maycombhq/naysayer";
 import type { Output, StepFact } from "./commands.js";
+import { isCritic, isHandoffStep } from "./handoff-steps.js";
 
 /**
  * `atticus <step> --handoff` (ADR 0086, plan 4.8): the step runs with the hand-off runtime, as
@@ -30,37 +31,8 @@ import type { Output, StepFact } from "./commands.js";
  * question), "stopped" (exit 1) or "failed" (exit 2 or more, or it threw), with its messages.
  */
 
-/** The AI steps that take --handoff. */
-const STEPS = new Set([
-  "scan survey",
-  "scan verify",
-  "spec draft",
-  "knowledge scan",
-  // ADR 0087: the feature and architecture stages (plan stories already takes it).
-  "change feature",
-  "change architecture",
-  // ADR 0113: the fast path's one step.
-  "change small",
-  "change draft",
-  "plan stories",
-  // ADR 0101: what a change needs from the organisation.
-  "change needs",
-  "knowledge find",
-  "knowledge ask",
-]);
-
-export const isHandoffStep = (group: string | undefined, command: string | undefined) =>
-  STEPS.has(`${group ?? ""} ${command ?? ""}`) ||
-  isCritic(group, command) ||
-  // ADR 0124 §4: atticus map <repo>, the batched read, one batch per hand-off.
-  (group === "map" && !!command && !command.startsWith("-"));
-
-/**
- * `atticus critic <change>` (ADR 0106 addendum): its AI lenses wait together, one run each, so
- * --handoff offers them one at a time, oldest first, and each resume offers the next.
- */
-const isCritic = (group: string | undefined, command: string | undefined) =>
-  group === "critic" && !!command && command !== "stats";
+// The steps that take --handoff, and the critic among them (handoff-steps.ts loads nothing).
+export { isHandoffStep };
 
 /**
  * The stages (ADR 0115): after a draft passes the rules, the critic's AI lenses wait together,
