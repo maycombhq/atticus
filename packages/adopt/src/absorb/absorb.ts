@@ -1,7 +1,7 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { stringify } from "yaml";
-import { loadOrgPack, RecordId, type Sources } from "@maycombhq/core";
+import { loadOrgPack, LOCAL_ONLY, RecordId, type Sources } from "@maycombhq/core";
 import type { GitRunner } from "@maycombhq/workspace";
 import type { z } from "zod";
 import { AdoptError } from "../errors.js";
@@ -133,7 +133,16 @@ export async function absorb(
     const theirs = await loadOrgPack(join(dir, ...fmt.orgPack.split("/")));
     fmt.openspec = theirs.sources.layout.openspec;
   }
-  const files = await listFiles(dir, { skipNames: new Set([".git", "node_modules"]) });
+  // This machine's own files inside another metarepo's .atticus/ (LOCAL_ONLY: the kept parses,
+  // logs, locks, me.yaml) are its state, not anything to translate: they are left out, as Git
+  // leaves them out of the repo they sit in.
+  const local = (f: string) =>
+    /(^|\/)\.atticus\//.test(f) &&
+    (/(^|\/)\.atticus\/(\.gitignore|me\.yaml)$/.test(f) ||
+      LOCAL_ONLY.some((l) => l.endsWith("/") && f.includes(`/.atticus/${l}`)));
+  const files = (await listFiles(dir, { skipNames: new Set([".git", "node_modules"]) })).filter(
+    (f) => !local(`/${f}`),
+  );
   const read = async (f: string) => (await readFile(join(dir, f), "utf8")).replace(/\r\n/g, "\n");
 
   const items: AbsorbItem[] = [];

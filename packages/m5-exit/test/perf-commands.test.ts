@@ -13,6 +13,11 @@ import { writeTrialEstate, type TrialEstate } from "@maycombhq/synth";
  * items and questions). The app's screens have their own budgets in perf.test.ts; these are
  * the command line's.
  *
+ * These budgets are wall-clock, so they are only meaningful when nothing else is running: the
+ * root `pnpm test` runs every other package first and this one on its own afterwards, because
+ * measured inside the parallel run on a 2-CPU machine the same commands took 30 s, 7.7 s and
+ * 3.8 s — the check's own load, not the commands.
+ *
  * Each is measured twice: the first run after a scan, which parses every record file, and the
  * run after that, which reuses the parses kept in `.atticus/cache/` (record-cache.ts). The
  * second is what a person feels: the first command of a session pays the parse, every one after
@@ -40,7 +45,16 @@ const BUDGET = {
 
 let top: string;
 let estate: TrialEstate;
-const timings: Record<string, number> = {};
+// The measurements this file prints, and the counts of the estate they were taken on. Named
+// keys, not an index signature, so the saving check below reads numbers rather than maybes.
+const timings: Record<string, number> = {
+  nextFirstMs: 0,
+  nextMs: 0,
+  changeStatusFirstMs: 0,
+  changeStatusMs: 0,
+  questionsListFirstMs: 0,
+  questionsListMs: 0,
+};
 
 /** Run the built command line against the estate; the fastest of `runs`, in milliseconds. */
 function fastest(args: string[], runs: number, cold?: () => void): number {
@@ -110,8 +124,8 @@ describe("the commands a person runs all day", () => {
     // holds however loaded the machine is: a run that reuses the kept parses is well clear of
     // the first. Before the kept parses the two cost the same, so the ratio was about 1.
     for (const [first, warm, what] of [
-      [timings.nextFirstMs, timings.nextMs, "next"],
-      [timings.changeStatusFirstMs, timings.changeStatusMs, "change status"],
+      [timings.nextFirstMs ?? 0, timings.nextMs ?? 0, "next"],
+      [timings.changeStatusFirstMs ?? 0, timings.changeStatusMs ?? 0, "change status"],
     ] as const)
       expect(warm, `${what}: ${warm} ms against ${first} ms for the first run`).toBeLessThan(
         first * 0.8,

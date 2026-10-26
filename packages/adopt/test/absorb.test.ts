@@ -25,9 +25,13 @@ beforeAll(async () => {
   await init(root, { name: "shop", platform: "shop", openspec: "folders" });
 });
 
-/** Every file of the source is in some item (file, folder item, or the code item's count). */
+/**
+ * Every file of the source is in some item (file, folder item, or the code item's count), apart
+ * from this machine's own files inside a metarepo's `.atticus/` (LOCAL_ONLY: the kept parses,
+ * logs, locks, me.yaml), which absorb leaves out because they are its state, not its content.
+ */
 async function expectEveryFileListed(src: string, r: AbsorbResult) {
-  const files = await listFiles(src);
+  const files = (await listFiles(src)).filter((f) => !/(^|\/)\.atticus\//.test(`/${f}`));
   const covered = (f: string) =>
     r.items.some((i) => i.kind !== "code" && (i.path === f || f.startsWith(`${i.path}/`)));
   const rest = files.filter((f) => !covered(f));

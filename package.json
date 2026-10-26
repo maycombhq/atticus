@@ -11,7 +11,7 @@
   "scripts": {
     "build": "turbo run build",
     "typecheck": "turbo run typecheck",
-    "test": "turbo run test",
+    "test": "turbo run test --filter=!@maycombhq/m5-exit && turbo run test --filter=@maycombhq/m5-exit --concurrency=1",
     "lint": "eslint . && prettier --check . && node scripts/check-core-neutral.mjs && node scripts/check-portable-paths.mjs && node scripts/check-deps.mjs && node scripts/check-docs.mjs && node scripts/check-surfaces.mjs && node scripts/bundle/check-licences.mjs",
     "format": "prettier --write .",
     "denylist": "node scripts/check-denylist.mjs",
