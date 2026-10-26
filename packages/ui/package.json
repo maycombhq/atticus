@@ -18,7 +18,7 @@
     "dist-lib"
   ],
   "scripts": {
-    "build": "vite build && tsc -p tsconfig.lib.json",
+    "build": "node ../../scripts/clean-dir.mjs dist && vite build && tsc -p tsconfig.lib.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --config ../../vitest.shared.mjs --fsModuleCachePath=node_modules/.vitest-cache --testTimeout=30000"
   },
