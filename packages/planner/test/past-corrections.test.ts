@@ -116,8 +116,13 @@ const BEFORE = {
   // there) and B-tasks grouping the fraud check's call-out and branch into one task (the source's
   // two task lines became one that lists the steps it covers); and after B-place's self-check line;
   // and after B-task-knowledge: the fraud check's task has knowledge of its own (vendor
-  // onboarding), so the prompt gains the task-knowledge source and its one criteria rule
-  stories: "bb653ac6c0623666d73a9c338a941d508d96ce472263beed9a668c27a547107a",
+  // onboarding), so the prompt gains the task-knowledge source and its one criteria rule;
+  // and after the feature stage began writing OpenSpec's proposal.md (ADR 0006 addendum,
+  // 2026-10-25): the estate index ranks with the change folder's words, so two of its lines
+  // (system forge, endpoint forge-orders.get-orders-orderid) changed places (diffed: only that).
+  // This pin is both changes at once: B-task-knowledge and B-short landed in the same merge
+  // (diffed: this prompt without the task-knowledge source and its rule is B-short's pin exactly).
+  stories: "b272f6a028777c349503baaa8061641488d58dc13c5e4d6e4e377bc4fca4e46f",
 };
 
 const ARCHIVE = join(FIX, "corrections/changes/archive");

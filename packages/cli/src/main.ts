@@ -524,6 +524,7 @@ Usage:
   atticus change return <id> --reason "<why>" --approve  Close the hand-off PR and return the change to the product owner
   atticus change archive <id> [--no-rescan]  Archive a released change and rescan its repos
   atticus change list [--json]         Every change and its state
+  atticus change export <change> [ado|jira] [--format ado|jira] [--out file.csv] [--area path] [--iteration path]  The change's stories and tasks as a work-item import file: Azure DevOps' CSV (a User Story per story, its Tasks under it, criteria in Acceptance Criteria) or Jira's; a person imports it
   atticus change conflicts [--json]    Open changes that touch the same systems, records or repos
   atticus change conform <change> [--repo r] [--ref branch] [--task t] [--latest] [--json]  Does the code do what the design says: scan the branch's commit and check it against the target flows; what is missing, still there or not in the design becomes findings on the conform gate (--latest shows the newest check, scanning nothing)
   atticus change estimate <change> [--json]  The change's estimate: its size from the target flows, the org pack's ranges summed, and what drives it, each with its source; never a number nobody stands behind
@@ -837,6 +838,8 @@ const OPTIONS = {
   focus: { type: "string" },
   format: { type: "string" },
   out: { type: "string" },
+  area: { type: "string" },
+  iteration: { type: "string" },
   port: { type: "string" },
   open: { type: "boolean" },
   "show-token": { type: "boolean" },
@@ -2496,6 +2499,23 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
       );
     }
     if (command === "list") return changeList(root, { json }, io);
+    if (command === "export") {
+      // ADR 0124 addendum B-short: `atticus change export <change> [ado|jira]`.
+      const { changeExportCommand } = await import("./export-commands.js");
+      const named = positionals[3];
+      const fmt = str(values.format) ?? (named === "ado" || named === "jira" ? named : undefined);
+      return changeExportCommand(
+        root,
+        arg,
+        {
+          ...(fmt ? { format: fmt } : {}),
+          ...(str(values.out) ? { out: str(values.out)! } : {}),
+          ...(str(values.area) ? { areaPath: str(values.area)! } : {}),
+          ...(str(values.iteration) ? { iterationPath: str(values.iteration)! } : {}),
+        },
+        io,
+      );
+    }
     if (command === "conflicts") return changeConflicts(root, { json }, io);
     if (command === "conform") {
       if (!arg) {

@@ -13,6 +13,7 @@ export * from "./adapters.js";
 export * from "./draft.js";
 export * from "./stages/index.js";
 export * from "./needs.js";
+export * from "./export-work-items.js";
 export * from "./engine.js";
 export * from "./gaps.js";
 export * from "./task-context.js";

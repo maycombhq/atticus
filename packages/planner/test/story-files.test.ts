@@ -514,7 +514,7 @@ describe("a story's implementation steps follow the places in the code that chan
     ]);
   });
 
-  it("the story file lists them under Implementation steps, tasks staying the unit a developer runs", async () => {
+  it("B-short: the places are said once, in each task (no Implementation steps list beside them)", async () => {
     const dir = await root();
     expect(
       (await featureStage(dir, CHANGE, { runtime: assistant(fixture("placed.yaml")), now: NOW }))
@@ -536,22 +536,18 @@ describe("a story's implementation steps follow the places in the code that chan
       join(dir, "openspec/changes", CHANGE, "stories/s1-place-order.md"),
       "utf8",
     );
-    const section = /## Implementation steps\n([\s\S]*?)\n## /.exec(story)?.[1] ?? "";
-    expect(section).toContain(
-      `1. ${OC} (lines 4 and 9), task 1.1: adds the call-out step after this code: Northwind Pay screens the order for fraud.`,
+    // storySteps still orders the places (the stories bench reads it), but the story file says
+    // each place once, on the task that changes it.
+    expect(story).not.toContain("## Implementation steps");
+    const tasks = /## Tasks\n([\s\S]*?)\n## /.exec(story)?.[1] ?? "";
+    expect(tasks).toContain(`- Files to touch: ${OC} (lines 4 and 9)`);
+    expect(tasks).toContain("forge-orders:src/main/java/forge/orders/Order.java (line 14)");
+    expect(tasks).toContain(
+      "forge-orders:src/main/resources/db/migration/V4__add_fraud_verdict.sql (new migration)",
     );
-    expect(section).toContain(
-      "5. forge-orders:src/main/java/forge/orders/Order.java (line 14), task 1.3: the fields and columns change here: where table forge-orders-db.orders and its columns are.",
-    );
-    expect(section).toContain(
-      "6. forge-orders:src/main/resources/db/migration/V4__add_fraud_verdict.sql (new), task 1.3: the new migration V4__add_fraud_verdict.sql adds fraud_verdict to forge-orders-db.orders.",
-    );
-    // It comes after Scope and before the acceptance criteria; the tasks are still there.
-    expect(story.indexOf("## Scope")).toBeLessThan(story.indexOf("## Implementation steps"));
-    expect(story.indexOf("## Implementation steps")).toBeLessThan(
-      story.indexOf("## Acceptance criteria"),
-    );
-    expect(story).toContain("### Task 1.3: Change the write step");
+    expect(story.indexOf("## Scope")).toBeLessThan(story.indexOf("## Tasks"));
+    expect(story.indexOf("## Tasks")).toBeLessThan(story.indexOf("## Acceptance criteria"));
+    expect(story).toContain("### Task 1.2: Change the write step");
   });
 });
 

@@ -1,0 +1,46 @@
+name: OpenSpec compatibility
+
+# ADR 0006 addendum ("Compatibility"): the adapter's suite against the newest OpenSpec release and
+# the newest beta, weekly, so a breaking OpenSpec change shows up as a failed job here instead of
+# a broken install. The tests themselves stay offline and pinned (1.14.0); only this job installs
+# OpenSpec from the registry, into a folder of its own, and points the adapter at it
+# (ATTICUS_OPENSPEC_BIN). A failure is a reason to look, never a release block by itself.
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  adapter:
+    strategy:
+      fail-fast: false
+      matrix:
+        tag: [latest, beta]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @maycombhq/openspec-adapter... build
+      - name: Install OpenSpec ${{ matrix.tag }} apart
+        id: openspec
+        run: |
+          mkdir -p "$RUNNER_TEMP/openspec"
+          cd "$RUNNER_TEMP/openspec"
+          npm init -y > /dev/null
+          npm install --no-audit --no-fund "@fission-ai/openspec@${{ matrix.tag }}" || {
+            echo "No ${{ matrix.tag }} release of OpenSpec to test"; echo "skip=true" >> "$GITHUB_OUTPUT"; exit 0; }
+          echo "bin=$RUNNER_TEMP/openspec/node_modules/@fission-ai/openspec/bin/openspec.js" >> "$GITHUB_OUTPUT"
+          node "$RUNNER_TEMP/openspec/node_modules/@fission-ai/openspec/bin/openspec.js" --version
+      - name: The adapter's suite against it
+        if: steps.openspec.outputs.skip != 'true'
+        env:
+          ATTICUS_OPENSPEC_BIN: ${{ steps.openspec.outputs.bin }}
+        run: pnpm --filter @maycombhq/openspec-adapter test

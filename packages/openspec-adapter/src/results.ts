@@ -52,6 +52,10 @@ export const ArtifactInstructions = z.looseObject({
   template: z.string(),
   dependencies: z.array(z.unknown()),
   unlocks: z.array(z.string()),
+  /** openspec/config.yaml's context, for every artifact (OpenSpec 1.13+). */
+  context: z.string().optional(),
+  /** openspec/config.yaml's rules for this artifact. */
+  rules: z.array(z.string()).optional(),
 });
 export type ArtifactInstructions = z.infer<typeof ArtifactInstructions>;
 

@@ -10,11 +10,14 @@ import { join } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import {
+  ARTIFACT_STAGE,
   createOpenSpec,
   OPENSPEC_PINNED,
   ORG_FLOW,
   ORG_FLOW_ARTIFACTS,
+  ORG_FLOW_VERSION,
   orgFlowSchema,
+  orgFlowVersionOf,
   setDefaultSchema,
   writeOrgFlowSchema,
   type OpenSpec,
@@ -78,8 +81,10 @@ describe("OpenSpec stable core contract", () => {
   it(
     "is the pinned version and supported",
     async () => {
-      expect(await os.version()).toBe(OPENSPEC_PINNED);
-      expect(await os.assertSupported()).toBe(OPENSPEC_PINNED);
+      // The weekly compatibility job runs this suite against a newer OpenSpec (ATTICUS_OPENSPEC_BIN).
+      const pinned = process.env.ATTICUS_OPENSPEC_BIN ? await os.version() : OPENSPEC_PINNED;
+      expect(await os.version()).toBe(pinned);
+      expect(await os.assertSupported()).toBe(pinned);
     },
     T,
   );
@@ -287,45 +292,116 @@ describe("org-flow schema", () => {
       const s = await os.status("add-transfer-limit");
       const ready = s.artifacts.filter((a) => a.status === "ready").map((a) => a.id);
       expect(ready).toEqual(["proposal"]);
+      // Version 2: Atticus 2's stages, in their order (feature → architecture → stories).
       const req = Object.fromEntries(s.artifacts.map((a) => [a.id, a.requires]));
       expect(req).toEqual({
         proposal: [],
-        specs: ["proposal"],
-        interfaces: ["proposal"],
-        mappings: ["interfaces"],
-        data: ["interfaces"],
-        design: ["specs", "mappings", "data"],
+        design: ["proposal"],
         stories: ["design"],
+        specs: ["stories"],
         tasks: ["stories"],
-        snow: ["tasks"],
+      });
+      expect(Object.keys(req)).toEqual(["proposal", "design", "stories", "specs", "tasks"]);
+      expect(ARTIFACT_STAGE).toEqual({
+        proposal: "feature",
+        design: "architecture",
+        stories: "stories",
+        specs: "stories",
+        tasks: "stories",
       });
     },
     T,
   );
 
   it(
-    "unlocks specs and interfaces once the proposal exists",
+    "unlocks the design once the proposal exists, and the stories after it",
     async () => {
       await writeChange(root, "add-transfer-limit", { "proposal.md": PROPOSAL });
-      const s = await os.status("add-transfer-limit");
-      expect(s.artifacts.filter((a) => a.status === "ready").map((a) => a.id)).toEqual([
-        "specs",
-        "interfaces",
-      ]);
+      let s = await os.status("add-transfer-limit");
+      expect(s.artifacts.filter((a) => a.status === "ready").map((a) => a.id)).toEqual(["design"]);
+      await writeChange(root, "add-transfer-limit", { "design.md": "# Design\n" });
+      s = await os.status("add-transfer-limit");
+      expect(s.artifacts.filter((a) => a.status === "ready").map((a) => a.id)).toEqual(["stories"]);
     },
     T,
   );
 
   it(
-    "serves Atticus's instructions and templates",
+    "serves Atticus's instructions and templates, with the config's context and rules",
     async () => {
-      const i = await os.instructions("interfaces", "add-transfer-limit");
-      expect(i.outputPath).toBe("interfaces.md");
-      expect(i.instruction).toContain("pattern code");
-      expect(i.template).toContain("| Interface id |");
+      const cfg = join(root, "openspec/config.yaml");
+      await writeFile(
+        cfg,
+        (await readFile(cfg, "utf8")) +
+          "context: |\n  Forge sells parts.\nrules:\n  stories:\n    - Keep each story under 150 lines\n",
+        "utf8",
+      );
+      const i = await os.instructions("design", "add-transfer-limit");
+      expect(i.outputPath).toBe("design.md");
+      expect(i.instruction).toContain("Rollout\nand rollback");
+      expect(i.template).toContain("## Rollout and rollback");
+      const st = await os.instructions("stories", "add-transfer-limit");
+      expect(st.context).toContain("Forge sells parts.");
+      expect(st.rules).toEqual(["Keep each story under 150 lines"]);
     },
     T,
   );
+
+  it(
+    "validates and archives an Atticus 2 change: the specs grow, a second change modifies them",
+    async () => {
+      await writeChange(root, "add-transfer-limit", {
+        "stories.md": "# Stories\n",
+        "specs/transfers/spec.md": SPEC,
+        "tasks.md": "# Tasks\n\n## ledger-api\n\n- [x] 1.1 Add the limit (story s1)\n",
+      });
+      const s = await os.status("add-transfer-limit");
+      expect(s.isComplete).toBe(true);
+      expect(
+        (await os.validate({ item: "add-transfer-limit", strict: true })).items[0]!.valid,
+      ).toBe(true);
+      await os.archive("add-transfer-limit");
+      expect((await os.listSpecs()).map((x) => [x.id, x.requirementCount])).toEqual([
+        ["transfers", 1],
+      ]);
+      await os.newChange("raise-transfer-limit");
+      await writeChange(root, "raise-transfer-limit", {
+        "proposal.md": PROPOSAL,
+        "specs/transfers/spec.md": SPEC.replace("ADDED", "MODIFIED").replace(
+          "rejected with reason LIMIT_EXCEEDED\n",
+          "rejected with reason LIMIT_EXCEEDED\n\n#### Scenario: Premium limit\n- **WHEN** a premium account moves 20000\n- **THEN** the transfer is accepted\n",
+        ),
+        "tasks.md": "## ledger-api\n\n- [x] 1.1 Raise the limit (story s1)\n",
+      });
+      expect(
+        (await os.validate({ item: "raise-transfer-limit", strict: true })).items[0]!.valid,
+      ).toBe(true);
+      expect((await os.archive("raise-transfer-limit")).specsUpdated).toBe(true);
+      const spec = await os.showSpec("transfers");
+      expect(spec.requirements[0]!.scenarios.map((x) => x.name)).toEqual([
+        "Over the limit",
+        "Premium limit",
+      ]);
+    },
+    T,
+  );
+
+  it("knows the version a metarepo installed", async () => {
+    expect(await orgFlowVersionOf(root)).toBe(ORG_FLOW_VERSION);
+    expect(ORG_FLOW_VERSION).toBe(2);
+    const old = await mkdtemp(join(tmpdir(), "atticus-orgflow-v1-"));
+    expect(await orgFlowVersionOf(old)).toBeUndefined();
+    await mkdir(join(old, "openspec/schemas/org-flow/templates"), { recursive: true });
+    await writeFile(
+      join(old, "openspec/schemas/org-flow/schema.yaml"),
+      "name: org-flow\nversion: 1\n",
+    );
+    await writeFile(join(old, "openspec/schemas/org-flow/templates/snow.md"), "# snow\n");
+    expect(await orgFlowVersionOf(old)).toBe(1);
+    await writeOrgFlowSchema(old);
+    expect(await orgFlowVersionOf(old)).toBe(2);
+    expect(existsSync(join(old, "openspec/schemas/org-flow/templates/snow.md"))).toBe(false);
+  });
 
   it("schema.yaml has only fields OpenSpec's schema format allows", () => {
     const s = orgFlowSchema();

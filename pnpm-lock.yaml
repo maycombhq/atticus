@@ -922,6 +922,9 @@ importers:
       '@maycombhq/naysayer':
         specifier: workspace:*
         version: link:../naysayer
+      '@maycombhq/openspec-adapter':
+        specifier: workspace:*
+        version: link:../openspec-adapter
       '@maycombhq/scanner':
         specifier: workspace:*
         version: link:../scanner

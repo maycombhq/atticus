@@ -55,9 +55,13 @@ export function openspecEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.Proce
  * addendum D-npm2) that carries OpenSpec bundled as a program of its own at
  * vendor/@fission-ai/openspec/bin/openspec.js, three folders up from this module's place
  * (packages/openspec-adapter/dist/); elsewhere (a checkout, the offline bundle) it is the pinned
- * package in node_modules. `here` is this module's URL (a test passes another).
+ * package in node_modules. ATTICUS_OPENSPEC_BIN names another script instead: the weekly
+ * compatibility job runs the adapter's suite against the newest OpenSpec with it (ADR 0006
+ * addendum). `here` is this module's URL (a test passes another).
  */
 export function bundledOpenSpecBin(here: string = import.meta.url): string {
+  const other = process.env.ATTICUS_OPENSPEC_BIN?.trim();
+  if (other) return other;
   const shipped = fileURLToPath(
     new URL("../../../vendor/@fission-ai/openspec/bin/openspec.js", here),
   );

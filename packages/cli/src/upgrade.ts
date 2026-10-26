@@ -1,4 +1,4 @@
-import { cp, mkdir, readFile, stat } from "node:fs/promises";
+import { cp, mkdir, readdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { parse, stringify } from "yaml";
 import {
@@ -9,13 +9,19 @@ import {
 import { readPackFiles, STARTER_REVIEW_PATH, starterReviewText } from "@maycombhq/naysayer";
 import { metarepoOrigin } from "@maycombhq/changes";
 import {
+  ORG_FLOW_VERSION,
+  orgFlowVersionOf,
   readStoreMarker,
   STORE_MARKER,
   storeIdOf,
+  writeOrgFlowSchema,
   writeStoreMarker,
 } from "@maycombhq/openspec-adapter";
+import { openspecRootOf, rewriteStories } from "@maycombhq/planner";
 import {
   catalogDirOf,
+  changesDirOf,
+  changesRelOf,
   ensureLocalIgnore,
   isAdopted,
   layoutOf,
@@ -230,7 +236,68 @@ export const MIGRATIONS: Migration[] = [
       return [rel];
     },
   },
+  {
+    // ADR 0006 addendum (2026-10-25): org-flow version 2 lists Atticus 2's artifacts (proposal,
+    // design, stories, specs, tasks), so `openspec status` and `validate` agree with Atticus.
+    id: "org-flow-v2",
+    summary:
+      "OpenSpec's org-flow schema at version 2: the artifacts Atticus 2 writes, in its stage order (ADR 0006 addendum)",
+    async pending(root) {
+      const os = openspecRootOf(root);
+      if (!os) return [];
+      const v = await orgFlowVersionOf(os);
+      return v !== undefined && v < ORG_FLOW_VERSION ? [orgFlowRel(root)] : [];
+    },
+    async apply(root) {
+      const os = openspecRootOf(root);
+      if (!os) return [];
+      await writeOrgFlowSchema(os);
+      return [orgFlowRel(root)];
+    },
+  },
+  {
+    // ADR 0124 addendum B-short: a change's stories written again from its kept answer, no model
+    // call: short story files, task prompts in tasks/, tasks numbered per story, OpenSpec specs.
+    id: "stories-b-short",
+    summary:
+      "Each change's stories in the short form, with OpenSpec spec deltas and a proposal, from the kept stories answer (no model call; ADR 0124 addendum B-short)",
+    async pending(root) {
+      return (await longStories(root)).map((c) => `${changesRelOf(root)}/${c}/stories`);
+    },
+    async apply(root) {
+      const out: string[] = [];
+      for (const c of await longStories(root))
+        for (const f of await rewriteStories(root, c).catch(() => [] as string[]))
+          out.push(`${changesRelOf(root)}/${c}/${f}`);
+      return out;
+    },
+  },
 ];
+
+/** The org-flow schema file, metarepo-relative. */
+const orgFlowRel = (root: string) =>
+  `${layoutOf(root).openspec.replace(/\/+$/, "")}/schemas/org-flow/schema.yaml`;
+
+/** The changes in flight whose story files are in the long form (a prompt pasted per task). */
+async function longStories(root: string): Promise<string[]> {
+  const out: string[] = [];
+  const dir = changesDirOf(root);
+  for (const c of (await readdir(dir).catch(() => [] as string[])).sort()) {
+    if (c === "archive") continue;
+    if (!(await exists(join(dir, c, "stage", "stories-answer.yaml")))) continue;
+    for (const f of await readdir(join(dir, c, "stories")).catch(() => [] as string[]))
+      if (
+        f.endsWith(".md") &&
+        (await readFile(join(dir, c, "stories", f), "utf8")).includes(
+          "Prompt for Copilot or Claude Code:",
+        )
+      ) {
+        out.push(c);
+        break;
+      }
+  }
+  return out;
+}
 
 /** A .gitignore line that ignores the whole of .atticus/, the stamp with it. */
 const WHOLE_FOLDER = /^\/?\.atticus\/?[ \t]*$/m;
