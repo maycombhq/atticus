@@ -119,8 +119,7 @@
           },
           {
             "name": "new",
-            "description": "Start a change: /new <what it is>, then pick its type and write its brief",
-            "when": "config.atticus.fullUi"
+            "description": "Start a change: /new <what it is>, then pick its type and write its brief"
           },
           {
             "name": "survey",
@@ -139,28 +138,23 @@
           },
           {
             "name": "diagram",
-            "description": "A repo on the Architecture canvas, or one of its flows: /diagram [repo] [flow]",
-            "when": "config.atticus.fullUi"
+            "description": "A repo on the Architecture canvas, or one of its flows: /diagram [repo] [flow]"
           },
           {
             "name": "changemap",
-            "description": "A change's picture: what it touches, marked + new, ◇ changed or ✕ retired: /changemap <change>",
-            "when": "config.atticus.fullUi"
+            "description": "A change's picture: what it touches, marked + new, ◇ changed or ✕ retired: /changemap <change>"
           },
           {
             "name": "estimate",
-            "description": "A change's estimate: its size from the target flows, the org pack's ranges and what drives it: /estimate <change>",
-            "when": "config.atticus.fullUi"
+            "description": "A change's estimate: its size from the target flows, the org pack's ranges and what drives it: /estimate <change>"
           },
           {
             "name": "ask",
-            "description": "Ask the catalog a plain question: /ask <question>",
-            "when": "config.atticus.fullUi"
+            "description": "Ask the catalog a plain question: /ask <question>"
           },
           {
             "name": "run",
-            "description": "Any atticus command: /run <command> [arguments] (every command, from atticus commands)",
-            "when": "config.atticus.fullUi"
+            "description": "Any atticus command: /run <command> [arguments] (every command, from atticus commands)"
           }
         ]
       }
@@ -732,27 +726,28 @@
           "id": "atticus.knowledge",
           "name": "Knowledge",
           "visibility": "collapsed",
-          "when": "atticus.hasMetarepo && !atticus.cliMissing && config.atticus.fullUi",
+          "when": "atticus.hasMetarepo && !atticus.cliMissing",
           "initialSize": 1
         },
         {
           "id": "atticus.repos",
           "name": "Repos",
-          "when": "atticus.hasMetarepo && !atticus.cliMissing && config.atticus.fullUi",
+          "visibility": "collapsed",
+          "when": "atticus.hasMetarepo && !atticus.cliMissing",
           "initialSize": 3
         },
         {
           "id": "atticus.catalog",
           "name": "Catalog",
           "visibility": "collapsed",
-          "when": "atticus.hasMetarepo && !atticus.cliMissing && config.atticus.fullUi",
+          "when": "atticus.hasMetarepo && !atticus.cliMissing",
           "initialSize": 1
         },
         {
           "id": "atticus.runs",
           "name": "Model runs",
           "visibility": "collapsed",
-          "when": "atticus.hasMetarepo && !atticus.cliMissing && config.atticus.fullUi",
+          "when": "atticus.hasMetarepo && !atticus.cliMissing",
           "initialSize": 1
         }
       ]
@@ -821,7 +816,7 @@
         },
         {
           "command": "atticus.runCommand",
-          "when": "view == atticus.view && config.atticus.fullUi",
+          "when": "view == atticus.view",
           "group": "navigation@1"
         },
         {
@@ -831,17 +826,17 @@
         },
         {
           "command": "atticus.setup",
-          "when": "view == atticus.view && config.atticus.fullUi",
+          "when": "view == atticus.view",
           "group": "more"
         },
         {
           "command": "atticus.digest",
-          "when": "view == atticus.view && config.atticus.fullUi",
+          "when": "view == atticus.view",
           "group": "more"
         },
         {
           "command": "atticus.upgrade",
-          "when": "view == atticus.view && config.atticus.fullUi",
+          "when": "view == atticus.view",
           "group": "more"
         },
         {
@@ -963,7 +958,7 @@
         },
         {
           "command": "atticus.repoCommand",
-          "when": "view == atticus.repos && viewItem == atticus.repo && config.atticus.fullUi",
+          "when": "view == atticus.repos && viewItem == atticus.repo",
           "group": "inline"
         },
         {
@@ -973,22 +968,22 @@
         },
         {
           "command": "atticus.repoCommand",
-          "when": "view == atticus.repos && viewItem == atticus.repo && config.atticus.fullUi",
+          "when": "view == atticus.repos && viewItem == atticus.repo",
           "group": "atticus"
         },
         {
           "command": "atticus.changeCommand",
-          "when": "view == atticus.changes && viewItem == atticus.change && config.atticus.fullUi",
+          "when": "view == atticus.changes && viewItem == atticus.change",
           "group": "inline"
         },
         {
           "command": "atticus.changeCommand",
-          "when": "view == atticus.changes && viewItem == atticus.change && config.atticus.fullUi",
+          "when": "view == atticus.changes && viewItem == atticus.change",
           "group": "atticus"
         },
         {
           "command": "atticus.runTask",
-          "when": "view == atticus.changes && viewItem == atticus.task && config.atticus.fullUi",
+          "when": "view == atticus.changes && viewItem == atticus.task",
           "group": "inline"
         },
         {
@@ -1343,155 +1338,11 @@
           "when": "config.atticus.fullUi"
         },
         {
-          "command": "atticus.ask",
-          "when": "config.atticus.fullUi"
-        },
-        {
-          "command": "atticus.diagram",
-          "when": "config.atticus.fullUi"
-        },
-        {
-          "command": "atticus.changeDiagram",
-          "when": "config.atticus.fullUi"
-        },
-        {
-          "command": "atticus.estimate",
-          "when": "config.atticus.fullUi"
-        },
-        {
-          "command": "atticus.promptHistory",
-          "when": "config.atticus.fullUi"
-        },
-        {
-          "command": "atticus.openApp",
-          "when": "config.atticus.fullUi"
-        },
-        {
-          "command": "atticus.refresh",
-          "when": "config.atticus.fullUi"
-        },
-        {
-          "command": "atticus.runCommand",
-          "when": "config.atticus.fullUi"
-        },
-        {
-          "command": "atticus.attachToChange",
-          "when": "config.atticus.fullUi"
-        },
-        {
-          "command": "atticus.watchChange",
-          "when": "config.atticus.fullUi"
-        },
-        {
-          "command": "atticus.addToKnowledge",
-          "when": "config.atticus.fullUi"
-        },
-        {
           "command": "atticus.scanAll",
           "when": "config.atticus.fullUi"
         },
         {
-          "command": "atticus.estateJoin",
-          "when": "config.atticus.fullUi"
-        },
-        {
-          "command": "atticus.workspaceSync",
-          "when": "config.atticus.fullUi"
-        },
-        {
-          "command": "atticus.sourcesSync",
-          "when": "config.atticus.fullUi"
-        },
-        {
-          "command": "atticus.knowledgeScan",
-          "when": "config.atticus.fullUi"
-        },
-        {
-          "command": "atticus.knowledgeAsk",
-          "when": "config.atticus.fullUi"
-        },
-        {
-          "command": "atticus.upgrade",
-          "when": "config.atticus.fullUi"
-        },
-        {
-          "command": "atticus.setup",
-          "when": "config.atticus.fullUi"
-        },
-        {
-          "command": "atticus.digest",
-          "when": "config.atticus.fullUi"
-        },
-        {
-          "command": "atticus.createMetarepo",
-          "when": "config.atticus.fullUi"
-        },
-        {
-          "command": "atticus.adoptRepo",
-          "when": "config.atticus.fullUi"
-        },
-        {
-          "command": "atticus.practiceSandbox",
-          "when": "config.atticus.fullUi"
-        },
-        {
-          "command": "atticus.addRepos",
-          "when": "config.atticus.fullUi"
-        },
-        {
-          "command": "atticus.installCopilot",
-          "when": "config.atticus.fullUi"
-        },
-        {
-          "command": "atticus.absorb",
-          "when": "config.atticus.fullUi"
-        },
-        {
-          "command": "atticus.absorbAccept",
-          "when": "config.atticus.fullUi"
-        },
-        {
-          "command": "atticus.onboardRepo",
-          "when": "config.atticus.fullUi"
-        },
-        {
-          "command": "atticus.addKnowledge",
-          "when": "config.atticus.fullUi"
-        },
-        {
           "command": "atticus.acceptCatalog",
-          "when": "config.atticus.fullUi"
-        },
-        {
-          "command": "atticus.openOrgPackOwner",
-          "when": "config.atticus.fullUi"
-        },
-        {
-          "command": "atticus.addWiki",
-          "when": "config.atticus.fullUi"
-        },
-        {
-          "command": "atticus.searchWikis",
-          "when": "config.atticus.fullUi"
-        },
-        {
-          "command": "atticus.keepFound",
-          "when": "config.atticus.fullUi"
-        },
-        {
-          "command": "atticus.findNeeds",
-          "when": "config.atticus.fullUi"
-        },
-        {
-          "command": "atticus.raiseNeeds",
-          "when": "config.atticus.fullUi"
-        },
-        {
-          "command": "atticus.draftOrgPack",
-          "when": "config.atticus.fullUi"
-        },
-        {
-          "command": "atticus.reviewUnverified",
           "when": "config.atticus.fullUi"
         }
       ],
@@ -1521,42 +1372,42 @@
         {
           "command": "atticus.absorb",
           "group": "3_bring@1",
-          "when": "atticus.hasMetarepo && !atticus.cliMissing && config.atticus.fullUi"
+          "when": "atticus.hasMetarepo && !atticus.cliMissing"
         },
         {
           "command": "atticus.absorbAccept",
           "group": "3_bring@2",
-          "when": "atticus.hasMetarepo && !atticus.cliMissing && config.atticus.fullUi"
+          "when": "atticus.hasMetarepo && !atticus.cliMissing"
         },
         {
           "command": "atticus.addWiki",
           "group": "3_bring@3",
-          "when": "atticus.hasMetarepo && !atticus.cliMissing && config.atticus.fullUi"
+          "when": "atticus.hasMetarepo && !atticus.cliMissing"
         },
         {
           "command": "atticus.searchWikis",
           "group": "3_bring@4",
-          "when": "atticus.hasMetarepo && !atticus.cliMissing && config.atticus.fullUi"
+          "when": "atticus.hasMetarepo && !atticus.cliMissing"
         },
         {
           "command": "atticus.keepFound",
           "group": "3_bring@5",
-          "when": "atticus.hasMetarepo && !atticus.cliMissing && config.atticus.fullUi"
+          "when": "atticus.hasMetarepo && !atticus.cliMissing"
         },
         {
           "command": "atticus.reviewUnverified",
           "group": "3_bring@6",
-          "when": "atticus.hasMetarepo && !atticus.cliMissing && config.atticus.fullUi"
+          "when": "atticus.hasMetarepo && !atticus.cliMissing"
         },
         {
           "command": "atticus.draftOrgPack",
           "group": "3_bring@7",
-          "when": "atticus.hasMetarepo && !atticus.cliMissing && config.atticus.fullUi"
+          "when": "atticus.hasMetarepo && !atticus.cliMissing"
         },
         {
           "command": "atticus.addKnowledge",
           "group": "3_bring@8",
-          "when": "atticus.hasMetarepo && !atticus.cliMissing && config.atticus.fullUi"
+          "when": "atticus.hasMetarepo && !atticus.cliMissing"
         }
       ],
       "explorer/context": [
@@ -1612,7 +1463,7 @@
         "atticus.fullUi": {
           "type": "boolean",
           "default": false,
-          "markdownDescription": "Offer every view and command again, as `atticus ui --full` does for the app: the Knowledge, Repos, Catalog and Model runs views, **Run a command…** (every command the command line has), and the rest of the Command Palette and `@atticus`. The Atticus tab then shows every page of the app. Off: Next and Waiting, Questions and Changes, the steps, and the app's six entries."
+          "markdownDescription": "Offer Atticus 1's legacy commands too (Survey a repo, Verify a repo's last scan, Draft and check a repo's spec, Run a small change's fast path, Scan every repo, Accept the catalog, and `@atticus` /survey, /scanverify, /spec and /small), and start the Atticus tab as `atticus ui --full` does: every page a tab, and the menu's More pages open. Every view and every other command is offered without it."
         }
       }
     },
@@ -1731,8 +1582,7 @@
       {
         "command": "atticus.runCommand",
         "key": "ctrl+alt+shift+a",
-        "mac": "cmd+alt+shift+a",
-        "when": "config.atticus.fullUi"
+        "mac": "cmd+alt+shift+a"
       },
       {
         "command": "atticus.runNext",

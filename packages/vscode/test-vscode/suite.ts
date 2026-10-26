@@ -137,21 +137,29 @@ export async function run(): Promise<void> {
       throw new Error(items.join(", ") || "empty");
     return items.join(", ");
   });
-  // Phase D: three views, in the order of a working day; the other four with atticus.fullUi.
+  // Every view (2026-10-25): the three a day starts from, then four collapsed below them.
   await check(
-    "the sidebar reads Next and Waiting, Questions, Changes; Knowledge, Repos, Catalog, Model runs with atticus.fullUi",
+    "the sidebar reads Next and Waiting, Questions, Changes, then Knowledge, Repos, Catalog, Model runs collapsed",
     async () => {
       const views = (
-        ext.packageJSON.contributes.views.atticus as { id: string; name: string; when?: string }[]
-      ).map((v) => `${v.name} (${v.id})${v.when?.includes(FULL_WHEN) ? " full" : ""}`);
+        ext.packageJSON.contributes.views.atticus as {
+          id: string;
+          name: string;
+          when?: string;
+          visibility?: string;
+        }[]
+      ).map(
+        (v) =>
+          `${v.name} (${v.id})${v.when?.includes(FULL_WHEN) ? " full" : ""}${v.visibility === "collapsed" ? " collapsed" : ""}`,
+      );
       const want = [
         "Next and Waiting (atticus.view)",
         "Questions (atticus.questions)",
         "Changes (atticus.changes)",
-        "Knowledge (atticus.knowledge) full",
-        "Repos (atticus.repos) full",
-        "Catalog (atticus.catalog) full",
-        "Model runs (atticus.runs) full",
+        "Knowledge (atticus.knowledge) collapsed",
+        "Repos (atticus.repos) collapsed",
+        "Catalog (atticus.catalog) collapsed",
+        "Model runs (atticus.runs) collapsed",
       ];
       if (views.join(", ") !== want.join(", ")) throw new Error(views.join(", "));
       return views.map((v) => v.split(" (")[0]).join(", ");
@@ -442,13 +450,21 @@ export async function run(): Promise<void> {
     },
   );
 
-  await check("the three views open in the sidebar", async () => {
+  await check("every view opens in the sidebar, Model runs among them", async () => {
     await vscode.commands.executeCommand("workbench.view.extension.atticus");
-    for (const v of ["atticus.view", "atticus.questions", "atticus.changes"])
+    for (const v of [
+      "atticus.view",
+      "atticus.questions",
+      "atticus.changes",
+      "atticus.knowledge",
+      "atticus.repos",
+      "atticus.catalog",
+      "atticus.runs",
+    ])
       await vscode.commands.executeCommand(`${v}.focus`);
     await new Promise((r) => setTimeout(r, 2000));
     shot(`${MODE}-sidebar`);
-    return "Next and Waiting, Questions, Changes";
+    return "Next and Waiting, Questions, Changes, Knowledge, Repos, Catalog, Model runs";
   });
 
   await check("a line the facts cite has a CodeLens naming what cites it", async () => {

@@ -4,7 +4,7 @@ Run Atticus's AI steps with GitHub Copilot's own model, without pasting prompts.
 
 Atticus's command line does all the checking. The extension only carries the prompt to the model and the answer back (ADR 0090).
 
-**What it offers** (Phase D, the design's Surfaces): three views (**Next and Waiting**, **Questions**, **Changes**), about fifteen commands in the Command Palette, the `@atticus` steps, the lines in the code that cite flows, and the app in a tab, opening on its Home. Everything else it did before is still there, behind the setting **`atticus.fullUi`** (as `atticus ui --full` is for the app): the Knowledge, Repos, Catalog and Model runs views, **Run a command…** for every command the command line has, and the rest of the palette and of `@atticus`. Nothing was removed. See [Behind atticus.fullUi](#behind-atticusfullui).
+**What it offers:** every view (**Next and Waiting**, **Questions** and **Changes** open; **Knowledge**, **Repos**, **Catalog** and **Model runs** collapsed below them), every command in the Command Palette and in `@atticus`, **Run a command…** for every command the command line has, the lines in the code that cite flows, and the app in a tab, opening on its Home, with **More pages** and Ctrl+K for every page. Only Atticus 1's legacy commands wait behind the setting **`atticus.fullUi`**. See [Behind atticus.fullUi](#behind-atticusfullui).
 
 ## What you need
 
@@ -27,7 +27,7 @@ To build the file from the source: build the app (`pnpm --filter @maycombhq/ui b
 
 Open **Get started with Atticus** (Help → Welcome, or the link in the Atticus sidebar). It takes you from installing the command line to your first change, with a button at each step. With no metarepo open, the sidebar offers to open one, create one, use Atticus in the repo you have open, or make a practice one with invented repos.
 
-**Start or bring in:** the + in the Next and Waiting section's title bar, always there. Create a metarepo, use Atticus in the repo you have open, or make a practice one. With a metarepo open, also **Add repos** and **Onboard a repo**; with `atticus.fullUi` on, the rest of this list too:
+**Start or bring in:** the + in the Next and Waiting section's title bar, always there. Create a metarepo, use Atticus in the repo you have open, or make a practice one. With a metarepo open, also the rest of this list:
 
 - **Add repos.**
 - **Onboard a repo:** its stages in order, each with its state.
@@ -43,7 +43,7 @@ Open **Get started with Atticus** (Help → Welcome, or the link in the Atticus 
 - **Bring in from another repo:** another metarepo, an OpenSpec, Spec Kit or TypeSpec repo, or a repo of prompts, agents, skills and checklists, from a folder or a Git URL. You see what it found in plain words before anything is written. Then its summary opens as a proposal, and **Accept** copies what it adopts into the org pack and adds it to `sources.yaml`. Nothing is committed: open a pull request with it.
 - **Add knowledge:** a wiki, files, or reading the sources.
 
-**Shortcut keys:** Ctrl+Alt+Shift+N runs the next step and Ctrl+Alt+Shift+D opens the app; with `atticus.fullUi` on, Ctrl+Alt+Shift+A runs any command (Cmd on macOS).
+**Shortcut keys:** Ctrl+Alt+Shift+N runs the next step, Ctrl+Alt+Shift+D opens the app and Ctrl+Alt+Shift+A runs any command (Cmd on macOS).
 
 ## Try it
 
@@ -68,20 +68,25 @@ The steps, run with the editor's model:
 | `@atticus /critic <change>`       | The critic's lenses on the change, one at a time (`atticus critic`)                                                                 |
 | `@atticus /answer`                | Each open question with its options as buttons; a click runs `atticus questions answer`                                             |
 
-With `atticus.fullUi` on, also:
+Also:
 
-| Command                           | What it does                                                                              |
-| --------------------------------- | ----------------------------------------------------------------------------------------- |
-| `@atticus /survey <repo>`         | Draft the repo's scan settings (`atticus scan survey`)                                    |
-| `@atticus /scanverify <repo>`     | Compare the repo's code with its last scan, for the older scanner (`atticus scan verify`) |
-| `@atticus /spec <repo>`           | Draft the repo's spec, then `atticus spec check`; draft again on findings, up to 3 times  |
-| `@atticus /small <change>`        | A small change, brief to tasks in one step (`atticus change small`, ADR 0113)             |
-| `@atticus /diagram [repo] [flow]` | The repo on the Architecture canvas, or one of its flows, in the Atticus tab              |
-| `@atticus /changemap <change>`    | What the change touches, marked new, changed or retired                                   |
-| `@atticus /estimate <change>`     | The change's size and what drives it                                                      |
-| `@atticus /new <title>`           | Start a change: pick its type, then write its brief                                       |
-| `@atticus /run <command>`         | Any atticus command, with its dry run and your approval for a shared write                |
-| `@atticus /ask <question>`        | A plain question to the catalog (`atticus ask`); no model is used                         |
+| Command                           | What it does                                                                 |
+| --------------------------------- | ---------------------------------------------------------------------------- |
+| `@atticus /diagram [repo] [flow]` | The repo on the Architecture canvas, or one of its flows, in the Atticus tab |
+| `@atticus /changemap <change>`    | What the change touches, marked new, changed or retired                      |
+| `@atticus /estimate <change>`     | The change's size and what drives it                                         |
+| `@atticus /new <title>`           | Start a change: pick its type, then write its brief                          |
+| `@atticus /run <command>`         | Any atticus command, with its dry run and your approval for a shared write   |
+| `@atticus /ask <question>`        | A plain question to the catalog (`atticus ask`); no model is used            |
+
+With `atticus.fullUi` on, Atticus 1's too:
+
+| Command                       | What it does                                                                              |
+| ----------------------------- | ----------------------------------------------------------------------------------------- |
+| `@atticus /survey <repo>`     | Draft the repo's scan settings (`atticus scan survey`)                                    |
+| `@atticus /scanverify <repo>` | Compare the repo's code with its last scan, for the older scanner (`atticus scan verify`) |
+| `@atticus /spec <repo>`       | Draft the repo's spec, then `atticus spec check`; draft again on findings, up to 3 times  |
+| `@atticus /small <change>`    | A small change, brief to tasks in one step (`atticus change small`, ADR 0113)             |
 
 Without a repo or change, a step command takes the one `atticus next` names for that step. A read with `/map` takes as many rounds as it has batches (up to 50); a draft stops after eight.
 
@@ -91,7 +96,7 @@ When a step ends, its reply has **Open the prompt** and **Open the answer** (ADR
 
 ## The sidebar
 
-The Atticus icon in the activity bar opens three sections, in the order of a working day (ADR 0105; Phase D): what is next and what waits on you, the questions only a person can answer, and your changes.
+The Atticus icon in the activity bar opens its sections in the order of a working day (ADR 0105): what is next and what waits on you, the questions only a person can answer, and your changes, open; then Knowledge, Repos, Catalog and Model runs, collapsed below them (described after Run a command…).
 
 - **Next and Waiting**: the next step in plain words, then the steps after it. Click any of them, or its Run button, to take it; its command is in the tooltip. A step with a part to fill in opens the screen that asks for it. **Raise a change's open needs** lists them to mark one by one. Then **Waiting on you**, open under the steps: what waits on you across every change, except the questions, which have their own section. An empty group is left out; when nothing waits, one row says so. Then **Set up** (the setup checklist until the catalog is accepted; click a step to do it, or the checklist to do the next one), what runs a step, and **Open the app**.
   - **By change** (the default): each change with something open, its title, id and count, and under it its open needs, then its open findings, then its manual steps. Changes with a blocking finding come first, then the rest by title. Last, **Not part of a change**: manual steps with no change, and knowledge to verify.
@@ -101,10 +106,10 @@ The Atticus icon in the activity bar opens three sections, in the order of a wor
   - **Findings**: the critic's open findings on every open change, blocking first. Click one to open its change in the app; its check button acts on it, as in Changes.
   - **Knowledge to verify**: how many knowledge items no person has verified. Click it to check them one after another.
 - **Questions**: the open questions by repo (this section's id, `atticus.questions`, is the one it had before ADR 0105). Click one to answer it in a dialog: first the lines it read (pick one to open the code there, then come back to the answers), then its options with what each means, and **In my own words...**. Its tooltip shows the question, its options and what it read. A repo's button answers its questions one after another. After an answer, **Run the next step** carries on.
-- **Changes**: each change with its state and blocking findings. Under it, each of its files with its state, its tasks (each with **Start this task in Copilot**, and **Run the task** with `atticus.fullUi`) (click to open; one not written yet says so), its target flows (each flow the change adds, changes or removes; click to see it beside today's, with each step marked Added, Changed or Removed, ADR 0095), its findings (click to open the file a finding is about; the why and the fix are in the tooltip; its check button acts on it, ADR 0094: Apply the fix, I fixed it by hand, Not relevant, Waive it or Ask someone, offering only what the critic allows, and showing a patch before applying it) and a link to the change in the app.
+- **Changes**: each change with its state and blocking findings. Under it, each of its files with its state, its tasks (each with **Start this task in Copilot** and **Run the task**) (click to open; one not written yet says so), its target flows (each flow the change adds, changes or removes; click to see it beside today's, with each step marked Added, Changed or Removed, ADR 0095), its findings (click to open the file a finding is about; the why and the fix are in the tooltip; its check button acts on it, ADR 0094: Apply the fix, I fixed it by hand, Not relevant, Waive it or Ask someone, offering only what the critic allows, and showing a patch before applying it) and a link to the change in the app.
   - **Needs** (ADR 0101): what the change needs from the organisation, with how many are open. Before they are found, the row is **Find what it needs**: Copilot reads the change and the knowledge items, and Atticus checks each need against the change's own words. Each need shows what it is for (the change, a feature, a flow, a story or a task), its lead time and who handles it, and a green tick when a person verified the knowledge item it comes from. Its tooltip has why (quoting the change, with file and line), how to raise it, what it needs, its catalogue item and links. Click one to open `needs.md` at it. Its buttons: **Done…** (with a note, such as the request's number), **Not needed…** (say why), **Reopen**, **Open its links** and **Open the item's page**. Atticus never raises a request: you do, then mark it.
 
-**Filter…** (ADR 0105), in the title bars of Next and Waiting (for what waits), Changes and, with `atticus.fullUi`, Knowledge and Model runs, asks for words to match, for example `forge-ledger`. Each row is matched, case-insensitively, against its title, id, change and repo (and the words beside it); every word must match. A row that matches keeps everything under it, and a row shows when something under it matches: in Knowledge that looks inside sources, items, what the last scan changed and searches; in Changes a change shows when it matches itself (its title, id or repos); in Model runs a run matches its step or change, run id, agent and state. The view's description says `filter: <words>`, and **Clear filter** removes it. When nothing matches, one row says what was filtered; click it to clear the filter. Each view keeps its own filter until the window closes.
+**Filter…** (ADR 0105), in the title bars of Next and Waiting (for what waits), Changes, Knowledge and Model runs, asks for words to match, for example `forge-ledger`. Each row is matched, case-insensitively, against its title, id, change and repo (and the words beside it); every word must match. A row that matches keeps everything under it, and a row shows when something under it matches: in Knowledge that looks inside sources, items, what the last scan changed and searches; in Changes a change shows when it matches itself (its title, id or repos); in Model runs a run matches its step or change, run id, agent and state. The view's description says `filter: <words>`, and **Clear filter** removes it. When nothing matches, one row says what was filtered; click it to clear the filter. Each view keeps its own filter until the window closes.
 
 The sections read the app's local API on 127.0.0.1, which the extension starts for them; they follow the files as they change, and the Refresh button reads everything again. Each section, and each part of one you open, shows a "Reading…" row until it is read; when it is read again, what it showed stays, with the section's progress bar, until the new rows are in. A part that can't be read says why: click the row to see the Atticus output.
 
@@ -114,26 +119,26 @@ The sections read the app's local API on 127.0.0.1, which the extension starts f
 
 **The status bar** shows the open questions and the next step; click it to open the sidebar.
 
-**Open the app** shows the Atticus app, with its diagrams, in a VS Code tab, on its **Home**: the first of its six entries (Home, Map, Change, Questions, Knowledge, Set up; ADR 0124 addendum D-app). With `atticus.fullUi` on, the extension starts the app with `atticus ui --full`, so every page is a tab again; changing the setting starts the app again and opens the tab again. The app comes from the extension's own files (ADR 0097): it isn't a page on 127.0.0.1 framed in the tab, so it works where framing a local page is blocked, and over SSH or in a container. Its calls go through the extension to the local API, which the extension starts for the tab and the sidebar (`atticus ui`) and stops when the window closes. **Run with Copilot** on an AI step in the app (ADR 0106) asks the extension, which runs only the command line's AI steps, refuses any argument that starts with `-`, and runs the step as the sidebar does: Copilot, your consent and every check. Its progress shows in the app and in a notification, and its ending as any step's does. The setting `atticus.appIn` set to `frame` uses the framed page instead (ADR 0091). **Atticus: Open the app in the browser** opens it in a browser.
+**Open the app** shows the Atticus app, with its diagrams, in a VS Code tab, on its **Home**: the first of its six entries (Home, Map, Change, Questions, Knowledge, Set up; ADR 0124 addendum D-app). Below the six, **More pages** opens every other page (Prompt history among them), and Ctrl+K, or a click on the menu's "Ctrl+K: any page", finds any page by its name; Model runs is a tab of Set up. With `atticus.fullUi` on, the extension starts the app with `atticus ui --full`, so every page is a tab too and More pages starts open; changing the setting starts the app again and opens the tab again. The app comes from the extension's own files (ADR 0097): it isn't a page on 127.0.0.1 framed in the tab, so it works where framing a local page is blocked, and over SSH or in a container. Its calls go through the extension to the local API, which the extension starts for the tab and the sidebar (`atticus ui`) and stops when the window closes. **Run with Copilot** on an AI step in the app (ADR 0106) asks the extension, which runs only the command line's AI steps, refuses any argument that starts with `-`, and runs the step as the sidebar does: Copilot, your consent and every check. Its progress shows in the app and in a notification, and its ending as any step's does. The setting `atticus.appIn` set to `frame` uses the framed page instead (ADR 0091). **Atticus: Open the app in the browser** opens it in a browser.
 
-With `atticus.fullUi` on, `@atticus /diagram <repo>` (or **Atticus: Open a repo on the Architecture canvas**) opens the tab on that repo's part of the estate. Drag boxes to rearrange them; Keep saves the arrangement in the metarepo. With no repo named it opens the whole estate. `@atticus /diagram <repo> <flow id>` opens one of the repo's flows as a sequence of steps (ADR 0092), and `@atticus /diagram <repo> <words>` lists the flows that match.
+`@atticus /diagram <repo>` (or **Atticus: Open a repo on the Architecture canvas**) opens the tab on that repo's part of the estate. Drag boxes to rearrange them; Keep saves the arrangement in the metarepo. With no repo named it opens the whole estate. `@atticus /diagram <repo> <flow id>` opens one of the repo's flows as a sequence of steps (ADR 0092), and `@atticus /diagram <repo> <words>` lists the flows that match.
 
-The everyday ones are in the Command Palette under **Atticus:** (about fifteen; every one with `atticus.fullUi`). Every `atticus` command the extension runs, with its exit code, is in the **Atticus** output.
+Every command is in the Command Palette under **Atticus:** (Atticus 1's legacy ones with `atticus.fullUi`). Every `atticus` command the extension runs, with its exit code, is in the **Atticus** output.
 
 **When the window opens**, the extension checks whether the metarepo needs `atticus upgrade` and whether this machine is ready (`atticus doctor`), and says so with a button when something needs a look.
 
-**Starting a change:** the + button in the Changes section, or **Atticus: New change** (and, with `atticus.fullUi`, `@atticus /new <what it is>`). Pick its type, and the brief opens. Write it, save it, then run the feature stage from the message or with `@atticus /feature <change>`.
+**Starting a change:** the + button in the Changes section, or **Atticus: New change** (or `@atticus /new <what it is>`). Pick its type, and the brief opens. Write it, save it, then run the feature stage from the message or with `@atticus /feature <change>`.
 
 ## Small changes, files and tasks (ADR 0113)
 
-- **A small change** (its change type is small, or its brief says `Size: small` where the type allows it) has one step before its tasks: Next's **Run it** (and, with `atticus.fullUi`, **Run a small change's fast path** in the palette or `@atticus /small <change>`). Copilot places it, writes its target flows and words its stories in one answer; Atticus checks it as the three stages would.
+- **A small change** (its change type is small, or its brief says `Size: small` where the type allows it) has one step before its tasks: Next's **Run it** (and, with `atticus.fullUi`, Atticus 1's **Run a small change's fast path** in the palette or `@atticus /small <change>`). Copilot places it, writes its target flows and words its stories in one answer; Atticus checks it as the three stages would.
 - **Attach to Atticus change**: right-click one or more files in the Explorer, or a change in the sidebar, or use the palette. You pick the change; `atticus change attach` copies the files into its `inputs/`, and its steps read them as data, citing each by line or page.
 - **Add to Atticus knowledge** (ADR 0122): right-click files in the Explorer. `atticus intake add` copies them into the metarepo's `inputs/inbox/`: general knowledge, read by the next sync and the knowledge scan. Use it for a file every change may need; attach a file to a change when only that change needs it.
 - **Start this task in Copilot**: on a task in the Changes section (or the palette). It reads `atticus task context` and opens Copilot Chat in agent mode with `/atticus-task <change> <task>` (or, before `atticus assistant-files` has written that prompt file, the task's context itself), left in the box for you to send. Agent mode needs VS Code 1.99 or later; an older one opens the chat in its usual mode. If the chat can't be opened, the context is put on the clipboard and the notification says so.
 
 ## Behind atticus.fullUi
 
-Turn on the setting `atticus.fullUi` and the extension offers everything it did before Phase D again, as `atticus ui --full` does for the app: nothing was removed, it is only out of the way. The Knowledge, Repos, Catalog and Model runs sections come back below Changes; **Run a command…** is in the palette, the Next and Waiting title bar and Ctrl+Alt+Shift+A; the rest of the palette (survey, spec, a small change, ask, the diagrams, the knowledge and catalog commands, upgrade, digest…) and of `@atticus` (`/run`, `/ask`, `/new` and the others above) are offered; a repo's and a change's play button and **Run the task** come back; and Start or bring in has bringing in again. Turn it off and they go away again; their code is never unloaded.
+Every view and command is offered without it (2026-10-25: hidden, they were too hard to find). The setting `atticus.fullUi` adds Atticus 1's legacy commands, for the older scanner and spec drafting: **Survey a repo**, **Verify a repo's last scan**, **Draft and check a repo's spec**, **Run a small change's fast path**, **Scan every repo** and **Accept the catalog** in the palette, and `@atticus` `/survey`, `/scanverify`, `/spec` and `/small`. It also starts the app with `atticus ui --full`: every page a tab, and More pages open. Turn it off and they go away again; their code is never unloaded. Run a command… still offers every command the command line has, legacy ones under **Legacy**.
 
 **Atticus: Run a command…** (the Command Palette, the terminal button in Next and Waiting's title bar, or `@atticus /run` in Copilot Chat) offers every command the command line has, by area: set up, repos and specs, knowledge, the catalog, changes, plans, release (ADR 0096). The list comes from `atticus commands --json`, so a new command is there as soon as your `atticus` has it.
 
@@ -143,7 +148,7 @@ Turn on the setting `atticus.fullUi` and the extension offers everything it did 
 
 **On a repo or a change:** its play button lists every command that takes it, with it filled in: for a repo, survey, verify, spec draft and check, repo type and the rest; for a change, the stages, the critic, status, hand-off, tasks, service desk, work items, release and the rest.
 
-The sections it adds:
+The sections below Changes, collapsed until you open them:
 
 - **Knowledge** (ADR 0101):
   - **Sources**: each wiki or docs repo in `sources.yaml`, with its last snapshot and the commit it read. Its buttons: **Sync it**, **Read it with Copilot** and **Tag it…**. **Add a wiki or docs repo…** (also the + in the title bar and in Start or bring in) asks what it is (a git repo such as an Azure DevOps or GitHub wiki or a docs repo, a folder on this machine, or Confluence or SharePoint), where, its name, the folder and branch to read, whether to clone it or keep it as a submodule of the metarepo, what it is about and who owns it, then saves it into `sources.yaml` and offers to sync and read it. Confluence and SharePoint need their adapter wired to the command line, so for them it only shows the entry.
@@ -159,14 +164,14 @@ The sections it adds:
 
 ## Settings
 
-| Setting                    | Default   | What it is                                                                                                                                                                                                                                                                             |
-| -------------------------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `atticus.path`             | `atticus` | The `atticus` command: a command on PATH, its full path, or the path to its `bin.js` (run with `node`). On Windows the extension reads the `atticus.cmd` that npm or pnpm writes and runs the `bin.js` it names, so no shell is used.                                                  |
-| `atticus.model`            | empty     | The model the AI steps run on; set it with **Atticus: Pick the model**. `vendor/family` for any model VS Code offers, a bare family for Copilot's, `atticus` for the model provider in `runtime.yaml` (model mode). Empty: the model picked in the chat, else the first Copilot model. |
-| `atticus.codeLens`         | on        | Above each line of code a spec flow cites, show which flow and step cite it.                                                                                                                                                                                                           |
-| `atticus.codeLens.records` | on        | With `atticus.codeLens` on, also show which catalog records were read from a line.                                                                                                                                                                                                     |
-| `atticus.appIn`            | `panel`   | `panel`: the app from the extension's own files. `frame`: the page `atticus ui` serves, framed.                                                                                                                                                                                        |
-| `atticus.fullUi`           | off       | On: every view and command again (Knowledge, Repos, Catalog, Model runs, Run a command…, the rest of the palette and of `@atticus`), and the app with every page (`atticus ui --full`). Off: Next and Waiting, Questions, Changes, the steps and the app's six entries.                |
+| Setting                    | Default   | What it is                                                                                                                                                                                                                                                                                                    |
+| -------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `atticus.path`             | `atticus` | The `atticus` command: a command on PATH, its full path, or the path to its `bin.js` (run with `node`). On Windows the extension reads the `atticus.cmd` that npm or pnpm writes and runs the `bin.js` it names, so no shell is used.                                                                         |
+| `atticus.model`            | empty     | The model the AI steps run on; set it with **Atticus: Pick the model**. `vendor/family` for any model VS Code offers, a bare family for Copilot's, `atticus` for the model provider in `runtime.yaml` (model mode). Empty: the model picked in the chat, else the first Copilot model.                        |
+| `atticus.codeLens`         | on        | Above each line of code a spec flow cites, show which flow and step cite it.                                                                                                                                                                                                                                  |
+| `atticus.codeLens.records` | on        | With `atticus.codeLens` on, also show which catalog records were read from a line.                                                                                                                                                                                                                            |
+| `atticus.appIn`            | `panel`   | `panel`: the app from the extension's own files. `frame`: the page `atticus ui` serves, framed.                                                                                                                                                                                                               |
+| `atticus.fullUi`           | off       | On: Atticus 1's legacy commands too (survey, the older scan's check, spec drafting, the small change's fast path, scan every repo, accept the catalog; `@atticus` /survey, /scanverify, /spec, /small), and the app started with `atticus ui --full`. Every view and every other command is there either way. |
 
 ## What is sent where
 
@@ -183,4 +188,4 @@ A prompt longer than the model takes is never cut: the extension says so and sto
 - It doesn't check anything itself. Every check is Atticus's.
 - It runs `/atticus-onboard`, `/atticus-knowledge` and `/atticus-release` steps only when `atticus next` names them (Run in the view or the chat): there is no chat command for them yet. It doesn't answer `atticus probe` itself (ADR 0124 addendum A-probe): run `/atticus-probe` in Copilot Chat.
 - The sidebar never runs a step. The only file it changes is a finding's record (and, for Apply the fix, the patched file), when you act on the finding. Steps run from Next and Waiting, the chat or the Command Palette.
-- Its checks run inside a real VS Code (`pnpm --filter atticus test:vscode`), and its flows were driven there from an empty window to an onboarded repo and an accepted absorb (ADR 0100). Its AI steps have been run with a fake model, not yet with Copilot's on a bank machine. The three-view arrangement (Phase D) was run in a real VS Code (1.143.1, from the source folder and from the `.vsix`): the views, the fifteen palette commands, Verify a repo's facts, the app panel, CodeLenses and `@atticus` without a model. Not yet seen with Copilot signed in: the AI steps with its model, and that `@atticus` hides its other commands until `atticus.fullUi` is on (a `when` on each).
+- Its checks run inside a real VS Code (`pnpm --filter atticus test:vscode`), and its flows were driven there from an empty window to an onboarded repo and an accepted absorb (ADR 0100). Its AI steps have been run with a fake model, not yet with Copilot's on a bank machine. The three-view arrangement (Phase D) was run in a real VS Code (1.143.1, from the source folder and from the `.vsix`): the views, the fifteen palette commands, Verify a repo's facts, the app panel, CodeLenses and `@atticus` without a model. Not yet seen with Copilot signed in: the AI steps with its model, and that `@atticus` hides Atticus 1's commands until `atticus.fullUi` is on (a `when` on each).

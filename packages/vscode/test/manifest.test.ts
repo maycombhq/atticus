@@ -3,11 +3,13 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   APP_HOME,
+  COLLAPSED_VIEWS,
   DEFAULT_CHAT,
   DEFAULT_PALETTE,
   DEFAULT_VIEWS,
-  FULL_VIEWS,
   FULL_WHEN,
+  LEGACY_CHAT,
+  LEGACY_PALETTE,
   TOP_COMMANDS,
 } from "../src/surface";
 
@@ -114,27 +116,29 @@ describe("the extension's manifest and its code", () => {
       .filter((m) => m.when === `view == ${view}`)
       .map((m) => ({ command: m.command!, group: m.group ?? "" }));
 
-  it("shows Next and Waiting, Questions and Changes; the other four only with atticus.fullUi (Phase D)", () => {
+  it("shows every view: the three a day starts from, then four collapsed (2026-10-25)", () => {
     const views = pkg.contributes.views.atticus! as {
       id: string;
       name: string;
       when?: string;
       visibility?: string;
     }[];
-    const shown = (v: { when?: string }) => !(v.when ?? "").includes(FULL_WHEN);
-    expect(views.filter(shown).map((v) => ({ id: v.id, name: v.name }))).toEqual(DEFAULT_VIEWS);
-    // Behind the setting, in the order they had (ADR 0105, 0106), nothing removed.
-    const full = views.filter((v) => !shown(v));
-    expect(full.map((v) => ({ id: v.id, name: v.name }))).toEqual(FULL_VIEWS);
-    for (const v of full)
-      expect(v.when).toBe(`atticus.hasMetarepo && !atticus.cliMissing && ${FULL_WHEN}`);
+    // The product owner, 2026-10-25: "I see only 3 tabs". Every view is offered, none behind the
+    // setting, in the order of a working day (ADR 0105).
+    expect(views.map((v) => ({ id: v.id, name: v.name }))).toEqual(DEFAULT_VIEWS);
+    for (const v of views) expect(v.when ?? "", v.id).not.toContain(FULL_WHEN);
+    // The four below the three start collapsed, so the sidebar opens on Next and Waiting.
+    expect(views.filter((v) => v.visibility === "collapsed").map((v) => v.id)).toEqual(
+      COLLAPSED_VIEWS,
+    );
+    expect(views.slice(0, 3).every((v) => v.visibility === undefined)).toBe(true);
     // ADR 0106: the model runs at the bottom, collapsed.
     expect(views.at(-1)).toMatchObject({ id: "atticus.runs", visibility: "collapsed" });
     // The Next view hosts the welcome (no metarepo, no command line), so it has no condition.
     expect(views[0]!.when).toBeUndefined();
   });
 
-  it("declares atticus.fullUi, off by default, as the app's atticus ui --full", () => {
+  it("declares atticus.fullUi, off by default, for the legacy commands and the app's ui --full", () => {
     const c = pkg.contributes as unknown as {
       configuration: { properties: Record<string, { type: string; default: unknown }> };
     };
@@ -151,46 +155,44 @@ describe("the extension's manifest and its code", () => {
       ),
     );
 
-  it("offers about fifteen commands in the Command Palette; the rest only with atticus.fullUi", () => {
+  it("offers every command in the Command Palette but Atticus 1's legacy ones", () => {
     const when = palette();
     const declared = pkg.contributes.commands.map((c) => c.command);
     // A command only its view's title bar or rows offer (focusedView, or never) isn't counted.
     const offered = declared.filter((c) => when[c] === undefined);
-    expect(offered).toEqual(DEFAULT_PALETTE);
-    expect(offered.length).toBeLessThanOrEqual(16);
-    const rest = declared.filter(
-      (c) => when[c] !== undefined && when[c] !== "false" && !when[c]!.startsWith("focusedView"),
+    // The everyday ones, in order, among them Open the prompt history.
+    expect(offered.filter((c) => DEFAULT_PALETTE.includes(c))).toEqual(DEFAULT_PALETTE);
+    for (const c of ["atticus.ask", "atticus.estimate", "atticus.runCommand", "atticus.addWiki"])
+      expect(offered, c).toContain(c);
+    // Behind the setting: only the legacy ones, each still in the palette with it on.
+    const behind = declared.filter((c) => when[c] === FULL_WHEN);
+    expect(behind).toEqual(LEGACY_PALETTE);
+    const other = declared.filter(
+      (c) =>
+        when[c] !== undefined &&
+        when[c] !== "false" &&
+        when[c] !== FULL_WHEN &&
+        !when[c]!.startsWith("focusedView"),
     );
-    // Nothing removed: every other one is in the palette again with the setting on.
-    for (const c of rest) expect(when[c], c).toBe(FULL_WHEN);
-    expect(rest).toContain("atticus.runCommand");
-    expect(rest).toContain("atticus.ask");
-    expect(rest.length).toBeGreaterThan(30);
+    expect(other).toEqual([]);
   });
 
-  it("keeps the every-command runner (ADR 0096) behind atticus.fullUi wherever it is offered", () => {
+  it("offers the every-command runner (ADR 0096) wherever it is, and its key, without the setting", () => {
     const entries = Object.values(pkg.contributes.menus).flat() as {
       command?: string;
       when?: string;
     }[];
-    for (const c of [
-      "atticus.runCommand",
-      "atticus.repoCommand",
-      "atticus.changeCommand",
-      "atticus.runTask",
-    ])
-      for (const m of entries.filter((x) => x.command === c && x.when !== "false"))
-        expect(m.when ?? "", c).toContain(FULL_WHEN);
+    // Only the legacy commands' palette entries name the setting.
+    const named = entries.filter((x) => (x.when ?? "").includes(FULL_WHEN));
+    expect(named.map((x) => x.command)).toEqual(LEGACY_PALETTE);
     const keys = (
       pkg.contributes as unknown as { keybindings: { command: string; when?: string }[] }
     ).keybindings;
-    expect(keys.find((k) => k.command === "atticus.runCommand")?.when).toContain(FULL_WHEN);
-    // The everyday keys stay.
-    expect(keys.find((k) => k.command === "atticus.runNext")?.when).not.toContain(FULL_WHEN);
-    expect(keys.find((k) => k.command === "atticus.showApp")?.when).not.toContain(FULL_WHEN);
+    for (const k of keys) expect(k.when ?? "", k.command).not.toContain(FULL_WHEN);
+    expect(keys.some((k) => k.command === "atticus.runCommand")).toBe(true);
   });
 
-  it("offers @atticus's steps by default, and its other commands only with atticus.fullUi", () => {
+  it("offers every @atticus command but Atticus 1's legacy ones", () => {
     const chat = (
       pkg.contributes as unknown as {
         chatParticipants: { commands: { name: string; when?: string }[] }[];
@@ -199,20 +201,19 @@ describe("the extension's manifest and its code", () => {
     expect(chat.filter((c) => !c.when).map((c) => c.name)).toEqual(DEFAULT_CHAT);
     const rest = chat.filter((c) => c.when);
     for (const c of rest) expect(c.when, c.name).toBe(FULL_WHEN);
-    expect(rest.map((c) => c.name)).toContain("run");
+    expect(rest.map((c) => c.name)).toEqual(LEGACY_CHAT);
     // The handler still answers each one: nothing is removed.
     for (const c of chat) expect(src, c.name).toMatch(new RegExp(`"${c.name}"`));
   });
 
-  it("starts or brings in from the Next title bar; bringing in knowledge only with atticus.fullUi", () => {
+  it("starts or brings in from the Next title bar, bringing in knowledge too, without the setting", () => {
     const start = pkg.contributes.menus["atticus.start"] as {
       command: string;
       group: string;
       when?: string;
     }[];
-    for (const m of start)
-      if (m.group.startsWith("3_")) expect(m.when, m.command).toContain(FULL_WHEN);
-      else expect(m.when ?? "", m.command).not.toContain(FULL_WHEN);
+    expect(start.some((m) => m.group.startsWith("3_"))).toBe(true);
+    for (const m of start) expect(m.when ?? "", m.command).not.toContain(FULL_WHEN);
   });
 
   it("opens the app on Home, one of its six entries (ADR 0124 addendum D-app)", () => {

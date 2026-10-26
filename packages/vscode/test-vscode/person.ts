@@ -7,8 +7,8 @@ import { choose, Person, type Shown, until } from "./drive";
 import type { Check } from "./suite";
 
 /**
- * What a person does, in a real VS Code (ADR 0098; Phase D's surface): every command the
- * Command Palette offers, run as from the palette, its lists picked and its dialogs answered by
+ * What a person does, in a real VS Code (ADR 0098; Phase D's surface): every everyday command
+ * the Command Palette offers (DEFAULT_PALETTE), run as from the palette, its lists picked and its dialogs answered by
  * `Person`; Verify a repo's facts through VS Code's own pick list and terminal; @atticus's steps
  * with the editor's model, here without one (no Copilot in the test VS Code); and the window with
  * no folder open.
@@ -66,6 +66,7 @@ const PALETTE: Record<string, Step> = {
         : "didn't say no question waits",
   },
   "atticus.showApp": { expect: (_p, h) => (h.panel() ? undefined : "no Atticus tab") },
+  "atticus.promptHistory": { expect: (_p, h) => (h.panel() ? undefined : "no Atticus tab") },
   "atticus.showLog": { expect: () => undefined },
   "atticus.newChange": {
     expect: (p) => (p.inputs.includes("Atticus: New change") ? undefined : "no title asked"),

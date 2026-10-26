@@ -410,6 +410,83 @@ a:hover {
   color: var(--text);
   box-shadow: var(--shadow-ask);
 }
+/* More pages, at the bottom of the menu (2026-10-25): one button, then every other page by
+   section, smaller than the six so the six stay the menu. */
+.nav .more {
+  margin-top: 14px;
+  border-top: 1px solid var(--line-soft);
+  padding-top: 8px;
+}
+.nav .more-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--nav-text);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.nav .more-toggle:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.nav .more-caret {
+  display: inline-block;
+  font-size: 10px;
+  transition: transform 0.15s ease;
+}
+.nav .more-toggle[aria-expanded="true"] .more-caret {
+  transform: rotate(90deg);
+}
+.nav .more-count {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+}
+.nav .more-pages[hidden] {
+  display: none;
+}
+.nav .more-pages a {
+  padding: 4px 12px 4px 22px;
+  font-size: 12px;
+  gap: 6px;
+}
+.nav .more-group,
+.nav .more-phase {
+  display: block;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 10px 12px 2px;
+}
+.nav .more-phase {
+  padding: 6px 12px 0 22px;
+  letter-spacing: 0.08em;
+}
+.nav .menu-hint {
+  margin-top: 10px;
+  padding: 6px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 10px;
+  text-align: left;
+  cursor: pointer;
+}
+.nav .menu-hint:hover {
+  color: var(--text);
+  background: var(--hover);
+}
 .brand {
   display: flex;
   align-items: center;
@@ -444,6 +521,20 @@ a:hover {
     gap: 8px;
     padding: 7px 8px;
     font-size: 12.5px;
+  }
+  .nav .more-toggle,
+  .nav .menu-hint {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+  .nav .more-pages a {
+    padding: 4px 8px 4px 14px;
+  }
+  .nav .more-group {
+    padding-left: 8px;
+  }
+  .nav .more-phase {
+    padding-left: 14px;
   }
   .main {
     padding: 12px 12px 20px;

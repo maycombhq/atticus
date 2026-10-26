@@ -318,21 +318,40 @@ interface ReconcileOut {
   }[];
 }
 
+/** The diagrams `atticus reconcile` reads by itself: under inputs/diagrams/ (reconcile-commands). */
+const DIAGRAM = /^inputs\/diagrams\/.+\.(drawio|drawio\.xml|vsdx|mmd|mermaid|csv)$/i;
+
+/**
+ * Whether inputs/diagrams/ holds a diagram to reconcile, from the Documents list: undefined while
+ * it loads, true when it can't be read (reconcile is asked as before). Exported for tests.
+ */
+export function hasDiagrams(
+  docs: { documents: { path: string }[] } | "error" | undefined,
+): boolean | undefined {
+  if (docs === "error") return true;
+  return docs ? docs.documents.some((d) => DIAGRAM.test(d.path)) : undefined;
+}
+
+/** Reconcile, asked only when there is a diagram (with none, the command refuses: 2026-10-25). */
 function useReconcile() {
-  const r = useApi<{ code: number; data: ReconcileOut }>("/api/view/reconcile");
-  return r;
+  const docs = useApi<{ documents: { path: string }[] }>("/api/knowledge/documents");
+  const some = hasDiagrams(
+    docs.state === "ready" ? docs.data : docs.state === "error" ? "error" : undefined,
+  );
+  const r = useApi<{ code: number; data: ReconcileOut }>(some ? "/api/view/reconcile" : undefined);
+  return { r, none: some === false };
 }
 
 const noDiagrams = (e: string) => /No diagrams to reconcile/.test(e);
 
 export function Reconcile({ hash }: { hash: string }) {
-  const r = useReconcile();
+  const { r, none } = useReconcile();
   const file = queryParam(hash, "file");
   const [filter, setFilter] = useState<string>("all");
   useLiveEvents((e) => {
     if (e.type === "job.done") r.reload();
   });
-  if (r.state === "error" && noDiagrams(r.error))
+  if (none || (r.state === "error" && noDiagrams(r.error)))
     return (
       <div className="bento">
         <Panel title={T.reconcileADiagramAgainst} span="1 / -1">

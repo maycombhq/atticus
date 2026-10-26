@@ -652,7 +652,7 @@ Usage:
           [--embed vscode]             Let a VS Code panel show the app (the Atticus extension starts it so)
           [--parent pid]               Stop when that process ends (an editor that started it)
           [--show-token]               Print the session token, for an assistant or a script (an editor that starts it gets it)
-          [--full]                     Every page in the menu, not only the six entries (the others open by address)
+          [--full]                     Every page a tab of its section, and the menu's More pages open
   atticus --version                    Print the version
   atticus --help                       Show this help
 

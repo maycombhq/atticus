@@ -46,8 +46,8 @@ import type { WaitingGroup } from "./waiting-data";
  * The Atticus extension (ADR 0090, plan 4.8): a thin runner of Atticus's AI steps with
  * Copilot's model through vscode.lm. Atticus's command line keeps every check; the extension
  * carries prompts and answers between it and the model, and shows what it did. No telemetry.
- * Phase D (surface.ts): three views and about fifteen commands by default; every command below
- * stays registered, and the setting atticus.fullUi offers the rest again.
+ * Surface (surface.ts): every view and command, but Atticus 1's legacy commands, which the
+ * setting atticus.fullUi offers again; every command below stays registered.
  */
 
 const APP_PORT = 4321;
@@ -84,7 +84,7 @@ export interface AtticusHandles {
 
 export function activate(context: vscode.ExtensionContext): AtticusHandles {
   const svc = new Service();
-  // Phase D: three views by default. Next and Waiting: the steps, then what waits on you (ADR
+  // The three views a day starts from. Next and Waiting: the steps, then what waits on you (ADR
   // 0105) under them. Questions: the open questions, in the view that had them before ADR 0105.
   const view = new AtticusView(svc);
   const waiting = new WaitingView(svc, view);
@@ -108,7 +108,7 @@ export function activate(context: vscode.ExtensionContext): AtticusHandles {
   );
   // The sections that read the app's API (ADR 0093), in the sidebar's order (ADR 0105), and the
   // model runs at the bottom (ADR 0106), read from the command line. Knowledge, Repos, Catalog
-  // and Model runs are shown only with the setting atticus.fullUi; they are drawn either way.
+  // and Model runs start collapsed below the three a day starts from.
   const SECTIONS: Section[] = ["changes", "knowledge", "repos", "catalog", "runs"];
   const sections = SECTIONS.map((name) => {
     const tree = new SectionTree(svc, name);
@@ -625,9 +625,8 @@ ${view.next.why}`
       if (e.affectsConfiguration("atticus.path")) void updateContext().then(refreshAll);
       // A model picked: the Next view's "in VS Code" says the new one.
       else if (e.affectsConfiguration("atticus.model")) refreshAll();
-      // Phase D: every view and command, or the three views and the steps. The views and menus
-      // follow the setting by themselves; the app takes --full only when it starts, so it starts
-      // again, and an open Atticus tab opens again on it.
+      // The legacy commands come and go with the setting by themselves; the app takes --full
+      // only when it starts, so it starts again, and an open Atticus tab opens again on it.
       else if (e.affectsConfiguration(`atticus.${FULL_UI}`)) {
         const on = vscode.workspace.getConfiguration("atticus").get<boolean>(FULL_UI, false);
         svc.restartApp();

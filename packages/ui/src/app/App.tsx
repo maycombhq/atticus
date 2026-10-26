@@ -19,7 +19,7 @@ interface Health {
   version: string;
   root: string;
   user: string;
-  /** `atticus ui --full`: every page in the menu, not only the six entries. */
+  /** `atticus ui --full`: every page a tab of its section, and More pages open. */
   full?: boolean;
 }
 
@@ -161,9 +161,6 @@ function TopBar({ health }: { health?: Health }) {
       <a className="btn" href="#/words" title={COPY.glossary.linkTitle}>
         {COPY.glossary.link}
       </a>
-      <span className="hud" style={{ fontSize: 9.5, whiteSpace: "nowrap" }} aria-hidden="true">
-        {T.ctrlK}
-      </span>
       {health && <Person health={health} />}
     </header>
   );
@@ -215,7 +212,7 @@ export function App() {
   const hash = useHash();
   const current = screenOf(hash);
   const health = useApi<Health>("/api/health");
-  // The server says whether it was started with --full; until it answers, the six.
+  // The server says whether it was started with --full (every page a tab, More pages open).
   const full = health.state === "ready" && health.data.full === true;
   const server = useServer();
   const reloadHealth = health.reload;
@@ -239,8 +236,8 @@ export function App() {
         <a className="skip" href="#main">
           {T.skipToContent}
         </a>
-        <Nav current={current} full={full} />
-        <CommandPalette full={full} />
+        <Nav current={current} hash={hash} full={full} />
+        <CommandPalette />
         <Tour
           metarepo={
             health.state === "ready"

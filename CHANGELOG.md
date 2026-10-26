@@ -4,6 +4,15 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### More pages: every page in the menu again (ADR 0124 addendum D-app, follow-up)
+
+- **The menu has More pages again**, below the six entries and always there: one button that says how many pages it holds (26) and opens every page the six entries' tabs don't show, by section (the Map's older pages, a change's other pages by phase, Knowledge's, Set up's, then Prompt history, AI quality and Learning). It stays open or closed as you left it, works with the keyboard alone (Enter or Space opens it, Escape closes it) and fits an editor's panel. Before, those pages opened only by their address or with `atticus ui --full`.
+- **Model runs is a tab of Set up**, beside AI: what Atticus asked a model, and what came back, where you set AI up.
+- **Ctrl+K (Cmd+K on a Mac) finds every page**, with or without `--full`, and the menu says so; clicking the hint opens it too.
+- **`atticus ui --full`** makes every page a tab of its section and opens More pages; it no longer adds a seventh entry.
+- **Fixed: Atticus 1's pages failed on an Atticus 2 change.** The feature brief, prototypes, architecture review and API mappings asked for files an Atticus 2 change never has, and reconcile ran with no diagrams; each now says what is missing (and what Atticus 2 writes instead) without an error.
+- **The VS Code extension offers everything by default**: the Knowledge, Repos, Catalog and Model runs views (collapsed below the three), Open the prompt history and every other command. `atticus.fullUi` now only adds Atticus 1's legacy commands and starts the app with `--full`.
+
 ### npm installs carry search by meaning (ADR 0124 addendum D-npm)
 
 - **`npm install --global @maycombhq/cli` through a bank's npm mirror now gives search by meaning, with nothing downloaded after install and no install scripts.** `@maycombhq/embed-model` carries the model (all-MiniLM-L6-v2, 79 MB packed), its tokenizer, model card and Apache-2.0 licence; each `@maycombhq/onnxruntime-<platform>-<arch>` carries onnxruntime's CPU build for that platform and `@maycombhq/onnxruntime-wasm` its WebAssembly fallback, with onnxruntime's MIT licence. npm installs only your platform's runtime. On Linux x64 the install downloads 117 MB (141 packages). `--omit=optional` still leaves it out.

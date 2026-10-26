@@ -213,7 +213,7 @@ export async function uiCommand(
     parent?: number;
     /** Print the session token (ADR 0119): an editor that starts the app reads it, a person rarely needs it. */
     showToken?: boolean;
-    /** Every page in the menu, not only the six entries (the Surfaces design). */
+    /** Every page a tab of its section, and the menu's More pages open (the Surfaces design). */
     full?: boolean;
   },
   io: Output,

@@ -539,7 +539,7 @@ export const COPY = {
       openCount: (n: number) => `${n} open`,
     },
   },
-  /** The menu: six entries (the Surfaces design), and Atticus's own pages with --full. */
+  /** The menu: six entries (the Surfaces design), then More pages with every other page. */
   nav: {
     main: "Main",
     /** The Overview's name: it is part of Home now, and Ctrl+K finds Home by it. */
@@ -550,7 +550,7 @@ export const COPY = {
     stories: "Stories",
     tasks: "Tasks",
     knowledge: "Knowledge",
-    /** The six entries, by their id in screens.ts, and Atticus's own pages with --full. */
+    /** The six entries, by their id in screens.ts, and Atticus's own pages (under More pages). */
     sections: {
       Home: "Home",
       Map: "Map",
@@ -1185,7 +1185,6 @@ export const COPY = {
     ask: "Ask",
     help: "Help",
     replayTheTour: "Replay the tour",
-    ctrlK: "Ctrl K",
     skipToContent: "Skip to content",
   },
   boundary: {
@@ -1217,6 +1216,13 @@ export const COPY = {
   menu: {
     atticus: "ATTICUS",
     askAtticus: "Ask Atticus",
+    /** At the bottom of the menu: every page the six entries' tabs don't show (2026-10-25). */
+    morePages: "More pages",
+    /** The keys that open Ctrl+K: Cmd on a Mac. */
+    keysMac: "Cmd+K",
+    keys: "Ctrl+K",
+    /** The hint under More pages; a click opens it too (an editor's panel may take the keys). */
+    anyPage: (keys: string) => `${keys}: any page`,
   },
   palette: {
     askItem: (question: string) => `Ask: ${question}`,
@@ -1994,6 +2000,9 @@ export const COPY = {
     gate: "Gate",
     notWrittenYetFor:
       "Not written yet for this change. It is drafted when the change reaches this phase, or by its agent.",
+    /** An Atticus 1 artifact on an Atticus 2 change (2026-10-25). */
+    noSuchArtifact: (artifact: string) =>
+      `This change has no ${artifact}. Atticus 2 writes a change's brief, design, stories and tasks in its stages instead: see Feature design, Architecture and Stories.`,
     text: (artifact: string | number) => `${artifact} text`,
     edit: "Edit",
     for: (owner: string | number) => ` for ${owner}`,

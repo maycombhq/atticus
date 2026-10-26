@@ -6,7 +6,7 @@ const app = forgeJourney();
 test("runs a task with AI, and is told to open the change's workspace first", async ({ page }) => {
   await open(page, app(), "home");
   await open(page, app(), "tasks?change=add-transfer-limit");
-  // The Task board is behind --full: its address still opens it, Change's entry marked, and
+  // The Task board is under More pages: its address still opens it, Change's entry marked, and
   // Change's tabs keep the change, At a glance among them.
   await expect(
     page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Change" }),

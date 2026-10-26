@@ -59,7 +59,7 @@ export const WORDS = {
   ownerPrompt:
     "The handle of the person or team who looks after the org pack, normally the platform lead (for example priya.nair or team-platform).",
   ownerRule: "One handle: letters, digits, dots and hyphens, no spaces.",
-  // Phase D: three views, the steps, and the rest behind the setting atticus.fullUi.
+  // Every view and command; Atticus 1's legacy ones behind the setting atticus.fullUi.
   waitingHead: "Waiting on you",
   waitingHeadTip:
     "What waits on you across every change: open needs, open findings, manual steps and knowledge to verify. The open questions are in the Questions view.",
@@ -72,7 +72,7 @@ export const WORDS = {
   questionEvidence: (lines: string) => `What it read: ${lines}`,
   questionClick: "Click to answer it, with the lines it read beside the answers.",
   chatUse:
-    "Use a command: /next, /map <repo>, /verify <repo>, /feature <change>, /architecture <change>, /stories <change>, /task <change> [task], /critic <change> or /answer. With the setting atticus.fullUi on, the others too (/run, /ask, /diagram and the rest).",
+    "Use a command: /next, /map <repo>, /verify <repo>, /feature <change>, /architecture <change>, /stories <change>, /task <change> [task], /critic <change> or /answer; or /new, /diagram, /changemap, /estimate, /ask and /run. With the setting atticus.fullUi on, Atticus 1's too (/survey, /scanverify, /spec, /small).",
   taskSay: "Say which change, and the task if you know it: /task add-note-tags T2",
   taskStarting: (change: string, task?: string) =>
     task
@@ -84,8 +84,8 @@ export const WORDS = {
   otherArea: "Other",
   fullUiChanged: (on: boolean) =>
     on
-      ? "Atticus now offers every view and command, and the app every page."
-      : "Atticus now offers Next and Waiting, Questions, Changes and the steps; the app its six entries.",
+      ? "Atticus now offers Atticus 1's legacy commands too, and the app every page as a tab."
+      : "Atticus now offers every view and command but Atticus 1's legacy ones; the app its six entries, with every other page under More pages.",
 };
 
 /** WP7.6: an archived change near a new one, as `atticus change similar --json` gives it. */

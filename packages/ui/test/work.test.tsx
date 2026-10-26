@@ -287,17 +287,20 @@ describe("the menu: six entries (the Surfaces design)", () => {
     expect(out).toContain('href="#/changes"');
     expect(out).toContain('href="#/repos"');
     expect(out).not.toContain(">Atticus</a>");
-    expect(out).not.toContain("nav-more");
-    expect(out).not.toContain('aria-expanded="');
+    // Then More pages, closed (2026-10-25; test/nav.test.tsx has the rest).
+    expect(out).toContain('aria-expanded="false"');
+    expect(out.indexOf(">Set up</a>")).toBeLessThan(out.indexOf("More pages"));
   });
 
-  it("adds Atticus's own pages as a seventh entry with --full", () => {
-    const out = html(<Nav current={screenOf("#/runs")} full />);
-    expect(out).toContain('href="#/runs" aria-current="page">Atticus</a>');
+  it("keeps the six with --full, Atticus's own pages under More pages, open", () => {
+    const out = html(<Nav current={screenOf("#/history")} full />);
+    expect(out).not.toContain(">Atticus</a>");
+    expect(out).toContain('aria-expanded="true"');
+    expect(out).toContain('href="#/history" aria-current="page">Prompt history</a>');
     expect(out).toContain('href="#/changes">Change</a>');
   });
 
-  it("marks the entry of the page shown, also one behind --full opened by its address", () => {
+  it("marks the entry of the page shown, also one under More pages opened by its address", () => {
     expect(html(<Nav current={screenOf("#/scans")} />)).toContain(
       'href="#/repos" aria-current="page"',
     );

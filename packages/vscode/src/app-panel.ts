@@ -105,8 +105,8 @@ export function stopChild(child: ChildProcess, graceMs = 0): void {
 
 /**
  * Start `atticus ui --port 0 --embed vscode`; resolves once it prints its address. With `full`
- * (the setting atticus.fullUi, Phase D) it is `atticus ui --full`: every page of the app, not
- * only its six entries.
+ * (the setting atticus.fullUi, Phase D) it is `atticus ui --full`: every page a tab, and the
+ * menu's More pages open. Without it the six entries, with More pages below them.
  */
 export function startApp(o: CliOptions, how: { full?: boolean } = {}): Promise<RunningApp> {
   const log = o.log ?? (() => undefined);
