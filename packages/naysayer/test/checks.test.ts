@@ -267,6 +267,27 @@ rules:
     );
   });
 
+  /**
+   * ADR 0021 addendum (2026-10-26), trial problem 3: the define gate's "Unknown: System owner for
+   * <repo>" had nowhere to put an answer, because the shipped profile has `systems: []`. A gap
+   * about a field a person writes in the org pack now names that file and field in its fix.
+   */
+  it("names the org-pack file and field for a missing system owner", async () => {
+    const root = await forgeChangeRoot();
+    const r = await runCritic(root, CHANGE, { now: NOW, gate: "design" });
+    const gap = r.findings.find(
+      (f) =>
+        f.finding.rule === "constitution.touched-components-known" &&
+        f.finding.summary.includes("System owner"),
+    )!.finding;
+    expect(gap.summary).toBe(
+      "Unknown: Component repo, System owner and an interface spec for audit-svc.",
+    );
+    expect(gap.fix.text).toBe(
+      "Write it in org-pack/profiles/forge/profile.yaml: systems[] (id: audit): owner (the team that owns the system), in a pull request. Answering the owner question doesn't close the gap on its own: the answer counts once the fact is in the catalog.",
+    );
+  });
+
   it("refuses a team pack that loosens a constitution rule and reports it on the run", async () => {
     const root = await forgeChangeRoot();
     await write(

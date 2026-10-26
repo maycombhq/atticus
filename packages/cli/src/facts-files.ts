@@ -25,7 +25,7 @@ import {
   type VerifyReport,
 } from "@maycombhq/verify";
 import { changesSince, createGit, type GitRunner } from "@maycombhq/workspace";
-import { repoFor } from "./onboard-commands.js";
+import { repoFor } from "./repo-for.js";
 
 /**
  * The files of a repo's read (ADR 0124), shared by `atticus verify` and `atticus map`: where the

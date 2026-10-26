@@ -93,6 +93,16 @@ export async function initCommand(
         : "openspec/ was made as folders with the org-flow schema.",
     );
     if (r.openspecNote) io.out(r.openspecNote);
+    // ADR 0006 addendum (2026-10-26): the slash commands the Next line names are written here, so
+    // a fresh metarepo has them; `atticus assistant-files` is only needed when the org pack changes.
+    if (r.assistantFiles > 0)
+      io.out(
+        `Your assistant's files are written (${r.assistantFiles} of them, .claude/commands/, .github/prompts/, CLAUDE.md), so /atticus-map works here; atticus assistant-files writes them again when the org pack changes.`,
+      );
+    else
+      io.out(
+        "Your assistant's files weren't written; run atticus assistant-files to get the slash commands (/atticus-map and the rest), or use atticus map <repo> instead.",
+      );
     if (r.openspecStore)
       io.out(
         `It is also the OpenSpec store ${r.openspecStore.id} (beta, .openspec-store/store.yaml): once it is pushed, a developer runs openspec store register <their clone> to use it from plain OpenSpec.`,

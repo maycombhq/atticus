@@ -84,6 +84,13 @@ import {
   writeVerifyFiles,
   type VerifySummary,
 } from "./facts-files.js";
+import {
+  loadReadPlan,
+  partOfWords,
+  readPlanProgress,
+  readPlanRelOf,
+  writeReadPlan,
+} from "./map-parts.js";
 
 /**
  * atticus map <repo> (ADR 0124 §4, tiers 2 and 3): an assistant that can't open files reads the
@@ -1144,6 +1151,23 @@ async function estimate(
   // A-big2: the parts are of the product code left with every proposal out.
   const product = files.filter((f) => !left.some((d) => f.path.startsWith(d)));
   const parts = planParts(product, session);
+  // A-ledger: the plan is kept beside the facts, so the parts are the same in every session and
+  // which part is next is read back from the facts. An unchanged plan is left as it was planned.
+  const plan0 = await loadReadPlan(root, repo);
+  const same =
+    plan0 !== undefined &&
+    plan0.commit === c.commit &&
+    plan0.session === session &&
+    plan0.parts.length === parts.length &&
+    plan0.parts.every(
+      (p, i) =>
+        p.paths.length === parts[i]!.paths.length &&
+        p.paths.every((x, j) => x === parts[i]!.paths[j]),
+    );
+  if (parts.length && !same) await writeReadPlan(root, repo, { commit: c.commit, session, parts });
+  const progress = parts.length
+    ? await readPlanProgress(root, repo, { commit: c.commit })
+    : undefined;
   const questions = (await listQuestions(root, { repo })).questions.filter(
     (q) => q.state !== "retired",
   );
@@ -1173,7 +1197,23 @@ async function estimate(
             after: proposed.after,
             exclude: proposed.proposals,
           },
-          parts: { session, parts },
+          parts: {
+            session,
+            parts,
+            // A-ledger: the read plan on file and what the facts say each part has covered.
+            ...(progress
+              ? {
+                  plan: {
+                    file: readPlanRelOf(root, repo),
+                    total: progress.total,
+                    done: progress.done,
+                    ...(progress.next ? { next: progress.next.part } : {}),
+                    stale: progress.stale,
+                    parts: progress.parts,
+                  },
+                }
+              : {}),
+          },
           tier,
           questions: questions.map((q) => ({
             id: q.id,
@@ -1253,11 +1293,29 @@ async function estimate(
     io.out(
       `About ${parts.reduce((n, p) => n + p.tokens, 0)} tokens${proposed.proposals.length ? " with those left out" : ""} is more than one session reads (${session} tokens): read it in ${parts.length} parts, one per session or sub-agent, as /atticus-map says:`,
     );
+    // A-ledger: the plan is recorded, so each part says whether it is read; the next one is named.
+    const stateOf = (i: number) => progress?.parts[i]?.state;
+    const words = (s: string | undefined) =>
+      s === "done" ? "done" : s === "in-progress" ? "part-read" : "to read";
     parts.forEach((p, i) =>
       io.out(
-        `  part ${i + 1} (about ${p.tokens} tokens, ${plural(p.files, "file")}): ${p.paths.join(", ")}`,
+        `  part ${i + 1} (${words(stateOf(i))}, about ${p.tokens} tokens, ${plural(p.files, "file")}): ${p.paths.join(", ")}`,
       ),
     );
+    if (progress) {
+      io.out(
+        `Read plan: ${readPlanRelOf(root, repo)}. ${
+          progress.next
+            ? `${partOfWords({ part: progress.next.part, total: progress.total })} is next (${progress.done ? `${progress.done} of ${progress.total} read` : `none of ${progress.total} read yet`}): ${progress.next.paths.join(", ")}.`
+            : `All ${progress.total} parts are read.`
+        } A part counts as read when every folder it covers is in the facts (a fact citing a file, or a line of ${factsRelOf(root)}/${repo}.reviewed.jsonl); atticus next says which comes next.`,
+      );
+      for (const p of progress.parts)
+        if (p.state === "in-progress")
+          io.out(
+            `  part ${p.part} is part-read: nothing in the facts yet for ${p.left.join(", ")}.`,
+          );
+    }
   }
   io.out(`Your assistant: ${tierWords(tier)}, ${tierSource(tier)}. ${tier.how}`);
   io.out(

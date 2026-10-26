@@ -14,6 +14,7 @@ import {
   writeOrgFlowSchema,
   writeStoreMarker,
 } from "@maycombhq/openspec-adapter";
+import { generateAssistantFiles } from "@maycombhq/assistant-files";
 import { createGit, ensureGitignore, type GitRunner } from "@maycombhq/workspace";
 import { AdoptError } from "./errors.js";
 import { copyDir, exists, isDir, listFiles, writeNew } from "./files.js";
@@ -67,6 +68,12 @@ export interface InitResult {
   openspecNote?: string;
   problems: OrgPackProblem[];
   questions: string[];
+  /**
+   * How many assistant files were written (the slash commands, instructions and skills for each
+   * assistant runtime.yaml allows). `init` names `/atticus-map <repo>` as the next step, so the
+   * command must exist in a fresh metarepo (ADR 0006 addendum 2026-10-26).
+   */
+  assistantFiles: number;
   /**
    * `initialised`: the folder wasn't inside a git repository, so it was made one (branch main);
    * `inside`: it is in one already, left as it is; `unavailable`: git didn't run.
@@ -225,10 +232,21 @@ export async function init(dir: string, o: InitOptions): Promise<InitResult> {
     );
 
   const op = await loadOrgPack(orgPack);
+  // The assistant files, so the slash commands init names (`/atticus-map <repo>`) exist here from
+  // the first minute; `atticus assistant-files` writes them again when the org pack changes.
+  let assistantFiles = 0;
+  try {
+    const a = await generateAssistantFiles(dir);
+    assistantFiles = a.results.filter((x) => x.written).length;
+  } catch {
+    // The org pack's own problems are reported above; a metarepo without the slash commands
+    // still works through `atticus map <repo>`.
+  }
   const created = (await listFiles(dir)).filter((f) => !before.has(f));
   return {
     root: dir,
     created,
+    assistantFiles,
     openspec: mode,
     ...(store ? { openspecStore: store } : {}),
     ...(note ? { openspecNote: note } : {}),

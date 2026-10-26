@@ -1,0 +1,49 @@
+# Laid over fixtures/forge/expected/scan.yaml. Invented, like the rest of the Forge estate.
+#
+# Calls out of the estate to a system that has no Endpoint record of its own: Thornefield Models,
+# an invented model provider the ledger calls. The projection of a `call` fact (ADR 0124) makes an
+# Interface with its method and path and no Endpoint, because an Endpoint is read from the code
+# that serves it and nobody reads a vendor's code. Before ADR 0124 addendum A-ledger the index
+# knew an endpoint name only from an Endpoint record, so "POST /messages" was a gap at the
+# architecture stage although the catalog held the call.
+# Records omit schemaVersion and status; the tests add them.
+- kind: System
+  id: thornefield-models
+  confidence: verified
+  name: Thornefield Models
+  boundary: vendor
+  evidence: [{ source: config, repo: forge-ledger, path: forge.yaml, line: 11 }]
+- kind: Interface
+  id: if-a358633ab639503b
+  confidence: verified
+  from: ledger-api
+  to: thornefield-models
+  via: direct
+  method: POST
+  normalizedPath: /messages
+  sync: sync
+  evidence:
+    - {
+        source: code,
+        repo: forge-ledger,
+        path: src/main/java/forge/ledger/ThornefieldClient.java,
+        line: 14,
+        side: caller,
+      }
+- kind: Interface
+  id: if-76e25b5569beb95d
+  confidence: verified
+  from: ledger-api
+  to: thornefield-models
+  via: direct
+  method: POST
+  normalizedPath: /chat/completions
+  sync: sync
+  evidence:
+    - {
+        source: code,
+        repo: forge-ledger,
+        path: src/main/java/forge/ledger/ThornefieldClient.java,
+        line: 29,
+        side: caller,
+      }

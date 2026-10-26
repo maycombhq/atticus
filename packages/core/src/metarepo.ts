@@ -30,6 +30,11 @@ export function orgPackDirOf(root: string): string {
   return isAdopted(root) ? join(root, ".atticus", "org-pack") : join(root, "org-pack");
 }
 
+/** The org pack folder relative to the root with forward slashes, for messages and stored paths. */
+export function orgPackRelOf(root: string): string {
+  return isAdopted(root) ? ".atticus/org-pack" : "org-pack";
+}
+
 /** The folder holding local state (`.index/`, `.runs/`, `workspace/`): the root, or `.atticus/`. */
 export function stateDirOf(root: string): string {
   return isAdopted(root) ? join(root, ".atticus") : root;
@@ -83,7 +88,8 @@ export function factsDirOf(root: string): string {
 /**
  * The files the facts folder keeps beside a repo's facts file (ADR 0124): the questions the
  * assistant raised, what the verifier rejected, the files read and found to hold no fact, a
- * person's corrections, and the verifier's report. None of them is a facts file of its own.
+ * person's corrections, the verifier's report, and the read plan of a repo read in parts
+ * (addendum A-ledger). None of them is a facts file of its own.
  */
 export const FACTS_COMPANIONS = [
   ".questions.jsonl",
@@ -91,6 +97,7 @@ export const FACTS_COMPANIONS = [
   ".reviewed.jsonl",
   ".corrections.jsonl",
   ".verify.yaml",
+  ".read-plan.yaml",
 ] as const;
 
 /**

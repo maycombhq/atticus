@@ -177,7 +177,7 @@ describe("the stories stage as an OpenSpec citizen", () => {
       const t = await taskContext(root, CHANGE, "1.3");
       expect(t.task.id).toBe("1.2");
       expect(t.notes).toContain(
-        "OpenSpec counts 0 of 2 tasks done (openspec instructions apply); tick this one in tasks.md when its tests pass.",
+        "OpenSpec counts 0 of 2 tasks done (atticus openspec instructions apply); tick this one in tasks.md when its tests pass.",
       );
       // Archive (the tasks ticked): openspec/specs/ gains the capability.
       const tasks = join(dir, "tasks.md");

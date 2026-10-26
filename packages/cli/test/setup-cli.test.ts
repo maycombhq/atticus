@@ -70,6 +70,11 @@ describe("atticus init", () => {
     // It wasn't inside a git repository: it is one now, on main.
     expect(t.out[1]).toBe(`Made ${dir} a git repository (git init, branch main).`);
     expect(t.out).toContain("OpenSpec is set up with the org-flow schema.");
+    // ADR 0006 addendum (2026-10-26), trial problem 1: init writes the slash commands it names
+    // below, so /atticus-map works in a fresh metarepo without atticus assistant-files.
+    expect(t.out.find((l) => l.startsWith("Your assistant's files"))).toMatch(
+      /^Your assistant's files are written \(\d+ of them, \.claude\/commands\/, \.github\/prompts\/, CLAUDE\.md\), so \/atticus-map works here; atticus assistant-files writes them again when the org pack changes\.$/,
+    );
     // ADR 0124 §4: the tier the assistant reads a repo at, and where to see the first read's cost;
     // a new metarepo has no probe on file, so it is from runtime.yaml, with the command that
     // measures it (addendum A-probe).

@@ -23,7 +23,7 @@ import {
  */
 
 /** Bumped when the index's tables change; an index of another version is rebuilt once. */
-export const INDEX_VERSION = 3;
+export const INDEX_VERSION = 4;
 
 export const SCHEMA = `
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);

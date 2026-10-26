@@ -22,3 +22,11 @@ Contract notes (no change made): C6 has classification levels but no limit, so t
 ## Consequences
 
 On Forge it finds d12 (both document conflicts) and d09–d11 (the owner questions) exactly, and the pattern scan matches the org pack.
+
+## Addendum (2026-10-26): an owner question says which file and field answers it
+
+On a trial run the define gate reported `gap-touched-components-known-<repo>`: "Unknown: System owner for <repo>", and the same gap came back at design. Nobody had asked for a system owner, and nothing said where one goes. The cause is plain: the profile `atticus init` ships has `systems: []`, so no system has an owner, and `component-source-known` asks for one of every component the change touches. The question was fair; it had nowhere for its answer to land. Answering the `OwnerQuestion` does not close it either, because a gap closes only when the fact is in the catalog, never on an answer alone.
+
+A gap draft may now carry `fill`: the org-pack file and the field in it a person writes, with what the field says, relative to the org pack's folder. `component-source-known` fills it for a missing system owner, pointing at the platform profile that lists the system, or — when no profile lists it — the pack's one profile; when neither can be named it says nothing rather than the wrong file. The check context gains `systemFill(system, field, what)` for this, so a plugin check can do the same. The critic's `knowledge-check` uses it: the finding's fix reads "Write it in `org-pack/profiles/<platform>/profile.yaml`: `systems[] (id: <system>): owner` (the team that owns the system), in a pull request. Answering the owner question doesn't close the gap on its own: the answer counts once the fact is in the catalog." A gap about a fact no org-pack field holds (a timeout setting, an alert) is unchanged.
+
+Asking for the owner when the repo is added or the profile is written was the other option. It was left: `repos discover` proposes manifest entries a person accepts in a pull request and already raises its own questions, and an owner nobody has decided yet would become a blank field rather than an answer. Saying exactly where the answer goes costs nothing and works whenever the question is met.

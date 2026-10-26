@@ -150,7 +150,9 @@ describe("atticus handoff done finishes other commands' hand-off runs", () => {
     await writeFile(out, "features: [unclosed\n");
     const d = io();
     expect(await handoffDone(root, runId, d.io)).toBe(1);
-    expect(d.err[0]).toMatch(/^catalog\/proposals\/feature-names.yaml isn't YAML: /);
+    expect(d.err[0]).toMatch(
+      /^catalog\/proposals\/feature-names.yaml isn't YAML \(line \d+, column \d+\): /,
+    );
   });
 
   it("saves the glossary definer's definitions as proposals, as the model path does", async () => {

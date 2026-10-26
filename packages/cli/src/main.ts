@@ -697,6 +697,7 @@ Usage:
   atticus orgpack accept <platform>    Put the drafted systems into profile.yaml [--only <id,id>] [--verified-only] [--dry-run] [--json]
   atticus openspec setup               Set up OpenSpec with the org-flow schema in the metarepo
   atticus openspec check               Check the OpenSpec version and validate every change and spec
+  atticus openspec <args...>           Run the bundled OpenSpec CLI in the metarepo with these arguments (openspec isn't on PATH; it ships inside Atticus). status, instructions and show take --change from the only change open when you don't name one
   atticus handoff done <run-id>        Tell Atticus a hand-off artifact is written; it validates it (a stage's draft: with the stage's checks, its problems listed with their lines until it is clean) [--model m: the model that wrote it, kept in the run record]
   atticus stage check <change> <stage> <file>  Run a stage's checks on a draft's file and list its problems with their lines; writes nothing (a drafter checks its draft before it hands it in)
   atticus next [--all] [--json]        The next step to take, its command and slash command, and why; from the files only
@@ -794,6 +795,25 @@ export async function main(
     if (l && e instanceof Error) (e as Error & { logFile?: string }).logFile = l.file;
     throw e;
   }
+}
+
+/**
+ * The arguments `atticus openspec <args...>` passes on: everything after the word `openspec`,
+ * without Atticus's own `--root <dir>` (ADR 0006 addendum 2026-10-26).
+ */
+function openspecArgsOf(argv: readonly string[]): string[] {
+  const at = argv.indexOf("openspec");
+  const out: string[] = [];
+  for (let i = at + 1; i < argv.length; i++) {
+    const a = argv[i]!;
+    if (a === "--root") {
+      i++;
+      continue;
+    }
+    if (a.startsWith("--root=")) continue;
+    out.push(a);
+  }
+  return out;
 }
 
 /** The indexes of argv's positional words, as the parser reads them (an option's value isn't one). */
@@ -3160,6 +3180,12 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
   }
   if (group === "openspec" && command === "setup") return openspecSetup(root, io);
   if (group === "openspec" && command === "check") return openspecCheck(root, io);
+  // ADR 0006 addendum (2026-10-26): everything else is the bundled OpenSpec CLI, run as it is, so
+  // every OpenSpec command Atticus names in a message is one a person can run.
+  if (group === "openspec") {
+    const { openspecRun } = await import("./openspec-run-commands.js");
+    return openspecRun(root, openspecArgsOf(argv), io);
+  }
   if (group === "workspace" && command === "sync") return workspaceSync(root, repoIds, io);
   if (group === "workspace" && (command === "open" || command === "prune")) {
     if (!arg) {

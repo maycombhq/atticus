@@ -28,12 +28,28 @@ export interface Need {
   what: string;
 }
 
+/**
+ * Where a person writes a fact the catalog can't read from code (ADR 0021 addendum 2026-10-26):
+ * the org-pack file and the field in it. A gap that has one says it, so an owner question nobody
+ * asked for ("Unknown: System owner for <repo>") names somewhere for the answer to go.
+ */
+export interface FillPlace {
+  /** The file, relative to the org pack's folder. */
+  file: string;
+  /** The field in it, as a person reads it: `systems[] (id: audit): owner`. */
+  field: string;
+  /** What the field says, in the check's own words. */
+  what: string;
+}
+
 export interface KnowledgeGap {
   check: string;
   system: string;
   /** Catalog records the gap is about. */
   records: string[];
   owner: string;
+  /** The org-pack files and fields a person fills to close the gap, when it has any. */
+  fill?: FillPlace[];
   /** Set when nobody owns the system or the platform: the role that takes the question. */
   routeTo?: string;
   /** Ids of needed records that exist but are older than the freshness window. */
@@ -50,6 +66,8 @@ export interface GapDraft {
   stale?: string[];
   /** Who takes the question when it isn't the system's owner (a feature's own owner). */
   owner?: string;
+  /** The org-pack files and fields a person fills to close the gap (ADR 0021 addendum). */
+  fill?: FillPlace[];
 }
 
 export interface CheckContext {
@@ -62,6 +80,12 @@ export interface CheckContext {
   /** Whether a record is older than the pack's freshness window for its kind. */
   isStale(r: CatalogRecord): boolean;
   lastSeen(r: CatalogRecord): string | undefined;
+  /**
+   * The org-pack file and field a person fills to give a system a field nothing in the code can
+   * say (ADR 0021 addendum): the platform profile that lists the system, else the pack's only profile.
+   * Undefined when no profile can be named, so a check says nothing rather than the wrong file.
+   */
+  systemFill(system: string, field: string, what: string): FillPlace | undefined;
 }
 
 export interface KnowledgeCheck {
@@ -265,12 +289,18 @@ const sourceKnown: KnowledgeCheck = {
         asks.length > 1 ? `${asks.slice(0, -1).join(", ")}, and ${asks.at(-1)}?` : `${asks[0]}?`;
       if (asks[0]!.startsWith("which")) q = q[0]!.toUpperCase() + q.slice(1);
       if (!c.repo && callers.length) q += ` It is known only from calls by ${callers.join(", ")}.`;
+      // ADR 0021 addendum: a system's owner is a person's fact, written in the platform profile; say which
+      // file and field, so the gap isn't an owner question with nowhere for its answer to go.
+      const fill = owned
+        ? undefined
+        : ctx.systemFill(c.system, "owner", "the team that owns the system");
       out.push({
         system: c.system,
         records: [c.id],
         question: q,
         neededFact: `${missing.length > 1 ? `${missing.slice(0, -1).join(", ")} and ${missing.at(-1)}` : missing[0]} for ${c.id}`,
         evidence: c.evidence,
+        ...(fill ? { fill: [fill] } : {}),
       });
     }
     return out;
@@ -339,6 +369,24 @@ export function knowledgeGaps(input: KnowledgeGapsInput): KnowledgeGap[] {
     const seen = lastSeen(r);
     return days !== undefined && seen !== undefined && daysBetween(seen, input.now) > days;
   };
+  // ADR 0021 addendum: which platform profile a system's own fields are written in.
+  const platformOf = (system: string) => {
+    const lists = orgPack.profiles.filter((p) => p.profile?.systems.some((s) => s.id === system));
+    if (lists.length === 1) return lists[0]!.platform;
+    if (lists.length > 1) return undefined;
+    const withProfile = orgPack.profiles.filter((p) => p.profile);
+    return withProfile.length === 1 ? withProfile[0]!.platform : undefined;
+  };
+  const systemFill = (system: string, field: string, what: string): FillPlace | undefined => {
+    const platform = platformOf(system);
+    return platform
+      ? {
+          file: `profiles/${platform}/profile.yaml`,
+          field: `systems[] (id: ${system}): ${field}`,
+          what,
+        }
+      : undefined;
+  };
   const ctx: CheckContext = {
     records,
     byId,
@@ -348,6 +396,7 @@ export function knowledgeGaps(input: KnowledgeGapsInput): KnowledgeGap[] {
     ownerOf,
     isStale,
     lastSeen,
+    systemFill,
   };
   const existing = new Map<string, OwnerQuestionRecord>();
   for (const r of records) if (r.kind === "OwnerQuestion") existing.set(r.id, r);
@@ -382,6 +431,7 @@ export function knowledgeGaps(input: KnowledgeGapsInput): KnowledgeGap[] {
         system: g.system,
         records: g.records,
         owner,
+        ...(g.fill?.length ? { fill: g.fill } : {}),
         ...(routeTo ? { routeTo } : {}),
         ...(g.stale ? { stale: g.stale } : {}),
         question: p.record as OwnerQuestionRecord,

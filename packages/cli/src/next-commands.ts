@@ -30,6 +30,7 @@ import {
   whatRunsWhere,
 } from "@maycombhq/assistant-files";
 import { isMetarepo, notMetarepo } from "./metarepo-guard.js";
+import { partOfWords, readPlanProgress, readPlanRelOf } from "./map-parts.js";
 
 /**
  * atticus next [--all] [--json] (ADR 0086, plan principle 8): the next step to take, worked out
@@ -74,6 +75,16 @@ export interface RepoState {
   facts?: boolean;
   /** Its assistant wrote its facts (facts/<repo>.jsonl), whether or not they are written yet. */
   read?: boolean;
+  /**
+   * The read plan of a repo read in parts (ADR 0124 addendum A-ledger): how many parts there are,
+   * how many the facts account for, and which comes next.
+   */
+  readPlan?: {
+    total: number;
+    done: number;
+    next?: { part: number; paths: string[] };
+    file: string;
+  };
   /**
    * What it is, in a person's words (ADR 0128): `none` when nothing says, `draft` when the
    * assistant wrote one and nobody has confirmed it, `said` when a person did.
@@ -154,6 +165,8 @@ export async function readNextState(root: string): Promise<NextState> {
     const spec = await readRepoSpec(root, r.id);
     problems.push(...spec.problems);
     const findings = await readSpecFindings(root, r.id);
+    // A-ledger: the parts a repo is read in, and which the facts account for.
+    const plan = await readPlanProgress(root, r.id);
     repos.push({
       id: r.id,
       cloned: r.cloned,
@@ -166,6 +179,16 @@ export async function readNextState(root: string): Promise<NextState> {
       described: !r.description ? "none" : r.description.trust === "suggested" ? "draft" : "said",
       ...(spec.header?.template.startsWith("facts@") ? { facts: true } : {}),
       ...(existsSync(join(factsDirOf(root), `${r.id}.jsonl`)) ? { read: true } : {}),
+      ...(plan
+        ? {
+            readPlan: {
+              total: plan.total,
+              done: plan.done,
+              ...(plan.next ? { next: { part: plan.next.part, paths: plan.next.paths } } : {}),
+              file: readPlanRelOf(root, r.id),
+            },
+          }
+        : {}),
     });
   }
   const open = await listQuestions(root, { state: "open" });
@@ -599,7 +622,10 @@ export function nextSteps(s: NextState): NextStep[] {
             command: `atticus map ${r.id}`,
             slash: `/atticus-map ${r.id}`,
             where: METAREPO,
-            why: `${r.id} isn't read yet: your assistant reads it and writes its facts, each citing its line, and atticus verify ${r.id} checks them.`,
+            // A-ledger: a repo read in parts says which part comes next, so nobody keeps the list.
+            why: r.readPlan?.next
+              ? `${r.id} is read in ${r.readPlan.total} parts (${r.readPlan.file}): ${partOfWords({ part: r.readPlan.next.part, total: r.readPlan.total })} is next, ${r.readPlan.done === 0 ? "none" : r.readPlan.done} ${r.readPlan.done === 1 ? "is" : "are"} read (${r.readPlan.next.paths.join(", ")}). Your assistant reads the part and writes its facts, each citing its line.`
+              : `${r.id} isn't read yet: your assistant reads it and writes its facts, each citing its line, and atticus verify ${r.id} checks them.`,
             repo: r.id,
           },
     );

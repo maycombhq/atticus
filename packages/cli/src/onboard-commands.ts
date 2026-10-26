@@ -1,5 +1,5 @@
 import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
-import { basename, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { parse } from "yaml";
 import { type AiRuntime } from "@maycombhq/ai";
 import {
@@ -41,6 +41,7 @@ import {
 import { fsRepo } from "@maycombhq/sdk";
 import { baseClonePath } from "@maycombhq/workspace";
 import { offerCodeDir } from "./code-tools.js";
+import { repoFor } from "./repo-for.js";
 import type { Output } from "./commands.js";
 import { loadCatalog } from "./diagram-commands.js";
 
@@ -55,21 +56,6 @@ const proposalPath = (root: string, name: string) =>
   join(root, "proposals", "dialects", `${name}.yaml`);
 
 const isDir = async (p: string) => !!(await stat(p).catch(() => undefined))?.isDirectory();
-
-/** A repo by manifest id (its base clone) or a folder. */
-export async function repoFor(
-  root: string,
-  target: string,
-): Promise<{ id: string; dir: string } | undefined> {
-  const op = await loadOrgPack(orgPackDirOf(root));
-  const known = op.profiles.flatMap((p) => p.repos?.repos ?? []).find((r) => r.id === target);
-  if (known) {
-    const dir = baseClonePath(root, known.id);
-    return (await isDir(dir)) ? { id: known.id, dir } : undefined;
-  }
-  const dir = resolve(target);
-  return (await isDir(dir)) ? { id: basename(dir), dir } : undefined;
-}
 
 export interface OnboardDeps {
   /** The runtime to draft with; the CLI builds it from runtime.yaml (or --mode). */
@@ -789,3 +775,5 @@ export async function scanReview(
     );
   return 0;
 }
+
+export { repoFor };

@@ -10,7 +10,11 @@ OpenSpec is the foundation and Atticus is a layer on top of it ([ADR 0006](../ad
 | specs    | `specs/<capability>/spec.md`       | `atticus stories`, from the stories' acceptance criteria     |
 | tasks    | `tasks.md`                         | `atticus stories`, numbered per story (1.1, 1.2, 2.1 …)      |
 
-`openspec status --change <id>` shows the same progress `atticus next` reads. Edit `feature.yaml`, the target flows or the stories' answer and run the stage again; never edit the generated files. An organisation changes what each stage is told through `openspec/config.yaml` (`context`, and `rules` per artifact), which every stage reads first through `openspec instructions`.
+The architecture stage also writes `data.md` when a target flow changes the schema (a new table, a migration, a column with a type). It isn't an org-flow artifact and there is no template for it: a change that only reads or writes columns the catalog already has gets no `data.md`, and nothing asks for one — its data changes are the design's own **Data changes** section.
+
+OpenSpec ships inside the installed Atticus package rather than on your PATH, so run it as `atticus openspec <the same words>`: `atticus openspec status`, `atticus openspec instructions apply`, `atticus openspec list --specs`. `status`, `instructions` and `show` need a `--change`, and Atticus fills it in when exactly one change is open.
+
+`atticus openspec status` shows the same progress `atticus next` reads. Edit `feature.yaml`, the target flows or the stories' answer and run the stage again; never edit the generated files. An organisation changes what each stage is told through `openspec/config.yaml` (`context`, and `rules` per artifact), which every stage reads first through `openspec instructions`.
 
 ## How a change's specs accumulate
 
