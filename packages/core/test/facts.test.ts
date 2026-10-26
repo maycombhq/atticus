@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  catalogAuth,
   FACT_KINDS,
   factsJsonSchemas,
   mapDirOf,
@@ -12,6 +13,7 @@ import {
   projectFacts,
   serializeFacts,
   type Fact,
+  type FactOf,
 } from "../src/index.js";
 
 const here = join(__dirname, "fixtures", "facts");
@@ -124,6 +126,7 @@ describe("projectFacts: facts become C1 records, nothing downstream changes", ()
     expect(get.endpointType).toBe("rest");
     expect(get.method).toBe("GET");
     expect(get.normalizedPath).toBe("/accounts/{}");
+    // A-uncited: the fixture cites the line its auth rests on, so the Endpoint carries it.
     expect(get.auth).toBe("oauth2");
     expect(get.confidence).toBe("verified");
     const ev = (get.evidence as { path: string; line: number; commit: string; side?: string }[])[0];
@@ -383,5 +386,60 @@ describe("config facts per environment (ADR 0124, A4)", () => {
       ["forge-ledger.prod.ledger-pagesize", "prod", "50"],
     ]);
     for (const r of records) expect(parseRecord(r).ok).toBe(true);
+  });
+});
+
+/**
+ * ADR 0124 addendum A-uncited. The verifier keeps an entry's `auth` in the facts file whether or
+ * not a line is cited for it, because the file is the reader's own; the gate is here, on the way
+ * into C1, so the catalog never says an auth nothing shows and the warning doesn't erase itself.
+ */
+describe("catalogAuth: an auth reaches C1 only on a cited line (A-uncited)", () => {
+  const entry = (extra: Record<string, unknown>) =>
+    ({
+      kind: "entry",
+      id: "e-get-tiers",
+      repo: "forge-limits",
+      commit: "4d1c0de",
+      component: "limits-api",
+      entryType: "rest",
+      method: "GET",
+      path: "/limits/tiers",
+      cite: { file: "src/main/java/forge/limits/LimitController.java", line: 24, value: "/tiers" },
+      ...extra,
+    }) as unknown as FactOf<"entry">;
+  const cite = {
+    file: "src/main/java/forge/limits/LimitController.java",
+    line: 17,
+    value: "SCOPE_limits.read",
+  };
+
+  it("takes an auth a line is cited for", () => {
+    expect(catalogAuth(entry({ auth: "mtls", authCite: cite }))).toBe("mtls");
+  });
+
+  it("leaves out an auth the assistant cited no line for", () => {
+    expect(catalogAuth(entry({ auth: "mtls" }))).toBeUndefined();
+  });
+
+  it("takes a person's own auth without a cite: their word, marked as theirs", () => {
+    expect(catalogAuth(entry({ auth: "mtls", by: "person" }))).toBe("mtls");
+  });
+
+  it("says nothing where the fact claims no auth", () => {
+    expect(catalogAuth(entry({}))).toBeUndefined();
+  });
+
+  it("gives the Endpoint no auth when no line is cited, the fact keeping the claim", () => {
+    const uncited = entry({ auth: "mtls" });
+    const { records } = projectFacts([uncited]);
+    const ep = records.find((r) => r.kind === "Endpoint") as unknown as { auth?: string };
+    expect(ep.auth).toBeUndefined();
+    // the fact itself is untouched: the projection reads it, it never rewrites it
+    expect(uncited.auth).toBe("mtls");
+    const { records: cited } = projectFacts([entry({ auth: "mtls", authCite: cite })]);
+    expect((cited.find((r) => r.kind === "Endpoint") as unknown as { auth?: string }).auth).toBe(
+      "mtls",
+    );
   });
 });

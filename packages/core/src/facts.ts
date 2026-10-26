@@ -63,35 +63,37 @@ function issueOf(i: z.core.$ZodIssue): FactIssue {
   return { code: i.code, message: `${i.path.join(".") || "(root)"}: ${i.message}` };
 }
 
+/** A line of a facts file that isn't a fact, with its number, its text and what is wrong. */
+export type BadFactLine = { line: number; raw: string; issues: FactIssue[] };
+
 /**
- * Read a JSONL facts file line by line, keeping every line that reads and returning the others
- * with their issues, so one bad line (a capital in an id, a missing field) costs that fact, not
- * the whole read (feedback from the A4 run). A repeated id keeps its first line.
+ * One line of a facts file: the fact it holds, or what is wrong with it, or neither when the line
+ * is blank. `seen` holds the ids read so far and gains this one, so a repeated id keeps its first
+ * line. The whole of reading a line is here, so a reader that streams the file (ADR 0124 addendum
+ * A-room) and one that has the text in hand give the same facts and the same issues.
  */
-export function parseFactsLines(text: string): {
-  facts: Fact[];
-  bad: { line: number; raw: string; issues: FactIssue[] }[];
-} {
-  const facts: Fact[] = [];
-  const bad: { line: number; raw: string; issues: FactIssue[] }[] = [];
-  const seen = new Set<string>();
-  text.split(/\r?\n/).forEach((raw, i) => {
-    const line = i + 1;
-    if (raw.trim() === "") return;
-    let json: unknown;
-    try {
-      json = JSON.parse(raw);
-    } catch (e) {
-      bad.push({ line, raw, issues: [{ line, code: "not-json", message: (e as Error).message }] });
-      return;
-    }
-    const r = Fact.safeParse(json);
-    if (!r.success) {
-      bad.push({ line, raw, issues: r.error.issues.map((iss) => ({ line, ...issueOf(iss) })) });
-      return;
-    }
-    if (seen.has(r.data.id)) {
-      bad.push({
+export function parseFactLine(
+  raw: string,
+  line: number,
+  seen: Set<string>,
+): { fact?: Fact; bad?: BadFactLine } {
+  if (raw.trim() === "") return {};
+  let json: unknown;
+  try {
+    json = JSON.parse(raw);
+  } catch (e) {
+    return {
+      bad: { line, raw, issues: [{ line, code: "not-json", message: (e as Error).message }] },
+    };
+  }
+  const r = Fact.safeParse(json);
+  if (!r.success)
+    return {
+      bad: { line, raw, issues: r.error.issues.map((iss) => ({ line, ...issueOf(iss) })) },
+    };
+  if (seen.has(r.data.id))
+    return {
+      bad: {
         line,
         raw,
         issues: [
@@ -102,11 +104,31 @@ export function parseFactsLines(text: string): {
             message: `fact id ${r.data.id} is used on an earlier line`,
           },
         ],
-      });
-      return;
-    }
-    seen.add(r.data.id);
-    facts.push(r.data);
+      },
+    };
+  seen.add(r.data.id);
+  return { fact: r.data };
+}
+
+/**
+ * Read a JSONL facts file line by line, keeping every line that reads and returning the others
+ * with their issues, so one bad line (a capital in an id, a missing field) costs that fact, not
+ * the whole read (feedback from the A4 run). A repeated id keeps its first line.
+ *
+ * This takes the whole file as one string; a big repo's facts are read a line at a time instead
+ * (`streamFacts` in the CLI, ADR 0124 addendum A-room), through the same `parseFactLine`.
+ */
+export function parseFactsLines(text: string): {
+  facts: Fact[];
+  bad: BadFactLine[];
+} {
+  const facts: Fact[] = [];
+  const bad: BadFactLine[] = [];
+  const seen = new Set<string>();
+  text.split(/\r?\n/).forEach((raw, i) => {
+    const r = parseFactLine(raw, i + 1, seen);
+    if (r.fact) facts.push(r.fact);
+    else if (r.bad) bad.push(r.bad);
   });
   return { facts, bad };
 }
@@ -203,6 +225,18 @@ function triggerKind(t: Entry["entryType"]) {
 }
 
 /**
+ * The `auth` an entry fact may put in the catalog (ADR 0124 addendum A-uncited): the claim stands
+ * in C1 only where a line is cited for it (`authCite`), or where a person made the fact, since
+ * that is their own word, marked as theirs. The facts file keeps what its writer wrote either
+ * way; this is the gate on the way into the catalog, so the catalog never says an auth no line
+ * was cited for, and the verifier's `authUncited` warning stays until a line is cited.
+ */
+export function catalogAuth(f: FactOf<"entry">): FactOf<"entry">["auth"] {
+  if (f.auth === undefined) return undefined;
+  return f.authCite || f.by === "person" ? f.auth : undefined;
+}
+
+/**
  * Facts to C1. Ids are made from the claims, so the same facts give the same ids:
  * Endpoint `<component>.<method-path>`, Interface `if-<hash>`, DataStore `<store>`,
  * Table `<store>.<table>`, Column `<store>.<table>.<column>`, Schema `<endpoint>.<side>`,
@@ -277,7 +311,8 @@ export function projectFacts(input: readonly Fact[], opts: ProjectOptions = {}):
       pathOrTopic: f.path,
       ...(isPath ? { normalizedPath: normalizePath(f.path) } : {}),
       schemaRefs: [],
-      ...(f.auth ? { auth: f.auth } : {}),
+      // A-uncited: an auth no line is cited for stays in the facts file and out of the catalog.
+      ...(catalogAuth(f) ? { auth: catalogAuth(f) } : {}),
       evidence: [evidenceOf(f, "code", "callee")],
     } as CatalogRecord);
   }

@@ -1,4 +1,5 @@
 import {
+  appendFileSync,
   cpSync,
   existsSync,
   mkdirSync,
@@ -221,8 +222,12 @@ describe("atticus verify: long lists are counted, shown in part and pointed to (
     expect(await verifyCommand(root, "forge-gates", { commit: "6a7e5c0" }, o.io)).toBe(0);
     const text = o.out.join("\n");
     expect(text).toMatch(
-      /12 entries' auth left out \(no line that sets it was cited; all under authUncited in \.atticus\/facts\/forge-gates\.verify\.yaml\)/,
+      /12 entries' auth rests on no cited line \(all under authUncited in \.atticus\/facts\/forge-gates\.verify\.yaml\)\./,
     );
+    // A-uncited: it says what is kept where, and what to do, not only that something is amiss.
+    expect(text).toContain("kept in .atticus/facts/forge-gates.jsonl");
+    expect(text).toContain("left out of the catalog");
+    expect(text).toMatch(/give each entry an authCite/);
     const shown = o.out.filter((l) => /^ {2}e-g\d+ \(oauth2, /.test(l));
     expect(shown).toHaveLength(5);
     expect(shown[0]).toBe(`  e-g0 (oauth2, ${CTRL}:8)`);
@@ -389,7 +394,9 @@ describe("atticus verify: files read with nothing to record, and a read that is 
     expect(report(root).coverage.reviewed).toBe(3);
   });
 
-  it("leaves out an entry's auth that no line is cited for, and says so", async () => {
+  // A-uncited: the claim stays in the reader's own file, and out of the catalog. It used to be
+  // stripped from the file here, which erased this very warning on the next run.
+  it("keeps an entry's uncited auth in the facts file, says so, and says the same next run", async () => {
     const root = limits(reviewedFixture());
     const facts = join(root, ".atticus", "facts", "forge-limits.jsonl");
     writeFileSync(
@@ -401,15 +408,105 @@ describe("atticus verify: files read with nothing to record, and a read that is 
     );
     const o = io();
     expect(await verifyCommand(root, "forge-limits", { commit: "4d1c0de" }, o.io)).toBe(0);
-    expect(o.out.join("\n")).toMatch(/1 entry's auth left out .*authCite/);
-    expect(report(root).authUncited).toEqual([
+    const noted = [
       {
         id: "e-get-tiers",
         auth: "mtls",
         cite: "src/main/java/forge/limits/LimitController.java:24",
       },
-    ]);
-    expect(readFileSync(facts, "utf8")).not.toContain('"auth":"mtls"');
+    ];
+    expect(o.out.join("\n")).toMatch(/1 entry's auth rests on no cited line/);
+    expect(o.out.join("\n")).toMatch(/give each entry an authCite/);
+    expect(report(root).authUncited).toEqual(noted);
+    expect(readFileSync(facts, "utf8")).toContain('"auth":"mtls"');
+
+    const again = io();
+    expect(await verifyCommand(root, "forge-limits", { commit: "4d1c0de" }, again.io)).toBe(0);
+    expect(again.out.join("\n")).toMatch(/1 entry's auth rests on no cited line/);
+    expect(report(root).authUncited).toEqual(noted);
+  });
+
+  /**
+   * The two rewrites the facts file does get, with the reasons they differ from the auth claim
+   * (A-uncited): a secret must not sit on disk, so it goes and stays gone; a quote the cited line
+   * can't be checked against is evidence, not a claim, and is counted rather than passed over.
+   */
+  it("redacts a secret in a quote on disk, and the quote stays redacted on the next run", async () => {
+    const root = limits(reviewedFixture());
+    const facts = join(root, ".atticus", "facts", "forge-limits.jsonl");
+    const secret = "forge-limits-k3y-not-a-real-one";
+    mkdirSync(join(root, "src", "main", "resources"), { recursive: true });
+    writeFileSync(
+      join(root, "src", "main", "resources", "limits.yml"),
+      `limits:\n  gate:\n    api-key: ${secret}\n`,
+    );
+    appendFileSync(
+      facts,
+      JSON.stringify({
+        kind: "config",
+        id: "k-gate-key",
+        repo: "forge-limits",
+        commit: "4d1c0de",
+        component: "limits-api",
+        settingKind: "config",
+        key: "limits.gate.api-key",
+        cite: {
+          file: "src/main/resources/limits.yml",
+          line: 3,
+          value: "api-key",
+          quote: `    api-key: ${secret}`,
+        },
+      }) + "\n",
+    );
+    const o = io();
+    expect(await verifyCommand(root, "forge-limits", { commit: "4d1c0de" }, o.io)).toBe(0);
+    expect(o.out.join("\n")).toMatch(/1 quotes? had a secret value redacted/);
+    const kept = readFileSync(facts, "utf8");
+    expect(kept).not.toContain(secret);
+    expect(kept).toContain("<redacted>");
+    // and again: the secret doesn't come back, and nothing claims a new redaction
+    const again = io();
+    expect(await verifyCommand(root, "forge-limits", { commit: "4d1c0de" }, again.io)).toBe(0);
+    expect(readFileSync(facts, "utf8")).toBe(kept);
+    expect(again.out.join("\n")).not.toMatch(/secret value redacted/);
+  });
+
+  it("counts a quote left off because the cited line can't be quoted", async () => {
+    const root = limits(reviewedFixture());
+    const facts = join(root, ".atticus", "facts", "forge-limits.jsonl");
+    // A minified bundle: `quoteNotRequired` holds for it, so a quote that doesn't match the line
+    // is left off rather than rejecting the fact. That used to be silent.
+    mkdirSync(join(root, "src", "main", "resources"), { recursive: true });
+    writeFileSync(
+      join(root, "src", "main", "resources", "limits.min.js"),
+      `var forgeLimits={path:"/limits/caps"};\n`,
+    );
+    appendFileSync(
+      facts,
+      JSON.stringify({
+        kind: "entry",
+        id: "e-get-caps",
+        repo: "forge-limits",
+        commit: "4d1c0de",
+        component: "limits-api",
+        entryType: "rest",
+        method: "GET",
+        path: "/limits/caps",
+        cite: {
+          file: "src/main/resources/limits.min.js",
+          line: 1,
+          value: "/limits/caps",
+          quote: "a line this bundle does not hold",
+        },
+      }) + "\n",
+    );
+    const o = io();
+    expect(await verifyCommand(root, "forge-limits", { commit: "4d1c0de" }, o.io)).toBe(0);
+    expect(o.out.join("\n")).toMatch(/1 quote was left off .*the claim itself was still checked/);
+    expect(report(root).quotesDropped).toBe(1);
+    const kept = readFileSync(facts, "utf8");
+    expect(kept).toContain('"e-get-caps"');
+    expect(kept).not.toContain("a line this bundle does not hold");
   });
 });
 

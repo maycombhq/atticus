@@ -145,6 +145,11 @@ export interface VerifySummary {
   accepted: number;
   rejected: number;
   redacted: number;
+  /**
+   * Quotes left off a kept fact, the cited line being one a quote can't be checked against (ADR
+   * 0124 addendum A-uncited). Left out when none, so reports with no such quote are as they were.
+   */
+  quotesDropped?: number;
   coverage: {
     ratio: number;
     read: number;
@@ -175,7 +180,10 @@ export interface VerifySummary {
    * why and the files it stands for, for a person to challenge. Left out when none.
    */
   reviewed?: VerifyReport["reviewed"];
-  /** A note: the entries whose `auth` was left out, no line being cited for it. Left out when none. */
+  /**
+   * A note: the entries whose `auth` rests on no cited line (ADR 0124 addendum A-uncited). The
+   * claim is in the facts file and not in the catalog. Left out when none.
+   */
   authUncited?: VerifyReport["authUncited"];
   /**
    * What the repo is built on, as its framework facts say (ADR 0124 addendum A-framework): the
@@ -200,6 +208,12 @@ export interface ReviewedLineProblem {
  * Write the verifier's results: the kept facts in canonical form, the rejected ones (and any
  * question that couldn't be raised) with their reasons in `<repo>.rejected.jsonl` for the reader
  * to fix, and `<repo>.verify.yaml` with the coverage.
+ *
+ * The facts file keeps every claim its reader wrote (ADR 0124 addendum A-uncited). Two things are
+ * rewritten, and only in the bytes: a quote's secret value is redacted, and a quote the cited
+ * line can't be checked against is left off and counted. A claim the catalog mustn't carry — an
+ * `auth` no line is cited for — is dropped on the way into the catalog (`catalogAuth`), not here,
+ * so the warning for it is still raised the next time the facts are verified.
  */
 export async function writeVerifyFiles(
   root: string,
@@ -236,6 +250,7 @@ export async function writeVerifyFiles(
     accepted: report.accepted.length,
     rejected: report.rejected.length,
     redacted: report.redacted,
+    ...(report.quotesDropped ? { quotesDropped: report.quotesDropped } : {}),
     coverage: {
       ratio: report.coverage.ratio,
       read: report.coverage.read.length,

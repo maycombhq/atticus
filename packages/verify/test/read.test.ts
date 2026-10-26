@@ -210,14 +210,36 @@ describe("an entry's auth rests on the line that sets it (A-read, problem 4)", (
     expect(r.authUncited).toEqual([]);
   });
 
-  it("leaves out an auth with no authCite, a note and not a rejection", async () => {
+  // A-uncited: the claim stays in the fact the verifier keeps, and `catalogAuth` leaves it out of
+  // the catalog. Dropping it here rewrote the reader's own file and erased the warning with it.
+  it("keeps an auth with no authCite in the fact it keeps, and says so: a note, not a rejection", async () => {
     const r = await run(edit("e-get-tiers", (x) => ({ ...x, auth: "mtls" }) as Fact));
     expect(r.rejected).toEqual([]);
     const e = r.accepted.find((f) => f.id === "e-get-tiers")!;
-    expect("auth" in e).toBe(false);
+    expect(e.kind === "entry" && e.auth).toBe("mtls");
     expect(r.authUncited).toEqual([
       { id: "e-get-tiers", auth: "mtls", cite: `${J}/LimitController.java:24` },
     ]);
+  });
+
+  it("says the same on every run: verifying what it kept gives the same count, not nothing", async () => {
+    const first = await run(edit("e-get-tiers", (x) => ({ ...x, auth: "mtls" }) as Fact));
+    // what `--write` puts back in facts/<repo>.jsonl is `accepted`: verify that, as a person does
+    const second = await run(first.accepted);
+    expect(second.rejected).toEqual([]);
+    expect(second.authUncited).toEqual(first.authUncited);
+    const e = second.accepted.find((f) => f.id === "e-get-tiers")!;
+    expect(e.kind === "entry" && e.auth).toBe("mtls");
+    // and again, in case the second run were the stable one
+    const third = await run(second.accepted);
+    expect(third.authUncited).toEqual(first.authUncited);
+  });
+
+  it("leaves a person's own uncited auth unsaid: it is their word, marked as theirs", async () => {
+    const r = await run(edit("e-get-tiers", (x) => ({ ...x, auth: "mtls", by: "person" }) as Fact));
+    expect(r.authUncited).toEqual([]);
+    const e = r.accepted.find((f) => f.id === "e-get-tiers")!;
+    expect(e.kind === "entry" && e.auth).toBe("mtls");
   });
 
   it("rejects an authCite whose value its line doesn't write, or writes only in a comment", async () => {
