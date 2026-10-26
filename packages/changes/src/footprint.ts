@@ -2,8 +2,8 @@ import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { LineCounter, isMap, isSeq, parse, parseDocument } from "yaml";
 import {
-  readRepoSpec,
-  specRepos,
+  readFlow,
+  specFlowFiles,
   type CatalogRecord,
   type ChangeLifecycle,
   type RecordOf,
@@ -141,20 +141,60 @@ const FIELD_LISTS = ["sends", "returns", "reads", "checks", "from", "to", "requi
 /** A step's words cut to a quote: the first 90 characters. */
 const quote = (s: string) => (s.length > 90 ? `${s.slice(0, 87).trimEnd()}...` : s);
 
-type SpecIndex = Map<string, { repo: string; flow: RecordOf<"Flow"> }>;
+interface Today {
+  repo: string;
+  flow: RecordOf<"Flow">;
+}
+
+/**
+ * Today's flows, by id, read one at a time. A change touches a handful of flows and an estate's
+ * specs hold hundreds, so the index comes from the file names (`specs/<repo>/<id>.yaml`) and a
+ * flow is parsed only when something asks for it. Each parse is kept for the context's life.
+ */
+interface SpecIndex {
+  /** Today's flow of that id, with the repo whose spec holds it; undefined when there is none. */
+  get(id: string): Promise<Today | undefined>;
+  /** Whether some repo's spec holds a flow of that component (ADR 0079: its id starts with it). */
+  hasComponent(id: string): Promise<boolean>;
+  /** Whether that repo's spec holds a flow. */
+  hasRepo(id: string): Promise<boolean>;
+}
+
 const specCache = new WeakMap<ChangeContext, Promise<SpecIndex>>();
 
-/** Today's flows of every repo's spec, by id (read once per context). */
+/** The lazy index of today's flows (built once per context). */
 function specIndex(ctx: ChangeContext): Promise<SpecIndex> {
   let p = specCache.get(ctx);
   if (!p) {
     p = (async () => {
-      const out: SpecIndex = new Map();
-      for (const repo of await specRepos(ctx.root)) {
-        const spec = await readRepoSpec(ctx.root, repo).catch(() => ({ flows: [] }));
-        for (const flow of spec.flows) out.set(flow.id, { repo, flow });
-      }
-      return out;
+      const files = await specFlowFiles(ctx.root).catch(
+        () => new Map<string, { repo: string; file: string }>(),
+      );
+      const read = new Map<string, Today | undefined>();
+      const get = async (id: string): Promise<Today | undefined> => {
+        if (read.has(id)) return read.get(id);
+        const f = files.get(id);
+        const flow = f ? await readFlow(ctx.root, f.repo, id).catch(() => undefined) : undefined;
+        const today = flow && f ? { repo: f.repo, flow } : undefined;
+        read.set(id, today);
+        return today;
+      };
+      const ids = [...files.keys()];
+      return {
+        get,
+        hasComponent: async (id) => {
+          for (const flowId of ids) {
+            if (!flowId.startsWith(`${id}.`)) continue;
+            if ((await get(flowId))?.flow.component === id) return true;
+          }
+          return false;
+        },
+        hasRepo: async (id) => {
+          for (const flowId of ids)
+            if (files.get(flowId)!.repo === id && (await get(flowId))) return true;
+          return false;
+        },
+      };
     })();
     specCache.set(ctx, p);
   }
@@ -413,11 +453,10 @@ async function stageFootprint(
 
   const { get, isSystem, profileSystems, ref } = h;
   const specs = await specIndex(ctx);
-  const known = new Set([...specs.values()].map((s) => s.flow.component));
-  const knownRepos = new Set([...specs.values()].map((s) => s.repo));
+  const catalogRepos = new Set<string>();
   for (const r of ctx.records)
     if (r.kind === "Component" && (r as RecordOf<"Component">).repo)
-      knownRepos.add((r as RecordOf<"Component">).repo!);
+      catalogRepos.add((r as RecordOf<"Component">).repo!);
   const authWords = new Set(ctx.policy.risk.signals.auth.map((w) => w.toLowerCase()));
   const personalWords = new Set(ctx.policy.risk.signals.personal.map((w) => w.toLowerCase()));
   const endpoints = ctx.records.filter((r) => r.kind === "Endpoint") as RecordOf<"Endpoint">[];
@@ -425,12 +464,13 @@ async function stageFootprint(
   const flows = new Map<string, FootprintFlow>();
 
   /** A target outside the estate: a vendor system, or nothing the catalog or specs know. */
-  const outsideOf = (id: string): boolean => {
+  const outsideOf = async (id: string): Promise<boolean> => {
     const c = get("Component", id);
     if (c) return get("System", c.system)?.boundary === "vendor";
     if (isSystem(id))
       return (get("System", id)?.boundary ?? profileSystems.get(id)?.boundary) === "vendor";
-    return !known.has(id) && !knownRepos.has(id);
+    if (catalogRepos.has(id)) return false;
+    return !(await specs.hasComponent(id)) && !(await specs.hasRepo(id));
   };
   const endpointOf = (component: string, entry: string) => {
     const e = entryParts(entry);
@@ -484,12 +524,13 @@ async function stageFootprint(
       return lineOf(pair?.key);
     };
 
-    const today = specs.get(flowId);
+    const today = await specs.get(flowId);
     const change = (str(d.change) ?? "modify") as FootprintFlow["change"];
     const repo = str(d.repo) ?? today?.repo;
     const prefix = flowId.split(".")[0]!;
     const component =
-      today?.flow.component ?? (get("Component", prefix) || known.has(prefix) ? prefix : undefined);
+      today?.flow.component ??
+      (get("Component", prefix) || (await specs.hasComponent(prefix)) ? prefix : undefined);
     flows.set(flowId, { id: flowId, ...(repo ? { repo } : {}), change });
     if (repo) out.repos.add(repo);
     if (component) ref(component);
@@ -516,9 +557,10 @@ async function stageFootprint(
       });
 
     const steps = Array.isArray(d.steps) ? d.steps : [];
-    steps.forEach((raw, i) => {
+    // In order, one step at a time: a step's target may have to be looked up in the specs.
+    for (const [i, raw] of steps.entries()) {
       const s = obj(raw);
-      if (!s) return;
+      if (!s) continue;
       const cite = `${rel}:${lineOf(stepNodes[i]) ?? 1}`;
       const op = str(s.op) ?? "add";
       const n = typeof s.step === "number" ? s.step : undefined;
@@ -568,7 +610,7 @@ async function stageFootprint(
       const target = str(to?.component);
       const entry = str(to?.entry) ?? "";
       if (target) {
-        if (outsideOf(target)) {
+        if (await outsideOf(target)) {
           if (isSystem(target)) ref(target);
           const o = outside.get(target) ?? { entries: new Set<string>(), cite };
           if (entry) o.entries.add(entry);
@@ -593,7 +635,7 @@ async function stageFootprint(
         }
       }
 
-      if (!live) return;
+      if (!live) continue;
       const fields = obj(s.fields) ?? {};
       const names = FIELD_LISTS.flatMap((k) => strs(fields[k]));
       for (const name of names) out.fields.add(name);
@@ -637,7 +679,7 @@ async function stageFootprint(
             : `${kind} step "${quote(what)}" is marked breaking`,
           cite,
         });
-    });
+    }
   }
 
   // feature.yaml: the flows it changes or reads, and the repos of its new flows.
@@ -654,7 +696,7 @@ async function stageFootprint(
         const fl = obj(raw);
         const id = str(fl?.id);
         if (!id || flows.has(id)) continue;
-        const today = specs.get(id);
+        const today = await specs.get(id);
         const read = str(fl?.how) === "read";
         flows.set(id, {
           id,
@@ -674,10 +716,10 @@ async function stageFootprint(
     }
   }
 
-  // tasks.md: the repos its tasks are grouped under.
-  const taskRepos = [...tasksText.matchAll(/^##\s+(\S+)\s*$/gm)]
-    .map((m) => m[1]!)
-    .filter((r) => knownRepos.has(r));
+  // tasks.md: the repos its tasks are grouped under (a repo the specs or the catalog know).
+  const taskRepos: string[] = [];
+  for (const m of tasksText.matchAll(/^##\s+(\S+)\s*$/gm))
+    if (catalogRepos.has(m[1]!) || (await specs.hasRepo(m[1]!))) taskRepos.push(m[1]!);
   if (taskRepos.length) {
     out.from.push("tasks.md");
     for (const r of taskRepos) out.repos.add(r);

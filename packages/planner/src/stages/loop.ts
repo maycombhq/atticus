@@ -5,7 +5,6 @@ import { parse } from "yaml";
 import {
   AgentDefinition,
   answerWords,
-  changesDirOf,
   changesRelOf,
   gateRoundLimit,
   raiseQuestions,
@@ -58,6 +57,7 @@ import {
 } from "@maycombhq/naysayer";
 import type { ChangeLifecycle, RunRetrieval } from "@maycombhq/core";
 import { PlannerError } from "../errors.js";
+import { rerunOf } from "./waiting.js";
 import { citeFiles } from "./cite.js";
 import { unfence, YAML_QUOTE_RULE } from "./answer.js";
 import { questionsOnFile, stepJudges } from "./questions-on-file.js";
@@ -298,48 +298,10 @@ export async function readStageLoop(
 /** Write a stage's loop file as the loop does. */
 export const writeStageLoop = (dir: string, l: StageLoop): Promise<void> => writeLoop(dir, l);
 
-/** A question a stage holds back over its stop's cap, as `atticus questions list` shows it. */
-export interface WaitingQuestion {
-  change: string;
-  stage: Stage;
-  question: string;
-  evidence: string[];
-  /** The command that asks it, once the open questions are answered: the stage's rerun. */
-  rerun: string;
-}
-
-/**
- * Every question the changes' stages hold back over the stop's cap (ADR 0117 addendum,
- * 2026-10-25), from their loop files (`waiting`), by change and stage. A loop file that doesn't
- * read holds none.
- */
-export async function waitingQuestions(root: string): Promise<WaitingQuestion[]> {
-  const out: WaitingQuestion[] = [];
-  const changes = (await readdir(changesDirOf(root), { withFileTypes: true }).catch(() => []))
-    .filter((d) => d.isDirectory() && d.name !== "archive")
-    .map((d) => d.name)
-    .sort();
-  for (const change of changes) {
-    const files = (await readdir(join(changesDirOf(root), change, "stage")).catch(() => []))
-      .filter((f) => f.endsWith(".yaml"))
-      .sort();
-    for (const f of files) {
-      let loop: StageLoop;
-      try {
-        const r = StageLoop.safeParse(
-          parse(await readFile(join(changesDirOf(root), change, "stage", f), "utf8")),
-        );
-        if (!r.success) continue;
-        loop = r.data;
-      } catch {
-        continue;
-      }
-      for (const w of loop.waiting ?? [])
-        out.push({ change, stage: loop.stage, ...w, rerun: rerunOf(loop.stage, change) });
-    }
-  }
-  return out;
-}
+// The questions the stages hold back, and the command that runs a stage again, live in their
+// own light module so `atticus questions list` needn't load the whole planner (waiting.ts).
+export { waitingQuestions, type WaitingQuestion } from "./waiting.js";
+export { rerunOf } from "./waiting.js";
 
 async function writeLoop(dir: string, l: StageLoop): Promise<void> {
   await writeFileAtomic(
@@ -1629,12 +1591,6 @@ export function stageEnd(r: StageResult<unknown>, rerun: string): string[] {
     );
   else out.push(`Then run ${rerun} again.`);
   return out;
-}
-
-export function rerunOf(stage: Stage, change: string): string {
-  return stage === "stories"
-    ? `atticus plan stories ${change}`
-    : `atticus change ${stage} ${change}`;
 }
 
 /**

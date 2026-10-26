@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { parseRecord, raiseQuestions, recordPath, serializeRecord } from "@maycombhq/core";
 import { main } from "../src/main.js";
-import { nextSteps, type NextState, type NextStep } from "../src/next-commands.js";
+import { canMoveOn, nextSteps, type NextState, type NextStep } from "../src/next-commands.js";
 
 /** `atticus next` (ADR 0086): the next step from the metarepo's files, in several states. */
 
@@ -517,6 +517,16 @@ describe("atticus next with a change in hand, and the assistant that was probed"
     const j = await json(root);
     expect(j.steps[0]).toMatchObject({ step: "answer", change: "add-fraud-check" });
     expect(j.steps[1]).toMatchObject({ step: "feature", change: "add-fraud-check" });
+  });
+
+  // ADR 0006 addendum: `openspec status` is a child process, so it is run only where its answer
+  // could move the change on — a drafting stage with a later one after it. A change at the last
+  // drafting stage, or past them, keeps the stage its state says whatever OpenSpec reports.
+  it("asks OpenSpec's status only where its answer could move the change on", () => {
+    for (const state of ["draft", "define", "returned", "design"])
+      expect(canMoveOn(state), state).toBe(true);
+    for (const state of ["plan", "build", "qa", "released", "archived", "post-release-review"])
+      expect(canMoveOn(state), state).toBe(false);
   });
 
   it("names the assistant a probe measured here, not the default's chat", async () => {

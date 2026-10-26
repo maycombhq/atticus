@@ -304,3 +304,5 @@ export async function writeEstate(estate: Estate, dir: string): Promise<void> {
     "utf8",
   );
 }
+
+export * from "./trial.js";

@@ -5,9 +5,12 @@ import {
   deserializeRecord,
   knowledgeDirOf,
   knowledgeKindOf,
+  readParsedFiles,
   recordPath,
+  SCHEMA_VERSION,
   serializeRecord,
   writeFileAtomic,
+  type CatalogRecord,
   type KnowledgeKind,
 } from "@maycombhq/core";
 import {
@@ -94,14 +97,23 @@ export async function readKnowledge(
   const dir = join(knowledgeDirOf(root), "items");
   const items: KnowledgeRecord[] = [];
   const problems: { file: string; message: string }[] = [];
-  for (const f of await files(dir)) {
-    const r = deserializeRecord(await readFile(join(dir, ...f.split("/")), "utf8"));
-    if (!r.ok)
-      problems.push({
-        file: f,
-        message: r.issues.map((i) => `${i.path}: ${i.message}`).join("; "),
-      });
-    else if (isKnowledgeRecord(r.record)) items.push(r.record);
+  // The item files are read at once, and one whose size and time haven't changed since the last
+  // run isn't parsed again (record-cache.ts): a scanned wiki leaves hundreds of items, and
+  // every command that reads the knowledge read them all.
+  for (const p of await readParsedFiles<CatalogRecord>({
+    dir,
+    files: await files(dir),
+    name: "knowledge",
+    version: `c1@${SCHEMA_VERSION}`,
+    parse: (text) => {
+      const r = deserializeRecord(text);
+      return r.ok
+        ? { ok: true, value: r.record }
+        : { ok: false, message: r.issues.map((i) => `${i.path}: ${i.message}`).join("; ") };
+    },
+  })) {
+    if (p.problem !== undefined) problems.push({ file: p.rel, message: p.problem });
+    else if (isKnowledgeRecord(p.value!)) items.push(p.value!);
   }
   items.sort((a, b) => a.id.localeCompare(b.id));
   const text = await readFile(join(knowledgeDirOf(root), KNOWLEDGE_REPORT), "utf8").catch(

@@ -2,6 +2,8 @@ import { readdir, readFile, rm } from "node:fs/promises";
 import { join, relative, resolve, sep } from "node:path";
 import {
   deserializeRecord,
+  readParsedFiles,
+  SCHEMA_VERSION,
   writeFileAtomic,
   recordPath,
   serializeRecord,
@@ -44,9 +46,16 @@ export async function readCatalog(dir: string): Promise<CatalogRead> {
   return { records: structuredClone(r.records), problems: r.problems.map((p) => ({ ...p })) };
 }
 
+/**
+ * Bumped when what a kept parse holds changes, so a cache written by an older Atticus is read
+ * from the files again: the records are C1, so its version is the one to follow.
+ */
+const CATALOG_CACHE_VERSION = `c1@${SCHEMA_VERSION}`;
+
 async function readCatalogFiles(dir: string): Promise<CatalogRead> {
   const records: CatalogRecord[] = [];
   const problems: { file: string; message: string }[] = [];
+  const files: string[] = [];
   async function walk(d: string) {
     let entries;
     try {
@@ -57,18 +66,27 @@ async function readCatalogFiles(dir: string): Promise<CatalogRead> {
     for (const e of entries.sort((a, b) => a.name.localeCompare(b.name))) {
       const full = join(d, e.name);
       if (e.isDirectory()) await walk(full);
-      else if (/\.ya?ml$/.test(e.name)) {
-        const r = deserializeRecord(await readFile(full, "utf8"));
-        if (r.ok) records.push(r.record);
-        else
-          problems.push({
-            file: relative(dir, full).split(sep).join("/"),
-            message: r.issues.map((i) => `${i.path}: ${i.message}`).join("; "),
-          });
-      }
+      else if (/\.ya?ml$/.test(e.name)) files.push(relative(dir, full).split(sep).join("/"));
     }
   }
   await walk(dir);
+  // The files are read at once, and a file whose size and time haven't changed since the last
+  // run isn't parsed again (ADR 0119): 1,500 records took seconds on every command.
+  for (const p of await readParsedFiles<CatalogRecord>({
+    dir,
+    files,
+    name: "catalog",
+    version: CATALOG_CACHE_VERSION,
+    parse: (text) => {
+      const r = deserializeRecord(text);
+      return r.ok
+        ? { ok: true, value: r.record }
+        : { ok: false, message: r.issues.map((i) => `${i.path}: ${i.message}`).join("; ") };
+    },
+  })) {
+    if (p.problem === undefined) records.push(p.value!);
+    else problems.push({ file: p.rel, message: p.problem });
+  }
   // The same order as a scan's records (kind, then id), whatever the file names sort to.
   records.sort((a, b) =>
     a.kind === b.kind ? a.id.localeCompare(b.id) : a.kind.localeCompare(b.kind),

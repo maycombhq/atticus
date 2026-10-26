@@ -128,6 +128,20 @@ export interface NextState {
 }
 
 const METAREPO = "metarepo";
+/** The drafting stages in order: OpenSpec's status may move a change on among them, never past. */
+const DRAFTING = ["feature", "architecture", "stories"] as const;
+/** Where a stage sits among the drafting stages; -1 for a stage that isn't one of them. */
+const draftingAt = (s: string) => DRAFTING.indexOf(s as (typeof DRAFTING)[number]);
+
+/**
+ * Whether OpenSpec's status could move this change on: only a change at a drafting stage with
+ * a later one after it (stageSteps takes a later stage only). For every other state the answer
+ * can't change, so `openspec status` isn't run for it.
+ */
+export const canMoveOn = (state: string) => {
+  const at = draftingAt(stageOf(state));
+  return at >= 0 && at < DRAFTING.length - 1;
+};
 /** A snapshot older than this many days is synced again (ADR 0101). */
 const STALE_DAYS = 14;
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
@@ -196,10 +210,13 @@ export async function readNextState(root: string): Promise<NextState> {
         : {}),
     });
   }
+  // The org pack, read once for everything below it (the profiles' systems, the change types).
+  const orgPack = await loadOrgPack(orgPackDirOf(root)).catch((e: Error) => e);
   // ADR 0101: what the knowledge names that the org pack's profiles don't have yet.
   let orgpack: NextState["orgpack"];
   try {
-    const op = await loadOrgPack(orgPackDirOf(root));
+    if (orgPack instanceof Error) throw orgPack;
+    const op = orgPack;
     const names = new Set(
       op.profiles
         .flatMap((p) => (p.profile?.systems ?? []).flatMap((x) => [x.name, ...x.aliases]))
@@ -231,10 +248,7 @@ export async function readNextState(root: string): Promise<NextState> {
   let unverifiedNeeds = 0;
   let active: { id: string; at: string } | undefined;
   // ADR 0113: the change types, to tell a small change from a standard one.
-  const types = await loadOrgPack(orgPackDirOf(root)).then(
-    (op) => op.changeTypes.types,
-    () => [],
-  );
+  const types = orgPack instanceof Error ? [] : orgPack.changeTypes.types;
   // B-change: which stages each change has done, read the way the lifecycle reads them.
   const { policy } = await loadChangePolicy(orgPackDirOf(root));
   const os = metarepoOpenSpec(root);
@@ -258,7 +272,14 @@ export async function readNextState(root: string): Promise<NextState> {
         }))
         .sort((a, b) => b.days - a.days)[0];
       // ADR 0006 addendum: which stage's artifacts are written comes from OpenSpec's status.
-      const progress = os ? await openspecProgress(os, c.id).catch(() => undefined) : undefined;
+      // It runs `openspec status` in a child process, so it is asked only where its answer can
+      // move the change on: a change whose state is already at the last drafting stage, or past
+      // the drafting stages, keeps the stage its state says whatever OpenSpec reports
+      // (stageSteps below takes a later stage only).
+      const progress =
+        os && canMoveOn(c.state)
+          ? await openspecProgress(os, c.id).catch(() => undefined)
+          : undefined;
       const busy = await stageInProgress(root, c.id);
       if (busy && stageOf(c.state) !== "done" && (!active || busy > active.at))
         active = { id: c.id, at: busy };
@@ -409,15 +430,12 @@ export function changeSteps(c: NextState["changes"][number]): NextStep[] {
   return [...find, ...stage, ...raise];
 }
 
-/** The drafting stages in order: OpenSpec's status may move a change on among them, never past. */
-const DRAFTING = ["feature", "architecture", "stories"] as const;
-
 function stageSteps(c: NextState["changes"][number]): NextStep[] {
   const id = c.id;
   const byState = stageOf(c.state);
   // ADR 0006 addendum: in a drafting stage, the stage whose artifacts OpenSpec says come next
   // (a later one only: the hand-off PRs a person merges still move the state).
-  const at = (s: string) => DRAFTING.indexOf(s as (typeof DRAFTING)[number]);
+  const at = draftingAt;
   const stage =
     c.openspecStage && at(byState) >= 0 && at(c.openspecStage) > at(byState)
       ? c.openspecStage
