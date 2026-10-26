@@ -203,11 +203,16 @@ function inPlace(root: string, url: string): string | undefined {
   return undefined;
 }
 
-/** Federated catalogs: records added with their origin; local records win. */
+/**
+ * Federated catalogs: records added with their origin; local records win. Their folders are
+ * read-only, so the parses of their record files are kept in **our** root (`cacheRoot`, ADR 0119
+ * addendum) — never beside their files.
+ */
 async function federate(
   local: CatalogRecord[],
   sources: { id: string; dir: string }[],
   problems: ScanProblem[],
+  root: string,
 ): Promise<{ records: CatalogRecord[]; contributions: FederatedContribution[] }> {
   const have = new Set(local.map((r) => `${r.kind}/${r.id}`));
   const records: CatalogRecord[] = [];
@@ -215,7 +220,7 @@ async function federate(
   for (const s of sources) {
     const theirs = await loadOrgPack((await orgPackDirFor(s.dir)).dir);
     const catalogRel = `${theirs.sources.layout.catalog}/generated`;
-    const cat = await readCatalog(join(s.dir, ...catalogRel.split("/")));
+    const cat = await readCatalog(join(s.dir, ...catalogRel.split("/")), { cacheRoot: root });
     for (const p of cat.problems)
       problems.push({ source: `federated ${s.id}`, message: `${p.file}: ${p.message}` });
     const c: FederatedContribution = { id: s.id, added: 0, shadowed: [] };
@@ -570,7 +575,7 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
   }
   let merged = mergeCatalog(mergeInput(codeRecords));
   const curatedDir = o.curatedDir ?? curatedDirOf(o.root, op);
-  const curated = await readCatalog(curatedDir);
+  const curated = await readCatalog(curatedDir, { cacheRoot: o.root });
   for (const p of curated.problems)
     problems.push({ source: `catalog/curated/${p.file}`, message: p.message });
 
@@ -605,7 +610,12 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
   let federated: FederatedContribution[] | undefined;
   let fedRecords: CatalogRecord[] = [];
   if (fedSources.length) {
-    const fed = await federate([...merged.records, ...found.features], fedSources, problems);
+    const fed = await federate(
+      [...merged.records, ...found.features],
+      fedSources,
+      problems,
+      o.root,
+    );
     // Their loose ends go through merge against our raw facts; local code still wins.
     const placed = resolveFederatedLooseEnds({
       local: merged.records,

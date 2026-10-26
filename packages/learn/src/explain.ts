@@ -260,8 +260,8 @@ export async function explain(
   if (!out) {
     const dir = catalogDirOf(root);
     const records = [
-      ...(await readCatalog(join(dir, "generated"))).records,
-      ...(await readCatalog(join(dir, "curated"))).records,
+      ...(await readCatalog(join(dir, "generated"), { cacheRoot: root })).records,
+      ...(await readCatalog(join(dir, "curated"), { cacheRoot: root })).records,
     ];
     const hits = records.filter((r) => r.id === s);
     if (hits.length) {

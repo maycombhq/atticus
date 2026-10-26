@@ -34,7 +34,11 @@ const pageFile = (page: string) => (/\.(md|markdown)$/i.test(page) ? page : `${p
 /** The catalog's records, for a conflict the code settles; none when the catalog can't be read. */
 export async function codeFactRecords(root: string): Promise<CatalogRecord[]> {
   return (
-    (await readCatalog(join(catalogDirOf(root), "generated")).catch(() => undefined))?.records ?? []
+    (
+      await readCatalog(join(catalogDirOf(root), "generated"), { cacheRoot: root }).catch(
+        () => undefined,
+      )
+    )?.records ?? []
   );
 }
 
@@ -65,7 +69,7 @@ export async function askKnowledgeConflicts(
   by: { command: string; rerun: string; at: string; run?: string },
   o: { used?: Iterable<string>; records?: readonly CatalogRecord[] } = {},
 ): Promise<AskedConflicts> {
-  const knowledge = await readKnowledge(root);
+  const knowledge = await readKnowledge(root, { cacheRoot: root });
   const conflicts = knowledge.report?.conflicts ?? [];
   if (!conflicts.length) return { raised: [], open: [], touching: [] };
   const list = await readKnowledgeApplies(root, change);

@@ -109,3 +109,27 @@ Choosing the assistant and the model from the app, branches, and the knowledge f
 - Item 5, in part (the app): six sections (`SECTIONS` in `ui/src/app/screens.ts`), every page a tab of one (`SectionTabs`, with where you are and a change's tabs grouped by phase, keeping the change), no More, unknown addresses open Home, the confusing names changed. Not built yet: Set up shown before Knowledge until the catalog is baselined; Home as one page (Waiting on you and Overview are its two tabs for now); the product glossary; the six-step tour; focus on route change; axe at moderate; the editors' sidebars in the same order.
 - Item 4, in part (VS Code): pickers for the canvas, the Change diagram and the Estimate; one startup notice with Don't show again (`startupNotice`, kept in `globalState` by the set's signature); exit codes said in words (`WORDS.endedWith`); results that start with what was said; Run the next step after an answer; a numbered practice folder (`freeFolder`). Not built yet: one runner for every step (no terminal), forms in place of YAML, the IntelliJ pickers, moving every inline VS Code string into `words.ts` with a test.
 - Item 3, in part: one list (`metarepoCommands`), with a parity test against the app, the plugin README (generated), the roles guide and IntelliJ; `/atticus-draft`, `/atticus-knowledge-ask` and `/atticus-critic` (the lenses with `--handoff`); `/atticus-snow` and `/atticus-release` rewritten to run the commands; `/atticus-plan` kept as the old name of `/atticus-stories`; `readOnlyHint` on every MCP tool. Not built: the check at the start of every prompt (with item 2's "not a metarepo"); slash commands for `scan review`, `onboard`, `orgpack draft`, `tests generate` and `feature suggest-names`, which don't take `--handoff` yet; MCP tools for `ask` and `knowledge ask`.
+
+## Addendum (2026-10-26): the record cache belongs to the root the command is working in
+
+### Context
+
+The record cache (`packages/core/src/record-cache.ts`) keeps each parsed record file in `.atticus/cache/` so `atticus next` and `change status` don't parse 1,500 files on every run. It picked where to keep them itself: `memoFileOf` called `metarepoRootOf(dir)`, the nearest folder above the files holding `org-pack/` or `.atticus/org-pack/` — the metarepo **that contains the folder being read**.
+
+For our own catalog, specs and knowledge that is the right folder. For someone else's it is their repository. `atticus absorb`, a federated scan and a linked estate all read another team's metarepo, and each of them wrote `.atticus/cache/<kind>-<key>.json` and `.atticus/.gitignore` into it. It showed up in two committed fixtures after a test run, and absorb then listed our own cache as content of theirs to translate, which took a measured bar from 100% to 88.9%. The pollution was the lesser half: Atticus never writes where it was only asked to read (hard rule 6; ADR 0038: nothing else is written into a product repo).
+
+### Decision
+
+1. **The caller names the root; nothing works one out.** `readParsedFiles` takes `cacheRoot`, the metarepo this run is working in, and keeps the parses at `<cacheRoot>/.atticus/cache/` and nowhere else. `metarepoRootOf` is gone: no reader looks at the folder it is reading to decide where to write. The key is still the folder's absolute path, and the memo still names that folder, so several folders cached into one root can't be read as one.
+
+2. **No root means no cache — read-only.** A read with no `cacheRoot` reads nothing from a cache and writes nothing anywhere; it costs the parse and that is all. That is the safe default, so a path nobody thought about is read-only rather than quietly writing somewhere. This is why the choice is an explicit parameter and not a root the CLI records for the run in global state: a hidden root is a default again, and the next read-only path added would inherit it.
+
+3. **Threaded through every reader that keeps parses.** `readRepoSpec` (`core/specs.ts`), `readCatalog` (`scanner/files.ts`) and `readKnowledge` (`knowledge/knowledge-store.ts`) each take `cacheRoot` and pass it down, defaulting to none. The commands pass the root they were given (`--root`). Two paths name no root on purpose: `atticus catalog diff <a> <b>`, whose two folders are given on the command line and may be anyone's, and the reading bench, which reads its own cache folder.
+
+4. **Their files, our cache.** A federated scan reads their catalog with `cacheRoot` set to **our** root, so the saving holds for records we read from a linked estate while their folder stays untouched. Where the parses are kept follows the command, not the files.
+
+### Consequences
+
+- Reading another metarepo leaves it byte-identical. `packages/adopt/test/read-only.test.ts` fingerprints a whole source metarepo — every file, its path and its bytes, and every folder — before absorb, a federated scan and the conflict check, and compares after; the M3 absorb bar does the same through the CLI for all five source fixtures.
+- A new reader that forgets `cacheRoot` loses the saving. It cannot pollute anything, and the perf budgets in `packages/m5-exit/test/perf-commands.test.ts` are what catch the loss.
+- The cache stays local-only and git-ignored (`LOCAL_ONLY`, `cache/`), and `absorb` still skips `.atticus/` as local-only content.

@@ -76,7 +76,7 @@ export async function onboardingView(root: string): Promise<View> {
   }
 
   // What the last scan wrote, per repo: a record counts once for each repo its evidence cites.
-  const catalog = await readCatalog(join(catalogDirOf(root), "generated"));
+  const catalog = await readCatalog(join(catalogDirOf(root), "generated"), { cacheRoot: root });
   for (const p of catalog.problems)
     problems.push({ file: rel(join(catalogDirOf(root), "generated", p.file)), message: p.message });
   const scans = new Map<string, NonNullable<Repo["lastScan"]>>();

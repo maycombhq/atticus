@@ -33,7 +33,9 @@ export async function loadChangeContext(root: string): Promise<ChangeContext> {
   const orgPack = await loadOrgPack(orgPackDir);
   const policy = await loadChangePolicy(orgPackDir);
   const templates = await loadTemplates(orgPackDir);
-  const catalog = await readCatalog(join(root, orgPack.sources.layout.catalog, "generated"));
+  const catalog = await readCatalog(join(root, orgPack.sources.layout.catalog, "generated"), {
+    cacheRoot: root,
+  });
   return {
     root,
     orgPack,

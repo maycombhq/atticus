@@ -67,8 +67,8 @@ async function load(root: string, io: Output): Promise<Loaded> {
     io.err(`org-pack/${p.file}: ${p.path ? `${p.path}: ` : ""}${p.message}`);
   const catalogRel = op.sources.layout.catalog;
   const catalogDir = join(root, catalogRel);
-  const generated = await readCatalog(join(catalogDir, "generated"));
-  const curated = await readCatalog(join(catalogDir, "curated"));
+  const generated = await readCatalog(join(catalogDir, "generated"), { cacheRoot: root });
+  const curated = await readCatalog(join(catalogDir, "curated"), { cacheRoot: root });
   for (const p of [...generated.problems, ...curated.problems])
     io.err(`catalog ${p.file}: ${p.message}`);
   const base = generated.records.filter((r) => r.kind !== "Capability");

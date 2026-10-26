@@ -84,8 +84,8 @@ export interface CatalogView {
 /** The catalog as files: generated records, then curated ones (initiatives, parties, questions). */
 export async function readView(root: string): Promise<CatalogView> {
   const dir = catalogDirOf(root);
-  const gen = await readCatalog(join(dir, "generated"));
-  const cur = await readCatalog(join(dir, "curated"));
+  const gen = await readCatalog(join(dir, "generated"), { cacheRoot: root });
+  const cur = await readCatalog(join(dir, "curated"), { cacheRoot: root });
   const records = [...gen.records, ...cur.records];
   const problems = [
     ...gen.problems.map((p) => `catalog/generated/${p.file}: ${p.message}`),

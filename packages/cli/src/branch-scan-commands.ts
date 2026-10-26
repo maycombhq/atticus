@@ -77,7 +77,7 @@ export async function scanBranch(
     stringify({ schemaVersion: 1, branch, scannedAt, repos: commits }),
   );
   const ofRepos = new Set(ids);
-  const before = await readCatalog(join(catalogDirOf(root), "generated"));
+  const before = await readCatalog(join(catalogDirOf(root), "generated"), { cacheRoot: root });
   const diff = diffCatalogs(fromRepos(before.records, ofRepos), fromRepos(scan.records, ofRepos));
   problems += scan.problems.length;
   if (o.json) {

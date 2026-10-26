@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { parse } from "yaml";
-import { DEFAULT_SOURCES, Sources } from "@maycombhq/core";
+import { DEFAULT_SOURCES, LOCAL_ONLY, Sources } from "@maycombhq/core";
 import type { z } from "zod";
 import { isDir, readText } from "./files.js";
 
@@ -21,6 +21,31 @@ export const ATTICUS_DIR = ".atticus";
 export const ORG_PACK_DIR = "org-pack";
 /** Local-state folders, relative to the state folder; never committed. */
 export const STATE_FOLDERS = ["workspace", ".index", ".runs", "state", "absorbed"] as const;
+
+/** The folders and files inside `.atticus/` that belong to a machine, not to the work. */
+const LOCAL_STATE = [
+  ...STATE_FOLDERS,
+  ...LOCAL_ONLY.map((l) => (l.endsWith("/") ? l.slice(0, -1) : l)),
+];
+
+/**
+ * Is this path (relative to a metarepo, forward slashes) Atticus's own local state on the
+ * machine it ran on — the record cache, the log, locks, the prompt history, the probe, upgrade
+ * backups, `me.yaml`, the index, the run folders, the base clones? It is derived, never
+ * committed and never anybody's work, so reading another metarepo passes over it (ADR 0119
+ * addendum). Inside `.atticus/` the answer holds for any metarepo; at the root it holds only
+ * for one that is itself a metarepo, since a product repo may well have its own `workspace/`.
+ */
+export function isLocalState(rel: string, atRoot = false): boolean {
+  const parts = rel.split("/");
+  const inside = parts[0] === ATTICUS_DIR;
+  if (!inside && !atRoot) return false;
+  const at = inside ? 1 : 0;
+  const head = parts[at];
+  if (head === undefined || parts.length <= at) return false;
+  // A folder's contents, or a local-only file of its own (`me.yaml`).
+  return LOCAL_STATE.includes(head) && (parts.length > at + 1 || head.includes("."));
+}
 
 export type Layout = z.infer<typeof Sources>["layout"];
 

@@ -458,7 +458,7 @@ export async function selectTaskKnowledge(
 ): Promise<{ byTask: Map<string, TaskKnowledge[]>; note?: string }> {
   const byTask = new Map<string, TaskKnowledge[]>();
   if (!inputs.length) return { byTask };
-  const knowledge = o.knowledge ?? (await readKnowledge(root));
+  const knowledge = o.knowledge ?? (await readKnowledge(root, { cacheRoot: root }));
   const items = new Map(knowledge.items.map((i) => [i.id, i] as const));
   const verified = (id: string) => {
     const s = knowledge.reviews[id]?.state;
@@ -716,7 +716,7 @@ export async function refreshTaskConflicts(
   root: string,
   lists: Iterable<TaskKnowledge[]>,
 ): Promise<void> {
-  const knowledge = await readKnowledge(root);
+  const knowledge = await readKnowledge(root, { cacheRoot: root });
   const items = new Map(knowledge.items.map((i) => [i.id, i] as const));
   const views = await readConflicts(root, {
     conflicts: knowledge.report?.conflicts ?? [],

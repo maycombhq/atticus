@@ -307,7 +307,7 @@ function idsIn(text: string, universe: string[]): Set<string> {
 async function universeOf(root: string): Promise<string[]> {
   const records = (await readCatalog(root)).records as CatalogRecord[];
   const e = await loadEstate(root, records);
-  const k = await readKnowledge(root);
+  const k = await readKnowledge(root, { cacheRoot: root });
   return [...new Set([...e.ids, ...k.items.map((i) => i.id)])].sort();
 }
 

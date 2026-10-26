@@ -6,7 +6,7 @@ import type { GitRunner } from "@maycombhq/workspace";
 import type { z } from "zod";
 import { AdoptError } from "../errors.js";
 import { isDir, listFiles, sha256, slug, toPosix } from "../files.js";
-import { resolveMetarepo, type MetarepoPaths } from "../layout.js";
+import { isLocalState, resolveMetarepo, type MetarepoPaths } from "../layout.js";
 import {
   markdownItems,
   packFor,
@@ -133,7 +133,14 @@ export async function absorb(
     const theirs = await loadOrgPack(join(dir, ...fmt.orgPack.split("/")));
     fmt.openspec = theirs.sources.layout.openspec;
   }
-  const files = await listFiles(dir, { skipNames: new Set([".git", "node_modules"]) });
+  // Their own local state is not their work: the record cache, the log, locks, the prompt
+  // history, the index, the run folders and the base clones are derived files belonging to the
+  // machine Atticus ran on. Absorb passes over them, so a linked estate's cache is never listed
+  // as content of theirs to translate — and nothing of ours is written there either (ADR 0119
+  // addendum).
+  const files = (await listFiles(dir, { skipNames: new Set([".git", "node_modules"]) })).filter(
+    (f) => !isLocalState(f, fmt.format === "atticus"),
+  );
   const read = async (f: string) => (await readFile(join(dir, f), "utf8")).replace(/\r\n/g, "\n");
 
   const items: AbsorbItem[] = [];

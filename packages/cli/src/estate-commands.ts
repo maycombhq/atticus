@@ -100,7 +100,7 @@ async function readSpecs(
 ): Promise<EstateSpec[]> {
   const out: EstateSpec[] = [];
   for (const repo of await specRepos(root)) {
-    const s = await readRepoSpec(root, repo);
+    const s = await readRepoSpec(root, repo, { cacheRoot: root });
     for (const p of s.problems) io.err(`${p.file}: ${p.message}`);
     if (s.flows.length) out.push({ repo, flows: s.flows });
     if (templates && s.header?.template) templates[repo] = s.header.template;

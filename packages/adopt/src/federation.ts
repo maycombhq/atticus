@@ -111,7 +111,9 @@ export async function federationConflicts(
   const ctx: ChangeContext = {
     ...base,
     orgPack: await loadOrgPack(p.orgPackDir),
-    records: o.records ?? (await readCatalog(join(p.catalogDir, "generated"))).records,
+    records:
+      o.records ??
+      (await readCatalog(join(p.catalogDir, "generated"), { cacheRoot: root })).records,
   };
   const ours = (await changeStore(root).list()).filter((c) => c.state !== "archived");
   const theirs = await federatedChanges(sources);

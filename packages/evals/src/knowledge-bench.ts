@@ -393,7 +393,7 @@ export async function runKnowledgeBench(o: KnowledgeBenchOptions): Promise<Knowl
     await writeKnowledge(o.work, scan, at);
     scanProblems = scan.attempts.at(-1)?.problems ?? [];
   }
-  const k = await readKnowledge(o.work);
+  const k = await readKnowledge(o.work, { cacheRoot: o.work });
   const ask = await askKnowledge(
     ref.questions.map((q) => q.ask),
     {

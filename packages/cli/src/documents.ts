@@ -72,7 +72,7 @@ export async function listDocuments(root: string): Promise<DocumentList> {
   const records: CatalogRecord[] = [];
   for (const part of ["generated", "curated"])
     records.push(
-      ...(await readCatalog(join(catalogDirOf(root), part)).then(
+      ...(await readCatalog(join(catalogDirOf(root), part), { cacheRoot: root }).then(
         (c) => c.records,
         () => [] as CatalogRecord[],
       )),
@@ -93,7 +93,7 @@ export async function listDocuments(root: string): Promise<DocumentList> {
   const copy = new RegExp(
     `^${knowledgeRelOf(root).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/snapshots/${INPUTS_SOURCE_ID}/[^/]+/(.+)$`,
   );
-  const k = await readKnowledge(root).catch(() => undefined);
+  const k = await readKnowledge(root, { cacheRoot: root }).catch(() => undefined);
   const itemsOf = new Map<string, DocumentView["items"]>();
   for (const item of k?.items ?? []) {
     const files = new Set(

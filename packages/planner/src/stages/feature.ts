@@ -441,7 +441,7 @@ export async function featureStage(
   // knowledge.yaml from this first stage on and sent to the placer: "org knowledge is important
   // to break down tasks efficiently". The items in the stages' own lines; the sections apart.
   const items = new Map(
-    (await readKnowledge(root)).items
+    (await readKnowledge(root, { cacheRoot: root })).items
       .filter((i) => FEATURE_KNOWLEDGE.includes(i.kind))
       .map((i) => [i.id, i] as const),
   );

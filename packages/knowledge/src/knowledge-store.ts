@@ -89,10 +89,14 @@ export interface KnowledgeRead {
   problems: { file: string; message: string }[];
 }
 
-/** Read the knowledge items, people's reviews of them and the last scan's report. */
+/**
+ * Read the knowledge items, people's reviews of them and the last scan's report. `cacheRoot` is
+ * the metarepo this run is working in, and the only place the parses are kept (record-cache.ts);
+ * a read of another team's estate names no root, and then nothing is written into it.
+ */
 export async function readKnowledge(
   root: string,
-  o: { raw?: boolean } = {},
+  o: { raw?: boolean; cacheRoot?: string } = {},
 ): Promise<KnowledgeRead> {
   const dir = join(knowledgeDirOf(root), "items");
   const items: KnowledgeRecord[] = [];
@@ -105,6 +109,7 @@ export async function readKnowledge(
     files: await files(dir),
     name: "knowledge",
     version: `c1@${SCHEMA_VERSION}`,
+    cacheRoot: o.cacheRoot,
     parse: (text) => {
       const r = deserializeRecord(text);
       return r.ok
@@ -172,7 +177,7 @@ export async function writeKnowledge(
     const pages = replaced(source);
     return !pages || page === undefined || pages.has(page);
   };
-  const before = await readKnowledge(root, { raw: true });
+  const before = await readKnowledge(root, { raw: true, cacheRoot: root });
   // An item a person kept from a search stays while its quote is still on its page.
   const pageText = (source: string, page: string) =>
     o.snapshots?.find((x) => x.manifest.source === source)?.pages.find((p) => p.pagePath === page)

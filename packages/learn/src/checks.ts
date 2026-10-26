@@ -33,8 +33,8 @@ const no = (message: string): CheckResult => ({ pass: false, message });
 
 async function catalog(root: string): Promise<CatalogRecord[]> {
   const dir = catalogDirOf(root);
-  const g = await readCatalog(join(dir, "generated"));
-  const c = await readCatalog(join(dir, "curated"));
+  const g = await readCatalog(join(dir, "generated"), { cacheRoot: root });
+  const c = await readCatalog(join(dir, "curated"), { cacheRoot: root });
   return [...g.records, ...c.records];
 }
 

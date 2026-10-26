@@ -38,7 +38,7 @@ export function uiSpecRoutes(r: Router, ctx: ServerContext): Router {
   const specOf = async (repo: string) => {
     if (!(await specRepos(root)).includes(repo))
       throw notFound(`${repo} has no spec. Draft one with atticus spec draft ${repo}.`);
-    return readRepoSpec(root, repo);
+    return readRepoSpec(root, repo, { cacheRoot: root });
   };
 
   /** Each flow's name, for the repos named, read once. */
@@ -46,7 +46,8 @@ export function uiSpecRoutes(r: Router, ctx: ServerContext): Router {
     const names = new Map<string, string>();
     const have = new Set(await specRepos(root));
     for (const repo of [...new Set(repos)].filter((x) => have.has(x)))
-      for (const f of (await readRepoSpec(root, repo)).flows) names.set(f.id, f.name);
+      for (const f of (await readRepoSpec(root, repo, { cacheRoot: root })).flows)
+        names.set(f.id, f.name);
     return names;
   };
 
@@ -59,7 +60,10 @@ export function uiSpecRoutes(r: Router, ctx: ServerContext): Router {
   r.add("GET", "/api/specs", async () => {
     const repos: Api.SpecListT["repos"] = [];
     for (const repo of await specRepos(root))
-      repos.push({ repo, flows: (await readRepoSpec(root, repo)).flows.length });
+      repos.push({
+        repo,
+        flows: (await readRepoSpec(root, repo, { cacheRoot: root })).flows.length,
+      });
     return { status: 200, body: { repos } satisfies Api.SpecListT };
   });
 
@@ -141,7 +145,7 @@ export function uiSpecRoutes(r: Router, ctx: ServerContext): Router {
   };
   const todayOf = async (repo: string, flow: string) =>
     (await specRepos(root)).includes(repo)
-      ? (await readRepoSpec(root, repo)).flows.find((f) => f.id === flow)
+      ? (await readRepoSpec(root, repo, { cacheRoot: root })).flows.find((f) => f.id === flow)
       : undefined;
 
   r.add("GET", "/api/changes/{changeId}/target-flows", async ({ params }) => {

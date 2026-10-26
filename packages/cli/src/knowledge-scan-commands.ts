@@ -184,7 +184,7 @@ export async function knowledgeScan(
   let r!: KnowledgeScanResult;
   for (;;) {
     // ADR 0101: a rescan reads only the pages that changed since the last scan (--full: all).
-    const before = await readKnowledge(root, { raw: true });
+    const before = await readKnowledge(root, { raw: true, cacheRoot: root });
     plan = planRescan(snapshots, before.report, before.items, {
       full: o.full === true,
       batchTokens: room,
@@ -299,7 +299,7 @@ export async function knowledgeScan(
   // big for the prompt on their own aren't among them: another batch won't read them.
   const left = pending.length;
   const big = tooBig.map((t) => `${t.source}/${t.page}`);
-  const after = await readKnowledge(root);
+  const after = await readKnowledge(root, { cacheRoot: root });
   const recheck = Object.entries(after.reviews)
     .filter(([, v]) => v.state === "stale")
     .map(([id]) => id);
@@ -416,7 +416,7 @@ export async function knowledgeList(
     io.err(`There is no knowledge kind ${o.kind}. Use one of: ${KNOWLEDGE_KINDS.join(", ")}.`);
     return 2;
   }
-  const k = await readKnowledge(root);
+  const k = await readKnowledge(root, { cacheRoot: root });
   for (const p of k.problems) io.err(`${knowledgeRelOf(root)}/items/${p.file}: ${p.message}`);
   if (!k.items.length) {
     io.err(
@@ -487,7 +487,7 @@ export async function knowledgeAsk(
   deps: KnowledgeDeps,
   io: Output,
 ): Promise<number> {
-  const k = await readKnowledge(root);
+  const k = await readKnowledge(root, { cacheRoot: root });
   if (!k.items.length) {
     io.err(
       "There are no knowledge items yet. Run atticus sources sync, then atticus knowledge scan.",
@@ -566,7 +566,7 @@ export async function knowledgeFind(
   if (!snapshots) return 2;
   const op = await loadOrgPack(orgPackDirOf(root));
   const now = deps.now ?? new Date();
-  const k = await readKnowledge(root);
+  const k = await readKnowledge(root, { cacheRoot: root });
   const r = await findKnowledge(snapshots, phrase, {
     runtime: deps.runtime,
     items: [...k.items, ...k.rejected],
@@ -789,7 +789,7 @@ export async function knowledgeReview(
   o: { set?: string[]; note?: string; by: string; now?: Date; json?: boolean },
   io: Output,
 ): Promise<number> {
-  const k = await readKnowledge(root, { raw: true });
+  const k = await readKnowledge(root, { raw: true, cacheRoot: root });
   const item = k.items.find((i) => i.id === id);
   if (!item) {
     io.err(

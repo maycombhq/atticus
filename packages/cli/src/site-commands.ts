@@ -8,8 +8,8 @@ import type { Output } from "./commands.js";
 /** Generated records, with a curated record of the same kind and id taking its place. */
 export async function catalogRecords(root: string, io?: Output): Promise<CatalogRecord[]> {
   const dir = catalogDirOf(root);
-  const gen = await readCatalog(join(dir, "generated"));
-  const cur = await readCatalog(join(dir, "curated"));
+  const gen = await readCatalog(join(dir, "generated"), { cacheRoot: root });
+  const cur = await readCatalog(join(dir, "curated"), { cacheRoot: root });
   for (const p of [...gen.problems, ...cur.problems]) io?.err(`catalog ${p.file}: ${p.message}`);
   const curated = new Set(cur.records.map((r) => `${r.kind}/${r.id}`));
   return [...gen.records.filter((r) => !curated.has(`${r.kind}/${r.id}`)), ...cur.records];

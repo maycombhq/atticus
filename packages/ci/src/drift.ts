@@ -512,7 +512,7 @@ export async function repoDrift(o: DriftOptions): Promise<DriftReport> {
   problems.push(...loaded.problems);
   const cfg: CiConfig = loaded.config;
 
-  const catalog = await readCatalog(where.generated);
+  const catalog = await readCatalog(where.generated, where.root ? { cacheRoot: where.root } : {});
   for (const p of catalog.problems) problems.push(`catalog ${p.file}: ${p.message}`);
   if (catalog.records.length === 0)
     throw new DriftError(`The catalog at ${o.catalog} has no records; scan the estate first.`);

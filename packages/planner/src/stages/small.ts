@@ -314,7 +314,7 @@ export async function smallStage(
       `${change.id} has no brief yet: write brief.md (what changes, where, and when it is done), then run atticus change small ${change.id} again.`,
     );
   const estate: Estate = await loadEstate(root, ctx.records);
-  const knowledge = await readKnowledge(root);
+  const knowledge = await readKnowledge(root, { cacheRoot: root });
   const guides = knowledge.items.filter((i) => i.kind === "Pattern" || i.kind === "Decision");
   const items = knowledge.items.filter((i): i is Process => i.kind === "ProcessDefinition");
 

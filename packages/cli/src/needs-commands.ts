@@ -51,7 +51,7 @@ export async function changeNeeds(
       }
       throw e;
     }
-  const k = await readKnowledge(root);
+  const k = await readKnowledge(root, { cacheRoot: root });
   if (!k.items.length) {
     io.err(
       "There are no knowledge items to check the change against yet. Run atticus sources sync, then atticus knowledge scan.",
@@ -118,7 +118,7 @@ export async function needsList(
   o: { change?: string; all?: boolean; json?: boolean },
   io: Output,
 ): Promise<number> {
-  const k = await readKnowledge(root);
+  const k = await readKnowledge(root, { cacheRoot: root });
   const rows: (Need & { change: string; verified?: string })[] = [];
   for (const c of o.change ? [o.change] : await changeIds(root)) {
     const f = await readNeeds(root, c);
