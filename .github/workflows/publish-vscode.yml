@@ -41,12 +41,15 @@ jobs:
       - name: Package the .vsix
         id: pack
         working-directory: packages/vscode
+        # A pre-release must be packaged as one too: vsce refuses to publish a .vsix with
+        # --pre-release that wasn't packaged with it.
         run: |
-          pnpm run package
           version=$(node -p "require('./package.json').version")
           minor=$(echo "$version" | cut -d. -f2)
+          if [ $((minor % 2)) -eq 1 ]; then flag=--pre-release; else flag=; fi
+          pnpm run package $flag
           echo "vsix=atticus-$version.vsix" >> "$GITHUB_OUTPUT"
-          if [ $((minor % 2)) -eq 1 ]; then echo "flag=--pre-release" >> "$GITHUB_OUTPUT"; else echo "flag=" >> "$GITHUB_OUTPUT"; fi
+          echo "flag=$flag" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.pack.outputs.vsix }}
