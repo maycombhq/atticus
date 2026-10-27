@@ -285,6 +285,22 @@ export interface FrameworkToLearn {
  * (`group:artifact[:version]`), matched as a declaration is — letter case, group and version
  * aside — so a repo whose starter is already taught raises nothing.
  */
+/**
+ * An Apigee bundle written as a framework fact: a proxy (`<APIProxy>`, under `apiproxy/`) or a
+ * shared flow (`<SharedFlowBundle>`, under `sharedflowbundle/` or `sharedflows/`). Map reads
+ * these as the gateway's routes, auth, scopes and callers (ADR 0124 addenda A-gateway,
+ * A-gateway2); there is nothing to learn, so none is offered.
+ */
+export function isApigeeBundle(f: Pick<Fact, "cite"> & { name?: string }): boolean {
+  const file = f.cite.file.replace(/\\/g, "/").toLowerCase();
+  const said = `${f.cite.value} ${f.cite.quote ?? ""}`;
+  return (
+    /<\s*(APIProxy|SharedFlowBundle)\b/i.test(said) ||
+    /^(apiproxy|sharedflowbundle)$/i.test(f.cite.value.trim()) ||
+    /(^|\/)(apiproxy|sharedflowbundle|sharedflows)\//.test(file)
+  );
+}
+
 export function frameworksToLearn(
   facts: readonly Fact[],
   known: readonly string[] = [],
@@ -293,6 +309,7 @@ export function frameworksToLearn(
   return frameworkFacts(facts)
     .filter(
       (f) =>
+        !isApigeeBundle(f) &&
         !frameworkOf(f.cite.value) &&
         !have.has(declarationKey(f.name)) &&
         !have.has(declarationKey(f.cite.value)),

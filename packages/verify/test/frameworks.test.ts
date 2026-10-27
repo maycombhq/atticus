@@ -180,6 +180,51 @@ describe("a house framework nothing can read is learned, not guessed at", () => 
   it("offers nothing for a framework Atticus reads itself", () => {
     expect(frameworksToLearn(facts("forge-reconcile"))).toEqual([]);
   });
+
+  it("offers nothing for an Apigee proxy or shared flow, which map reads as a gateway", () => {
+    const fw = (id: string, name: string, file: string, value: string, quote: string): Fact =>
+      ({
+        kind: "framework",
+        id,
+        repo: "forge-gateway",
+        commit: COMMIT,
+        name,
+        cite: { file, line: 2, value, quote },
+      }) as Fact;
+    const apigee = [
+      fw(
+        "fw.apiproxy",
+        "apiproxy",
+        "apiproxy/ledger-v1.xml",
+        "APIProxy",
+        '<APIProxy name="ledger-v1">',
+      ),
+      fw(
+        "fw.sf-verify-token",
+        "sf-verify-token",
+        "sharedflows/sf-verify-token/sharedflowbundle/sf-verify-token.xml",
+        "SharedFlowBundle",
+        '<SharedFlowBundle name="sf-verify-token">',
+      ),
+      fw(
+        "fw.sf-spike",
+        "sf-spike-arrest",
+        "src/main/apigee/sharedflows/sf-spike-arrest.xml",
+        "SharedFlowBundle",
+        '<SharedFlowBundle revision="1" name="sf-spike-arrest">',
+      ),
+    ];
+    const house = fw(
+      "fw.forge-card-starter",
+      "forge-card-starter",
+      "pom.xml",
+      "forge-card-starter",
+      "<artifactId>forge-card-starter</artifactId>",
+    );
+    expect(frameworksToLearn([...apigee, house]).map((l) => l.framework)).toEqual([
+      "forge-card-starter",
+    ]);
+  });
 });
 
 describe("what a declaration means", () => {

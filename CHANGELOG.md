@@ -2,6 +2,12 @@
 
 All notable changes to Atticus. Versions follow [Semantic Versioning](https://semver.org); contracts C1 to C6 change only with an ADR, a schema version and a migration (`atticus upgrade`).
 
+## Unreleased
+
+### Fixed: an Apigee proxy or shared flow is never offered as a framework to learn
+
+- Reading a gateway repo, an assistant could write a framework fact for the proxy (`<APIProxy>`) or each shared flow (`<SharedFlowBundle>`), and `atticus verify` then offered `atticus frameworks learn` for each, whatever the repo's type. They are the gateway's routes, which map already reads: the verifier offers nothing for them, and `/atticus-map`'s framework rule says they are not framework facts.
+
 ## 2.0.0-beta.3 (2026-10-27)
 
 ### Base clones copied from the clones you already have
