@@ -33,6 +33,7 @@ const COMMITS: Record<string, string> = {
   "forge-partner-gateway": "ddd4444",
   "northwind-pay-api": "eee5555",
   "forge-orders-sandbox": "fff6666",
+  "forge-refunds": "aab7777",
 };
 const facts = (repo: string): Fact[] => {
   const r = parseFacts(readFileSync(join(FIX, "facts", `${repo}.jsonl`), "utf8"));
@@ -67,6 +68,7 @@ describe("the hand-written facts of the two-gateway chain verify", () => {
       "proxies/forge-loop-v1/apiproxy/forge-loop-v1.xml",
       "proxies/forge-orders-v2/apiproxy/forge-orders-v2.xml",
       "proxies/forge-pay-v1/apiproxy/forge-pay-v1.xml",
+      "proxies/forge-refunds-v1/apiproxy/forge-refunds-v1.xml",
     ]);
   });
 });

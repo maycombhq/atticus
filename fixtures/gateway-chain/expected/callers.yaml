@@ -1,0 +1,201 @@
+# Who each gateway route lets in (ADR 0124 addendum A-callers), derived by hand from the seven
+# repos' facts, their join (join.yaml) and the profile's one declaration: every route of the two
+# gateways, with the consumers its own files name (cited), the systems a person declared (linked to
+# the named consumer they say they are), and the calls the scanned repos make into it.
+#
+# The forge-refunds-v1 routes are called by nothing Atticus scans: their callers are the API
+# product forge-refunds and the two developer apps subscribed to it, and Harbor Desk, which a
+# person declared as the app harbor-desk-portal. Every other route is called by a scanned repo and
+# names no consumer of its own. No route here is "callers unknown"; the tests strip the refunds
+# routes' callers and the declaration to see one.
+routes:
+  - route:
+      {
+        repo: forge-edge-gateway,
+        fact: entry.get.forge-loop-ping,
+        component: edge-gateway,
+        at: proxies/forge-loop-v1/apiproxy/proxies/default.xml:5,
+      }
+    gatewayRoute: gw-edge-gateway-get-forge-loop-ping
+    method: GET
+    path: /forge/loop/ping
+    named: []
+    declared: []
+    scanned:
+      - {
+          repo: forge-partner-gateway,
+          fact: call.get.forge-loop-ping,
+          component: partner-gateway,
+          at: proxies/northwind-loop-v1/apiproxy/targets/edge.xml:3,
+        }
+  - route:
+      {
+        repo: forge-edge-gateway,
+        fact: entry.get.forge-refunds-v1-refunds-id,
+        component: edge-gateway,
+        at: proxies/forge-refunds-v1/apiproxy/proxies/default.xml:17,
+      }
+    gatewayRoute: gw-edge-gateway-get-forge-refunds-v1-refunds-id
+    method: GET
+    path: /forge/refunds/v1/refunds/{id}
+    named:
+      - { as: product, name: forge-refunds, at: resources/edge/org/apiProducts.json:3 }
+      - { as: app, name: harbor-desk-portal, at: resources/edge/org/developerApps.json:4 }
+      - { as: app, name: forge-ops-console, at: resources/edge/org/developerApps.json:11 }
+    declared:
+      - system: harbor-desk
+        name: Harbor Desk
+        boundary: internal
+        owner: team-harbor
+        as: app
+        identity: harbor-desk-portal
+        linked: { as: app, name: harbor-desk-portal, at: resources/edge/org/developerApps.json:4 }
+        by: person
+        source: profiles/forge/profile.yaml
+    scanned: []
+  - route:
+      {
+        repo: forge-edge-gateway,
+        fact: entry.get.forge-v2-orders-id,
+        component: edge-gateway,
+        at: proxies/forge-orders-v2/apiproxy/proxies/default.xml:17,
+      }
+    gatewayRoute: gw-edge-gateway-get-forge-v2-orders-id
+    method: GET
+    path: /forge/v2/orders/{id}
+    named: []
+    declared: []
+    scanned:
+      - {
+          repo: forge-shop-bff,
+          fact: call.get.forge-v2-orders-id,
+          component: shop-bff,
+          at: src/main/java/forge/shop/OrdersGatewayClient.java:17,
+        }
+  - route:
+      {
+        repo: forge-edge-gateway,
+        fact: entry.post.forge-pay-v1-charges,
+        component: edge-gateway,
+        at: proxies/forge-pay-v1/apiproxy/proxies/default.xml:13,
+      }
+    gatewayRoute: gw-edge-gateway-post-forge-pay-v1-charges
+    method: POST
+    path: /forge/pay/v1/charges
+    named: []
+    declared: []
+    scanned:
+      - {
+          repo: forge-orders,
+          fact: call.post.forge-pay-v1-charges,
+          component: orders-api,
+          at: src/main/java/forge/orders/PayGatewayClient.java:17,
+        }
+  - route:
+      {
+        repo: forge-edge-gateway,
+        fact: entry.post.forge-refunds-v1-refunds,
+        component: edge-gateway,
+        at: proxies/forge-refunds-v1/apiproxy/proxies/default.xml:10,
+      }
+    gatewayRoute: gw-edge-gateway-post-forge-refunds-v1-refunds
+    method: POST
+    path: /forge/refunds/v1/refunds
+    named:
+      - { as: product, name: forge-refunds, at: resources/edge/org/apiProducts.json:3 }
+      - { as: app, name: harbor-desk-portal, at: resources/edge/org/developerApps.json:4 }
+      - { as: app, name: forge-ops-console, at: resources/edge/org/developerApps.json:11 }
+    declared:
+      - system: harbor-desk
+        name: Harbor Desk
+        boundary: internal
+        owner: team-harbor
+        as: app
+        identity: harbor-desk-portal
+        linked: { as: app, name: harbor-desk-portal, at: resources/edge/org/developerApps.json:4 }
+        by: person
+        source: profiles/forge/profile.yaml
+    scanned: []
+  - route:
+      {
+        repo: forge-edge-gateway,
+        fact: entry.post.forge-v2-orders-id-dispatch,
+        component: edge-gateway,
+        at: proxies/forge-orders-v2/apiproxy/proxies/default.xml:28,
+      }
+    gatewayRoute: gw-edge-gateway-post-forge-v2-orders-id-dispatch
+    method: POST
+    path: /forge/v2/orders/{id}/dispatch
+    named: []
+    declared: []
+    scanned:
+      - {
+          repo: forge-shop-bff,
+          fact: call.post.forge-v2-orders-id-dispatch,
+          component: shop-bff,
+          at: src/main/java/forge/shop/OrdersGatewayClient.java:22,
+        }
+  - route:
+      {
+        repo: forge-partner-gateway,
+        fact: entry.get.pay-loop-ping,
+        component: partner-gateway,
+        at: proxies/northwind-loop-v1/apiproxy/proxies/default.xml:5,
+      }
+    gatewayRoute: gw-partner-gateway-get-pay-loop-ping
+    method: GET
+    path: /pay/loop/ping
+    named: []
+    declared: []
+    scanned:
+      - {
+          repo: forge-edge-gateway,
+          fact: call.get.pay-loop-ping,
+          component: edge-gateway,
+          at: proxies/forge-loop-v1/apiproxy/targets/partner.xml:3,
+        }
+  - route:
+      {
+        repo: forge-partner-gateway,
+        fact: entry.post.pay-refunds-v1-refunds,
+        component: partner-gateway,
+        at: proxies/northwind-refunds-v1/apiproxy/proxies/default.xml:10,
+      }
+    gatewayRoute: gw-partner-gateway-post-pay-refunds-v1-refunds
+    method: POST
+    path: /pay/refunds/v1/refunds
+    named: []
+    declared: []
+    scanned:
+      - {
+          repo: forge-refunds,
+          fact: call.post.pay-refunds-v1-refunds,
+          component: refunds-api,
+          at: src/main/java/forge/refunds/NorthwindRefundsClient.java:17,
+        }
+  - route:
+      {
+        repo: forge-partner-gateway,
+        fact: entry.post.pay-v1-charges,
+        component: partner-gateway,
+        at: proxies/northwind-pay-v1/apiproxy/proxies/default.xml:10,
+      }
+    gatewayRoute: gw-partner-gateway-post-pay-v1-charges
+    method: POST
+    path: /pay/v1/charges
+    named: []
+    declared: []
+    scanned:
+      - {
+          repo: forge-edge-gateway,
+          fact: call.post.partner-pay-v1-charges,
+          component: edge-gateway,
+          at: proxies/forge-pay-v1/apiproxy/policies/AM-RewritePay.xml:8,
+        }
+# Each declared caller's chain, as the join reads it: the person's word first, then each gateway
+# hop with what it checks, the scopes it demands and which side it faces, the service, and on
+# through every call the service makes from that entry while there is exactly one.
+chains:
+  - "Harbor Desk (declared; app harbor-desk-portal) → edge-gateway forge-refunds-v1 (oauth2; scopes refunds.read; internal) → refunds-api GET /refunds/{id}"
+  - "Harbor Desk (declared; app harbor-desk-portal) → edge-gateway forge-refunds-v1 (oauth2; scopes refunds.write; internal) → refunds-api POST /refunds → partner-gateway northwind-refunds-v1 (oauth2; scopes northwind.refunds.write; external) → northwind-pay-api POST /v2/refunds"
+problems: []

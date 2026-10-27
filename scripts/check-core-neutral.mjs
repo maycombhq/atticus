@@ -166,6 +166,12 @@ export const ALLOW = [
       "a gateway bundle's folder names (apiproxy/, sharedflowbundle/) say an entry is a gateway route whatever the repo's type says, so the join follows the hop (ADR 0124 addenda A-gateway and A-gateway2); the reading rules and the policy kinds stay in the assistant's protocol and the verifier",
   },
   {
+    file: "packages/core/src/facts-callers.ts",
+    names: ["apigee"],
+    reason:
+      "the same bundle test as facts-join.ts (its exported APIGEE_BUNDLE), so a route's callers are read for exactly the entries the join treats as gateway routes (ADR 0124 addendum A-callers)",
+  },
+  {
     file: "packages/core/src/api.ts",
     names: ["confluence", "ado", "sharepoint", "claude"],
     reason:

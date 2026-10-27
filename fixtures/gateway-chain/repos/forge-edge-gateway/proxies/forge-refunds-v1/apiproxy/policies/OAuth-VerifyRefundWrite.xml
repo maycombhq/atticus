@@ -1,0 +1,4 @@
+<OAuthV2 name="OAuth-VerifyRefundWrite">
+  <Operation>VerifyAccessToken</Operation>
+  <Scope>refunds.write</Scope>
+</OAuthV2>

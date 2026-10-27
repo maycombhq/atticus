@@ -1,0 +1,10 @@
+[
+  {
+    "name": "forge-refunds",
+    "displayName": "Forge Refunds",
+    "approvalType": "manual",
+    "proxies": ["forge-refunds-v1"],
+    "scopes": ["refunds.read", "refunds.write"],
+    "environments": ["prod"]
+  }
+]

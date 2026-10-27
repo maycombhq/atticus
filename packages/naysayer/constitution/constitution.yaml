@@ -266,3 +266,21 @@ rules:
     waivable: false
     source: Atticus constitution
     needs: []
+
+  # ADR 0124 addendum A-callers: who a gateway route lets in. A route whose files name no consumer,
+  # that no person declared a caller of and that no call the catalog holds goes through is asked
+  # about, never passed in silence; a risk, so a person answers it rather than the gate blocking.
+  - id: constitution.route-callers-known
+    title: Every gateway route a change touches has a known caller
+    description: A gateway route that carries an operation the change modifies or retires names its consumers in its files, has a caller a person declared in the org pack's profile, or has a call the catalog holds going through it. When none of these says who calls it, who does is asked of the callee's owner.
+    layer: constitution
+    lens: architecture
+    question: complete
+    appliesTo: { artifacts: [interfaces, catalog] }
+    severity: risk
+    check:
+      type: deterministic
+      check: route-callers-known
+    waivable: false
+    source: Atticus constitution
+    needs: []

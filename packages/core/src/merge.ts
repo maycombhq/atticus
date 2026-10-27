@@ -485,7 +485,10 @@ export function mergeCatalog(input: MergeInput): MergeResult {
       ...d,
       ...(ep ? { endpoint: ep.id } : {}),
       evidence: unionEvidence(d.evidence, callee),
-      confidence: callee.length > 0 ? "verified" : d.confidence,
+      // A person's word stays asserted (A-callers): finding the callee's code doesn't prove the
+      // caller, which nobody read, makes the call.
+      confidence:
+        d.confidence === "asserted" ? "asserted" : callee.length > 0 ? "verified" : d.confidence,
     });
   }
 

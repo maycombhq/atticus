@@ -32,7 +32,7 @@ const readCase = (name: string): Fact[] => {
   return r.facts;
 };
 
-/** The six repos as org-pack/profiles/forge/repos.manifest.yaml lists them. */
+/** The seven repos as org-pack/profiles/forge/repos.manifest.yaml lists them. */
 const estate = (): JoinRepo[] => [
   { repo: "forge-shop-bff", facts: read("forge-shop-bff"), component: "shop-bff" },
   {
@@ -67,6 +67,13 @@ const estate = (): JoinRepo[] => [
     facts: read("forge-orders-sandbox"),
     component: "orders-sandbox-api",
     hosts: ["orders-sandbox.forge.internal"],
+  },
+  // A-callers: the refunds service behind the edge gateway's forge-refunds-v1 proxy.
+  {
+    repo: "forge-refunds",
+    facts: read("forge-refunds"),
+    component: "refunds-api",
+    hosts: ["refunds.forge.internal"],
   },
 ];
 const expected = () => parse(readFileSync(join(DIR, "expected", "join.yaml"), "utf8"));
@@ -305,6 +312,15 @@ describe("joinRecords through a chain of gateways", () => {
         "orders-api",
         ["OAuth-VerifyDispatch"],
         ["orders.dispatch", "orders.write"],
+      ],
+      [
+        // A-callers: the refunds service's refund, out through the partner gateway alone.
+        "gw-partner-gateway-post-pay-refunds-v1-refunds",
+        "northwind-refunds-v1",
+        "/pay/refunds/v1",
+        "northwind-pay-api",
+        ["OAuth-VerifyRefunds"],
+        ["northwind.refunds.write"],
       ],
       [
         "gw-partner-gateway-post-pay-v1-charges",

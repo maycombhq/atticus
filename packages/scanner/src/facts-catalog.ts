@@ -1,6 +1,10 @@
 import {
+  callerRecords,
+  DECLARED_CALLER,
   callTargetQuestion,
+  declaredCallsOf,
   factIdPart,
+  joinCallers,
   joinFacts,
   joinRecords,
   normalizePath,
@@ -8,6 +12,7 @@ import {
   projectFacts,
   questionId,
   slugify,
+  type CallersResult,
   type CatalogRecord,
   type CuratedProblem,
   type Fact,
@@ -442,6 +447,12 @@ export function applyFactJoins(
   records: readonly CatalogRecord[],
   join: FactsJoinResult,
   repos: readonly JoinRepo[],
+  /**
+   * Who the gateway routes let in (ADR 0124 addendum A-callers): the consumers their files name
+   * and the systems people declared, written as C1 records for the routes of `only` (every repo
+   * when left out), over the whole estate's `join`.
+   */
+  withCallers?: { callers: CallersResult; join: FactsJoinResult; only?: readonly string[] },
 ): CatalogRecord[] {
   /** A joined call, by its repo, cited line and component: the first Interface it joined. */
   const calls = new Map<string, string>();
@@ -476,6 +487,15 @@ export function applyFactJoins(
       if (id === from || id.startsWith(`${from}.`)) return to + id.slice(from.length);
     return id;
   };
+  const joined = joinRecords(join, repos);
+  const callers = withCallers
+    ? callerRecords(withCallers.callers, repos, withCallers.join, {
+        ...(withCallers.only ? { only: withCallers.only } : {}),
+        existing: joined,
+      })
+    : [];
+  // A GatewayRoute the callers fill in (its API product) replaces the join's.
+  const filled = new Set(callers.map((r) => `${r.kind}|${r.id}`));
   return [
     ...kept.map((r): CatalogRecord => {
       if (r.kind === "Schema" && re(r.ref) !== r.ref) return { ...r, id: re(r.id), ref: re(r.ref) };
@@ -483,7 +503,8 @@ export function applyFactJoins(
         return { ...r, id: re(r.id), interface: re(r.interface) };
       return r;
     }),
-    ...joinRecords(join, repos),
+    ...joined.filter((r) => !filled.has(`${r.kind}|${r.id}`)),
+    ...callers,
   ];
 }
 
@@ -492,7 +513,14 @@ const entryText = (j: FactJoin) => (j.method ? `${j.method} ${j.path}` : j.path)
 
 /** The part of an estate join about one repo: its calls, and the other repos' calls into it. */
 function joinAbout(all: FactsJoinResult, repo: string): FactsJoinResult {
-  const joins = all.joins.filter((j) => j.call.repo === repo || j.entry.repo === repo);
+  // A join through a gateway of this repo too (A-callers): its routes are this repo's records,
+  // so writing the gateway after the caller doesn't drop the GatewayRoute the call goes through.
+  const joins = all.joins.filter(
+    (j) =>
+      j.call.repo === repo ||
+      j.entry.repo === repo ||
+      !!j.gateway?.some((h) => h.entry.repo === repo),
+  );
   const ifaces = new Set(joins.map((j) => j.interface));
   return {
     joins,
@@ -535,7 +563,11 @@ export function catalogWithFacts(input: FactsCatalogInput): FactsCatalogResult {
     const ev = r.evidence as unknown[];
     const m = ev.filter(mine).length;
     if (m === 0) kept.push(r);
-    else if (m === ev.length) dropped.add(`${r.kind}|${r.id}`);
+    // A declared caller's Interface (A-callers) rests on a person's word and this gateway's
+    // route: it is made again from the profile each time the gateway is written, so a
+    // declaration taken back leaves nothing behind.
+    else if (m === ev.length || r.flags?.includes(DECLARED_CALLER))
+      dropped.add(`${r.kind}|${r.id}`);
     else mixed.push(r);
   }
   const droppedEndpoint = (id: unknown) => typeof id === "string" && dropped.has(`Endpoint|${id}`);
@@ -585,15 +617,19 @@ export function catalogWithFacts(input: FactsCatalogInput): FactsCatalogResult {
   let records0 = [...kept, ...newRecords];
   if (input.estate) {
     const repos = joinReposOf(op, [{ repo, facts }, ...others], renames);
-    join = joinAbout(
-      joinFacts({
-        repos,
-        targets: { ...input.estateTargets, [repo]: input.targets ?? {} },
-        outside: outsideSystems(op),
-      }),
-      repo,
-    );
-    records0 = applyFactJoins(records0, join, repos);
+    const whole = joinFacts({
+      repos,
+      targets: { ...input.estateTargets, [repo]: input.targets ?? {} },
+      outside: outsideSystems(op),
+    });
+    join = joinAbout(whole, repo);
+    // A-callers: who this repo's gateway routes let in, read from the whole estate's join (a
+    // route's scanned callers may be anywhere) and the systems people declared.
+    records0 = applyFactJoins(records0, join, repos, {
+      callers: joinCallers({ repos, join: whole, declared: declaredCallsOf(op.profiles) }),
+      join: whole,
+      only: [repo],
+    });
     // A publish names its first listener's Interface (sorted), whether or not the listener's
     // repo is written yet, so its schema's id doesn't depend on which repo was written first.
     for (const j of join.joins) {
