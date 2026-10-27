@@ -134,6 +134,68 @@ const steps = [
       </figure>
     </section>
 
+    <section class="screens" aria-labelledby="screens-title">
+      <h2 id="screens-title">In VS Code, and in your browser</h2>
+      <figure class="shot shot-main">
+        <a :href="withBase('/screens/vscode-change.webp')">
+          <img
+            :src="withBase('/screens/vscode-change.webp')"
+            width="1439"
+            height="899"
+            loading="lazy"
+            alt="VS Code with the Atticus sidebar (next steps, questions and the change Add a daily transfer limit with its artifacts) and the Atticus app open in an editor tab on the change's page: its stages from define to release, its risk and its artifacts."
+          />
+        </a>
+        <figcaption>
+          A change in VS Code: the sidebar says what's next and what waits on you; the app opens in
+          a tab beside your code.
+        </figcaption>
+      </figure>
+      <div class="shot-row">
+        <figure class="shot">
+          <a :href="withBase('/screens/vscode-stories.webp')">
+            <img
+              :src="withBase('/screens/vscode-stories.webp')"
+              width="1439"
+              height="899"
+              loading="lazy"
+              alt="VS Code showing the change's stories.md as a table of four stories, each with the repos it touches and the story it depends on."
+            />
+          </a>
+          <figcaption>Stories are OpenSpec files in your metarepo, reviewed like code.</figcaption>
+        </figure>
+        <figure class="shot">
+          <a :href="withBase('/screens/vscode-map.webp')">
+            <img
+              :src="withBase('/screens/vscode-map.webp')"
+              width="1439"
+              height="899"
+              loading="lazy"
+              alt="The estate canvas in VS Code: the Portal, Reports, Audit, Ledger and Northwind Pay systems with the calls and subscriptions between them, and one call flagged as missing something."
+            />
+          </a>
+          <figcaption>The map of your systems, built from verified facts.</figcaption>
+        </figure>
+        <figure class="shot">
+          <a :href="withBase('/screens/app-task-board.webp')">
+            <img
+              :src="withBase('/screens/app-task-board.webp')"
+              width="1440"
+              height="900"
+              loading="lazy"
+              alt="The task board in the browser: five tasks across forge-ledger and forge-portal-bff, each tied to a story, each with Run with AI."
+            />
+          </a>
+          <figcaption>
+            The same app in your browser: <code>atticus ui</code>. Here, the task board.
+          </figcaption>
+        </figure>
+      </div>
+      <p class="shot-note">
+        On the invented Forge practice estate: <code>atticus sandbox create</code>.
+      </p>
+    </section>
+
     <section class="does" aria-labelledby="does-title">
       <h2 id="does-title">What it does</h2>
       <dl>
@@ -529,6 +591,52 @@ code {
 .note {
   margin: 14px 0 0;
   font-size: 0.8125rem;
+  color: var(--a-muted);
+}
+
+/* Screenshots: one large, three below. */
+.screens {
+  margin-bottom: 72px;
+}
+.shot {
+  margin: 0;
+  min-width: 0;
+}
+.shot a {
+  display: block;
+  border: 1px solid var(--a-line);
+  background: var(--a-sunk);
+}
+.shot img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.shot figcaption {
+  margin-top: 10px;
+  font-size: 0.9375rem;
+  line-height: 1.5;
+  color: var(--a-muted);
+  max-width: 72ch;
+}
+.shot-main {
+  margin-bottom: 32px;
+}
+.shot-main a {
+  box-shadow: 0 24px 60px -30px rgba(0, 40, 50, 0.45);
+}
+.shot-row {
+  display: grid;
+  gap: 28px;
+}
+@media (min-width: 768px) {
+  .shot-row {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+.shot-note {
+  margin: 20px 0 0;
+  font-size: 0.875rem;
   color: var(--a-muted);
 }
 
