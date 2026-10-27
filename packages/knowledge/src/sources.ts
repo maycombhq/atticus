@@ -13,6 +13,8 @@ import type { ProfileSystem } from "@maycombhq/reconcile";
 import { screenDocuments } from "@maycombhq/ai";
 import { readMarkdown, type MarkdownDoc, type MdSection } from "./markdown.js";
 import { mentionIndex, type MentionIndex } from "./mentions.js";
+import { confluenceExportAdapter, sharepointExportAdapter } from "./exports.js";
+import { authorityRank, bodyKey, pageRestricted, pageStandingOf } from "./standing.js";
 
 export type WikiSource = OrgPack["sources"]["wikis"][number];
 export type SourceDocumentRecord = RecordOf<"SourceDocument">;
@@ -52,6 +54,9 @@ export interface WikiApi {
     version: number;
     updatedAt: string;
     url: string;
+    /** ADR 0130, optional: the page's labels and whether it is under view restrictions. */
+    labels?: string[];
+    restricted?: boolean;
   }>;
 }
 
@@ -106,10 +111,20 @@ export function wikiApiAdapter(api: WikiApi): KnowledgeSourceAdapter {
         const heads = await api.listPages(space);
         for (const h of [...heads].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))) {
           const p = await api.getPage(h.id);
+          // ADR 0130: what the API says of the page goes in front matter, as an export's does.
+          const fm = [
+            ...(p.labels?.length
+              ? [`labels: [${p.labels.map((l) => JSON.stringify(l)).join(", ")}]`]
+              : []),
+            ...(p.restricted ? ["restricted: true"] : []),
+          ];
           out.push({
             pagePath: `${space}/${p.id}`,
             path: `${source.id}:${space}/${p.id}`,
-            content: p.body,
+            content:
+              fm.length && !p.body.startsWith("---\n")
+                ? `---\n${fm.join("\n")}\n---\n${p.body}`
+                : p.body,
             updatedAt: p.updatedAt,
             version: String(p.version),
           });
@@ -374,9 +389,17 @@ export async function syncSources(o: SyncOptions): Promise<SyncResult> {
     const folder =
       source.type === "markdown-folder" ||
       (source.type !== "confluence" && !isUrl(source.location));
+    // ADR 0130: an export folder is read by its own adapter, with the export's metadata.
+    const exportAdapter =
+      source.type === "confluence-export"
+        ? confluenceExportAdapter
+        : source.type === "sharepoint-export"
+          ? sharepointExportAdapter
+          : undefined;
     const adapter =
       o.adaptersById?.[source.id] ??
       o.adapters?.[source.type] ??
+      exportAdapter ??
       (folder ? markdownFolderAdapter : undefined);
     if (!adapter) {
       res.problems.push({
@@ -401,6 +424,21 @@ export async function syncSources(o: SyncOptions): Promise<SyncResult> {
     read.push({ source, raw: raw.filter((r) => sourceReadsPage(source, r.pagePath)) });
   }
   const owners = pageOwners(read.filter((x) => !o.adaptersById?.[x.source.id]));
+  // ADR 0130: the same page mirrored in two wikis (the same words, front matter aside) is read
+  // once, by the more authoritative source (then the first listed); the mirror is skipped.
+  const mirrors = mirrorReaders(
+    read
+      .filter((x) => !o.adaptersById?.[x.source.id])
+      // A file two sources cover is one page already, read by the nearest (above).
+      .map((x) => ({
+        source: x.source,
+        raw: x.raw.filter((r) => {
+          const owner = owners.get(r.path);
+          return !owner || owner.source === x.source.id;
+        }),
+      })),
+    o.orgPack,
+  );
 
   for (const { source, raw: all } of read) {
     // A page another source also covers is read by the one nearest to it (its path there is
@@ -408,13 +446,20 @@ export async function syncSources(o: SyncOptions): Promise<SyncResult> {
     const raw: RawPage[] = [];
     for (const r of all) {
       const owner = owners.get(r.path);
-      if (!owner || owner.source === source.id) raw.push(r);
-      else
+      const mirror = mirrors.get(`${source.id}\0${r.pagePath}`);
+      if (owner && owner.source !== source.id)
         res.skipped.push({
           source: source.id,
           path: r.path,
           reason: `also in ${owner.source} (as ${owner.pagePath}), which reads it`,
         });
+      else if (mirror)
+        res.skipped.push({
+          source: source.id,
+          path: r.path,
+          reason: `the same page as ${mirror.source}/${mirror.pagePath}, which reads it`,
+        });
+      else raw.push(r);
     }
     // Screen every page as it was read (wiki text is untrusted); keep them all, flag the risky.
     const flagged = new Map(
@@ -436,6 +481,17 @@ export async function syncSources(o: SyncOptions): Promise<SyncResult> {
         defaultClassification,
         mentions: index,
       });
+      // ADR 0130: a page under view restrictions is above the limit for the metarepo's audience
+      // (its snapshot is committed), unless the source says that audience may read it.
+      if (!source.readRestricted && pageRestricted(page.frontMatter)) {
+        res.skipped.push({
+          source: source.id,
+          path: r.path,
+          reason:
+            "under view restrictions, so above the limit for the metarepo's audience (readRestricted on the source says everyone who reads the metarepo may read it)",
+        });
+        continue;
+      }
       const level = levels.indexOf(page.classification);
       if (level === -1 || level > limitLevel) {
         res.skipped.push({
@@ -499,6 +555,49 @@ function pageOwners(
       path,
       list.reduce((a, b) => (depth(b.pagePath) < depth(a.pagePath) ? b : a)),
     );
+  }
+  return out;
+}
+
+/**
+ * The pages mirrored in another wiki (ADR 0130), by `<source>\0<page>` of each copy that is not
+ * read, with the copy that is: the same words (front matter and markup aside, at least a dozen
+ * words) in two or more sources. The copy read is the most authoritative (its page's standing),
+ * then the first source listed. A page with a few words of its own differs: it is not a mirror.
+ */
+function mirrorReaders(
+  read: { source: WikiSource; raw: RawPage[] }[],
+  orgPack: OrgPack,
+): Map<string, { source: string; pagePath: string }> {
+  const settings = new Map(orgPack.sources.wikis.map((w) => [w.id, w]));
+  const order = new Map(orgPack.sources.wikis.map((w, i) => [w.id, i]));
+  const by = new Map<string, { source: string; pagePath: string; rank: number }[]>();
+  for (const { source, raw } of read)
+    for (const r of raw) {
+      const k = bodyKey(r.content);
+      if (k.words < 12) continue;
+      const doc = readMarkdown(r.content);
+      const standing = pageStandingOf(
+        { source: source.id, pagePath: r.pagePath, frontMatter: doc.frontMatter, text: r.content },
+        settings,
+      );
+      const list = by.get(k.key) ?? [];
+      list.push({
+        source: source.id,
+        pagePath: r.pagePath,
+        rank: authorityRank(standing.authority),
+      });
+      by.set(k.key, list);
+    }
+  const out = new Map<string, { source: string; pagePath: string }>();
+  for (const list of by.values()) {
+    if (new Set(list.map((x) => x.source)).size < 2) continue;
+    const best = [...list].sort(
+      (a, b) => a.rank - b.rank || (order.get(a.source) ?? 0) - (order.get(b.source) ?? 0),
+    )[0]!;
+    for (const x of list)
+      if (x.source !== best.source)
+        out.set(`${x.source}\0${x.pagePath}`, { source: best.source, pagePath: best.pagePath });
   }
   return out;
 }

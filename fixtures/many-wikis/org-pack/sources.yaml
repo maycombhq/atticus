@@ -1,0 +1,87 @@
+# The 12 knowledge sources of the invented Forge shop (ADR 0130): two standards, two platforms,
+# two frameworks, five teams and one reference. Each wiki's pages are the planted pages under
+# fixtures/many-wikis/sources/<id>/ and the filler the generator adds (packages/synth wikis.ts).
+schemaVersion: 3
+wikis:
+  # Enterprise Architecture: a Confluence space export (HTML). Its approved standards sit next to
+  # drafts and meeting notes, which are only reference.
+  - id: ea-standards
+    type: confluence-export
+    location: ../wikis/ea-standards
+    owner: Enterprise Architecture
+    authority: standard
+    byPage:
+      - { match: ["Drafts/**", "Meeting-notes/**"], authority: reference }
+    reviewMonths: 18
+    tags: { kinds: [enterprise-architecture] }
+  - id: security-standards
+    type: markdown-folder
+    location: ../wikis/security-standards
+    owner: Security Architecture
+    authority: standard
+    reviewMonths: 18
+    tags: { kinds: [security-standard] }
+  # The cloud platform: everything on GCP, and every new component (the org builds new ones there).
+  - id: gcp-platform
+    type: markdown-folder
+    location: ../wikis/gcp-platform
+    owner: Cloud Platform team
+    authority: platform
+    appliesTo: { platforms: [gcp], newComponents: true }
+    tags: { kinds: [platform-runbook] }
+  - id: openshift-platform
+    type: markdown-folder
+    location: ../wikis/openshift-platform
+    owner: OpenShift Platform team
+    authority: platform
+    appliesTo: { platforms: [openshift] }
+    tags: { kinds: [platform-runbook] }
+  - id: anvil-framework
+    type: markdown-folder
+    location: ../wikis/anvil-framework
+    owner: Anvil maintainers
+    authority: framework
+    appliesTo: { frameworks: [anvil] }
+    tags: { kinds: [framework], frameworks: [anvil] }
+  - id: web-framework
+    type: markdown-folder
+    location: ../wikis/web-framework
+    owner: Web Platform guild
+    authority: framework
+    appliesTo: { frameworks: [angular] }
+    tags: { kinds: [framework], frameworks: [angular] }
+  - id: orders-team
+    type: markdown-folder
+    location: ../wikis/orders-team
+    owner: Orders team
+    authority: team
+    appliesTo: { components: [forge-orders, forge-refund-worker] }
+  # Forge Pay's team site: a SharePoint export (pages and the library's metadata.csv).
+  - id: payments-team
+    type: sharepoint-export
+    location: ../wikis/payments-team
+    owner: Payments team
+    authority: team
+    appliesTo: { systems: [forge-pay] }
+  - id: stock-team
+    type: markdown-folder
+    location: ../wikis/stock-team
+    owner: Stock team
+    authority: team
+    appliesTo: { components: [forge-stock] }
+  - id: web-team
+    type: markdown-folder
+    location: ../wikis/web-team
+    owner: Web team
+    authority: team
+    appliesTo: { repoTypes: [angular] }
+  - id: identity-team
+    type: markdown-folder
+    location: ../wikis/identity-team
+    owner: Identity team
+    authority: team
+  - id: glossary-reference
+    type: markdown-folder
+    location: ../wikis/glossary-reference
+    owner: Data Governance
+    authority: reference

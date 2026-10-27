@@ -28,7 +28,7 @@ export interface RescanPlan {
 }
 
 /** As many tokens as the context pack counts for a page: its text in its data wrapper. */
-const tokensOf = (source: string, page: string, text: string) =>
+export const tokensOf = (source: string, page: string, text: string) =>
   estimateTokens(wrapData({ id: "page-000", kind: "document", origin: `${source}/${page}` }, text));
 
 export function planRescan(
@@ -40,6 +40,11 @@ export function planRescan(
     batchTokens?: number;
     /** Pages a scan in batches has read already in this run, by source: not read again. */
     read?: Record<string, string[]>;
+    /**
+     * ADR 0130: at most this many pages of a source per run (sources.yaml `maxPages`); the rest
+     * wait for the next run, as pages left for the next batch do.
+     */
+    caps?: Record<string, number>;
   } = {},
 ): RescanPlan {
   const plan: RescanPlan = {
@@ -63,12 +68,19 @@ export function planRescan(
       .map((p) => p.page);
     const changed: string[] = [];
     const deferred: string[] = [];
+    const cap = o.caps?.[source];
+    // ADR 0130: by page, once; a find per page was quadratic on a wiki of thousands of pages.
+    const textOf = new Map(s.pages.map((p) => [p.pagePath, p.text ?? ""]));
     for (const page of all) {
+      if (cap !== undefined && changed.length >= cap) {
+        deferred.push(page);
+        continue;
+      }
       if (room === undefined) {
         changed.push(page);
         continue;
       }
-      const text = s.pages.find((p) => p.pagePath === page)?.text ?? "";
+      const text = textOf.get(page) ?? "";
       const t = tokensOf(source, page, text);
       if (taken === 0 || (deferred.length === 0 && t <= room)) {
         changed.push(page);

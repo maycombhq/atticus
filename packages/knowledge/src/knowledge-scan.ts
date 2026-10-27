@@ -867,7 +867,7 @@ function toRecord(c: CheckedItem, flags: string[]): KnowledgeRecord {
     page: page.page.pagePath,
     section: c.section,
     text: item.source.quote,
-    snapshot: page.snapshot.manifest.date,
+    snapshot: copyDate(page),
     ...(c.line ? { line: c.line } : {}),
   };
   const alsoOn = c.alsoOn.map((a) => ({
@@ -875,7 +875,7 @@ function toRecord(c: CheckedItem, flags: string[]): KnowledgeRecord {
     page: a.page.page.pagePath,
     section: a.section,
     text: a.quote,
-    snapshot: a.page.snapshot.manifest.date,
+    snapshot: copyDate(a.page),
     line: a.line,
   }));
   const common = {
@@ -1486,6 +1486,16 @@ function finish(
   result.injections = [...result.injections, ...aiInjections];
   result.failed = [...result.failed, ...failed];
   return result;
+}
+
+/**
+ * The snapshot whose folder holds a page's copy (ADR 0130): an unchanged page is copied in an
+ * earlier snapshot than the one read, and a quote names where its words are.
+ */
+function copyDate(p: PreparedPage): string {
+  return (
+    /\/snapshots\/[^/]+\/(\d{4}-\d{2}-\d{2})\//.exec(p.page.path)?.[1] ?? p.snapshot.manifest.date
+  );
 }
 
 /** Every knowledge record kind, for readers that filter a catalog. */

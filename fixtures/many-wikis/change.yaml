@@ -1,0 +1,54 @@
+# The invented change forge-refunds (ADR 0130): its stories and their 14 tasks as the stories
+# stage writes them, and the target flows the architecture stage wrote, for the knowledge bench
+# on 12 sources. forge-refund-worker is a new component: it is in no catalog yet, only in its
+# target flow, which places it on Cloud Run (GCP).
+change: forge-refunds
+stories:
+  - id: s1
+    repo: forge-orders
+    flow: forge-orders.place-refund
+    name: Place a refund for an order
+    change: new
+    tasks:
+      - { id: "1.1", op: add, kind: validate, title: "Accept a refund request for an order (POST /orders/{orderId}/refunds)", what: "Accept a refund request for an order at POST /orders/{orderId}/refunds and answer errors with the standard error body", fields: [orderId, amount, reason], evidence: ["forge-orders:src/main/java/forge/orders/OrderController.java:9"] }
+      - { id: "1.2", op: add, kind: store, title: "Store each refund in a new refunds table, with a Flyway migration", what: "Store each refund in a new refunds table, added with a Flyway migration", fields: [refundId, orderId, amount, status], store: forge-orders-db.refunds, evidence: [] }
+      - { id: "1.3", op: add, kind: publish, title: "Publish an order-refunded event once the refund is saved", what: "Publish an order-refunded event to the order-events topic once the refund is saved", fields: [orderId, refundId], target: order-events, evidence: [] }
+      - { id: "1.4", op: add, kind: call-out, title: "Refund the payment in forge-payments with an idempotency key", what: "Call forge-payments to refund the payment, sending an idempotency key", fields: [paymentId, amount, idempotencyKey], to: { component: forge-payments, entry: "POST /payments/{paymentId}/refunds", new: false }, evidence: [] }
+      - { id: "1.5", op: add, kind: config, title: "Add a timeout for the call to forge-payments", what: "Set a timeout for the refund call to forge-payments", fields: [timeout], evidence: ["forge-orders:src/main/resources/application.yaml:3"] }
+      - { id: "6.1", op: add, kind: validate, title: "Only the order's own customer may ask for its refund", what: "Check that the caller is the order's own customer before the refund is created, and refuse with 403", fields: [customerId], evidence: [] }
+  - id: s2
+    repo: forge-payments
+    flow: forge-payments.refund-payment
+    name: Refund a payment
+    change: new
+    tasks:
+      - { id: "2.1", op: add, kind: validate, title: "Accept refund requests in forge-payments (POST /payments/{paymentId}/refunds)", what: "Accept a refund request for a payment at POST /payments/{paymentId}/refunds", fields: [paymentId, amount, currency], evidence: ["forge-payments:src/main/java/forge/payments/PaymentController.java:12"] }
+      - { id: "2.2", op: add, kind: store, title: "Keep each refund's idempotency key in forge-payments", what: "Keep each refund request's idempotency key so a repeated request returns the first answer", fields: [idempotencyKey], evidence: [] }
+  - id: s3
+    repo: forge-refund-worker
+    flow: forge-refund-worker.retry-refunds
+    name: Retry failed refunds
+    change: new
+    tasks:
+      - { id: "3.1", op: add, kind: call-out, title: "Retry failed refunds in the new forge-refund-worker", what: "Retry a failed refund by calling forge-payments again with the refund's original idempotency key", fields: [refundId], to: { component: forge-payments, entry: "POST /payments/{paymentId}/refunds", new: false }, evidence: [] }
+      - { id: "3.2", op: add, kind: consume, title: "Read refund requests from the refunds Pub/Sub subscription", what: "Read refund requests from the refunds Pub/Sub subscription", fields: [refundId], evidence: [] }
+  - id: s4
+    repo: forge-stock
+    flow: forge-stock.return-stock
+    name: Return refunded items to stock
+    change: new
+    tasks:
+      - { id: "4.1", op: add, kind: call-out, title: "Return refunded items to stock over the warehouse link", what: "Tell the warehouse over the warehouse link which refunded items come back to stock", fields: [sku, quantity], to: { component: warehouse, entry: "returns", new: false }, evidence: [] }
+      - { id: "4.2", op: add, kind: log, title: "Log each stock return as a structured log line", what: "Write a structured log line for each stock return", fields: [sku, quantity], evidence: [] }
+  - id: s5
+    repo: forge-web
+    flow: forge-web.order-page
+    name: Refunds on the order page
+    change: modify
+    tasks:
+      - { id: "5.1", op: add, kind: render, title: "Show the refund status on the order page", what: "Show each refund's status on the order page", fields: [refundStatus], evidence: ["forge-web:src/app/orders/order-page.component.html:1"] }
+      - { id: "5.2", op: add, kind: render, title: "Add the refund form with field validation", what: "Add a refund form to the order page that validates its fields", fields: [amount, reason], evidence: ["forge-web:src/app/orders/order-page.component.ts:1"] }
+# The target flows' placement of a component the catalog doesn't have yet (planner FlowDelta
+# runsOn, ADR 0130). Only the new component's flow says where it runs.
+targetFlows:
+  - { flow: forge-refund-worker.retry-refunds, repo: forge-refund-worker, change: new, runsOn: { component: forge-refund-worker, system: forge-shop, cloud: gcp, platform: cloud-run } }

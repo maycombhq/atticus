@@ -1,3 +1,4 @@
+import type { SourceScope } from "@maycombhq/core";
 import type { PageRef, SupersededPage } from "./knowledge-scan.js";
 import type { SnapshotManifest } from "./snapshot.js";
 import type { KnowledgePage } from "./sources.js";
@@ -20,12 +21,25 @@ import type { KnowledgePage } from "./sources.js";
  * named in it as suggested.
  */
 
-export type OwnerSignal = "replaces" | "owner" | "source-kind" | "space" | "last-edited";
+export type OwnerSignal =
+  | "replaces"
+  | "owner"
+  | "source-kind"
+  | "space"
+  | "last-edited"
+  // ADR 0130, read from sources.yaml and the pages when the conflict is shown (standing.ts):
+  | "status"
+  | "exception"
+  | "authority";
 
 export interface ConflictOwner extends PageRef {
   signal: OwnerSignal;
   /** What the signal read, in words: "b.md says it replaces a.md". */
   detail: string;
+  /** An exception: where it applies (its source's appliesTo); everywhere when left out. */
+  scope?: SourceScope;
+  /** An exception: the page suggested outside its scope. */
+  otherwise?: ConflictOwner;
 }
 
 /** What the signals read about one page of a conflict. */

@@ -1,0 +1,106 @@
+# The expected knowledge per task for the invented 12-source Forge estate (ADR 0130), written
+# by hand before any code, so the bench is not graded by what the code happens to give.
+#
+# The change is forge-refunds: 14 tasks across forge-orders (OpenShift, built on Anvil),
+# forge-payments (Cloud Run on GCP), a new forge-refund-worker (a new component the target flow
+# places on Cloud Run), forge-stock (OpenShift) and forge-web (Angular).
+#
+# Per task:
+#   needed     the items or sections the task must list (recall is counted on these);
+#   allowed    related enough that listing them is not wrong (left out of precision either way);
+#   never      must not be listed: out of scope, restricted, a mirror read once, a draft;
+#   lead       for an entry, the page that must lead it (source/page), when several pages say it;
+#   notLead    pages that may be listed under an entry but must never lead it;
+#   before     pairs whose order must hold (the precise how-to before the loose principle);
+#   conflicts  for an item's disagreement: the page suggested and the signal, and whether the
+#              standard is shown as "may be out of date". A person still decides.
+#
+# Pages that must never be in a snapshot (the sync skips them, path and reason only).
+skipped:
+  - { source: security-standards, page: incident/pen-test-findings-2026.md, reason: restricted }
+  - { source: payments-team, page: SitePages/Fraud-thresholds.md, reason: restricted }
+  - { source: web-team, page: copied/logging-standard.md, reason: mirror }
+tasks:
+  "1.1":
+    title: Accept a refund request for an order (POST /orders/{orderId}/refunds)
+    needed: [api-resource-naming, error-response-format, anvil-rest-endpoint]
+    allowed: [payments-api-conventions]
+    never: [cloud-run-timeouts, cloud-run-new-service]
+    lead:
+      error-response-format: ea-standards/Standards/Error-Response-Format.md
+    notLead: [orders-team/api/api-errors.md]
+  "1.2":
+    title: Store each refund in a new refunds table, with a Flyway migration
+    needed: [schema-migrations]
+    never: [cloud-run-new-service]
+  "1.3":
+    title: Publish an order-refunded event once the refund is saved
+    needed: [order-events-v2, anvil-publish-event]
+    allowed: [event-principles]
+    never: [pubsub-subscriptions]
+    lead:
+      order-events-v2: orders-team/events/order-events-v2.md
+    notLead: [orders-team/events/order-events-v1.md]
+    before: [[order-events-v2, event-principles]]
+  "1.4":
+    title: Refund the payment in forge-payments with an idempotency key
+    needed: [idempotency-keys, internal-tls]
+    allowed: [payments-api-conventions]
+    never: [warehouse-link-tls-exception]
+    lead:
+      idempotency-keys: ea-standards/Standards/Idempotency-Keys.md
+    notLead: [ea-standards/Drafts/Idempotency-Keys-v2-DRAFT.md]
+    conflicts:
+      idempotency-keys:
+        { suggested: ea-standards/Standards/Idempotency-Keys.md, signal: authority, mayBeOutOfDate: true }
+      internal-tls: { suggested: security-standards/tls/internal-calls-tls.md, signal: authority }
+  "1.5":
+    title: Add a timeout for the call to forge-payments
+    needed: [openshift-route-timeouts]
+    never: [cloud-run-timeouts, cloud-run-new-service]
+  "2.1":
+    title: Accept refund requests in forge-payments (POST /payments/{paymentId}/refunds)
+    needed: [payments-api-conventions, api-resource-naming]
+    allowed: [error-response-format, cloud-run-timeouts]
+    never: [anvil-rest-endpoint, openshift-route-timeouts]
+  "2.2":
+    title: Keep each refund's idempotency key in forge-payments
+    needed: [idempotency-keys]
+    lead:
+      idempotency-keys: ea-standards/Standards/Idempotency-Keys.md
+    conflicts:
+      idempotency-keys:
+        { suggested: ea-standards/Standards/Idempotency-Keys.md, signal: authority, mayBeOutOfDate: true }
+  "3.1":
+    title: Retry failed refunds in the new forge-refund-worker
+    needed: [cloud-run-new-service, replay-failed-refund]
+    never: [openshift-route-timeouts, anvil-rest-endpoint]
+  "3.2":
+    title: Read refund requests from the refunds Pub/Sub subscription
+    needed: [pubsub-subscriptions]
+    allowed: [cloud-run-new-service]
+    never: [openshift-route-timeouts]
+  "4.1":
+    title: Return refunded items to stock over the warehouse link
+    needed: [warehouse-link-tls-exception, internal-tls]
+    conflicts:
+      internal-tls: { suggested: stock-team/warehouse/legacy-warehouse-link.md, signal: exception }
+  "4.2":
+    title: Log each stock return as a structured log line
+    needed: [structured-logging]
+    lead:
+      structured-logging: ea-standards/Standards/Logging-Standard.md
+    never: ["web-team/copied/logging-standard.md#Logging standard"]
+  "5.1":
+    title: Show the refund status on the order page
+    needed: [order-page-layout, status-badge]
+    never: [cloud-run-new-service, anvil-rest-endpoint]
+  "5.2":
+    title: Add the refund form with field validation
+    needed: [angular-form-validation]
+    allowed: [order-page-layout]
+    never: [anvil-rest-endpoint]
+  "6.1":
+    title: Only the order's own customer may ask for its refund
+    needed: [caller-customer-check, authorisation-checks]
+    never: ["security-standards/incident/pen-test-findings-2026.md#Findings"]

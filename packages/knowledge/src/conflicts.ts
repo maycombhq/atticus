@@ -6,6 +6,8 @@ import {
   type QuestionDraft,
 } from "@maycombhq/core";
 import { codeSettles, type CodeFactRecord } from "./conflict-code.js";
+import { snapshotPageReader, standingSuggestion } from "./conflict-standing.js";
+import { readSourceSettings, type SourceSettings } from "./standing.js";
 import { pageFacts, type ConflictOwner } from "./conflict-owner.js";
 import type { KnowledgeConflict, KnowledgeRecord, PageRef } from "./knowledge-scan.js";
 import { readKnowledge, itemTitle } from "./knowledge-store.js";
@@ -103,10 +105,20 @@ const and = (xs: string[]) =>
  */
 export async function conflictDraft(
   root: string,
-  c: KnowledgeConflict,
-  o: { items?: KnowledgeRecord[] } = {},
+  conflict: KnowledgeConflict,
+  o: { items?: KnowledgeRecord[]; sources?: SourceSettings; now?: string } = {},
 ): Promise<QuestionDraft> {
   const items = o.items ?? (await readKnowledge(root, { cacheRoot: root })).items;
+  // ADR 0130: the page suggested is the one the pages' standing picks, else the scan's signal.
+  const settings = o.sources ?? readSourceSettings(root);
+  const now = o.now ?? new Date().toISOString();
+  const owner = await standingSuggestion(
+    conflict,
+    snapshotPageReader(root, settings, now),
+    settings,
+    now,
+  );
+  const c: KnowledgeConflict = owner ? { ...conflict, owner } : conflict;
   const about = c.about.map((id) => items.find((i) => i.id === id));
   const topic = c.about
     .map((id, k) => (about[k] ? `"${itemTitle(about[k])}" (${id})` : id))
@@ -200,6 +212,10 @@ export async function readConflicts(
     conflicts?: KnowledgeConflict[];
     questions?: Question[];
     records?: readonly CodeFactRecord[];
+    /** sources.yaml's settings (ADR 0130); default read from the org pack. */
+    sources?: SourceSettings;
+    /** The clock, for a standard's review age; default now. */
+    now?: string;
   } = {},
 ): Promise<ConflictView[]> {
   const conflicts =
@@ -220,8 +236,15 @@ export async function readConflicts(
     const k = conflictKeyOfQuestion(root, q);
     if (k) byKey.set(k, q);
   }
-  return conflicts.map((c) => {
+  const settings = o.sources ?? readSourceSettings(root);
+  const now = o.now ?? new Date().toISOString();
+  const read = snapshotPageReader(root, settings, now);
+  const suggestions = await Promise.all(
+    conflicts.map((c) => standingSuggestion(c, read, settings, now)),
+  );
+  return conflicts.map((c, n) => {
     const key = conflictKey(c);
+    const suggested = suggestions[n];
     const q = byKey.get(key);
     const code = o.records ? codeSettles(c, o.records) : undefined;
     const a = q && !code ? answered(root, q, c) : undefined;
@@ -230,7 +253,7 @@ export async function readConflicts(
       conflict: c,
       applies: code ? [code.page] : (a?.applies ?? []),
       ...(q ? { question: { id: q.id, state: q.state, repo: q.repo } } : {}),
-      ...(c.owner ? { suggested: c.owner } : {}),
+      ...(suggested ? { suggested } : {}),
     };
     if (code)
       view.decided = {
