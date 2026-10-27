@@ -599,6 +599,13 @@ describe("readAnswer: what a model's answer holds", () => {
   });
 });
 
+/**
+ * A printed command line as its words, as a shell reads them: a quoted word (a Windows path such
+ * as "C:\Users\...\forge-meta" is printed quoted) loses its quotes.
+ */
+const words = (line: string): string[] =>
+  [...line.trim().matchAll(/"([^"]*)"|(\S+)/g)].map((m) => m[1] ?? m[2]!);
+
 describe("atticus map <repo> --handoff: the step the editors and /atticus-* loops run", () => {
   const cli = async (args: string[]) => {
     const out: string[] = [];
@@ -630,13 +637,24 @@ describe("atticus map <repo> --handoff: the step the editors and /atticus-* loop
       expect(prompt).toMatch(/^\.atticus\/\.runs\/map-forge-ledger\/run-[\w-]+\/prompt\.md$/);
       expect(result).toMatch(/facts\.jsonl$/);
       writeFileSync(join(root, result), reader(readFileSync(join(root, prompt), "utf8")));
-      const done = r.out[3]!.trim().split(" ").slice(1);
+      const done = words(r.out[3]!).slice(1);
       expect((await cli(done)).code).toBe(0);
-      const resume = r.out[4]!.trim().split(" ").slice(1);
+      const resume = words(r.out[4]!).slice(1);
       expect(resume).toContain("--resume");
       r = await cli(resume);
     }
     expect(factsOf(root)).toHaveLength(17);
+  });
+
+  it("reads a quoted path in a printed command as one word, without its quotes", () => {
+    expect(words('  atticus handoff done run-1 --root "C:\\Users\\a b\\forge-meta"')).toEqual([
+      "atticus",
+      "handoff",
+      "done",
+      "run-1",
+      "--root",
+      "C:\\Users\\a b\\forge-meta",
+    ]);
   });
 
   it("estimates through the command line, and lists map as an AI command", async () => {
