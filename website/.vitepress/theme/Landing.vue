@@ -113,13 +113,6 @@ const steps = [
           aria-label="Lines 8 to 12 of the file"
         ><span class="ln cited-refused"><span class="no">8</span>  @ForgeCall(method = "POST", path = "/v2/payments")</span><span class="ln"><span class="no">9</span>  PaymentResult pay(PaymentRequest request);</span><span class="ln"><span class="no">10</span></span><span class="ln cited-kept"><span class="no">11</span>  @ForgeCall(method = "POST", path = "/v2/refunds")</span><span class="ln"><span class="no">12</span>  RefundResult refund(RefundRequest request);</span></pre>
         <ul class="verdicts">
-          <li class="kept">
-            <span class="word">Kept</span>
-            <span class="claim"
-              >Calls Northwind Pay at <code>POST /v2/refunds</code>, line 11.</span
-            >
-            <span class="why">The path is on line 11 and the quote matches.</span>
-          </li>
           <li class="refused">
             <span class="word">Rejected</span>
             <span class="claim">Calls Northwind Pay at <code>POST /v2/payouts</code>, line 8.</span>
@@ -127,6 +120,13 @@ const steps = [
               >Line 8 says <code>/v2/payments</code>. The fact goes back to the assistant with the
               reason.</span
             >
+          </li>
+          <li class="kept">
+            <span class="word">Kept</span>
+            <span class="claim"
+              >Calls Northwind Pay at <code>POST /v2/refunds</code>, line 11.</span
+            >
+            <span class="why">The path is on line 11 and the quote matches.</span>
           </li>
         </ul>
         <p class="note">From the invented Forge estate in Atticus's test fixtures.</p>
@@ -205,10 +205,24 @@ const steps = [
 
 <style scoped>
 .landing {
+  position: relative;
+  isolation: isolate;
   max-width: 1152px;
   margin: 0 auto;
   padding: 48px 24px 96px;
   color: var(--a-text);
+}
+/* The same soft cyan light as the MaycombHQ home, from the top right. */
+.landing::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  top: -64px;
+  right: -20vw;
+  width: min(68rem, 120vw);
+  height: 40rem;
+  background: radial-gradient(closest-side, var(--a-glow), transparent);
+  pointer-events: none;
 }
 
 h2 {
@@ -257,13 +271,64 @@ code {
     padding-top: 24px;
   }
 }
+/* The claim and the lede as the first two lines of a file, numbered in a gutter, as on the
+   MaycombHQ home: a claim names the line it comes from. */
+.hero-words {
+  --gutter: 44px;
+  position: relative;
+  counter-reset: line;
+}
+.hero h1::after,
+.lede::after {
+  content: "";
+  position: absolute;
+  top: 0.15em;
+  bottom: -24px;
+  left: calc(var(--gutter) - 14px);
+  border-left: 1px solid var(--a-line);
+}
+.lede::after {
+  bottom: 0.2em;
+}
+.hero h1,
+.lede {
+  counter-increment: line;
+  position: relative;
+  padding-left: var(--gutter);
+}
+.hero h1::before,
+.lede::before {
+  content: counter(line);
+  position: absolute;
+  left: 0;
+  width: calc(var(--gutter) - 28px);
+  text-align: right;
+  font: 400 0.8125rem/1 var(--vp-font-family-mono);
+  letter-spacing: 0;
+  color: var(--a-muted);
+}
+.hero h1::before {
+  top: 0.62em;
+  font-size: 0.8125rem;
+}
+.lede::before {
+  top: 0.55em;
+}
+.actions {
+  padding-left: var(--gutter);
+}
+@media (max-width: 640px) {
+  .hero-words {
+    --gutter: 30px;
+  }
+}
 .hero h1 {
-  font-size: clamp(2rem, 1.4rem + 2.4vw, 3rem);
-  line-height: 1.12;
+  font-size: clamp(2.125rem, 1.3rem + 3vw, 3.5rem);
+  line-height: 1.08;
   font-weight: 600;
-  letter-spacing: -0.022em;
+  letter-spacing: -0.03em;
   margin: 0 0 24px;
-  max-width: 20ch;
+  max-width: 19ch;
 }
 .lede {
   font-size: 1.125rem;
@@ -353,6 +418,84 @@ code {
 }
 .cited-refused {
   border-left-color: var(--a-refused);
+  text-decoration: line-through var(--a-refused);
+  text-decoration-thickness: 1px;
+}
+.cited-refused .no {
+  color: var(--a-refused);
+}
+
+/* The page's one moment of motion: verify checks line 8 and rejects it, then line 11 and keeps
+   it, then says why. The resting styles are the result, so with reduced motion (style.css turns
+   animation off) the figure shows the verdicts at once. */
+.cited-refused {
+  animation: refuse 1.6s ease 0.5s both;
+}
+.cited-refused .no {
+  animation: refuse-no 1.6s ease 0.5s both;
+}
+.cited-kept {
+  animation: keep 1.2s ease 2s both;
+}
+.verdicts .refused {
+  animation: appear 0.4s ease 1.7s both;
+}
+.verdicts .kept {
+  animation: appear 0.4s ease 3s both;
+}
+@keyframes refuse {
+  0% {
+    border-left-color: transparent;
+    background: transparent;
+    text-decoration-color: transparent;
+  }
+  25%,
+  60% {
+    border-left-color: var(--a-cite);
+    background: var(--a-cite-wash);
+    text-decoration-color: transparent;
+  }
+  75%,
+  100% {
+    border-left-color: var(--a-refused);
+    background: transparent;
+    text-decoration-color: var(--a-refused);
+  }
+}
+@keyframes refuse-no {
+  0%,
+  60% {
+    color: var(--a-muted);
+  }
+  75%,
+  100% {
+    color: var(--a-refused);
+  }
+}
+@keyframes keep {
+  0% {
+    border-left-color: transparent;
+    background: transparent;
+  }
+  40%,
+  70% {
+    border-left-color: var(--a-cite);
+    background: var(--a-cite-wash);
+  }
+  100% {
+    border-left-color: var(--a-kept);
+    background: var(--a-cite-wash);
+  }
+}
+@keyframes appear {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 .verdicts {
   list-style: none;

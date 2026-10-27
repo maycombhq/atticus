@@ -18,6 +18,7 @@
   --a-person: #7a4a00;
   --a-refused: #a3155a;
   --a-kept: #08693f;
+  --a-glow: rgba(0, 150, 160, 0.14);
 
   --vp-font-family-base: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --vp-font-family-mono:
@@ -38,6 +39,7 @@
   --a-person: #ffc56e;
   --a-refused: #ff9bcb;
   --a-kept: #6be3ad;
+  --a-glow: rgba(92, 225, 238, 0.1);
 }
 
 :root,
@@ -74,6 +76,12 @@
 body {
   background: var(--a-ink);
   font-feature-settings: "kern", "liga";
+}
+
+/* The landing page's light reaches past the window's edge: clip it there, without making a
+   scroll container (the sticky nav keeps working). */
+.Layout {
+  overflow-x: clip;
 }
 
 /* Reading pages: a measure under 80 characters, a little more air than the default. */
