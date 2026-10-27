@@ -328,6 +328,23 @@ export const COPY = {
       owner: "Owner",
       tags: "Tags",
       noTags: "No tags: it is read for every kind",
+      /** ADR 0132: how much a source's word counts, and where it applies. */
+      authority: "Authority",
+      authorities: {
+        standard: "Standard: the organisation's own rules",
+        platform: "Platform: a shared platform team's guidance",
+        framework: "Framework: a framework's own documentation",
+        team: "Team: a team's pages",
+        reference: "Reference: glossaries and notes",
+      } as Record<string, string>,
+      noAuthority: "Not set: it ranks as a team's pages",
+      byPage: (n: number) => `${n} page override${n === 1 ? "" : "s"} in sources.yaml`,
+      scope: "Applies to",
+      everywhere: "Every task: no appliesTo in sources.yaml",
+      restricted: "Restricted pages",
+      readsRestricted: "Read: the metarepo's audience may read them",
+      skipsRestricted: "Skipped, path and reason only",
+      maxPages: (n: number) => `A scan reads at most ${n} page${n === 1 ? "" : "s"} of it a run`,
       snapshot: "Newest snapshot",
       noSnapshot: "Never synced",
       snapshotLine: (date: string, pages: number, days: number) =>
@@ -722,6 +739,9 @@ export const COPY = {
       `${id} is ${status}, in ${file}. Commit it with the change's files:`,
     copyCommit: "Copy the git command",
     noStages: "a person",
+    /** ADR 0132: the source of the page an item is read from, and how much its word counts. */
+    fromSource: (source: string, authority?: string) =>
+      authority ? `from ${source} (${authority})` : `from ${source}`,
     /** B-task-knowledge: the tasks whose own selection picked it. */
     tasks: (ids: string[] | string) => {
       const all = typeof ids === "string" ? [ids] : ids;

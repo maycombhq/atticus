@@ -192,7 +192,7 @@ async function scannedPages(kdir: string): Promise<Map<string, Set<string>>> {
 
 /**
  * The files of a wiki snapshot to index, as absolute paths: those its snapshot.yaml lists (a
- * stray copy is not the snapshot), each where its copy is (ADR 0130: an unchanged page's copy is
+ * stray copy is not the snapshot), each where its copy is (ADR 0132: an unchanged page's copy is
  * in an earlier snapshot's folder, `in`), and once the knowledge scan has read the source, only
  * the pages it read, so the index covers what was scanned (a page a batch left for the next joins
  * when it is read). Undefined: every Markdown file (a snapshot written by hand has no list).

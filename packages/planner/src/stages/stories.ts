@@ -292,7 +292,7 @@ export function taskKnowledgeInput(
     const was = n && today ? today.flow.steps[n - 1] : undefined;
     if (was) context.push(was.what);
   }
-  // ADR 0130: the component the task's code is in when the catalog doesn't have it yet, as the
+  // ADR 0132: the component the task's code is in when the catalog doesn't have it yet, as the
   // target flow places it (runsOn), or a new flow's own component; a scoped source is matched
   // against it. The story's first task creates it: building and deploying a new service is part
   // of what that task changes.

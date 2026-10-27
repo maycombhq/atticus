@@ -182,10 +182,10 @@ export const MIGRATIONS: Migration[] = [
     "sources.yaml at version 2: a wiki can include and exclude pages by pattern; every wiki still reads every page (ADR 0083)",
     { from: 1, to: 2 },
   ),
-  // ADR 0130: from version 1 or 2 (a version 1 file is moved to 2 by the step before, then here).
+  // ADR 0132: from version 1 or 2 (a version 1 file is moved to 2 by the step before, then here).
   sourcesStep(
     "sources-v3",
-    "sources.yaml at version 3: a wiki can say how much its word counts (authority) and where it applies (appliesTo); every wiki still ranks as a team's and applies everywhere (ADR 0130)",
+    "sources.yaml at version 3: a wiki can say how much its word counts (authority) and where it applies (appliesTo); every wiki still ranks as a team's and applies everywhere (ADR 0132)",
     { to: 3 },
   ),
   {
@@ -299,7 +299,7 @@ async function longStories(root: string): Promise<string[]> {
   return out;
 }
 
-/** A step that moves sources.yaml up a version, the number only (ADR 0127, 0130). */
+/** A step that moves sources.yaml up a version, the number only (ADR 0127, 0132). */
 function sourcesStep(id: string, summary: string, v: { from?: number; to: number }): Migration {
   return {
     id,

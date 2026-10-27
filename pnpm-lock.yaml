@@ -465,6 +465,9 @@ importers:
       '@maycombhq/release':
         specifier: workspace:*
         version: link:../release
+      '@maycombhq/synth':
+        specifier: workspace:*
+        version: link:../synth
       '@maycombhq/testgen':
         specifier: workspace:*
         version: link:../testgen
@@ -797,12 +800,24 @@ importers:
 
   packages/m5-exit:
     dependencies:
+      '@maycombhq/ai':
+        specifier: workspace:*
+        version: link:../ai
       '@maycombhq/cli':
         specifier: workspace:*
         version: link:../cli
       '@maycombhq/core':
         specifier: workspace:*
         version: link:../core
+      '@maycombhq/index':
+        specifier: workspace:*
+        version: link:../index
+      '@maycombhq/knowledge':
+        specifier: workspace:*
+        version: link:../knowledge
+      '@maycombhq/planner':
+        specifier: workspace:*
+        version: link:../planner
       '@maycombhq/scanner':
         specifier: workspace:*
         version: link:../scanner
@@ -812,6 +827,9 @@ importers:
       '@maycombhq/ui':
         specifier: workspace:*
         version: link:../ui
+      yaml:
+        specifier: ^2.9.1
+        version: 2.9.1
 
   packages/model-providers:
     dependencies:

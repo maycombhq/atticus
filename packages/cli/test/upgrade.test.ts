@@ -114,7 +114,7 @@ describe("atticus upgrade", () => {
       ["questions-v2", ["questions/q-0f1e2d3c4b5a.yaml"]],
       // The Forge pack's sources.yaml is at version 1.
       ["sources-v2", ["org-pack/sources.yaml"]],
-      // ADR 0130: and on to version 3, in the same run.
+      // ADR 0132: and on to version 3, in the same run.
       ["sources-v3", ["org-pack/sources.yaml"]],
       // ADR 0121 addendum: and its runtime.yaml.
       ["runtime-v2", ["org-pack/runtime.yaml"]],
@@ -182,7 +182,7 @@ describe("atticus upgrade", () => {
     const was = await readFile(join(FIXTURES, "forge/metarepo/org-pack/runtime.yaml"), "utf8");
     expect(runtime).toBe(was.replace(/^schemaVersion: 1$/m, "schemaVersion: 2"));
     expect(parse(runtime).models).toBeUndefined();
-    // sources.yaml at version 3 (ADR 0130), its wiki as it was: every page still read, ranked as
+    // sources.yaml at version 3 (ADR 0132), its wiki as it was: every page still read, ranked as
     // a team's and applying everywhere; only the number changed.
     const sources = await readFile(join(root, "org-pack/sources.yaml"), "utf8");
     const wasSources = await readFile(

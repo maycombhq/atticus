@@ -14,7 +14,7 @@ import {
 } from "../src/index.js";
 
 /**
- * sources.yaml version 3 (ADR 0130): how much a source's word counts (authority, with per-page
+ * sources.yaml version 3 (ADR 0132): how much a source's word counts (authority, with per-page
  * overrides), where it applies (appliesTo), whether a restricted page may be read, a review age,
  * a cap on the pages a scan reads, and two export folder types. Fixture: the 12-source Forge shop.
  */

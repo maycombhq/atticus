@@ -54,7 +54,7 @@ export interface WikiApi {
     version: number;
     updatedAt: string;
     url: string;
-    /** ADR 0130, optional: the page's labels and whether it is under view restrictions. */
+    /** ADR 0132, optional: the page's labels and whether it is under view restrictions. */
     labels?: string[];
     restricted?: boolean;
   }>;
@@ -111,7 +111,7 @@ export function wikiApiAdapter(api: WikiApi): KnowledgeSourceAdapter {
         const heads = await api.listPages(space);
         for (const h of [...heads].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))) {
           const p = await api.getPage(h.id);
-          // ADR 0130: what the API says of the page goes in front matter, as an export's does.
+          // ADR 0132: what the API says of the page goes in front matter, as an export's does.
           const fm = [
             ...(p.labels?.length
               ? [`labels: [${p.labels.map((l) => JSON.stringify(l)).join(", ")}]`]
@@ -389,7 +389,7 @@ export async function syncSources(o: SyncOptions): Promise<SyncResult> {
     const folder =
       source.type === "markdown-folder" ||
       (source.type !== "confluence" && !isUrl(source.location));
-    // ADR 0130: an export folder is read by its own adapter, with the export's metadata.
+    // ADR 0132: an export folder is read by its own adapter, with the export's metadata.
     const exportAdapter =
       source.type === "confluence-export"
         ? confluenceExportAdapter
@@ -424,7 +424,7 @@ export async function syncSources(o: SyncOptions): Promise<SyncResult> {
     read.push({ source, raw: raw.filter((r) => sourceReadsPage(source, r.pagePath)) });
   }
   const owners = pageOwners(read.filter((x) => !o.adaptersById?.[x.source.id]));
-  // ADR 0130: the same page mirrored in two wikis (the same words, front matter aside) is read
+  // ADR 0132: the same page mirrored in two wikis (the same words, front matter aside) is read
   // once, by the more authoritative source (then the first listed); the mirror is skipped.
   const mirrors = mirrorReaders(
     read
@@ -481,7 +481,7 @@ export async function syncSources(o: SyncOptions): Promise<SyncResult> {
         defaultClassification,
         mentions: index,
       });
-      // ADR 0130: a page under view restrictions is above the limit for the metarepo's audience
+      // ADR 0132: a page under view restrictions is above the limit for the metarepo's audience
       // (its snapshot is committed), unless the source says that audience may read it.
       if (!source.readRestricted && pageRestricted(page.frontMatter)) {
         res.skipped.push({
@@ -560,7 +560,7 @@ function pageOwners(
 }
 
 /**
- * The pages mirrored in another wiki (ADR 0130), by `<source>\0<page>` of each copy that is not
+ * The pages mirrored in another wiki (ADR 0132), by `<source>\0<page>` of each copy that is not
  * read, with the copy that is: the same words (front matter and markup aside, at least a dozen
  * words) in two or more sources. The copy read is the most authoritative (its page's standing),
  * then the first source listed. A page with a few words of its own differs: it is not a mirror.

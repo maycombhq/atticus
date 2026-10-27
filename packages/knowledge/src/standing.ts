@@ -15,7 +15,7 @@ import {
 import type { KnowledgePage, WikiSource } from "./sources.js";
 
 /**
- * What a page's word counts for, and where it applies (ADR 0130): its source's settings in
+ * What a page's word counts for, and where it applies (ADR 0132): its source's settings in
  * sources.yaml, read where they are (a change to sources.yaml applies without a new sync), and
  * what the page says of itself. Used by the sync (which page of a mirror is read), the conflicts
  * (which page is suggested) and each task's knowledge (which page leads a topic, and whether a
@@ -141,7 +141,7 @@ export function scopeWords(s: SourceScope | undefined): string {
 const APPROVAL = /\b(?:WVR|WAIVER|EXC|EXCEPTION|ADR|RISK|RA)[- ]?\d{2,}\b/i;
 
 /**
- * An approved exception a page records to another page (ADR 0130): the page says "exception" or
+ * An approved exception a page records to another page (ADR 0132): the page says "exception" or
  * "waiver", gives an approval (an ADR, waiver or exception id, or "approved by"), and names the
  * other page by its title or its path. The approval's id, or the "approved by" words.
  */
@@ -164,7 +164,7 @@ export function exceptionTo(
 }
 
 /**
- * The places a task works in, for a source's scope (ADR 0130): where its code is (its components,
+ * The places a task works in, for a source's scope (ADR 0132): where its code is (its components,
  * their systems, where they run, their repos' types and frameworks), what it calls (components
  * and their systems), and the components it creates, which only the target state has. Each value
  * (lower case) maps to the words that say where it comes from: "forge-orders runs on openshift".

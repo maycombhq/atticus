@@ -53,7 +53,7 @@ import { readKnowledgeApplies } from "./stages/knowledge-applies.js";
  * by a person, then the newest, then a page someone owns (a page or source owner, or a space),
  * then the page that matches more of the task's words. No model: the same files give the same list.
  *
- * Many wikis (ADR 0130). Each source in sources.yaml has an authority (standard, platform,
+ * Many wikis (ADR 0132). Each source in sources.yaml has an authority (standard, platform,
  * framework, team, reference) and may have a scope (appliesTo). A scoped source's pages reach a
  * task only when the task's places fall in its scope: the components its code is in, their
  * systems, where they run, their repos' types and frameworks (from the catalog, the repos
@@ -100,14 +100,14 @@ export interface TaskKnowledgeInput {
   files: string[];
   /** The story's words: searched, never enough on their own. */
   story?: string;
-  /** The repo the task's code is in: its story's (ADR 0130, for a source's scope). */
+  /** The repo the task's code is in: its story's (ADR 0132, for a source's scope). */
   repo?: string;
   /**
    * The component the task's code is in when the catalog doesn't have it yet, as the target state
-   * places it (a target flow's runsOn, ADR 0130): what a scoped source is matched against for it.
+   * places it (a target flow's runsOn, ADR 0132): what a scoped source is matched against for it.
    */
   placedIn?: NewComponent;
-  /** Components the task creates: the first task of a new component's story (ADR 0130). */
+  /** Components the task creates: the first task of a new component's story (ADR 0132). */
   creates?: NewComponent[];
 }
 
@@ -142,7 +142,7 @@ export interface KnowledgePlace {
   space?: string;
   /** A person verified the item, read from this page. */
   verified?: boolean;
-  /** How much its source's word counts, with its page overrides (ADR 0130). */
+  /** How much its source's word counts, with its page overrides (ADR 0132). */
   authority?: SourceAuthority;
   /** Left out when current: deprecated, superseded or archived, and what said so. */
   status?: Exclude<PageStatus, "current">;
@@ -349,7 +349,7 @@ function placeOf(i: Item, q: NonNullable<Item["quote"]>): KnowledgePlace {
 
 // ------------------------------------------------------------------ conflicts
 
-/** Single pages of the newest snapshots (ADR 0130: never a whole snapshot for a few pages). */
+/** Single pages of the newest snapshots (ADR 0132: never a whole snapshot for a few pages). */
 type Snapshots = ReturnType<typeof snapshotPages>;
 const snapshotsOf = (root: string): Snapshots => snapshotPages(root);
 
@@ -382,7 +382,7 @@ async function conflictsOf(
       });
     }
     const d = v.decided;
-    // ADR 0130: an approved exception is suggested within its scope; outside it, the page the
+    // ADR 0132: an approved exception is suggested within its scope; outside it, the page the
     // exception is to.
     const s =
       v.suggested?.signal === "exception" &&
@@ -466,10 +466,15 @@ const groupOf = (kind: string) =>
 export interface TaskKnowledgeOptions {
   /** Tokens for the engine's fit. Default TASK_KNOWLEDGE_TOKENS. */
   budget?: number;
-  /** The clock, for a standard's review age (ADR 0130). Default now. */
+  /** The clock, for a standard's review age (ADR 0132). Default now. */
   now?: string;
   /** sources.yaml's settings. Default read from the org pack. */
   sources?: SourceSettings;
+  /**
+   * False: no source's authority, scope or page status is used, as before ADR 0132 (for the
+   * bench's comparison only).
+   */
+  standing?: boolean;
   knowledge?: KnowledgeRead;
   conflicts?: ConflictView[];
   /** The catalog's records, for a conflict the code settles. Default: read from the catalog. */
@@ -487,7 +492,7 @@ interface Kept {
   words: string[];
   terms: string[];
   places: string[];
-  /** ADR 0130: each source of its pages that is scoped, with the scope it matched. */
+  /** ADR 0132: each source of its pages that is scoped, with the scope it matched. */
   scopes: Map<string, string>;
 }
 
@@ -505,7 +510,7 @@ function placesNamed(text: string, input: TaskKnowledgeInput): string[] {
   return out;
 }
 
-// ------------------------------------------------------------------ where a task works (ADR 0130)
+// ------------------------------------------------------------------ where a task works (ADR 0132)
 
 type Rec = Record<string, unknown>;
 const str = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : undefined);
@@ -600,7 +605,7 @@ async function placesContext(root: string, records: readonly unknown[]): Promise
   return { byId, byRepo, runsOn, repos, frameworks };
 }
 
-/** Where a task works: the places a source's scope is matched against (ADR 0130). */
+/** Where a task works: the places a source's scope is matched against (ADR 0132). */
 async function taskPlaces(input: TaskKnowledgeInput, c: PlacesContext): Promise<ScopePlaces> {
   const p = emptyPlaces();
   const set = (m: Map<string, string>, k: string, why: string) => {
@@ -695,7 +700,8 @@ export async function selectTaskKnowledge(
       .filter((i) => i.status === "confirmed" && TASK_KINDS.includes(i.kind))
       .map((i) => [i.id, i.kind] as const),
   );
-  const settings = o.sources ?? readSourceSettings(root);
+  const settings: SourceSettings =
+    o.standing === false ? new Map() : (o.sources ?? readSourceSettings(root));
   const now = o.now ?? new Date().toISOString();
   const records = o.records ?? (await codeFactRecords(root));
   const views =
@@ -705,8 +711,9 @@ export async function selectTaskKnowledge(
       records,
       sources: settings,
       now,
+      ...(o.standing === false ? { standing: false } : {}),
     }).catch(() => []));
-  // ADR 0130: the places each task works in, read only when a source is scoped.
+  // ADR 0132: the places each task works in, read only when a source is scoped.
   const scoped = [...settings.values()].some((w) => w.appliesTo);
   const placesIn = scoped ? await placesContext(root, records) : undefined;
   // The pages an excluded item is read from: their sections stay out too.
@@ -784,7 +791,7 @@ export async function selectTaskKnowledge(
         }
         if (item && (excluded.has(item.id) || !TASK_KINDS.includes(item.kind))) continue;
         if (!item && !section) continue;
-        // ADR 0130: a scoped source's page reaches the task only when the task is in its scope;
+        // ADR 0132: a scoped source's page reaches the task only when the task is in its scope;
         // an item read on several pages stays when one of its sources is.
         const sources = item
           ? [...new Set([item.quote, ...(item.alsoOn ?? [])].flatMap((q) => (q ? [q.source] : [])))]
@@ -862,14 +869,21 @@ export async function selectTaskKnowledge(
         .sort((a, b) => b[1].score - a[1].score || a[0].localeCompare(b[0]))
         .slice(0, TASK_KNOWLEDGE_MAX * 2);
       const out: TaskKnowledge[] = [];
-      const ctx: PageContext = { snapshot, settings, now, scopeOf, ...(places ? { places } : {}) };
+      const ctx: PageContext = {
+        snapshot,
+        settings,
+        now,
+        scopeOf,
+        ...(places ? { places } : {}),
+        ...(o.standing === false ? { standing: false } : {}),
+      };
       for (const [id, k] of ranked)
         out.push(
           k.item
             ? await itemEntry(k.item, k, views, ctx, verified(id))
             : await sectionEntry(ix, id, k, ctx),
         );
-      // Relevance first: an entry led by a page no longer current is halved (ADR 0130).
+      // Relevance first: an entry led by a page no longer current is halved (ADR 0132).
       out.sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
       byTask.set(input.task, groupNearDuplicates(out).slice(0, TASK_KNOWLEDGE_MAX));
     }
@@ -889,13 +903,15 @@ interface PageContext {
   /** A source's scope for the task: "" unscoped, the match in words, undefined out of scope. */
   scopeOf: (source: string) => string | undefined;
   places?: ScopePlaces;
+  /** False: no page status or authority read (the bench's before). */
+  standing?: boolean;
 }
 
-/** Why it applies, with the scope its leading page's source matched (ADR 0130). */
+/** Why it applies, with the scope its leading page's source matched (ADR 0132). */
 const scopedWhy = (why: string, page: KnowledgePlace | undefined) =>
   page?.scope ? `${why} Its source ${page.source} applies to ${page.scope}.` : why;
 
-/** A page no longer current halves its entry's place in the list (ADR 0130). */
+/** A page no longer current halves its entry's place in the list (ADR 0132). */
 const retired = (page: KnowledgePlace | undefined) => (page?.status ? 0.5 : 1);
 
 async function itemEntry(
@@ -909,7 +925,7 @@ async function itemEntry(
   const q = i.quote;
   const steps = strings(x.steps);
   // The item's pages, each with what the snapshot says of it, best first; a page of a source
-  // whose scope the task is outside isn't one of them (ADR 0130).
+  // whose scope the task is outside isn't one of them (ADR 0132).
   const places: Ranked[] = [];
   for (const [n, a] of [q, ...(i.alsoOn ?? [])].entries()) {
     if (!a || (n > 0 && q && a.source === q.source && a.page === q.page)) continue;
@@ -1032,7 +1048,7 @@ export function pageMeta(p: KnowledgePlace): string {
     ...(p.updated ? [`updated ${p.updated}${p.author ? ` by ${p.author}` : ""}`] : []),
     ...(!p.updated && p.author ? [`by ${p.author}`] : []),
     ...(p.owner ? [`owner ${p.owner}`] : []),
-    // ADR 0130: how much its source's word counts, and whether the page is still current.
+    // ADR 0132: how much its source's word counts, and whether the page is still current.
     ...(p.authority ? [`${p.authority} source`] : []),
     ...(p.status ? [p.status] : []),
     ...(p.outOfDate ? [`may be out of date (not updated since ${p.outOfDate.since})`] : []),
@@ -1053,7 +1069,7 @@ interface Ranked {
 const owned = (p: KnowledgePlace) => !!(p.owner || p.space);
 
 /**
- * Two pages of one topic, the better first (ADR 0130): a current page before one deprecated,
+ * Two pages of one topic, the better first (ADR 0132): a current page before one deprecated,
  * superseded or archived; then verified by a person; then the more authoritative source; then the
  * newest; then one someone owns. 0 when none of these tells them apart.
  */
@@ -1084,7 +1100,7 @@ export function rankPages(pages: Ranked[], words: readonly string[]): KnowledgeP
 }
 
 /**
- * A page's facts from its snapshot: title, last update, author, owner and space; and (ADR 0130)
+ * A page's facts from its snapshot: title, last update, author, owner and space; and (ADR 0132)
  * its source's authority, the page's status, a standard's review age, and the scope it matched.
  */
 async function withFacts(p: KnowledgePlace, ctx: PageContext): Promise<KnowledgePlace> {
@@ -1096,7 +1112,10 @@ async function withFacts(p: KnowledgePlace, ctx: PageContext): Promise<Knowledge
   const { page, manifest } = hit;
   const f = pageFacts(page, manifest);
   const author = page.frontMatter.author;
-  const st = pageStandingOf(page, ctx.settings, ctx.now);
+  const st =
+    ctx.standing === false
+      ? { authority: "team" as const, status: "current" as const }
+      : pageStandingOf(page, ctx.settings, ctx.now);
   // The authority is shown when sources.yaml gives one (the source's or a page override's).
   const said = !!authority || !!st.by?.startsWith("byPage");
   return {
@@ -1140,20 +1159,35 @@ const overlap = (a: Set<string>, b: Set<string>) => {
 
 /**
  * Two entries say nearly the same: the same kind, and nearly the same title or body. A section
- * no item is read from and an item say the same when most of the smaller one's words are in the
- * other (ADR 0130): a page copied from a standard into a team's wiki, perhaps drifted since, is
- * the standard's topic.
+ * no item is read from and an item say the same when the section's heading has every word of the
+ * item's title, or most of the smaller one's words are in the other (ADR 0132): a draft of a
+ * standard, or a page copied from it into a team's wiki and drifted since, is the standard's topic.
  */
 export function nearDuplicates(a: TaskKnowledge, b: TaskKnowledge): boolean {
+  // Two sections of one page are one entry: the page's best section leads (ADR 0132).
+  if (
+    isSection(a) &&
+    isSection(b) &&
+    a.page &&
+    b.page &&
+    a.page.source === b.page.source &&
+    a.page.page === b.page.page
+  )
+    return true;
   if (a.knowledgeKind !== b.knowledgeKind) {
     if (isSection(a) === isSection(b)) return false;
+    // A section headed with every word of the item's title (two or more) is about it.
+    const [item, section] = isSection(a) ? [b, a] : [a, b];
+    const t = topicWords(item);
+    const h = topicWords(section);
+    if (t.size >= 2 && [...t].every((w) => h.has(w))) return true;
     return overlap(bodyWords(a), bodyWords(b)) >= 0.75;
   }
   return jaccard(topicWords(a), topicWords(b)) >= 0.6 || jaccard(bodyWords(a), bodyWords(b)) >= 0.7;
 }
 
 /**
- * Which of two near-duplicates leads (ADR 0130): its page current, verified, the more
+ * Which of two near-duplicates leads (ADR 0132): its page current, verified, the more
  * authoritative, the newest, owned (comparePages); then an item over a section; then the score.
  */
 const leads = (a: TaskKnowledge, b: TaskKnowledge) =>

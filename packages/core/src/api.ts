@@ -10,7 +10,7 @@ import {
   RECORD_SCHEMAS,
   type RecordKind,
 } from "./schema/kinds.js";
-import { ChangeArtifact, Phase } from "./schema/orgpack.js";
+import { ChangeArtifact, Phase, SOURCE_AUTHORITIES, SourceScope } from "./schema/orgpack.js";
 import { Finding, FindingAction, Lens, Severity } from "./schema/review.js";
 import { Question, QuestionScopeLevel } from "./schema/question.js";
 import { FactCorrection } from "./schema/fact-corrections.js";
@@ -71,8 +71,13 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  * 2.29.0 (ADR 0124 addendum A-framework): what each repo is built on. `frameworks` on a repo in
  *   GET /api/trust — the framework its facts declare, the version as declared, where it is
  *   cited, and the frameworks whose patterns the facts show none of. Additive only.
+ * 2.30.0 (ADR 0132): many wikis. A knowledge source's `authority`, `appliesTo` (and in words,
+ *   `scope`), `readRestricted` and `maxPages` (and `authority` and `scope` on onboarding's
+ *   wikis), and the two export types; a conflict's suggested
+ *   page by `status`, `exception` or `authority`; and on a change's knowledge item, its page's
+ *   `source` and that source's `authority`. Additive only.
  */
-export const API_VERSION = "2.29.0";
+export const API_VERSION = "2.30.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -581,6 +586,9 @@ export const OnboardingView = z.object({
         location: z.string(),
         spaces: z.array(z.string()),
         owner: z.string().optional(),
+        /** 2.30.0 (ADR 0132): how much its word counts, and where it applies, in words. */
+        authority: z.enum(SOURCE_AUTHORITIES).optional(),
+        scope: z.string().optional(),
       }),
     ),
     absorbed: z.array(
@@ -706,6 +714,9 @@ export const ChangeKnowledgeItem = z.object({
   reason: z.string().optional(),
   /** 2.26.0: the tasks whose own selection picked it (B-task-knowledge). */
   tasks: z.array(z.string()).optional(),
+  /** 2.30.0 (ADR 0132): the source of the page it is read from, and how much its word counts. */
+  source: z.string().optional(),
+  authority: z.enum(SOURCE_AUTHORITIES).optional(),
 });
 
 /**
@@ -747,7 +758,17 @@ export const KnowledgeConflictView = z.object({
     .object({
       source: z.string(),
       page: z.string(),
-      signal: z.enum(["replaces", "owner", "source-kind", "space", "last-edited"]),
+      /** 2.30.0: status, exception and authority (ADR 0132). */
+      signal: z.enum([
+        "replaces",
+        "owner",
+        "source-kind",
+        "space",
+        "last-edited",
+        "status",
+        "exception",
+        "authority",
+      ]),
       detail: z.string(),
     })
     .optional(),
@@ -1651,6 +1672,9 @@ export const WIKI_TYPES = [
   "sharepoint",
   "markdown-folder",
   "git",
+  // 2.30.0 (ADR 0132): a space or site exported to a folder.
+  "confluence-export",
+  "sharepoint-export",
 ] as const;
 
 /** A person's review of a knowledge item (ADR 0101); stale: its page changed since. */
@@ -1674,6 +1698,16 @@ export const KnowledgeSource = z.object({
   checkout: z.enum(["clone", "submodule"]).optional(),
   owner: z.string().optional(),
   tags: z.object({ kinds: z.array(z.string()), frameworks: z.array(z.string()) }),
+  /** 2.30.0 (ADR 0132): how much its word counts; left out, as a team's. */
+  authority: z.enum(SOURCE_AUTHORITIES).optional(),
+  /** 2.30.0: where it applies (sources.yaml appliesTo); left out, everywhere. */
+  appliesTo: SourceScope.optional(),
+  /** 2.30.0: appliesTo in words: "platforms gcp; new components". */
+  scope: z.string().optional(),
+  /** 2.30.0: page overrides of its authority or status. */
+  byPage: z.number().int().optional(),
+  readRestricted: z.boolean().optional(),
+  maxPages: z.number().int().optional(),
   /** The newest snapshot `atticus sources sync` took; none before the first sync. */
   snapshot: z
     .object({

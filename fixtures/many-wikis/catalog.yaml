@@ -1,4 +1,4 @@
-# The invented Forge shop's catalog for the 12-source knowledge estate (ADR 0130), written by
+# The invented Forge shop's catalog for the 12-source knowledge estate (ADR 0132), written by
 # hand: what a scan of forge-orders, forge-stock, forge-web and forge-payments would give. Where
 # each runs is what the scope of a platform wiki is matched against: forge-orders, forge-stock
 # and forge-web run on OpenShift, forge-payments on Cloud Run (GCP).

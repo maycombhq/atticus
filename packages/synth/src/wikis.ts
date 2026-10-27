@@ -2,7 +2,7 @@ import { copyFile, mkdir, readdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 /**
- * A synthetic estate of many wikis (ADR 0130), for the scale budgets and the matching bench: the
+ * A synthetic estate of many wikis (ADR 0132), for the scale budgets and the matching bench: the
  * invented Forge shop's 12 knowledge sources (fixtures/many-wikis: two standards, two platforms,
  * two frameworks, five teams and one reference), each with its hand-written planted pages and
  * thousands of generated filler pages. Deterministic: the same options always write the same

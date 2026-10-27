@@ -1489,7 +1489,7 @@ function finish(
 }
 
 /**
- * The snapshot whose folder holds a page's copy (ADR 0130): an unchanged page is copied in an
+ * The snapshot whose folder holds a page's copy (ADR 0132): an unchanged page is copied in an
  * earlier snapshot than the one read, and a quote names where its words are.
  */
 function copyDate(p: PreparedPage): string {

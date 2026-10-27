@@ -1,5 +1,5 @@
 # The knowledge items a scan of the planted pages of the 12-source Forge shop would give
-# (ADR 0130), written by hand: what each item is, its rules or steps and the words it is quoted
+# (ADR 0132), written by hand: what each item is, its rules or steps and the words it is quoted
 # by. Each quote's line is where those words are in the page's snapshot.
 - kind: Pattern
   schemaVersion: 2

@@ -2,6 +2,7 @@ import { readdir, readFile, stat } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
 import { parse } from "yaml";
 import { catalogDirOf, orgPackDirOf, Sources, type Api } from "@maycombhq/core";
+import { scopeWords } from "@maycombhq/knowledge";
 import { readCatalog } from "@maycombhq/scanner";
 import type { Router, ServerContext } from "@maycombhq/server";
 import { baseClonePath, loadManifest } from "@maycombhq/workspace";
@@ -137,6 +138,9 @@ export async function onboardingView(root: string): Promise<View> {
           location: w.location,
           spaces: w.spaces,
           ...(w.owner ? { owner: w.owner } : {}),
+          // 2.30.0 (ADR 0132): how much its word counts, and where it applies.
+          ...(w.authority ? { authority: w.authority } : {}),
+          ...(w.appliesTo ? { scope: scopeWords(w.appliesTo) } : {}),
         }));
         sources.absorbed = s.data.absorbed.map((a) => ({
           id: a.id,

@@ -35,7 +35,7 @@ import {
 import { HERE } from "./helpers.js";
 
 /**
- * Many wikis (ADR 0130): an organisation with a dozen wikis, read from exports when there is no
+ * Many wikis (ADR 0132): an organisation with a dozen wikis, read from exports when there is no
  * API, each with how much its word counts and where it applies. The invented Forge shop's 12
  * sources (fixtures/many-wikis): an Enterprise Architecture Confluence space export, a
  * SharePoint team site export, and Markdown folders.

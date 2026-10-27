@@ -12,7 +12,7 @@ import { readPage, type KnowledgePage, type SyncResult, type WikiSource } from "
  * hashes. The knowledge scan reads only snapshots, so a scan never reaches a wiki and the same
  * snapshot always gives the scan the same pages.
  *
- * ADR 0130: snapshots are committed, so at a dozen wikis a full copy per sync bloats the
+ * ADR 0132: snapshots are committed, so at a dozen wikis a full copy per sync bloats the
  * metarepo. A snapshot copies only the pages new or changed since the source's snapshot before
  * it; an unchanged page is listed with `in: <date>`, the snapshot whose folder holds its copy.
  * Readers follow it: a page's path is always where its copy is.
@@ -21,7 +21,7 @@ import { readPage, type KnowledgePage, type SyncResult, type WikiSource } from "
 export const SNAPSHOT_FILE = "snapshot.yaml";
 
 export const SnapshotManifest = z.strictObject({
-  /** 2 (ADR 0130): a page may be copied in an earlier snapshot (`in`). */
+  /** 2 (ADR 0132): a page may be copied in an earlier snapshot (`in`). */
   schemaVersion: z.union([z.literal(1), z.literal(2)]),
   source: z.string().min(1),
   /** The snapshot's date (the folder name). */
@@ -238,7 +238,7 @@ export async function readSnapshot(
 
 /**
  * Single pages of each source's newest snapshot, read one file at a time with the manifest kept
- * (ADR 0130): a task's knowledge shows a few pages of a source with thousands, and reading the
+ * (ADR 0132): a task's knowledge shows a few pages of a source with thousands, and reading the
  * whole snapshot (every page parsed) to show three was what cost the time at a dozen wikis.
  */
 export function snapshotPages(

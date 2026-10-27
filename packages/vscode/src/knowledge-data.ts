@@ -538,8 +538,9 @@ export function wikiItems(
       return {
         id: `source:${w.id}`,
         label: w.id,
-        description: `${w.type} · ${snap ? `snapshot ${snap.date}${snap.commit ? ` at ${snap.commit}` : ""}` : "not synced yet"}`,
-        tooltip: `${w.id}: ${w.type} at ${w.location}${w.spaces.length ? ` (${w.spaces.join(", ")})` : ""}${w.owner ? `, owned by ${w.owner}` : ""}.${snap ? ` Last copied on ${snap.date}${snap.commit ? `, at commit ${snap.commit}` : ""}.` : " Sync it to copy its pages."}`,
+        description: `${w.type}${w.authority ? ` · ${w.authority}` : ""} · ${snap ? `snapshot ${snap.date}${snap.commit ? ` at ${snap.commit}` : ""}` : "not synced yet"}`,
+        // ADR 0132: how much its word counts, and where it applies.
+        tooltip: `${w.id}: ${w.type} at ${w.location}${w.spaces.length ? ` (${w.spaces.join(", ")})` : ""}${w.owner ? `, owned by ${w.owner}` : ""}.${w.authority ? ` Authority: ${w.authority}.` : ""} ${w.scope ? `Applies to ${w.scope}.` : "Applies to every task."}${snap ? ` Last copied on ${snap.date}${snap.commit ? `, at commit ${snap.commit}` : ""}.` : " Sync it to copy its pages."}`,
         icon: w.type === "git" ? "repo" : w.type === "markdown-folder" ? "folder-library" : "globe",
         open: file,
         context: "atticus.source",

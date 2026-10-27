@@ -27,7 +27,7 @@ import {
 } from "../src/index.js";
 
 /**
- * Knowledge per task across 12 wikis (ADR 0130), on the invented Forge shop (fixtures/many-wikis):
+ * Knowledge per task across 12 wikis (ADR 0132), on the invented Forge shop (fixtures/many-wikis):
  * each source's authority and scope, the target state's new component, pages that are no longer
  * current, an approved exception, a stale standard and a mirror. The expected answers are
  * fixtures/many-wikis/expected.yaml, written before the code; this test holds the cases each

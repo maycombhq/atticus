@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { MANY_WIKIS, writeWikiEstate } from "../src/index.js";
 
-/** The 12-source wiki estate (ADR 0130): deterministic, the planted pages and the filler. */
+/** The 12-source wiki estate (ADR 0132): deterministic, the planted pages and the filler. */
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), "../../../fixtures");
 

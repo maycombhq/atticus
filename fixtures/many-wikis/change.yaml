@@ -1,4 +1,4 @@
-# The invented change forge-refunds (ADR 0130): its stories and their 14 tasks as the stories
+# The invented change forge-refunds (ADR 0132): its stories and their 14 tasks as the stories
 # stage writes them, and the target flows the architecture stage wrote, for the knowledge bench
 # on 12 sources. forge-refund-worker is a new component: it is in no catalog yet, only in its
 # target flow, which places it on Cloud Run (GCP).
@@ -49,7 +49,7 @@ stories:
       - { id: "5.1", op: add, kind: render, title: "Show the refund status on the order page", what: "Show each refund's status on the order page", fields: [refundStatus], evidence: ["forge-web:src/app/orders/order-page.component.html:1"] }
       - { id: "5.2", op: add, kind: render, title: "Add the refund form with field validation", what: "Add a refund form to the order page that validates its fields", fields: [amount, reason], evidence: ["forge-web:src/app/orders/order-page.component.ts:1"] }
 # The target flows' placement of a component the catalog doesn't have yet (planner FlowDelta
-# runsOn, ADR 0130). Only the new component's flow says where it runs.
+# runsOn, ADR 0132). Only the new component's flow says where it runs.
 targetFlows:
   - schemaVersion: 2
     flow: forge-refund-worker.retry-refunds

@@ -4,7 +4,7 @@ import { stringify } from "yaml";
 import type { KnowledgeSourceAdapter, RawPage, WikiSource } from "./sources.js";
 
 /**
- * Wikis read from an export folder when there is no API (ADR 0130): a Confluence space exported
+ * Wikis read from an export folder when there is no API (ADR 0132): a Confluence space exported
  * as HTML (`confluence-export`) and a SharePoint site's pages saved with the library's metadata
  * (`sharepoint-export`). Each page becomes Markdown with front matter holding what the export
  * says of it (title, last update, author, labels, status, restrictions), so the sync, the

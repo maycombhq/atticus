@@ -27,7 +27,7 @@ export type OwnerSignal =
   | "source-kind"
   | "space"
   | "last-edited"
-  // ADR 0130, read from sources.yaml and the pages when the conflict is shown (standing.ts):
+  // ADR 0132, read from sources.yaml and the pages when the conflict is shown (standing.ts):
   | "status"
   | "exception"
   | "authority";

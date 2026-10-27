@@ -5,7 +5,7 @@ import { planRescan, tokensOf } from "./rescan.js";
 import { readSnapshot, type Snapshot } from "./snapshot.js";
 
 /**
- * What a knowledge scan would cost before it runs (ADR 0130), as `atticus map --estimate` says
+ * What a knowledge scan would cost before it runs (ADR 0132), as `atticus map --estimate` says
  * for a read: per source, the pages its newest snapshot holds, those the scan would read (new or
  * changed since the last scan, within the source's `maxPages`), their tokens, and the model calls
  * the batches take; then the whole. Read from the snapshots only: nothing reaches a wiki or a

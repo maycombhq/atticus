@@ -28,7 +28,11 @@ const nameOf = (i: { id: string; title?: string }) => i.title ?? i.id;
 const kindWord = (k: string) => K.kinds[k] ?? k;
 
 /** The title a person reads, with the id it is set by (the command takes the id) beside it. */
-function Name({ item }: { item: { id: string; kind: string; title?: string } }) {
+function Name({
+  item,
+}: {
+  item: { id: string; kind: string; title?: string; source?: string; authority?: string };
+}) {
   return (
     <>
       {item.title ? <span>{item.title}</span> : <code className="mono">{item.id}</code>}{" "}
@@ -37,6 +41,13 @@ function Name({ item }: { item: { id: string; kind: string; title?: string } }) 
         <>
           <br />
           <code className="mono muted">{item.id}</code>
+        </>
+      )}
+      {/* ADR 0132: the source of its page, and how much that source's word counts. */}
+      {item.source && (
+        <>
+          <br />
+          <span className="muted">{K.fromSource(item.source, item.authority)}</span>
         </>
       )}
     </>

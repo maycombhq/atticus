@@ -16,7 +16,7 @@ import { readKnowledge, itemTitle } from "./knowledge-store.js";
 import { readSourceSettings } from "./standing.js";
 
 /**
- * Standards become checks a person accepts (ADR 0130). The knowledge scan reads a standard's
+ * Standards become checks a person accepts (ADR 0132). The knowledge scan reads a standard's
  * rules from its page (`rules`, one line each); the stages already put them in their prompts as
  * context (the feature stage's knowledge list, each task's knowledge). Here each rule of a
  * standard a person confirmed (verified or corrected), read from a page whose standing is
@@ -119,7 +119,7 @@ export async function draftStandardChecks(
   }
   await writeFileAtomic(
     proposalsFile(root),
-    `# Critic checks proposed from confirmed standards (ADR 0130). Nothing here is enforced: atticus standards accept puts what you pick into org-pack/checklists/${PACK}.yaml.\n${stringify({ schemaVersion: 1, at: now.replace(/\.\d{3}Z$/, "Z"), proposals }, { lineWidth: 0 })}`,
+    `# Critic checks proposed from confirmed standards (ADR 0132). Nothing here is enforced: atticus standards accept puts what you pick into org-pack/checklists/${PACK}.yaml.\n${stringify({ schemaVersion: 1, at: now.replace(/\.\d{3}Z$/, "Z"), proposals }, { lineWidth: 0 })}`,
   );
   await writeFileAtomic(summaryFile(root), summary(proposals, left));
   return { proposals, left, file: `${proposalsRelOf(root)}/checklists/${PACK}.yaml` };
@@ -179,17 +179,17 @@ export async function acceptStandardChecks(
     version: pack?.version ?? "1.0.0",
     description:
       pack?.description ??
-      "Critic checks accepted from the organisation's confirmed standards (ADR 0130). Each cites its page and knowledge item.",
+      "Critic checks accepted from the organisation's confirmed standards (ADR 0132). Each cites its page and knowledge item.",
     rules,
   });
   if (!o.dryRun) {
     await writeFileAtomic(
       packFile(root),
-      `# Critic checks accepted from confirmed standards (ADR 0130). Contract C3. Change or retire a rule through a pull request.\n${stringify(next, { lineWidth: 0 })}`,
+      `# Critic checks accepted from confirmed standards (ADR 0132). Contract C3. Change or retire a rule through a pull request.\n${stringify(next, { lineWidth: 0 })}`,
     );
     await writeFileAtomic(
       proposalsFile(root),
-      `# Critic checks proposed from confirmed standards (ADR 0130). Nothing here is enforced: atticus standards accept puts what you pick into org-pack/checklists/${PACK}.yaml.\n${stringify({ ...draft, proposals: left }, { lineWidth: 0 })}`,
+      `# Critic checks proposed from confirmed standards (ADR 0132). Nothing here is enforced: atticus standards accept puts what you pick into org-pack/checklists/${PACK}.yaml.\n${stringify({ ...draft, proposals: left }, { lineWidth: 0 })}`,
     );
     await writeFileAtomic(summaryFile(root), summary(left, []));
   }

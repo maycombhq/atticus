@@ -14,7 +14,7 @@ import {
 } from "./standing.js";
 
 /**
- * Which page of a disagreement to suggest, by what the pages are worth (ADR 0130), read when the
+ * Which page of a disagreement to suggest, by what the pages are worth (ADR 0132), read when the
  * conflict is shown, so a change to sources.yaml applies at once and an older scan's report is
  * read the same way. In order, the first that tells the pages apart:
  *

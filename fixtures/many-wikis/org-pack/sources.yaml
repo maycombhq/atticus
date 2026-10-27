@@ -1,4 +1,4 @@
-# The 12 knowledge sources of the invented Forge shop (ADR 0130): two standards, two platforms,
+# The 12 knowledge sources of the invented Forge shop (ADR 0132): two standards, two platforms,
 # two frameworks, five teams and one reference. Each wiki's pages are the planted pages under
 # fixtures/many-wikis/sources/<id>/ and the filler the generator adds (packages/synth wikis.ts).
 schemaVersion: 3

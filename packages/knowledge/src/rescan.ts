@@ -41,7 +41,7 @@ export function planRescan(
     /** Pages a scan in batches has read already in this run, by source: not read again. */
     read?: Record<string, string[]>;
     /**
-     * ADR 0130: at most this many pages of a source per run (sources.yaml `maxPages`); the rest
+     * ADR 0132: at most this many pages of a source per run (sources.yaml `maxPages`); the rest
      * wait for the next run, as pages left for the next batch do.
      */
     caps?: Record<string, number>;
@@ -69,7 +69,7 @@ export function planRescan(
     const changed: string[] = [];
     const deferred: string[] = [];
     const cap = o.caps?.[source];
-    // ADR 0130: by page, once; a find per page was quadratic on a wiki of thousands of pages.
+    // ADR 0132: by page, once; a find per page was quadratic on a wiki of thousands of pages.
     const textOf = new Map(s.pages.map((p) => [p.pagePath, p.text ?? ""]));
     for (const page of all) {
       if (cap !== undefined && changed.length >= cap) {

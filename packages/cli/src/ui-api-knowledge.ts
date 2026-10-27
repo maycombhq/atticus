@@ -16,6 +16,7 @@ import {
   RecordId,
   SOURCE_KIND_SUGGESTIONS,
   type KnowledgeKind,
+  pageStanding,
 } from "@maycombhq/core";
 import { changeFolder } from "@maycombhq/changes";
 import {
@@ -45,6 +46,8 @@ import {
   type ReviewSummary,
   type SavedFind,
   type Snapshot,
+  readSourceSettings,
+  scopeWords,
 } from "@maycombhq/knowledge";
 import {
   codeFactRecords,
@@ -238,13 +241,39 @@ export function uiKnowledgeRoutes(
           await readConflicts(root, { records: await codeFactRecords(root) }).catch(() => [])
         ).filter((v) => conflictTouches(v, used))
       : [];
+    // 2.30.0 (ADR 0132): the source of each item's page, and how much its word counts.
+    const settings = readSourceSettings(root);
+    const quoted = new Map<string, { source: string; page: string }>();
+    if (settings.size && doc?.items.length)
+      for (const r of (await readKnowledge(root, { cacheRoot: root })).items)
+        if (r.quote) quoted.set(r.id, { source: r.quote.source, page: r.quote.page });
+    const sourceOf = (id: string): { source: string; page: string } | undefined => {
+      const q = quoted.get(id);
+      if (q) return q;
+      const hash = id.indexOf("#");
+      const slash = id.indexOf("/");
+      return hash > 0 && slash > 0 && slash < hash
+        ? { source: id.slice(0, slash), page: id.slice(slash + 1, hash) }
+        : undefined;
+    };
     return {
       change,
       file,
       present,
       items: (doc?.items ?? []).map((i) => {
         const reason = plainWhy(i);
-        return { ...titled(i), ...(reason ? { reason } : {}) };
+        const at = sourceOf(i.id);
+        const w = at ? settings.get(at.source) : undefined;
+        const authority =
+          w && (w.authority || w.byPage?.length)
+            ? pageStanding(w, at!.page, {}).authority
+            : undefined;
+        return {
+          ...titled(i),
+          ...(reason ? { reason } : {}),
+          ...(at && settings.has(at.source) ? { source: at.source } : {}),
+          ...(authority ? { authority } : {}),
+        };
       }),
       nearMisses: (doc?.nearMisses ?? []).map(titled),
       ...(conflicts.length ? { conflicts: conflicts.map(conflictView) } : {}),
@@ -346,6 +375,12 @@ export function uiKnowledgeRoutes(
             ...(w.checkout ? { checkout: w.checkout } : {}),
             ...(w.owner ? { owner: w.owner } : {}),
             tags: { kinds: w.tags?.kinds ?? [], frameworks: w.tags?.frameworks ?? [] },
+            // 2.30.0 (ADR 0132): how much its word counts and where it applies.
+            ...(w.authority ? { authority: w.authority } : {}),
+            ...(w.appliesTo ? { appliesTo: w.appliesTo, scope: scopeWords(w.appliesTo) } : {}),
+            ...(w.byPage?.length ? { byPage: w.byPage.length } : {}),
+            ...(w.readRestricted !== undefined ? { readRestricted: w.readRestricted } : {}),
+            ...(w.maxPages ? { maxPages: w.maxPages } : {}),
             ...(snapshot ? { snapshot } : {}),
             ...(s ? { scanned: { date: s.date, pages: s.pages } } : {}),
             stale: !snapshot || snapshot.ageDays > STALE_DAYS,

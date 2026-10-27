@@ -445,7 +445,7 @@ export type SourceTags = z.infer<typeof SourceTags>;
 
 /**
  * sources.yaml's own schema version. Version 2 (ADR 0127) adds a wiki's `include` and `exclude`
- * globs. Version 3 (ADR 0130) adds what a source's word counts for (`authority`, `byPage`,
+ * globs. Version 3 (ADR 0132) adds what a source's word counts for (`authority`, `byPage`,
  * `reviewMonths`), where it applies (`appliesTo`), `readRestricted`, `maxPages`, and the
  * `confluence-export` and `sharepoint-export` folder types. Version 1 and 2 files still read;
  * `atticus upgrade` moves them up (`sources-v2`, `sources-v3`), changing nothing else.
@@ -453,7 +453,7 @@ export type SourceTags = z.infer<typeof SourceTags>;
 export const SOURCES_SCHEMA_VERSION = 3 as const;
 
 /**
- * How much a source's word counts (ADR 0130), most first: the organisation's own rules
+ * How much a source's word counts (ADR 0132), most first: the organisation's own rules
  * (enterprise architecture, security), a shared platform team's guidance, a framework's own
  * documentation, a team's pages, and reference material (a glossary, notes). A source without
  * one ranks as a team's. Authority decides only between pages on the same topic: never relevance.
@@ -467,11 +467,11 @@ export const SOURCE_AUTHORITIES = [
 ] as const;
 export type SourceAuthority = (typeof SOURCE_AUTHORITIES)[number];
 
-/** A page's status (ADR 0130): a page that is no longer current ranks below every current one. */
+/** A page's status (ADR 0132): a page that is no longer current ranks below every current one. */
 export const PAGE_STATUSES = ["current", "deprecated", "superseded", "archived"] as const;
 export type PageStatus = (typeof PAGE_STATUSES)[number];
 
-/** Where a source applies (ADR 0130): a page attaches to a task whose places fall in it. */
+/** Where a source applies (ADR 0132): a page attaches to a task whose places fall in it. */
 export const SourceScope = z
   .strictObject({
     /** Catalog System ids. */
@@ -517,7 +517,7 @@ const SOURCES_V3_FIELDS = [
 ] as const;
 const SOURCES_V3_TYPES = ["confluence-export", "sharepoint-export"];
 
-/** A page override of a source's authority or status (ADR 0130), by page pattern; first match wins. */
+/** A page override of a source's authority or status (ADR 0132), by page pattern; first match wins. */
 const PageOverride = z
   .strictObject({
     match: z.array(PageGlob).min(1),
@@ -554,7 +554,7 @@ export const Sources = z
               "sharepoint",
               "markdown-folder",
               "git",
-              // Version 3 (ADR 0130): a space or site exported to a folder, read with its metadata.
+              // Version 3 (ADR 0132): a space or site exported to a folder, read with its metadata.
               "confluence-export",
               "sharepoint-export",
             ]),
@@ -688,13 +688,13 @@ export function sourceReadsPage(
   return !w.exclude?.some((g) => pageGlobMatches(g, page));
 }
 
-/** The rank of an authority, 0 the most; a source without one ranks as a team's (ADR 0130). */
+/** The rank of an authority, 0 the most; a source without one ranks as a team's (ADR 0132). */
 export function authorityRank(a: SourceAuthority | undefined): number {
   return SOURCE_AUTHORITIES.indexOf(a ?? "team");
 }
 
 /**
- * The platforms each cloud runs (ADR 0130), so a source scoped to a cloud applies to a component
+ * The platforms each cloud runs (ADR 0132), so a source scoped to a cloud applies to a component
  * that runs on one of its platforms, and one scoped to a platform to a component placed on its
  * cloud. Lower case; an organisation names any other platform as it is.
  */
@@ -798,7 +798,7 @@ const monthsBetween = (from: string, to: string) => {
 };
 
 /**
- * A page's standing (ADR 0130), in three layers: the source's authority (default a team's); the
+ * A page's standing (ADR 0132), in three layers: the source's authority (default a team's); the
  * first `byPage` pattern that matches the page; then what the page says of itself: a status or
  * label (deprecated, superseded, archived), an archived space, or a banner at its top. A
  * standard last updated more than the source's `reviewMonths` before `now` may be out of date.

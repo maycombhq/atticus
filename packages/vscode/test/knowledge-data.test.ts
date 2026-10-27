@@ -420,6 +420,9 @@ describe("the sources (ADR 0101)", () => {
             location: "../runbooks",
             spaces: [],
             owner: "team-ops",
+            // ADR 0132: its authority and where it applies.
+            authority: "platform",
+            scope: "platforms gcp; new components",
           },
         ],
         absorbed: [],
@@ -429,8 +432,12 @@ describe("the sources (ADR 0101)", () => {
     );
     expect(rows.map((r) => [r.label, r.description, r.context])).toEqual([
       ["forge-wiki", "git · snapshot 2026-10-22 at 4b825dc", "atticus.source"],
-      ["runbooks", "markdown-folder · not synced yet", "atticus.source"],
+      ["runbooks", "markdown-folder · platform · not synced yet", "atticus.source"],
     ]);
+    expect(rows[1]!.tooltip).toContain(
+      "Authority: platform. Applies to platforms gcp; new components.",
+    );
+    expect(rows[0]!.tooltip).toContain("Applies to every task.");
     expect(rows[0]!.source).toBe("forge-wiki");
   });
 });

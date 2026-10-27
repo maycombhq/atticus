@@ -109,7 +109,7 @@ export async function conflictDraft(
   o: { items?: KnowledgeRecord[]; sources?: SourceSettings; now?: string } = {},
 ): Promise<QuestionDraft> {
   const items = o.items ?? (await readKnowledge(root, { cacheRoot: root })).items;
-  // ADR 0130: the page suggested is the one the pages' standing picks, else the scan's signal.
+  // ADR 0132: the page suggested is the one the pages' standing picks, else the scan's signal.
   const settings = o.sources ?? readSourceSettings(root);
   const now = o.now ?? new Date().toISOString();
   const owner = await standingSuggestion(
@@ -212,10 +212,12 @@ export async function readConflicts(
     conflicts?: KnowledgeConflict[];
     questions?: Question[];
     records?: readonly CodeFactRecord[];
-    /** sources.yaml's settings (ADR 0130); default read from the org pack. */
+    /** sources.yaml's settings (ADR 0132); default read from the org pack. */
     sources?: SourceSettings;
     /** The clock, for a standard's review age; default now. */
     now?: string;
+    /** False: only the scan's own signal suggests a page (the bench's before, ADR 0132). */
+    standing?: boolean;
   } = {},
 ): Promise<ConflictView[]> {
   const conflicts =
@@ -240,7 +242,9 @@ export async function readConflicts(
   const now = o.now ?? new Date().toISOString();
   const read = snapshotPageReader(root, settings, now);
   const suggestions = await Promise.all(
-    conflicts.map((c) => standingSuggestion(c, read, settings, now)),
+    conflicts.map((c) =>
+      o.standing === false ? Promise.resolve(c.owner) : standingSuggestion(c, read, settings, now),
+    ),
   );
   return conflicts.map((c, n) => {
     const key = conflictKey(c);

@@ -321,7 +321,7 @@ export const FlowDelta = z.strictObject({
   consumers: z.array(Id).optional(),
   /**
    * A new flow of a component the catalog doesn't have yet: where that component runs, as the
-   * architecture places it (ADR 0130). What a knowledge source's scope (sources.yaml appliesTo)
+   * architecture places it (ADR 0132). What a knowledge source's scope (sources.yaml appliesTo)
    * is matched against before the component exists. Optional and additive: version 2 stays.
    */
   runsOn: z
