@@ -31,7 +31,16 @@ export interface ChangeFiles {
    * artifacts a lens reviews, but the store writes the ship question's check reads.
    */
   flows?: Doc[];
+  /**
+   * The attached files' index and what was read from each (ADR 0113): `inputs/index.yaml` and
+   * `inputs/read/*.md`, as text, by change-folder path. Not artifacts a lens reviews: what a
+   * criterion's cite of a note is checked against (ADR 0113 addendum, 2026-10-26).
+   */
+  inputs?: Map<string, string>;
 }
+
+/** The attached files' index and read texts, which the note-cite check reads. */
+const INPUT_FILE = /^inputs\/(index\.yaml|read\/[^/]+\.md)$/;
 
 /** Where a stage writes its target flows in the change folder. */
 const FLOW_FILE = /^target-flows\/[^/]+\.ya?ml$/;
@@ -65,12 +74,14 @@ async function walk(dir: string, rel = ""): Promise<string[]> {
 export async function readChangeFiles(dir: string): Promise<ChangeFiles> {
   const docs = new Map<string, Doc>();
   const flows: Doc[] = [];
+  const inputs = new Map<string, string>();
   for (const rel of (await walk(dir)).sort()) {
     if (FLOW_FILE.test(rel)) flows.push(parseDoc(rel, await readFile(join(dir, rel), "utf8")));
+    if (INPUT_FILE.test(rel)) inputs.set(rel, await readFile(join(dir, rel), "utf8"));
     if (!artifactOf(rel)) continue;
     docs.set(rel, parseDoc(rel, await readFile(join(dir, rel), "utf8")));
   }
-  return { dir, docs, flows };
+  return { dir, docs, flows, ...(inputs.size ? { inputs } : {}) };
 }
 
 export interface StoreWrite {

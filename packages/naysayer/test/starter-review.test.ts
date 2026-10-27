@@ -42,6 +42,8 @@ describe("the starter review checklist", () => {
       // (2026-10-24): the org's to change, retire or delete; written for their question.
       ["review.call-timeout-stated", "safe", "safe", ["interfaces", "design", "catalog"], "risk"],
       ["review.store-write-rollback", "ship", "ship", ["data", "design", "catalog"], "risk"],
+      // ADR 0113 addendum (2026-10-26): a criterion an attached note gives quotes the note's line.
+      ["review.note-cites-on-line", "true", "true", ["stories"], "risk"],
     ]);
     expect(
       pack.rules.flatMap((r) =>
@@ -50,6 +52,7 @@ describe("the starter review checklist", () => {
     ).toEqual([
       ["review.call-timeout-stated", "call-timeout-stated", []],
       ["review.store-write-rollback", "store-write-rollback", []],
+      ["review.note-cites-on-line", "note-cites-on-line", []],
     ]);
     for (const r of pack.rules) {
       // Configuration, not the constitution: an org can waive a blocking rule, or change it.
@@ -115,6 +118,8 @@ const PLAN = [
   "review.outcome-has-story",
   "review.criteria-testable",
   "review.requests-raised-in-time",
+  // The code check of a note's cite reads the stories (ADR 0113 addendum, 2026-10-26).
+  "review.note-cites-on-line",
 ];
 /** The code checks read the catalog, which is due at every gate. */
 const TIMEOUT = "review.call-timeout-stated";
@@ -184,6 +189,7 @@ describe("the starter review with the default gates and change types", () => {
         ...DESIGN,
         "review.outcome-has-story",
         "review.criteria-testable",
+        "review.note-cites-on-line",
         ...CODE,
       ]),
     );

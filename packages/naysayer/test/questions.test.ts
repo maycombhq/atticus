@@ -164,6 +164,7 @@ describe("every rule answers one of the four questions, as data", () => {
       "public-entry-auth": "safe",
       "breaking-delta-consumers": "safe",
       "store-write-rollback": "ship",
+      "note-cites-on-line": "true",
     });
   });
 
@@ -205,6 +206,7 @@ describe("every rule answers one of the four questions, as data", () => {
     ).toEqual([
       ["review.call-timeout-stated", "org", "safe", "risk", false, "call-timeout-stated"],
       ["review.store-write-rollback", "org", "ship", "risk", false, "store-write-rollback"],
+      ["review.note-cites-on-line", "org", "true", "risk", false, "note-cites-on-line"],
     ]);
     // The fixture's org pack carries them as the starter writes them (its AI rules left out).
     const fixture = ChecklistPack.parse(
@@ -626,6 +628,115 @@ describe("code answers what code can: the checks the four questions add", () => 
     expect(tf.map((x) => [x.finding.artifact, x.finding.locator.line])).toContainEqual([
       "target-flows/ledger-api.create-transfer.yaml",
       12,
+    ]);
+  });
+});
+
+describe("is it true: a criterion an attached note gives cites a line the note has (ADR 0113 addendum)", () => {
+  const NOTE = [
+    "# Limit analysis",
+    "",
+    '- A refused transfer says: "You have reached today\'s limit."',
+    "- A limit change takes effect the next day.",
+    "",
+  ].join("\n");
+  const LINE =
+    "- Given an account with a limit of 1000 that has sent 900 today, when it asks to send 200, then the transfer is refused with LIMIT_EXCEEDED and nothing is posted.";
+
+  /** The fixture change with a note attached and its first story's first criterion citing it. */
+  async function cited(from: string, quote: string, o: { held?: boolean } = {}) {
+    const root = await forgeChangeRoot();
+    await write(root, `openspec/changes/${CHANGE}/inputs/limit-analysis.md`, NOTE);
+    // What intake read from it (ADR 0113): each line with words on it, cited by its line.
+    await write(
+      root,
+      `openspec/changes/${CHANGE}/inputs/read/limit-analysis.md.md`,
+      [
+        "# inputs/limit-analysis.md",
+        "",
+        ...NOTE.split("\n").flatMap((l, i) =>
+          l.trim() ? [`[inputs/limit-analysis.md:${i + 1}] ${l}`] : [],
+        ),
+        "",
+      ].join("\n"),
+    );
+    await write(
+      root,
+      `openspec/changes/${CHANGE}/inputs/index.yaml`,
+      stringify({
+        schemaVersion: 1,
+        files: [
+          {
+            path: "inputs/limit-analysis.md",
+            name: "limit-analysis.md",
+            kind: "document",
+            format: "markdown",
+            sha256: "0".repeat(64),
+            bytes: NOTE.length,
+            addedBy: "product-owner",
+            addedAt: NOW,
+            read: "text",
+            readAs: "inputs/read/limit-analysis.md.md",
+            citeBy: "line",
+            ...(o.held
+              ? {
+                  defences: { risk: "high", reason: "It hides instructions.", rules: ["override"] },
+                }
+              : {}),
+          },
+        ],
+      }),
+    );
+    await edit(
+      root,
+      "stories/s1-refuse-over-limit.md",
+      LINE,
+      `${LINE}\n  From ${from}, quoting: "${quote}"`,
+    );
+    return of(
+      await runCritic(root, CHANGE, { gate: "plan", now: NOW }),
+      "review.note-cites-on-line",
+    );
+  }
+
+  it("passes a cite whose words are on the line it names", async () => {
+    expect(await cited("inputs/limit-analysis.md:3", "You have reached today's limit.")).toEqual(
+      [],
+    );
+  });
+
+  it("finds a cite whose words aren't on that line, a line the note doesn't have, and a file not attached", async () => {
+    const wrong = await cited("inputs/limit-analysis.md:4", "You have reached today's limit.");
+    expect(
+      wrong.map((f) => [f.finding.artifact, f.finding.locator.line, f.finding.severity]),
+    ).toEqual([["stories/s1-refuse-over-limit.md", 9, "risk"]]);
+    expect(wrong[0]!.finding.summary).toBe(
+      "stories/s1-refuse-over-limit.md line 9 cites inputs/limit-analysis.md:4, which doesn't say \"You have reached today's limit.\"",
+    );
+    expect(wrong[0]!.finding.lens).toBe("true");
+    expect(
+      (await cited("inputs/limit-analysis.md:30", "You have reached today's limit.")).map(
+        (f) => f.finding.summary,
+      ),
+    ).toEqual([
+      "stories/s1-refuse-over-limit.md line 9 cites inputs/limit-analysis.md:30, a line inputs/limit-analysis.md doesn't have.",
+    ]);
+    expect(
+      (await cited("inputs/meeting.md:3", "You have reached today's limit.")).map(
+        (f) => f.finding.summary,
+      ),
+    ).toEqual([
+      "stories/s1-refuse-over-limit.md line 9 cites inputs/meeting.md, which isn't attached to the change.",
+    ]);
+  });
+
+  it("finds a cite of a note held out of every AI step: what it says isn't a criterion until a person decides", async () => {
+    expect(
+      (
+        await cited("inputs/limit-analysis.md:3", "You have reached today's limit.", { held: true })
+      ).map((f) => f.finding.summary),
+    ).toEqual([
+      "stories/s1-refuse-over-limit.md line 9 cites inputs/limit-analysis.md, which is held out of every AI step: It hides instructions.",
     ]);
   });
 });

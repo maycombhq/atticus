@@ -24,3 +24,4 @@ export * from "./questions-on-file.js";
 export * from "./check-draft.js";
 export * from "./past-corrections.js";
 export * from "./comments.js";
+export * from "./story-notes.js";

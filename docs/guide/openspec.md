@@ -16,6 +16,23 @@ OpenSpec ships inside the installed Atticus package rather than on your PATH, so
 
 `atticus openspec status` shows the same progress `atticus next` reads. Edit `feature.yaml`, the target flows or the stories' answer and run the stage again; never edit the generated files. An organisation changes what each stage is told through `openspec/config.yaml` (`context`, and `rules` per artifact), which every stage reads first through `openspec instructions`.
 
+## Starting a change from your own analysis
+
+If you start a change with notes of your own (acceptance criteria, edge cases, field rules, error messages, what it must do under load), attach them to the change before its first stage: `atticus change attach <change> notes/*.md`, or **Attach a file** on the change's page ([ADR 0113](../adr/0113-small-changes-fast-files-into-a-change-and-the-task-context.md)). Markdown and text are read line by line; a PDF or slides page by page.
+
+What each stage reads of them:
+
+| Stage                         | Reads the attached files | What it takes from them                                                               |
+| ----------------------------- | ------------------------ | ------------------------------------------------------------------------------------- |
+| `atticus change feature`      | yes                      | the outcomes and scope, beside `brief.md`                                             |
+| `atticus change architecture` | yes                      | what the target flows must do                                                         |
+| `atticus stories`             | yes                      | acceptance criteria, edge cases, field rules, error messages and non-functional needs |
+| `atticus change small` (fast) | yes                      | all of the above, in its one step                                                     |
+
+Each criterion the stories take from a note cites it under the criterion, `From inputs/<file>:<line>, quoting: "<the note's words>"`, and Atticus checks the words are on that line; the critic checks it again (the starter review's `review.note-cites-on-line`). Long notes are trimmed to the parts most related to the stories, and the stage says which lines it left out. A file that hides instructions for an AI is kept out of every step until a person decides, and the stage says so.
+
+**Code wins.** Where a note says something the code contradicts (an entry's path, a field, who calls what, the order of the steps), the stories follow the code, the story's Context lists the difference, and you are asked a question naming the note's line and the code's: is the note out of date, or should the change make the code do what it says? Answer it and run the stage again.
+
 ## How a change's specs accumulate
 
 Each flow a change adds or changes is a capability in `openspec/specs/`, named after the flow (with its repo in front when the estate has several). Its spec has one requirement per flow, worded from the story ("The system SHALL give a shop owner …"), and one scenario per acceptance criterion (GIVEN, WHEN, THEN).
