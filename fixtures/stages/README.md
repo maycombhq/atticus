@@ -37,6 +37,14 @@ two classifications left to a person; `sends-extra.yaml` and `sends-extra-no-ret
 a field sent and never stored; and `answered.yaml`, which is right. `expected/live-findings.yaml`
 holds the findings the checks give `live.yaml`. The tests copy it in themselves.
 
+`stories-notes/` is the attached-notes scenario (ADR 0113 addendum, 2026-10-26): three Markdown
+analysis notes a product owner attaches to `add-fraud-check` (`notes/`: acceptance criteria and
+edge cases the brief doesn't have, a field rule for cardToken, and how ordering "works today",
+which the code contradicts twice), `expected/expected.yaml` (written before the code: the
+criteria each note gives with their cites, and the two contradictions asked of a person),
+`answer.yaml` (the story writer's answer citing them) and `expected/s1-place-order.md` (the story
+file it writes). The tests attach the notes themselves.
+
 `hold-stock/` is the architecture checks scenario (ADR 0124 addendum B-arch): the change
 `hold-stock` ("hold stock instead of reserving it"), placed on both repos' flows.
 `catalog.yaml` adds who uses what it touches: forge-web calls POST /orders (an Interface) and

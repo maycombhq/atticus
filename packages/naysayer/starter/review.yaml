@@ -3,7 +3,7 @@
 #
 # Most are AI rules: the critic's lenses apply them to every draft a stage writes (ADR 0115) and
 # at each gate's critic round, judging what the draft means against the estate and the brief. The
-# last two are code checks (a call's timeout, a store write's rollback step) that run before any
+# last three are code checks (a call's timeout, a store write's rollback step, a note's cite) that run before any
 # lens, with no model.
 # This is the organisation's configuration, not the constitution: change a prompt or a severity,
 # make a blocking rule not waivable, retire a rule (status: retired) or delete it, and add your own.
@@ -19,7 +19,7 @@
 schemaVersion: 1
 name: review
 version: 1.0.0
-description: The starter review. AI rules for the critic's true, complete, safe and ship lenses, from the define gate to the plan gate, and two code checks of the safe and ship questions.
+description: The starter review. AI rules for the critic's true, complete, safe and ship lenses, from the define gate to the plan gate, and three code checks of the true, safe and ship questions.
 rules:
   # ---- define: the feature placement, against the brief and the estate
   - id: review.brief-outcomes-placed
@@ -236,6 +236,21 @@ rules:
     check:
       type: deterministic
       check: store-write-rollback
+    waivable: false
+    source: Atticus starter review
+    needs: []
+
+  - id: review.note-cites-on-line
+    title: A criterion from an attached note quotes the note's line
+    description: A story criterion that says it comes from a file a person attached to the change (From inputs/<file>:<line>) quotes words that are on that line of what was read from the file, a file attached and not held out of AI steps (ADR 0113 addendum).
+    lens: "true"
+    question: "true"
+    layer: org
+    appliesTo: { artifacts: [stories] }
+    severity: risk
+    check:
+      type: deterministic
+      check: note-cites-on-line
     waivable: false
     source: Atticus starter review
     needs: []

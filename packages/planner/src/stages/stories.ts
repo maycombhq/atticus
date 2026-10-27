@@ -89,6 +89,19 @@ import {
   writeSpecFiles,
 } from "./openspec-files.js";
 import { storyCodeSource, STORY_CODE_SHARE } from "./story-code.js";
+import {
+  fromLine,
+  noteConflictLines,
+  noteCiteIssues,
+  noteCiteOf,
+  noteQuestions,
+  storyCodeCites,
+  storyNotes,
+  STORY_NOTES_CONFLICTS_FORMAT,
+  STORY_NOTES_CRITERION_FORMAT,
+  STORY_NOTES_RULE,
+  STORY_NOTES_SHARE,
+} from "./story-notes.js";
 // A cycle (task-context reads the stories), safe: only functions are used, and only when called.
 import { migrationPath } from "../task-context.js";
 import {
@@ -1416,6 +1429,13 @@ const CriterionObject = z.strictObject({
    * repeated on every task a field passes through.
    */
   also: z.array(Words).optional(),
+  /**
+   * A criterion an attached note gives (ADR 0113 addendum, 2026-10-26): the note's line, as the
+   * change folder cites it (`inputs/<file>:<line>`, or `inputs/<file> page <n>`).
+   */
+  from: Words.optional(),
+  /** The words of that line it rests on, copied exactly: checked to be on the line. */
+  quote: Words.optional(),
 });
 
 export const StoryCriterion = z.union([
@@ -1513,6 +1533,13 @@ const StorySections = {
       repos: z.array(Words).default([]),
       notes: z.array(Words).default([]),
     })
+    .optional(),
+  /**
+   * The lines of attached notes the code contradicts (ADR 0113 addendum, 2026-10-26): the story
+   * follows the code, and each is a question to a person naming both.
+   */
+  conflicts: z
+    .array(z.strictObject({ note: Words, quote: Words, code: Words, says: Words }))
     .optional(),
 };
 
@@ -3101,6 +3128,7 @@ export function renderStoryFile(
   lines.push("## Context", "");
   if (w.context) lines.push(sentence(w.context), "");
   lines.push(flowSummary(s), "");
+  lines.push(...noteConflictLines(w.conflicts));
 
   // ---- Scope: the tasks are the in-scope work; the story's other words beside them.
   const kept = s.change === "modify" && s.kept?.length ? s.kept : [];
@@ -3204,6 +3232,8 @@ export function renderStoryFile(
         return [
           `- ${sentence(c.text)}${also.length ? ` (also accepts task${also.length === 1 ? "" : "s"} ${andList(also.map((y) => label(y)))})` : ""}`,
           ...(details ? [`  ${details.replace(/^ \((.*)\)$/, "$1")}.`] : []),
+          // ADR 0113 addendum: the attached note it comes from, its file, line and words.
+          ...fromLine(c),
         ];
       }),
       "",
@@ -3798,6 +3828,27 @@ export async function rewriteStories(
   });
 }
 
+/**
+ * An answer's note cites as the change folder names them (ADR 0113 addendum): a model's cite of
+ * a note's data block is read as the metarepo path (cite.ts); the story and the critic cite
+ * `inputs/<file>:<line>`.
+ */
+function notesCitedInFolder(a: StoriesAnswer, rel: string): StoriesAnswer {
+  return {
+    ...a,
+    stories: a.stories.map((s) => ({
+      ...s,
+      ...(s.conflicts
+        ? { conflicts: s.conflicts.map((c) => ({ ...c, note: noteCiteOf(c.note, rel) })) }
+        : {}),
+      tasks: s.tasks.map((t) => ({
+        ...t,
+        criteria: t.criteria.map((c) => (c.from ? { ...c, from: noteCiteOf(c.from, rel) } : c)),
+      })),
+    })),
+  };
+}
+
 export interface StoriesStageResult extends StageResult<StoriesAnswer> {
   stories: DeltaStory[];
   requests: RequestTask[];
@@ -3931,6 +3982,16 @@ export async function storiesStage(
   // task has any: the prompt is otherwise as it was.
   const taskSource = taskKnowledgeSource(stories, taskKnown);
   if (taskSource) sources.push(taskSource);
+  // ADR 0113 addendum (2026-10-26): the files a person attached, each cited, within a share of the
+  // budget. With none attached, nothing is added: the prompt is as it was.
+  const attached = await storyNotes(
+    dir,
+    rel,
+    stories,
+    Math.floor(stageBudget(ctx, STORY_AGENT) * STORY_NOTES_SHARE),
+  );
+  sources.push(...attached.sources);
+  const noted = attached.sources.length > 0;
   const TASK_KNOWLEDGE_RULE = taskSource
     ? "\n- A standard's rule or a how-to's step listed for a task under task-knowledge is something that task's code must do: write an acceptance criterion on that task that checks it (a claim a token must carry, a timeout, a header), and name the standard in its story's context. Where pages disagree, follow the page the list says applies; one a person hasn't decided yet is theirs to settle, so write no criterion on it."
     : "";
@@ -3968,7 +4029,7 @@ stories:
     dependencies:
       stories: [<story ids of this change that land first>]
       repos: [<repos whose change lands first>]
-      notes: [<anything else that happens first: a migration run, a vendor's release>]
+      notes: [<anything else that happens first: a migration run, a vendor's release>]${noted ? STORY_NOTES_CONFLICTS_FORMAT : ""}
     tasks:
       - id: <task id, exactly as listed>
         criteria:
@@ -3979,7 +4040,7 @@ stories:
             validation: <error criteria: the rule it relies on>
             rule: <error criteria: required, format, length, range, limit, unique, not-found, forbidden, conflict, unavailable or other>
             status: <error criteria: the status the caller sees>
-            also: [<other task ids of this story it also accepts>]
+            also: [<other task ids of this story it also accepts>]${noted ? STORY_NOTES_CRITERION_FORMAT : ""}
         tests: [<the test file and cases this task adds>]
 requests:      # every request or process from the list below that a step meets; a standard is followed (name it in a story's context), never listed here
   - item: <process or request id>
@@ -4001,7 +4062,7 @@ Rules:
 - Every request field an entry of this repo gains or changes has a validation, and a criterion with outcome: error that checks it, saying the status and message the caller sees.
 - Data: every column a step adds, with its type, nullable, default, migration, classification and retention, as the target flow says them; a write that adds a column names its migration.
 - Non-functional: auth, audit, the timeout and retries of every call, and the cost per request. Dependencies: the stories and repos that land first, or empty lists.
-- Name a request only when the knowledge item's "applies when" fits the step, quoting those words. Never raise it yourself.${TASK_KNOWLEDGE_RULE}
+- Name a request only when the knowledge item's "applies when" fits the step, quoting those words. Never raise it yourself.${TASK_KNOWLEDGE_RULE}${noted ? STORY_NOTES_RULE : ""}
 - Plain, short English.`;
   // H2: the closest past corrections of this stage, when there are any (else nothing changes).
   const past = await pastCorrectionsSource(root, {
@@ -4156,7 +4217,8 @@ Rules:
     parse: (text) => {
       const r = parseYamlAs(text, Answer, (d) => d, "stories");
       // B-tasks: an answer keyed by step is kept keyed by task.
-      return { ...(r.value ? { answer: foldAnswer(r.value, stories) } : {}), issues: r.issues };
+      const value = r.value && noted ? notesCitedInFolder(r.value, rel) : r.value;
+      return { ...(value ? { answer: foldAnswer(value, stories) } : {}), issues: r.issues };
     },
     check: async (a) => [
       ...checkStories(a, stories, deltas, items, {
@@ -4172,7 +4234,15 @@ Rules:
       })),
       // ADR 0006 addendum: the specs and proposal the draft makes pass openspec validate --strict.
       ...(await openspecGate(a)),
+      // ADR 0113 addendum: a criterion from a note quotes its line; a note never overrides code.
+      ...(noted ? noteCiteIssues(a, attached, storyCodeCites(stories, ctx.records)) : []),
     ],
+    ...(noted
+      ? {
+          questions: (a: StoriesAnswer) =>
+            noteQuestions(a, attached, { rel, records: ctx.records, stories, deltas }),
+        }
+      : {}),
     write: async (a) => {
       requests = await merge(a);
       const open = await unjudgedChecks(unwrittenChecks(a, stories), {
@@ -4200,6 +4270,7 @@ Rules:
   res.context = context;
   await recordKnowledge(root, change.id, "stories", context);
   res.notes.unshift(...settled.notes);
+  res.notes.push(...attached.notes);
   if (empty.length)
     res.notes.unshift(
       `No story for ${empty.map((d) => `${TARGET_DIR}/${d.flow}.yaml`).join(", ")}: ${empty.length === 1 ? "it is marked modify but changes" : "they are marked modify but change"} no step, so ${empty.length === 1 ? "it is" : "they are"} context, not a change.`,

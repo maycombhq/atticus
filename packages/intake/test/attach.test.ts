@@ -6,7 +6,13 @@ import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
-import { attachToChange, changeInputSources, readChangeInputs } from "../src/index.js";
+import {
+  attachToChange,
+  changeInputSources,
+  citedParts,
+  heldOutInputs,
+  readChangeInputs,
+} from "../src/index.js";
 
 /** ADR 0113: files attached to one change, read with intake's readers, cited by file and line or page. */
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -188,6 +194,32 @@ describe("attaching files to a change", () => {
     const s = await changeInputSources(dir, REL);
     expect(s).toEqual([]);
     expect(r.notes.join("\n")).toMatch(/kept out of every AI step/);
+  });
+
+  it("reads back each cited part of what was read, and names the files held out (ADR 0113 addendum, 2026-10-26)", async () => {
+    const dir = await changeDir();
+    await attachToChange(
+      dir,
+      [
+        file("refund-rules-v1.md"),
+        file("ledger-handover.md", join(HERE, "fixtures/defences/inputs/inbox")),
+      ],
+      { by: "pat", at: AT },
+    );
+    const [s] = await changeInputSources(dir, REL);
+    const parts = citedParts(s!.text);
+    const lines = readFileSync(join(FIX, "refund-rules-v1.md"), "utf8").split(/\r?\n/);
+    // Every non-blank line of the file is a part, cited by its own line, with its words.
+    expect(parts.length).toBe(lines.filter((l) => l.trim()).length);
+    for (const p of parts) {
+      const n = Number(/:(\d+)$/.exec(p.cite)![1]);
+      expect(p.cite).toBe(`inputs/refund-rules-v1.md:${n}`);
+      expect(p.text).toBe(lines[n - 1]);
+      expect(s!.text.split("\n")[p.readLine - 1]).toBe(`[${p.cite}] ${p.text}`);
+    }
+    expect(await heldOutInputs(dir)).toEqual([
+      { path: "inputs/ledger-handover.md", reason: expect.any(String) },
+    ]);
   });
 
   it("refuses a name that would leave inputs/, and an empty file", async () => {

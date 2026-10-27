@@ -73,7 +73,11 @@ describe("init", () => {
       ChecklistPack.parse(parse(review))
         .rules.filter((r) => r.check.type !== "ai")
         .map((r) => r.id),
-    ).toEqual(["review.call-timeout-stated", "review.store-write-rollback"]);
+    ).toEqual([
+      "review.call-timeout-stated",
+      "review.store-write-rollback",
+      "review.note-cites-on-line",
+    ]);
     expect(await readFile(join(root, "org-pack/checklists/README.md"), "utf8")).toContain(
       "`review.yaml` is the starter review",
     );

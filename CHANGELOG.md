@@ -20,6 +20,14 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - **Fixed on the way:** writing a gateway's facts after its caller's no longer drops the route the call goes through, and a person's asserted call no longer turns `verified` when the service's code is found.
 - **New in the guide:** "Apigee: naming your consumers" and "Declaring a caller you can't scan" in [Teaching Atticus your house frameworks](docs/guide/frameworks.md).
 
+### Stories read the notes you attach to a change, and code wins (ADR 0113 addendum)
+
+Start a change from your own analysis: `atticus change attach <change> notes/*.md`, and the stories stage now reads them too, as the feature and architecture stages already did.
+
+- **What your notes say reaches the stories.** Acceptance criteria, edge cases, field rules, error messages and non-functional needs in an attached note become criteria on the task they belong to. Each says where it came from under it — `From inputs/<file>:<line>, quoting: "<your words>"` — and Atticus checks the words are on that line; the starter review's new code check, `review.note-cites-on-line`, checks it again at the plan gate.
+- **Code wins, out loud.** Where a note says something the code contradicts — an entry's path, a field, the order of the steps — the story follows the code, lists the difference in its Context, and you are asked a question naming the note's line and the code's. A note that names an entry no code serves is asked about even when the drafter missed it.
+- **Honest about the budget.** Notes take at most 15% of the stories prompt. A long note keeps its headings and the parts most related to the stories, and the stage says which lines it left out; no file is dropped. A note that hides instructions for an AI is held out and named. With nothing attached, the prompt is exactly what it was.
+
 ### A fresh metarepo goes from `init` to stories with no dead end (ADR 0006, 0021, 0115 and 0124 addenda)
 
 A trial on a real repo, run as a developer would, stopped eight times on things that were nobody's bug and everybody's lost hour. All eight are fixed, each with a test.

@@ -1,0 +1,43 @@
+# What the stories stage must make of add-fraud-check with the three notes in ../notes/ attached
+# (ADR 0113 addendum, 2026-10-26). Written before the code. Invented: Forge, Northwind Pay.
+#
+# Each criterion the notes give appears on its task with the note's file and line; the note that
+# contradicts the code is not followed, and both are named in a question to a person.
+
+criteria:
+  # fraud-screen-analysis.md: acceptance criteria and edge cases the brief doesn't have.
+  - task: "1.1"
+    from: inputs/fraud-screen-analysis.md:7
+    says: the 422 for a rejected verdict carries the shopper's message
+    status: 422
+  - task: "1.1"
+    from: inputs/fraud-screen-analysis.md:8
+    says: a review verdict is refused like a rejected one
+    status: 422
+  - task: "1.1"
+    from: inputs/fraud-screen-analysis.md:12
+    says: an unknown verdict refuses the order with 502 and reserves nothing
+    status: 502
+  # card-token-rules.md: a field rule.
+  - task: "1.1"
+    from: inputs/card-token-rules.md:6
+    says: a cardToken outside 16 to 64 letters and digits is refused with 400 and the note's message
+    status: 400
+    rule: format
+
+# ordering-today.md contradicts two facts the code verifies. The stories follow the code: no
+# criterion cites either line, and each is a question naming the note's line and the code's.
+contradictions:
+  - note: inputs/ordering-today.md:5
+    code: forge-orders:src/main/java/forge/orders/OrderController.java:9
+    because: the note's entry is POST /api/v2/orders; the code serves POST /orders
+  - note: inputs/ordering-today.md:6
+    code: forge-orders:src/main/java/forge/orders/OrderController.java:13
+    because: the note saves before reserving; the code reserves stock (step 2) before it saves (step 4)
+
+# When the answer leaves the first contradiction out, Atticus raises it itself: the note names an
+# entry no code serves, and the question names the entry the code does serve.
+raisedByAtticus:
+  note: inputs/ordering-today.md:5
+  names: POST /api/v2/orders
+  code: POST /orders (forge-orders:src/main/java/forge/orders/OrderController.java:9)

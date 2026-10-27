@@ -31,6 +31,7 @@ import {
 import {
   mappingsCoverInterfaces,
   noEmbeddedInstructions,
+  noteCitesOnLine,
   specScenariosPresent,
   storyHasAcceptanceCriteria,
   tasksCoverStories,
@@ -69,6 +70,8 @@ export const BUILT_IN_CHECKS: readonly DeterministicCheckDef[] = [
   storeWriteRollback,
   // Who a gateway route lets in (ADR 0124 addendum A-callers).
   routeCallersKnown,
+  // ADR 0113 addendum (2026-10-26): a criterion an attached note gives quotes the note's line.
+  noteCitesOnLine,
 ];
 
 export function checkRegistry(

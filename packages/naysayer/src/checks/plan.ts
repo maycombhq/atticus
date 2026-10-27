@@ -1,3 +1,4 @@
+import { parse } from "yaml";
 import { z } from "zod";
 import { INSTRUCTION_RULES, screenText, type DefenceSignal } from "@maycombhq/ai";
 import { artifactOf, docOf, filesOf, readStoryIndex, readTasks } from "../artifacts.js";
@@ -271,6 +272,110 @@ export const noEmbeddedInstructions: DeterministicCheckDef = {
           key: `inject|${doc.path}|${line}`,
         });
       }
+    }
+    return { hits, subjects: [] };
+  },
+};
+
+/** A story file's line saying which attached note a criterion comes from (ADR 0113 addendum). */
+const FROM_NOTE = /^\s+From (inputs\/[^\s:]+?)(?::(\d+)| page (\d+)), quoting: "(.*)"\s*$/;
+
+/** Words compared as written, whitespace and the shapes of quotes aside. */
+const plain = (s: string) =>
+  s.replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/\s+/g, " ").trim();
+
+interface AttachedNote {
+  path: string;
+  readAs?: string;
+  defences?: { risk?: string; reason?: string };
+}
+
+/**
+ * The critic's true question of a criterion an attached note gives (ADR 0113 addendum,
+ * 2026-10-26): the story says the file and line (or page) it comes from and quotes it; the words
+ * must be on that line of what was read from that file, attached to the change and not held out
+ * of AI steps. As a lens's quote is checked word for word on the line it cites, so is this one.
+ * Files only: inputs/index.yaml and inputs/read/.
+ */
+export const noteCitesOnLine: DeterministicCheckDef = {
+  id: "note-cites-on-line",
+  question: "true",
+  description:
+    "A criterion a story says comes from an attached note quotes words that are on the line (or page) of the note it cites, a file attached to the change and not held out of AI steps.",
+  params: z.strictObject({}),
+  run(ctx) {
+    const hits: Hit[] = [];
+    const cites = filesOf(ctx.files, "stories")
+      .filter((d) => d.path !== "stories.md")
+      .flatMap((doc) =>
+        doc.rawLines.flatMap((text, i) => {
+          const m = FROM_NOTE.exec(text);
+          return m
+            ? [{ doc, line: i + 1, file: m[1]!, at: m[2] ?? m[3]!, page: !!m[3], quote: m[4]! }]
+            : [];
+        }),
+      );
+    if (!cites.length) return { hits, subjects: [] };
+    const inputs = ctx.files.inputs ?? new Map<string, string>();
+    let index: AttachedNote[];
+    try {
+      const raw = parse(inputs.get("inputs/index.yaml") ?? "") as { files?: unknown } | null;
+      index = Array.isArray(raw?.files) ? (raw.files as AttachedNote[]) : [];
+    } catch {
+      // An index that doesn't read attaches nothing: every cite is of a file not attached.
+      index = [];
+    }
+    for (const c of cites) {
+      const cite = c.page ? `${c.file} page ${c.at}` : `${c.file}:${c.at}`;
+      const where = `${c.doc.path} line ${c.line} cites`;
+      const hit = (summary: string, why: string, fix: string) =>
+        hits.push({
+          kind: "issue",
+          artifact: c.doc.path,
+          locator: { line: c.line },
+          summary: sentence(summary),
+          why,
+          fix: { text: fix },
+          evidence: [lineEvidence(c.doc, c.line)],
+          key: `note-cite|${c.doc.path}|${c.line}`,
+        });
+      const f = index.find((x) => x.path === c.file);
+      if (!f) {
+        hit(
+          `${where} ${c.file}, which isn't attached to the change.`,
+          "A criterion that says it comes from a person's note rests on a note attached to the change (atticus change attach), so a reviewer can open it.",
+          `Attach ${c.file} to the change, or cite the note the criterion comes from.`,
+        );
+        continue;
+      }
+      if (f.defences?.risk === "high") {
+        hit(
+          `${where} ${c.file}, which is held out of every AI step: ${(f.defences.reason ?? "it hides instructions").trim()}`,
+          "Ingested content is data, never instructions. A note the defences flagged is kept out of every AI step until a person decides, so nothing a step drafted can rest on it.",
+          `Decide whether ${c.file} is safe; until then, write the criterion from the code and the brief, not from it.`,
+        );
+        continue;
+      }
+      const tag = `[${cite}] `;
+      const said = (f.readAs ? (inputs.get(f.readAs) ?? "") : "")
+        .split(/\r?\n/)
+        .filter((l) => l.startsWith(tag))
+        .map((l) => l.slice(tag.length))
+        .join(" ");
+      if (!said.trim()) {
+        hit(
+          `${where} ${cite}, a ${c.page ? "page" : "line"} ${c.file} doesn't have.`,
+          "A criterion's cite names the line (or page) of the note it comes from, so a reviewer can check it.",
+          `Cite the ${c.page ? "page" : "line"} of ${c.file} the criterion comes from.`,
+        );
+        continue;
+      }
+      if (!plain(said).includes(plain(c.quote)))
+        hit(
+          `${where} ${cite}, which doesn't say "${c.quote}"`,
+          `The criterion says it comes from that ${c.page ? "page" : "line"} of a person's note, but the words it quotes aren't there: it rests on another line, or on nothing the note says.`,
+          `Cite the line the words are on, or write the criterion from what ${cite} says.`,
+        );
     }
     return { hits, subjects: [] };
   },

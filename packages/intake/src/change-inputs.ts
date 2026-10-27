@@ -342,6 +342,40 @@ export async function attachToChange(
   return out;
 }
 
+/** One cited part of what was read from an attached file: its cite and its text. */
+export interface CitedPart {
+  /** `inputs/<name>:<line>`, `inputs/<name> page <n>`, `inputs/<name> section "<heading>"` or `inputs/<name> table`. */
+  cite: string;
+  text: string;
+  /** Its line in the read text (inputs/read/<name>.md), from 1. */
+  readLine: number;
+}
+
+const CITED_PART = /^\[(inputs\/[^\]]+)\] (.*)$/;
+
+/**
+ * The cited parts of what was read from an attached file (`readText`'s `[cite] text` lines), in
+ * order. A line or page cites by its own words; the header and notes around them are not parts.
+ */
+export function citedParts(read: string): CitedPart[] {
+  const out: CitedPart[] = [];
+  read.split(/\r?\n/).forEach((l, i) => {
+    const m = CITED_PART.exec(l);
+    if (m) out.push({ cite: m[1]!, text: m[2]!, readLine: i + 1 });
+  });
+  return out;
+}
+
+/**
+ * The attached files held out of every AI step (ADR 0113): the current version of each the
+ * defences found hiding instructions, with why. A step that reads attached files says these.
+ */
+export async function heldOutInputs(dir: string): Promise<{ path: string; reason: string }[]> {
+  return (await readChangeInputs(dir)).files
+    .filter((f) => !f.supersededBy && f.defences?.risk === "high")
+    .map((f) => ({ path: f.path, reason: f.defences!.reason }));
+}
+
 export interface ChangeInputSource {
   /** Change-folder-relative path: inputs/<name>. */
   id: string;
