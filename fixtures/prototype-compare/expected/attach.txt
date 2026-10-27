@@ -1,0 +1,22 @@
+forge-checkout-prototype (a prototype): A clickable prototype of checkout with loyalty points: a React UI, its Express BFF behind the shop's SSO, and MSW and WireMock mocks of the backend.
+6 calls compared with the estate: 2 exist, 1 changes, 2 new, 1 only a vendor provides.
+Exists: the estate serves it as the prototype needs.
+  GET /orders/{id}, which checkout-ui calls on its BFF: forge-shop-bff serves it as the prototype needs (GET /orders/{orderId}, src/main/java/forge/shop/OrdersController.java:9).
+    forge-checkout-prototype ui/src/api.ts:8 → bff/src/server.ts:17; forge-shop-bff src/main/java/forge/shop/OrdersController.java:9
+  POST /invoices/{invoiceId}/pay, which checkout-bff calls on its mock: forge-billing serves it as the prototype needs (POST /invoices/{id}/pay, src/main/java/forge/billing/InvoicesController.java:13).
+    forge-checkout-prototype bff/src/server.ts:12 → mocks/handlers.ts:5; forge-billing src/main/java/forge/billing/InvoicesController.java:13
+Changes: the estate serves the operation, but not as the prototype needs.
+  POST /checkout, which checkout-ui calls on its BFF: forge-shop-bff serves it (POST /checkout, src/main/java/forge/shop/CheckoutController.java:16), but not as the prototype needs: 2 differences.
+    forge-checkout-prototype ui/src/api.ts:3 → bff/src/server.ts:10; forge-shop-bff src/main/java/forge/shop/CheckoutController.java:16
+    - the response field loyaltyPoints (bff/src/types.ts:9) isn't in forge-shop-bff's response
+    - the prototype's sign-on asks for the scope shop.loyalty (bff/src/sso.ts:5), which forge-shop-bff doesn't demand (it demands shop.checkout)
+New: nothing in the estate serves it.
+  GET /loyalty/summary, which checkout-ui calls on its BFF: nothing in the estate serves it, and no vendor publishes it.
+    forge-checkout-prototype ui/src/api.ts:13 → bff/src/server.ts:23
+  GET /loyalty/{sub}/balance, which checkout-bff calls on its mock: nothing in the estate serves it, and no vendor publishes it.
+    forge-checkout-prototype bff/src/server.ts:24 → mocks/handlers.ts:10
+Vendor: only a vendor provides it, so it needs a route through the external gateway.
+  GET /v1/charges/{orderId}, which checkout-bff calls on its mock: only Northwind Pay provides it (GET /charges/{chargeId}, inputs/partner-specs/northwind-pay-openapi-v2.yaml:46); it needs a route through forge-partner-gateway, which forwards to Northwind Pay already.
+    forge-checkout-prototype bff/src/server.ts:18 → mocks/wiremock/mappings/northwind-get-charge.json:4; Northwind Pay inputs/partner-specs/northwind-pay-openapi-v2.yaml:46
+Attached as inputs/prototype-forge-checkout-prototype.md: the change's feature and architecture stages read it as data, citing it by line.
+Its footprint now has repos forge-partner-gateway, forge-shop-bff; Endpoints shop-bff.post-checkout; vendor operations northwind-pay.get-charge-8fbd38.

@@ -71,8 +71,8 @@ export function factsReference(): string {
  * batch can hold (`FILE_KINDS` in @maycombhq/verify, which derives a file's kinds from its path):
  * front-end and page files, server-side code, routes, stores (ORM, migrations, schemas), deploy
  * and infrastructure files, config, contracts and messaging (gRPC, SOAP, GraphQL, events),
- * flows, and an API gateway's bundles (Apigee proxies, shared flows, TargetServers and KVMs:
- * ADR 0124 addendum A-gateway).
+ * flows, an API gateway's bundles (Apigee proxies, shared flows, TargetServers and KVMs:
+ * ADR 0124 addendum A-gateway), and a prototype's mocks and sign-on configuration (ADR 0133).
  */
 export const RULE_TOPICS = [
   "frontend",
@@ -84,6 +84,7 @@ export const RULE_TOPICS = [
   "protocols",
   "flows",
   "gateway",
+  "mocks",
 ] as const;
 export type RuleTopic = (typeof RULE_TOPICS)[number];
 
@@ -357,6 +358,16 @@ export const FACT_RULE_PARTS: readonly (readonly RulePart[])[] = [
     {
       when: ["flows"],
       text: "A page load is its own flow; a server-rendered page's flow starts at its `rest` entry. Follow in-process dispatch into its handler and keep writing the handler's steps in the same flow (a mediator's `Send`, a domain event, an in-process bus), citing the handler's lines; a publish to a broker ends at the `publish` step, and the subscriber's handler is its own flow. A front end's flow runs from the user's action through its call-out to what the screen does with the answer; a back end's from its entry to its response. Write a flow for every user action that reaches a back end and every entry that does more than return a constant, not a sample of them.",
+    },
+  ],
+  [
+    {
+      when: ["mocks"],
+      text: "A mock is the backend a prototype expects (ADR 0133): each mocked operation is a `rest` entry, `path` with `{name}` for each parameter (`:id`, a regex part), cited where it is declared: an MSW handler (`http.get`, `rest.get`), a WireMock mapping's `url`, `urlPath` or `urlPathTemplate`, a json-server `db.json` key (`GET` and `POST /<key>`, `GET`, `PUT`, `PATCH` and `DELETE /<key>/{id}`) or `routes.json` line, a Postman mock collection's request `url`, or a controller that runs only under a mock profile, with the `@Profile(\"mock\")` line in `cite.with`. The fields it accepts are `request` field facts and those it returns `response` field facts, owned by the entry. The mock tool's declaration is a `framework` fact whose `component` is the mocks' module.",
+    },
+    {
+      when: ["mocks"],
+      text: "A prototype's sign-on (SSO, OIDC) configuration gives each BFF route its `auth`, with `authCite` on the line that wires the sign-on in, and the scopes it asks of the token in `scopes`, one citation each on the line that names it.",
     },
   ],
   [

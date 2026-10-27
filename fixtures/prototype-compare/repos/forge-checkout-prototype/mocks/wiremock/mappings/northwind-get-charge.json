@@ -1,0 +1,14 @@
+{
+  "request": {
+    "method": "GET",
+    "urlPathTemplate": "/v1/charges/{chargeId}"
+  },
+  "response": {
+    "status": 200,
+    "jsonBody": {
+      "id": "ch_123",
+      "status": "captured",
+      "amount": 42.5
+    }
+  }
+}

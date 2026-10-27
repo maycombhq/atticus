@@ -23,7 +23,7 @@ import {
   type RecordIssue,
   applyCurated,
 } from "@maycombhq/core";
-import { estateRepos, mergeEstate } from "./merge-input.js";
+import { estateRepos, isPrototypeRepo, mergeEstate } from "./merge-input.js";
 
 /**
  * A repo's verified facts written into the catalog (ADR 0124, A3b). The facts are projected into
@@ -505,9 +505,13 @@ function joinAbout(all: FactsJoinResult, repo: string): FactsJoinResult {
 
 export function catalogWithFacts(input: FactsCatalogInput): FactsCatalogResult {
   const { repo, op } = input;
+  if (isPrototypeRepo(op, repo)) return prototypeLeftOut(input);
   // B-fixes, problem 1: a component id another repo has too (in the estate's facts, or a
   // Component of another repo the catalog already holds) is made unique by the repo's id.
-  const others = (input.estate ?? []).filter((x) => x.repo !== repo);
+  // A prototype's facts are never part of the estate (ADR 0133).
+  const others = (input.estate ?? []).filter(
+    (x) => x.repo !== repo && !isPrototypeRepo(op, x.repo),
+  );
   const renames = componentRenames(
     [{ repo, facts: input.facts }, ...others],
     op,
@@ -740,6 +744,31 @@ export function catalogWithFacts(input: FactsCatalogInput): FactsCatalogResult {
  * one by one with the others' facts as the estate (ADR 0124, C-join): the catalog, each repo's
  * flows (in the order given) and the estate's whole join. The bench measures the estate with it.
  */
+/**
+ * A prototype's write (ADR 0133): its facts are verified and kept, but nothing is projected from
+ * them, nothing joins them and nothing is asked about them. A record an earlier write made from
+ * the repo alone (before the manifest typed it a prototype) goes; the rest of the catalog stays.
+ */
+export function prototypeLeftOut(input: FactsCatalogInput): FactsCatalogResult {
+  const { repo } = input;
+  const records = input.existing.filter((r) => {
+    if (r.kind === "Flow" || r.kind === "CuratedDecision") return false;
+    const ev = r.evidence as unknown[];
+    return !(ev.length && ev.every((e) => (e as Ev).repo === repo));
+  });
+  return {
+    records: [...records].sort(byKindId),
+    flows: [],
+    unresolved: [],
+    curated: { applied: [], suppressed: [], problems: [] },
+    projectionIssues: [],
+    invalid: [],
+    notes: [
+      `${repo} is a prototype: its facts are kept in facts/${repo}.jsonl and compared with the estate (atticus change attach <change> --prototype ${repo}), never written into the catalog.`,
+    ],
+  };
+}
+
 export function estateFromFacts(input: {
   op: OrgPack;
   repos: readonly { repo: string; facts: readonly Fact[] }[];
@@ -751,27 +780,29 @@ export function estateFromFacts(input: {
   join: FactsJoinResult;
   invalid: FactsCatalogResult["invalid"];
 } {
+  // A prototype is compared with the estate, never part of it (ADR 0133).
+  const repos = input.repos.filter((x) => !isPrototypeRepo(input.op, x.repo));
   let records = [...(input.existing ?? [])];
   const specs: { repo: string; flows: FlowRecord[] }[] = [];
   const invalid: FactsCatalogResult["invalid"] = [];
-  for (const { repo, facts } of input.repos) {
+  for (const { repo, facts } of repos) {
     const out = catalogWithFacts({
       repo,
       facts,
       existing: records,
       op: input.op,
       decisions: input.decisions ?? [],
-      estate: input.repos.filter((x) => x.repo !== repo),
+      estate: repos.filter((x) => x.repo !== repo),
     });
     records = out.records;
     specs.push({ repo, flows: out.flows });
     invalid.push(...out.invalid);
   }
-  const renames = componentRenames(input.repos, input.op);
+  const renames = componentRenames(repos, input.op);
   const join = joinFacts({
     repos: joinReposOf(
       input.op,
-      input.repos.map(({ repo, facts }) => ({
+      repos.map(({ repo, facts }) => ({
         repo,
         facts: factsRecords({ repo, facts, op: input.op, renames }).facts,
       })),

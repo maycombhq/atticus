@@ -1,0 +1,34 @@
+# The repos of the prototype-compare fixture (invented, ADR 0133). Hand-written; matches
+# fixtures/prototype-compare/repos. forge-checkout-prototype is a prototype: read, compared with
+# the estate, never written into the catalog.
+schemaVersion: 2
+platform: forge
+repos:
+  - id: forge-shop-bff
+    url: https://git.example.com/forge/forge-shop-bff.git
+    type: spring-boot
+    owner: team-shop
+    component: shop-bff
+    system: shop
+  - id: forge-billing
+    url: https://git.example.com/forge/forge-billing.git
+    type: spring-boot
+    owner: team-billing
+    component: billing-api
+    system: billing
+    hosts: [billing.forge.internal]
+  - id: forge-partner-gateway
+    url: https://git.example.com/forge/forge-partner-gateway.git
+    type: gateway-external
+    owner: team-platform
+    component: partner-gateway
+    system: platform
+    hosts: [partner.forge.example]
+  - id: forge-checkout-prototype
+    url: https://git.example.com/forge/forge-checkout-prototype.git
+    description:
+      text: "A clickable prototype of checkout with loyalty points: a React UI, its Express BFF behind the shop's SSO, and MSW and WireMock mocks of the backend."
+      trust: verified
+      by: pat
+    type: prototype
+    owner: team-shop

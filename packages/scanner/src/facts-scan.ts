@@ -13,7 +13,7 @@ import {
 import { dirSource, sameCommit, verifyFacts } from "@maycombhq/verify";
 import { changesSince, type GitRunner } from "@maycombhq/workspace";
 import { componentRenames, factsRecords, targetsFromAnswers } from "./facts-catalog.js";
-import { estateRepos } from "./merge-input.js";
+import { productionRepos } from "./merge-input.js";
 
 /**
  * A scan's use of a repo's verified facts (ADR 0124 §3): when the assistant has read a repo and
@@ -149,7 +149,8 @@ export async function estateFacts(
   const repos: { repo: string; facts: Fact[] }[] = [];
   const targets: Record<string, Record<string, string>> = {};
   const notes: string[] = [];
-  for (const r of estateRepos(op)) {
+  // A prototype's facts are never part of the estate join (ADR 0133).
+  for (const r of productionRepos(op)) {
     if (r.id === except) continue;
     const text = await readFile(join(factsDirOf(root), `${r.id}.jsonl`), "utf8").catch(
       () => undefined,

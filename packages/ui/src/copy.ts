@@ -1557,6 +1557,38 @@ export const COPY = {
       how === "text" ? `Read, cited by ${citeBy ?? "line"}` : "Not read: open it to see it",
     inputOlder: (by: string) => `Older version: ${by} replaces it`,
     inputHidden: "Hides instructions: kept out of every AI step until a person decides",
+    // ADR 0133: a prototype compared with the estate.
+    prototypes: "The prototype, compared",
+    noPrototypes: (change: string) =>
+      `No prototype is attached. Compare one with the estate: atticus change attach ${change} --prototype <repo>`,
+    prototypeMarker: "Prototype",
+    prototypeUnconfirmed: "a draft nobody has confirmed",
+    prototypeNoAbout: "Nothing says what it is yet.",
+    prototypeCounts: (c: { exists: number; changes: number; new: number; vendor: number }) =>
+      `${c.exists} exist, ${c.changes} change, ${c.new} new, ${c.vendor} only a vendor provides`,
+    prototypeGroup: {
+      exists: "Exists",
+      changes: "Changes",
+      new: "New",
+      vendor: "Only a vendor",
+    } as Record<"exists" | "changes" | "new" | "vendor", string>,
+    prototypeGroupHelp: {
+      exists: "The estate serves it as the prototype needs.",
+      changes: "The estate serves the operation, but not as the prototype needs.",
+      new: "Nothing in the estate serves it.",
+      vendor: "Only a vendor provides it, so it needs a route through the external gateway.",
+    } as Record<"exists" | "changes" | "new" | "vendor", string>,
+    prototypeNoCalls: "None.",
+    prototypeGroupCount: (group: string, n: number) => `${group} · ${n}`,
+    prototypeLeg: { "ui-bff": "UI to BFF", "bff-mock": "BFF to mock" } as Record<
+      "ui-bff" | "bff-mock",
+      string
+    >,
+    prototypeCites: (at: string, lands: string) => `Prototype: ${at} → ${lands}`,
+    prototypeEstate: (repo: string, at: string) => `Estate: ${repo} ${at}`,
+    prototypeVendor: (name: string, at: string) => `Vendor: ${name} ${at}`,
+    prototypeLeft: (n: number) =>
+      `${n} call${n === 1 ? "" : "s"} reach${n === 1 ? "es" : ""} nothing in the prototype and ${n === 1 ? "isn't" : "aren't"} compared.`,
     noTasksYetThey: "No tasks yet: they come with the plan.",
     tasks: "Tasks",
     markDone: "Mark done",

@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Atticus local API",
-    "version": "2.29.0",
+    "version": "2.30.0",
     "description": "Served by `atticus ui` on 127.0.0.1. The UI only calls this API, and the API only reads and writes files in the metarepo.",
     "license": {
       "name": "Apache-2.0",
@@ -2801,6 +2801,67 @@
           },
           "422": {
             "description": "Atticus refused: the problem carries the command's own words (ADR 0043)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/changes/{changeId}/prototypes": {
+      "get": {
+        "operationId": "listChangePrototypes",
+        "summary": "The prototypes attached to a change, each compared again with the estate: every call its UI makes to its BFF and its BFF makes to a mock, as exists, changes, new or vendor, cited (ADR 0133)",
+        "tags": [
+          "changes"
+        ],
+        "parameters": [
+          {
+            "name": "changeId",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangePrototypeList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -22029,6 +22090,476 @@
           "added",
           "refused",
           "notes"
+        ],
+        "additionalProperties": false
+      },
+      "ChangePrototypeList": {
+        "type": "object",
+        "properties": {
+          "prototypes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "repo": {
+                  "type": "string"
+                },
+                "attached": {
+                  "type": "string"
+                },
+                "about": {
+                  "type": "object",
+                  "properties": {
+                    "text": {
+                      "type": "string"
+                    },
+                    "trust": {
+                      "type": "string",
+                      "enum": [
+                        "suggested",
+                        "verified"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "text",
+                    "trust"
+                  ],
+                  "additionalProperties": false
+                },
+                "comparison": {
+                  "type": "object",
+                  "properties": {
+                    "prototype": {
+                      "type": "string"
+                    },
+                    "counts": {
+                      "type": "object",
+                      "properties": {
+                        "exists": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "changes": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "new": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "vendor": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "exists",
+                        "changes",
+                        "new",
+                        "vendor"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "calls": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "leg": {
+                            "type": "string",
+                            "enum": [
+                              "ui-bff",
+                              "bff-mock"
+                            ]
+                          },
+                          "group": {
+                            "type": "string",
+                            "enum": [
+                              "exists",
+                              "changes",
+                              "new",
+                              "vendor"
+                            ]
+                          },
+                          "method": {
+                            "type": "string"
+                          },
+                          "path": {
+                            "type": "string"
+                          },
+                          "call": {
+                            "type": "object",
+                            "properties": {
+                              "repo": {
+                                "type": "string"
+                              },
+                              "fact": {
+                                "type": "string"
+                              },
+                              "component": {
+                                "type": "string"
+                              },
+                              "at": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "repo",
+                              "fact",
+                              "component",
+                              "at"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "lands": {
+                            "type": "object",
+                            "properties": {
+                              "repo": {
+                                "type": "string"
+                              },
+                              "fact": {
+                                "type": "string"
+                              },
+                              "component": {
+                                "type": "string"
+                              },
+                              "at": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "repo",
+                              "fact",
+                              "component",
+                              "at"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "auth": {
+                            "type": "string"
+                          },
+                          "scopes": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "estate": {
+                            "type": "object",
+                            "properties": {
+                              "entry": {
+                                "type": "object",
+                                "properties": {
+                                  "repo": {
+                                    "type": "string"
+                                  },
+                                  "fact": {
+                                    "type": "string"
+                                  },
+                                  "component": {
+                                    "type": "string"
+                                  },
+                                  "at": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "repo",
+                                  "fact",
+                                  "component",
+                                  "at"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "endpoint": {
+                                "type": "string"
+                              },
+                              "how": {
+                                "type": "string"
+                              },
+                              "gateway": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "auth": {
+                                "type": "string"
+                              },
+                              "scopes": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            "required": [
+                              "entry",
+                              "endpoint",
+                              "how"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "vendor": {
+                            "type": "object",
+                            "properties": {
+                              "system": {
+                                "type": "string"
+                              },
+                              "name": {
+                                "type": "string"
+                              },
+                              "operation": {
+                                "type": "string"
+                              },
+                              "method": {
+                                "type": "string"
+                              },
+                              "path": {
+                                "type": "string"
+                              },
+                              "at": {
+                                "type": "string"
+                              },
+                              "through": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            "required": [
+                              "system",
+                              "name",
+                              "operation",
+                              "method",
+                              "path",
+                              "through"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "candidates": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "repo": {
+                                  "type": "string"
+                                },
+                                "fact": {
+                                  "type": "string"
+                                },
+                                "component": {
+                                  "type": "string"
+                                },
+                                "at": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "repo",
+                                "fact",
+                                "component",
+                                "at"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "differences": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "field-missing",
+                                    "field-type",
+                                    "field-required",
+                                    "scope-missing",
+                                    "auth"
+                                  ]
+                                },
+                                "side": {
+                                  "type": "string",
+                                  "enum": [
+                                    "request",
+                                    "response"
+                                  ]
+                                },
+                                "field": {
+                                  "type": "string"
+                                },
+                                "scope": {
+                                  "type": "string"
+                                },
+                                "prototype": {
+                                  "type": "object",
+                                  "properties": {
+                                    "value": {
+                                      "type": "string"
+                                    },
+                                    "at": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "value",
+                                    "at"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                "estate": {
+                                  "type": "object",
+                                  "properties": {
+                                    "value": {
+                                      "type": "string"
+                                    },
+                                    "at": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "value",
+                                    "at"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                "message": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "prototype",
+                                "message"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "sentence": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "leg",
+                          "group",
+                          "path",
+                          "call",
+                          "lands",
+                          "differences",
+                          "sentence"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "repos": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "uses": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "endpoints": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "vendorOperations": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "vendors": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "left": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "call": {
+                            "type": "object",
+                            "properties": {
+                              "repo": {
+                                "type": "string"
+                              },
+                              "fact": {
+                                "type": "string"
+                              },
+                              "component": {
+                                "type": "string"
+                              },
+                              "at": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "repo",
+                              "fact",
+                              "component",
+                              "at"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "why": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "call",
+                          "why"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "prototype",
+                    "counts",
+                    "calls",
+                    "repos",
+                    "uses",
+                    "endpoints",
+                    "vendorOperations",
+                    "vendors",
+                    "left"
+                  ],
+                  "additionalProperties": false
+                },
+                "problem": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "repo",
+                "attached"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "prototypes"
         ],
         "additionalProperties": false
       },

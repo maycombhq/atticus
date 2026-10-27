@@ -48,7 +48,7 @@ import { scanInputs, type ScanInputsResult } from "@maycombhq/intake";
 import { baseClonePath, checkoutState, type GitRunner } from "@maycombhq/workspace";
 import { resolveFederatedLooseEnds } from "./federate-loose.js";
 import { readCatalog } from "./files.js";
-import { curatedDirOf, estateMergeInput, estateRepos } from "./merge-input.js";
+import { curatedDirOf, estateMergeInput, estateRepos, productionRepos } from "./merge-input.js";
 import { factsForScan } from "./facts-scan.js";
 import { applyFactJoins, joinReposOf, outsideSystems } from "./facts-catalog.js";
 import {
@@ -407,9 +407,15 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
     o.cache === null ? undefined : (o.cache ?? fsScanCache(join(stateDir, ".index", "scan-cache")));
   const scannedAt = o.scannedAt ?? new Date().toISOString();
 
-  const repos = estateRepos(op, o.repos);
+  // A prototype is read and compared with the estate, never scanned into the catalog (ADR 0133).
+  const repos = productionRepos(op, o.repos);
   const results: RepoScan[] = [];
-  const factNotes: string[] = [];
+  const factNotes: string[] = estateRepos(op, o.repos)
+    .filter((r) => !repos.includes(r))
+    .map(
+      (r) =>
+        `${r.id}: a prototype, so not scanned into the catalog; compare it with the estate: atticus change attach <change> --prototype ${r.id}.`,
+    );
   /** The repos read from their facts, for the estate join (ADR 0124, C-join). */
   const factRepos: { repo: string; facts: Fact[]; targets: Record<string, string> }[] = [];
   /** Each repo's structured files, to tell which no record cites. */

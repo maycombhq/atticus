@@ -831,3 +831,20 @@ What it watches is **resident memory**, not the heap, because resident memory is
   - The ceiling is read once, when the command starts: memory another process takes while the read runs isn't noticed.
   - Nothing bounds the catalog write itself, which holds every record of the estate; the trial's write fitted, but a much larger estate would need the same treatment.
   - The bench repos' facts still have no `authCite`, so their 515 auth claims stay in their facts files and out of their catalogs.
+
+## Addendum (A-mocks): a prototype's mocks and sign-on, read as a topic of their own (ADR 0133; no C1 to C6 fact-schema change)
+
+- **A topic, `mocks`.** `RULE_TOPICS` and `FILE_KINDS` gain `mocks`, with one rule of two parts. The rule is kept apart from the gateway's, on its own line.
+  - **The mocked operations.** A mock is the backend a prototype expects. Each mocked operation is a `rest` entry, with `{name}` for each parameter, cited where it is declared: an MSW handler, a WireMock mapping's `url`, `urlPath` or `urlPathTemplate`, a json-server `db.json` key or `routes.json` line, a Postman mock collection's request `url`, or a controller that runs only under a mock profile (with the `@Profile("mock")` line in `cite.with`). What it accepts and returns are `request` and `response` field facts owned by the entry. The mock tool's declaration is a `framework` fact on the mocks' module.
+  - **The sign-on.** A prototype's sign-on (SSO, OIDC) configuration gives each BFF route its `auth`, with `authCite` on the line that wires it in, and its `scopes`, one citation each.
+- **Told by the path, as a gateway's files are.** `fileKinds` gives `mocks` to:
+  - a file in a `mocks/`, `__mocks__/`, `stubs/`, `msw/` or `wiremock/` folder;
+  - a `mappings/*.json`;
+  - `db.json` or `routes.json`;
+  - a `.postman_collection.json`;
+  - a sign-on file (`sso`, `oidc`, `keycloak`, `okta`, `auth0`).
+
+  A structured mock carries only these rules, and a file of no kind the path says never gets them.
+
+- **The facts file is unchanged.** A mock is an `entry`, as a gateway's route is, and no fact kind or field is added. What makes an entry a mock is read from its file, its module's mock framework or its mock profile line (`isMockEntry`, ADR 0133), not written on the fact.
+- **The prompt budget.** Only a batch with a mock or a sign-on file pays for the rule. Tier 1 carries every rule as before, so `FACT_RULES`' hash is re-pinned, and the `/atticus-map` golden and the generated plugin and Copilot agent files are regenerated.
