@@ -99,3 +99,36 @@ Recall is unchanged: the one miss (task 1.4's TLS standard) is the search engine
 
 - A team page that disagrees with a standard is asked about with the standard suggested, or the team's approved exception within its scope; a deprecated page never leads; a GCP page reaches a task on GCP or one that creates a new component, never a task that doesn't.
 - Not done: the snapshot manifests now dominate what a sync adds (each lists every page; about 1 MB a sync at this scale), a later change could list only what moved; the change's stage-level knowledge list isn't scoped; the matching is lexical (low precision, measured); an export's restrictions are read only where the export carries them (a Confluence HTML export usually doesn't: use the `.csv` beside it or `readRestricted`); `atticus task context` per task (about 1.8 s each at 4,800 pages) re-lists every source file to open the index; a snapshot folder an `in` points into must be kept.
+
+## Addendum (2026-10-27): a task's knowledge is kept by meaning as well as by words
+
+The product owner asked whether a task's knowledge is matched "by shared words and by meaning". The search that finds candidates was (BM25, glossary synonyms and aliases, and the local model's vectors, fused by reciprocal rank, ADR 0116), but the test that keeps a candidate was words only: one word in common with what the task changes kept a page about something else, and a page found by meaning that shared no word was dropped.
+
+**Decision.** The keep test reads the vectors the index already has (`CatalogIndex.closeness`, `index/src/vectors.ts` `cosines`): the cosine of the candidate's node (and of the item it is read as) to the task's step text (its new words, fields, target and store: the same text the words test uses, never the flow's). Only that text is embedded, once, and kept with the queries; no page is embedded again. A candidate is kept when:
+
+- the task's step names it, it names the component the task calls or the table it stores in, or the change confirmed it and it shares a word (as before);
+- it shares two or more of the words the task changes (`KEEP_WORDS`), or one of the task's own names (`namesOf`: an identifier in camel case or with a digit, such as `createdAt`, or an acronym such as `POST`);
+- it shares one common word and its cosine is at least `KEEP_ONE_WORD_CLOSE` (0.65); or
+- it shares no word and its cosine is at least `KEEP_BY_MEANING` (0.65);
+- or its one word wasn't enough but its pages disagree with an item the task keeps (the task sees both sides).
+
+Each kept entry says why: the words it shares, or "close in meaning to the task's step ("…", similarity 0.71)"; `matched.meaning` carries the cosine. Relevance multiplies by 1 + the cosine, so the list is ranked by words and meaning together; authority still decides only among pages on one topic, a retired page never leads, a person's verification ranks above authority. Same files, same list: the cosines are exact integer dot products of stored vectors.
+
+Without the model (`--omit=optional`, `ATTICUS_EMBEDDINGS=off`, or not every node embedded), the keep test is exactly the words test it was, and the task context says "Knowledge matched by words only: the meaning model isn't installed" (or the reason). `keep: "words"` gives that test with the model on, for the benches.
+
+**Calibration** (all-MiniLM-L6-v2, `fixtures/retrieval/vectors/benches` recorded by `pnpm --filter @maycombhq/evals eval:bench-vectors`). On the many-wiki bench (planted and filler) and the task-knowledge bench, sweeping the one-word threshold before names counted: on the planted pages 0.30 to 0.40 lost no recall and 0.42 lost task 2.1's resource-naming standard (its only link, "POST", cosine 0.42); on the task-knowledge bench 0.40 already lost the small case's UTC standard (its only link, "createdAt", cosine 0.27: the model ranks the order events pattern above it). So a name the task writes counts on its own. With names counted, no needed candidate depended on one common word: the closest one not needed scored 0.62, so the threshold sits just above it. No needed candidate shares no word; the closest one not needed scored 0.56.
+
+**Measured** (`docs/evidence/many-wikis.md`, `packages/evals/test/many-wikis-bench.test.ts` and `task-knowledge-bench.test.ts` replay the vectors):
+
+| Run                | Keep test         | Recall | Precision | One task, `atticus task context`'s call |
+| ------------------ | ----------------- | ------ | --------- | --------------------------------------- |
+| Planted pages (32) | words, no model   | 0.96   | 0.50      | 37 ms                                   |
+| Planted pages (32) | words, model on   | 0.96   | 0.46      | 47 ms                                   |
+| Planted pages (32) | words and meaning | 0.96   | 0.58      | 43 ms                                   |
+| Filler (4,832)     | words, no model   | 0.96   | 0.34      | 1.31 s                                  |
+| Filler (4,832)     | words, model on   | 0.96   | 0.31      | 1.47 s                                  |
+| Filler (4,832)     | words and meaning | 0.96   | 0.51      | 1.42 s                                  |
+
+The task-knowledge bench keeps recall and precision 1.00 on its four cases with the model. Its new acronym case (`fixtures/stages/sso-acronym`: the step says "single sign-on", the how-to only "SSO", no alias) is still a miss: the pinned model rates "SSO" against "single sign-on" at 0.33 (below "login", 0.55) and the how-to against the step at about 0.2, under unrelated pages, so no threshold that keeps precision keeps it; the item sharing only "shopper" is no longer listed. The context bench's recall doesn't change (the search isn't touched). Embedding every node of the filler estate once (`atticus index embed`) took about 210 s on the 2-CPU build machine.
+
+**Not done.** Most of the gain is the words rule the cosine gates (one common word is no longer enough); at these thresholds meaning has not kept a page by itself on the benches. A glossary alias (SSO ↔ single sign-on) helps the search but the keep test doesn't read it yet; that, or a model that knows the acronym, is what the acronym case needs. A page sharing two common words ("refund", "report") still attaches at 4,800 pages. No contract changes: `matched.meaning` and the `matching` note are additive to the planner's task context.

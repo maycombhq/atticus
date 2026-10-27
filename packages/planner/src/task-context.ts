@@ -15,6 +15,7 @@ import {
   refreshTaskConflicts,
   selectTaskKnowledge,
   type TaskKnowledge,
+  type TaskKnowledgeOptions,
 } from "./task-knowledge.js";
 import { isEmptyDelta, readDeltas, TARGET_DIR } from "./stages/architecture.js";
 import { loadEstate, type Estate } from "./stages/estate.js";
@@ -233,6 +234,10 @@ export async function taskContext(
      * command (B-task-knowledge). Left out (the MCP tool, task runs), nothing is written.
      */
     ask?: { command: string; rerun: string; at: string };
+    /** The embedding model the index opens with (ADR 0116): default "auto"; the benches pass one. */
+    embeddings?: TaskKnowledgeOptions["embeddings"];
+    /** "words": keep a task's knowledge by words alone (the bench's before, ADR 0132 addendum). */
+    keep?: TaskKnowledgeOptions["keep"];
   } = {},
 ): Promise<TaskContext> {
   const change: ChangeLifecycle = await changeStore(root)
@@ -425,9 +430,13 @@ export async function taskContext(
         knowledge,
         records: ctx.records,
         ...(o.knowledgeTokens !== undefined ? { budget: o.knowledgeTokens } : {}),
+        ...(o.embeddings ? { embeddings: o.embeddings } : {}),
+        ...(o.keep ? { keep: o.keep } : {}),
       },
     );
     if (got.note) notes.push(`The context engine wasn't used: ${got.note}.`);
+    // ADR 0132 addendum: without the meaning model, the knowledge is matched by words alone.
+    if (got.matching) notes.push(`Knowledge ${got.matching}.`);
     picked = got.byTask.get(dt.id) ?? [];
     if (o.ask && picked.length) {
       const asked = await askKnowledgeConflicts(root, change.id, o.ask, {

@@ -1,0 +1,33 @@
+summary: Placing an order takes only a shopper signed in through single sign-on.
+features:
+  - id: cap-ordering
+    why: Placing an order is the feature whose entry gains the sign-in check.
+flows:
+  - id: forge-orders.place-order
+    how: changed
+    why: Its entry step checks the shopper signed in through single sign-on first.
+targetFlows:
+  - flow: forge-orders.place-order
+    repo: forge-orders
+    change: modify
+    why: Only a shopper signed in through single sign-on places an order.
+    steps:
+      - op: change
+        step: 1
+        kind: entry
+        what: OrderController.place takes the order only from a shopper signed in through single sign-on
+        fields: {}
+stories:
+  - flow: forge-orders.place-order
+    title: Only a signed-in shopper places an order
+    asA: shopper
+    iWant: to place an order signed in through single sign-on
+    soThat: no one else can place an order for me
+    tasks:
+      - step: 1
+        criteria:
+          - text: "Given a shopper signed in through single sign-on, when they place an order, then the order is taken"
+          - text: "Given a shopper who hasn't signed in, when they place an order, then the call is refused with 401"
+            outcome: error
+            status: "401"
+            rule: forbidden

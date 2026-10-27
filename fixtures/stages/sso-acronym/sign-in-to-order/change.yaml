@@ -1,0 +1,16 @@
+schemaVersion: 1
+id: sign-in-to-order
+title: Sign in through single sign-on to place an order
+type: small-change
+template: small-change
+state: plan
+createdAt: 2026-10-24T09:00:00Z
+createdBy: pat
+systems:
+  - forge
+history:
+  - from: draft
+    to: plan
+    at: 2026-10-24T09:00:00Z
+    by: pat
+    reason: Created from the small-change template

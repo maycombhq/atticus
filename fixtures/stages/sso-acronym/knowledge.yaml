@@ -1,0 +1,51 @@
+# Knowledge items for the acronym case of the task-knowledge bench (ADR 0132 addendum), invented
+# and written by hand: the task says "single sign-on", the how-to it needs says only "SSO" and
+# shares no word with the task's step, and no glossary alias links the two. The other item shares
+# one common word with the step ("shopper") and is about something else: a task that changes how
+# a shopper signs in doesn't need how long their order history is kept.
+- kind: ProcessDefinition
+  schemaVersion: 2
+  id: sso-login-gate
+  status: current
+  confidence: inferred
+  evidence:
+    - { source: document, path: knowledge/snapshots/forge-wiki/2026-10-20/sso-login-gate.md, line: 5, side: document }
+  title: Put an endpoint behind SSO login
+  processKind: process
+  appliesWhen: An endpoint of a Forge service is open only to users logged in with SSO.
+  inputs: []
+  steps:
+    - Send a user who isn't logged in to the SSO login page of Forge Identity.
+    - Bring the user back from the SSO login on the callback URI and start their session.
+    - Answer 401 to a call whose SSO session has ended.
+  tags: []
+  quote:
+    source: forge-wiki
+    page: sso-login-gate.md
+    section: Steps
+    text: "Send a user who isn't logged in to the SSO login page of Forge Identity."
+    snapshot: 2026-10-20
+    line: 5
+  urls: []
+- kind: Pattern
+  schemaVersion: 2
+  id: order-history-years
+  status: current
+  confidence: inferred
+  evidence:
+    - { source: document, path: knowledge/snapshots/forge-wiki/2026-10-20/order-history.md, line: 5, side: document }
+  code: order-history-years
+  name: A shopper's order history is kept for seven years
+  patternKind: standard
+  patternStatus: to-review
+  appliesWhen: A Forge service keeps the orders a shopper placed.
+  rules:
+    - "A Forge service keeps each shopper's order history for seven years, then deletes it."
+  tags: []
+  quote:
+    source: forge-wiki
+    page: order-history.md
+    section: How long
+    text: "A Forge service keeps each shopper's order history for seven years, then deletes it."
+    snapshot: 2026-10-20
+    line: 5

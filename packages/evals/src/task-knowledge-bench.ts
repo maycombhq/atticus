@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { parse } from "yaml";
 import { parseRecord, recordPath, serializeRecord } from "@maycombhq/core";
-import { MockRuntime, type AiRequest } from "@maycombhq/ai";
+import { MockRuntime, type AiRequest, type Embedder } from "@maycombhq/ai";
 import { selectFor, smallStage, taskContext } from "@maycombhq/planner";
 
 /**
@@ -65,6 +65,15 @@ export const TASK_KNOWLEDGE_CASES: TaskKnowledgeCase[] = [
     task: "1.1",
     needed: ["api-times-utc"],
     distractors: ALL.filter((d) => d !== "small"),
+  },
+  // ADR 0132 addendum: the task says "single sign-on", the how-to it needs only "SSO", with no
+  // word in common and no glossary alias; another item shares one common word ("shopper").
+  {
+    name: "sso acronym: sign-in-to-order",
+    dir: "sso-acronym",
+    change: "sign-in-to-order",
+    task: "1.1",
+    needed: ["sso-login-gate"],
   },
 ];
 
@@ -143,11 +152,22 @@ function row(c: TaskKnowledgeCase, mode: TaskKnowledgeMode, listed: string[]): T
   };
 }
 
-export async function runTaskKnowledgeBench(fixtures: string): Promise<TaskKnowledgeRow[]> {
+export async function runTaskKnowledgeBench(
+  fixtures: string,
+  o: {
+    /** The embedding model (ADR 0116): default "auto"; the test passes the recorded vectors. */
+    embeddings?: Embedder | "off";
+    /** "words": keep by shared words alone, as before the ADR 0132 addendum. */
+    keep?: "words";
+  } = {},
+): Promise<TaskKnowledgeRow[]> {
   const out: TaskKnowledgeRow[] = [];
   for (const c of TASK_KNOWLEDGE_CASES) {
     const root = await caseRoot(fixtures, c);
-    const ctx = await taskContext(root, c.change, c.task);
+    const ctx = await taskContext(root, c.change, c.task, {
+      ...(o.embeddings ? { embeddings: o.embeddings } : {}),
+      ...(o.keep ? { keep: o.keep } : {}),
+    });
     // Before: the task context's selection as it was (ADR 0113): the same words, patterns and
     // decisions only, 1,500 tokens, everything picked kept.
     const before = await selectFor(

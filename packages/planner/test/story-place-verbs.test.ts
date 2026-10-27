@@ -409,7 +409,8 @@ describe("C. the task context: the task's own places, and the code it calls apar
       "# Tasks\n\n## forge-orders\n\n- [ ] 1.1 The controller\n- [ ] 1.3 The service\n",
     );
     const c = await taskContext(root, "order-story", "1.3");
-    expect(c.notes.filter((n) => !n.includes("worktree"))).toEqual([
+    // ADR 0132 addendum: the test suites run without the meaning model, and the context says so.
+    expect(c.notes.filter((n) => !/worktree|matched by words only/.test(n))).toEqual([
       `Step 6 (The spend is reserved before the call) is already done by existing code at ${CLIENT}:30 (step 3 of forge-orders.draft-reply): no change.`,
       `Step 8 (The spend is settled with what the call cost) is already done by existing code at ${CLIENT}:45 (step 5 of forge-orders.draft-reply): no change.`,
     ]);

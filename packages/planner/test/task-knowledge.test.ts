@@ -5,7 +5,14 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
 import { describe, expect, it } from "vitest";
-import { MockRuntime, type AiRequest } from "@maycombhq/ai";
+import {
+  MockRuntime,
+  quantize,
+  type AiRequest,
+  type Embedder,
+  type EmbedKind,
+  type QuantVector,
+} from "@maycombhq/ai";
 import {
   answerQuestion,
   listQuestions,
@@ -17,6 +24,7 @@ import { CONFLICT_STEP } from "@maycombhq/knowledge";
 import {
   askKnowledgeConflicts,
   groupNearDuplicates,
+  KEEP_BY_MEANING,
   nearDuplicates,
   rankPages,
   readKnowledgeApplies,
@@ -25,6 +33,7 @@ import {
   smallStage,
   storyKnowledgeLines,
   taskContext,
+  wordsOnlyNote,
   type KnowledgePlace,
   type TaskKnowledge,
 } from "../src/index.js";
@@ -406,5 +415,92 @@ describe("several pages on one topic", () => {
     });
     // A different kind is never a duplicate, whatever its words.
     expect(nearDuplicates(entry("a"), entry("b", { knowledgeKind: "standard" }))).toBe(false);
+  });
+});
+
+// ADR 0132 addendum: keeping a task's knowledge by words and meaning. The acronym fixture
+// (fixtures/stages/sso-acronym): the step says "single sign-on", the how-to it needs only "SSO"
+// (no word in common, no glossary alias); another item shares one common word ("shopper").
+const ACRONYM = join(FIX, "stages/sso-acronym");
+const ACRONYM_CHANGE = "sign-in-to-order";
+
+/**
+ * A stand-in for the model that knows one thing: "SSO" and "single sign-on" mean the same. Each
+ * text is a vector over three concepts (sign-on, history, anything else), so the test fixes what
+ * is close in meaning without a model file.
+ */
+class ConceptEmbedder implements Embedder {
+  readonly id = "concepts@1";
+  readonly dim = 3;
+  readonly maxTokens = 512;
+  readonly backend = "mock";
+  async embed(texts: string[], _kind: EmbedKind): Promise<QuantVector[]> {
+    return texts.map((t) =>
+      quantize([/\bSSO\b|single sign-on/i.test(t) ? 1 : 0, /history/i.test(t) ? 1 : 0, 0.05]),
+    );
+  }
+}
+
+async function plannedAcronym(): Promise<string> {
+  const root = await mkdtemp(join(tmpdir(), "atticus-taskkn-acronym-"));
+  await mkdir(join(root, "org-pack"), { recursive: true });
+  await writeRecords(root, "catalog/generated", join(FIX, "specs/catalog.yaml"));
+  await writeRecords(root, "catalog/generated", join(FIX, "stages/catalog-extra.yaml"));
+  await writeRecords(root, "knowledge/items", join(ACRONYM, "knowledge.yaml"));
+  await cp(join(FIX, "stages/specs"), join(root, "specs"), { recursive: true });
+  await cp(join(ACRONYM, ACRONYM_CHANGE), join(root, "openspec/changes", ACRONYM_CHANGE), {
+    recursive: true,
+  });
+  const answer = readFileSync(join(ACRONYM, "answer.yaml"), "utf8");
+  const runtime = new MockRuntime(
+    (req: AiRequest) => (req.agent.id.endsWith("-critic") ? "findings: []" : answer),
+    { now: () => NOW },
+  );
+  expect((await smallStage(root, ACRONYM_CHANGE, { runtime, now: NOW })).state).toBe("done");
+  return root;
+}
+
+describe("keeping a task's knowledge by words and meaning (ADR 0132 addendum)", () => {
+  it("without the meaning model, keeps by words as before and says so in the task context", async () => {
+    const root = await plannedAcronym();
+    const c = await taskContext(root, ACRONYM_CHANGE, "1.1");
+    const ids = c.knowledge.map((k) => k.id);
+    // One common word kept it before, and still does without a model: nothing changes.
+    expect(ids).toContain("order-history-years");
+    expect(ids).not.toContain("sso-login-gate");
+    expect(c.knowledge.every((k) => k.matched.meaning === undefined)).toBe(true);
+    expect(c.notes).toContain(
+      "Knowledge matched by words only: ATTICUS_EMBEDDINGS is off for this process.",
+    );
+    expect(renderTaskContext(c)).toContain(
+      "- Knowledge matched by words only: ATTICUS_EMBEDDINGS is off for this process.",
+    );
+    expect(
+      wordsOnlyNote(
+        "similar in meaning is off: the bundled model (@maycombhq/embed-model) isn't installed",
+      ),
+    ).toBe("matched by words only: the meaning model isn't installed");
+  });
+
+  it("keeps a page close in meaning that shares no word, says why with the similarity, and drops one whose only link is a common word", async () => {
+    const root = await plannedAcronym();
+    const embeddings = new ConceptEmbedder();
+    const c = await taskContext(root, ACRONYM_CHANGE, "1.1", { embeddings });
+    const ids = c.knowledge.map((k) => k.id);
+    expect(ids).toContain("sso-login-gate");
+    expect(ids).not.toContain("order-history-years");
+    const gate = c.knowledge.find((k) => k.id === "sso-login-gate")!;
+    expect(gate.why).toMatch(
+      /^It is close in meaning to the task's step \("OrderController\.place takes the order only from a shopper signed in through single sign-on", similarity [01]\.\d\d\)\.$/,
+    );
+    expect(gate.matched.meaning).toBeGreaterThanOrEqual(KEEP_BY_MEANING);
+    expect(c.notes.some((n) => /matched by words only/.test(n))).toBe(false);
+    // The same files give the same list.
+    const again = await taskContext(root, ACRONYM_CHANGE, "1.1", { embeddings });
+    expect(again.knowledge).toEqual(c.knowledge);
+    // Kept by words alone (the bench's before), it is the list without a model.
+    const words = await taskContext(root, ACRONYM_CHANGE, "1.1", { embeddings, keep: "words" });
+    expect(words.knowledge.map((k) => k.id)).toContain("order-history-years");
+    expect(words.knowledge.map((k) => k.id)).not.toContain("sso-login-gate");
   });
 });

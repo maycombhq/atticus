@@ -202,6 +202,31 @@ export function nearest(
     .slice(0, o.limit);
 }
 
+/**
+ * How close each of these nodes is to the queries (ADR 0132 addendum): each node's best cosine
+ * over them, rounded as `nearest` rounds, read from the stored vectors. A key with no vector is
+ * left out. Exact integer dot products: the same stored vectors give the same numbers.
+ */
+export function cosines(
+  m: Matrix,
+  rows: Map<string, number>,
+  queries: QuantVector[],
+  keys: string[],
+): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const key of keys) {
+    const i = rows.get(key);
+    if (i === undefined || out.has(key)) continue;
+    let best = -Infinity;
+    for (const qv of queries) {
+      const c = dotInt8(qv.q, m.q, i * m.dim) * qv.scale * m.scales[i]!;
+      if (c > best) best = c;
+    }
+    if (best > -Infinity) out.set(key, Math.round(best * 1e4) / 1e4);
+  }
+  return out;
+}
+
 /** The pieces of an input embedded as queries: its title, then each paragraph, at most 20. */
 export function queryChunks(input: { text: string; title?: string }): string[] {
   const out: string[] = [];
