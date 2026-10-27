@@ -2,7 +2,7 @@
 
 The IntelliJ plugin does the same work as the VS Code extension: the same commands, the same tool window, the same checks. Two things only VS Code does, and they are named at the bottom.
 
-Install it from Settings → Plugins (search for Atticus), or from the zip the release gives you. It needs the `atticus` command line on this machine (`npm install -g @maycombhq/atticus`, from your npm mirror, or the offline bundle); Settings → Tools → Atticus sets the path when it is somewhere else. The plugin calls no model itself and makes no network call of its own: it runs `atticus` here and shows the app `atticus ui` serves on 127.0.0.1.
+Install it from the zip the release gives you: Settings → Plugins → ⚙ → Install Plugin from Disk…. (It is not on the JetBrains Marketplace yet, so searching Settings → Plugins doesn't find it.) It needs the `atticus` command line on this machine (`npm install -g @maycombhq/atticus`, from your npm mirror, or the offline bundle); Settings → Tools → Atticus sets the path when it is somewhere else. The plugin calls no model itself and makes no network call of its own: it runs `atticus` here and shows the app `atticus ui` serves on 127.0.0.1.
 
 ## The tool window
 

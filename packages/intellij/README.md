@@ -102,7 +102,7 @@ cd packages/intellij
 ./gradlew test buildPlugin        # gradlew.bat on Windows cmd
 ```
 
-The plugin is written to `build/distributions/atticus-intellij-<version>.zip`. Its version is set in `build.gradle.kts` (0.1.0); it doesn't follow the command line's version.
+The plugin is written to `build/distributions/atticus-intellij-<version>.zip`. Its version is set in `build.gradle.kts` (0.2.0); it doesn't follow the command line's version.
 
 - **Another IDE folder:** pass `-Patticus.ideaPath=<folder>`, or set `atticus.ideaPath` in `~/.gradle/gradle.properties`. When that folder doesn't exist, the build downloads IntelliJ IDEA 2025.3.6 instead (about 1.5 GB, 4 GB unpacked) and needs a JDK 21. It is the one IntelliJ IDEA distribution, free without a licence: IntelliJ IDEA Community isn't published on its own from 2025.3.
 - **Checking the plugin against the IDE:** `./gradlew verifyPlugin`. With a local IDE it checks that one (add `"-Porg.gradle.java.installations.paths=<IDE folder>/jbr"`). Without one, pick the IntelliJ IDEA versions with `-Patticus.verifyIdes=2025.3.6,2026.2.3`; left out, it checks the Marketplace's recommended set, four IDEs of about 4 GB each unpacked. The verifier runs `-offline`: the plugin needs nothing from the Marketplace, so none of its plugins are downloaded.

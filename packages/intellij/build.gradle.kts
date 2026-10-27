@@ -9,7 +9,7 @@ plugins {
 }
 
 group = "com.maycombhq"
-version = "0.1.0"
+version = "0.2.0"
 
 // The IntelliJ IDEA on this machine, so nothing big is downloaded (ADR 0099). Its JetBrains
 // Runtime (Java 25 for 2026.x) compiles the plugin and runs the tests.
