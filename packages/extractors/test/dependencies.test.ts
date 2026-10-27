@@ -52,6 +52,43 @@ describe("house dependencies: which house artifacts a repo builds on (ADR 0054)"
     ]);
   });
 
+  it("fills Maven's own ${project.parent.version} and ${project.version} from the pom", async () => {
+    // A house platform's parent pom carries the version every starter takes, as a module of
+    // the platform writes it: ${project.parent.version}; ${project.version} falls back to it.
+    const repo = memoryRepo("ledger", SHA, {
+      "pom.xml": `<project>
+  <parent>
+    <groupId>tide.platform</groupId>
+    <artifactId>tide-parent</artifactId>
+    <version>4.7.2</version>
+  </parent>
+  <artifactId>ledger-api</artifactId>
+  <dependencies>
+    <dependency>
+      <groupId>tide.platform</groupId>
+      <artifactId>tide-core</artifactId>
+      <version>\${project.parent.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>tide.platform</groupId>
+      <artifactId>tide-gateway-integration</artifactId>
+      <version>\${parent.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>tide.platform</groupId>
+      <artifactId>tide-ledger-client</artifactId>
+      <version>\${project.version}</version>
+    </dependency>
+  </dependencies>
+</project>`,
+    });
+    expect((await houseDependencies(repo, ["tide.platform"])).map((d) => d.version)).toEqual([
+      "4.7.2",
+      "4.7.2",
+      "4.7.2",
+    ]);
+  });
+
   it("reads poms and Kotlin DSL builds from their trees: comments aren't dependencies (ADR 0060)", async () => {
     const repo = memoryRepo("cards", SHA, {
       "pom.xml": `<project>

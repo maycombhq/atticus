@@ -4,6 +4,10 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### Fixed: a house starter versioned `${project.parent.version}` is found
+
+- `atticus frameworks discover` read a starter declared at `${project.parent.version}` (or `${parent.version}`, `${project.version}`) as that literal text, so it never found the JAR in the Maven cache and said it wasn't on the machine. Those versions now come from the pom's `<parent>` and `<version>`.
+
 ### Fixed: an Apigee proxy or shared flow is never offered as a framework to learn
 
 - Reading a gateway repo, an assistant could write a framework fact for the proxy (`<APIProxy>`) or each shared flow (`<SharedFlowBundle>`), and `atticus verify` then offered `atticus frameworks learn` for each, whatever the repo's type. They are the gateway's routes, which map already reads: the verifier offers nothing for them, and `/atticus-map`'s framework rule says they are not framework facts.

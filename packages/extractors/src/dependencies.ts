@@ -65,6 +65,19 @@ export async function houseDependencies(
       const props = new Map<string, string>();
       for (const block of select(pom, "project/properties"))
         for (const p of block.children) props.set(p.name, p.text.trim());
+      // Maven's own properties a house module writes its starters' versions with: the parent's
+      // version (${project.parent.version}, ${parent.version}) and the project's, which is the
+      // parent's when the module doesn't set one.
+      const parentVersion = selectText(pom, "project/parent/version")?.text.trim();
+      const ownVersion = selectText(pom, "project/version")?.text.trim() || parentVersion;
+      const builtIn: Record<string, string | undefined> = {
+        "project.parent.version": parentVersion,
+        "parent.version": parentVersion,
+        "project.version": ownVersion,
+        version: ownVersion,
+        "pom.version": ownVersion,
+      };
+      for (const [k, v] of Object.entries(builtIn)) if (v && !props.has(k)) props.set(k, v);
       const fill = (v: string) =>
         v.replace(/\$\{([\w.-]+)\}/g, (s, k: string) => props.get(k) ?? s);
       // Every <dependency>: the project's, its modules' management, and plugins'.
