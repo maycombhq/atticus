@@ -94,7 +94,7 @@ export default defineConfig({
     docFooter: { prev: "Previous", next: "Next" },
     footer: {
       message: `Atticus is open source under the <a href="${GITHUB}/blob/main/LICENSE">Apache 2.0 licence</a>.`,
-      copyright: `A <a href="https://maycombhq.com/">MaycombHQ</a> project, made by <a href="https://www.linkedin.com/in/devtomgeorge" rel="author">Tom George</a>.`,
+      copyright: `A <a href="https://maycombhq.com/">MaycombHQ</a> project, built by <a href="https://www.linkedin.com/in/devtomgeorge" rel="author">Tom George</a>.`,
     },
   },
 });
