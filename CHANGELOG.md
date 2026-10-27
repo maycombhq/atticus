@@ -2,7 +2,7 @@
 
 All notable changes to Atticus. Versions follow [Semantic Versioning](https://semver.org); contracts C1 to C6 change only with an ADR, a schema version and a migration (`atticus upgrade`).
 
-## Unreleased (2.0.0-beta.2)
+## 2.0.0-beta.2 (2026-10-27)
 
 ### Fixed: a scan no longer calls every repo a prototype
 
