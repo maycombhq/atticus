@@ -1,0 +1,6 @@
+# Copied from docs/guide and README.md on every start and build (.vitepress/sync.mjs)
+/guide/
+/overview.md
+# VitePress's build and cache
+/.vitepress/dist/
+/.vitepress/cache/

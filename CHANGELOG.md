@@ -4,6 +4,13 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased (2.0.0-beta.2)
 
+### The Atticus site
+
+- **The guides as a site, at maycombhq.com/atticus.** `website/` builds them with VitePress, with a landing page, a short "What Atticus is" page and local search. `pnpm docs:site` serves it while you edit; `pnpm docs:site:build` builds it and runs the deny-list over every built file. `.github/workflows/pages.yml` deploys it to GitHub Pages on each push to main.
+- **One source.** The pages are `docs/guide/*.md`, the command reference and the README, copied in on every build with their links rewritten: a link to another guide stays on the site, and a link to an ADR or the spec goes to GitHub. A change to a guide changes the site with no second edit.
+- **`node scripts/check-denylist.mjs <folder>`** checks every file under a folder, tracked or not, such as a build's output.
+- **Guide fixes:** the troubleshooting table no longer repeats its first 35 rows, and the setup checklist's step 7 is back in the list.
+
 ### Start a change from a working prototype (ADR 0133)
 
 - **A prototype is a repo of type `prototype`.** Atticus reads it and verifies each claim on its line, as it does for any repo. It is kept out of the production catalog: it gives no Endpoints or Interfaces, none of its mocked calls becomes a gap or a question, and no other repo's call joins it. `atticus verify <repo> --write` and a scan say so.
