@@ -1,9 +1,16 @@
 // What a deployed Atticus contains: every package under node_modules with its version, licence
 // and licence text. Used by the licence check, the SBOM and the offline bundle's LICENSES file.
 import { execFileSync } from "node:child_process";
-import { cpSync, existsSync, readdirSync, readFileSync, mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { basename, dirname, join } from "node:path";
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  mkdtempSync,
+  rmSync,
+} from "node:fs";
+import { basename, dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const REPO = fileURLToPath(new URL("../..", import.meta.url));
@@ -71,8 +78,15 @@ function runPnpm(args, opts) {
   return execFileSync("pnpm", quoted, { ...opts, shell: true });
 }
 
+/**
+ * Where deploy() makes its folders: inside the repo (.cache/ is ignored), not the system temp
+ * folder. On Windows pnpm's legacy deploy joins the repo's path to a target on another drive
+ * (D:\a\repo\C:\Users\...\Temp), so the target is kept on the repo's drive and passed relative.
+ */
+export const DEPLOY_ROOT = join(REPO, ".cache", "deploy");
+
 /** `pnpm deploy` of the CLI with production dependencies only, into a new folder. */
-export function deploy(dir = join(mkdtempSync(join(tmpdir(), "atticus-deploy-")), "atticus")) {
+export function deploy(dir = newDeployDir()) {
   // Hoisted: real folders, no symlinks, so the zip (and Windows) see one copy of each package.
   // --prefer-offline, not --offline: a fresh `pnpm install --frozen-lockfile` fills the store
   // but not pnpm's metadata cache, which --offline needs. The lockfile still fixes every version.
@@ -85,7 +99,7 @@ export function deploy(dir = join(mkdtempSync(join(tmpdir(), "atticus-deploy-"))
       "--legacy",
       "--prefer-offline",
       "--config.node-linker=hoisted",
-      dir,
+      relative(REPO, dir) || dir,
     ],
     { cwd: REPO, stdio: "pipe" },
   );
@@ -120,10 +134,15 @@ export function workspaceShaped(deployDir, repo = REPO) {
   return done;
 }
 
-/** Remove a folder deploy() made (its atticus-deploy-* parent in the temp folder). */
+function newDeployDir() {
+  mkdirSync(DEPLOY_ROOT, { recursive: true });
+  return join(mkdtempSync(join(DEPLOY_ROOT, "atticus-deploy-")), "atticus");
+}
+
+/** Remove a folder deploy() made (its atticus-deploy-* parent under DEPLOY_ROOT). */
 export function removeDeploy(dir) {
   const parent = dirname(dir);
-  if (dirname(parent) === tmpdir() && basename(parent).startsWith("atticus-deploy-"))
+  if (dirname(parent) === DEPLOY_ROOT && basename(parent).startsWith("atticus-deploy-"))
     rmSync(parent, { recursive: true, force: true, maxRetries: 5 });
 }
 
