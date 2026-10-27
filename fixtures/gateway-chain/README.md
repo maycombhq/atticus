@@ -42,4 +42,23 @@ each join keeps the hops its own call passes through.
   `forge-orders`'. Added to the edge gateway's facts, the forwarding call is asked, never guessed,
   and the chain stops at the first gateway.
 
+## Who calls a route (ADR 0124 addendum A-callers)
+
+A seventh repo, `repos/forge-refunds`, is the Spring-shaped refunds service behind the edge
+gateway's `forge-refunds-v1` proxy (base path `/forge/refunds/v1`, virtual host `internal`, two
+flows: `CreateRefund` demanding `refunds.write`, `GetRefund` demanding `refunds.read`, both
+forwarding by `<URL>` to `refunds.forge.internal`). Its refund goes straight out through the
+partner gateway's `northwind-refunds-v1` proxy (`external`, `northwind.refunds.write`) to Northwind
+Pay's `POST /v2/refunds`.
+
+Nothing scanned calls the `forge-refunds-v1` routes. The edge gateway's own files name who may:
+`resources/edge/org/apiProducts.json` lists the API product `forge-refunds` for that proxy, and
+`resources/edge/org/developerApps.json` subscribes two developer apps to it, `harbor-desk-portal`
+and `forge-ops-console`; the routes' facts cite each as a `callers` entry. Harbor Desk, another
+team's product whose repo is never scanned, is declared in `org-pack/profiles/forge/profile.yaml`
+as calling as the app `harbor-desk-portal`. `expected/callers.yaml` is every route's callers and
+Harbor Desk's chains, written by hand:
+
+`Harbor Desk (declared; app harbor-desk-portal) → edge-gateway forge-refunds-v1 (oauth2; scopes refunds.write; internal) → refunds-api POST /refunds → partner-gateway northwind-refunds-v1 (oauth2; scopes northwind.refunds.write; external) → northwind-pay-api POST /v2/refunds`
+
 Files here are byte-exact: facts cite their line numbers.

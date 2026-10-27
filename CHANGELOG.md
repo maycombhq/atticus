@@ -12,6 +12,14 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - **The vendor's operations in the catalog.** A partner spec's current version now gives each operation a request and a response Schema: each field with its type and whether it is required, and each citing its line in the spec. This is ADR 0125's OpenAPI rule, now wired. No schema version change.
 - **New in the guide:** [A vendor's API changes](docs/guide/vendor-specs.md).
 
+### Who calls a gateway route, even when Atticus can't read the caller (ADR 0124 addendum A-callers)
+
+- **A route says who it lets in.** Reading an Apigee gateway now records, on each route, the consumers its own files name: the API product it belongs to, the developer apps subscribed to it, a client id or certificate subject a check admits. Each is cited on the line that names it and checked like any other claim, so an invented one never reaches the catalog. In the catalog they are AccessGrants on the route, and `map.md` prints `callers …` on each route's line, or `callers unknown`.
+- **Declare a caller you'll never scan.** Another team's product calls your internal proxy and its repo isn't yours to read? Add it under `systems:` in the org pack's profile with its owner and `calls: [{ as: app, name: <the app the proxy names> }]` (or the route itself). It links to the cited app when the proxy names it, stays marked as your word everywhere, and never replaces what the code says. The join reads the chain from it: `Harbor Desk (declared; app harbor-desk-portal) → edge-gateway forge-refunds-v1 (oauth2; scopes refunds.write; internal) → refunds-api POST /refunds → partner-gateway northwind-refunds-v1 (…; external) → northwind-pay-api POST /v2/refunds`.
+- **The critic names them.** A change to what a route carries lists every caller the route names or a person declared as affected, beside the catalog's other consumers; and a route nobody names, declares or calls asks who calls it, under the "complete" question, instead of passing in silence.
+- **Fixed on the way:** writing a gateway's facts after its caller's no longer drops the route the call goes through, and a person's asserted call no longer turns `verified` when the service's code is found.
+- **New in the guide:** "Apigee: naming your consumers" and "Declaring a caller you can't scan" in [Teaching Atticus your house frameworks](docs/guide/frameworks.md).
+
 ### A fresh metarepo goes from `init` to stories with no dead end (ADR 0006, 0021, 0115 and 0124 addenda)
 
 A trial on a real repo, run as a developer would, stopped eight times on things that were nobody's bug and everybody's lost hour. All eight are fixed, each with a test.

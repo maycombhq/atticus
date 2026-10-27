@@ -17,6 +17,8 @@ import {
 } from "@maycombhq/sdk";
 import {
   applyCurated,
+  declaredCallsOf,
+  joinCallers,
   joinFacts,
   loadOrgPack,
   mergeCatalog,
@@ -571,7 +573,10 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
       targets: Object.fromEntries(factRepos.map((x) => [x.repo, x.targets])),
       outside: outsideSystems(op),
     });
-    codeRecords = applyFactJoins(codeRecords, join, joinRepos);
+    codeRecords = applyFactJoins(codeRecords, join, joinRepos, {
+      callers: joinCallers({ repos: joinRepos, join, declared: declaredCallsOf(op.profiles) }),
+      join,
+    });
   }
   let merged = mergeCatalog(mergeInput(codeRecords));
   const curatedDir = o.curatedDir ?? curatedDirOf(o.root, op);

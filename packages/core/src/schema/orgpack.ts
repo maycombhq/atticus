@@ -1082,6 +1082,23 @@ export type OpenSpecSettings = z.infer<typeof OpenSpecSettings>;
 
 // ------------------------------------------------------------------ profiles/<platform>/profile.yaml
 
+/** One gateway route a person says an unscanned system calls (ADR 0124 addendum A-callers). */
+export const DeclaredCall = z
+  .strictObject({
+    /** What identifies the caller at the gateway, as the route's files would name it. */
+    as: z.enum(["app", "product", "client-id", "subject"]).optional(),
+    name: z.string().min(1).optional(),
+    /** The route: its handler (`proxy/flow`) or `METHOD /path` as the gateway serves it. */
+    route: z.string().min(1).optional(),
+  })
+  .refine((c) => (c.as === undefined) === (c.name === undefined), {
+    message: "a caller's identity is `as` and `name` together",
+  })
+  .refine((c) => c.name !== undefined || c.route !== undefined, {
+    message: "a declared call names the identity the gateway knows the caller by, or the route",
+  });
+export type DeclaredCall = z.infer<typeof DeclaredCall>;
+
 export const Profile = z
   .strictObject({
     schemaVersion: V,
@@ -1098,6 +1115,15 @@ export const Profile = z
           aliases: z.array(z.string().min(1)).default([]),
           /** Free labels copied to the System record; `saas` marks a SaaS vendor (ADR 0040). */
           tags: z.array(z.string().min(1)).default([]),
+          /**
+           * The gateway routes this system calls, for a system whose repo is never scanned (ADR
+           * 0124 addendum A-callers): a person's word, marked as such wherever it shows and never
+           * over a fact from code. Each names the consumer identity a route's own files name
+           * (`as` and `name`: the developer app, API product, client id or certificate subject),
+           * the route itself (`route`: its handler `proxy/flow`, or `METHOD /path` as the gateway
+           * serves it), or both. Additive and optional.
+           */
+          calls: z.array(DeclaredCall).optional(),
         }),
       )
       .default([]),

@@ -1,9 +1,20 @@
 schemaVersion: 1
 platform: forge
-name: Forge through two gateways (invented, for ADR 0124 addendum A-gateway2)
+name: Forge through two gateways (invented, for ADR 0124 addenda A-gateway2 and A-callers)
 systems:
   - { id: shop, name: Shop, boundary: product, owner: team-shop, aliases: [] }
   - { id: platform, name: Platform, boundary: product, owner: team-platform, aliases: [] }
   - { id: orders, name: Orders, boundary: product, owner: team-orders, aliases: [] }
+  - { id: refunds, name: Refunds, boundary: product, owner: team-refunds, aliases: [] }
+  # Harbor Desk is another team's product: its repo is never scanned, so a person declares it
+  # and says how the edge gateway knows it (A-callers): as the developer app harbor-desk-portal,
+  # which the gateway's own files name as a consumer of the forge-refunds API product.
+  - id: harbor-desk
+    name: Harbor Desk
+    boundary: internal
+    owner: team-harbor
+    aliases: []
+    calls:
+      - { as: app, name: harbor-desk-portal }
   - { id: northwind-pay, name: Northwind Pay, boundary: vendor, owner: team-payments, aliases: [] }
 environments: [dev, prod]

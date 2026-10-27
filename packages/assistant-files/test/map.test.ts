@@ -143,10 +143,11 @@ describe("lean batch prompts: the core and the topic rules a batch needs (ADR 01
     // sha256 of FACT_RULES: every rule, in the same words and order. Re-pinned since the split for
     // two added sentences: what `to` is for a relative call (C-join) and an entry's auth goes with
     // authCite (A-read); for the Apigee rule's three parts (A-gateway); for its fourth, the
-    // scopes a route demands and the proxy's virtual host (A-gateway2); and for the framework
-    // fact and the per-framework parts of the derived-names rule (A-framework).
+    // scopes a route demands and the proxy's virtual host (A-gateway2); for the framework
+    // fact and the per-framework parts of the derived-names rule (A-framework); and for the
+    // Apigee rule's fifth part, the consumers a route names (A-callers).
     expect(createHash("sha256").update(FACT_RULES).digest("hex")).toBe(
-      "ed717899db61628851624050ba8e72aa96ca887fa868aec724edc5d0a728b1bd",
+      "113f1b67f846d4e666bed1d5c68309f74cf761e69ef951483b2bcca5333ed0e9",
     );
     expect(FACT_RULES).toBe(factRulesFor());
     expect(mapCommand().body).toContain(FACT_RULES);
@@ -352,6 +353,38 @@ describe("lean batch prompts: the core and the topic rules a batch needs (ADR 01
     // budget buys the sentence once (A-gateway2). A back-end batch's rules don't mention them.
     expect(batch(["backend", "routes", "data", "protocols", "flows"])).not.toContain(
       "The scopes the route demands",
+    );
+  });
+
+  it("says how the consumers a route names are read and cited, in a gateway batch only (A-callers)", () => {
+    const CALLERS = "The consumers the route lets in go in `callers`";
+    const rule = FACT_RULES.split("\n").find((l) => l.startsWith("- An Apigee proxy")) ?? "";
+    for (const words of [
+      CALLERS,
+      "one citation each on the line that names it",
+      "`as` `app`",
+      "a developer app subscribed to its API product",
+      "`developer.app.name`",
+      "`product`",
+      "`client-id`",
+      "`verifyapikey.*.client_id`",
+      "a KVM or allowlist",
+      "`subject`",
+      "a certificate subject",
+      "the line tying it to the route",
+      "Never a name you don't see",
+    ])
+      expect(rule, words).toContain(words);
+    expect(batch(["config", "gateway"])).toContain(CALLERS);
+    for (const kinds of [
+      ["backend", "routes", "data", "protocols", "flows"],
+      ["frontend", "flows"],
+      ["deploy", "config"],
+    ] as RuleTopic[][])
+      expect(batch(kinds), kinds.join()).not.toContain(CALLERS);
+    // Still smaller than a back end's batch (the instructions' size is in the addendum).
+    expect(batch(["config", "gateway"]).length).toBeLessThan(
+      batch(["backend", "routes", "data", "protocols", "flows"]).length,
     );
   });
 });

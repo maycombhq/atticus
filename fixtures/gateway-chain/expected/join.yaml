@@ -4,6 +4,10 @@
 # internal edge one and then the external partner one, to land on Northwind Pay's POST /v2/charges.
 # Each hop keeps its own auth, the scopes its route demands and which side it faces; the two loop
 # proxies forward into each other, so each call into the ring is asked instead of walked.
+# A-callers adds the refunds service (seven repos): the edge gateway's forge-refunds-v1 routes
+# forward to it by their <URL> host, and its refund goes out through the external partner gateway
+# (one hop: it calls the partner gateway's host directly) to Northwind Pay's POST /v2/refunds.
+# Nothing scanned calls the forge-refunds-v1 routes: who does is in callers.yaml.
 joins:
   - call:
       repo: forge-edge-gateway
@@ -40,6 +44,21 @@ joins:
     method: GET
     path: /pay/loop/ping
     interface: if-58341bc8444c76fd
+  - call:
+      repo: forge-edge-gateway
+      fact: call.get.refunds-id
+      component: edge-gateway
+      at: proxies/forge-refunds-v1/apiproxy/proxies/default.xml:17
+    entry:
+      repo: forge-refunds
+      fact: entry.get.refunds-id
+      component: refunds-api
+      at: src/main/java/forge/refunds/RefundsController.java:24
+    how: host
+    callType: rest
+    method: GET
+    path: /refunds/{id}
+    interface: if-62f91b696a5ed559
   - call:
       repo: forge-edge-gateway
       fact: call.post.dispatch
@@ -103,6 +122,21 @@ joins:
     method: POST
     path: /v2/charges
     interface: if-987f78c2ed2733bb
+  - call:
+      repo: forge-edge-gateway
+      fact: call.post.refunds
+      component: edge-gateway
+      at: proxies/forge-refunds-v1/apiproxy/proxies/default.xml:10
+    entry:
+      repo: forge-refunds
+      fact: entry.post.refunds
+      component: refunds-api
+      at: src/main/java/forge/refunds/RefundsController.java:19
+    how: host
+    callType: rest
+    method: POST
+    path: /refunds
+    interface: if-85c3fb3b313e485c
   - call:
       repo: forge-orders
       fact: call.post.forge-pay-v1-charges
@@ -202,6 +236,69 @@ joins:
     method: POST
     path: /v2/charges
     interface: if-de5bdc97d8b72f83
+  - call:
+      repo: forge-partner-gateway
+      fact: call.post.v2-refunds
+      component: partner-gateway
+      at: proxies/northwind-refunds-v1/apiproxy/proxies/default.xml:10
+    entry:
+      repo: northwind-pay-api
+      fact: entry.post.v2-refunds
+      component: northwind-pay-api
+      at: src/main/java/northwind/pay/RefundsController.java:16
+    tie:
+      repo: forge-partner-gateway
+      fact: config.targetserver.northwind-pay
+      component: partner-gateway
+      at: environments/prod/targetservers.json:4
+    how: host
+    callType: rest
+    method: POST
+    path: /v2/refunds
+    interface: if-ed16ba309a72852e
+  - call:
+      repo: forge-refunds
+      fact: call.post.pay-refunds-v1-refunds
+      component: refunds-api
+      at: src/main/java/forge/refunds/NorthwindRefundsClient.java:17
+    entry:
+      repo: northwind-pay-api
+      fact: entry.post.v2-refunds
+      component: northwind-pay-api
+      at: src/main/java/northwind/pay/RefundsController.java:16
+    tie:
+      repo: forge-refunds
+      fact: config.partner-base-url
+      component: refunds-api
+      at: src/main/resources/application.yml:3
+    how: host
+    gateway:
+      - entry:
+          repo: forge-partner-gateway
+          fact: entry.post.pay-refunds-v1-refunds
+          component: partner-gateway
+          at: proxies/northwind-refunds-v1/apiproxy/proxies/default.xml:10
+        call:
+          repo: forge-partner-gateway
+          fact: call.post.v2-refunds
+          component: partner-gateway
+          at: proxies/northwind-refunds-v1/apiproxy/proxies/default.xml:10
+        tie:
+          repo: forge-partner-gateway
+          fact: config.targetserver.northwind-pay
+          component: partner-gateway
+          at: environments/prod/targetservers.json:4
+        route: gw-partner-gateway-post-pay-refunds-v1-refunds
+        auth: oauth2
+        scopes:
+          - northwind.refunds.write
+        facing: external
+    scopes:
+      - northwind.refunds.write
+    callType: rest
+    method: POST
+    path: /v2/refunds
+    interface: if-db4d8d18427a4e17
   - call:
       repo: forge-shop-bff
       fact: call.get.forge-v2-orders-id
@@ -345,6 +442,26 @@ lineage:
       repo: forge-orders
       fact: field.dispatch-request.courier
       name: courier
+  - interface: if-db4d8d18427a4e17
+    side: request
+    from:
+      repo: forge-refunds
+      fact: field.vendor-refund.amount
+      name: amount
+    to:
+      repo: northwind-pay-api
+      fact: field.refund-request.amount
+      name: amount
+  - interface: if-db4d8d18427a4e17
+    side: request
+    from:
+      repo: forge-refunds
+      fact: field.vendor-refund.reference
+      name: reference
+    to:
+      repo: northwind-pay-api
+      fact: field.refund-request.reference
+      name: reference
   - interface: if-ed9f9d07234fd896
     side: request
     from:

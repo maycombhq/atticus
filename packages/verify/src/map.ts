@@ -197,6 +197,53 @@ function asked(c: Ctx, e: Ev | undefined): string {
 
 // ---------------------------------------------------------------- map.md sections
 
+/** An Apigee proxy or shared flow's file: an entry cited there is a gateway route. */
+const APIGEE_FILE = /(^|\/)(apiproxy|sharedflowbundle)\//;
+const lineKey = (e: Ev | undefined) => (e?.path ? `${e.path}:${e.line ?? ""}` : "");
+
+/**
+ * Who calls a gateway route, as the catalog holds it (ADR 0124 addendum A-callers): a declared
+ * caller first, marked as a person's word with the identity it links to, then the consumers the
+ * route's files name, then the components whose calls go through it; "callers unknown" when the
+ * route has none of these. Undefined for an entry that is not a gateway route.
+ */
+function callersOf(c: Ctx, e: Rec<"Endpoint">): string | undefined {
+  const own = ownEvidence(e, c.i.repo);
+  const at = lineKey(own);
+  const route = at
+    ? records(c, "GatewayRoute").find((r) => lineKey((r.evidence as Ev[])[0]) === at)
+    : undefined;
+  if (!route && !(own?.path && APIGEE_FILE.test(own.path))) return undefined;
+  if (!route) return "callers unknown";
+  const grants = records(c, "AccessGrant").filter((g) => g.resource === route.id);
+  const kindOf = (g: Rec<"AccessGrant">) =>
+    g.flags?.find((f) => f.startsWith("caller:"))?.slice("caller:".length) ?? g.subjectKind;
+  const grantAt = new Map(grants.map((g) => [lineKey((g.evidence as Ev[])[0]), g] as const));
+  const linked = new Set<string>();
+  const declared: string[] = [];
+  const scanned = new Set<string>();
+  for (const i of records(c, "Interface").filter((x) => x.route === route.id)) {
+    if (i.confidence !== "asserted") {
+      scanned.add(i.from);
+      continue;
+    }
+    const g = (i.evidence as Ev[]).map((x) => grantAt.get(lineKey(x))).find((x) => !!x);
+    if (g) linked.add(g.id);
+    const sys = c.byId.get(i.from);
+    const name = sys?.kind === "System" ? sys.name : i.from;
+    declared.push(`${name} (declared${g ? `; ${kindOf(g)} ${g.subject}` : ""})`);
+  }
+  // The callers themselves first (apps, client ids, certificate subjects), the product they
+  // subscribe through last.
+  const order = (k: string) => (k === "product" ? 1 : 0);
+  const named = grants
+    .filter((g) => !linked.has(g.id))
+    .sort((a, b) => order(kindOf(a)) - order(kindOf(b)) || cmp(a.subject, b.subject))
+    .map((g) => `${kindOf(g)} ${g.subject}`);
+  const all = [...new Set(declared)].sort(cmp).concat(named, [...scanned].sort(cmp));
+  return all.length ? `callers ${list(all)}` : "callers unknown";
+}
+
 function serves(c: Ctx): string[] {
   const eps = records(c, "Endpoint").filter((e) => c.comps.has(e.component));
   if (!eps.length) return ["Nothing read yet."];
@@ -214,6 +261,8 @@ function serves(c: Ctx): string[] {
     for (const e of mine) {
       const what = [e.method, e.pathOrTopic].filter(Boolean).join(" ");
       const notes = [e.endpointType, ...(e.auth ? [`auth ${e.auth}`] : [])];
+      const who = callersOf(c, e);
+      if (who) notes.push(who);
       for (const side of ["request", "response"] as const) {
         const s = c.byId.get(`${e.id}.${side}`);
         if (s?.kind === "Schema" && s.fields.length)

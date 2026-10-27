@@ -297,6 +297,10 @@ export const FACT_RULE_PARTS: readonly (readonly RulePart[])[] = [
       when: ["gateway"],
       text: "The scopes the route demands go in `scopes`, one citation each on the line that names it: an `OAuthV2`'s `<Scope>` (a space-separated list is one fact per scope, all citing that line), a `VerifyJWT` or `VerifyAccessToken` scope claim, a scope a `Condition` asserts on the token's claims, or the scopes a shared flow it calls checks. Write the scope as the policy writes it, never a guess; a route that demands none leaves `scopes` out. Record the proxy's `<VirtualHost>` as a `config` fact (`key` `VirtualHost`, `target` the proxy) so the join can say whether the hop faces a partner.",
     },
+    {
+      when: ["gateway"],
+      text: "The consumers the route lets in go in `callers`, one citation each on the line that names it, the line tying it to the route in `cite.with`: `as` `app` (a developer app subscribed to its API product, or one a `Condition` on `developer.app.name` admits), `product` (the API product listing its proxy), `client-id` (one a `Condition` on `verifyapikey.*.client_id` or `client_id`, or a KVM or allowlist, admits), `subject` (a certificate subject an mTLS check admits). Never a name you don't see.",
+    },
   ],
   [
     {

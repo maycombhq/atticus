@@ -1,0 +1,28 @@
+<ProxyEndpoint name="default">
+  <Description>Forge refunds, version 1: callers are the apps subscribed to the forge-refunds product</Description>
+  <Flows>
+    <Flow name="CreateRefund">
+      <Request>
+        <Step>
+          <Name>OAuth-VerifyRefundWrite</Name>
+        </Step>
+      </Request>
+      <Condition>(proxy.pathsuffix MatchesPath "/refunds") and (request.verb = "POST")</Condition>
+    </Flow>
+    <Flow name="GetRefund">
+      <Request>
+        <Step>
+          <Name>OAuth-VerifyRefundRead</Name>
+        </Step>
+      </Request>
+      <Condition>(proxy.pathsuffix MatchesPath "/refunds/*") and (request.verb = "GET")</Condition>
+    </Flow>
+  </Flows>
+  <HTTPProxyConnection>
+    <BasePath>/forge/refunds/v1</BasePath>
+    <VirtualHost>internal</VirtualHost>
+  </HTTPProxyConnection>
+  <RouteRule name="refunds">
+    <TargetEndpoint>refunds</TargetEndpoint>
+  </RouteRule>
+</ProxyEndpoint>

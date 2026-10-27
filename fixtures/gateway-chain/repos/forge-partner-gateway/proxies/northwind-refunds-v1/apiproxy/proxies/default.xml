@@ -1,0 +1,20 @@
+<ProxyEndpoint name="default">
+  <Description>Northwind Pay refunds, for the refunds service</Description>
+  <Flows>
+    <Flow name="CreateRefund">
+      <Request>
+        <Step>
+          <Name>OAuth-VerifyRefunds</Name>
+        </Step>
+      </Request>
+      <Condition>(proxy.pathsuffix MatchesPath "/refunds") and (request.verb = "POST")</Condition>
+    </Flow>
+  </Flows>
+  <HTTPProxyConnection>
+    <BasePath>/pay/refunds/v1</BasePath>
+    <VirtualHost>external</VirtualHost>
+  </HTTPProxyConnection>
+  <RouteRule name="northwind">
+    <TargetEndpoint>northwind</TargetEndpoint>
+  </RouteRule>
+</ProxyEndpoint>

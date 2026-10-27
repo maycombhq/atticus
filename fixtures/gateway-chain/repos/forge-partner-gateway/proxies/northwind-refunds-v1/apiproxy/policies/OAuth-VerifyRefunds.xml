@@ -1,0 +1,4 @@
+<OAuthV2 name="OAuth-VerifyRefunds">
+  <Operation>VerifyAccessToken</Operation>
+  <Scope>northwind.refunds.write</Scope>
+</OAuthV2>

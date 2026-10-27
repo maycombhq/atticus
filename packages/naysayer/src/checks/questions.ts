@@ -387,6 +387,124 @@ function consumersOf(ctx: CriticContext, d: Delta): RecordOf<"Interface">[] {
   );
 }
 
+type Ev = { repo?: string; path?: string; line?: number; side?: string };
+const lineOf = (e: Ev) => `${e.repo ?? ""}|${e.path ?? ""}:${e.line ?? ""}`;
+
+/**
+ * The gateway routes that carry a changed operation (ADR 0124 addendum A-callers): the routes
+ * interfaces.md names for its hop, the route its Interface goes through, the routes the catalog's
+ * other calls to the operation go through, and the route whose evidence holds a gateway's own
+ * forwarding call to it (a route nothing scanned calls has only that).
+ */
+function routesOf(ctx: CriticContext, d: Delta): RecordOf<"GatewayRoute">[] {
+  const ids = new Set<string>(d.hop ? hopRoutes(ctx.files, d.hop) : []);
+  if (d.record?.route) ids.add(d.record.route);
+  const ep = endpointOf(ctx, d.callee, d.method, d.path, d.record);
+  const p = d.path ? normalizePath(d.path) : undefined;
+  const into = ctx.records.filter(
+    (r): r is RecordOf<"Interface"> =>
+      r.kind === "Interface" &&
+      r.to === d.callee &&
+      (ep
+        ? r.endpoint === ep.id
+        : p !== undefined &&
+          r.normalizedPath === p &&
+          (r.method ?? "").toUpperCase() === (d.method ?? "").toUpperCase()),
+  );
+  for (const i of into) if (i.route) ids.add(i.route);
+  const forwards = new Set(
+    into
+      .filter((i) => !i.route)
+      .flatMap((i) => (i.evidence as Ev[]).filter((e) => e.side === "caller").map(lineOf)),
+  );
+  if (forwards.size)
+    for (const r of ctx.records)
+      if (
+        r.kind === "GatewayRoute" &&
+        r.target === d.callee &&
+        (r.evidence as Ev[]).slice(1).some((e) => forwards.has(lineOf(e)))
+      )
+        ids.add(r.id);
+  return [...ids]
+    .sort()
+    .map((id) => ctx.get("GatewayRoute", id))
+    .filter((r) => r !== undefined);
+}
+
+/** Who a route lets in, as the catalog holds it (A-callers). */
+interface RouteCallers {
+  /** The consumers its files name (AccessGrants on it). */
+  named: RecordOf<"AccessGrant">[];
+  /** The systems a person declared (asserted Interfaces through it). */
+  declared: RecordOf<"Interface">[];
+  /** The scanned calls through it. */
+  scanned: RecordOf<"Interface">[];
+}
+
+/** Every route's callers, read once per run. */
+function callersIndex(ctx: CriticContext): Map<string, RouteCallers> {
+  const out = new Map<string, RouteCallers>();
+  const at = (id: string) => {
+    let c = out.get(id);
+    if (!c) out.set(id, (c = { named: [], declared: [], scanned: [] }));
+    return c;
+  };
+  for (const r of ctx.records) {
+    if (r.kind === "AccessGrant" && r.flags?.some((f) => f.startsWith("caller:")))
+      at(r.resource).named.push(r);
+    if (r.kind === "Interface" && r.route)
+      (r.confidence === "asserted" ? at(r.route).declared : at(r.route).scanned).push(r);
+  }
+  return out;
+}
+
+const callerKind = (g: RecordOf<"AccessGrant">) =>
+  g.flags?.find((f) => f.startsWith("caller:"))?.slice("caller:".length) ?? g.subjectKind;
+/** The consumers first (apps, client ids, subjects), the product they come through last. */
+const byKind = (a: RecordOf<"AccessGrant">, b: RecordOf<"AccessGrant">) =>
+  (callerKind(a) === "product" ? 1 : 0) - (callerKind(b) === "product" ? 1 : 0) ||
+  (a.subject < b.subject ? -1 : a.subject > b.subject ? 1 : 0);
+
+/**
+ * The callers of a changed operation's routes beyond the catalog's own consumers: each declared
+ * system as a person's word (with the consumer it links to), then each consumer the routes' files
+ * name that no declaration links to. Labels, the records they rest on and the routes.
+ */
+function routeCallersOf(
+  ctx: CriticContext,
+  d: Delta,
+  index: Map<string, RouteCallers>,
+): { labels: string[]; evidence: Evidence[]; routes: string[]; declared: string[] } {
+  const routes = routesOf(ctx, d).filter((r) => index.has(r.id));
+  const grants = routes.flatMap((r) => index.get(r.id)!.named);
+  const grantAt = new Map(grants.map((g) => [lineOf((g.evidence as Ev[])[0] ?? {}), g] as const));
+  const linked = new Set<string>();
+  const declared: string[] = [];
+  const evidence: Evidence[] = [];
+  const planned = new Set(ctx.hops.map((h) => h.caller));
+  for (const i of routes.flatMap((r) => index.get(r.id)!.declared)) {
+    if (planned.has(i.from) || i.from === d.caller) continue;
+    const g = (i.evidence as Ev[]).map((e) => grantAt.get(lineOf(e))).find((x) => !!x);
+    if (g) linked.add(g.id);
+    const sys = ctx.get("System", i.from);
+    declared.push(`${sys?.name ?? i.from} (declared${g ? `; ${callerKind(g)} ${g.subject}` : ""})`);
+    evidence.push(recordEvidence(i.id));
+  }
+  const named = grants.filter((g) => !linked.has(g.id)).sort(byKind);
+  for (const g of named) evidence.push(recordEvidence(g.id));
+  return {
+    labels: [
+      ...new Set([...declared].sort()),
+      ...new Set(named.map((g) => `${callerKind(g)} ${g.subject}`)),
+    ],
+    evidence,
+    routes: routes
+      .filter((r) => index.get(r.id)!.named.length || index.get(r.id)!.declared.length)
+      .map((r) => r.id),
+    declared: [...new Set(declared)].sort(),
+  };
+}
+
 /** The `breaking` judgment's item for a changed operation, keyed as the release notes key it. */
 function breakingItemOf(d: Delta): JudgeItem {
   return {
@@ -414,8 +532,13 @@ function breakingItemOf(d: Delta): JudgeItem {
  * retired one is settled by its change kind, the veto.
  */
 export function breakingItems(ctx: CriticContext): JudgeItem[] {
+  const index = callersIndex(ctx);
   return deltas(ctx)
-    .filter((d) => (d.notes || d.change === "planned-retire") && consumersOf(ctx, d).length)
+    .filter(
+      (d) =>
+        (d.notes || d.change === "planned-retire") &&
+        (consumersOf(ctx, d).length || routeCallersOf(ctx, d, index).labels.length),
+    )
     .map(breakingItemOf);
 }
 
@@ -431,28 +554,42 @@ export const breakingDeltaConsumers: DeterministicCheckDef = {
   run(ctx) {
     const hits: Hit[] = [];
     const ifaces = docOf(ctx.files, IFACES);
+    // A-callers: the routes' own consumers and declared callers are consumers too.
+    const index = callersIndex(ctx);
     for (const d of deltas(ctx)) {
-      const consumers = consumersOf(ctx, d);
-      if (consumers.length === 0) continue;
+      const via = routeCallersOf(ctx, d, index);
+      const declaredIds = new Set(
+        via.evidence.flatMap((e) => (e.source === "catalog" ? [e.record] : [])),
+      );
+      const consumers = consumersOf(ctx, d).filter((c) => !declaredIds.has(c.id));
+      if (consumers.length === 0 && via.labels.length === 0) continue;
       const verdict =
         d.change === "planned-retire"
           ? "yes"
           : ctx.judged(BREAKING_SPEC.kind, breakingItemOf(d).inputs);
       if (verdict === "no") continue;
-      const who = [...new Set(consumers.map((c) => c.from))].sort();
+      const scanned = [...new Set(consumers.map((c) => c.from))].sort();
+      const who = [...scanned, ...via.labels];
       const one = who.length === 1;
       const evidence: Evidence[] = [
         ...(d.hop && ifaces ? [lineEvidence(ifaces, d.hop.line)] : []),
         ...(d.record ? [recordEvidence(d.record.id)] : []),
         ...consumers.map((c) => recordEvidence(c.id)),
+        ...via.evidence,
       ];
+      // Where the route's files or a person, not a scanned call, say who calls (A-callers).
+      const through = via.labels.length
+        ? ` They reach it through ${and(via.routes)}${via.declared.length ? `; ${and(via.declared)} ${via.declared.length === 1 ? "is" : "are"} a person's word in the org pack's profile, not read from code` : ""}.`
+        : "";
       const place =
         d.hop && ifaces
           ? { artifact: IFACES, locator: rowLocator(ifaces, d.hop.line) }
           : { artifact: "catalog", locator: { record: d.record!.id } };
       const key = `breaking|${d.hop?.line ?? d.record?.id}`;
       const repos = [
-        ...new Set(who.map((w) => ctx.get("Component", w)?.repo).filter((r) => r !== undefined)),
+        ...new Set(
+          scanned.map((w) => ctx.get("Component", w)?.repo).filter((r) => r !== undefined),
+        ),
       ];
       const fix = {
         text: `Add a row to interfaces.md for ${and(who)} (planned-modify) with a task in ${repos.length ? and(repos) : one ? "its repo" : "their repos"}, or keep the old ${d.operation} beside the new one until ${one ? "it moves" : "they move"}.`,
@@ -465,9 +602,10 @@ export const breakingDeltaConsumers: DeterministicCheckDef = {
             `${d.change === "planned-retire" ? "Retiring" : "Changing"} ${d.operation} breaks ${and(who)}, which ${one ? "calls" : "call"} it today and which the change doesn't plan for.`,
           ),
           why:
-            d.change === "planned-retire"
+            (d.change === "planned-retire"
               ? `A retired operation breaks every caller, and the catalog knows ${and(who)} ${one ? "calls" : "call"} it.`
-              : `A judgment on file says a caller must change its code or handling for this change to ${d.operation}, and the catalog knows ${and(who)} ${one ? "calls" : "call"} it.`,
+              : `A judgment on file says a caller must change its code or handling for this change to ${d.operation}, and the catalog knows ${and(who)} ${one ? "calls" : "call"} it.`) +
+            through,
           fix,
           evidence,
           key,
@@ -480,7 +618,7 @@ export const breakingDeltaConsumers: DeterministicCheckDef = {
         summary: sentence(
           `Nobody has judged whether the change to ${d.operation} breaks ${and(who)}, which ${one ? "calls" : "call"} it and which the change doesn't plan for.`,
         ),
-        why: `The catalog knows ${and(who)} ${one ? "calls" : "call"} ${d.operation}, and whether ${one ? "it" : "they"} must change is a judgment nobody has made yet (no model was asked, or it was unsure).`,
+        why: `The catalog knows ${and(who)} ${one ? "calls" : "call"} ${d.operation}, and whether ${one ? "it" : "they"} must change is a judgment nobody has made yet (no model was asked, or it was unsure).${through}`,
         fix,
         evidence,
         question: {
@@ -491,6 +629,60 @@ export const breakingDeltaConsumers: DeterministicCheckDef = {
         key,
       });
     }
+    return { hits, subjects: [] };
+  },
+};
+
+/**
+ * A gateway route that carries a changed operation and whose callers nobody knows (ADR 0124
+ * addendum A-callers): its files name no consumer, no person declared one, and no call the
+ * catalog holds goes through it. Who the change affects can't be said, so it is asked, never
+ * passed in silence.
+ */
+export const routeCallersKnown: DeterministicCheckDef = {
+  id: "route-callers-known",
+  question: "complete",
+  description:
+    "Every gateway route that carries an operation the change modifies or retires has a known caller: a consumer its files name, a system a person declared, or a call the catalog holds.",
+  params: z.strictObject({}),
+  run(ctx) {
+    const hits: Hit[] = [];
+    const ifaces = docOf(ctx.files, IFACES);
+    const index = callersIndex(ctx);
+    const asked = new Set<string>();
+    for (const d of deltas(ctx))
+      for (const r of routesOf(ctx, d)) {
+        const c = index.get(r.id);
+        if (c && (c.named.length || c.declared.length || c.scanned.length)) continue;
+        const key = `callers-unknown|${r.id}|${d.operation}`;
+        if (asked.has(key)) continue;
+        asked.add(key);
+        const place =
+          d.hop && ifaces
+            ? { artifact: IFACES, locator: rowLocator(ifaces, d.hop.line) }
+            : { artifact: "catalog", locator: { record: r.id } };
+        hits.push({
+          kind: "knowledge-gap",
+          ...place,
+          summary: sentence(
+            `Nobody knows who calls ${d.operation} through the gateway route ${r.id}.`,
+          ),
+          why: `The route's files name no consumer (no API product, developer app, client id or certificate subject), nobody has declared a caller in the org pack's profile, and no call the catalog holds goes through it, so the change can't say who it affects.`,
+          fix: {
+            text: `Declare the system that calls it in the org pack's profile (a System with \`calls\`, by the app or client id the gateway knows it as), or record the consumers in the route's files so the gateway's read names them.`,
+          },
+          evidence: [
+            ...(d.hop && ifaces ? [lineEvidence(ifaces, d.hop.line)] : []),
+            recordEvidence(r.id),
+          ],
+          question: {
+            text: `Who calls ${d.operation} through ${r.id} (${r.proxy} ${r.basepath})? Its files name no consumer, nobody has declared one, and no repo Atticus reads calls through it.`,
+            owner: questionOwner(ctx, d.callee),
+          },
+          subject: d.callee,
+          key,
+        });
+      }
     return { hits, subjects: [] };
   },
 };

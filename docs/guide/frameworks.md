@@ -58,6 +58,63 @@ a finding, a scope a story's criteria name that no route demands is a finding, a
 own callers' tokens hold none of the scopes a hop downstream demands is a question. Nothing from
 the old gateway reader is needed.
 
+### Apigee: naming your consumers
+
+A proxy usually says who it lets in, and Atticus reads that from the gateway repo's own files
+(ADR 0124 addendum A-callers). Each route records the consumers it can name, each cited on the
+line that names it, with the line tying it to the route beside it:
+
+- **`product`**: the API product whose `proxies` list holds the route's proxy
+  (`resources/edge/org/apiProducts.json`).
+- **`app`**: a developer app subscribed to that product (`resources/edge/org/developerApps.json`),
+  or one a `Condition` on `developer.app.name` lets in.
+- **`client-id`**: a client id a `Condition` on `verifyapikey.<policy>.client_id` or `client_id`
+  admits, or one a KVM or allowlist file in the repo lists.
+- **`subject`**: a certificate subject an mTLS check admits.
+
+The verifier checks each like any other claim, so a consumer no line names never reaches the
+catalog. In the catalog each one is an `AccessGrant` on the route's GatewayRoute (its `flags` say
+which kind), and the route's API product fills the GatewayRoute's `product`. `map.md` prints the
+callers on each route's line: `callers app forge-ops-console, product forge-refunds`, the
+components whose calls go through it (`callers shop-bff`), or `callers unknown`.
+
+Keep the product and app definitions in the gateway repo if you can. Apps that live only in the
+Apigee console can't be read; declare their systems instead (below).
+
+### Declaring a caller you can't scan
+
+When a flow starts in another team's product whose repo you will never scan, say so in the org
+pack's profile, where every system a person declares already lives. Add the product under
+`systems:` with its boundary (`internal` or `product`) and its owner, and say what it calls as
+the gateway knows it:
+
+```yaml
+# org-pack/profiles/<platform>/profile.yaml
+systems:
+  - id: harbor-desk
+    name: Harbor Desk
+    boundary: internal
+    owner: team-harbor
+    calls:
+      - { as: app, name: harbor-desk-portal } # the developer app the proxy names
+      # or a route itself: { route: forge-refunds-v1/CreateRefund } or { route: POST /forge/refunds/v1/refunds }
+```
+
+When the route's files name that app, the declaration is linked to it ("app `harbor-desk-portal`
+on the route's API product is Harbor Desk"). It stays your word wherever it shows (`declared`,
+an `asserted` Interface with your profile as its evidence) and never replaces anything read from
+code: an app you name that the files don't is shown as yours alone, and a declaration no route
+can be placed on is reported, not guessed. The join then reads the whole chain from it:
+
+`Harbor Desk (declared; app harbor-desk-portal) → edge-gateway forge-refunds-v1 (oauth2; scopes refunds.write; internal) → refunds-api POST /refunds → partner-gateway northwind-refunds-v1 (oauth2; scopes northwind.refunds.write; external) → northwind-pay-api POST /v2/refunds`
+
+**The critic** lists every caller a route names or you declared as affected when a change alters
+what the route carries (its path, method, a required field or a scope), beside the catalog's
+other consumers. A route with **callers unknown** — no consumer in its files, nobody declared,
+no call the catalog holds — becomes a question for the change that touches it ("Who calls … through
+…?"), asked of the owner. Answer it by declaring the caller here, or by adding the app to the
+gateway's files.
+
 ## Repos Atticus can't read yet: onboard them
 
 `atticus scan` names the repos it read nothing from though they have config files no reader knows (a gateway's routes, a house Terraform module, a pipeline template). For each:

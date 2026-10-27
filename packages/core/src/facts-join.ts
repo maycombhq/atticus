@@ -815,7 +815,7 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
 }
 
 /** The path a joined Interface records: the entry's, normalised (a gRPC or SOAP name as written). */
-function servedPath(e: Entry): string {
+export function servedPath(e: Entry): string {
   return NAMED.has(e.entryType) ? callPath(e.entryType, e.path) : callPath("rest", e.path);
 }
 
@@ -845,7 +845,7 @@ function once(ev: EvidenceT[]): EvidenceT[] {
 }
 
 /** A gateway route's GatewayRoute id: `gw-<component>-<method>-<path>`, no dots (as a hop names one). */
-function gatewayRouteId(n: Node & { fact: Entry }): string {
+export function gatewayRouteId(n: { component: string; fact: Entry }): string {
   const id = `gw-${factIdPart(`${n.component} ${n.fact.method ?? ""} ${n.fact.path}`)}`
     .replace(/-{2,}/g, "-")
     .replace(/-$/, "");
@@ -856,7 +856,7 @@ function gatewayRouteId(n: Node & { fact: Entry }): string {
  * A route's base path: the part of its citation (`cite.with`) its path starts with (an Apigee
  * `<BasePath>`), else its whole path.
  */
-function basePathOf(e: Entry): string {
+export function basePathOf(e: Entry): string {
   const segs = (p: string) => p.split(/[?#]/, 1)[0]!.split("/").filter(Boolean);
   const path = segs(e.path);
   const base = (e.cite.with ?? [])

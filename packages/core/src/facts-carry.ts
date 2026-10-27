@@ -41,6 +41,8 @@ export function citedFiles(f: Fact): string[] {
         ...(f.kind === "entry" && f.authCite ? [f.authCite.file] : []),
         // A-gateway2: a changed scope line invalidates the entry that demands the scope.
         ...(f.kind === "entry" ? (f.scopes ?? []).flatMap(filesOfCite) : []),
+        // A-callers: so does a changed line naming a consumer (an API product, a developer app).
+        ...(f.kind === "entry" ? (f.callers ?? []).flatMap(filesOfCite) : []),
       ]),
     ];
   const all = new Set<string>(filesOfCite(f.cite));

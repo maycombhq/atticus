@@ -1,0 +1,15 @@
+{
+  "harbor-team@forge.example": [
+    {
+      "name": "harbor-desk-portal",
+      "apiProducts": ["forge-refunds"],
+      "callbackUrl": "https://harbor.forge.internal/signed-in"
+    }
+  ],
+  "ops-team@forge.example": [
+    {
+      "name": "forge-ops-console",
+      "apiProducts": ["forge-refunds"]
+    }
+  ]
+}

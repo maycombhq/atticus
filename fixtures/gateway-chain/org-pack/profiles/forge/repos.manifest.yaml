@@ -1,7 +1,10 @@
-# Six invented Forge repos (ADR 0124 addendum A-gateway2): a shop's back end, the internal edge
+# Seven invented Forge repos (ADR 0124 addenda A-gateway2 and A-callers): a shop's back end, the internal edge
 # gateway it calls, the orders service behind it, the partner gateway the orders service calls
 # through, and Northwind Pay's charge API (an invented vendor) behind that, plus the orders
-# sandbox the edge gateway's dev TargetServer names (the ambiguous-host case).
+# sandbox the edge gateway's dev TargetServer names (the ambiguous-host case), and the refunds
+# service behind the edge gateway's forge-refunds-v1 proxy, which calls Northwind Pay through the
+# partner gateway; its own callers are Harbor Desk (declared, never scanned) and the apps the
+# proxy's API product names.
 # The two gateways are typed `gateway` and `gateway-external`, so the join knows which hop faces
 # a partner and which stays inside.
 schemaVersion: 1
@@ -48,3 +51,10 @@ repos:
     component: orders-sandbox-api
     system: orders
     hosts: [orders-sandbox.forge.internal]
+  - id: forge-refunds
+    url: https://git.forge.example/forge/forge-refunds.git
+    type: spring-boot
+    owner: team-refunds
+    component: refunds-api
+    system: refunds
+    hosts: [refunds.forge.internal]

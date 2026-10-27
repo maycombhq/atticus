@@ -652,6 +652,18 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
           ),
         ),
       );
+    // A-callers: and each consumer it names, on the line that names it.
+    if (f.kind === "entry")
+      (f.callers ?? []).forEach((c, i) =>
+        add(
+          f,
+          checkCite(
+            c,
+            [{ kind: "word", value: c.value }],
+            `${label} caller ${i + 1} (${c.as} "${c.value}")`,
+          ),
+        ),
+      );
     // A-framework: the name follows from the declaration on the cited line, and a version, where
     // one is claimed, is written on that line or on one of its `cite.with` parts (a property, a
     // parent pom's version, a <TargetFramework>, a dependency-management block).

@@ -1,0 +1,5 @@
+<TargetEndpoint name="refunds">
+  <HTTPTargetConnection>
+    <URL>https://refunds.forge.internal</URL>
+  </HTTPTargetConnection>
+</TargetEndpoint>

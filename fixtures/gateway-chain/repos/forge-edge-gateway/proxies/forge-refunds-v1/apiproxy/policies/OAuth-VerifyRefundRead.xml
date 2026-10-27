@@ -1,0 +1,4 @@
+<OAuthV2 name="OAuth-VerifyRefundRead">
+  <Operation>VerifyAccessToken</Operation>
+  <Scope>refunds.read</Scope>
+</OAuthV2>

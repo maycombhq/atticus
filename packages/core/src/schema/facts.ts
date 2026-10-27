@@ -98,6 +98,19 @@ export const ENTRY_TYPES = [
   "screen",
 ] as const;
 
+/**
+ * What identifies a consumer a gateway route names (ADR 0124 addendum A-callers): a developer
+ * `app` subscribed to the route's API product or admitted by a condition, the API `product` the
+ * route belongs to, a `client-id` a condition or an allowlist admits, or a certificate `subject`
+ * an mTLS check admits.
+ */
+export const CALLER_KINDS = ["app", "product", "client-id", "subject"] as const;
+export type CallerKind = (typeof CALLER_KINDS)[number];
+
+/** A consumer a route names: the identity as written (`value`), cited on the line that names it. */
+export const CallerCite = Cite.extend({ as: z.enum(CALLER_KINDS) });
+export type CallerCite = z.infer<typeof CallerCite>;
+
 export const EntryFact = z.strictObject({
   kind: z.literal("entry"),
   ...common,
@@ -127,6 +140,16 @@ export const EntryFact = z.strictObject({
    * identity apart from the entry that demands it (see the addendum for why).
    */
   scopes: z.array(Cite).max(12).optional(),
+  /**
+   * The consumers the route lets in, as its own files name them (ADR 0124 addendum A-callers):
+   * the API product it belongs to, the developer apps subscribed to that product, a client id or
+   * app name a `Condition` or allowlist admits, a certificate subject an mTLS check admits. One
+   * citation per consumer, `value` the identity as written, on the line that names it, with the
+   * line that ties it to the route (the product's proxy list, the app's product list) in `with`.
+   * The verifier checks each like a scope, so an invented consumer rejects the entry. Additive
+   * and optional, as `scopes` is; only a gateway batch's rules ask for it.
+   */
+  callers: z.array(CallerCite).max(24).optional(),
 });
 
 export const CALL_TYPES = [

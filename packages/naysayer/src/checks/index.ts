@@ -24,6 +24,7 @@ import {
 import {
   breakingDeltaConsumers,
   callTimeoutStated,
+  routeCallersKnown,
   publicEntryAuth,
   storeWriteRollback,
 } from "./questions.js";
@@ -66,6 +67,8 @@ export const BUILT_IN_CHECKS: readonly DeterministicCheckDef[] = [
   publicEntryAuth,
   breakingDeltaConsumers,
   storeWriteRollback,
+  // Who a gateway route lets in (ADR 0124 addendum A-callers).
+  routeCallersKnown,
 ];
 
 export function checkRegistry(

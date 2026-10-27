@@ -172,6 +172,12 @@ export const ALLOW = [
       "the vendor match reads the same gateway-route test the join does (facts-join.ts's bundle folder names), so a forwarding call in a bundle is matched whatever the repo's type says (ADR 0130)",
   },
   {
+    file: "packages/core/src/facts-callers.ts",
+    names: ["apigee"],
+    reason:
+      "the same bundle test as facts-join.ts (its exported APIGEE_BUNDLE), so a route's callers are read for exactly the entries the join treats as gateway routes (ADR 0124 addendum A-callers)",
+  },
+  {
     file: "packages/core/src/api.ts",
     names: ["confluence", "ado", "sharepoint", "claude"],
     reason:
