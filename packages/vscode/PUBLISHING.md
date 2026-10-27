@@ -28,6 +28,8 @@ pnpm --filter atticus run marketplace                # stable
 pnpm --filter atticus run marketplace:pre-release    # pre-release (odd minor)
 ```
 
+**From GitHub instead of your machine:** `.github/workflows/publish-vscode.yml` runs these same steps when a GitHub release is published (the same release that publishes the npm packages), or by hand, where it defaults to a dry run that only packages. It waits for a person to approve the `marketplace` environment, publishes an odd minor as a pre-release, and keeps the `.vsix` as the run's artifact. Put the token in the repository secret `VSCE_PAT` instead of using `vsce login`.
+
 The listing shows the README, the CHANGELOG, `media/icon.png` and the gallery banner. It can take a few minutes to appear. A verified publisher badge needs a domain verified on the publisher page; that's optional.
 
 ## Open VSX (VSCodium, Gitpod and other editors)

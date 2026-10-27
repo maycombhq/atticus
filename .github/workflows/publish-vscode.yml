@@ -1,0 +1,59 @@
+name: Publish the VS Code extension
+
+# The Atticus extension (maycombhq.atticus) to the VS Code Marketplace, the way
+# packages/vscode/PUBLISHING.md says to do it by hand: build the app and the command line, package
+# the .vsix (which checks the app's licences), then vsce publish that same file. An odd minor
+# (0.7.0) goes out as a pre-release and an even one as stable. The run waits for a person to
+# approve the `marketplace` environment. Needs the VSCE_PAT secret (an Azure DevOps token with
+# Marketplace › Manage, for the publisher maycombhq). Started by hand, it can package only, as a
+# dry run; the .vsix is kept as the run's artifact either way.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Package and check the .vsix only (nothing is published)"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-vscode
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: marketplace
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec turbo run build --filter=@maycombhq/ui --filter=@maycombhq/cli
+      - run: pnpm --filter atticus test
+      - name: Package the .vsix
+        id: pack
+        working-directory: packages/vscode
+        run: |
+          pnpm run package
+          version=$(node -p "require('./package.json').version")
+          minor=$(echo "$version" | cut -d. -f2)
+          echo "vsix=atticus-$version.vsix" >> "$GITHUB_OUTPUT"
+          if [ $((minor % 2)) -eq 1 ]; then echo "flag=--pre-release" >> "$GITHUB_OUTPUT"; else echo "flag=" >> "$GITHUB_OUTPUT"; fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.pack.outputs.vsix }}
+          path: packages/vscode/${{ steps.pack.outputs.vsix }}
+      - name: Publish to the Marketplace
+        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.dry_run) }}
+        working-directory: packages/vscode
+        run: pnpm exec vsce publish ${{ steps.pack.outputs.flag }} --packagePath ${{ steps.pack.outputs.vsix }}
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
