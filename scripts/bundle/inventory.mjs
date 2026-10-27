@@ -51,6 +51,19 @@ export const itemAllowed = (i) =>
  * PATH. On Windows that one is pnpm.cmd, which Node only starts through a shell.
  */
 function pnpm(args, opts) {
+  try {
+    return runPnpm(args, opts);
+  } catch (e) {
+    // execFileSync's error carries pnpm's output as bytes; say it as text, so a CI log shows why.
+    const said = [e.stdout, e.stderr]
+      .map((b) => (b ? b.toString() : ""))
+      .join("\n")
+      .trim();
+    if (said) process.stderr.write(`pnpm ${args.join(" ")} failed:\n${said.slice(-6000)}\n`);
+    throw e;
+  }
+}
+function runPnpm(args, opts) {
   const exec = process.env.npm_execpath;
   if (exec && /\.[cm]?js$/.test(exec)) return execFileSync(process.execPath, [exec, ...args], opts);
   if (process.platform !== "win32") return execFileSync("pnpm", args, opts);
