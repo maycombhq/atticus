@@ -65,6 +65,7 @@ export async function workspaceSync(
   root: string,
   repoIds: string[] | undefined,
   io: Output,
+  o: { from?: string } = {},
 ): Promise<number> {
   const all = await loadRepos(root);
   if (all.length === 0) {
@@ -73,10 +74,12 @@ export async function workspaceSync(
   }
   const repos = pick(all, repoIds, io);
   if (!repos) return 2;
-  const results = await createWorkspace(root).sync(repos);
+  // --from <folder>: copy each missing base clone from your own clone there, with no network.
+  const results = await createWorkspace(root).sync(repos, o.from ? { from: o.from } : {});
   for (const r of results) {
     const sha = r.sha ? ` ${r.sha.slice(0, 12)}` : "";
-    const line = `${r.id}: ${r.action}${sha}${r.reason ? ` (${r.reason})` : ""}`;
+    const why = r.from ? `copied from your clone at ${r.from}` : r.reason;
+    const line = `${r.id}: ${r.action}${sha}${why ? ` (${why})` : ""}`;
     if (r.action === "failed") io.err(line);
     else io.out(line);
     // ADR 0123: the manifest names one default branch; the remote may call another its default.

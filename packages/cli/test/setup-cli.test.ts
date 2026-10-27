@@ -129,6 +129,9 @@ describe("atticus repos discover", () => {
     expect(t.out).toContain("  orders-api: spring-boot (pom.xml)");
     expect(t.out).toContain("  Skipped docs: no build file, code or platform files");
     expect(t.out).toContain("Wrote 10 repos to org-pack/profiles/shop/repos.manifest.yaml.");
+    expect(t.out).toContain(
+      `Next: atticus workspace sync --from "${join(FIXTURES, "plain-multi")}" copies each repo from these clones, with no network.`,
+    );
     expect(t.out.at(-1)).toBe("20 questions need a person: proposals/repos/shop/QUESTIONS.md.");
   });
 

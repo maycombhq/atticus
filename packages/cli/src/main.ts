@@ -713,6 +713,7 @@ Usage:
   atticus <step> --max-tokens n        On the same steps: the model's limit. The whole prompt fits n tokens (counted as characters / 4, a quarter kept back for the count's error), or the step says before handing off that it can't, with the numbers. The VS Code extension passes its model's limit to every step
   atticus workspace sync               Clone or update the base clone of every repo in the manifests
           [--repos a,b]                Only these repos
+          [--from <folder>]            Copy a missing base clone from your own clone of it in that folder: no network, your clone only read
   atticus workspace open <change>      Create the change's worktrees, repos.yaml and editor workspaces
           --repos a,b                  The repos the change touches
   atticus workspace prune <change>     Remove worktrees whose PRs merged or closed
@@ -3214,7 +3215,13 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
     const { openspecRun } = await import("./openspec-run-commands.js");
     return openspecRun(root, openspecArgsOf(argv), io);
   }
-  if (group === "workspace" && command === "sync") return workspaceSync(root, repoIds, io);
+  if (group === "workspace" && command === "sync")
+    return workspaceSync(
+      root,
+      repoIds,
+      io,
+      str(values.from) ? { from: resolve(str(values.from)!) } : {},
+    );
   if (group === "workspace" && (command === "open" || command === "prune")) {
     if (!arg) {
       io.err(

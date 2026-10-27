@@ -110,6 +110,42 @@ describe("atticus workspace", () => {
     T,
   );
 
+  it(
+    "--from copies each repo from your own clones, with no network, and says where from",
+    async () => {
+      const dir = await mkdtemp(join(tmpdir(), "atticus-cli-wsfrom-"));
+      const src = join(dir, "src");
+      await mkdir(src);
+      git(src, "init", "-q", "-b", "main");
+      await writeFile(join(src, "README.md"), "ledger\n");
+      git(src, "add", "-A");
+      git(src, "commit", "-q", "-m", "first");
+      const url = join(dir, "forge-ledger.git");
+      git(dir, "clone", "-q", "--bare", src, url);
+      const clones = join(dir, "my-clones");
+      await mkdir(clones);
+      git(clones, "clone", "-q", url, "forge-ledger");
+      const { rename } = await import("node:fs/promises");
+      await rename(url, `${url}.away`); // the server can't be reached
+
+      const root = join(dir, "metarepo");
+      await mkdir(join(root, "org-pack/profiles/forge"), { recursive: true });
+      await writeFile(
+        join(root, "org-pack/profiles/forge/repos.manifest.yaml"),
+        `schemaVersion: 1\nplatform: forge\nrepos:\n  - id: forge-ledger\n    url: ${JSON.stringify(url)}\n    type: forge-service\n    owner: team-ledger\n`,
+      );
+      const s = capture();
+      expect(await main(["workspace", "sync", "--from", clones, "--root", root], s.io)).toBe(0);
+      expect(s.out[0]).toMatch(
+        new RegExp(
+          `^forge-ledger: cloned [0-9a-f]{12} \\(copied from your clone at .*forge-ledger\\)$`,
+        ),
+      );
+      expect(existsSync(join(root, "workspace/forge-ledger/README.md"))).toBe(true);
+    },
+    T,
+  );
+
   it("says what to do when there is no manifest", async () => {
     const root = await mkdtemp(join(tmpdir(), "atticus-cli-empty-"));
     const c = capture();

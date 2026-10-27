@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
-import { mkdir, rm } from "node:fs/promises";
-import { dirname } from "node:path";
+import { mkdir, readdir, readFile, rm } from "node:fs/promises";
+import { basename, dirname, join } from "node:path";
 import {
   changeBranch,
   WORKSPACE_SCHEMA_VERSION,
@@ -30,12 +30,26 @@ export interface SyncResult {
    * manifest's defaultBranch is another one. Undefined when the remote didn't say.
    */
   remoteDefault?: string;
+  /** The clone of yours it was copied from (`sync --from`), when one matched. */
+  from?: string;
+}
+
+export interface SyncOptions {
+  /**
+   * A folder holding your own clones (`atticus workspace sync --from <dir>`). A missing base
+   * clone is copied from your clone of the same repo there (matched by its origin URL, else by
+   * folder name), with no network: Git hard-links the objects on the same drive. It takes the
+   * branch as your clone last fetched it (origin/<branch>), never your unpushed commits or
+   * edits, and points origin at the manifest's URL, so later syncs fetch from the server. Your
+   * clones are only read.
+   */
+  from?: string;
 }
 
 export interface WorkspaceManager {
   readonly root: string;
   /** Clone missing base clones and fast-forward existing ones to the default branch. One failure doesn't stop the rest. */
-  sync(repos: ManifestRepo[]): Promise<SyncResult[]>;
+  sync(repos: ManifestRepo[], opts?: SyncOptions): Promise<SyncResult[]>;
   /**
    * Another branch of a repo, checked out read-only beside its base clone (ADR 0123), fetched
    * first: what `atticus scan --ref` reads. Nothing is ever committed there.
@@ -103,7 +117,49 @@ export function createWorkspace(root: string, git: GitRunner = createGit()): Wor
     return b ? { remoteDefault: b } : {};
   };
 
-  async function syncOne(repo: ManifestRepo): Promise<SyncResult> {
+  /**
+   * A base clone copied from your clone at `from`, with no network (sync --from): a local clone
+   * (hard-linked objects), origin pointed at the manifest's URL, and the branch checked out at
+   * your clone's origin/<branch> (what the server had when you last fetched), else at your
+   * local branch when it has never fetched.
+   */
+  async function copyFrom(repo: ManifestRepo, from: string, dest: string): Promise<SyncResult> {
+    const branch = repo.defaultBranch;
+    const sha = async (ref: string) => {
+      try {
+        return (
+          await g(["rev-parse", "--verify", "--quiet", `${ref}^{commit}`], from)
+        ).stdout.trim();
+      } catch {
+        return "";
+      }
+    };
+    const at = (await sha(`refs/remotes/origin/${branch}`)) || (await sha(`refs/heads/${branch}`));
+    if (!at)
+      return {
+        id: repo.id,
+        action: "failed",
+        reason: `your clone at ${from} has no ${branch} branch; fetch it there, or sync without --from`,
+      };
+    await g(["clone", "--quiet", "--no-tags", "--no-checkout", "--", from, dest]);
+    await g(["remote", "set-url", "origin", repo.url], dest);
+    // Your clone's own branches came over as origin/*: replace them with the one we read.
+    const refs = (
+      await g(["for-each-ref", "--format=%(refname)", "refs/remotes/origin"], dest)
+    ).stdout
+      .split("\n")
+      .filter(Boolean);
+    for (const r of refs) await g(["update-ref", "-d", r], dest);
+    await g(["update-ref", `refs/remotes/origin/${branch}`, at], dest);
+    if (repo.sparse.length > 0) await g(["sparse-checkout", "set", "--", ...repo.sparse], dest);
+    await g(["checkout", "--quiet", "-B", branch, at], dest);
+    return { id: repo.id, action: "cloned", sha: await head(dest), from };
+  }
+
+  async function syncOne(
+    repo: ManifestRepo,
+    local: Map<string, string> | undefined,
+  ): Promise<SyncResult> {
     if (repo.archived) return { id: repo.id, action: "skipped", reason: "archived" };
     if (isInPlace(repo.url))
       return {
@@ -116,6 +172,8 @@ export function createWorkspace(root: string, git: GitRunner = createGit()): Wor
     try {
       if (!existsSync(dest)) {
         await mkdir(dirname(dest), { recursive: true });
+        const from = local && yourClone(local, repo);
+        if (from) return await copyFrom(repo, from, dest);
         const args = ["clone", "--no-tags", "--branch", branch, "--filter=blob:none"];
         if (repo.sparse.length > 0) args.push("--sparse");
         args.push("--", repo.url, dest);
@@ -197,12 +255,13 @@ export function createWorkspace(root: string, git: GitRunner = createGit()): Wor
   return {
     root,
 
-    async sync(repos) {
+    async sync(repos, opts = {}) {
       // Only base clones need workspace/ ignored; a root of in-place repos (an adopted repo)
       // must stay untouched.
       if (repos.some((r) => !r.archived && !isInPlace(r.url))) await ensureGitignore(root);
       const out: SyncResult[] = [];
-      for (const repo of repos) out.push(await syncOne(repo));
+      const local = opts.from ? await localClones(opts.from) : undefined;
+      for (const repo of repos) out.push(await syncOne(repo, local));
       return out;
     },
 
@@ -286,3 +345,45 @@ export function createWorkspace(root: string, git: GitRunner = createGit()): Wor
     },
   };
 }
+
+/**
+ * A remote URL as a key: no credentials, no trailing `.git` or `/`, the host in lower case and
+ * `git@host:path` written as `host/path`, so a clone made over SSH matches a manifest's HTTPS.
+ */
+export function remoteKey(url: string): string {
+  let u = url.trim().replace(/\\/g, "/");
+  const scp = /^[\w.-]+@([^:/]+):(.+)$/.exec(u);
+  if (scp) u = `${scp[1]}/${scp[2]}`;
+  u = u.replace(/^[a-z+]+:\/\//i, "").replace(/^[^@/]+@/, "");
+  u = u.replace(/\/+$/, "").replace(/\.git$/i, "");
+  const slash = u.indexOf("/");
+  return slash < 0 ? u.toLowerCase() : u.slice(0, slash).toLowerCase() + u.slice(slash);
+}
+
+/** Your clones under `dir` (two levels deep), by their origin's key and by folder name. */
+async function localClones(dir: string): Promise<Map<string, string>> {
+  const found = new Map<string, string>();
+  const visit = async (d: string, depth: number) => {
+    let names: string[];
+    try {
+      names = await readdir(d);
+    } catch {
+      return;
+    }
+    if (names.includes(".git")) {
+      const cfg = await readFile(join(d, ".git", "config"), "utf8").catch(() => "");
+      const url = /\[remote "origin"\][^[]*?url\s*=\s*(\S+)/.exec(cfg)?.[1];
+      if (url && !found.has(`url:${remoteKey(url)}`)) found.set(`url:${remoteKey(url)}`, d);
+      if (!found.has(`name:${basename(d)}`)) found.set(`name:${basename(d)}`, d);
+      return;
+    }
+    if (depth === 0) return;
+    for (const n of names)
+      if (!n.startsWith(".") && n !== "node_modules") await visit(join(d, n), depth - 1);
+  };
+  await visit(dir, 2);
+  return found;
+}
+
+const yourClone = (local: Map<string, string>, repo: ManifestRepo): string | undefined =>
+  local.get(`url:${remoteKey(repo.url)}`) ?? local.get(`name:${repo.id}`);

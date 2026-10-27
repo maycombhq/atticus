@@ -2,6 +2,12 @@
 
 All notable changes to Atticus. Versions follow [Semantic Versioning](https://semver.org); contracts C1 to C6 change only with an ADR, a schema version and a migration (`atticus upgrade`).
 
+## Unreleased
+
+### Base clones copied from the clones you already have
+
+- **`atticus workspace sync --from <folder>`** copies each repo's base clone from your own clone of it in that folder, matched by its remote URL (SSH and HTTPS alike) or its folder name: no network, the files hard-linked on the same drive, your clones only read. It takes the branch as your clone last fetched it (`origin/<branch>`), never your unpushed commits or edits, and points `origin` at the server, so the next sync fetches from there. A repo with no clone in the folder is cloned from the server as before.
+
 ## 2.0.0-beta.2 (2026-10-27)
 
 ### Fixed: a scan no longer calls every repo a prototype

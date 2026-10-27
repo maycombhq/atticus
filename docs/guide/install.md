@@ -53,11 +53,13 @@ On Windows, once: `git config --global core.longpaths true`. If Git doesn't know
 atticus init forge-meta --platform forge --owner <you>   # an estate of repos: one metarepo for the team
 cd forge-meta
 atticus repos discover <folder with your clones>         # proposes repos.manifest.yaml entries; add them
-atticus workspace sync                                   # base clones of every repo
+atticus workspace sync                                   # base clones of every repo (--from <folder with your clones>: copied from them, no network)
 atticus doctor                                           # each line [ok], [warn] or [FAIL], with what to do
 ```
 
 `atticus init` makes the folder a git repository (`git init`, branch `main`) when it isn't inside one, so the metarepo's changes go through pull requests; a folder already inside a repository is left as it is. It also writes your assistant's files — the slash commands (`.claude/commands/`), Copilot's prompts (`.github/prompts/`) and the instructions — so `/atticus-map <repo>` works in the new metarepo straight away; commit them in a pull request, and run `atticus assistant-files` again whenever the org pack's process files change. `atticus repos discover` never looks inside hidden folders (an assistant's worktrees under `.claude/`), `node_modules` or a nested worktree.
+
+Atticus reads each repo from its own base clone under `workspace/`, on the branch the manifest names (`repos discover` records the branch each of your clones is on), never from the clones you work in. When your clones are already on this machine, `atticus workspace sync --from <folder with your clones>` copies each one instead of cloning it again: nothing comes over the network, Git hard-links the files on the same drive, and your clones are only read. It takes each branch as your clone last fetched it (`origin/<branch>`), so your unpushed commits and edits stay yours, and points the copy's `origin` at the server, so later syncs fetch from there as usual.
 
 ### Say what each repo is
 

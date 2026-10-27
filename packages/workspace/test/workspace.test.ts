@@ -10,6 +10,7 @@ import {
   baseClonePath,
   branchCheckoutPath,
   checkoutState,
+  createGit,
   createWorkspace,
   ensureGitignore,
   intellijProjectPath,
@@ -507,4 +508,96 @@ describe("another branch beside the base clone (ADR 0123)", () => {
     },
     T,
   );
+});
+
+describe("base clones copied from your own clones (sync --from), with no network", () => {
+  /** Your clones folder: forge-ledger under its own name, forge-gateway under another. */
+  async function yourClones(): Promise<string> {
+    const clones = join(dir, "clones");
+    await mkdir(clones);
+    git(clones, "clone", "-q", repos[0]!.url, "forge-ledger");
+    git(clones, "clone", "-q", "--branch", "develop", repos[1]!.url, "gateway-work");
+    return clones;
+  }
+
+  it(
+    "copies each repo from your clone, never reaching the remote, and points origin at it",
+    async () => {
+      const clones = await yourClones();
+      const serverSha = git(join(clones, "forge-ledger"), "rev-parse", "origin/main");
+      // Work of yours that was never pushed, and uncommitted edits: neither may reach Atticus.
+      await writeFile(join(clones, "forge-ledger", "Mine.java"), "class Mine {}\n");
+      git(join(clones, "forge-ledger"), "add", "-A");
+      git(join(clones, "forge-ledger"), "commit", "-q", "-m", "unpushed");
+      await writeFile(join(clones, "forge-ledger", "pom.xml"), "<edited/>\n");
+      // The remotes are gone: any attempt to reach them fails the sync.
+      const { rename } = await import("node:fs/promises");
+      await rename(join(dir, "remotes"), join(dir, "remotes-away"));
+
+      const seen: string[][] = [];
+      const real = createGit();
+      const ws = createWorkspace(root, (args, cwd) => {
+        seen.push(args);
+        return real(args, cwd);
+      });
+      const r = await ws.sync(repos, { from: clones });
+      expect(r.map((x) => [x.id, x.action, x.from])).toEqual([
+        ["forge-ledger", "cloned", join(clones, "forge-ledger")],
+        ["forge-gateway", "cloned", join(clones, "gateway-work")],
+        ["forge-old", "skipped", undefined],
+      ]);
+      expect(seen.some((a) => a[0] === "fetch" || a[0] === "ls-remote")).toBe(false);
+
+      const base = baseClonePath(root, "forge-ledger");
+      expect(git(base, "rev-parse", "HEAD")).toBe(serverSha);
+      expect(git(base, "rev-parse", "--abbrev-ref", "HEAD")).toBe("main");
+      expect(git(base, "remote", "get-url", "origin")).toBe(repos[0]!.url);
+      expect(existsSync(join(base, "Mine.java"))).toBe(false);
+      expect(await readFile(join(base, "pom.xml"), "utf8")).toBe("<project/>\n");
+      expect(git(baseClonePath(root, "forge-gateway"), "rev-parse", "--abbrev-ref", "HEAD")).toBe(
+        "develop",
+      );
+      // Your clone is left as it was: the unpushed commit and the edit are still there.
+      expect(git(join(clones, "forge-ledger"), "log", "-1", "--format=%s")).toBe("unpushed");
+      expect(git(join(clones, "forge-ledger"), "status", "--porcelain")).toBe("M pom.xml");
+    },
+    T,
+  );
+
+  it(
+    "updates from the remote afterwards, like any base clone",
+    async () => {
+      const clones = await yourClones();
+      const ws = createWorkspace(root);
+      await ws.sync(repos, { from: clones });
+      await ledger.push({ "src/Next.java": "class Next {}\n" });
+      const r = await ws.sync(repos);
+      expect(r[0]!.action).toBe("updated");
+      expect(existsSync(join(baseClonePath(root, "forge-ledger"), "src", "Next.java"))).toBe(true);
+    },
+    T,
+  );
+
+  it(
+    "clones from the remote as before when your folder has no clone of a repo",
+    async () => {
+      const clones = join(dir, "clones");
+      await mkdir(clones);
+      const r = await createWorkspace(root).sync(repos, { from: clones });
+      expect(r[0]!.action).toBe("cloned");
+      expect(r[0]!.from).toBeUndefined();
+    },
+    T,
+  );
+});
+
+describe("remoteKey: one repo however its URL is written", () => {
+  it("matches SSH and HTTPS, with or without .git, credentials or a trailing slash", async () => {
+    const { remoteKey } = await import("../src/manager.js");
+    const k = "git.example.com/forge/forge-ledger";
+    expect(remoteKey("https://git.example.com/forge/forge-ledger.git")).toBe(k);
+    expect(remoteKey("git@git.example.com:forge/forge-ledger.git")).toBe(k);
+    expect(remoteKey("https://pat:tok@Git.Example.com/forge/forge-ledger/")).toBe(k);
+    expect(remoteKey("ssh://git@git.example.com/forge/forge-ledger")).toBe(k);
+  });
 });

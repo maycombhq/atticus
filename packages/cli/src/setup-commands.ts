@@ -278,6 +278,11 @@ export async function reposDiscoverCommand(
           ? `A manifest exists, so it was left as it is; the proposal is in ${r.file}.`
           : `Found ${plural(r.repos.length, "repo")}; nothing written (dry run).`,
     );
+    // Clones already on this machine: the base clones can be copied from them, not cloned again.
+    if (o.from && r.wrote === "manifest" && r.repos.length)
+      io.out(
+        `Next: atticus workspace sync --from "${resolve(o.from)}" copies each repo from these clones, with no network.`,
+      );
     if (r.questions.length)
       io.out(
         `${plural(r.questions.length, "question")} need a person${r.questionsFile ? `: ${r.questionsFile}` : ""}.`,
