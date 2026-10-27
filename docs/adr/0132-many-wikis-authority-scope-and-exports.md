@@ -78,7 +78,7 @@ On the invented Forge shop's 12 sources (2 standards, 2 platforms, 2 frameworks,
 
 What didn't hold up, and was fixed: the index looked up full-text rows by key, a scan of every row for every node, quadratic (68 s to build at 4,800 pages, 6 s after; `INDEX_VERSION` 5 rebuilds an index once); a rescan's plan looked a page's text up by a linear find, per page, per batch; each task's knowledge read whole snapshots (every page parsed) to show a few pages, now one file at a time; the same page in two wikis was read, scanned and indexed twice; a sync copied every page every time.
 
-The matching (`packages/evals/src/many-wikis-bench.ts`, `docs/evidence/context-eval.md`), before (no authority, scope or status) and after:
+The matching (`packages/evals/src/many-wikis-bench.ts`, `docs/evidence/many-wikis.md`), before (no authority, scope or status) and after:
 
 | Run                 | Selection | Recall | Precision | Out of scope listed | Leads right | Suggested right |
 | ------------------- | --------- | ------ | --------- | ------------------- | ----------- | --------------- |

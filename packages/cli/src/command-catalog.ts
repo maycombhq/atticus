@@ -116,6 +116,7 @@ const AREA_BY_WORD: Record<string, string> = {
   stub: "repos",
   ci: "repos",
   sources: "knowledge",
+  standards: "knowledge",
   knowledge: "knowledge",
   patterns: "knowledge",
   absorb: "knowledge",

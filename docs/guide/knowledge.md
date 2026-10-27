@@ -346,6 +346,6 @@ The app's Sources page shows each source's authority, its page overrides and whe
 - An answer to a conflict question doesn't rewrite the story files; the next stories run, or `atticus task context`, shows it. A hand-down already in a repo isn't redone either.
 - The code settles only a value it holds exactly (a path, URL or dotted key); a disagreement on step order or a claim's name is always a person's question.
 - A real document, a diagram and a real repo are still to walk.
-- Many wikis (ADR 0132): the matching is lexical, so precision on 12 sources is about 0.5 on the planted pages and 0.35 with 4,800 filler pages (`docs/evidence/context-eval.md`); a needed standard can still be missed when the search engine doesn't offer it. A Confluence or SharePoint export's restrictions are read only where the export has them. The change's own knowledge list (`knowledge.yaml`, the stages') isn't scoped; each task's is.
+- Many wikis (ADR 0132): the matching is lexical, so precision on 12 sources is about 0.5 on the planted pages and 0.35 with 4,800 filler pages (`docs/evidence/many-wikis.md`); a needed standard can still be missed when the search engine doesn't offer it. A Confluence or SharePoint export's restrictions are read only where the export has them. The change's own knowledge list (`knowledge.yaml`, the stages') isn't scoped; each task's is.
 
 `docs/build-status.md` (B2 and B-task-knowledge) has the detail.
