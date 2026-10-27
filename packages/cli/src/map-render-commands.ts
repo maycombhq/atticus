@@ -35,6 +35,8 @@ import {
   diffCatalogs,
   diffIsEmpty,
   estateFacts,
+  isPrototypeRepo,
+  prototypeLeftOut,
   readCatalog,
   targetQuestionDrafts,
   targetsFromAnswers,
@@ -135,6 +137,20 @@ export async function writeFactsIntoCatalog(
     const op = await loadOrgPack(orgPackDirOf(root));
     const generated = join(catalogDirOf(root), "generated");
     const existing = await readCatalog(generated, { cacheRoot: root });
+    // ADR 0133: a prototype's facts are kept and compared with the estate, never written into
+    // the catalog, its specs or its map, and nothing is asked about its calls.
+    if (isPrototypeRepo(op, repo)) {
+      for (const n of prototypeLeftOut({ repo, facts, existing: [], op, decisions: [] }).notes)
+        io.out(n);
+      const none = diffCatalogs(existing.records, existing.records);
+      return {
+        written: { written: 0, unchanged: 0, removed: 0 },
+        flows: [],
+        questions: [],
+        map: [],
+        changes: { ...none, byKind: {} },
+      };
+    }
     const curated = await readCatalog(join(catalogDirOf(root), "curated"), { cacheRoot: root });
     const rerun = `atticus verify ${repo} --write`;
     const answered = (await listQuestions(root, { repo, step: TARGETS_STEP })).questions;

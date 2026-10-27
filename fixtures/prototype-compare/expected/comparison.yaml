@@ -1,0 +1,170 @@
+# What the invented checkout prototype asks of the Forge estate (ADR 0133), written by hand before
+# the code: each call its UI makes to its BFF, and each call its BFF makes to a mock, in one of
+# four groups, citing the prototype and, where it exists, the estate's code or the vendor's spec.
+prototype: forge-checkout-prototype
+counts:
+  exists: 2
+  changes: 1
+  new: 2
+  vendor: 1
+calls:
+  - id: ui-bff.post-checkout
+    leg: ui-bff
+    group: changes
+    method: POST
+    path: /checkout
+    call:
+      repo: forge-checkout-prototype
+      fact: call.ui.post.checkout
+      component: checkout-ui
+      at: ui/src/api.ts:3
+    lands:
+      repo: forge-checkout-prototype
+      fact: entry.bff.post.checkout
+      component: checkout-bff
+      at: bff/src/server.ts:10
+    auth: oauth2
+    scopes: [shop.checkout, shop.loyalty]
+    estate:
+      entry:
+        repo: forge-shop-bff
+        fact: entry.post.checkout
+        component: shop-bff
+        at: src/main/java/forge/shop/CheckoutController.java:16
+      endpoint: shop-bff.post-checkout
+      how: path
+      auth: oauth2
+      scopes: [shop.checkout]
+    differences:
+      - kind: field-missing
+        side: response
+        field: loyaltyPoints
+        prototype: { value: loyaltyPoints, at: "bff/src/types.ts:9" }
+        message: "the response field loyaltyPoints (bff/src/types.ts:9) isn't in forge-shop-bff's response"
+      - kind: scope-missing
+        scope: shop.loyalty
+        prototype: { value: shop.loyalty, at: "bff/src/sso.ts:5" }
+        estate: { value: shop.checkout, at: "src/main/java/forge/shop/CheckoutController.java:15" }
+        message: "the prototype's sign-on asks for the scope shop.loyalty (bff/src/sso.ts:5), which forge-shop-bff doesn't demand (it demands shop.checkout)"
+    sentence: "POST /checkout, which checkout-ui calls on its BFF: forge-shop-bff serves it (POST /checkout, src/main/java/forge/shop/CheckoutController.java:16), but not as the prototype needs: 2 differences."
+  - id: ui-bff.get-loyalty-summary
+    leg: ui-bff
+    group: new
+    method: GET
+    path: /loyalty/summary
+    call:
+      repo: forge-checkout-prototype
+      fact: call.ui.get.loyalty-summary
+      component: checkout-ui
+      at: ui/src/api.ts:13
+    lands:
+      repo: forge-checkout-prototype
+      fact: entry.bff.get.loyalty-summary
+      component: checkout-bff
+      at: bff/src/server.ts:23
+    auth: oauth2
+    scopes: [shop.loyalty]
+    differences: []
+    sentence: "GET /loyalty/summary, which checkout-ui calls on its BFF: nothing in the estate serves it, and no vendor publishes it."
+  - id: ui-bff.get-orders-id
+    leg: ui-bff
+    group: exists
+    method: GET
+    path: /orders/{id}
+    call:
+      repo: forge-checkout-prototype
+      fact: call.ui.get.orders-id
+      component: checkout-ui
+      at: ui/src/api.ts:8
+    lands:
+      repo: forge-checkout-prototype
+      fact: entry.bff.get.orders-orderid
+      component: checkout-bff
+      at: bff/src/server.ts:17
+    auth: oauth2
+    scopes: [shop.orders.read]
+    estate:
+      entry:
+        repo: forge-shop-bff
+        fact: entry.get.orders-orderid
+        component: shop-bff
+        at: src/main/java/forge/shop/OrdersController.java:9
+      endpoint: shop-bff.get-orders-orderid
+      how: path
+      auth: oauth2
+      scopes: [shop.orders.read]
+    differences: []
+    sentence: "GET /orders/{id}, which checkout-ui calls on its BFF: forge-shop-bff serves it as the prototype needs (GET /orders/{orderId}, src/main/java/forge/shop/OrdersController.java:9)."
+  - id: bff-mock.post-invoices-invoiceid-pay
+    leg: bff-mock
+    group: exists
+    method: POST
+    path: /invoices/{invoiceId}/pay
+    call:
+      repo: forge-checkout-prototype
+      fact: call.bff.post.invoices-invoiceid-pay
+      component: checkout-bff
+      at: bff/src/server.ts:12
+    lands:
+      repo: forge-checkout-prototype
+      fact: entry.mock.post.invoices-id-pay
+      component: checkout-mocks
+      at: mocks/handlers.ts:5
+    estate:
+      entry:
+        repo: forge-billing
+        fact: entry.post.invoices-id-pay
+        component: billing-api
+        at: src/main/java/forge/billing/InvoicesController.java:13
+      endpoint: billing-api.post-invoices-id-pay
+      how: path
+    differences: []
+    sentence: "POST /invoices/{invoiceId}/pay, which checkout-bff calls on its mock: forge-billing serves it as the prototype needs (POST /invoices/{id}/pay, src/main/java/forge/billing/InvoicesController.java:13)."
+  - id: bff-mock.get-loyalty-sub-balance
+    leg: bff-mock
+    group: new
+    method: GET
+    path: /loyalty/{sub}/balance
+    call:
+      repo: forge-checkout-prototype
+      fact: call.bff.get.loyalty-sub-balance
+      component: checkout-bff
+      at: bff/src/server.ts:24
+    lands:
+      repo: forge-checkout-prototype
+      fact: entry.mock.get.loyalty-customerid-balance
+      component: checkout-mocks
+      at: mocks/handlers.ts:10
+    differences: []
+    sentence: "GET /loyalty/{sub}/balance, which checkout-bff calls on its mock: nothing in the estate serves it, and no vendor publishes it."
+  - id: bff-mock.get-v1-charges-orderid
+    leg: bff-mock
+    group: vendor
+    method: GET
+    path: /v1/charges/{orderId}
+    call:
+      repo: forge-checkout-prototype
+      fact: call.bff.get.v1-charges-orderid
+      component: checkout-bff
+      at: bff/src/server.ts:18
+    lands:
+      repo: forge-checkout-prototype
+      fact: entry.mock.get.v1-charges-chargeid
+      component: checkout-mocks
+      at: mocks/wiremock/mappings/northwind-get-charge.json:4
+    vendor:
+      system: northwind-pay
+      name: Northwind Pay
+      operation: northwind-pay.get-charge-8fbd38
+      method: GET
+      path: /charges/{chargeId}
+      at: inputs/partner-specs/northwind-pay-openapi-v2.yaml:46
+      through: [forge-partner-gateway]
+    differences: []
+    sentence: "GET /v1/charges/{orderId}, which checkout-bff calls on its mock: only Northwind Pay provides it (GET /charges/{chargeId}, inputs/partner-specs/northwind-pay-openapi-v2.yaml:46); it needs a route through forge-partner-gateway, which forwards to Northwind Pay already."
+repos: [forge-partner-gateway, forge-shop-bff]
+uses: [forge-billing]
+endpoints: [shop-bff.post-checkout]
+vendorOperations: [northwind-pay.get-charge-8fbd38]
+vendors: [northwind-pay]
+left: []

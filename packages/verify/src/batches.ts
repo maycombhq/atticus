@@ -1,3 +1,4 @@
+import { MOCK_FILE } from "@maycombhq/core";
 import { globToRegExp } from "@maycombhq/sdk";
 import type { FileSource } from "./source.js";
 import { isSourceFile } from "./verify.js";
@@ -108,8 +109,15 @@ export const FILE_KINDS = [
   "protocols",
   "flows",
   "gateway",
+  "mocks",
 ] as const;
 export type FileKind = (typeof FILE_KINDS)[number];
+
+/**
+ * A prototype's sign-on configuration (ADR 0133): an SSO, OIDC, Keycloak, Okta or Auth0 file. It
+ * gives each BFF route its auth and scopes, so it carries the mocks' rules, which say how.
+ */
+const SSO_FILE = /(^|\/)(sso|oidc|keycloak|okta|auth0)[^/]*\.[a-z]+$/i;
 
 /**
  * An API gateway's bundle (ADR 0124 addendum A-gateway): an Apigee proxy or shared flow (its XML
@@ -119,8 +127,11 @@ export type FileKind = (typeof FILE_KINDS)[number];
 const GATEWAY_FILE =
   /(^|\/)(apiproxy|sharedflowbundle)\/|(^|\/)(targetservers?|kvms?)\.json$|(^|\/)resources\/edge\/(env|org|api)\//i;
 const GATEWAY_KINDS: readonly FileKind[] = ["config", "gateway"];
-/** A file of no kind the path says: every kind it might be but the gateway's, which paths always say. */
-const ANY_KINDS: readonly FileKind[] = FILE_KINDS.filter((k) => k !== "gateway");
+/**
+ * A file of no kind the path says: every kind it might be but the gateway's and the mocks', which
+ * paths always say.
+ */
+const ANY_KINDS: readonly FileKind[] = FILE_KINDS.filter((k) => k !== "gateway" && k !== "mocks");
 
 /** Server-side code, every code topic but the front end's. */
 const BACKEND_KINDS: readonly FileKind[] = ["backend", "routes", "data", "protocols", "flows"];
@@ -201,7 +212,12 @@ export function fileKinds(path: string): FileKind[] {
       BACK_SCRIPT.test(path) ? BACKEND_KINDS : FRONT_DIR.test(path) ? FRONTEND_KINDS : CODE_KINDS,
     );
   if (isCode && CONFIG_CODE.test(path)) add(["config"]);
-  if (!k.size) add(STRUCTURED.test(path) ? DATAFILE_KINDS : ANY_KINDS);
+  // A prototype's mocks and sign-on (ADR 0133): told by their paths, as a gateway's files are.
+  // A structured mock (a WireMock mapping, db.json, a Postman collection) needs only these rules.
+  const mock = MOCK_FILE.test(path) || SSO_FILE.test(path);
+  if (!k.size && !(mock && STRUCTURED.test(path)))
+    add(STRUCTURED.test(path) ? DATAFILE_KINDS : ANY_KINDS);
+  if (mock) add(["mocks"]);
   return FILE_KINDS.filter((x) => k.has(x));
 }
 

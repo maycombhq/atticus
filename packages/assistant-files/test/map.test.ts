@@ -146,8 +146,10 @@ describe("lean batch prompts: the core and the topic rules a batch needs (ADR 01
     // scopes a route demands and the proxy's virtual host (A-gateway2); for the framework
     // fact and the per-framework parts of the derived-names rule (A-framework); and for the
     // Apigee rule's fifth part, the consumers a route names (A-callers).
+    // Re-pinned again when the mocks' rule (a prototype's mocks and sign-on, ADR 0133) landed
+    // beside the consumers a route names (A-callers).
     expect(createHash("sha256").update(FACT_RULES).digest("hex")).toBe(
-      "113f1b67f846d4e666bed1d5c68309f74cf761e69ef951483b2bcca5333ed0e9",
+      "af78226683e90fc1a857ac1dfaa6218602361f4d3f5e0fee26065abf6654bfca",
     );
     expect(FACT_RULES).toBe(factRulesFor());
     expect(mapCommand().body).toContain(FACT_RULES);
@@ -386,6 +388,36 @@ describe("lean batch prompts: the core and the topic rules a batch needs (ADR 01
     expect(batch(["config", "gateway"]).length).toBeLessThan(
       batch(["backend", "routes", "data", "protocols", "flows"]).length,
     );
+  });
+
+  it("gives a prototype's mocks and sign-on the mocks' rules, and no other batch (ADR 0133)", () => {
+    const MOCK = "A mock is the backend a prototype expects";
+    const SSO = "A prototype's sign-on (SSO, OIDC) configuration";
+    // A WireMock mapping's kinds (fileKinds in @maycombhq/verify): mocks alone.
+    const mocks = batch(["mocks"]);
+    for (const r of [MOCK, SSO]) expect(mocks).toContain(r);
+    for (const r of [FLOW, STORE, FRONT, GRPC, DEPLOY, "An Apigee proxy"])
+      expect(mocks).not.toContain(r);
+    const rule = FACT_RULES.split("\n").find((l) => l.startsWith(`- ${MOCK}`)) ?? "";
+    for (const words of [
+      "an MSW handler",
+      "a WireMock mapping's `url`, `urlPath` or `urlPathTemplate`",
+      "a json-server `db.json` key",
+      "a Postman mock collection's request `url`",
+      'the `@Profile(\\"mock\\")` line in `cite.with`'.replace(/\\"/g, '"'),
+      "`request` field facts",
+      "`response` field facts",
+      "a `framework` fact whose `component` is the mocks' module",
+      "one citation each on the line that names it",
+    ])
+      expect(rule, words).toContain(words);
+    for (const kinds of [
+      ["backend", "routes", "data", "protocols", "flows"],
+      ["frontend", "flows"],
+      ["deploy", "config"],
+      ["config", "gateway"],
+    ] as RuleTopic[][])
+      for (const r of [MOCK, SSO]) expect(batch(kinds), kinds.join()).not.toContain(r);
   });
 });
 

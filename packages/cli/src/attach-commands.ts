@@ -142,9 +142,26 @@ export async function changeAttachCli(
     promote?: string;
     /** WP7.6: an archived change to attach as an example, by its folder or its id. */
     like?: string;
+    /** ADR 0133: a prototype repo, compared with the estate and attached with its footprint. */
+    prototype?: string;
   },
   io: Output,
 ): Promise<number> {
+  if (change && o.prototype) {
+    if (paths.length) {
+      const { PROTOTYPE_CLI_WORDS } = await import("./prototype-commands.js");
+      io.err(PROTOTYPE_CLI_WORDS.usage(change, o.prototype));
+      return 2;
+    }
+    const { attachPrototype } = await import("./prototype-commands.js");
+    return attachPrototype(
+      root,
+      change,
+      o.prototype,
+      { by: o.by, ...(o.json ? { json: true } : {}), ...(o.now ? { now: o.now } : {}) },
+      io,
+    );
+  }
   if (change && o.like) {
     if (paths.length) {
       io.err(

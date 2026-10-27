@@ -76,8 +76,11 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   wikis), and the two export types; a conflict's suggested
  *   page by `status`, `exception` or `authority`; and on a change's knowledge item, its page's
  *   `source` and that source's `authority`. Additive only.
+ * 2.31.0 (ADR 0133): a prototype compared with the estate. GET
+ *   /api/changes/{id}/prototypes: each prototype attached to the change, its calls placed as
+ *   exists, changes, new or vendor, each cited. Additive only.
  */
-export const API_VERSION = "2.30.0";
+export const API_VERSION = "2.31.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -1541,6 +1544,100 @@ export type ChangeInputT = z.infer<typeof ChangeInput>;
 export type ChangeInputListT = z.infer<typeof ChangeInputList>;
 export type AttachResultT = z.infer<typeof AttachResult>;
 
+// ------------------------------------------------------------------ a prototype compared (ADR 0133)
+
+/** One end of the comparison: a fact, its repo and component, and the line it cites. */
+const PrototypeEnd = z.object({
+  repo: z.string(),
+  fact: z.string(),
+  component: z.string(),
+  at: z.string(),
+});
+const PrototypeSaid = z.object({ value: z.string(), at: z.string() });
+
+/** One way the estate (or a vendor) serves an operation other than as the prototype needs. */
+export const PrototypeDifferenceView = z.object({
+  kind: z.enum(["field-missing", "field-type", "field-required", "scope-missing", "auth"]),
+  side: z.enum(["request", "response"]).optional(),
+  field: z.string().optional(),
+  scope: z.string().optional(),
+  prototype: PrototypeSaid,
+  estate: PrototypeSaid.optional(),
+  message: z.string(),
+});
+
+/** One call of the prototype (a screen's to its BFF, the BFF's to a mock), placed in a group. */
+export const PrototypeCallView = z.object({
+  id: z.string(),
+  leg: z.enum(["ui-bff", "bff-mock"]),
+  group: z.enum(["exists", "changes", "new", "vendor"]),
+  method: z.string().optional(),
+  path: z.string(),
+  call: PrototypeEnd,
+  lands: PrototypeEnd,
+  auth: z.string().optional(),
+  scopes: z.array(z.string()).optional(),
+  estate: z
+    .object({
+      entry: PrototypeEnd,
+      endpoint: z.string(),
+      how: z.string(),
+      gateway: z.array(z.string()).optional(),
+      auth: z.string().optional(),
+      scopes: z.array(z.string()).optional(),
+    })
+    .optional(),
+  vendor: z
+    .object({
+      system: z.string(),
+      name: z.string(),
+      operation: z.string(),
+      method: z.string(),
+      path: z.string(),
+      at: z.string().optional(),
+      through: z.array(z.string()),
+    })
+    .optional(),
+  candidates: z.array(PrototypeEnd).optional(),
+  differences: z.array(PrototypeDifferenceView),
+  sentence: z.string(),
+});
+
+export const PrototypeComparisonView = z.object({
+  prototype: z.string(),
+  counts: z.object({
+    exists: z.number().int(),
+    changes: z.number().int(),
+    new: z.number().int(),
+    vendor: z.number().int(),
+  }),
+  calls: z.array(PrototypeCallView),
+  repos: z.array(z.string()),
+  uses: z.array(z.string()),
+  endpoints: z.array(z.string()),
+  vendorOperations: z.array(z.string()),
+  vendors: z.array(z.string()),
+  left: z.array(z.object({ call: PrototypeEnd, why: z.string() })),
+});
+
+/**
+ * A prototype attached to a change (`atticus change attach <change> --prototype <repo>`), compared
+ * again from today's facts; `problem` says why it can't be (its facts aren't verified, it is no
+ * longer typed a prototype).
+ */
+export const ChangePrototype = z.object({
+  repo: z.string(),
+  /** The attached comparison: inputs/prototype-<repo>.md. */
+  attached: z.string(),
+  about: z.object({ text: z.string(), trust: z.enum(["suggested", "verified"]) }).optional(),
+  comparison: PrototypeComparisonView.optional(),
+  problem: z.string().optional(),
+});
+export const ChangePrototypeList = z.object({ prototypes: z.array(ChangePrototype) });
+export type PrototypeCallViewT = z.infer<typeof PrototypeCallView>;
+export type ChangePrototypeT = z.infer<typeof ChangePrototype>;
+export type ChangePrototypeListT = z.infer<typeof ChangePrototypeList>;
+
 export const SaveArtifactRequest = z.strictObject({
   content: z.string(),
   /** The sha256 the edit started from; a mismatch returns 409. */
@@ -2601,6 +2698,17 @@ const OPS: Record<string, Record<string, Op>> = {
       body: AttachFileRequest,
       ok: { status: 201, schema: "AttachResult", description: "Attached, or refused with why" },
       errors: [400, 404, 413, 422],
+    },
+  },
+  "/api/changes/{changeId}/prototypes": {
+    get: {
+      id: "listChangePrototypes",
+      summary:
+        "The prototypes attached to a change, each compared again with the estate: every call its UI makes to its BFF and its BFF makes to a mock, as exists, changes, new or vendor, cited (ADR 0133)",
+      tag: "changes",
+      params: [p("changeId")],
+      ok: { status: 200, schema: "ChangePrototypeList", description: "OK" },
+      errors: [400, 404],
     },
   },
   "/api/questions/{id}/evidence": {
@@ -3731,6 +3839,7 @@ export function openApiDocument(): Record<string, unknown> {
     ChangeInput,
     ChangeInputList,
     AttachResult,
+    ChangePrototypeList,
     DocumentList,
     AddDocumentResult,
     RepoBranchesList,

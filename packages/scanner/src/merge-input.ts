@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import {
+  isPrototypeType,
   mergeCatalog,
   type CatalogRecord,
   type MergeInput,
@@ -32,6 +33,20 @@ export function estateRepos(op: OrgPack, only?: readonly string[]): EstateRepo[]
   return op.profiles
     .flatMap((p) => (p.repos?.repos ?? []).map((r) => ({ ...r, platform: p.platform })))
     .filter((r) => !r.archived && (!only || only.includes(r.id)));
+}
+
+/**
+ * The repos whose code is the estate (ADR 0133): every repo of `estateRepos` but a prototype (a
+ * repo the manifest types `prototype`). A prototype is read and compared with the estate, never
+ * written into the catalog, joined or asked about.
+ */
+export function productionRepos(op: OrgPack, only?: readonly string[]): EstateRepo[] {
+  return estateRepos(op, only).filter((r) => !isPrototypeType(r.type));
+}
+
+/** Whether the manifests type a repo as a prototype (ADR 0133). */
+export function isPrototypeRepo(op: OrgPack, repo: string): boolean {
+  return estateRepos(op).some((r) => r.id === repo && isPrototypeType(r.type));
 }
 
 /**

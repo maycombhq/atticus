@@ -198,8 +198,30 @@ describe("fileKinds: which topic rules of the protocol a file's batch needs (ADR
     expect(fileKinds("schema/ledger.graphql")).toEqual(["routes", "protocols"]);
     expect(fileKinds("api/openapi.yaml")).toEqual(["routes", "protocols"]);
     expect(fileKinds("ops/kong.yaml")).toEqual(["routes", "data", "deploy", "config", "protocols"]);
-    // Every kind but the gateway's: a gateway's files are told by their paths (A-gateway).
-    expect(fileKinds("scripts/release.sh")).toEqual(FILE_KINDS.filter((k) => k !== "gateway"));
+    // Every kind but the gateway's and the mocks': their files are told by their paths
+    // (A-gateway, ADR 0133).
+    expect(fileKinds("scripts/release.sh")).toEqual(
+      FILE_KINDS.filter((k) => k !== "gateway" && k !== "mocks"),
+    );
+  });
+
+  it("gives a prototype's mocks and its sign-on configuration the mocks' rules (ADR 0133)", () => {
+    expect(fileKinds("mocks/handlers.ts")).toEqual([
+      "frontend",
+      "backend",
+      "routes",
+      "data",
+      "protocols",
+      "flows",
+      "mocks",
+    ]);
+    expect(fileKinds("mocks/wiremock/mappings/northwind-get-charge.json")).toEqual(["mocks"]);
+    expect(fileKinds("db.json")).toEqual(["mocks"]);
+    expect(fileKinds("postman/shop.postman_collection.json")).toEqual(["mocks"]);
+    expect(fileKinds("bff/src/sso.ts")).toContain("mocks");
+    expect(fileKinds("src/oidc.config.ts")).toContain("mocks");
+    expect(fileKinds("src/main/java/forge/shop/CheckoutController.java")).not.toContain("mocks");
+    expect(fileKinds("package.json")).not.toContain("mocks");
   });
 
   it("a batch's kinds are its files' kinds together, in one order", () => {

@@ -432,6 +432,15 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
           body: Api.ChangeInputList.parse(await readChangeInputs(join(changesDirOf(root), c.id))),
         };
       })
+      // ADR 0133: each prototype attached to the change, compared again from today's facts.
+      .add("GET", "/api/changes/{changeId}/prototypes", async ({ params }) => {
+        const c = await readChange(root, params.changeId!);
+        const { changePrototypes } = await import("./prototype-commands.js");
+        return {
+          status: 200,
+          body: Api.ChangePrototypeList.parse(await changePrototypes(root, c.id)),
+        };
+      })
       .add(
         "POST",
         "/api/changes/{changeId}/inputs",

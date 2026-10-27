@@ -4,6 +4,21 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased (2.0.0-beta.2)
 
+### Start a change from a working prototype (ADR 0133)
+
+- **A prototype is a repo of type `prototype`.** Atticus reads it and verifies each claim on its line, as it does for any repo. It is kept out of the production catalog: it gives no Endpoints or Interfaces, none of its mocked calls becomes a gap or a question, and no other repo's call joins it. `atticus verify <repo> --write` and a scan say so.
+- **Its mocks are the backend it expects.** A new reading rule covers MSW handlers, WireMock mappings, json-server, Postman mock collections and `@Profile("mock")` controllers. It reads each mocked operation, with the fields it accepts and returns, and gives each BFF route the auth and scopes from the prototype's sign-on configuration.
+- **Each call placed in one of four groups.** `atticus change attach <change> --prototype <repo>` places every call the UI makes to its BFF, and every call the BFF makes to a mock, as:
+  - **exists:** the estate serves it, through the gateways;
+  - **changes:** a field is missing or retyped, required-ness differs, or a scope or the auth differs;
+  - **new:** nothing serves it;
+  - **only a vendor:** it needs a route through the external gateway.
+
+  Each call cites the prototype's line and the estate's or the vendor's. No model is called.
+
+- **It reaches the change.** The comparison is attached for the feature and architecture stages to read, cited by line. The change's footprint gains the repos, gateways, Endpoints, vendor operations and systems. `--json` gives the comparison as data. The app's change page shows the four groups (`GET /api/changes/{id}/prototypes`, C4 2.30.0).
+- **New in the guide:** [Starting from a prototype](docs/guide/prototypes.md).
+
 ### A vendor's new API version, and what in your estate it reaches (ADR 0130)
 
 - **Two versions of a vendor's spec, compared.** Add each version of a partner spec beside the last in `inputs/` (`atticus intake add`), never over it. `atticus intake impact <spec>` lists what changed: operations added, removed or moved, auth and scopes, and request and response fields added, removed, renamed, made required or optional, retyped, or given new enum values. Each change is marked breaking or additive by fixed rules, said in one sentence, and cited in both versions. No model is called.
