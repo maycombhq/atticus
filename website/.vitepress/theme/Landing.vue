@@ -35,7 +35,7 @@ const does = [
     linkText: "How approving works",
   },
   {
-    term: "Your wikis, attached to every task",
+    term: "Your wikis, indexed and tagged to every task",
     body: "Atticus reads your wikis and documents into knowledge items, each quote checked word for word against its page. Each task gets the how-tos, standards and decisions that bear on its own step, and when two pages disagree and the code doesn't settle it, a person is asked.",
     link: "/guide/knowledge.html#_7-knowledge-per-story-and-per-task",
     linkText: "Knowledge per task",
@@ -93,9 +93,10 @@ const steps = [
           Your assistant reads the code. Atticus checks every fact against the line it cites.
         </h1>
         <p class="lede">
-          Then it runs each change from idea to stories and tasks on that map, with a critic that
-          argues the other side and a person's approval at every gate. Open source, built on
-          OpenSpec, for teams whose systems span many repositories.
+          Then it runs each change from idea to stories and tasks on that map, indexes your wikis
+          and tags each task with the pages that bear on it, and puts a critic that argues the other
+          side and a person's approval at every gate. Open source, built on OpenSpec, for teams
+          whose systems span many repositories.
         </p>
         <p class="actions">
           <a class="btn btn-primary" href="#start">Install Atticus</a>
