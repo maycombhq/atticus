@@ -95,8 +95,8 @@ const steps = [
         <p class="lede">
           Then it runs each change from idea to stories and tasks on that map, indexes your wikis
           and tags each task with the pages that bear on it, and puts a critic that argues the other
-          side and a person's approval at every gate. Open source, built on OpenSpec, for teams
-          whose systems span many repositories.
+          side and a person's approval at every gate. Open source, spec-driven development built on
+          OpenSpec, for teams whose systems span many repositories.
         </p>
         <p class="actions">
           <a class="btn btn-primary" href="#start">Install Atticus</a>

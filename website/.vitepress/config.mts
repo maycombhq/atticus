@@ -20,7 +20,7 @@ export default defineConfig({
   lang: "en",
   title: "Atticus",
   description:
-    "Atticus reads your repos into facts that cite their file and line, checks every one, and runs each change from idea to tasks with a critic and a person's approval.",
+    "Atticus reads your repos into facts that cite their file and line, checks every one, and runs each change from idea to tasks with a critic and a person's approval: spec-driven development across many repos, built on OpenSpec.",
   cleanUrls: false,
   lastUpdated: false,
   head: [
