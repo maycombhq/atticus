@@ -1,5 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { commandText, resolveCommand, SHELL_UNSAFE, type CliOptions } from "./cli";
+import { hideInLog } from "./log-channel";
 import { WORDS } from "./words";
 
 /**
@@ -46,10 +48,17 @@ export function appUrlFrom(stdout: string): string | undefined {
   return /Atticus is running at (http:\/\/127\.0\.0\.1:\d+)/.exec(stdout)?.[1];
 }
 
-/** The session token `atticus ui` prints, for the sidebar's calls to the API (ADR 0093). */
+/**
+ * The session token an older `atticus ui` prints, for the sidebar's calls to the API (ADR 0093).
+ * This release gives the app its token (ATTICUS_UI_TOKEN) and the app never prints it with
+ * --embed, so it can't reach the output channel, the log people attach to a support ticket.
+ */
 export function appTokenFrom(stdout: string): string | undefined {
   return /the session token is (\S+)/.exec(stdout)?.[1];
 }
+
+/** What `atticus ui --embed` prints when it took the token the editor gave it. */
+const TOKEN_GIVEN = /session token isn't printed/;
 
 const attr = (s: string) => s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 
@@ -121,6 +130,10 @@ export function startApp(o: CliOptions, how: { full?: boolean } = {}): Promise<R
     o.cwd,
   ];
   const cmd = resolveCommand(o);
+  // The app's session token, made here and given in the environment (never on the command line,
+  // which other processes can read), and kept out of the log.
+  const given = randomBytes(32).toString("base64url");
+  hideInLog(given);
   log(`> ${commandText(args)}`);
   if (cmd.shell && args.some((a) => SHELL_UNSAFE.test(a)))
     return Promise.reject(
@@ -134,7 +147,7 @@ export function startApp(o: CliOptions, how: { full?: boolean } = {}): Promise<R
     try {
       child = spawn(cmd.shell ? `"${cmd.file}"` : cmd.file, argv, {
         cwd: o.cwd,
-        env: o.env ?? process.env,
+        env: { ...(o.env ?? process.env), ATTICUS_UI_TOKEN: given },
         shell: cmd.shell,
         windowsHide: true,
       });
@@ -151,7 +164,10 @@ export function startApp(o: CliOptions, how: { full?: boolean } = {}): Promise<R
       if (url) return;
       out += d;
       const at = appUrlFrom(out);
-      const token = appTokenFrom(out);
+      // An older atticus prints its own token (hidden in the log); this one took ours.
+      const printed = appTokenFrom(out);
+      if (printed) hideInLog(printed);
+      const token = printed ?? (TOKEN_GIVEN.test(out) ? given : undefined);
       // Both lines are printed one after the other; wait for the token too.
       if (at && token) {
         url = at;

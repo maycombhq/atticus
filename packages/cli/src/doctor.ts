@@ -45,7 +45,8 @@ import {
   type GitRunner,
 } from "@maycombhq/workspace";
 import type { Output } from "./commands.js";
-import { upgradeCheck } from "./upgrade.js";
+import { isMetarepo, notMetarepo } from "./metarepo-guard.js";
+import { upgradeCheck, type UpgradeCheck } from "./upgrade.js";
 import { versionAtLeast } from "./version.js";
 export { versionAtLeast };
 
@@ -239,7 +240,12 @@ export async function doctorChecks(root: string, deps: DoctorDeps = {}): Promise
     });
   const openspecSoon = openspecVersion();
   const storesSoon = (deps.openspecStores ?? (() => openspecHasStores()))().catch(() => false);
-  const upgradeSoon = upgradeCheck(root);
+  // Outside a metarepo only the machine is checked (the metarepo's checks would read defaults
+  // and ask for an upgrade of a folder that isn't one).
+  const meta = isMetarepo(root);
+  const upgradeSoon: Promise<UpgradeCheck> = meta
+    ? upgradeCheck(root)
+    : Promise.resolve({ atticus: "", newer: false, pending: [] });
   // Read below; marked handled here so a check that throws first leaves no stray rejection.
   upgradeSoon.catch(() => undefined);
 
@@ -420,16 +426,17 @@ export async function doctorChecks(root: string, deps: DoctorDeps = {}): Promise
 
   // ---- The metarepo and this machine
   let writable = true;
-  try {
-    const dir = join(root, ".atticus");
-    await mkdir(dir, { recursive: true });
-    const probe = join(dir, `.doctor-${process.pid}`);
-    await writeFile(probe, "ok");
-    await rm(probe);
-    await access(root, constants.W_OK);
-  } catch {
-    writable = false;
-  }
+  if (meta)
+    try {
+      const dir = join(root, ".atticus");
+      await mkdir(dir, { recursive: true });
+      const probe = join(dir, `.doctor-${process.pid}`);
+      await writeFile(probe, "ok");
+      await rm(probe);
+      await access(root, constants.W_OK);
+    } catch {
+      writable = false;
+    }
   out.push({
     id: "writable",
     label: "Metarepo is writable",
@@ -632,7 +639,7 @@ export async function doctorChecks(root: string, deps: DoctorDeps = {}): Promise
   }
 
   // ---- The slash commands the assistant runs: there and current (ADR 0119)
-  if (rt.ai !== "off") {
+  if (rt.ai !== "off" && meta) {
     let files: AssistantFilesState | undefined;
     let problem: string | undefined;
     try {
@@ -725,8 +732,26 @@ export async function doctorChecks(root: string, deps: DoctorDeps = {}): Promise
       ? `${live.map(([k, a]) => `${k}: ${a!.type}`).join(", ")}; each falls back to steps a person does when it can't be reached`
       : "every outside system is manual or a mock: Atticus writes steps for a person",
   });
-  return out;
+  if (meta) return out;
+  // Said once, first, with the guidance atticus next gives; the machine's checks follow.
+  return [
+    { id: "metarepo", label: "Metarepo", status: "warn", detail: notMetarepo(root) },
+    ...out.filter((c) => !METAREPO_ONLY.has(c.id)),
+  ];
 }
+
+/** The checks that read the metarepo itself, left out where the folder isn't one. */
+const METAREPO_ONLY = new Set([
+  "openspec-stores",
+  "writable",
+  "facts-read",
+  "default-branches",
+  "upgrade",
+  "org-pack",
+  "tier",
+  "assistant-files",
+  "adapters",
+]);
 
 /** atticus doctor [--json]: exit 0 when nothing fails (warnings allowed), else 1. */
 export async function doctorCommand(

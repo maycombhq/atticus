@@ -2199,13 +2199,7 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
       },
       io,
     );
-    // A new metarepo starts up to date: record the Atticus that made it (ADR 0051).
-    if (code === 0)
-      await upgradeCommand(
-        dir,
-        { by: owner ?? (await gitUser(dir)).handle },
-        { out: () => undefined, err: (l) => io.err(l) },
-      );
+    // initCommand brings the new metarepo up to date and records the Atticus that made it.
     return code;
   }
   if (group === "adopt")

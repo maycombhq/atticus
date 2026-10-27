@@ -117,10 +117,23 @@ export function tarballProblems(bytes) {
   const problems = commonProblems(m);
   if (a.has("binding.gyp"))
     problems.push("it has a binding.gyp, which makes npm run node-gyp at install");
-  for (const kind of ["dependencies", "optionalDependencies", "peerDependencies"])
-    for (const [d, v] of Object.entries(m[kind] ?? {}))
+  // devDependencies too: npm reads them, and a published manifest that names a private Atticus
+  // package (the cli, extractors or core a bundle is built from) can't be resolved from npm.
+  const published = new Set(publishablePackages().map((p) => p.name));
+  for (const kind of [
+    "dependencies",
+    "optionalDependencies",
+    "peerDependencies",
+    "devDependencies",
+  ])
+    for (const [d, v] of Object.entries(m[kind] ?? {})) {
       if (String(v).startsWith("workspace:"))
         problems.push(`${d} is still ${v}: pack it with pnpm, which writes the version`);
+      if (d.startsWith("@maycombhq/") && !published.has(d))
+        problems.push(
+          `it needs ${d} (${kind}), which isn't published: leave it out of the packed manifest`,
+        );
+    }
   const third = Boolean(m.atticusModel || m.atticusRepackaged);
   const pinsText = a.text("pins.json");
   if (third && !pinsText)

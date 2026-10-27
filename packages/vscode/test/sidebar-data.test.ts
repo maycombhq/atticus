@@ -640,6 +640,22 @@ describe("the rest of Atticus in the sidebar (ADR 0096)", () => {
       }),
     ).toEqual(["Proxy: No proxy set. Set HTTPS_PROXY", "Disk: 200 MB free. Free some space"]);
   });
+
+  it("leaves out port 4321 in use: the extension starts its own app on a free port", () => {
+    expect(
+      healthProblems({
+        checks: [
+          {
+            id: "port",
+            label: "Port 4321",
+            status: "warn",
+            detail: "in use (another atticus ui, or another program)",
+            fix: "Stop the other program, or start the app on another port: atticus ui --port 4322.",
+          },
+        ],
+      }),
+    ).toEqual([]);
+  });
 });
 
 describe("the Questions section (ADR 0098)", () => {

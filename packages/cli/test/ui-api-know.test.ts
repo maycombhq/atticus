@@ -156,4 +156,31 @@ describe("the machine checks in the app", () => {
     const s = await get("/api/setup");
     expect((s.body as unknown as { steps: { id: string }[] }).steps[0]!.id).toBe("machine");
   });
+
+  it("starts the machine checks when the server starts, so the Set up page's first load finds them done or running", async () => {
+    const root = await mkdtemp(join(tmpdir(), "atticus-ui-warm-"));
+    await cp(join(FIXTURES, "forge/metarepo"), root, { recursive: true });
+    let runs = 0;
+    const doctor = async () => {
+      runs++;
+      return [{ id: "node", label: "Node.js", status: "ok" as const, detail: "Node 22" }];
+    };
+    const warm = await startServer({
+      root,
+      port: 0,
+      extend: (r, ctx) => uiKnowRoutes(r, ctx, { warm: true, doctor }),
+    });
+    try {
+      // Before any request.
+      expect(runs).toBe(1);
+      const r = await fetch(`${warm.url}/api/setup`, {
+        headers: { "X-Atticus-Token": warm.token },
+      });
+      expect(r.status).toBe(200);
+      await fetch(`${warm.url}/api/doctor`, { headers: { "X-Atticus-Token": warm.token } });
+      expect(runs).toBe(1);
+    } finally {
+      await warm.close();
+    }
+  });
 });

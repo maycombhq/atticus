@@ -56,6 +56,10 @@ export async function startUi(
     embed?: "vscode";
     /** Every page in the app's menu, not only the six entries (`atticus ui --full`). */
     full?: boolean;
+    /** The session token the editor that started it made (ATTICUS_UI_TOKEN). */
+    token?: string;
+    /** Start the machine checks as the server starts, for the Set up page's first load. */
+    warm?: boolean;
   } = {},
   deps: UiDeps = {},
 ): Promise<RunningServer> {
@@ -64,6 +68,7 @@ export async function startUi(
     port: o.port ?? DEFAULT_PORT,
     ...(o.embed ? { embed: o.embed } : {}),
     ...(o.full ? { full: true } : {}),
+    ...(o.token ? { token: o.token } : {}),
     staticDir: o.staticDir ?? uiDistDir(),
     ...(o.user ? { user: o.user } : {}),
     ...(o.version ? { version: o.version } : {}),
@@ -77,7 +82,9 @@ export async function startUi(
       };
     })(),
     extend: (r, ctx) => {
-      const base = uiKnowRoutes(uiRunRoutes(uiRoutes(r, ctx, deps), ctx, deps), ctx);
+      const base = uiKnowRoutes(uiRunRoutes(uiRoutes(r, ctx, deps), ctx, deps), ctx, {
+        warm: o.warm === true,
+      });
       const views = uiGraphRoutes(uiAcrossRoutes(uiMeRoutes(base, ctx), ctx), ctx);
       const specs = uiSpecRoutes(uiOnboardingRoutes(uiQuestionRoutes(views, ctx), ctx), ctx);
       // ADR 0102: knowledge, a change's needs and the org pack from the wikis.
@@ -203,9 +210,11 @@ export function untilStopped(
 }
 
 /**
- * What `atticus ui` prints once it runs. The token drives the API, so it is printed only for an
- * editor that started the app (it reads it from here) or on request, not into every terminal and
- * its scrollback (ADR 0119).
+ * What `atticus ui` prints once it runs. The token drives the API, so it is printed only on
+ * request in a person's own terminal, not into every terminal and its scrollback (ADR 0119).
+ * Never when an editor started the app (--embed, --parent): what it prints lands in the editor's
+ * output log, the file people attach to a support ticket. VS Code gives the app its token
+ * (ATTICUS_UI_TOKEN); IntelliJ's page has it.
  */
 export function startedLines(
   url: string,
@@ -214,9 +223,11 @@ export function startedLines(
 ): string[] {
   return [
     `Atticus is running at ${url} (Ctrl+C stops it).`,
-    o.showToken || o.embed || o.parent !== undefined
-      ? `For assistants and scripts, the session token is ${token}`
-      : "The page has the session token; --show-token prints it for an assistant or a script.",
+    o.embed || o.parent !== undefined
+      ? "The session token isn't printed: the editor that started the app has it."
+      : o.showToken
+        ? `For assistants and scripts, the session token is ${token}`
+        : "The page has the session token; --show-token prints it for an assistant or a script.",
   ];
 }
 
@@ -241,9 +252,14 @@ export async function uiCommand(
   },
   io: Output,
 ): Promise<number> {
+  // The editor's token, read once and kept from the commands the app runs.
+  const given = o.embed ? process.env.ATTICUS_UI_TOKEN : undefined;
+  delete process.env.ATTICUS_UI_TOKEN;
   let srv: RunningServer;
   try {
     srv = await startUi(root, {
+      ...(given ? { token: given } : {}),
+      warm: true,
       ...(o.full ? { full: true } : {}),
       ...(o.port !== undefined ? { port: o.port } : {}),
       ...(o.user ? { user: o.user } : {}),

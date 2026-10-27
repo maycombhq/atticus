@@ -1,6 +1,6 @@
 import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { parseRecord, raiseQuestions, recordPath, serializeRecord } from "@maycombhq/core";
@@ -78,6 +78,14 @@ describe("atticus next", () => {
     expect(said).toContain("isn't an Atticus metarepo");
     expect(said).toContain("atticus init");
     expect(said).toContain("atticus adopt");
+  });
+
+  it("in a practice sandbox's outer folder, says the metarepo is in .\\metarepo", async () => {
+    const outer = await mkdtemp(join(tmpdir(), "atticus-next-outer-"));
+    await mkdir(join(outer, "metarepo", "org-pack"), { recursive: true });
+    const r = await run(["next", "--root", outer]);
+    expect(r.code).toBe(2);
+    expect(r.err.join("\n")).toContain(`the metarepo is in .${sep}metarepo`);
   });
 
   it("names where to type the slash command: the default assistant (ADR 0121)", async () => {

@@ -7,6 +7,7 @@ import { cliRunner, resolveCommand, type CliOptions } from "./cli";
 import { codeRootFor, type Paths } from "./sidebar-data";
 import { runSpec, runStep, type RunnerDeps, type StepEnd } from "./runner";
 import { modelEnv, orgModelsFrom, type StepClass } from "./step-models";
+import { guardChannel } from "./log-channel";
 import { FULL_UI } from "./surface";
 import type { Cancel, Cli } from "./types";
 import { modelSettings, pickModel, usesConfiguredModel } from "./vscode-model";
@@ -38,7 +39,8 @@ export class Service {
   readonly onChanged = this.changed.event;
 
   constructor() {
-    this.log = vscode.window.createOutputChannel("Atticus");
+    // Each line stamped with the time, and no secret in it (log-channel.ts).
+    this.log = guardChannel(vscode.window.createOutputChannel("Atticus"));
   }
 
   /** The workspace folder holding org-pack/ (or .atticus/org-pack/), else the first folder. */

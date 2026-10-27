@@ -1,6 +1,6 @@
 import { cp, mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
 import type { GitRunner } from "@maycombhq/workspace";
@@ -567,5 +567,31 @@ describe("default branches (ADR 0123)", () => {
       "forge-gateway",
       "forge-events",
     ]);
+  });
+});
+
+describe("outside a metarepo", () => {
+  it("says once that the folder isn't a metarepo, leaves the metarepo checks out and still checks the machine", async () => {
+    const plain = await mkdtemp(join(tmpdir(), "atticus-doctor-plain-"));
+    const checks = await doctorChecks(plain, healthy());
+    const ids = checks.map((c) => c.id);
+    expect(byId(checks, "metarepo")).toMatchObject({ status: "warn" });
+    expect(byId(checks, "metarepo").detail).toContain("isn't an Atticus metarepo");
+    expect(byId(checks, "metarepo").detail).toContain("atticus init");
+    for (const id of ["writable", "upgrade", "org-pack", "assistant-files", "facts-read"])
+      expect(ids, id).not.toContain(id);
+    for (const id of ["node", "git", "openspec", "model"]) expect(ids, id).toContain(id);
+    const out: string[] = [];
+    await doctorCommand(plain, {}, { out: (l) => out.push(l), err: () => undefined }, healthy());
+    const said = out.join("\n");
+    expect(said).not.toMatch(/atticus upgrade|atticus assistant-files|Org pack: valid/);
+    expect(said.match(/isn't an Atticus metarepo/g)).toHaveLength(1);
+  });
+
+  it("in a practice sandbox's outer folder, says the metarepo is in .\\metarepo", async () => {
+    const outer = await mkdtemp(join(tmpdir(), "atticus-doctor-outer-"));
+    await mkdir(join(outer, "metarepo", "org-pack"), { recursive: true });
+    const checks = await doctorChecks(outer, healthy());
+    expect(byId(checks, "metarepo").detail).toContain(`the metarepo is in .${sep}metarepo`);
   });
 });

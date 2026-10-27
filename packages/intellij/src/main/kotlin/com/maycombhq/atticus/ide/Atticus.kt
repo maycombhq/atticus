@@ -96,7 +96,8 @@ class AtticusLog {
     private val text = StringBuilder()
     private val listeners = CopyOnWriteArrayList<(String) -> Unit>()
 
-    fun line(s: String) {
+    fun line(raw: String) {
+        val s = "[" + java.time.LocalTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss.SSS")) + "] " + raw
         synchronized(text) {
             text.append(s).append('\n')
             if (text.length > 400_000) text.delete(0, text.length - 300_000)

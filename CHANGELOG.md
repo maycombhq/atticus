@@ -8,6 +8,16 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 - **Change › Knowledge**, a tab beside Feature design, shows every page attached to the change, ranked, with its source and authority, the near-misses, the tasks that use each page and the pages that disagree; Confirm and Exclude work there. It was only at the foot of the Feature page, which now links to it. Ctrl+K finds it, and the editors' app panels reach it like the other tabs.
 
+### A first install on Windows 11: what it found, fixed
+
+- **A new metarepo is current.** `atticus sandbox create` wrote the Forge org pack at old schema versions, so its first `atticus doctor` asked for five upgrade steps and 66 slash commands. The sandbox's metarepo, and one `atticus init` makes (from the command line or anything that calls it), is brought to the current version of every schema with its slash commands written, so its doctor has nothing to upgrade. A test makes each and runs `upgrade --check` and doctor, so a future schema bump that forgets them fails.
+- **`atticus doctor` outside a metarepo says so, once,** with the guidance `atticus next` gives, and checks only the machine (Node, Git, OpenSpec, the model). It no longer says "Org pack: valid" or asks to run `atticus upgrade` in a folder that isn't one.
+- **The sandbox's next command is printed.** `atticus sandbox create <name>` ends with the `cd` line to run; doctor and `atticus next` in the sandbox's outer folder say the metarepo is in `.\metarepo`.
+- **The app's session token never reaches an editor's log.** `atticus ui` no longer prints it when an editor starts it (`--embed`, `--parent`): the VS Code extension gives it the token in its environment (`ATTICUS_UI_TOKEN`), and IntelliJ's page has it. `--show-token` in your own terminal prints it as before. The extension 0.7.0 is needed with this command line.
+- **The extension's and IntelliJ's output say the time on each line,** and the extension's machine check no longer warns about port 4321, which only `atticus ui` in a terminal uses.
+- **The Set up page's first load doesn't wait for the machine checks** (3 s on Windows): `atticus ui` starts them as it starts.
+- **The published manifests name no private package.** `@maycombhq/atticus` and the SDK leave out the devDependencies they are built from (a prepack step), and the release's pack check refuses a packed manifest with a `workspace:` spec or a dependency, devDependencies included, on a package that isn't published.
+
 ### Start a change from a working prototype (ADR 0133)
 
 - **A prototype is a repo of type `prototype`.** Atticus reads it and verifies each claim on its line, as it does for any repo. It is kept out of the production catalog: it gives no Endpoints or Interfaces, none of its mocked calls becomes a gap or a question, and no other repo's call joins it. `atticus verify <repo> --write` and a scan say so.
