@@ -79,12 +79,12 @@ describe("hand-down (Spec Kit engine)", () => {
       expect(text).toContain("\n## Organisation Rules\n");
       expect(text).toContain("\n## Team Rules (team-ledger)\n");
       expect(text).toContain("\n## Governance\n");
-      // The 14 active built-in rules (17, one retired with the four questions, and the timeout
+      // The 15 active built-in rules (17, one retired with the four questions, and the timeout
       // and rollback checks moved to the starter org rules by the product owner's decisions of
-      // 2026-10-24, ADR 0124 Part 4) and the Forge pack's two constitution-layer rules are the
-      // core principles.
+      // 2026-10-24, ADR 0124 Part 4; then route-callers-known added, ADR 0124 addendum A-callers)
+      // and the Forge pack's two constitution-layer rules are the core principles.
       const principles = lines.filter((l) => /^### [IVXLC]+\. /.test(l));
-      expect(principles).toHaveLength(16);
+      expect(principles).toHaveLength(17);
       expect(principles).toContain("### I. Every interface names an approved integration pattern");
       expect(principles.some((l) => / Calls to vendors go through the gateway$/.test(l))).toBe(
         true,
