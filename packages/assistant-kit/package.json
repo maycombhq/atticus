@@ -1,6 +1,6 @@
 {
   "name": "@maycombhq/assistant-kit",
-  "version": "2.0.0-beta.2",
+  "version": "2.0.0-beta.3",
   "private": true,
   "description": "The dialect build kit an organisation's own assistant uses to write dialects, dialect scaffolding and testing, and the kit's evaluation grader.",
   "license": "Apache-2.0",

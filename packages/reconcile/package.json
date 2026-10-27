@@ -1,6 +1,6 @@
 {
   "name": "@maycombhq/reconcile",
-  "version": "2.0.0-beta.2",
+  "version": "2.0.0-beta.3",
   "private": true,
   "description": "Reads draw.io diagrams, resolves diagram names to catalog ids, and reconciles what the diagram says with what the code says.",
   "license": "Apache-2.0",

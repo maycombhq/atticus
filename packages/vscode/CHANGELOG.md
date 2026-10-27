@@ -2,6 +2,10 @@
 
 The Atticus extension for VS Code. The command line's own changes are in the repository's [CHANGELOG](https://github.com/maycombhq/atticus/blob/main/CHANGELOG.md).
 
+## 0.7.1 (pre-release, with Atticus 2.0.0-beta.3)
+
+- **Ships with Atticus 2.0.0-beta.3.** No change to the extension itself; the command line adds `atticus workspace sync --from <folder>`, which copies base clones from the clones already on the machine instead of cloning again.
+
 ## 0.7.0 (pre-release, with Atticus 2.0.0-beta.2)
 
 - **A new version for this release.** 0.6.0 was also what a development build said, so VS Code couldn't tell the two apart.

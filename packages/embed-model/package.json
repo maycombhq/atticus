@@ -1,6 +1,6 @@
 {
   "name": "@maycombhq/embed-model",
-  "version": "2.0.0-beta.2",
+  "version": "2.0.0-beta.3",
   "description": "The local embedding model Atticus ships (ADR 0116): all-MiniLM-L6-v2 as fp32 ONNX, its tokenizer and licence, and atticus-model.yaml. Run on the person's own machine; nothing is downloaded.",
   "license": "Apache-2.0",
   "files": [

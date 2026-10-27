@@ -1,6 +1,6 @@
 {
   "name": "@maycombhq/verify",
-  "version": "2.0.0-beta.2",
+  "version": "2.0.0-beta.3",
   "private": true,
   "description": "The verifier for the facts an assistant writes (ADR 0124): the claim on the cited line, the quote, references, redaction and coverage; and the map rendered from the catalog they become (map.md, flows, OpenAPI).",
   "license": "Apache-2.0",

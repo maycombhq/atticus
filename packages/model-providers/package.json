@@ -1,6 +1,6 @@
 {
   "name": "@maycombhq/model-providers",
-  "version": "2.0.0-beta.2",
+  "version": "2.0.0-beta.3",
   "private": true,
   "description": "Model-provider plugins for Atticus model mode (ADR 0065): Anthropic Messages, OpenAI-compatible Chat Completions (with Azure OpenAI) and AWS Bedrock Converse, through a corporate proxy and custom CA.",
   "license": "Apache-2.0",

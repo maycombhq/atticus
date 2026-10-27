@@ -1,6 +1,6 @@
 {
   "name": "@maycombhq/server",
-  "version": "2.0.0-beta.2",
+  "version": "2.0.0-beta.3",
   "private": true,
   "description": "The local server behind the Atticus UI: the C4 local API on 127.0.0.1 with a session token, live events and the UI files.",
   "license": "Apache-2.0",
