@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Atticus local API",
-    "version": "2.29.0",
+    "version": "2.30.0",
     "description": "Served by `atticus ui` on 127.0.0.1. The UI only calls this API, and the API only reads and writes files in the metarepo.",
     "license": {
       "name": "Apache-2.0",
@@ -8133,7 +8133,9 @@
                       "ado-wiki",
                       "sharepoint",
                       "markdown-folder",
-                      "git"
+                      "git",
+                      "confluence-export",
+                      "sharepoint-export"
                     ]
                   },
                   "location": {
@@ -20369,6 +20371,19 @@
                     },
                     "owner": {
                       "type": "string"
+                    },
+                    "authority": {
+                      "type": "string",
+                      "enum": [
+                        "standard",
+                        "platform",
+                        "framework",
+                        "team",
+                        "reference"
+                      ]
+                    },
+                    "scope": {
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -24058,6 +24073,76 @@
                   ],
                   "additionalProperties": false
                 },
+                "authority": {
+                  "type": "string",
+                  "enum": [
+                    "standard",
+                    "platform",
+                    "framework",
+                    "team",
+                    "reference"
+                  ]
+                },
+                "appliesTo": {
+                  "type": "object",
+                  "properties": {
+                    "systems": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "components": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "platforms": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "repoTypes": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "frameworks": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "newComponents": {
+                      "type": "boolean"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "scope": {
+                  "type": "string"
+                },
+                "byPage": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "readRestricted": {
+                  "type": "boolean"
+                },
+                "maxPages": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
                 "snapshot": {
                   "type": "object",
                   "properties": {
@@ -25782,6 +25867,19 @@
                   "items": {
                     "type": "string"
                   }
+                },
+                "source": {
+                  "type": "string"
+                },
+                "authority": {
+                  "type": "string",
+                  "enum": [
+                    "standard",
+                    "platform",
+                    "framework",
+                    "team",
+                    "reference"
+                  ]
                 }
               },
               "required": [
@@ -25978,7 +26076,10 @@
                   "owner",
                   "source-kind",
                   "space",
-                  "last-edited"
+                  "last-edited",
+                  "status",
+                  "exception",
+                  "authority"
                 ]
               },
               "detail": {

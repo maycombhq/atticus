@@ -1,0 +1,8 @@
+# The Forge shop's repos for the 12-source knowledge estate (ADR 0132). Hand-written.
+schemaVersion: 2
+platform: forge
+repos:
+  - { id: forge-orders, url: https://git.example.com/forge/forge-orders.git, type: spring-boot, owner: team-orders, system: forge-shop }
+  - { id: forge-stock, url: https://git.example.com/forge/forge-stock.git, type: spring-boot, owner: team-stock, system: forge-shop }
+  - { id: forge-web, url: https://git.example.com/forge/forge-web.git, type: angular, owner: team-web, system: forge-shop }
+  - { id: forge-payments, url: https://git.example.com/forge/forge-payments.git, type: spring-boot, owner: team-payments, system: forge-pay }

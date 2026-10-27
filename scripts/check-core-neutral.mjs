@@ -160,6 +160,12 @@ const WORK_REFS = "C1 ExternalRef.system adapter-type values (ado, jira) and the
 
 export const ALLOW = [
   {
+    file: "packages/core/src/schema/orgpack.ts",
+    names: ["gcp", "aws", "elastic"],
+    reason:
+      "ADR 0132: the default clouds a sources.yaml appliesTo.platforms takes in (a cloud stands for its platforms); a source names any other platform itself",
+  },
+  {
     file: "packages/core/src/facts-join.ts",
     names: ["apigee"],
     reason:
@@ -327,8 +333,14 @@ export const ALLOW = [
   },
   {
     file: "packages/knowledge/src/sources.ts",
-    names: ["confluence"],
-    reason: "C6 sources.yaml wiki adapter type",
+    names: ["confluence", "sharepoint"],
+    reason: "C6 sources.yaml wiki adapter types (ADR 0132: the export types)",
+  },
+  {
+    file: "packages/knowledge/src/exports.ts",
+    names: ["confluence", "sharepoint"],
+    reason:
+      "C6 sources.yaml export types (ADR 0132): the folder a named wiki exports to, read as that wiki writes it",
   },
   // --- generic words that collide with a product name
   {

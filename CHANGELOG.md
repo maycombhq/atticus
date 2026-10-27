@@ -28,6 +28,16 @@ Start a change from your own analysis: `atticus change attach <change> notes/*.m
 - **Code wins, out loud.** Where a note says something the code contradicts — an entry's path, a field, the order of the steps — the story follows the code, lists the difference in its Context, and you are asked a question naming the note's line and the code's. A note that names an entry no code serves is asked about even when the drafter missed it.
 - **Honest about the budget.** Notes take at most 15% of the stories prompt. A long note keeps its headings and the parts most related to the stories, and the stage says which lines it left out; no file is dropped. A note that hides instructions for an AI is held out and named. With nothing attached, the prompt is exactly what it was.
 
+### A dozen wikis: which counts for more, where each applies, read from exports (ADR 0132)
+
+- **`sources.yaml` version 3.** A source says how much its word counts (`authority`: standard, platform, framework, team or reference), with page overrides (`byPage`, as `include` and `exclude` match: an EA space's drafts and meeting notes are only reference) and how old a standard may get (`reviewMonths`). A page that is deprecated, superseded or archived (its labels, status or a banner) ranks below every current page. `atticus upgrade` moves version 1 and 2 files, changing only the number.
+- **Authority decides on one topic only.** A task's list stays ordered by how well each page matches it; among pages on the same topic the current, verified, more authoritative page leads. A draft or a drifted copy of a standard groups under it.
+- **Where a source applies** (`appliesTo`: systems, components, platforms or clouds, repo types, frameworks, new components). A GCP platform page reaches a task on GCP, or one that creates a new component (the target flow now says where a new component runs), never one that doesn't. Each attached page says the scope it matched.
+- **Pages that disagree** name the more authoritative page as suggested, or a team's approved exception within its scope, or the one still current; a stale standard is said to be possibly out of date. A person still decides.
+- **Standards become checks you accept**: `atticus standards propose`, then `atticus standards accept`. Nothing is enforced until the pull request merges.
+- **Exports and restricted pages.** A Confluence space exported as HTML and a SharePoint site saved with its library's `.csv` are sources (`confluence-export`, `sharepoint-export`). A page under view restrictions is skipped, path and reason only, unless the source says `readRestricted`.
+- **At scale.** A sync copies only changed pages; a page mirrored in two wikis is read once; `atticus sources estimate` gives pages, tokens and model calls before a scan, and `maxPages` caps a source. On 12 sources and 4,800 pages the index builds in about 10 s (it took over a minute: fixed).
+
 ### A fresh metarepo goes from `init` to stories with no dead end (ADR 0006, 0021, 0115 and 0124 addenda)
 
 A trial on a real repo, run as a developer would, stopped eight times on things that were nobody's bug and everybody's lost hour. All eight are fixed, each with a test.

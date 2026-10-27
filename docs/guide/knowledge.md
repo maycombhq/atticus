@@ -141,14 +141,20 @@ What each entry shows: the title and kind; the page, section and line (`forge-wi
 Several people may have written pages on the same thing. They are one entry, never several:
 
 - the pages an item was read from and is also described on, and
-- items that are near-duplicates of each other (the same kind, and nearly the same title or the same rules and steps).
+- items that are near-duplicates of each other (the same kind, and nearly the same title or the same rules and steps),
+- a section headed with every word of an item's title, or whose words are mostly the item's (a draft of a standard, or a copy of it in a team's wiki that has drifted since), and
+- two sections of the same page.
 
 The best page leads and the others are listed as "Also described on", in this order:
 
-1. **Verified by a person** (the item was reviewed and verified or corrected).
-2. **Newer** (the page's last update).
-3. **Owned:** a page or source with an owner, or in a team's space.
-4. **The more specific match:** the page whose section says more of the task's words.
+1. **Current:** a page that is deprecated, superseded or archived ranks below every current page, whatever its source (section 9).
+2. **Verified by a person** (the item was reviewed and verified or corrected).
+3. **More authoritative:** a standard before a platform's guidance, a framework's documentation, a team's page and reference material (section 9).
+4. **Newer** (the page's last update).
+5. **Owned:** a page or source with an owner, or in a team's space.
+6. **The more specific match:** the page whose section says more of the task's words.
+
+Authority decides only between pages on the same topic. The list itself is ordered by how well each entry matches the task: a loosely related standard never moves above the precise runbook for the task.
 
 A grouped entry says which items it grouped ("Grouped with sso-setup-2: they say the same").
 
@@ -166,7 +172,13 @@ The scan keeps one item for a topic, with the other pages that state it the same
 
 **Atticus never picks a page silently.** Once a change or one of its tasks relies on the item, it asks a person once, on the change (`questions/<id>.yaml`, step `knowledge-conflict`). The question quotes both pages, with their owners and last-edited dates when the snapshot has them, and offers each page, or "Both, in different cases" (say which in your own words), with what each choice changes.
 
-The scan also reads, without a model, which page likely owns the topic, by the first of these signals that tells the pages apart, and the question names that page as **suggested**, with the signal. It is only a suggestion:
+The page the question names as **suggested** comes first from what the pages are worth (section 9), read when the question is asked, so a change to `sources.yaml` applies at once:
+
+1. **Status:** one page is current and the others are deprecated, superseded or archived.
+2. **Exception:** a less authoritative page records an approved exception to the other (it says "exception" or "waiver", gives an approval such as `WVR-2291`, an ADR or "approved by", and names the other page). It is suggested within its source's scope, and the standard outside it, and the suggestion says it is an exception to which page.
+3. **Authority:** one page's source is more authoritative (a standard over a team's page). A standard not updated within its source's `reviewMonths` is said to be possibly out of date.
+
+Otherwise the scan reads, without a model, which page likely owns the topic, by the first of these signals that tells the pages apart. Either way it is only a suggestion:
 
 1. **Replaces:** one page says it replaces the other.
 2. **Owner:** one page's owner (its front matter or an "Owner:" line, else its source's owner in `sources.yaml`) is the team that handles the item.
@@ -185,6 +197,148 @@ The answer is used from then on. Tasks show the chosen page's words, and the oth
 
 `atticus knowledge conflicts` lists every disagreement, what each page says and who decided: a person (with their question) or the code (the fact), and the suggested page while it waits. `atticus change knowledge <id>` lists those the change relies on and asks the undecided ones; so do the stories stage and `atticus task context`. In the app, a knowledge item and the change's Knowledge panel show the same.
 
+## 9. Many wikis: authority, scope and exports
+
+An organisation has many wikis: enterprise architecture, security, a cloud platform's, framework wikis and a dozen team wikis. `sources.yaml` version 3 (ADR 0132; `atticus upgrade` moves a version 1 or 2 file and changes nothing else) says, for each, how much its word counts and where it applies.
+
+**Authority**, one of five, most first:
+
+| Authority   | For                               | Example                                     |
+| ----------- | --------------------------------- | ------------------------------------------- |
+| `standard`  | The organisation's own rules      | Enterprise architecture, security standards |
+| `platform`  | A shared platform team's guidance | The cloud platform's wiki                   |
+| `framework` | A framework's own documentation   | An internal framework's wiki                |
+| `team`      | A team's pages (the default)      | The orders team's wiki                      |
+| `reference` | Glossaries, notes, drafts         | A data glossary                             |
+
+A source's authority is its default. `byPage` overrides it, or a page's status, by page pattern (as `include` and `exclude` match); the first match wins. An enterprise architecture space holds approved standards next to drafts and meeting notes, and a team wiki may host a runbook the organisation adopted:
+
+```yaml
+byPage:
+  - { match: ["Drafts/**", "Meeting-notes/**"], authority: reference }
+  - { match: ["adopted/**"], authority: standard }
+  - { match: ["old/**"], status: archived }
+```
+
+Then the page itself: a `status` or label (deprecated, obsolete, superseded, archived), an archived space, or a banner at its top ("Deprecated: superseded by …", "This page is superseded by …"). A page no longer current ranks below every current page. `reviewMonths` says how old a standard may get: one not updated in longer is shown as "may be out of date".
+
+**Scope** (`appliesTo`): a scoped source's pages reach only the tasks whose places fall in it. Any dimension it names may match:
+
+- `systems` and `components`: the catalog's, for where the task's code is and what it calls; a component a target flow creates counts too;
+- `platforms`: where the task's components run (a component's `runtime` and its deployments' `platform`); a cloud (`gcp`, `aws`, `azure`) takes in its platforms (`cloud-run`, `gke`, ...);
+- `repoTypes`: the repos manifest's `type`;
+- `frameworks`: what a repo's facts declare it is built on (ADR 0124 addendum A-framework);
+- `newComponents: true`: every task that creates a component the catalog doesn't have yet. The architecture stage's target flow says where a new component runs (`runsOn`: its system, platform, cloud and framework), so "new components are built on GCP" reaches the task that creates one before it exists.
+
+Each attached page says why it applied, with the scope it matched: "Its source openshift-platform applies to platforms openshift: forge-orders runs on openshift". A source without `appliesTo` applies everywhere.
+
+**Restricted pages.** Snapshots are committed to the metarepo, so a page under view restrictions (front matter `restricted: true` or `restrictions`, a Confluence export's restriction marker, a SharePoint page with permissions of its own) is skipped as above the limit, path and reason only, unless the source has `readRestricted: true` because everyone who reads the metarepo may read it.
+
+**Exports, when there is no API.** `confluence-export` reads a Confluence space exported as HTML: each page's place in the space from its breadcrumbs (so `Drafts/**` matches), its last edit and author from the metadata line, its labels, and a restriction marker where the export has one. `sharepoint-export` reads a site's pages saved as HTML (or `.aspx`, or Markdown), with the pages library's metadata exported to a `.csv` beside them: Title, Modified, Modified By, labels or tags, status and `HasUniqueRoleAssignments` (a page with permissions of its own is restricted). Both become Markdown with that metadata as front matter, so everything above applies to them as to any page.
+
+**The same page in two wikis** (the same words, front matter aside) is read once, by the more authoritative source (then the first listed); the copy's snapshot lists it as skipped: "the same page as ea-standards/Standards/Logging-Standard.md, which reads it". A copy someone has edited since is a page of its own, grouped under the original's topic, which leads it.
+
+**Snapshots copy only what changed.** A sync copies the pages new or changed since the source's snapshot before it; an unchanged page is listed in `snapshot.yaml` with `in: <date>`, the snapshot whose folder holds its copy. Keep the snapshot folders a newer one points into. A knowledge scan reads only the pages changed since the last scan, and keeps the items of the others.
+
+**What a scan costs, before it runs:**
+
+```sh
+atticus sources estimate             # pages, tokens and model calls per source
+atticus sources estimate --source ea-standards --batch-tokens 50000
+```
+
+Each call is one prompt to your model (with Copilot, one premium request). `maxPages` caps the pages a scan reads of a source in one run; the rest wait for the next.
+
+**Standards become checks a person accepts.** The scan reads a standard's rules. Each rule of a standard a person confirmed (verified or corrected), on a page whose authority is `standard`, can be proposed as a critic check, citing the page and the item. Nothing is enforced until a person accepts it and the pull request merges:
+
+```sh
+atticus standards propose            # proposals/checklists/standards.yaml and .md
+atticus standards accept --only std-structured-logging-1
+```
+
+A rule that says should or recommended is a risk; any other is a blocking, waivable rule (C3, unchanged).
+
+An example with 12 sources, invented:
+
+```yaml
+schemaVersion: 3
+wikis:
+  - id: ea-standards
+    type: confluence-export
+    location: ../wikis/ea-standards
+    owner: Enterprise Architecture
+    authority: standard
+    byPage:
+      - { match: ["Drafts/**", "Meeting-notes/**"], authority: reference }
+    reviewMonths: 18
+  - {
+      id: security-standards,
+      type: markdown-folder,
+      location: ../wikis/security,
+      authority: standard,
+      reviewMonths: 18,
+    }
+  - id: gcp-platform
+    type: markdown-folder
+    location: ../wikis/gcp-platform
+    authority: platform
+    appliesTo: { platforms: [gcp], newComponents: true }
+    maxPages: 500
+  - {
+      id: openshift-platform,
+      type: markdown-folder,
+      location: ../wikis/openshift,
+      authority: platform,
+      appliesTo: { platforms: [openshift] },
+    }
+  - {
+      id: anvil-framework,
+      type: markdown-folder,
+      location: ../wikis/anvil,
+      authority: framework,
+      appliesTo: { frameworks: [anvil] },
+    }
+  - {
+      id: web-framework,
+      type: markdown-folder,
+      location: ../wikis/web-framework,
+      authority: framework,
+      appliesTo: { frameworks: [angular] },
+    }
+  - {
+      id: orders-team,
+      type: markdown-folder,
+      location: ../wikis/orders,
+      authority: team,
+      appliesTo: { components: [forge-orders, forge-refund-worker] },
+    }
+  - {
+      id: payments-team,
+      type: sharepoint-export,
+      location: ../wikis/payments,
+      authority: team,
+      appliesTo: { systems: [forge-pay] },
+    }
+  - {
+      id: stock-team,
+      type: markdown-folder,
+      location: ../wikis/stock,
+      authority: team,
+      appliesTo: { components: [forge-stock] },
+    }
+  - {
+      id: web-team,
+      type: markdown-folder,
+      location: ../wikis/web,
+      authority: team,
+      appliesTo: { repoTypes: [angular] },
+    }
+  - { id: identity-team, type: markdown-folder, location: ../wikis/identity, authority: team }
+  - { id: glossary, type: markdown-folder, location: ../wikis/glossary, authority: reference }
+```
+
+The app's Sources page shows each source's authority, its page overrides and where it applies; a change's Knowledge panel shows the source of each item's page and its authority; VS Code's Sources list shows the same.
+
 ## What it doesn't do yet
 
 - Matching by words still picks "file transfer" items (a file-transfer pattern, its request, a file hub's retirement) for a change about a money transfer, from the model's reading of the brief. Exclude them; no later stage picks them again.
@@ -192,5 +346,6 @@ The answer is used from then on. Tasks show the chosen page's words, and the oth
 - An answer to a conflict question doesn't rewrite the story files; the next stories run, or `atticus task context`, shows it. A hand-down already in a repo isn't redone either.
 - The code settles only a value it holds exactly (a path, URL or dotted key); a disagreement on step order or a claim's name is always a person's question.
 - A real document, a diagram and a real repo are still to walk.
+- Many wikis (ADR 0132): the matching is lexical, so precision on 12 sources is about 0.5 on the planted pages and 0.35 with 4,800 filler pages (`docs/evidence/many-wikis.md`); a needed standard can still be missed when the search engine doesn't offer it. A Confluence or SharePoint export's restrictions are read only where the export has them. The change's own knowledge list (`knowledge.yaml`, the stages') isn't scoped; each task's is.
 
 `docs/build-status.md` (B2 and B-task-knowledge) has the detail.

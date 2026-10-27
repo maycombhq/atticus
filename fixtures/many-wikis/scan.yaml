@@ -1,0 +1,37 @@
+# The knowledge scan's report for the planted pages (ADR 0132): the two disagreements it found.
+schemaVersion: 1
+scannedAt: 2026-10-20T09:00:00Z
+snapshots: []
+conflicts:
+  - about:
+      - idempotency-keys
+    pages:
+      - source: ea-standards
+        page: Standards/Idempotency-Keys.md
+      - source: payments-team
+        page: SitePages/Idempotency.md
+    says:
+      - The service keeps each idempotency key for 24 hours.
+      - forge-payments keeps each idempotency key for 72 hours, because the card network retries a refund for up to three days.
+    summary: how long an idempotency key is kept
+    foundBy: ai
+    owner:
+      source: payments-team
+      page: SitePages/Idempotency.md
+      signal: last-edited
+      detail: SitePages/Idempotency.md was last edited 2026-08-20, after Standards/Idempotency-Keys.md (2023-01-10)
+  - about:
+      - internal-tls
+    pages:
+      - source: security-standards
+        page: tls/internal-calls-tls.md
+      - source: stock-team
+        page: warehouse/legacy-warehouse-link.md
+    says:
+      - A service refuses a connection that offers only TLS 1.2 or older.
+      - forge-stock calls the warehouse over TLS 1.2 with mutual authentication until the warehouse is replaced.
+    summary: the TLS version of an internal call
+    foundBy: ai
+superseded: []
+injections: []
+failed: []

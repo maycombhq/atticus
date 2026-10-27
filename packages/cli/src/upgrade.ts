@@ -177,25 +177,17 @@ export const MIGRATIONS: Migration[] = [
     "Catalog records at schema version 3: a Schema field can say whether it is required (ADR 0125)",
     [2],
   ),
-  {
-    id: "sources-v2",
-    summary:
-      "sources.yaml at version 2: a wiki can include and exclude pages by pattern; every wiki still reads every page (ADR 0083)",
-    async pending(root) {
-      const rel = packRel(root, "sources.yaml");
-      const text = await readFile(join(root, rel), "utf8").catch(() => undefined);
-      return text !== undefined && migrateSourcesText(text).changed ? [rel] : [];
-    },
-    async apply(root) {
-      const rel = packRel(root, "sources.yaml");
-      const text = await readFile(join(root, rel), "utf8").catch(() => undefined);
-      if (text === undefined) return [];
-      const r = migrateSourcesText(text);
-      if (!r.changed) return [];
-      await writeFileAtomic(join(root, rel), r.text);
-      return [rel];
-    },
-  },
+  sourcesStep(
+    "sources-v2",
+    "sources.yaml at version 2: a wiki can include and exclude pages by pattern; every wiki still reads every page (ADR 0083)",
+    { from: 1, to: 2 },
+  ),
+  // ADR 0132: from version 1 or 2 (a version 1 file is moved to 2 by the step before, then here).
+  sourcesStep(
+    "sources-v3",
+    "sources.yaml at version 3: a wiki can say how much its word counts (authority) and where it applies (appliesTo); every wiki still ranks as a team's and applies everywhere (ADR 0132)",
+    { to: 3 },
+  ),
   {
     // ADR 0124 addendum B-place: `atticus init` ignored the whole of .atticus/, so the stamp this
     // command asks a person to commit (ADR 0051) was never committed.
@@ -305,6 +297,28 @@ async function longStories(root: string): Promise<string[]> {
       }
   }
   return out;
+}
+
+/** A step that moves sources.yaml up a version, the number only (ADR 0127, 0132). */
+function sourcesStep(id: string, summary: string, v: { from?: number; to: number }): Migration {
+  return {
+    id,
+    summary,
+    async pending(root) {
+      const rel = packRel(root, "sources.yaml");
+      const text = await readFile(join(root, rel), "utf8").catch(() => undefined);
+      return text !== undefined && migrateSourcesText(text, v).changed ? [rel] : [];
+    },
+    async apply(root) {
+      const rel = packRel(root, "sources.yaml");
+      const text = await readFile(join(root, rel), "utf8").catch(() => undefined);
+      if (text === undefined) return [];
+      const r = migrateSourcesText(text, v);
+      if (!r.changed) return [];
+      await writeFileAtomic(join(root, rel), r.text);
+      return [rel];
+    },
+  };
 }
 
 /** A .gitignore line that ignores the whole of .atticus/, the stamp with it. */

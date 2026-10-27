@@ -2,7 +2,7 @@
   "name": "@maycombhq/m5-exit",
   "version": "0.0.0",
   "private": true,
-  "description": "The M5 exit check: performance budgets on a synthetic estate three times the target size, and the installed command line's start time.",
+  "description": "The M5 exit check: performance budgets on a synthetic estate three times the target size, the installed command line's start time, and a dozen wikis of thousands of pages (ADR 0130).",
   "license": "Apache-2.0",
   "type": "module",
   "scripts": {
@@ -10,10 +10,15 @@
     "test": "vitest run --config ../../vitest.shared.mjs --fsModuleCachePath=node_modules/.vitest-cache --testTimeout=600000 --hookTimeout=600000 --no-file-parallelism"
   },
   "dependencies": {
+    "@maycombhq/ai": "workspace:*",
     "@maycombhq/cli": "workspace:*",
     "@maycombhq/core": "workspace:*",
+    "@maycombhq/index": "workspace:*",
+    "@maycombhq/knowledge": "workspace:*",
+    "@maycombhq/planner": "workspace:*",
     "@maycombhq/scanner": "workspace:*",
     "@maycombhq/synth": "workspace:*",
-    "@maycombhq/ui": "workspace:*"
+    "@maycombhq/ui": "workspace:*",
+    "yaml": "^2.9.1"
   }
 }

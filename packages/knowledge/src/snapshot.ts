@@ -11,12 +11,18 @@ import { readPage, type KnowledgePage, type SyncResult, type WikiSource } from "
  * `knowledge/snapshots/<source>/<date>/`, with `snapshot.yaml` listing the pages and their
  * hashes. The knowledge scan reads only snapshots, so a scan never reaches a wiki and the same
  * snapshot always gives the scan the same pages.
+ *
+ * ADR 0132: snapshots are committed, so at a dozen wikis a full copy per sync bloats the
+ * metarepo. A snapshot copies only the pages new or changed since the source's snapshot before
+ * it; an unchanged page is listed with `in: <date>`, the snapshot whose folder holds its copy.
+ * Readers follow it: a page's path is always where its copy is.
  */
 
 export const SNAPSHOT_FILE = "snapshot.yaml";
 
 export const SnapshotManifest = z.strictObject({
-  schemaVersion: z.literal(1),
+  /** 2 (ADR 0132): a page may be copied in an earlier snapshot (`in`). */
+  schemaVersion: z.union([z.literal(1), z.literal(2)]),
   source: z.string().min(1),
   /** The snapshot's date (the folder name). */
   date: z.iso.date(),
@@ -45,6 +51,8 @@ export const SnapshotManifest = z.strictObject({
       title: z.string().optional(),
       date: z.string().optional(),
       classification: z.string().optional(),
+      /** The earlier snapshot (its date) whose folder holds this page's copy, unchanged since. */
+      in: z.iso.date().optional(),
     }),
   ),
   /** Pages the sync didn't copy (above the classification limit), path and reason only. */
@@ -87,19 +95,22 @@ export async function writeSnapshots(o: {
   sources?: string[];
   /** Each git wiki's commit read, by source id (ADR 0101). */
   commits?: Record<string, string>;
-}): Promise<{ source: string; dir: string; pages: number }[]> {
+}): Promise<{ source: string; dir: string; pages: number; copied: number }[]> {
   const date = o.takenAt.slice(0, 10);
-  const out: { source: string; dir: string; pages: number }[] = [];
+  const out: { source: string; dir: string; pages: number; copied: number }[] = [];
   for (const w of o.orgPack.sources.wikis) {
     if (o.sources && !o.sources.includes(w.id)) continue;
     const pages = o.sync.pages.filter((p) => p.source === w.id);
     if (!pages.length && o.sync.problems.some((p) => p.source === w.id)) continue;
     const rel = `${knowledgeRelOf(o.root)}/snapshots/${w.id}/${date}`;
     const dir = join(o.root, ...rel.split("/"));
+    // The snapshot before this one: an unchanged page points at the folder that holds its copy.
+    const before = await previousCopies(o.root, w.id, date);
     await rm(dir, { recursive: true, force: true });
     await mkdir(dir, { recursive: true });
+    let copied = 0;
     const manifest: SnapshotManifest = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       source: w.id,
       date,
       takenAt: o.takenAt,
@@ -115,7 +126,12 @@ export async function writeSnapshots(o: {
     };
     for (const p of pages) {
       const file = safe(fileFor(p.pagePath));
-      await writeFileAtomic(join(dir, ...file.split("/")), p.text ?? "");
+      const was = before.get(p.pagePath);
+      const keep = was && was.sha256 === p.hash && was.file === file ? was.in : undefined;
+      if (!keep) {
+        await writeFileAtomic(join(dir, ...file.split("/")), p.text ?? "");
+        copied++;
+      }
       manifest.pages.push({
         page: p.pagePath,
         file,
@@ -123,13 +139,53 @@ export async function writeSnapshots(o: {
         ...(p.title ? { title: p.title } : {}),
         ...(p.date ? { date: p.date } : {}),
         classification: p.classification,
+        ...(keep ? { in: keep } : {}),
       });
     }
     await writeFileAtomic(join(dir, SNAPSHOT_FILE), stringify(manifest));
-    out.push({ source: w.id, dir: rel, pages: pages.length });
+    out.push({ source: w.id, dir: rel, pages: pages.length, copied });
   }
   return out;
 }
+
+/**
+ * The pages of a source's newest snapshot before `date` whose copy is still on disk, by page:
+ * the hash, the file and the snapshot (date) whose folder holds the copy.
+ */
+async function previousCopies(
+  root: string,
+  source: string,
+  date: string,
+): Promise<Map<string, { sha256: string; file: string; in: string }>> {
+  const out = new Map<string, { sha256: string; file: string; in: string }>();
+  const prev = (await snapshotDates(root, source)).find((d) => d < date);
+  if (!prev) return out;
+  const m = await readManifest(root, source, prev);
+  if (!m) return out;
+  for (const p of m.pages) out.set(p.page, { sha256: p.sha256, file: p.file, in: p.in ?? prev });
+  return out;
+}
+
+/** A snapshot's manifest, undefined when it has none or it doesn't read. */
+export async function readManifest(
+  root: string,
+  source: string,
+  date: string,
+): Promise<SnapshotManifest | undefined> {
+  const dir = join(knowledgeDirOf(root), "snapshots", source, date);
+  const text = await readFile(join(dir, SNAPSHOT_FILE), "utf8").catch(() => undefined);
+  if (text === undefined) return undefined;
+  const r = SnapshotManifest.safeParse(parse(text));
+  return r.success ? r.data : undefined;
+}
+
+/** Where a manifest's page copy is, root-relative: its own snapshot's folder, or the one it is in. */
+export const snapshotCopyPath = (
+  root: string,
+  source: string,
+  date: string,
+  p: { file: string; in?: string | undefined },
+) => `${knowledgeRelOf(root)}/snapshots/${source}/${p.in ?? date}/${p.file}`;
 
 /** The dates a source has snapshots for, newest first. */
 export async function snapshotDates(root: string, source: string): Promise<string[]> {
@@ -164,12 +220,13 @@ export async function readSnapshot(
   const manifest = SnapshotManifest.parse(parse(text));
   const pages: KnowledgePage[] = [];
   for (const p of manifest.pages) {
-    const content = await readFile(join(dir, ...p.file.split("/")), "utf8");
+    const path = snapshotCopyPath(root, source, d, p);
+    const content = await readFile(join(root, ...path.split("/")), "utf8");
     pages.push(
       readPage({
         source,
         sourceType: manifest.type,
-        path: `${rel}/${p.file}`,
+        path,
         pagePath: p.page,
         content,
         ...(p.date ? { updatedAt: p.date } : {}),
@@ -177,4 +234,61 @@ export async function readSnapshot(
     );
   }
   return { manifest, dir: rel, pages };
+}
+
+/**
+ * Single pages of each source's newest snapshot, read one file at a time with the manifest kept
+ * (ADR 0132): a task's knowledge shows a few pages of a source with thousands, and reading the
+ * whole snapshot (every page parsed) to show three was what cost the time at a dozen wikis.
+ */
+export function snapshotPages(
+  root: string,
+): (
+  source: string,
+  page: string,
+) => Promise<{ page: KnowledgePage; manifest: SnapshotManifest } | undefined> {
+  type Hit = { page: KnowledgePage; manifest: SnapshotManifest } | undefined;
+  const manifests = new Map<string, Promise<{ date: string; m: SnapshotManifest } | undefined>>();
+  const pages = new Map<string, Promise<Hit>>();
+  const manifest = (source: string) => {
+    if (!manifests.has(source))
+      manifests.set(
+        source,
+        (async () => {
+          const date = (await snapshotDates(root, source))[0];
+          const m = date ? await readManifest(root, source, date) : undefined;
+          return date && m ? { date, m } : undefined;
+        })(),
+      );
+    return manifests.get(source)!;
+  };
+  return (source, page) => {
+    const key = `${source}\0${page}`;
+    if (!pages.has(key))
+      pages.set(
+        key,
+        (async (): Promise<Hit> => {
+          const s = await manifest(source);
+          const e = s?.m.pages.find((p) => p.page === page);
+          if (!s || !e) return undefined;
+          const path = snapshotCopyPath(root, source, s.date, e);
+          const content = await readFile(join(root, ...path.split("/")), "utf8").catch(
+            () => undefined,
+          );
+          if (content === undefined) return undefined;
+          return {
+            manifest: s.m,
+            page: readPage({
+              source,
+              sourceType: s.m.type,
+              path,
+              pagePath: e.page,
+              content,
+              ...(e.date ? { updatedAt: e.date } : {}),
+            }),
+          };
+        })(),
+      );
+    return pages.get(key)!;
+  };
 }

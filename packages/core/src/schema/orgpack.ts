@@ -444,11 +444,56 @@ export const SourceTags = z.strictObject({
 export type SourceTags = z.infer<typeof SourceTags>;
 
 /**
- * sources.yaml's own schema version. Version 2 (ADR 0083 addendum, docs-folder fixes) adds a
- * wiki's `include` and `exclude` globs. Version 1 files still read; `atticus upgrade` moves
- * them to version 2 (`sources-v2`), changing nothing else.
+ * sources.yaml's own schema version. Version 2 (ADR 0127) adds a wiki's `include` and `exclude`
+ * globs. Version 3 (ADR 0132) adds what a source's word counts for (`authority`, `byPage`,
+ * `reviewMonths`), where it applies (`appliesTo`), `readRestricted`, `maxPages`, and the
+ * `confluence-export` and `sharepoint-export` folder types. Version 1 and 2 files still read;
+ * `atticus upgrade` moves them up (`sources-v2`, `sources-v3`), changing nothing else.
  */
-export const SOURCES_SCHEMA_VERSION = 2 as const;
+export const SOURCES_SCHEMA_VERSION = 3 as const;
+
+/**
+ * How much a source's word counts (ADR 0132), most first: the organisation's own rules
+ * (enterprise architecture, security), a shared platform team's guidance, a framework's own
+ * documentation, a team's pages, and reference material (a glossary, notes). A source without
+ * one ranks as a team's. Authority decides only between pages on the same topic: never relevance.
+ */
+export const SOURCE_AUTHORITIES = [
+  "standard",
+  "platform",
+  "framework",
+  "team",
+  "reference",
+] as const;
+export type SourceAuthority = (typeof SOURCE_AUTHORITIES)[number];
+
+/** A page's status (ADR 0132): a page that is no longer current ranks below every current one. */
+export const PAGE_STATUSES = ["current", "deprecated", "superseded", "archived"] as const;
+export type PageStatus = (typeof PAGE_STATUSES)[number];
+
+/** Where a source applies (ADR 0132): a page attaches to a task whose places fall in it. */
+export const SourceScope = z
+  .strictObject({
+    /** Catalog System ids. */
+    systems: z.array(z.string().min(1)).optional(),
+    /** Catalog Component ids, or a new component's id as its target flow names it. */
+    components: z.array(z.string().min(1)).optional(),
+    /** Where it runs: a platform (openshift, cloud-run, kubernetes) or a cloud (gcp, aws, azure). */
+    platforms: z.array(z.string().min(1)).optional(),
+    /** Repo types from the repos manifests (spring-boot, angular...). */
+    repoTypes: z.array(z.string().min(1)).optional(),
+    /** Frameworks a repo's facts declare (ADR 0124 addendum A-framework), or a new component's. */
+    frameworks: z.array(z.string().min(1)).optional(),
+    /** Every task that creates a component the catalog doesn't have yet. */
+    newComponents: z.boolean().optional(),
+  })
+  .refine(
+    (s) =>
+      s.newComponents === true ||
+      [s.systems, s.components, s.platforms, s.repoTypes, s.frameworks].some((l) => l?.length),
+    { message: "appliesTo names nothing: leave it out to apply everywhere" },
+  );
+export type SourceScope = z.infer<typeof SourceScope>;
 
 /**
  * A page path pattern inside a source, "/"-separated: `**` spans folders, `*` stays in one, `?`
@@ -462,10 +507,30 @@ const PageGlob = z
   });
 
 const SOURCES_V2_FIELDS = ["include", "exclude"] as const;
+const SOURCES_V3_FIELDS = [
+  "authority",
+  "byPage",
+  "reviewMonths",
+  "appliesTo",
+  "readRestricted",
+  "maxPages",
+] as const;
+const SOURCES_V3_TYPES = ["confluence-export", "sharepoint-export"];
+
+/** A page override of a source's authority or status (ADR 0132), by page pattern; first match wins. */
+const PageOverride = z
+  .strictObject({
+    match: z.array(PageGlob).min(1),
+    authority: z.enum(SOURCE_AUTHORITIES).optional(),
+    status: z.enum(PAGE_STATUSES).optional(),
+  })
+  .refine((o) => o.authority !== undefined || o.status !== undefined, {
+    message: "a byPage entry sets authority or status",
+  });
 
 export const Sources = z
   .strictObject({
-    schemaVersion: z.union([V, z.literal(SOURCES_SCHEMA_VERSION)]),
+    schemaVersion: z.union([V, z.literal(2), z.literal(SOURCES_SCHEMA_VERSION)]),
     /** Adopt in place: where an existing metarepo keeps things. Nothing is moved. */
     layout: z
       .strictObject({
@@ -483,7 +548,16 @@ export const Sources = z
           .strictObject({
             id: RecordId,
             /** git (ADR 0101): a repository of Markdown pages, such as an Azure DevOps or GitHub wiki, or a docs repo. */
-            type: z.enum(["confluence", "ado-wiki", "sharepoint", "markdown-folder", "git"]),
+            type: z.enum([
+              "confluence",
+              "ado-wiki",
+              "sharepoint",
+              "markdown-folder",
+              "git",
+              // Version 3 (ADR 0132): a space or site exported to a folder, read with its metadata.
+              "confluence-export",
+              "sharepoint-export",
+            ]),
             location: z.string().min(1),
             spaces: z.array(z.string().min(1)).default([]),
             owner: z.string().optional(),
@@ -499,6 +573,21 @@ export const Sources = z
             include: z.array(PageGlob).optional(),
             /** Version 2: never the pages matching one of these, even when included. */
             exclude: z.array(PageGlob).optional(),
+            /** Version 3: how much the source's word counts; default as a team's. */
+            authority: z.enum(SOURCE_AUTHORITIES).optional(),
+            /** Version 3: a page's own authority or status, by pattern (first match wins). */
+            byPage: z.array(PageOverride).optional(),
+            /** Version 3: a standard not updated in this many months may be out of date. */
+            reviewMonths: z.number().int().positive().optional(),
+            /** Version 3: where the source applies; default everywhere. */
+            appliesTo: SourceScope.optional(),
+            /**
+             * Version 3: the metarepo's audience may read pages under view restrictions. Default
+             * false: a restricted page is skipped as above the limit, path and reason only.
+             */
+            readRestricted: z.boolean().optional(),
+            /** Version 3: at most this many pages a knowledge scan reads of it per run. */
+            maxPages: z.number().int().positive().optional(),
           })
           .transform((w) => (w.type === "git" ? { ...w, checkout: w.checkout ?? "clone" } : w))
           .superRefine((w, ctx) => {
@@ -538,8 +627,8 @@ export const Sources = z
   .superRefine((s, ctx) => {
     unique(s.wikis, (w) => w.id, ctx, "wikis");
     unique(s.absorbed, (a) => a.id, ctx, "absorbed");
-    if (s.schemaVersion === 1)
-      s.wikis.forEach((w, i) => {
+    s.wikis.forEach((w, i) => {
+      if (s.schemaVersion === 1)
         for (const f of SOURCES_V2_FIELDS)
           if (w[f] !== undefined)
             ctx.addIssue({
@@ -547,7 +636,22 @@ export const Sources = z
               path: ["wikis", i, f],
               message: `${f} needs schemaVersion 2: run atticus upgrade`,
             });
-      });
+      if (s.schemaVersion < 3) {
+        for (const f of SOURCES_V3_FIELDS)
+          if (w[f] !== undefined)
+            ctx.addIssue({
+              code: "custom",
+              path: ["wikis", i, f],
+              message: `${f} needs schemaVersion 3: run atticus upgrade`,
+            });
+        if (SOURCES_V3_TYPES.includes(w.type))
+          ctx.addIssue({
+            code: "custom",
+            path: ["wikis", i, "type"],
+            message: `${w.type} needs schemaVersion 3: run atticus upgrade`,
+          });
+      }
+    });
   });
 
 /**
@@ -582,6 +686,178 @@ export function sourceReadsPage(
 ): boolean {
   if (w.include?.length && !w.include.some((g) => pageGlobMatches(g, page))) return false;
   return !w.exclude?.some((g) => pageGlobMatches(g, page));
+}
+
+/** The rank of an authority, 0 the most; a source without one ranks as a team's (ADR 0132). */
+export function authorityRank(a: SourceAuthority | undefined): number {
+  return SOURCE_AUTHORITIES.indexOf(a ?? "team");
+}
+
+/**
+ * The platforms each cloud runs (ADR 0132), so a source scoped to a cloud applies to a component
+ * that runs on one of its platforms, and one scoped to a platform to a component placed on its
+ * cloud. Lower case; an organisation names any other platform as it is.
+ */
+export const CLOUD_PLATFORMS: Record<string, readonly string[]> = {
+  gcp: [
+    "cloud-run",
+    "gke",
+    "cloud-functions",
+    "app-engine",
+    "compute-engine",
+    "dataflow",
+    "pubsub",
+  ],
+  aws: ["lambda", "ecs", "eks", "fargate", "ec2", "elastic-beanstalk", "sqs", "sns"],
+  azure: ["aks", "app-service", "azure-functions", "container-apps", "service-bus"],
+};
+
+const low = (s: string) => s.trim().toLowerCase();
+
+/** Whether a scope's platform or cloud takes in a task's: the same, or a cloud and one of its platforms. */
+const takesIn = (scope: string, place: string) => {
+  const e = low(scope);
+  const p = low(place);
+  return e === p || !!CLOUD_PLATFORMS[e]?.includes(p) || !!CLOUD_PLATFORMS[p]?.includes(e);
+};
+
+/**
+ * The first of a task's platforms a scope's platforms take in, a cloud standing for its platforms
+ * and a platform for its cloud; undefined when none is.
+ */
+export function platformsMatch(
+  scope: readonly string[],
+  places: readonly string[],
+): string | undefined {
+  return places.find((p) => scope.some((e) => takesIn(e, p)));
+}
+
+/** What the page says of itself, for its standing: from front matter, an export's metadata, its text. */
+export interface PageSignals {
+  labels?: readonly string[];
+  /** A status the page or its export states (Confluence status, a SharePoint column). */
+  status?: string;
+  /** The space or site is archived. */
+  spaceStatus?: string;
+  /** When it was last reviewed or updated, YYYY-MM-DD. */
+  updated?: string;
+  /** The page's text, for a banner near its top. */
+  text?: string;
+}
+
+/** A page's authority and status, and why, as its source, its overrides and the page itself say. */
+export interface PageStanding {
+  authority: SourceAuthority;
+  status: PageStatus;
+  /** What set the authority or status when it isn't the source's own: "byPage Drafts/**", "label deprecated". */
+  by?: string;
+  /** A standard not reviewed within the source's reviewMonths: shown as "may be out of date". */
+  outOfDate?: { since: string; months: number };
+}
+
+const STATUS_WORDS: [RegExp, PageStatus][] = [
+  [/^(deprecated|obsolete|retired|outdated)$/, "deprecated"],
+  [/^(superseded|replaced)$/, "superseded"],
+  [/^(archived|archive)$/, "archived"],
+];
+const statusOfWord = (w: string | undefined): PageStatus | undefined => {
+  const x = (w ?? "").trim().toLowerCase();
+  return STATUS_WORDS.find(([re]) => re.test(x))?.[1];
+};
+
+/** A banner near the top of a page: "> **Deprecated:** ...", "This page is superseded by ...". */
+function bannerStatus(text: string): PageStatus | undefined {
+  const lines = text.replace(/\r\n/g, "\n").split("\n");
+  let start = 0;
+  if (lines[0]?.trim() === "---") {
+    const end = lines.findIndex((l, k) => k > 0 && l.trim() === "---");
+    start = end + 1;
+  }
+  let seen = 0;
+  for (const raw of lines.slice(start)) {
+    const l = raw
+      .replace(/^[\s>*_#|-]+/, "")
+      .replace(/[*_]/g, "")
+      .trim();
+    if (!l) continue;
+    if (++seen > 6) break;
+    const m =
+      /^(deprecated|obsolete|superseded|archived|retired)\b/i.exec(l) ??
+      /^this (?:page|document|standard|runbook) (?:is|has been|was) (deprecated|obsolete|superseded|archived|retired|replaced)\b/i.exec(
+        l,
+      );
+    if (m) return statusOfWord(m[1]!);
+  }
+  return undefined;
+}
+
+const monthsBetween = (from: string, to: string) => {
+  const a = new Date(`${from}T00:00:00Z`);
+  const b = new Date(`${to.slice(0, 10)}T00:00:00Z`);
+  return (b.getUTCFullYear() - a.getUTCFullYear()) * 12 + (b.getUTCMonth() - a.getUTCMonth());
+};
+
+/**
+ * A page's standing (ADR 0132), in three layers: the source's authority (default a team's); the
+ * first `byPage` pattern that matches the page; then what the page says of itself: a status or
+ * label (deprecated, superseded, archived), an archived space, or a banner at its top. A
+ * standard last updated more than the source's `reviewMonths` before `now` may be out of date.
+ */
+export function pageStanding(
+  w: {
+    authority?: SourceAuthority | undefined;
+    byPage?:
+      | {
+          match: string[];
+          authority?: SourceAuthority | undefined;
+          status?: PageStatus | undefined;
+        }[]
+      | undefined;
+    reviewMonths?: number | undefined;
+  },
+  page: string,
+  signals: PageSignals,
+  now?: string,
+): PageStanding {
+  let authority: SourceAuthority = w.authority ?? "team";
+  let status: PageStatus = "current";
+  const by: string[] = [];
+  const o = w.byPage?.find((x) => x.match.some((g) => pageGlobMatches(g, page)));
+  if (o) {
+    const hit = o.match.find((g) => pageGlobMatches(g, page))!;
+    if (o.authority) authority = o.authority;
+    if (o.status) status = o.status;
+    by.push(`byPage ${hit}`);
+  }
+  if (status === "current") {
+    const own =
+      statusOfWord(signals.status) ??
+      signals.labels?.map(statusOfWord).find((x) => x !== undefined) ??
+      statusOfWord(signals.spaceStatus) ??
+      (signals.text ? bannerStatus(signals.text) : undefined);
+    if (own) {
+      status = own;
+      by.push(
+        statusOfWord(signals.status)
+          ? `status ${signals.status}`
+          : signals.labels?.some((l) => statusOfWord(l))
+            ? `label ${signals.labels.find((l) => statusOfWord(l))}`
+            : statusOfWord(signals.spaceStatus)
+              ? "its space is archived"
+              : "a banner at its top",
+      );
+    }
+  }
+  const out: PageStanding = { authority, status, ...(by.length ? { by: by.join("; ") } : {}) };
+  if (
+    authority === "standard" &&
+    w.reviewMonths &&
+    signals.updated &&
+    now &&
+    monthsBetween(signals.updated, now) > w.reviewMonths
+  )
+    out.outOfDate = { since: signals.updated, months: w.reviewMonths };
+  return out;
 }
 
 // ------------------------------------------------------------------ runtime.yaml

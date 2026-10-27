@@ -26,7 +26,16 @@ export interface OnboardingRepo {
 export interface Sources {
   path: string;
   present: boolean;
-  wikis: { id: string; type: string; location: string; spaces: string[]; owner?: string }[];
+  wikis: {
+    id: string;
+    type: string;
+    location: string;
+    spaces: string[];
+    owner?: string;
+    /** C4 2.30.0 (ADR 0132): how much its word counts, and where it applies, in words. */
+    authority?: string;
+    scope?: string;
+  }[];
   absorbed: { id: string; url: string; format: string; mode: string }[];
 }
 export interface OnboardingView {

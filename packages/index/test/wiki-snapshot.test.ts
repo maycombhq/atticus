@@ -100,4 +100,44 @@ describe("wiki sections from a snapshot", () => {
     expect(pages).toEqual(["forge-docs/overview.md", "forge-docs/runbooks/queues.md"]);
     ix.close();
   });
+
+  it("indexes a page copied in an earlier snapshot where its copy is (ADR 0132)", async () => {
+    const r = await root();
+    const later = "knowledge/snapshots/forge-docs/2026-10-26";
+    await mkdir(join(r, later), { recursive: true });
+    await writeFile(
+      join(r, later, "overview.md"),
+      "# Overview\n\n## Changed\n\nA zeppelin page.\n",
+    );
+    await writeFile(
+      join(r, later, "snapshot.yaml"),
+      [
+        "schemaVersion: 2",
+        "source: forge-docs",
+        "date: 2026-10-26",
+        "takenAt: 2026-10-26T09:00:00Z",
+        "type: markdown-folder",
+        "location: docs",
+        "pages:",
+        `  - { page: overview.md, file: overview.md, sha256: ${SHA("d")} }`,
+        `  - { page: runbooks/restart.md, file: runbooks/restart.md, sha256: ${SHA("b")}, in: 2026-10-25 }`,
+        "",
+      ].join("\n"),
+    );
+    const ix = await openIndex(r, { embeddings: "off" });
+    const pages = [...new Set(sections(ix).map((id) => id.split("#")[0]))];
+    expect(pages).toEqual(["forge-docs/overview.md", "forge-docs/runbooks/restart.md"]);
+    const file = ix.db
+      .prepare("SELECT file FROM nodes WHERE id = ?")
+      .get("forge-docs/runbooks/restart.md#Restart") as { file: string };
+    expect(file.file).toBe(`${SNAP}/runbooks/restart.md`);
+    expect(ix.search("zeppelin", { kinds: ["WikiSection"] }).length).toBe(1);
+    ix.close();
+    // A page changed again: its full-text rows are replaced, the old words gone.
+    await writeFile(join(r, later, "overview.md"), "# Overview\n\n## Changed\n\nA blimp page.\n");
+    const again = await openIndex(r, { embeddings: "off" });
+    expect(again.search("zeppelin", { kinds: ["WikiSection"] })).toEqual([]);
+    expect(again.search("blimp", { kinds: ["WikiSection"] }).length).toBe(1);
+    again.close();
+  });
 });

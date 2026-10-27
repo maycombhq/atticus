@@ -22,8 +22,12 @@ import {
  * files' nodes are.
  */
 
-/** Bumped when the index's tables change; an index of another version is rebuilt once. */
-export const INDEX_VERSION = 4;
+/**
+ * Bumped when the index's tables change; an index of another version is rebuilt once. 5 (ADR
+ * 0132): a node's full-text row has the node's rowid, so a changed file's rows are found without
+ * reading every full-text row (quadratic at thousands of wiki pages).
+ */
+export const INDEX_VERSION = 5;
 
 export const SCHEMA = `
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -293,8 +297,10 @@ export async function updateIndex(
       ])
         db.prepare(`DELETE FROM ${t} WHERE file = ?`).run(path);
     };
+    // ADR 0132: a full-text row is found by its rowid, the node's; by key it was a scan of every
+    // row, for every node, which took a minute at 5,000 wiki pages.
     const dropFts = db.prepare(
-      "DELETE FROM fts WHERE key IN (SELECT key FROM nodes WHERE file = ?)",
+      "DELETE FROM fts WHERE rowid IN (SELECT rowid FROM nodes WHERE file = ?)",
     );
     for (const p of removed) {
       dropFts.run(p);
@@ -313,9 +319,11 @@ export async function updateIndex(
     const insLink = db.prepare("INSERT INTO links VALUES (?, ?, ?, ?, ?, ?, ?)");
     const insReview = db.prepare("INSERT INTO reviews VALUES (?, ?, ?, ?, ?)");
     const insFts = db.prepare(
-      "INSERT INTO fts (key, name, ids, body, words) VALUES (?, ?, ?, ?, ?)",
+      "INSERT INTO fts (rowid, key, name, ids, body, words) VALUES (?, ?, ?, ?, ?, ?)",
     );
-    const delFtsKey = db.prepare("DELETE FROM fts WHERE key = ?");
+    const delFtsKey = db.prepare(
+      "DELETE FROM fts WHERE rowid IN (SELECT rowid FROM nodes WHERE key = ?)",
+    );
     // ADR 0116: what each node is embedded as, by the hash its vector is kept under.
     const insText = db.prepare("INSERT OR REPLACE INTO node_text VALUES (?, ?, ?, ?)");
     const upFile = db.prepare("INSERT OR REPLACE INTO files VALUES (?, ?, ?, ?, ?)");
@@ -327,8 +335,11 @@ export async function updateIndex(
         upFile.run(f.path, f.source, f.size, f.mtimeMs, hash);
         continue;
       }
-      dropFts.run(f.path);
-      drop(f.path);
+      // A file the index didn't have has no rows to drop.
+      if (known.has(f.path)) {
+        dropFts.run(f.path);
+        drop(f.path);
+      }
       const r: FileRead = documents.get(f.path) ?? readSource(root, f, text);
       if (r.problem) result.problems.push({ file: f.path, message: r.problem });
       if (f.source === "catalog") catalogChanged = true;
@@ -359,7 +370,7 @@ export async function updateIndex(
       }
       for (const n of r.nodes) {
         delFtsKey.run(n.key);
-        insNode.run(
+        const row = insNode.run(
           n.key,
           n.kind,
           n.id,
@@ -377,6 +388,7 @@ export async function updateIndex(
         insText.run(n.key, sha(t), t, f.path);
         // ADR 0116: the words its identifiers are made of (renamedAt → renamed at), searched too.
         insFts.run(
+          row.lastInsertRowid,
           n.key,
           n.names,
           n.ids,

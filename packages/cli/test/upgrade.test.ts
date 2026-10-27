@@ -114,6 +114,8 @@ describe("atticus upgrade", () => {
       ["questions-v2", ["questions/q-0f1e2d3c4b5a.yaml"]],
       // The Forge pack's sources.yaml is at version 1.
       ["sources-v2", ["org-pack/sources.yaml"]],
+      // ADR 0132: and on to version 3, in the same run.
+      ["sources-v3", ["org-pack/sources.yaml"]],
       // ADR 0121 addendum: and its runtime.yaml.
       ["runtime-v2", ["org-pack/runtime.yaml"]],
       // ADR 0128: the manifest's number, so a repo can say what it is.
@@ -121,7 +123,7 @@ describe("atticus upgrade", () => {
     ]);
     const r = io();
     expect(await upgradeCommand(root, { check: true }, r.io, "1.0.0")).toBe(1);
-    expect(r.out[0]).toMatch(/9 upgrade steps to run/);
+    expect(r.out[0]).toMatch(/10 upgrade steps to run/);
     // A dry run changes nothing.
     const before = await readFile(join(root, "catalog/generated/system/ledger.yaml"), "utf8");
     expect(await upgradeCommand(root, { dryRun: true }, io().io, "1.0.0")).toBe(0);
@@ -166,6 +168,7 @@ describe("atticus upgrade", () => {
       "starter-review",
       "catalog-schema-v3",
       "sources-v2",
+      "sources-v3",
       "stamp-committed",
       "runtime-v2",
       // ADR 0006 addendum: no OpenSpec here, so nothing to do, but recorded as done.
@@ -179,9 +182,14 @@ describe("atticus upgrade", () => {
     const was = await readFile(join(FIXTURES, "forge/metarepo/org-pack/runtime.yaml"), "utf8");
     expect(runtime).toBe(was.replace(/^schemaVersion: 1$/m, "schemaVersion: 2"));
     expect(parse(runtime).models).toBeUndefined();
-    // sources.yaml at version 2, its wiki as it was: every page still read.
+    // sources.yaml at version 3 (ADR 0132), its wiki as it was: every page still read, ranked as
+    // a team's and applying everywhere; only the number changed.
     const sources = await readFile(join(root, "org-pack/sources.yaml"), "utf8");
-    expect(sources).toMatch(/^schemaVersion: 2$/m);
+    const wasSources = await readFile(
+      join(FIXTURES, "forge/metarepo/org-pack/sources.yaml"),
+      "utf8",
+    );
+    expect(sources).toBe(wasSources.replace(/^schemaVersion: 1$/m, "schemaVersion: 3"));
     expect(parse(sources).wikis).toEqual([
       {
         id: "forge-wiki",

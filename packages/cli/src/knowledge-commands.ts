@@ -390,7 +390,11 @@ export async function sourcesSync(
           `  ${c.submodule ? `Submodule ${c.submodule.path}` : "Cloned"} at commit ${c.commit.slice(0, 7)}${c.submodule?.moved ? `: the pin moved, commit ${c.submodule.path} to keep it` : ""}`,
         );
       const s = snapshots.find((x) => x.source === w.id);
-      if (s) io.out(`  Snapshot: ${s.dir}/ (the knowledge scan reads this copy)`);
+      // ADR 0132: a snapshot copies only the pages new or changed since the one before.
+      if (s)
+        io.out(
+          `  Snapshot: ${s.dir}/ (the knowledge scan reads this copy; ${s.copied} page${s.copied === 1 ? "" : "s"} new or changed copied, the rest pointed at)`,
+        );
     }
     for (const s of sync.skipped) io.out(`Skipped ${s.path}: ${s.reason}`);
     // High-risk pages are problems (printed above); medium risk stays data, marked for a person.

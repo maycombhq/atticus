@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Idempotency in forge-payments</title>
+</head>
+<body>
+<div class="ms-rtestate-field">
+<h1>Idempotency in forge-payments</h1>
+<h2>How long we keep keys</h2>
+<p>forge-payments keeps each idempotency key for 72 hours, because the card network retries a refund for up to three days.</p>
+<p>A repeated request with the same key gets the first answer back.</p>
+</div>
+</body>
+</html>

@@ -191,31 +191,44 @@ async function scannedPages(kdir: string): Promise<Map<string, Set<string>>> {
 }
 
 /**
- * The files of a wiki snapshot to index, relative to its folder: those its snapshot.yaml lists
- * (a stray copy is not the snapshot), and once the knowledge scan has read the source, only the
- * pages it read, so the index covers what was scanned (a page a batch left for the next joins
+ * The files of a wiki snapshot to index, as absolute paths: those its snapshot.yaml lists (a
+ * stray copy is not the snapshot), each where its copy is (ADR 0132: an unchanged page's copy is
+ * in an earlier snapshot's folder, `in`), and once the knowledge scan has read the source, only
+ * the pages it read, so the index covers what was scanned (a page a batch left for the next joins
  * when it is read). Undefined: every Markdown file (a snapshot written by hand has no list).
  */
 async function wikiPagesToIndex(
   dir: string,
   source: string,
   scanned: Map<string, Set<string>>,
-): Promise<Set<string> | undefined> {
-  let pages: { page: string; file: string }[];
+): Promise<string[] | undefined> {
+  let pages: { page: string; file: string; in?: string }[];
   try {
     const m = parse(await readFile(join(dir, "snapshot.yaml"), "utf8")) as {
-      pages?: { page?: unknown; file?: unknown }[];
+      pages?: { page?: unknown; file?: unknown; in?: unknown }[];
     } | null;
     pages = (m?.pages ?? []).flatMap((p) =>
       typeof p?.page === "string" && typeof p.file === "string"
-        ? [{ page: p.page, file: p.file.replace(/\\/g, "/") }]
+        ? [
+            {
+              page: p.page,
+              file: p.file.replace(/\\/g, "/"),
+              ...(typeof p.in === "string" && /^\d{4}-\d{2}-\d{2}$/.test(p.in) ? { in: p.in } : {}),
+            },
+          ]
         : [],
     );
   } catch {
     return undefined;
   }
   const read = scanned.get(source);
-  return new Set(pages.filter((p) => !read || read.has(p.page)).map((p) => p.file));
+  const out: string[] = [];
+  for (const p of pages) {
+    if (read && !read.has(p.page)) continue;
+    const f = join(p.in ? join(dir, "..", p.in) : dir, ...p.file.split("/"));
+    if (await stat(f).catch(() => undefined)) out.push(f);
+  }
+  return out;
 }
 
 /** Every file the index reads, sorted by path. */
@@ -303,11 +316,14 @@ export async function listSources(root: string): Promise<SourceFile[]> {
         .sort();
       const newest = dates.at(-1);
       if (!newest) continue;
-      const files: string[] = [];
       const dir = join(sdir, s.name, newest);
-      await walk(dir, (n) => /\.(md|markdown)$/i.test(n), files);
-      const only = await wikiPagesToIndex(dir, s.name, scanned);
-      add("wiki")(only ? files.filter((f) => only.has(rel(dir, f))) : files);
+      const listed = await wikiPagesToIndex(dir, s.name, scanned);
+      if (listed) add("wiki")(listed);
+      else {
+        const files: string[] = [];
+        await walk(dir, (n) => /\.(md|markdown)$/i.test(n), files);
+        add("wiki")(files);
+      }
     }
   }
   {

@@ -515,6 +515,7 @@ Usage:
           [--id <id>] [--path <folder>] [--ref <branch>] [--submodule] [--kind <k,k>] [--framework <f,f>] [--owner <who>] [--save]
   atticus sources sync [--source s] [--json]  Read the wikis and copy each to a dated snapshot: pages, stale pages, conflicts with code, document-only facts
   atticus sources tag <source> [--kind k,k] [--framework f,f] [--owner o]  Tag a knowledge source in sources.yaml (kinds, frameworks, owner)
+  atticus sources estimate [--source s] [--batch-tokens n] [--full] [--json]  What a knowledge scan would cost before it runs: pages, tokens and model calls per source, within each source's maxPages
   atticus knowledge scan [--source s] [--mode m] [--resume run] [--full] [--batch-tokens n] [--max-tokens n]  Your assistant reads the snapshots into patterns, standards, processes, requests, decisions and constraints; every quote checked. A rescan reads only the pages that changed and says what changed
   atticus knowledge list [--tag t] [--kind k] [--unverified] [--json]  The knowledge items, by tag and kind
   atticus knowledge ask "<question>" [--mode m] [--resume run] [--max-tokens n]  An answer from the knowledge items only, citing them
@@ -700,6 +701,8 @@ Usage:
   atticus orgpack validate [dir]       Check an org pack against its schemas (default: <root>/org-pack)
   atticus orgpack draft                Draft the profile's systems from the knowledge items: the products and vendors the wikis name, with their aliases and owners, each citing its item [--platform <p>] [--json]
   atticus orgpack accept <platform>    Put the drafted systems into profile.yaml [--only <id,id>] [--verified-only] [--dry-run] [--json]
+  atticus standards propose            Propose each rule of a confirmed standard as a critic check (proposals/checklists/standards.yaml); nothing is enforced [--json]
+  atticus standards accept             Put the proposed checks a person picks into org-pack/checklists/standards.yaml [--only <id,id>] [--dry-run] [--json]
   atticus openspec setup               Set up OpenSpec with the org-flow schema in the metarepo
   atticus openspec check               Check the OpenSpec version and validate every change and spec
   atticus openspec <args...>           Run the bundled OpenSpec CLI in the metarepo with these arguments (openspec isn't on PATH; it ships inside Atticus). status, instructions and show take --change from the only change open when you don't name one
@@ -3129,6 +3132,22 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
   }
   if (group === "sources" && command === "refresh")
     return sourcesRefreshCommand(root, { json }, io);
+  // ADR 0132: a scan's cost before it runs, and standards proposed as critic checks.
+  if (group === "sources" && command === "estimate") {
+    const bt = str(values["batch-tokens"]);
+    return (await import("./wikis-commands.js")).sourcesEstimate(
+      root,
+      {
+        ...(str(values.source) ? { source: str(values.source)! } : {}),
+        ...(bt && Number(bt) > 0 ? { batchTokens: Number(bt) } : {}),
+        ...(values.full === true ? { full: true } : {}),
+        json: values.json === true,
+      },
+      io,
+    );
+  }
+  if (group === "standards")
+    return (await import("./wikis-commands.js")).standardsCli(root, command, values, io);
   if (group === "sources" && command === "sync")
     return sourcesSync(root, io, {
       json: values.json === true,

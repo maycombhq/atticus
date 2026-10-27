@@ -61,8 +61,9 @@ describe("identifier words (ADR 0116)", () => {
   });
 
   // A-ledger: a hop's endpoint name is indexed too, so an index built before it is rebuilt once.
-  it("is index version 4: an index of an earlier version is rebuilt once", () => {
-    expect(INDEX_VERSION).toBe(4);
+  it("is index version 5: an index of an earlier version is rebuilt once", () => {
+    // ADR 0132: a node's full-text row has the node's rowid.
+    expect(INDEX_VERSION).toBe(5);
   });
 });
 

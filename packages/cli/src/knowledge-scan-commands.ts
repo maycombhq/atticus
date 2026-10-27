@@ -185,14 +185,22 @@ export async function knowledgeScan(
   for (;;) {
     // ADR 0101: a rescan reads only the pages that changed since the last scan (--full: all).
     const before = await readKnowledge(root, { raw: true, cacheRoot: root });
+    // ADR 0132: a source's maxPages caps the pages one run reads of it; the rest wait.
+    const caps = Object.fromEntries(
+      op.sources.wikis
+        .filter((w) => w.maxPages)
+        .map((w) => [w.id, Math.max(0, w.maxPages! - (readNow[w.id]?.length ?? 0))]),
+    );
     plan = planRescan(snapshots, before.report, before.items, {
       full: o.full === true,
       batchTokens: room,
       read: passed(),
+      caps,
     });
     const gone = Object.values(plan.removed).flat().length;
     if (!plan.snapshots.length && !gone) {
-      pending = [];
+      // A source's cap leaves its other pages for the next run (ADR 0132): they wait, named.
+      pending = Object.entries(plan.deferred).flatMap(([s, ps]) => ps.map((p) => `${s}/${p}`));
       if (batches.length) break;
       for (const s of snapshots)
         io.out(

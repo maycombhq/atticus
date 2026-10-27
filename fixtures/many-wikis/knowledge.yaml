@@ -1,0 +1,623 @@
+# The knowledge items a scan of the planted pages of the 12-source Forge shop would give
+# (ADR 0132), written by hand: what each item is, its rules or steps and the words it is quoted
+# by. Each quote's line is where those words are in the page's snapshot.
+- kind: Pattern
+  schemaVersion: 2
+  id: api-resource-naming
+  status: current
+  confidence: inferred
+  evidence:
+    - source: document
+      path: knowledge/snapshots/ea-standards/2026-10-20/Standards/API-Design-Standard.md
+      line: 14
+      side: document
+  code: api-resource-naming
+  name: REST endpoints name resources
+  patternKind: standard
+  patternStatus: to-review
+  appliesWhen: A service adds or changes a REST endpoint.
+  rules:
+    - A REST endpoint names a resource with a plural noun, such as /orders or /refunds.
+    - "An action on one resource is a sub-resource: POST /orders/{orderId}/refunds, never POST /refundOrder."
+    - Path parameters are written in camel case, such as {orderId}.
+  tags: []
+  quote:
+    source: ea-standards
+    page: Standards/API-Design-Standard.md
+    section: Resource naming
+    text: A REST endpoint names a resource with a plural noun, such as /orders or /refunds.
+    snapshot: 2026-10-20
+    line: 14
+- kind: Pattern
+  schemaVersion: 2
+  id: error-response-format
+  status: current
+  confidence: inferred
+  evidence:
+    - source: document
+      path: knowledge/snapshots/ea-standards/2026-10-20/Standards/Error-Response-Format.md
+      line: 14
+      side: document
+  code: error-response-format
+  name: Error response format
+  patternKind: standard
+  patternStatus: to-review
+  appliesWhen: A REST endpoint answers an error.
+  rules:
+    - Every REST endpoint answers an error with an application/problem+json body.
+    - The body has the fields type, title, status and detail, and nothing else at the top level.
+    - The status field repeats the HTTP status code.
+    - The detail field never carries a stack trace or an internal class name.
+  tags: []
+  quote:
+    source: ea-standards
+    page: Standards/Error-Response-Format.md
+    section: The error body
+    text: Every REST endpoint answers an error with an application/problem+json body.
+    snapshot: 2026-10-20
+    line: 14
+- kind: Pattern
+  schemaVersion: 2
+  id: idempotency-keys
+  status: current
+  confidence: inferred
+  evidence:
+    - source: document
+      path: knowledge/snapshots/ea-standards/2026-10-20/Standards/Idempotency-Keys.md
+      line: 14
+      side: document
+  flags:
+    - conflict:Standards/Idempotency-Keys.md|SitePages/Idempotency.md
+  code: idempotency-keys
+  name: Idempotency keys
+  patternKind: standard
+  patternStatus: to-review
+  appliesWhen: A service changes a payment or a refund.
+  rules:
+    - A service that moves money accepts an Idempotency-Key header on every request that changes a payment or a refund.
+    - The service keeps each idempotency key for 24 hours.
+    - A request repeated with the same key returns the first answer and changes nothing.
+  tags: []
+  quote:
+    source: ea-standards
+    page: Standards/Idempotency-Keys.md
+    section: Keeping the key
+    text: A service that moves money accepts an Idempotency-Key header on every request that changes a payment or a refund.
+    snapshot: 2026-10-20
+    line: 14
+- kind: Pattern
+  schemaVersion: 2
+  id: structured-logging
+  status: current
+  confidence: inferred
+  evidence:
+    - source: document
+      path: knowledge/snapshots/ea-standards/2026-10-20/Standards/Logging-Standard.md
+      line: 14
+      side: document
+  code: structured-logging
+  name: Structured log lines
+  patternKind: standard
+  patternStatus: to-review
+  appliesWhen: A service writes a log line.
+  rules:
+    - A service writes every log line as one JSON object with the fields timestamp, level, service, traceId and message.
+    - A log line never carries a card number, a password or a token.
+  tags: []
+  quote:
+    source: ea-standards
+    page: Standards/Logging-Standard.md
+    section: Structured log lines
+    text: A service writes every log line as one JSON object with the fields timestamp, level, service, traceId and message.
+    snapshot: 2026-10-20
+    line: 14
+- kind: Pattern
+  schemaVersion: 2
+  id: schema-migrations
+  status: current
+  confidence: inferred
+  evidence:
+    - source: document
+      path: knowledge/snapshots/ea-standards/2026-10-20/Standards/Database-Schema-Changes.md
+      line: 14
+      side: document
+  code: schema-migrations
+  name: Schema changes are Flyway migrations
+  patternKind: standard
+  patternStatus: to-review
+  appliesWhen: A change adds or changes a table.
+  rules:
+    - A schema change to a Forge database is a Flyway migration in the repo of the service that owns the table.
+    - A migration that adds a table also adds its primary key and the indexes its queries need.
+    - A migration is never edited once it has run in production.
+  tags: []
+  quote:
+    source: ea-standards
+    page: Standards/Database-Schema-Changes.md
+    section: Migrations
+    text: A schema change to a Forge database is a Flyway migration in the repo of the service that owns the table.
+    snapshot: 2026-10-20
+    line: 14
+- kind: Pattern
+  schemaVersion: 2
+  id: event-principles
+  status: current
+  confidence: inferred
+  evidence:
+    - source: document
+      path: knowledge/snapshots/ea-standards/2026-10-20/Principles/Event-Driven-Architecture-Principles.md
+      line: 13
+      side: document
+  code: event-principles
+  name: Services tell each other what happened through events
+  patternKind: integration-pattern
+  patternStatus: to-review
+  rules:
+    - Services tell each other what happened through events rather than calls, so a slow consumer never slows the producer.
+    - An event names something that happened, in the past tense, and carries what a consumer needs to act on it.
+  tags: []
+  quote:
+    source: ea-standards
+    page: Principles/Event-Driven-Architecture-Principles.md
+    section: Why events
+    text: Services tell each other what happened through events rather than calls, so a slow consumer never slows the producer.
+    snapshot: 2026-10-20
+    line: 13
+- kind: Pattern
+  schemaVersion: 2
+  id: internal-tls
+  status: current
+  confidence: inferred
+  evidence:
+    - source: document
+      path: knowledge/snapshots/security-standards/2026-10-20/tls/internal-calls-tls.md
+      line: 10
+      side: document
+  flags:
+    - conflict:tls/internal-calls-tls.md|warehouse/legacy-warehouse-link.md
+  code: internal-tls
+  name: Internal calls use TLS 1.3
+  patternKind: standard
+  patternStatus: to-review
+  appliesWhen: A service calls another service.
+  rules:
+    - Every call between Forge services uses TLS 1.3 with mutual authentication.
+    - A service refuses a connection that offers only TLS 1.2 or older.
+  tags: []
+  quote:
+    source: security-standards
+    page: tls/internal-calls-tls.md
+    section: The rule
+    text: Every call between Forge services uses TLS 1.3 with mutual authentication.
+    snapshot: 2026-10-20
+    line: 10
+- kind: Pattern
+  schemaVersion: 2
+  id: authorisation-checks
+  status: current
+  confidence: inferred
+  evidence:
+    - source: document
+      path: knowledge/snapshots/security-standards/2026-10-20/access/authorisation-checks.md
+      line: 10
+      side: document
+  code: authorisation-checks
+  name: Authorisation checks
+  patternKind: standard
+  patternStatus: to-review
+  appliesWhen: A service changes a resource on a caller's behalf.
+  rules:
+    - A service checks that the caller may act on the resource before it changes anything, and answers 403 when it may not.
+    - A customer may act only on their own orders, refunds and payments.
+  tags: []
+  quote:
+    source: security-standards
+    page: access/authorisation-checks.md
+    section: Checking who may act
+    text: A service checks that the caller may act on the resource before it changes anything, and answers 403 when it may not.
+    snapshot: 2026-10-20
+    line: 10
+- kind: ProcessDefinition
+  schemaVersion: 2
+  id: cloud-run-new-service
+  status: current
+  confidence: inferred
+  evidence:
+    - source: document
+      path: knowledge/snapshots/gcp-platform/2026-10-20/run/deploy-a-new-service.md
+      line: 10
+      side: document
+  title: Deploy a new service to Cloud Run
+  processKind: process
+  appliesWhen: A team builds a new service.
+  inputs: []
+  steps:
+    - Ask the Cloud Platform team for a project with the new service request form.
+    - Build the service as a container image with the platform's base image.
+    - Deploy it to Cloud Run with the platform pipeline, never from a laptop.
+    - Give the service its own service account with only the roles it needs.
+  handledBy: Cloud Platform team
+  tags: []
+  quote:
+    source: gcp-platform
+    page: run/deploy-a-new-service.md
+    section: Steps
+    text: Ask the Cloud Platform team for a project with the new service request form.
+    snapshot: 2026-10-20
+    line: 10
+  alsoOn: []
+  urls: []
+- kind: Pattern
+  schemaVersion: 2
+  id: cloud-run-timeouts
+  status: current
+  confidence: inferred
+  evidence:
+    - source: document
+      path: knowledge/snapshots/gcp-platform/2026-10-20/run/request-timeouts.md
+      line: 10
+      side: document
+  code: cloud-run-timeouts
+  name: Cloud Run request timeouts
+  patternKind: standard
+  patternStatus: to-review
+  appliesWhen: A Cloud Run service sets a timeout or calls another service.
+  rules:
+    - A Cloud Run service sets its request timeout below the timeout of the load balancer in front of it.
+    - A call from a Cloud Run service to another service sets a timeout of its own, shorter than its own request timeout.
+  tags: []
+  quote:
+    source: gcp-platform
+    page: run/request-timeouts.md
+    section: Setting the timeout
+    text: A Cloud Run service sets its request timeout below the timeout of the load balancer in front of it.
+    snapshot: 2026-10-20
+    line: 10
+- kind: ProcessDefinition
+  schemaVersion: 2
+  id: pubsub-subscriptions
+  status: current
+  confidence: inferred
+  evidence:
+    - source: document
+      path: knowledge/snapshots/gcp-platform/2026-10-20/pubsub/subscriptions.md
+      line: 10
+      side: document
+  title: Read from a Pub/Sub subscription
+  processKind: process
+  appliesWhen: A service reads messages from a Pub/Sub subscription.
+  inputs: []
+  steps:
+    - Ask for the subscription with the Pub/Sub request form, naming the topic and the dead-letter topic.
+    - Acknowledge a message only after it is processed.
+    - Let a message that fails five times go to the dead-letter topic.
+  tags: []
+  quote:
+    source: gcp-platform
+    page: pubsub/subscriptions.md
+    section: Reading from a subscription
+    text: Ask for the subscription with the Pub/Sub request form, naming the topic and the dead-letter topic.
+    snapshot: 2026-10-20
+    line: 10
+  alsoOn: []
+  urls: []
+- kind: Pattern
+  schemaVersion: 2
+  id: openshift-route-timeouts
+  status: current
+  confidence: inferred
+  evidence:
+    - source: document
+      path: knowledge/snapshots/openshift-platform/2026-10-20/routes/timeouts.md
+      line: 10
+      side: document
+  code: openshift-route-timeouts
+  name: Route and call timeouts on OpenShift
+  patternKind: standard
+  patternStatus: to-review
+  appliesWhen: A service on OpenShift sets a timeout or calls another service.
+  rules:
+    - A call from a service on OpenShift to another service sets a timeout of its own, in the service's configuration, never in code.
+    - The route's timeout annotation is longer than the longest call timeout of the service behind it.
+  tags: []
+  quote:
+    source: openshift-platform
+    page: routes/timeouts.md
+    section: Timeouts
+    text: A call from a service on OpenShift to another service sets a timeout of its own, in the service's configuration, never in code.
+    snapshot: 2026-10-20
+    line: 10
+- kind: ProcessDefinition
+  schemaVersion: 2
+  id: anvil-rest-endpoint
+  status: current
+  confidence: inferred
+  evidence:
+    - source: document
+      path: knowledge/snapshots/anvil-framework/2026-10-20/rest/adding-an-endpoint.md
+      line: 10
+      side: document
+  title: Add a REST endpoint with Anvil
+  processKind: process
+  appliesWhen: An Anvil service adds a REST endpoint.
+  inputs: []
+  steps:
+    - Add a controller method annotated with @AnvilEndpoint and the path.
+    - Declare the request and response as records in the api package.
+    - Map errors with the AnvilProblemMapper so the error body follows the standard.
+  tags: []
+  quote:
+    source: anvil-framework
+    page: rest/adding-an-endpoint.md
+    section: Steps
+    text: Add a controller method annotated with @AnvilEndpoint and the path.
+    snapshot: 2026-10-20
+    line: 10
+  alsoOn: []
+  urls: []
+- kind: ProcessDefinition
+  schemaVersion: 2
+  id: anvil-publish-event
+  status: current
+  confidence: inferred
+  evidence:
+    - source: document
+      path: knowledge/snapshots/anvil-framework/2026-10-20/events/publishing.md
+      line: 10
+      side: document
+  title: Publish an event with Anvil
+  processKind: process
+  appliesWhen: An Anvil service publishes an event.
+  inputs: []
+  steps:
+    - Declare the event as a record annotated with @AnvilEvent and the topic.
+    - Publish it with the AnvilPublisher after the transaction that saves the change commits.
+  tags: []
+  quote:
+    source: anvil-framework
+    page: events/publishing.md
+    section: Steps
+    text: Declare the event as a record annotated with @AnvilEvent and the topic.
+    snapshot: 2026-10-20
+    line: 10
+  alsoOn: []
+  urls: []
+- kind: Pattern
+  schemaVersion: 2
+  id: angular-form-validation
+  status: current
+  confidence: inferred
+  evidence:
+    - source: document
+      path: knowledge/snapshots/web-framework/2026-10-20/forms/reactive-forms.md
+      line: 10
+      side: document
+  code: angular-form-validation
+  name: Form validation in Angular
+  patternKind: standard
+  patternStatus: to-review
+  appliesWhen: A screen adds a form or a field.
+  rules:
+    - A form is a reactive form; each field's validators are declared with the form, not in the template.
+    - A field shows its error under the field once the field is touched, with words from the copy file.
+  tags: []
+  quote:
+    source: web-framework
+    page: forms/reactive-forms.md
+    section: Validating fields
+    text: A form is a reactive form; each field's validators are declared with the form, not in the template.
+    snapshot: 2026-10-20
+    line: 10
+- kind: Pattern
+  schemaVersion: 2
+  id: status-badge
+  status: current
+  confidence: inferred
+  evidence:
+    - source: document
+      path: knowledge/snapshots/web-framework/2026-10-20/components/status-badge.md
+      line: 10
+      side: document
+  code: status-badge
+  name: Show a status with the status badge
+  patternKind: standard
+  patternStatus: to-review
+  appliesWhen: A screen shows a status.
+  rules:
+    - Show a status with the forge-status-badge component, never with a coloured text of its own.
+    - The badge's text says the status in words; colour alone never carries it.
+  tags: []
+  quote:
+    source: web-framework
+    page: components/status-badge.md
+    section: Showing a status
+    text: Show a status with the forge-status-badge component, never with a coloured text of its own.
+    snapshot: 2026-10-20
+    line: 10
+- kind: Pattern
+  schemaVersion: 2
+  id: order-events-v1
+  status: current
+  confidence: inferred
+  evidence:
+    - source: document
+      path: knowledge/snapshots/orders-team/2026-10-20/events/order-events-v1.md
+      line: 12
+      side: document
+  code: order-events-v1
+  name: Publish order events
+  patternKind: integration-pattern
+  patternStatus: to-review
+  appliesWhen: An order service publishes an order event.
+  rules:
+    - An order service publishes order events to the orders topic as XML.
+  tags: []
+  quote:
+    source: orders-team
+    page: events/order-events-v1.md
+    section: Publishing order events
+    text: An order service publishes order events to the orders topic as XML.
+    snapshot: 2026-10-20
+    line: 12
+- kind: Pattern
+  schemaVersion: 2
+  id: order-events-v2
+  status: current
+  confidence: inferred
+  evidence:
+    - source: document
+      path: knowledge/snapshots/orders-team/2026-10-20/events/order-events-v2.md
+      line: 10
+      side: document
+  code: order-events-v2
+  name: Publish order events
+  patternKind: integration-pattern
+  patternStatus: to-review
+  appliesWhen: An order service publishes an order event.
+  rules:
+    - An order service publishes order events to the order-events topic as JSON, after the order is saved.
+    - An event's type names what happened in the past tense, such as order-refunded.
+  tags: []
+  quote:
+    source: orders-team
+    page: events/order-events-v2.md
+    section: Publishing order events
+    text: An order service publishes order events to the order-events topic as JSON, after the order is saved.
+    snapshot: 2026-10-20
+    line: 10
+- kind: ProcessDefinition
+  schemaVersion: 2
+  id: replay-failed-refund
+  status: current
+  confidence: inferred
+  evidence:
+    - source: document
+      path: knowledge/snapshots/orders-team/2026-10-20/runbooks/replay-a-failed-refund.md
+      line: 10
+      side: document
+  title: Replay a failed refund
+  processKind: process
+  appliesWhen: A refund failed and is retried.
+  inputs: []
+  steps:
+    - Find the failed refund in the refunds dead-letter queue by its refund id.
+    - "Check the payment in forge-payments: a refund already paid is not replayed."
+    - Put the refund back on the refunds queue with its original idempotency key.
+  tags: []
+  quote:
+    source: orders-team
+    page: runbooks/replay-a-failed-refund.md
+    section: Steps
+    text: Find the failed refund in the refunds dead-letter queue by its refund id.
+    snapshot: 2026-10-20
+    line: 10
+  alsoOn: []
+  urls: []
+- kind: Pattern
+  schemaVersion: 2
+  id: payments-api-conventions
+  status: current
+  confidence: inferred
+  evidence:
+    - source: document
+      path: knowledge/snapshots/payments-team/2026-10-20/SitePages/Payments-API-conventions.md
+      line: 14
+      side: document
+  code: payments-api-conventions
+  name: Refund requests in the payments API
+  patternKind: standard
+  patternStatus: to-review
+  appliesWhen: A client creates a refund in forge-payments.
+  rules:
+    - A refund is created with POST /payments/{paymentId}/refunds and answers 201 with the refund's id.
+    - A refund request carries the amount in minor units and the currency, never a decimal amount.
+    - A refund larger than what is left of the payment is refused with 422.
+  tags: []
+  quote:
+    source: payments-team
+    page: SitePages/Payments-API-conventions.md
+    section: Refund requests
+    text: A refund is created with POST /payments/{paymentId}/refunds and answers 201 with the refund's id.
+    snapshot: 2026-10-20
+    line: 14
+- kind: Decision
+  schemaVersion: 2
+  id: warehouse-link-tls-exception
+  status: current
+  confidence: inferred
+  evidence:
+    - source: document
+      path: knowledge/snapshots/stock-team/2026-10-20/warehouse/legacy-warehouse-link.md
+      line: 12
+      side: document
+  title: The warehouse link stays on TLS 1.2 until 2027-03-31
+  decision: forge-stock calls the warehouse over TLS 1.2 with mutual authentication until the warehouse is replaced.
+  links:
+    changes: []
+    interfaces: []
+    systems: []
+  decisionKind: decision
+  dates: {}
+  appliesWhen: forge-stock calls the warehouse over the warehouse link.
+  tags: []
+  quote:
+    source: stock-team
+    page: warehouse/legacy-warehouse-link.md
+    section: TLS on the warehouse link
+    text: forge-stock calls the warehouse over TLS 1.2 with mutual authentication until the warehouse is replaced.
+    snapshot: 2026-10-20
+    line: 12
+- kind: Pattern
+  schemaVersion: 2
+  id: order-page-layout
+  status: current
+  confidence: inferred
+  evidence:
+    - source: document
+      path: knowledge/snapshots/web-team/2026-10-20/pages/order-page.md
+      line: 10
+      side: document
+  code: order-page-layout
+  name: The order page's layout
+  patternKind: standard
+  patternStatus: to-review
+  appliesWhen: A change adds to the order page.
+  rules:
+    - The order page shows the order's status, its lines and its refunds, each refund with its status.
+    - A status is shown with a status badge beside the line it belongs to.
+  tags: []
+  quote:
+    source: web-team
+    page: pages/order-page.md
+    section: Layout
+    text: The order page shows the order's status, its lines and its refunds, each refund with its status.
+    snapshot: 2026-10-20
+    line: 10
+- kind: ProcessDefinition
+  schemaVersion: 2
+  id: caller-customer-check
+  status: current
+  confidence: inferred
+  evidence:
+    - source: document
+      path: knowledge/snapshots/identity-team/2026-10-20/how-to/check-the-callers-customer.md
+      line: 10
+      side: document
+  title: Check the caller's customer id
+  processKind: process
+  appliesWhen: A service acts on a customer's order for a caller.
+  inputs: []
+  steps:
+    - Read the customer id from the token's sub claim, never from a request header.
+    - Compare it with the order's customer id before the refund is created.
+    - Answer 403 when they differ.
+  tags: []
+  quote:
+    source: identity-team
+    page: how-to/check-the-callers-customer.md
+    section: Steps
+    text: Read the customer id from the token's sub claim, never from a request header.
+    snapshot: 2026-10-20
+    line: 10
+  alsoOn: []
+  urls: []

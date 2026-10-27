@@ -74,6 +74,18 @@ function SourceCard(p: {
             ? [...s.tags.kinds, ...s.tags.frameworks].join(", ")
             : S.noTags}
         </dd>
+        <dt>{S.authority}</dt>
+        <dd>
+          {s.authority ? (S.authorities[s.authority] ?? s.authority) : S.noAuthority}
+          {s.byPage ? `; ${S.byPage(s.byPage)}` : ""}
+        </dd>
+        <dt>{S.scope}</dt>
+        <dd>{s.scope ?? S.everywhere}</dd>
+        <dt>{S.restricted}</dt>
+        <dd>
+          {s.readRestricted ? S.readsRestricted : S.skipsRestricted}
+          {s.maxPages ? `; ${S.maxPages(s.maxPages)}` : ""}
+        </dd>
         <dt>{S.snapshot}</dt>
         <dd>
           {s.snapshot
