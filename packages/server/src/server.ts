@@ -68,6 +68,12 @@ export interface ServerOptions {
    */
   embed?: "vscode";
   /**
+   * The session token, when the editor that starts the server made it (ATTICUS_UI_TOKEN), so the
+   * server never has to print it. Taken only when it is strong (32 or more URL-safe characters);
+   * otherwise, and by default, the server makes its own.
+   */
+  token?: string;
+  /**
    * `atticus ui --full`: the app offers every page in its menu, not only the six entries (the
    * Surfaces design). Reported by health; it changes what the app shows, never what the API does.
    */
@@ -162,7 +168,10 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
   const host = o.host ?? "127.0.0.1";
   if (host !== "127.0.0.1")
     throw new Error(`Atticus only listens on 127.0.0.1 (asked for ${host}).`);
-  const token = randomBytes(32).toString("base64url");
+  const token =
+    o.token && /^[A-Za-z0-9_-]{32,}$/.test(o.token)
+      ? o.token
+      : randomBytes(32).toString("base64url");
   const events = new EventHub();
   const jobs = new JobManager((e) => events.publish(e));
   const person: GitUser = o.user ? { handle: o.user, source: "given" } : await gitUser(o.root);

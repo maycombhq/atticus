@@ -13,8 +13,10 @@ import {
   type Lesson,
   type LessonStep,
 } from "@maycombhq/learn";
+import { generateAssistantFiles } from "@maycombhq/assistant-files";
 import type { Output } from "./commands.js";
 import { table } from "./table.js";
+import { upgradeCommand } from "./upgrade.js";
 
 /**
  * atticus learn, atticus sandbox, atticus explain: the learning tools. Lessons run only in a
@@ -216,6 +218,16 @@ export async function sandboxCreate(
   }
   try {
     const s = await createSandbox(dir, deps.now ? { now: deps.now } : {});
+    // The Forge fixture keeps files at older schema versions (other tests read them as they are):
+    // the sandbox's metarepo is brought to the current ones and given its slash commands, so its
+    // first doctor has nothing to upgrade, like a metarepo atticus init makes.
+    const silent: Output = { out: () => undefined, err: () => undefined };
+    await upgradeCommand(
+      s.root,
+      { by: "atticus-sandbox", ...(deps.now ? { now: deps.now } : {}) },
+      silent,
+    );
+    await generateAssistantFiles(s.root);
     if (o.json) {
       io.out(JSON.stringify(s, null, 2));
       return 0;
@@ -224,8 +236,9 @@ export async function sandboxCreate(
       `Made a practice sandbox in ${s.dir}: ${s.repos.length} Forge repos and the seeded change ${s.change}.`,
     );
     io.out(
-      `Its metarepo is ${s.root}. Run commands there (or add --root), starting with atticus learn.`,
+      `Its metarepo is ${s.root}. Run commands there (or add --root), starting with atticus learn. Go there with:`,
     );
+    io.out(`cd "${s.root}"`);
     return 0;
   } catch (e) {
     return fail(io, e);

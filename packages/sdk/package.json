@@ -18,7 +18,9 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json && node ../../scripts/bundle/npm-sdk.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run --config ../../vitest.shared.mjs --fsModuleCachePath=node_modules/.vitest-cache --testTimeout=30000 --hookTimeout=60000"
+    "test": "vitest run --config ../../vitest.shared.mjs --fsModuleCachePath=node_modules/.vitest-cache --testTimeout=30000 --hookTimeout=60000",
+    "prepack": "node ../../scripts/bundle/pack-manifest.mjs strip",
+    "postpack": "node ../../scripts/bundle/pack-manifest.mjs restore"
   },
   "dependencies": {
     "yaml": "^2.9.1",

@@ -411,3 +411,26 @@ describe("the twelve commands first (ADR 0124 addendum D-cli)", () => {
     expect(first).not.toContain("atticus.draftSpec");
   });
 });
+
+describe("the extension's version (a release changes it, so VS Code can tell builds apart)", () => {
+  const manifest = JSON.parse(readFileSync(join(HERE, "../package.json"), "utf8")) as {
+    version: string;
+  };
+  const cli = JSON.parse(readFileSync(join(HERE, "../../cli/package.json"), "utf8")) as {
+    version: string;
+  };
+  const changelog = readFileSync(join(HERE, "../CHANGELOG.md"), "utf8");
+
+  it("has a CHANGELOG section that names the Atticus release it ships with", () => {
+    const heading = changelog.split("\n").find((l) => l.startsWith(`## ${manifest.version} `));
+    expect(heading, `CHANGELOG.md has no section for ${manifest.version}`).toBeDefined();
+    expect(heading).toContain(`Atticus ${cli.version}`);
+  });
+
+  it("is a new version for each Atticus release: no two sections name the same one", () => {
+    const named = [...changelog.matchAll(/^## \d+\.\d+\.\d+ .*with Atticus ([^)\s]+)\)/gm)];
+    const releases = named.map((m) => m[1]);
+    expect(releases.length).toBeGreaterThan(1);
+    expect(new Set(releases).size).toBe(releases.length);
+  });
+});

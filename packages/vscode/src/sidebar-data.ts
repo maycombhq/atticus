@@ -486,9 +486,13 @@ export function sourceItems(s: Api.Sources, p: Paths): Item[] {
 
 /** The machine's checks (atticus doctor --json) that aren't ok, with their fix. */
 export function healthProblems(d: Api.Doctor): string[] {
-  return d.checks
-    .filter((c) => c.status !== "ok" && c.status !== "skip")
-    .map((c) => `${c.label}: ${c.detail}${c.fix ? `. ${c.fix}` : ""}`);
+  return (
+    d.checks
+      .filter((c) => c.status !== "ok" && c.status !== "skip")
+      // Port 4321 is for `atticus ui` in a terminal; the extension starts its own app with --port 0.
+      .filter((c) => c.id !== "port")
+      .map((c) => `${c.label}: ${c.detail}${c.fix ? `. ${c.fix}` : ""}`)
+  );
 }
 
 // ------------------------------------------------------------------ catalog

@@ -18,6 +18,7 @@ import {
 import { assistantTier, readProbes, tierLine } from "@maycombhq/assistant-files";
 import { loadOrgPack, orgPackDirOf } from "@maycombhq/core";
 import type { Output } from "./commands.js";
+import { upgradeCommand } from "./upgrade.js";
 
 /**
  * ADR 0124 §4: the tier the org pack's assistant reads a repo at, said once at set-up, with where
@@ -79,6 +80,13 @@ export async function initCommand(
       ...(o.owner ? { owner: o.owner } : {}),
       ...(o.openspecStore ? { openspecStore: true } : {}),
     });
+    // A new metarepo starts up to date: every file at the current version of its schema, and
+    // the Atticus that made it recorded (ADR 0051), so its first doctor has nothing to upgrade.
+    if (!r.problems.length)
+      await upgradeCommand(dir, o.owner ? { by: o.owner } : {}, {
+        out: () => undefined,
+        err: (l) => io.err(l),
+      });
     if (o.json) {
       io.out(JSON.stringify(r, null, 2));
       return r.problems.length ? 1 : 0;

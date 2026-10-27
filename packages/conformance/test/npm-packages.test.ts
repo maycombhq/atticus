@@ -1,6 +1,8 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { gzipSync } from "node:zlib";
@@ -168,10 +170,83 @@ describe("the npm packages Atticus publishes (ADR 0124 addendum D-npm)", () => {
     ]);
     expect(own({ dependencies: { "@maycombhq/core": "workspace:*" } })).toEqual([
       "@maycombhq/core is still workspace:*: pack it with pnpm, which writes the version",
+      "it needs @maycombhq/core (dependencies), which isn't published: leave it out of the packed manifest",
     ]);
     expect(own({ publishConfig: {} })).toEqual([
       'publishConfig.access isn\'t "public": a scoped package is published private otherwise',
     ]);
+  });
+
+  it("refuses a packed manifest with a workspace: spec or a dependency on a package that isn't published, devDependencies too", async () => {
+    const { tarballProblems } = await load();
+    const own = (manifest: Partial<Manifest> & { devDependencies?: Record<string, string> }) =>
+      tarballProblems(
+        tgz({
+          "package.json": JSON.stringify({
+            name: "@maycombhq/invented",
+            version: "1.0.0",
+            publishConfig: { access: "public" },
+            ...manifest,
+          }),
+        }),
+      ).problems;
+    // What `npm pack` made of the tester's tarball, and what `pnpm pack` made before the fix.
+    expect(own({ devDependencies: { "@maycombhq/cli": "workspace:*" } })).toEqual([
+      "@maycombhq/cli is still workspace:*: pack it with pnpm, which writes the version",
+      "it needs @maycombhq/cli (devDependencies), which isn't published: leave it out of the packed manifest",
+    ]);
+    expect(own({ devDependencies: { "@maycombhq/extractors": "2.0.0-beta.2" } })).toEqual([
+      "it needs @maycombhq/extractors (devDependencies), which isn't published: leave it out of the packed manifest",
+    ]);
+    // A published Atticus package, and anyone else's, is fine.
+    expect(
+      own({
+        optionalDependencies: { "@maycombhq/embed-model": "2.0.0-beta.2" },
+        dependencies: { yaml: "^2.9.1" },
+      }),
+    ).toEqual([]);
+  });
+
+  it("packs the bundled packages without the devDependencies they are built from", async () => {
+    const { publishablePackages } = await load();
+    for (const p of publishablePackages(REPO).filter(
+      (x) => Object.keys((x.manifest as { devDependencies?: object }).devDependencies ?? {}).length,
+    )) {
+      expect(p.manifest.scripts?.prepack, p.name).toBe(
+        "node ../../scripts/bundle/pack-manifest.mjs strip",
+      );
+      expect(p.manifest.scripts?.postpack, p.name).toBe(
+        "node ../../scripts/bundle/pack-manifest.mjs restore",
+      );
+    }
+  });
+
+  it("strips devDependencies from the manifest while packing, and puts the manifest back after", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "atticus-pack-manifest-"));
+    const text = `${JSON.stringify(
+      {
+        name: "@maycombhq/invented",
+        version: "1.0.0",
+        devDependencies: { "@maycombhq/cli": "workspace:*" },
+      },
+      null,
+      2,
+    )}\n`;
+    await writeFile(join(dir, "package.json"), text);
+    const run = (what: string) =>
+      spawnSync(process.execPath, [join(REPO, "scripts/bundle/pack-manifest.mjs"), what], {
+        cwd: dir,
+        encoding: "utf8",
+      });
+    expect(run("strip").status).toBe(0);
+    expect(JSON.parse(readFileSync(join(dir, "package.json"), "utf8"))).toEqual({
+      name: "@maycombhq/invented",
+      version: "1.0.0",
+    });
+    // A pack that stopped half way and ran again still ends with the manifest as it was.
+    expect(run("strip").status).toBe(0);
+    expect(run("restore").status).toBe(0);
+    expect(readFileSync(join(dir, "package.json"), "utf8")).toBe(text);
   });
 
   it("refuses a native runtime package that npm would install on every platform", async () => {
@@ -281,6 +356,7 @@ describe("the npm packages Atticus publishes (ADR 0124 addendum D-npm)", () => {
       tarballProblems(bundled({ manifest: { dependencies: { "@maycombhq/core": "9.9.9" } } }))
         .problems,
     ).toEqual([
+      "it needs @maycombhq/core (dependencies), which isn't published: leave it out of the packed manifest",
       "it is bundled but depends on @maycombhq/core: only the model and onnxruntime stay packages of their own",
     ]);
     const imports = 'import { parseRecord } from "@maycombhq/core";\nexport const a = 1;\n';

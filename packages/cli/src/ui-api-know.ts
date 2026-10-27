@@ -46,18 +46,34 @@ const DIAGRAM_VIEWS = ["context", "container", "data", "event", "sequence"];
 /** A refusal that names the step to take first (a scan): the app shows it as an empty state. */
 const scanFirst = (words: string) => /catalog is empty|scan first/i.test(words);
 
-export function uiKnowRoutes(r: Router, ctx: ServerContext): Router {
-  // The machine doesn't change between page loads: check it at most every five minutes.
-  let checked: { at: number; checks: DoctorCheck[] } | undefined;
-  const machine = async (fresh = false) => {
-    if (fresh || !checked || Date.now() - checked.at > 300_000)
-      checked = {
-        at: Date.now(),
-        // The app itself holds the default port: that isn't a problem to report.
-        checks: await doctorChecks(ctx.root, { portFree: async () => true }),
-      };
+export function uiKnowRoutes(
+  r: Router,
+  ctx: ServerContext,
+  o: {
+    /** Start the machine checks now, as the server starts (`atticus ui`), not on the first request. */
+    warm?: boolean;
+    /** The machine checks; default doctor's (tests pass their own). */
+    doctor?: (root: string) => Promise<DoctorCheck[]>;
+  } = {},
+): Router {
+  // The app itself holds the default port: that isn't a problem to report.
+  const doctor = o.doctor ?? ((root: string) => doctorChecks(root, { portFree: async () => true }));
+  // The machine doesn't change between page loads: check it at most every five minutes. The
+  // checks in flight are kept too, so a request while they run waits for them, not a second run.
+  let checked: { at: number; checks: Promise<DoctorCheck[]> } | undefined;
+  const machine = (fresh = false): Promise<DoctorCheck[]> => {
+    if (fresh || !checked || Date.now() - checked.at > 300_000) {
+      const run = { at: Date.now(), checks: doctor(ctx.root) };
+      checked = run;
+      // A run that failed is forgotten, so the next request checks again.
+      run.checks.catch(() => {
+        if (checked === run) checked = undefined;
+      });
+    }
     return checked.checks;
   };
+  // The Set up page's first load waited about 3 s for these (found on Windows): start them now.
+  if (o.warm) void machine().catch(() => undefined);
   const view = async (name: string, arg?: string) => {
     const build = VIEWS[name];
     if (!build) throw notFound(`There is no view ${name}.`);

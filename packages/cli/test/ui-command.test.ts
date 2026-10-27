@@ -17,9 +17,36 @@ describe("atticus ui", () => {
     expect(said({})).not.toContain("tok-1");
     expect(said({})).toContain("--show-token");
     expect(said({ showToken: true })).toContain("the session token is tok-1");
-    // The editors read it from this line: VS Code (--embed) and IntelliJ (--parent).
-    expect(said({ embed: "vscode" })).toContain("the session token is tok-1");
-    expect(said({ parent: 42 })).toContain("the session token is tok-1");
+    // An editor that starts it gives it the token (VS Code) or reads the page (IntelliJ): it is
+    // never printed there, so it can't reach the editor's output log, even when asked.
+    for (const o of [
+      { embed: "vscode" as const },
+      { parent: 42 },
+      { embed: "vscode" as const, showToken: true },
+    ]) {
+      expect(said(o)).not.toContain("tok-1");
+      expect(said(o)).toContain("session token isn't printed");
+    }
+  });
+
+  it("takes the session token the editor gives it (ATTICUS_UI_TOKEN), and only a strong one", async () => {
+    const root = await mkdtemp(join(tmpdir(), "atticus-ui-cmd-"));
+    await cp(join(FORGE, "metarepo"), root, { recursive: true });
+    const given = "editor-made-token-0123456789abcdefghijklmnopqrstuvwxyz";
+    const srv = await startUi(root, { port: 0, user: "pat", token: given });
+    try {
+      expect(srv.token).toBe(given);
+      const h = await fetch(srv.url + "/api/health", { headers: { "X-Atticus-Token": given } });
+      expect(h.status).toBe(200);
+    } finally {
+      await srv.close();
+    }
+    const weak = await startUi(root, { port: 0, user: "pat", token: "short" });
+    try {
+      expect(weak.token).not.toBe("short");
+    } finally {
+      await weak.close();
+    }
   });
 
   it("serves the built app with its session token and the API on 127.0.0.1", async () => {
