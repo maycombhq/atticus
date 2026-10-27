@@ -134,8 +134,8 @@ export async function writeFactsIntoCatalog(
   try {
     const op = await loadOrgPack(orgPackDirOf(root));
     const generated = join(catalogDirOf(root), "generated");
-    const existing = await readCatalog(generated);
-    const curated = await readCatalog(join(catalogDirOf(root), "curated"));
+    const existing = await readCatalog(generated, { cacheRoot: root });
+    const curated = await readCatalog(join(catalogDirOf(root), "curated"), { cacheRoot: root });
     const rerun = `atticus verify ${repo} --write`;
     const answered = (await listQuestions(root, { repo, step: TARGETS_STEP })).questions;
     // The estate join (ADR 0124, C-join): the other repos' verified facts, so this repo's calls
@@ -171,7 +171,7 @@ export async function writeFactsIntoCatalog(
       );
       return false;
     });
-    const spec = await readRepoSpec(root, repo);
+    const spec = await readRepoSpec(root, repo, { cacheRoot: root });
     const ids = new Set(flows.map((f) => f.id));
     for (const f of spec.flows)
       if (f.template === FACTS_TEMPLATE && !ids.has(f.id)) await removeFlow(root, repo, f.id);
@@ -315,8 +315,9 @@ async function renderRepoMap(
   repo: string,
   io: Output,
 ): Promise<string[] | undefined> {
-  const records = (await readCatalog(join(catalogDirOf(root), "generated"))).records;
-  const spec = await readRepoSpec(root, repo);
+  const records = (await readCatalog(join(catalogDirOf(root), "generated"), { cacheRoot: root }))
+    .records;
+  const spec = await readRepoSpec(root, repo, { cacheRoot: root });
   const ofRepo = records.some((r) => r.kind === "Component" && r.repo === repo);
   if (!ofRepo && spec.flows.length === 0) {
     io.err(

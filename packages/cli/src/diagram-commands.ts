@@ -26,8 +26,8 @@ export async function loadCatalog(
 }> {
   const op = await loadOrgPack(join(orgPackDirOf(root)));
   const catalogDir = join(root, op.sources.layout.catalog);
-  const generated = await readCatalog(join(catalogDir, "generated"));
-  const curated = await readCatalog(join(catalogDir, "curated"));
+  const generated = await readCatalog(join(catalogDir, "generated"), { cacheRoot: root });
+  const curated = await readCatalog(join(catalogDir, "curated"), { cacheRoot: root });
   for (const p of [...generated.problems, ...curated.problems])
     io.err(`catalog ${p.file}: ${p.message}`);
   const legend = op.profiles[0]?.profile?.legend;

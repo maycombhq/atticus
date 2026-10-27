@@ -31,13 +31,21 @@ export function forgetCatalogs(): void {
   kept.clear();
 }
 
-/** Read every record file under a catalog folder. Files that fail C1 are reported, not returned. */
-export async function readCatalog(dir: string): Promise<CatalogRead> {
-  if (!keeping) return readCatalogFiles(dir);
+/**
+ * Read every record file under a catalog folder. Files that fail C1 are reported, not returned.
+ * `cacheRoot` is the metarepo this run is working in, and the only place the parses are kept
+ * (record-cache.ts): a catalog read out of another team's estate names no root, so nothing of
+ * ours is written into it.
+ */
+export async function readCatalog(
+  dir: string,
+  o: { cacheRoot?: string } = {},
+): Promise<CatalogRead> {
+  if (!keeping) return readCatalogFiles(dir, o.cacheRoot);
   const key = resolve(dir);
   let read = kept.get(key);
   if (!read) {
-    read = readCatalogFiles(dir);
+    read = readCatalogFiles(dir, o.cacheRoot);
     kept.set(key, read);
     read.catch(() => kept.delete(key));
   }
@@ -52,7 +60,7 @@ export async function readCatalog(dir: string): Promise<CatalogRead> {
  */
 const CATALOG_CACHE_VERSION = `c1@${SCHEMA_VERSION}`;
 
-async function readCatalogFiles(dir: string): Promise<CatalogRead> {
+async function readCatalogFiles(dir: string, cacheRoot?: string): Promise<CatalogRead> {
   const records: CatalogRecord[] = [];
   const problems: { file: string; message: string }[] = [];
   const files: string[] = [];
@@ -77,6 +85,7 @@ async function readCatalogFiles(dir: string): Promise<CatalogRead> {
     files,
     name: "catalog",
     version: CATALOG_CACHE_VERSION,
+    cacheRoot,
     parse: (text) => {
       const r = deserializeRecord(text);
       return r.ok

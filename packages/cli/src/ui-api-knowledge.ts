@@ -219,7 +219,10 @@ export function uiKnowledgeRoutes(
     // stages kept titles takes an item's title from its record.
     const titles = new Map<string, string>();
     if (doc?.items.some((i) => !i.title) || doc?.nearMisses.some((n) => !n.title))
-      for (const r of await readKnowledge(root).then((k) => [...k.items, ...k.rejected]))
+      for (const r of await readKnowledge(root, { cacheRoot: root }).then((k) => [
+        ...k.items,
+        ...k.rejected,
+      ]))
         titles.set(r.id, itemTitle(r));
     const titled = <T extends { id: string; title?: string }>(x: T): T => {
       const title = x.title ?? titles.get(x.id);
@@ -251,7 +254,7 @@ export function uiKnowledgeRoutes(
 
   /** One item as people reviewed it now (rejected ones included). */
   const reviewed = async (id: string) => {
-    const k = await readKnowledge(root);
+    const k = await readKnowledge(root, { cacheRoot: root });
     const item = [...k.items, ...k.rejected].find((i) => i.id === id);
     const conflicts = await readConflicts(root, {
       conflicts: k.report?.conflicts ?? [],
@@ -307,7 +310,7 @@ export function uiKnowledgeRoutes(
             file: `org-pack/${p.file}`,
             message: `${p.path ? `${p.path}: ` : ""}${p.message}`,
           }));
-        const k = await readKnowledge(root, { raw: true });
+        const k = await readKnowledge(root, { raw: true, cacheRoot: root });
         const scanned = new Map((k.report?.snapshots ?? []).map((s) => [s.source, s]));
         const today = now().getTime();
         const sources: Api.KnowledgeSourceT[] = [];
@@ -400,7 +403,7 @@ export function uiKnowledgeRoutes(
 
       // ------------------------------------------------------------ the last scan and the items
       .add("GET", "/api/knowledge/scan", async () => {
-        const k = await readKnowledge(root);
+        const k = await readKnowledge(root, { cacheRoot: root });
         const r = k.report;
         const body: Api.KnowledgeScanViewT = {
           ...(r ? { scannedAt: r.scannedAt } : {}),
@@ -434,7 +437,7 @@ export function uiKnowledgeRoutes(
             `There is no knowledge kind ${kind}. Use one of: ${KNOWLEDGE_KINDS.join(", ")}.`,
           );
         const tag = strParam(query, "tag");
-        const k = await readKnowledge(root);
+        const k = await readKnowledge(root, { cacheRoot: root });
         // Rejected items are listed too, marked: a person said why, and the next one reads it.
         const items = filterItems([...k.items, ...k.rejected], {
           ...(kind ? { kind: kind as KnowledgeKind } : {}),
@@ -457,7 +460,7 @@ export function uiKnowledgeRoutes(
         const id = idOf(params.itemId!, "knowledge item");
         const b = Api.ReviewItemRequest.safeParse(body ?? {});
         if (!b.success) throw invalid("Say verified, corrected or rejected.", b.error);
-        const raw = await readKnowledge(root, { raw: true });
+        const raw = await readKnowledge(root, { raw: true, cacheRoot: root });
         const item = raw.items.find((i) => i.id === id);
         if (!item) throw notFound(`There is no knowledge item ${id}.`);
         let set = asSet(b.data.set);
@@ -561,7 +564,7 @@ export function uiKnowledgeRoutes(
             "Atticus can't read that file",
             `${changesRelOf(root)}/${change}/${NEEDS_FILE} isn't a valid needs file.`,
           );
-        const k = f ? await readKnowledge(root) : undefined;
+        const k = f ? await readKnowledge(root, { cacheRoot: root }) : undefined;
         const view = (n: Need): Api.NeedViewT => ({
           ...n,
           ...(k?.reviews[n.item] ? { review: k.reviews[n.item] } : {}),
@@ -600,7 +603,7 @@ export function uiKnowledgeRoutes(
         }
         const file = `${changesRelOf(root)}/${change}/${NEEDS_FILE}`;
         changed(file);
-        const k = await readKnowledge(root);
+        const k = await readKnowledge(root, { cacheRoot: root });
         return {
           status: 200,
           body: {

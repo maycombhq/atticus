@@ -128,7 +128,7 @@ describe("the commands a person runs all day", () => {
       [timings.changeStatusFirstMs ?? 0, timings.changeStatusMs ?? 0, "change status"],
     ] as const)
       expect(warm, `${what}: ${warm} ms against ${first} ms for the first run`).toBeLessThan(
-        first * 0.8,
+        first! * 0.8,
       );
   });
 

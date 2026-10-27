@@ -66,8 +66,8 @@ export async function reconcileCommand(
   const op = await loadOrgPack(join(orgPackDirOf(root)));
   const profile = op.profiles[0]?.profile;
   const catalogDir = join(root, op.sources.layout.catalog);
-  const generated = await readCatalog(join(catalogDir, "generated"));
-  const curated = await readCatalog(join(catalogDir, "curated"));
+  const generated = await readCatalog(join(catalogDir, "generated"), { cacheRoot: root });
+  const curated = await readCatalog(join(catalogDir, "curated"), { cacheRoot: root });
   for (const p of [...generated.problems, ...curated.problems])
     io.err(`catalog ${p.file}: ${p.message}`);
   const records = [...generated.records, ...curated.records];
@@ -141,7 +141,7 @@ export async function aliasCommand(
 ): Promise<number> {
   const op = await loadOrgPack(join(orgPackDirOf(root)));
   const catalogDir = join(root, op.sources.layout.catalog);
-  const generated = await readCatalog(join(catalogDir, "generated"));
+  const generated = await readCatalog(join(catalogDir, "generated"), { cacheRoot: root });
   const systems = op.profiles.flatMap((p) => p.profile?.systems ?? []).map((s) => s.id);
   if (!generated.records.some((r) => r.id === target) && !systems.includes(target)) {
     io.err(

@@ -404,7 +404,7 @@ async function write(root: string, f: NeedsFile): Promise<void> {
     join(dir, NEEDS_FILE),
     `# What this change needs from the organisation (ADR 0101). atticus change needs writes it; status, note, by and at are a person's.\n${stringify(NeedsFile.parse(f), { lineWidth: 0 })}`,
   );
-  const k = await readKnowledge(root);
+  const k = await readKnowledge(root, { cacheRoot: root });
   await writeFileAtomic(join(dir, NEEDS_MD), renderNeeds(f, k.reviews));
 }
 
@@ -477,7 +477,7 @@ export async function findNeeds(
   const dir = changeFolder(root, change);
   const files = await changeFiles(dir);
   const targets = await targetsOf(dir, files);
-  const k = await readKnowledge(root);
+  const k = await readKnowledge(root, { cacheRoot: root });
   const byId = new Map(k.items.map((i) => [i.id, i]));
   const agent =
     o.orgPack?.agents.find((a) => a.id === NEEDS_FINDER) ??
@@ -827,7 +827,7 @@ export async function mergeStoryRequests(
   requests: RequestTask[],
   now: Date,
 ): Promise<NeedsFile> {
-  const k = await readKnowledge(root);
+  const k = await readKnowledge(root, { cacheRoot: root });
   const byId = new Map(k.items.map((i) => [i.id, i]));
   const fresh: Need[] = [];
   for (const r of requests) {

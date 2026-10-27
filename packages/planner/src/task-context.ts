@@ -389,7 +389,7 @@ export async function taskContext(
     );
 
   // What the organisation needs of it, and the knowledge the step leads to.
-  const knowledge = await readKnowledge(root);
+  const knowledge = await readKnowledge(root, { cacheRoot: root });
   const verified = (item: string) => {
     const s = knowledge.reviews[item]?.state;
     return s === "verified" || s === "corrected";

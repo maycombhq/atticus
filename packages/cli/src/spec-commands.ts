@@ -92,7 +92,7 @@ export async function specDraft(
   }
   const { repo, op, handle, commit, repoType, template } = c;
   const { records } = await loadCatalog(root, { out: () => {}, err: (l) => io.err(l) });
-  const before = await readRepoSpec(root, repo.id);
+  const before = await readRepoSpec(root, repo.id, { cacheRoot: root });
   for (const p of before.problems) io.err(`${p.file}: ${p.message}`);
   const stale = o.force ? [] : await staleFlows(handle, before.flows, before.header?.files ?? {});
   const staleIds = new Set(stale.map((s) => s.flow));
@@ -278,7 +278,7 @@ export async function specCheck(
     return 2;
   }
   const { repo, handle, template } = c;
-  const spec = await readRepoSpec(root, repo.id);
+  const spec = await readRepoSpec(root, repo.id, { cacheRoot: root });
   if (!spec.header && spec.flows.length === 0) {
     io.err(`${repo.id} has no spec yet. Draft it: atticus spec draft ${repo.id}`);
     return 2;

@@ -95,7 +95,7 @@ export async function draftOrgPack(
   const own = new Set(
     (op.profiles.find((p) => p.platform === platform)?.profile?.systems ?? []).map((s) => s.id),
   );
-  const k = await readKnowledge(root);
+  const k = await readKnowledge(root, { cacheRoot: root });
   const candidates = k.items
     .filter(
       (i) =>

@@ -3758,7 +3758,7 @@ export async function draftedStories(root: string, changeId: string): Promise<Dr
     );
   const ctx = await loadChangeContext(root);
   const estate = await loadEstate(root, ctx.records);
-  const items = (await readKnowledge(root)).items.filter(
+  const items = (await readKnowledge(root, { cacheRoot: root })).items.filter(
     (i): i is Process => i.kind === "ProcessDefinition",
   );
   const stories = storiesFromDeltas(deltas, estate);
@@ -3846,7 +3846,7 @@ export async function storiesStage(
   }
   const ctx = await loadChangeContext(root);
   const estate = await loadEstate(root, ctx.records);
-  const items = (await readKnowledge(root)).items.filter(
+  const items = (await readKnowledge(root, { cacheRoot: root })).items.filter(
     (i): i is Process => i.kind === "ProcessDefinition",
   );
   const stories = storiesFromDeltas(deltas, estate);
@@ -4034,7 +4034,7 @@ Rules:
   // with their rules in full, since a story's Context names "a standard, a vendor's rule". An
   // integration pattern is the architecture stage's: never selected here.
   const byId = new Map(items.map((p) => [p.id, p]));
-  const knowledgeItems = (await readKnowledge(root)).items;
+  const knowledgeItems = (await readKnowledge(root, { cacheRoot: root })).items;
   const standards = new Map(
     knowledgeItems
       .filter((i): i is RecordOf<"Pattern"> => i.kind === "Pattern" && isStandard(i))

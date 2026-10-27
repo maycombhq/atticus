@@ -102,7 +102,7 @@ export async function scanCommand(
 
 async function scanLocked(root: string, o: ScanCommandOptions, io: Output): Promise<number> {
   const out = join(catalogDirOf(root), "generated");
-  const before = await readCatalog(out);
+  const before = await readCatalog(out, { cacheRoot: root });
   const started = Date.now();
   const scan = await scanEstate({
     root,

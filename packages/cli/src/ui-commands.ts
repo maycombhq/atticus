@@ -119,7 +119,9 @@ export async function startUi(
   // hears (its watcher, its own writes, a scan) means the next read reads the files again.
   keepCatalogsInMemory(true);
   // Read it now, while nobody waits, so the first page doesn't pay for it.
-  void readCatalog(join(catalogDirOf(root), "generated")).catch(() => undefined);
+  void readCatalog(join(catalogDirOf(root), "generated"), { cacheRoot: root }).catch(
+    () => undefined,
+  );
   const stop = srv.events.listen((e) => {
     const changed =
       e.type === "file.changed" &&

@@ -56,7 +56,7 @@ async function build(root: string): Promise<Index> {
     return l;
   };
   for (const specRepo of await specRepos(root))
-    for (const f of (await readRepoSpec(root, specRepo)).flows) {
+    for (const f of (await readRepoSpec(root, specRepo, { cacheRoot: root })).flows) {
       const parts: {
         step: number;
         kind: string;

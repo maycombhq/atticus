@@ -13,10 +13,6 @@ coverage/
 /.runs/
 /workspace/
 /.atticus/
-# A test that reads a fixture metarepo in place leaves this machine's own files there: the kept
-# record parses (.atticus/cache/, record-cache.ts) and the .gitignore Atticus writes beside them.
-packages/*/test/fixtures/**/.atticus/
-fixtures/**/.atticus/
 
 # Local AI session worktrees
 /.claude/worktrees/

@@ -3,7 +3,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
-  metarepoRootOf,
   parseRecord,
   readFlow,
   readParsedFiles,
@@ -15,7 +14,8 @@ import { EXAMPLES } from "./examples.js";
 
 /**
  * Parses kept between runs (record-cache.ts): a file whose size and time haven't changed isn't
- * parsed again, a changed file is, and a folder outside a metarepo keeps nothing. The flows a
+ * parsed again, a changed file is, and the cache is kept under the root the caller names and
+ * nowhere else (ADR 0119 addendum: a read that names no root writes nothing). The flows a
  * command asks for by id are read one at a time, from the file names alone.
  */
 
@@ -39,8 +39,12 @@ function counting() {
   };
 }
 
-const read = (dir: string, files: string[], parse: ReturnType<typeof counting>["parse"]) =>
-  readParsedFiles<string>({ dir, files, name: "test", version: "1", parse });
+const read = (
+  dir: string,
+  files: string[],
+  parse: ReturnType<typeof counting>["parse"],
+  cacheRoot?: string,
+) => readParsedFiles<string>({ dir, files, name: "test", version: "1", parse, cacheRoot });
 
 describe("parses kept between runs", () => {
   it("reads every file the first time and none of them the second", async () => {
@@ -50,14 +54,14 @@ describe("parses kept between runs", () => {
     await writeFile(join(dir, "a.yaml"), "ok a\n");
     await writeFile(join(dir, "b.yaml"), "no b\n");
     const first = counting();
-    const one = await read(dir, ["a.yaml", "b.yaml"], first.parse);
+    const one = await read(dir, ["a.yaml", "b.yaml"], first.parse, root);
     expect(first.parsed).toEqual(["a.yaml", "b.yaml"]);
     expect(one).toEqual([
       { rel: "a.yaml", value: "ok a" },
       { rel: "b.yaml", problem: "not ok: no b" },
     ]);
     const second = counting();
-    const two = await read(dir, ["a.yaml", "b.yaml"], second.parse);
+    const two = await read(dir, ["a.yaml", "b.yaml"], second.parse, root);
     expect(second.parsed).toEqual([]);
     expect(two).toEqual(one);
     // The cache is Atticus's own, on this machine only, and Git ignores it.
@@ -71,24 +75,55 @@ describe("parses kept between runs", () => {
     await mkdir(dir, { recursive: true });
     await writeFile(join(dir, "a.yaml"), "ok a\n");
     await writeFile(join(dir, "b.yaml"), "ok b\n");
-    await read(dir, ["a.yaml", "b.yaml"], counting().parse);
+    await read(dir, ["a.yaml", "b.yaml"], counting().parse, root);
     await writeFile(join(dir, "a.yaml"), "ok a changed\n");
     const again = counting();
-    const out = await read(dir, ["a.yaml", "b.yaml"], again.parse);
+    const out = await read(dir, ["a.yaml", "b.yaml"], again.parse, root);
     expect(again.parsed).toEqual(["a.yaml"]);
     expect(out[0]).toEqual({ rel: "a.yaml", value: "ok a changed" });
     expect(out[1]).toEqual({ rel: "b.yaml", value: "ok b" });
   });
 
-  it("parses every time outside a metarepo, and keeps nothing", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "atticus-nocache-"));
+  it("writes nothing, and keeps nothing, when the caller names no root", async () => {
+    // A read of someone else's metarepo: Atticus was asked to read it, so it writes nothing
+    // into it, not even a cache of its own (ADR 0119 addendum, hard rule 6).
+    const root = await metarepo();
+    const dir = join(root, "things");
+    await mkdir(dir, { recursive: true });
     await writeFile(join(dir, "a.yaml"), "ok a\n");
-    expect(metarepoRootOf(dir)).toBeUndefined();
     for (const _ of [1, 2]) {
       const c = counting();
-      await read(dir, ["a.yaml"], c.parse);
+      expect(await read(dir, ["a.yaml"], c.parse)).toEqual([{ rel: "a.yaml", value: "ok a" }]);
       expect(c.parsed).toEqual(["a.yaml"]);
     }
+    expect(await readdir(root)).toEqual(["org-pack", "things"]);
+  });
+
+  it("keeps the parses under the root it is given, and never under the folder's own", async () => {
+    // The root is the one the command is working in, not the one the files happen to sit in:
+    // ours, reading a folder we copied from theirs, keeps its cache in ours.
+    const ours = await metarepo();
+    const theirs = await metarepo();
+    const dir = join(theirs, "things");
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, "a.yaml"), "ok a\n");
+    const first = counting();
+    await read(dir, ["a.yaml"], first.parse, ours);
+    expect(first.parsed).toEqual(["a.yaml"]);
+    expect(await readdir(theirs)).toEqual(["org-pack", "things"]);
+    expect(await readdir(join(ours, ".atticus", "cache"))).toHaveLength(1);
+    // And it is read back from there, so naming a root outside the files still keeps the speed.
+    const again = counting();
+    await read(dir, ["a.yaml"], again.parse, ours);
+    expect(again.parsed).toEqual([]);
+  });
+
+  it("outside a metarepo, keeps the parses under the root it is given", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "atticus-nocache-"));
+    await writeFile(join(dir, "a.yaml"), "ok a\n");
+    const c = counting();
+    await read(dir, ["a.yaml"], c.parse);
+    expect(c.parsed).toEqual(["a.yaml"]);
     expect(await readdir(dir)).toEqual(["a.yaml"]);
   });
 
@@ -97,12 +132,14 @@ describe("parses kept between runs", () => {
     const dir = join(root, "things");
     await mkdir(dir, { recursive: true });
     await writeFile(join(dir, "a.yaml"), "ok a\n");
-    await read(dir, ["a.yaml"], counting().parse);
+    await read(dir, ["a.yaml"], counting().parse, root);
     const cache = join(root, ".atticus", "cache");
     const name = (await readdir(cache))[0]!;
     await writeFile(join(cache, name), "not json at all");
     const again = counting();
-    expect(await read(dir, ["a.yaml"], again.parse)).toEqual([{ rel: "a.yaml", value: "ok a" }]);
+    expect(await read(dir, ["a.yaml"], again.parse, root)).toEqual([
+      { rel: "a.yaml", value: "ok a" },
+    ]);
     expect(again.parsed).toEqual(["a.yaml"]);
   });
 });
@@ -144,12 +181,22 @@ describe("a repo's flows read one at a time", () => {
 
   it("gives the same flows and problems as reading the whole spec", async () => {
     const root = await withFlows();
-    const spec = await readRepoSpec(root, "forge-notes");
+    const spec = await readRepoSpec(root, "forge-notes", { cacheRoot: root });
     expect(spec.flows.map((f) => f.id)).toEqual(["forge-notes.get-note", "forge-notes.save-note"]);
     expect(spec.problems.map((p) => p.file)).toEqual(["specs/forge-notes/forge-notes.broken.yaml"]);
     // Read again from the kept parses: the same answer, to the letter.
-    expect(await readRepoSpec(root, "forge-notes")).toEqual(spec);
+    expect(await readRepoSpec(root, "forge-notes", { cacheRoot: root })).toEqual(spec);
+    await rm(join(root, ".atticus"), { recursive: true, force: true });
+    expect(await readRepoSpec(root, "forge-notes", { cacheRoot: root })).toEqual(spec);
+  });
+
+  it("reads a spec with no cache root at all, and writes nothing into it", async () => {
+    // Their estate, read-only: the same flows, and not a file left behind (hard rule 6).
+    const root = await withFlows();
+    const spec = await readRepoSpec(root, "forge-notes", { cacheRoot: root });
     await rm(join(root, ".atticus"), { recursive: true, force: true });
     expect(await readRepoSpec(root, "forge-notes")).toEqual(spec);
+    expect(await readRepoSpec(root, "forge-notes")).toEqual(spec);
+    expect((await readdir(root)).sort()).toEqual(["org-pack", "specs"]);
   });
 });

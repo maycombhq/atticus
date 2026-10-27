@@ -249,7 +249,7 @@ async function deltasOf(root: string, change: string) {
   const out: ConformDelta[] = [];
   for (const d of deltas) {
     if (!specs.has(d.delta.repo))
-      specs.set(d.delta.repo, (await readRepoSpec(root, d.delta.repo)).flows);
+      specs.set(d.delta.repo, (await readRepoSpec(root, d.delta.repo, { cacheRoot: root })).flows);
     const today = specs.get(d.delta.repo)!.find((f) => f.id === d.delta.flow);
     if (d.delta.change !== "new" && !today)
       problems.push(

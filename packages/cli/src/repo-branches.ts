@@ -92,8 +92,10 @@ export async function compareBranch(root: string, branch: string) {
   const ofRepos = (records: CatalogRecord[]) =>
     records.filter((r) => r.evidence.some((e) => e.repo && ids.has(e.repo)));
   const cat = catalogDirOf(root);
-  const before = await readCatalog(join(cat, "generated"));
-  const after = await readCatalog(join(cat, "branches", branchSlug(branch), "generated"));
+  const before = await readCatalog(join(cat, "generated"), { cacheRoot: root });
+  const after = await readCatalog(join(cat, "branches", branchSlug(branch), "generated"), {
+    cacheRoot: root,
+  });
   const d = diffCatalogs(ofRepos(before.records), ofRepos(after.records));
   return {
     branch,

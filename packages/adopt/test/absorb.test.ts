@@ -8,6 +8,7 @@ import {
   absorb,
   hashTree,
   init,
+  isLocalState,
   listFiles,
   type AbsorbItem,
   type AbsorbResult,
@@ -27,11 +28,12 @@ beforeAll(async () => {
 
 /**
  * Every file of the source is in some item (file, folder item, or the code item's count), apart
- * from this machine's own files inside a metarepo's `.atticus/` (LOCAL_ONLY: the kept parses,
- * logs, locks, me.yaml), which absorb leaves out because they are its state, not its content.
+ * from Atticus's own local state on the machine it ran on (isLocalState: the record cache, the
+ * log, locks, the prompt history, me.yaml, the index, the run folders, the base clones), which
+ * absorb passes over because it is derived, not anybody's work (ADR 0119 addendum).
  */
 async function expectEveryFileListed(src: string, r: AbsorbResult) {
-  const files = (await listFiles(src)).filter((f) => !/(^|\/)\.atticus\//.test(`/${f}`));
+  const files = (await listFiles(src)).filter((f) => !isLocalState(f, true));
   const covered = (f: string) =>
     r.items.some((i) => i.kind !== "code" && (i.path === f || f.startsWith(`${i.path}/`)));
   const rest = files.filter((f) => !covered(f));

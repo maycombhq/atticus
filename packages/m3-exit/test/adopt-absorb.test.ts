@@ -175,7 +175,7 @@ const ABSORB: [fixture: string, id: string, what: string][] = [
 describe("M3 exit step 4: the absorb bar", () => {
   for (const [fixture, id, what] of ABSORB)
     it(
-      `${what} (${fixture}): every item is listed as adopt, link or ignore, at least 90% translated, under 10 minutes, and the org pack is unchanged`,
+      `${what} (${fixture}): every item is listed as adopt, link or ignore, at least 90% translated, under 10 minutes, the org pack is unchanged and the source is byte-identical`,
       async () => {
         const top = await mkdtemp(join(tmpdir(), "atticus-m3-absorb-"));
         made.push(top);
@@ -183,7 +183,11 @@ describe("M3 exit step 4: the absorb bar", () => {
         expect((await atticus(undefined, "init", root, "--platform", "shop")).code).toBe(0);
         const pack = await fingerprint(join(root, "org-pack"));
 
-        const src = join(ADOPT_FIXTURES, fixture);
+        // The source is a copy, and its whole tree is fingerprinted: absorb was asked to read
+        // it, so nothing of ours — a record cache, a .gitignore, a lock — may land in it
+        // (hard rule 6, ADR 0038, ADR 0119 addendum).
+        const src = await copy(fixture, fixture);
+        const source = await fingerprint(src);
         const a = await atticus(root, "absorb", src, "--id", id, "--json");
         expect(a.code, a.text).toBe(0);
         const r = json<AbsorbJson>(a);
@@ -213,6 +217,8 @@ describe("M3 exit step 4: the absorb bar", () => {
         expect(r.proposal).toBe(`proposals/absorb/${id}`);
         expect(existsSync(join(root, r.proposal!, "PR.md"))).toBe(true);
         expect(await fingerprint(join(root, "org-pack"))).toEqual(pack);
+        // And the source, every file and every byte of it, is as it was.
+        expect(await fingerprint(src)).toEqual(source);
       },
       T,
     );

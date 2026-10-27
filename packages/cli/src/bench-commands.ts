@@ -556,9 +556,12 @@ async function estatePass(
       `atticus scan failed on the ${estate} estate: run atticus scan --root ${root} to see why.`,
     );
   await main(["estate", "join", "--root", root], quiet);
-  const { records } = await readCatalog(join(root, ".atticus", "catalog", "generated"));
+  const { records } = await readCatalog(join(root, ".atticus", "catalog", "generated"), {
+    cacheRoot: root,
+  });
   const specs: { repo: string; flows: FlowRecord[] }[] = [];
-  for (const id of repos) specs.push({ repo: id, flows: (await readRepoSpec(root, id)).flows });
+  for (const id of repos)
+    specs.push({ repo: id, flows: (await readRepoSpec(root, id, { cacheRoot: root })).flows });
   const joined = await readEstateJoins(root);
   const comps = new Map(
     records

@@ -843,8 +843,11 @@ export async function draftTemplates(
 ): Promise<DraftTemplatesResult> {
   const orgPackDir = join(orgPackDirOf(root));
   const orgPack = await loadOrgPack(orgPackDir);
-  const records = (await readCatalog(join(root, orgPack.sources.layout.catalog, "generated")))
-    .records;
+  const records = (
+    await readCatalog(join(root, orgPack.sources.layout.catalog, "generated"), {
+      cacheRoot: root,
+    })
+  ).records;
   const now = o.now ?? new Date();
   const problems: string[] = [];
   const inputsDir = o.inputsDir ?? inputsDirOf(root);

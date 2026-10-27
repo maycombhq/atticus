@@ -106,7 +106,7 @@ export async function conflictDraft(
   c: KnowledgeConflict,
   o: { items?: KnowledgeRecord[] } = {},
 ): Promise<QuestionDraft> {
-  const items = o.items ?? (await readKnowledge(root)).items;
+  const items = o.items ?? (await readKnowledge(root, { cacheRoot: root })).items;
   const about = c.about.map((id) => items.find((i) => i.id === id));
   const topic = c.about
     .map((id, k) => (about[k] ? `"${itemTitle(about[k])}" (${id})` : id))
@@ -202,7 +202,8 @@ export async function readConflicts(
     records?: readonly CodeFactRecord[];
   } = {},
 ): Promise<ConflictView[]> {
-  const conflicts = o.conflicts ?? (await readKnowledge(root)).report?.conflicts ?? [];
+  const conflicts =
+    o.conflicts ?? (await readKnowledge(root, { cacheRoot: root })).report?.conflicts ?? [];
   if (!conflicts.length) return [];
   const qs = (
     o.questions ??

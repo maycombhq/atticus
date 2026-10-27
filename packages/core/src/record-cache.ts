@@ -1,17 +1,23 @@
 import { createHash } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
-import { existsSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { ensureLocalIgnore, writeFileAtomic } from "./fs.js";
 
 /**
- * Record files read and parsed once, then kept between runs (ADR 0119). A metarepo's catalog is
- * about 1,500 files and its specs 400 more; reading and parsing every one took seconds on every
- * `atticus next` or `atticus change status`, and a person runs those all day. So each parse is
- * kept in `.atticus/cache/`, keyed by the file's path, size and modification time, the way the
- * search index (packages/index) and the manual step store already key theirs. A file whose size
- * or time changed is read again; the cache is derived, local-only and never committed, and a
- * cache that can't be read or written costs nothing but the parse.
+ * Record files read and parsed once, then kept between runs (ADR 0119, with its addendum of
+ * 2026-10-26). A metarepo's catalog is about 1,500 files and its specs 400 more; reading and
+ * parsing every one took seconds on every `atticus next` or `atticus change status`, and a
+ * person runs those all day. So each parse is kept in `<cacheRoot>/.atticus/cache/`, keyed by
+ * the file's path, size and modification time, the way the search index (packages/index) and the
+ * manual step store already key theirs. A file whose size or time changed is read again; the
+ * cache is derived, local-only and never committed, and a cache that can't be read or written
+ * costs nothing but the parse.
+ *
+ * `cacheRoot` is the metarepo the command is working in, and the caller names it: nothing here
+ * works out a root from the folder being read. A read with no `cacheRoot` keeps nothing and
+ * writes nothing, which is what reading someone else's metarepo must be — absorb, federation, a
+ * linked estate. Atticus never writes where it was only asked to read (hard rule 6, ADR 0038),
+ * and that holds for its own cache as much as for anything else.
  *
  * Nothing here decides what a file means: the caller's `parse` does, and only its output (the
  * record, or the problem with the file) is kept.
@@ -55,25 +61,18 @@ export async function mapAtOnce<I, O>(items: I[], f: (item: I) => Promise<O>): P
 }
 
 /**
- * The metarepo root a path is inside: the nearest folder above it holding `org-pack/` or
- * `.atticus/org-pack/` (a repo adopted in place), or undefined outside one — a unit test's
- * temporary folder, say, which then keeps no cache.
+ * The file a folder's parses are kept in, under the root the caller named, or undefined when it
+ * named none — and then nothing is read from a cache and nothing is written anywhere. The key is
+ * the folder's absolute path, and the memo names that folder too, so two folders read into one
+ * root can't be read as one.
  */
-export function metarepoRootOf(path: string): string | undefined {
-  let dir = resolve(path);
-  for (;;) {
-    if (existsSync(join(dir, "org-pack")) || existsSync(join(dir, ".atticus", "org-pack")))
-      return dir;
-    const up = dirname(dir);
-    if (up === dir) return undefined;
-    dir = up;
-  }
-}
-
-/** The metarepo and the file its parses are kept in, or undefined outside a metarepo. */
-function memoFileOf(dir: string, name: string): { root: string; file: string } | undefined {
-  const root = metarepoRootOf(dir);
-  if (!root) return undefined;
+function memoFileOf(
+  cacheRoot: string | undefined,
+  dir: string,
+  name: string,
+): { root: string; file: string } | undefined {
+  if (!cacheRoot) return undefined;
+  const root = resolve(cacheRoot);
   const key = createHash("sha256").update(resolve(dir)).digest("hex").slice(0, 16);
   return { root, file: join(root, ".atticus", "cache", `${name}-${key}.json`) };
 }
@@ -94,6 +93,8 @@ async function readMemo(file: string, v: string, dir: string): Promise<Map<strin
  * Read and parse every named file of a folder, reusing the parses kept from an earlier run for
  * the files that haven't changed. `name` names the kind of file (`catalog`, `spec`), `version`
  * the shape of what the parse gives back; `files` are relative to `dir`, with forward slashes.
+ * `cacheRoot` is the metarepo this run is working in, and the only place a cache is ever
+ * written; without it the read keeps nothing and writes nothing, and costs only the parse.
  */
 export async function readParsedFiles<T>(o: {
   dir: string;
@@ -101,8 +102,10 @@ export async function readParsedFiles<T>(o: {
   name: string;
   version: string;
   parse: (text: string, rel: string) => ParseOutcome<T>;
+  /** The root of the metarepo this run is working in; none means no cache (read-only). */
+  cacheRoot?: string;
 }): Promise<Parsed<T>[]> {
-  const memo = memoFileOf(o.dir, o.name);
+  const memo = memoFileOf(o.cacheRoot, o.dir, o.name);
   const had = memo ? await readMemo(memo.file, o.version, o.dir) : new Map<string, Entry>();
   const full = (rel: string) => join(o.dir, ...rel.split("/"));
   const stats = await mapAtOnce(o.files, (rel) =>

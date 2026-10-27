@@ -2376,7 +2376,7 @@ export async function architectureStage(
     );
   const ctx = await loadChangeContext(root);
   const estate = await loadEstate(root, ctx.records);
-  const knowledge = await readKnowledge(root);
+  const knowledge = await readKnowledge(root, { cacheRoot: root });
   const patterns = knowledge.items.filter((i) => i.kind === "Pattern" || i.kind === "Decision");
 
   const touched = placement.flows.map((f) => estate.flowById.get(f.id)).filter((x) => !!x);

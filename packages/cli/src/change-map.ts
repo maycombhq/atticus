@@ -57,7 +57,7 @@ export async function targetFlowsOf(
   const merged: MergedFlow[] = [];
   for (const d of deltas) {
     if (repos.has(d.repo) && !specs.has(d.repo))
-      specs.set(d.repo, await readRepoSpec(root, d.repo));
+      specs.set(d.repo, await readRepoSpec(root, d.repo, { cacheRoot: root }));
     const m = mergeDelta(
       d,
       specs.get(d.repo)?.flows.find((f) => f.id === d.flow),
@@ -69,7 +69,7 @@ export async function targetFlowsOf(
   const { records } = await loadCatalog(root, { out: () => undefined, err: () => undefined });
   const known = new Set<string>();
   for (const repo of repos) {
-    const spec = specs.get(repo) ?? (await readRepoSpec(root, repo));
+    const spec = specs.get(repo) ?? (await readRepoSpec(root, repo, { cacheRoot: root }));
     for (const f of spec.flows) known.add(f.component);
   }
   return {

@@ -176,7 +176,7 @@ export async function readNextState(root: string): Promise<NextState> {
   const problems = [...view.problems];
   const repos: RepoState[] = [];
   for (const r of view.repos) {
-    const spec = await readRepoSpec(root, r.id);
+    const spec = await readRepoSpec(root, r.id, { cacheRoot: root });
     problems.push(...spec.problems);
     const findings = await readSpecFindings(root, r.id);
     // A-ledger: the parts a repo is read in, and which the facts account for.
@@ -218,7 +218,7 @@ export async function readNextState(root: string): Promise<NextState> {
   const changeQuestions: Record<string, string[]> = {};
   for (const q of open.questions)
     if (changeIds.has(q.repo)) (changeQuestions[q.repo] ??= []).push(q.id);
-  const knowledge = await readKnowledge(root);
+  const knowledge = await readKnowledge(root, { cacheRoot: root });
   const sources: NextState["sources"] = [];
   for (const w of view.sources.wikis) {
     const newest = (await snapshotDates(root, w.id))[0];

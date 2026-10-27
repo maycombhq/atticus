@@ -148,7 +148,7 @@ export async function trustView(root: string): Promise<View> {
   for (const id of [...named].sort()) if (!ids.includes(id)) ids.push(id);
 
   // What the catalog holds of each repo: records from its facts, records from the readers.
-  const catalog = await readCatalog(join(catalogDirOf(root), "generated"));
+  const catalog = await readCatalog(join(catalogDirOf(root), "generated"), { cacheRoot: root });
   for (const p of catalog.problems)
     problems.push({ file: rel(join(catalogDirOf(root), "generated", p.file)), message: p.message });
   const counts = new Map<string, { facts: number; readers: number }>();

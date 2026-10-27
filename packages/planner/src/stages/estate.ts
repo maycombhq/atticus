@@ -39,7 +39,7 @@ export async function loadEstate(root: string, records: CatalogRecord[]): Promis
     .map((d) => d.name)
     .sort();
   for (const repo of repos) {
-    const s = await readRepoSpec(root, repo);
+    const s = await readRepoSpec(root, repo, { cacheRoot: root });
     for (const f of s.flows) flows.push({ repo, flow: f });
     for (const p of s.problems) problems.push(`${p.file}: ${p.message}`);
   }

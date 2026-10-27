@@ -69,8 +69,16 @@ function parseSpecFile(text: string, name: string, rel: string): ParseOutcome<Sp
   return { ok: true, value: { flow: r.record } };
 }
 
-/** Read a repo's spec: header, flows (sorted by id) and the files that didn't read. */
-export async function readRepoSpec(root: string, repo: string): Promise<RepoSpec> {
+/**
+ * Read a repo's spec: header, flows (sorted by id) and the files that didn't read. `cacheRoot`
+ * is the metarepo this run is working in, and the only place the parses are kept (record-cache.ts);
+ * reading another team's estate leaves it out, and then nothing is written into it.
+ */
+export async function readRepoSpec(
+  root: string,
+  repo: string,
+  o: { cacheRoot?: string } = {},
+): Promise<RepoSpec> {
   const dir = specDirOf(root, repo);
   const rel = specRelOf(root, repo);
   let names: string[];
@@ -88,6 +96,7 @@ export async function readRepoSpec(root: string, repo: string): Promise<RepoSpec
     name: "spec",
     version: SPEC_CACHE_VERSION,
     parse: (text, name) => parseSpecFile(text, name, rel),
+    cacheRoot: o.cacheRoot,
   });
   for (const p of read) {
     if (p.problem !== undefined) {
