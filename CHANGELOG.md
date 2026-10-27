@@ -4,6 +4,10 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased (2.0.0-beta.2)
 
+### Fixed: a scan no longer calls every repo a prototype
+
+- `atticus scan` said "a prototype, so not scanned into the catalog" for every repo, though it scanned them all. It now says it only of a repo the manifest types `prototype`.
+
 ### A change's knowledge has its own page
 
 - **Change › Knowledge**, a tab beside Feature design, shows every page attached to the change, ranked, with its source and authority, the near-misses, the tasks that use each page and the pages that disagree; Confirm and Exclude work there. It was only at the foot of the Feature page, which now links to it. Ctrl+K finds it, and the editors' app panels reach it like the other tabs.

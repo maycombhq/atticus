@@ -44,6 +44,19 @@ export function productionRepos(op: OrgPack, only?: readonly string[]): EstateRe
   return estateRepos(op, only).filter((r) => !isPrototypeType(r.type));
 }
 
+/**
+ * What a scan says of each prototype it leaves out (ADR 0133). By id: estateRepos makes new
+ * objects on every call, so a prototype is told from the estate by its type, not by identity.
+ */
+export function prototypeScanNotes(op: OrgPack, only?: readonly string[]): string[] {
+  return estateRepos(op, only)
+    .filter((r) => isPrototypeType(r.type))
+    .map(
+      (r) =>
+        `${r.id}: a prototype, so not scanned into the catalog; compare it with the estate: atticus change attach <change> --prototype ${r.id}.`,
+    );
+}
+
 /** Whether the manifests type a repo as a prototype (ADR 0133). */
 export function isPrototypeRepo(op: OrgPack, repo: string): boolean {
   return estateRepos(op).some((r) => r.id === repo && isPrototypeType(r.type));

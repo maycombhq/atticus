@@ -10,7 +10,13 @@ import {
   type Fact,
   type OrgPack,
 } from "@maycombhq/core";
-import { catalogWithFacts, estateFacts, estateFromFacts, productionRepos } from "../src/index.js";
+import {
+  catalogWithFacts,
+  estateFacts,
+  estateFromFacts,
+  productionRepos,
+  prototypeScanNotes,
+} from "../src/index.js";
 
 /**
  * A prototype is read but kept out of the production catalog (ADR 0133): the manifest types it
@@ -36,6 +42,13 @@ beforeAll(async () => {
 describe("a prototype and the catalog", () => {
   it("leaves the prototype out of the estate's repos for the catalog", () => {
     expect(productionRepos(op).map((r) => r.id)).toEqual([...ESTATE]);
+  });
+
+  it("says a scan leaves out the prototype, and only the prototype", () => {
+    expect(prototypeScanNotes(op)).toEqual([
+      `${PROTO}: a prototype, so not scanned into the catalog; compare it with the estate: atticus change attach <change> --prototype ${PROTO}.`,
+    ]);
+    expect(prototypeScanNotes(op, [...ESTATE])).toEqual([]);
   });
 
   it("writes nothing into the catalog for the prototype's own facts, and asks nothing", () => {
