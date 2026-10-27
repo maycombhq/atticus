@@ -88,7 +88,7 @@ describe("the retrieval cases (ADR 0116)", () => {
     // every paraphrase at the normal budget, and recall holds on every case.
     expect(sw["+expansion"]).toBe(true);
     expect(mean(para("+expansion"))).toBe(1);
-  }, 300_000);
+  }, 900_000); // Windows CI scores every mode in ~7 min; the bar is the result, not the time.
 });
 
 describe("the context engine's eval", () => {
@@ -127,5 +127,5 @@ describe("the context engine's eval", () => {
     });
     const doc = readFileSync(join(REPO, "docs/evidence/context-eval.md"), "utf8");
     expect(doc, "run pnpm --filter @maycombhq/evals eval:context").toBe(renderContextEval(e));
-  }, 300_000);
+  }, 900_000);
 });
