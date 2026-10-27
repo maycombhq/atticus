@@ -47,7 +47,8 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       # Windows runners are slower; fewer packages testing at once keeps timing-sensitive tests honest.
-      - run: pnpm turbo run test --concurrency=${{ matrix.os == 'windows-latest' && '2' || '10' }}
+      # --continue: every package's tests run, so one run shows every failure, not the first.
+      - run: pnpm turbo run test --continue --concurrency=${{ matrix.os == 'windows-latest' && '2' || '10' }}
 
   # The offline install bundle, built and installed the way a person would, on Linux and
   # Windows (install.sh and install.ps1), when the full matrix runs.

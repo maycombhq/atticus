@@ -5,7 +5,7 @@
  */
 import { cp, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { GitRunner } from "@maycombhq/workspace";
@@ -111,7 +111,7 @@ describe("the stores openspec.yaml names (read-only)", () => {
   });
 
   it("resolves a path against the metarepo root, or the home folder for ~/", () => {
-    expect(storeDirOf("/m/forge-meta", "../s")).toBe(join("/m", "s"));
+    expect(storeDirOf("/m/forge-meta", "../s")).toBe(resolve("/m", "s"));
     expect(storeDirOf("/m/forge-meta", "~/openspec/s")).toBe(join(homedir(), "openspec", "s"));
     expect(storeDirOf("/m/forge-meta", join(FX, "x"))).toBe(join(FX, "x"));
   });
