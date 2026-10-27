@@ -4,6 +4,10 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased (2.0.0-beta.2)
 
+### A change's knowledge has its own page
+
+- **Change › Knowledge**, a tab beside Feature design, shows every page attached to the change, ranked, with its source and authority, the near-misses, the tasks that use each page and the pages that disagree; Confirm and Exclude work there. It was only at the foot of the Feature page, which now links to it. Ctrl+K finds it, and the editors' app panels reach it like the other tabs.
+
 ### Start a change from a working prototype (ADR 0133)
 
 - **A prototype is a repo of type `prototype`.** Atticus reads it and verifies each claim on its line, as it does for any repo. It is kept out of the production catalog: it gives no Endpoints or Interfaces, none of its mocked calls becomes a gap or a question, and no other repo's call joins it. `atticus verify <repo> --write` and a scan say so.

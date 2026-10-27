@@ -16,6 +16,7 @@ import { ChangeDiagram } from "./work/ChangeDiagram.js";
 import { Conformance } from "./work/Conformance.js";
 import { ChangeCockpit } from "./work/Cockpit.js";
 import { Estimate } from "./work/Estimate.js";
+import { ChangeKnowledgePage } from "./work/KnowledgePage.js";
 import { Onboarding } from "./work/Onboarding.js";
 import { ArchitecturePage, FeatureDesign, Stories, TaskListScreen } from "./work/Stage.js";
 
@@ -30,6 +31,7 @@ export const SCREEN_COMPONENTS: Record<string, Screen> = {
   // Home: its address, #/dashboard, opens Home (OLD_ADDRESSES in app/screens.ts).
   onboarding: () => <Onboarding />,
   "feature-design": FeatureDesign,
+  "change-knowledge": ChangeKnowledgePage,
   architecture: ArchitecturePage,
   stories: Stories,
   "task-list": TaskListScreen,

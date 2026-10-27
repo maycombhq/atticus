@@ -3,6 +3,8 @@ export const SCREENS = [
   // The Overview is part of Home (2026-10-24): #/dashboard opens Home, checked as "home" below.
   "onboarding",
   "feature-design?change=add-transfer-limit",
+  // 2026-10-27: a change's knowledge, on its own page beside Feature design.
+  "change-knowledge?change=add-transfer-limit",
   "stories?change=add-transfer-limit",
   "task-list?change=add-transfer-limit",
   "home",

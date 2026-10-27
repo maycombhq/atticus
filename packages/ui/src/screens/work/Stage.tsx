@@ -6,7 +6,6 @@ import { queryParam, setQueryParam, Table } from "../know/common.js";
 import { Architecture } from "../architecture/Architecture.js";
 import { NeedsPanel } from "../knowledge/Needs.js";
 import { ChangeInputs } from "../ChangeInputs.js";
-import { ChangeKnowledgePanel } from "./Knowledge.js";
 import { StageReviewPanel } from "./StageReview.js";
 import {
   architectureStep,
@@ -218,8 +217,20 @@ export function StagePage(p: {
               )}
               {/* ADR 0113: the specs, screenshots and documents the change starts from. */}
               {p.stage === "feature" && <ChangeInputs change={c.id} />}
-              {/* ADR 0124, Part 5: the org knowledge that applies, confirmed or excluded here. */}
-              {p.stage === "feature" && <ChangeKnowledgePanel change={c.id} />}
+              {/* ADR 0124, Part 5: the org knowledge that applies is on the change's Knowledge
+                  page (2026-10-27); here, a line saying so, so it isn't shown twice. */}
+              {p.stage === "feature" && (
+                <Panel title={COPY.changeKnowledge.title} span="1 / -1">
+                  <p className="work-why" style={{ marginTop: 0 }}>
+                    {COPY.changeKnowledge.onFeature}
+                  </p>
+                  <p className="work-say" style={{ margin: 0 }}>
+                    <a href={`#/change-knowledge?change=${encodeURIComponent(c.id)}`}>
+                      {COPY.changeKnowledge.openPage}
+                    </a>
+                  </p>
+                </Panel>
+              )}
               {/* ADR 0102: what the change needs from the organisation. */}
               <NeedsPanel change={c.id} />
             </div>

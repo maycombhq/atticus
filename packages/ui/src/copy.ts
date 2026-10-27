@@ -630,6 +630,8 @@ export const COPY = {
       changeDiagram: "Change diagram",
       estimate: "Estimate",
       conformance: "Code against design",
+      /** A change's knowledge (2026-10-27): its own page, beside Feature design. */
+      changeKnowledge: "Knowledge",
     },
   },
   /** Map › Trust (ADR 0124): how far to trust each repo's map, from the verifier's report. */
@@ -698,12 +700,16 @@ export const COPY = {
     more: (n: number, path: string) => `and ${n} more, listed in ${path}`,
     files: (facts: string, report: string) => `Files: ${facts}, ${report}`,
   },
-  /** Change › Feature (ADR 0124, Part 5): the org knowledge that applies to the change. */
+  /** Change › Knowledge (ADR 0124, Part 5): the org knowledge that applies to the change. */
   changeKnowledge: {
     title: "Knowledge that applies",
+    /** On Feature design: where the change's knowledge is now (2026-10-27). */
+    onFeature:
+      "The pages attached to this change, ranked, with their source, the tasks that use them and the pages that disagree, are on the change's Knowledge page. Confirm or exclude them there.",
+    openPage: "Open the change's knowledge",
     intro:
       "What the change's stages picked from the org's knowledge, with why: from the feature stage on, each picks the patterns, standards, decisions, processes and requests, and the wiki and document sections, that its own input leads to. Confirm what applies, and every later stage that takes its kind picks it; exclude what doesn't, and no later stage picks it again.",
-    none: "No stage of this change has picked knowledge yet. The feature stage is the first that does. Once the brief is written, run:",
+    none: "No knowledge is attached to this change yet. The feature stage is the first that picks pages from the org's wikis, documents and standards. Once the brief is written, run:",
     featureCommand: (id: string) => `atticus change feature ${id}`,
     working: "Writing knowledge.yaml…",
     caption: "Knowledge that applies to this change",
