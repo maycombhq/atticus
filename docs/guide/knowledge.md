@@ -100,7 +100,7 @@ Each stage writes what it picked to `openspec/changes/<id>/knowledge.yaml`: each
 
 `atticus change knowledge` lists each item by its title, with its id in brackets, and says why in plain words: "The change names it", "Linked to northwind-pay, which the change leads to", or "Its words match the change's title and words".
 
-In the app, the list is the **Knowledge that applies** panel on the change's Feature design tab (`GET /api/changes/<id>/knowledge`), filled from the feature stage on.
+**Where to see a change's knowledge:** in the app, open the change and its **Knowledge** tab, beside Feature design (`#/change-knowledge?change=<id>`, or Ctrl+K and "knowledge that applies"; `GET /api/changes/<id>/knowledge`), filled from the feature stage on. Feature design links to it.
 
 ## 6. Confirm or exclude
 

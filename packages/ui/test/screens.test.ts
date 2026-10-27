@@ -135,6 +135,8 @@ describe("the app's map: six entries (the Surfaces design)", () => {
       "changes",
       "cockpit",
       "feature-design",
+      // 2026-10-27: the product owner couldn't find a change's knowledge at the foot of Feature.
+      "change-knowledge",
       "architecture",
       "stories",
       "task-list",
@@ -201,7 +203,13 @@ describe("the app's map: six entries (the Surfaces design)", () => {
         .filter((x) => x.group === g)
         .map((x) => x.id);
     expect(PHASES.map(groupLabel)).toEqual(["Define", "Design", "Plan", "Build", "Release"]);
-    expect(phase("Define")).toEqual(["cockpit", "brief", "ux", "feature-design"]);
+    expect(phase("Define")).toEqual([
+      "cockpit",
+      "brief",
+      "ux",
+      "feature-design",
+      "change-knowledge",
+    ]);
     expect(phase("Design")).toEqual(["architecture", "arch-review", "change-diagram"]);
     expect(phase("Plan")).toEqual(["stories", "breakdown", "estimate"]);
     expect(phase("Build")).toEqual(["task-list", "tasks", "conformance", "trace", "todo"]);
@@ -247,6 +255,10 @@ describe("the app's map: six entries (the Surfaces design)", () => {
     expect(tabHref(byId("stories"), "add-fraud-check")).toBe("#/stories?change=add-fraud-check");
     expect(tabHref(byId("changes"), "add-fraud-check")).toBe("#/changes/add-fraud-check");
     expect(tabHref(byId("stories"), undefined)).toBe("#/stories");
+    expect(tabHref(byId("change-knowledge"), "add-fraud-check")).toBe(
+      "#/change-knowledge?change=add-fraud-check",
+    );
+    expect(changeOf("#/change-knowledge?change=add-fraud-check")).toBe("add-fraud-check");
     expect(tabHref(byId("canvas"), "add-fraud-check")).toBe("#/canvas");
   });
 

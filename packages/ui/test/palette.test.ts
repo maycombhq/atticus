@@ -38,6 +38,14 @@ describe("the command palette", () => {
     expect(screens("feature brief")).toEqual(["#/brief"]);
     expect(screens("governance")).toEqual(["#/governance"]);
     expect(paletteItems("estimate", [], [])[0]).toMatchObject({ detail: "Change · Plan" });
+    // 2026-10-27: a change's Knowledge page, found by its name and by the panel's own title.
+    expect(screens("knowledge that applies")).toEqual(["#/change-knowledge"]);
+    expect(
+      paletteItems("knowledge", [], []).find((i) => i.href === "#/change-knowledge"),
+    ).toMatchObject({
+      label: "Knowledge",
+      detail: "Change · Define",
+    });
   });
 
   it("finds Home by the pages merged into it, and never offers the Overview's own page", () => {

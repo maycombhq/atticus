@@ -9,7 +9,7 @@ import { Command } from "./RunNext.js";
 import "./work.css";
 
 /**
- * Change › Feature: the org knowledge that applies to the change (ADR 0124, Part 5), from its
+ * Change › Knowledge: the org knowledge that applies to the change (ADR 0124, Part 5), from its
  * `knowledge.yaml`. Each item with why the stages picked it; Confirm and Exclude write the file
  * through the local API (`atticus change knowledge --confirm|--exclude` does the same), and the
  * git command that commits it is shown after, since the app runs no git. An excluded item stays

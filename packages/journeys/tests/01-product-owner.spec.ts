@@ -52,6 +52,7 @@ test("starts from the same home as everyone, as their Git user (ADR 0073)", asyn
     "All changes",
     "At a glance",
     "Feature design",
+    "Knowledge",
     "Architecture",
     "Stories",
     "Tasks",

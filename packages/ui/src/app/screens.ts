@@ -84,6 +84,16 @@ export const SCREENS: ScreenDef[] = [
   { id: "brief", label: S.brief, section: "Change", group: "Define", full: true },
   { id: "ux", label: S.ux, section: "Change", group: "Define", full: true },
   { id: "feature-design", label: N.feature, section: "Change", group: "Define" },
+  // 2026-10-27: the knowledge attached to a change, on its own page (it was only at the foot of
+  // Feature, where the product owner couldn't find it). In Define: the feature stage is the first
+  // that picks it, and it is confirmed or excluded before Design; later stages and tasks add to it.
+  {
+    id: "change-knowledge",
+    label: S.changeKnowledge,
+    section: "Change",
+    group: "Define",
+    also: [COPY.changeKnowledge.title],
+  },
   { id: "architecture", label: N.architecture, section: "Change", group: "Design" },
   { id: "arch-review", label: S.archReview, section: "Change", group: "Design", full: true },
   // ADR 0108: a change's picture, from its target flows (linked from Architecture).
