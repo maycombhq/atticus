@@ -1,0 +1,41 @@
+schemaVersion: 1
+kind: Flow
+id: shop-bff.checkout
+status: current
+confidence: inferred
+component: shop-bff
+errors: []
+evidence: []
+family: []
+name: The shop checks a basket out and pays its invoice
+steps:
+  - evidence:
+      - source: code
+        repo: forge-shop-bff
+        path: src/main/java/forge/shop/CheckoutController.java
+        line: 14
+    kind: entry
+    refs:
+      - shop-bff.post-checkout
+    what: CheckoutController.checkout receives the basket
+  - evidence:
+      - source: code
+        repo: forge-shop-bff
+        path: src/main/java/forge/shop/CheckoutController.java
+        line: 16
+    kind: call-out
+    refs: []
+    to:
+      component: billing-api
+      entry: POST /invoices/{id}/pay
+    what: It asks billing to pay the basket's invoice
+template: default@1
+trigger:
+  evidence:
+    - source: code
+      repo: forge-shop-bff
+      path: src/main/java/forge/shop/CheckoutController.java
+      line: 14
+  kind: endpoint
+  ref: shop-bff.post-checkout
+  what: A customer checks out

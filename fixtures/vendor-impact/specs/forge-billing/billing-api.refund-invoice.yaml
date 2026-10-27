@@ -1,0 +1,41 @@
+schemaVersion: 1
+kind: Flow
+id: billing-api.refund-invoice
+status: current
+confidence: inferred
+component: billing-api
+errors: []
+evidence: []
+family: []
+name: Billing refunds an invoice through Northwind Pay
+steps:
+  - evidence:
+      - source: code
+        repo: forge-billing
+        path: src/main/java/forge/billing/InvoicesController.java
+        line: 23
+    kind: entry
+    refs:
+      - billing-api.post-invoices-id-refund
+    what: InvoicesController.refund receives the refund
+  - evidence:
+      - source: code
+        repo: forge-billing
+        path: src/main/java/forge/billing/NorthwindClient.java
+        line: 23
+    kind: call-out
+    refs: []
+    to:
+      component: partner-gateway
+      entry: POST /partners/northwind/charges/{chargeId}/refunds
+    what: NorthwindClient.refund asks Northwind Pay to refund the charge, through the partner gateway
+template: default@1
+trigger:
+  evidence:
+    - source: code
+      repo: forge-billing
+      path: src/main/java/forge/billing/InvoicesController.java
+      line: 23
+  kind: endpoint
+  ref: billing-api.post-invoices-id-refund
+  what: Someone refunds an invoice

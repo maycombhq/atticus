@@ -56,6 +56,7 @@ Every command under the twelve, with its options.
           [--scope repo|repo-type] [--type <repo type>] [--by who]
   atticus change new "<title>"         Start a change from a template: --type <type>
           [--template id] [--id id] [--owner role=a,b]... [--system id]... [--like <archived change>]
+          [--impact <vendor spec>]  (its footprint: what the spec's newer version reaches, see intake impact)
   atticus change similar "<brief>"     The archived changes nearest a new brief (or --change <id>: a change's own), to start from one with change new --like or change attach --like [--limit n] [--json]
   atticus change feature <change>      The feature stage: your assistant places the change on the estate's flows and features from the brief, stories or a design; checked and criticised every draft until done [--from-figma f.json] [--mode m] [--resume run] [--force] [--context-tokens n] [--whole-context] [--max-tokens n]
   atticus change architecture <change>  The architecture stage: the target flows (steps added, changed or removed, with fields) as flow deltas; looped the same way [--mode m] [--resume run] [--context-tokens n] [--whole-context] [--max-tokens n]
@@ -163,6 +164,7 @@ Every other command. `atticus legacy` lists them by area; each runs by its own n
   atticus coverage [--json]            What the catalog knows per system and area: verified, document-only, unknown
   atticus intake add <files...>        Drop documents, specs and diagrams into inputs/inbox for intake
   atticus intake list [--json]         What intake read from inputs/: kinds, systems, duplicates, versions
+  atticus intake impact <spec> [--json]   A vendor spec against its other version: each change, breaking or not, and the gateway routes, service calls and callers it reaches
   atticus triage [--json]              What needs a person: unknown names, conflicts with code, image edges
   atticus triage decide <item> <n>     Choose option n for a triage item; writes a curated decision
           [--reason text]

@@ -120,6 +120,11 @@ export async function changeNew(
     systems?: string[];
     /** WP7.6: an archived change to start from, by its folder or its id. */
     like?: string;
+    /**
+     * ADR 0130: a vendor spec in inputs/ whose impact (against its other version) is the change's
+     * footprint: the vendor and the systems, repos, flows and Interfaces it reaches.
+     */
+    impact?: string;
   },
   io: Output,
   deps: ChangeDeps = {},
@@ -158,7 +163,19 @@ export async function changeNew(
       return 1;
     }
   }
+  let impact: import("./vendor-impact-commands.js").LoadedImpact | undefined;
+  if (o.impact) {
+    const { loadVendorImpact } = await import("./vendor-impact-commands.js");
+    const got = await loadVendorImpact(root, o.impact, io);
+    if ("error" in got) {
+      io.err(got.error);
+      return 1;
+    }
+    impact = got;
+  }
   try {
+    const i = impact?.impact;
+    const systems = [...(o.systems ?? []), ...(i?.systems ?? [])];
     const c = await newChange(root, {
       title: o.title,
       type: o.type,
@@ -166,10 +183,39 @@ export async function changeNew(
       owners,
       ...(o.template ? { template: o.template } : {}),
       ...(o.id ? { id: o.id } : {}),
-      ...(o.systems ? { systems: o.systems } : {}),
+      ...(systems.length ? { systems } : {}),
+      ...(i
+        ? {
+            touches: {
+              repos: i.repos,
+              interfaces: i.interfaces.map((id) => ({ id, status: "planned-modify" as const })),
+              records: [...new Set([...i.flows.map((f) => f.id), ...i.endpoints])].sort(),
+            },
+          }
+        : {}),
       ...(deps.now ? { now: deps.now } : {}),
     });
     io.out(`Created ${c.id} (${c.type}, from the ${c.template} template). It is in ${c.state}.`);
+    if (impact) {
+      const { attachToChange } = await import("@maycombhq/intake");
+      const { changeFolder } = await import("@maycombhq/changes");
+      const { impactDocument, IMPACT_WORDS } = await import("./vendor-impact-commands.js");
+      const doc = impactDocument(impact);
+      const attached = await attachToChange(
+        changeFolder(root, c.id),
+        [{ name: doc.name, bytes: new TextEncoder().encode(doc.text) }],
+        { by: o.by, at: deps.now ?? new Date().toISOString().replace(/\.\d{3}Z$/, "Z") },
+      );
+      const path = attached.added[0]?.path ?? `inputs/${doc.name}`;
+      io.out(
+        IMPACT_WORDS.started(
+          impact.name,
+          impact.impact.newer.version ?? impact.impact.newer.id,
+          impact.impact,
+          path,
+        ),
+      );
+    }
     if (like) {
       const { attachPastChange } = await import("./similar-changes.js");
       const name = await attachPastChange(

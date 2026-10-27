@@ -1,0 +1,41 @@
+schemaVersion: 1
+kind: Flow
+id: billing-api.pay-invoice
+status: current
+confidence: inferred
+component: billing-api
+errors: []
+evidence: []
+family: []
+name: Billing charges an invoice through Northwind Pay
+steps:
+  - evidence:
+      - source: code
+        repo: forge-billing
+        path: src/main/java/forge/billing/InvoicesController.java
+        line: 13
+    kind: entry
+    refs:
+      - billing-api.post-invoices-id-pay
+    what: InvoicesController.pay receives the invoice to pay
+  - evidence:
+      - source: code
+        repo: forge-billing
+        path: src/main/java/forge/billing/NorthwindClient.java
+        line: 15
+    kind: call-out
+    refs: []
+    to:
+      component: partner-gateway
+      entry: POST /partners/northwind/charges
+    what: NorthwindClient.charge asks Northwind Pay for a charge, through the partner gateway
+template: default@1
+trigger:
+  evidence:
+    - source: code
+      repo: forge-billing
+      path: src/main/java/forge/billing/InvoicesController.java
+      line: 13
+  kind: endpoint
+  ref: billing-api.post-invoices-id-pay
+  what: The shop pays an invoice at checkout

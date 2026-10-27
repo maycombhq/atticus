@@ -42,6 +42,7 @@ export {
   topicsExtractor,
 };
 export { CLIENT_PACKAGES, READ_ANNOTATIONS, settingSlug } from "./spring.js";
+export { readOpenApiDocument, type OpenApiDocument, type OpenApiOperation } from "./openapi.js";
 export * from "./frameworks.js";
 export * from "./learn-framework.js";
 export * from "./learn-js-framework.js";

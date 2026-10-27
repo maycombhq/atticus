@@ -5,6 +5,7 @@ export * from "./schema/fact-corrections.js";
 export * from "./facts.js";
 export * from "./migration-files.js";
 export * from "./facts-join.js";
+export * from "./facts-join-vendor.js";
 export * from "./facts-carry.js";
 export * from "./cite.js";
 export * from "./catalog.js";

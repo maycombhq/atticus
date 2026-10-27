@@ -1,0 +1,28 @@
+Northwind Pay: inputs/partner-specs/northwind-pay-openapi-v1.yaml (1.0.0) → inputs/partner-specs/northwind-pay-openapi-v2.yaml (2.0.0)
+4 changes: 3 breaking, 1 additive.
+
+Breaking: POST /charges: the request field reference is now merchantReference; a caller that still sends reference no longer sets it.
+  was inputs/partner-specs/northwind-pay-openapi-v1.yaml:98, now inputs/partner-specs/northwind-pay-openapi-v2.yaml:104
+  forwarded by partner-gateway: POST /v1/charges, forge-partner-gateway proxies/northwind-pay-v1/apiproxy/proxies/default.xml:5 (to Northwind Pay through environments/prod/targetservers.json:4)
+    called by billing-api: forge-billing src/main/java/forge/billing/NorthwindClient.java:15, sends reference (src/main/java/forge/billing/ChargeRequest.java:5)
+      under forge-billing src/main/java/forge/billing/InvoicesController.java:13
+      ← shop-bff: forge-shop-bff src/main/java/forge/shop/CheckoutController.java:16, under forge-shop-bff src/main/java/forge/shop/CheckoutController.java:14
+
+Breaking: POST /charges/{chargeId}/capture is gone in 2.0.0; a call to it will fail.
+  was inputs/partner-specs/northwind-pay-openapi-v1.yaml:42
+  forwarded by partner-gateway: POST /v1/charges/{chargeId}/capture, forge-partner-gateway proxies/northwind-pay-v1/apiproxy/proxies/default.xml:8 (to Northwind Pay through environments/prod/targetservers.json:4)
+    called by billing-api: forge-billing src/main/java/forge/billing/NorthwindClient.java:19
+      under forge-billing src/main/java/forge/billing/InvoicesController.java:18
+
+Breaking: POST /charges/{chargeId}/refunds: the request field reason is now required; a caller that leaves it out is refused.
+  was inputs/partner-specs/northwind-pay-openapi-v1.yaml:119, now inputs/partner-specs/northwind-pay-openapi-v2.yaml:129
+  forwarded by partner-gateway: POST /v1/charges/{chargeId}/refunds, forge-partner-gateway proxies/northwind-pay-v1/apiproxy/proxies/default.xml:11 (to Northwind Pay through environments/prod/targetservers.json:4)
+    called by billing-api: forge-billing src/main/java/forge/billing/NorthwindClient.java:23, doesn't send reason
+      under forge-billing src/main/java/forge/billing/InvoicesController.java:23
+
+Additive: GET /charges is new in 2.0.0; no caller has to change.
+  now inputs/partner-specs/northwind-pay-openapi-v2.yaml:12
+  Nothing in the estate reaches it.
+
+Affected: forge-billing, forge-partner-gateway, forge-shop-bff; flows billing-api.pay-invoice, billing-api.refund-invoice, shop-bff.checkout.
+Start a change with this as its footprint: atticus change new "<title>" --type <type> --impact inputs/partner-specs/northwind-pay-openapi-v2.yaml

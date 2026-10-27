@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<TargetEndpoint name="northwind">
+  <HTTPTargetConnection>
+    <LoadBalancer>
+      <Server name="northwind-pay"/>
+    </LoadBalancer>
+    <Path>/v1</Path>
+  </HTTPTargetConnection>
+</TargetEndpoint>

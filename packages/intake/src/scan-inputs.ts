@@ -15,6 +15,7 @@ import type { Ingestor, ScanContext } from "@maycombhq/sdk";
 import { classify, type Classification } from "./classify.js";
 import { screenFile } from "./screen-file.js";
 import { readAsyncApiSpec, readOpenApiSpec, readPayload, READERS } from "./readers.js";
+import { operationSchemas, readVendorSpec } from "./vendor-ops.js";
 import {
   boundedId,
   opt,
@@ -406,6 +407,27 @@ export async function scanInputs(o: ScanInputsOptions): Promise<ScanInputsResult
           f.doc.reader = cls === "asyncapi" ? READERS.asyncapi : READERS.openapi;
           out.push(...endpoints);
           f.doc.records.push(...endpoints.map((e) => e.id));
+          // The operations' request and response fields (ADR 0130): a Schema per side, named
+          // from the endpoint, with each field's type and whether the spec requires it.
+          if (cls !== "asyncapi") {
+            const spec = readVendorSpec(f.path, text(), component);
+            for (const { operation, schemas } of spec ? operationSchemas(spec) : []) {
+              const e = endpoints.find(
+                (x) =>
+                  x.endpointType === "rest" &&
+                  x.method === operation.method &&
+                  x.normalizedPath === operation.normalizedPath,
+              );
+              if (!e || !schemas.length) continue;
+              const named = schemas.map((r) => ({
+                ...r,
+                id: `${e.id}.${String(r.id).split(".").pop()}`,
+              }));
+              e.schemaRefs = named.map((r) => r.id);
+              out.push(...(named as Rec[]));
+              f.doc.records.push(...named.map((r) => r.id));
+            }
+          }
           specOps.push({ file: f, component, system, endpoints });
           // A system with no code of its own (a vendor) is verified by its published spec.
           const sys = systems.find((s) => s.id === component);

@@ -1,0 +1,9 @@
+schemaVersion: 1
+platform: forge
+name: Forge billing through the partner gateway (invented, for ADR 0130)
+systems:
+  - { id: shop, name: Shop, boundary: product, owner: team-shop, aliases: [] }
+  - { id: billing, name: Billing, boundary: product, owner: team-billing, aliases: [] }
+  - { id: platform, name: Platform, boundary: product, owner: team-platform, aliases: [] }
+  - { id: northwind-pay, name: Northwind Pay, boundary: vendor, owner: team-billing, aliases: [] }
+environments: [dev, prod]
