@@ -1,2 +1,5 @@
 packages:
   - "packages/*"
+  # The Atticus site (maycombhq.com/atticus): private, not a product package, and not in turbo's
+  # build (it has no build, typecheck or test script).
+  - "website"

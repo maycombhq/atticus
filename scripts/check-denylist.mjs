@@ -3,11 +3,14 @@
 // The deny-list stores only SHA-256 hashes, so the protected names never appear in the repo.
 //
 //   node scripts/check-denylist.mjs            check every tracked file
+//   node scripts/check-denylist.mjs <folder>   check every file under a folder, tracked or not
+//                                              (a build's output, such as the published site)
 //   node scripts/check-denylist.mjs --hash "x" print the hash to add to .denylist
 
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { join } from "node:path";
 
 const sha = (s) => createHash("sha256").update(s, "utf8").digest("hex");
 
@@ -24,15 +27,20 @@ const denied = new Set(
     .filter((l) => /^[0-9a-f]{64}$/.test(l)),
 );
 
-const files = execFileSync(
-  "git",
-  ["ls-files", "-z", "--cached", "--others", "--exclude-standard"],
-  {
-    encoding: "utf8",
-  },
-)
-  .split("\0")
-  .filter((f) => f && f !== ".denylist");
+/** Every file under a folder, as paths joined to it. */
+const under = (dir) =>
+  readdirSync(dir).flatMap((e) => {
+    const p = join(dir, e);
+    return statSync(p).isDirectory() ? under(p) : [p];
+  });
+
+const files = (
+  args[0]
+    ? under(args[0])
+    : execFileSync("git", ["ls-files", "-z", "--cached", "--others", "--exclude-standard"], {
+        encoding: "utf8",
+      }).split("\0")
+).filter((f) => f && f !== ".denylist");
 
 const hits = [];
 for (const file of files) {

@@ -62,7 +62,7 @@ No model cost per repo was recorded: the reading sessions ran as Claude sessions
 
 ## Get started
 
-- **Install, then a first map and a first change:** [docs/guide/install.md](docs/guide/install.md) has one page covering every tier and an offline bank laptop. From your npm mirror it is one package, `npm install -g @maycombhq/atticus@beta` (the model and this machine's onnxruntime come with it); without a registry, one offline zip (about 20 MB) and one script. Either way you need Node.js 22.13 or later and Git 2.30 or later.
+- **Install, then a first map and a first change:** [docs/guide/install.md](docs/guide/install.md) has one page covering every tier and an offline company laptop. From your npm mirror it is one package, `npm install -g @maycombhq/atticus@beta` (the model and this machine's onnxruntime come with it); without a registry, one offline zip (about 20 MB) and one script. Either way you need Node.js 22.13 or later and Git 2.30 or later.
 - **Set it up for a team:** [docs/guide/admin.md](docs/guide/admin.md).
 - **By kind of work:** [docs/guide/roles.md](docs/guide/roles.md).
 - **Every command:** [docs/guide/commands.md](docs/guide/commands.md).
@@ -86,7 +86,7 @@ pnpm install
 pnpm build
 pnpm check          # deny-list, lint, dependency, licence and docs checks, typecheck, tests
 pnpm bundle         # dist/atticus-<version>-offline.zip
-pnpm npm:test       # the npm packages, installed from a throwaway mirror the way a bank would
+pnpm npm:test       # the npm packages, installed from a throwaway mirror, as a company mirror would serve them
 ```
 
 ## Where things are

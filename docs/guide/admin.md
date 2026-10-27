@@ -13,6 +13,7 @@ Home shows it until the catalog is accepted; `atticus setup` prints it. Each ste
 4. **Repos are cloned here** (`atticus workspace sync`, or _Sync repos_ on the Scans screen).
 5. **The first scan is done** (`atticus scan`, or _Scan now_). Scans read files only: no network, no AI.
 6. **Existing knowledge is added** (optional): diagrams, partner specs and exports in `inputs/` (`atticus intake add <files>`), wikis in `sources.yaml` (`atticus sources add`).
+7. **The catalog is accepted**: walk the ecosystem map with the architect, then `atticus baseline` or _Accept the catalog_ on Home. It writes `catalog/baseline.yaml` with your name (your Git user); commit it and open a pull request, whose merge makes it the baseline on main. Every later scan, document and change is compared with this baseline.
 
 ### Branches
 
@@ -27,7 +28,7 @@ Knowledge comes in two scopes (ADR 0122):
 - **General knowledge** goes in the metarepo's `inputs/`: decisions, runbooks, specs, request forms, slides and exported pages. Add files on Knowledge › Documents, with **Add to Atticus knowledge** in either editor, or with `atticus intake add <files>`. `atticus sources sync` reads `inputs/` as a source called `inputs`, and the knowledge scan (`/atticus-knowledge inputs`) reads it into items, each quote checked against the file. A file dropped twice is read once, and an older version is kept but not read.
 - **Specific to one change** goes in that change's Files attached (`atticus change attach`). Only that change's steps read it. **Copy to general knowledge** (`--promote`) copies it into `inputs/inbox/` when every change should see it.
 
-Pictures go to a person, since AI steps take text only. A scanned PDF with no text layer can't be read: OCR isn't built. 7. **The catalog is accepted**: walk the ecosystem map with the architect, then `atticus baseline` or _Accept the catalog_ on Home. It writes `catalog/baseline.yaml` with your name (your Git user); commit it and open a pull request, whose merge makes it the baseline on main. Every later scan, document and change is compared with this baseline.
+Pictures go to a person, since AI steps take text only. A scanned PDF with no text layer can't be read: OCR isn't built.
 
 ### Helm charts and Kustomize overlays
 
@@ -249,7 +250,7 @@ retrieval:
   rerank: false # not measured yet
 ```
 
-- **Search by meaning (`embeddings`).** `bundled` is all-MiniLM-L6-v2 (87 MB, Apache-2.0), an optional plugin: npm installs it with Atticus, the model and this platform's onnxruntime inside the packages (nothing to fetch, no install script; ADR 0124 addendum D-npm), and the offline bundle carries it with onnxruntime only when built with `pnpm bundle --with-embeddings` (the default bundle leaves it out, ADR 0124 addendum D-bundle). On the retrieval eval it found 0.96 of what a step needed, against 0.81 by words and names alone (`docs/evidence/context-eval.md`). It runs on the machine, on the CPU, and nothing is ever downloaded. Where the model or onnxruntime isn't installed (the default offline bundle, a checkout without `pnpm model:fetch`, or a bank that hasn't approved them yet), the engine searches by words and names, never fails a step, and `atticus doctor` says so under "Embedding model". Set `model: off` to say your organisation doesn't use one. The model's training data needs your legal team's sign-off (ADR 0116 lists it); a model you name by folder is a one-line switch.
+- **Search by meaning (`embeddings`).** `bundled` is all-MiniLM-L6-v2 (87 MB, Apache-2.0), an optional plugin: npm installs it with Atticus, the model and this platform's onnxruntime inside the packages (nothing to fetch, no install script; ADR 0124 addendum D-npm), and the offline bundle carries it with onnxruntime only when built with `pnpm bundle --with-embeddings` (the default bundle leaves it out, ADR 0124 addendum D-bundle). On the retrieval eval it found 0.96 of what a step needed, against 0.81 by words and names alone (`docs/evidence/context-eval.md`). It runs on the machine, on the CPU, and nothing is ever downloaded. Where the model or onnxruntime isn't installed (the default offline bundle, a checkout without `pnpm model:fetch`, or an organisation that hasn't approved them yet), the engine searches by words and names, never fails a step, and `atticus doctor` says so under "Embedding model". Set `model: off` to say your organisation doesn't use one. The model's training data needs your legal team's sign-off (ADR 0116 lists it); a model you name by folder is a one-line switch.
 - **The expansion.** One small call (a 6,000-token budget, within GPT-4o mini's reach) before a step's selection: your assistant reads the step's input and the estate's names and says what it is about in the estate's words, and every name it uses. Atticus checks each name against the input and each id against the index. The names the estate doesn't know become the step's gaps, so a vendor named only in a sentence is asked about. In hand-off mode it is one extra round per step (one prompt, then the step's own); its answer is kept in `judgments/expansion/`, so the same input with the same estate names is never asked again, and an answer that fails its check is left out with a note while the step goes on by words and names. `expansion: false` turns it off; then only names the input marks by their form (an endpoint, a name in backticks) are asked about.
 - **The rerank** orders the candidates when they don't fit the room. It is built but not measured, so it is off.
 
@@ -320,7 +321,7 @@ Install the new version on every machine, then one person runs `atticus upgrade`
 
 ## Publishing to npm
 
-For whoever releases Atticus (ADR 0124 addenda D-npm and D-npm2). Nine packages are published to the public npm registry under the `maycombhq` scope, so a bank's mirror (Artifactory, Nexus) can proxy them and `npm install -g @maycombhq/atticus` brings everything, search by meaning included:
+For whoever releases Atticus (ADR 0124 addenda D-npm and D-npm2). Nine packages are published to the public npm registry under the `maycombhq` scope, so a company's mirror (Artifactory, Nexus) can proxy them and `npm install -g @maycombhq/atticus` brings everything, search by meaning included:
 
 - **`@maycombhq/atticus`**: the command line (`bin` `atticus`) and its app, self-contained. Its build (`packages/atticus`, `scripts/bundle/npm-atticus.mjs`) bundles the CLI's workspace packages and their third-party JavaScript with esbuild, and OpenSpec as a program of its own, and copies what they read at run time (rules, the constitution, schemas, the assistant kits, lessons, the app's web files, the Forge fixtures, tree-sitter's grammars). `dist/files.json` lists every file with its sha256; `THIRD-PARTY-LICENSES.txt` holds every bundled third party's licence.
 - **`@maycombhq/sdk`**: the plugin SDK (C4), with what it uses of the core bundled in and its types beside it; it depends only on `zod` and `yaml`.

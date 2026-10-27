@@ -9,7 +9,7 @@ From nothing to a first map and a first change, on one page. Atticus is a comman
 
 ## Minute 2: install
 
-**From your npm mirror** (a bank with Artifactory or Nexus in front of npm): this is the shortest way, and it brings search by meaning with it.
+**From your npm mirror** (a company with Artifactory or Nexus in front of npm): this is the shortest way, and it brings search by meaning with it.
 
 ```bash
 npm install -g @maycombhq/atticus@beta     # @maycombhq/atticus once Atticus 2 is out of beta
@@ -191,6 +191,6 @@ atticus openspec list --specs
 
 Install the new bundle (the old version stays beside it), or `npm install -g @maycombhq/atticus@<version>` from your mirror. In the metarepo: `atticus doctor`, then `atticus upgrade` (it backs up every file it changes to `.atticus/backups/<time>/`; `--check` lists what it would do), and commit what it changed in a pull request. To uninstall, delete the version folder and the `atticus` command (`...\Atticus\bin\atticus.cmd`, or `~/.local/bin/atticus`), or `npm uninstall -g @maycombhq/atticus`; Atticus keeps nothing else outside your metarepos.
 
-From a checkout instead: `corepack enable`, `pnpm install`, `pnpm build`, then `node packages/cli/dist/bin.js --version`. `pnpm bundle` builds the offline bundle for this platform, `pnpm bundle --with-embeddings` the one with the model (filled from pinned sources through `.cache/pinned`), `pnpm bundle --embeddings-plugin` the plugin zip, and `pnpm bundle:test <zip>` installs a bundle into a throwaway folder and uses it (`--plugin <plugin zip>` adds the plugin next to the default bundle; `--plugin-from .cache/pinned` runs its fetch step offline and searches by meaning). `pnpm npm:test` packs the public npm packages (after `pnpm model:fetch`), serves them from a throwaway mirror and installs `@maycombhq/atticus` with `npm install --global --ignore-scripts` the way a bank would, then uses it with the network blocked (doctor, a practice metarepo, a search by meaning, `map --estimate`, the app); publishing is in [the admin guide](admin.md#publishing-to-npm).
+From a checkout instead: `corepack enable`, `pnpm install`, `pnpm build`, then `node packages/cli/dist/bin.js --version`. `pnpm bundle` builds the offline bundle for this platform, `pnpm bundle --with-embeddings` the one with the model (filled from pinned sources through `.cache/pinned`), `pnpm bundle --embeddings-plugin` the plugin zip, and `pnpm bundle:test <zip>` installs a bundle into a throwaway folder and uses it (`--plugin <plugin zip>` adds the plugin next to the default bundle; `--plugin-from .cache/pinned` runs its fetch step offline and searches by meaning). `pnpm npm:test` packs the public npm packages (after `pnpm model:fetch`), serves them from a throwaway mirror and installs `@maycombhq/atticus` with `npm install --global --ignore-scripts` as a locked-down company machine would, then uses it with the network blocked (doctor, a practice metarepo, a search by meaning, `map --estimate`, the app); publishing is in [the admin guide](admin.md#publishing-to-npm).
 
 Next: [running Atticus for a team](admin.md).

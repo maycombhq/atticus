@@ -1,0 +1,49 @@
+name: Site
+
+# The Atticus site (website/, VitePress) on GitHub Pages: maycombhq.github.io/atticus, served as
+# maycombhq.com/atticus once the organisation's own site has that domain. Built from the repo's
+# guides on every push to main, or by hand (Actions > Site > Run workflow). The built pages pass
+# the deny-list before anything is deployed.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time; a newer push waits rather than cancelling one in progress.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --filter @maycombhq/website...
+      - run: pnpm docs:site:test
+      # Builds the site, then runs the deny-list over every built file.
+      - run: pnpm docs:site:build
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: website/.vitepress/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
