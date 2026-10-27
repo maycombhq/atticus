@@ -157,3 +157,16 @@ body {
 .vp-doc div[class*="language-"] {
   border: 1px solid var(--a-line);
 }
+
+/* Atticus is in beta: said beside the name in the nav on every page. */
+.VPNavBarTitle .title::after {
+  content: "Beta";
+  margin-left: 10px;
+  padding: 1px 8px;
+  border: 1px solid var(--a-cite);
+  border-radius: 999px;
+  color: var(--a-cite);
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.5;
+}
