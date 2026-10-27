@@ -258,7 +258,7 @@ export function readCsv(text: string): Record<string, string>[] {
   let row: string[] = [];
   let cell = "";
   let q = false;
-  const t = text.replace(/^﻿/, "");
+  const t = text.replace(/^\uFEFF/, "");
   for (let i = 0; i < t.length; i++) {
     const c = t[i]!;
     if (q) {

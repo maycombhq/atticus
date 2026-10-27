@@ -99,7 +99,7 @@ flows:
     trigger: <new flows only> { kind: endpoint | action | page | listener | job, what: <plain words>, entry: <the HTTP method and the path, such as "GET /orders/{id}", or a topic> }
     why: <one sentence: why this flow changes>
     consumers: [<when the change breaks the flow's entry: every component that calls it today>]
-    runsOn: <a new flow of a component that doesn't exist yet: where it runs> { component: <its id>, system: <the system it belongs to>, platform: <such as cloud-run or openshift>, cloud: <such as gcp, or on-prem>, framework: <what it is built on> }
+    runsOn: <a new flow of a component that doesn't exist yet: where it runs> { component: <its id>, system: <the system it belongs to>, platform: <the platform it runs on>, cloud: <the cloud, or on-prem>, framework: <what it is built on> }
     steps:
       - op: add | change | remove
         step: <change and remove: the step's number in today's flow, as listed>
