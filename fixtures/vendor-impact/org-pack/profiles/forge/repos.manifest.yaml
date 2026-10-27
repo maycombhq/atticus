@@ -1,0 +1,24 @@
+# The repos of the vendor-impact fixture (invented). Hand-written; matches fixtures/vendor-impact/repos.
+schemaVersion: 1
+platform: forge
+repos:
+  - id: forge-shop-bff
+    url: https://git.example.com/forge/forge-shop-bff.git
+    type: spring-boot
+    owner: team-shop
+    component: shop-bff
+    system: shop
+  - id: forge-billing
+    url: https://git.example.com/forge/forge-billing.git
+    type: spring-boot
+    owner: team-billing
+    component: billing-api
+    system: billing
+    hosts: [billing.forge.internal]
+  - id: forge-partner-gateway
+    url: https://git.example.com/forge/forge-partner-gateway.git
+    type: gateway-external
+    owner: team-platform
+    component: partner-gateway
+    system: platform
+    hosts: [partner.forge.example]

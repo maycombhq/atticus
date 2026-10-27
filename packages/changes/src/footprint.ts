@@ -271,6 +271,20 @@ export async function changeFootprint(
   for (const r of staged.repos) repos.add(r);
   for (const t of staged.tables) tables.add(t);
   for (const [id, status] of staged.interfaces) if (!interfaces.has(id)) interfaces.set(id, status);
+  // A flow change.yaml names in `touches.records` (a change started from a vendor's impact, ADR
+  // 0130): a flow it changes, in the repo whose spec holds it, unless the stages already say how.
+  const flows = [...staged.flows];
+  if (change.touches.records.length) {
+    const specs = await specIndex(ctx);
+    for (const id of change.touches.records) {
+      if (flows.some((f) => f.id === id)) continue;
+      const today = await specs.get(id);
+      if (!today) continue;
+      flows.push({ id, repo: today.repo, change: "modify" });
+      repos.add(today.repo);
+    }
+    flows.sort((a, b) => a.id.localeCompare(b.id));
+  }
 
   for (const id of interfaces.keys()) {
     const i = get("Interface", id);
@@ -377,7 +391,7 @@ export async function changeFootprint(
     repos: sorted(repos),
     vendors: vendors.sort(),
     personal,
-    flows: staged.flows,
+    flows,
     entries: sorted(staged.entries),
     newEntries: sorted(staged.newEntries),
     calls: sorted([...staged.calls].filter((id) => !interfaces.has(id))),

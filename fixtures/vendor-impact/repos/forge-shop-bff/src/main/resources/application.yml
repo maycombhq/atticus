@@ -1,0 +1,3 @@
+forge:
+  billing:
+    base-url: https://billing.forge.internal

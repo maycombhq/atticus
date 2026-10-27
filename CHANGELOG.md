@@ -4,6 +4,14 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased (2.0.0-beta.2)
 
+### A vendor's new API version, and what in your estate it reaches (ADR 0130)
+
+- **Two versions of a vendor's spec, compared.** Add each version of a partner spec beside the last in `inputs/` (`atticus intake add`), never over it. `atticus intake impact <spec>` lists what changed: operations added, removed or moved, auth and scopes, and request and response fields added, removed, renamed, made required or optional, retyped, or given new enum values. Each change is marked breaking or additive by fixed rules, said in one sentence, and cited in both versions. No model is called.
+- **Followed through your gateway.** For each change, Atticus finds the forwarding calls in your external gateway that reach that vendor operation, the service calls that go through each route, and their callers further up the chain, each cited to a file and line. When the change is to a field, it says whether a call sends that field. A forwarding call to an operation the vendor doesn't publish is listed as a gap, and one that two operations fit is listed as a question. `--json` gives the same data; the command exits 1 when a breaking change reaches the estate.
+- **A change that starts with its footprint.** `atticus change new "<title>" --type <type> --impact <spec>` fills the change's systems, repos, Interfaces, flows and vendor Endpoints from the impact, and attaches the impact for every stage to read.
+- **The vendor's operations in the catalog.** A partner spec's current version now gives each operation a request and a response Schema: each field with its type and whether it is required, and each citing its line in the spec. This is ADR 0125's OpenAPI rule, now wired. No schema version change.
+- **New in the guide:** [A vendor's API changes](docs/guide/vendor-specs.md).
+
 ### A fresh metarepo goes from `init` to stories with no dead end (ADR 0006, 0021, 0115 and 0124 addenda)
 
 A trial on a real repo, run as a developer would, stopped eight times on things that were nobody's bug and everybody's lost hour. All eight are fixed, each with a test.

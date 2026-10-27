@@ -166,6 +166,12 @@ export const ALLOW = [
       "a gateway bundle's folder names (apiproxy/, sharedflowbundle/) say an entry is a gateway route whatever the repo's type says, so the join follows the hop (ADR 0124 addenda A-gateway and A-gateway2); the reading rules and the policy kinds stay in the assistant's protocol and the verifier",
   },
   {
+    file: "packages/core/src/facts-join-vendor.ts",
+    names: ["apigee"],
+    reason:
+      "the vendor match reads the same gateway-route test the join does (facts-join.ts's bundle folder names), so a forwarding call in a bundle is matched whatever the repo's type says (ADR 0130)",
+  },
+  {
     file: "packages/core/src/api.ts",
     names: ["confluence", "ado", "sharepoint", "claude"],
     reason:

@@ -537,6 +537,7 @@ Usage:
           [--scope repo|repo-type] [--type <repo type>] [--by who]
   atticus intake add <files...>        Drop documents, specs and diagrams into inputs/inbox for intake
   atticus intake list [--json]         What intake read from inputs/: kinds, systems, duplicates, versions
+  atticus intake impact <spec> [--json]   A vendor spec against its other version: each change, breaking or not, and the gateway routes, service calls and callers it reaches
   atticus triage [--json]              What needs a person: unknown names, conflicts with code, image edges
   atticus triage decide <item> <n>     Choose option n for a triage item; writes a curated decision
           [--reason text]
@@ -570,6 +571,7 @@ Usage:
   atticus frameworks kit [dir]         Export the framework-model kit for an assistant
   atticus change new "<title>"         Start a change from a template: --type <type>
           [--template id] [--id id] [--owner role=a,b]... [--system id]... [--like <archived change>]
+          [--impact <vendor spec>]  (its footprint: what the spec's newer version reaches, see intake impact)
   atticus change similar "<brief>"     The archived changes nearest a new brief (or --change <id>: a change's own), to start from one with change new --like or change attach --like [--limit n] [--json]
   atticus domain profile <system>      A system as a domain profile, filled from the catalog [--out file]
   atticus change feature <change>      The feature stage: your assistant places the change on the estate's flows and features from the brief, stories or a design; checked and criticised every draft until done [--from-figma f.json] [--mode m] [--resume run] [--force] [--context-tokens n] [--whole-context] [--max-tokens n]
@@ -931,6 +933,7 @@ const OPTIONS = {
   type: { type: "string" },
   template: { type: "string" },
   like: { type: "string" },
+  impact: { type: "string" },
   id: { type: "string" },
   owner: { type: "string", multiple: true },
   system: { type: "string", multiple: true },
@@ -2604,6 +2607,7 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
           ...(list(values.owner) ? { owners: list(values.owner)! } : {}),
           ...(list(values.system) ? { systems: list(values.system)! } : {}),
           ...(str(values.like) ? { like: str(values.like)! } : {}),
+          ...(str(values.impact) ? { impact: str(values.impact)! } : {}),
         },
         io,
       );
@@ -2767,6 +2771,10 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
       io,
     );
   if (group === "intake" && command === "list") return intakeList(root, io, { json });
+  if (group === "intake" && command === "impact") {
+    const { intakeImpact } = await import("./vendor-impact-commands.js");
+    return intakeImpact(root, positionals[2] ?? "", { json }, io);
+  }
   if (group === "triage" && !command) return triageList(root, io, { json });
   if (group === "triage" && command === "decide") {
     const [item, option] = positionals.slice(2);

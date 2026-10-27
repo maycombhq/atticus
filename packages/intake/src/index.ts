@@ -7,3 +7,6 @@ export * from "./work-items.js";
 export * from "./service-requests.js";
 export * from "./change-inputs.js";
 export * from "./screen-file.js";
+export * from "./vendor-ops.js";
+export * from "./vendor-diff.js";
+export * from "./vendor-impact.js";

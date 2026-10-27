@@ -149,7 +149,7 @@ export async function intakeAdd(root: string, files: string[], io: Output): Prom
   return problems ? 1 : 0;
 }
 
-interface Context {
+export interface Context {
   op: Awaited<ReturnType<typeof loadOrgPack>>;
   records: CatalogRecord[];
   curated: CatalogRecord[];
@@ -157,7 +157,7 @@ interface Context {
 }
 
 /** The org pack, the catalog (generated and curated) and the inputs, as every command sees them. */
-async function context(root: string, io: Output): Promise<Context> {
+export async function intakeContext(root: string, io: Output): Promise<Context> {
   const op = await loadOrgPack(join(orgPackDirOf(root)));
   const catalogDir = join(root, op.sources.layout.catalog);
   const generated = await readCatalog(join(catalogDir, "generated"), { cacheRoot: root });
@@ -207,7 +207,7 @@ function chains(docs: IntakeDocument[]): string[][] {
  * systems it is about, version chains and problems. Exit 1 when there are problems.
  */
 export async function intakeList(root: string, io: Output, o: { json?: boolean }): Promise<number> {
-  const { inputs } = await context(root, io);
+  const { inputs } = await intakeContext(root, io);
   const { documents, problems } = inputs;
   if (o.json) {
     io.out(JSON.stringify({ documents, chains: chains(documents), problems }, null, 2));
@@ -245,7 +245,7 @@ export async function intakeList(root: string, io: Output, o: { json?: boolean }
 
 /** Triage over the inputs and every current draw.io diagram in them, reconciled with the catalog. */
 async function triageOf(root: string, io: Output): Promise<Triage> {
-  const { op, records, curated, inputs } = await context(root, io);
+  const { op, records, curated, inputs } = await intakeContext(root, io);
   if (records.length === 0 && inputs.documents.length > 0)
     io.err(
       "The catalog is empty: run atticus scan first, or most diagram edges will look unknown.",

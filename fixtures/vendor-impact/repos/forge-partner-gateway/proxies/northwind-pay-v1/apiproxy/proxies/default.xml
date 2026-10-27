@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ProxyEndpoint name="default">
+  <Flows>
+    <Flow name="CreateCharge">
+      <Condition>(proxy.pathsuffix MatchesPath "/charges") and (request.verb = "POST")</Condition>
+    </Flow>
+    <Flow name="CaptureCharge">
+      <Condition>(proxy.pathsuffix MatchesPath "/charges/*/capture") and (request.verb = "POST")</Condition>
+    </Flow>
+    <Flow name="RefundCharge">
+      <Condition>(proxy.pathsuffix MatchesPath "/charges/*/refunds") and (request.verb = "POST")</Condition>
+    </Flow>
+  </Flows>
+  <HTTPProxyConnection>
+    <BasePath>/partners/northwind</BasePath>
+    <VirtualHost>external</VirtualHost>
+  </HTTPProxyConnection>
+  <RouteRule name="northwind">
+    <TargetEndpoint>northwind</TargetEndpoint>
+  </RouteRule>
+</ProxyEndpoint>

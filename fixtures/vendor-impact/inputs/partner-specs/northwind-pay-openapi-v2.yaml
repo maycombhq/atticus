@@ -1,0 +1,143 @@
+openapi: 3.0.3
+info:
+  title: Northwind Pay API
+  version: 2.0.0
+  description: Charges and refunds for merchants. Northwind Pay is an invented vendor.
+servers:
+  - url: https://api.northwindpay.example/v1
+security:
+  - oauth: [charges.write]
+paths:
+  /charges:
+    get:
+      operationId: listCharges
+      security:
+        - oauth: [charges.read]
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [pending, captured, failed]
+      responses:
+        "200":
+          description: The charges, newest first
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChargeList"
+    post:
+      operationId: createCharge
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChargeRequest"
+      responses:
+        "201":
+          description: The charge, created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Charge"
+  /charges/{chargeId}:
+    get:
+      operationId: getCharge
+      security:
+        - oauth: [charges.read]
+      parameters:
+        - $ref: "#/components/parameters/ChargeId"
+      responses:
+        "200":
+          description: The charge
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Charge"
+  /charges/{chargeId}/refunds:
+    post:
+      operationId: createRefund
+      parameters:
+        - $ref: "#/components/parameters/ChargeId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefundRequest"
+      responses:
+        "201":
+          description: The refund, accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Refund"
+components:
+  parameters:
+    ChargeId:
+      name: chargeId
+      in: path
+      required: true
+      schema:
+        type: string
+  securitySchemes:
+    oauth:
+      type: oauth2
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.northwindpay.example/token
+          scopes:
+            charges.write: Create charges and refunds
+            charges.read: Read charges
+  schemas:
+    ChargeRequest:
+      type: object
+      required: [amount, currency]
+      properties:
+        amount:
+          type: number
+        currency:
+          type: string
+          enum: [USD, EUR]
+        merchantReference:
+          type: string
+        description:
+          type: string
+    Charge:
+      type: object
+      required: [id, status, amount]
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+          enum: [pending, captured, failed]
+        amount:
+          type: number
+    ChargeList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Charge"
+    RefundRequest:
+      type: object
+      required: [amount, reason]
+      properties:
+        amount:
+          type: number
+        reason:
+          type: string
+    Refund:
+      type: object
+      required: [id, status]
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+          enum: [pending, succeeded]

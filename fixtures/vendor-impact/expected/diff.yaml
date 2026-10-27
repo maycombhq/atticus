@@ -1,0 +1,48 @@
+# Northwind Pay API 1.0.0 → 2.0.0, written by hand before the code (ADR 0130).
+# Breaking first, then by path and method. Each change cites both versions where both have it.
+vendor: northwind-pay
+older:
+  id: doc.northwind-pay-openapi-v1
+  path: inputs/partner-specs/northwind-pay-openapi-v1.yaml
+  version: 1.0.0
+newer:
+  id: doc.northwind-pay-openapi-v2
+  path: inputs/partner-specs/northwind-pay-openapi-v2.yaml
+  version: 2.0.0
+changes:
+  - id: field-renamed.post-charges.request.reference
+    kind: field-renamed
+    severity: breaking
+    operation: { method: POST, path: /charges, operationId: createCharge }
+    endpoints: { older: northwind-pay.post-charge, newer: northwind-pay.post-charge }
+    side: request
+    field: reference
+    before: { value: reference, cite: "inputs/partner-specs/northwind-pay-openapi-v1.yaml:98" }
+    after: { value: merchantReference, cite: "inputs/partner-specs/northwind-pay-openapi-v2.yaml:104" }
+    says: "POST /charges: the request field reference is now merchantReference; a caller that still sends reference no longer sets it."
+  - id: operation-removed.post-charges-chargeid-capture
+    kind: operation-removed
+    severity: breaking
+    operation: { method: POST, path: "/charges/{chargeId}/capture", operationId: captureCharge }
+    endpoints: { older: northwind-pay.post-capture }
+    before:
+      value: "POST /charges/{chargeId}/capture"
+      cite: "inputs/partner-specs/northwind-pay-openapi-v1.yaml:42"
+    says: "POST /charges/{chargeId}/capture is gone in 2.0.0; a call to it will fail."
+  - id: field-required.post-charges-chargeid-refunds.request.reason
+    kind: field-required
+    severity: breaking
+    operation: { method: POST, path: "/charges/{chargeId}/refunds", operationId: createRefund }
+    endpoints: { older: northwind-pay.post-refund, newer: northwind-pay.post-refund }
+    side: request
+    field: reason
+    before: { value: optional, cite: "inputs/partner-specs/northwind-pay-openapi-v1.yaml:119" }
+    after: { value: required, cite: "inputs/partner-specs/northwind-pay-openapi-v2.yaml:129" }
+    says: "POST /charges/{chargeId}/refunds: the request field reason is now required; a caller that leaves it out is refused."
+  - id: operation-added.get-charges
+    kind: operation-added
+    severity: additive
+    operation: { method: GET, path: /charges, operationId: listCharges }
+    endpoints: { newer: northwind-pay.get-charge-625a4a }
+    after: { value: GET /charges, cite: "inputs/partner-specs/northwind-pay-openapi-v2.yaml:12" }
+    says: "GET /charges is new in 2.0.0; no caller has to change."
