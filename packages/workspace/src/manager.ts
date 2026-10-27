@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { mkdir, readdir, readFile, rm } from "node:fs/promises";
+import { mkdir, readdir, rm } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import {
   changeBranch,
@@ -260,7 +260,7 @@ export function createWorkspace(root: string, git: GitRunner = createGit()): Wor
       // must stay untouched.
       if (repos.some((r) => !r.archived && !isInPlace(r.url))) await ensureGitignore(root);
       const out: SyncResult[] = [];
-      const local = opts.from ? await localClones(opts.from) : undefined;
+      const local = opts.from ? await localClones(opts.from, git) : undefined;
       for (const repo of repos) out.push(await syncOne(repo, local));
       return out;
     },
@@ -355,13 +355,20 @@ export function remoteKey(url: string): string {
   const scp = /^[\w.-]+@([^:/]+):(.+)$/.exec(u);
   if (scp) u = `${scp[1]}/${scp[2]}`;
   u = u.replace(/^[a-z+]+:\/\//i, "").replace(/^[^@/]+@/, "");
-  u = u.replace(/\/+$/, "").replace(/\.git$/i, "");
+  u = u
+    .replace(/\/{2,}/g, "/")
+    .replace(/\/+$/, "")
+    .replace(/\.git$/i, "");
   const slash = u.indexOf("/");
   return slash < 0 ? u.toLowerCase() : u.slice(0, slash).toLowerCase() + u.slice(slash);
 }
 
-/** Your clones under `dir` (two levels deep), by their origin's key and by folder name. */
-async function localClones(dir: string): Promise<Map<string, string>> {
+/**
+ * Your clones under `dir` (two levels deep), by their origin's key and by folder name. The
+ * origin URL is asked of Git (`git config --get`, local, no network): the config file escapes a
+ * Windows path's backslashes, which a reader of the file would have to undo.
+ */
+async function localClones(dir: string, g: GitRunner): Promise<Map<string, string>> {
   const found = new Map<string, string>();
   const visit = async (d: string, depth: number) => {
     let names: string[];
@@ -371,8 +378,10 @@ async function localClones(dir: string): Promise<Map<string, string>> {
       return;
     }
     if (names.includes(".git")) {
-      const cfg = await readFile(join(d, ".git", "config"), "utf8").catch(() => "");
-      const url = /\[remote "origin"\][^[]*?url\s*=\s*(\S+)/.exec(cfg)?.[1];
+      const url = await g(["config", "--get", "remote.origin.url"], d).then(
+        (r) => r.stdout.trim(),
+        () => "",
+      );
       if (url && !found.has(`url:${remoteKey(url)}`)) found.set(`url:${remoteKey(url)}`, d);
       if (!found.has(`name:${basename(d)}`)) found.set(`name:${basename(d)}`, d);
       return;

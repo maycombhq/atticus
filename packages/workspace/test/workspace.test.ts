@@ -599,5 +599,12 @@ describe("remoteKey: one repo however its URL is written", () => {
     expect(remoteKey("git@git.example.com:forge/forge-ledger.git")).toBe(k);
     expect(remoteKey("https://pat:tok@Git.Example.com/forge/forge-ledger/")).toBe(k);
     expect(remoteKey("ssh://git@git.example.com/forge/forge-ledger")).toBe(k);
+    // A Windows path, as a manifest has it and as Git writes it.
+    expect(remoteKey("C:\\Users\\a\\remotes\\forge-ledger.git")).toBe(
+      remoteKey("C:/Users/a/remotes/forge-ledger.git"),
+    );
+    expect(remoteKey("C:/Users/a//remotes/forge-ledger.git/")).toBe(
+      remoteKey("C:/Users/a/remotes/forge-ledger"),
+    );
   });
 });
