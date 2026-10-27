@@ -4,6 +4,13 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased (2.0.0-beta.2)
 
+### A task's knowledge is kept by meaning as well as by words (ADR 0132 addendum)
+
+- **One common word no longer attaches a page.** With the meaning model installed, a page reaches a task when it shares two of the words the task changes, or one of the task's names (`createdAt`, `POST`); a page whose only link is one common word ("payment", "status") must also be close in meaning to the task's step. Precision across 12 wikis rises from 0.46 to 0.58 on the planted pages and from 0.31 to 0.51 with 4,800 filler pages, recall unchanged at 0.96 (`docs/evidence/many-wikis.md`).
+- **Each page says why**: the words it shares, or "close in meaning to the task's step (…, similarity 0.71)"; the list is ranked by words and meaning together. The closeness is read from the vectors the index already has, so `atticus task context` stays about 1.4 s a task at 4,800 pages.
+- **Without the model** (`--omit=optional`), nothing changes, and the task context says "Knowledge matched by words only: the meaning model isn't installed".
+- **Not yet:** a how-to that says only "SSO" for a task that says "single sign-on" is still missed; the bundled model doesn't link the two. Confirm it for the change.
+
 ### A vendor's new API version, and what in your estate it reaches (ADR 0130)
 
 - **Two versions of a vendor's spec, compared.** Add each version of a partner spec beside the last in `inputs/` (`atticus intake add`), never over it. `atticus intake impact <spec>` lists what changed: operations added, removed or moved, auth and scopes, and request and response fields added, removed, renamed, made required or optional, retyped, or given new enum values. Each change is marked breaking or additive by fixed rules, said in one sentence, and cited in both versions. No model is called.

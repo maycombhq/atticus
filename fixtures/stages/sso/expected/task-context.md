@@ -75,6 +75,7 @@ The organisation's own pages and items that bear on this task, quoted from the w
 
 ## Notes
 
+- Knowledge matched by words only: ATTICUS_EMBEDDINGS is off for this process.
 - forge-orders has no worktree for add-sso yet: open one with atticus workspace open add-sso --repos forge-orders.
 
 ## The task's prompt

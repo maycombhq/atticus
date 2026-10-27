@@ -71,3 +71,20 @@ Per task:
 | 12 sources, filler at scale 1 | 5.2 | before | 1.00 | 0.33 | none | 2: orders-team/api/api-errors.md#The error body, payments-api-conventions | none | none |
 | 12 sources, filler at scale 1 | 6.1 | after | 1.00 | 0.33 | none | 4: glossary-reference/terms/refund.md#Definition, anvil-framework/testing/Testing-a-customer-profile-19.md#History, glossary-reference/terms/Customer-profile-term-18.md#Details, replay-failed-refund | none | none |
 | 12 sources, filler at scale 1 | 6.1 | before | 1.00 | 0.25 | none | 6: glossary-reference/terms/refund.md#Definition, payments-api-conventions, payments-team/SitePages/Runbooks/Customer-profile-FAQ-268.md#Who to ask, anvil-framework/testing/Testing-a-customer-profile-19.md#History, … | none | none |
+
+## Keeping a task's knowledge by words and meaning (ADR 0132 addendum)
+
+Written on 2026-10-27 from `runManyWikisBench` with the pinned model (all-MiniLM-L6-v2, every node embedded first), the "after" selection (authority, scope and status on). Words, no model: the keep test as the tables above measure it (the test suites run with `ATTICUS_EMBEDDINGS=off`). Words, model on: the same keep test, with the model ranking the search (`keep: "words"`). Words and meaning: two of the words a task changes, or one of its names, keep a page; one common word only with a cosine of at least 0.65 to the task's step; none, only at 0.65. Time: one task's selection on its own, as `atticus task context` makes it, on average over the 14 tasks (index opened each time), on the 2-CPU build machine.
+
+| Run | Keep test | Recall | Precision | Never | Leads | One task |
+| --- | --- | --- | --- | --- | --- | --- |
+| 12 sources, planted pages (32 pages) | words, no model | 0.96 | 0.50 | 0 | 5 / 5 | 37 ms |
+| 12 sources, planted pages (32 pages) | words, model on | 0.96 | 0.46 | 0 | 5 / 5 | 47 ms |
+| 12 sources, planted pages (32 pages) | words and meaning | 0.96 | 0.58 | 0 | 5 / 5 | 43 ms |
+| 12 sources, filler at scale 1 (4832 pages) | words, no model | 0.96 | 0.34 | 0 | 5 / 5 | 1.31 s |
+| 12 sources, filler at scale 1 (4832 pages) | words, model on | 0.96 | 0.31 | 0 | 5 / 5 | 1.47 s |
+| 12 sources, filler at scale 1 (4832 pages) | words and meaning | 0.96 | 0.51 | 0 | 5 / 5 | 1.42 s |
+
+Embedding every node at scale 1 (once, `atticus index embed`): about 210 s. The planted run with the model is replayed in CI from `fixtures/retrieval/vectors/benches/all-minilm-l6-v2.json` (`packages/evals/test/many-wikis-bench.test.ts`).
+
+What is left at 4,800 pages: filler sections that share two common words with a task ("refund", "report", "warehouse", "link") and the pages naming the component a task calls are still kept; task 1.4's TLS standard is still not offered by the search.

@@ -10,6 +10,7 @@ import {
   serializeRecord,
   type CatalogRecord,
 } from "@maycombhq/core";
+import { openIndex, type OpenOptions } from "@maycombhq/index";
 import { syncSources, writeSnapshots } from "@maycombhq/knowledge";
 import {
   estateOf,
@@ -78,8 +79,18 @@ export interface ManyWikisRun {
   case: string;
   pages: number;
   rows: ManyWikisRow[];
-  /** Milliseconds: writing the estate, the sync, and each mode's selection for all 14 tasks. */
-  ms: { write: number; sync: number; before: number; after: number };
+  /**
+   * Milliseconds: writing the estate, the sync, embedding every node (embedAll), each mode's
+   * selection for all 14 tasks, and (perTask) one task's selection on its own, on average.
+   */
+  ms: {
+    write: number;
+    sync: number;
+    embed: number;
+    before: number;
+    after: number;
+    perTask?: number;
+  };
 }
 
 const NOW = "2026-10-20T08:00:00Z";
@@ -213,7 +224,18 @@ function row(
  */
 export async function runManyWikisBench(
   fixtures: string,
-  o: { scale?: number; name?: string } = {},
+  o: {
+    scale?: number;
+    name?: string;
+    /** The embedding model (ADR 0116): default "auto"; the test passes the recorded vectors. */
+    embeddings?: OpenOptions["embeddings"];
+    /** Embed every node before selecting, so meaning is on at any scale (the filler's 20,000). */
+    embedAll?: boolean;
+    /** "words": keep by shared words alone, as before the ADR 0132 addendum. */
+    keep?: "words";
+    /** Also time one call per task, as `atticus task context` makes it. */
+    perTask?: boolean;
+  } = {},
 ): Promise<ManyWikisRun> {
   const fx = join(fixtures, "many-wikis");
   const name =
@@ -236,14 +258,26 @@ export async function runManyWikisBench(
     tasks: Record<string, Expected>;
   };
   const inputs = manyWikisInputs(change, estateOf(recs, []));
+  let embed = 0;
+  if (o.embedAll) {
+    t = performance.now();
+    const ix = await openIndex(root, {
+      ...(o.embeddings ? { embeddings: o.embeddings } : {}),
+      embedOnOpen: Number.MAX_SAFE_INTEGER,
+    });
+    ix.close();
+    embed = performance.now() - t;
+  }
   const rows: ManyWikisRow[] = [];
-  const ms = { write, sync, before: 0, after: 0 };
+  const ms: ManyWikisRun["ms"] = { write, sync, embed, before: 0, after: 0 };
   // After first: it builds the index both modes then read.
   for (const mode of ["after", "before"] as const) {
     t = performance.now();
     const got = await selectTaskKnowledge(root, change.change, inputs, {
       now: NOW,
       ...(mode === "before" ? { standing: false } : {}),
+      ...(o.embeddings ? { embeddings: o.embeddings } : {}),
+      ...(o.keep ? { keep: o.keep } : {}),
     });
     ms[mode] = performance.now() - t;
     for (const i of inputs)
@@ -253,6 +287,17 @@ export async function runManyWikisBench(
     (a, b) =>
       a.task.localeCompare(b.task, undefined, { numeric: true }) || a.mode.localeCompare(b.mode),
   );
+  if (o.perTask) {
+    // One call per task, as `atticus task context` makes it: the index opened for each.
+    t = performance.now();
+    for (const i of inputs)
+      await selectTaskKnowledge(root, change.change, [i], {
+        now: NOW,
+        ...(o.embeddings ? { embeddings: o.embeddings } : {}),
+        ...(o.keep ? { keep: o.keep } : {}),
+      });
+    ms.perTask = (performance.now() - t) / inputs.length;
+  }
   return { case: name, pages: s.pages.length, rows, ms };
 }
 

@@ -10,7 +10,12 @@ import {
   type PageStatus,
   type SourceAuthority,
 } from "@maycombhq/core";
-import { openIndex, type CatalogIndex, type ContextSelection } from "@maycombhq/index";
+import {
+  openIndex,
+  type CatalogIndex,
+  type ContextSelection,
+  type OpenOptions,
+} from "@maycombhq/index";
 import {
   checkQuote,
   codeText,
@@ -80,6 +85,27 @@ export const TASK_KNOWLEDGE_TOKENS = 3000;
 
 /** At most this many items reach one task. */
 export const TASK_KNOWLEDGE_MAX = 8;
+
+/**
+ * Keeping by words and meaning (ADR 0132 addendum), with the pinned model (all-MiniLM-L6-v2):
+ * this many of the words a task changes keep a candidate on their own, as does one of the task's
+ * names (namesOf).
+ */
+export const KEEP_WORDS = 2;
+/**
+ * One common word in common keeps a candidate only when its cosine to the task's step is at least
+ * this. Calibrated on the many-wiki bench (planted pages and filler at scale 1) and the
+ * task-knowledge bench: the closest candidate not needed whose only link was one common word
+ * scored 0.62 (filler, task 1.5); no needed candidate depended on one (0.40 to 0.70 lost no
+ * recall; 0.42 and above did, before names counted on their own).
+ */
+export const KEEP_ONE_WORD_CLOSE = 0.65;
+/**
+ * No word in common: kept only when its cosine is at least this. On the same benches no needed
+ * candidate shares no word, and the closest one not needed scored 0.56; the model rates "SSO"
+ * against "single sign-on" at 0.33, so the acronym case stays a miss with it.
+ */
+export const KEEP_BY_MEANING = 0.65;
 
 /** What a task is, for its selection. */
 export interface TaskKnowledgeInput {
@@ -206,8 +232,11 @@ export interface TaskKnowledge {
   alsoOn: KnowledgePlace[];
   /** Near-duplicate items grouped into this one: their pages are in alsoOn. */
   sameAs?: string[];
-  /** What it matched: the task's terms it is about, and the task's places it names. */
-  matched: { terms: string[]; places: string[] };
+  /**
+   * What it matched: the task's terms it is about, the task's places it names, and (ADR 0132
+   * addendum) its cosine to the task's step when the meaning model is there.
+   */
+  matched: { terms: string[]; places: string[]; meaning?: number };
   /** Pages that disagree with it. */
   conflicts: TaskConflict[];
   /** A person confirmed it for the change. */
@@ -479,6 +508,13 @@ export interface TaskKnowledgeOptions {
   conflicts?: ConflictView[];
   /** The catalog's records, for a conflict the code settles. Default: read from the catalog. */
   records?: readonly CodeFactRecord[];
+  /** The embedding model the index opens with (ADR 0116): default "auto"; the benches pass one. */
+  embeddings?: OpenOptions["embeddings"];
+  /**
+   * "words": keep by shared words alone, as before the ADR 0132 addendum (for the bench's
+   * comparison only). Default: by words and meaning, when the meaning model is there.
+   */
+  keep?: "words";
 }
 
 interface Kept {
@@ -494,6 +530,56 @@ interface Kept {
   places: string[];
   /** ADR 0132: each source of its pages that is scoped, with the scope it matched. */
   scopes: Map<string, string>;
+  /** Its cosine to the task's step, when the meaning model is there (ADR 0132 addendum). */
+  meaning?: number;
+}
+
+/** The index nodes a candidate's meaning is read from: its own, and the item it is read as. */
+function nodeKeys(c: Candidate, items: Map<string, Item>, itemOfPage: Map<string, Item>): string[] {
+  const own = `${groupOf(c.kind)}:${c.kind}:${c.id}`;
+  let item = items.get(c.id);
+  if (!item && (c.kind === "WikiSection" || c.kind === "DocumentSection")) {
+    const sp = sectionParts(c.id);
+    item = itemOfPage.get(`${sp.source}/${pageFile(sp.page)}`);
+  }
+  return item ? [own, `knowledge:${item.kind}:${item.id}`] : [own];
+}
+
+/**
+ * The names in a task's text, folded as wordsOf folds them: an identifier written in camel case
+ * or with a digit (createdAt, paymentId, v2) and an acronym (POST, UTC, SSO). A page that shares
+ * one of them is about what the task names, not about a common word (ADR 0132 addendum).
+ */
+export function namesOf(texts: string[]): Set<string> {
+  const out = new Set<string>();
+  for (const t of texts)
+    for (const m of t.matchAll(/[A-Za-z][A-Za-z0-9]*/g)) {
+      const w = m[0];
+      const name = /[a-z][A-Z]|[A-Za-z]\d/.test(w) || /^[A-Z]{2,}s?$/.test(w);
+      if (name && w.length >= 3 && !STOP.has(w.toLowerCase())) out.add(stem(w.toLowerCase()));
+    }
+  return out;
+}
+
+/** What a task changes, in a few words for a reason: its step's words once the change is in. */
+function stepText(input: TaskKnowledgeInput): string {
+  const t = (input.changes[0] ?? input.title).replace(/\s+/g, " ").trim();
+  return t.length > 90 ? `${t.slice(0, 89).trimEnd()}…` : t;
+}
+
+/** Said in the task's context when meaning isn't used (ADR 0132 addendum). */
+export function wordsOnlyNote(off: string): string {
+  return /isn't installed/.test(off)
+    ? "matched by words only: the meaning model isn't installed"
+    : `matched by words only: ${off.replace(/^similar in meaning is off: /, "")}`;
+}
+
+/** A disagreement about an item whose pages include another item's (or that is about both). */
+function disagree(v: ConflictView, id: string, other: Item): boolean {
+  if (!v.conflict.about.includes(id)) return false;
+  if (v.conflict.about.includes(other.id)) return true;
+  const pages = itemPages(other);
+  return v.conflict.pages.some((p) => pages.includes(`${p.source}/${pageFile(p.page)}`));
 }
 
 /** The task's places an item's text names, whole: its target component or table, its files. */
@@ -682,7 +768,12 @@ export async function selectTaskKnowledge(
   change: string,
   inputs: TaskKnowledgeInput[],
   o: TaskKnowledgeOptions = {},
-): Promise<{ byTask: Map<string, TaskKnowledge[]>; note?: string }> {
+): Promise<{
+  byTask: Map<string, TaskKnowledge[]>;
+  note?: string;
+  /** Said when meaning wasn't used: "matched by words only: ..." (ADR 0132 addendum). */
+  matching?: string;
+}> {
   const byTask = new Map<string, TaskKnowledge[]>();
   if (!inputs.length) return { byTask };
   const knowledge = o.knowledge ?? (await readKnowledge(root, { cacheRoot: root }));
@@ -728,7 +819,7 @@ export async function selectTaskKnowledge(
 
   let ix: CatalogIndex;
   try {
-    ix = await openIndex(root);
+    ix = await openIndex(root, o.embeddings ? { embeddings: o.embeddings } : {});
   } catch (e) {
     return {
       byTask,
@@ -736,6 +827,7 @@ export async function selectTaskKnowledge(
     };
   }
   const snapshot = snapshotsOf(root);
+  let matching: string | undefined;
   try {
     for (const input of inputs) {
       const places = placesIn ? await taskPlaces(input, placesIn) : undefined;
@@ -778,8 +870,32 @@ export async function selectTaskKnowledge(
       // What the task changes: its words that aren't the flow's, components' or today's step's.
       const changes = new Map([...said].filter(([s]) => !context.has(s)));
       const all = new Map([...context, ...wordsOf([input.title]), ...said]);
+      // The task's own names among them: a field or id (createdAt), an acronym (POST, UTC).
+      const named = namesOf(input.changes);
       const kept = new Map<string, Kept>();
-      for (const c of candidatesOf(sel)) {
+      const cands = candidatesOf(sel);
+      // ADR 0132 addendum: how close each candidate is in meaning to what the task changes, read
+      // from the vectors the index already has (only the task's text is embedded, once).
+      const near =
+        o.keep === "words"
+          ? undefined
+          : await ix.closeness(
+              [input.changes.join("; ")],
+              cands.flatMap((c) => nodeKeys(c, items, itemOfPage)),
+            );
+      const cosOf = (c: Candidate, item: Item | undefined): number | undefined => {
+        if (!near || !("cos" in near)) return undefined;
+        const xs = [
+          near.cos.get(`${groupOf(c.kind)}:${c.kind}:${c.id}`),
+          item ? near.cos.get(`knowledge:${item.kind}:${item.id}`) : undefined,
+        ].filter((x): x is number => x !== undefined);
+        return xs.length ? Math.max(...xs) : 0;
+      };
+      if (near && "off" in near) matching ??= wordsOnlyNote(near.off);
+      const step = stepText(input);
+      /** Candidates whose one word wasn't enough: kept when their pages disagree with a kept item's. */
+      const held: { id: string; k: Kept }[] = [];
+      for (const c of cands) {
         let item = items.get(c.id);
         let section: string | undefined;
         if (!item && (c.kind === "WikiSection" || c.kind === "DocumentSection")) {
@@ -819,36 +935,73 @@ export async function selectTaskKnowledge(
         // The task's places it names whole: the component it calls or its table keep it alone.
         const places = placesNamed(aboutTexts.join("\n"), input);
         const target = places.some((p) => (input.targets ?? []).includes(p));
-        if (!(c.named || target || matched.length > 0 || (isConfirmed && shared.length > 0)))
-          continue;
+        const cos = cosOf(c, item);
+        const always = c.named || target || (isConfirmed && shared.length > 0);
+        // Words and meaning (ADR 0132 addendum): two of the words the task changes keep it; one
+        // keeps it only when it is close in meaning too; none, only when it is very close. With
+        // no meaning model, one word keeps it, as before.
+        const close =
+          cos === undefined
+            ? false
+            : matched.length === 1
+              ? cos >= KEEP_ONE_WORD_CLOSE
+              : matched.length === 0 && cos >= KEEP_BY_MEANING;
+        const byWords =
+          cos === undefined
+            ? matched.length > 0
+            : matched.length >= KEEP_WORDS || matched.some((w) => named.has(w));
         const terms = (matched.length ? matched : shared).map((w) => all.get(w) ?? w);
         const words = terms.slice(0, 4).map((w) => `"${w}"`);
         const where = places.length ? ` It names ${and(places)}, where this task works.` : "";
+        const sim = cos === undefined ? "" : `, similarity ${cos.toFixed(2)}`;
         const why = c.named
           ? "The task's step names it."
           : matched.length
-            ? `It is about ${and(words)}, which this task changes.${where}`
-            : words.length
-              ? `It is about ${and(words)}, as this task is.${where}`
-              : where.trim();
+            ? `It is about ${and(words)}, which this task changes${close && !always ? `, and is close in meaning to its step ("${step}"${sim})` : ""}.${where}`
+            : close && !always
+              ? `It is close in meaning to the task's step ("${step}"${sim}).${where}`
+              : words.length
+                ? `It is about ${and(words)}, as this task is.${where}`
+                : where.trim();
         const score =
           c.score *
           (1 + 0.25 * Math.min(matched.length, 4)) *
+          (cos === undefined ? 1 : 1 + Math.max(0, cos)) *
           (places.length ? 1.25 : 1) *
           (isConfirmed ? 1.5 : 1);
+        const k: Kept = {
+          ...(item ? { item } : {}),
+          ...(section ? { section, sectionKind: c.kind } : {}),
+          score,
+          why: isConfirmed ? `${why} Confirmed for the change.` : why,
+          confirmed: isConfirmed,
+          words: matched.length ? matched : shared,
+          terms: matched.length || !c.named ? terms : [],
+          places,
+          scopes,
+          ...(cos !== undefined ? { meaning: cos } : {}),
+        };
+        if (!(always || byWords || close)) {
+          if (item && matched.length === 1) held.push({ id, k });
+          continue;
+        }
         const was = kept.get(id);
-        if (!was || was.score < score)
-          kept.set(id, {
-            ...(item ? { item } : {}),
-            ...(section ? { section, sectionKind: c.kind } : {}),
-            score,
-            why: isConfirmed ? `${why} Confirmed for the change.` : why,
-            confirmed: isConfirmed,
-            words: matched.length ? matched : shared,
-            terms: matched.length || !c.named ? terms : [],
-            places,
-            scopes,
-          });
+        if (!was || was.score < score) kept.set(id, k);
+      }
+      // An item whose one word wasn't enough stays when its pages disagree with an item the task
+      // keeps (ADR 0132 addendum): the task sees both sides of the disagreement, as a person or
+      // the code decided it.
+      for (const h of held) {
+        if (kept.has(h.id)) continue;
+        const other = [...kept.values()].find(
+          (x) => x.item && views.some((v) => disagree(v, h.id, x.item!)),
+        )?.item;
+        if (!other) continue;
+        const words = h.k.terms.slice(0, 4).map((w) => `"${w}"`);
+        kept.set(h.id, {
+          ...h.k,
+          why: `It is about ${and(words)}, which this task changes, and its pages disagree with ${other.id}'s, which applies to this task.`,
+        });
       }
       // A section of a page a kept item is read from, or of a page that disagrees with it, is
       // shown through that item.
@@ -890,7 +1043,7 @@ export async function selectTaskKnowledge(
   } finally {
     ix.close();
   }
-  return { byTask };
+  return { byTask, ...(matching ? { matching } : {}) };
 }
 
 const round = (n: number) => Math.round(n * 1e4) / 1e4;
@@ -949,7 +1102,11 @@ async function itemEntry(
       i.kind === "Decision" ? [String(x.decision ?? "")].filter((s) => s.trim()) : strings(x.rules),
     ...(steps.length ? { steps } : {}),
     alsoOn: rest,
-    matched: { terms: k.terms, places: k.places },
+    matched: {
+      terms: k.terms,
+      places: k.places,
+      ...(k.meaning !== undefined ? { meaning: k.meaning } : {}),
+    },
     conflicts: await conflictsOf(i, views, ctx.snapshot, ctx.places),
     ...(k.confirmed ? { confirmed: true } : {}),
     verified,
@@ -993,7 +1150,11 @@ async function sectionEntry(
     says: steps.length || !body ? [] : [body],
     ...(steps.length ? { steps } : {}),
     alsoOn: [],
-    matched: { terms: k.terms, places: k.places },
+    matched: {
+      terms: k.terms,
+      places: k.places,
+      ...(k.meaning !== undefined ? { meaning: k.meaning } : {}),
+    },
     conflicts: [],
     ...(k.confirmed ? { confirmed: true } : {}),
     verified: false,

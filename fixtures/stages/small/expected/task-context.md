@@ -57,6 +57,7 @@ The organisation's own pages and items that bear on this task, quoted from the w
 
 ## Notes
 
+- Knowledge matched by words only: ATTICUS_EMBEDDINGS is off for this process.
 - forge-orders has no worktree for return-order-time yet: open one with atticus workspace open return-order-time --repos forge-orders.
 
 ## The task's prompt

@@ -6,6 +6,7 @@ import { openDb, type Db } from "./db.js";
 import {
   attachVectors,
   cachedQuery,
+  cosines,
   embedMissing,
   loadMatrix,
   meaningState,
@@ -154,6 +155,7 @@ export class CatalogIndex {
   /** Set when the model is configured but couldn't run. */
   meaningProblem?: string;
   private matrix?: Matrix;
+  private rows?: Map<string, number>;
 
   close(): void {
     this.db.close();
@@ -172,7 +174,10 @@ export class CatalogIndex {
   ): Promise<number> {
     if (!this.embedder) return 0;
     const n = await embedMissing(this.db, this.embedder, o);
-    if (n) this.matrix = undefined;
+    if (n) {
+      this.matrix = undefined;
+      this.rows = undefined;
+    }
     return n;
   }
 
@@ -223,6 +228,32 @@ export class CatalogIndex {
         ...(exclude ? { exclude } : {}),
       }),
     };
+  }
+
+  /**
+   * How close in meaning each of these nodes is to the texts (ADR 0132 addendum): the best
+   * cosine of a node's stored vector over the texts' vectors. The texts are embedded as queries
+   * once and kept; a node is never embedded here (a node with no vector is left out). Off, with
+   * why, when similarity is off.
+   */
+  async closeness(
+    texts: string[],
+    keys: string[],
+  ): Promise<{ cos: Map<string, number> } | { off: string }> {
+    const state = this.meaning();
+    if (!state.on || !this.embedder) return { off: state.note };
+    const asked = [...new Set(texts.map((t) => t.replace(/\s+/g, " ").trim()).filter((t) => t))];
+    if (!asked.length) return { cos: new Map() };
+    let queries: QuantVector[];
+    try {
+      queries = await queryVectors(this.db, this.embedder, asked);
+    } catch (err) {
+      this.meaningProblem = `the embedding model couldn't run: ${(err as Error).message.split("\n")[0]}`;
+      return { off: this.meaning().note };
+    }
+    this.matrix ??= loadMatrix(this.db, this.embedder.id);
+    this.rows ??= new Map(this.matrix.keys.map((k, i) => [k, i] as const));
+    return { cos: cosines(this.matrix, this.rows, queries, keys) };
   }
 
   /**

@@ -211,4 +211,41 @@ describe("similar in meaning (ADR 0116)", () => {
     expect(near.split("\n").filter((l) => l.startsWith("- "))).toHaveLength(3);
     ix.close();
   });
+  it("how close in meaning given nodes are to a text: their stored vectors, never embedded again; off, with why, without a model (ADR 0132 addendum)", async () => {
+    const root = await retrievalRoot();
+    const e = new HashEmbedder();
+    const ix = await openIndex(root, { embeddings: e });
+    const keys = (
+      ix.db.prepare("SELECT key FROM nodes ORDER BY key LIMIT 4").all() as { key: string }[]
+    ).map((r) => r.key);
+    const before = e.embedded;
+    const got = await ix.closeness(
+      ["the account's renamed timestamp"],
+      [...keys, "catalog:Nothing:x"],
+    );
+    if (!("cos" in got)) throw new Error(got.off);
+    // Only the text is embedded (once, as a query, and kept): no node is embedded again.
+    expect(e.embedded).toBe(before + 1);
+    expect([...got.cos.keys()]).toEqual(keys);
+    for (const c of got.cos.values()) {
+      expect(c).toBeGreaterThanOrEqual(-1);
+      expect(c).toBeLessThanOrEqual(1);
+    }
+    // The same text again: the kept query vector, the same cosines.
+    const again = await ix.closeness(["the account's renamed timestamp"], keys);
+    expect(e.embedded).toBe(before + 1);
+    expect(again).toEqual(got);
+    // A node is closest to its own text.
+    const own = ix.db.prepare("SELECT text FROM node_text WHERE key = ?").get(keys[0]!) as {
+      text: string;
+    };
+    const self = await ix.closeness([own.text], [keys[0]!]);
+    expect("cos" in self && self.cos.get(keys[0]!)).toBeGreaterThan(0.99);
+    ix.close();
+    const off = await openIndex(root);
+    expect(await off.closeness(["anything"], keys)).toEqual({
+      off: expect.stringMatching(/ATTICUS_EMBEDDINGS is off/),
+    });
+    off.close();
+  });
 });
