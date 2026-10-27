@@ -48,7 +48,10 @@ jobs:
       - run: pnpm typecheck
       # Windows runners are slower; fewer packages testing at once keeps timing-sensitive tests honest.
       # --continue: every package's tests run, so one run shows every failure, not the first.
-      - run: pnpm turbo run test --continue --concurrency=${{ matrix.os == 'windows-latest' && '2' || '10' }}
+      - run: pnpm turbo run test --continue --filter=!@maycombhq/m5-exit --concurrency=${{ matrix.os == 'windows-latest' && '2' || '10' }}
+      # The speed budgets (m5-exit) run alone, as `pnpm test` runs them: alongside every other
+      # package's tests they measure the machine's load, not Atticus.
+      - run: pnpm turbo run test --filter=@maycombhq/m5-exit --concurrency=1
 
   # The offline install bundle, built and installed the way a person would, on Linux and
   # Windows (install.sh and install.ps1), when the full matrix runs.
