@@ -51,4 +51,10 @@ stories:
 # The target flows' placement of a component the catalog doesn't have yet (planner FlowDelta
 # runsOn, ADR 0130). Only the new component's flow says where it runs.
 targetFlows:
-  - { flow: forge-refund-worker.retry-refunds, repo: forge-refund-worker, change: new, runsOn: { component: forge-refund-worker, system: forge-shop, cloud: gcp, platform: cloud-run } }
+  - schemaVersion: 2
+    flow: forge-refund-worker.retry-refunds
+    repo: forge-refund-worker
+    change: new
+    name: Retry failed refunds
+    why: Failed refunds are retried by a worker of their own, off the order path.
+    runsOn: { component: forge-refund-worker, system: forge-shop, cloud: gcp, platform: cloud-run }

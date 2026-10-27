@@ -6,6 +6,7 @@ import {
   authorityRank,
   orgPackDirOf,
   pageStanding,
+  platformsMatch,
   Sources,
   type PageSignals,
   type PageStanding,
@@ -160,4 +161,68 @@ export function exceptionTo(
     `${other.source}/${other.page}`,
   ].filter((n): n is string => !!n && n.trim().length > 3);
   return names.some((n) => low.includes(n.toLowerCase())) ? ref : undefined;
+}
+
+/**
+ * The places a task works in, for a source's scope (ADR 0130): where its code is (its components,
+ * their systems, where they run, their repos' types and frameworks), what it calls (components
+ * and their systems), and the components it creates, which only the target state has. Each value
+ * (lower case) maps to the words that say where it comes from: "forge-orders runs on openshift".
+ */
+export interface ScopePlaces {
+  components: Map<string, string>;
+  systems: Map<string, string>;
+  platforms: Map<string, string>;
+  repoTypes: Map<string, string>;
+  frameworks: Map<string, string>;
+  /** What the task calls: a scope's systems and components take these in too. */
+  calls: { components: Map<string, string>; systems: Map<string, string> };
+  /** Components the task creates that the catalog doesn't have yet. */
+  creates: string[];
+}
+
+export const emptyPlaces = (): ScopePlaces => ({
+  components: new Map(),
+  systems: new Map(),
+  platforms: new Map(),
+  repoTypes: new Map(),
+  frameworks: new Map(),
+  calls: { components: new Map(), systems: new Map() },
+  creates: [],
+});
+
+/**
+ * Whether a source's scope takes in a task's places, and the first match in words ("platforms
+ * openshift: forge-orders runs on openshift"); undefined when it doesn't. A source with no scope
+ * applies everywhere: the caller doesn't ask. Any dimension the scope names may match: a scope
+ * is where its pages apply, so a platform's guidance applies to a component on that platform and,
+ * with `newComponents`, to a task that creates one.
+ */
+export function scopeMatch(scope: SourceScope, places: ScopePlaces): string | undefined {
+  const low = (s: string) => s.trim().toLowerCase();
+  const inMap = (dim: string, wanted: string[] | undefined, ...maps: Map<string, string>[]) => {
+    for (const w of wanted ?? [])
+      for (const m of maps) {
+        const why = m.get(low(w));
+        if (why) return `${dim} ${w}: ${why}`;
+      }
+    return undefined;
+  };
+  const platform = () => {
+    for (const w of scope.platforms ?? []) {
+      const hit = platformsMatch([w], [...places.platforms.keys()]);
+      if (hit) return `platforms ${w}: ${places.platforms.get(hit)}`;
+    }
+    return undefined;
+  };
+  return (
+    inMap("components", scope.components, places.components, places.calls.components) ??
+    inMap("systems", scope.systems, places.systems, places.calls.systems) ??
+    (scope.newComponents && places.creates.length
+      ? `new components: this task creates ${places.creates.join(", ")}`
+      : undefined) ??
+    platform() ??
+    inMap("repo types", scope.repoTypes, places.repoTypes) ??
+    inMap("frameworks", scope.frameworks, places.frameworks)
+  );
 }

@@ -99,6 +99,7 @@ flows:
     trigger: <new flows only> { kind: endpoint | action | page | listener | job, what: <plain words>, entry: <the HTTP method and the path, such as "GET /orders/{id}", or a topic> }
     why: <one sentence: why this flow changes>
     consumers: [<when the change breaks the flow's entry: every component that calls it today>]
+    runsOn: <a new flow of a component that doesn't exist yet: where it runs> { component: <its id>, system: <the system it belongs to>, platform: <such as cloud-run or openshift>, cloud: <such as gcp, or on-prem>, framework: <what it is built on> }
     steps:
       - op: add | change | remove
         step: <change and remove: the step's number in today's flow, as listed>
@@ -128,6 +129,7 @@ Rules:
 - Name fields at every step that moves data: what a call sends and returns, what a write stores, what a transform maps. A key a write or read matches rows by goes under checks.
 - Give each added step at or new. A class or function it only calls is uses, never at; a step that code under uses already does needs no at or new.
 - Use component, system and table ids from the index. Something that doesn't exist yet is marked new: true.
+- A new flow of a component that doesn't exist yet says where that component runs under runsOn, as the standards and platform guidance below place a new component.
 - Follow the integration patterns and standards below where they apply; say in why when one shapes a step.
 ${storeRules(levels).join("\n")}
 - A change breaks who uses it when a field the response returns is gone, the entry reads one field in place of another, the entry, the response or the flow is removed, or a column gets another type: list who uses it under consumers, as the consumers block names them.

@@ -319,6 +319,20 @@ export const FlowDelta = z.strictObject({
    * the flow. Optional and additive: the flow delta stays at version 2.
    */
   consumers: z.array(Id).optional(),
+  /**
+   * A new flow of a component the catalog doesn't have yet: where that component runs, as the
+   * architecture places it (ADR 0130). What a knowledge source's scope (sources.yaml appliesTo)
+   * is matched against before the component exists. Optional and additive: version 2 stays.
+   */
+  runsOn: z
+    .strictObject({
+      component: Id,
+      system: Id.optional(),
+      platform: z.string().trim().min(1).optional(),
+      cloud: z.string().trim().min(1).optional(),
+      framework: z.string().trim().min(1).optional(),
+    })
+    .optional(),
   steps: z.array(DeltaStep).default([]),
   /**
    * Written by Atticus, never the assistant (ADR 0111): the sha-256 of today's flow's steps (each

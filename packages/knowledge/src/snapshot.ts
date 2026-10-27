@@ -235,3 +235,60 @@ export async function readSnapshot(
   }
   return { manifest, dir: rel, pages };
 }
+
+/**
+ * Single pages of each source's newest snapshot, read one file at a time with the manifest kept
+ * (ADR 0130): a task's knowledge shows a few pages of a source with thousands, and reading the
+ * whole snapshot (every page parsed) to show three was what cost the time at a dozen wikis.
+ */
+export function snapshotPages(
+  root: string,
+): (
+  source: string,
+  page: string,
+) => Promise<{ page: KnowledgePage; manifest: SnapshotManifest } | undefined> {
+  type Hit = { page: KnowledgePage; manifest: SnapshotManifest } | undefined;
+  const manifests = new Map<string, Promise<{ date: string; m: SnapshotManifest } | undefined>>();
+  const pages = new Map<string, Promise<Hit>>();
+  const manifest = (source: string) => {
+    if (!manifests.has(source))
+      manifests.set(
+        source,
+        (async () => {
+          const date = (await snapshotDates(root, source))[0];
+          const m = date ? await readManifest(root, source, date) : undefined;
+          return date && m ? { date, m } : undefined;
+        })(),
+      );
+    return manifests.get(source)!;
+  };
+  return (source, page) => {
+    const key = `${source}\0${page}`;
+    if (!pages.has(key))
+      pages.set(
+        key,
+        (async (): Promise<Hit> => {
+          const s = await manifest(source);
+          const e = s?.m.pages.find((p) => p.page === page);
+          if (!s || !e) return undefined;
+          const path = snapshotCopyPath(root, source, s.date, e);
+          const content = await readFile(join(root, ...path.split("/")), "utf8").catch(
+            () => undefined,
+          );
+          if (content === undefined) return undefined;
+          return {
+            manifest: s.m,
+            page: readPage({
+              source,
+              sourceType: s.m.type,
+              path,
+              pagePath: e.page,
+              content,
+              ...(e.date ? { updatedAt: e.date } : {}),
+            }),
+          };
+        })(),
+      );
+    return pages.get(key)!;
+  };
+}

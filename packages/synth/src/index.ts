@@ -306,3 +306,4 @@ export async function writeEstate(estate: Estate, dir: string): Promise<void> {
 }
 
 export * from "./trial.js";
+export * from "./wikis.js";

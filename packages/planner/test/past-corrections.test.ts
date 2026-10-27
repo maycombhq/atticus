@@ -108,8 +108,9 @@ const BEFORE = {
   // the store facts list (its one changed line); and after B-tasks asked for `at` whenever the
   // code goes into or beside a file the repo has, a new flow's too (the format's one `at` line);
   // and after B-place gave three places (the format's `at` line became at, new and uses, one rule
-  // added) and the self-check line
-  arch: "700bb874fd0b751ea7fda7c8a6f1ec4bb0d6993ee0e6232c8ea009c65c1bf9ce",
+  // added) and the self-check line; and after ADR 0130 asked where a new component runs (the
+  // format's runsOn line and one rule)
+  arch: "1165ae8cfc34b736610b0e400f96070f318abea3b5ccbcdbe111af5385d7855b",
   // re-pinned after B-run2-fixes 5 gave the stories rules the rule words (one line added); and
   // after B-once let a criterion accept other tasks (also in the format, one rule reworded, one added);
   // and on 2026-10-25 twice: the format's requests line (a standard is followed, never listed

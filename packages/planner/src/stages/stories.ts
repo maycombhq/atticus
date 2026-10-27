@@ -55,6 +55,7 @@ import {
   selectTaskKnowledge,
   storyKnowledgeLines,
   type TaskKnowledge,
+  type NewComponent,
   type TaskKnowledgeInput,
 } from "../task-knowledge.js";
 import { askKnowledgeConflicts } from "../knowledge-conflicts.js";
@@ -256,7 +257,7 @@ export const stepTasks = (s: DeltaStory): DeltaTask[] => s.tasks.flatMap(partsOf
  * flow's name, its components and repo), the ids it names and the files it touches.
  */
 export function taskKnowledgeInput(
-  s: Pick<DeltaStory, "flow" | "name" | "repo">,
+  s: Pick<DeltaStory, "flow" | "name" | "repo"> & { tasks?: DeltaTask[] },
   t: DeltaTask,
   delta: FlowDelta | undefined,
   estate: Estate | undefined,
@@ -291,12 +292,40 @@ export function taskKnowledgeInput(
     const was = n && today ? today.flow.steps[n - 1] : undefined;
     if (was) context.push(was.what);
   }
+  // ADR 0130: the component the task's code is in when the catalog doesn't have it yet, as the
+  // target flow places it (runsOn), or a new flow's own component; a scoped source is matched
+  // against it. The story's first task creates it: building and deploying a new service is part
+  // of what that task changes.
+  let placedIn: NewComponent | undefined;
+  let creates = false;
+  const own =
+    delta?.runsOn?.component ?? (delta?.change === "new" ? s.flow.split(".")[0] : undefined);
+  if (own && estate && !estate.byId.has(own)) {
+    const r = delta?.runsOn;
+    placedIn = {
+      component: own,
+      ...(r?.system ? { system: r.system } : {}),
+      ...(r?.platform ? { platform: r.platform } : {}),
+      ...(r?.cloud ? { cloud: r.cloud } : {}),
+      ...(r?.framework ? { framework: r.framework } : {}),
+    };
+    const first = s.tasks?.length
+      ? s.tasks.flatMap(partsOf).reduce((a, b) => (b.position < a.position ? b : a))
+      : undefined;
+    creates = first
+      ? partsOf(t).some((p) => p.id === first.id)
+      : partsOf(t).some((p) => p.position === 1);
+    if (creates) changes.push(`Build and deploy ${own}, a new service`);
+  }
   return {
     task: t.id,
     title: t.title,
     changes,
     context,
     ids: [...ids],
+    repo: s.repo,
+    ...(placedIn ? { placedIn } : {}),
+    ...(placedIn && creates ? { creates: [placedIn] } : {}),
     ...(targets.size ? { targets: [...targets] } : {}),
     files: [
       ...t.evidence,
