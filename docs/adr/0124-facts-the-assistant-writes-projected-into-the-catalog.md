@@ -885,6 +885,7 @@ The gateway batch's instructions go from about 7,401 characters (~1,850 tokens) 
   - Developer apps and API products defined somewhere other than files in the gateway repo (only in the Apigee console, or another repo) can't be read at all: those callers have to be declared.
   - A declaration taken out of the profile leaves its Interface until the gateway is written again (`atticus verify <gateway> --write`, or a scan).
   - The app shows a declared Interface's `ASSERTED` chip, as for any asserted record; it has no screen of its own for a route's callers.
+
 ## Addendum (A-mocks): a prototype's mocks and sign-on, read as a topic of their own (ADR 0133; no C1 to C6 fact-schema change)
 
 - **A topic, `mocks`.** `RULE_TOPICS` and `FILE_KINDS` gain `mocks`, with one rule of two parts. The rule is kept apart from the gateway's, on its own line.
