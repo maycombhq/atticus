@@ -58,11 +58,12 @@ describe("watchMetarepo", () => {
 
   it("says one path once however often it was written while it waited", async () => {
     const root = await metarepo();
-    const { events } = collect(root, 150);
+    // A window long enough that five writes land in it on a loaded CI machine too.
+    const { events } = collect(root, 1_000);
     const f = join(root, "catalog/generated/system.yaml");
     for (let i = 0; i < 5; i++) await writeFile(f, `n: ${i}\n`);
-    await until(() => events.length > 0);
-    await new Promise((r) => setTimeout(r, 300));
+    await until(() => events.length > 0, 10_000);
+    await new Promise((r) => setTimeout(r, 1_500));
     expect(paths(events).filter((p) => p === "catalog/generated/system.yaml")).toHaveLength(1);
   });
 

@@ -553,7 +553,10 @@ describe("base clones copied from your own clones (sync --from), with no network
       expect(git(base, "rev-parse", "--abbrev-ref", "HEAD")).toBe("main");
       expect(git(base, "remote", "get-url", "origin")).toBe(repos[0]!.url);
       expect(existsSync(join(base, "Mine.java"))).toBe(false);
-      expect(await readFile(join(base, "pom.xml"), "utf8")).toBe("<project/>\n");
+      // The server's content, not your edit (line endings as Git checks them out here).
+      expect((await readFile(join(base, "pom.xml"), "utf8")).replace(/\r\n/g, "\n")).toBe(
+        "<project/>\n",
+      );
       expect(git(baseClonePath(root, "forge-gateway"), "rev-parse", "--abbrev-ref", "HEAD")).toBe(
         "develop",
       );

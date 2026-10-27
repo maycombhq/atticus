@@ -119,7 +119,13 @@ test("the page loads again by itself once the server answers", async ({ page }) 
   await page.reload();
   await expect(page.getByText(/The Atticus server isn't answering/)).toBeVisible();
   await page.unroute("**/api/**");
-  await page.getByRole("button", { name: "Try again" }).first().click();
+  // The page retries by itself, so the button may go before a click lands: click it while it is
+  // there, and either way the page must come back.
+  await page
+    .getByRole("button", { name: "Try again" })
+    .first()
+    .click({ timeout: 2_000 })
+    .catch(() => undefined);
   await expect(page.getByText(/The Atticus server isn't answering/)).toHaveCount(0);
   await expect(page.getByText(/Couldn't load this/)).toHaveCount(0);
 });
