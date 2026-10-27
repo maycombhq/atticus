@@ -260,7 +260,11 @@ const steps = [
       </p>
       <p class="name">
         The name comes from Atticus Finch, the honest advocate in
-        <cite>To Kill a Mockingbird</cite>.
+        <cite>To Kill a Mockingbird</cite>. It also spells what Atticus covers:
+        <span class="acronym"
+          ><b>A</b>rchitecture, <b>T</b>racing, <b>T</b>esting, <b>I</b>ntegration, <b>C</b>atalog
+          &amp; <b>U</b>nified <b>S</b>pecs</span
+        >.
       </p>
     </section>
   </main>
@@ -764,5 +768,9 @@ code {
 }
 .source .name {
   color: var(--a-muted);
+}
+.acronym b {
+  color: var(--a-cite);
+  font-weight: 600;
 }
 </style>
