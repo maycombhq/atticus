@@ -1,6 +1,7 @@
 import { MOCK_FILE } from "@maycombhq/core";
 import { globToRegExp } from "@maycombhq/sdk";
 import type { FileSource } from "./source.js";
+import { API_SPEC } from "./not-product.js";
 import { isSourceFile } from "./verify.js";
 
 /**
@@ -180,7 +181,7 @@ const IAC =
   /\.(tf|tfvars|hcl|bicep)$|(^|\/)(serverless|template)[^/]*\.ya?ml$|(^|\/)(cdk|pulumi|terraform)\//;
 const DATA_FILE = /\.sql$|(^|\/)(migrations?|db|database|changelogs?|liquibase|flyway)\//i;
 const CONTRACT = /\.(proto|avsc|wsdl|xsd)$/i;
-const API_SCHEMA = /\.(graphql|gql)$|(^|\/)(openapi|swagger|asyncapi)[^/]*\.(ya?ml|json)$/i;
+const API_SCHEMA = /\.(graphql|gql)$/i;
 const STRUCTURED = /\.(ya?ml|json|xml|config|properties|toml|ini|conf)$/i;
 
 /**
@@ -199,7 +200,7 @@ export function fileKinds(path: string): FileKind[] {
   if (CONFIG.test(path)) add(["config"]);
   if (DATA_FILE.test(path)) add(["data"]);
   if (CONTRACT.test(path)) add(["protocols"]);
-  if (API_SCHEMA.test(path)) add(["routes", "protocols"]);
+  if (API_SCHEMA.test(path) || API_SPEC.test(path)) add(["routes", "protocols"]);
   const isCode = SERVER_CODE.test(path) || DEVICE_CODE.test(path) || SCRIPT_CODE.test(path);
   if (PAGE_CODE.test(path) || DEVICE_CODE.test(path)) add(CODE_KINDS);
   else if (SPA_FILE.test(path))

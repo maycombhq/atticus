@@ -77,6 +77,7 @@ describe("not product by default: big data files (ADR 0124 addendum A-big)", () 
       "src/Forge.Atlas/appsettings.Production.json",
       "api/openapi.json",
       "docs/api/swagger.json",
+      "oas/Forge_Ledger_1.0.json",
       "atlas-api/src/main/resources/db/changelog/master.xml",
       "atlas-api/src/main/resources/mapper/AccountMapper.xml",
     ])
@@ -231,6 +232,19 @@ describe("proposed exclusions: folders that hold data, docs or vendored code (A-
         { saysNotProduct: true },
       ).proposals.map((p) => p.path),
     ).toEqual(["src/main/resources/data/**"]);
+  });
+
+  it("never proposes an API spec folder, however big (a gateway's oas/)", () => {
+    const files: FileTokens[] = [
+      { path: "apiproxy/proxies/default.xml", tokens: 9_000 },
+      { path: "oas/Forge_Ledger_1.0 20260529-LED.yaml", tokens: 206_000 },
+    ];
+    expect(
+      proposeExclusions(
+        files,
+        files.map((f) => f.path),
+      ).proposals,
+    ).toEqual([]);
   });
 
   it("gives a ready exclude: block for org-pack/scan/<repo>.yaml, every entry citing a file", () => {

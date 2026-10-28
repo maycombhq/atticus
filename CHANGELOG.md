@@ -2,6 +2,12 @@
 
 All notable changes to Atticus. Versions follow [Semantic Versioning](https://semver.org); contracts C1 to C6 change only with an ADR, a schema version and a migration (`atticus upgrade`).
 
+## Unreleased
+
+### Fixed: an API spec in an `oas/` folder is read, not proposed as data
+
+- An OpenAPI or Swagger spec was known only by a file name starting with `openapi`, `swagger` or `asyncapi`. One in a folder named for it (`oas/`, `openapi/`, `swagger/`, `api-specs/`), named `*.oas.yaml`, or with the word elsewhere in its name was taken for data: `atticus map --estimate` proposed excluding it as "data, not code", and a reader would leave it unread. As an Apigee proxy's repo keeps its spec, it is now read like any API spec (split into line ranges when it is too big for one prompt), whatever its size.
+
 ## 2.0.0-beta.6 (2026-10-28)
 
 ### Fixed: a flow whose call joined a long-named interface is rendered

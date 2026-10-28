@@ -197,6 +197,15 @@ describe("fileKinds: which topic rules of the protocol a file's batch needs (ADR
     expect(fileKinds("proto/ledger.proto")).toEqual(["protocols"]);
     expect(fileKinds("schema/ledger.graphql")).toEqual(["routes", "protocols"]);
     expect(fileKinds("api/openapi.yaml")).toEqual(["routes", "protocols"]);
+    // An API spec told by its folder or a name that only contains the word (a gateway's oas/).
+    for (const spec of [
+      "oas/Forge_Ledger_1.0 20260529-LED.yaml",
+      "api-specs/ledger.yaml",
+      "specs/ledger.oas.yaml",
+      "src/main/resources/ledger-openapi.yaml",
+      "contracts/swagger/ledger.json",
+    ])
+      expect(fileKinds(spec), spec).toEqual(["routes", "protocols"]);
     expect(fileKinds("ops/kong.yaml")).toEqual(["routes", "data", "deploy", "config", "protocols"]);
     // Every kind but the gateway's and the mocks': their files are told by their paths
     // (A-gateway, ADR 0133).

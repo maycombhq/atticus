@@ -22,6 +22,14 @@ export function isLocaleBundle(path: string): boolean {
 export const DATA_FILE_LINES = 2_000;
 export const DATA_FILE_CHARS = 200_000;
 
+/**
+ * An API spec (OpenAPI, Swagger, AsyncAPI): a name with the word in it, a `.oas.yaml`, or any
+ * YAML or JSON in a folder named for one (`oas/`, `openapi/`, `swagger/`, `api-specs/`), as an
+ * API gateway's repo keeps its proxy's spec. Code whatever its size.
+ */
+export const API_SPEC =
+  /(^|\/)[^/]*(openapi|swagger|asyncapi|api-docs)[^/]*\.(ya?ml|json|xml)$|\.oas\.(ya?ml|json)$|(^|\/)(oas|openapi|swagger|asyncapi|api-?specs?)\/(.+\/)?[^/]+\.(ya?ml|json)$/i;
+
 const DATA_EXT = /\.(json|xml)$/i;
 /** Build, config, API and migration files, and MyBatis mappers: code whatever their size. */
 const KEEP_BIG =
@@ -29,7 +37,7 @@ const KEEP_BIG =
 
 /** Whether a file is a big data file, from its lines (as read, without line breaks). */
 export function isDataFile(path: string, lines: readonly string[]): boolean {
-  if (!DATA_EXT.test(path) || KEEP_BIG.test(path)) return false;
+  if (!DATA_EXT.test(path) || KEEP_BIG.test(path) || API_SPEC.test(path)) return false;
   // a split that kept the last line break ends in "", which isn't a line
   if (lines.length - (lines[lines.length - 1] === "" ? 1 : 0) > DATA_FILE_LINES) return true;
   let chars = 0;
