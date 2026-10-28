@@ -2,7 +2,7 @@
 
 All notable changes to Atticus. Versions follow [Semantic Versioning](https://semver.org); contracts C1 to C6 change only with an ADR, a schema version and a migration (`atticus upgrade`).
 
-## Unreleased
+## 2.0.0-beta.6 (2026-10-28)
 
 ### Fixed: a flow whose call joined a long-named interface is rendered
 

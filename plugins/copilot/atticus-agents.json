@@ -1,6 +1,6 @@
 {
   "name": "atticus-copilot-agents",
-  "version": "2.0.0-beta.5",
+  "version": "2.0.0-beta.6",
   "description": "Atticus's AI steps as GitHub Copilot custom agents and instructions, for agent mode.",
   "license": "Apache-2.0",
   "agents": [

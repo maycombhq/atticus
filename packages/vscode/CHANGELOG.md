@@ -2,6 +2,10 @@
 
 The Atticus extension for VS Code. The command line's own changes are in the repository's [CHANGELOG](https://github.com/maycombhq/atticus/blob/main/CHANGELOG.md).
 
+## 0.7.4 (pre-release, with Atticus 2.0.0-beta.6)
+
+- **Ships with Atticus 2.0.0-beta.6.** No change to the extension itself; `atticus verify --write` no longer stops on a long schema id after a join, `frameworks learn` says plainly when it can't tell a framework's package, and `/atticus-map` tells the reader a flow fact needs its own `cite`.
+
 ## 0.7.3 (pre-release, with Atticus 2.0.0-beta.5)
 
 - **Ships with Atticus 2.0.0-beta.5.** No change to the extension itself; `/atticus-map` now reads each repo with the frameworks your organisation taught Atticus, `atticus verify --all` checks every repo read so far, and `repo add` on a clone's folder records its URL and branch.

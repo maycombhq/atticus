@@ -1,6 +1,6 @@
 # Atticus for GitHub Copilot's agent mode
 
-Atticus's AI steps, run by Copilot's agent mode (ADR 0121 addendum of 2026-10-26). Version 2.0.0-beta.5.
+Atticus's AI steps, run by Copilot's agent mode (ADR 0121 addendum of 2026-10-26). Version 2.0.0-beta.6.
 
 `@atticus` in the chat answers; agent mode edits files and runs commands, which is what Atticus's
 steps want: the agent writes the facts file or the stage answer where Atticus expects it, runs the

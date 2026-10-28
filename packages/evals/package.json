@@ -1,6 +1,6 @@
 {
   "name": "@maycombhq/evals",
-  "version": "2.0.0-beta.5",
+  "version": "2.0.0-beta.6",
   "private": true,
   "description": "The AI eval harness: datasets of graded cases per agent, graders bounded by evidence, mock, replay and live runners, the 4-of-5 live bar, regression comparison and the AI-quality summary.",
   "license": "Apache-2.0",
