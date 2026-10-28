@@ -147,4 +147,39 @@ describe("the read ledger of a repo read in parts (A-ledger)", () => {
     expect(o.out.join("\n")).not.toContain("Read plan:");
     expect(await readPlanProgress(root, REPO)).toBeUndefined();
   });
+
+  it("reads a file too big for a session in line ranges, each done by the lines its facts cite", async () => {
+    const root = mkdtempSync(join(tmpdir(), "atticus-read-ranges-"));
+    cpSync(join(fixtures, "repo"), root, { recursive: true });
+    mkdirSync(join(root, ".atticus", "org-pack"), { recursive: true });
+    const spec = "oas/Forge_Ledger_1.0.yaml";
+    write(
+      root,
+      spec,
+      `openapi: 3.0.1\npaths:\n${rows(24_000, (i) => `  /v1/ledger/entries/${i}/lines/{lineId}/postings/{postingId}: { get: { operationId: getPosting${i} } }`)}`,
+    );
+    const o = io();
+    expect(await mapCommand(root, REPO, { estimate: true, commit: COMMIT }, o.io)).toBe(0);
+    const p = (await readPlanProgress(root, REPO))!;
+    const ranges = p.parts.flatMap((x) => x.paths).filter((g) => g.startsWith(`${spec}#L`));
+    expect(ranges.length).toBeGreaterThan(1);
+    expect(o.out.join("\n")).toContain(`${spec}#L1-L`);
+    const [first, second] = ranges as [string, string];
+    const from = (g: string) => Number(/#L(\d+)-/.exec(g)![1]);
+    // A kept fact citing a line in the first range accounts for it, and for no other.
+    const facts = join(root, ".atticus", "facts", `${REPO}.jsonl`);
+    writeFileSync(
+      facts,
+      `${JSON.stringify({ kind: "config", id: "k-spec", repo: REPO, commit: COMMIT, settingKind: "config", key: "openapi", value: "3.0.1", cite: { file: spec, line: 1, value: "3.0.1" } })}\n`,
+    );
+    const once = (await readPlanProgress(root, REPO))!;
+    const covered = once.parts.flatMap((x) => x.covered);
+    expect(covered).toContain(first);
+    expect(covered).not.toContain(second);
+    // A range read with nothing in it is reviewed by its own path.
+    reviewPart(root, [second]);
+    const twice = (await readPlanProgress(root, REPO))!;
+    expect(twice.parts.flatMap((x) => x.covered)).toContain(second);
+    expect(from(second)).toBeGreaterThan(1);
+  });
 });

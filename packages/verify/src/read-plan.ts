@@ -13,6 +13,8 @@ import { vendoredProjects, type VendoredProject } from "./vendored.js";
 export interface FileTokens {
   path: string;
   tokens: number;
+  /** Its lines, when known: a file bigger than a session is then read in line ranges. */
+  lines?: number;
 }
 
 /** One proposed `exclude:` entry of `org-pack/scan/<repo>.yaml` (ADR 0075), with its size. */
@@ -266,11 +268,34 @@ function unitsOf(dir: string, fs: readonly FileTokens[], room: number): Unit[] {
 export function planParts(files: readonly FileTokens[], room = SESSION_TOKENS): ReadPart[] {
   const total = sum(files);
   if (total <= room) return [];
-  const sorted = [...files].sort((a, b) => byPath(a.path, b.path));
+  // A file bigger than the room, whatever its size, is read in line ranges, each a unit that fits
+  // with room to spare (lines aren't all the same length); its first range counts the file.
+  const big = files.filter((f) => f.tokens > room && (f.lines ?? 0) > 1);
+  const rest = files.filter((f) => !big.includes(f));
+  const ranges: (Unit & { key: string })[] = [];
+  for (const f of big) {
+    const n = Math.min(f.lines!, Math.ceil(f.tokens / (0.8 * room)));
+    const each = Math.ceil(f.lines! / n);
+    for (let from = 1, i = 0; from <= f.lines!; from += each, i++) {
+      const to = Math.min(f.lines!, from + each - 1);
+      ranges.push({
+        glob: `${f.path}#L${from}-L${to}`,
+        files: i === 0 ? 1 : 0,
+        tokens: Math.ceil((f.tokens * (to - from + 1)) / f.lines!),
+        key: `${f.path}\u0000${String(from).padStart(12, "0")}`,
+      });
+    }
+  }
+  const sorted = [...rest].sort((a, b) => byPath(a.path, b.path));
+  const keyOf = (g: string) => g.replace(/\/?\*\*?$/, "");
+  const units = [
+    ...unitsOf("", sorted, room).map((u) => ({ ...u, key: keyOf(u.glob) })),
+    ...ranges,
+  ].sort((a, b) => byPath(a.key, b.key));
   const target = total / Math.ceil(total / room);
   const parts: ReadPart[] = [];
   let current: ReadPart | undefined;
-  for (const u of unitsOf("", sorted, room)) {
+  for (const u of units) {
     if (current && (current.tokens + u.tokens > room || current.tokens >= target)) {
       parts.push(current);
       current = undefined;

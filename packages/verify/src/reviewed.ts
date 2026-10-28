@@ -11,9 +11,19 @@
  * is simply read. This is the verifier's input, like the routed files: not a facts-file field.
  */
 
+/** A range of one file's lines in a read plan: `<file>#L<from>-L<to>`. */
+export const LINE_RANGE = /^(.+)#L(\d+)-L(\d+)$/;
+
+/** The file and lines a range path names, or undefined for a file or folder glob. */
+export function lineRangeOf(path: string): { file: string; from: number; to: number } | undefined {
+  const m = LINE_RANGE.exec(path);
+  return m ? { file: m[1]!, from: Number(m[2]), to: Number(m[3]) } : undefined;
+}
+
 /** One line of `<repo>.reviewed.jsonl`, with its line number when read from the file. */
 export interface ReviewedEntry {
-  /** A repo-relative file, or a glob (`*` within a folder, `**` across folders). */
+  /** A repo-relative file, a glob (`*` within a folder, `**` across folders), or a range of a
+   * file read in line ranges (`<file>#L<from>-L<to>`). */
   path: string;
   /** Why the file holds nothing to record, in the reader's words. */
   why: string;

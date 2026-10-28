@@ -10,6 +10,7 @@ import {
   writeFileAtomic,
   type Fact,
 } from "@maycombhq/core";
+import { lineRangeOf } from "@maycombhq/verify";
 import { readReviewed } from "./facts-files.js";
 
 /**
@@ -55,6 +56,8 @@ interface Unit {
   glob: string;
   dir: string;
   deep: boolean;
+  /** A range of one file too big for a session: done by a cited line in it (or its own path). */
+  range?: { file: string; from: number; to: number };
 }
 
 /**
@@ -63,6 +66,8 @@ interface Unit {
  * other path is read as the one file it names.
  */
 function unitOf(glob: string): Unit {
+  const range = lineRangeOf(glob);
+  if (range) return { glob, dir: range.file.replace(/\/?[^/]*$/, ""), deep: false, range };
   if (glob === "**") return { glob, dir: "", deep: true };
   if (glob.endsWith("/**")) return { glob, dir: glob.slice(0, -3), deep: true };
   if (glob === "*") return { glob, dir: "", deep: false };
@@ -144,19 +149,53 @@ export async function loadReadPlan(root: string, repo: string): Promise<ReadPlan
   }
 }
 
-/** The files the facts folder accounts for: cited by a kept fact, or reviewed as holding no fact. */
-async function coveredPaths(root: string, repo: string): Promise<string[]> {
+/** Every `{file, line}` a fact cites: its cite and parts, and a flow's steps and errors. */
+function citedLines(x: unknown, out: { file: string; line: number }[] = []) {
+  if (Array.isArray(x)) for (const v of x) citedLines(v, out);
+  else if (x && typeof x === "object") {
+    const o = x as Record<string, unknown>;
+    if (typeof o.file === "string" && typeof o.line === "number")
+      out.push({ file: o.file, line: o.line });
+    for (const v of Object.values(o)) if (v && typeof v === "object") citedLines(v, out);
+  }
+  return out;
+}
+
+/**
+ * What the facts folder accounts for: the files a kept fact cites or that are reviewed as holding
+ * no fact, the lines cited (for a file read in ranges), and the ranges reviewed by their own path.
+ */
+async function coveredOf(
+  root: string,
+  repo: string,
+): Promise<{
+  paths: string[];
+  reviewed: Set<string>;
+  lines: { file: string; line: number }[];
+  ranges: Set<string>;
+}> {
   const out = new Set<string>();
+  const reviewed = new Set<string>();
+  const lines: { file: string; line: number }[] = [];
+  const ranges = new Set<string>();
   const text = await readFile(join(factsDirOf(root), `${repo}.jsonl`), "utf8").catch(
     () => undefined,
   );
   if (text !== undefined) {
     const parsed = parseFacts(text);
     const facts: readonly Fact[] = parsed.ok ? parsed.facts : [];
-    for (const f of facts) for (const p of citedFiles(f)) out.add(p);
+    for (const f of facts) {
+      for (const p of citedFiles(f)) out.add(p);
+      citedLines(f, lines);
+    }
   }
-  for (const e of (await readReviewed(root, repo)).entries) out.add(e.path);
-  return [...out];
+  for (const e of (await readReviewed(root, repo)).entries)
+    if (lineRangeOf(e.path)) ranges.add(e.path);
+    else {
+      out.add(e.path);
+      reviewed.add(e.path);
+    }
+  return { paths: [...out], reviewed, lines, ranges };
 }
 
 /**
@@ -170,13 +209,25 @@ export async function readPlanProgress(
 ): Promise<ReadPlanProgress | undefined> {
   const plan = await loadReadPlan(root, repo);
   if (!plan) return undefined;
-  const covered = (await coveredPaths(root, repo)).map(folderOf);
+  const of = await coveredOf(root, repo);
+  const covered = of.paths.map(folderOf);
   const parts: PartState[] = plan.parts.map((p) => {
     const units = p.paths.map(unitOf);
-    const hit = (u: Unit) =>
-      covered.some((c) =>
+    const hit = (u: Unit) => {
+      if (u.range) {
+        const r = u.range;
+        return (
+          of.ranges.has(u.glob) ||
+          of.lines.some((l) => l.file === r.file && l.line >= r.from && l.line <= r.to) ||
+          // The whole file reviewed, or a folder glob reviewed over it.
+          of.reviewed.has(r.file) ||
+          [...of.reviewed].some((c) => folderOf(c).deep && under(u.dir, folderOf(c).dir))
+        );
+      }
+      return covered.some((c) =>
         u.deep ? under(c.dir, u.dir) : c.dir === u.dir || (c.deep && under(u.dir, c.dir)),
       );
+    };
     const yes = units.filter(hit).map((u) => u.glob);
     const no = units.filter((u) => !hit(u)).map((u) => u.glob);
     return {

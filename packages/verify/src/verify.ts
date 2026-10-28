@@ -25,7 +25,7 @@ import { derivedHolds, derivedNamesAt, type DeriveEnv, type DerivedName } from "
 import { frameworkGaps, frameworkNameProblem, type FrameworkGap } from "./frameworks.js";
 import { isDataFile, isLocaleBundle } from "./not-product.js";
 import { pageRouteMatches } from "./pages.js";
-import { isGlob, type ReviewedEntry } from "./reviewed.js";
+import { isGlob, lineRangeOf, type ReviewedEntry } from "./reviewed.js";
 import { insideRepo, type FileSource } from "./source.js";
 
 /**
@@ -854,8 +854,23 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
       refuse("is a secret's file, which is never read into a map");
       continue;
     }
-    const re = isGlob(r.path) ? globToRegExp(r.path) : undefined;
-    const matched = re ? allFiles.filter((p) => re.test(p)) : allFiles.filter((p) => p === r.path);
+    // A range of a file read in line ranges (A-ledger): the file, and lines it has.
+    const range = lineRangeOf(r.path);
+    if (range) {
+      const text = allFiles.includes(range.file) ? o.source.read(range.file) : undefined;
+      if (text === undefined) {
+        refuse("is not in the repo at this commit; name a file you read");
+        continue;
+      }
+      const last = text.split(/\r?\n/).length;
+      if (range.from < 1 || range.from > range.to || range.to > last) {
+        refuse(`is past the file's last line (${last}) or out of order; name the lines you read`);
+        continue;
+      }
+    }
+    const target = range ? range.file : r.path;
+    const re = !range && isGlob(r.path) ? globToRegExp(r.path) : undefined;
+    const matched = re ? allFiles.filter((p) => re.test(p)) : allFiles.filter((p) => p === target);
     if (!matched.length) {
       refuse(
         re

@@ -138,6 +138,19 @@ describe("files read with nothing to record (A-read, problem 2)", () => {
     expect(r.reviewedProblems).toEqual([]);
   });
 
+  it("takes a range of a file read in line ranges, and refuses one past the file's end", async () => {
+    const r = await run(facts(), [
+      ...reviewedLines(),
+      { line: 9, path: `${J}/InvalidAmount.java#L1-L3`, why: "these lines hold no fact" },
+      { line: 10, path: `${J}/InvalidAmount.java#L1-L99999`, why: "these too" },
+    ]);
+    expect(r.reviewedProblems.map((p) => [p.line, p.path])).toEqual([
+      [10, `${J}/InvalidAmount.java#L1-L99999`],
+    ]);
+    expect(r.reviewedProblems[0]!.message).toMatch(/past the file's last line/);
+    expect(r.reviewed.some((x) => x.path === `${J}/InvalidAmount.java#L1-L3`)).toBe(true);
+  });
+
   it("refuses a path that isn't in the repo at this commit, a glob that matches nothing, and a path outside the repo or a secret's", async () => {
     const r = await run(facts(), [
       { line: 1, path: `${J}/Gone.java`, why: "read it" },

@@ -451,6 +451,41 @@ describe("reading a big repo in parts (A-big)", () => {
     ]);
   });
 
+  it("reads a file bigger than the room in line ranges, whatever its size", () => {
+    for (const [tokens, lines] of [
+      [250_000, 30_000],
+      [2_000_000, 240_000],
+    ] as const) {
+      const parts = planParts(
+        [
+          { path: "apiproxy/proxies/default.xml", tokens: 9_000 },
+          { path: "oas/Forge Ledger 1.0.yaml", tokens, lines },
+        ],
+        100_000,
+      );
+      for (const p of parts) expect(p.tokens).toBeLessThanOrEqual(100_000);
+      const all = parts.flatMap((p) => p.paths);
+      expect(all[0]).toBe("apiproxy/**");
+      const ranges = all.filter((g) => g.startsWith("oas/"));
+      expect(ranges.length).toBeGreaterThan(1);
+      // Every line once, in order: L1-La, L(a+1)-Lb, ... to the last line.
+      let next = 1;
+      for (const r of ranges) {
+        const m = /^oas\/Forge Ledger 1\.0\.yaml#L(\d+)-L(\d+)$/.exec(r)!;
+        expect(m, r).not.toBeNull();
+        expect(Number(m[1])).toBe(next);
+        next = Number(m[2]) + 1;
+      }
+      expect(next).toBe(lines + 1);
+      expect(parts.reduce((n, p) => n + p.files, 0)).toBe(2);
+    }
+  });
+
+  it("keeps a big file whole when its lines aren't known", () => {
+    const parts = planParts([{ path: "a/big.yaml", tokens: 300_000 }], 100_000);
+    expect(parts.map((p) => p.paths)).toEqual([["a/**"]]);
+  });
+
   it("is the same plan for the same files, in any order", () => {
     const files = big();
     expect(planParts([...files].reverse(), 100_000)).toEqual(planParts(files, 100_000));

@@ -2,6 +2,12 @@
 
 All notable changes to Atticus. Versions follow [Semantic Versioning](https://semver.org); contracts C1 to C6 change only with an ADR, a schema version and a migration (`atticus upgrade`).
 
+## Unreleased
+
+### No file is too big to read: the read plan splits it into line ranges
+
+- A file bigger than one session (a 200K-token OpenAPI spec, a generated schema) was a part of its own that no session could hold, and an agent-mode reader gave up on it. `atticus map --estimate` now plans such a file, whatever its size, in line ranges (`oas/spec.yaml#L1-L4000`, `#L4001-L8000`, ...), each fitting a session. A range is done when a kept fact cites a line in it, or when `<repo>.reviewed.jsonl` names the range itself (verify checks the file has those lines). `/atticus-map` tells the reader to open only that range's lines. A part's progress shows in `--estimate` and `atticus next` as before.
+
 ## 2.0.0-beta.7 (2026-10-28)
 
 ### Fixed: an API spec in an `oas/` folder is read, not proposed as data

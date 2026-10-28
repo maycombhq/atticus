@@ -1186,7 +1186,14 @@ async function estimate(
   const left = proposed.proposals.map((p) => p.path.slice(0, -2));
   const session = Math.max(SESSION_TOKENS, Math.floor(0.75 * (given ?? 0)));
   // A-big2: the parts are of the product code left with every proposal out.
-  const product = files.filter((f) => !left.some((d) => f.path.startsWith(d)));
+  const product = files
+    .filter((f) => !left.some((d) => f.path.startsWith(d)))
+    // A file bigger than a session is read in line ranges, so the plan needs its lines.
+    .map((f) => {
+      if (f.tokens <= session) return f;
+      const text = c.source.read(f.path);
+      return text === undefined ? f : { ...f, lines: text.split(/\r?\n/).length };
+    });
   const parts = planParts(product, session);
   // A-ledger: the plan is kept beside the facts, so the parts are the same in every session and
   // which part is next is read back from the facts. An unchanged plan is left as it was planned.
