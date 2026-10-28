@@ -2,6 +2,10 @@
 
 The Atticus extension for VS Code. The command line's own changes are in the repository's [CHANGELOG](https://github.com/maycombhq/atticus/blob/main/CHANGELOG.md).
 
+## 0.7.6 (pre-release, with Atticus 2.0.0-beta.8)
+
+- **Ships with Atticus 2.0.0-beta.8.** No change to the extension itself; no file is too big to read any more: the read plan splits one bigger than a session into line ranges, each read in a session of its own.
+
 ## 0.7.5 (pre-release, with Atticus 2.0.0-beta.7)
 
 - **Ships with Atticus 2.0.0-beta.7.** No change to the extension itself; an API spec in an `oas/`, `openapi/`, `swagger/` or `api-specs/` folder is now read as one, not proposed for exclusion as data.
