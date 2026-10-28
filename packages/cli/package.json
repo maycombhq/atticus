@@ -1,6 +1,6 @@
 {
   "name": "@maycombhq/cli",
-  "version": "2.0.0-beta.4",
+  "version": "2.0.0-beta.5",
   "private": true,
   "description": "The atticus command line.",
   "license": "Apache-2.0",

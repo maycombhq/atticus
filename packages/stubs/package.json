@@ -1,6 +1,6 @@
 {
   "name": "@maycombhq/stubs",
-  "version": "2.0.0-beta.4",
+  "version": "2.0.0-beta.5",
   "private": true,
   "description": "Deterministic stub servers from OpenAPI and Swagger specs, or from the endpoints in the catalog.",
   "license": "Apache-2.0",

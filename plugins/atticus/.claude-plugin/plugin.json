@@ -1,6 +1,6 @@
 {
   "name": "atticus",
-  "version": "2.0.0-beta.4",
+  "version": "2.0.0-beta.5",
   "description": "Atticus in Claude Code: every step as a slash command, the next step when a session starts, read-only tools over the catalog, knowledge, changes and needs, and a history of the prompts and replies in a metarepo, kept on your machine.",
   "author": {
     "name": "Maycomb"

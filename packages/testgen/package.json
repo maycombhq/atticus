@@ -1,6 +1,6 @@
 {
   "name": "@maycombhq/testgen",
-  "version": "2.0.0-beta.4",
+  "version": "2.0.0-beta.5",
   "private": true,
   "description": "Test generation from a story, the change and the catalog (Gherkin, a JSON test-case format and framework plugins), and traceability from requirement to feature.",
   "license": "Apache-2.0",

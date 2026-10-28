@@ -1,7 +1,7 @@
 {
   "name": "atticus",
   "displayName": "Atticus",
-  "version": "0.7.2",
+  "version": "0.7.3",
   "description": "Run Atticus's AI steps with Copilot's own model, in VS Code. Atticus's command line does all the checking.",
   "license": "Apache-2.0",
   "publisher": "maycombhq",
