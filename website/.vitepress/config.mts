@@ -55,6 +55,7 @@ export default defineConfig({
         text: "Start",
         items: [
           { text: "What Atticus is", link: "/concepts" },
+          { text: "OpenSpec and Atticus", link: "/openspec-and-atticus" },
           { text: "Overview and measurements", link: "/overview" },
           { text: "All guides", link: "/guide/" },
         ],

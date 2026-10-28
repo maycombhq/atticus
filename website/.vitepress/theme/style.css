@@ -170,3 +170,123 @@ body {
   font-weight: 600;
   line-height: 1.5;
 }
+
+/* The architecture diagrams (openspec-and-atticus.md): inline SVG drawn from the site's tokens,
+   on a page wide enough to show them whole. */
+.arch-page .VPDoc .container,
+.arch-page .VPDoc .content-container {
+  max-width: 1180px !important;
+}
+.arch {
+  margin: 16px 0 8px;
+  background: var(--a-panel);
+  border: 1px solid var(--a-line);
+  border-radius: 12px;
+  overflow-x: auto;
+}
+.arch svg {
+  display: block;
+  width: 100%;
+  min-width: 860px;
+  height: auto;
+}
+.arch text {
+  font-family: var(--vp-font-family-base);
+  fill: var(--a-text);
+}
+.arch .bt {
+  font-weight: 600;
+  font-size: 15px;
+}
+.arch .bl {
+  font-size: 13.5px;
+  fill: var(--a-muted);
+}
+.arch .mono {
+  font-family: var(--vp-font-family-mono);
+  font-size: 12.5px;
+}
+.arch .lab {
+  font-size: 12.5px;
+  fill: var(--a-muted);
+  font-style: italic;
+}
+.arch .zlab {
+  font-family: var(--vp-font-family-mono);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  fill: var(--a-cite);
+}
+.arch rect {
+  stroke-width: 1.2;
+}
+.arch .box,
+.arch .src {
+  fill: var(--a-panel);
+  stroke: var(--a-line);
+}
+.arch .stage,
+.arch .out {
+  fill: var(--a-panel);
+  stroke: var(--a-cite);
+}
+.arch .actor {
+  fill: color-mix(in srgb, var(--a-person) 9%, transparent);
+  stroke: var(--a-person);
+}
+.arch .zone {
+  fill: none;
+  stroke: var(--a-line);
+  stroke-dasharray: 6 5;
+  stroke-width: 1.4;
+}
+.arch .pill,
+.arch .file,
+.arch .file2 {
+  fill: var(--a-sunk);
+  stroke: var(--a-line);
+}
+.arch .file2 {
+  stroke-dasharray: 4 3;
+}
+.arch .good {
+  fill: var(--a-cite-wash);
+  stroke: none;
+}
+.arch .gap {
+  fill: color-mix(in srgb, var(--a-refused) 7%, transparent);
+  stroke: var(--a-refused);
+  stroke-dasharray: 5 4;
+}
+.arch .no {
+  fill: color-mix(in srgb, var(--a-refused) 7%, transparent);
+  stroke: var(--a-refused);
+}
+.arch .key {
+  fill: var(--a-cite-wash);
+  stroke: var(--a-cite);
+  stroke-width: 2;
+}
+.arch .key2 {
+  fill: var(--a-cite-wash);
+  stroke: var(--a-cite);
+}
+.arch .gate {
+  fill: var(--a-cite-wash);
+  stroke: var(--a-cite);
+  stroke-width: 1.6;
+}
+.arch .arr {
+  fill: none;
+  stroke: var(--a-muted);
+  stroke-width: 1.5;
+}
+.arch .loop {
+  fill: none;
+  stroke: var(--a-muted);
+  stroke-width: 1.2;
+  stroke-dasharray: 3 4;
+}
+.arch .ahead {
+  fill: var(--a-muted);
+}

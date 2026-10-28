@@ -111,7 +111,7 @@ Every tier writes the same facts file, each fact citing its file and line, and `
 
 Then, in the assistant: `/atticus-map <repo>`. It reads the repo, runs `atticus verify <repo>` after each pass and fixes what is rejected until everything passes, then shows you the questions it raised. Finish with `atticus verify <repo> --write`: the facts go into the catalog and the map is rendered under `map/<repo>/` for review in a pull request.
 
-For a big repo, run `atticus map <repo> --estimate` first: it proposes folders of data, docs or vendored code to leave out (an `exclude:` block to add to `org-pack/scan/<repo>.yaml` in a pull request), and, past what one session reads, the parts to read it in, one per session or sub-agent.
+For a big repo, run `atticus map <repo> --estimate` first: it proposes folders of data, docs or vendored code to leave out (an `exclude:` block to add to `org-pack/scan/<repo>.yaml` in a pull request; it never proposes build, config or migration files, or an API spec such as an OpenAPI file or an `oas/` folder, whatever their size), and, past what one session reads, the parts to read it in, one per session or sub-agent.
 
 You don't keep that list of parts yourself. `--estimate` writes the plan to `facts/<repo>.read-plan.yaml` and, run again, says which parts are read and which comes next:
 
