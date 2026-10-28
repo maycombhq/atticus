@@ -148,9 +148,10 @@ describe("lean batch prompts: the core and the topic rules a batch needs (ADR 01
     // Apigee rule's fifth part, the consumers a route names (A-callers).
     // Re-pinned again when the mocks' rule (a prototype's mocks and sign-on, ADR 0133) landed
     // beside the consumers a route names (A-callers), and when the framework fact said an Apigee
-    // proxy or shared flow is not a framework (a gateway read offered them as house frameworks).
+    // proxy or shared flow is not a framework (a gateway read offered them as house frameworks),
+    // and when authCite was said to be {file, line, value} only (readers gave it a quote).
     expect(createHash("sha256").update(FACT_RULES).digest("hex")).toBe(
-      "4f4656e5cfb3d9728a90309cddd6515e1fb8945727acc2e87b0a9ed4f5184aa2",
+      "30aeb8006cc017be4909a5c354051d84dd46475137c48f384f639938e7e999f3",
     );
     expect(FACT_RULES).toBe(factRulesFor());
     expect(mapCommand().body).toContain(FACT_RULES);

@@ -149,7 +149,7 @@ export const FACT_RULE_PARTS: readonly (readonly RulePart[])[] = [
     },
     {
       when: ["routes", "protocols", "gateway"],
-      text: "An entry's `auth` goes with `authCite`: the line that sets it (an annotation, a middleware, a policy, a security setting) and what it writes there. An `auth` without one is left out.",
+      text: "An entry's `auth` goes with `authCite`: the line that sets it (an annotation, a middleware, a policy, a security setting) and what it writes there, as `{file, line, value}` only (no `quote`, unlike `cite`). An `auth` without one is left out.",
     },
     {
       when: ["frontend"],

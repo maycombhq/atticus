@@ -2,6 +2,12 @@
 
 All notable changes to Atticus. Versions follow [Semantic Versioning](https://semver.org); contracts C1 to C6 change only with an ADR, a schema version and a migration (`atticus upgrade`).
 
+## Unreleased
+
+### `/atticus-map` says `authCite` takes no quote
+
+- Readers (Claude Sonnet among them) gave an entry's `authCite` a `quote`, as `cite` has, and the line failed the facts schema and went back to be rewritten. The reading rules now say `authCite` is `{file, line, value}` only.
+
 ## 2.0.0-beta.4 (2026-10-28)
 
 ### Fixed: `frameworks learn` leaves out Java's `serialVersionUID`
