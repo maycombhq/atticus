@@ -1,6 +1,6 @@
 {
   "name": "@maycombhq/executors",
-  "version": "2.0.0-beta.3",
+  "version": "2.0.0-beta.4",
   "private": true,
   "description": "Pluggable step executors (ADR 0033): the run protocol over local http, command and MCP, approvals per write run, fallbacks to the manual step, and a reference executor.",
   "license": "Apache-2.0",

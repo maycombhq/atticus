@@ -2,6 +2,10 @@
 
 The Atticus extension for VS Code. The command line's own changes are in the repository's [CHANGELOG](https://github.com/maycombhq/atticus/blob/main/CHANGELOG.md).
 
+## 0.7.2 (pre-release, with Atticus 2.0.0-beta.4)
+
+- **Ships with Atticus 2.0.0-beta.4.** No change to the extension itself; the command line no longer offers an Apigee proxy or shared flow as a framework to learn, finds house starters versioned `${project.parent.version}`, and leaves Java's `serialVersionUID` out of a learned framework.
+
 ## 0.7.1 (pre-release, with Atticus 2.0.0-beta.3)
 
 - **Ships with Atticus 2.0.0-beta.3.** No change to the extension itself; the command line adds `atticus workspace sync --from <folder>`, which copies base clones from the clones already on the machine instead of cloning again.

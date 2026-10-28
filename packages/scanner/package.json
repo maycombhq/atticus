@@ -1,6 +1,6 @@
 {
   "name": "@maycombhq/scanner",
-  "version": "2.0.0-beta.3",
+  "version": "2.0.0-beta.4",
   "private": true,
   "description": "Runs every extractor and dialect over every repo, merges the results into one catalog, and writes and diffs catalog files.",
   "license": "Apache-2.0",

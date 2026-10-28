@@ -1,6 +1,6 @@
 {
   "name": "@maycombhq/journeys",
-  "version": "2.0.0-beta.3",
+  "version": "2.0.0-beta.4",
   "private": true,
   "description": "The thirteen role journeys through the app, as browser tests, with an accessibility check (WCAG 2.1 AA) on every screen they visit.",
   "license": "Apache-2.0",

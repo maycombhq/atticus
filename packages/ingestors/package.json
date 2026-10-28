@@ -1,6 +1,6 @@
 {
   "name": "@maycombhq/ingestors",
-  "version": "2.0.0-beta.3",
+  "version": "2.0.0-beta.4",
   "private": true,
   "description": "Reads Lucidchart, Visio and Mermaid diagrams, images, documents and Figma links into source documents, diagrams and text, for intake and reconcile.",
   "license": "Apache-2.0",
