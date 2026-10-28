@@ -383,7 +383,7 @@ async function localClones(dir: string, g: GitRunner): Promise<Map<string, strin
         () => "",
       );
       if (url && !found.has(`url:${remoteKey(url)}`)) found.set(`url:${remoteKey(url)}`, d);
-      if (!found.has(`name:${basename(d)}`)) found.set(`name:${basename(d)}`, d);
+      if (!found.has(`name:${nameKey(basename(d))}`)) found.set(`name:${nameKey(basename(d))}`, d);
       return;
     }
     if (depth === 0) return;
@@ -395,4 +395,10 @@ async function localClones(dir: string, g: GitRunner): Promise<Map<string, strin
 }
 
 const yourClone = (local: Map<string, string>, repo: ManifestRepo): string | undefined =>
-  local.get(`url:${remoteKey(repo.url)}`) ?? local.get(`name:${repo.id}`);
+  local.get(`url:${remoteKey(repo.url)}`) ?? local.get(`name:${nameKey(repo.id)}`);
+
+/**
+ * A folder name or repo id as a key: lower case, anything but letters, digits, `.`, `_` and `-`
+ * as `-`, the way an id is made from a folder (`Qolo_Onboarding_1-0` is `qolo_onboarding_1-0`).
+ */
+const nameKey = (s: string): string => s.toLowerCase().replace(/[^a-z0-9._-]+/g, "-");

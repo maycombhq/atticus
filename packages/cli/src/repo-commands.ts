@@ -1,5 +1,5 @@
 import { readFile, stat } from "node:fs/promises";
-import { basename, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 import {
@@ -141,6 +141,32 @@ async function typeOf(
     : { type: d.type, signals: d.signals, confidence: d.confidence };
 }
 
+/**
+ * A clone on this machine given as the URL: its folder, the server URL its origin names and the
+ * branch it is on, asked of Git (local, no network). The manifest records the server URL and
+ * that branch, as repos discover does, so the base clone is the repo's and later syncs fetch
+ * from the server; a folder path in the manifest would be cloned from that folder instead.
+ */
+async function cloneAt(
+  url: string,
+): Promise<{ dir: string; origin?: string; branch?: string } | undefined> {
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(url) || /^[^/\\]+@/.test(url)) return undefined;
+  const dir = resolve(url);
+  if (!(await stat(join(dir, ".git")).catch(() => undefined))) return undefined;
+  const { execFile } = await import("node:child_process");
+  const git = (...args: string[]) =>
+    new Promise<string>((done) =>
+      execFile("git", args, { cwd: dir }, (e, out) => done(e ? "" : String(out).trim())),
+    );
+  const origin = await git("config", "--get", "remote.origin.url");
+  const branch = await git("rev-parse", "--abbrev-ref", "HEAD");
+  return {
+    dir,
+    ...(origin ? { origin } : {}),
+    ...(branch && branch !== "HEAD" ? { branch } : {}),
+  };
+}
+
 async function whoFor(root: string, d: RepoDeps): Promise<string> {
   if (d.by) return d.by;
   try {
@@ -177,6 +203,7 @@ export async function repoAdd(
     );
     return 2;
   }
+  const clone = await cloneAt(url.trim());
   const id = o.id?.trim() || idFromUrl(url.trim());
   if (!RecordId.safeParse(id).success) {
     io.err(
@@ -212,7 +239,8 @@ export async function repoAdd(
   try {
     const file = await addManifestRepo(root, platform, {
       id,
-      url: url.trim(),
+      url: clone?.origin ?? url.trim(),
+      ...(clone?.branch ? { defaultBranch: clone.branch } : {}),
       type: o.type?.trim() || detected?.type || "unknown",
       owner: o.owner?.trim() || "unassigned",
       ...(o.system?.trim() ? { system: o.system.trim() } : {}),
@@ -233,7 +261,11 @@ export async function repoAdd(
       io.out(
         `${id} has no description yet${asked ? "" : " (--description, or atticus repo describe)"}: atticus repo describe ${id} --description "what it is". Until then its reading prompts, the join's questions and the views have only its id to go on.`,
       );
-    io.out(`Next: atticus workspace sync, then read it: /atticus-map ${id}.`);
+    io.out(
+      clone?.origin
+        ? `From your clone: ${clone.origin}, branch ${clone.branch ?? "main"}. Next: atticus workspace sync --from "${dirname(clone.dir)}" --repos ${id} (copied from it, no network), then read it: /atticus-map ${id}.`
+        : `Next: atticus workspace sync, then read it: /atticus-map ${id}.`,
+    );
     return 0;
   } catch (e) {
     if (e instanceof ManifestEditError) {

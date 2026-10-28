@@ -582,6 +582,26 @@ describe("base clones copied from your own clones (sync --from), with no network
   );
 
   it(
+    "finds your clone by folder name whatever its letter case",
+    async () => {
+      const clones = join(dir, "clones");
+      await mkdir(clones);
+      // No remote to match by: the folder name, in other case, is all there is.
+      git(clones, "clone", "-q", repos[0]!.url, "Forge-Ledger");
+      git(
+        join(clones, "Forge-Ledger"),
+        "remote",
+        "set-url",
+        "origin",
+        "https://elsewhere.example/x.git",
+      );
+      const r = await createWorkspace(root).sync([repos[0]!], { from: clones });
+      expect(r[0]!.from).toBe(join(clones, "Forge-Ledger"));
+    },
+    T,
+  );
+
+  it(
     "clones from the remote as before when your folder has no clone of a repo",
     async () => {
       const clones = join(dir, "clones");

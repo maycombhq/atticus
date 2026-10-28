@@ -116,6 +116,8 @@ export async function addManifestRepo(
     url: string;
     type: string;
     owner: string;
+    /** The branch to read, when known (a clone's current branch); the manifest's default is main. */
+    defaultBranch?: string;
     system?: string;
     component?: string;
     description?: RepoDescription;
@@ -149,6 +151,7 @@ export async function addManifestRepo(
     doc.createNode({
       id: entry.id,
       url: entry.url,
+      ...(entry.defaultBranch ? { defaultBranch: entry.defaultBranch } : {}),
       type: entry.type,
       owner: entry.owner,
       ...(entry.component ? { component: entry.component } : {}),

@@ -205,6 +205,36 @@ describe("atticus repo add", () => {
     expect((await manifestOf(root)).repos.find((r) => r.id === "forge-pay")!.type).toBe("unknown");
   });
 
+  it("given a clone's folder, records its server URL and the branch it is on, not the path", async () => {
+    const root = await metarepo();
+    const { execFileSync } = await import("node:child_process");
+    const git = (cwd: string, ...a: string[]) =>
+      execFileSync("git", ["-c", "user.name=T", "-c", "user.email=t@example.com", ...a], {
+        cwd,
+        stdio: "pipe",
+      });
+    const clone = join(root, "clones", "Forge_Fees_1-0");
+    await mkdir(clone, { recursive: true });
+    git(clone, "init", "-q", "-b", "develop");
+    await writeFile(join(clone, "pom.xml"), "<project/>\n", "utf8");
+    git(clone, "add", "-A");
+    git(clone, "commit", "-q", "-m", "first");
+    git(clone, "remote", "add", "origin", "https://git.example.com/forge/Forge_Fees_1-0.git");
+    const o = io();
+    expect(
+      await repoAdd(root, clone, { owner: "team-fees", noDescription: true }, o.io, {
+        now: NOW,
+        by: "pat",
+      }),
+    ).toBe(0);
+    const r = (await manifestOf(root)).repos.find((x) => x.id === "forge_fees_1-0")!;
+    expect(r.url).toBe("https://git.example.com/forge/Forge_Fees_1-0.git");
+    expect(r.defaultBranch).toBe("develop");
+    expect(o.out.join("\n")).toContain(
+      `Next: atticus workspace sync --from "${join(root, "clones")}" --repos forge_fees_1-0`,
+    );
+  });
+
   it("takes the id from the URL", () => {
     expect(idFromUrl("https://git.example.com/forge/forge-ledger.git")).toBe("forge-ledger");
     expect(idFromUrl("git@git.example.com:forge/Forge_Web.git")).toBe("forge_web");
