@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { factsDirOf, factsRelOf, listQuestions, loadOrgPack, orgPackDirOf } from "@maycombhq/core";
 import { dirSource, frameworkFacts, frameworksToLearn, verifyFacts } from "@maycombhq/verify";
@@ -90,6 +90,47 @@ function questionLines(text: string): { lines: unknown[]; problems: QuestionProb
     }
   }
   return { lines, problems };
+}
+
+/** The files beside a repo's facts that are not its facts. */
+const FACTS_SIDE_FILES = /\.(questions|reviewed|rejected|corrections)\.jsonl$/;
+
+/** The repos with a facts file here (`<repo>.jsonl`), in id order: those read so far. */
+export async function factsRepos(root: string): Promise<string[]> {
+  const names = await readdir(factsDirOf(root)).catch(() => [] as string[]);
+  return names
+    .filter((n) => n.endsWith(".jsonl") && !FACTS_SIDE_FILES.test(n))
+    .map((n) => n.slice(0, -".jsonl".length))
+    .sort();
+}
+
+/**
+ * atticus verify --all [--write]: every repo read so far, one after another, as `atticus verify
+ * <repo>` would, then a line saying how many passed. No model is called. Exits 1 when any repo
+ * has rejected facts, so a script can tell.
+ */
+export async function verifyAllCommand(
+  root: string,
+  o: Omit<VerifyCommandOptions, "dir">,
+  io: Output,
+): Promise<number> {
+  const repos = await factsRepos(root);
+  if (!repos.length) {
+    io.err(
+      `No repo has facts yet (${factsRelOf(root)}/<repo>.jsonl). Read one first: /atticus-map <repo> in your assistant.`,
+    );
+    return 2;
+  }
+  const failed: string[] = [];
+  for (const repo of repos) {
+    const code = await verifyCommand(root, repo, o, io);
+    if (code !== 0) failed.push(repo);
+  }
+  const passed = repos.length - failed.length;
+  io.out(
+    `Verified ${repos.length === 1 ? "1 repo" : `${repos.length} repos`}: ${passed} passed${failed.length ? `, ${failed.length} with something to fix (${failed.join(", ")})` : ""}.`,
+  );
+  return failed.length ? 1 : 0;
 }
 
 export async function verifyCommand(

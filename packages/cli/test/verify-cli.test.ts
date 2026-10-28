@@ -31,6 +31,23 @@ const io = () => {
   return { out, err, io: { out: (l: string) => out.push(l), err: (l: string) => err.push(l) } };
 };
 
+describe("atticus verify --all", () => {
+  it("verifies every repo with a facts file, and never a repo's questions, reviewed or rejected files", async () => {
+    const root = adoptedRepo(readFileSync(join(fixtures, "forge-ledger.facts.jsonl"), "utf8"));
+    const facts = join(root, ".atticus", "facts");
+    writeFileSync(join(facts, "forge-ledger.questions.jsonl"), "");
+    writeFileSync(join(facts, "forge-ledger.reviewed.jsonl"), "");
+    writeFileSync(join(facts, "forge-ledger.rejected.jsonl"), "");
+    const { verifyAllCommand, factsRepos } = await import("../src/verify-commands.js");
+    expect(await factsRepos(root)).toEqual(["forge-ledger"]);
+    const o = io();
+    expect(await verifyAllCommand(root, { commit: "0123abc" }, o.io)).toBe(0);
+    expect(o.out[0]).toMatch(/^forge-ledger: 17 facts kept, 0 rejected/);
+    expect(o.out.at(-1)).toBe("Verified 1 repo: 1 passed.");
+    expect(o.err).toEqual([]);
+  });
+});
+
 describe("atticus verify <repo> (ADR 0124)", () => {
   it("keeps a correct read, writes the report, exits 0", async () => {
     const root = adoptedRepo(readFileSync(join(fixtures, "forge-ledger.facts.jsonl"), "utf8"));

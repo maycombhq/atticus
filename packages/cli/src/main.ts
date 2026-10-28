@@ -468,6 +468,7 @@ Usage:
   atticus verify <repo>                Check the facts your assistant wrote for a repo (/atticus-map) against its code: the claim on each cited line, the quote, references, secrets, coverage; raises the questions it wrote for a person; rejected facts go back to the assistant (ADR 0124) [--dir path] [--commit sha] [--routed a,b] [--json]
           [--write]                    When nothing is rejected: put the facts in the catalog, the flows in specs/<repo>/, ask about calls nothing joins, and render the map
           [--verbose]                  With --write: list every record changed and flow written, not only the counts
+  atticus verify --all [--write]       Every repo read so far (each with a facts file), one after another; no model is called
   atticus map render <repo> [--json]   Render the repo's map from the catalog: map.md, a page per flow with its sequence diagram, an OpenAPI file per component, under map/<repo>/
   atticus spec draft <repo>            Your assistant writes the repo's flows, one per trigger, each step cited and checked [--attempts 3] [--resume run] [--force] [--mode m] [--max-tokens n]
   atticus spec check <repo> [--json]   Check the repo's flows against the catalog, the template and the code; confirms steps on their cited lines
@@ -1469,13 +1470,25 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
       strict: false,
     });
     const repo = v.positionals[1];
+    const text = (x: unknown) => (typeof x === "string" ? x : undefined);
+    if (!repo && v.values.all === true) {
+      // Every repo read so far, as one command: no model is called.
+      const { verifyAllCommand } = await import("./verify-commands.js");
+      return verifyAllCommand(
+        text(v.values.root) ? resolve(text(v.values.root)!) : root,
+        {
+          ...(v.values.write === true ? { write: true } : {}),
+          ...(v.values.verbose === true ? { verbose: true } : {}),
+        },
+        io,
+      );
+    }
     if (!repo) {
       io.err(
-        "Usage: atticus verify <repo> [--write [--verbose]] [--dir path] [--commit sha] [--routed a,b] [--json]",
+        "Usage: atticus verify <repo> [--write [--verbose]] [--dir path] [--commit sha] [--routed a,b] [--json], or atticus verify --all [--write]",
       );
       return 2;
     }
-    const text = (x: unknown) => (typeof x === "string" ? x : undefined);
     const { verifyCommand } = await import("./verify-commands.js");
     return verifyCommand(
       // The first reading took --write's next word as its value, so a --root right after it
