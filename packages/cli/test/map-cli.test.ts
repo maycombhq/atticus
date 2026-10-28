@@ -120,6 +120,41 @@ function honestReader(extra: (prompt: string, n: number) => string[] = () => [])
   };
 }
 
+describe("a framework the organisation taught Atticus goes to the reader (A-taught)", () => {
+  const MESSY = join(__dirname, "..", "..", "..", "fixtures", "messy");
+  /** tide-cards, built on tide-web-starter, adopted in place with the tide-platform model taught. */
+  function cardsWithModel(): string {
+    const root = mkdtempSync(join(tmpdir(), "atticus-map-taught-"));
+    cpSync(join(MESSY, "repos", "tide-cards"), root, { recursive: true });
+    mkdirSync(join(root, ".atticus", "org-pack", "frameworks"), { recursive: true });
+    cpSync(
+      join(MESSY, "metarepo", "org-pack", "frameworks", "tide-platform.yaml"),
+      join(root, ".atticus", "org-pack", "frameworks", "tide-platform.yaml"),
+    );
+    return root;
+  }
+
+  it("--estimate says how to read the wrapper calls and annotations of the framework it is built on", async () => {
+    const root = cardsWithModel();
+    const o = io();
+    expect(await mapCommand(root, "tide-cards", { estimate: true, commit: COMMIT }, o.io)).toBe(0);
+    const text = o.out.join("\n");
+    expect(text).toContain("Frameworks of the organisation this repo is built on");
+    expect(text).toContain("`BankHttp.exchange(...)`");
+    const j = io();
+    await mapCommand(root, "tide-cards", { estimate: true, commit: COMMIT, json: true }, j.io);
+    expect(JSON.parse(j.out.join("\n")).taughtFrameworks).toEqual(["tide-platform"]);
+  });
+
+  it("says nothing of a taught framework the repo isn't built on", async () => {
+    const root = cardsWithModel();
+    writeFileSync(join(root, "pom.xml"), "<project><artifactId>plain</artifactId></project>\n");
+    const o = io();
+    await mapCommand(root, "tide-cards", { estimate: true, commit: COMMIT }, o.io);
+    expect(o.out.join("\n")).not.toContain("Frameworks of the organisation");
+  });
+});
+
 describe("atticus map <repo> --estimate: what the first read costs", () => {
   it("prints the checkout, commit, facts file, the source files, the tier and the batches", async () => {
     const root = adoptedRepo();

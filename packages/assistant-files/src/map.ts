@@ -1,4 +1,4 @@
-import { factsJsonSchemas } from "@maycombhq/core";
+import { factsJsonSchemas, type FrameworkModel } from "@maycombhq/core";
 
 /**
  * The reading protocol of ADR 0124: how an assistant reads a repo into facts. One source for
@@ -435,6 +435,75 @@ export const FACT_RULES = factRulesFor();
 export const ABOUT_RULE =
   '- Nothing says what this repo is for. If these files say plainly, add one line: {"about": "<one sentence>", "cites": [{"file": "...", "line": n}]}. Else leave it out.';
 
+/** At most this many of a framework's constants go to the reader: those that look like a path, URL or topic. */
+const TAUGHT_CONSTANTS = 40;
+
+/** A call part as words: "argument 2" (counted from 1), "property `path` of argument 1", or a value. */
+const partWords = (p: { arg: number; key?: string } | { value: string }): string =>
+  "value" in p
+    ? p.value
+    : p.key
+      ? `property \`${p.key}\` of argument ${p.arg + 1}`
+      : `argument ${p.arg + 1}`;
+
+/**
+ * The frameworks of the organisation a repo is built on, as they were taught to Atticus
+ * (org-pack/frameworks/, ADR 0054 and 0055), in words a reader applies (ADR 0124 addendum
+ * A-taught): each wrapper call with which argument is the method, the path and the service; each
+ * house annotation with what it stands for; the service ids' base URLs and the constants that
+ * look like paths. Without this the reader sees a call through a wrapper as ordinary code and can
+ * only ask. Empty when the repo is built on none.
+ */
+export function taughtFrameworksText(models: readonly FrameworkModel[]): string {
+  if (!models.length) return "";
+  const lines = [
+    "Frameworks of the organisation this repo is built on, as taught to Atticus (org-pack/frameworks/). Read every use of them as the code it stands for: a call through one is a `call` fact cited on the line that makes it, a route an `entry` fact cited on its annotation. Where the path or the service comes only from the framework (a constant or service id below, not written in this repo), write the value it stands for and mark the fact `conf: inferred`.",
+  ];
+  for (const m of models) {
+    lines.push(`- ${m.name}${m.artifacts.length ? ` (${m.artifacts.join(", ")})` : ""}:`);
+    for (const c of m.clients) {
+      const method =
+        "value" in c.httpMethod
+          ? `the method is ${c.httpMethod.value}`
+          : `the method is ${partWords(c.httpMethod)}`;
+      lines.push(
+        `  - \`${c.type}.${c.method}(...)\` (a field or variable of type ${c.type}) is an HTTP call: ${method}, the path ${partWords(c.path)}${c.service ? `, the service id ${partWords(c.service)}` : ""}.`,
+      );
+    }
+    for (const c of m.calls) {
+      const on = `${c.receiver ? `${c.receiver}.` : ""}${c.function}(...)`;
+      const parts = [
+        ...(c.httpMethod ? [`the method ${partWords(c.httpMethod)}`] : []),
+        `the ${c.kind === "http-call" ? "path" : "topic or queue"} ${partWords(c.path)}`,
+        ...(c.service ? [`the service id ${partWords(c.service)}`] : []),
+      ];
+      lines.push(
+        `  - \`${on}\`${c.from ? ` from ${c.from}` : ""}${c.language ? ` (${c.language})` : ""} is a ${c.kind}: ${parts.join(", ")}.`,
+      );
+    }
+    for (const r of m.routes)
+      lines.push(
+        `  - \`${r.receiver ? `${r.receiver}.` : ""}${r.function}(...)\`${r.from ? ` from ${r.from}` : ""} serves a route: the method ${partWords(r.httpMethod)}, the path ${partWords(r.path)}.`,
+      );
+    for (const a of m.annotations) {
+      const attrs = Object.entries(a.attributes).map(([k, v]) => `its \`${k}\` is its \`${v}\``);
+      const fixed = Object.entries(a.fixed).map(([k, v]) => `its \`${k}\` is always ${v}`);
+      lines.push(
+        `  - \`@${a.name}\` stands for ${`\`${a.means.map((x) => `@${x}`).join(" ")}\``}${[...attrs, ...fixed].length ? `; ${[...attrs, ...fixed].join(", ")}` : ""}.`,
+      );
+    }
+    const services = Object.entries(m.services);
+    if (services.length)
+      lines.push(`  - Service ids: ${services.map(([k, v]) => `${k} is ${v.value}`).join("; ")}.`);
+    const constants = Object.entries(m.constants)
+      .filter(([, v]) => /^(\/|https?:\/\/)|^[\w-]+(\.[\w-]+)+$/.test(v.value))
+      .slice(0, TAUGHT_CONSTANTS);
+    if (constants.length)
+      lines.push(`  - Constants: ${constants.map(([k, v]) => `${k} is ${v.value}`).join("; ")}.`);
+  }
+  return lines.join("\n");
+}
+
 export function mapBatchInstructions(o: {
   repo: string;
   commit: string;
@@ -459,6 +528,11 @@ export function mapBatchInstructions(o: {
    * confirms, edits or rejects. Left out when the manifest already says.
    */
   askAbout?: boolean;
+  /**
+   * The frameworks of the organisation this repo is built on, as taught to Atticus
+   * (`taughtFrameworksText`, ADR 0124 addendum A-taught). Left out when it is built on none.
+   */
+  taught?: string;
 }): string {
   return [
     `Read the repo ${o.repo} at commit ${o.commit} into facts: what it answers to and calls, the data it reads and writes, the fields crossing those boundaries, its deployment and the config it depends on.`,
@@ -474,5 +548,6 @@ export function mapBatchInstructions(o: {
     "- Cite only the numbered lines in this prompt. A reference may name a fact already kept (listed below) or one in your answer. Don't write a kept fact again, unless you correct it under the same `id`.",
     "- When these files hold no fact, answer with nothing.",
     ...(o.askAbout ? [ABOUT_RULE] : []),
+    ...(o.taught ? ["", o.taught] : []),
   ].join("\n");
 }

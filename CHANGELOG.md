@@ -4,6 +4,19 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### `/atticus-map` reads with the frameworks you've taught
+
+- A framework you taught Atticus (`frameworks learn`, `frameworks kit`, or a model written by hand in `org-pack/frameworks/`) is now handed to the reader of every repo whose build file names one of its artifacts. `atticus map --estimate` lists it (and `--json` gives `taughtFrameworks`), and each batch's instructions say what its wrappers, routes, annotations, service ids and constants stand for, so a call through a house HTTP client is read as a `call` fact rather than missed. Before, verify knew the framework but the reader didn't (ADR 0124 addendum A-taught).
+
+### `atticus verify --all`
+
+- Verifies every repo with a facts file in `.atticus/facts/`, one after another, and prints a line for each and a total. With `--write` it projects each that passes. The side files (`.questions`, `.reviewed`, `.rejected`, `.corrections`) are skipped.
+
+### `repo add` on a folder you've cloned
+
+- `atticus repo add <folder>` on a git clone now records its `origin` URL and checked-out branch in `repos.manifest.yaml` (as `defaultBranch`), and says the `workspace sync --from` command to copy it in.
+- `workspace sync --from` matches a clone to a repo by its folder name in any case, when the URLs don't match.
+
 ### Fixed: frameworks you've taught are recognised by `atticus verify`
 
 - `atticus verify` loaded the org pack from the metarepo's root instead of `org-pack/`, failed quietly, and so knew none of your framework files: every house starter, even one you had learned, was offered as "nothing here can read yet". It reads `org-pack/frameworks/` now (or `.atticus/org-pack/` in an adopted repo).

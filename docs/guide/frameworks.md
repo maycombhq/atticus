@@ -153,6 +153,8 @@ What this doesn't do: the learner doesn't read pipeline templates or Jenkins lib
 3. `atticus frameworks check <name>` runs the tests. It fails when a test gives the wrong records, or when an entry the assistant wrote is exercised by no test.
 4. A person reviews the file and commits it to the org pack. A draft is used only once it is in the org pack, and only while its tests pass.
 
+**`/atticus-map` reads with what you've taught.** When a repo's build file (pom.xml, build.gradle, package.json, a .csproj, requirements.txt, pyproject.toml or go.mod) names one of a model's `artifacts`, `atticus map --estimate` lists that framework and what it stands for, and each batch's instructions carry it: its wrapper methods and which argument is the method, path and service, its routes, what its annotations stand for, its service ids and its path-like constants. The reader then writes a call through a wrapper as a `call` fact on the line that makes it, and marks `conf: inferred` a value that comes only from the model. This holds for every model in `org-pack/frameworks/`, however it was made.
+
 **A scan uses a model only while its tests pass.** A failing model is left out, and the scan's problems say which test failed. A model with no tests is used as written, so hand-written models keep working; add tests so a wrong entry can't go unnoticed.
 
 ## What a model can say

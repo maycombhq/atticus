@@ -5,6 +5,7 @@ import {
   assistantTier,
   ABOUT_RULE,
   mapBatchInstructions,
+  taughtFrameworksText,
   readProbes,
   tierSource,
   tierWords,
@@ -26,6 +27,7 @@ import {
   parseFacts,
   runsDirOf,
   writeFileAtomic,
+  type FrameworkModel,
   type OrgPack,
   type Question,
   type RepoDescription,
@@ -484,6 +486,39 @@ async function rereadOf(
 }
 
 /** The prompt of one batch (or of the fix round), fitted to the model's limit. */
+const taughtOption = (models: FrameworkModel[]) => {
+  const taught = taughtFrameworksText(models);
+  return taught ? { taught } : {};
+};
+
+/** The build files a taught framework's artifact is declared in. */
+const BUILD_FILE =
+  /(^|\/)(pom\.xml|build\.gradle(\.kts)?|package\.json|[^/]+\.csproj|requirements[^/]*\.txt|pyproject\.toml|go\.mod)$/;
+
+/**
+ * The frameworks taught to Atticus (org-pack/frameworks/, ADR 0054) that this repo's build files
+ * declare, by an artifact the model names (ADR 0124 addendum A-taught): a Maven `<artifactId>`
+ * (a dependency or the `<parent>`), a Gradle coordinate, an npm package. In model order.
+ */
+export function taughtIn(source: FileSource, op: OrgPack): FrameworkModel[] {
+  const models = op.frameworks.filter((m) => m.artifacts.length);
+  if (!models.length) return [];
+  const texts = source
+    .list()
+    .filter((p) => BUILD_FILE.test(p))
+    .map((p) => source.read(p) ?? "");
+  const esc = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return models.filter((m) =>
+    m.artifacts.some((a) => {
+      const artifact = a.split(":")[1] ?? a;
+      const declared = new RegExp(
+        `<artifactId>\\s*${esc(artifact)}\\s*</artifactId>|["':]${esc(artifact)}["':@]`,
+      );
+      return texts.some((t) => declared.test(t));
+    }),
+  );
+}
+
 async function packFor(
   root: string,
   s: MapState,
@@ -535,6 +570,8 @@ async function packFor(
         frameworks: await frameworksFor(root, s.repo, facts),
         // Nothing says what this repo is: ask for one line, cited, for a person to confirm.
         ...(about ? {} : { askAbout: true }),
+        // A-taught: how to read the wrapper calls and annotations of the frameworks it is built on.
+        ...taughtOption(taughtIn(source, op)),
       }),
       classification: "public",
       trusted: true,
@@ -1215,6 +1252,8 @@ async function estimate(
               : {}),
           },
           tier,
+          // A-taught: the frameworks of the organisation it is built on, as taught to Atticus.
+          taughtFrameworks: taughtIn(c.source, c.op).map((m) => m.name),
           questions: questions.map((q) => ({
             id: q.id,
             question: q.question,
@@ -1248,6 +1287,9 @@ async function estimate(
       : `What it is: nothing says yet. A person writes one line (atticus repo describe ${repo} --description "..."); if the files say plainly, hand yours over with atticus repo describe ${repo} --drafted "..." --cites <file>:<line>, and it waits for a person.`,
   );
   io.out(`Facts file: ${c.factsFile}`);
+  // A-taught: the frameworks of the organisation it is built on, as /atticus-map's reader needs them.
+  const taught = taughtFrameworksText(taughtIn(c.source, c.op));
+  if (taught) for (const l of taught.split("\n")) io.out(l);
   if (reread) for (const l of rereadLines(repo, reread)) io.out(l);
   for (const m of re.missing)
     io.out(

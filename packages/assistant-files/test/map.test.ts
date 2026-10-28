@@ -1,8 +1,17 @@
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { ASSISTANTS, FACT_KINDS, Fact, loadOrgPack, Runtime } from "@maycombhq/core";
+import { parse as parseYaml } from "yaml";
+import {
+  ASSISTANTS,
+  FACT_KINDS,
+  Fact,
+  FrameworkModel,
+  loadOrgPack,
+  Runtime,
+} from "@maycombhq/core";
 import {
   ASSISTANT_FORMATS,
   assistantTier,
@@ -18,6 +27,7 @@ import {
   renderAssistantFiles,
   FRAMEWORK_TOPICS,
   RULE_TOPICS,
+  taughtFrameworksText,
   type FrameworkTopic,
   type RuleTopic,
 } from "../src/index.js";
@@ -563,5 +573,50 @@ describe("the capability probe: which tier this person's assistant reads at (ADR
     );
     expect(m.model).toMatch(/atticus map <repo> --mode model/);
     expect(m.maxTokens).toBe(50000);
+  });
+});
+
+describe("frameworks the organisation taught Atticus, handed to the reader", () => {
+  const model = FrameworkModel.parse(
+    parseYaml(
+      readFileSync(
+        join(
+          __dirname,
+          "..",
+          "..",
+          "..",
+          "fixtures",
+          "messy",
+          "metarepo",
+          "org-pack",
+          "frameworks",
+          "tide-platform.yaml",
+        ),
+        "utf8",
+      ),
+    ),
+  );
+
+  it("says each wrapper call, annotation and service id in words a reader can apply", () => {
+    const text = taughtFrameworksText([model]);
+    expect(text).toContain("tide-platform");
+    expect(text).toContain(
+      "`BankHttp.exchange(...)` (a field or variable of type BankHttp) is an HTTP call: the method is argument 2, the path argument 3, the service id argument 1",
+    );
+    expect(text).toContain("`@InternalApi` stands for `@RestController @RequestMapping`");
+    expect(text).toContain("`basePath` is its `path`");
+    expect(text).toContain("Services.AUDIT is https://audit.tide.internal");
+    expect(text).toContain("cited on the line that makes it");
+  });
+
+  it("says nothing when no taught framework is in the repo", () => {
+    expect(taughtFrameworksText([])).toBe("");
+  });
+
+  it("goes into a batch's instructions after the rules, and only when there is one", () => {
+    const base = { repo: "tide-cards", commit: "c".repeat(40), batch: 1, of: 2 };
+    const taught = taughtFrameworksText([model]);
+    expect(mapBatchInstructions({ ...base, taught })).toContain(taught);
+    expect(mapBatchInstructions(base)).not.toContain("taught to Atticus");
   });
 });
