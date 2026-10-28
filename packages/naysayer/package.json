@@ -1,6 +1,6 @@
 {
   "name": "@maycombhq/naysayer",
-  "version": "2.0.0-beta.6",
+  "version": "2.0.0-beta.7",
   "private": true,
   "description": "The critic: rule layering (constitution, org, team), deterministic checks, AI lenses in a fresh session, findings, rounds, gates, actions and override stats.",
   "license": "Apache-2.0",

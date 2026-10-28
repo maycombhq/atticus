@@ -2,6 +2,10 @@
 
 The Atticus extension for VS Code. The command line's own changes are in the repository's [CHANGELOG](https://github.com/maycombhq/atticus/blob/main/CHANGELOG.md).
 
+## 0.7.5 (pre-release, with Atticus 2.0.0-beta.7)
+
+- **Ships with Atticus 2.0.0-beta.7.** No change to the extension itself; an API spec in an `oas/`, `openapi/`, `swagger/` or `api-specs/` folder is now read as one, not proposed for exclusion as data.
+
 ## 0.7.4 (pre-release, with Atticus 2.0.0-beta.6)
 
 - **Ships with Atticus 2.0.0-beta.6.** No change to the extension itself; `atticus verify --write` no longer stops on a long schema id after a join, `frameworks learn` says plainly when it can't tell a framework's package, and `/atticus-map` tells the reader a flow fact needs its own `cite`.

@@ -1,6 +1,6 @@
 {
   "name": "@maycombhq/atticus",
-  "version": "2.0.0-beta.6",
+  "version": "2.0.0-beta.7",
   "description": "Atticus: map a multi-repo ecosystem from its code and run every change from idea to release, with an AI critic and human approvals. The atticus command line and its app in one package.",
   "license": "Apache-2.0",
   "type": "module",

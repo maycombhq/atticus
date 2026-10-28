@@ -1,6 +1,6 @@
 {
   "name": "@maycombhq/assistant-files",
-  "version": "2.0.0-beta.6",
+  "version": "2.0.0-beta.7",
   "private": true,
   "description": "Copilot and Claude Code files (instructions, prompts, commands, agents, skills, Spec Kit commands) generated from the org pack's one skill source.",
   "license": "Apache-2.0",

@@ -1,6 +1,6 @@
 {
   "name": "@maycombhq/index",
-  "version": "2.0.0-beta.6",
+  "version": "2.0.0-beta.7",
   "private": true,
   "description": "The local SQLite index over catalog files, the catalog query language, graph and impact.",
   "license": "Apache-2.0",

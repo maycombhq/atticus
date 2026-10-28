@@ -1,6 +1,6 @@
 {
   "name": "@maycombhq/adapters",
-  "version": "2.0.0-beta.6",
+  "version": "2.0.0-beta.7",
   "private": true,
   "description": "Atticus adapters for outside systems (work tracker, service desk, Git host, wiki, notifications, design tool), each with an in-memory mock.",
   "license": "Apache-2.0",
