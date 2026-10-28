@@ -87,6 +87,9 @@ function addConstant(
   value: string,
   source: FrameworkSource,
 ) {
+  // Java's serialization version: in every exception and bean, never a value the framework's
+  // users pass, and never a service id.
+  if (name === "serialVersionUID") return;
   c.constants[`${owner}.${name}`] = { value, source };
   if (/service/i.test(owner)) c.serviceIds.push(`${owner}.${name}`);
 }

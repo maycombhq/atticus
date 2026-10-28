@@ -131,6 +131,35 @@ public class KitHttp {
     expect(r.model.clients[0]).toMatchObject({ httpMethod: { arg: 0 }, path: { arg: 1 } });
     expect(Object.keys(r.model.constants)).toEqual(["KitHttp.NOTE"]);
   });
+
+  it("leaves out Java's serialVersionUID: not a constant of the framework, nor a service id", async () => {
+    const r = await learnFramework(
+      memoryRepo("kit", SHA, {
+        "src/main/java/tide/kit/ServiceException.java": `package tide.kit;
+public class ServiceException extends RuntimeException {
+  private static final long serialVersionUID = 1L;
+}`,
+        "src/main/java/tide/kit/ServiceIds.java": `package tide.kit;
+public final class ServiceIds {
+  public static final String LEDGER = "ledger";
+}`,
+      }),
+      { name: "tide-kit" },
+    );
+    expect(Object.keys(r.model.constants)).toEqual(["ServiceIds.LEDGER"]);
+    expect(r.notes.join("\n")).not.toContain("serialVersionUID");
+  });
+
+  it("leaves out serialVersionUID read from a JAR's bytecode too", async () => {
+    const { readFileSync } = await import("node:fs");
+    const bytes = readFileSync(join(dirname(PLATFORM), "../jars/tide-kit-errors-1.0.0.jar"));
+    const r = learnFrameworkFromJar(new Uint8Array(bytes), {
+      name: "tide-kit",
+      jarName: "tide-kit-errors-1.0.0.jar",
+    });
+    expect(Object.keys(r.model.constants)).toEqual(["ServiceIds.LEDGER"]);
+    expect(r.notes.join("\n")).not.toContain("serialVersionUID");
+  });
 });
 
 describe("learning a framework model from a starter's JAR (ADR 0054)", () => {

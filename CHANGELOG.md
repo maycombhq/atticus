@@ -4,6 +4,10 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### Fixed: `frameworks learn` leaves out Java's `serialVersionUID`
+
+- Learning a framework from its JAR kept every exception's and bean's `serialVersionUID` as a constant, and called the ones in a class named like a service "service ids" to give base URLs for. It is Java's serialization version, never a value of the framework's: it is left out.
+
 ### Fixed: a house starter versioned `${project.parent.version}` is found
 
 - `atticus frameworks discover` read a starter declared at `${project.parent.version}` (or `${parent.version}`, `${project.version}`) as that literal text, so it never found the JAR in the Maven cache and said it wasn't on the machine. Those versions now come from the pom's `<parent>` and `<version>`.
