@@ -58,6 +58,8 @@ interface Known {
 const KNOWN: readonly (readonly [string, Known])[] = [
   // Java and Kotlin
   ["spring-boot*", { name: "spring-boot", topic: "spring", shape: "rest" }],
+  // the annotation a Spring Boot app's main class carries, which a reader may cite instead
+  ["@springbootapplication", { name: "spring-boot", topic: "spring", shape: "rest" }],
   ["spring-webmvc", { name: "spring", topic: "spring", shape: "rest" }],
   ["spring-webflux", { name: "spring", topic: "spring", shape: "rest" }],
   ["spring-web", { name: "spring", topic: "spring", shape: "rest" }],

@@ -181,6 +181,23 @@ describe("a house framework nothing can read is learned, not guessed at", () => 
     expect(frameworksToLearn(facts("forge-reconcile"))).toEqual([]);
   });
 
+  it("offers nothing for @SpringBootApplication, which is Spring Boot itself", () => {
+    const f = {
+      kind: "framework",
+      id: "fw.sba",
+      repo: "forge-ledger-api",
+      commit: COMMIT,
+      name: "@springbootapplication",
+      cite: {
+        file: "src/main/java/forge/ledger/App.java",
+        line: 5,
+        value: "@SpringBootApplication",
+        quote: "@SpringBootApplication",
+      },
+    } as Fact;
+    expect(frameworksToLearn([f])).toEqual([]);
+  });
+
   it("offers nothing for an Apigee proxy or shared flow, which map reads as a gateway", () => {
     const fw = (id: string, name: string, file: string, value: string, quote: string): Fact =>
       ({

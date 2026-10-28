@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { factsDirOf, factsRelOf, listQuestions, loadOrgPack } from "@maycombhq/core";
+import { factsDirOf, factsRelOf, listQuestions, loadOrgPack, orgPackDirOf } from "@maycombhq/core";
 import { dirSource, frameworkFacts, frameworksToLearn, verifyFacts } from "@maycombhq/verify";
 import type { GitRunner } from "@maycombhq/workspace";
 import type { Output } from "./commands.js";
@@ -36,7 +36,9 @@ import { NoRoomError, roomGuard, streamFacts } from "./memory-room.js";
  * None when there is no org pack here.
  */
 async function frameworksKnownTo(root: string): Promise<string[]> {
-  const op = await loadOrgPack(root).catch(() => undefined);
+  // The org pack's own folder (org-pack/, or .atticus/org-pack/ in an adopted repo): loading the
+  // root failed quietly, so every framework file was ignored and each starter offered to learn.
+  const op = await loadOrgPack(orgPackDirOf(root)).catch(() => undefined);
   return (op?.frameworks ?? []).flatMap((f) => [f.name, ...f.artifacts]);
 }
 

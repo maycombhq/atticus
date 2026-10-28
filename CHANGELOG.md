@@ -4,6 +4,11 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### Fixed: frameworks you've taught are recognised by `atticus verify`
+
+- `atticus verify` loaded the org pack from the metarepo's root instead of `org-pack/`, failed quietly, and so knew none of your framework files: every house starter, even one you had learned, was offered as "nothing here can read yet". It reads `org-pack/frameworks/` now (or `.atticus/org-pack/` in an adopted repo).
+- A framework fact citing `@SpringBootApplication` is read as Spring Boot, not offered to learn.
+
 ### `/atticus-map` says `authCite` takes no quote
 
 - Readers (Claude Sonnet among them) gave an entry's `authCite` a `quote`, as `cite` has, and the line failed the facts schema and went back to be rewritten. The reading rules now say `authCite` is `{file, line, value}` only.

@@ -567,6 +567,22 @@ describe("atticus verify <repo>: what the repo is built on", () => {
     expect(text).toContain("atticus frameworks learn forge-card-starter --from forge-cards-api");
   });
 
+  it("offers nothing to learn for a starter the org pack's framework files already cover", async () => {
+    // The org pack is read where it is (org-pack/, or .atticus/org-pack/ in an adopted repo):
+    // a framework file whose artifacts name the starter covers it.
+    const root = repoWithFacts("forge-cards-api");
+    mkdirSync(join(root, ".atticus", "org-pack", "frameworks"), { recursive: true });
+    writeFileSync(
+      join(root, ".atticus", "org-pack", "frameworks", "forge-cards.yaml"),
+      "schemaVersion: 1\nname: forge-cards\npackages: [com.forge.cards]\nartifacts: [com.forge.platform:forge-card-starter]\n",
+    );
+    const o = io();
+    expect(await verifyCommand(root, "forge-cards-api", { commit: COMMIT }, o.io)).toBe(0);
+    const text = o.out.join("\n");
+    expect(text).not.toContain("nothing here can read yet");
+    expect(text).not.toContain("atticus frameworks learn");
+  });
+
   it("says nothing about frameworks for a repo whose facts name none", async () => {
     const root = adoptedRepo(readFileSync(join(fixtures, "forge-ledger.facts.jsonl"), "utf8"));
     const o = io();
