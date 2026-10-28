@@ -143,7 +143,7 @@ function assemble(c: Collected, o: { name: string; packages?: string[] }) {
   const model = FrameworkModel.parse({
     schemaVersion: 1,
     name: o.name,
-    packages: o.packages ?? [commonPrefix([...c.packages])].filter(Boolean),
+    packages: o.packages ?? packagesOf(c),
     artifacts: [...new Set(c.artifacts)],
     annotations,
     clients: c.clients,
@@ -161,7 +161,7 @@ export async function learnFramework(
   const src = (path: string): FrameworkSource => ({ kind: "code", ref: `${repo.name}:${path}` });
   const c = collected();
   for await (const path of repo.listFiles(["**/*.java", "**/pom.xml"])) {
-    if (/(^|\/)src\/test\//.test(path)) continue;
+    if (/(^|\/)src\/test\//.test(path) || isBuildOutput(path)) continue;
     const text = await repo.readText(path);
     if (path.endsWith("pom.xml")) {
       if (path === "pom.xml") {
@@ -289,6 +289,32 @@ export function learnFrameworkFromJar(
 }
 
 /** The longest dotted prefix every package name shares: tide.platform.web + tide.platform.http → tide.platform. */
+/** Generated or built code (a module's target/ or build/ folder), never a package of that name. */
+function isBuildOutput(path: string): boolean {
+  const m = /(^|\/)(target|build)\//.exec(path);
+  return !!m && !path.slice(0, m.index).split("/").includes("src");
+}
+
+/** The framework's package, from the packages its code declares; said in words when it can't be told. */
+function packagesOf(c: Collected): string[] {
+  const names = [...c.packages].sort();
+  if (names.length === 0)
+    throw new Error(
+      "no Java source with a package declaration was found (tests, target/ and build/ are left out). Point --from at the framework's own source, its JAR or its .tgz, or name its package with --package <base package>.",
+    );
+  const p = commonPrefix(names);
+  if (p) return [p];
+  const count = new Map<string, number>();
+  for (const n of names) {
+    const r = n.split(".").slice(0, 2).join(".");
+    count.set(r, (count.get(r) ?? 0) + 1);
+  }
+  const roots = [...count.keys()].sort((a, b) => count.get(b)! - count.get(a)! || (a < b ? -1 : 1));
+  throw new Error(
+    `its Java packages share no common package (${roots.slice(0, 6).join(", ")}${roots.length > 6 ? ", ..." : ""}), so the framework's can't be told. Name it with --package <base package>, e.g. --package ${roots[0]}.`,
+  );
+}
+
 function commonPrefix(names: string[]): string {
   if (names.length === 0) return "";
   const parts = names.map((n) => n.split("."));

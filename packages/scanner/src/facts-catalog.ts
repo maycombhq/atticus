@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   callerRecords,
   DECLARED_CALLER,
@@ -131,6 +132,29 @@ function needsTarget(f: Fact, facts: readonly Fact[]): f is FactOf<"call"> {
     !EVENT_CALLS.has(f.callType) &&
     !(HTTP_CALLS.has(f.callType) && urlOf(f, facts))
   );
+}
+
+const MAX_ID = 120;
+
+/**
+ * Renames ids after a record whose id changed: the record itself, and every id under it
+ * (`<call>.request` follows the call's Interface). An id the rename makes longer than a record id
+ * may be is shortened to its first part and a hash of the whole, so it stays valid and is the
+ * same wherever it is renamed.
+ */
+export function remapIds(remap: ReadonlyMap<string, string>): (id: string) => string {
+  return (id) => {
+    const exact = remap.get(id);
+    if (exact) return exact;
+    for (const [from, to] of remap)
+      if (id.startsWith(`${from}.`)) {
+        const out = to + id.slice(from.length);
+        if (out.length <= MAX_ID) return out;
+        const hash = createHash("sha256").update(out, "utf8").digest("hex").slice(0, 16);
+        return `${out.slice(0, MAX_ID - hash.length - 1).replace(/[-._]+$/, "")}.${hash}`;
+      }
+    return id;
+  };
 }
 
 /** The question for a call with no target and no host: its words and the line it cites. */
@@ -482,11 +506,7 @@ export function applyFactJoins(
     } else if (!(r.kind === "FieldMapping" && ifaces.has(r.interface))) kept.push(r);
   }
   // The call's request and response schemas (`<call>.<side>`) and mappings follow its Interface.
-  const re = (id: string) => {
-    for (const [from, to] of was)
-      if (id === from || id.startsWith(`${from}.`)) return to + id.slice(from.length);
-    return id;
-  };
+  const re = remapIds(was);
   const joined = joinRecords(join, repos);
   const callers = withCallers
     ? callerRecords(withCallers.callers, repos, withCallers.join, {
@@ -707,13 +727,7 @@ export function catalogWithFacts(input: FactsCatalogInput): FactsCatalogResult {
       joinedTo.set(id, iface.to);
     }
   }
-  const re = (id: string): string => {
-    const exact = remap.get(id);
-    if (exact) return exact;
-    for (const [from, to] of remap)
-      if (id.startsWith(`${from}.`)) return to + id.slice(from.length);
-    return id;
-  };
+  const re = remapIds(remap);
   const records = merged.records.map((r): CatalogRecord => {
     if (r.kind === "Schema") return { ...r, id: re(r.id), ref: re(r.ref) };
     if (r.kind === "Endpoint" && r.schemaRefs.length)

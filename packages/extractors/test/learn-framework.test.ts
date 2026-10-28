@@ -194,3 +194,36 @@ describe("learning a framework model from a starter's JAR (ADR 0054)", () => {
     ).toThrow();
   });
 });
+
+describe("learning a framework whose package can't be told", () => {
+  it("says so in words when the source has no Java package", async () => {
+    await expect(
+      learnFramework(memoryRepo("svc", SHA, { "pom.xml": "<project/>" }), { name: "svc" }),
+    ).rejects.toThrow(/no Java source with a package.*--package/s);
+  });
+
+  it("names the roots and asks for --package when the packages share no prefix", async () => {
+    const repo = memoryRepo("svc", SHA, {
+      "src/main/java/tide/svc/A.java": "package tide.svc;\nclass A {}",
+      "src/main/java/org/gen/B.java": "package org.gen;\nclass B {}",
+    });
+    await expect(learnFramework(repo, { name: "svc" })).rejects.toThrow(
+      /share no common package.*--package (org\.gen|tide\.svc)/s,
+    );
+    const r = await learnFramework(repo, { name: "svc", packages: ["tide.svc"] });
+    expect(r.model.packages).toEqual(["tide.svc"]);
+  });
+
+  it("leaves out generated code under target/ and build/", async () => {
+    const r = await learnFramework(
+      memoryRepo("svc", SHA, {
+        "src/main/java/tide/svc/A.java": "package tide.svc;\nclass A {}",
+        "target/generated-sources/openapi/org/gen/B.java": "package org.gen;\nclass B {}",
+        "build/generated/sources/org/gen/C.java": "package org.gen;\nclass C {}",
+        "src/main/java/tide/svc/build/D.java": "package tide.svc.build;\nclass D {}",
+      }),
+      { name: "svc" },
+    );
+    expect(r.model.packages).toEqual(["tide.svc"]);
+  });
+});

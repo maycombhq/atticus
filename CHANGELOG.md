@@ -2,6 +2,20 @@
 
 All notable changes to Atticus. Versions follow [Semantic Versioning](https://semver.org); contracts C1 to C6 change only with an ADR, a schema version and a migration (`atticus upgrade`).
 
+## Unreleased
+
+### Fixed: a flow whose call joined a long-named interface is rendered
+
+- `atticus verify --write` could stop with "A merged record isn't valid C1 (a bug): schemaRefs.0 / id: Too big". When a call joined the endpoint it reaches, its request and response schemas were renamed after the joined interface, and a long service name and path took the id past 120 characters. Such an id is now shortened to a stable one (its start and a hash), the same wherever it is renamed, so the flow renders. Nothing in the facts needs to change: run `verify --write` again.
+
+### `/atticus-map` says a flow fact needs its own `cite`
+
+- Readers (Claude Sonnet among them) wrote flow facts with an `entry` and cited steps but no `cite` of their own, and the line failed the facts schema. The reading rules now say a flow's `cite` is the line that starts it, as its entry fact cites it.
+
+### Fixed: `frameworks learn` says why it can't tell a framework's package
+
+- Learning from a folder whose Java sources have no package, or packages with nothing in common, printed a raw schema error ("packages: Too small"). It now says which, names the package roots it found, and asks for `--package <base package>`. Generated code in a module's `target/` or `build/` folder is left out, so OpenAPI or SOAP stubs no longer hide the framework's own package.
+
 ## 2.0.0-beta.5 (2026-10-28)
 
 ### `/atticus-map` reads with the frameworks you've taught
