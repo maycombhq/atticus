@@ -14,21 +14,36 @@ import { RecordId } from "./common.js";
  *
  * Version 2 (ADR 0128) added `description` on a repo, optional, and changed no other field.
  */
-export const WORKSPACE_SCHEMA_VERSION = 2 as const;
+export const WORKSPACE_SCHEMA_VERSION = 3 as const;
 
 /** Every workspace-file schema version a reader accepts, oldest first. */
-export const SUPPORTED_WORKSPACE_SCHEMA_VERSIONS = [1, 2] as const;
+export const SUPPORTED_WORKSPACE_SCHEMA_VERSIONS = [1, 2, 3] as const;
 
 /**
- * A workspace file's schema version. Version-1 files differ from version 2 only in this number
- * (nothing they hold changed meaning), so they are read as they are and come back as version 2
- * in memory; writers always write the current version, and `atticus upgrade` rewrites old files.
+ * A workspace file's schema version. Version-1 and version-2 files differ from version 3 only in
+ * this number (version 2 let a repo say what it is, version 3 its base path; nothing they hold
+ * changed meaning), so they are read as they are and come back as version 3 in memory; writers
+ * always write the current version, and `atticus upgrade` rewrites old files.
  */
 export const WorkspaceSchemaVersion = z
-  .union([z.literal(1), z.literal(2)], {
-    error: "schemaVersion must be 1 or 2 (version-1 files are read as version 2; ADR 0009, 0128)",
+  .union([z.literal(1), z.literal(2), z.literal(3)], {
+    error:
+      "schemaVersion must be 1, 2 or 3 (older files are read as version 3; ADR 0009, 0128, 0134)",
   })
-  .overwrite((): 1 | 2 => WORKSPACE_SCHEMA_VERSION);
+  .overwrite((): 1 | 2 | 3 => WORKSPACE_SCHEMA_VERSION);
+
+/**
+ * The path a repo's routes sit under on its hosts (ADR 0134): what a platform's ingress or a
+ * shared gateway host puts in front of them (`/cdp/limits`, `/qolo-onboarding/1.0`). Plain
+ * segments, a leading slash and no trailing one.
+ */
+export const BasePath = z
+  .string()
+  .max(200)
+  .regex(
+    /^(\/[A-Za-z0-9._~%{}-]+)+$/,
+    "a path after the host: /segment/segment, starting with / and not ending in one",
+  );
 
 /** A Git branch name segment Atticus generates: no slashes, safe on every platform. */
 const BranchSegment = RecordId;
@@ -192,6 +207,11 @@ export const ManifestRepo = z.strictObject({
    */
   hosts: z.array(HostPattern).default([]),
   /**
+   * The path this repo's routes sit under on its hosts (ADR 0134), when the host is one several
+   * repos share: a call on the host whose path starts with it goes to this repo.
+   */
+  basePath: BasePath.optional(),
+  /**
    * Modules that build their own component (ADR 0057): a folder, its component and the hosts
    * it answers on. When none are listed, a repo with two or more Spring Boot apps gets one per
    * app, found by the scan.
@@ -202,6 +222,7 @@ export const ManifestRepo = z.strictObject({
         path: RelativePosixPath,
         component: RecordId,
         hosts: z.array(HostPattern).default([]),
+        basePath: BasePath.optional(),
       }),
     )
     .default([]),

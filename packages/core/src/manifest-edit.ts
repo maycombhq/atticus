@@ -174,25 +174,26 @@ export async function addManifestRepo(
 }
 
 /**
- * Rewrite every manifest that still says schemaVersion 1 at the current version, keeping its
- * comments and order (ADR 0009, 0128). Nothing a person wrote changes: version-1 manifests are
- * read as they are and stay valid, and this only keeps diffs clean. `dryRun` lists what it
- * would change.
+ * Rewrite every manifest at a version below `to` (the current one when left out) at that
+ * version, keeping its comments and order (ADR 0009, 0128, 0134). Nothing a person wrote
+ * changes: older manifests are read as they are and stay valid, and this only keeps diffs clean.
+ * `dryRun` lists what it would change.
  */
 export async function migrateManifests(
   root: string,
-  o: { dryRun?: boolean } = {},
+  o: { dryRun?: boolean; to?: number } = {},
 ): Promise<string[]> {
+  const to = o.to ?? WORKSPACE_SCHEMA_VERSION;
   const out: string[] = [];
   for (const file of await manifestFiles(root)) {
     const text = await readFile(file.path, "utf8").catch(() => undefined);
     if (text === undefined) continue;
     const doc = parseDocument(text);
     const have = doc.get("schemaVersion");
-    if (typeof have !== "number" || have >= WORKSPACE_SCHEMA_VERSION) continue;
+    if (typeof have !== "number" || have >= to) continue;
     if (!RepoManifest.safeParse(doc.toJS()).success) continue;
     if (!o.dryRun) {
-      doc.set("schemaVersion", WORKSPACE_SCHEMA_VERSION);
+      doc.set("schemaVersion", to);
       await save(file.path, doc);
     }
     out.push(file.rel);

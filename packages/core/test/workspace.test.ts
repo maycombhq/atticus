@@ -105,10 +105,47 @@ describe("repos.manifest.yaml (RepoManifest)", () => {
     ).toBe(false);
   });
 
-  it("reads a version-1 manifest as version 2, so nothing a person wrote stops reading (ADR 0128)", () => {
-    expect(RepoManifest.parse({ ...manifest, schemaVersion: 1 }).schemaVersion).toBe(2);
-    expect(RepoManifest.parse({ ...manifest, schemaVersion: 2 }).schemaVersion).toBe(2);
-    expect(RepoManifest.safeParse({ ...manifest, schemaVersion: 3 }).success).toBe(false);
+  it("reads a version-1 or version-2 manifest as version 3, so nothing a person wrote stops reading (ADR 0128, 0134)", () => {
+    expect(RepoManifest.parse({ ...manifest, schemaVersion: 1 }).schemaVersion).toBe(3);
+    expect(RepoManifest.parse({ ...manifest, schemaVersion: 2 }).schemaVersion).toBe(3);
+    expect(RepoManifest.parse({ ...manifest, schemaVersion: 3 }).schemaVersion).toBe(3);
+    expect(RepoManifest.safeParse({ ...manifest, schemaVersion: 4 }).success).toBe(false);
+  });
+
+  it("takes the base path a repo (or a module) answers under on its hosts (ADR 0134)", () => {
+    const m = RepoManifest.parse({
+      ...manifest,
+      repos: [
+        {
+          ...manifest.repos[0],
+          hosts: ["apps.ocp.forge.internal"],
+          basePath: "/cdp/limits",
+          modules: [
+            {
+              path: "limits-api",
+              component: "limits-api",
+              hosts: ["apps.ocp.forge.internal"],
+              basePath: "/cdp/limits-api",
+            },
+          ],
+        },
+      ],
+    });
+    expect(m.repos[0]!.basePath).toBe("/cdp/limits");
+    expect(m.repos[0]!.modules[0]!.basePath).toBe("/cdp/limits-api");
+    for (const bad of [
+      "cdp/limits",
+      "/cdp/limits/",
+      "/",
+      "/cdp//limits",
+      "/cdp limits",
+      "/cdp?x=1",
+    ])
+      expect(
+        RepoManifest.safeParse({ ...manifest, repos: [{ ...manifest.repos[0], basePath: bad }] })
+          .success,
+        bad,
+      ).toBe(false);
   });
 
   it("takes a repo's description with who wrote it, when, and whether a person confirmed it", () => {
@@ -237,7 +274,7 @@ describe("change repos.yaml (ChangeRepos)", () => {
     const once = toCanonicalYaml(ChangeRepos.parse(repos), leading);
     const twice = toCanonicalYaml(ChangeRepos.parse(parse(once)), leading);
     expect(twice).toBe(once);
-    expect(once.startsWith("schemaVersion: 2\nchange: add-transfer-limit\n")).toBe(true);
+    expect(once.startsWith("schemaVersion: 3\nchange: add-transfer-limit\n")).toBe(true);
   });
 });
 

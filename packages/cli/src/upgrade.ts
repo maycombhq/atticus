@@ -269,8 +269,15 @@ export const MIGRATIONS: Migration[] = [
     id: "manifest-schema-v2",
     summary:
       "repos.manifest.yaml at version 2: a repo can say what it is, in a person's words (ADR 0128)",
-    pending: (root) => migrateManifests(root, { dryRun: true }),
-    apply: (root) => migrateManifests(root),
+    pending: (root) => migrateManifests(root, { dryRun: true, to: 2 }),
+    apply: (root) => migrateManifests(root, { to: 2 }),
+  },
+  {
+    id: "manifest-schema-v3",
+    summary:
+      "repos.manifest.yaml at version 3: a repo can give the base path it answers under on a shared host (ADR 0134)",
+    pending: (root) => migrateManifests(root, { dryRun: true, to: 3 }),
+    apply: (root) => migrateManifests(root, { to: 3 }),
   },
 ];
 

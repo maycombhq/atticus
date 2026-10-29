@@ -4,6 +4,10 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### A repo's `basePath` on a shared host (`repos.manifest.yaml` version 3)
+
+- A repo, or a module, can give the path its routes sit under on its hosts: `basePath: /cdp/limits` beside `hosts:`. When several repos share a host (services behind one OpenShift or GCP ingress, each under a common prefix and its module name), a call whose path starts with a repo's base path goes to that repo, so even a path every service serves (`/ping`, `/retrieve`) is joined rather than asked. Leave it out and nothing changes. The manifest moves to version 3; older manifests are read as they are, and `atticus upgrade` rewrites the number (ADR 0134). No repo needs reading again: run `atticus verify --all --write`.
+
 ### Fixed: one gateway host shared by many proxy repos is joined by path
 
 - When several repos list the same host in `repos.manifest.yaml` (an Apigee gateway host such as `api-gw.example.internal`, with each proxy in a repo of its own), a call on that host was joined only against the first of them, and a call to any other proxy's base path was missed. The join now looks at every repo that lists the host and picks the one whose route serves the call's path; two routes that both serve it are asked, as before. List the gateway host under `hosts:` on every proxy repo, then run `atticus verify --all --write` again.

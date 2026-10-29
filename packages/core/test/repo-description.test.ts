@@ -105,7 +105,7 @@ describe("migrateManifests (atticus upgrade)", () => {
     expect(await read(root)).toContain("schemaVersion: 1");
     expect(await migrateManifests(root)).toEqual(["org-pack/profiles/forge/repos.manifest.yaml"]);
     const text = await read(root);
-    expect(text).toContain("schemaVersion: 2");
+    expect(text).toContain("schemaVersion: 3");
     expect(text).toContain("# The two invented repos of the estate");
     expect(RepoManifest.safeParse(parse(text)).success).toBe(true);
     expect(await migrateManifests(root)).toEqual([]);

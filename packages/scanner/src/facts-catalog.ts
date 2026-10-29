@@ -445,8 +445,15 @@ export function joinReposOf(
       facts: renames?.[repo] ? withComponents(repo, facts, op, renames) : facts,
       ...(component ? { component } : {}),
       ...(m?.hosts.length ? { hosts: m.hosts } : {}),
+      ...(m?.basePath ? { basePath: m.basePath } : {}),
       ...(modules.length
-        ? { modules: modules.map((x) => ({ component: x.component, hosts: x.hosts })) }
+        ? {
+            modules: modules.map((x) => ({
+              component: x.component,
+              hosts: x.hosts,
+              ...(x.basePath ? { basePath: x.basePath } : {}),
+            })),
+          }
         : {}),
       // An API gateway's entries are routes the join follows through (ADR 0124 addendum A-gateway).
       // A type that says which side it faces (`gateway-external`, `gateway-internal`) marks each

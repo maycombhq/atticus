@@ -62,6 +62,59 @@ const entry = (repo: string, id: string, extra: Record<string, unknown>): Fact =
     ...extra,
   }) as Fact;
 
+describe("joinFacts on a host several repos share: each repo's base path (ADR 0134)", () => {
+  // Two Spring Boot services on one platform host, each under its own base path, both with /ping.
+  const services = (o: { basePaths: boolean }): JoinRepo[] => [
+    {
+      repo: "forge-web",
+      component: "forge-web",
+      facts: [
+        call("forge-web", "call.get.cdp-limits-ping", {
+          method: "GET",
+          path: "/cdp/limits/ping",
+          host: "apps.ocp.forge.internal",
+        }),
+        call("forge-web", "call.get.cdp-limits-limits-id", {
+          method: "GET",
+          path: "/cdp/limits/limits/{id}",
+          host: "apps.ocp.forge.internal",
+        }),
+      ],
+    },
+    ...(["limits", "wallets"] as const).map((m): JoinRepo => ({
+      repo: `forge-${m}`,
+      component: `${m}-api`,
+      hosts: ["apps.ocp.forge.internal"],
+      ...(o.basePaths ? { basePath: `/cdp/${m}` } : {}),
+      facts: [
+        entry(`forge-${m}`, "entry.get.ping", { method: "GET", path: "/ping" }),
+        ...(m === "limits"
+          ? [entry("forge-limits", "entry.get.limits-id", { method: "GET", path: "/limits/{id}" })]
+          : []),
+      ],
+    })),
+  ];
+
+  it("joins the repo whose base path starts the call's path, even where every repo serves the rest", () => {
+    const out = joinFacts({ repos: services({ basePaths: true }) });
+    const ping = out.joins.find((j) => j.call.fact === "call.get.cdp-limits-ping")!;
+    expect(ping.entry).toMatchObject({ repo: "forge-limits", fact: "entry.get.ping" });
+    expect(ping.how).toBe("host");
+    expect(out.asks).toEqual([]);
+    expect(joinFacts({ repos: [...services({ basePaths: true })].reverse() })).toEqual(out);
+  });
+
+  it("without base paths, joins what only one repo serves and asks about the rest", () => {
+    const out = joinFacts({ repos: services({ basePaths: false }) });
+    expect(
+      out.joins.find((j) => j.call.fact === "call.get.cdp-limits-limits-id")?.entry,
+    ).toMatchObject({ repo: "forge-limits" });
+    expect(out.asks.map((a) => [a.call.fact, a.reason])).toEqual([
+      ["call.get.cdp-limits-ping", "ambiguous"],
+    ]);
+  });
+});
+
 describe("joinFacts: calls joined to the entries that serve them, across repos", () => {
   it("gives the golden joins, questions and field lineage for the Forge estate", () => {
     expect(JSON.parse(JSON.stringify(joinFacts({ repos: estate() })))).toEqual(expected());

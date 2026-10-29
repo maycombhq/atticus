@@ -55,8 +55,10 @@ export interface JoinRepo {
   component?: string;
   /** Hosts the repo answers on (repos.manifest.yaml). */
   hosts?: readonly string[];
-  /** Modules with hosts of their own (ADR 0057). */
-  modules?: readonly { component: string; hosts: readonly string[] }[];
+  /** The path its routes sit under on its hosts, when they are shared (ADR 0134). */
+  basePath?: string;
+  /** Modules with hosts of their own (ADR 0057), and their base paths (ADR 0134). */
+  modules?: readonly { component: string; hosts: readonly string[]; basePath?: string }[];
   /** An API gateway (the manifest's `type: gateway`): its entries are routes it forwards. */
   gateway?: boolean;
   /**
@@ -348,6 +350,26 @@ export function gatewayCycleQuestion(f: Call, component: string, gateway: string
 const SECRETISH = /^(env:|vault:|secret:|ref:|\$\{|\{\{)/i;
 
 /** A host written as a URL or as `name[:port]`; `named` is the port the text writes, if any. */
+/** A path's segments, lower case, or undefined for none (ADR 0134). */
+function pathSegments(p: string | undefined): string[] | undefined {
+  if (!p) return undefined;
+  const segs = p
+    .split(/[?#]/)[0]!
+    .split("/")
+    .filter(Boolean)
+    .map((x) => x.toLowerCase());
+  return segs.length ? segs : undefined;
+}
+
+/** The path part of a URL (`https://host/cdp/limits` gives `/cdp/limits`), when it has one. */
+function urlPathOf(s: string | undefined): string | undefined {
+  const m = s ? /^[a-z][a-z0-9+.-]*:\/\/[^/?#]+(\/[^?#]*)/i.exec(s.trim()) : null;
+  return m && m[1] !== "/" ? m[1] : undefined;
+}
+
+const joinPaths = (base: string | undefined, path: string | undefined) =>
+  base ? `${base.replace(/\/+$/, "")}/${(path ?? "").replace(/^\/+/, "")}` : path;
+
 function hostIn(
   s: string | undefined,
 ): { host: string; port?: number; named?: number } | undefined {
@@ -394,23 +416,42 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
   const repoIds = new Map(repos.map((r) => [factIdPart(r.repo), r.repo] as const));
   const declared = repos.flatMap((r) => [
     ...(r.modules ?? []).flatMap((m) =>
-      m.hosts.map((h) => ({ pattern: h, repo: r.repo, component: factIdPart(m.component) })),
+      m.hosts.map((h) => ({
+        pattern: h,
+        repo: r.repo,
+        component: factIdPart(m.component),
+        basePath: pathSegments(m.basePath),
+      })),
     ),
-    ...(r.hosts ?? []).map((h) => ({ pattern: h, repo: r.repo, component: undefined })),
+    ...(r.hosts ?? []).map((h) => ({
+      pattern: h,
+      repo: r.repo,
+      component: undefined,
+      basePath: pathSegments(r.basePath),
+    })),
   ]);
   /**
    * Every repo (or module) that lists a host: those naming its port, else those that don't. A
    * host several repos list (a shared API gateway host, each proxy in a repo of its own) is
    * answered by whichever of them serves the call's path, never by the first one listed.
    */
-  const claimed = (h: { host: string; port?: number }) => {
+  const claimed = (h: { host: string; port?: number }, path?: string) => {
     const ported = declared.filter(
       (d) => hostHasPort(d.pattern) && hostMatches(d.pattern, h.host, h.port),
     );
-    const all = ported.length
+    const listed = ported.length
       ? ported
       : declared.filter((d) => !hostHasPort(d.pattern) && hostMatches(d.pattern, h.host, h.port));
-    if (!all.length) return undefined;
+    if (!listed.length) return undefined;
+    // ADR 0134: where repos give the base path they answer under, the call's path picks among
+    // them, the longest base path that starts it first; none starting it leaves every one.
+    const segs = pathSegments(path) ?? [];
+    const starts = listed.filter(
+      (d) =>
+        d.basePath && d.basePath.length <= segs.length && d.basePath.every((x, i) => x === segs[i]),
+    );
+    const longest = Math.max(0, ...starts.map((d) => d.basePath!.length));
+    const all = starts.length ? starts.filter((d) => d.basePath!.length === longest) : listed;
     const owns = (d: (typeof declared)[number]) => (e: Node) =>
       d.component ? e.component === d.component : e.repo === d.repo;
     const targets = [...new Set(all.map((d) => d.component ?? d.repo))].sort();
@@ -482,6 +523,13 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
     const tie = tieNode ? { tie: end(tieNode) } : {};
     const host =
       hostIn(f.host) ?? (tieNode ? hostIn(tieNode.fact.value) : undefined) ?? hostIn(f.base);
+    // The whole path the call sends: a base URL's own path (`https://host/cdp/limits`) in front.
+    const fullPath = joinPaths(
+      urlPathOf(f.host) ??
+        (tieNode ? urlPathOf(tieNode.fact.value) : undefined) ??
+        urlPathOf(f.base),
+      f.path,
+    );
 
     const answer = input.targets?.[call.repo]?.[f.id];
     const named = (name: string) => {
@@ -497,7 +545,7 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
     if (!answer && !hostIn(f.host) && !(f.to && named(f.to)) && configs.length > 1) {
       const owners = new Map<string, (e: Node) => boolean>();
       for (const n of configs) {
-        const d = claimed(hostIn(n.fact.value)!);
+        const d = claimed(hostIn(n.fact.value)!, joinPaths(urlPathOf(n.fact.value), f.path));
         if (d) owners.set(d.key, d.scope);
       }
       if (owners.size > 1) {
@@ -523,8 +571,8 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
       const n = named(f.to)!;
       scope = n;
       how = n.repo ? "repo" : "named";
-    } else if (host && claimed(host)) {
-      const d = claimed(host)!;
+    } else if (host && claimed(host, fullPath)) {
+      const d = claimed(host, fullPath)!;
       scope = { scope: d.scope, target: d.target };
       how = "host";
     } else if (host && components.has(factIdPart(host.host.split(".")[0]!))) {

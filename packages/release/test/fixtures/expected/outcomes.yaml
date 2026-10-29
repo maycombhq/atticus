@@ -1,4 +1,4 @@
-schemaVersion: 2
+schemaVersion: 3
 change: add-transfer-limit
 measures:
   - id: support-reversals-for-drained-accounts-drop-to-zero

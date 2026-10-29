@@ -239,7 +239,7 @@ describe("change worktrees", () => {
       );
       expect(
         text.startsWith(
-          "schemaVersion: 2\nchange: add-transfer-limit\nrepos:\n  - id: forge-gateway\n",
+          "schemaVersion: 3\nchange: add-transfer-limit\nrepos:\n  - id: forge-gateway\n",
         ),
       ).toBe(true);
       expect(await readChangeRepos(root, "add-transfer-limit")).toEqual(c);
