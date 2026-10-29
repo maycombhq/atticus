@@ -2,6 +2,12 @@
 
 All notable changes to Atticus. Versions follow [Semantic Versioning](https://semver.org); contracts C1 to C6 change only with an ADR, a schema version and a migration (`atticus upgrade`).
 
+## Unreleased
+
+### Fixed: one gateway host shared by many proxy repos is joined by path
+
+- When several repos list the same host in `repos.manifest.yaml` (an Apigee gateway host such as `api-gw.example.internal`, with each proxy in a repo of its own), a call on that host was joined only against the first of them, and a call to any other proxy's base path was missed. The join now looks at every repo that lists the host and picks the one whose route serves the call's path; two routes that both serve it are asked, as before. List the gateway host under `hosts:` on every proxy repo, then run `atticus verify --all --write` again.
+
 ## 2.0.0-beta.8 (2026-10-28)
 
 ### No file is too big to read: the read plan splits it into line ranges

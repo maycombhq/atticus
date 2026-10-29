@@ -83,6 +83,36 @@ describe("joinFacts through a gateway: the caller joins the service the route fo
     expect(post.gateway![0]!.facing).toBeUndefined();
   });
 
+  it("picks the gateway repo by path when several share one host (each proxy its own repo)", () => {
+    // Another team's proxy on the same gateway host, under its own base path.
+    const payments: Fact = {
+      ...read("forge-gateway").find((f) => f.id === "entry.get.forge-v1-accounts-id")!,
+      id: "entry.get.forge-payments-v1-payments-id",
+      repo: "forge-cards-proxy",
+      path: "/forge-payments/v1/payments/{id}",
+      handler: "forge-payments-v1/GetPayment",
+    } as Fact;
+    const shared = (order: "first" | "last"): JoinRepo[] => {
+      const other: JoinRepo = {
+        repo: "forge-cards-proxy",
+        facts: [payments],
+        component: "cards-proxy",
+        hosts: ["api.forge.example"],
+        gateway: true,
+      };
+      return order === "first" ? [other, ...estate()] : [...estate(), other];
+    };
+    for (const order of ["first", "last"] as const) {
+      const out = joinFacts({ repos: shared(order) });
+      const get = out.joins.find((j) => j.call.fact === PORTAL_GET)!;
+      expect(get, order).toBeDefined();
+      expect(get.entry).toMatchObject({ repo: "forge-accounts" });
+      expect(get.gateway![0]!.entry.repo).toBe("forge-gateway");
+      expect(out.asks.filter((a) => a.call.fact === PORTAL_GET)).toEqual([]);
+    }
+    expect(joinFacts({ repos: shared("first") })).toEqual(joinFacts({ repos: shared("last") }));
+  });
+
   it("joins at the gateway when the forwarding call's host is one nobody lists, and asks the host", () => {
     const repos = estate().map((r) => (r.repo === "forge-accounts" ? { ...r, hosts: [] } : r));
     const out = joinFacts({ repos });

@@ -398,9 +398,28 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
     ),
     ...(r.hosts ?? []).map((h) => ({ pattern: h, repo: r.repo, component: undefined })),
   ]);
-  const claimed = (h: { host: string; port?: number }) =>
-    declared.find((d) => hostHasPort(d.pattern) && hostMatches(d.pattern, h.host, h.port)) ??
-    declared.find((d) => !hostHasPort(d.pattern) && hostMatches(d.pattern, h.host, h.port));
+  /**
+   * Every repo (or module) that lists a host: those naming its port, else those that don't. A
+   * host several repos list (a shared API gateway host, each proxy in a repo of its own) is
+   * answered by whichever of them serves the call's path, never by the first one listed.
+   */
+  const claimed = (h: { host: string; port?: number }) => {
+    const ported = declared.filter(
+      (d) => hostHasPort(d.pattern) && hostMatches(d.pattern, h.host, h.port),
+    );
+    const all = ported.length
+      ? ported
+      : declared.filter((d) => !hostHasPort(d.pattern) && hostMatches(d.pattern, h.host, h.port));
+    if (!all.length) return undefined;
+    const owns = (d: (typeof declared)[number]) => (e: Node) =>
+      d.component ? e.component === d.component : e.repo === d.repo;
+    const targets = [...new Set(all.map((d) => d.component ?? d.repo))].sort();
+    return {
+      scope: (e: Node) => all.some((d) => owns(d)(e)),
+      target: targets.join(", "),
+      key: targets.join("|"),
+    };
+  };
 
   const outside = new Set((input.outside ?? []).map(factIdPart));
   const joins: FactJoin[] = [];
@@ -479,11 +498,7 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
       const owners = new Map<string, (e: Node) => boolean>();
       for (const n of configs) {
         const d = claimed(hostIn(n.fact.value)!);
-        if (d)
-          owners.set(
-            d.component ? `c:${d.component}` : `r:${d.repo}`,
-            d.component ? (e) => e.component === d.component : (e) => e.repo === d.repo,
-          );
+        if (d) owners.set(d.key, d.scope);
       }
       if (owners.size > 1) {
         asks.push({
@@ -510,9 +525,7 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
       how = n.repo ? "repo" : "named";
     } else if (host && claimed(host)) {
       const d = claimed(host)!;
-      scope = d.component
-        ? { scope: (e) => e.component === d.component, target: d.component }
-        : { scope: (e) => e.repo === d.repo, target: d.repo };
+      scope = { scope: d.scope, target: d.target };
       how = "host";
     } else if (host && components.has(factIdPart(host.host.split(".")[0]!))) {
       const comp = factIdPart(host.host.split(".")[0]!);
