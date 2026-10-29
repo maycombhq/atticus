@@ -1,6 +1,6 @@
 {
   "name": "@maycombhq/adopt",
-  "version": "2.0.0-beta.8",
+  "version": "2.0.0-beta.9",
   "private": true,
   "description": "Set Atticus up: init a metarepo, discover repos, adopt an existing repo in place, absorb another team's work and federate another Atticus metarepo.",
   "license": "Apache-2.0",

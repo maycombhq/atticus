@@ -1,6 +1,6 @@
 {
   "name": "@maycombhq/intake",
-  "version": "2.0.0-beta.8",
+  "version": "2.0.0-beta.9",
   "private": true,
   "description": "Takes in whatever is dropped into inputs/: classifies, dedupes and versions each file, reads partner specs and payload samples, and builds the triage list of what a person must decide.",
   "license": "Apache-2.0",

@@ -2,6 +2,10 @@
 
 The Atticus extension for VS Code. The command line's own changes are in the repository's [CHANGELOG](https://github.com/maycombhq/atticus/blob/main/CHANGELOG.md).
 
+## 0.7.7 (pre-release, with Atticus 2.0.0-beta.9)
+
+- **Ships with Atticus 2.0.0-beta.9.** No change to the extension itself; one host many repos share (an API gateway's, a platform ingress's) is joined by path, a repo can give its `basePath` in `repos.manifest.yaml` (now version 3), and a host question retires itself once the manifest lists the host.
+
 ## 0.7.6 (pre-release, with Atticus 2.0.0-beta.8)
 
 - **Ships with Atticus 2.0.0-beta.8.** No change to the extension itself; no file is too big to read any more: the read plan splits one bigger than a session into line ranges, each read in a session of its own.

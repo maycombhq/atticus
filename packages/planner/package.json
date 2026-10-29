@@ -1,6 +1,6 @@
 {
   "name": "@maycombhq/planner",
-  "version": "2.0.0-beta.8",
+  "version": "2.0.0-beta.9",
   "private": true,
   "description": "Planning artifacts from an approved design: stories, tasks and service-desk drafts, the story bar, work-tracker sync, and request templates and procedures drafted from knowledge.",
   "license": "Apache-2.0",

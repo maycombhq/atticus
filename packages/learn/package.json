@@ -1,6 +1,6 @@
 {
   "name": "@maycombhq/learn",
-  "version": "2.0.0-beta.8",
+  "version": "2.0.0-beta.9",
   "private": true,
   "description": "Learning tools: role lessons as data with verifiable checks, a throwaway practice sandbox built from the Forge fixture, local progress, and plain-words explanations of records, findings and commands.",
   "license": "Apache-2.0",

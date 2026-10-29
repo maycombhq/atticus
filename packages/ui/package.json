@@ -1,6 +1,6 @@
 {
   "name": "@maycombhq/ui",
-  "version": "2.0.0-beta.8",
+  "version": "2.0.0-beta.9",
   "private": true,
   "description": "The Atticus app: the screens the local server serves, built against the local API (C4).",
   "license": "Apache-2.0",
