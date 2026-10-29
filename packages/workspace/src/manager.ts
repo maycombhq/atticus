@@ -399,6 +399,6 @@ const yourClone = (local: Map<string, string>, repo: ManifestRepo): string | und
 
 /**
  * A folder name or repo id as a key: lower case, anything but letters, digits, `.`, `_` and `-`
- * as `-`, the way an id is made from a folder (`Qolo_Onboarding_1-0` is `qolo_onboarding_1-0`).
+ * as `-`, the way an id is made from a folder (`Forge_Onboarding_1-0` is `forge_onboarding_1-0`).
  */
 const nameKey = (s: string): string => s.toLowerCase().replace(/[^a-z0-9._-]+/g, "-");

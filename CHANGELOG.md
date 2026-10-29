@@ -6,7 +6,11 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ### A repo's `basePath` on a shared host (`repos.manifest.yaml` version 3)
 
-- A repo, or a module, can give the path its routes sit under on its hosts: `basePath: /cdp/limits` beside `hosts:`. When several repos share a host (services behind one OpenShift or GCP ingress, each under a common prefix and its module name), a call whose path starts with a repo's base path goes to that repo, so even a path every service serves (`/ping`, `/retrieve`) is joined rather than asked. Leave it out and nothing changes. The manifest moves to version 3; older manifests are read as they are, and `atticus upgrade` rewrites the number (ADR 0134). No repo needs reading again: run `atticus verify --all --write`.
+- A repo, or a module, can give the path its routes sit under on its hosts: `basePath: /forge/limits` beside `hosts:`. When several repos share a host (services behind one OpenShift or GCP ingress, each under a common prefix and its module name), a call whose path starts with a repo's base path goes to that repo, so even a path every service serves (`/ping`, `/retrieve`) is joined rather than asked. Leave it out and nothing changes. The manifest moves to version 3; older manifests are read as they are, and `atticus upgrade` rewrites the number (ADR 0134). A `{placeholder}` in a base path stands for any one segment, and a repo whose base path rules a call out is never joined to it. No repo needs reading again: run `atticus verify --all --write`. Files this version writes are at version 3, which beta.8 and older refuse to read, so upgrade everyone who shares the metarepo together.
+
+### A host question retires itself once the manifest lists the host
+
+- "Which repo answers on <host>?" stayed open after a person wrote the host into `repos.manifest.yaml` by hand, and answering it puts the host on one repo only, which is wrong for a gateway or platform host many repos share. The question now retires itself, saying which repos list the host, the next time `atticus scan` or `atticus verify --write` runs, and the line that asks it says to list a shared host on each repo instead of picking one.
 
 ### Fixed: one gateway host shared by many proxy repos is joined by path
 

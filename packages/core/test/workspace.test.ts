@@ -119,27 +119,27 @@ describe("repos.manifest.yaml (RepoManifest)", () => {
         {
           ...manifest.repos[0],
           hosts: ["apps.ocp.forge.internal"],
-          basePath: "/cdp/limits",
+          basePath: "/forge/limits",
           modules: [
             {
               path: "limits-api",
               component: "limits-api",
               hosts: ["apps.ocp.forge.internal"],
-              basePath: "/cdp/limits-api",
+              basePath: "/forge/limits-api",
             },
           ],
         },
       ],
     });
-    expect(m.repos[0]!.basePath).toBe("/cdp/limits");
-    expect(m.repos[0]!.modules[0]!.basePath).toBe("/cdp/limits-api");
+    expect(m.repos[0]!.basePath).toBe("/forge/limits");
+    expect(m.repos[0]!.modules[0]!.basePath).toBe("/forge/limits-api");
     for (const bad of [
-      "cdp/limits",
-      "/cdp/limits/",
+      "forge/limits",
+      "/forge/limits/",
       "/",
-      "/cdp//limits",
-      "/cdp limits",
-      "/cdp?x=1",
+      "/forge//limits",
+      "/forge limits",
+      "/forge?x=1",
     ])
       expect(
         RepoManifest.safeParse({ ...manifest, repos: [{ ...manifest.repos[0], basePath: bad }] })

@@ -34,7 +34,7 @@ export const WorkspaceSchemaVersion = z
 
 /**
  * The path a repo's routes sit under on its hosts (ADR 0134): what a platform's ingress or a
- * shared gateway host puts in front of them (`/cdp/limits`, `/qolo-onboarding/1.0`). Plain
+ * shared gateway host puts in front of them (`/forge/limits`, `/forge-onboarding/1.0`). Plain
  * segments, a leading slash and no trailing one.
  */
 export const BasePath = z

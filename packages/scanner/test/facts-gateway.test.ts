@@ -58,6 +58,39 @@ describe("the estate through a gateway, from facts", () => {
     ]);
   });
 
+  it("passes each repo's base path to the join, and a module's on the repo's hosts when it lists none (ADR 0134)", () => {
+    const withBase: OrgPack = {
+      ...op,
+      profiles: op.profiles.map((p) => ({
+        ...p,
+        repos: p.repos && {
+          ...p.repos,
+          repos: p.repos.repos.map((r) =>
+            r.id === "forge-accounts"
+              ? {
+                  ...r,
+                  basePath: "/forge/accounts",
+                  modules: [
+                    {
+                      path: "ledger",
+                      component: "ledger-api",
+                      hosts: [],
+                      basePath: "/forge/ledger",
+                    },
+                  ],
+                }
+              : r,
+          ),
+        },
+      })),
+    };
+    const accounts = joinReposOf(withBase, all()).find((r) => r.repo === "forge-accounts")!;
+    expect(accounts.basePath).toBe("/forge/accounts");
+    expect(accounts.modules).toEqual([
+      { component: "ledger-api", hosts: accounts.hosts, basePath: "/forge/ledger" },
+    ]);
+  });
+
   it("records the portal to the service via the gateway's route, with the route's auth", () => {
     const { records } = estateFromFacts({ op, repos: all() });
     const via = records.filter((r) => r.kind === "Interface" && r.via === "gateway");

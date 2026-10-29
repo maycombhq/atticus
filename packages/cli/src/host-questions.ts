@@ -1,9 +1,11 @@
 import { stat } from "node:fs/promises";
 import {
   HOSTS_STEP,
+  hostMatches,
   hostOfQuestion,
   listQuestions,
   raiseQuestions,
+  retireQuestion,
   type CatalogRecord,
   type Question,
 } from "@maycombhq/core";
@@ -72,9 +74,27 @@ export async function askHosts(
   const hosts = new Set(asks.map((a) => a.host));
   const open = before.filter((q) => q.state === "open" && hosts.has(hostOfQuestion(q)!));
   const lines: string[] = [];
+  // A host a person has since written into the manifest by hand (on a shared host, on every repo
+  // that answers there) is answered by the manifest: its open question retires, saying which.
+  for (const q of before) {
+    const host = hostOfQuestion(q);
+    if (q.state !== "open" || !host || hosts.has(host)) continue;
+    const [name, port] = host.split(/:(?=\d+$)/);
+    const listing = repos
+      .filter((r) =>
+        [...r.hosts, ...r.modules.flatMap((m) => m.hosts)].some((p) =>
+          hostMatches(p, name!, port ? Number(port) : undefined),
+        ),
+      )
+      .map((r) => r.id);
+    if (!listing.length) continue;
+    const why = `${listing.join(", ")} ${listing.length === 1 ? "lists" : "list"} ${host} under hosts in repos.manifest.yaml`;
+    await retireQuestion(root, q.id, { why, at });
+    lines.push(`Retired ${q.id} (${q.question}): ${why}.`);
+  }
   for (const q of raised)
     lines.push(
-      `Calls to ${hostOfQuestion(q)} join no repo: no repo lists it under hosts. Asked ${q.id}: ${q.question} Answer it: atticus questions answer ${q.id} --option <n> (1 is ${q.options[0]!.label}).`,
+      `Calls to ${hostOfQuestion(q)} join no repo: no repo lists it under hosts. Asked ${q.id}: ${q.question} Answer it: atticus questions answer ${q.id} --option <n> (1 is ${q.options[0]!.label}). If several repos answer on it (a shared gateway or platform host), don't pick one: list it under hosts on each of them in repos.manifest.yaml (with each one's basePath where the path tells them apart), and the question retires itself.`,
     );
   for (const q of open)
     lines.push(

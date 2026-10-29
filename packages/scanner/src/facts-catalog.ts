@@ -436,7 +436,10 @@ export function joinReposOf(
   const manifests = estateRepos(op);
   return list.map(({ repo, facts }) => {
     const m = manifests.find((r) => r.id === repo);
-    const modules = (m?.modules ?? []).filter((x) => x.hosts.length > 0);
+    // A module answers on its own hosts, or, giving only a base path, on its repo's (ADR 0134).
+    const modules = (m?.modules ?? [])
+      .filter((x) => x.hosts.length > 0 || (x.basePath && (m?.hosts.length ?? 0) > 0))
+      .map((x) => (x.hosts.length ? x : { ...x, hosts: m!.hosts }));
     const component = m?.component
       ? (renames?.[repo]?.[factIdPart(m.component)] ?? m.component)
       : undefined;

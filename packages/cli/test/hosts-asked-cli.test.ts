@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { cp, mkdtemp } from "node:fs/promises";
+import { cp, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -90,5 +90,30 @@ describe("atticus scan asks which repo answers on a host (ADR 0088)", () => {
         "forge-web->forge-customers POST /owners",
       ]),
     );
+  }, 300_000);
+
+  it("retires the question when a person lists the host in the manifest instead of answering", async () => {
+    const root = await metarepo();
+    expect(await scanCommand(root, { noDrift: true }, io().io)).toBe(0);
+    const [q] = (await listQuestions(root, { step: HOSTS_STEP })).questions;
+    expect(q!.state).toBe("open");
+    // The person writes the host into repos.manifest.yaml by hand (on a shared host, on each
+    // repo that answers there), not through the question.
+    const file = join(root, "org-pack", "profiles", "forge", "repos.manifest.yaml");
+    const text = await readFile(file, "utf8");
+    await writeFile(
+      file,
+      text.replace(
+        "    component: forge-customers\n",
+        '    component: forge-customers\n    hosts: ["localhost:9966"]\n',
+      ),
+    );
+    const s2 = io();
+    expect(await scanCommand(root, { noDrift: true }, s2.io)).toBe(0);
+    const after = (await listQuestions(root, { step: HOSTS_STEP })).questions;
+    expect(after.map((x) => [x.id, x.state])).toEqual([[q!.id, "retired"]]);
+    expect(after[0]!.retired?.why).toMatch(/forge-customers lists localhost:9966 under hosts/);
+    expect(s2.out.some((l) => l.includes(`Retired ${q!.id}`))).toBe(true);
+    expect(await interfaces(root)).toContain("forge-web->forge-customers POST /owners");
   }, 300_000);
 });

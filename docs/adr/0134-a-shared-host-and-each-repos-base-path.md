@@ -8,7 +8,7 @@
 
 The estate join (ADR 0124, C-join) ties a call to the repo that serves it by the host the call uses, as `repos.manifest.yaml` lists it under `hosts:` (ADR 0053). That assumed a host is one repo's.
 
-A first read of a bank's estate showed two common shapes where it isn't:
+A first read of a large estate showed two common shapes where it isn't:
 
 - **One API gateway host, many proxy repos.** Every internal Apigee proxy is a repo of its own, all deployed behind one host. The path's first segments (the proxy's base path) say which proxy a call reaches.
 - **One platform host, many services.** Spring Boot services on OpenShift or GCP sit behind one ingress host, each under a common base path and its own module name (`/<base>/<module>/...`). Their code declares only the controller's path (`/limits/{id}`); the part in front is the platform's.
@@ -25,11 +25,15 @@ A call on a host several repos (or modules) list is matched against the routes o
 
 ### 2. A repo can give its base path
 
-`repos.manifest.yaml` gains an optional `basePath` on a repo and on each module: the path its routes sit under on its hosts (`/cdp/limits`, `/qolo-onboarding/1.0`). Plain segments, a leading slash and no trailing one.
+`repos.manifest.yaml` gains an optional `basePath` on a repo and on each module: the path its routes sit under on its hosts (`/forge/limits`, `/forge-onboarding/1.0`). Plain segments, a leading slash and no trailing one.
 
-When repos that list a host give base paths, a call whose path starts with one of them goes only to those repos, the longest base path first. The call's path is the base URL's own path (a config value `https://host/cdp/limits`) followed by the call's. No base path starting it leaves every repo listing the host, as in 1.
+When repos that list a host give base paths, a call whose path starts with one of them goes only to the repos with the **longest** base path that starts it; a shorter one is not tried after it. The call's path is the base URL's own path (a config value `https://host/forge/limits`) followed by the call's. Segments compare in any case, and a `{placeholder}` on either side (`/{tenant}/limits`) stands for any one segment.
 
-A base path only narrows which repos are searched. Matching within them is unchanged: an entry still matches the end of a longer called path, so a controller's `/limits/{id}` serves `/cdp/limits/limits/{id}`.
+No base path starting the call leaves only the repos on the host that give none. A repo whose base path rules the call out is never joined, even where one of its routes ends the path: the call is recorded as served by none of them, not asked and not guessed.
+
+A module that gives a base path but no hosts answers on its repo's hosts. Hosts written with a port are matched first, as before (ADR 0053): where any repo lists the host with the call's port, only those repos are candidates, and their base paths decide among them.
+
+A base path only narrows which repos are searched. Matching within them is unchanged: an entry still matches the end of a longer called path, so a controller's `/limits/{id}` serves `/forge/limits/limits/{id}`.
 
 ### 3. The manifest's version 3
 
@@ -45,4 +49,5 @@ Hosts and base paths are read by the join at `atticus verify --write`. Nothing a
 
 - An organisation with a shared gateway host lists it on every proxy repo. One with a platform ingress lists the host and each service's base path. One with a host per service changes nothing.
 - A path every repo serves, with no base path to tell them apart, is still asked rather than guessed.
-- C6 (the manifest is org-pack configuration) gains one optional field, behind a version bump with a migration.
+- The manifest (documented with the workspace files under C4) gains one optional field, behind a version bump with a migration.
+- The bump moves every workspace file Atticus writes (a change's `repos.yaml`, `review/outcomes.yaml`) to version 3, which an older Atticus refuses to read: a team upgrades together, as with ADR 0128.

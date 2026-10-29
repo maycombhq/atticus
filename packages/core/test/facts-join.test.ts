@@ -69,14 +69,14 @@ describe("joinFacts on a host several repos share: each repo's base path (ADR 01
       repo: "forge-web",
       component: "forge-web",
       facts: [
-        call("forge-web", "call.get.cdp-limits-ping", {
+        call("forge-web", "call.get.forge-limits-ping", {
           method: "GET",
-          path: "/cdp/limits/ping",
+          path: "/forge/limits/ping",
           host: "apps.ocp.forge.internal",
         }),
-        call("forge-web", "call.get.cdp-limits-limits-id", {
+        call("forge-web", "call.get.forge-limits-limits-id", {
           method: "GET",
-          path: "/cdp/limits/limits/{id}",
+          path: "/forge/limits/limits/{id}",
           host: "apps.ocp.forge.internal",
         }),
       ],
@@ -85,7 +85,7 @@ describe("joinFacts on a host several repos share: each repo's base path (ADR 01
       repo: `forge-${m}`,
       component: `${m}-api`,
       hosts: ["apps.ocp.forge.internal"],
-      ...(o.basePaths ? { basePath: `/cdp/${m}` } : {}),
+      ...(o.basePaths ? { basePath: `/forge/${m}` } : {}),
       facts: [
         entry(`forge-${m}`, "entry.get.ping", { method: "GET", path: "/ping" }),
         ...(m === "limits"
@@ -97,20 +97,63 @@ describe("joinFacts on a host several repos share: each repo's base path (ADR 01
 
   it("joins the repo whose base path starts the call's path, even where every repo serves the rest", () => {
     const out = joinFacts({ repos: services({ basePaths: true }) });
-    const ping = out.joins.find((j) => j.call.fact === "call.get.cdp-limits-ping")!;
+    const ping = out.joins.find((j) => j.call.fact === "call.get.forge-limits-ping")!;
     expect(ping.entry).toMatchObject({ repo: "forge-limits", fact: "entry.get.ping" });
     expect(ping.how).toBe("host");
     expect(out.asks).toEqual([]);
     expect(joinFacts({ repos: [...services({ basePaths: true })].reverse() })).toEqual(out);
   });
 
+  it("joins no repo whose base path rules the call out, even where its route ends the path", () => {
+    const repos = services({ basePaths: true });
+    repos[0] = {
+      ...repos[0]!,
+      facts: [
+        call("forge-web", "call.get.forge-accounts-ping", {
+          method: "GET",
+          path: "/forge/accounts/ping",
+          host: "apps.ocp.forge.internal",
+        }),
+      ],
+    };
+    const out = joinFacts({ repos });
+    expect(out.joins.filter((j) => j.call.fact === "call.get.forge-accounts-ping")).toEqual([]);
+    expect(out.misses.map((m) => m.call.fact)).toEqual(["call.get.forge-accounts-ping"]);
+  });
+
+  it("reads a {placeholder} in a base path, or in the call's path, as any one segment", () => {
+    const repos = services({ basePaths: true }).map((r) =>
+      r.basePath ? { ...r, basePath: r.basePath.replace("/forge/", "/{tenant}/") } : r,
+    );
+    repos[0] = {
+      ...repos[0]!,
+      facts: [
+        call("forge-web", "call.get.acme-limits-ping", {
+          method: "GET",
+          path: "/acme/limits/ping",
+          host: "apps.ocp.forge.internal",
+        }),
+        call("forge-web", "call.get.tenant-wallets-ping", {
+          method: "GET",
+          path: "/{tenantId}/wallets/ping",
+          host: "apps.ocp.forge.internal",
+        }),
+      ],
+    };
+    const out = joinFacts({ repos });
+    const to = (id: string) => out.joins.find((j) => j.call.fact === id)?.entry.repo;
+    expect(to("call.get.acme-limits-ping")).toBe("forge-limits");
+    expect(to("call.get.tenant-wallets-ping")).toBe("forge-wallets");
+    expect(out.asks).toEqual([]);
+  });
+
   it("without base paths, joins what only one repo serves and asks about the rest", () => {
     const out = joinFacts({ repos: services({ basePaths: false }) });
     expect(
-      out.joins.find((j) => j.call.fact === "call.get.cdp-limits-limits-id")?.entry,
+      out.joins.find((j) => j.call.fact === "call.get.forge-limits-limits-id")?.entry,
     ).toMatchObject({ repo: "forge-limits" });
     expect(out.asks.map((a) => [a.call.fact, a.reason])).toEqual([
-      ["call.get.cdp-limits-ping", "ambiguous"],
+      ["call.get.forge-limits-ping", "ambiguous"],
     ]);
   });
 });
