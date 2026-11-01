@@ -141,6 +141,11 @@ export interface MapOptions {
   json?: boolean;
   /** The model's limit; default the step's (--max-tokens), else runtime.yaml's maxInput. */
   maxTokens?: number;
+  /**
+   * R2 (ADR 0157): plan a second pass on the gaps the last verify listed, for a fresh session,
+   * and write its prompt beside the facts; nothing else.
+   */
+  gaps?: boolean;
 }
 
 export interface MapDeps {
@@ -806,6 +811,21 @@ export async function mapCommand(
   const exclude = await excludesOf(root, repo);
   const factsFile = `${factsRelOf(root)}/${repo}.jsonl`;
 
+  if (o.gaps) {
+    const { mapGaps } = await import("./map-gaps.js");
+    const tier = await tierHere(root, op);
+    return mapGaps(
+      root,
+      repo,
+      {
+        commit,
+        source,
+        session: sessionTokensFor(limitOf(o, op, tier).limit),
+        ...(o.json ? { json: true } : {}),
+      },
+      io,
+    );
+  }
   if (o.estimate)
     return estimate(
       root,

@@ -252,6 +252,35 @@ export function rangeOverlap(each: number): number {
   );
 }
 
+/** One range of a file too big for a session: its lines, and its share of the file's tokens. */
+export interface LineRange {
+  from: number;
+  to: number;
+  /** The first line that is its own, not shared with the range before (R4). */
+  start: number;
+  tokens: number;
+}
+
+/**
+ * The line ranges a file bigger than `room` is read in (A-ranges): `ceil(tokens / (0.8 × room))`
+ * ranges of equal lines, each fitting with room to spare (lines aren't all the same length), in
+ * order. R4: each range after the first starts `rangeOverlap` lines before the last one ended, so
+ * a block cut at the boundary is whole in one of them; its tokens count those lines once more,
+ * and nothing else.
+ */
+export function lineRanges(f: { tokens: number; lines: number }, room: number): LineRange[] {
+  const n = Math.max(1, Math.min(f.lines, Math.ceil(f.tokens / (0.8 * room))));
+  const each = Math.ceil(f.lines / n);
+  const overlap = rangeOverlap(each);
+  const out: LineRange[] = [];
+  for (let start = 1; start <= f.lines; start += each) {
+    const from = start === 1 ? 1 : start - overlap;
+    const to = Math.min(f.lines, start + each - 1);
+    out.push({ from, to, start, tokens: Math.ceil((f.tokens * (to - from + 1)) / f.lines) });
+  }
+  return out;
+}
+
 /** One part of a big repo's read: globs over its files, in path order. */
 export interface ReadPart {
   paths: string[];
@@ -303,24 +332,14 @@ export function planParts(files: readonly FileTokens[], room = SESSION_TOKENS): 
   const big = files.filter((f) => f.tokens > room && (f.lines ?? 0) > 1);
   const rest = files.filter((f) => !big.includes(f));
   const ranges: (Unit & { key: string })[] = [];
-  for (const f of big) {
-    const n = Math.min(f.lines!, Math.ceil(f.tokens / (0.8 * room)));
-    const each = Math.ceil(f.lines! / n);
-    // R4: each range after the first starts a few lines before the last one ended, so a block
-    // cut at the boundary is whole in one of them. Its tokens count those lines once more, and
-    // nothing else: the range is still its own lines' share of the file.
-    const overlap = rangeOverlap(each);
-    for (let start = 1, i = 0; start <= f.lines!; start += each, i++) {
-      const from = i === 0 ? 1 : start - overlap;
-      const to = Math.min(f.lines!, start + each - 1);
+  for (const f of big)
+    for (const [i, r] of lineRanges({ ...f, lines: f.lines! }, room).entries())
       ranges.push({
-        glob: `${f.path}#L${from}-L${to}`,
+        glob: `${f.path}#L${r.from}-L${r.to}`,
         files: i === 0 ? 1 : 0,
-        tokens: Math.ceil((f.tokens * (to - from + 1)) / f.lines!),
-        key: `${f.path}\u0000${String(start).padStart(12, "0")}`,
+        tokens: r.tokens,
+        key: `${f.path}\u0000${String(r.start).padStart(12, "0")}`,
       });
-    }
-  }
   const sorted = [...rest].sort((a, b) => byPath(a.path, b.path));
   const keyOf = (g: string) => g.replace(/\/?\*\*?$/, "");
   const units = [

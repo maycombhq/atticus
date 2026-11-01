@@ -111,6 +111,8 @@ export const FACTS_COMPANIONS = [
   ".audit.yaml",
   // ADR 0151: the contract files (Pact, a consumer's OpenAPI) read in the repo at the facts' commit.
   ".contracts.yaml",
+  // ADR 0157: the prompt for a second pass on the gaps the last verify listed.
+  ".gaps.md",
 ] as const;
 
 /**

@@ -120,7 +120,7 @@ atticus map <repo> --estimate   # part 4 of 13 is next (3 of 13 read): ...
 atticus next                    # the same, among the other steps
 ```
 
-A part counts as read when every folder it covers is accounted for in the facts: a fact citing a file under it, or a line of `facts/<repo>.reviewed.jsonl` saying the file holds nothing to record. So the plan survives a lost session, a sub-agent and someone else carrying on, and reading a part again never un-does it. Commit the plan with the facts.
+A file bigger than one session is planned in line ranges (`<file>#L<from>-L<to>`); each range starts 20 lines (or 2% of the range) before the last one ended, so nothing is cut at a boundary. A part counts as read when every folder it covers is accounted for in the facts: a fact citing a file under it, or a line of `facts/<repo>.reviewed.jsonl` saying the file holds nothing to record. So the plan survives a lost session, a sub-agent and someone else carrying on, and reading a part again never un-does it. Commit the plan with the facts.
 
 The plan also keeps what the read cost (ADR 0141), for every repo `--estimate` has seen, one session or many. Atticus can't meter the tokens your assistant spends, so it keeps three numbers apart and says which is which: `--estimate`'s estimate (tokens counted from the source, and the sessions planned); the parts `atticus verify` first found in the facts, each stamped with when and at which commit; and what your assistant reports, if you record it:
 
@@ -161,6 +161,8 @@ The catalog is stricter than the facts file, and that is where a claim is droppe
 ### Lines the read may have skipped
 
 `atticus verify` also looks at the files your assistant read for strings that look like a path (`/api/v1/accounts/{id}`), a URL (`https://host/x`) or a topic (`forge.accounts.created`) which no fact cites or names, by plain text patterns that work in any language. Comments, imports, tests, generated, build-output and vendored folders, asset and file-system paths are left out. It looks inside folders `<repo>.reviewed.jsonl` marks as holding nothing (`reviewedHolds`), and lists the operations an OpenAPI spec in the repo declares that no entry covers (`specOpsUncovered`). It prints the first few; `<repo>.verify.yaml` lists the first hundred under `skipped` with the count, and `atticus verify <repo> --skipped` prints every one. These are notes for your assistant to check on its next pass: nothing is rejected, kept or made a fact because of them.
+
+That next pass is best done in a fresh session, which holds only what the first read left. `atticus map <repo> --gaps` plans it from the last verify's lists (the files no fact cites, read whole; the skipped lines, reviewed folders that hold some, spec operations no entry covers and entries no flow follows, each with 20 lines round it), sized to one session, and writes the prompt to `facts/<repo>.gaps.md`. Start a new chat and run `/atticus-map <repo> --gaps` there: the facts it writes go in the same facts file under the same ids, and `atticus verify <repo>` checks them as any others. When the gaps need more than one session, `--gaps` plans the first; verify, and run it again for the next (ADR 0157).
 
 ### A big repo and memory
 

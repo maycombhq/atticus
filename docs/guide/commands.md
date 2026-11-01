@@ -31,7 +31,8 @@ Every command under the twelve, with its options.
 
 ```text
   atticus map <repo>                   Read a repo into facts in batches that fit your model, one hand-off at a time, each answer verified at once; for an assistant without file tools (ADR 0124; /atticus-map reads it in one session) [--mode m] [--max-tokens n] [--next] [--resume run] [--force] [--dir path] [--commit sha] [--json]
-          [--estimate]                 Say what the first read costs: the checkout, commit, facts file, source files, tokens, your assistant's tier and the batches at the limit
+          [--estimate]                 Say what the first read costs: the checkout, commit, facts file, source files, tokens, your assistant's tier and the batches at the limit; with housePrefixes in conventions.yaml, it warns of house packages the repo imports that no taught framework covers, with the frameworks learn command for each (ADR 0147)
+          [--gaps]                     Plan a second pass on what the last verify left (files no fact cites, skipped lines, spec operations, entries no flow follows) for a new chat, sized to the session: writes facts/<repo>.gaps.md (ADR 0157)
           [--copy]                     Print the next batch's prompt to paste into a chat
           [--answer <file>]            With --copy: read the pasted answer back from a file (- for stdin)
           [--spent <tokens>] [--sessions n] [--part n]  Record what the read took as your assistant reports it, in facts/<repo>.read-plan.yaml beside --estimate's estimate (Atticus can't meter an assistant's tokens; ADR 0141)
