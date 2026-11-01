@@ -4,6 +4,16 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## 2.0.0-beta.10 (2026-10-31)
 
+### The estate's freshness, and the onboarding queue with what each read cost (ADR 0141)
+
+- `atticus estate fresh` lists, for every repo at once and most stale first, the facts' commit and the clone's, the files changed that the facts cite, the facts to read again and the command to run; local git only, nothing fetched or written. The Map's Trust tab shows the same under Freshness (`GET /api/trust/fresh`, C4 2.34.0).
+- `atticus next` reads the repos in the order that lands links early: reads under way, then the repos the read repos call, then gateways, then the rest; `--queue` lists the order with each repo's estimated cost. A mapped repo is no longer offered again because an older spec header kept another template; one whose clone moved past its facts gets a re-read step. The read plan (schema 2, an older one is read as before) keeps `--estimate`'s estimate for every repo, the parts `atticus verify` saw read, and what your assistant reports with `atticus map <repo> --spent`, each said for what it is.
+
+### A prototype compared further, and another team's spec as their system (ADR 0142)
+
+- `atticus change attach --prototype` now also says where enum values, headers and error responses differ (from field types, header-named fields, flow error paths and spec enums, header parameters and 4xx/5xx responses; no facts change), and the attached comparison lists the calls nothing serves for the architecture stage, whose drafter is told to place each one. C4 2.35.0, additive.
+- Another team's OpenAPI spec (a profile system with no estate repo, boundary `internal`) is read as a vendor's: `atticus intake impact` lands a service's own call on its operation, checks the field it sends and walks up its callers, and the prototype comparison names a call only that team publishes as theirs. A host alias counts as the system's host.
+
 ### A change warns on guessed links; questions come in the order a change needs them, each to its owner (ADR 0140)
 
 - The critic's new constitution rule `constitution.change-links-known` says when a call the change plans rests on a link the join guessed (joined by path or by a host's label), on a link question still open, or on a repo whose read is stale or incomplete, with the question to answer or the command that reads it again.

@@ -972,3 +972,11 @@ The gateway batch's instructions go from about 7,401 characters (~1,850 tokens) 
 - **Evidence.** `FactJoin.tie` stays the caller's placeholder line; the new `through` (with `entryThrough` for a listener and `GatewayHop.through` for a hop) lists the lines that set it, which `joinRecords` adds as `config` evidence. A repo whose settings a join cites is written again with it at `verify --write`.
 - **Reading rule.** An environment variable a deployment sets is a config fact whose `key` is the variable's name, `value` what it is set to, `target` the deployment; a placeholder is written as it is, never resolved by the reader.
 - **Not yet.** `valueFrom`/`configMapKeyRef` indirection and two placeholders in one value.
+
+## Addendum (A-ledger, ADR 0141): the plan also keeps what the read cost
+
+- The read plan is at schema 2: `--estimate` writes it for every repo, one session or many (a repo one session reads has `parts: []`, so still no ledger), with `estimate` (files, tokens counted from the source, sessions planned); `atticus verify` stamps each part, and the whole read, the first time the facts account for it (`read: {at, commit}`, never moved); `atticus map <repo> --spent` appends what the reader reports (`reported`). Estimates and reports are kept apart; Atticus meters nothing. A v1 plan reads as v2 with nothing recorded.
+
+## Addendum (O2-join, ADR 0142): another team's operations
+
+- A system outside the estate that isn't a vendor (F3; often added by O1 with its host as alias) can publish a spec, which intake reads as a vendor's. `JoinVendor.boundary: internal` makes `joinVendorOperations` also match a service's own call to it, by answer, `to` or host (the spec's servers and the system's host aliases), marked `direct`, with `route` set to the entry it is made under. A vendor's direct calls are still left to its gateway routes. `vendorImpact` makes a direct match its own caller. The prototype comparison reads every outside system's spec (`outsideProfileSystems`).
