@@ -26,6 +26,25 @@ import {
 
 const W = COPY.why;
 
+/** Their lines (another team's shared map, ADR 0160): named, never opened as ours. */
+function TheirLines({ title, list }: { title: string; list: readonly Api.HierEvidenceT[] }) {
+  return (
+    <>
+      <dt className="hud">{title}</dt>
+      <dd style={{ margin: 0 }}>
+        <ul className="ev-list">
+          {list.map((e) => (
+            <li key={`${e.repo ?? ""}:${e.at}`}>
+              {e.repo && <span className="mono">{e.repo}: </span>}
+              <code className="mono">{e.at}</code>
+            </li>
+          ))}
+        </ul>
+      </dd>
+    </>
+  );
+}
+
 function Lines({ title, list }: { title: string; list: readonly Api.HierEvidenceT[] }) {
   return (
     <>
@@ -62,11 +81,21 @@ export function JoinView({ join, children }: { join: Api.HierJoinT; children?: R
       <p className="ev-say" style={{ margin: 0 }}>
         {W.how[join.how] ?? W.how.unknown}
         {join.gateway && ` ${W.gateway}`}
+        {join.shared && ` ${W.sharedMap(join.shared.team, join.shared.commit)}`}
       </p>
+      {join.shared && (
+        <p className="ev-say" style={{ margin: 0 }}>
+          {W.sharedTheirs(join.shared.team)}
+        </p>
+      )}
       <dl className="stack" style={{ gap: 2, margin: 0 }}>
         <Lines title={W.caller} list={join.caller} />
         {join.hops.length > 0 && <Lines title={W.hops} list={join.hops} />}
-        <Lines title={W.callee} list={join.callee} />
+        {join.shared && join.callee.length ? (
+          <TheirLines title={W.callee} list={join.callee} />
+        ) : (
+          <Lines title={W.callee} list={join.callee} />
+        )}
         {join.other.length > 0 && <Lines title={W.other} list={join.other} />}
       </dl>
       {children}

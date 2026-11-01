@@ -36,6 +36,8 @@ import {
   type ExposureFinding,
   type JoinHow,
   type Question,
+  readSharedMaps,
+  type SharedJoinResult,
 } from "@maycombhq/core";
 import {
   catalogWithFacts,
@@ -255,6 +257,8 @@ async function writeLinksIntoReport(
   exposure: readonly ExposureFinding[] = [],
   /** ADR 0151: what the contract files and traffic say of this repo's links. */
   evidence?: ReturnType<typeof linkEvidenceAbout>,
+  /** ADR 0160: this repo's calls joined to another team's shared map, and those it has no entry for. */
+  shared?: SharedReport,
 ): Promise<void> {
   const file = join(factsDirOf(root), `${repo}.verify.yaml`);
   const text = await readFile(file, "utf8").catch(() => undefined);
@@ -270,8 +274,9 @@ async function writeLinksIntoReport(
     exposure: _old,
     contracts: _c,
     traffic: _t,
+    shared: _s,
     ...rest
-  } = report as { exposure?: unknown; contracts?: unknown; traffic?: unknown };
+  } = report as { exposure?: unknown; contracts?: unknown; traffic?: unknown; shared?: unknown };
   const c = evidence?.contracts;
   const t = evidence?.traffic;
   await writeFileAtomic(
@@ -291,8 +296,76 @@ async function writeLinksIntoReport(
         : {}),
       ...(c && (c.confirmed.length || c.findings.length) ? { contracts: c } : {}),
       ...(t && (t.seen.length || t.findings.length || t.unknownApps.length) ? { traffic: t } : {}),
+      ...(shared && (shared.joined.length || shared.unmatched.length || shared.asked.length)
+        ? { shared }
+        : {}),
     }),
   );
+}
+
+/** ADR 0160: what a write's calls met in other teams' shared maps, for the verify report. */
+export interface SharedReport {
+  joined: {
+    call: string;
+    at: string;
+    team: string;
+    commit: string;
+    repo: string;
+    entry: string;
+    entryAt: string;
+  }[];
+  unmatched: { call: string; at: string; team: string; commit: string; message: string }[];
+  asked: { call: string; at: string; team: string; question: string }[];
+}
+
+export function sharedReport(
+  r: SharedJoinResult,
+  maps: readonly { team: string; commit: string }[],
+): SharedReport {
+  const commit = (team: string) => maps.find((m) => m.team === team)?.commit ?? "";
+  return {
+    joined: r.matches.map((m) => ({
+      call: m.call.fact,
+      at: m.call.at,
+      team: m.team,
+      commit: commit(m.team),
+      repo: m.entry.repo,
+      entry: m.entry.fact,
+      entryAt: m.entry.at,
+    })),
+    unmatched: r.gaps.map((g) => ({
+      call: g.call.fact,
+      at: g.call.at,
+      team: g.team,
+      commit: commit(g.team),
+      message: g.message,
+    })),
+    asked: r.asks.map((a) => ({
+      call: a.call.fact,
+      at: a.call.at,
+      team: a.team,
+      question: a.question,
+    })),
+  };
+}
+
+/** What a write's calls met in other teams' shared maps, in a few lines (ADR 0160). */
+export function sharedLines(repo: string, s: SharedReport, verbose: boolean): string[] {
+  const out: string[] = [];
+  const teams = [...new Set([...s.joined, ...s.unmatched, ...s.asked].map((x) => x.team))].sort();
+  for (const team of teams) {
+    const j = s.joined.filter((x) => x.team === team);
+    const u = s.unmatched.filter((x) => x.team === team);
+    const a = s.asked.filter((x) => x.team === team);
+    const c = (j[0] ?? u[0])?.commit.slice(0, 7);
+    out.push(
+      `Shared map: ${j.length} of ${repo}'s calls joined to ${team}'s map${c ? ` (their commit ${c})` : ""}, each citing their entry; ${u.length} it has no entry for${a.length ? `; ${a.length} two of its entries answer` : ""}. Their entries are theirs: a wrong one is theirs to correct.`,
+    );
+    for (const x of verbose ? j : []) out.push(`  ${x.at} → ${x.repo} ${x.entryAt} (${x.entry})`);
+    for (const x of verbose ? u : u.slice(0, 5)) out.push(`  ${x.at}: ${x.message}`);
+    for (const x of a) out.push(`  ${x.at}: ${x.question}`);
+  }
+  return out;
 }
 
 /** How many records of a kind a write added, changed (fields or only evidence) and removed. */
@@ -365,6 +438,8 @@ export async function projectFactsIntoCatalog(
   // people imported. (The write refreshes this repo's contracts first; a preview reads them as
   // they are, so it writes nothing.)
   const evidence = await loadLinkEvidence(root);
+  // ADR 0160 (O3): the maps other teams share, read-only, under shared/<team>/.
+  const shared = await readSharedMaps(root);
   const result = catalogWithFacts({
     repo,
     facts,
@@ -375,6 +450,7 @@ export async function projectFactsIntoCatalog(
     estate: estate.repos,
     estateTargets: estate.targets,
     linkEvidence: { contracts: evidence.contracts, traffic: evidence.traffic },
+    ...(shared.maps.length ? { shared: shared.maps } : {}),
   });
   const diff = diffCatalogs([...existing], result.records);
   const links = linkChanges(repo, result.join, existing, result.records);
@@ -388,7 +464,8 @@ export async function projectFactsIntoCatalog(
     result,
     diff,
     links,
-    evidenceProblems: evidence.problems,
+    evidenceProblems: [...evidence.problems, ...shared.problems.map((p) => p.message)],
+    sharedMaps: shared.maps,
   };
 }
 
@@ -437,7 +514,7 @@ export async function writeFactsIntoCatalog(
     const rerun = `atticus verify ${repo} --write`;
     // ADR 0151: this repo's contract files, read at the facts' commit and kept beside its facts.
     await writeRepoContracts(root, repo, o.dir, facts);
-    const { answered, targets, ruled, estate, result, diff, links, evidenceProblems } =
+    const { answered, targets, ruled, estate, result, diff, links, evidenceProblems, sharedMaps } =
       await projectFactsIntoCatalog(root, repo, facts, { op, existing: existing.records });
     for (const p of evidenceProblems) io.err(p);
     for (const i of result.invalid)
@@ -585,7 +662,9 @@ export async function writeFactsIntoCatalog(
         verbose: o.verbose === true,
       }))
         io.out(l);
-    await writeLinksIntoReport(root, repo, links, result.join?.exposure, about);
+    const sharedAbout = result.shared ? sharedReport(result.shared, sharedMaps) : undefined;
+    if (sharedAbout) for (const l of sharedLines(repo, sharedAbout, o.verbose === true)) io.out(l);
+    await writeLinksIntoReport(root, repo, links, result.join?.exposure, about, sharedAbout);
     for (const l of lines) io.out(l);
     const map = await renderRepoMap(root, repo, io);
     return {

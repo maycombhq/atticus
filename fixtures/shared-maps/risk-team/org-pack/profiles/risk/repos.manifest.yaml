@@ -1,0 +1,20 @@
+# The Forge Risk Team's own metarepo, as they share it (invented, ADR 0160): their manifest and
+# their verified facts, at their commit. Nothing here is ours; atticus join shared import copies
+# their entries, read-only, into shared/forge-risk-team/.
+schemaVersion: 2
+platform: risk
+repos:
+  - id: forge-risk-scoring
+    url: https://git.example.com/forge-risk/forge-risk-scoring.git
+    type: spring-boot
+    owner: team-risk
+    component: scoring-api
+    system: risk
+    hosts: [risk.forge.internal]
+    basePath: /risk
+  - id: forge-risk-limits
+    url: https://git.example.com/forge-risk/forge-risk-limits.git
+    type: spring-boot
+    owner: team-risk
+    component: limits-api
+    system: risk

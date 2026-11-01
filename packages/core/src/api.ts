@@ -121,8 +121,13 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  * 2.43.0 (ADR 0156): a change's impact walks up the chain: each item's `chain` (who calls the
  *   callers, each hop with its depth, the callers it calls through, its verdict and owner, and the
  *   guess it rests on), `capped`, and the `upstream` counts. Additive only.
+ * 2.44.0 (ADR 0160, plan item O3): another team's map, read-only. A link's join can be `shared`
+ *   (`LINK_HOWS`), with `HierJoin.shared` naming the team, their repo, the line and their commit;
+ *   an outside system's view gains `shared` (the team's entries, each with the calls that reach
+ *   it, and the calls their map has no entry for), and a caller its `entry` and `seen: shared`.
+ *   Additive only.
  */
-export const API_VERSION = "2.43.0";
+export const API_VERSION = "2.44.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -267,6 +272,7 @@ export const LINK_HOWS = [
   "platform-setting",
   "folder-name",
   "conflict",
+  "shared",
   "unknown",
 ] as const;
 export const HierJoin = z.object({
@@ -289,6 +295,18 @@ export const HierJoin = z.object({
   hops: z.array(HierEvidence),
   /** Lines the record doesn't place at either end (a built-in reader's). */
   other: z.array(HierEvidence),
+  /**
+   * 2.44.0 (ADR 0160): the call is answered by an entry of another team's shared map: the team,
+   * their repo, the entry's line and the commit their code is at. Theirs to correct.
+   */
+  shared: z
+    .object({
+      team: z.string(),
+      repo: z.string(),
+      at: z.string(),
+      commit: z.string().optional(),
+    })
+    .optional(),
 });
 
 /** Parallel edges between the same two nodes of the same type are one edge with a count. */
@@ -1259,13 +1277,17 @@ export const OutsideCallView = z.object({
    * Where it was seen: a catalog Interface to the system, the estate join's outside list, the
    * system's spec (its hosts or names matched the call, ADR 0130), or more than one.
    */
-  seen: z.array(z.enum(["interface", "join", "spec"])),
+  seen: z.array(z.enum(["interface", "join", "spec", "shared"])),
   /** The Interface record, when the catalog has one. */
   interface: z.string().optional(),
   /** The spec operation it reaches (its Endpoint id), when it matches one. */
   operation: z.string().optional(),
   /** Through a gateway's forwarding call (the route and the gateway's call), when it is. */
   through: z.object({ repo: z.string(), at: z.string() }).optional(),
+  /** 2.44.0 (ADR 0160): the entry of another team's shared map that answers it. */
+  entry: z
+    .object({ team: z.string(), repo: z.string(), fact: z.string(), at: z.string() })
+    .optional(),
 });
 export const OutsideSystemView = z.object({
   id: z.string(),
@@ -1300,6 +1322,31 @@ export const OutsideSystemView = z.object({
   questions: z.array(z.object({ id: z.string(), repo: z.string(), question: z.string() })),
   /** With no spec: how to add one. */
   addSpec: z.array(z.string()).optional(),
+  /**
+   * 2.44.0 (ADR 0160): the map its team shares, read-only: whose, their commit, when it was
+   * imported, each entry with how many of the callers reach it, and the calls it has no entry for.
+   */
+  shared: z
+    .object({
+      team: z.string(),
+      name: z.string(),
+      commit: z.string(),
+      importedAt: z.string(),
+      entries: z.array(
+        z.object({
+          repo: z.string(),
+          component: z.string(),
+          fact: z.string(),
+          method: z.string().optional(),
+          path: z.string(),
+          at: z.string(),
+          commit: z.string().optional(),
+          calls: z.number().int(),
+        }),
+      ),
+      unmatched: z.array(OutsideCallView.extend({ message: z.string() })),
+    })
+    .optional(),
 });
 export const OutsideView = z.object({
   systems: z.array(OutsideSystemView),

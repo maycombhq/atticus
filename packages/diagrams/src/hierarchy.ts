@@ -1,6 +1,8 @@
 import {
   JOIN_HOW_FLAGS,
+  JOINED_TO_SHARED_MAP,
   LINK_EVIDENCE_NOT_GAPS,
+  SHARED_MAP_EVIDENCE,
   type Api,
   type CatalogRecord,
   type EvidenceT,
@@ -203,6 +205,8 @@ const HOW_OF_FLAG: Record<string, Join["how"]> = {
   "joined-by-repo": "repo",
   "joined-by-host": "host",
   "declared-caller": "declared",
+  // ADR 0160 (O3): answered by an entry of another team's shared map.
+  [JOINED_TO_SHARED_MAP]: "shared",
 };
 
 /** How an Interface's call found its callee, from its flags and via (C1, ADR 0135). */
@@ -228,6 +232,24 @@ function joinOf(i: RecordOf<"Interface">): Join {
     callee: side("callee"),
     hops: side("gateway"),
     other: evidenceOf(i.evidence.filter((e) => !e.side || !sided.has(e.side))),
+    ...sharedOf(i),
+  };
+}
+
+/** ADR 0160: the entry of another team's shared map a call is joined to, from its evidence. */
+function sharedOf(i: RecordOf<"Interface">): Pick<Join, "shared"> {
+  if (!i.flags?.includes(JOINED_TO_SHARED_MAP)) return {};
+  const e = i.evidence.find(
+    (x) => x.extractor === SHARED_MAP_EVIDENCE && x.side === "callee" && x.repo && x.path,
+  );
+  if (!e) return {};
+  return {
+    shared: {
+      team: e.by ?? "",
+      repo: e.repo!,
+      at: e.line === undefined ? e.path! : `${e.path}:${e.line}`,
+      ...(e.commit ? { commit: e.commit } : {}),
+    },
   };
 }
 

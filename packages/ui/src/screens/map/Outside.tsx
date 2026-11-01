@@ -9,8 +9,9 @@ import { CopyButton } from "../run/shared.js";
  * Map › Outside systems (plan item O4, ADR 0149): one page per system no estate repo belongs to
  * (a vendor, another team's). Who calls it, the operations its intaken spec publishes with how
  * many calls reach each, the calls that match nothing in that spec, and its open questions; a
- * system with no spec says how to add one. `GET /api/outside` reads files only; the app runs
- * nothing.
+ * system with no spec says how to add one. Another team's system shows the map that team shares
+ * (ADR 0160, O3): their entries with the calls that reach each, or how to import it. `GET
+ * /api/outside` reads files only; the app runs nothing.
  */
 
 const O = COPY.outside;
@@ -175,6 +176,59 @@ export function OutsideSystemPanels({ system: s }: { system: System }) {
           </>
         )}
       </Panel>
+      {(s.shared || s.boundary === "internal") && (
+        <Panel title={O.shared} span="1 / -1" labelledBy={`${id}-shared`}>
+          {s.shared ? (
+            <>
+              <p className="work-say">
+                {O.sharedFrom(s.shared.name, s.shared.commit, s.shared.importedAt)}
+              </p>
+              <table className="run-table">
+                <caption className="sr">{O.shared}</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">{O.sharedCols.entry}</th>
+                    <th scope="col">{O.sharedCols.repo}</th>
+                    <th scope="col">{O.sharedCols.line}</th>
+                    <th scope="col">{O.sharedCols.calls}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {s.shared.entries.map((e) => (
+                    <tr key={`${e.repo}|${e.fact}`}>
+                      <td>
+                        <code className="mono">{[e.method, e.path].filter(Boolean).join(" ")}</code>
+                      </td>
+                      <td>
+                        {e.repo}
+                        {e.component !== e.repo ? ` (${e.component})` : ""}
+                      </td>
+                      <td>
+                        <code className="mono">{e.at}</code>
+                      </td>
+                      <td>{e.calls}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <h3 className="hud">{O.sharedUnmatched}</h3>
+              {s.shared.unmatched.length ? (
+                <CallList
+                  calls={s.shared.unmatched}
+                  extra={(c) => (c as Call & { message: string }).message}
+                />
+              ) : (
+                <p className="work-say">{O.noSharedUnmatched}</p>
+              )}
+            </>
+          ) : (
+            <>
+              <p className="work-say">{O.noShared}</p>
+              <Cmd text={O.sharedImport(s.id)} />
+            </>
+          )}
+        </Panel>
+      )}
       <Panel title={O.questions} span="1 / -1" labelledBy={`${id}-questions`}>
         {s.questions.length ? (
           <ul className="ev-list" style={{ margin: 0 }}>

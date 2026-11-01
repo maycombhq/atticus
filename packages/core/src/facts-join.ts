@@ -259,7 +259,15 @@ export const JOIN_HOW_FLAGS: ReadonlySet<string> = new Set([
   JOINED_BY_HOST,
   // A-callers: a person declared who calls a gateway route (`DECLARED_CALLER`, facts-callers).
   "declared-caller",
+  // ADR 0160 (O3): a call to another team's system, answered by an entry of the map they share.
+  "joined-to-shared-map",
 ]);
+
+/**
+ * ADR 0160 (O3): a call left to another team's system that an entry of the team's shared map
+ * answers (`shared-maps.ts`). A how, never a guess.
+ */
+export const JOINED_TO_SHARED_MAP = "joined-to-shared-map";
 
 /**
  * How the callee was found: `answer` (a person named it), `named` (the call's `to` names the

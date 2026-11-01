@@ -262,7 +262,7 @@ async function routeTemplates(root: string): Promise<string[]> {
 }
 
 /** The metarepo's deny-list (`.denylist`: SHA-256 hashes, one a line), when it has one. */
-async function denyHashesAt(root: string): Promise<Set<string>> {
+export async function denyHashesAt(root: string): Promise<Set<string>> {
   const text = await readFile(join(root, ".denylist"), "utf8").catch(() => "");
   return new Set(
     text

@@ -1,0 +1,10 @@
+schemaVersion: 1
+platform: forge
+name: Forge lending platform
+systems:
+  - { id: lending, name: Lending, boundary: product, owner: team-lending }
+  - { id: forge-risk, name: Forge Risk, boundary: internal, owner: Forge Risk Team, aliases: [risk.forge.internal] }
+  - { id: northwind-pay, name: Northwind Pay, boundary: vendor }
+environments: [dev, test, prod]
+legend: { new: [New], modify: [Modify], retire: [Retire] }
+gates: []
