@@ -8,9 +8,13 @@ import {
   factsRelOf,
   headFromFiles,
   isAdopted,
+  auditItemHolds,
+  auditPrecision,
   listQuestions,
+  parseAuditFile,
   parseFacts,
   type Api,
+  type Fact,
   type CatalogRecord,
 } from "@maycombhq/core";
 import { readCatalog } from "@maycombhq/scanner";
@@ -203,10 +207,12 @@ export async function trustView(root: string): Promise<View> {
       unverified: 0,
     };
     let frameworks: Repo["frameworks"];
+    let kept: Fact[] = [];
     const lists: Lists = { rejected: [], excluded: [], asked: [], unverified: [] };
     if (raw !== undefined && raw.trim()) {
       const parsed = parseFacts(raw);
       if (parsed.ok) {
+        kept = parsed.facts;
         facts.count = parsed.facts.length;
         const unchecked = parsed.facts.filter((f) => f.verified === "none");
         facts.unverified = unchecked.length;
@@ -261,6 +267,22 @@ export async function trustView(root: string): Promise<View> {
       .filter((q) => q.repo === repo)
       .map((q) => ({ id: q.id, question: q.question, lines: q.evidence }));
 
+    // ADR 0148 (P3): the sample audit's precision. A fact answer stands while the fact cites the
+    // line the person saw; a link answer is counted as given (the join isn't run here).
+    let audit: Repo["audit"];
+    const auditPath = join(dir, `${repo}.audit.yaml`);
+    const auditText = await text(auditPath);
+    if (auditText !== undefined) {
+      const a = parseAuditFile(auditText);
+      if (!a.ok)
+        problems.push({ file: rel(auditPath), message: `isn't an audit file: ${a.issues[0]}` });
+      else {
+        const byId = new Map(kept.map((f) => [f.id, f] as const));
+        const p = auditPrecision(a.file.items, (i) => auditItemHolds(i, byId));
+        audit = { path: rel(auditPath), facts: p.facts, byKind: p.byKind, links: p.links };
+      }
+    }
+
     let checkoutDir: string | undefined;
     try {
       checkoutDir = adopted ? root : baseClonePath(root, repo);
@@ -298,6 +320,7 @@ export async function trustView(root: string): Promise<View> {
       ...(next ? { next } : {}),
       ...(frameworks ? { frameworks } : {}),
       lists,
+      ...(audit ? { audit } : {}),
     });
   }
   return { factsDir: factsRel, repos, problems };

@@ -289,7 +289,9 @@ const SPEC_EXT = /\.(ya?ml|json)$/i;
 
 /**
  * The operations a spec declares that no kept entry covers, with the spec reader the extractor
- * and intake share (`readOpenApiDocument`, ADR 0130); undefined when the file is no spec. An
+ * and intake share (`readOpenApiDocument`, ADR 0130); undefined when the file is no spec. A
+ * built-in reader, so optional (G4, `verifyFacts({ readers: false })`): without it no spec is
+ * read and none of its operations is listed; the skipped lines are listed as before. An
  * entry covers an operation when it cites the operation's lines, or has its method (or none) and
  * its path, with or without the server's path in front, or ends with it (a context path before).
  */

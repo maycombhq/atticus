@@ -3,6 +3,7 @@ import {
   joinConventions,
   callHostOf,
   factIdPart,
+  helperOn,
   joinFacts,
   JOINED_BY_LABEL,
   JOINED_BY_PATH,
@@ -225,6 +226,8 @@ export interface MeasureLinksInput {
   /** The targets people named (answers to targets questions): repo → call fact id → name. */
   targets?: Readonly<Record<string, Readonly<Record<string, string>>>>;
   reference: LinkReference;
+  /** G4: follow calls through gateway routes (the `gateway-walk` helper); default the run's setting. */
+  walkGateways?: boolean;
 }
 
 type Call = FactOf<"call">;
@@ -311,6 +314,7 @@ export function measureLinks(input: MeasureLinksInput): MeasureLinksResult {
     ...(input.targets ? { targets: input.targets } : {}),
     outside: outsideSystems(op),
     ...joinConventions(op),
+    walkGateways: input.walkGateways ?? helperOn("gateway-walk"),
   });
   const key = (repo: string, fact: string) => `${repo}\u0000${fact}`;
   const joins = new Map<string, FactJoin[]>();

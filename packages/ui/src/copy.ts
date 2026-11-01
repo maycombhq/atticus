@@ -694,6 +694,25 @@ export const COPY = {
       trusted:
         "Every fact is verified at the checkout's commit, every source file is read, and the catalog is built from the facts.",
     },
+    /** ADR 0148 (P3): what a person's sample audit of the repo found, with how small it is. */
+    audit: "Sample audit",
+    auditNone: (repo: string) => `None yet: atticus verify audit ${repo}`,
+    auditTally: (
+      what: string,
+      t: {
+        right: number;
+        wrong: number;
+        precision: number | null;
+        low: number | null;
+        high: number | null;
+      },
+    ) =>
+      t.precision === null
+        ? `${what}: no answers yet`
+        : `${what}: ${Math.round(t.precision * 100)}% right (${t.right} of ${t.right + t.wrong}; 95% between ${Math.round((t.low ?? 0) * 100)}% and ${Math.round((t.high ?? 0) * 100)}%)`,
+    auditFacts: "facts",
+    auditLinks: "links",
+    auditSmall: "A small sample: read the range, not the number.",
     /** ADR 0124 addendum A-framework: what each repo is built on, read from its build files. */
     builtOn: "Built on",
     builtOnNone: "Not read yet",

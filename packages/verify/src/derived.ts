@@ -4,6 +4,12 @@
  * accepts such a claim only when the cited line (or one either side), or a `cite.with` part,
  * declares the source, and the claim is the framework's derived name exactly (letter case aside,
  * as every claim). Each rule below names the convention it follows; nothing here guesses.
+ *
+ * A stack helper, optional (G4; `derived-names`, `verifyFacts({ derivedNames: false })` or
+ * ATTICUS_HELPERS_OFF): without it a claim must be written on its cited line or a `cite.with`
+ * part, so the reader cites a `@Table`, `table_name` or migration line that writes the name,
+ * and a name only a convention gives (an entity with no `@Table`) is rejected as
+ * `claim-not-on-line` for the reader to ask about instead.
  */
 
 export type DerivedKind = "word" | "route" | "field";

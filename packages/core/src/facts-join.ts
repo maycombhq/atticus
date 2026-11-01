@@ -45,6 +45,9 @@ import { DEFAULT_FACING_WORDS, gatewayBundleTest } from "./schema/conventions.js
  * and a route that forwards back into a gateway already in the path is a question (`cycle`), not
  * a loop; a walk that runs past the bound is a question too. The join stops at the last gateway
  * whose next hop is asked, missed or forwards to several services, exactly as one hop does.
+ * The walk is a stack helper, optional (G4; `walkGateways: false`, or ATTICUS_HELPERS_OFF=
+ * gateway-walk): without it a call is joined to the route it lands on, and each route's
+ * forwarding call to its service on its own, so the chain is there in two links, not one.
  *
  * Placeholders (J0): a base URL, host or topic written as `${X}`, `${X:default}` or `env:X` is
  * each value the config facts setting `X` give it, read in the caller's repo and in any repo of
@@ -328,6 +331,12 @@ export interface JoinFactsInput {
    * entry cited under one is a gateway route whatever its repo. Default `APIGEE_BUNDLE`'s.
    */
   bundleFolders?: readonly string[];
+  /**
+   * G4: follow a call through the gateway routes it lands on to the service behind them (the
+   * stack helper `gateway-walk`). False: a call is joined to the route it lands on, in the
+   * gateway's repo, and the route's forwarding call is joined on its own. Default true.
+   */
+  walkGateways?: boolean;
 }
 
 type Entry = FactOf<"entry">;
@@ -1161,7 +1170,7 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
   };
   const cycles: FactJoinAsk[] = [];
   for (const [i, j] of joins.entries()) {
-    if (j.how === "topic") continue;
+    if (j.how === "topic" || input.walkGateways === false) continue;
     let route = byKey.get(key(j.entry.repo, j.entry.fact))!;
     if (!isRoute(route)) continue;
     const caller = byKey.get(key(j.call.repo, j.call.fact))! as Node & { fact: Call };
@@ -1400,6 +1409,26 @@ export function basePathOf(e: Entry): string {
 }
 
 /**
+ * How a join found its callee, as its Interface's flags (C1, ADR 0135): a guess by its own F2
+ * flag alone (`joined-by-path`, `joined-by-label`), any other by how it was made
+ * (`joined-by-answer`, `-name`, `-repo`, `-host`); a publish joined to its listener has none.
+ */
+export function joinFlagsOf(j: Pick<FactJoin, "how" | "inferred" | "byLabel">): string[] {
+  const guessed = [
+    ...(j.inferred ? [JOINED_BY_PATH] : []),
+    ...(j.byLabel ? [JOINED_BY_LABEL] : []),
+  ];
+  if (guessed.length) return guessed;
+  const HOW: Partial<Record<JoinHow, string>> = {
+    answer: JOINED_BY_ANSWER,
+    named: JOINED_BY_NAME,
+    repo: JOINED_BY_REPO,
+    host: JOINED_BY_HOST,
+  };
+  return HOW[j.how] ? [HOW[j.how]!] : [];
+}
+
+/**
  * The joins as C1 records: an Interface per call joined to an entry (a publish to each
  * listener, as the merge would pair them), citing the caller's call, the config that ties it to
  * the host and the callee's entry; and a FieldMapping per field that crosses, and
@@ -1430,20 +1459,9 @@ export function joinRecords(result: FactsJoinResult, repos: readonly JoinRepo[])
     ];
   };
   const out = new Map<string, CatalogRecord>();
-  // F2: how a guessed join found its callee, as the Interface's flags.
-  const guessed = (j: FactJoin): string[] => [
-    ...(j.inferred ? [JOINED_BY_PATH] : []),
-    ...(j.byLabel ? [JOINED_BY_LABEL] : []),
-  ];
-  // C1 (ADR 0135): how any other join found it; a guess says it by its own flag alone.
-  const HOW: Partial<Record<JoinHow, string>> = {
-    answer: JOINED_BY_ANSWER,
-    named: JOINED_BY_NAME,
-    repo: JOINED_BY_REPO,
-    host: JOINED_BY_HOST,
-  };
-  const flagsOf = (j: FactJoin): string[] =>
-    guessed(j).length ? guessed(j) : HOW[j.how] ? [HOW[j.how]!] : [];
+  const flagsOf = joinFlagsOf;
+  // F2: a guess (by path or a host's label) is inferred, however declared its ends are.
+  const guessed = (j: FactJoin): boolean => !!(j.inferred || j.byLabel);
   for (const j of result.joins) {
     if (j.how === "topic") {
       // As the merge pairs a publish with a listener: via the bus, async, at the topic.
@@ -1486,7 +1504,7 @@ export function joinRecords(result: FactsJoinResult, repos: readonly JoinRepo[])
         entry,
         ...j.gateway.flatMap((h) => [fact(h.entry), fact(h.call)]),
       ].every((f) => f?.conf === "declared");
-      const confidence = declared && !guessed(j).length ? "verified" : "inferred";
+      const confidence = declared && !guessed(j) ? "verified" : "inferred";
       const auth = catalogAuth(route) ?? catalogAuth(entry);
       out.set(j.interface, {
         kind: "Interface",
@@ -1568,7 +1586,7 @@ export function joinRecords(result: FactsJoinResult, repos: readonly JoinRepo[])
       schemaVersion: 2,
       id: j.interface,
       status: "current",
-      confidence: declared && !guessed(j).length ? "verified" : "inferred",
+      confidence: declared && !guessed(j) ? "verified" : "inferred",
       ...(flagsOf(j).length ? { flags: flagsOf(j) } : {}),
       from: j.call.component,
       to: j.entry.component,

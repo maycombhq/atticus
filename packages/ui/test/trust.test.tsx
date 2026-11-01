@@ -115,6 +115,35 @@ describe("Map › Trust (ADR 0124)", () => {
     expect(out).toContain(esc("Were its screens missed?"));
   });
 
+  // ADR 0148 (P3): the sample audit's precision, with the size and the range.
+  it("says a sample audit's precision for facts and links, how small it is, or how to start one", () => {
+    const tally = (right: number, wrong: number, precision: number | null) => ({
+      drawn: right + wrong,
+      right,
+      wrong,
+      unsure: 0,
+      open: 0,
+      gone: 0,
+      precision,
+      low: precision === null ? null : 0.4,
+      high: precision === null ? null : 0.98,
+    });
+    const audit = {
+      path: "facts/forge-ledger.audit.yaml",
+      facts: tally(9, 1, 0.9),
+      byKind: {},
+      links: tally(0, 0, null),
+    };
+    const out = renderToStaticMarkup(<TrustRow r={{ ...LEDGER, audit }} />);
+    expect(out).toContain(esc(T.audit));
+    expect(out).toContain(esc(T.auditTally(T.auditFacts, audit.facts)));
+    expect(out).toContain(esc("facts: 90% right (9 of 10; 95% between 40% and 98%)"));
+    expect(out).toContain(esc("links: no answers yet"));
+    expect(out).toContain(esc(T.auditSmall));
+    const none = renderToStaticMarkup(<TrustRow r={LEDGER} />);
+    expect(none).toContain(esc(T.auditNone("forge-ledger")));
+  });
+
   it("says a repo nobody has read yet is built on nothing it knows of, and guesses nothing", () => {
     const out = renderToStaticMarkup(<TrustRow r={GATEWAY} />);
     expect(out).toContain(esc(T.builtOnNone));

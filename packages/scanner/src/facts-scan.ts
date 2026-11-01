@@ -10,6 +10,7 @@ import {
   type CatalogRecord,
   type Fact,
   type OrgPack,
+  stackHelpersOff,
 } from "@maycombhq/core";
 import { dirSource, sameCommit, verifyFacts } from "@maycombhq/verify";
 import { changesSince, type GitRunner } from "@maycombhq/workspace";
@@ -76,9 +77,12 @@ export async function factsForScan(
         note: `${repo}: its facts are of commit ${(diff?.missing[0] ?? older[0]!.commit).slice(0, 7)}, the checkout is at ${commit!.slice(0, 7)}, and the two can't be compared here; its readers' records are used until it is read again (/atticus-map ${repo}, then atticus verify ${repo} --write).`,
       };
     // A changed file invalidates only what cites it: the rest are carried, their lines checked.
+    const off = stackHelpersOff();
     const report = await verifyFacts({
       facts,
       source: dirSource(at.dir!),
+      ...(off.has("derived-names") ? { derivedNames: false } : {}),
+      ...(off.has("readers") ? { readers: false } : {}),
       commit: commit!,
       carry: diff.changes,
       conventions: conventionsOf(op),

@@ -34,6 +34,7 @@ import {
   type Question,
   type RepoDescription,
   type RepoDescriptionCite,
+  stackHelpersOff,
 } from "@maycombhq/core";
 import {
   buildContextPack,
@@ -518,6 +519,9 @@ const BUILD_FILE =
  * (a dependency or the `<parent>`), a Gradle coordinate, an npm package. In model order.
  */
 export function taughtIn(source: FileSource, op: OrgPack): FrameworkModel[] {
+  // G4: the framework models are a stack helper; off, the reader reads the house layer as code
+  // and asks about an annotation it can't place (FACT_RULES), so no model is given.
+  if (stackHelpersOff().has("framework-models")) return [];
   const models = op.frameworks.filter((m) => m.artifacts.length);
   if (!models.length) return [];
   const texts = source
@@ -1015,10 +1019,14 @@ async function takeAnswer(
   const { carry } = await carryOf(at.dir, [...merged.values()], s.commit, at.git);
   const reviewed = await readReviewed(root, s.repo);
   const estate = await estateComponentsOf(root);
+  const off = stackHelpersOff();
   const report = await verifyFacts({
     facts: [...merged.values()],
     source,
     commit: s.commit,
+    // G4: the stack helpers this run switched off (ATTICUS_HELPERS_OFF).
+    ...(off.has("derived-names") ? { derivedNames: false } : {}),
+    ...(off.has("readers") ? { readers: false } : {}),
     carry,
     exclude,
     // ADR 0124 addendum D-app: a person's corrections hold through every batch of a read.

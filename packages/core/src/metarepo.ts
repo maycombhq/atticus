@@ -98,6 +98,7 @@ export const FACTS_COMPANIONS = [
   ".corrections.jsonl",
   ".verify.yaml",
   ".read-plan.yaml",
+  ".audit.yaml",
 ] as const;
 
 /**

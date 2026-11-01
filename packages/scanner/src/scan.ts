@@ -29,6 +29,8 @@ import {
   type Fact,
   type FrameworkModel,
   type OrgPack,
+  helperOn,
+  stackHelpersOff,
 } from "@maycombhq/core";
 import {
   BUILT_IN_EXTRACTORS,
@@ -392,6 +394,11 @@ async function modelsReadingNothing(
 /**
  * Scan every repo in the org pack's manifests with the built-in extractors and the dialects
  * whose tests pass, then merge into one catalog. Unchanged repos come from the cache.
+ *
+ * The built-in readers and dialects are a stack helper, the cross-check of ADR 0124 §3 (G4;
+ * ATTICUS_HELPERS_OFF=readers): without them a repo with verified facts is projected from its
+ * facts alone, as with them, and the cross-check note says the readers agree; a repo nobody has
+ * read gives no records until the assistant reads it. The org's own plugins still run.
  */
 export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
   const pack = o.orgPack ? undefined : await orgPackDirFor(o.root);
@@ -405,7 +412,10 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
   }));
   const brokenDialects = new Set<string>();
   const dialects = await usableDialects(op, orgPackDir, problems, brokenDialects);
-  const frameworks = await usableFrameworks(op, problems);
+  // G4: the stack helpers a run switched off (ATTICUS_HELPERS_OFF): with `readers` off a repo
+  // is projected from its verified facts alone, with `framework-models` off no taught model is used.
+  const off = stackHelpersOff();
+  const frameworks = off.has("framework-models") ? [] : await usableFrameworks(op, problems);
   // Scanner plugins (ADR 0080): pinned, re-tested, then run sandboxed after the built-ins.
   const pluginSet = await usablePlugins(op);
   problems.push(...pluginSet.problems);
@@ -452,19 +462,21 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
       });
       continue;
     }
-    const extractors: Extractor[] = [
-      ...BUILT_IN_EXTRACTORS,
-      ...(o.extractors ?? []),
-      ...dialectExtractors
-        .filter(
-          ({ d }) =>
-            r.dialects.includes(d.name) ||
-            d.appliesTo.repoTypes.includes(r.type) ||
-            // "*": any repo where the marker matches (ADR 0062).
-            d.appliesTo.repoTypes.includes("*"),
-        )
-        .map(({ x }) => x),
-    ];
+    const extractors: Extractor[] = off.has("readers")
+      ? []
+      : [
+          ...BUILT_IN_EXTRACTORS,
+          ...(o.extractors ?? []),
+          ...dialectExtractors
+            .filter(
+              ({ d }) =>
+                r.dialects.includes(d.name) ||
+                d.appliesTo.repoTypes.includes(r.type) ||
+                // "*": any repo where the marker matches (ADR 0062).
+                d.appliesTo.repoTypes.includes("*"),
+            )
+            .map(({ x }) => x),
+        ];
     // One parse cache for the repo (ADR 0067): every extractor and dialect shares each file's
     // parse, and everything it holds (syntax trees too) is freed when the repo is done.
     const parsed = createParseCache();
@@ -580,6 +592,7 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
       targets: Object.fromEntries(factRepos.map((x) => [x.repo, x.targets])),
       outside: outsideSystems(op),
       ...joinConventions(op),
+      walkGateways: helperOn("gateway-walk"),
     });
     codeRecords = applyFactJoins(codeRecords, join, joinRepos, {
       callers: joinCallers({

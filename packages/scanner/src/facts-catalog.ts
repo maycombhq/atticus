@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import {
   joinConventions,
+  helperOn,
   callerRecords,
   DECLARED_CALLER,
   callTargetQuestion,
@@ -955,6 +956,8 @@ export function catalogWithFacts(input: FactsCatalogInput): FactsCatalogResult {
       targets: { ...input.estateTargets, [repo]: input.targets ?? {} },
       outside: outsideSystems(op),
       ...joinConventions(op),
+      // G4: the walk through gateways is a stack helper (ATTICUS_HELPERS_OFF=gateway-walk).
+      walkGateways: helperOn("gateway-walk"),
     });
     join = joinAbout(whole, repo);
     // A-callers: who this repo's gateway routes let in, read from the whole estate's join (a
@@ -1174,6 +1177,7 @@ export function estateFromFacts(input: {
     ),
     outside: outsideSystems(input.op),
     ...joinConventions(input.op),
+    walkGateways: helperOn("gateway-walk"),
   });
   return { records, specs, join, invalid };
 }
