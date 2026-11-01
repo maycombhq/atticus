@@ -14,6 +14,7 @@ import {
   ManifestEditError,
   migrateManifests,
   RepoDescription,
+  renameManifestRepo,
   RepoManifest,
   saysNotProduct,
   setManifestDescription,
@@ -88,6 +89,30 @@ describe("setManifestDescription", () => {
     expect(await read(root)).not.toContain("description");
     await expect(setManifestDescription(root, "forge-nothing", undefined)).rejects.toBeInstanceOf(
       ManifestEditError,
+    );
+  });
+});
+
+describe("renameManifestRepo (F5)", () => {
+  it("moves a repo's id in place, keeping the comments and the order", async () => {
+    const root = await metarepo();
+    const file = await renameManifestRepo(root, "forge-customers", "forge-accounts");
+    expect(file.platform).toBe("forge");
+    const text = await read(root);
+    expect(text).toContain("# The two invented repos of the estate");
+    expect(RepoManifest.parse(parse(text)).repos.map((r) => r.id)).toEqual([
+      "forge-web",
+      "forge-accounts",
+    ]);
+  });
+
+  it("refuses a repo no manifest lists, and an id one already lists", async () => {
+    const root = await metarepo();
+    await expect(renameManifestRepo(root, "forge-gone", "forge-x")).rejects.toThrow(
+      ManifestEditError,
+    );
+    await expect(renameManifestRepo(root, "forge-customers", "forge-web")).rejects.toThrow(
+      /forge-web is already listed/,
     );
   });
 });

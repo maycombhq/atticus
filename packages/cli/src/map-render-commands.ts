@@ -1,11 +1,12 @@
 import { existsSync } from "node:fs";
 import { readFile, readdir, rm } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
-import { parse } from "yaml";
+import { parse, stringify } from "yaml";
 import {
   acquireLock,
   catalogDirOf,
   factsDirOf,
+  factsRelOf,
   isAdopted,
   listQuestions,
   loadOrgPack,
@@ -28,8 +29,10 @@ import {
   writeFileAtomic,
   writeFlow,
   writeSpecHeader,
+  type CatalogRecord,
   type Fact,
   type FactsJoinResult,
+  type JoinHow,
   type Question,
 } from "@maycombhq/core";
 import {
@@ -80,6 +83,172 @@ export interface WriteFactsResult {
   map: string[];
   /** Every record the write added, changed or removed, and the counts by kind. */
   changes: CatalogDiff & { byKind: Record<string, KindCount> };
+  /** J2: the links between components the write made, unmade or changed, and the join's counts. */
+  links: LinkChanges;
+}
+
+/** J2: one Interface of a write, with its confidence and how its callee was found. */
+export interface LinkLine {
+  id: string;
+  from: string;
+  to: string;
+  method?: string;
+  path: string;
+  confidence: string;
+  /** How the join found the callee (left out for a link no join of this write made). */
+  how?: JoinHow;
+  /** The Interface's flags, `joined-by-path` and `joined-by-label` among them. */
+  flags?: string[];
+  /** Under changed: the confidence and flags it had before. */
+  was?: { confidence: string; flags?: string[] };
+}
+
+/**
+ * J2: what a write did to the links (catalog Interfaces), for review in the pull request: the
+ * repo's calls joined (of them inferred), asked, left to a system outside the estate, and not
+ * joined; and each Interface added, removed, or changed in confidence or flags.
+ */
+export interface LinkChanges {
+  calls: { joined: number; inferred: number; asked: number; outside: number; missed: number };
+  added: LinkLine[];
+  removed: LinkLine[];
+  changed: LinkLine[];
+}
+
+const HOW_WORDS: Record<JoinHow, string> = {
+  answer: "a person's answer",
+  named: "name",
+  repo: "the repo's name",
+  host: "host",
+  path: "path",
+  topic: "topic",
+};
+
+/** J2: the links a write added, removed or changed, from the catalog before and after it. */
+export function linkChanges(
+  repo: string,
+  join: FactsJoinResult | undefined,
+  before: readonly CatalogRecord[],
+  after: readonly CatalogRecord[],
+): LinkChanges {
+  const mine = <T extends { call: { repo: string } }>(xs: readonly T[] | undefined) =>
+    (xs ?? []).filter((x) => x.call.repo === repo);
+  const joined = mine(join?.joins);
+  const how = new Map((join?.joins ?? []).map((j) => [j.interface, j.how] as const));
+  const ifaces = (rs: readonly CatalogRecord[]) =>
+    new Map(
+      rs
+        .filter((r): r is Extract<CatalogRecord, { kind: "Interface" }> => r.kind === "Interface")
+        .map((r) => [r.id, r] as const),
+    );
+  const was = ifaces(before);
+  const now = ifaces(after);
+  // A call the join asks about that a link already starts from (a host a person answered,
+  // which the merge joins) is no longer asked.
+  const linked = new Set(
+    [...now.values()].flatMap((r) =>
+      r.evidence.filter((e) => e.side !== "callee").map((e) => `${e.repo}|${e.path}:${e.line}`),
+    ),
+  );
+  const line = (r: Extract<CatalogRecord, { kind: "Interface" }>, found: boolean): LinkLine => {
+    const h = found ? how.get(r.id) : undefined;
+    return {
+      id: r.id,
+      from: r.from,
+      to: r.to,
+      ...(r.method ? { method: r.method } : {}),
+      path: r.normalizedPath,
+      confidence: r.confidence,
+      ...(h ? { how: h } : {}),
+      ...(r.flags?.length ? { flags: [...r.flags] } : {}),
+    };
+  };
+  const byId = (a: LinkLine, b: LinkLine) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+  const flagsOf = (r: { flags?: string[] | undefined }) => [...(r.flags ?? [])].sort().join(",");
+  const changed: LinkLine[] = [];
+  for (const [id, r] of now) {
+    const old = was.get(id);
+    if (!old || (old.confidence === r.confidence && flagsOf(old) === flagsOf(r))) continue;
+    changed.push({
+      ...line(r, true),
+      was: {
+        confidence: old.confidence,
+        ...(old.flags?.length ? { flags: [...old.flags] } : {}),
+      },
+    });
+  }
+  return {
+    calls: {
+      joined: joined.length,
+      inferred: joined.filter((j) => j.inferred || j.byLabel).length,
+      asked: mine(join?.asks).filter((a) => !linked.has(`${a.call.repo}|${a.call.at}`)).length,
+      outside: mine(join?.outside).length,
+      missed: mine(join?.misses).length,
+    },
+    added: [...now.values()]
+      .filter((r) => !was.has(r.id))
+      .map((r) => line(r, true))
+      .sort(byId),
+    removed: [...was.values()]
+      .filter((r) => !now.has(r.id))
+      .map((r) => line(r, false))
+      .sort(byId),
+    changed: changed.sort(byId),
+  };
+}
+
+/** How many links a write lists before pointing to the verify report (as verify's SHOWN). */
+const LINKS_SHOWN = 5;
+
+/** J2: the links of a write in a few lines; every one with verbose, else the first few. */
+export function linkLines(l: LinkChanges, report: string, o: { verbose?: boolean } = {}): string[] {
+  const c = l.calls;
+  const calls = `${c.joined} call${c.joined === 1 ? "" : "s"} joined${c.inferred ? ` (${c.inferred} inferred)` : ""}, ${c.asked} asked, ${c.outside} outside the estate, ${c.missed} not joined`;
+  const counts = [
+    l.added.length ? `+${l.added.length}` : "",
+    l.removed.length ? `-${l.removed.length}` : "",
+    l.changed.length ? `~${l.changed.length}` : "",
+  ].filter(Boolean);
+  if (!counts.length) return [`  Links: ${calls}; no Interface added or removed.`];
+  const out = [`  Links: ${calls}; Interfaces ${counts.join(" ")} (all under links in ${report}).`];
+  const text = (sign: string, x: LinkLine) => {
+    const what = [x.method, x.path].filter(Boolean).join(" ");
+    const conf = x.was ? `${x.confidence}, was ${x.was.confidence}` : x.confidence;
+    const flags = x.flags?.join(", ");
+    const found = x.how
+      ? `found by ${HOW_WORDS[x.how]}${flags ? `: ${flags}` : ""}`
+      : (flags ?? "");
+    return `    ${sign} ${x.from} → ${x.to} ${what} (${conf}${found ? `; ${found}` : ""})`;
+  };
+  const all = [
+    ...l.added.map((x) => text("+", x)),
+    ...l.removed.map((x) => text("-", x)),
+    ...l.changed.map((x) => text("~", x)),
+  ];
+  const shown = o.verbose ? all : all.slice(0, LINKS_SHOWN);
+  out.push(...shown);
+  if (shown.length < all.length)
+    out.push(`    ... and ${all.length - shown.length} more (links in ${report})`);
+  return out;
+}
+
+/**
+ * J2: the write's links, put in the repo's verify report (`<repo>.verify.yaml`) under `links`,
+ * so the pull request shows what the write did to the links. A report that isn't there or
+ * doesn't read is left alone.
+ */
+async function writeLinksIntoReport(root: string, repo: string, links: LinkChanges): Promise<void> {
+  const file = join(factsDirOf(root), `${repo}.verify.yaml`);
+  const text = await readFile(file, "utf8").catch(() => undefined);
+  if (text === undefined) return;
+  let report: unknown;
+  try {
+    report = parse(text);
+  } catch {
+    return;
+  }
+  if (!report || typeof report !== "object" || Array.isArray(report)) return;
+  await writeFileAtomic(file, stringify({ ...(report as object), links }));
 }
 
 /** How many records of a kind a write added, changed (fields or only evidence) and removed. */
@@ -154,6 +323,12 @@ export async function writeFactsIntoCatalog(
         questions: [],
         map: [],
         changes: { ...none, byKind: {} },
+        links: {
+          calls: { joined: 0, inferred: 0, asked: 0, outside: 0, missed: 0 },
+          added: [],
+          removed: [],
+          changed: [],
+        },
       };
     }
     const curated = await readCatalog(join(catalogDirOf(root), "curated"), { cacheRoot: root });
@@ -305,6 +480,13 @@ export async function writeFactsIntoCatalog(
     for (const p of result.projectionIssues) io.out(`  ${p.code}: ${p.message}`);
     for (const l of joinLines(repo, result.join, estate.notes, { verbose: o.verbose === true }))
       io.out(l);
+    // J2: the links the write made or unmade, with confidence and how each was found.
+    const links = linkChanges(repo, result.join, existing.records, result.records);
+    for (const l of linkLines(links, `${factsRelOf(root)}/${repo}.verify.yaml`, {
+      verbose: o.verbose === true,
+    }))
+      io.out(l);
+    await writeLinksIntoReport(root, repo, links);
     for (const l of lines) io.out(l);
     const map = await renderRepoMap(root, repo, io);
     return {
@@ -313,6 +495,7 @@ export async function writeFactsIntoCatalog(
       questions: raised.map((q) => q.id),
       map: map ?? [],
       changes: { ...diff, byKind },
+      links,
     };
   } finally {
     await lock.release();

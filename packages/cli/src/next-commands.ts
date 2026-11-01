@@ -5,6 +5,8 @@ import { parse } from "yaml";
 import {
   changesDirOf,
   factsDirOf,
+  factsFileOf,
+  factsRelOf,
   fastPathOf,
   listQuestions,
   proposalsDirOf,
@@ -31,6 +33,7 @@ import {
 } from "@maycombhq/assistant-files";
 import { isMetarepo, notMetarepo } from "./metarepo-guard.js";
 import { partOfWords, readPlanProgress, readPlanRelOf } from "./map-parts.js";
+import { repoIdKey } from "./repo-ids.js";
 
 /**
  * atticus next [--all] [--json] (ADR 0086, plan principle 8): the next step to take, worked out
@@ -90,6 +93,11 @@ export interface RepoState {
    * assistant wrote one and nobody has confirmed it, `said` when a person did.
    */
   described: "none" | "draft" | "said";
+  /**
+   * F5: when no facts are filed under this repo, the ids near it (case, `_` and `-`, a version
+   * suffix aside) that do have a facts file: likely the same repo under another id.
+   */
+  nearFacts?: { id: string; file: string }[];
 }
 
 export interface NextState {
@@ -175,7 +183,18 @@ export async function readNextState(root: string): Promise<NextState> {
   const view = await onboardingView(root);
   const problems = [...view.problems];
   const repos: RepoState[] = [];
+  // F5: the ids facts are filed under, so a repo with none can be told of a near one that has.
+  const factIds = (await readdir(factsDirOf(root)).catch(() => [] as string[]))
+    .map((n) => factsFileOf(n))
+    .flatMap((f) => (f?.facts ? [f.repo] : []));
   for (const r of view.repos) {
+    const hasFacts = existsSync(join(factsDirOf(root), `${r.id}.jsonl`));
+    const near = hasFacts
+      ? []
+      : factIds
+          .filter((x) => x !== r.id && repoIdKey(x) === repoIdKey(r.id))
+          .sort()
+          .map((x) => ({ id: x, file: `${factsRelOf(root)}/${x}.jsonl` }));
     const spec = await readRepoSpec(root, r.id, { cacheRoot: root });
     problems.push(...spec.problems);
     const findings = await readSpecFindings(root, r.id);
@@ -192,7 +211,8 @@ export async function readNextState(root: string): Promise<NextState> {
       findings: findings?.findings.filter((f) => !f.question).length ?? 0,
       described: !r.description ? "none" : r.description.trust === "suggested" ? "draft" : "said",
       ...(spec.header?.template.startsWith("facts@") ? { facts: true } : {}),
-      ...(existsSync(join(factsDirOf(root), `${r.id}.jsonl`)) ? { read: true } : {}),
+      ...(hasFacts ? { read: true } : {}),
+      ...(near.length ? { nearFacts: near } : {}),
       ...(plan
         ? {
             readPlan: {
@@ -596,6 +616,19 @@ function changeAnswer(id: string, ids: string[]): NextStep[] {
 }
 
 /** Every step still to take, in the order to take them. Pure: tests check each case. */
+/**
+ * F5: what a repo with no facts is told of an id near its own that has some: likely one repo
+ * listed under two ids. Empty when there is none.
+ */
+function nearFactsWords(r: RepoState): string {
+  return (r.nearFacts ?? [])
+    .map(
+      (n) =>
+        ` No facts are filed under ${r.id}, but ${n.id} has some (${n.file}) and its id is near this one: if they are one repo, keep one id with atticus repo rename ${r.id} ${n.id} (or rename the facts to ${r.id}).`,
+    )
+    .join("");
+}
+
 export function nextSteps(s: NextState): NextStep[] {
   const out: NextStep[] = [];
   // The change in hand first (a live run, 2026-10-25, was pointed at eleven repo questions while
@@ -641,9 +674,11 @@ export function nextSteps(s: NextState): NextStep[] {
             slash: `/atticus-map ${r.id}`,
             where: METAREPO,
             // A-ledger: a repo read in parts says which part comes next, so nobody keeps the list.
-            why: r.readPlan?.next
-              ? `${r.id} is read in ${r.readPlan.total} parts (${r.readPlan.file}): ${partOfWords({ part: r.readPlan.next.part, total: r.readPlan.total })} is next, ${r.readPlan.done === 0 ? "none" : r.readPlan.done} ${r.readPlan.done === 1 ? "is" : "are"} read (${r.readPlan.next.paths.join(", ")}). Your assistant reads the part and writes its facts, each citing its line.`
-              : `${r.id} isn't read yet: your assistant reads it and writes its facts, each citing its line, and atticus verify ${r.id} checks them.`,
+            why:
+              (r.readPlan?.next
+                ? `${r.id} is read in ${r.readPlan.total} parts (${r.readPlan.file}): ${partOfWords({ part: r.readPlan.next.part, total: r.readPlan.total })} is next, ${r.readPlan.done === 0 ? "none" : r.readPlan.done} ${r.readPlan.done === 1 ? "is" : "are"} read (${r.readPlan.next.paths.join(", ")}). Your assistant reads the part and writes its facts, each citing its line.`
+                : `${r.id} isn't read yet: your assistant reads it and writes its facts, each citing its line, and atticus verify ${r.id} checks them.`) +
+              nearFactsWords(r),
             repo: r.id,
           },
     );

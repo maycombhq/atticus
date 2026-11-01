@@ -214,6 +214,12 @@ export interface FactJoinAsk {
   candidates: FactEnd[];
 }
 
+/** J2: a call left to a system outside the estate (a vendor, a cloud service), with the name it gave. */
+export interface FactJoinOutside {
+  call: FactEnd;
+  target: string;
+}
+
 /** A call whose named target (a repo or component of the estate) has no entry for it. */
 export interface FactJoinMiss {
   call: FactEnd;
@@ -250,6 +256,8 @@ export interface FactsJoinResult {
   misses: FactJoinMiss[];
   lineage: FieldLink[];
   gaps: FieldGap[];
+  /** J2: the calls left to a system outside the estate, by the name each gave; left out when none. */
+  outside?: FactJoinOutside[];
 }
 
 export interface JoinFactsInput {
@@ -516,6 +524,7 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
   const joins: FactJoin[] = [];
   const asks: FactJoinAsk[] = [];
   const misses: FactJoinMiss[] = [];
+  const outsideCalls: FactJoinOutside[] = [];
 
   /** The entries of a scope that serve a call, best first: score and node. */
   const serving = (c: Node & { fact: Call }, inScope: (e: Node) => boolean, loose: boolean) => {
@@ -621,7 +630,11 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
     if (!answer && f.by === "person" && f.to && !named(f.to)) continue;
     if (answer) {
       scope = named(answer);
-      if (!scope) continue; // a vendor or "none": nothing in the estate to join
+      if (!scope) {
+        // A vendor named by a person: nothing in the estate to join, the call goes outside.
+        outsideCalls.push({ call: end(call), target: answer });
+        continue;
+      }
       how = "answer";
     } else if (f.to && named(f.to)) {
       const n = named(f.to)!;
@@ -642,7 +655,9 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
       how = "host";
       byLabel = true;
     } else if (f.to && (host || outside.has(factIdPart(f.to)))) {
-      continue; // a target outside the estate (a vendor, a cloud service): the call keeps it
+      // A target outside the estate (a vendor, a cloud service): the call keeps it.
+      outsideCalls.push({ call: end(call), target: f.to });
+      continue;
     } else if (host) {
       const h = host.named ? `${host.host}:${host.named}` : host.host;
       asks.push({
@@ -925,6 +940,8 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
     ),
     asks: asks.sort(byEnds),
     misses: misses.sort(byEnds),
+    // Left out when none, so a join with nothing outside reads as it did before J2.
+    ...(outsideCalls.length ? { outside: outsideCalls.sort(byEnds) } : {}),
     lineage: lineage.sort(
       (x, y) =>
         cmp(x.interface, y.interface) ||

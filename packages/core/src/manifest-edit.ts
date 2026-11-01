@@ -174,6 +174,33 @@ export async function addManifestRepo(
 }
 
 /**
+ * F5: move a repo's id in the manifest that lists it, in place (comments and order kept). Refused
+ * when no manifest lists the repo, or any lists the new id already (ids are unique across every
+ * profile, ADR 0009). Only the id changes; the files filed under it are the caller's to move.
+ */
+export async function renameManifestRepo(
+  root: string,
+  repo: string,
+  to: string,
+): Promise<ManifestFile> {
+  for (const other of await manifestFiles(root)) {
+    const t = await readFile(other.path, "utf8").catch(() => undefined);
+    if (t === undefined) continue;
+    const repos = parseDocument(t).get("repos");
+    if (isSeq(repos) && repos.items.some((x) => isMap(x) && x.get("id") === to))
+      throw new ManifestEditError(
+        "invalid",
+        `${to} is already listed in ${other.rel}; repo ids are unique across every profile.`,
+      );
+  }
+  const found = await entryOf(root, repo);
+  if (!found) throw new ManifestEditError("not-found", `There is no repo ${repo} in any manifest.`);
+  found.item.set("id", to);
+  await save(found.file.path, found.doc);
+  return found.file;
+}
+
+/**
  * Rewrite every manifest at a version below `to` (the current one when left out) at that
  * version, keeping its comments and order (ADR 0009, 0128, 0134). Nothing a person wrote
  * changes: older manifests are read as they are and stay valid, and this only keeps diffs clean.

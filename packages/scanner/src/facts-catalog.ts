@@ -817,10 +817,12 @@ function joinAbout(all: FactsJoinResult, repo: string): FactsJoinResult {
       !!j.gateway?.some((h) => h.entry.repo === repo),
   );
   const ifaces = new Set(joins.map((j) => j.interface));
+  const outside = (all.outside ?? []).filter((o) => o.call.repo === repo);
   return {
     joins,
     asks: all.asks.filter((a) => a.call.repo === repo),
     misses: all.misses.filter((m) => m.call.repo === repo),
+    ...(outside.length ? { outside } : {}),
     lineage: all.lineage.filter((l) => ifaces.has(l.interface)),
     gaps: all.gaps.filter((g) => ifaces.has(g.interface)),
   };
