@@ -116,3 +116,18 @@ The change starts with its footprint filled in:
 The impact is attached to the change as `inputs/northwind-pay-2-0-0-impact.md`. Every stage reads it as data.
 
 `atticus change status` shows the footprint and the risk it adds up to, as for any change. The stages can still widen or narrow the footprint.
+
+## Another team's spec
+
+The same works for an API another team of your organisation owns and publishes, when no repo of yours belongs to it. Declare their system in the profile, with `boundary: internal` (a hosts question can add it, with the host as its alias), and add their OpenAPI spec to `inputs/` as above. Intake links it by the system's name or an alias, and `atticus intake impact` compares its versions.
+
+Your services usually call another team's API themselves, not through the external gateway. So for their system, Atticus also lands each service's own call on the team's operation, by the call's target, its host (the spec's servers, or a host alias), and its method and path:
+
+```
+Breaking: POST /v1/assessments: the request field channel is now required; a caller that leaves it out is refused.
+  called directly by billing-api: POST /v1/assessments, forge-billing src/main/java/forge/billing/RiskClient.java:12 (on Forge Risk Team), doesn't send channel
+    under forge-billing src/main/java/forge/billing/InvoicesController.java:13
+    ← shop-bff: forge-shop-bff src/main/java/forge/shop/BillingClient.java:9, under forge-shop-bff src/main/java/forge/shop/CheckoutController.java:16
+```
+
+A vendor's direct calls are still left to the gateway's routes, as before (ADR 0142).

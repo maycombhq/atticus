@@ -1,0 +1,18 @@
+# The repos of the team-spec fixture (invented, ADR 0142). Hand-written. No repo belongs to the
+# Forge Risk Team: the estate knows it only by its published spec in inputs/.
+schemaVersion: 1
+platform: forge
+repos:
+  - id: forge-shop-bff
+    url: https://git.example.com/forge/forge-shop-bff.git
+    type: spring-boot
+    owner: team-shop
+    component: shop-bff
+    system: shop
+  - id: forge-billing
+    url: https://git.example.com/forge/forge-billing.git
+    type: spring-boot
+    owner: team-billing
+    component: billing-api
+    system: billing
+    hosts: [billing.forge.internal]
