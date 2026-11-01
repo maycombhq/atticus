@@ -3376,15 +3376,74 @@ export const COPY = {
     saving: "Writing the correction…",
     needReason: "Say why the fact is wrong first.",
     nothingChanged: "Change a field or the line first.",
-    saved: (file: string) =>
-      `Written to ${file}. Commit it with the metarepo's other files, then run atticus verify to apply it:`,
-    copyCommit: "Copy the git command",
-    copyVerify: "Copy the verify command",
+    saved: (file: string) => `Written to ${file}.`,
     correction: (action: string, by: string) =>
       action === "wrong" ? `Marked wrong by ${by}` : `Corrected by ${by}`,
     links: "Links",
     noLinks: "No link starts or ends here in this view.",
     linkOf: (from: string, to: string, type: string) => `${from} ${type} ${to}`,
+  },
+  /**
+   * C4 (ADR 0149): after any correction the app writes, the commands to run (the app runs none)
+   * and what the next verify --write will change, worked out without writing.
+   */
+  correctionNext: {
+    title: "What happens next",
+    onlyWrote: (file: string) =>
+      `The app wrote only ${file}. It runs no command: nothing else changes until you run the steps below, and a person reviews the pull request.`,
+    fileDiff: (file: string) => `The change to ${file}, as written`,
+    stepsTitle: "Run these, in order",
+    step: {
+      verify: "Apply it: verify checks the facts again and writes the catalog",
+      branch: "Make a branch for the change",
+      add: "Add the exact files the write changes",
+      commit: "Commit them",
+      push: "Push the branch",
+      pr: "Open a pull request",
+    } as Record<string, string>,
+    prByHand: (branch: string) =>
+      `Open a pull request from ${branch} on your Git host. Set adapters.gitHost in org-pack/runtime.yaml and Atticus gives its command here.`,
+    copy: (what: string) => `Copy: ${what}`,
+    previewTitle: "What atticus verify --write will change",
+    previewIntro:
+      "Worked out here by the same checks the command runs, without writing anything. It compares with the catalog on disk, so it also shows anything else waiting to be written.",
+    loading: "Working out what the write will change…",
+    failed: (why: string) => `Couldn't work out what the write will change: ${why}`,
+    unavailable: {
+      "no-checkout":
+        "There is no checkout of the repo here, so what the write changes can't be worked out. Clone it (atticus workspace sync); the commands still apply.",
+      "unreadable-facts":
+        "The repo's facts file doesn't read as facts, so the write would change nothing yet. Have your assistant read the repo again.",
+    } as Record<string, string>,
+    blocked: (n: number) =>
+      `The write puts nothing in the catalog: ${n} fact${n === 1 ? " is" : "s are"} rejected. Fix ${n === 1 ? "it" : "them"} first (Map › Trust lists ${n === 1 ? "it" : "them"}).`,
+    headMoved: (head: string, commit: string) =>
+      `The checkout is at ${head.slice(0, 7)}, past the facts' commit ${commit.slice(0, 7)}: verify reads the changed files' facts again, which this preview doesn't.`,
+    facts: "Facts",
+    dropped: "Left out",
+    droppedWhy: {
+      wrong: "marked wrong by a person",
+      rejected: "rejected by the verifier",
+    } as Record<string, string>,
+    edited: "Edited",
+    field: (name: string, was: string | undefined, now: string | undefined) =>
+      `${name}: ${was ?? "(none)"} → ${now ?? "(none)"}`,
+    noFactChange: "No fact changes.",
+    kept: (n: number) => `${n} fact${n === 1 ? "" : "s"} kept.`,
+    links: "Links",
+    moved: (what: string, was: string, now: string) => `${what}: moves from ${was} to ${now}`,
+    added: (what: string) => `${what}: added`,
+    removed: (what: string) => `${what}: removed`,
+    changed: (what: string, was: string, now: string) => `${what}: ${was} → ${now}`,
+    unmade: (what: string) =>
+      `${what}: this repo no longer makes it (the record stays, held by the other side, until that repo is written again)`,
+    linkWhat: (from: string, to: string, method: string | undefined, path: string) =>
+      `${from} → ${to} ${method ? `${method} ` : ""}${path}`,
+    noLinkChange: "No link changes.",
+    catalog: (added: number, changed: number, removed: number, evidence: number) =>
+      `Catalog records: ${added} added, ${changed} changed, ${removed} removed, ${evidence} with only their evidence changed.`,
+    stale: (ids: string[]) =>
+      `Corrections on file that meet no fact in this read (kept, applied when it is read again): ${ids.join(", ")}.`,
   },
   /** ADR 0135, C1 and C2: why a link is there, and saying it is wrong. */
   why: {
@@ -3460,10 +3519,7 @@ export const COPY = {
       dropped: (from: string, was: string) =>
         `The call is dropped from the catalog: ${from} → ${was} loses it, and goes if it was the link's only call.`,
     },
-    saved: (file: string) => `Written to ${file}. To apply it, run:`,
-    then: "Then commit the corrections file and the catalog files verify rewrote on a branch, and open a pull request: a person reviews the change before it merges.",
-    copyVerify: "Copy the verify command",
-    copyCommit: "Copy the git command",
+    saved: (file: string) => `Written to ${file}.`,
     moved: "What moved when the estate was joined again",
     movedTo: (what: string, was: string, now: string) => `${what}: was ${was}, now ${now}`,
     movedOff: (what: string, was: string) =>

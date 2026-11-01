@@ -152,6 +152,23 @@ export async function verifyAllCommand(
   return failed.length ? 1 : 0;
 }
 
+/**
+ * What the verifier is given besides the facts and the source, read from the metarepo: a person's
+ * corrections from the Map (ADR 0124 addendum D-app), the files the reader found nothing in
+ * (A-read), the estate's components (J1), the org pack's conventions (ADR 0147) and the accepted
+ * exclusions. Shared by `atticus verify` and the app's preview of it (ADR 0149), so both check
+ * the same way.
+ */
+export async function verifyInputsOf(root: string, repo: string) {
+  return {
+    corrections: await readCorrections(root, repo),
+    reviewed: await readReviewed(root, repo),
+    estate: await estateComponentsOf(root),
+    conventions: await conventionsAt(root),
+    exclude: await excludesOf(root, repo),
+  };
+}
+
 export async function verifyCommand(
   root: string,
   repo: string,
@@ -208,18 +225,14 @@ export async function verifyCommand(
   // where every file they cite is unchanged since, and read again where one changed.
   const { carry, missing } = await carryOf(dir, parsed.facts, commit, o.git);
   // ADR 0124 addendum D-app: a person's corrections from the Map, applied on every run.
-  const corrections = await readCorrections(root, repo);
+  const inputs = await verifyInputsOf(root, repo);
+  const { corrections, reviewed, estate, conventions } = inputs;
   for (const b of corrections.bad.slice(0, SHOWN))
     io.err(`${rel}/${repo}.corrections.jsonl line ${b.line} isn't a correction: ${b.message}`);
   if (corrections.bad.length > SHOWN)
     io.err(
       `... and ${corrections.bad.length - SHOWN} more lines of ${rel}/${repo}.corrections.jsonl that aren't corrections`,
     );
-  // ADR 0124 addendum A-read: the files the reader read and found nothing to record in.
-  const reviewed = await readReviewed(root, repo);
-  const estate = await estateComponentsOf(root);
-  // ADR 0147: the org pack's folder lists and house frameworks.
-  const conventions = await conventionsAt(root);
   let report;
   try {
     report = await verifyFacts({
@@ -230,7 +243,7 @@ export async function verifyCommand(
       ...(off.has("readers") ? { readers: false } : {}),
       ...(commit ? { commit, carry } : {}),
       ...(o.routed ? { routed: o.routed } : {}),
-      exclude: await excludesOf(root, repo),
+      exclude: inputs.exclude,
       corrections: corrections.corrections,
       reviewed: reviewed.entries,
       room,

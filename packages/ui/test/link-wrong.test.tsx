@@ -266,9 +266,9 @@ describe("the form", () => {
       },
     });
     expect(page).toContain(esc(W.will.moves("web-app", "customers-api", "forge-ledger")));
-    expect(page).toContain("atticus verify forge-web --write");
-    expect(page).toContain(esc(W.then));
-    expect(page).toContain("git add facts/forge-web.corrections.jsonl");
+    // C4 (ADR 0149): the panel of what happens next, its preview still loading.
+    expect(page).toContain(esc(COPY.correctionNext.onlyWrote("facts/forge-web.corrections.jsonl")));
+    expect(page).toContain(esc(COPY.correctionNext.loading));
   });
 
   it("says an error writing it", () => {

@@ -109,8 +109,12 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   setting's folder name or despite an open exposure conflict is a guess: `LINK_HOWS` gains
  *   `platform-setting`, `folder-name` and `conflict`, and a change's impact caller's `guessed`
  *   takes any of `JOIN_GUESS_FLAGS`. Additive only.
+ * 2.39.0 (ADR 0149, plan items C4, O4 and P3's follow-up): after a correction, the commands to
+ *   run and a preview of the next verify --write (GET /api/facts/{repo}/preview, `line` on a
+ *   correction's result); the outside systems (GET /api/outside); and a sample audit drawn and
+ *   answered in the app (GET and POST /api/facts/{repo}/audit). Additive only.
  */
-export const API_VERSION = "2.38.0";
+export const API_VERSION = "2.39.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -1065,7 +1069,117 @@ export const FactCorrectionResult = z.object({
   commit: z.string(),
   /** The command that applies it: the verifier reads the corrections every time it runs. */
   verify: z.string(),
+  /** 2.39.0 (ADR 0149): the line appended to the file, exactly as written. */
+  line: z.string().optional(),
 });
+/**
+ * 2.39.0 (ADR 0149, C4): after a correction the app writes, the commands a person runs (the app
+ * runs none) and what the next `atticus verify <repo> --write` will change, computed in-process
+ * by the same functions that command uses, writing nothing.
+ */
+export const NextStepView = z.object({
+  step: z.enum(["verify", "branch", "add", "commit", "push", "pr"]),
+  /** The command to copy; absent for a pull request on a Git host Atticus has no command for. */
+  command: z.string().optional(),
+});
+export const PreviewLinkView = z.object({
+  id: z.string(),
+  from: z.string(),
+  to: z.string(),
+  method: z.string().optional(),
+  path: z.string(),
+  confidence: z.string(),
+  how: z.string().optional(),
+  flags: z.array(z.string()).optional(),
+  /** Under changed: the confidence and flags it had before. */
+  was: z.object({ confidence: z.string(), flags: z.array(z.string()).optional() }).optional(),
+});
+export const VerifyPreviewView = z.object({
+  repo: z.string(),
+  /** The one file the app wrote: `facts/<repo>.corrections.jsonl`. */
+  wrote: z.string(),
+  /** The branch the git steps make. */
+  branch: z.string(),
+  /** In order: verify --write, then branch, add (the exact files), commit, push, pull request. */
+  steps: z.array(NextStepView),
+  /** What the next verify --write will change; absent when it can't be worked out here (`unavailable`). */
+  preview: z
+    .object({
+      facts: z.object({
+        /** Facts the write leaves out: marked wrong by a person, or rejected by the verifier. */
+        dropped: z.array(
+          z.object({
+            id: z.string(),
+            kind: z.string(),
+            label: z.string(),
+            why: z.enum(["wrong", "rejected"]),
+            message: z.string().optional(),
+          }),
+        ),
+        /** Facts whose claim or line the write changes (a person's edit), field by field. */
+        edited: z.array(
+          z.object({
+            id: z.string(),
+            kind: z.string(),
+            label: z.string(),
+            fields: z.array(
+              z.object({
+                name: z.string(),
+                was: z.string().optional(),
+                now: z.string().optional(),
+              }),
+            ),
+          }),
+        ),
+        kept: z.number().int(),
+      }),
+      /** The write puts nothing in the catalog while facts are rejected: how many. */
+      blocked: z.object({ rejected: z.number().int() }).optional(),
+      /** The catalog records it adds, changes and removes; absent when blocked. */
+      catalog: z
+        .object({
+          added: z.number().int(),
+          changed: z.number().int(),
+          removed: z.number().int(),
+          /** Record files whose only change is their evidence (a line moved, a new commit). */
+          evidenceOnly: z.number().int(),
+          /** The record files it writes or removes, from the metarepo's root. */
+          files: z.array(z.string()),
+        })
+        .optional(),
+      /** The links (Interfaces) it adds, removes, changes, and moves (one call, another callee). */
+      links: z
+        .object({
+          added: z.array(PreviewLinkView),
+          removed: z.array(PreviewLinkView),
+          changed: z.array(PreviewLinkView),
+          /**
+           * Links this repo's calls no longer make whose record stays, held by the callee's side
+           * alone, until that repo is written again.
+           */
+          unmade: z.array(PreviewLinkView),
+          moved: z.array(
+            z.object({
+              from: z.string(),
+              method: z.string().optional(),
+              path: z.string(),
+              was: z.string(),
+              to: z.string(),
+            }),
+          ),
+        })
+        .optional(),
+      /** The checkout's HEAD is past the facts' commit: verify reads the changed files' facts again. */
+      headMoved: z.object({ head: z.string(), commit: z.string() }).optional(),
+      /** Corrections on file that meet no fact in this read (kept, applied when it is read again). */
+      staleCorrections: z.array(z.string()),
+    })
+    .optional(),
+  /** Why there is no preview: no checkout of the repo, or a facts file that doesn't read. */
+  unavailable: z.enum(["no-checkout", "unreadable-facts"]).optional(),
+});
+export type VerifyPreviewViewT = z.infer<typeof VerifyPreviewView>;
+export type PreviewLinkViewT = z.infer<typeof PreviewLinkView>;
 export type FactCiteViewT = z.infer<typeof FactCiteView>;
 export type RepoFactsViewT = z.infer<typeof RepoFactsView>;
 export type FactCorrectionResultT = z.infer<typeof FactCorrectionResult>;
@@ -3208,6 +3322,17 @@ const OPS: Record<string, Record<string, Op>> = {
       errors: [400, 404, 422],
     },
   },
+  "/api/facts/{repo}/preview": {
+    get: {
+      id: "previewVerifyWrite",
+      summary:
+        "After a correction: the commands to run (atticus verify <repo> --write, then the git steps with the exact files) and what that write will change in the facts and the catalog (links moved, added, removed; facts dropped or edited), computed in-process without writing (ADR 0149)",
+      tag: "workspace",
+      params: [p("repo"), q("fact", str, "The fact corrected, for the branch and commit message")],
+      ok: { status: 200, schema: "VerifyPreviewView", description: "OK" },
+      errors: [400, 404],
+    },
+  },
   "/api/workspace/sync": {
     post: {
       id: "syncWorkspace",
@@ -4226,6 +4351,7 @@ export function openApiDocument(): Record<string, unknown> {
     SetChangeKnowledgeResult,
     RepoFactsView,
     FactCorrectionResult,
+    VerifyPreviewView,
     StageReviewView,
     StageCommentResult,
     OrgPackDraftView,

@@ -13,7 +13,7 @@ import {
 import type { Api } from "@maycombhq/core";
 import { api, useLiveEvents, type Loaded } from "../api/client.js";
 import { COPY } from "../copy.js";
-import { Command } from "../screens/work/RunNext.js";
+import { CorrectionNext } from "./correction-next.js";
 import { message } from "../screens/run/shared.js";
 import { escapeCloses } from "./ui.js";
 import {
@@ -423,10 +423,12 @@ export function CorrectFactForm(p: {
         </p>
       )}
       {saving.state === "done" && (
-        <div role="status">
-          <p className="ev-say">{E.saved(saving.result.file)}</p>
-          <Command text={saving.result.commit} label={E.copyCommit} />
-          <Command text={saving.result.verify} label={E.copyVerify} />
+        <div>
+          <p role="status" className="ev-say">
+            {E.saved(saving.result.file)}
+          </p>
+          {/* C4 (ADR 0149): the commands to run and what the next verify --write changes. */}
+          <CorrectionNext repo={p.repo} result={saving.result} />
         </div>
       )}
     </form>

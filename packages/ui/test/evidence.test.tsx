@@ -351,7 +351,10 @@ describe("correcting a fact", () => {
       },
     });
     expect(done).toContain(esc(E.saved("facts/forge-ledger.corrections.jsonl")));
-    expect(done).toContain("git add facts/forge-ledger.corrections.jsonl");
-    expect(done).toContain("atticus verify forge-ledger");
+    // C4 (ADR 0149): the panel of what happens next, its preview still loading.
+    expect(done).toContain(
+      esc(COPY.correctionNext.onlyWrote("facts/forge-ledger.corrections.jsonl")),
+    );
+    expect(done).toContain(esc(COPY.correctionNext.loading));
   });
 });
