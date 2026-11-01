@@ -447,6 +447,45 @@ describe("joinFacts: an answer that names nothing binds (F3)", () => {
   });
 });
 
+/**
+ * O1: a hosts question answered "an outside system (new)" declares a system with the host as its
+ * alias; a call on that host keeps it (no question, no guess by a first label), unless the
+ * manifest lists the host under a repo.
+ */
+describe("joinFacts: a call on a host an outside system names (O1)", () => {
+  const repos: JoinRepo[] = [
+    {
+      repo: "forge-notes",
+      facts: [
+        call("forge-notes", "c-tags", {
+          component: "forge-notes-web",
+          method: "GET",
+          path: "/api/tags",
+          host: "forge-archive.tidewater.example",
+        }),
+      ],
+    },
+    {
+      repo: "forge-archive",
+      component: "forge-archive",
+      facts: [entry("forge-archive", "e-tags", { method: "GET", path: "/api/tags" })],
+    },
+  ];
+  it("is left to the outside system, not asked and not joined by the host's first label", () => {
+    const before = joinFacts({ repos });
+    expect(before.joins.map((j) => j.byLabel)).toEqual([true]);
+    const out = joinFacts({ repos, outside: ["forge-archive-tidewater-example"] });
+    expect(out.joins).toEqual([]);
+    expect(out.asks).toEqual([]);
+  });
+
+  it("joins the repo the manifest lists the host under, whatever the profile says", () => {
+    const listed = [repos[0]!, { ...repos[1]!, hosts: ["forge-archive.tidewater.example"] }];
+    const out = joinFacts({ repos: listed, outside: ["forge-archive-tidewater-example"] });
+    expect(out.joins.map((j) => j.how)).toEqual(["host"]);
+  });
+});
+
 describe("joinRecords: a guessed join is inferred, with how it was found (F2)", () => {
   it("marks a join by path inferred and flags it joined-by-path", () => {
     const repos: JoinRepo[] = [

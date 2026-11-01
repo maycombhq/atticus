@@ -161,7 +161,9 @@ ATTICUS_MAX_OLD_SPACE=4096 atticus verify <repo> --write   # megabytes Node may 
 
 Closing an IDE usually frees enough on its own. Atticus checks its own memory as it reads and stops with that message, so the command never dies without saying anything.
 
-With several repos read: `atticus join` follows flows from repo to repo through the calls the facts join, and asks which repo answers a host nobody lists. `atticus ui --open` shows the map, with the Trust tab saying per repo what was verified.
+With several repos read: `atticus join` follows flows from repo to repo through the calls the facts join, and asks which repo answers a host nobody lists. When a system outside the estate answers on that host, pick "An outside system (new)", another team's or a vendor's: it is written into the profile with the host as its alias, for review with the rest of the change. `atticus ui --open` shows the map, with the Trust tab saying per repo what was verified.
+
+A call that names no target is asked about once for every call of the repo that goes the same way (the same target named, host or base, and the same first part of the path, such as `/notify` or `/api/v2/accounts`): one answer names the target of all of them, and a call added to the group later reads it too. If they don't all go to one place, answer "Not all to one place" and each is asked on its own. A question the code answers later (the call names its target, or the manifest's hosts and base paths join it) retires itself and says how; an answered question is never retired.
 
 ## The first change
 

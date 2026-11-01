@@ -13,9 +13,16 @@ options:
   - label: forge-customers
     means: "forge-customers serves HTTP, and its src/main/resources/application.properties:2 sets the port 9966 (server.port=9966)"
     changes: localhost:9966 goes under hosts for forge-customers in repos.manifest.yaml, and the calls to it join forge-customers on the next scan
+  # O1: or an outside system the org pack doesn't name yet, another team's or a vendor's.
+  - label: "An outside system (new): another team's"
+    means: localhost:9966 is another team's system, outside this estate, that the org pack doesn't name yet
+    changes: A system localhost-9966 (boundary internal, alias localhost:9966) goes into the profile, and the calls to localhost:9966 go to it on the next scan
+  - label: "An outside system (new): a vendor"
+    means: localhost:9966 is a vendor's system, outside this estate, that the org pack doesn't name yet
+    changes: A system localhost-9966 (boundary vendor, alias localhost:9966) goes into the profile, and the calls to localhost:9966 go to it on the next scan
   - label: None of these
-    means: An outside system answers on localhost:9966, not a repo of this estate
-    changes: Nothing is added to the manifest; the calls stay loose ends, and this isn't asked again
+    means: Neither a repo of this estate nor a system to add to the org pack answers on localhost:9966
+    changes: Nothing is added to the manifest or the profile; the calls stay loose ends, and this isn't asked again
 evidence:
   - src/app/owners/owner.service.ts:10
   - src/app/owners/owner.service.ts:14

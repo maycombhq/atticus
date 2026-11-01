@@ -211,7 +211,7 @@ describe("atticus estate join, flow and lineage (ADR 0085)", () => {
     }).toEqual(want);
     expect(asked[0]!.askedBy.command).toBe("atticus estate join");
     expect(j.out).toContain(
-      `Calls to localhost:9966 join no repo: no repo lists it under hosts. Asked ${asked[0]!.id}: Which repo answers on localhost:9966? Answer it: atticus questions answer ${asked[0]!.id} --option <n> (1 is forge-customers). If several repos answer on it (a shared gateway or platform host), don't pick one: list it under hosts on each of them in repos.manifest.yaml (with each one's basePath where the path tells them apart), and the question retires itself.`,
+      `Calls to localhost:9966 join no repo: no repo lists it under hosts. Asked ${asked[0]!.id}: Which repo answers on localhost:9966? Answer it: atticus questions answer ${asked[0]!.id} --option <n> (1 is forge-customers). If several repos answer on it (a shared gateway or platform host), don't pick one: list it under hosts on each of them in repos.manifest.yaml (with each one's basePath where the path tells them apart), and the question retires itself. If a system outside the estate answers on it, pick an outside system (another team's or a vendor's): it goes into the profile with the host as its alias.`,
     );
     // Asked once: the next join says it's still open.
     const again = io();

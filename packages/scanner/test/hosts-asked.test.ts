@@ -110,6 +110,9 @@ describe("which repo answers on a host the calls name (ADR 0088)", () => {
     expect(hostQuestionDrafts(asks)[0]!.draft.options.map((o) => o.label)).toEqual([
       "forge-billing",
       "forge-customers",
+      // O1: an outside system, another team's or a vendor's, written into the profile.
+      "An outside system (new): another team's",
+      "An outside system (new): a vendor",
       "None of these",
     ]);
   });

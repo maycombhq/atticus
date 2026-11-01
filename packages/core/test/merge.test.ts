@@ -336,6 +336,44 @@ describe("mergeCatalog: hosts and gateways (ADR 0053)", () => {
     ]);
   });
 
+  it("reaches an outside system a host question added: its alias is the host (O1)", () => {
+    const outside = [
+      ...systems,
+      {
+        id: "ledger-tidewater-example",
+        name: "ledger.tidewater.example",
+        boundary: "internal" as const,
+        aliases: ["ledger.tidewater.example"],
+      },
+      {
+        id: "localhost-9970",
+        name: "localhost:9970",
+        boundary: "vendor" as const,
+        aliases: ["localhost:9970"],
+      },
+    ];
+    const m = mergeCatalog({
+      records: [
+        ...records,
+        call("bff", "GET https://ledger.tidewater.example/v1/balances"),
+        call("bff", "GET http://localhost:9970/quotes"),
+        // Another port of the host is not the system's.
+        call("bff", "GET http://localhost:9971/quotes"),
+      ],
+      repos,
+      systems: outside,
+      patterns: [],
+    });
+    expect(
+      ifs(m)
+        .filter((i) => !i.startsWith("bff->api") && !i.startsWith("bff->cards"))
+        .sort(),
+    ).toEqual([
+      "bff->ledger-tidewater-example direct GET /v1/balances inferred",
+      "bff->localhost-9970 direct GET /quotes inferred",
+    ]);
+  });
+
   it("tells two services on one host apart by the port a host names (ADR 0088)", () => {
     const local = [
       { id: "forge-bff", component: "bff", type: "spring-boot", hosts: [] },

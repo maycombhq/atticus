@@ -362,7 +362,20 @@ export function mergeCatalog(input: MergeInput): MergeResult {
       const k = compact(n);
       if (k.length >= 3) vendorNames.set(k, (vendorNames.get(k) ?? new Set()).add(sys.id));
     }
-  const vendorFor = (host: string): string | undefined => {
+  // O1: an outside system whose name or alias is the host itself (host, or host:port), as a
+  // hosts question's "an outside system (new)" answer writes it, takes the calls on that host.
+  const hostSystems = new Map<string, Set<string>>();
+  for (const sys of input.systems.filter((x) => x.boundary === "vendor" || !ownSystems.has(x.id)))
+    for (const n of [sys.name, ...sys.aliases])
+      if (/^[a-z0-9-]+(\.[a-z0-9-]+)*(:\d+)?$/i.test(n) && /[.:]/.test(n)) {
+        const k = n.toLowerCase();
+        hostSystems.set(k, (hostSystems.get(k) ?? new Set()).add(sys.id));
+      }
+  const vendorFor = (host: string, port?: number): string | undefined => {
+    for (const k of port !== undefined ? [`${host}:${port}`, host] : [host]) {
+      const exact = hostSystems.get(k.toLowerCase());
+      if (exact?.size === 1) return [...exact][0];
+    }
     const hits = new Set<string>();
     for (const label of host.split(".").slice(0, -1))
       for (const id of vendorNames.get(compact(label)) ?? []) hits.add(id);
@@ -432,9 +445,9 @@ export function mergeCatalog(input: MergeInput): MergeResult {
         : undefined;
     } else if (declared && !declared.gateway) {
       to = declared.repo.component ?? declared.repo.id;
-    } else if (host && !declared && vendorFor(host)) {
+    } else if (host && !declared && vendorFor(host, urlHostPort(url)?.port)) {
       // A vendor's name in the host says more than a first label such as api.
-      to = vendorFor(host);
+      to = vendorFor(host, urlHostPort(url)?.port);
     } else if (host && !declared && !hostedComponents.has(hostComponent!)) {
       to = resolveComponent(hostComponent!, caller[0]!);
     } else if (!host && !GENERIC_PATH.test(path)) {

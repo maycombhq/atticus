@@ -694,3 +694,47 @@ describe("atticus verify <repo> --write asks a call's target once per group (Q1,
     });
   });
 });
+
+/**
+ * O1 end to end: a host no repo answers on is answered "an outside system (new)", the system
+ * goes into the profile with the host as its alias, and the next write sends the calls to it.
+ */
+describe("a host question answered with an outside system (O1)", () => {
+  it("writes the system into the profile, and the next write sends the call to it", async () => {
+    const { questionsFiles } = await import("../src/question-commands.js");
+    const root = await metarepo();
+    expect(await write(root)).toBe(0);
+    const q = (await listQuestions(root, { state: "open" })).questions.find(
+      (x) => x.question === "Which repo answers on notify.internal?",
+    )!;
+    const n = q.options.findIndex((x) => x.label === "An outside system (new): another team's") + 1;
+    expect(n).toBeGreaterThan(0);
+    const a = io();
+    expect(
+      await questionsFiles(
+        root,
+        ["questions", "answer", q.id, "--option", String(n), "--by", "dana.okafor"],
+        a.io,
+        { now: new Date("2026-10-30T10:00:00Z") },
+      ),
+    ).toBe(0);
+    expect(a.out).toContain(
+      "Wrote the system notify-internal (boundary internal, alias notify.internal) into org-pack/profiles/forge/profile.yaml, so the calls to notify.internal go to it; review it in the same pull request, and give it a better name and an owner there if you like.",
+    );
+    const profile = readFileSync(
+      join(root, "org-pack", "profiles", "forge", "profile.yaml"),
+      "utf8",
+    );
+    expect(profile).toContain("id: northwind-fx");
+    expect(profile).toContain("id: notify-internal");
+    const o = io();
+    expect(await write(root, o)).toBe(0);
+    const catalog = (await readCatalog(join(root, "catalog", "generated"))).records;
+    expect(
+      catalog.some(
+        (r) => r.kind === "Interface" && r.from === "ledger-api" && r.to === "notify-internal",
+      ),
+    ).toBe(true);
+    expect(o.out.join("\n")).not.toContain("notify.internal?");
+  });
+});
