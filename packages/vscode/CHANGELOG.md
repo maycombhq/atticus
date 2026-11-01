@@ -2,6 +2,10 @@
 
 The Atticus extension for VS Code. The command line's own changes are in the repository's [CHANGELOG](https://github.com/maycombhq/atticus/blob/main/CHANGELOG.md).
 
+## 0.7.8 (pre-release, with Atticus 2.0.0-beta.10)
+
+- **Ships with Atticus 2.0.0-beta.10.** No change to the extension itself; a read part now fits the model it is read with (45% of its limit), a guessed link is marked inferred with how it was found, and a "None of these" answer and other teams' declared systems hold in the join.
+
 ## 0.7.7 (pre-release, with Atticus 2.0.0-beta.9)
 
 - **Ships with Atticus 2.0.0-beta.9.** No change to the extension itself; one host many repos share (an API gateway's, a platform ingress's) is joined by path, a repo can give its `basePath` in `repos.manifest.yaml` (now version 3), and a host question retires itself once the manifest lists the host.
