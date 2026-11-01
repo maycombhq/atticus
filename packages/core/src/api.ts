@@ -15,6 +15,7 @@ import { Finding, FindingAction, Lens, Severity } from "./schema/review.js";
 import { Question, QuestionScopeLevel } from "./schema/question.js";
 import { FactCorrection } from "./schema/fact-corrections.js";
 import { JOIN_GUESS_FLAGS } from "./facts-join.js";
+import { AUDIT_ANSWERS, AuditItem } from "./audit.js";
 import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
 
 /**
@@ -1180,6 +1181,59 @@ export const VerifyPreviewView = z.object({
 });
 export type VerifyPreviewViewT = z.infer<typeof VerifyPreviewView>;
 export type PreviewLinkViewT = z.infer<typeof PreviewLinkView>;
+/**
+ * 2.39.0 (ADR 0149, P3's follow-up): a sample audit drawn and answered in the app, by the same
+ * functions as `atticus verify audit` (the same seed draws the same sample). Each item with the
+ * text of every line it cites, read from the checkout.
+ */
+export const AuditItemView = AuditItem.extend({
+  lines: z.array(z.object({ cite: z.string(), text: z.string().optional() })),
+});
+export const AuditSampleView = z.object({
+  repo: z.string(),
+  /** `facts/<repo>.audit.yaml`, from the metarepo's root. */
+  file: z.string(),
+  seed: z.string(),
+  size: z.number().int(),
+  /** The seed a draw takes when none is given, `<repo>@<commit>`, as the CLI's. */
+  defaultSeed: z.string().optional(),
+  /** This draw's items, with any answers on file. */
+  items: z.array(AuditItemView),
+  /** Why the repo can't be audited yet; then `items` is empty. */
+  refused: z.enum(["no-facts", "bad-facts", "unverified", "bad-file"]).optional(),
+  /** Under `unverified`: how many facts aren't verified. */
+  unverified: z.number().int().optional(),
+  /** The precision over the answers on file that still stand (links checked by the join). */
+  precision: z.object({ facts: AuditTallyView, links: AuditTallyView }).optional(),
+  /** The same draw in a terminal. */
+  command: z.string(),
+});
+export const AuditAnswerRequest = z.strictObject({
+  seed: z.string().min(1).max(200),
+  size: z.number().int().positive().max(100),
+  answers: z
+    .array(
+      z.strictObject({
+        id: z.string().min(1),
+        answer: z.enum(AUDIT_ANSWERS),
+        note: z.string().trim().max(500).optional(),
+      }),
+    )
+    .min(1),
+});
+export const AuditAnswerResult = z.object({
+  file: z.string(),
+  answered: z.number().int(),
+  open: z.number().int(),
+  items: z.array(AuditItemView),
+  precision: z.object({ facts: AuditTallyView, links: AuditTallyView }),
+  /** The git command that commits the file (the app runs no git). */
+  commit: z.string(),
+});
+export type AuditItemViewT = z.infer<typeof AuditItemView>;
+export type AuditSampleViewT = z.infer<typeof AuditSampleView>;
+export type AuditAnswerResultT = z.infer<typeof AuditAnswerResult>;
+
 export type FactCiteViewT = z.infer<typeof FactCiteView>;
 export type RepoFactsViewT = z.infer<typeof RepoFactsView>;
 export type FactCorrectionResultT = z.infer<typeof FactCorrectionResult>;
@@ -3333,6 +3387,31 @@ const OPS: Record<string, Record<string, Op>> = {
       errors: [400, 404],
     },
   },
+  "/api/facts/{repo}/audit": {
+    get: {
+      id: "drawAudit",
+      summary:
+        "A repo's sample audit drawn as atticus verify audit draws it (the same seed, the same sample): each item with its cited lines and any answer on file, and the precision so far. Writes nothing (ADR 0149)",
+      tag: "workspace",
+      params: [
+        p("repo"),
+        q("seed", str, "The seed; default <repo>@<commit>"),
+        q("size", { type: "integer" }, "How many facts and how many links; default 10"),
+      ],
+      ok: { status: 200, schema: "AuditSampleView", description: "OK" },
+      errors: [400],
+    },
+    post: {
+      id: "answerAudit",
+      summary:
+        "Answer items of a draw right, wrong or unsure (with a note): written to facts/<repo>.audit.yaml by the same functions as atticus verify audit. Returns the precision and the git command (ADR 0149)",
+      tag: "workspace",
+      params: [p("repo")],
+      body: AuditAnswerRequest,
+      ok: { status: 200, schema: "AuditAnswerResult", description: "Recorded" },
+      errors: [400, 404, 422],
+    },
+  },
   "/api/workspace/sync": {
     post: {
       id: "syncWorkspace",
@@ -4352,6 +4431,8 @@ export function openApiDocument(): Record<string, unknown> {
     RepoFactsView,
     FactCorrectionResult,
     VerifyPreviewView,
+    AuditSampleView,
+    AuditAnswerResult,
     StageReviewView,
     StageCommentResult,
     OrgPackDraftView,

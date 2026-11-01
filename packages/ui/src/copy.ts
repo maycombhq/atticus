@@ -713,6 +713,53 @@ export const COPY = {
     auditFacts: "facts",
     auditLinks: "links",
     auditSmall: "A small sample: read the range, not the number.",
+    /** ADR 0149 (P3's follow-up): drawing and answering the sample audit here. */
+    sample: {
+      open: "Answer a sample",
+      openOf: (repo: string) => `Answer a sample audit of ${repo}`,
+      intro:
+        "A random sample of the repo's kept facts and the links the join makes from it, drawn as atticus verify audit draws it: the same seed draws the same sample on any machine. Read each item's lines and say whether it is right. Your answers go to the repo's audit file, a person's record you commit in a pull request; nothing is sent anywhere.",
+      seed: "Seed",
+      seedHint: (seed: string) => `Leave it empty for ${seed}, the repo at its facts' commit.`,
+      seedHintNone: "Leave it empty for the repo at its facts' commit.",
+      size: "How many facts and how many links",
+      draw: "Draw",
+      loading: "Drawing the sample…",
+      failed: (why: string) => `Couldn't draw the sample: ${why}`,
+      refused: {
+        "no-facts": (repo: string) =>
+          `${repo} has no facts to audit yet. Have your assistant read it (/atticus-map ${repo}), then run atticus verify ${repo}.`,
+        "bad-facts": (repo: string) =>
+          `${repo}'s facts file doesn't read as facts: run atticus verify ${repo} first.`,
+        unverified: (repo: string, n: number) =>
+          `${n} of ${repo}'s facts aren't verified yet, and an audit samples kept facts only. Run atticus verify ${repo} first.`,
+        "bad-file": (repo: string) =>
+          `${repo}'s audit file isn't one Atticus can read: atticus verify audit ${repo} --report says why.`,
+      } as Record<string, (repo: string, n: number) => string>,
+      empty: "Nothing to sample: the repo has no kept facts a reader wrote and no links.",
+      item: (k: number, n: number, what: string, claim: string) => `${k} of ${n}: ${what} ${claim}`,
+      fact: "fact",
+      link: (how: string) => `link (${how})`,
+      lines: "The lines it rests on",
+      noText: "(the line isn't in the checkout)",
+      choices: { right: "Right", wrong: "Wrong", unsure: "Unsure" } as Record<string, string>,
+      note: "Note (what is wrong with it)",
+      noteOptional: "Note (optional)",
+      onFile: (answer: string, by: string) => `On file: ${answer}, by ${by}`,
+      save: "Save the answers",
+      saving: "Writing the answers…",
+      nothingPicked: "Answer at least one item first.",
+      saved: (file: string, answered: number, open: number) =>
+        `Written to ${file}: ${answered} answered, ${open} open. The app wrote only that file; commit it in a pull request:`,
+      copyCommit: "Copy the git command",
+      sameInTerminal: "The same draw in a terminal:",
+      copyCommand: "Copy the audit command",
+      wrongFact: "Correct this fact",
+      wrongFactOf: (claim: string) => `Correct the fact ${claim}`,
+      wrongLink: (repo: string) =>
+        `Open ${repo} on the estate canvas, then the link's Why is this linked? › This link is wrong`,
+      factGone: "This fact isn't in the repo's facts any more, so there is nothing to correct.",
+    },
     /** ADR 0124 addendum A-framework: what each repo is built on, read from its build files. */
     builtOn: "Built on",
     builtOnNone: "Not read yet",
