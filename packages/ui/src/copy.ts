@@ -653,6 +653,7 @@ export const COPY = {
       repos: "Repos",
       cockpit: "At a glance",
       systems: "Systems",
+      outside: "Outside systems",
       runs: "Model runs",
       history: "Prompt history",
       words: "What the words mean",
@@ -2808,6 +2809,55 @@ export const COPY = {
     noChanges: "No change in flight touches its repos.",
     questions: "Open questions about it",
     noQuestions: "No open question about it.",
+    outside: "The systems outside the estate: vendors and other teams",
+  },
+  /** O4 (ADR 0149): one page per system outside the estate (a vendor, another team's). */
+  outside: {
+    title: "Outside systems",
+    intro:
+      "The systems no repo of the estate belongs to: vendors, and other teams' systems. For each, who calls it, the operations its spec publishes, the calls that match nothing in that spec, and the questions open about it. Read from the facts, the catalog and the specs in inputs/; nothing is written.",
+    pick: "Which outside system",
+    empty:
+      "No outside system yet: the profiles name none that the estate's repos don't belong to. Add a vendor or another team's system to a profile's systems in the org pack.",
+    boundary: {
+      vendor: "A vendor",
+      internal: "Another team's system",
+      product: "A product no estate repo belongs to",
+    } as Record<string, string>,
+    owner: (owner: string) => `Owner: ${owner}`,
+    aliases: (list: string) => `Also called ${list}`,
+    callers: "Who calls it",
+    noCallers:
+      "No call in the estate's facts reaches it yet. A call reaches it when it names it, uses one of its hosts, or a person's answer says so.",
+    callerCols: {
+      from: "From",
+      call: "Call",
+      line: "Line",
+      operation: "Operation",
+      seen: "Seen in",
+    },
+    through: (repo: string, at: string) => `through ${repo} ${at}`,
+    seen: { interface: "the catalog", join: "the estate join", spec: "its spec" } as Record<
+      string,
+      string
+    >,
+    noOperation: "—",
+    operations: "Its operations",
+    specFrom: (path: string, title: string | undefined, version: string | undefined) =>
+      `From ${path}${title ? `, ${title}` : ""}${version ? ` ${version}` : ""}`,
+    opCols: { op: "Operation", line: "Spec line", calls: "Calls" },
+    unmatched: "Calls that match nothing in its spec",
+    noUnmatched: "Every call to it matches an operation its spec publishes.",
+    ambiguous: "Calls two or more operations answer",
+    ambiguousOf: (list: string) => `Could be ${list}`,
+    noSpec: "No spec of it is in inputs/ yet, so its operations aren't known. Add one:",
+    noSpecWhy:
+      "Then intake links it to this system by name (atticus triage asks when it can't tell), and this page lists its operations and the calls that match none.",
+    questions: "Open questions about it",
+    noQuestions: "No open question about it.",
+    answer: "Answer it",
+    copy: (cmd: string) => `Copy: ${cmd}`,
+    notes: "What the estate's facts left out",
   },
   /** WP7.1: the change cockpit, one change at a glance. */
   cockpit: {

@@ -2,6 +2,7 @@ import type { ComponentType } from "react";
 import { Architecture } from "./architecture/Architecture.js";
 import { Changes } from "./Changes.js";
 import { Trust } from "./map/Trust.js";
+import { Outside } from "./map/Outside.js";
 import { CommandCenter } from "./CommandCenter.js";
 import { Explore } from "./Explore.js";
 import { Flows } from "./flows/Flows.js";
@@ -38,6 +39,8 @@ export const SCREEN_COMPONENTS: Record<string, Screen> = {
   // Map: the estate canvas (the Architecture workspace, without a change's step) and Trust.
   canvas: ({ hash }) => <Architecture hash={hash} screen="canvas" />,
   trust: () => <Trust />,
+  // O4 (ADR 0149): the systems outside the estate, one page each.
+  outside: Outside,
   // Home: one page, Waiting on you with the Overview merged in.
   home: () => <CommandCenter />,
   // Every other page, unchanged (behind --full, or reached by a link).

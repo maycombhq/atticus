@@ -81,6 +81,9 @@ export function Systems({ hash }: { hash: string }) {
         <View of={list} empty={(d) => d.items.length === 0} emptyText={Y.empty}>
           {() => <SystemPicker systems={systems} current={current} />}
         </View>
+        <p className="muted" style={{ margin: "8px 0 0" }}>
+          <a href="#/outside">{Y.outside}</a>
+        </p>
       </Panel>
       {current && <SystemGuide system={current} />}
       {system && (

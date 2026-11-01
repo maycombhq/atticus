@@ -25,6 +25,7 @@ import { uiCockpitRoutes } from "./ui-api-cockpit.js";
 import { uiTrustRoutes } from "./ui-api-trust.js";
 import { uiFactsRoutes } from "./ui-api-facts.js";
 import { uiAuditRoutes } from "./ui-api-audit.js";
+import { uiOutsideRoutes } from "./ui-api-outside.js";
 import { uiStageRoutes } from "./ui-api-stages.js";
 
 /**
@@ -96,17 +97,20 @@ export async function startUi(
       // WP7.1: one change at a glance. ADR 0124: how far to trust each repo's map; the Map's
       // evidence and a person's correction of a fact (F3); a stage tab's findings and a comment
       // on one (B10).
-      // ADR 0149: a sample audit answered in the app.
+      // ADR 0149: a sample audit answered in the app, and the outside systems.
       return uiStageRoutes(
-        uiAuditRoutes(
-          uiFactsRoutes(
-            uiTrustRoutes(
-              uiCockpitRoutes(
-                uiRepoRoutes(
-                  uiDocumentRoutes(
-                    uiAiRoutes(
-                      uiHistoryRoutes(
-                        uiModelRunRoutes(uiKnowledgeRoutes(uiCiteRoutes(specs, ctx), ctx), ctx),
+        uiOutsideRoutes(
+          uiAuditRoutes(
+            uiFactsRoutes(
+              uiTrustRoutes(
+                uiCockpitRoutes(
+                  uiRepoRoutes(
+                    uiDocumentRoutes(
+                      uiAiRoutes(
+                        uiHistoryRoutes(
+                          uiModelRunRoutes(uiKnowledgeRoutes(uiCiteRoutes(specs, ctx), ctx), ctx),
+                          ctx,
+                        ),
                         ctx,
                       ),
                       ctx,

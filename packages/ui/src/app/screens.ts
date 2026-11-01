@@ -69,6 +69,8 @@ export const SCREENS: ScreenDef[] = [
   // Ask (the box at the top), and a system's page (WP7.7).
   { id: "explore", label: S.explore, section: "Map", aside: true },
   { id: "systems", label: S.systems, section: "Map", aside: true },
+  // O4 (ADR 0149): one page per system outside the estate, linked from Systems.
+  { id: "outside", label: S.outside, section: "Map", aside: true },
   { id: "map", label: S.map, section: "Map", full: true },
   { id: "features", label: S.features, section: "Map", full: true },
   { id: "mappings", label: S.mappings, section: "Map", full: true },

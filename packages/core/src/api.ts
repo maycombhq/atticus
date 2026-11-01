@@ -1234,6 +1234,75 @@ export type AuditItemViewT = z.infer<typeof AuditItemView>;
 export type AuditSampleViewT = z.infer<typeof AuditSampleView>;
 export type AuditAnswerResultT = z.infer<typeof AuditAnswerResult>;
 
+/**
+ * 2.39.0 (ADR 0149, O4): the systems outside the estate (every profile system no estate repo
+ * belongs to: vendors and other teams), each with who calls it, the operations its intaken spec
+ * publishes, the calls that match nothing in that spec, and its open questions.
+ */
+export const OutsideCallView = z.object({
+  repo: z.string(),
+  component: z.string().optional(),
+  /** The call fact, when the join names it. */
+  fact: z.string().optional(),
+  /** `path:line` of the call. */
+  at: z.string(),
+  method: z.string().optional(),
+  path: z.string().optional(),
+  /**
+   * Where it was seen: a catalog Interface to the system, the estate join's outside list, the
+   * system's spec (its hosts or names matched the call, ADR 0130), or more than one.
+   */
+  seen: z.array(z.enum(["interface", "join", "spec"])),
+  /** The Interface record, when the catalog has one. */
+  interface: z.string().optional(),
+  /** The spec operation it reaches (its Endpoint id), when it matches one. */
+  operation: z.string().optional(),
+  /** Through a gateway's forwarding call (the route and the gateway's call), when it is. */
+  through: z.object({ repo: z.string(), at: z.string() }).optional(),
+});
+export const OutsideSystemView = z.object({
+  id: z.string(),
+  name: z.string(),
+  boundary: z.string(),
+  owner: z.string().optional(),
+  aliases: z.array(z.string()),
+  callers: z.array(OutsideCallView),
+  /** Its newest intaken spec in inputs/; absent when none is linked to it. */
+  spec: z
+    .object({
+      path: z.string(),
+      title: z.string().optional(),
+      version: z.string().optional(),
+      operations: z.array(
+        z.object({
+          id: z.string(),
+          method: z.string(),
+          path: z.string(),
+          cite: z.string(),
+          /** How many of the callers reach it. */
+          calls: z.number().int(),
+        }),
+      ),
+    })
+    .optional(),
+  /** Calls to it that match no operation of its spec, with why. */
+  unmatched: z.array(OutsideCallView.extend({ message: z.string() })),
+  /** Calls two or more of its operations answer equally well. */
+  ambiguous: z.array(OutsideCallView.extend({ candidates: z.array(z.string()) })),
+  /** Open questions about it: naming it, or citing a line one of its calls is on. */
+  questions: z.array(z.object({ id: z.string(), repo: z.string(), question: z.string() })),
+  /** With no spec: how to add one. */
+  addSpec: z.array(z.string()).optional(),
+});
+export const OutsideView = z.object({
+  systems: z.array(OutsideSystemView),
+  /** What the estate's facts left out (a repo not verified), said once. */
+  notes: z.array(z.string()),
+});
+export type OutsideSystemViewT = z.infer<typeof OutsideSystemView>;
+export type OutsideCallViewT = z.infer<typeof OutsideCallView>;
+export type OutsideViewT = z.infer<typeof OutsideView>;
+
 export type FactCiteViewT = z.infer<typeof FactCiteView>;
 export type RepoFactsViewT = z.infer<typeof RepoFactsView>;
 export type FactCorrectionResultT = z.infer<typeof FactCorrectionResult>;
@@ -3412,6 +3481,15 @@ const OPS: Record<string, Record<string, Op>> = {
       errors: [400, 404, 422],
     },
   },
+  "/api/outside": {
+    get: {
+      id: "getOutsideSystems",
+      summary:
+        "The systems outside the estate (vendors and other teams): who calls each, the operations its intaken spec publishes, the calls that match nothing in it, its open questions, and how to add a spec (ADR 0149)",
+      tag: "views",
+      ok: { status: 200, schema: "OutsideView", description: "OK" },
+    },
+  },
   "/api/workspace/sync": {
     post: {
       id: "syncWorkspace",
@@ -4433,6 +4511,7 @@ export function openApiDocument(): Record<string, unknown> {
     VerifyPreviewView,
     AuditSampleView,
     AuditAnswerResult,
+    OutsideView,
     StageReviewView,
     StageCommentResult,
     OrgPackDraftView,
