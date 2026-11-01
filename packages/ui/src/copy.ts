@@ -206,8 +206,10 @@ export const COPY = {
     whoseMine: "My teams'",
     owner: (team: string, name?: string) => `Owner: ${name ? `${name} (${team})` : team}`,
     noOwner: (why: string) => `No owner: ${why}`,
-    restsOn: (changes: string[]) =>
-      `Ask first: ${changes.join(", ")} ${changes.length === 1 ? "rests" : "rest"} on it`,
+    restsOn: (changes: string[] | string) => {
+      const list = typeof changes === "string" ? [changes] : changes;
+      return `Ask first: ${list.join(", ")} ${list.length === 1 ? "rests" : "rest"} on it`;
+    },
     joins: (n: number) => `Its answer joins ${n} ${n === 1 ? "call" : "calls"}`,
     mineTeams: (teams: string) => `Questions for your teams: ${teams}.`,
     mineNone: (handle: string) =>
