@@ -697,6 +697,8 @@ describe("joinRecords: every Interface says how it was joined (C1, ADR 0135)", (
       "joined-by-host",
       "joined-by-name",
       "joined-by-repo",
+      // ADR 0160 (O3): answered by an entry of another team's shared map.
+      "joined-to-shared-map",
     ]);
   });
 });

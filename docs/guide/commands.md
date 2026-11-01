@@ -45,6 +45,9 @@ Every command under the twelve, with its options.
   atticus map render <repo> [--json]   Render the repo's map from the catalog: map.md, a page per flow with its sequence diagram, an OpenAPI file per component, under map/<repo>/
   atticus join [--json]                Follow each repo's flows into the flows their calls reach, through the calls the repos' verified facts join (verify --write); the same as estate join
   atticus join measure <reference> [--json]  Measure your map against a reference you write by hand for two or three repos you know (their entries and calls, each call with the repo it should reach): reading recall, and join precision and recall; reads files only (docs/guide/measure.md)
+  atticus join shared import <their metarepo> --team <id> --system <id>  Bring in another team's Atticus map, read-only: their verified entries (quotes redacted, the deny-list applied) go to shared/<team>/ at their commit, and verify --write joins your calls to that system to them, cited on their lines; files only (docs/guide/shared-maps.md) [--name <team name>] [--commit <sha>] [--json]
+  atticus join shared refresh [<team>] [<folder>]  Import a team's map again from where it came from (or a new folder); a newer commit replaces the old [--commit <sha>]
+  atticus join shared list [--json]    The shared maps on file: whose, for which system, their commit and entries
   atticus knowledge scan [--source s] [--mode m] [--resume run] [--full] [--batch-tokens n] [--max-tokens n]  Your assistant reads the snapshots into patterns, standards, processes, requests, decisions and constraints; every quote checked. A rescan reads only the pages that changed and says what changed
   atticus knowledge list [--tag t] [--kind k] [--unverified] [--json]  The knowledge items, by tag and kind
   atticus knowledge ask "<question>" [--mode m] [--resume run] [--max-tokens n]  An answer from the knowledge items only, citing them
@@ -131,6 +134,7 @@ Every other command. `atticus legacy` lists them by area; each runs by its own n
   atticus estate flow <flow> [--depth 5] [--json]  A flow followed across repos, with the data at each crossing
   atticus estate lineage <flow> <field> [--depth 5] [--json]  Follow a field along a flow to the column it is stored in, or where it breaks
   atticus estate measure <reference> [--json]  The same as join measure
+  atticus estate shared import|refresh|list  The same as join shared
   atticus estate fresh [--all] [--json]  Which repos' clones have moved past their facts' commit, most stale first: per repo the facts' commit, the clone's, the files changed that the facts cite, the facts to read again and the command to run; local git only, nothing fetched or written (--all lists the fresh ones too)
   atticus repo-type detect <repo> [--json]   Match a repo against the org pack's repo types by fingerprint, with the evidence for each signal
   atticus repo-type new <id> --from <repo> [--force]   Draft a repo type from a repo (its build files, dependencies, markers, folders) for you to edit

@@ -9,6 +9,7 @@
 - [A vendor's API changes](vendor-specs.md): feed each version of a vendor's spec beside the last, see what changed and what in the estate it reaches, and start a change from it.
 - [Starting from a prototype](prototypes.md): compare a working prototype (a UI, its BFF, SSO and mocks) with the estate, and attach what exists, changes, is new or only a vendor provides to a change.
 - [Contracts and traffic as evidence for links](link-evidence.md): Pact files and a consumer's OpenAPI specs confirm links or show where they disagree; a gateway's traffic export, kept only as counts, shows links used, unused and missing.
+- [Another team's map, read-only](shared-maps.md): bring in the Atticus map a team that owns a system you call shares, as files; your calls to that system join their entries, cited on their lines, and stay theirs to change.
 - [Measuring your map on your own estate](measure.md): list a few known repos' entries and calls, each with the repo it should reach, and score the map's reading recall and join precision and recall against it.
 - [Atticus by kind of work](roles.md): who you are in Atticus (your Git user), approving by pull request, and the screens and first steps for each kind of work.
 - [Atticus in IntelliJ IDEA](intellij.md): the tool window's tabs, what is native, how an AI step runs through Copilot Chat or Claude Code there, and the two things only VS Code does.

@@ -102,6 +102,38 @@ describe("why is this linked", () => {
     }
   });
 
+  it("says a call joined to another team's shared map is theirs, with their line and commit, never a citation of ours (O3)", () => {
+    const shared: Api.HierJoinT = {
+      ...GUESS,
+      interface: "if-2",
+      to: "forge-risk",
+      how: "shared",
+      gateway: false,
+      callee: [
+        {
+          source: "code",
+          repo: "forge-risk-scoring",
+          at: "src/main/java/forge/risk/ScoresController.java:12",
+        },
+      ],
+      hops: [],
+      shared: {
+        team: "forge-risk-team",
+        repo: "forge-risk-scoring",
+        at: "src/main/java/forge/risk/ScoresController.java:12",
+        commit: "5555eee",
+      },
+    };
+    const page = html(<WhyLinked link={{ ...LINK, joins: [shared] }} />);
+    expect(page).toContain(esc(W.how.shared!));
+    expect(page).toContain(esc(W.sharedMap("forge-risk-team", "5555eee")));
+    expect(page).toContain(esc(W.sharedTheirs("forge-risk-team")));
+    expect(page).toContain("forge-risk-scoring: ");
+    expect(page).toContain("ScoresController.java:12");
+    expect(WORDS.gap["not-in-shared-map"]).toBeTruthy();
+    expect(WORDS.gapFix["not-in-shared-map"]).toBeTruthy();
+  });
+
   it("says a link that isn't a call has no join to explain", () => {
     expect(html(<WhyLinked link={{ ...LINK, joins: [] }} />)).toContain(esc(W.none));
   });

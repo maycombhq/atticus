@@ -523,4 +523,42 @@ describe("why is this linked: each link's joins, how each was made and both ends
     expect(link.gaps).toEqual(["inferred", flag]);
     expect(link.joins!.find((j) => j.interface === PATH)).toMatchObject({ how, verified: false });
   });
+
+  it("says a call joined to another team's shared map is theirs, naming the team, their line and commit (O3, ADR 0160)", () => {
+    const rs = records().map((r) =>
+      r.id === OLD
+        ? ({
+            ...r,
+            flags: ["joined-to-shared-map"],
+            evidence: [
+              ...r.evidence,
+              {
+                source: "code",
+                repo: "forge-risk-scoring",
+                path: "src/main/java/forge/risk/ScoresController.java",
+                line: 12,
+                commit: "5555eee",
+                side: "callee",
+                extractor: "atticus-shared@1",
+                by: "forge-risk-team",
+              },
+            ],
+          } as typeof r)
+        : r,
+    );
+    const v = nodeView(buildEstate(rs), "estate", { lens: "architecture" });
+    const link = v.edges.find((e) => e.from === "system:web" && e.to === "system:customers")!;
+    expect(link.joins!.find((j) => j.interface === OLD)).toMatchObject({
+      how: "shared",
+      shared: {
+        team: "forge-risk-team",
+        repo: "forge-risk-scoring",
+        at: "src/main/java/forge/risk/ScoresController.java:12",
+        commit: "5555eee",
+      },
+    });
+    // A how, never a gap; the others have no shared end.
+    expect(link.gaps).not.toContain("joined-to-shared-map");
+    expect(link.joins!.find((j) => j.interface === HOST)!.shared).toBeUndefined();
+  });
 });

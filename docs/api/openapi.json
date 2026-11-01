@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Atticus local API",
-    "version": "2.43.0",
+    "version": "2.44.0",
     "description": "Served by `atticus ui` on 127.0.0.1. The UI only calls this API, and the API only reads and writes files in the metarepo.",
     "license": {
       "name": "Apache-2.0",
@@ -18021,6 +18021,7 @@
               "platform-setting",
               "folder-name",
               "conflict",
+              "shared",
               "unknown"
             ]
           },
@@ -18123,6 +18124,29 @@
               ],
               "additionalProperties": false
             }
+          },
+          "shared": {
+            "type": "object",
+            "properties": {
+              "team": {
+                "type": "string"
+              },
+              "repo": {
+                "type": "string"
+              },
+              "at": {
+                "type": "string"
+              },
+              "commit": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "team",
+              "repo",
+              "at"
+            ],
+            "additionalProperties": false
           }
         },
         "required": [
@@ -30009,7 +30033,8 @@
                           "enum": [
                             "interface",
                             "join",
-                            "spec"
+                            "spec",
+                            "shared"
                           ]
                         }
                       },
@@ -30031,6 +30056,30 @@
                         },
                         "required": [
                           "repo",
+                          "at"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "entry": {
+                        "type": "object",
+                        "properties": {
+                          "team": {
+                            "type": "string"
+                          },
+                          "repo": {
+                            "type": "string"
+                          },
+                          "fact": {
+                            "type": "string"
+                          },
+                          "at": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "team",
+                          "repo",
+                          "fact",
                           "at"
                         ],
                         "additionalProperties": false
@@ -30126,7 +30175,8 @@
                           "enum": [
                             "interface",
                             "join",
-                            "spec"
+                            "spec",
+                            "shared"
                           ]
                         }
                       },
@@ -30148,6 +30198,30 @@
                         },
                         "required": [
                           "repo",
+                          "at"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "entry": {
+                        "type": "object",
+                        "properties": {
+                          "team": {
+                            "type": "string"
+                          },
+                          "repo": {
+                            "type": "string"
+                          },
+                          "fact": {
+                            "type": "string"
+                          },
+                          "at": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "team",
+                          "repo",
+                          "fact",
                           "at"
                         ],
                         "additionalProperties": false
@@ -30195,7 +30269,8 @@
                           "enum": [
                             "interface",
                             "join",
-                            "spec"
+                            "spec",
+                            "shared"
                           ]
                         }
                       },
@@ -30217,6 +30292,30 @@
                         },
                         "required": [
                           "repo",
+                          "at"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "entry": {
+                        "type": "object",
+                        "properties": {
+                          "team": {
+                            "type": "string"
+                          },
+                          "repo": {
+                            "type": "string"
+                          },
+                          "fact": {
+                            "type": "string"
+                          },
+                          "at": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "team",
+                          "repo",
+                          "fact",
                           "at"
                         ],
                         "additionalProperties": false
@@ -30265,6 +30364,169 @@
                   "items": {
                     "type": "string"
                   }
+                },
+                "shared": {
+                  "type": "object",
+                  "properties": {
+                    "team": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "commit": {
+                      "type": "string"
+                    },
+                    "importedAt": {
+                      "type": "string"
+                    },
+                    "entries": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "repo": {
+                            "type": "string"
+                          },
+                          "component": {
+                            "type": "string"
+                          },
+                          "fact": {
+                            "type": "string"
+                          },
+                          "method": {
+                            "type": "string"
+                          },
+                          "path": {
+                            "type": "string"
+                          },
+                          "at": {
+                            "type": "string"
+                          },
+                          "commit": {
+                            "type": "string"
+                          },
+                          "calls": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "required": [
+                          "repo",
+                          "component",
+                          "fact",
+                          "path",
+                          "at",
+                          "calls"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "unmatched": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "repo": {
+                            "type": "string"
+                          },
+                          "component": {
+                            "type": "string"
+                          },
+                          "fact": {
+                            "type": "string"
+                          },
+                          "at": {
+                            "type": "string"
+                          },
+                          "method": {
+                            "type": "string"
+                          },
+                          "path": {
+                            "type": "string"
+                          },
+                          "seen": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "enum": [
+                                "interface",
+                                "join",
+                                "spec",
+                                "shared"
+                              ]
+                            }
+                          },
+                          "interface": {
+                            "type": "string"
+                          },
+                          "operation": {
+                            "type": "string"
+                          },
+                          "through": {
+                            "type": "object",
+                            "properties": {
+                              "repo": {
+                                "type": "string"
+                              },
+                              "at": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "repo",
+                              "at"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "entry": {
+                            "type": "object",
+                            "properties": {
+                              "team": {
+                                "type": "string"
+                              },
+                              "repo": {
+                                "type": "string"
+                              },
+                              "fact": {
+                                "type": "string"
+                              },
+                              "at": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "team",
+                              "repo",
+                              "fact",
+                              "at"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "repo",
+                          "at",
+                          "seen",
+                          "message"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "team",
+                    "name",
+                    "commit",
+                    "importedAt",
+                    "entries",
+                    "unmatched"
+                  ],
+                  "additionalProperties": false
                 }
               },
               "required": [

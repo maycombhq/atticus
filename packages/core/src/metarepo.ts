@@ -90,6 +90,16 @@ export function evidenceRelOf(root: string): string {
   return isAdopted(root) ? ".atticus/evidence" : "evidence";
 }
 
+/** Where other teams' shared maps live (ADR 0160), relative to the root: `shared`, or `.atticus/shared` when adopted. */
+export function sharedRelOf(root: string): string {
+  return isAdopted(root) ? ".atticus/shared" : "shared";
+}
+
+/** The shared maps folder (ADR 0160): `<team>/map.yaml` and `<team>/facts/<repo>.jsonl`, their entries, read-only. */
+export function sharedDirOf(root: string): string {
+  return join(root, ...sharedRelOf(root).split("/"));
+}
+
 /** The evidence folder (ADR 0151): `traffic/<source>-<from>-<to>.yaml`, the traffic aggregates a person imported. */
 export function evidenceDirOf(root: string): string {
   return join(root, ...evidenceRelOf(root).split("/"));

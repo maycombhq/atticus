@@ -129,4 +129,67 @@ describe("the outside systems' pages (O4)", () => {
     expect(out).toContain(esc(O.noCallers));
     expect(out).toContain(esc(O.noQuestions));
   });
+
+  it("shows the map another team shares: their entries with their calls, and calls it has no entry for (O3)", () => {
+    const RISK = Api.OutsideSystemView.parse({
+      ...AUDIT,
+      id: "forge-risk",
+      name: "Forge Risk",
+      addSpec: undefined,
+      callers: [
+        {
+          repo: "forge-lending",
+          fact: "call.post.risk-v1-scores",
+          at: "src/main/java/forge/lending/RiskClient.java:14",
+          method: "POST",
+          path: "/risk/v1/scores",
+          seen: ["join", "shared"],
+          entry: {
+            team: "forge-risk-team",
+            repo: "forge-risk-scoring",
+            fact: "entry.post.v1-scores",
+            at: "src/main/java/forge/risk/ScoresController.java:12",
+          },
+        },
+      ],
+      shared: {
+        team: "forge-risk-team",
+        name: "Forge Risk Team",
+        commit: "9999abc0000",
+        importedAt: "2026-11-01T10:00:00.000Z",
+        entries: [
+          {
+            repo: "forge-risk-scoring",
+            component: "scoring-api",
+            fact: "entry.post.v1-scores",
+            method: "POST",
+            path: "/v1/scores",
+            at: "src/main/java/forge/risk/ScoresController.java:12",
+            calls: 1,
+          },
+        ],
+        unmatched: [
+          {
+            repo: "forge-lending",
+            at: "src/main/java/forge/lending/RiskClient.java:16",
+            method: "POST",
+            path: "/risk/v1/fraud-checks",
+            seen: ["shared"],
+            message: "their map has no entry that serves it",
+          },
+        ],
+      },
+    });
+    const out = html(<OutsideSystemPanels system={RISK} />);
+    expect(out).toMatch(new RegExp(`<h2 id="[^"]+" class="h">${esc(O.shared)}</h2>`));
+    expect(out).toContain(esc(O.sharedFrom("Forge Risk Team", "9999abc0000", "2026-11-01")));
+    expect(out).toContain("forge-risk-scoring (scoring-api)");
+    expect(out).toContain("their map has no entry that serves it");
+    expect(out).toContain(esc(O.seen.shared!));
+    // Another team's system with no map says how to bring one in; a vendor's page doesn't.
+    const none = html(<OutsideSystemPanels system={AUDIT} />);
+    expect(none).toContain(esc(O.noShared));
+    expect(none).toContain(esc(O.sharedImport("audit")));
+    expect(html(<OutsideSystemPanels system={NW} />)).not.toContain(esc(O.shared));
+  });
 });

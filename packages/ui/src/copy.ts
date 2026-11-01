@@ -2863,10 +2863,12 @@ export const COPY = {
       seen: "Seen in",
     },
     through: (repo: string, at: string) => `through ${repo} ${at}`,
-    seen: { interface: "the catalog", join: "the estate join", spec: "its spec" } as Record<
-      string,
-      string
-    >,
+    seen: {
+      interface: "the catalog",
+      join: "the estate join",
+      spec: "its spec",
+      shared: "their shared map",
+    } as Record<string, string>,
     noOperation: "—",
     operations: "Its operations",
     specFrom: (path: string, title: string | undefined, version: string | undefined) =>
@@ -2884,6 +2886,17 @@ export const COPY = {
     answer: "Answer it",
     copy: (cmd: string) => `Copy: ${cmd}`,
     notes: "What the estate's facts left out",
+    // ADR 0160 (O3): another team's map, read-only.
+    shared: "Their shared map",
+    sharedFrom: (name: string, commit: string, at: string) =>
+      `${name}'s Atticus map, their commit ${commit.slice(0, 7)}, imported ${at.slice(0, 10)}. Their entries stay theirs: Atticus never verifies, corrects or reports on them; a wrong one is theirs to fix in their own map.`,
+    sharedCols: { entry: "Their entry", repo: "Their repo", line: "Their line", calls: "Calls" },
+    sharedUnmatched: "Calls their map has no entry for",
+    noSharedUnmatched: "Every call to it is answered by an entry of their map.",
+    noShared:
+      "If the team that owns it runs Atticus, bring in their map, read-only, so calls to it join their entries:",
+    sharedImport: (id: string) =>
+      `atticus join shared import <their metarepo> --team <their team id> --system ${id} --name "<their team's name>"`,
   },
   /** WP7.1: the change cockpit, one change at a glance. */
   cockpit: {
@@ -3591,10 +3604,17 @@ export const COPY = {
         "Its host comes from a setting that is this service's only because its file sits in a folder named like it, so this is a guess.",
       conflict:
         "Its host or base path is one a deploy file gives and the manifest disagrees with (an open conflict on Map › Trust), so this is a guess.",
+      shared:
+        "It calls another team's system, and the map that team shares has the entry that answers it.",
       unknown:
         "The catalog doesn't say how this was joined: it was written before Atticus kept that, or by a built-in reader. Run atticus verify on the caller's repo with --write to record it.",
     } as Record<string, string>,
     gateway: "It goes through a gateway on the way.",
+    // ADR 0160 (O3): the answering side is another team's map.
+    sharedMap: (team: string, commit: string | undefined) =>
+      `Joined to ${team}'s map${commit ? ` (their commit ${commit.slice(0, 7)})` : ""}.`,
+    sharedTheirs: (team: string) =>
+      `What answers it is ${team}'s, read from the map they share: Atticus never verifies or corrects it. If their entry is wrong, tell ${team}; correct this call only if it goes somewhere else.`,
     verified: "✓ Verified",
     inferred: "△ Inferred",
     caller: "The call",

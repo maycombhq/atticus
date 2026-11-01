@@ -1,0 +1,12 @@
+# Our side of the shared-maps fixture (invented, ADR 0160): one repo of our own that calls the
+# Forge Risk Team's system, which runs Atticus on its own repos (../../../risk-team).
+schemaVersion: 2
+platform: forge
+repos:
+  - id: forge-lending
+    url: https://git.example.com/forge/forge-lending.git
+    type: spring-boot
+    owner: team-lending
+    component: lending-api
+    system: lending
+    hosts: [lending.forge.internal]

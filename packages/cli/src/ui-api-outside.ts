@@ -5,8 +5,10 @@ import {
   factIdPart,
   inputsDirOf,
   joinConventions,
+  joinSharedMaps,
   joinVendorOperations,
   listQuestions,
+  readSharedMaps,
   type Api,
   type CatalogRecord,
   type Fact,
@@ -33,7 +35,8 @@ import { intakeContext } from "./intake-commands.js";
  * behind a gateway's forwarding call; the operations its newest intaken spec in inputs/ publishes
  * (ADR 0130, 0142 O2), each with how many calls reach it, from `joinVendorOperations`; the calls
  * that match nothing in that spec; and its open questions. A system with no spec says how to add
- * one. Files only: no git, no network, nothing written.
+ * one. The map another team shares for it (ADR 0160, O3): their entries, each with the calls that
+ * reach it, and the calls it has no entry for. Files only: no git, no network, nothing written.
  */
 
 type View = Api.OutsideViewT;
@@ -60,6 +63,11 @@ export async function outsideView(root: string): Promise<View> {
   for (const r of estate.repos) for (const f of r.facts) facts.set(`${r.repo}\u0000${f.id}`, f);
   const joined = estateJoinOf(op, estate.repos, estate.targets);
   const repos = joinReposOf(op, estate.repos, componentRenames(estate.repos, op));
+  // ADR 0160 (O3): the maps other teams share, and the calls left to their systems joined to them.
+  const { maps: sharedMaps } = await readSharedMaps(root);
+  const sharedJoin = sharedMaps.length
+    ? joinSharedMaps({ outside: joined.outside ?? [], repos, maps: sharedMaps, systems })
+    : { matches: [], gaps: [], asks: [] };
 
   // Each system's newest spec (the one no later version supersedes), as the prototype reads it.
   const specs = new Map<string, VendorSpec>();
@@ -190,8 +198,18 @@ export async function outsideView(root: string): Promise<View> {
             "spec",
           );
     }
+    for (const m of sharedJoin.matches.filter((x) => x.system === s.id))
+      add(
+        {
+          ...callOf(m.call),
+          entry: { team: m.team, repo: m.entry.repo, fact: m.entry.fact, at: m.entry.at },
+        },
+        "shared",
+      );
+    for (const g of sharedJoin.gaps.filter((x) => x.system === s.id)) add(callOf(g.call), "shared");
     const list = [...callers.values()].sort((a, b) => cmp(a.repo, b.repo) || cmp(a.at, b.at));
     const spec = specs.get(s.id);
+    const map = sharedMaps.find((m) => m.system === s.id);
     const lines = new Set(list.map((c) => `${c.repo}|${c.at}`));
     const named = [s.id, s.name, ...s.aliases].map((n) => n.toLowerCase());
     const questions = open
@@ -234,6 +252,41 @@ export async function outsideView(root: string): Promise<View> {
         .map((a) => ({ ...callOf(a.call), seen: ["spec" as const], candidates: a.candidates })),
       questions,
       ...(spec ? {} : { addSpec: OUTSIDE_ADD_SPEC(s.id) }),
+      ...(map
+        ? {
+            shared: {
+              team: map.team,
+              name: map.name,
+              commit: map.commit,
+              importedAt: map.file.importedAt,
+              entries: map.repos
+                .flatMap((r) =>
+                  r.facts.flatMap((f) =>
+                    f.kind === "entry"
+                      ? [
+                          {
+                            repo: r.repo,
+                            component: factIdPart(f.component ?? r.component ?? r.repo),
+                            fact: f.id,
+                            ...(f.method ? { method: f.method.toUpperCase() } : {}),
+                            path: f.path,
+                            at: `${f.cite.file}:${f.cite.line}`,
+                            ...(f.commit ? { commit: f.commit } : {}),
+                            calls: list.filter(
+                              (c) => c.entry?.repo === r.repo && c.entry.fact === f.id,
+                            ).length,
+                          },
+                        ]
+                      : [],
+                  ),
+                )
+                .sort((a, b) => cmp(a.repo, b.repo) || cmp(a.at, b.at)),
+              unmatched: sharedJoin.gaps
+                .filter((g) => g.system === s.id)
+                .map((g) => ({ ...callOf(g.call), seen: ["shared" as const], message: g.message })),
+            },
+          }
+        : {}),
     };
   });
   return { systems: out, notes: estate.notes };

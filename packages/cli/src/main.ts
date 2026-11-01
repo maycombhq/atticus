@@ -77,6 +77,7 @@ const NO_AI = new Set([
   "change list",
   "estate measure",
   "estate fresh",
+  "estate shared",
   "change status",
   // Reading the questions on file and printing one: files only, no model (question-commands.ts).
   "questions list",
@@ -484,6 +485,10 @@ Usage:
   atticus join [--json]                Follow each repo's flows into the flows their calls reach, through the calls the repos' verified facts join (verify --write); the same as estate join
   atticus join measure <reference> [--json]  Measure your map against a reference you write by hand for two or three repos you know (their entries and calls, each call with the repo it should reach): reading recall, and join precision and recall; reads files only (docs/guide/measure.md)
   atticus estate measure <reference> [--json]  The same as join measure
+  atticus join shared import <their metarepo> --team <id> --system <id>  Bring in another team's Atticus map, read-only: their verified entries (quotes redacted, the deny-list applied) go to shared/<team>/ at their commit, and verify --write joins your calls to that system to them, cited on their lines; files only (docs/guide/shared-maps.md) [--name <team name>] [--commit <sha>] [--json]
+  atticus join shared refresh [<team>] [<folder>]  Import a team's map again from where it came from (or a new folder); a newer commit replaces the old [--commit <sha>]
+  atticus join shared list [--json]    The shared maps on file: whose, for which system, their commit and entries
+  atticus estate shared import|refresh|list  The same as join shared
   atticus estate fresh [--all] [--json]  Which repos' clones have moved past their facts' commit, most stale first: per repo the facts' commit, the clone's, the files changed that the facts cite, the facts to read again and the command to run; local git only, nothing fetched or written (--all lists the fresh ones too)
   atticus repo-type detect <repo> [--json]   Match a repo against the org pack's repo types by fingerprint, with the evidence for each signal
   atticus repo-type new <id> --from <repo> [--force]   Draft a repo type from a repo (its build files, dependencies, markers, folders) for you to edit
@@ -1389,6 +1394,38 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
   if (group === "estate" && command === "fresh") {
     const m = await import("./estate-fresh.js");
     return m.estateFresh(root, { json: values.json === true, all: values.all === true }, io);
+  }
+  if (group === "estate" && command === "shared") {
+    const m = await import("./shared-commands.js");
+    const json = values.json === true;
+    const text = (v: unknown) => (typeof v === "string" && v.trim() ? v : undefined);
+    if (arg === "import")
+      return m.sharedImport(
+        root,
+        positionals[3],
+        {
+          ...(text(values.team) ? { team: text(values.team)! } : {}),
+          ...(text(values.system) ? { system: text(values.system)! } : {}),
+          ...(text(values.name) ? { name: text(values.name)! } : {}),
+          ...(text(values.commit) ? { commit: text(values.commit)! } : {}),
+          json,
+        },
+        io,
+      );
+    if (arg === "refresh")
+      return m.sharedRefresh(
+        root,
+        positionals[3],
+        {
+          ...(positionals[4] ? { dir: positionals[4] } : {}),
+          ...(text(values.commit) ? { commit: text(values.commit)! } : {}),
+          json,
+        },
+        io,
+      );
+    if (arg === "list" || arg === undefined) return m.sharedList(root, { json }, io);
+    io.err("Usage: atticus join shared import|refresh|list (atticus help join)");
+    return 2;
   }
   if (group === "estate" && command === "measure") {
     const m = await import("./measure-commands.js");

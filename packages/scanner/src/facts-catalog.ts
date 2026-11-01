@@ -40,6 +40,12 @@ import {
   applyLinkEvidence,
   linkEvidenceOf,
   stripLinkEvidence,
+  stripSharedMaps,
+  applySharedMaps,
+  joinSharedMaps,
+  sharedJoinAbout,
+  type SharedMap,
+  type SharedJoinResult,
   type ContractsFileT,
   type LinkEvidenceResult,
   type TrafficOnFile,
@@ -87,6 +93,12 @@ export interface FactsCatalogInput {
    * aggregates people imported (`evidence/traffic/`), read against the estate's join.
    */
   linkEvidence?: { contracts?: readonly ContractsFileT[]; traffic?: readonly TrafficOnFile[] };
+  /**
+   * ADR 0160 (O3): other teams' shared maps (`shared/<team>/`): a call the estate join leaves to
+   * a team's system joins the entry of their map that serves it, cited on their line; nothing of
+   * theirs is written as ours.
+   */
+  shared?: readonly SharedMap[];
 }
 
 /** A call of the repo that is still a loose end after the merge. */
@@ -119,6 +131,8 @@ export interface FactsCatalogResult {
   join?: FactsJoinResult;
   /** With the estate: the links contract files and traffic bear out, and where they disagree (ADR 0151). */
   linkEvidence?: LinkEvidenceResult;
+  /** With the estate and shared maps: this repo's calls joined to another team's map (ADR 0160). */
+  shared?: SharedJoinResult;
 }
 
 type Rec = CatalogRecord & Record<string, unknown>;
@@ -980,7 +994,8 @@ export function catalogWithFacts(given: FactsCatalogInput): FactsCatalogResult {
   if (isPrototypeRepo(op, repo)) return prototypeLeftOut(given);
   // ADR 0151: what an earlier write's contract files and traffic added is taken off first, so
   // it never keeps a record alive and is made again below from the evidence on file now.
-  const input = { ...given, existing: stripLinkEvidence(given.existing) };
+  // ADR 0160: and what a shared map marked, so a map taken away leaves nothing behind.
+  const input = { ...given, existing: stripSharedMaps(stripLinkEvidence(given.existing)) };
   // B-fixes, problem 1: a component id another repo has too (in the estate's facts, or a
   // Component of another repo the catalog already holds) is made unique by the repo's id.
   // A prototype's facts are never part of the estate (ADR 0133).
@@ -1183,9 +1198,24 @@ export function catalogWithFacts(given: FactsCatalogInput): FactsCatalogResult {
         traffic: input.linkEvidence?.traffic ?? [],
       })
     : undefined;
-  const applied = linkEvidence
+  const evidenced = linkEvidence
     ? { ...curated, records: applyLinkEvidence(curated.records, linkEvidence.marks) }
     : curated;
+  // ADR 0160 (O3): the calls the whole estate's join left to a team's system, joined to the
+  // entry of the map that team shares; every write marks the same links, whatever the order.
+  const systems = outsideProfileSystems(op);
+  const sharedWhole =
+    estateJoin && input.shared?.length
+      ? joinSharedMaps({
+          outside: estateJoin.whole.outside ?? [],
+          repos: estateJoin.repos,
+          maps: input.shared,
+          systems,
+        })
+      : undefined;
+  const applied = sharedWhole
+    ? { ...evidenced, records: applySharedMaps(evidenced.records, sharedWhole, systems) }
+    : evidenced;
 
   const newIds = new Set(
     applied.records.filter((r) => (r.evidence as unknown[]).some(mine)).map((r) => r.id),
@@ -1237,6 +1267,7 @@ export function catalogWithFacts(given: FactsCatalogInput): FactsCatalogResult {
     notes: merged.notes,
     ...(join ? { join } : {}),
     ...(linkEvidence ? { linkEvidence } : {}),
+    ...(sharedWhole ? { shared: sharedJoinAbout(sharedWhole, repo) } : {}),
   };
 }
 
