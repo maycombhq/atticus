@@ -468,7 +468,7 @@ Usage:
           [--copy]                     Print the next batch's prompt to paste into a chat
           [--answer <file>]            With --copy: read the pasted answer back from a file (- for stdin)
           [--spent <tokens>] [--sessions n] [--part n]  Record what the read took as your assistant reports it, in facts/<repo>.read-plan.yaml beside --estimate's estimate (Atticus can't meter an assistant's tokens; ADR 0141)
-  atticus verify <repo>                Check the facts your assistant wrote for a repo (/atticus-map) against its code: the claim on each cited line, the quote, references, secrets, coverage; raises the questions it wrote for a person; rejected facts go back to the assistant (ADR 0124) [--dir path] [--commit sha] [--routed a,b] [--json]
+  atticus verify <repo>                Check the facts your assistant wrote for a repo (/atticus-map) against its code: the claim on each cited line, the quote, references, secrets, coverage; raises the questions it wrote for a person; rejected facts go back to the assistant (ADR 0124) [--dir path] [--commit sha] [--routed a,b] [--skipped] [--json]
           [--write]                    When nothing is rejected: put the facts in the catalog, the flows in specs/<repo>/, ask about calls nothing joins, and render the map
           [--verbose]                  With --write: list every record changed and flow written, not only the counts
   atticus verify --all [--write]       Every repo read so far (each with a facts file), one after another; no model is called
@@ -1508,7 +1508,12 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
     const v = parseArgs({
       args: argv,
       allowPositionals: true,
-      options: { ...OPTIONS, write: { type: "boolean" }, verbose: { type: "boolean" } },
+      options: {
+        ...OPTIONS,
+        write: { type: "boolean" },
+        verbose: { type: "boolean" },
+        skipped: { type: "boolean" },
+      },
       strict: false,
     });
     const repo = v.positionals[1];
@@ -1527,7 +1532,7 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
     }
     if (!repo) {
       io.err(
-        "Usage: atticus verify <repo> [--write [--verbose]] [--dir path] [--commit sha] [--routed a,b] [--json], or atticus verify --all [--write]",
+        "Usage: atticus verify <repo> [--write [--verbose]] [--dir path] [--commit sha] [--routed a,b] [--skipped] [--json], or atticus verify --all [--write]",
       );
       return 2;
     }
@@ -1551,6 +1556,7 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
         write: v.values.write === true,
         verbose: v.values.verbose === true,
         json: v.values.json === true,
+        ...(v.values.skipped === true ? { skipped: true } : {}),
       },
       io,
     );

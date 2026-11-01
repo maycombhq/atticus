@@ -1,0 +1,14 @@
+spring:
+  application:
+    name: wallet-api
+forge:
+  ledger:
+    url: https://ledger.forge.internal
+  rates:
+    url: https://rates.forge.internal/v2
+  kafka:
+    topic: forge.wallet.audit
+management:
+  endpoint:
+    health:
+      path: /actuator/health

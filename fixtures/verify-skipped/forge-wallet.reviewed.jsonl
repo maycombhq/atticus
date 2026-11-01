@@ -1,0 +1,4 @@
+{"path":"src/main/java/forge/wallet/Wallet.java","why":"a record with no I/O"}
+{"path":"src/main/java/forge/wallet/support/**","why":"helpers, nothing to record"}
+{"path":"generated/**","why":"generated client"}
+{"path":"third_party/**","why":"a vendored library"}

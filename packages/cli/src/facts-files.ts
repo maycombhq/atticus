@@ -187,6 +187,19 @@ export interface VerifySummary {
   methodUnseenCount?: number;
   /** P2: those entries and calls, each with where it is cited (a warning, not a rejection). */
   methodUnseen?: VerifyReport["methodUnseen"];
+  /**
+   * R1: how many lines of the files read write a path, URL or topic no kept fact cites or names;
+   * left out when none. A note for the reader to check, never a rejection.
+   */
+  skippedCount?: number;
+  /** R1: the first of them (at most `SKIPPED_LISTED`); `atticus verify <repo> --skipped` prints all. */
+  skipped?: VerifyReport["skipped"];
+  /** R1: the reviewed globs whose files write such a line, each with the first few. */
+  reviewedHolds?: VerifyReport["reviewedHolds"];
+  /** R1: how many operations the repo's OpenAPI specs declare that no entry covers. */
+  specOpsUncoveredCount?: number;
+  /** R1: the first of them (at most `SKIPPED_LISTED`). */
+  specOpsUncovered?: VerifyReport["specOpsUncovered"];
   /** R6: the slips of form fixed in the facts (a slugged id, a flow's cite). Left out when none. */
   slips?: FormSlip[];
   /**
@@ -205,6 +218,12 @@ export interface VerifySummary {
    */
   frameworkGaps?: VerifyReport["frameworkGaps"];
 }
+
+/**
+ * How many skipped lines and uncovered spec operations `<repo>.verify.yaml` lists (R1); the
+ * count says how many there are, and `atticus verify <repo> --skipped` prints every one.
+ */
+export const SKIPPED_LISTED = 100;
 
 /** A line of `<repo>.reviewed.jsonl` refused: not an entry, or naming no file of the repo. */
 export interface ReviewedLineProblem {
@@ -298,6 +317,16 @@ export async function writeVerifyFiles(
   if (report.methodUnseen.length) {
     summary.methodUnseenCount = report.methodUnseen.length;
     summary.methodUnseen = report.methodUnseen;
+  }
+  // R1: notes for the reader's second pass, capped with a count.
+  if (report.skipped.length) {
+    summary.skippedCount = report.skipped.length;
+    summary.skipped = report.skipped.slice(0, SKIPPED_LISTED);
+  }
+  if (report.reviewedHolds.length) summary.reviewedHolds = report.reviewedHolds;
+  if (report.specOpsUncovered.length) {
+    summary.specOpsUncoveredCount = report.specOpsUncovered.length;
+    summary.specOpsUncovered = report.specOpsUncovered.slice(0, SKIPPED_LISTED);
   }
   if (slips.length) summary.slips = [...slips];
   if (report.authUncited.length) summary.authUncited = report.authUncited;

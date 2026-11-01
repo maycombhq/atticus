@@ -693,3 +693,71 @@ describe("atticus verify <repo>: what the repo is built on", () => {
     expect(r.frameworkGaps).toBeUndefined();
   });
 });
+
+/**
+ * R1: the lines the reader skipped, on the invented forge-wallet service
+ * (`fixtures/verify-skipped/`): a note with the first few and the command that prints them all,
+ * the capped list with its count in the report for the second pass, and never a rejection.
+ */
+describe("atticus verify: the lines the reader skipped (R1)", () => {
+  const FIX = join(__dirname, "..", "..", "..", "fixtures", "verify-skipped");
+  const wallet = (): string => {
+    const root = mkdtempSync(join(tmpdir(), "atticus-verify-skipped-"));
+    cpSync(join(FIX, "repo"), root, { recursive: true });
+    mkdirSync(join(root, ".atticus", "org-pack"), { recursive: true });
+    mkdirSync(join(root, ".atticus", "facts"), { recursive: true });
+    cpSync(
+      join(FIX, "forge-wallet.facts.jsonl"),
+      join(root, ".atticus", "facts", "forge-wallet.jsonl"),
+    );
+    cpSync(
+      join(FIX, "forge-wallet.reviewed.jsonl"),
+      join(root, ".atticus", "facts", "forge-wallet.reviewed.jsonl"),
+    );
+    return root;
+  };
+  const want = JSON.parse(readFileSync(join(FIX, "expected.json"), "utf8"));
+  const yaml = ".atticus/facts/forge-wallet.verify.yaml";
+
+  it("says the first few with the command that prints all, and lists them in the report; it fails nothing", async () => {
+    const root = wallet();
+    const o = io();
+    expect(await verifyCommand(root, "forge-wallet", { commit: "5e1f00d" }, o.io)).toBe(0);
+    expect(existsSync(join(root, ".atticus", "facts", "forge-wallet.rejected.jsonl"))).toBe(false);
+    expect(o.out).toContain(
+      `7 lines of the files read write a path, URL or topic no fact cites (a note for the reader to check, not a rejection; under skipped in ${yaml}; atticus verify forge-wallet --skipped prints every one):`,
+    );
+    expect(o.out).toContain(
+      "  src/main/java/forge/wallet/HoldEvents.java:11 topic forge.wallet.hold-released",
+    );
+    expect(o.out).toContain(
+      "  ... and 2 more (atticus verify forge-wallet --skipped prints every one)",
+    );
+    expect(o.out).not.toContain("  web/src/api.ts:6 path /api/wallets/${id}/freeze");
+    expect(o.out.join("\n")).toContain(
+      "1 reviewed glob holds lines that write a path, URL or topic",
+    );
+    expect(o.out).toContain(
+      `2 operations the repo's OpenAPI specs declare have no entry (a note, not a rejection; under specOpsUncovered in ${yaml}; atticus verify forge-wallet --skipped prints every one):`,
+    );
+    const r = parse(readFileSync(join(root, yaml), "utf8"));
+    expect(r.skippedCount).toBe(7);
+    expect(r.skipped).toEqual(want.skipped);
+    expect(r.reviewedHolds).toEqual(want.reviewedHolds);
+    expect(r.specOpsUncoveredCount).toBe(2);
+    expect(r.specOpsUncovered).toEqual(want.specOpsUncovered);
+    expect(r.accepted).toBe(6);
+  });
+
+  it("prints every one with --skipped", async () => {
+    const root = wallet();
+    const o = io();
+    expect(
+      await verifyCommand(root, "forge-wallet", { commit: "5e1f00d", skipped: true }, o.io),
+    ).toBe(0);
+    expect(o.out).toContain("  web/src/api.ts:6 path /api/wallets/${id}/freeze");
+    expect(o.out.join("\n")).not.toMatch(
+      /\.\.\. and \d+ more \(atticus verify forge-wallet --skipped/,
+    );
+  });
+});

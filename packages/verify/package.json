@@ -24,6 +24,7 @@
   "dependencies": {
     "@maycombhq/core": "workspace:*",
     "@maycombhq/diagrams": "workspace:*",
+    "@maycombhq/extractors": "workspace:*",
     "@maycombhq/sdk": "workspace:*"
   }
 }
