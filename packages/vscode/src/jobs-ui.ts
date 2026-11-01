@@ -1,11 +1,11 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import * as vscode from "vscode";
 import { answerQuestion } from "./atticus";
 import { showReadOnly, type CommandUi } from "./command-ui";
 import { commandText } from "./cli";
 import { agentFilePath, agentForStep, openForStep, promptFilePath } from "./copilot-agent";
-import { JOBS, TRAFFIC_SOURCES, type Job, type JobArgs } from "./jobs";
+import { JOBS, limitOf, runtimeMaxInput, TRAFFIC_SOURCES, type Job, type JobArgs } from "./jobs";
 import { proposalWhat } from "./waiting-data";
 import type { Service } from "./service";
 import type { OpenQuestion } from "./types";
@@ -28,6 +28,8 @@ export interface JobsDeps {
   questions: () => OpenQuestion[] | undefined;
   /** My teams' on or off in the Questions view. */
   setMine: (on: boolean) => void;
+  /** A long-running command in a terminal the person sees and types into (map --all). */
+  inTerminal: (root: string, name: string, args: string[]) => unknown;
 }
 
 /** Open a step in Copilot Chat: agent mode where its agent file is, else its prompt file. */
@@ -153,6 +155,30 @@ export function registerJobs(d: JobsDeps) {
         }
         return a;
       }
+      case "limit": {
+        if (a.maxTokens) return a;
+        const read = (rel: string) => {
+          try {
+            return readFileSync(join(root, ...rel.split("/")), "utf8");
+          } catch {
+            return undefined;
+          }
+        };
+        const preset =
+          runtimeMaxInput(read("org-pack/runtime.yaml")) ??
+          runtimeMaxInput(read(".atticus/org-pack/runtime.yaml"));
+        const v = await vscode.window.showInputBox({
+          title,
+          prompt: WORDS.mapEstateLimit,
+          ...(preset ? { value: preset } : {}),
+          ignoreFocusOut: true,
+          validateInput: (x) => (limitOf(x) ? undefined : WORDS.mapEstateBadLimit),
+        });
+        const n = v === undefined ? undefined : limitOf(v);
+        if (!n) return undefined;
+        a.maxTokens = n;
+        return a;
+      }
       default:
         return a;
     }
@@ -190,6 +216,8 @@ export function registerJobs(d: JobsDeps) {
       return openChatStep(root, c.step, c.target);
     }
     const argv = j.argv(a);
+    // ADR 0161: map --all runs all day in a terminal, where the person types s, r and q.
+    if (j.how === "terminal") return void d.inTerminal(root, "Atticus: map the estate", argv);
     if (j.how === "confirm") {
       const yes = await vscode.window.showWarningMessage(
         j.command === "atticus.repoRename"

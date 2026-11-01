@@ -874,6 +874,7 @@ ${view.next.why}`
   registerJobs({
     svc,
     commands,
+    inTerminal: (root, name, args) => inTerminal(root, name, args),
     needRoot,
     reg,
     refreshAll,

@@ -148,6 +148,19 @@ function folderOf(path: string): { dir: string; deep: boolean } {
 
 const under = (dir: string, of: string) => of === "" || dir === of || dir.startsWith(`${of}/`);
 
+/**
+ * Whether `file` is one a part's glob stands for (ADR 0161: the rest of a part a read stopped in):
+ * a folder glob holds the files under it as `unitOf` reads it, a line range its file, and any
+ * other path the one file it names.
+ */
+export function globHolds(glob: string, file: string): boolean {
+  const u = unitOf(glob);
+  if (u.range) return u.range.file === file;
+  if (!/[*]/.test(glob)) return glob === file;
+  const dir = file.replace(/\/?[^/]*$/, "");
+  return u.deep ? under(dir, u.dir) : dir === u.dir;
+}
+
 export interface PartState extends z.infer<typeof Part> {
   state: "done" | "in-progress" | "to-read";
   /** The units of the part the facts account for. */

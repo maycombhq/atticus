@@ -204,6 +204,10 @@ export const WORDS = {
   sheetOther: "Another file…",
   trafficSource: "Where the export comes from",
   referencePick: "The reference file (docs/guide/measure.md)",
+  // ADR 0161: atticus map --all, in a terminal.
+  mapEstateLimit:
+    "Your model's limit in tokens (the context window of the model Copilot Chat uses): each part is planned to fit it. The terminal then shows each part's line to paste into a new Copilot Chat; type s, r or q there.",
+  mapEstateBadLimit: "A whole number of tokens, such as 128000.",
   trafficPick: "The traffic export",
   auditWhole: "Every repo audited, and the estate",
   newRepoId: (from: string) => `The new id for ${from}`,

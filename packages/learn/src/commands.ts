@@ -32,7 +32,7 @@ export const COMMANDS: readonly CommandHelp[] = [
   {
     name: "map",
     usage:
-      "atticus map <repo> [--estimate] [--handoff | --copy [--answer <file>] | --mode m] [--next] [--max-tokens n] [--force]",
+      "atticus map <repo> [--estimate] [--handoff | --copy [--answer <file>] | --mode m] [--next] [--max-tokens n] [--force], or atticus map --all [--max-tokens n] [--stale | --gaps] [--repos a,b] [--dry-run]",
     what: "Has your assistant read a repo into facts, each citing its file and line: an agentic assistant follows /atticus-map; one without tools gets the repo in batches that fit its model, each answer checked before the next.",
     who: ["developer", "architect"],
     changes: "facts/<repo>.jsonl and the questions the reader raised",

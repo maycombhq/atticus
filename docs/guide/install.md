@@ -149,6 +149,23 @@ atticus map <repo> --copy --answer reply.txt # reads the answer you saved (--ans
 
 Repeat until it says the read is done, then `atticus verify <repo> --write`.
 
+### The whole estate in one command
+
+`atticus map --all` maps or re-maps every repo in the manifests, one part at a time, and you can leave it open all day (ADR 0161):
+
+```bash
+atticus map --all --max-tokens 128000 --dry-run   # the plan: every repo, its parts, the tokens; nothing read
+atticus map --all --max-tokens 128000             # read the estate
+```
+
+It plans each repo's read at your model's limit (`--max-tokens`, else `maxInput` in `runtime.yaml`, else what `atticus probe` measured; with none of them it refuses, because a part planned too big overflows the reader), in the onboarding queue's order (gateways, called repos and deploy repos first, prototypes last), and skips each repo whose read is complete and fresh.
+
+- **With Copilot (IntelliJ or VS Code)**, Copilot gives Atticus no way to send it a prompt, so for each part it prints a block, puts one line on your clipboard (`/atticus-map <repo>`) and waits. Paste the line into a **new** Copilot Chat in agent mode and send it. Atticus watches the facts file; once the part is accounted for and Copilot's own `atticus verify` passed, it runs what `atticus verify <repo> --write` runs, prints one paragraph and moves on to the next part. While it waits, type `s` and Enter to skip the part, `r` and Enter to retry, `q` and Enter (or Ctrl+C) to stop.
+- **If Copilot stops partway** (a long chat that fails, a closed window), nothing is lost: after 15 minutes with no change to the facts (`--idle <minutes>`) it says Copilot seems to have stopped. `r` verifies what was written (the good facts are kept, and the read plan marks only what they account for) and gives a new line for **only what is left** of the part (`/atticus-map <repo> --part n --gaps`), for a new chat. After three tries it suggests a smaller `--max-tokens`, which plans the repo in smaller parts.
+- **With model mode** (`runtime.yaml` allows it and names a provider), every part runs on the model with no one there; `--max-parts n` or `--budget-tokens n` caps it, and a provider error is retried three times with a pause before the part is listed as failed.
+
+When every repo is done it runs `atticus verify --all --write` once, so every link is joined with the whole estate read, and prints what it did: repos and parts read, facts rejected, links added and removed, questions open, what is unfinished with the command for each, and the next steps (`atticus questions list --mine`, `atticus estate fresh`). Where it stands is kept in `.atticus/map-all/state.json` on this machine (never committed), but what is done is always read from the facts, so running `atticus map --all` again after a closed terminal or a reboot carries on where it was. `--stale` re-reads only the repos whose clone moved past their facts, `--gaps` runs the second pass on the gaps for every read repo, and `--repos a,b` limits it. In IntelliJ, Tools → Atticus → Map the Estate… runs it in a console, where you type `s`, `r` and `q`; in VS Code, Atticus: Map the estate runs it in a terminal.
+
 ### What `--write` keeps, and what the catalog leaves out
 
 `--write` rewrites `facts/<repo>.jsonl` with the facts it kept. That file stays your assistant's own: every claim it wrote is still in it, and the only changes to the bytes are that a quote carrying a secret value is redacted (so a secret never sits in the file) and that a quote the cited line can't be checked against — a minified bundle, a notebook, a binary, a line over 1,000 characters — is left off and counted. A fact that was rejected isn't in the file: it is in `<repo>.rejected.jsonl` with why, for your assistant to fix.

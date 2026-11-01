@@ -185,6 +185,10 @@
             <action id="Atticus.ReadingQueue" class="com.maycombhq.atticus.ide.ReadingQueueAction"
                     text="Atticus: The Reading Order and Its Costs" description="The repos to read next, callees and gateways first, each with its estimated cost (atticus next --queue)"
                     icon="AllIcons.Actions.ListFiles"/>
+            <!-- ADR 0161: the whole estate in one command, in a console the person types s, r, q into -->
+            <action id="Atticus.MapEstate" class="com.maycombhq.atticus.ide.MapEstateAction"
+                    text="Atticus: Map the Estate..." description="Read every repo one part at a time: each part's line on the clipboard for a new Copilot Chat, verified as it lands, then the estate joined (atticus map --all)"
+                    icon="AllIcons.Actions.Execute"/>
             <action id="Atticus.MapGaps" class="com.maycombhq.atticus.ide.MapGapsAction"
                     text="Atticus: Read a Repo's Gaps with Copilot" description="Plan a second pass on what the last verify left, then /atticus-map &lt;repo&gt; --gaps on the clipboard for a new chat"
                     icon="AllIcons.Actions.Search"/>

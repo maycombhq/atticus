@@ -737,6 +737,11 @@
         "icon": "$(list-ordered)"
       },
       {
+        "command": "atticus.mapEstate",
+        "title": "Map the estate, one part at a time (map --all)",
+        "category": "Atticus"
+      },
+      {
         "command": "atticus.mapGaps",
         "title": "Plan a second pass on a repo's gaps (map --gaps)",
         "category": "Atticus"

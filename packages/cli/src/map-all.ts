@@ -1,0 +1,1096 @@
+import { existsSync } from "node:fs";
+import { readFile, stat } from "node:fs/promises";
+import { join } from "node:path";
+import { parse } from "yaml";
+import { assistantTier, readProbes } from "@maycombhq/assistant-files";
+import { currentPromptLimit, type AiRequest, type AiRuntime } from "@maycombhq/ai";
+import {
+  ensureLocalIgnore,
+  factsDirOf,
+  factsRelOf,
+  headFromFiles,
+  listQuestions,
+  loadOrgPack,
+  orgPackDirOf,
+  parseFacts,
+  writeFileAtomic,
+  type OrgPack,
+} from "@maycombhq/core";
+import { estateRepos, productionRepos } from "@maycombhq/scanner";
+import { sameCommit } from "@maycombhq/verify";
+import type { GitRunner } from "@maycombhq/workspace";
+import type { Output } from "./commands.js";
+import { estateFreshness, type FreshRepo } from "./estate-fresh.js";
+import { checkoutOf, headOf } from "./facts-files.js";
+import { mapCommand, mapStateOf } from "./map-commands.js";
+import { readPlanProgress } from "./map-parts.js";
+import { isMetarepo, notMetarepo } from "./metarepo-guard.js";
+import { onboardingQueue } from "./onboarding-queue.js";
+import { factsRepos, verifyCommand } from "./verify-commands.js";
+
+/**
+ * `atticus map --all` (ADR 0161): one command that maps or re-maps the whole estate. It plans
+ * every repo's read at the model's limit, in the onboarding queue's order (ADR 0141), and then
+ * reads one part at a time:
+ *
+ * - **Copilot (hand-off)**: Copilot in IntelliJ gives a plugin or a command line no API, so a
+ *   person pastes one line per part into a new Copilot Chat. Atticus prints it, puts it on the
+ *   clipboard and waits, polling the facts on disk, until the part is accounted for; then it runs
+ *   what `atticus verify <repo> --write` runs and moves on. A part a read stopped in is verified
+ *   as it is (good facts kept) and given again for only what is left.
+ * - **Model mode** (runtime.yaml allows it and names a provider): every part runs on the model,
+ *   unattended, with a cap on prompts or tokens; a failed part is retried with backoff.
+ *
+ * At the end the estate is joined once (`verify --all --write`). Where it is in the estate is
+ * kept in `.atticus/map-all/state.json` (this machine's, never committed), but what is done is
+ * always read back from the facts on disk, so a killed terminal resumes cleanly.
+ */
+
+export interface MapAllOptions {
+  /** The model's limit; else the global --max-tokens, runtime.yaml's maxInput, the probe's. */
+  maxTokens?: number;
+  /** Re-read only the repos whose clone moved past their facts. */
+  stale?: boolean;
+  /** The second pass on the gaps (R2) for every read repo, instead of full reads. */
+  gaps?: boolean;
+  /** Only these repos. */
+  repos?: readonly string[];
+  /** Print the plan and stop. */
+  dryRun?: boolean;
+  json?: boolean;
+  /** Who reads: a person pasting into Copilot, or runtime.yaml's model. Default from runtime.yaml. */
+  mode?: "copilot" | "model";
+  /** Model mode: stop after this many prompts. */
+  maxParts?: number;
+  /** Model mode: stop once this many tokens are spent (the runtime's count, else the prompts'). */
+  budgetTokens?: number;
+  /** Copilot: minutes the facts may stand still before Atticus says the read seems to have stopped. */
+  idleMinutes?: number;
+}
+
+/** A clock the wait loop runs on; tests pass a fake one, so nothing really waits. */
+export interface Clock {
+  now(): number;
+  sleep(ms: number): Promise<void>;
+}
+
+export interface MapAllDeps {
+  /** Model mode's runtime; else made by `makeRuntime` when model mode runs. */
+  runtime?: AiRuntime;
+  makeRuntime?: () => Promise<AiRuntime>;
+  clock?: Clock;
+  /** The lines a person typed, taken one at a time (`s`, `r`, `q`). */
+  input?: { take(): string | undefined };
+  clipboard?: (text: string) => Promise<boolean>;
+  git?: GitRunner;
+  /** Ctrl+C. */
+  signal?: AbortSignal;
+  /** How often the facts are looked at while waiting. */
+  pollMs?: number;
+  /** How often a reminder is printed while waiting. */
+  remindMs?: number;
+  /** Model mode: the first wait before a retry (doubled each time). */
+  backoffMs?: number;
+}
+
+export type ItemKind = "read" | "reread" | "carry" | "gaps";
+
+export interface PlanPart {
+  part: number;
+  total: number;
+  /** The globs the part reads; empty for a repo one session reads whole. */
+  paths: string[];
+  files: number;
+  tokens: number;
+}
+
+export interface PlanItem {
+  repo: string;
+  kind: ItemKind;
+  commit: string;
+  /** A prototype (ADR 0133): read, never joined. */
+  prototype?: true;
+  why: string;
+  /** The parts still to read, in order; none for carry. */
+  parts: PlanPart[];
+  /** The parts the read plan has in all (1 for a repo one session reads). */
+  total: number;
+  tokens: number;
+  /** Model mode: the prompts the read takes at the limit. */
+  batches?: number;
+}
+
+export interface MapAllPlan {
+  limit: number;
+  limitFrom: "flag" | "runtime.yaml" | "probe";
+  mode: "copilot" | "model";
+  items: PlanItem[];
+  skipped: { repo: string; why: string }[];
+}
+
+/** How a part ended, kept in the state file and said in the summary. */
+type PartEnd = "done" | "skipped" | "incomplete" | "failed";
+
+interface RepoState {
+  commit: string;
+  kind: ItemKind;
+  parts: Record<string, { retries: number; state?: PartEnd }>;
+  /** The gaps pass (which the facts can't show was done) or the carry, done at `commit`. */
+  done?: true;
+}
+
+export interface MapAllState {
+  schemaVersion: 1;
+  updatedAt: string;
+  mode: "copilot" | "model";
+  gaps: boolean;
+  repos: Record<string, RepoState>;
+}
+
+export const MAP_ALL_STATE_REL = ".atticus/map-all/state.json";
+const statePath = (root: string) => join(root, ".atticus", "map-all", "state.json");
+
+const REMIND_MS = 10 * 60_000;
+const IDLE_MINUTES = 15;
+const POLL_MS = 3000;
+const RETRIES = 3;
+
+const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+const tokensText = (n: number) => n.toLocaleString("en-US");
+const firstLine = (e: unknown) => String((e as Error)?.message ?? e).split("\n")[0]!;
+
+export async function readMapAllState(root: string): Promise<MapAllState | undefined> {
+  const text = await readFile(statePath(root), "utf8").catch(() => undefined);
+  if (!text) return undefined;
+  try {
+    const s = JSON.parse(text) as MapAllState;
+    return s.schemaVersion === 1 && s.repos && typeof s.repos === "object" ? s : undefined;
+  } catch {
+    // A state file cut short is no state: the facts on disk say what is done.
+    return undefined;
+  }
+}
+
+async function saveState(root: string, s: MapAllState, now: number): Promise<void> {
+  s.updatedAt = new Date(now).toISOString().replace(/\.\d{3}Z$/, "Z");
+  await ensureLocalIgnore(root);
+  await writeFileAtomic(statePath(root), `${JSON.stringify(s, null, 2)}\n`);
+}
+
+/** Whether runtime.yaml lets a step run on its model here (as `atticus next --json` says it). */
+export function modelModeAllowed(op: Pick<OrgPack, "runtime">): boolean {
+  const rt = op.runtime;
+  return (
+    rt.ai !== "off" &&
+    rt.modes.allowed.includes("model") &&
+    !!rt.adapters.model &&
+    rt.adapters.model.type !== "mock"
+  );
+}
+
+/** The model's limit: --max-tokens, else runtime.yaml's maxInput, else the probe's; never a guess. */
+export async function limitFor(
+  root: string,
+  op: OrgPack,
+  given: number | undefined,
+): Promise<{ limit: number; from: MapAllPlan["limitFrom"] } | undefined> {
+  const flag = given ?? currentPromptLimit();
+  if (flag !== undefined) return { limit: flag, from: "flag" };
+  const maxInput = op.runtime.adapters.model?.settings.maxInput;
+  if (typeof maxInput === "number") return { limit: maxInput, from: "runtime.yaml" };
+  const tier = assistantTier(op.runtime, { probes: (await readProbes(root)).results });
+  if (tier.maxTokensFrom === "probe" && tier.maxTokens !== undefined)
+    return { limit: tier.maxTokens, from: "probe" };
+  return undefined;
+}
+
+/** What one call of a command printed, kept instead of shown. */
+function captured(): Output & { lines: string[]; errs: string[] } {
+  const lines: string[] = [];
+  const errs: string[] = [];
+  return { lines, errs, out: (l) => lines.push(l), err: (l) => errs.push(l) };
+}
+
+/** The last JSON object a command printed. */
+function jsonOf<T>(lines: readonly string[]): T | undefined {
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const l = lines[i]!.trimStart();
+    if (!l.startsWith("{")) continue;
+    try {
+      return JSON.parse(lines.slice(i).join("\n")) as T;
+    } catch {
+      try {
+        return JSON.parse(l) as T;
+      } catch {
+        continue;
+      }
+    }
+  }
+  return undefined;
+}
+
+async function commitOf(root: string, repo: string, f?: FreshRepo): Promise<string | undefined> {
+  if (f?.head) return f.head;
+  const dir = await checkoutOf(root, repo).catch(() => undefined);
+  if (!dir || !existsSync(dir)) return undefined;
+  return (await headFromFiles(dir)) ?? (await headOf(dir));
+}
+
+interface EstimateJson {
+  tokens: number;
+  files: number;
+  batches: number | null;
+  parts: {
+    parts: { paths: string[]; files: number; tokens: number }[];
+    plan?: { parts: { part: number; state: string }[] };
+  };
+}
+
+/** The parts of a repo's read at the limit, as `atticus map <repo> --estimate` plans them. */
+async function partsOf(
+  root: string,
+  repo: string,
+  commit: string,
+  limit: number,
+  git: GitRunner | undefined,
+): Promise<{ parts: PlanPart[]; total: number; tokens: number; batches?: number } | string> {
+  const io = captured();
+  const code = await mapCommand(
+    root,
+    repo,
+    { estimate: true, json: true, commit, maxTokens: limit },
+    io,
+    git ? { git } : {},
+  );
+  const r = code === 0 ? jsonOf<EstimateJson>(io.lines) : undefined;
+  if (!r) return io.errs[0] ?? `atticus map ${repo} --estimate didn't plan it`;
+  const planned = r.parts.parts;
+  const batches = r.batches ?? undefined;
+  if (!planned.length)
+    return {
+      parts: [{ part: 1, total: 1, paths: [], files: r.files, tokens: r.tokens }],
+      total: 1,
+      tokens: r.tokens,
+      ...(batches !== undefined ? { batches } : {}),
+    };
+  const states = r.parts.plan?.parts ?? [];
+  const parts = planned
+    .map((p, i) => ({ part: i + 1, total: planned.length, ...p }))
+    .filter((p) => states.find((s) => s.part === p.part)?.state !== "done");
+  return {
+    parts,
+    total: planned.length,
+    tokens: parts.reduce((n, p) => n + p.tokens, 0),
+    ...(batches !== undefined ? { batches } : {}),
+  };
+}
+
+/**
+ * The plan: every repo of the estate (or of --repos), what it needs (a read, a re-read of what
+ * changed, a carry, a gaps pass) or why it is skipped, in the onboarding queue's order; the
+ * prototypes after the estate, read but never joined (ADR 0133).
+ */
+export async function planEstate(
+  root: string,
+  op: OrgPack,
+  o: MapAllOptions,
+  c: {
+    limit: number;
+    limitFrom: MapAllPlan["limitFrom"];
+    mode: MapAllPlan["mode"];
+    git?: GitRunner;
+  },
+  state: MapAllState | undefined,
+): Promise<MapAllPlan | string> {
+  const all = estateRepos(op).map((r) => r.id);
+  const production = new Set(productionRepos(op).map((r) => r.id));
+  if (o.repos) {
+    const unknown = o.repos.filter((r) => !all.includes(r));
+    if (unknown.length)
+      return `No repo ${unknown.join(", ")} in the manifests (org-pack/profiles/*/repos.manifest.yaml).`;
+  }
+  const ids = o.repos ? all.filter((r) => o.repos!.includes(r)) : all;
+  const fresh = await estateFreshness(root, { repos: ids, ...(c.git ? { git: c.git } : {}) });
+  const byId = new Map(fresh.repos.map((r) => [r.repo, r]));
+  const skipped: MapAllPlan["skipped"] = [];
+  const todo: { repo: string; kind: ItemKind; commit: string; why: string; started?: boolean }[] =
+    [];
+  for (const repo of ids) {
+    const f = byId.get(repo);
+    const commit = await commitOf(root, repo, f);
+    if (!commit || f?.state === "no-checkout") {
+      skipped.push({ repo, why: "no clone to read: atticus workspace sync clones it" });
+      continue;
+    }
+    const state = f?.state ?? "not-read";
+    if (o.gaps) {
+      if (state === "not-read")
+        skipped.push({ repo, why: "not read yet: the gaps pass follows a read" });
+      else if (state === "stale" || state === "unknown-commit")
+        skipped.push({
+          repo,
+          why: "its clone moved past its facts: atticus map --all --stale reads what changed first",
+        });
+      else if (isDone(repo, commit))
+        skipped.push({ repo, why: "its gaps pass is done at this commit" });
+      else todo.push({ repo, kind: "gaps", commit, why: "the second pass on what its read left" });
+      continue;
+    }
+    if (state === "stale" || state === "unknown-commit") {
+      todo.push({
+        repo,
+        kind: "reread",
+        commit,
+        why:
+          state === "stale"
+            ? `its clone moved past its facts: ${plural(f!.reread, "fact")} to read again, ${plural(f!.toRead, "file")} to read`
+            : "the clone lacks the commit its facts were read at: read whole again",
+        started: true,
+      });
+      continue;
+    }
+    if (state === "moved") {
+      todo.push({
+        repo,
+        kind: "carry",
+        commit,
+        why: "its clone moved, but nothing its facts cite changed: verify carries them",
+        started: true,
+      });
+      continue;
+    }
+    if (o.stale) {
+      skipped.push({
+        repo,
+        why: state === "fresh" ? "fresh" : "not read yet (atticus map --all reads it)",
+      });
+      continue;
+    }
+    if (state === "fresh") {
+      const progress = await readPlanProgress(root, repo, { commit });
+      if (progress && !progress.stale && progress.next) {
+        todo.push({
+          repo,
+          kind: "read",
+          commit,
+          why: `its read is under way: ${progress.done} of ${progress.total} parts read`,
+          started: true,
+        });
+      } else skipped.push({ repo, why: "read and fresh" });
+      continue;
+    }
+    todo.push({ repo, kind: "read", commit, why: "not read yet" });
+  }
+
+  // The order: the onboarding queue over the estate's repos; prototypes after, as listed.
+  const prod = todo.filter((t) => production.has(t.repo));
+  const q = await onboardingQueue(
+    root,
+    prod.map((t) => ({ repo: t.repo, ...(t.started ? { started: true } : {}) })),
+  );
+  const ordered = [
+    ...q.queue.map((x) => prod.find((t) => t.repo === x.repo)!),
+    ...todo.filter((t) => !production.has(t.repo)),
+  ];
+
+  const items: PlanItem[] = [];
+  for (const t of ordered) {
+    const base = {
+      repo: t.repo,
+      kind: t.kind,
+      commit: t.commit,
+      why: t.why,
+      ...(production.has(t.repo) ? {} : { prototype: true as const }),
+    };
+    if (t.kind === "carry") {
+      items.push({ ...base, parts: [], total: 0, tokens: 0 });
+      continue;
+    }
+    if (t.kind === "gaps") {
+      items.push({
+        ...base,
+        parts: [{ part: 1, total: 1, paths: [], files: 0, tokens: 0 }],
+        total: 1,
+        tokens: 0,
+      });
+      continue;
+    }
+    const p = await partsOf(root, t.repo, t.commit, c.limit, c.git);
+    if (typeof p === "string") {
+      skipped.push({ repo: t.repo, why: p });
+      continue;
+    }
+    if (c.mode === "model" && p.batches === undefined) {
+      skipped.push({
+        repo: t.repo,
+        why: `a model of ${c.limit} tokens leaves too little room for its files beside the instructions`,
+      });
+      continue;
+    }
+    if (!p.parts.length) {
+      skipped.push({ repo: t.repo, why: "every part of its read plan is read" });
+      continue;
+    }
+    items.push({ ...base, ...p });
+  }
+  return { limit: c.limit, limitFrom: c.limitFrom, mode: c.mode, items, skipped };
+
+  function isDone(repo: string, commit: string) {
+    const r = state?.repos[repo];
+    return !!r?.done && r.kind === "gaps" && sameCommit(r.commit, commit);
+  }
+}
+
+function planLines(plan: MapAllPlan): string[] {
+  const out: string[] = [];
+  const reading = plan.items.filter((i) => i.kind !== "carry");
+  const parts = reading.reduce((n, i) => n + i.parts.length, 0);
+  const tokens = reading.reduce((n, i) => n + i.tokens, 0);
+  out.push(
+    `The estate at ${tokensText(plan.limit)} tokens a prompt (${plan.limitFrom === "flag" ? "--max-tokens" : plan.limitFrom === "probe" ? "the limit atticus probe measured" : "runtime.yaml's maxInput"}), ${plan.mode === "model" ? "read by runtime.yaml's model, unattended" : "read by Copilot Chat in agent mode: you paste one line per part"}:`,
+  );
+  plan.items.forEach((i, n) => {
+    const head = `  ${n + 1}. ${i.repo}${i.prototype ? " (prototype: read, never joined)" : ""}`;
+    if (i.kind === "carry") return out.push(`${head}: ${i.why}.`);
+    if (i.kind === "gaps") return out.push(`${head}: ${i.why}, planned when it starts.`);
+    out.push(
+      `${head}: ${i.kind === "reread" ? "re-read" : "read"}, ${i.why}; ${plural(i.parts.length, "part")}${i.parts.length < i.total ? ` of ${i.total}` : ""}, about ${tokensText(i.tokens)} tokens${plan.mode === "model" && i.batches !== undefined ? `, ${plural(i.batches, "prompt")}` : ""}.`,
+    );
+    if (i.total > 1)
+      for (const p of i.parts)
+        out.push(
+          `     part ${p.part} of ${p.total} (about ${tokensText(p.tokens)} tokens, ${plural(p.files, "file")}): ${p.paths.join(", ")}`,
+        );
+  });
+  for (const s of plan.skipped) out.push(`  - ${s.repo}: skipped, ${s.why}.`);
+  out.push(
+    plan.items.length
+      ? `In all: ${plural(plan.items.length, "repo")}, ${plural(parts, "part")} to read, about ${tokensText(tokens)} tokens (estimated from the source, not metered). Then atticus verify --all --write joins the estate once.`
+      : "Nothing to read: every repo is read and fresh, or skipped as said.",
+  );
+  return out;
+}
+
+// ---------------------------------------------------------------- the files a part is read back from
+
+interface Snap {
+  facts?: number;
+  reviewed?: number;
+  verify?: number;
+}
+
+const mtime = async (p: string) => (await stat(p).catch(() => undefined))?.mtimeMs;
+
+async function snapOf(root: string, repo: string): Promise<Snap> {
+  const dir = factsDirOf(root);
+  const [facts, reviewed, verify] = await Promise.all([
+    mtime(join(dir, `${repo}.jsonl`)),
+    mtime(join(dir, `${repo}.reviewed.jsonl`)),
+    mtime(join(dir, `${repo}.verify.yaml`)),
+  ]);
+  return {
+    ...(facts !== undefined ? { facts } : {}),
+    ...(reviewed !== undefined ? { reviewed } : {}),
+    ...(verify !== undefined ? { verify } : {}),
+  };
+}
+
+const sameSnap = (a: Snap, b: Snap) =>
+  a.facts === b.facts && a.reviewed === b.reviewed && a.verify === b.verify;
+
+/** Facts of `commit` in the facts file. */
+async function factsAt(root: string, repo: string, commit: string): Promise<number> {
+  const text = await readFile(join(factsDirOf(root), `${repo}.jsonl`), "utf8").catch(() => "");
+  if (!text.trim()) return 0;
+  const p = parseFacts(text);
+  return p.ok ? p.facts.filter((f) => sameCommit(f.commit, commit)).length : 0;
+}
+
+/**
+ * The reader ran `atticus verify` after its last write, and it passed: its verify report is
+ * newer than the facts and the reviewed lines (and than when the wait began), of this commit,
+ * with nothing rejected.
+ */
+async function settled(root: string, repo: string, commit: string, s: Snap, since: Snap) {
+  if (s.verify === undefined || s.verify === since.verify) return false;
+  if (s.verify < (s.facts ?? 0) || s.verify < (s.reviewed ?? 0)) return false;
+  const text = await readFile(join(factsDirOf(root), `${repo}.verify.yaml`), "utf8").catch(
+    () => "",
+  );
+  try {
+    const v = (parse(text) ?? {}) as { rejected?: number; commit?: string };
+    return v.rejected === 0 && (!v.commit || sameCommit(v.commit, commit));
+  } catch {
+    return false;
+  }
+}
+
+/** Whether what the part reads is accounted for in the facts on disk. */
+async function covered(root: string, item: PlanItem, part: PlanPart, first: Snap, now: Snap) {
+  if (item.total > 1) {
+    const p = await readPlanProgress(root, item.repo);
+    return p?.parts.find((x) => x.part === part.part)?.state === "done";
+  }
+  const moved = now.facts !== first.facts || now.reviewed !== first.reviewed;
+  if (item.kind === "read")
+    return moved || now.reviewed !== undefined || (await factsAt(root, item.repo, item.commit)) > 0;
+  return moved;
+}
+
+// ---------------------------------------------------------------- the run
+
+interface Totals {
+  parts: number;
+  repos: Set<string>;
+  rejected: Map<string, number>;
+  added: number;
+  removed: number;
+  ends: { repo: string; part?: number; total?: number; end: PartEnd; command: string }[];
+  spent: { prompts: number; tokens: number };
+}
+
+interface VerifyJson {
+  accepted: number;
+  rejected: number;
+  coverage: { ratio: number; unknown: string[] };
+  questions?: { open: number };
+  written?: { links?: { added: unknown[]; removed: unknown[] } };
+}
+
+class CapReached extends Error {}
+
+/** A runtime that stops once the cap is reached (model mode's --max-parts, --budget-tokens). */
+function capped(inner: AiRuntime, o: MapAllOptions, spent: Totals["spent"]): AiRuntime {
+  const over = () =>
+    (o.maxParts !== undefined && spent.prompts >= o.maxParts) ||
+    (o.budgetTokens !== undefined && spent.tokens >= o.budgetTokens);
+  // A prompt is counted at its estimate until the runtime says what the run took.
+  const estimated = new Map<string, number>();
+  return {
+    kind: inner.kind,
+    prepare: async (r: AiRequest) => {
+      if (over()) throw new CapReached();
+      spent.prompts++;
+      const run = await inner.prepare(r);
+      const est = r.pack.manifest.totalTokens;
+      estimated.set(run.runId, est);
+      spent.tokens += est;
+      return run;
+    },
+    run: async (id, signal) => {
+      const run = await inner.run(id, signal);
+      const u = (run as { usage?: { inputTokens: number; outputTokens: number } }).usage;
+      if (u) spent.tokens += u.inputTokens + u.outputTokens - (estimated.get(id) ?? 0);
+      estimated.delete(id);
+      return run;
+    },
+    result: (id) => inner.result(id),
+  };
+}
+
+export async function mapAllCommand(
+  root: string,
+  o: MapAllOptions,
+  io: Output,
+  deps: MapAllDeps = {},
+): Promise<number> {
+  if (!isMetarepo(root)) {
+    io.err(notMetarepo(root));
+    return 2;
+  }
+  const clock: Clock = deps.clock ?? {
+    now: () => Date.now(),
+    sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+  };
+  const op = await loadOrgPack(orgPackDirOf(root));
+  const lim = await limitFor(root, op, o.maxTokens);
+  if (!lim) {
+    io.err(
+      "Atticus doesn't know your model's limit, and a part planned too big overflows the reader: pass --max-tokens <n> (the context window of the model Copilot Chat uses, in tokens), or set maxInput under adapters.model in runtime.yaml.",
+    );
+    return 2;
+  }
+  const limit = lim.limit;
+  const allowed = modelModeAllowed(op);
+  const mode = o.mode ?? (allowed ? "model" : "copilot");
+  if (mode === "model" && !allowed && !deps.runtime) {
+    io.err(
+      "runtime.yaml doesn't allow model mode with a provider here: map the estate through Copilot (atticus map --all without --mode model).",
+    );
+    return 2;
+  }
+  if (mode === "model" && o.gaps) {
+    io.err(
+      "The gaps pass is a session for an assistant that opens files: run atticus map --all --gaps --mode hand-off and paste each line into Copilot Chat.",
+    );
+    return 2;
+  }
+  let state = await readMapAllState(root);
+  if (state && (state.gaps !== !!o.gaps || state.mode !== mode)) state = undefined;
+  const plan = await planEstate(
+    root,
+    op,
+    o,
+    { limit: lim.limit, limitFrom: lim.from, mode, ...(deps.git ? { git: deps.git } : {}) },
+    state,
+  );
+  if (typeof plan === "string") {
+    io.err(plan);
+    return 2;
+  }
+  if (o.dryRun) {
+    if (o.json) io.out(JSON.stringify(plan, null, 2));
+    else for (const l of planLines(plan)) io.out(l);
+    return 0;
+  }
+  for (const l of planLines(plan)) io.out(l);
+  const st: MapAllState = state ?? {
+    schemaVersion: 1,
+    updatedAt: "",
+    mode,
+    gaps: !!o.gaps,
+    repos: {},
+  };
+  const save = () => saveState(root, st, clock.now());
+  await save();
+
+  const totals: Totals = {
+    parts: 0,
+    repos: new Set(),
+    rejected: new Map(),
+    added: 0,
+    removed: 0,
+    ends: [],
+    spent: { prompts: 0, tokens: 0 },
+  };
+  const stopped = () => deps.signal?.aborted === true;
+  const repoState = (item: PlanItem): RepoState => {
+    const r = st.repos[item.repo];
+    if (r && sameCommit(r.commit, item.commit) && r.kind === item.kind) return r;
+    return (st.repos[item.repo] = { commit: item.commit, kind: item.kind, parts: {} });
+  };
+  const partState = (item: PlanItem, part: number) =>
+    (repoState(item).parts[String(part)] ??= { retries: 0 });
+
+  /** What `atticus verify <repo> --write` runs, said in one paragraph. */
+  const verifyStep = async (item: PlanItem): Promise<VerifyJson | undefined> => {
+    const c = captured();
+    await verifyCommand(root, item.repo, { commit: item.commit, write: true, json: true }, c);
+    const v = jsonOf<VerifyJson>(c.lines);
+    if (!v) {
+      io.out(`${item.repo}: verify didn't run: ${c.errs[0] ?? "no report"}`);
+      return undefined;
+    }
+    const links = v.written?.links;
+    totals.rejected.set(item.repo, v.rejected);
+    if (links) {
+      totals.added += links.added.length;
+      totals.removed += links.removed.length;
+    }
+    io.out(
+      `${item.repo}: ${plural(v.accepted, "fact")} kept, ${v.rejected} rejected; coverage ${Math.round(v.coverage.ratio * 100)}% (${v.coverage.unknown.length} files no fact cites yet)${links ? `; links +${links.added.length} -${links.removed.length}` : ""}; ${plural(v.questions?.open ?? 0, "question")} open. ${v.rejected ? `Nothing written to the catalog until the rejected facts are fixed (${factsRelOf(root)}/${item.repo}.rejected.jsonl).` : v.written ? "Written to the catalog." : ""}`.trimEnd(),
+    );
+    return v;
+  };
+
+  let quit = false;
+  let capHit = false;
+  let runtime: AiRuntime | undefined;
+  const items = plan.items;
+  for (const [n, item] of items.entries()) {
+    if (quit || stopped()) break;
+    const where = `repo ${n + 1} of ${items.length}`;
+    if (item.kind === "carry") {
+      io.out("");
+      io.out(`===== ${item.repo} (${where}): ${item.why} =====`);
+      const v = await verifyStep(item);
+      if (v && !v.rejected) {
+        repoState(item).done = true;
+        totals.repos.add(item.repo);
+      }
+      await save();
+      continue;
+    }
+    if (mode === "model") {
+      runtime ??= deps.runtime ?? (await deps.makeRuntime?.());
+      if (!runtime) {
+        io.err("No model runtime: model mode needs runtime.yaml's provider.");
+        return 2;
+      }
+      const r = await modelRead(item, where, capped(runtime, o, totals.spent));
+      if (r === "cap") {
+        capHit = true;
+        break;
+      }
+      continue;
+    }
+    for (const part of item.parts) {
+      if (quit || stopped()) break;
+      const end = await copilotPart(item, part, where);
+      if (end === "quit") {
+        quit = true;
+        break;
+      }
+    }
+  }
+
+  const interrupted = quit || stopped() || capHit;
+  if (interrupted) {
+    io.out("");
+    io.out(
+      capHit
+        ? `Stopped at the cap (${o.maxParts !== undefined ? `--max-parts ${o.maxParts}` : ""}${o.maxParts !== undefined && o.budgetTokens !== undefined ? ", " : ""}${o.budgetTokens !== undefined ? `--budget-tokens ${o.budgetTokens}` : ""}): ${plural(totals.spent.prompts, "prompt")} run. atticus map --all carries on from here.`
+        : "Stopped. Where the estate stands is saved: atticus map --all carries on from here.",
+    );
+  } else if (totals.parts || totals.repos.size) {
+    // The estate join, once, so every link is re-joined with every repo read (verify --all --write).
+    io.out("");
+    io.out("Joining the estate: atticus verify --all --write.");
+    const repos = await factsRepos(root);
+    let passed = 0;
+    for (const repo of repos) {
+      const c = captured();
+      const code = await verifyCommand(root, repo, { write: true, json: true }, c);
+      const v = jsonOf<VerifyJson>(c.lines);
+      if (code === 0) passed++;
+      if (v?.written?.links) {
+        totals.added += v.written.links.added.length;
+        totals.removed += v.written.links.removed.length;
+      }
+      if (v) totals.rejected.set(repo, v.rejected);
+    }
+    io.out(
+      `Verified ${plural(repos.length, "repo")}: ${passed} passed${repos.length - passed ? `, ${repos.length - passed} with something to fix` : ""}.`,
+    );
+  }
+  await save();
+  await summary(interrupted);
+  return 0;
+
+  // ------------------------------------------------------------ one part, read by Copilot
+
+  async function copilotPart(
+    item: PlanItem,
+    part: PlanPart,
+    where: string,
+  ): Promise<PartEnd | "quit"> {
+    const ps = partState(item, part.part);
+    const label = item.total > 1 ? `part ${part.part} of ${item.total}` : "one session";
+    const progress = item.total > 1 ? await readPlanProgress(root, item.repo) : undefined;
+    // A part after one not read yet: the estimate would name the earlier one, so the part's own
+    // files are planned as its rest (none of it read yet: all of it).
+    // A part after one not read yet (or given again): the estimate would name another part, so
+    // the part's own files are planned as its rest (none of it read yet: all of it).
+    const first0 =
+      item.kind === "gaps"
+        ? await gapsLine(item)
+        : ps.retries > 0 || (progress?.next && progress.next.part !== part.part)
+          ? ((await restLine(item, part)) ?? `/atticus-map ${item.repo}`)
+          : `/atticus-map ${item.repo}`;
+    if (first0 === undefined) {
+      io.out(`${item.repo}: no gaps left; nothing to read.`);
+      return finishPart(item, part, ps);
+    }
+    if (first0 === "done") return finishPart(item, part, ps);
+    let line: string = first0;
+    await block(item, part, label, where, line, ps.retries);
+    let first = await snapOf(root, item.repo);
+    let since = first;
+    let prev = first;
+    let lastChange = clock.now();
+    let lastRemind = clock.now();
+    const started = clock.now();
+    let stuckSaid = false;
+    const idleMs = (o.idleMinutes ?? IDLE_MINUTES) * 60_000;
+    for (;;) {
+      if (stopped()) {
+        ps.state = "incomplete";
+        await save();
+        return "quit";
+      }
+      const typed = deps.input?.take()?.trim().toLowerCase();
+      if (typed === "q") {
+        ps.state = "incomplete";
+        await save();
+        return "quit";
+      }
+      if (typed === "s") {
+        io.out(`Skipped ${item.repo} ${label}.`);
+        ps.state = "skipped";
+        await save();
+        totals.ends.push(endOf(item, part, "skipped"));
+        return "skipped";
+      }
+      if (typed === "r") {
+        const again = await retry(item, part, label, where);
+        if (again === "done") return finishPart(item, part, ps);
+        first = await snapOf(root, item.repo);
+        since = first;
+        prev = first;
+        lastChange = clock.now();
+        stuckSaid = false;
+        continue;
+      }
+      const now = await snapOf(root, item.repo);
+      if (!sameSnap(now, prev)) {
+        lastChange = clock.now();
+        stuckSaid = false;
+        prev = now;
+      }
+      if (
+        (await settled(root, item.repo, item.commit, now, since)) &&
+        (await covered(root, item, part, first, now))
+      ) {
+        const v = await verifyStep(item);
+        if (
+          v &&
+          !v.rejected &&
+          (await covered(root, item, part, first, await snapOf(root, item.repo)))
+        )
+          return finishPart(item, part, ps);
+        io.out(
+          `Not done yet: ${v?.rejected ? `${plural(v.rejected, "fact")} rejected for the reader to fix` : "the part isn't accounted for in the facts yet"}. Still waiting (s + Enter skips, r + Enter gives the prompt again for what's left).`,
+        );
+        since = await snapOf(root, item.repo);
+        prev = since;
+      }
+      if (!stuckSaid && clock.now() - lastChange >= idleMs) {
+        io.out(
+          `Copilot seems to have stopped on ${item.repo} ${item.total > 1 ? `part ${part.part}` : "(its one session)"}. r + Enter: verify what it wrote and give the prompt again for what's left, in a NEW chat; s: skip; q: stop.`,
+        );
+        stuckSaid = true;
+      }
+      if (clock.now() - lastRemind >= (deps.remindMs ?? REMIND_MS)) {
+        io.out(
+          `Still waiting on ${item.repo} ${label} (${Math.round((clock.now() - started) / 60_000)} minutes). The line to paste: ${line}  (s + Enter skips, r + Enter retries what's left, q + Enter stops)`,
+        );
+        lastRemind = clock.now();
+      }
+      await clock.sleep(deps.pollMs ?? POLL_MS);
+    }
+
+    /** r: verify what the read wrote, then the prompt again for only what is left. */
+    async function retry(
+      item: PlanItem,
+      part: PlanPart,
+      label: string,
+      where: string,
+    ): Promise<"done" | "again"> {
+      ps.retries++;
+      await save();
+      const rest = item.kind === "gaps" ? await gapsLine(item) : await restLine(item, part);
+      if (rest === "done" || (rest === undefined && item.kind === "gaps")) return "done";
+      line = rest ?? `/atticus-map ${item.repo}`;
+      await block(item, part, label, where, line, ps.retries);
+      if (ps.retries >= RETRIES) {
+        const smaller = Math.max(8000, Math.floor(limit / 2 / 1000) * 1000);
+        io.out(
+          `${item.repo} ${label} has been given again ${plural(ps.retries, "time")}: a smaller limit plans it in smaller parts, each a shorter chat. Stop (q), then atticus map --all --repos ${item.repo} --max-tokens ${smaller}.`,
+        );
+      }
+      return "again";
+    }
+  }
+
+  /** The part is accounted for: say so and save. */
+  async function finishPart(item: PlanItem, part: PlanPart, ps: { state?: PartEnd }) {
+    ps.state = "done";
+    if (item.kind === "gaps" || part.part === item.total) repoState(item).done = true;
+    totals.parts++;
+    totals.repos.add(item.repo);
+    await save();
+    return "done" as const;
+  }
+
+  /**
+   * The line for what is left of a part: verify what the read wrote (good facts kept, the read
+   * plan stamped), then plan the rest as the gaps are (`atticus map <repo> [--part n] --gaps`).
+   * Undefined when there are no facts to subtract yet (the whole part is read again), "done"
+   * when nothing is left.
+   */
+  async function restLine(item: PlanItem, part: PlanPart): Promise<string | "done" | undefined> {
+    if (!existsSync(join(factsDirOf(root), `${item.repo}.jsonl`))) return undefined;
+    const v = await verifyStep(item);
+    if (!v) return undefined;
+    const parted = item.total > 1;
+    const c = captured();
+    const code = await mapCommand(
+      root,
+      item.repo,
+      {
+        gaps: true,
+        json: true,
+        commit: item.commit,
+        maxTokens: limit,
+        ...(parted ? { part: part.part } : {}),
+      },
+      c,
+      deps.git ? { git: deps.git } : {},
+    );
+    const g = code === 0 ? jsonOf<{ sessions: unknown[] }>(c.lines) : undefined;
+    if (!g) return undefined;
+    if (!g.sessions.length && !v.rejected) return "done";
+    return `/atticus-map ${item.repo}${parted ? ` --part ${part.part}` : ""} --gaps`;
+  }
+
+  /** The gaps pass's line, its prompt planned first; undefined when there are no gaps left. */
+  async function gapsLine(item: PlanItem): Promise<string | undefined> {
+    const plain = captured();
+    // verify first, so the gaps are the ones left now (map --gaps refuses an older report).
+    await verifyCommand(root, item.repo, { commit: item.commit, json: true }, plain);
+    const c = captured();
+    const code = await mapCommand(
+      root,
+      item.repo,
+      { gaps: true, json: true, commit: item.commit, maxTokens: limit },
+      c,
+      deps.git ? { git: deps.git } : {},
+    );
+    const g = code === 0 ? jsonOf<{ sessions: unknown[] }>(c.lines) : undefined;
+    if (!g) {
+      io.out(`${item.repo}: the gaps pass couldn't be planned: ${c.errs[0] ?? "no plan"}`);
+      return undefined;
+    }
+    return g.sessions.length ? `/atticus-map ${item.repo} --gaps` : undefined;
+  }
+
+  async function block(
+    item: PlanItem,
+    part: PlanPart,
+    label: string,
+    where: string,
+    line: string,
+    retries: number,
+  ) {
+    io.out("");
+    io.out(
+      `===== ${item.repo}, ${item.kind === "gaps" ? "the gaps pass" : label} (${where})${retries ? `, given again (${retries})` : ""} =====`,
+    );
+    io.out(`In a NEW Copilot Chat (agent mode), run: ${line}`);
+    if (item.total > 1 && !line.includes("--gaps"))
+      io.out(
+        `That chat reads part ${part.part}: ${part.paths.join(", ")} (about ${tokensText(part.tokens)} tokens); the estimate it runs names it.`,
+      );
+    else if (line.includes("--part"))
+      io.out(
+        `That chat reads only what is left of part ${part.part}, as the prompt it writes lists.`,
+      );
+    const copied = await (deps.clipboard ?? (async () => false))(line);
+    io.out(
+      copied ? "The line is on your clipboard." : "Copy the line above (no clipboard tool here).",
+    );
+    io.out(
+      "Waiting for the facts it writes. s + Enter skips this part, r + Enter verifies what is there and gives the line again for what's left, q + Enter (or Ctrl+C) stops; atticus map --all carries on.",
+    );
+  }
+
+  // ------------------------------------------------------------ one repo, read by the model
+
+  async function modelRead(
+    item: PlanItem,
+    where: string,
+    rt: AiRuntime,
+  ): Promise<"done" | "failed" | "cap"> {
+    io.out("");
+    io.out(
+      `===== ${item.repo} (${where}): ${item.kind === "reread" ? "re-reading what changed" : "reading"} on the model, ${plural(item.batches ?? 0, "prompt")} =====`,
+    );
+    for (let attempt = 1; attempt <= RETRIES; attempt++) {
+      if (stopped()) return "failed";
+      const before = await mapStateOf(root, item.repo);
+      const resume = !!before && !before.done && sameCommit(before.commit, item.commit);
+      let error: string | undefined;
+      try {
+        await mapCommand(
+          root,
+          item.repo,
+          {
+            commit: item.commit,
+            maxTokens: limit,
+            ...(resume ? { next: true } : before && !before.done ? { force: true } : {}),
+          },
+          io,
+          { runtime: rt, ...(deps.git ? { git: deps.git } : {}) },
+        );
+      } catch (e) {
+        if (e instanceof CapReached) {
+          await save();
+          return "cap";
+        }
+        error = firstLine(e);
+      }
+      const after = await mapStateOf(root, item.repo);
+      const unfinished = !!after && !after.done && sameCommit(after.commit, item.commit);
+      if (!error && !unfinished) {
+        await verifyStep(item);
+        const ps = partState(item, 1);
+        return finishPart(
+          item,
+          item.parts[0] ?? { part: 1, total: 1, paths: [], files: 0, tokens: 0 },
+          ps,
+        );
+      }
+      if (attempt < RETRIES) {
+        const wait = (deps.backoffMs ?? 5000) * 2 ** (attempt - 1);
+        io.out(
+          `${item.repo}: the model's read stopped (${error ?? "a prompt got no answer"}); trying what is left again in ${Math.round(wait / 1000)}s (try ${attempt + 1} of ${RETRIES}).`,
+        );
+        await clock.sleep(wait);
+      } else {
+        io.out(
+          `${item.repo}: the model's read failed ${RETRIES} times (${error ?? "a prompt got no answer"}); moving on.`,
+        );
+      }
+    }
+    partState(item, 1).state = "failed";
+    totals.ends.push({
+      repo: item.repo,
+      end: "failed",
+      command: `atticus map --all --repos ${item.repo}`,
+    });
+    await save();
+    return "failed";
+  }
+
+  function endOf(item: PlanItem, part: PlanPart, end: PartEnd) {
+    return {
+      repo: item.repo,
+      ...(item.total > 1 ? { part: part.part, total: item.total } : {}),
+      end,
+      command: `atticus map --all --repos ${item.repo}${o.gaps ? " --gaps" : ""} (or /atticus-map ${item.repo}${o.gaps ? " --gaps" : ""} in a new chat)`,
+    };
+  }
+
+  async function summary(interrupted: boolean) {
+    // Parts the run never reached are incomplete too, each with its command.
+    for (const item of items)
+      for (const part of item.kind === "carry" ? [] : item.parts) {
+        const s = st.repos[item.repo]?.parts[String(part.part)];
+        if (
+          s?.state === "done" ||
+          totals.ends.some((e) => e.repo === item.repo && (e.part ?? 1) === part.part)
+        )
+          continue;
+        if (mode === "model" && totals.ends.some((e) => e.repo === item.repo)) continue;
+        totals.ends.push(endOf(item, part, "incomplete"));
+      }
+    const open = (await listQuestions(root, { state: "open" }).catch(() => ({ questions: [] })))
+      .questions.length;
+    const rejected = [...totals.rejected.values()].reduce((n, x) => n + x, 0);
+    io.out("");
+    io.out(
+      `${interrupted ? "So far" : "Done"}: ${plural(totals.repos.size, "repo")} read, ${plural(totals.parts, "part")}${mode === "model" ? ` (${plural(totals.spent.prompts, "prompt")})` : ""}; ${plural(rejected, "fact")} rejected; links +${totals.added} -${totals.removed}; ${plural(open, "question")} open.`,
+    );
+    const left = totals.ends.filter((e) => e.end !== "done");
+    if (left.length) {
+      io.out("Not finished:");
+      for (const e of left)
+        io.out(
+          `  ${e.repo}${e.part ? ` part ${e.part} of ${e.total}` : ""}: ${e.end}; ${e.command}`,
+        );
+    }
+    io.out(
+      "Next: atticus questions list --mine (answer what the code couldn't settle), then atticus estate fresh.",
+    );
+  }
+}
