@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
+  conventionsOf,
   factsDirOf,
   factsRelOf,
   listQuestions,
@@ -80,6 +81,7 @@ export async function factsForScan(
       source: dirSource(at.dir!),
       commit: commit!,
       carry: diff.changes,
+      conventions: conventionsOf(op),
     });
     const from = [...new Set(older.map((f) => f.commit.slice(0, 7)))].join(", ");
     if (!report.accepted.length)

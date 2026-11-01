@@ -3,6 +3,8 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parse, stringify } from "yaml";
 import {
+  Conventions,
+  DEFAULT_CONVENTIONS,
   factsDirOf,
   isAdopted,
   isSecretPath,
@@ -75,6 +77,21 @@ export async function carryOf(
 }
 
 /** Exclusion globs a person accepted for this repo (ADR 0075 scan settings). */
+/**
+ * The org pack's conventions (ADR 0147, `conventions.yaml`): the built-in lists when there is
+ * no file, or when it doesn't read (`atticus doctor` and the org pack's load say why).
+ */
+export async function conventionsAt(root: string): Promise<Conventions> {
+  const file = join(orgPackDirOf(root), "conventions.yaml");
+  if (!existsSync(file)) return DEFAULT_CONVENTIONS;
+  try {
+    const r = Conventions.safeParse(parse(await readFile(file, "utf8")));
+    return r.success ? r.data : DEFAULT_CONVENTIONS;
+  } catch {
+    return DEFAULT_CONVENTIONS;
+  }
+}
+
 export async function excludesOf(root: string, repo: string): Promise<string[]> {
   const file = join(orgPackDirOf(root), "scan", `${repo}.yaml`);
   if (!existsSync(file)) return [];

@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
+  joinConventions,
   PROTOTYPE_GROUPS,
   comparePrototype,
   factsDirOf,
@@ -164,6 +165,7 @@ export async function loadPrototypeComparison(
     estate: joinReposOf(op, estate.repos),
     vendors,
     outside: outsideSystems(op),
+    ...joinConventions(op),
   });
   return {
     repo,

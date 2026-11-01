@@ -17,6 +17,7 @@ import { interfaceId } from "./identity.js";
 import type { EvidenceT } from "./schema/common.js";
 import type { CallerKind, Fact, FactOf } from "./schema/facts.js";
 import type { Profile } from "./schema/orgpack.js";
+import { gatewayBundleTest } from "./schema/conventions.js";
 
 /**
  * Who a gateway route lets in (ADR 0124 addendum A-callers). A route's own files usually name
@@ -141,6 +142,8 @@ export interface JoinCallersInput {
   declared?: readonly DeclaredCallInput[];
   /** The estate's facing words, as given to `joinFacts`. */
   facing?: FacingWords;
+  /** The gateway bundle folders, as given to `joinFacts` (ADR 0147). */
+  bundleFolders?: readonly string[];
 }
 
 /** Every call a person declared in the org pack's profiles, one per route or identity named. */
@@ -190,8 +193,9 @@ export function joinCallers(input: JoinCallersInput): CallersResult {
     at: atOf(n.fact.cite),
   });
   const gateways = new Set(repos.filter((r) => r.gateway).map((r) => r.repo));
+  const bundle = input.bundleFolders ? gatewayBundleTest(input.bundleFolders) : APIGEE_BUNDLE;
   const isRoute = (n: Node): n is Node & { fact: Entry } =>
-    n.fact.kind === "entry" && (gateways.has(n.repo) || APIGEE_BUNDLE.test(n.fact.cite.file));
+    n.fact.kind === "entry" && (gateways.has(n.repo) || bundle.test(n.fact.cite.file));
   const routes = nodes.filter(isRoute);
 
   // ---- the scanned calls into each route: a join that lands on it directly, the first hop of a

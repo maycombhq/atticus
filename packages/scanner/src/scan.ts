@@ -16,6 +16,7 @@ import {
   type ScanCache,
 } from "@maycombhq/sdk";
 import {
+  joinConventions,
   applyCurated,
   declaredCallsOf,
   joinCallers,
@@ -578,9 +579,15 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
       repos: joinRepos,
       targets: Object.fromEntries(factRepos.map((x) => [x.repo, x.targets])),
       outside: outsideSystems(op),
+      ...joinConventions(op),
     });
     codeRecords = applyFactJoins(codeRecords, join, joinRepos, {
-      callers: joinCallers({ repos: joinRepos, join, declared: declaredCallsOf(op.profiles) }),
+      callers: joinCallers({
+        repos: joinRepos,
+        join,
+        declared: declaredCallsOf(op.profiles),
+        ...joinConventions(op),
+      }),
       join,
     });
   }

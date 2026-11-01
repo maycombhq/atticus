@@ -331,6 +331,32 @@ describe("nextSteps (pure)", () => {
     problems: [],
   };
 
+  it("R3: the map step says which house packages to teach first (ADR 0147)", () => {
+    const step = nextSteps({
+      ...base,
+      repos: [
+        {
+          ...base.repos[0]!,
+          scanned: false,
+          houseUntaught: [
+            {
+              package: "com.forge.platform",
+              name: "forge-platform",
+              files: 4,
+              first: "src/main/java/A.java:3",
+              command:
+                "atticus frameworks learn forge-platform --from <its source, JAR or npm package> --package com.forge.platform",
+            },
+          ],
+        },
+      ],
+    })[0]!;
+    expect(step.step).toBe("map");
+    expect(step.why).toContain(
+      "Teach first: forge-ledger imports com.forge.platform, a house package no taught framework covers; run atticus frameworks learn forge-platform",
+    );
+  });
+
   it("loops the spec: check a fresh draft, redraft on findings, nothing once it passes", () => {
     const at = (r: Partial<NextState["repos"][number]>) =>
       nextSteps({ ...base, repos: [{ ...base.repos[0]!, ...r }] })[0]!;

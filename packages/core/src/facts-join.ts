@@ -6,6 +6,7 @@ import { interfaceId } from "./identity.js";
 import type { EvidenceT } from "./schema/common.js";
 import type { Fact, FactOf } from "./schema/facts.js";
 import { hostHasPort, hostMatches, urlHostPort } from "./schema/workspace.js";
+import { DEFAULT_FACING_WORDS, gatewayBundleTest } from "./schema/conventions.js";
 
 /**
  * The estate join from facts (ADR 0124 addendum C-join): every call a repo's facts name, joined
@@ -78,7 +79,7 @@ export interface JoinRepo {
 }
 
 /** An Apigee proxy or shared flow bundle's file: its entries are gateway routes whatever the repo. */
-export const APIGEE_BUNDLE = /(^|\/)(apiproxy|sharedflowbundle)\//;
+export const APIGEE_BUNDLE = gatewayBundleTest();
 
 /** Whether a gateway hop stays inside the organisation or faces a partner or the internet. */
 export type GatewayFacing = "internal" | "external";
@@ -100,10 +101,7 @@ export interface FacingWords {
  * means which side is each estate's own convention. A value that says neither leaves the hop a
  * plain gateway: the join never guesses from a basepath or a host's shape.
  */
-export const FACING_WORDS: FacingWords = {
-  internal: ["internal", "private", "intranet", "inside"],
-  external: ["external", "partner", "public", "internet", "egress"],
-};
+export const FACING_WORDS: FacingWords = DEFAULT_FACING_WORDS;
 
 /** The hop a call takes through a gateway: the route it lands on and the call that forwards it. */
 export interface GatewayHop {
@@ -325,6 +323,11 @@ export interface JoinFactsInput {
    * leaves the hop a plain gateway.
    */
   facing?: FacingWords;
+  /**
+   * The folders of a gateway's proxy bundles (ADR 0147, the org pack's conventions.yaml): an
+   * entry cited under one is a gateway route whatever its repo. Default `APIGEE_BUNDLE`'s.
+   */
+  bundleFolders?: readonly string[];
 }
 
 type Entry = FactOf<"entry">;
@@ -1128,8 +1131,9 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
       )
       .sort((x, y) => cmp(x.fact.id, y.fact.id))[0]?.fact.value;
   };
+  const bundle = input.bundleFolders ? gatewayBundleTest(input.bundleFolders) : APIGEE_BUNDLE;
   const isRoute = (n: Node) =>
-    n.fact.kind === "entry" && (gateways.has(n.repo) || APIGEE_BUNDLE.test(n.fact.cite.file));
+    n.fact.kind === "entry" && (gateways.has(n.repo) || bundle.test(n.fact.cite.file));
   const joinsOf = new Map<string, FactJoin[]>();
   for (const j of joins) {
     const k = key(j.call.repo, j.call.fact);

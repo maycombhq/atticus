@@ -277,6 +277,24 @@ referenceInRepos: false
 
 `atticus doctor` has an "OpenSpec stores (beta)" line. It warns when the installed OpenSpec has no stores but this metarepo uses them; the OpenSpec Atticus ships (1.14.0) has them. Store names, flags and formats may change in OpenSpec. A store file in a newer format is still read, with a note.
 
+### Your house's conventions
+
+Some of what Atticus reads by is your organisation's convention, not Atticus's: the folders your API specs, tests and generated code live in, the folders of your gateway's proxy bundles, the words a gateway's virtual host uses for inside and outside, your own starters, and your house's package prefixes. They are `org-pack/conventions.yaml` (ADR 0147). The file is optional, every key has the default Atticus always used, and a key you give replaces that list whole.
+
+```yaml
+# org-pack/conventions.yaml (optional)
+schemaVersion: 1
+apiSpecFolders: [oas, openapi, swagger, contracts] # YAML and JSON here are API specs
+gatewayBundleFolders: [apiproxy, sharedflowbundle] # an entry here is a gateway route
+facing: { internal: [internal, private], external: [external, partner, public] }
+notProductFolders: [src/test, test, tests, __mocks__, fixtures, qa] # coverage doesn't count these
+notReadFolders: [generated, dist, build, target, node_modules, vendor] # verify's skipped-lines note skips these
+frameworks: [{ declares: forge-web-starter, name: forge-web, topic: spring, shape: rest }]
+housePrefixes: [com.forge., "@forge/"] # warn before a first read of house packages nobody taught
+```
+
+Folders are names or short paths (`src/test`), matched as whole folders anywhere in a path, never globs. The file-name rules (`FooTest.java`, `mvnw`) stay built in. The full schema is in [C6](../spec/contracts/c6-org-pack.md#conventions).
+
 ### Who you are and how approving works
 
 Atticus has no roles, views or sign-in (ADR 0073). Each person is the metarepo's **Git user** (`git config user.name` and `user.email`), which the app shows in the top bar and every command records as `by`; `--by <handle>` names someone else. With no Git user set, Atticus uses the OS user name and warns until it is set.

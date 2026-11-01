@@ -155,6 +155,61 @@ describe("a framework the organisation taught Atticus goes to the reader (A-taug
   });
 });
 
+describe("R3: --estimate warns of house packages no taught framework covers (ADR 0147)", () => {
+  const MESSY = join(__dirname, "..", "..", "..", "fixtures", "messy");
+  /** tide-cards adopted in place, its org pack naming tide. as the house's prefix. */
+  function cards(o: { taught: boolean; prefixes?: string[] }): string {
+    const root = mkdtempSync(join(tmpdir(), "atticus-map-house-"));
+    cpSync(join(MESSY, "repos", "tide-cards"), root, { recursive: true });
+    mkdirSync(join(root, ".atticus", "org-pack", "frameworks"), { recursive: true });
+    if (o.taught)
+      cpSync(
+        join(MESSY, "metarepo", "org-pack", "frameworks", "tide-platform.yaml"),
+        join(root, ".atticus", "org-pack", "frameworks", "tide-platform.yaml"),
+      );
+    writeFileSync(
+      join(root, ".atticus", "org-pack", "conventions.yaml"),
+      stringify({ schemaVersion: 1, housePrefixes: o.prefixes ?? ["tide."] }),
+    );
+    return root;
+  }
+
+  it("names the package and the atticus frameworks learn command to run first", async () => {
+    const o = io();
+    expect(
+      await mapCommand(
+        cards({ taught: false }),
+        "tide-cards",
+        { estimate: true, commit: COMMIT },
+        o.io,
+      ),
+    ).toBe(0);
+    const text = o.out.join("\n");
+    expect(text).toContain("Teach first: tide-cards imports a house package no framework taught");
+    expect(text).toContain(
+      "atticus frameworks learn tide-platform --from <its source, JAR or npm package> --package tide.platform",
+    );
+    const j = io();
+    await mapCommand(
+      cards({ taught: false }),
+      "tide-cards",
+      { estimate: true, commit: COMMIT, json: true },
+      j.io,
+    );
+    expect(
+      JSON.parse(j.out.join("\n")).houseUntaught.map((h: { package: string }) => h.package),
+    ).toEqual(["tide.platform"]);
+  });
+
+  it("says nothing once the framework is taught, or with no house prefix", async () => {
+    for (const root of [cards({ taught: true }), cards({ taught: false, prefixes: [] })]) {
+      const o = io();
+      await mapCommand(root, "tide-cards", { estimate: true, commit: COMMIT }, o.io);
+      expect(o.out.join("\n")).not.toContain("Teach first");
+    }
+  });
+});
+
 describe("atticus map <repo> --estimate: what the first read costs", () => {
   it("prints the checkout, commit, facts file, the source files, the tier and the batches", async () => {
     const root = adoptedRepo();

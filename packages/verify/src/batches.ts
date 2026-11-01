@@ -1,7 +1,8 @@
 import { MOCK_FILE } from "@maycombhq/core";
 import { globToRegExp } from "@maycombhq/sdk";
 import type { FileSource } from "./source.js";
-import { API_SPEC } from "./not-product.js";
+import type { Conventions } from "@maycombhq/core";
+import { DEFAULT_READ_RULES, readRulesOf, type ReadRules } from "./conventions.js";
 import { isSourceFile } from "./verify.js";
 
 /**
@@ -51,6 +52,8 @@ export interface PlanOptions {
    * room. None: every batch's instructions are the same, already outside the room.
    */
   overhead?: (kinds: readonly FileKind[]) => number;
+  /** The org pack's conventions (ADR 0147): what counts as source, and the API spec folders. */
+  conventions?: Conventions;
 }
 
 // A build file a framework is declared in (ADR 0124 addendum A-framework): Gemfile, a gemspec,
@@ -189,7 +192,7 @@ const STRUCTURED = /\.(ya?ml|json|xml|config|properties|toml|ini|conf)$/i;
  * path can't say which side or topic a file is, it gets every kind it might be, so a batch never
  * goes without a rule its files need.
  */
-export function fileKinds(path: string): FileKind[] {
+export function fileKinds(path: string, rules: ReadRules = DEFAULT_READ_RULES): FileKind[] {
   if (GATEWAY_FILE.test(path)) return [...GATEWAY_KINDS];
   const k = new Set<FileKind>();
   const add = (ks: readonly FileKind[]) => ks.forEach((x) => k.add(x));
@@ -200,7 +203,7 @@ export function fileKinds(path: string): FileKind[] {
   if (CONFIG.test(path)) add(["config"]);
   if (DATA_FILE.test(path)) add(["data"]);
   if (CONTRACT.test(path)) add(["protocols"]);
-  if (API_SCHEMA.test(path) || API_SPEC.test(path)) add(["routes", "protocols"]);
+  if (API_SCHEMA.test(path) || rules.apiSpec.test(path)) add(["routes", "protocols"]);
   const isCode = SERVER_CODE.test(path) || DEVICE_CODE.test(path) || SCRIPT_CODE.test(path);
   if (PAGE_CODE.test(path) || DEVICE_CODE.test(path)) add(CODE_KINDS);
   else if (SPA_FILE.test(path))
@@ -263,6 +266,7 @@ const tokensOf = (chars: number) => Math.ceil(chars / 4);
 
 export function planBatches(source: FileSource, o: PlanOptions): BatchPlan {
   const room = Math.max(1, o.room);
+  const rules = readRulesOf(o.conventions);
   const excludeRes = (o.exclude ?? []).map(globToRegExp);
   const excluded: string[] = [];
   const paths: string[] = [];
@@ -271,7 +275,7 @@ export function planBatches(source: FileSource, o: PlanOptions): BatchPlan {
     const text = source.read(p);
     if (text === undefined) continue;
     const ls = linesOf(text);
-    if (!isSourceFile(p, ls[0] ?? "", ls)) continue;
+    if (!isSourceFile(p, ls[0] ?? "", ls, rules)) continue;
     if (excludeRes.some((re) => re.test(p))) {
       excluded.push(p);
       continue;
@@ -294,7 +298,7 @@ export function planBatches(source: FileSource, o: PlanOptions): BatchPlan {
   let lines = 0;
   let leastRoom = room;
   for (const path of readingOrder(paths)) {
-    const kinds = fileKinds(path);
+    const kinds = fileKinds(path, rules);
     const left = room - overhead(kinds);
     leastRoom = Math.min(leastRoom, left);
     const fileRoom = Math.max(1, left);

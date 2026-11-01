@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
+  joinConventions,
   factIdPart,
   factsDirOf,
   joinFacts,
@@ -124,7 +125,7 @@ export function callersOf(
       .filter((id) => !read.some((r) => r.repo === id))
       .map((repo) => ({ repo, facts: [] })),
   ]);
-  const join = joinFacts({ repos, outside: outsideSystems(op) });
+  const join = joinFacts({ repos, outside: outsideSystems(op), ...joinConventions(op) });
   for (const m of join.misses) {
     const to = byTarget.get(factIdPart(m.target));
     if (!to || to === m.call.repo) continue;

@@ -51,6 +51,9 @@ import {
 import { onboardingQueue, queueWhy, reasonOf, type QueueReason } from "./onboarding-queue.js";
 import { catalogSources, headFromFiles } from "./ui-api-trust.js";
 import { repoIdKey } from "./repo-ids.js";
+import { checkoutOf, conventionsAt } from "./facts-files.js";
+import { houseUntaughtOf, houseUntaughtWords } from "./house-imports.js";
+import type { HouseImport } from "@maycombhq/verify";
 
 /**
  * atticus next [--all] [--json] (ADR 0086, plan principle 8): the next step to take, worked out
@@ -127,6 +130,11 @@ export interface RepoState {
    * suffix aside) that do have a facts file: likely the same repo under another id.
    */
   nearFacts?: { id: string; file: string }[];
+  /**
+   * R3 (ADR 0147): for the first repo of the onboarding queue not read yet, the house packages it
+   * imports that no taught framework covers, to teach before its read.
+   */
+  houseUntaught?: HouseImport[];
 }
 
 export interface NextState {
@@ -308,6 +316,16 @@ export async function readNextState(root: string): Promise<NextState> {
       const r = repos.find((y) => y.id === x.repo)!;
       r.queue = { order, reason: reasonOf(x), why: queueWhy(x) };
     });
+    // R3: the first repo to read is looked at for house imports nothing taught covers. Only the
+    // first, so the step costs one repo's files, and only when the org pack names house prefixes.
+    const first = waiting
+      .filter((r) => !r.read)
+      .sort((a, b) => (a.queue?.order ?? Infinity) - (b.queue?.order ?? Infinity))[0];
+    const dir = first ? await checkoutOf(root, first.id) : undefined;
+    if (first && dir && (await conventionsAt(root)).housePrefixes.length) {
+      const found = await houseUntaughtOf(root, first.id, { dir }).catch(() => []);
+      if (found.length) first.houseUntaught = found;
+    }
   }
   const open = await listQuestions(root, { state: "open" });
   problems.push(...open.problems);
@@ -785,6 +803,7 @@ export function nextSteps(s: NextState): NextStep[] {
                 ? ` ${r.queue.why}`
                 : "") +
               costWords(r) +
+              houseUntaughtWords(r.id, r.houseUntaught ?? []) +
               nearFactsWords(r),
             repo: r.id,
           },

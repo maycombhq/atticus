@@ -253,6 +253,11 @@ const CONTRACTS: Contract[] = [
         name: "OpenSpecSettings",
         where: "org-pack/openspec.yaml (optional; OpenSpec's beta stores, ADR 0126)",
       },
+      {
+        name: "Conventions",
+        where:
+          "org-pack/conventions.yaml (optional; the house conventions a read leans on, ADR 0147)",
+      },
     ],
   },
 ];
