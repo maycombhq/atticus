@@ -357,9 +357,7 @@ export function mergeCatalog(input: MergeInput): MergeResult {
   const compact = (x: string) => x.toLowerCase().replace(/[^a-z0-9]/g, "");
   const vendorNames = new Map<string, Set<string>>();
   const ownSystems = new Set(input.repos.flatMap((r) => (r.system ? [r.system] : [])));
-  for (const sys of input.systems.filter(
-    (x) => x.boundary === "vendor" || !ownSystems.has(x.id),
-  ))
+  for (const sys of input.systems.filter((x) => x.boundary === "vendor" || !ownSystems.has(x.id)))
     for (const n of [sys.id, sys.name, ...sys.aliases]) {
       const k = compact(n);
       if (k.length >= 3) vendorNames.set(k, (vendorNames.get(k) ?? new Set()).add(sys.id));
