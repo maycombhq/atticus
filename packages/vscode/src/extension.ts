@@ -7,9 +7,11 @@ import {
   actionFor,
   answerQuestion,
   argsOf,
+  readMyQuestions,
   readNext,
   readOpenQuestions,
   STEP_COMMANDS,
+  takesRule,
   type StepCommand,
 } from "./atticus";
 import { answerApp, bundledHtml } from "./app-bundle";
@@ -47,6 +49,8 @@ import {
 } from "./copilot-agent";
 import { APP_HOME, FULL_UI } from "./surface";
 import { AtticusView, QuestionsView, WaitingView } from "./view";
+import { registerJobs } from "./jobs-ui";
+import { proposalWhat } from "./waiting-data";
 import type { WaitingGroup } from "./waiting-data";
 
 /**
@@ -95,7 +99,11 @@ export function activate(context: vscode.ExtensionContext): AtticusHandles {
   // 0105) under them. Questions: the open questions, in the view that had them before ADR 0105.
   const view = new AtticusView(svc);
   const waiting = new WaitingView(svc, view);
-  const questions = new QuestionsView(view);
+  // beta.10 (ADR 0140): My teams' questions, read with --mine when the person asks for them.
+  const questions = new QuestionsView(view, async () => {
+    const root = svc.root;
+    return root && svc.cliOk ? readMyQuestions(svc.cli(root), root) : undefined;
+  });
   const reg = (id: string, f: (...a: never[]) => unknown) =>
     context.subscriptions.push(
       vscode.commands.registerCommand(id, f as (...a: unknown[]) => unknown),
@@ -862,6 +870,27 @@ ${view.next.why}`
       name,
       withRoot((root) => commands.pickAndRun(root, id)),
     );
+  // beta.10 caught up: the new jobs of the command line, Accept as my answer and My teams'.
+  registerJobs({
+    svc,
+    commands,
+    needRoot,
+    reg,
+    refreshAll,
+    questions: () => {
+      const q = questions.questions ?? view.questions;
+      return Array.isArray(q) ? q : undefined;
+    },
+    setMine: (on) => {
+      void vscode.commands.executeCommand("setContext", "atticus.questionsMine", on);
+      void context.workspaceState.update("atticus.questionsMine", on);
+      questions.setMine(on);
+    },
+  });
+  if (context.workspaceState.get<boolean>("atticus.questionsMine")) {
+    void vscode.commands.executeCommand("setContext", "atticus.questionsMine", true);
+    questions.setMine(true);
+  }
   reg("atticus.openItem", async (o: Open, how?: { beside?: boolean }): Promise<unknown> => {
     if (o.kind === "app")
       return vscode.commands.executeCommand("atticus.showApp", o.hash, how ?? {});
@@ -1114,6 +1143,9 @@ ${view.next.why}`
     if (n.step === "orgpack-draft" || n.step === "accept-orgpack")
       return knowledge.draftOrgPack(root);
     if (n.step === "verify-knowledge") return knowledge.reviewUnverified(root);
+    // beta.10 (ADR 0156): a person reads the seed and accepts it, after a yes in the editor.
+    if (n.step === "accept-seed" && n.repo)
+      return vscode.commands.executeCommand("atticus.specAccept", n.repo);
     const a = actionFor(n);
     if (a.kind === "ai") return runAi(a.args, a.spec);
     if (a.kind === "answer") return vscode.commands.executeCommand("atticus.answerQuestion");
@@ -1217,7 +1249,7 @@ ${view.next.why}`
       if (!pick) return;
       q = pick.q;
     }
-    let answer: { option: number } | { text: string } | undefined =
+    let answer: { option: number } | { text: string } | { acceptProposal: true } | undefined =
       option !== undefined ? { option } : undefined;
     if (!answer) {
       const own = { label: "In my own words...", n: 0 };
@@ -1236,7 +1268,19 @@ ${view.next.why}`
         ...(r.open ? { open: r.open } : {}),
       }));
       type Row = vscode.QuickPickItem & { n: number; open?: { path: string; line: number } };
+      // ADR 0144 (beta.10): the assistant's checked proposal, first, to accept as the answer.
+      const proposed = proposalWhat(q);
       const rows: Row[] = [
+        ...(proposed
+          ? [
+              {
+                label: WORDS.acceptProposalRow(proposed),
+                detail: q.about?.proposal?.why,
+                description: q.about?.proposal?.by,
+                n: -2,
+              },
+            ]
+          : []),
         { label: WORDS.whatItRead, kind: vscode.QuickPickItemKind.Separator, n: -1 },
         ...seen,
         { label: WORDS.answers, kind: vscode.QuickPickItemKind.Separator, n: -1 },
@@ -1261,8 +1305,9 @@ ${view.next.why}`
           preview: true,
         });
       }
-      if (!pick || pick.n < 0) return;
-      if (pick.n) answer = { option: pick.n };
+      if (pick?.n === -2) answer = { acceptProposal: true };
+      else if (!pick || pick.n < 0) return;
+      else if (pick.n) answer = { option: pick.n };
       else {
         const text = await vscode.window.showInputBox({
           title: q.question,
@@ -1273,6 +1318,22 @@ ${view.next.why}`
         answer = { text: text.trim() };
       }
     }
+    // ADR 0153 (beta.10): a target or hosts answer may carry a rule, covering every call it matches.
+    let match: string | undefined;
+    if (takesRule(q) && !("acceptProposal" in answer)) {
+      const rule = await vscode.window.showInputBox({
+        title: q.question,
+        prompt: WORDS.rulePrompt,
+        placeHolder: "*.payments.forge.internal or /forge/limits/**",
+        ignoreFocusOut: true,
+        validateInput: (v) =>
+          !v.trim() || /^\/\S*$/.test(v.trim()) || /^[A-Za-z0-9*.-]+$/.test(v.trim())
+            ? undefined
+            : WORDS.ruleProblem,
+      });
+      if (rule === undefined) return;
+      match = rule.trim() || undefined;
+    }
     const asked = q;
     const given = answer;
     const done = await vscode.window.withProgress(
@@ -1280,7 +1341,7 @@ ${view.next.why}`
         location: vscode.ProgressLocation.Notification,
         title: `Atticus: writing the answer to ${asked.id}…`,
       },
-      () => answerQuestion(cli, root, asked.id, given),
+      () => answerQuestion(cli, root, asked.id, given, match ? { match } : {}),
     );
     svc.fireChanged();
     for (const l of done.lines) svc.log.appendLine(l);

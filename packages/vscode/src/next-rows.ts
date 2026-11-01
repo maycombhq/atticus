@@ -26,7 +26,12 @@ export type NextNode =
   | { kind: "runs"; runs: string; model: string; stepClass?: string }
   | { kind: "no-root" }
   /** Phase D: what waits on you, under the steps (Next and Waiting); its rows are view.ts's. */
-  | { kind: "waiting" };
+  | { kind: "waiting" }
+  /** beta.10 (ADR 0141): the onboarding queue, a row that opens the repos to read in order. */
+  | { kind: "queue"; repos: number; rows?: NextRow[] }
+  | { kind: "queue-repo"; row: NextRow }
+  /** beta.10 (F5): a repo with no facts whose id is near one that has some. */
+  | { kind: "hint"; from: string; to: string };
 
 export interface NextRow {
   label: string;
@@ -131,6 +136,30 @@ export function nextRow(node: NextNode, titles?: ChangeTitles): NextRow {
           "The app with its diagrams, in a VS Code tab. Atticus: Open the app in the browser opens it there instead.",
         plain: true,
         command: { command: "atticus.showApp", title: "Open the app" },
+      };
+    case "queue":
+      return {
+        id: "next:queue",
+        label: WORDS.queueHead(node.repos),
+        tooltip: WORDS.queueHeadTip,
+        plain: true,
+        icon: "list-ordered",
+        expanded: false,
+      };
+    case "queue-repo":
+      return node.row;
+    case "hint":
+      return {
+        id: `next:near:${node.from}`,
+        label: WORDS.nearIdHint(node.from, node.to),
+        tooltip: WORDS.nearIdTip(node.from, node.to),
+        plain: true,
+        icon: "lightbulb",
+        command: {
+          command: "atticus.repoRename",
+          title: WORDS.renameRepo,
+          args: [node.from, node.to],
+        },
       };
     case "waiting":
       return {

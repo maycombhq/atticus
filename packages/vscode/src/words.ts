@@ -100,7 +100,7 @@ export const WORDS = {
   questionEvidence: (lines: string) => `What it read: ${lines}`,
   questionClick: "Click to answer it, with the lines it read beside the answers.",
   chatUse:
-    "Use a command: /next, /map <repo>, /verify <repo>, /feature <change>, /architecture <change>, /stories <change>, /task <change> [task], /critic <change> or /answer; or /new, /diagram, /changemap, /estimate, /ask and /run. With the setting atticus.fullUi on, Atticus 1's too (/survey, /scanverify, /spec, /small).",
+    "Use a command: /next, /map <repo>, /verify <repo>, /feature <change>, /architecture <change>, /stories <change>, /task <change> [task], /critic <change> or /answer; or /new, /diagram, /changemap, /estimate, /impact, /fresh, /queue, /gaps, /propose, /ask and /run. Or ask in plain words: what does add-pins break, which repos are stale, propose answers. With the setting atticus.fullUi on, Atticus 1's too (/survey, /scanverify, /spec, /small).",
   taskSay: "Say which change, and the task if you know it: /task add-note-tags T2",
   taskStarting: (change: string, task?: string) =>
     task
@@ -130,6 +130,85 @@ export const WORDS = {
     `Copilot Chat couldn't be opened in agent mode (${why}), so the step goes to @atticus in the chat instead.`,
   copilotAgentFallbackFailed: (why: string) =>
     `Neither Copilot's agent mode nor the @atticus chat could be opened (${why}). Open Copilot Chat yourself and type the command.`,
+  // beta.10 caught up: the Questions view's owners, order, My teams', proposals and rules.
+  owner: (
+    o: { team: string; name?: string } | { change: string; people: string[] } | { none: string },
+  ) =>
+    "team" in o
+      ? `owner: ${o.name ?? o.team}`
+      : "change" in o
+        ? `owners: ${o.people.join(", ") || `the people of ${o.change}`}`
+        : "no owner",
+  noOwner: "no owner",
+  ownerTip: (
+    o: { team: string; name?: string } | { change: string; people: string[] } | { none: string },
+  ) =>
+    "team" in o
+      ? `**Owner:** ${o.team}${o.name ? ` (${o.name})` : ""}`
+      : "change" in o
+        ? `**Owners:** the people of ${o.change}: ${o.people.join(", ") || "none named"}`
+        : `**Owner:** none (${o.none})`,
+  restsOnShort: (change: string) => `${change} rests on it`,
+  restsOn: (changes: string[]) =>
+    `Ask it first: ${changes.join(", ")} ${changes.length === 1 ? "is a change in flight that rests" : "are changes in flight that rest"} on it.`,
+  questionJoins: (n: number) => `Its answer joins ${n} call${n === 1 ? "" : "s"}.`,
+  proposedShort: "proposed answer",
+  proposalTip: (by: string, what: string, why: string) =>
+    `**Proposed by ${by}** (not answered yet): ${what}. ${why}`,
+  proposalCites: "Cites (each checked: it is on that line):",
+  acceptAsMine: (what: string) => `Accept as my answer: ${what}`,
+  acceptAsMineTip:
+    "Runs atticus questions answer <id> --accept-proposal: the proposal, checked again, becomes your answer, recorded as yours with the lines it cited.",
+  ruleHint:
+    "This answer can carry a rule (a host pattern such as *.payments.forge.internal, or a path such as /forge/limits/**): it then covers every call that matches, the calls found later too.",
+  rulePrompt:
+    "Answer by rule (optional): a host pattern such as *.payments.forge.internal, or a path such as /forge/limits/**. It then covers every call that matches, found now or later. Leave it empty to answer this question only.",
+  ruleProblem:
+    "A rule is a host pattern (letters, digits, dots, - and *) or a path starting with /.",
+  acceptProposalRow: (what: string) => `$(check) Accept the proposal: ${what}`,
+  myTeams: (handle: string, teams: string[]) =>
+    teams.length
+      ? `My teams' questions (${handle}: ${teams.join(", ")})`
+      : `My questions (${handle} is on no team in roles.yaml)`,
+  myTeamsTip:
+    "Only the questions for your teams (org-pack/roles.yaml's teams) and the changes that name you under owners: atticus questions list --mine. Click to show every question.",
+  noQuestionsMine: "No question waits on your teams.",
+  noProposal:
+    "No open question has a checked proposal. /atticus-propose in Copilot Chat proposes answers from the code.",
+  // beta.10 caught up: the Next view's queue, re-read, accept-seed and near repo ids.
+  queueHead: (n: number) => `Onboarding queue: ${n} repo${n === 1 ? "" : "s"} to read`,
+  queueHeadTip:
+    "The repos to read, in the order that lands links early (reads under way, the repos others call, gateways, then the rest), each with its estimated cost: atticus next --queue. Click a repo to read it.",
+  notEstimated: "cost not estimated yet",
+  queueReason: (reason: string) =>
+    ({
+      started: "read under way",
+      called: "others call it",
+      gateway: "a gateway",
+      places: "places the others",
+      next: "then",
+    })[reason] ?? reason,
+  nearIdHint: (from: string, to: string) => `${from} may be ${to}: keep one id`,
+  nearIdTip: (from: string, to: string) =>
+    `No facts are filed under ${from}, but ${to} has some and its id is near this one. If they are one repo, atticus repo rename ${from} ${to} moves the id with its facts, questions and catalog records, in one change you review; nothing is committed or pushed.`,
+  renameRepo: "Rename the repo id",
+  renameConfirm: (from: string, to: string) =>
+    `Rename ${from} to ${to}? atticus repo rename moves its facts, read plan, questions, scan settings and catalog records in the metarepo, for you to review and commit; nothing is committed or pushed.`,
+  specAcceptConfirm: (repo: string) =>
+    `Accept ${repo}'s starting spec? atticus spec accept runs openspec validate --strict, then archives openspec/changes/seed-${repo}/ into openspec/specs/. Read the seed first.`,
+  confirmRun: "Run it",
+  openInApp: "Open in the app",
+  openInChat: "Open in Copilot Chat",
+  applySheet: "Apply the sheet",
+  sheetPick: "Apply which answer sheet?",
+  sheetOther: "Another file…",
+  trafficSource: "Where the export comes from",
+  referencePick: "The reference file (docs/guide/measure.md)",
+  trafficPick: "The traffic export",
+  auditWhole: "Every repo audited, and the estate",
+  newRepoId: (from: string) => `The new id for ${from}`,
+  promptFileMissing: (slash: string) =>
+    `This workspace has no .github/prompts/${slash}.prompt.md: run atticus assistant-files, then type /${slash} in Copilot Chat.`,
 };
 
 /**
@@ -374,6 +453,9 @@ const STEP_TITLES: Record<string, (s: NextStep, c: (id?: string) => string) => s
   "orgpack-draft": () => "Draft the org pack's systems from the wikis",
   "accept-orgpack": () => "Accept the systems drafted from the wikis",
   "verify-knowledge": () => "Check the knowledge items your changes use",
+  // beta.10 (ADR 0141, 0156): a repo whose clone moved past its facts, and a seed to accept first.
+  reread: (s) => `Read ${s.repo ?? "the repo"} again: its clone moved past its facts`,
+  "accept-seed": (s) => `Read and accept ${s.repo ?? "the repo"}'s starting spec`,
   tasks: (s, c) => `Work through ${c(s.change)}'s tasks`,
   task: (s, c) => `Run a task of ${c(s.change)}`,
   release: (s, c) => `Plan ${c(s.change)}'s release`,

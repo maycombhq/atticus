@@ -5,7 +5,8 @@ import { parseJson } from "./cli";
 import { needDescription, needItems, type KnowledgeEntry, type NeedEntry } from "./knowledge-data";
 import { readKnowledgeList } from "./knowledge-read";
 import { questionGroups, SEVERITY_ICON, type Item } from "./sidebar-data";
-import type { Cli, OpenQuestion } from "./types";
+import { takesRule } from "./atticus";
+import type { Cli, OpenQuestion, QuestionsMe } from "./types";
 import { questionLabel, WORDS } from "./words";
 
 /**
@@ -165,42 +166,108 @@ const errorRow = (id: string, message: string): WaitingRow => ({
   command: { command: "atticus.showLog" },
 });
 
+/**
+ * The open questions by repo. Since beta.10 the command line lists them in the order to ask them
+ * (what a change in flight rests on first, then the answers that join the most calls, ADR 0140),
+ * each with its owner and its checked proposal (ADR 0144): the repos then come in that order, and
+ * each question says its owner, what rests on it, and offers Accept as my answer.
+ */
 function questionRows(qs: OpenQuestion[]): WaitingRow[] {
-  return questionGroups(qs).map((g) => ({
+  const ordered = qs.some((q) => q.about);
+  const groups = ordered ? groupsInOrder(qs) : questionGroups(qs);
+  return groups.map((g) => ({
     id: `questions:${g.repo}`,
     label: g.repo,
     description: `${g.questions.length} open`,
     icon: "repo",
     context: "atticus.questionRepo",
     questions: g.questions,
-    rows: g.questions.map((q) => {
-      const l = questionLabel(q.question);
-      return {
-        id: `question:${q.id}`,
-        label: l.label,
-        description: [l.description, q.options.length ? `${q.options.length} options` : ""]
-          .filter(Boolean)
-          .join(" · "),
-        tooltip: [
-          q.question,
-          q.options
-            .map((o, i) => `${i + 1}. **${o.label}**${o.means ? `: ${o.means}` : ""}`)
-            .join("\n"),
-          // What the question read, so the person sees where it comes from before answering.
-          q.evidence.length
-            ? WORDS.questionEvidence(q.evidence.map((e) => `\`${e}\``).join(", "))
-            : "",
-          WORDS.questionClick,
-        ]
-          .filter(Boolean)
-          .join("\n\n"),
-        markdown: true,
-        icon: "question",
-        command: { command: "atticus.answerQuestion", args: [q.id] },
-        words: [q.repo],
-      };
-    }),
+    rows: g.questions.map(questionRow),
   }));
+}
+
+/** The repos in the order their first question comes, each repo's in the list's order. */
+function groupsInOrder(qs: OpenQuestion[]): { repo: string; questions: OpenQuestion[] }[] {
+  const by = new Map<string, OpenQuestion[]>();
+  for (const q of qs) by.set(q.repo, [...(by.get(q.repo) ?? []), q]);
+  return [...by].map(([repo, questions]) => ({ repo, questions }));
+}
+
+/** What a proposal answers, in a few words: the option with its number, or the text. */
+export function proposalWhat(q: OpenQuestion): string | undefined {
+  const a = q.about?.proposal?.answer;
+  if (!a) return undefined;
+  if (a.option !== undefined) return `${a.option}. ${q.options[a.option - 1]?.label ?? "?"}`;
+  return a.text !== undefined ? `“${a.text}”` : undefined;
+}
+
+function questionRow(q: OpenQuestion): WaitingRow {
+  const l = questionLabel(q.question);
+  const about = q.about;
+  const proposal = about?.proposal;
+  const what = proposalWhat(q);
+  const tick = (s: string) => `\`${s.replace(/`/g, "'")}\``;
+  return {
+    id: `question:${q.id}`,
+    label: l.label,
+    description: [
+      l.description,
+      about ? WORDS.owner(about.owner) : "",
+      about?.restsOn.length ? WORDS.restsOnShort(about.restsOn.join(", ")) : "",
+      proposal ? WORDS.proposedShort : "",
+      q.options.length ? `${q.options.length} options` : "",
+    ]
+      .filter(Boolean)
+      .join(" · "),
+    tooltip: [
+      q.question,
+      about
+        ? [
+            WORDS.ownerTip(about.owner),
+            about.restsOn.length ? WORDS.restsOn(about.restsOn) : "",
+            about.joins ? WORDS.questionJoins(about.joins) : "",
+          ]
+            .filter(Boolean)
+            .join("\n\n")
+        : "",
+      q.options
+        .map((o, i) => `${i + 1}. **${o.label}**${o.means ? `: ${o.means}` : ""}`)
+        .join("\n"),
+      // What the question read, so the person sees where it comes from before answering.
+      q.evidence.length ? WORDS.questionEvidence(q.evidence.map(tick).join(", ")) : "",
+      proposal && what
+        ? [
+            WORDS.proposalTip(proposal.by, what, proposal.why),
+            WORDS.proposalCites,
+            ...proposal.cites.map(
+              (c) => `- ${tick(`${c.repo ?? q.repo} ${c.file}:${c.line}`)}: ${tick(c.quote)}`,
+            ),
+          ].join("\n")
+        : "",
+      takesRule(q) ? WORDS.ruleHint : "",
+      WORDS.questionClick,
+    ]
+      .filter(Boolean)
+      .join("\n\n"),
+    markdown: true,
+    icon: proposal ? "lightbulb" : "question",
+    ...(proposal ? { context: "atticus.questionProposed" } : {}),
+    command: { command: "atticus.answerQuestion", args: [q.id] },
+    words: [q.repo, ...(about?.restsOn ?? [])],
+    ...(proposal && what
+      ? {
+          rows: [
+            {
+              id: `question:${q.id}:accept`,
+              label: WORDS.acceptAsMine(what),
+              tooltip: WORDS.acceptAsMineTip,
+              icon: "check",
+              command: { command: "atticus.acceptProposal", args: [q.id] },
+            },
+          ],
+        }
+      : {}),
+  };
 }
 
 const SEVERITY_ORDER: Record<string, number> = { blocking: 0, gap: 1, risk: 2, idea: 3 };
@@ -356,20 +423,39 @@ const NOTHING_ELSE: WaitingRow = {
  * the dialog that shows the lines it read; a row while they are read, the reason when they
  * couldn't be, and one row when none waits.
  */
-export function questionsRows(questions: OpenQuestion[] | string | undefined): WaitingRow[] {
+export function questionsRows(
+  questions: OpenQuestion[] | string | undefined,
+  o: { me?: QuestionsMe } = {},
+): WaitingRow[] {
   if (questions === undefined)
     return [{ id: "questions:loading", label: WORDS.readingQuestions, icon: "loading~spin" }];
   if (typeof questions === "string") return [errorRow("questions", questions)];
+  // My teams' (ADR 0140): who the command line took the person to be, a click from every question.
+  const head: WaitingRow[] = o.me
+    ? [
+        {
+          id: "questions:mine",
+          label: WORDS.myTeams(
+            o.me.handle,
+            o.me.teams.map((t) => (t.name ? `${t.id} (${t.name})` : t.id)),
+          ),
+          tooltip: WORDS.myTeamsTip,
+          icon: "filter",
+          command: { command: "atticus.questionsAll" },
+        },
+      ]
+    : [];
   if (!questions.length)
     return [
+      ...head,
       {
         id: "questions:none",
-        label: WORDS.noQuestions,
+        label: o.me ? WORDS.noQuestionsMine : WORDS.noQuestions,
         tooltip: WORDS.noQuestionsTip,
         icon: "check",
       },
     ];
-  return questionRows(questions);
+  return [...head, ...questionRows(questions)];
 }
 
 function byChange(
