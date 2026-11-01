@@ -2,7 +2,13 @@ import { existsSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { factsDirOf, factsRelOf, listQuestions, loadOrgPack, orgPackDirOf } from "@maycombhq/core";
-import { dirSource, frameworkFacts, frameworksToLearn, verifyFacts } from "@maycombhq/verify";
+import {
+  dirSource,
+  frameworkFacts,
+  frameworksToLearn,
+  repairFormSlips,
+  verifyFacts,
+} from "@maycombhq/verify";
 import type { GitRunner } from "@maycombhq/workspace";
 import type { Output } from "./commands.js";
 import {
@@ -163,6 +169,10 @@ export async function verifyCommand(
     io.err(`atticus verify ${repo}: ${e.message}`);
     return 2;
   }
+  // R6: the reader's slips of form (a camelCase id, a flow with no cite) are fixed, not refused.
+  const repaired = repairFormSlips(parsed.facts, parsed.bad);
+  parsed = { facts: repaired.facts, bad: repaired.bad };
+  const slips = repaired.slips;
   if (!parsed.facts.length && parsed.bad.length) {
     io.err(`${rel}/${repo}.jsonl does not read as facts:`);
     for (const b of parsed.bad.slice(0, 20))
@@ -250,6 +260,7 @@ export async function verifyCommand(
     qProblems,
     badLines,
     reviewedBad,
+    slips,
   );
   const failed =
     report.rejected.length + qProblems.length + badLines.length + reviewedBad.length > 0;
@@ -381,6 +392,27 @@ export async function verifyCommand(
     io.out(
       `The read is complete: every source file is read (${cov.read.length})${cov.reviewed.length ? ` or reviewed with nothing to record (${cov.reviewed.length}, each with why in ${rel}/${repo}.verify.yaml)` : ""}.`,
     );
+  // R6: notes, never rejections. A slip of form fixed in the facts, and a reviewed glob that
+  // matches nothing (it stands for no file, so it excuses none).
+  if (slips.length) {
+    io.out(
+      `${slips.length} ${slips.length === 1 ? "slip" : "slips"} of form fixed in the facts (a note, not a rejection; under slips in ${verifyYaml}):`,
+    );
+    show(
+      slips.map((x) => x.message),
+      `(slips in ${verifyYaml})`,
+    );
+  }
+  const dropped = report.reviewedDropped;
+  if (dropped.length) {
+    io.out(
+      `${dropped.length} reviewed ${dropped.length === 1 ? "glob matches" : "globs match"} no file and ${dropped.length === 1 ? "was" : "were"} dropped (a note, not a refusal; under reviewedDropped in ${verifyYaml}):`,
+    );
+    show(
+      dropped.map((d) => d.message),
+      `(reviewedDropped in ${verifyYaml})`,
+    );
+  }
   if (report.redacted) io.out(`${report.redacted} quotes had a secret value redacted.`);
   // A-uncited: the quote a file of that kind can't bear is left off the kept fact, and counted.
   if (report.quotesDropped)

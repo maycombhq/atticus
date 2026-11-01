@@ -22,6 +22,7 @@ import {
   type CarryChanges,
   type FileSource,
   type ReviewedEntry,
+  type FormSlip,
   type VerifyReport,
 } from "@maycombhq/verify";
 import { changesSince, createGit, type GitRunner } from "@maycombhq/workspace";
@@ -180,6 +181,10 @@ export interface VerifySummary {
    * why and the files it stands for, for a person to challenge. Left out when none.
    */
   reviewed?: VerifyReport["reviewed"];
+  /** R6: the reviewed globs that match no file, dropped with a note. Left out when none. */
+  reviewedDropped?: VerifyReport["reviewedDropped"];
+  /** R6: the slips of form fixed in the facts (a slugged id, a flow's cite). Left out when none. */
+  slips?: FormSlip[];
   /**
    * A note: the entries whose `auth` rests on no cited line (ADR 0124 addendum A-uncited). The
    * claim is in the facts file and not in the catalog. Left out when none.
@@ -225,6 +230,8 @@ export async function writeVerifyFiles(
   badLines: readonly { line: number; raw: string; message: string }[] = [],
   /** Lines of `<repo>.reviewed.jsonl` refused (A-read): kept here, with why, for the reader to fix. */
   reviewedProblems: readonly ReviewedLineProblem[] = [],
+  /** R6: the slips of form fixed in the facts before they were checked. */
+  slips: readonly FormSlip[] = [],
 ): Promise<VerifySummary> {
   const dir = factsDirOf(root);
   await mkdir(dir, { recursive: true });
@@ -283,6 +290,8 @@ export async function writeVerifyFiles(
   if (report.entriesNoFlowFollows.length)
     summary.entriesNoFlowFollows = report.entriesNoFlowFollows;
   if (report.reviewed.length) summary.reviewed = report.reviewed;
+  if (report.reviewedDropped.length) summary.reviewedDropped = report.reviewedDropped;
+  if (slips.length) summary.slips = [...slips];
   if (report.authUncited.length) summary.authUncited = report.authUncited;
   // A-framework: what the repo is built on, and the frameworks whose patterns nothing shows.
   const fws = frameworkFacts(report.accepted);

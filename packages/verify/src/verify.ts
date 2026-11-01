@@ -173,6 +173,11 @@ export interface VerifyReport {
   /** The reviewed lines refused, each with why (A-read). */
   reviewedProblems: ReviewedProblem[];
   /**
+   * A note, not a refusal (R6, amending A-read): the reviewed globs that match no file at the
+   * commit. A glob that stands for no file excuses none, so it is dropped and said, not refused.
+   */
+  reviewedDropped: ReviewedProblem[];
+  /**
    * A note, not a rejection (A-read, as A-uncited turns it round): the kept entries whose `auth`
    * rests on no cited line (`authCite`). The fact keeps the claim; the catalog projection drops
    * it. So this count is the same on every run, `--write` included, until a line is cited. In id
@@ -838,6 +843,7 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
   const reviewedSet = new Set<string>();
   const reviewed: ReviewedFiles[] = [];
   const reviewedProblems: ReviewedProblem[] = [];
+  const reviewedDropped: ReviewedProblem[] = [];
   for (const r of o.reviewed ?? []) {
     const refuse = (message: string) =>
       reviewedProblems.push({
@@ -872,11 +878,15 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
     const re = !range && isGlob(r.path) ? globToRegExp(r.path) : undefined;
     const matched = re ? allFiles.filter((p) => re.test(p)) : allFiles.filter((p) => p === target);
     if (!matched.length) {
-      refuse(
-        re
-          ? "matches no file in the repo at this commit; name the files you read"
-          : "is not in the repo at this commit; name a file you read",
-      );
+      // R6: a glob matching nothing stands for no file, so it excuses none: dropped with a note.
+      if (re)
+        reviewedDropped.push({
+          ...(r.line !== undefined ? { line: r.line } : {}),
+          path: r.path,
+          why: r.why,
+          message: `${r.line !== undefined ? `line ${r.line}: ` : ""}${r.path} matches no file in the repo at this commit; dropped (it stands for no file)`,
+        });
+      else refuse("is not in the repo at this commit; name a file you read");
       continue;
     }
     const files = matched.filter((p) => isSource.has(p) && !touched.has(p)).sort();
@@ -909,6 +919,7 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
     entriesNoFlowFollows: entriesNoFlowFollows(accepted),
     reviewed,
     reviewedProblems,
+    reviewedDropped,
     authUncited: authUncited.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)),
     frameworkGaps: frameworkGaps(accepted),
   };

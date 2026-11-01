@@ -411,6 +411,65 @@ describe("atticus verify: files read with nothing to record, and a read that is 
     expect(report(root).coverage.reviewed).toBe(3);
   });
 
+  // R6: a glob matching nothing is dropped with a note; the run passes.
+  it("drops a reviewed glob that matches nothing with a note, and exits 0 (R6)", async () => {
+    const root = limits(
+      reviewedFixture() +
+        `${JSON.stringify({ path: "src/main/kotlin/**/*.kt", why: "read them" })}\n`,
+    );
+    const o = io();
+    expect(await verifyCommand(root, "forge-limits", { commit: "4d1c0de" }, o.io)).toBe(0);
+    expect(existsSync(join(root, ".atticus", "facts", "forge-limits.rejected.jsonl"))).toBe(false);
+    expect(o.out).toContain(
+      "1 reviewed glob matches no file and was dropped (a note, not a refusal; under reviewedDropped in .atticus/facts/forge-limits.verify.yaml):",
+    );
+    expect(report(root).reviewedDropped).toEqual([
+      {
+        line: 3,
+        path: "src/main/kotlin/**/*.kt",
+        why: "read them",
+        message:
+          "line 3: src/main/kotlin/**/*.kt matches no file in the repo at this commit; dropped (it stands for no file)",
+      },
+    ]);
+  });
+
+  // R6: a camelCase id is slugged and a flow with no cite takes its entry's line, in the facts
+  // file verify writes back, so the next run reads them as written.
+  it("fixes the reader's slips of form, says each, and writes the fixed facts back (R6)", async () => {
+    const root = limits(reviewedFixture());
+    const file = join(root, ".atticus", "facts", "forge-limits.jsonl");
+    const slipped = readFileSync(file, "utf8")
+      .trim()
+      .split("\n")
+      .map((l) => {
+        const x = JSON.parse(l.replaceAll('"e-post-check"', '"postCheck"')) as Record<
+          string,
+          unknown
+        >;
+        if (x.kind === "flow") delete x.cite;
+        return JSON.stringify(x);
+      })
+      .join("\n");
+    writeFileSync(file, slipped + "\n");
+    const o = io();
+    expect(await verifyCommand(root, "forge-limits", { commit: "4d1c0de" }, o.io)).toBe(0);
+    const text = o.out.join("\n");
+    expect(o.out[0]).toMatch(/0 rejected/);
+    expect(text).toMatch(
+      /slips of form fixed in the facts \(a note, not a rejection; under slips in \.atticus\/facts\/forge-limits\.verify\.yaml\)/,
+    );
+    expect(text).toContain(
+      "line 1: fact id postCheck slugged to post-check, and every reference to it",
+    );
+    const kept = readFileSync(file, "utf8");
+    expect(kept).not.toContain("postCheck");
+    expect(kept).toContain('"id":"post-check"');
+    const codes = (report(root).slips as { code: string }[]).map((x) => x.code);
+    expect(codes).toContain("id-slugged");
+    expect(codes).toContain("flow-cite-from-entry");
+  });
+
   // A-uncited: the claim stays in the reader's own file, and out of the catalog. It used to be
   // stripped from the file here, which erased this very warning on the next run.
   it("keeps an entry's uncited auth in the facts file, says so, and says the same next run", async () => {

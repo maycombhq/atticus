@@ -10,3 +10,4 @@ export * from "./carry.js";
 export * from "./reviewed.js";
 export * from "./apigee-policy.js";
 export * from "./frameworks.js";
+export * from "./slips.js";

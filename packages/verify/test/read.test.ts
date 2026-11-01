@@ -151,26 +151,44 @@ describe("files read with nothing to record (A-read, problem 2)", () => {
     expect(r.reviewed.some((x) => x.path === `${J}/InvalidAmount.java#L1-L3`)).toBe(true);
   });
 
-  it("refuses a path that isn't in the repo at this commit, a glob that matches nothing, and a path outside the repo or a secret's", async () => {
+  it("refuses a path that isn't in the repo at this commit, and a path outside the repo or a secret's", async () => {
     const r = await run(facts(), [
       { line: 1, path: `${J}/Gone.java`, why: "read it" },
-      { line: 2, path: "src/main/kotlin/**/*.kt", why: "read them" },
       { line: 3, path: "../forge-ledger/src/A.java", why: "read it" },
       { line: 4, path: ".env", why: "read it" },
     ]);
     expect(r.reviewedProblems.map((p) => [p.line, p.path])).toEqual([
       [1, `${J}/Gone.java`],
-      [2, "src/main/kotlin/**/*.kt"],
       [3, "../forge-ledger/src/A.java"],
       [4, ".env"],
     ]);
     expect(r.reviewedProblems[0]!.message).toMatch(/not in the repo at this commit/);
-    expect(r.reviewedProblems[1]!.message).toMatch(/matches no file/);
-    expect(r.reviewedProblems[2]!.message).toMatch(/outside the repo/);
-    expect(r.reviewedProblems[3]!.message).toMatch(/secret/);
+    expect(r.reviewedProblems[1]!.message).toMatch(/outside the repo/);
+    expect(r.reviewedProblems[2]!.message).toMatch(/secret/);
     // Nothing is reviewed on a refused line.
     expect(r.coverage.reviewed).toEqual([]);
     expect(r.reviewed).toEqual([]);
+  });
+
+  // R6: a glob that matches nothing stands for no file, so it excuses none: dropped with a note
+  // rather than refusing the run. A plain path that isn't there is still refused.
+  it("drops a glob that matches nothing with a note, and reviews nothing on it (R6)", async () => {
+    const r = await run(facts(), [
+      ...reviewedLines(),
+      { line: 7, path: "src/main/kotlin/**/*.kt", why: "read them" },
+    ]);
+    expect(r.reviewedProblems).toEqual([]);
+    expect(r.reviewedDropped).toEqual([
+      {
+        line: 7,
+        path: "src/main/kotlin/**/*.kt",
+        why: "read them",
+        message:
+          "line 7: src/main/kotlin/**/*.kt matches no file in the repo at this commit; dropped (it stands for no file)",
+      },
+    ]);
+    expect(r.reviewed.map((x) => x.path)).not.toContain("src/main/kotlin/**/*.kt");
+    expect(r.coverage.reviewed).toHaveLength(3);
   });
 });
 
