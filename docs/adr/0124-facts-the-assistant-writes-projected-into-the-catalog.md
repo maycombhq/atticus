@@ -957,3 +957,9 @@ The gateway batch's instructions go from about 7,401 characters (~1,850 tokens) 
 
 - The method an entry or call claims (GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS) must be written on its cited line, the next line or a `cite.with` line. A text check that reads any language: each line is split into words at non-letters and camelCase capitals (`@GetMapping`, `[HttpGet]`, `RequestMethod.POST`, `getForObject`, `export async function POST`).
 - A method found on none is a warning: `methodUnseen` in VerifyReport, `methodUnseenCount` and `methodUnseen` in `<repo>.verify.yaml`, and a line in verify's output. Whether to make it a rejection is left until the count is measured on the bench facts.
+
+## Addendum (P-measure): the join is measured (P1, R5; no C1 to C6 change)
+
+- `measureLinks` (scanner) runs the join over the repos' facts exactly as `verify --write` does (manifest hosts and base paths, outside systems, the targets people named) and compares it with a reference written by hand: per repo, its entries and its calls, each call with the repo it ends at after any gateway (`reaches`), an outside system (`outside`), or `reaches: none`.
+- Precision is the share of listed calls joined to a repo that reach the named one; recall the share of calls that should reach a repo that do; asked, inferred (joined by path or by label), outside and unlinked calls are counted apart. `fixtures/link-estate` pins today's figures.
+- `atticus join measure <reference>` gives the same measure on a person's own estate from a reference kept in their metarepo; it reads files only.
