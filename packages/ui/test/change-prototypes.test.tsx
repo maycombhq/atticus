@@ -73,6 +73,30 @@ describe("the prototype on the change page", () => {
     expect(out.match(/<h4 /g)).toHaveLength(4);
   });
 
+  it("names another team's operation as theirs, not a vendor's (ADR 0142)", () => {
+    const calls = comparison!.calls.map((c) =>
+      c.vendor
+        ? {
+            ...c,
+            vendor: { ...c.vendor, name: "Forge Risk Team", boundary: "internal" as const },
+          }
+        : c,
+    );
+    const out = renderToStaticMarkup(
+      <PrototypeComparison
+        p={{
+          repo: "forge-checkout-prototype",
+          attached: "inputs/prototype-forge-checkout-prototype.md",
+          comparison: { ...comparison!, calls },
+        }}
+      />,
+    );
+    expect(out).toContain(
+      T.prototypeTeam("Forge Risk Team", "inputs/partner-specs/northwind-pay-openapi-v2.yaml:46"),
+    );
+    expect(out).not.toContain("Vendor: Forge Risk Team");
+  });
+
   it("says why a prototype can't be compared, and shows no stale groups", () => {
     const out = renderToStaticMarkup(
       <PrototypeComparison

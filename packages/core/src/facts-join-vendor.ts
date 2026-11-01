@@ -37,10 +37,21 @@ export interface JoinVendorOperation {
   cite?: string;
 }
 
-/** A vendor and what the join needs to find its calls: its names, its hosts and its operations. */
+/**
+ * A vendor, or any other system outside the estate that publishes a spec (O2: another team's,
+ * boundary `internal`), and what the join needs to find its calls: its names, its hosts and its
+ * operations.
+ */
 export interface JoinVendor {
-  /** The org pack's system id (boundary vendor). */
+  /** The org pack's system id: a vendor's, or another outside system's. */
   system: string;
+  /**
+   * The system's boundary in the profile. `internal` (another team's system, ADR 0142): the
+   * estate's services call it themselves, not through the external gateway, so a service's own
+   * call to it is matched too (`direct` on the match). Left out, or `vendor`: only a gateway's
+   * forwarding calls are matched, as ADR 0130 says.
+   */
+  boundary?: "vendor" | "internal";
   /** Its name and aliases, as the org pack writes them. */
   names: readonly string[];
   /** The hosts its spec's servers name, and any host the org pack gives it (patterns allowed). */
@@ -65,6 +76,11 @@ export interface VendorCallMatch {
   method?: string;
   /** The path the gateway forwards to. */
   path: string;
+  /**
+   * ADR 0142: a service's own call to another team's system, not a gateway's forwarding call;
+   * `route` is then the entry the call is made under, when it names one.
+   */
+  direct?: true;
 }
 
 /** A forwarding call to an operation the vendor's spec doesn't publish. */
@@ -119,6 +135,9 @@ function hostOf(s: string | undefined): { host: string; port?: number } | undefi
   return m ? { host: m[1]!.toLowerCase(), ...(m[2] ? { port: Number(m[2]) } : {}) } : undefined;
 }
 
+/** Whether a system's own published operations take a service's direct calls (ADR 0142). */
+const takesDirect = (v: JoinVendor) => v.boundary === "internal";
+
 const sameMethod = (a: string | undefined, b: string | undefined) => {
   const x = a?.toUpperCase();
   const y = b?.toUpperCase();
@@ -165,11 +184,14 @@ export function joinVendorOperations(input: JoinVendorOperationsInput): VendorJo
     );
     const isRoute = (e: Entry) => !!r.gateway || APIGEE_BUNDLE.test(e.cite.file);
     for (const f of facts) {
-      if (f.kind !== "call" || f.callType !== "rest" || !f.from) continue;
-      const routeFact = entries.get(f.from);
-      if (!routeFact || !isRoute(routeFact)) continue;
+      if (f.kind !== "call" || f.callType !== "rest") continue;
+      const routeFact = f.from ? entries.get(f.from) : undefined;
+      const forwarding = !!routeFact && isRoute(routeFact);
+      // ADR 0142: a call no gateway route makes is matched only to a system that takes direct
+      // calls (another team's), so a vendor's matches stay a gateway's, as ADR 0130 has them.
+      if (!forwarding && !vendors.some(takesDirect)) continue;
       const call = f as Call;
-      const route = end(routeFact);
+      const route = routeFact ? end(routeFact) : undefined;
 
       // ---- which vendor
       let vendor: JoinVendor | undefined;
@@ -212,6 +234,7 @@ export function joinVendorOperations(input: JoinVendorOperationsInput): VendorJo
         }
       }
       if (!vendor || !how) continue;
+      if (!forwarding && !takesDirect(vendor)) continue;
 
       // ---- which operation
       const name = vendor.names[0] ?? vendor.system;
@@ -233,7 +256,7 @@ export function joinVendorOperations(input: JoinVendorOperationsInput): VendorJo
         .sort((a, b) => cmp(a.id, b.id));
       const base = {
         call: end(call),
-        route,
+        ...(route ? { route } : {}),
         ...(tie ? { tie } : {}),
         vendor: vendor.system,
       };
@@ -245,13 +268,14 @@ export function joinVendorOperations(input: JoinVendorOperationsInput): VendorJo
           operation: op.id,
           ...(method || op.method ? { method: (method ?? op.method).toUpperCase() } : {}),
           path: call.path,
+          ...(forwarding ? {} : { direct: true as const }),
         });
       } else if (hits.length > 1) {
         const opName = (op: JoinVendorOperation) => `${op.method.toUpperCase()} ${op.path}`;
         const names = hits.map(opName).sort();
         asks.push({
           call: end(call),
-          route,
+          ...(route ? { route } : {}),
           vendor: vendor.system,
           question: `Which of ${name}'s operations does ${what}, which ${component(call)} forwards, reach: ${names.slice(0, -1).join(", ")} or ${names.at(-1)}?`,
           candidates: hits.map((o) => o.id),
@@ -262,7 +286,7 @@ export function joinVendorOperations(input: JoinVendorOperationsInput): VendorJo
           ...base,
           ...(method ? { method } : {}),
           path: call.path,
-          message: `${component(call)} forwards ${what} to ${name}, whose spec publishes no such operation${others.length ? ` (it publishes ${others.join(", ")} on that path)` : ""}`,
+          message: `${component(call)} ${forwarding ? "forwards" : "calls"} ${what} ${forwarding ? "to" : "on"} ${name}, whose spec publishes no such operation${others.length ? ` (it publishes ${others.join(", ")} on that path)` : ""}`,
         });
       }
     }

@@ -13,10 +13,18 @@ import {
   type PrototypeGroup,
   type PrototypeVendor,
   type RepoDescription,
+  prototypeArchitectureSection,
 } from "@maycombhq/core";
 import { changeFolder, changeStore } from "@maycombhq/changes";
 import { attachToChange, readChangeInputs, readVendorSpec } from "@maycombhq/intake";
-import { estateFacts, estateRepos, joinReposOf, outsideSystems } from "@maycombhq/scanner";
+import {
+  estateFacts,
+  estateRepos,
+  hostAliases,
+  joinReposOf,
+  outsideProfileSystems,
+  outsideSystems,
+} from "@maycombhq/scanner";
 import type { Output } from "./commands.js";
 import { intakeContext } from "./intake-commands.js";
 
@@ -49,6 +57,9 @@ export const PROTOTYPE_CLI_WORDS = {
     new: "New: nothing in the estate serves it.",
     vendor: "Vendor: only a vendor provides it, so it needs a route through the external gateway.",
   } as Record<PrototypeGroup, string>,
+  /** The vendor group's heading when another team's system provides one of its calls (O2). */
+  outside:
+    "Outside: only a vendor or another team's system provides it; a vendor's needs a route through the external gateway, another team's is called as it publishes it.",
   left: (n: number) =>
     `${n} call${n === 1 ? "" : "s"} of the prototype reach${n === 1 ? "es" : ""} nothing in it and ${n === 1 ? "isn't" : "aren't"} compared:`,
   attached: (path: string) =>
@@ -76,6 +87,8 @@ export interface LoadedPrototype {
   notes: string[];
   /** The repos' systems, for the change's footprint. */
   systemOf: Record<string, string>;
+  /** The calls nothing serves, for the architecture stage (ADR 0142): a section of the attached document. */
+  architecture: string[];
 }
 
 const SPECS = new Set(["openapi", "swagger"]);
@@ -97,11 +110,12 @@ export async function loadPrototypeComparison(
     return { error: PROTOTYPE_CLI_WORDS.notRead(repo) };
 
   const estate = await estateFacts(root, op, repo);
-  const systems = op.profiles.flatMap((p) => p.profile?.systems ?? []);
+  // Every system outside the estate with a published spec: a vendor's, or another team's (O2).
+  const systems = outsideProfileSystems(op);
   const vendors: PrototypeVendor[] = [];
   for (const d of inputs.documents) {
     if (!d.id || d.supersededBy || !SPECS.has(d.classification)) continue;
-    const system = systems.find((s) => s.id === d.systems[0] && s.boundary === "vendor");
+    const system = systems.find((s) => s.id === d.systems[0]);
     if (!system) continue;
     const body = await readFile(join(inputsDirOf(root), ...d.path.split("/").slice(1)), "utf8");
     const spec = readVendorSpec(d.path, body, system.id);
@@ -123,8 +137,11 @@ export async function loadPrototypeComparison(
         name: f.name,
         ...(f.type ? { type: f.type } : {}),
         ...(f.required !== undefined ? { required: f.required } : {}),
+        ...(f.enum ? { enum: f.enum } : {}),
+        ...(f.in === "header" ? { in: f.in } : {}),
         at: f.cite,
       })),
+      ...(o.errors ? { errors: o.errors.map((e) => ({ status: e.status, at: e.cite })) } : {}),
     }));
     if (prior) {
       (prior.operations as typeof operations).push(...operations);
@@ -133,7 +150,8 @@ export async function loadPrototypeComparison(
       vendors.push({
         system: system.id,
         names: [system.name, ...system.aliases],
-        hosts: [...spec.hosts],
+        hosts: [...new Set([...spec.hosts, ...hostAliases(system.aliases)])],
+        ...(system.boundary === "vendor" ? {} : { boundary: "internal" as const }),
         operations,
       });
   }
@@ -152,6 +170,7 @@ export async function loadPrototypeComparison(
     ...(manifest.description ? { about: manifest.description } : {}),
     comparison,
     notes: estate.notes,
+    architecture: prototypeArchitectureSection(comparison, parsed.facts),
     systemOf: Object.fromEntries(
       estateRepos(op).flatMap((r) => (r.system ? [[r.id, r.system] as const] : [])),
     ),
@@ -182,7 +201,11 @@ export function prototypeLines(l: LoadedPrototype): string[] {
   for (const g of PROTOTYPE_GROUPS) {
     const calls = c.calls.filter((x) => x.group === g);
     if (!calls.length) continue;
-    out.push(PROTOTYPE_CLI_WORDS.group[g]);
+    out.push(
+      g === "vendor" && calls.some((x) => x.vendor?.boundary === "internal")
+        ? PROTOTYPE_CLI_WORDS.outside
+        : PROTOTYPE_CLI_WORDS.group[g],
+    );
     for (const x of calls) out.push(...callLines(x));
   }
   if (c.left.length) {
@@ -197,7 +220,13 @@ export function prototypeLines(l: LoadedPrototype): string[] {
 export function prototypeDocument(l: LoadedPrototype): { name: string; text: string } {
   return {
     name: `prototype-${l.repo}.md`,
-    text: [PROTOTYPE_CLI_WORDS.docTitle(l.repo), "", ...prototypeLines(l), ""].join("\n"),
+    text: [
+      PROTOTYPE_CLI_WORDS.docTitle(l.repo),
+      "",
+      ...prototypeLines(l),
+      "",
+      ...l.architecture,
+    ].join("\n"),
   };
 }
 

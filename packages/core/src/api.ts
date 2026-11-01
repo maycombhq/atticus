@@ -83,8 +83,12 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   graph edge (each call merged into it, how it was joined, verified or not, and its lines at
  *   both ends), and in GET /api/trust the lists behind a repo's counts (`lists`: the facts
  *   rejected, the files not read and excluded, the questions open). Additive only.
+ * 2.33.0 (ADR 0142): the prototype comparison's further differences (`field-enum`,
+ *   `header-missing`, `header-required`, `error-missing`, `error-unhandled`, with the difference's
+ *   `value` or `status`), and a vendor-group call's `boundary` (`internal`: another team's
+ *   system). Additive only.
  */
-export const API_VERSION = "2.32.0";
+export const API_VERSION = "2.33.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -1635,10 +1639,23 @@ const PrototypeSaid = z.object({ value: z.string(), at: z.string() });
 
 /** One way the estate (or a vendor) serves an operation other than as the prototype needs. */
 export const PrototypeDifferenceView = z.object({
-  kind: z.enum(["field-missing", "field-type", "field-required", "scope-missing", "auth"]),
+  kind: z.enum([
+    "field-missing",
+    "field-type",
+    "field-required",
+    "field-enum",
+    "header-missing",
+    "header-required",
+    "error-missing",
+    "error-unhandled",
+    "scope-missing",
+    "auth",
+  ]),
   side: z.enum(["request", "response"]).optional(),
   field: z.string().optional(),
   scope: z.string().optional(),
+  value: z.string().optional(),
+  status: z.string().optional(),
   prototype: PrototypeSaid,
   estate: PrototypeSaid.optional(),
   message: z.string(),
@@ -1674,6 +1691,7 @@ export const PrototypeCallView = z.object({
       path: z.string(),
       at: z.string().optional(),
       through: z.array(z.string()),
+      boundary: z.enum(["vendor", "internal"]).optional(),
     })
     .optional(),
   candidates: z.array(PrototypeEnd).optional(),

@@ -1645,6 +1645,8 @@ export const COPY = {
     prototypeCites: (at: string, lands: string) => `Prototype: ${at} → ${lands}`,
     prototypeEstate: (repo: string, at: string) => `Estate: ${repo} ${at}`,
     prototypeVendor: (name: string, at: string) => `Vendor: ${name} ${at}`,
+    /** ADR 0142: the operation is another team's, published in their spec. */
+    prototypeTeam: (name: string, at: string) => `Another team: ${name} ${at}`,
     prototypeLeft: (n: number) =>
       `${n} call${n === 1 ? "" : "s"} reach${n === 1 ? "es" : ""} nothing in the prototype and ${n === 1 ? "isn't" : "aren't"} compared.`,
     noTasksYetThey: "No tasks yet: they come with the plan.",
