@@ -45,7 +45,7 @@ Chosen over adding their repos to `joinFacts` as read-only `JoinRepo`s: there, t
 The Interface a matched call made (from our component, to their system, citing our call's line) gets the flag `joined-to-shared-map` and an evidence entry on their entry's line: `source: code`, their repo, path, line and code commit, `side: callee`, `extractor: atticus-shared@1`, `by: <team>`. A call with no entry in their map gets `not-in-shared-map`, a gap.
 
 - The Interface's `to`, id and confidence don't change. `to` stays their system: naming their component would make a record of ours rest on their naming and rename our Interface whenever they rename a component; no Component or Endpoint of theirs is written. The confidence isn't raised: their line was checked by their verify, not ours.
-- Like contract and traffic evidence (ADR 0151), every write takes every shared mark off first (`stripSharedMaps`) and puts them back from the maps on file, over the whole estate's join (`applySharedMaps`), so the catalog is the same whatever order repos are written in, and a map taken away leaves nothing behind.
+- Like contract and traffic evidence (ADR 0151), every write takes every shared mark off first (`stripSharedMaps`) and puts them back from the maps on file, over the whole estate's join (`applySharedMaps`), so the catalog is the same whatever order repos are written in, and a map taken away leaves nothing behind: with no map on file the marks still come off every repo's links, not only the written repo's.
 - `joined-to-shared-map` is in `JOIN_HOW_FLAGS` (a how, never a gap).
 
 `atticus verify <repo> --write` prints a `Shared map:` line per team and writes `shared` (`joined`, `unmatched`, `asked`) into `<repo>.verify.yaml`.

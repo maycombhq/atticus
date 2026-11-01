@@ -138,4 +138,41 @@ describe("catalogWithFacts with a shared map (O3)", () => {
     expect(again.records).toEqual(plain.records);
     expect(again.shared).toBeUndefined();
   });
+
+  it("a map taken away leaves no mark on another repo's links when a different repo is written", async () => {
+    const mine = await facts("facts/forge-lending.jsonl");
+    const withMap = catalogWithFacts({
+      repo: "forge-lending",
+      facts: mine,
+      existing: [],
+      op,
+      decisions: [],
+      estate: [],
+      shared: [await map()],
+    });
+    expect(ifaces(withMap.records).some((i) => i.flags?.includes(JOINED_TO_SHARED_MAP))).toBe(true);
+    // shared/risk-team/ deleted, then repo A (another repo, with facts of its own) is written.
+    const other = mine
+      .filter((f) => f.kind === "entry")
+      .map((f) => ({ ...f, repo: "forge-ledger", id: f.id.replace("loans", "ledger") }));
+    const next = catalogWithFacts({
+      repo: "forge-ledger",
+      facts: other,
+      existing: withMap.records,
+      op,
+      decisions: [],
+      estate: [{ repo: "forge-lending", facts: mine }],
+    });
+    const lending = ifaces(next.records).filter((i) =>
+      (i.evidence as { repo?: string }[]).some((e) => e.repo === "forge-lending"),
+    );
+    expect(lending.length).toBeGreaterThan(0);
+    for (const i of lending) {
+      expect(i.flags ?? []).not.toContain(JOINED_TO_SHARED_MAP);
+      expect(i.flags ?? []).not.toContain(NOT_IN_SHARED_MAP);
+      expect(
+        (i.evidence as { extractor?: string }[]).some((e) => e.extractor === SHARED_MAP_EVIDENCE),
+      ).toBe(false);
+    }
+  });
 });
