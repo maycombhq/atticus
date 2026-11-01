@@ -291,6 +291,22 @@ export function TrustRow({ r }: { r: Repo }) {
             </dd>
           </>
         )}
+        <dt>{T.audit}</dt>
+        <dd>
+          {r.audit ? (
+            <>
+              {T.auditTally(T.auditFacts, r.audit.facts)} ·{" "}
+              {T.auditTally(T.auditLinks, r.audit.links)}
+              {r.audit.facts.right +
+                r.audit.facts.wrong +
+                r.audit.links.right +
+                r.audit.links.wrong <
+                30 && <span className="work-say"> {T.auditSmall}</span>}
+            </>
+          ) : (
+            <span className="mono">{T.auditNone(r.repo)}</span>
+          )}
+        </dd>
         <dt>{T.builtOn}</dt>
         <dd>
           {r.frameworks?.length

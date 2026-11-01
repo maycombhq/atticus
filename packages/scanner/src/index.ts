@@ -10,3 +10,4 @@ export * from "./merge-input.js";
 export * from "./facts-catalog.js";
 export * from "./facts-scan.js";
 export * from "./measure-links.js";
+export * from "./audit-links.js";

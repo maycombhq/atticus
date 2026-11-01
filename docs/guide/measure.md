@@ -69,3 +69,23 @@ your profile's outside systems, and the targets people named. A call whose base 
 as a miss.
 
 `atticus estate measure` is the same command.
+
+## A sample audit: precision across the whole estate
+
+A reference is thorough but takes a while to write. For a quick, honest number on every repo, audit a sample instead (ADR 0148):
+
+```sh
+atticus verify audit forge-payments            # 10 kept facts and 10 links, drawn at random
+atticus verify audit forge-payments --size 5 --seed s2   # another sample, the same every time for s2
+```
+
+Each fact and link is shown with every line it rests on (a link with how it was joined, and each gateway hop), and on a terminal you answer right, wrong or unsure. A wrong fact is corrected with Correct this on the Map; a wrong link with Why is this linked? › This link is wrong. The answers go to `facts/<repo>.audit.yaml`, your record: commit it in a pull request. Nothing is sent anywhere.
+
+From a script or an agent, give the answers instead of being asked: `--answers answers.yaml` (each item id, as the sample lists it, mapped to `right`, `wrong` or `unsure`, or to `{ answer: wrong, note: ... }`), or `--right`, `--wrong` and `--unsure` with comma-separated ids.
+
+```sh
+atticus verify audit forge-payments --report   # precision per kind of fact and for links
+atticus verify audit --report                  # every repo audited, and the estate
+```
+
+The report gives the share right of those answered right or wrong, how many that is, and a 95% interval. A sample of ten says little: 9 of 10 right is somewhere between 60% and 98%, so read the range, not the number, and draw more with another seed. A fact answered right shows as checked by the sample on the Map while it still cites the line you saw; Map › Trust shows each repo's audit.

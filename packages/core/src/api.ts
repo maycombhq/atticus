@@ -96,8 +96,13 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   `header-missing`, `header-required`, `error-missing`, `error-unhandled`, with the difference's
  *   `value` or `status`), and a vendor-group call's `boundary` (`internal`: another team's
  *   system). Additive only.
+ * 2.37.0 (ADR 0148, plan item P3): the sample audit's precision on Map › Trust,
+ *   `TrustRepo.audit` — from `facts/<repo>.audit.yaml`, the facts' and the links' precision with
+ *   what was drawn, answered right, wrong and unsure, still open or gone, and a 95% interval —
+ *   and GET /api/facts/{repo} gives `verified: sample` for a fact answered right there that still
+ *   cites the line the person saw. Additive only.
  */
-export const API_VERSION = "2.35.0";
+export const API_VERSION = "2.37.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -688,6 +693,20 @@ export const TrustState = z.enum([
   "unknown-files",
   "trusted",
 ]);
+/** 2.37.0 (ADR 0148): a sample audit's count of one kind, with its precision and 95% interval. */
+export const AuditTallyView = z.object({
+  drawn: z.number().int(),
+  right: z.number().int(),
+  wrong: z.number().int(),
+  unsure: z.number().int(),
+  open: z.number().int(),
+  gone: z.number().int(),
+  /** right / (right + wrong); null with neither. */
+  precision: z.number().nullable(),
+  low: z.number().nullable(),
+  high: z.number().nullable(),
+});
+export type AuditTallyViewT = z.infer<typeof AuditTallyView>;
 export const TrustRepo = z.object({
   repo: z.string(),
   /** `facts/<repo>.jsonl`: how many facts, how many not verified, and their commit. */
@@ -777,6 +796,20 @@ export const TrustRepo = z.object({
       unverified: z.array(
         z.object({ fact: z.string(), kind: z.string(), file: z.string(), line: z.number().int() }),
       ),
+    })
+    .optional(),
+  /**
+   * 2.37.0 (ADR 0148, P3): the sample audit's precision, from `facts/<repo>.audit.yaml` (`path`):
+   * the facts' (and per kind) and the links', each with the sample size and a 95% interval. A
+   * fact answer whose fact has been read again since is gone, not counted; left out when the
+   * repo has no audit.
+   */
+  audit: z
+    .object({
+      path: z.string(),
+      facts: AuditTallyView,
+      byKind: z.record(z.string(), AuditTallyView),
+      links: AuditTallyView,
     })
     .optional(),
 });

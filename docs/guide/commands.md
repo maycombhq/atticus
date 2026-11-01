@@ -39,6 +39,8 @@ Every command under the twelve, with its options.
           [--write]                    When nothing is rejected: put the facts in the catalog, the flows in specs/<repo>/, ask about calls nothing joins, and render the map
           [--verbose]                  With --write: list every record changed and flow written, not only the counts
   atticus verify --all [--write]       Every repo read so far (each with a facts file), one after another; no model is called
+  atticus verify audit <repo>          Confirm a reproducible random sample of the repo's kept facts and its links, each with its cited lines (right, wrong or unsure); the answers go to facts/<repo>.audit.yaml, a person's record for a pull request (ADR 0148) [--size n] [--seed s] [--answers file] [--right ids] [--wrong ids] [--unsure ids] [--dir path] [--json]
+  atticus verify audit <repo> --report  Precision from the answers, per kind of fact and for links (by how each was joined), with the sample size and a 95% interval; without a repo, every repo audited and the estate [--json]
   atticus map render <repo> [--json]   Render the repo's map from the catalog: map.md, a page per flow with its sequence diagram, an OpenAPI file per component, under map/<repo>/
   atticus join [--json]                Follow each repo's flows into the flows their calls reach, through the calls the repos' verified facts join (verify --write); the same as estate join
   atticus join measure <reference> [--json]  Measure your map against a reference you write by hand for two or three repos you know (their entries and calls, each call with the repo it should reach): reading recall, and join precision and recall; reads files only (docs/guide/measure.md)

@@ -8,7 +8,9 @@ import {
   factsDirOf,
   factsRelOf,
   listQuestions,
+  parseAuditFile,
   parseFactsLines,
+  sampleConfirmed,
   type Fact,
 } from "@maycombhq/core";
 import { applyCorrections, correctedFact, correctionFor } from "@maycombhq/verify";
@@ -103,6 +105,18 @@ export async function repoFactsView(root: string, repo: string): Promise<View> {
       message: `line ${b.line} isn't a correction: ${b.message}`,
     })),
   ];
+  // P3 (ADR 0148): a fact a person answered right in a sample audit, still citing the line they
+  // saw, is shown as checked by the sample; the facts file keeps the verifier's `line`.
+  const auditText = await readFile(join(factsDirOf(root), `${repo}.audit.yaml`), "utf8").catch(
+    () => undefined,
+  );
+  const audit = auditText === undefined ? undefined : parseAuditFile(auditText);
+  const sampled = sampleConfirmed(audit?.ok ? audit.file : undefined, f.facts);
+  if (audit && !audit.ok)
+    problems.push({
+      file: `${factsRelOf(root)}/${repo}.audit.yaml`,
+      message: `isn't an audit file: ${audit.issues[0] ?? "invalid"}`,
+    });
   const facts: CiteView[] = f.facts.map((x) => {
     const corr = correctionFor(x, c.corrections);
     return {
@@ -119,7 +133,7 @@ export async function repoFactsView(root: string, repo: string): Promise<View> {
             ],
           }
         : {}),
-      verified: x.verified,
+      verified: x.verified === "line" && sampled.has(x.id) ? "sample" : x.verified,
       by: x.by,
       ...(corr ? { correction: corr } : {}),
     };

@@ -472,6 +472,8 @@ Usage:
           [--write]                    When nothing is rejected: put the facts in the catalog, the flows in specs/<repo>/, ask about calls nothing joins, and render the map
           [--verbose]                  With --write: list every record changed and flow written, not only the counts
   atticus verify --all [--write]       Every repo read so far (each with a facts file), one after another; no model is called
+  atticus verify audit <repo>          Confirm a reproducible random sample of the repo's kept facts and its links, each with its cited lines (right, wrong or unsure); the answers go to facts/<repo>.audit.yaml, a person's record for a pull request (ADR 0148) [--size n] [--seed s] [--answers file] [--right ids] [--wrong ids] [--unsure ids] [--dir path] [--json]
+  atticus verify audit <repo> --report  Precision from the answers, per kind of fact and for links (by how each was joined), with the sample size and a 95% interval; without a repo, every repo audited and the estate [--json]
   atticus map render <repo> [--json]   Render the repo's map from the catalog: map.md, a page per flow with its sequence diagram, an OpenAPI file per component, under map/<repo>/
   atticus spec draft <repo>            Your assistant writes the repo's flows, one per trigger, each step cited and checked [--attempts 3] [--resume run] [--force] [--mode m] [--max-tokens n]
   atticus spec check <repo> [--json]   Check the repo's flows against the catalog, the template and the code; confirms steps on their cited lines
@@ -1529,11 +1531,60 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
         write: { type: "boolean" },
         verbose: { type: "boolean" },
         skipped: { type: "boolean" },
+        size: { type: "string" },
+        seed: { type: "string" },
+        answers: { type: "string" },
+        right: { type: "string" },
+        wrong: { type: "string" },
+        unsure: { type: "string" },
+        report: { type: "boolean" },
       },
       strict: false,
     });
     const repo = v.positionals[1];
     const text = (x: unknown) => (typeof x === "string" ? x : undefined);
+    // P3 (ADR 0148): atticus verify audit <repo>, the sample audit. `audit` alone, without
+    // --report, is still a repo called audit.
+    if (repo === "audit" && (v.positionals[2] || v.values.report === true)) {
+      const { auditCommand } = await import("./audit-commands.js");
+      const ids = (x: unknown) =>
+        text(x)
+          ?.split(",")
+          .map((y) => y.trim())
+          .filter(Boolean);
+      const size = Number(text(v.values.size));
+      const interactive = process.stdin.isTTY && v.values.json !== true;
+      let rl: import("node:readline/promises").Interface | undefined;
+      const ask = interactive
+        ? async (q: string) => {
+            const { createInterface } = await import("node:readline/promises");
+            rl ??= createInterface({ input: process.stdin, output: process.stdout });
+            return rl.question(`${q} `);
+          }
+        : undefined;
+      try {
+        return await auditCommand(
+          text(v.values.root) ? resolve(text(v.values.root)!) : root,
+          v.positionals[2],
+          {
+            by: who(),
+            ...(Number.isFinite(size) && size > 0 ? { size } : {}),
+            ...(text(v.values.seed) ? { seed: text(v.values.seed)! } : {}),
+            ...(text(v.values.dir) ? { dir: resolve(text(v.values.dir)!) } : {}),
+            ...(text(v.values.answers) ? { answers: text(v.values.answers)! } : {}),
+            ...(ids(v.values.right) ? { right: ids(v.values.right)! } : {}),
+            ...(ids(v.values.wrong) ? { wrong: ids(v.values.wrong)! } : {}),
+            ...(ids(v.values.unsure) ? { unsure: ids(v.values.unsure)! } : {}),
+            report: v.values.report === true,
+            json: v.values.json === true,
+            ...(ask ? { ask } : {}),
+          },
+          io,
+        );
+      } finally {
+        rl?.close();
+      }
+    }
     if (!repo && v.values.all === true) {
       // Every repo read so far, as one command: no model is called.
       const { verifyAllCommand } = await import("./verify-commands.js");
