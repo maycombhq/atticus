@@ -1,0 +1,45 @@
+schemaVersion: 1
+kind: Flow
+id: forge-stock.reserve-stock
+status: current
+confidence: inferred
+component: forge-stock
+errors: []
+evidence: []
+family: []
+name: The stock service reserves a quantity of a product
+steps:
+  - data:
+      reads:
+        - sku
+        - quantity
+    evidence:
+      - source: code
+        repo: forge-stock
+        path: src/main/java/forge/stock/StockController.java
+        line: 9
+    kind: entry
+    refs:
+      - forge-stock.post-stock-reservations
+    what: StockController.reserve receives the sku and quantity
+  - data:
+      returns:
+        - reservationId
+    evidence:
+      - source: code
+        repo: forge-stock
+        path: src/main/java/forge/stock/StockController.java
+        line: 12
+    kind: respond
+    refs: []
+    what: 201 Created with the reservation id
+template: default@1
+trigger:
+  evidence:
+    - source: code
+      repo: forge-stock
+      path: src/main/java/forge/stock/StockController.java
+      line: 9
+  kind: endpoint
+  ref: forge-stock.post-stock-reservations
+  what: The orders service asks to reserve stock

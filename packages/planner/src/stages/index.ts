@@ -11,6 +11,7 @@ export * from "./deploy-order.js";
 export * from "./merge.js";
 export * from "./stories.js";
 export * from "./openspec-files.js";
+export * from "./openspec-seed.js";
 export * from "./places.js";
 export * from "./story-code.js";
 export * from "./answer.js";

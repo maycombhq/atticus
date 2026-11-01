@@ -275,8 +275,8 @@ const requirementBlock = (r: DeltaRequirement) =>
   ].join("\n");
 
 /** One capability's delta file, in OpenSpec's format. */
-export function renderSpecDelta(d: SpecDelta): string {
-  const lines = [SPEC_MARK];
+export function renderSpecDelta(d: SpecDelta, mark: string = SPEC_MARK): string {
+  const lines = [mark];
   if (d.purpose) lines.push("## Purpose", "", d.purpose, "");
   if (d.added.length) lines.push("## ADDED Requirements", "", ...d.added.map(requirementBlock));
   if (d.modified.length)
@@ -296,24 +296,26 @@ export const specFiles = (deltas: SpecDelta[]): Record<string, string> =>
 
 /**
  * Write the deltas into the change's specs/, removing the spec files Atticus generated earlier
- * that this run no longer writes. A spec file a person wrote (no mark) is kept as it is.
+ * that this run no longer writes. A spec file a person wrote (no mark) is kept as it is. `mark`
+ * is the first line of the files this writer owns (the seed's, ADR 0146, is its own).
  */
 export async function writeSpecFiles(
   dir: string,
   files: Record<string, string>,
+  mark: string = SPEC_MARK,
 ): Promise<string[]> {
   const specs = join(dir, "specs");
   for (const c of await readdir(specs).catch(() => [] as string[])) {
     const f = join(specs, c, "spec.md");
     if (files[`specs/${c}/spec.md`] !== undefined) continue;
     const t = await readFile(f, "utf8").catch(() => undefined);
-    if (t?.startsWith(SPEC_MARK)) await rm(join(specs, c), { recursive: true, force: true });
+    if (t?.startsWith(mark)) await rm(join(specs, c), { recursive: true, force: true });
   }
   const written: string[] = [];
   for (const [rel, text] of Object.entries(files)) {
     const f = join(dir, ...rel.split("/"));
     const had = await readFile(f, "utf8").catch(() => undefined);
-    if (had !== undefined && !had.startsWith(SPEC_MARK)) continue;
+    if (had !== undefined && !had.startsWith(mark)) continue;
     await mkdir(dirname(f), { recursive: true });
     await writeFileAtomic(f, text);
     written.push(rel);
