@@ -62,6 +62,7 @@ const METAREPO_PATHS = [
   ".claude/commands/atticus-next.md",
   ".claude/commands/atticus-plan.md",
   ".claude/commands/atticus-probe.md",
+  ".claude/commands/atticus-propose.md",
   ".claude/commands/atticus-release.md",
   ".claude/commands/atticus-small.md",
   ".claude/commands/atticus-snow.md",
@@ -100,6 +101,7 @@ const METAREPO_PATHS = [
   ".github/prompts/atticus-next.prompt.md",
   ".github/prompts/atticus-plan.prompt.md",
   ".github/prompts/atticus-probe.prompt.md",
+  ".github/prompts/atticus-propose.prompt.md",
   ".github/prompts/atticus-release.prompt.md",
   ".github/prompts/atticus-small.prompt.md",
   ".github/prompts/atticus-snow.prompt.md",
@@ -257,6 +259,8 @@ const STEPS: [name: string, run: string | undefined][] = [
   ["atticus-needs", "atticus change needs"],
   ["atticus-find", "atticus knowledge find"],
   ["atticus-next", undefined],
+  // ADR 0144 (Q5): the assistant proposes answers; a person accepts them.
+  ["atticus-propose", undefined],
   // ADR 0124: the agentic read loops on atticus verify, not on a hand-off.
   ["atticus-map", undefined],
 ];
@@ -281,6 +285,7 @@ describe("step slash commands (ADR 0086)", () => {
     [".claude/commands/atticus-small.md", "atticus-small.claude.md"],
     [".claude/commands/atticus-map.md", "atticus-map.claude.md"],
     [".github/prompts/atticus-probe.prompt.md", "atticus-probe.prompt.md"],
+    [".claude/commands/atticus-propose.md", "atticus-propose.claude.md"],
   ] as const)
     it(`${rel} matches its golden file`, async () => {
       const want = (await readFile(join(STEP_GOLDEN, golden), "utf8")).replace(/\r\n/g, "\n");

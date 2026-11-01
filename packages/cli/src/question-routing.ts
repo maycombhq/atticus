@@ -1,6 +1,7 @@
 import { readdir } from "node:fs/promises";
 import {
   changesDirOf,
+  checkedProposals,
   orderQuestions,
   ownerOfQuestion,
   questionWeights,
@@ -54,12 +55,32 @@ export async function routeQuestions(
     ),
   );
   const weights = await questionWeights(root, questions);
+  // ADR 0144 (Q5): an open question's proposed answer, only once every line it cites holds.
+  const proposals = new Map(
+    (await checkedProposals(root).catch(() => []))
+      .filter((p) => p.ok && p.proposal)
+      .map((p) => [p.id, { ...p.proposal!, file: p.file }] as const),
+  );
   const about: Record<string, About> = {};
-  for (const q of questions)
+  for (const q of questions) {
+    const p = q.state === "open" ? proposals.get(q.id) : undefined;
     about[q.id] = {
       ...(weights.get(q.id) ?? { restsOn: [], joins: 0 }),
       owner: ownerOfQuestion(q, { owners, teams, changes }),
+      ...(p
+        ? {
+            proposal: {
+              answer: p.answer,
+              why: p.why,
+              cites: p.cites,
+              by: p.by,
+              at: p.at,
+              file: p.file,
+            },
+          }
+        : {}),
     };
+  }
   let list = orderQuestions(questions, weights);
   let me: Me | undefined;
   if (o.mine !== undefined) {

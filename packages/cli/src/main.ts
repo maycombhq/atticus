@@ -542,8 +542,9 @@ Usage:
   atticus questions list [--state open] [--mine] [--json]   The questions in questions/ a step raised for a person,
           in the order to ask them, each with its owner team; --mine, your teams' only
   atticus questions show <id> [--json]  One question on file, with its options, evidence and answer
-  atticus questions answer <id> --option <n> | --text "..."   Write the answer to the file; prints the rerun
-          [--scope repo|repo-type] [--type <repo type>] [--by who]
+  atticus questions answer <id> --option <n> | --text "..." | --accept-proposal   Write the answer to the file; prints the rerun
+          [--scope repo|repo-type] [--type <repo type>] [--by who]  (--accept-proposal: the assistant's proposed answer, checked again, as yours)
+  atticus questions proposed [--json]  The answers /atticus-propose proposed for open questions, each citation checked (the file, the line, the quote on it); exits 1 while one doesn't check
   atticus intake add <files...>        Drop documents, specs and diagrams into inputs/inbox for intake
   atticus intake list [--json]         What intake read from inputs/: kinds, systems, duplicates, versions
   atticus intake impact <spec> [--json]   A vendor spec against its other version: each change, breaking or not, and the gateway routes, service calls and callers it reaches

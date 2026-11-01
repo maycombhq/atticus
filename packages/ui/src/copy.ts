@@ -148,6 +148,20 @@ export const COPY = {
     openTargets: "Its target flows",
   },
   questions: {
+    /** ADR 0144 (Q5): the answer the assistant proposed, for a person to confirm. */
+    proposal: {
+      title: "Proposed by your assistant",
+      listed: "An answer is proposed",
+      notYet: (by: string) =>
+        `${by} read the code and proposes this. It is not an answer until you accept it.`,
+      option: (n: number, label: string) => `Option ${n}: ${label}`,
+      words: (text: string) => `In words: ${text}`,
+      cites: "The lines it rests on (each checked: the quoted words are on that line)",
+      accept: "Accept as my answer",
+      accepting: "Accepting…",
+      orAnswer: "Or answer it yourself below.",
+      command: (id: string) => `atticus questions answer ${id} --accept-proposal`,
+    },
     title: "Questions",
     intro:
       "When the code doesn't settle something, Atticus asks here. Your answer is written to the question's file in questions/; then run the command shown, and the step reads it.",
@@ -1051,6 +1065,12 @@ export const COPY = {
         args: "",
         where: "metarepo",
         what: "Shows Atticus what the assistant can do here (open a file, write one, run a command) after atticus probe, so the first read of a repo is handed to it the way it can take it.",
+      },
+      {
+        name: "/atticus-propose",
+        args: "[question id]",
+        where: "metarepo",
+        what: "Reads the code and config behind each open question and proposes an answer with the lines it rests on; Atticus checks every citation, and a person accepts it or answers otherwise.",
       },
       {
         name: "/atticus-survey",

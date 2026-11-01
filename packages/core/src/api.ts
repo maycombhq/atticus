@@ -1977,6 +1977,30 @@ export const QuestionList = z.object({
           z.object({ team: z.string(), name: z.string().optional() }),
           z.object({ none: z.string() }),
         ]),
+        /**
+         * 2.36.0 (ADR 0144, Q5): the answer the assistant proposed, for an open question, when
+         * every line it cites says what it quotes. A person accepts it or answers otherwise.
+         */
+        proposal: z
+          .object({
+            answer: z.object({
+              option: z.number().int().optional(),
+              text: z.string().optional(),
+            }),
+            why: z.string(),
+            cites: z.array(
+              z.object({
+                repo: z.string().optional(),
+                file: z.string(),
+                line: z.number().int(),
+                quote: z.string(),
+              }),
+            ),
+            by: z.string(),
+            at: z.string(),
+            file: z.string(),
+          })
+          .optional(),
       }),
     )
     .optional(),
@@ -1998,6 +2022,11 @@ export const AnswerQuestionRequest = z.strictObject({
   scope: QuestionScopeLevel.optional(),
   /** The repo type, when a repo question is widened to its type. */
   repoType: RecordId.optional(),
+  /**
+   * 2.36.0 (ADR 0144, Q5): accept the assistant's proposed answer, checked again, as the person's
+   * own (in place of option or text).
+   */
+  acceptProposal: z.literal(true).optional(),
 });
 
 /** ADR 0078: the answered question, the command to run next and, for a repo type, its skill file. */

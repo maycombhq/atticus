@@ -8156,6 +8156,10 @@
                     "minLength": 1,
                     "maxLength": 120,
                     "pattern": "^[a-z0-9][a-z0-9._-]*$"
+                  },
+                  "acceptProposal": {
+                    "type": "boolean",
+                    "const": true
                   }
                 },
                 "additionalProperties": false
@@ -25185,6 +25189,74 @@
                       "additionalProperties": false
                     }
                   ]
+                },
+                "proposal": {
+                  "type": "object",
+                  "properties": {
+                    "answer": {
+                      "type": "object",
+                      "properties": {
+                        "option": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "text": {
+                          "type": "string"
+                        }
+                      },
+                      "additionalProperties": false
+                    },
+                    "why": {
+                      "type": "string"
+                    },
+                    "cites": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "repo": {
+                            "type": "string"
+                          },
+                          "file": {
+                            "type": "string"
+                          },
+                          "line": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "quote": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "file",
+                          "line",
+                          "quote"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "by": {
+                      "type": "string"
+                    },
+                    "at": {
+                      "type": "string"
+                    },
+                    "file": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "answer",
+                    "why",
+                    "cites",
+                    "by",
+                    "at",
+                    "file"
+                  ],
+                  "additionalProperties": false
                 }
               },
               "required": [

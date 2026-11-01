@@ -30,16 +30,24 @@ Surfaces: `atticus change impact <change> [--json]`, and **What this change brea
 
 ### 2. Answers the assistant proposes (Q5)
 
-Described in section 2 of the Q5 addendum below.
+A new step, `/atticus-propose [question id]` (assistant-files `propose.ts`, in every assistant's step files and the Claude Code plugin), has the assistant read the code and config behind each open question and write a proposed answer beside it, never in it:
+
+- **Where.** `proposals/questions/<question id>.yaml` (under `.atticus/` in a repo adopted in place), the proposals folder that already holds drafts for a person to review. The question file and its format are unchanged, so this needs no contract change, no question schema version and no `atticus upgrade` step. The proposal's own shape is `QuestionProposal` (core, version 1): `answer` (`option` or `text`), `why`, `cites` (each `repo?`, `file`, `line`, `quote`, at least one), `by` (the assistant) and `at`.
+- **Checked before it is shown.** `checkProposal` (core, files only, deterministic): the option is one the question has; each cited file is in the question's repo (its checkout, `workspace/<repo>/`, or the metarepo when the repo has none, as for a change's own question) and doesn't leave it; the line is there; the quoted words are on it (spacing, curly quotes and case aside, `quotedIn`). `atticus questions proposed [--json]` lists every proposal with what fails, and exits 1 while one fails: the step loops on it as `/atticus-map` loops on `verify`. A proposal for a question no longer open is stale and said so.
+- **Shown only when it holds.** `atticus questions list` and `show` print a checked proposal under its question ("Proposed by claude-code (not answered yet)", each cited line, and the command that accepts it); one that fails is never shown as a proposal, only (by `show` and `proposed`) as its problems. `GET /api/questions` gives it as `about[id].proposal`; the Questions page shows it with its lines and **Accept as my answer**, and the person can still answer otherwise.
+- **A person confirms.** `atticus questions answer <id> --accept-proposal` (alone: not with `--option` or `--text`), or Accept (`POST /api/questions/{id}/answer` with `acceptProposal: true`), checks the proposal again and writes it through `answerQuestion` as the person's answer, by them (the Git user, or the app's user), at the scope they confirm. A proposal that fails is refused, and the question stays open.
+
+The step never runs `atticus questions answer` and never edits a question file; its text says so, and Atticus never accepts on its own. `verify` is untouched: a proposal changes no fact and no check until a person's answer is on file, and then the answer is read as any person's answer is.
 
 ### 3. The local API (C4 2.36.0)
 
-`GET /api/changes/{changeId}/impact` (`ChangeImpact`). Additive only.
+`GET /api/changes/{changeId}/impact` (`ChangeImpact`); `QuestionList.about[id].proposal` and `AnswerQuestionRequest.acceptProposal`. Additive only.
 
 ## Consequences
 
 - A designer sees who a change breaks, and whom to talk to, before the stories stage, from the same records the critic reads.
 - A guessed link is visible as such and never inflates the count of breaks.
-- Not done: the impact doesn't walk past direct callers (the vendor impact does, from facts); a caller the draft lists that the map doesn't show is left to the stage's own `delta.consumer-unseen` note.
+- An open question can arrive with its answer read from the code and its lines checked; a person confirms it with one command or click, and the answer is theirs.
+- Not done: the impact doesn't walk past direct callers (the vendor impact does, from facts); a caller the draft lists that the map doesn't show is left to the stage's own `delta.consumer-unseen` note; the question file doesn't record that an answer came from a proposal (that would be a question-file change), though the proposal file stays beside it in the same pull request; VS Code's Questions view and `@atticus` don't show proposals yet.
 
-**Contracts.** C4: the local API 2.36.0, additive. C1, C3, C6, the facts file and the question file are unchanged. The planner's `BreakingChange` gains an optional field (not a frozen contract).
+**Contracts.** C4: the local API 2.36.0, additive. C1, C3, C6, the facts file and the question file are unchanged; the proposal file is a draft in the proposals folder, version 1, not a contract. The planner's `BreakingChange` gains an optional field (not a frozen contract).
