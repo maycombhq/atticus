@@ -29,7 +29,9 @@ OpenAPI 3 and Swagger 2 specs are compared. For each operation, Atticus reads:
 
 - its method and path;
 - its auth and scopes;
-- its request and response fields, each with its type, whether it is required, and its enum values.
+- its request and response fields, each with its type, whether it is required, and its enum values;
+- the headers its success response lists (OpenAPI 3's `responses.<2xx>.headers`, and Swagger 2's), as response fields that are headers;
+- its error responses (each 4xx and 5xx status) and the fields of each one's body.
 
 Every operation and field cites the line of the spec it comes from. The newer version's operations go into the catalog as the vendor's Endpoints, each with a request Schema and a response Schema.
 
@@ -78,6 +80,11 @@ Atticus marks each change as breaking or additive by fixed rules, from a caller'
 - **Auth and scopes:**
   - the auth changed: breaking;
   - a new scope the token needs: breaking.
+- **A response header** is compared as a response field is, and said as a header.
+- **Error responses** (4xx and 5xx):
+  - one the operation may now answer: breaking (a caller must handle it);
+  - one it no longer answers: additive;
+  - one whose body changed: each field compared by the response rules above, said with its status ("its 402 response").
 
 The full table is in ADR 0130.
 
@@ -147,3 +154,5 @@ atticus change impact hold-stock
 For each entry or table the target flows break (a field a response stops returning, an entry that reads another field, a field now required, a column whose type changes, a flow removed), it lists who calls or uses it today, the fields that stop crossing, and the gateway routes the callers go through, which need updating. Each part names the team that owns it: the repo manifest's `owner`, with the name `roles.yaml` gives the team. The same view is on the change's Architecture tab in the app, under **What this change breaks**.
 
 A link the map only guessed (joined by path, by a host's first label, by a platform-wide setting or a setting's folder name, or despite an open host conflict) is shown as **may break (link guessed)** and is never counted as a break. The critic's `constitution.change-links-known` asks the caller's owner to confirm it ([ADR 0140](../adr/0140-a-change-warns-on-guessed-links-and-questions-go-to-their-owner.md)); see [ADR 0144](../adr/0144-a-changes-impact-and-proposed-answers.md).
+
+It then walks up the chain: who calls each affected caller's entries (the entries of the caller's flows that make the call, or every entry it has when the map doesn't say which), through catalog Interfaces and the gateway routes they go through, hop by hop with each hop's owner, until no new caller turns up or five hops up. Each hop says which caller it calls through (indented in the command's words, a **Calls** column in the app). A hop that rests on a guessed link, its own or one further down, may break and is never counted as a break; a component already on the chain isn't walked again, so a cycle stops. See [ADR 0156](../adr/0156-a-changes-impact-up-the-chain-seeds-and-vendor-headers-and-errors.md).

@@ -251,7 +251,8 @@ export function vendorImpact(input: VendorImpactInput): {
   };
 
   const fieldUse = (call: FactEnd, change: VendorChange): FieldUse | undefined => {
-    if (!change.side || !change.field) return undefined;
+    // An error response's body (ADR 0156) isn't what a call's response fields describe.
+    if (!change.side || !change.field || change.status) return undefined;
     const side = change.side;
     const mine = (input.repos.find((r) => r.repo === call.repo)?.facts ?? [])
       .filter(

@@ -9,6 +9,8 @@ import {
   readExistingSpecs,
   SEED_MARK,
   seedChangeId,
+  seedCollisions,
+  seedCollisionWords,
   seedSpec,
   writeSpecFiles,
 } from "@maycombhq/planner";
@@ -65,6 +67,8 @@ export async function specSeed(
   const proposal = had === undefined || had.startsWith(SEED_MARK);
   if (proposal) await writeFileAtomic(join(dir, "proposal.md"), seed.proposal);
   const kept = Object.keys(seed.files).filter((f) => !written.includes(f));
+  // ADR 0156: a change that already adds one of these flows as new would collide at archive.
+  const collisions = (await seedCollisions(root)).filter((c) => c.seed === seed.change);
   if (o.json) {
     io.out(
       JSON.stringify(
@@ -75,6 +79,7 @@ export async function specSeed(
           written,
           kept,
           skipped: seed.skipped,
+          collisions,
         },
         null,
         2,
@@ -82,6 +87,7 @@ export async function specSeed(
     );
     return 0;
   }
+  for (const c of collisions) io.err(`Warning: ${seedCollisionWords(c)}`);
   const rel = `openspec/changes/${seed.change}`;
   io.out(
     `Wrote ${rel}/: a starting spec for ${repo}, ${seed.deltas.length} ${seed.deltas.length === 1 ? "capability" : "capabilities"}, one per verified flow, each scenario citing its lines.`,

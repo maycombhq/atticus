@@ -69,7 +69,7 @@ The footprint still gains nothing from a new call: where it goes is that stage's
 **Not done here:**
 
 - The reading rules (`FACT_RULES`) don't yet ask the assistant to list an enum's values in a field's `type`, to record headers as fields, or to name an error path's status. Facts that do are compared; facts that don't are unknown.
-- A vendor's response headers aren't read from its spec, and `oneOf` and `anyOf` bodies aren't compared.
+- A vendor's response headers weren't read from its spec (ADR 0156 reads them, and compares error responses between versions); `oneOf` and `anyOf` bodies aren't compared.
 - The vendor-diff (ADR 0130) doesn't compare error responses between two versions.
 - The UI's group label stays "Only a vendor"; another team's call is marked "Another team" on its line.
 - Other places that read `boundary: vendor` alone (a target question's options, the footprint's outside systems, the risk and release checks) aren't changed here.

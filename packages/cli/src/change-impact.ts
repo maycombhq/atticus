@@ -1,5 +1,5 @@
 import { readTeams, type Api, type QuestionOwner, type Team } from "@maycombhq/core";
-import { changeImpact, loadEstate } from "@maycombhq/planner";
+import { changeImpact, loadEstate, MAX_CHAIN_DEPTH } from "@maycombhq/planner";
 import { loadRepos } from "@maycombhq/workspace";
 import { targetFlowsOf } from "./change-map.js";
 import type { Output } from "./commands.js";
@@ -21,6 +21,23 @@ export const CHANGE_IMPACT_WORDS = {
     `${id}'s target flows break nothing the map shows: no entry or table they change loses a field, a caller or its type.`,
   counts: (id: string, i: { breaks: number; mayBreak: number; routes: number }) =>
     `${id}: ${n(i.breaks, "caller")} ${i.breaks === 1 ? "breaks" : "break"}, ${n(i.mayBreak, "caller")} may break (link guessed), ${n(i.routes, "gateway route")} to update.`,
+  upstream: (u: { breaks: number; mayBreak: number }) =>
+    `Up the chain (who calls the callers): ${u.breaks} more ${u.breaks === 1 ? "breaks" : "break"}, ${u.mayBreak} may break (resting on a guessed link).`,
+  hopBreaks: (depth: number, via: string, who: string, owner: string, where: string) =>
+    `${"  ".repeat(depth)}Breaks via ${via}: ${who}, owned by ${owner}${where ? `; ${where}` : ""}.`,
+  hopMayBreak: (
+    depth: number,
+    via: string,
+    who: string,
+    owner: string,
+    rests: string,
+    where: string,
+  ) =>
+    `${"  ".repeat(depth)}May break via ${via} (${rests}): ${who}, owned by ${owner}${where ? `; ${where}` : ""}. Not counted as a break.`,
+  restsOwn: (how: string) => `its own link guessed ${how}`,
+  restsOn: (who: string, how: string) => `rests on ${who}'s link, guessed ${how}`,
+  capped: (depth: number) =>
+    `  The walk up the chain stops at ${depth} hops; more callers are above the last ones listed.`,
   item: (name: string, where: string, owner: string, why: string[]) =>
     `${name} (${where}), owned by ${owner}: ${why.join("; ")}.`,
   gone: (fields: string[]) => `  Stops crossing: ${fields.join(", ")}.`,
@@ -87,6 +104,7 @@ export function impactLines(i: Api.ChangeImpactT): string[] {
   if (!i.flows) return [W.noTargets(i.change), ...i.problems.map(W.problem)];
   if (!i.items.length) return [W.nothing(i.change), ...i.problems.map(W.problem)];
   const out = [W.counts(i.change, i)];
+  if (i.upstream && (i.upstream.breaks || i.upstream.mayBreak)) out.push(W.upstream(i.upstream));
   for (const it of i.items) {
     out.push(
       W.item(
@@ -111,7 +129,31 @@ export function impactLines(i: Api.ChangeImpactT): string[] {
           : W.mayBreak(c.component, ownerText(c.owner), GUESS_WORDS[c.guessed ?? ""] ?? "", where),
       );
     }
-    if (it.callers.some((c) => c.verdict === "may-break")) out.push(W.confirm(i.rule, i.change));
+    // ADR 0156: who calls the callers, indented by depth.
+    for (const h of it.chain ?? []) {
+      const via = `${h.via.join(", ")}${h.entries.length ? ` (${h.entries.join(", ")})` : ""}`;
+      const where = [
+        ...h.at.map((a) => `at ${a}`),
+        ...h.flows.map((f) => `its flow ${f}`),
+        ...h.routes.map((r) => `through ${r}`),
+      ].join(", ");
+      const how = GUESS_WORDS[h.guessed ?? ""] ?? "";
+      out.push(
+        h.verdict === "breaks"
+          ? W.hopBreaks(h.depth, via, h.component, ownerText(h.owner), where)
+          : W.hopMayBreak(
+              h.depth,
+              via,
+              h.component,
+              ownerText(h.owner),
+              h.restsOn ? W.restsOn(h.restsOn, how) : W.restsOwn(how),
+              where,
+            ),
+      );
+    }
+    if (it.capped) out.push(W.capped(MAX_CHAIN_DEPTH));
+    if ([...it.callers, ...(it.chain ?? [])].some((c) => c.verdict === "may-break"))
+      out.push(W.confirm(i.rule, i.change));
     for (const r of it.routes) {
       const what = [r.proxy, r.basepath, r.repo ? `in ${r.repo}` : undefined]
         .filter(Boolean)

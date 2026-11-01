@@ -92,6 +92,7 @@ describe("atticus change impact", () => {
     expect(r.code).toBe(0);
     expect(r.out).toEqual([
       "hold-stock: 3 callers break, 1 caller may break (link guessed), 1 gateway route to update.",
+      "Up the chain (who calls the callers): 1 more breaks, 0 may break (resting on a guessed link).",
       "forge-orders-db.orders (a table forge-orders.place-order writes), owned by team-orders (Orders team): it changes the type of quantity from INT to BIGINT.",
       "  Breaks: forge-reports, owned by no team (no repos.manifest.yaml lists forge-reports, so no team owns it).",
       "POST /stock/reservations (forge-stock.reserve-stock), owned by team-stock (Stock team): it no longer returns reservationId.",
@@ -99,6 +100,7 @@ describe("atticus change impact", () => {
       "  May break (link guessed by path): forge-mobile, owned by team-mobile; at forge-mobile src/stock/reserve.ts:7. Not counted as a break until someone confirms the link.",
       "  Breaks: forge-orders, owned by team-orders (Orders team); at forge-orders src/main/java/forge/orders/StockClient.java:14, its flow forge-orders.place-order.",
       "  Breaks: forge-partner, owned by team-partners; at forge-partner src/partner/StockClient.java:22, through gw-stock-v1.",
+      "    Breaks via forge-orders (forge-orders.post-orders): forge-web, owned by no team (no repos.manifest.yaml lists forge-web, so no team owns it); at forge-web src/app/orders/order.service.ts:12.",
       "  The critic's constitution.change-links-known asks the caller's owner to confirm each guessed link: atticus critic hold-stock.",
       "  Gateway route to update: gw-stock-v1 (stock-v1, /stock/v1, in forge-gateway), owned by team-platform; forge-partner calls through it.",
       "Teams to involve:",
@@ -108,6 +110,7 @@ describe("atticus change impact", () => {
       "  team-platform: forge-gateway",
       "  team-stock (Stock team): forge-stock",
       "  no team (no repos.manifest.yaml lists forge-reports, so no team owns it): forge-reports",
+      "  no team (no repos.manifest.yaml lists forge-web, so no team owns it): forge-web",
       ...["forge-orders.place-order", "forge-stock.reserve-stock"].map(
         (f) =>
           `Note: This target of ${f} was written before target flows were pinned to today's flow, so a change to today's flow can't be seen. Check its step numbers, then run atticus change architecture again to pin it.`,
@@ -148,6 +151,12 @@ describe("GET /api/changes/{id}/impact (ADR 0144)", () => {
     expect(r.status).toBe(200);
     const body = Api.ChangeImpact.parse(r.body);
     expect([body.breaks, body.mayBreak, body.routes, body.flows]).toEqual([3, 1, 1, 2]);
+    // ADR 0156: up the chain, forge-web calls forge-orders.
+    expect(body.upstream).toEqual({ breaks: 1, mayBreak: 0 });
+    const stock = body.items.find((i) => i.kind === "endpoint")!;
+    expect(stock.chain?.map((h) => [h.component, h.depth, h.via])).toEqual([
+      ["forge-web", 2, ["forge-orders"]],
+    ]);
     expect((await get("/api/changes/no-such/impact")).status).toBe(404);
   });
 });

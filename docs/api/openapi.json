@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Atticus local API",
-    "version": "2.42.0",
+    "version": "2.43.0",
     "description": "Served by `atticus ui` on 127.0.0.1. The UI only calls this API, and the API only reads and writes files in the metarepo.",
     "license": {
       "name": "Apache-2.0",
@@ -22549,6 +22549,26 @@
             "minimum": -9007199254740991,
             "maximum": 9007199254740991
           },
+          "upstream": {
+            "type": "object",
+            "properties": {
+              "breaks": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "mayBreak": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "breaks",
+              "mayBreak"
+            ],
+            "additionalProperties": false
+          },
           "rule": {
             "type": "string"
           },
@@ -22800,6 +22820,129 @@
                     ],
                     "additionalProperties": false
                   }
+                },
+                "chain": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "component": {
+                        "type": "string"
+                      },
+                      "repo": {
+                        "type": "string"
+                      },
+                      "depth": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      "via": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "entries": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "verdict": {
+                        "type": "string",
+                        "enum": [
+                          "breaks",
+                          "may-break"
+                        ]
+                      },
+                      "guessed": {
+                        "type": "string",
+                        "enum": [
+                          "joined-by-path",
+                          "joined-by-label",
+                          "joined-by-platform-setting",
+                          "joined-by-folder-name",
+                          "joined-despite-conflict"
+                        ]
+                      },
+                      "restsOn": {
+                        "type": "string"
+                      },
+                      "interfaces": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "flows": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "routes": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "at": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "owner": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "team": {
+                                "type": "string"
+                              },
+                              "name": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "team"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "none": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "none"
+                            ],
+                            "additionalProperties": false
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "component",
+                      "depth",
+                      "via",
+                      "entries",
+                      "verdict",
+                      "interfaces",
+                      "flows",
+                      "routes",
+                      "at",
+                      "owner"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "capped": {
+                  "type": "boolean",
+                  "const": true
                 }
               },
               "required": [

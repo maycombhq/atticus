@@ -369,3 +369,27 @@ describe("long notes are trimmed by relevance to the stories, never dropped sile
  * 3,012 tokens (12,046 characters) without the notes, 3,942 (15,766) with them.
  */
 const WITH_NOTES = "fc36bdc9ef7a96756a145527d32754fb4cb20f9835b96abd720215e7539265e2";
+
+describe("the stories stage warns when an open seed adds the same flow (ADR 0156)", () => {
+  it("names the seed and says to accept it, then run the stories again", async () => {
+    const root = await planned([]);
+    // forge-orders' starting spec, proposed and not yet accepted.
+    const seed = join(root, "openspec/changes/seed-forge-orders");
+    await mkdir(join(seed, "specs/place-order"), { recursive: true });
+    await writeFile(join(seed, ".openspec.yaml"), "schema: atticus-org-flow\n");
+    await writeFile(join(seed, "proposal.md"), "# Proposal: Starting spec for forge-orders\n");
+    await writeFile(
+      join(seed, "specs/place-order/spec.md"),
+      readFileSync(
+        join(HERE, "../../../fixtures/spec-seed/expected/forge-orders-place-order.spec.md"),
+        "utf8",
+      ),
+    );
+    const r = await storiesStage(root, CHANGE, { runtime: assistant([ANSWER]), now: NOW });
+    expect(r.state).toBe("done");
+    const said = r.notes.join("\n");
+    expect(said).toContain(
+      "the open seed seed-forge-orders adds it too: archiving both would fail on a requirement added twice. Accept the seed (atticus spec accept forge-orders), then run the change's stories stage again (atticus plan stories add-fraud-check)",
+    );
+  });
+});

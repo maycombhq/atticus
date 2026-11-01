@@ -89,6 +89,7 @@ import {
   writeProposal,
   writeSpecFiles,
 } from "./openspec-files.js";
+import { seedCollisions, seedCollisionWords } from "./openspec-seed.js";
 import { storyCodeSource, STORY_CODE_SHARE } from "./story-code.js";
 import {
   fromLine,
@@ -4300,6 +4301,10 @@ Rules:
   await recordKnowledge(root, change.id, "stories", context);
   res.notes.unshift(...settled.notes);
   res.notes.push(...attached.notes);
+  // ADR 0156: a flow these stories add as new that a repo's open seed adds too collides at
+  // archive; the remedy is to accept the seed, then run this stage again.
+  if (res.answer)
+    for (const c of await seedCollisions(root, change.id)) res.notes.push(seedCollisionWords(c));
   if (empty.length)
     res.notes.unshift(
       `No story for ${empty.map((d) => `${TARGET_DIR}/${d.flow}.yaml`).join(", ")}: ${empty.length === 1 ? "it is marked modify but changes" : "they are marked modify but change"} no step, so ${empty.length === 1 ? "it is" : "they are"} context, not a change.`,

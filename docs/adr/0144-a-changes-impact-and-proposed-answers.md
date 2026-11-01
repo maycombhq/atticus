@@ -24,7 +24,7 @@ Open questions wait on a person, and many are answered by reading code and confi
 - **The gateway routes to update.** Each GatewayRoute an Interface of a caller goes through (`route`), with its proxy, base path, the repo its config is in and the callers through it.
 - **Each with its owner.** A repo's team is its manifest's `owner`, with the name roles.yaml version 2 gives it (`ownerOfQuestion`, ADR 0140); a repo no manifest lists, or a component with no repo, says why no team owns it. `owners` lists each team to involve with its repos, teams first.
 
-It is computed from the catalog, not by walking the facts join as `vendorImpact` does: a change's entries are catalog Endpoints, and the guessed-link flags the critic reads are on catalog Interfaces, so the same records give the same answer at the gate and in this view. The walk further up the chain (who calls the callers) is not done here; the critic and the stages read only direct consumers too.
+It is computed from the catalog, not by walking the facts join as `vendorImpact` does: a change's entries are catalog Endpoints, and the guessed-link flags the critic reads are on catalog Interfaces, so the same records give the same answer at the gate and in this view. The walk further up the chain (who calls the callers) was not done here; ADR 0156 adds it to this view. The critic and the stages read only direct consumers.
 
 Surfaces: `atticus change impact <change> [--json]`, and **What this change breaks** on the change's Architecture tab (`GET /api/changes/{changeId}/impact`). A change with no target flows says to run its architecture stage. Files only; no model call.
 
@@ -48,6 +48,6 @@ The step never runs `atticus questions answer` and never edits a question file; 
 - A designer sees who a change breaks, and whom to talk to, before the stories stage, from the same records the critic reads.
 - A guessed link is visible as such and never inflates the count of breaks.
 - An open question can arrive with its answer read from the code and its lines checked; a person confirms it with one command or click, and the answer is theirs.
-- Not done: the impact doesn't walk past direct callers (the vendor impact does, from facts); a caller the draft lists that the map doesn't show is left to the stage's own `delta.consumer-unseen` note; the question file doesn't record that an answer came from a proposal (that would be a question-file change), though the proposal file stays beside it in the same pull request; VS Code's Questions view and `@atticus` don't show proposals yet.
+- Not done: a caller the draft lists that the map doesn't show is left to the stage's own `delta.consumer-unseen` note; the question file doesn't record that an answer came from a proposal (that would be a question-file change), though the proposal file stays beside it in the same pull request; VS Code's Questions view and `@atticus` don't show proposals yet.
 
 **Contracts.** C4: the local API 2.36.0, additive. C1, C3, C6, the facts file and the question file are unchanged; the proposal file is a draft in the proposals folder, version 1, not a contract. The planner's `BreakingChange` gains an optional field (not a frozen contract).

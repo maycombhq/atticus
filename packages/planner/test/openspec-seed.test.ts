@@ -1,12 +1,15 @@
 import { readFileSync } from "node:fs";
-import { mkdtemp } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { readRepoSpec, type FlowRecord } from "@maycombhq/core";
 import {
+  openSeeds,
   SEED_MARK,
+  seedCollisions,
+  seedCollisionWords,
   seedChangeId,
   seedSpec,
   specDeltas,
@@ -161,5 +164,68 @@ describe("a repo's starting spec from its flows", () => {
       ...d.added[0]!.scenarios.map((x) => x.name),
       "202 says it waits",
     ]);
+  });
+});
+
+describe("a change that adds a flow an open seed adds too (ADR 0156)", () => {
+  /** A metarepo with seed-forge-orders open and a change hold-big-orders whose spec adds the flow. */
+  async function metarepo(o: { modified?: boolean; archived?: boolean } = {}) {
+    const root = await mkdtemp(join(tmpdir(), "atticus-seed-clash-"));
+    const seedDir = o.archived
+      ? join(root, "openspec/changes/archive/2026-10-31-seed-forge-orders")
+      : join(root, "openspec/changes/seed-forge-orders");
+    for (const f of ["forge-orders-place-order", "forge-orders-list-orders"]) {
+      await mkdir(join(seedDir, "specs", f), { recursive: true });
+      await writeFile(join(seedDir, "specs", f, "spec.md"), expected(`${f}.spec.md`));
+    }
+    await writeFile(join(seedDir, ".openspec.yaml"), "schema: atticus-org-flow\n");
+    await writeFile(join(seedDir, "proposal.md"), expected("proposal.md"));
+    const change = join(root, "openspec/changes/hold-big-orders/specs/forge-orders-place-order");
+    await mkdir(change, { recursive: true });
+    const text = readFileSync(join(FIX, "collision/hold-big-orders.spec.md"), "utf8");
+    await writeFile(
+      join(change, "spec.md"),
+      o.modified ? text.replace(/## Purpose[\s\S]*?## ADDED/, "## MODIFIED") : text,
+    );
+    return root;
+  }
+
+  it("reads the open seeds: each with its repo and the flows it adds", async () => {
+    const root = await metarepo();
+    expect(await openSeeds(root)).toEqual([
+      {
+        change: "seed-forge-orders",
+        repo: "forge-orders",
+        adds: [
+          { capability: "forge-orders-list-orders", flows: ["forge-orders.list-orders"] },
+          { capability: "forge-orders-place-order", flows: ["forge-orders.place-order"] },
+        ],
+      },
+    ]);
+    expect(await openSeeds(await metarepo({ archived: true }))).toEqual([]);
+  });
+
+  it("finds the flow both add, and says to accept the seed then re-run the stories", async () => {
+    const root = await metarepo();
+    const got = await seedCollisions(root, "hold-big-orders");
+    expect(got).toEqual([
+      {
+        change: "hold-big-orders",
+        seed: "seed-forge-orders",
+        repo: "forge-orders",
+        capability: "forge-orders-place-order",
+        flow: "forge-orders.place-order",
+      },
+    ]);
+    expect(seedCollisionWords(got[0]!)).toBe(
+      "hold-big-orders's stories add flow forge-orders.place-order (capability forge-orders-place-order) as new, and the open seed seed-forge-orders adds it too: archiving both would fail on a requirement added twice. Accept the seed (atticus spec accept forge-orders), then run the change's stories stage again (atticus plan stories hold-big-orders) so it modifies the seeded requirement.",
+    );
+    // every change at once, the seed itself left out
+    expect((await seedCollisions(root)).map((c) => c.change)).toEqual(["hold-big-orders"]);
+  });
+
+  it("is quiet when the change modifies the flow, or the seed is accepted", async () => {
+    expect(await seedCollisions(await metarepo({ modified: true }), "hold-big-orders")).toEqual([]);
+    expect(await seedCollisions(await metarepo({ archived: true }), "hold-big-orders")).toEqual([]);
   });
 });

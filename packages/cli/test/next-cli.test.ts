@@ -438,6 +438,38 @@ describe("nextSteps (pure)", () => {
     );
   });
 
+  it("has a person accept a seed first when the change adds a flow the open seed adds too (ADR 0156)", () => {
+    const steps = nextSteps({
+      ...base,
+      changes: [
+        {
+          id: "hold-big-orders",
+          state: "plan",
+          tasks: [],
+          stagesDone: ["feature", "architecture", "stories"],
+          seedCollisions: [
+            {
+              seed: "seed-forge-orders",
+              repo: "forge-orders",
+              capability: "forge-orders-place-order",
+              flow: "forge-orders.place-order",
+            },
+          ],
+        },
+      ],
+    });
+    expect(steps[0]).toMatchObject({
+      step: "accept-seed",
+      command: "atticus spec accept forge-orders",
+      person: true,
+      change: "hold-big-orders",
+      repo: "forge-orders",
+    });
+    expect(steps[0]!.why).toContain(
+      "Then run the change's stories stage again (atticus plan stories hold-big-orders)",
+    );
+  });
+
   it("gives a small change the fast path's one step until it is built (ADR 0113)", () => {
     const steps = nextSteps({
       ...base,

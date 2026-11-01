@@ -1,4 +1,7 @@
-import type { FlowRecord } from "@maycombhq/core";
+import { existsSync } from "node:fs";
+import { readdir, readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { changesDirOf, type FlowRecord } from "@maycombhq/core";
 import {
   capabilityOf,
   renderSpecDelta,
@@ -229,3 +232,104 @@ export function renderSeedProposal(
     "",
   ].join("\n");
 }
+
+// ------------------------------------------------------------------ an open seed and a change (ADR 0156)
+
+/** What a spec delta file adds as new: the flows its ADDED requirements (and its Purpose) name. */
+export function addedFlowsOf(text: string): string[] {
+  const sections = text.replace(/\r\n/g, "\n").split(/^## /m);
+  const added = sections.find((x) => /^ADDED Requirements\b/.test(x));
+  if (added === undefined) return [];
+  const purpose = sections.find((x) => /^Purpose\b/.test(x)) ?? "";
+  const out = new Set<string>();
+  for (const m of purpose.matchAll(/Behaviour of flow `([^`]+)`/g)) out.add(m[1]!);
+  for (const m of added.matchAll(/^Flow: `([^`]+)`/gm)) out.add(m[1]!);
+  return [...out].sort();
+}
+
+/** A capability a change's (or a seed's) spec files add, with the flows they name. */
+export interface AddedCapability {
+  capability: string;
+  flows: string[];
+}
+
+/** The capabilities a change folder's specs/ adds (ADDED), each with its flows. */
+async function addedIn(dir: string): Promise<AddedCapability[]> {
+  const out: AddedCapability[] = [];
+  const caps = (await readdir(join(dir, "specs")).catch(() => [] as string[])).sort();
+  for (const c of caps) {
+    const text = await readFile(join(dir, "specs", c, "spec.md"), "utf8").catch(() => undefined);
+    if (text === undefined || !/^## ADDED Requirements\b/m.test(text)) continue;
+    out.push({ capability: c, flows: addedFlowsOf(text) });
+  }
+  return out;
+}
+
+/** A repo's starting spec still waiting for a person: `openspec/changes/seed-<repo>/`, not archived. */
+export interface OpenSeed {
+  change: string;
+  repo: string;
+  adds: AddedCapability[];
+}
+
+/** The seeds not yet accepted (`atticus spec accept` archives a seed, so it leaves this folder). */
+export async function openSeeds(root: string): Promise<OpenSeed[]> {
+  const base = changesDirOf(root);
+  const out: OpenSeed[] = [];
+  const ids = (await readdir(base, { withFileTypes: true }).catch(() => []))
+    .filter((d) => d.isDirectory() && d.name.startsWith("seed-"))
+    .map((d) => d.name)
+    .sort();
+  for (const id of ids) {
+    const dir = join(base, id);
+    if (!existsSync(join(dir, ".openspec.yaml"))) continue;
+    const proposal = await readFile(join(dir, "proposal.md"), "utf8").catch(() => "");
+    const repo = /^# Proposal: Starting spec for (\S+)\s*$/m.exec(proposal)?.[1] ?? id.slice(5);
+    out.push({ change: id, repo, adds: await addedIn(dir) });
+  }
+  return out;
+}
+
+/** A change that adds a flow an open seed adds too: archiving both would fail. */
+export interface SeedCollision {
+  change: string;
+  seed: string;
+  repo: string;
+  capability: string;
+  flow: string;
+}
+
+/**
+ * The flows a change's spec files add (ADDED) that an open seed adds too (ADR 0156): by flow,
+ * or by capability. Every change in openspec/changes (but the seeds and the archive) when no
+ * change is named. Files only.
+ */
+export async function seedCollisions(root: string, change?: string): Promise<SeedCollision[]> {
+  const seeds = await openSeeds(root);
+  if (!seeds.length) return [];
+  const base = changesDirOf(root);
+  const ids = change
+    ? [change]
+    : (await readdir(base, { withFileTypes: true }).catch(() => []))
+        .filter((d) => d.isDirectory() && d.name !== "archive" && !d.name.startsWith("seed-"))
+        .map((d) => d.name)
+        .sort();
+  const out: SeedCollision[] = [];
+  for (const id of ids) {
+    if (id.startsWith("seed-")) continue;
+    for (const a of await addedIn(join(base, id)))
+      for (const s of seeds)
+        for (const b of s.adds) {
+          const flow =
+            a.flows.find((f) => b.flows.includes(f)) ??
+            (a.capability === b.capability ? (a.flows[0] ?? b.flows[0]) : undefined);
+          if (flow)
+            out.push({ change: id, seed: s.change, repo: s.repo, capability: a.capability, flow });
+        }
+  }
+  return out;
+}
+
+/** The warning, with its remedy: accept the seed, then run the change's stories stage again. */
+export const seedCollisionWords = (c: SeedCollision): string =>
+  `${c.change}'s stories add flow ${c.flow} (capability ${c.capability}) as new, and the open seed ${c.seed} adds it too: archiving both would fail on a requirement added twice. Accept the seed (atticus spec accept ${c.repo}), then run the change's stories stage again (atticus plan stories ${c.change}) so it modifies the seeded requirement.`;

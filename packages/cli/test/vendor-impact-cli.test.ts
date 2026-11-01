@@ -61,6 +61,55 @@ describe("atticus intake impact", () => {
     );
   });
 
+  it("lists the error responses added, removed and changed between the versions (ADR 0156)", async () => {
+    const r = await root();
+    const errors = (lines: string[]) => async (f: string) => {
+      const p = join(r, f);
+      const t = await readFile(p, "utf8");
+      const at = '        "201":\n          description: The charge, created';
+      expect(t).toContain(at);
+      await writeFile(p, t.replace(at, [...lines, at].join("\n")));
+    };
+    await errors([
+      '        "402":',
+      "          description: declined",
+      "          content:",
+      "            application/json:",
+      "              schema:",
+      "                type: object",
+      "                properties:",
+      "                  code: { type: string }",
+      "                  message: { type: string }",
+      '        "422":',
+      "          description: can't be charged",
+    ])(V1);
+    await errors([
+      '        "402":',
+      "          description: declined",
+      "          content:",
+      "            application/json:",
+      "              schema:",
+      "                type: object",
+      "                properties:",
+      "                  code: { type: string }",
+      '        "409":',
+      "          description: under way",
+    ])(V2);
+    const c = capture();
+    expect(await intakeImpact(r, V2, {}, c.io)).toBe(1);
+    const out = c.out.join("\n");
+    expect(out).toContain(
+      "Breaking: POST /charges: it may now answer 409; a caller that doesn't handle 409 must.",
+    );
+    expect(out).toContain(
+      "Breaking: POST /charges (its 402 response): the response field message is gone; a caller that reads it gets nothing.",
+    );
+    expect(out).toContain(
+      "Additive: POST /charges: it no longer answers 422; no caller has to change.",
+    );
+    expect(out).toContain("7 changes: 5 breaking, 2 additive.");
+  });
+
   it("takes the older version too, or the file name alone, and compares it with the one that replaces it", async () => {
     const r = await root();
     for (const spec of [V1, "northwind-pay-openapi-v1.yaml", join(r, V2)]) {

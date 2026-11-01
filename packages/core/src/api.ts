@@ -118,8 +118,11 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   run and a preview of the next verify --write (GET /api/facts/{repo}/preview, `line` on a
  *   correction's result); the outside systems (GET /api/outside); and a sample audit drawn and
  *   answered in the app (GET and POST /api/facts/{repo}/audit). Additive only.
+ * 2.43.0 (ADR 0156): a change's impact walks up the chain: each item's `chain` (who calls the
+ *   callers, each hop with its depth, the callers it calls through, its verdict and owner, and the
+ *   guess it rests on), `capped`, and the `upstream` counts. Additive only.
  */
-export const API_VERSION = "2.42.0";
+export const API_VERSION = "2.43.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -1687,6 +1690,8 @@ export const ChangeImpact = z.object({
   breaks: z.number().int(),
   mayBreak: z.number().int(),
   routes: z.number().int(),
+  /** 2.43.0 (ADR 0156): up the chain, hops that surely break and those resting on a guess. */
+  upstream: z.object({ breaks: z.number().int(), mayBreak: z.number().int() }).optional(),
   /** The critic's rule that asks about a guessed link. */
   rule: z.string(),
   items: z.array(
@@ -1723,6 +1728,28 @@ export const ChangeImpact = z.object({
           owner: OwnerOf,
         }),
       ),
+      /** 2.43.0 (ADR 0156): who calls the callers, by depth (2 up to 5) then component. */
+      chain: z
+        .array(
+          z.object({
+            component: z.string(),
+            repo: z.string().optional(),
+            depth: z.number().int(),
+            via: z.array(z.string()),
+            entries: z.array(z.string()),
+            verdict: z.enum(["breaks", "may-break"]),
+            guessed: z.enum(JOIN_GUESS_FLAGS).optional(),
+            restsOn: z.string().optional(),
+            interfaces: z.array(z.string()),
+            flows: z.array(z.string()),
+            routes: z.array(z.string()),
+            at: z.array(z.string()),
+            owner: OwnerOf,
+          }),
+        )
+        .optional(),
+      /** The walk stopped at its depth cap with callers still above. */
+      capped: z.literal(true).optional(),
     }),
   ),
   owners: z.array(z.object({ owner: OwnerOf, repos: z.array(z.string()) })),

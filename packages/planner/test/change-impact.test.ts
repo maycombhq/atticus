@@ -5,9 +5,15 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
 import { describe, expect, it } from "vitest";
-import { parseRecord, recordPath, serializeRecord, type Team } from "@maycombhq/core";
+import { interfaceId, parseRecord, recordPath, serializeRecord, type Team } from "@maycombhq/core";
 import { loadChangeContext } from "@maycombhq/changes";
-import { changeImpact, FlowDelta, GUESSED_LINK_RULE, loadEstate } from "../src/index.js";
+import {
+  changeImpact,
+  FlowDelta,
+  GUESSED_LINK_RULE,
+  loadEstate,
+  MAX_CHAIN_DEPTH,
+} from "../src/index.js";
 
 /**
  * A change's impact, as designed (V1): from its target flows, who calls each entry it breaks, the
@@ -162,5 +168,92 @@ describe("a change's impact, as designed (V1)", () => {
       }),
     ]);
     expect(got).toMatchObject({ items: [], breaks: 0, mayBreak: 0, routes: 0, owners: [] });
+  });
+
+  // ---- up the chain (ADR 0156)
+  const iface = (from: string, to: string, o: Record<string, unknown> = {}) => {
+    const p = parseRecord({
+      kind: "Interface",
+      schemaVersion: 2,
+      id: interfaceId(from, to, "GET", `/${to}`),
+      status: "current",
+      confidence: "verified",
+      evidence: [{ source: "code", repo: from, path: `src/${to}.ts`, line: 4, side: "caller" }],
+      from,
+      to,
+      via: "direct",
+      method: "GET",
+      normalizedPath: `/${to}`,
+      sync: "sync",
+      ...o,
+    });
+    if (!p.ok) throw new Error(`bad record ${from}: ${JSON.stringify(p.issues)}`);
+    return p.record;
+  };
+  async function chainOf(extra: ReturnType<typeof iface>[]) {
+    const r = await root();
+    const e = await loadEstate(r, (await loadChangeContext(r)).records);
+    const { estateOf } = await import("../src/index.js");
+    return changeImpact("hold-stock", draft(), estateOf([...e.records, ...extra], e.flows), owners);
+  }
+
+  it("walks up the chain: each hop with the callers it calls through, and its owner", async () => {
+    const got = await chainOf([
+      // forge-kiosk calls forge-web, which calls forge-orders: two hops up.
+      iface("forge-kiosk", "forge-web"),
+    ]);
+    const chain = got.items[0]!.chain;
+    expect(chain.map((h) => [h.component, h.depth, h.via, h.verdict])).toEqual([
+      ["forge-web", 2, ["forge-orders"], "breaks"],
+      ["forge-kiosk", 3, ["forge-web"], "breaks"],
+    ]);
+    expect(chain[1]!.at).toEqual(["forge-kiosk src/forge-web.ts:4"]);
+    expect(got.upstream).toEqual({ breaks: 2, mayBreak: 0 });
+    expect(got.breaks).toBe(3);
+  });
+
+  it("a hop that rests on a guessed link may break and is not counted as a break", async () => {
+    const got = await chainOf([
+      // A sure link to forge-mobile, whose own link to the entry is guessed.
+      iface("forge-tablet", "forge-mobile"),
+      // A guessed link to forge-partner, which surely breaks.
+      iface("forge-batch", "forge-partner", {
+        confidence: "inferred",
+        flags: ["joined-by-label"],
+      }),
+    ]);
+    const chain = got.items[0]!.chain;
+    const tablet = chain.find((h) => h.component === "forge-tablet")!;
+    expect(tablet).toMatchObject({
+      verdict: "may-break",
+      guessed: "joined-by-path",
+      restsOn: "forge-mobile",
+    });
+    const batch = chain.find((h) => h.component === "forge-batch")!;
+    expect(batch).toMatchObject({ verdict: "may-break", guessed: "joined-by-label" });
+    expect(batch.restsOn).toBeUndefined();
+    expect(got.upstream).toEqual({ breaks: 1, mayBreak: 2 });
+  });
+
+  it("stops a cycle: a component already on the chain is not walked again", async () => {
+    const got = await chainOf([
+      iface("forge-kiosk", "forge-web"),
+      iface("forge-web", "forge-kiosk"),
+      iface("forge-stock", "forge-kiosk"),
+      iface("forge-orders", "forge-kiosk"),
+    ]);
+    expect(got.items[0]!.chain.map((h) => h.component)).toEqual(["forge-web", "forge-kiosk"]);
+    expect(got.items[0]!.capped).toBeUndefined();
+  });
+
+  it("stops at the depth cap and says so", async () => {
+    const names = ["c1", "c2", "c3", "c4", "c5", "c6"].map((n) => `forge-${n}`);
+    const got = await chainOf(
+      names.map((n, i) => iface(n, i === 0 ? "forge-partner" : names[i - 1]!)),
+    );
+    const chain = got.items[0]!.chain;
+    expect(Math.max(...chain.map((h) => h.depth))).toBe(MAX_CHAIN_DEPTH);
+    expect(chain.map((h) => h.component)).toEqual(["forge-c1", "forge-web", ...names.slice(1, 4)]);
+    expect(got.items[0]!.capped).toBe(true);
   });
 });
