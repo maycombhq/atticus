@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Atticus local API",
-    "version": "2.33.0",
+    "version": "2.34.0",
     "description": "Served by `atticus ui` on 127.0.0.1. The UI only calls this API, and the API only reads and writes files in the metarepo.",
     "license": {
       "name": "Apache-2.0",
@@ -3590,6 +3590,37 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/TrustView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/trust/fresh": {
+      "get": {
+        "operationId": "getTrustFresh",
+        "summary": "Which repos' clones have moved past their facts' commit, most stale first: per repo the facts' commit and the clone's, the files changed that the facts cite, the facts to read again and carried, and the command to run; local git only (ADR 0141)",
+        "tags": [
+          "workspace"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FreshView"
                 }
               }
             }
@@ -26679,6 +26710,135 @@
                 "sameCommit",
                 "catalog",
                 "state"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "problems": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "file": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "file",
+                "message"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "factsDir",
+          "repos",
+          "problems"
+        ],
+        "additionalProperties": false
+      },
+      "FreshView": {
+        "type": "object",
+        "properties": {
+          "factsDir": {
+            "type": "string"
+          },
+          "repos": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "repo": {
+                  "type": "string"
+                },
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "stale",
+                    "unknown-commit",
+                    "moved",
+                    "no-checkout",
+                    "fresh",
+                    "not-read"
+                  ]
+                },
+                "factsFile": {
+                  "type": "string"
+                },
+                "facts": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "factsCommits": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "head": {
+                  "type": "string"
+                },
+                "current": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "carried": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "reread": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "citedChanged": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "changed": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "toRead": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "unknown": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "command": {
+                  "type": "string"
+                },
+                "slash": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "repo",
+                "state",
+                "factsFile",
+                "facts",
+                "factsCommits",
+                "current",
+                "carried",
+                "reread",
+                "citedChanged",
+                "changed",
+                "toRead",
+                "unknown"
               ],
               "additionalProperties": false
             }

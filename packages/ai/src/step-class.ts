@@ -101,6 +101,8 @@ const NEXT_CLASS: Record<string, StepClass> = {
   survey: "draft",
   verify: "read",
   map: "read",
+  // ADR 0141: a mapped repo read again where its clone moved on.
+  reread: "read",
   spec: "draft",
   knowledge: "knowledge",
   feature: "draft",

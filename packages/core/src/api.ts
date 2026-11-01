@@ -88,8 +88,12 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   that join the most calls), with `about` (the changes each rests on, the calls it joins, its
  *   owner team or why it has none) and, with `mine=true`, only the person's teams' (`me`).
  *   Additive only.
+ * 2.34.0 (ADR 0141): the estate's freshness, GET /api/trust/fresh — per repo, the facts' commit
+ *   against the clone's, the files changed that the facts cite, the facts to read again and carried,
+ *   and the command to run, most stale first. It runs read-only local git in the clones (never
+ *   the network, never a write). Additive only.
  */
-export const API_VERSION = "2.33.0";
+export const API_VERSION = "2.34.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -780,6 +784,60 @@ export const TrustView = z.object({
   problems: z.array(z.object({ file: z.string(), message: z.string() })),
 });
 export type TrustViewT = z.infer<typeof TrustView>;
+
+/**
+ * 2.34.0 (ADR 0141, plan item P5): which repos' clones have moved past their facts' commit, and
+ * what reading each again costs, for every repo at once (the per-repo re-read plan of ADR 0124
+ * addendum A-incremental over the estate). Read from the facts files and the clones with local
+ * git only; nothing is fetched or written.
+ */
+export const FreshState = z.enum([
+  /** Facts cite files that changed, or source files changed: read again. */
+  "stale",
+  /** The clone doesn't have the commit the facts were read at. */
+  "unknown-commit",
+  /** The clone moved, but nothing the facts cite changed and no source file did. */
+  "moved",
+  /** No clone to compare with. */
+  "no-checkout",
+  "fresh",
+  /** No facts yet. */
+  "not-read",
+]);
+export const FreshRepo = z.object({
+  repo: z.string(),
+  state: FreshState,
+  factsFile: z.string(),
+  facts: z.number().int(),
+  /** The commits the facts were read at, sorted. */
+  factsCommits: z.array(z.string()),
+  /** The commit the clone is at. */
+  head: z.string().optional(),
+  /** Facts already of the clone's commit. */
+  current: z.number().int(),
+  /** Facts whose every cited file is unchanged: carried by atticus verify. */
+  carried: z.number().int(),
+  /** Facts citing a file that changed, or of a commit the clone lacks: read again. */
+  reread: z.number().int(),
+  /** Files the facts cite that changed since. */
+  citedChanged: z.number().int(),
+  /** Every file changed since the facts' commits. */
+  changed: z.number().int(),
+  /** The source files a re-read opens. */
+  toRead: z.number().int(),
+  /** Commits the facts name that the clone doesn't have. */
+  unknown: z.array(z.string()),
+  command: z.string().optional(),
+  slash: z.string().optional(),
+});
+export const FreshView = z.object({
+  factsDir: z.string(),
+  /** Most stale first. */
+  repos: z.array(FreshRepo),
+  problems: z.array(z.object({ file: z.string(), message: z.string() })),
+});
+export type FreshViewT = z.infer<typeof FreshView>;
+export type FreshRepoT = z.infer<typeof FreshRepo>;
 export type TrustRepoT = z.infer<typeof TrustRepo>;
 
 /**
@@ -2952,6 +3010,15 @@ const OPS: Record<string, Record<string, Op>> = {
       ok: { status: 200, schema: "TrustView", description: "OK" },
     },
   },
+  "/api/trust/fresh": {
+    get: {
+      id: "getTrustFresh",
+      summary:
+        "Which repos' clones have moved past their facts' commit, most stale first: per repo the facts' commit and the clone's, the files changed that the facts cite, the facts to read again and carried, and the command to run; local git only (ADR 0141)",
+      tag: "workspace",
+      ok: { status: 200, schema: "FreshView", description: "OK" },
+    },
+  },
   "/api/facts/{repo}": {
     get: {
       id: "getRepoFacts",
@@ -3986,6 +4053,7 @@ export function openApiDocument(): Record<string, unknown> {
     ChangeNeedsView,
     MarkedNeed,
     TrustView,
+    FreshView,
     ChangeKnowledgeView,
     KnowledgeConflictView,
     SetChangeKnowledgeResult,

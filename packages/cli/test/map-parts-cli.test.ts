@@ -71,7 +71,7 @@ describe("the read ledger of a repo read in parts (A-ledger)", () => {
     expect(await mapCommand(root, REPO, { estimate: true, commit: COMMIT }, o.io)).toBe(0);
     const rel = ".atticus/facts/forge-ledger.read-plan.yaml";
     const plan = parse(await readFile(join(root, rel), "utf8"));
-    expect(plan.schemaVersion).toBe(1);
+    expect(plan.schemaVersion).toBe(2);
     expect(plan.repo).toBe(REPO);
     expect(plan.commit).toBe(COMMIT);
     expect(plan.session).toBe(150_000);

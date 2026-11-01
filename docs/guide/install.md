@@ -122,6 +122,13 @@ atticus next                    # the same, among the other steps
 
 A part counts as read when every folder it covers is accounted for in the facts: a fact citing a file under it, or a line of `facts/<repo>.reviewed.jsonl` saying the file holds nothing to record. So the plan survives a lost session, a sub-agent and someone else carrying on, and reading a part again never un-does it. Commit the plan with the facts.
 
+The plan also keeps what the read cost (ADR 0141), for every repo `--estimate` has seen, one session or many. Atticus can't meter the tokens your assistant spends, so it keeps three numbers apart and says which is which: `--estimate`'s estimate (tokens counted from the source, and the sessions planned); the parts `atticus verify` first found in the facts, each stamped with when and at which commit; and what your assistant reports, if you record it:
+
+```bash
+atticus map <repo> --spent 84000 --sessions 2   # as your assistant reports it; --part n for one part
+atticus next --queue                            # each repo's estimate, and what each read so far took
+```
+
 **Copilot Chat without tools (tier 2: it reads and writes a file you give it, but runs nothing).**
 
 ```bash
@@ -160,6 +167,10 @@ ATTICUS_MAX_OLD_SPACE=4096 atticus verify <repo> --write   # megabytes Node may 
 ```
 
 Closing an IDE usually frees enough on its own. Atticus checks its own memory as it reads and stops with that message, so the command never dies without saying anything.
+
+Which repo to read next: `atticus next` puts first the repos the repos already read call, and the gateway proxies (a manifest `type: gateway`), so the links waiting on them land as soon as they are read; `atticus next --queue` lists the whole order with why each repo sits where it does and its estimated cost. A repo already mapped is never offered again unless its clone has moved past its facts' commit.
+
+When the clones move on: `atticus estate fresh` lists, for every repo at once and most stale first, the facts' commit and the clone's, the files changed that the facts cite, the facts to read again and the command to run. It compares the commits with local git only and writes nothing; the Map's Trust tab shows the same under Freshness.
 
 With several repos read: `atticus join` follows flows from repo to repo through the calls the facts join, and asks which repo answers a host nobody lists. When a system outside the estate answers on that host, pick "An outside system (new)", another team's or a vendor's: it is written into the profile with the host as its alias, for review with the rest of the change. `atticus ui --open` shows the map, with the Trust tab saying per repo what was verified.
 

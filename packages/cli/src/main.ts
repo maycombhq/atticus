@@ -76,6 +76,7 @@ const NO_AI = new Set([
   "support",
   "change list",
   "estate measure",
+  "estate fresh",
   "change status",
   // Reading the questions on file and printing one: files only, no model (question-commands.ts).
   "questions list",
@@ -466,6 +467,7 @@ Usage:
           [--estimate]                 Say what the first read costs: the checkout, commit, facts file, source files, tokens, your assistant's tier and the batches at the limit
           [--copy]                     Print the next batch's prompt to paste into a chat
           [--answer <file>]            With --copy: read the pasted answer back from a file (- for stdin)
+          [--spent <tokens>] [--sessions n] [--part n]  Record what the read took as your assistant reports it, in facts/<repo>.read-plan.yaml beside --estimate's estimate (Atticus can't meter an assistant's tokens; ADR 0141)
   atticus verify <repo>                Check the facts your assistant wrote for a repo (/atticus-map) against its code: the claim on each cited line, the quote, references, secrets, coverage; raises the questions it wrote for a person; rejected facts go back to the assistant (ADR 0124) [--dir path] [--commit sha] [--routed a,b] [--json]
           [--write]                    When nothing is rejected: put the facts in the catalog, the flows in specs/<repo>/, ask about calls nothing joins, and render the map
           [--verbose]                  With --write: list every record changed and flow written, not only the counts
@@ -479,6 +481,7 @@ Usage:
   atticus join [--json]                Follow each repo's flows into the flows their calls reach, through the calls the repos' verified facts join (verify --write); the same as estate join
   atticus join measure <reference> [--json]  Measure your map against a reference you write by hand for two or three repos you know (their entries and calls, each call with the repo it should reach): reading recall, and join precision and recall; reads files only (docs/guide/measure.md)
   atticus estate measure <reference> [--json]  The same as join measure
+  atticus estate fresh [--all] [--json]  Which repos' clones have moved past their facts' commit, most stale first: per repo the facts' commit, the clone's, the files changed that the facts cite, the facts to read again and the command to run; local git only, nothing fetched or written (--all lists the fresh ones too)
   atticus repo-type detect <repo> [--json]   Match a repo against the org pack's repo types by fingerprint, with the evidence for each signal
   atticus repo-type new <id> --from <repo> [--force]   Draft a repo type from a repo (its build files, dependencies, markers, folders) for you to edit
   atticus scan review <repo>           What the last scan couldn't read: your assistant gives a verdict on each gap and a rule for code it can read; checked [--gaps] [--attempts 3]
@@ -715,6 +718,7 @@ Usage:
   atticus handoff done <run-id>        Tell Atticus a hand-off artifact is written; it validates it (a stage's draft: with the stage's checks, its problems listed with their lines until it is clean) [--model m: the model that wrote it, kept in the run record]
   atticus stage check <change> <stage> <file>  Run a stage's checks on a draft's file and list its problems with their lines; writes nothing (a drafter checks its draft before it hands it in)
   atticus next [--all] [--json]        The next step to take, its command and slash command, and why; from the files only
+          [--queue]                    The repos to read next, gateways and the repos others call first so links land early, each with its estimated cost, and what each read so far took (ADR 0141)
   atticus <step> --handoff [--json]    On map, scan survey, scan verify, spec draft, knowledge scan, change feature, change architecture, change small, change draft, stories, change needs, knowledge find, knowledge ask and critic (its lenses one at a time, as a stage offers its critic lenses after each draft): print only the prompt, the result file and the commands that finish it
   atticus <step> --max-tokens n        On the same steps: the model's limit. The whole prompt fits n tokens (counted as characters / 4, a quarter kept back for the count's error), or the step says before handing off that it can't, with the numbers. The VS Code extension passes its model's limit to every step
   atticus workspace sync               Clone or update the base clone of every repo in the manifests
@@ -880,6 +884,11 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
  */
 const OPTIONS = {
   help: { type: "boolean", short: "h" },
+  // ADR 0141: what a read took, as the reader reports it (atticus map <repo> --spent).
+  spent: { type: "string" },
+  sessions: { type: "string" },
+  part: { type: "string" },
+  queue: { type: "boolean" },
   version: { type: "boolean", short: "v" },
   fix: { type: "boolean" },
   root: { type: "string" },
@@ -1126,7 +1135,7 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
   if (group === "next")
     return (await import("./next-commands.js")).nextCommand(
       root,
-      { json: values.json === true, all: values.all === true },
+      { json: values.json === true, all: values.all === true, queue: values.queue === true },
       io,
     );
   if (values.handoff === true && (await import("./handoff-steps.js")).isHandoffStep(group, command))
@@ -1365,6 +1374,10 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
       throw e;
     }
   }
+  if (group === "estate" && command === "fresh") {
+    const m = await import("./estate-fresh.js");
+    return m.estateFresh(root, { json: values.json === true, all: values.all === true }, io);
+  }
   if (group === "estate" && command === "measure") {
     const m = await import("./measure-commands.js");
     return m.joinMeasure(root, arg, { json: values.json === true }, io);
@@ -1446,6 +1459,21 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
       return 2;
     }
     const text = (v: unknown) => (typeof v === "string" ? v : undefined);
+    // ADR 0141: what the read took, as the reader reports it; recorded in the read plan.
+    if (values.spent !== undefined || values.sessions !== undefined) {
+      const { mapSpent } = await import("./map-parts.js");
+      return mapSpent(
+        root,
+        repo,
+        {
+          ...(text(values.spent) !== undefined ? { spent: text(values.spent)! } : {}),
+          ...(text(values.sessions) !== undefined ? { sessions: text(values.sessions)! } : {}),
+          ...(text(values.part) !== undefined ? { part: text(values.part)! } : {}),
+          ...(text(values.by) ? { by: text(values.by)! } : {}),
+        },
+        io,
+      );
+    }
     const { mapCommand } = await import("./map-commands.js");
     const o = {
       ...(text(values.dir) ? { dir: resolve(text(values.dir)!) } : {}),

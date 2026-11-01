@@ -88,6 +88,7 @@ import {
 } from "./facts-files.js";
 import {
   loadReadPlan,
+  saveReadPlan,
   partOfWords,
   readPlanProgress,
   readPlanRelOf,
@@ -1209,7 +1210,31 @@ async function estimate(
         p.paths.length === parts[i]!.paths.length &&
         p.paths.every((x, j) => x === parts[i]!.paths[j]),
     );
-  if (parts.length && !same) await writeReadPlan(root, repo, { commit: c.commit, session, parts });
+  // ADR 0141: what the read is estimated to cost is recorded too, for a repo one session reads
+  // as for one read in parts (which then has no parts and no ledger). Tokens are estimated from
+  // the source (estimateTokens), never metered; the sessions are the ones planned.
+  const estimate = {
+    files: product.length,
+    tokens: product.reduce((n, f) => n + f.tokens, 0),
+    sessions: parts.length || 1,
+    ...(reread ? { reread: true as const } : {}),
+  };
+  const sameEstimate =
+    plan0?.estimate !== undefined &&
+    plan0.estimate.files === estimate.files &&
+    plan0.estimate.tokens === estimate.tokens &&
+    plan0.estimate.sessions === estimate.sessions &&
+    plan0.estimate.reread === estimate.reread;
+  if (!same)
+    await writeReadPlan(root, repo, {
+      commit: c.commit,
+      session,
+      parts,
+      estimate,
+      // What the reader reported of an earlier plan stays, under the commit it was of.
+      ...(plan0?.reported ? { reported: plan0.reported } : {}),
+    });
+  else if (!sameEstimate) await saveReadPlan(root, { ...plan0, estimate });
   const progress = parts.length
     ? await readPlanProgress(root, repo, { commit: c.commit })
     : undefined;

@@ -25,24 +25,88 @@ import { readReviewed } from "./facts-files.js";
  * word that a part is finished, and a part re-read only ever stays done.
  */
 
+/** When Atticus first saw a part (or a whole read) accounted for in the facts, and at which commit. */
+const ReadStamp = z.strictObject({ at: z.string().min(1), commit: z.string().min(1) });
+
 const Part = z.strictObject({
   part: z.number().int().positive(),
   paths: z.array(z.string().min(1)).min(1),
   files: z.number().int().nonnegative(),
+  /** An estimate: the tokens the part's source counts as (`estimateTokens`), not a meter. */
   tokens: z.number().int().nonnegative(),
+  /** ADR 0141 (v2): when `atticus verify` first found every unit of the part in the facts. */
+  read: ReadStamp.optional(),
+});
+
+const PlanV1 = z.strictObject({
+  schemaVersion: z.literal(1),
+  repo: z.string().min(1),
+  commit: z.string().min(1),
+  session: z.number().int().positive(),
+  plannedAt: z.string().min(1),
+  parts: z.array(Part.omit({ read: true })).min(1),
+});
+
+/**
+ * What a reader (or the person running it) says a read took (ADR 0141): Atticus can't meter the
+ * tokens an assistant spends in Copilot agent mode or Claude Code, so these are recorded as
+ * reported, never as measured, and kept apart from the estimate.
+ */
+const Reported = z.strictObject({
+  at: z.string().min(1),
+  /** The commit the read was of. */
+  commit: z.string().min(1),
+  tokens: z.number().int().positive().optional(),
+  sessions: z.number().int().positive().optional(),
+  /** The part the report is for, when it is for one. */
+  part: z.number().int().positive().optional(),
+  /** Who reported it (--by), when given. */
+  by: z.string().min(1).optional(),
 });
 
 export const ReadPlanFile = z.strictObject({
-  schemaVersion: z.literal(1),
+  /** 2 since ADR 0141 (a v1 file reads as v2: `migrateReadPlan`). */
+  schemaVersion: z.literal(2),
   repo: z.string().min(1),
   /** The commit the plan was made at; the plan is stale at another commit. */
   commit: z.string().min(1),
-  /** The session token budget the parts were planned for. */
+  /** The session token budget the parts were planned for (`sessionTokensFor`). */
   session: z.number().int().positive(),
   plannedAt: z.string().min(1),
-  parts: z.array(Part).min(1),
+  /**
+   * ADR 0141: what `--estimate` counted for the read (an estimate, not a meter): its source files
+   * and tokens, and the sessions planned (the parts, or one). `reread` when the read is of the
+   * files changed since the facts' commit only (addendum A-incremental).
+   */
+  estimate: z
+    .strictObject({
+      files: z.number().int().nonnegative(),
+      tokens: z.number().int().nonnegative(),
+      sessions: z.number().int().positive(),
+      reread: z.literal(true).optional(),
+    })
+    .optional(),
+  /** The parts in the order they are read; none for a repo one session reads (ADR 0141). */
+  parts: z.array(Part),
+  /** ADR 0141: when `atticus verify` first found the whole plan in the facts. */
+  read: ReadStamp.extend({ sessions: z.number().int().positive() }).optional(),
+  /** ADR 0141: what the reader reported the read took (`atticus map <repo> --spent`). */
+  reported: z.array(Reported).optional(),
 });
 export type ReadPlanFileT = z.infer<typeof ReadPlanFile>;
+export type ReadPlanReport = z.infer<typeof Reported>;
+
+/**
+ * A read plan of either version as v2 (ADR 0141): a v1 plan (A-ledger) is the same plan with
+ * nothing recorded yet. Undefined when it is neither.
+ */
+export function migrateReadPlan(raw: unknown): ReadPlanFileT | undefined {
+  const v2 = ReadPlanFile.safeParse(raw);
+  if (v2.success) return v2.data;
+  const v1 = PlanV1.safeParse(raw);
+  if (!v1.success) return undefined;
+  return { ...v1.data, schemaVersion: 2 };
+}
 
 /** The plan's file, relative to the root with forward slashes, for messages. */
 export const readPlanRelOf = (root: string, repo: string) =>
@@ -106,7 +170,21 @@ export interface ReadPlanProgress {
   stale: boolean;
 }
 
-/** Write (or replace) a repo's read plan. The parts are numbered in the order they are read. */
+const HEADER =
+  "# The parts this repo is read in (ADR 0124 addendum A-ledger), as atticus map --estimate planned them,\n# and what the read cost (ADR 0141): tokens are estimates, reported numbers are the reader's word.\n# Which part is next is read back from the facts; atticus next says it. Atticus writes this file.\n";
+
+/** Write a read plan as it is. */
+export async function saveReadPlan(root: string, plan: ReadPlanFileT): Promise<void> {
+  await writeFileAtomic(
+    readPlanPath(root, plan.repo),
+    `${HEADER}${stringify(ReadPlanFile.parse(plan), { lineWidth: 0 })}`,
+  );
+}
+
+/**
+ * Write (or replace) a repo's read plan. The parts are numbered in the order they are read; none
+ * for a repo one session reads. What the reader reported of an earlier plan is kept.
+ */
 export async function writeReadPlan(
   root: string,
   repo: string,
@@ -115,35 +193,37 @@ export async function writeReadPlan(
     session: number;
     now?: string;
     parts: readonly { paths: string[]; files: number; tokens: number }[];
+    estimate?: ReadPlanFileT["estimate"];
+    reported?: ReadPlanFileT["reported"];
   },
 ): Promise<ReadPlanFileT> {
   const plan: ReadPlanFileT = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     repo,
     commit: o.commit,
     session: o.session,
-    plannedAt: o.now ?? new Date().toISOString().replace(/\.\d{3}Z$/, "Z"),
+    plannedAt: o.now ?? stamp(),
+    ...(o.estimate ? { estimate: o.estimate } : {}),
     parts: o.parts.map((p, i) => ({
       part: i + 1,
       paths: [...p.paths],
       files: p.files,
       tokens: p.tokens,
     })),
+    ...(o.reported?.length ? { reported: [...o.reported] } : {}),
   };
-  await writeFileAtomic(
-    readPlanPath(root, repo),
-    `# The parts this repo is read in (ADR 0124 addendum A-ledger), as atticus map --estimate planned them.\n# Which part is next is read back from the facts; atticus next says it. Atticus writes this file.\n${stringify(plan, { lineWidth: 0 })}`,
-  );
+  await saveReadPlan(root, plan);
   return plan;
 }
 
-/** A repo's read plan as it is on file, or undefined when there is none or it doesn't read. */
+const stamp = () => new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+
+/** A repo's read plan as it is on file (a v1 plan as v2), or undefined when there is none or it doesn't read. */
 export async function loadReadPlan(root: string, repo: string): Promise<ReadPlanFileT | undefined> {
   const text = await readFile(readPlanPath(root, repo), "utf8").catch(() => undefined);
   if (text === undefined) return undefined;
   try {
-    const r = ReadPlanFile.safeParse(parse(text));
-    return r.success ? r.data : undefined;
+    return migrateReadPlan(parse(text));
   } catch {
     return undefined;
   }
@@ -208,8 +288,18 @@ export async function readPlanProgress(
   o: { commit?: string } = {},
 ): Promise<ReadPlanProgress | undefined> {
   const plan = await loadReadPlan(root, repo);
-  if (!plan) return undefined;
-  const of = await coveredOf(root, repo);
+  // ADR 0141: a repo one session reads has a plan for its cost, but no parts and no ledger.
+  if (!plan || !plan.parts.length) return undefined;
+  return progressOf(plan, await coveredOf(root, repo), o);
+}
+
+/** Each part's state from what the facts folder accounts for. */
+function progressOf(
+  plan: ReadPlanFileT,
+  of: Awaited<ReturnType<typeof coveredOf>>,
+  o: { commit?: string },
+): ReadPlanProgress {
+  const repo = plan.repo;
   const covered = of.paths.map(folderOf);
   const parts: PartState[] = plan.parts.map((p) => {
     const units = p.paths.map(unitOf);
@@ -255,3 +345,201 @@ export async function readPlanProgress(
 /** "part 4 of 13" — how a command names where a part read stands. */
 export const partOfWords = (p: Pick<ReadPlanProgress, "total"> & { part: number }) =>
   `part ${p.part} of ${p.total}`;
+
+const sameCommit = (a: string, b: string) => a.startsWith(b) || b.startsWith(a);
+
+/**
+ * ADR 0141: what `atticus verify` records of a read, from the facts it just wrote: each part the
+ * facts now account for is stamped with when and at which commit it was first seen read, and the
+ * whole read once every part is (or, for a repo one session reads, once it has kept facts). A
+ * stamp is never moved or taken back, so re-verifying changes nothing. Only a plan of the commit
+ * being verified is stamped; a plan of another commit is stale and left for --estimate.
+ */
+export async function recordReadProgress(
+  root: string,
+  repo: string,
+  o: { commit: string | undefined; kept: number; now?: string },
+): Promise<ReadPlanFileT | undefined> {
+  const plan = await loadReadPlan(root, repo);
+  if (!plan || !o.commit || !sameCommit(plan.commit, o.commit)) return undefined;
+  const at = o.now ?? stamp();
+  const read = { at, commit: o.commit };
+  let changed = false;
+  let parts = plan.parts;
+  let whole = plan.parts.length === 0 && o.kept > 0;
+  if (plan.parts.length) {
+    const progress = progressOf(plan, await coveredOf(root, repo), {});
+    parts = plan.parts.map((p, i) => {
+      if (p.read || progress.parts[i]!.state !== "done") return p;
+      changed = true;
+      return { ...p, read };
+    });
+    whole = parts.every((p) => p.read);
+  }
+  const next: ReadPlanFileT = {
+    ...plan,
+    parts,
+    ...(whole && !plan.read
+      ? { read: { ...read, sessions: plan.parts.length || 1 } }
+      : plan.read
+        ? { read: plan.read }
+        : {}),
+  };
+  if (whole && !plan.read) changed = true;
+  if (!changed) return plan;
+  await saveReadPlan(root, next);
+  return next;
+}
+
+/** ADR 0141: add what the reader reports a read took to the plan (`atticus map <repo> --spent`). */
+export async function recordReported(
+  root: string,
+  repo: string,
+  r: Omit<ReadPlanReport, "at" | "commit"> & { at?: string },
+): Promise<ReadPlanFileT | undefined> {
+  const plan = await loadReadPlan(root, repo);
+  if (!plan) return undefined;
+  const entry: ReadPlanReport = {
+    at: r.at ?? stamp(),
+    commit: plan.commit,
+    ...(r.tokens ? { tokens: r.tokens } : {}),
+    ...(r.sessions ? { sessions: r.sessions } : {}),
+    ...(r.part ? { part: r.part } : {}),
+    ...(r.by ? { by: r.by } : {}),
+  };
+  const next = { ...plan, reported: [...(plan.reported ?? []), entry] };
+  await saveReadPlan(root, next);
+  return next;
+}
+
+/**
+ * What a repo's read cost, as the plan records it (ADR 0141), with each number saying where it
+ * comes from: `estimated` is --estimate's count (tokens are estimated from the source, never
+ * metered); `read` is what Atticus saw in the facts (the parts read, one session each as
+ * planned); `reported` is the reader's word, summed over its reports of this plan's commit.
+ */
+export interface ReadCost {
+  commit: string;
+  session: number;
+  estimated?: { tokens: number; files: number; sessions: number; reread?: true };
+  /** Parts read so far (as planned, one session each), and when the whole read was done. */
+  read: { parts: number; of: number; at?: string };
+  reported?: { tokens?: number; sessions?: number; reports: number };
+}
+
+export function readCostOf(plan: ReadPlanFileT): ReadCost {
+  const ofCommit = (plan.reported ?? []).filter((r) => sameCommit(r.commit, plan.commit));
+  const sum = (k: "tokens" | "sessions") =>
+    ofCommit.some((r) => r[k] !== undefined)
+      ? ofCommit.reduce((n, r) => n + (r[k] ?? 0), 0)
+      : undefined;
+  const tokens = sum("tokens");
+  const sessions = sum("sessions");
+  const of = plan.parts.length || 1;
+  return {
+    commit: plan.commit,
+    session: plan.session,
+    ...(plan.estimate ? { estimated: plan.estimate } : {}),
+    read: {
+      parts: plan.parts.length ? plan.parts.filter((p) => p.read).length : plan.read ? 1 : 0,
+      of,
+      ...(plan.read ? { at: plan.read.at } : {}),
+    },
+    ...(ofCommit.length
+      ? {
+          reported: {
+            ...(tokens !== undefined ? { tokens } : {}),
+            ...(sessions !== undefined ? { sessions } : {}),
+            reports: ofCommit.length,
+          },
+        }
+      : {}),
+  };
+}
+
+/** A token count in words: 61K, 1.2M. */
+export const tokensWords = (n: number) =>
+  n >= 1_000_000
+    ? `${(n / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`
+    : n >= 1000
+      ? `${Math.round(n / 1000)}K`
+      : String(n);
+
+/** A read's cost in a sentence, saying which numbers are estimates and which the reader's word. */
+export function readCostWords(c: ReadCost): string {
+  const out: string[] = [];
+  if (c.estimated)
+    out.push(
+      `estimated about ${tokensWords(c.estimated.tokens)} tokens in ${c.estimated.sessions} session${c.estimated.sessions === 1 ? "" : "s"}${c.estimated.reread ? " (a re-read)" : ""}`,
+    );
+  if (c.read.of > 1 || c.read.parts)
+    out.push(
+      c.read.at
+        ? `read in ${c.read.of} part${c.read.of === 1 ? "" : "s"}`
+        : `${c.read.parts} of ${c.read.of} part${c.read.of === 1 ? "" : "s"} read`,
+    );
+  if (c.reported)
+    out.push(
+      `reported ${[
+        c.reported.tokens !== undefined ? `${tokensWords(c.reported.tokens)} tokens` : "",
+        c.reported.sessions !== undefined
+          ? `${c.reported.sessions} session${c.reported.sessions === 1 ? "" : "s"}`
+          : "",
+      ]
+        .filter(Boolean)
+        .join(" in ")}`,
+    );
+  return out.join("; ");
+}
+
+/**
+ * atticus map <repo> --spent <tokens> [--sessions n] [--part n] (ADR 0141): record what the read
+ * took as the reader reports it. Atticus runs no model here and meters nothing, so the numbers
+ * are kept as the reader's word, beside --estimate's estimate, under the plan's commit.
+ */
+export async function mapSpent(
+  root: string,
+  repo: string,
+  o: { spent?: string; sessions?: string; part?: string; by?: string },
+  io: { out: (l: string) => void; err: (l: string) => void },
+): Promise<number> {
+  const count = (v: string | undefined, what: string): number | undefined | false => {
+    if (v === undefined) return undefined;
+    const n = Number(v.replace(/[_,]/g, "").replace(/k$/i, "000"));
+    if (Number.isInteger(n) && n > 0) return n;
+    io.err(`${what} is a whole number above 0 (got ${v}).`);
+    return false;
+  };
+  const tokens = count(o.spent, "--spent");
+  const sessions = count(o.sessions, "--sessions");
+  const part = count(o.part, "--part");
+  if (tokens === false || sessions === false || part === false) return 2;
+  if (tokens === undefined && sessions === undefined) {
+    io.err("Usage: atticus map <repo> --spent <tokens> [--sessions n] [--part n]");
+    return 2;
+  }
+  const plan = await loadReadPlan(root, repo);
+  if (!plan) {
+    io.err(
+      `${repo} has no read plan (${readPlanRelOf(root, repo)}) to record it in: run atticus map ${repo} --estimate first; it records the estimate the read is compared with.`,
+    );
+    return 2;
+  }
+  if (part !== undefined && !plan.parts.some((p) => p.part === part)) {
+    io.err(
+      `${repo}'s read plan has ${plan.parts.length ? `parts 1 to ${plan.parts.length}` : "no parts (one session reads it)"}: there is no part ${part}.`,
+    );
+    return 2;
+  }
+  const next = await recordReported(root, repo, {
+    ...(tokens ? { tokens } : {}),
+    ...(sessions ? { sessions } : {}),
+    ...(part ? { part } : {}),
+    ...(o.by ? { by: o.by } : {}),
+  });
+  const cost = readCostOf(next!);
+  io.out(
+    `Recorded in ${readPlanRelOf(root, repo)}, as reported (Atticus meters nothing): ${readCostWords(cost)}.`,
+  );
+  return 0;
+}

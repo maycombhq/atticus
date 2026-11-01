@@ -105,6 +105,34 @@ function reportOf(raw: unknown): Report | string {
 const sameCommit = (a: string | undefined, b: string | undefined): boolean | null =>
   a && b ? a.startsWith(b) || b.startsWith(a) : null;
 
+/**
+ * Per repo, how many records of the catalog cite it from its facts (an assistant's, a reader's or
+ * a person's fact, no extractor) and how many only from the built-in readers. A person's own
+ * statement (manual evidence) is neither.
+ */
+export function catalogSources(
+  records: readonly CatalogRecord[],
+): Map<string, { facts: number; readers: number }> {
+  const counts = new Map<string, { facts: number; readers: number }>();
+  for (const r of records) {
+    const seen = new Map<string, { facts: boolean; readers: boolean }>();
+    for (const e of r.evidence) {
+      if (!e.repo) continue;
+      const s = seen.get(e.repo) ?? { facts: false, readers: false };
+      if (!e.extractor && e.by && FACT_BY.has(e.by)) s.facts = true;
+      else if (e.source !== "manual") s.readers = true;
+      seen.set(e.repo, s);
+    }
+    for (const [repo, s] of seen) {
+      const c = counts.get(repo) ?? { facts: 0, readers: 0 };
+      if (s.facts) c.facts += 1;
+      else if (s.readers) c.readers += 1;
+      counts.set(repo, c);
+    }
+  }
+  return counts;
+}
+
 /** What to do next for a repo, and the state that says why (the app says it in words). */
 function nextOf(
   repo: string,
@@ -155,25 +183,7 @@ export async function trustView(root: string): Promise<View> {
   const catalog = await readCatalog(join(catalogDirOf(root), "generated"), { cacheRoot: root });
   for (const p of catalog.problems)
     problems.push({ file: rel(join(catalogDirOf(root), "generated", p.file)), message: p.message });
-  const counts = new Map<string, { facts: number; readers: number }>();
-  const count = (r: CatalogRecord) => {
-    const seen = new Map<string, { facts: boolean; readers: boolean }>();
-    for (const e of r.evidence) {
-      if (!e.repo) continue;
-      const s = seen.get(e.repo) ?? { facts: false, readers: false };
-      if (!e.extractor && e.by && FACT_BY.has(e.by)) s.facts = true;
-      // A person's own statement (manual evidence) is neither; anything else a reader found.
-      else if (e.source !== "manual") s.readers = true;
-      seen.set(e.repo, s);
-    }
-    for (const [repo, s] of seen) {
-      const c = counts.get(repo) ?? { facts: 0, readers: 0 };
-      if (s.facts) c.facts += 1;
-      else if (s.readers) c.readers += 1;
-      counts.set(repo, c);
-    }
-  };
-  for (const r of catalog.records) count(r);
+  const counts = catalogSources(catalog.records);
 
   // ADR 0135: the open questions, by repo, so the asked count opens them.
   const open = await listQuestions(root, { state: "open" }).then(
@@ -294,5 +304,15 @@ export async function trustView(root: string): Promise<View> {
 }
 
 export function uiTrustRoutes(r: Router, ctx: ServerContext): Router {
-  return r.add("GET", "/api/trust", async () => ({ status: 200, body: await trustView(ctx.root) }));
+  return (
+    r
+      .add("GET", "/api/trust", async () => ({ status: 200, body: await trustView(ctx.root) }))
+      // ADR 0141 (P5): the estate's freshness. It runs read-only local git in the clones
+      // (`git diff --name-status` between two commits they have); nothing fetched or written.
+      .add("GET", "/api/trust/fresh", async () => {
+        const { estateFreshness } = await import("./estate-fresh.js");
+        const body: Api.FreshViewT = await estateFreshness(ctx.root);
+        return { status: 200, body };
+      })
+  );
 }
