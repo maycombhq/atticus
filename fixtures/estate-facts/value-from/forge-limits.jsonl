@@ -1,0 +1,1 @@
+{"kind":"entry","id":"e-get-limit","repo":"forge-limits","commit":"7777bbb","entryType":"rest","method":"GET","path":"/v1/limits/{id}","cite":{"file":"src/main/java/forge/limits/LimitsController.java","line":17,"value":"/v1/limits/{id}","quote":"@GetMapping(\"/v1/limits/{id}\")"},"verified":"line","by":"assistant","conf":"declared"}

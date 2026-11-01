@@ -528,8 +528,8 @@ interface Node {
 
 /**
  * J0: a config placeholder: `${X}` or Spring's `${X:default}` anywhere in a value (a URL may be
- * written around it, `https://${HOST}/v2`), or `env:X` as the whole value. Two placeholders in
- * one value are not resolved: which part each gives can't be read without guessing.
+ * written around it, `https://${HOST}/v2`), or `env:X` as the whole value. With two in one value
+ * (`${SCHEME}://${HOST}/v1`) this is the first, the rest left in `after`.
  */
 export function placeholderIn(
   s: string | undefined,
@@ -551,7 +551,6 @@ export function placeholderIn(
   if (j >= t.length) return undefined;
   const inner = t.slice(i + 2, j);
   const after = t.slice(j + 1);
-  if (after.includes("${")) return undefined;
   const colon = inner.indexOf(":");
   const name = (colon < 0 ? inner : inner.slice(0, colon)).trim();
   if (!/^[A-Za-z_][A-Za-z0-9_.[\]-]*$/.test(name)) return undefined;
@@ -564,6 +563,20 @@ export function placeholderIn(
  * as Spring's relaxed binding reads `PAYMENTS_URL` for `${payments.url}`.
  */
 export const settingNameKey = (name: string) => name.toUpperCase().replace(/[^A-Z0-9]/g, "");
+
+/**
+ * J0: an environment variable a Deployment sets `valueFrom` a ConfigMap's or a Secret's key, as
+ * the reader writes it: `configMapKeyRef:<name>/<key>` or `secretKeyRef:<name>/<key>`.
+ */
+export function keyRefIn(
+  s: string | undefined,
+): { secret: boolean; name: string; key: string } | undefined {
+  const m = /^(configMapKeyRef|secretKeyRef):([^/\s]+)\/([^/\s]+)$/.exec((s ?? "").trim());
+  return m ? { secret: m[1] === "secretKeyRef", name: m[2]!, key: m[3]! } : undefined;
+}
+
+/** A Secret's value the join may read: a host and nothing else (no user, path, query or fragment). */
+const PLAIN_HOST = /^(?:https?:\/\/)?[a-z0-9][a-z0-9.-]*(?::\d+)?\/?$/i;
 
 /** How many placeholders deep a value is followed (`${A}` set to `${B}` set to a host). */
 const MAX_PLACEHOLDER_DEPTH = 4;
@@ -629,6 +642,30 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
     return !deploysIn.has(key(n.repo, n.fact.cite.file));
   };
   /**
+   * The ConfigMap's (or Secret's) entries a `valueFrom` setting names: config facts with its key,
+   * in the setting's repo or the caller's, whose ConfigMap is the one named: a `cite.with` line
+   * gives its name (the `metadata.name` line), a folder or file is named for it, or a deploy fact
+   * in the file deploys it.
+   */
+  const refTargets = (
+    s: Node & { fact: Config },
+    owner: Node,
+    seen: ReadonlySet<string>,
+  ): (Node & { fact: Config })[] => {
+    const ref = keyRefIn(s.fact.value ?? s.fact.source);
+    if (!ref) return [];
+    const name = factIdPart(ref.name);
+    return configNodes.filter((t) => {
+      if (t === s || seen.has(key(t.repo, t.fact.id))) return false;
+      if (t.repo !== s.repo && t.repo !== owner.repo) return false;
+      if (t.fact.key !== ref.key || keyRefIn(t.fact.value ?? t.fact.source)) return false;
+      if ((t.fact.cite.with ?? []).some((w) => factIdPart(w.value) === name)) return true;
+      if (t.fact.cite.file.split("/").some((x) => factIdPart(x.replace(/\.[^.]*$/, "")) === name))
+        return true;
+      return !!deploysIn.get(key(t.repo, t.fact.cite.file))?.has(name);
+    });
+  };
+  /**
    * A value with its placeholders resolved, once per setting that sets it (one per environment,
    * say), each with the config facts it went through; a placeholder nothing sets takes its
    * Spring default. A value nothing resolves gives none; a ring of placeholders ends.
@@ -644,14 +681,52 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
     const p = placeholderIn(v);
     if (!p) return SECRETISH.test(v) ? [] : [{ value: v, through: [] }];
     if (depth >= MAX_PLACEHOLDER_DEPTH) return [];
+    if (placeholderIn(p.after)) {
+      // Two or more in one value: each is resolved on its own, and kept only with one value.
+      const head = resolve(v.slice(0, v.length - p.after.length), owner, seen, depth);
+      const tail = resolve(p.after, owner, seen, depth);
+      if (new Set(head.map((r) => r.value)).size !== 1) return [];
+      if (new Set(tail.map((r) => r.value)).size !== 1) return [];
+      return [
+        {
+          value: `${head[0]!.value}${tail[0]!.value}`,
+          through: [...head, ...tail].flatMap((r) => r.through),
+        },
+      ];
+    }
     const want = settingNameKey(p.name);
     const out: { value: string; through: (Node & { fact: Config })[] }[] = [];
     const named = configNodes.filter(
       (s) => !seen.has(key(s.repo, s.fact.id)) && settingNameKey(s.fact.key) === want,
     );
     const mine = named.filter((s) => setsFor(s, owner));
-    for (const s of mine.length ? mine : named.filter((x) => setsForAll(x, owner))) {
+    const chosen = mine.length ? mine : named.filter((x) => setsForAll(x, owner));
+    // A ConfigMap's entry a `valueFrom` here follows is read through it, not as a setting itself.
+    const viaRef = new Set(
+      chosen.flatMap((s) => refTargets(s, owner, seen).map((t) => key(t.repo, t.fact.id))),
+    );
+    for (const s of chosen.filter((x) => !viaRef.has(key(x.repo, x.fact.id)))) {
       const k = key(s.repo, s.fact.id);
+      const ref = keyRefIn(s.fact.value ?? s.fact.source);
+      if (ref) {
+        for (const t of refTargets(s, owner, seen)) {
+          const tv = t.fact.value?.trim() ?? "";
+          // A Secret's value is read only when it is a plain host; anything else is left alone.
+          const rs = ref.secret
+            ? PLAIN_HOST.test(tv)
+              ? [{ value: tv, through: [] }]
+              : []
+            : resolve(
+                t.fact.value,
+                owner,
+                new Set([...seen, k, key(t.repo, t.fact.id)]),
+                depth + 1,
+              );
+          for (const r of rs)
+            out.push({ value: `${p.before}${r.value}${p.after}`, through: [s, t, ...r.through] });
+        }
+        continue;
+      }
       for (const r of resolve(
         s.fact.value ?? s.fact.source,
         owner,
