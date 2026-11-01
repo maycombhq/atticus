@@ -28,9 +28,9 @@ class EstateJobsTest {
         assertEquals(listOf("questions", "sheet"), argv("Atticus.QuestionsSheet"))
         assertEquals(listOf("questions", "sheet", "--apply", "questions-sheet.yaml"), argv("Atticus.ApplySheet", "questions-sheet.yaml"))
         assertEquals(listOf("questions", "proposed"), argv("Atticus.CheckProposals"))
-        // None of them is a VS Code command, so none is a Parity key; every one runs as it stands.
-        assertTrue(Steps.ESTATE.all { it.vsCode == null && it.direct && !it.ai })
-        assertTrue(Steps.ESTATE.none { it.actionId in Parity.MAP.values.filterIsInstance<InIntelliJ.Action>().map { a -> a.id } })
+        // Each answers VS Code's jobs.ts command for the same job, and runs as it stands.
+        assertTrue(Steps.ESTATE.all { it.vsCode != null && it.direct && !it.ai })
+        for (s in Steps.ESTATE) assertEquals(InIntelliJ.Action(s.actionId), Parity.MAP[s.vsCode], s.actionId)
     }
 
     @Test
