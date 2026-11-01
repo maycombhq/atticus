@@ -343,3 +343,150 @@ describe("J1: the join takes hosts and base paths from exposure facts as well as
     expect(iface("c-account")).toMatchObject({ confidence: "verified", flags: [JOINED_BY_HOST] });
   });
 });
+
+describe("J1: a Service's in-cluster address, and a module named <repo>/<module>", () => {
+  const service = (o: { host: string; exposes?: string }): Fact =>
+    fact({
+      kind: "deploy",
+      id: "service.accounts",
+      repo: "forge-deploy",
+      platform: "kubernetes",
+      resourceType: "service",
+      resourceName: "accounts-api",
+      host: o.host,
+      ...(o.exposes ? { exposes: o.exposes } : {}),
+      cite: {
+        file: "apps/accounts/service.yaml",
+        line: 4,
+        value: "accounts-api",
+        with: [
+          { file: "apps/accounts/service.yaml", line: 5, value: "forge-accounts" },
+          { file: "apps/accounts/service.yaml", line: 10, value: "8080" },
+        ],
+      },
+    });
+  const repos = (deploy: Fact[]): JoinRepo[] => [
+    {
+      repo: "forge-pay",
+      component: "pay-api",
+      facts: [
+        call(
+          "c-fqdn",
+          "http://accounts-api.forge-accounts.svc.cluster.local:8080",
+          "/accounts/{id}",
+        ),
+        call("c-short", "accounts-api:8080", "/accounts/{id}"),
+        call("c-ns", "http://accounts-api.forge-accounts:8080", "/accounts/{id}"),
+        call("c-statement", "https://statements.forge.internal", "/statements/{id}"),
+      ],
+    },
+    { repo: "forge-deploy", component: "deploy-config", facts: deploy },
+    {
+      // The manifest lists the ingress host; the in-cluster address is no conflict with it.
+      repo: "forge-accounts",
+      component: "accounts-api",
+      hosts: ["apps.forge.internal"],
+      facts: [
+        entry("forge-accounts", "e-account", "/accounts/{id}"),
+        // A module the manifest doesn't list: only its facts name it.
+        fact({
+          kind: "entry",
+          id: "e-statement",
+          repo: "forge-accounts",
+          component: "statements",
+          entryType: "rest",
+          method: "GET",
+          path: "/statements/{id}",
+          cite: {
+            file: "statements/src/StatementController.java",
+            line: 12,
+            value: "/statements/{id}",
+          },
+        }),
+      ],
+    },
+  ];
+  const svc = service({
+    host: "accounts-api.forge-accounts.svc.cluster.local:8080",
+    exposes: "accounts-api",
+  });
+  const statements = fact({
+    kind: "deploy",
+    id: "route.statements",
+    repo: "forge-deploy",
+    platform: "openshift",
+    resourceType: "route",
+    resourceName: "statements",
+    host: "statements.forge.internal",
+    exposes: "forge-accounts/statements",
+    cite: { file: "apps/statements/route.yaml", line: 4, value: "statements" },
+  });
+
+  it("places a call to any of the Service's names on the component it selects, citing the Service", () => {
+    const out = joinFacts({ repos: repos([svc]) });
+    for (const c of ["c-fqdn", "c-short", "c-ns"]) {
+      const [j, ...more] = joinOf(out, c);
+      expect(more, c).toEqual([]);
+      expect(j, c).toMatchObject({
+        entry: { repo: "forge-accounts", fact: "e-account" },
+        how: "host",
+        exposedBy: [{ repo: "forge-deploy", fact: "service.accounts" }],
+      });
+      expect(j!.byLabel, c).toBeUndefined();
+    }
+    expect(out.exposure).toBeUndefined();
+  });
+
+  it("without the Service, the short name is the host first-label guess it was", () => {
+    const [j] = joinOf(joinFacts({ repos: repos([]) }), "c-short");
+    expect(j).toMatchObject({ entry: { fact: "e-account" }, byLabel: true });
+  });
+
+  it("takes the Service's port: a call on another port isn't placed by it", () => {
+    const other = repos([svc]).map((r) =>
+      r.repo === "forge-pay"
+        ? { ...r, facts: [call("c-other-port", "accounts-api:9090", "/accounts/{id}")] }
+        : r,
+    );
+    const [j] = joinOf(joinFacts({ repos: other }), "c-other-port");
+    expect(j?.exposedBy).toBeUndefined();
+  });
+
+  it("resolves exposes named <repo>/<module> against the components the repo's facts name", () => {
+    const out = joinFacts({ repos: repos([statements]) });
+    expect(joinOf(out, "c-statement")[0]).toMatchObject({
+      entry: { repo: "forge-accounts", fact: "e-statement", component: "statements" },
+      how: "host",
+      exposedBy: [{ fact: "route.statements" }],
+    });
+    expect(out.exposure).toBeUndefined();
+  });
+
+  it("reports <repo>/<module> naming no module of the repo's facts", () => {
+    const ghost = { ...statements, exposes: "forge-accounts/ghost" } as Fact;
+    expect(joinFacts({ repos: repos([ghost]) }).exposure).toMatchObject([
+      { reason: "no-component", names: "forge-accounts/ghost" },
+    ]);
+  });
+});
+
+describe("J1: an Ingress base path written as a regular expression", () => {
+  it("joins by its plain prefix, should a fact still carry the expression", () => {
+    const ingress = route("limits", {
+      host: "apps.forge.internal",
+      basePath: "/forge-svc/limits(/|$)(.*)",
+      exposes: "limits-api",
+    });
+    const repos = estate().map((r) =>
+      r.repo === "forge-deploy"
+        ? { ...r, facts: [ingress] }
+        : r.repo === "forge-limits"
+          ? { ...r, hosts: [], basePath: undefined }
+          : r,
+    ) as JoinRepo[];
+    expect(joinOf(joinFacts({ repos }), "c-limit-route")[0]).toMatchObject({
+      entry: { repo: "forge-limits", fact: "e-limit" },
+      exposedBy: [{ fact: "limits" }],
+    });
+  });
+});

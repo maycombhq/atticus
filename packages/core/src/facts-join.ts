@@ -144,6 +144,69 @@ export interface FactEnd {
  */
 export const NO_TARGET = "(none)";
 
+/**
+ * J1 (ADR 0143, beta.10): a Kubernetes Service's in-cluster address as an exposure's `host` is
+ * written, `<name>.<namespace>.svc.cluster.local`, with `:<port>` when the Service's port is
+ * cited: its name, namespace and port, or undefined for any other host.
+ */
+export function clusterServiceAddress(
+  host: string,
+): { name: string; namespace: string; port?: number } | undefined {
+  const m =
+    /^([a-z0-9]([a-z0-9-]*[a-z0-9])?)\.([a-z0-9]([a-z0-9-]*[a-z0-9])?)\.svc\.cluster\.local(?::(\d+))?$/i.exec(
+      host.trim(),
+    );
+  if (!m) return undefined;
+  return {
+    name: m[1]!.toLowerCase(),
+    namespace: m[3]!.toLowerCase(),
+    ...(m[5] ? { port: Number(m[5]) } : {}),
+  };
+}
+
+/**
+ * Every name a call reaches a Service by inside the cluster (J1): the whole address, `.svc`,
+ * `<name>.<namespace>` and the bare `<name>` (from its own namespace), each with the port when
+ * one is cited.
+ */
+export function clusterServiceHosts(a: {
+  name: string;
+  namespace: string;
+  port?: number;
+}): string[] {
+  const port = a.port !== undefined ? `:${a.port}` : "";
+  return [
+    `${a.name}.${a.namespace}.svc.cluster.local`,
+    `${a.name}.${a.namespace}.svc`,
+    `${a.name}.${a.namespace}`,
+    a.name,
+  ].map((h) => `${h}${port}`);
+}
+
+/** A character that makes a path segment a regular expression (an Ingress `ImplementationSpecific` path). */
+const PATH_PATTERN = /[()[\]|$^*+?\\]/;
+
+/** Whether a base path is written as a regular expression (J1): `/forge/limits(/|$)(.*)`. */
+export const isPatternPath = (path: string): boolean => PATH_PATTERN.test(path);
+
+/**
+ * A base path's plain prefix (J1): the segments before the first one a regular expression's
+ * pattern is in, `/forge/limits(/|$)(.*)` giving `/forge/limits`. A plain path is itself.
+ */
+export function plainPathPrefix(path: string): string {
+  const segs: string[] = [];
+  for (const s of path.split("/").filter(Boolean)) {
+    const at = s.search(PATH_PATTERN);
+    if (at < 0) {
+      segs.push(s);
+      continue;
+    }
+    if (at > 0) segs.push(s.slice(0, at));
+    break;
+  }
+  return `/${segs.join("/")}`;
+}
+
 /** F2: an Interface's flags when nobody named its callee: found by path, or by a host's first label. */
 export const JOINED_BY_PATH = "joined-by-path";
 export const JOINED_BY_LABEL = "joined-by-label";
@@ -880,6 +943,20 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
     const own = (repo: string, component: string) =>
       mainOf.get(component) === repo ? { repo, component: undefined } : { repo, component };
     if (!n.fact.exposes) return own(n.repo, n.component);
+    // beta.10: `<repo>/<module>`, a module the manifest doesn't list, as the repo's facts name it.
+    const inRepo = /^([^/]+)\/([^/]+)$/.exec(n.fact.exposes.trim());
+    if (inRepo) {
+      const repo = repoIds.get(factIdPart(inRepo[1]!)) ?? mainOf.get(factIdPart(inRepo[1]!));
+      const mod = factIdPart(inRepo[2]!);
+      const named = repo
+        ? nodes.find(
+            (x) =>
+              x.repo === repo &&
+              (x.component === mod || x.component === factIdPart(`${repo}-${mod}`)),
+          )
+        : undefined;
+      return named ? own(named.repo, named.component) : undefined;
+    }
     const slug = factIdPart(n.fact.exposes);
     const repo = repoIds.get(slug) ?? mainOf.get(slug);
     if (repo) return { repo, component: undefined };
@@ -917,7 +994,14 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
       factIdPart(repos.find((r) => r.repo === owner.repo)?.component ?? owner.repo);
     const holder = owner.component ? `${owner.repo}'s module ${owner.component}` : owner.repo;
     const env = x.fact.env ? ` (${x.fact.env})` : "";
-    if (x.fact.host) {
+    // beta.10: a Service's in-cluster address, by each name a call in the cluster reaches it by;
+    // never a conflict with the manifest's hosts, which say where it is reached from outside.
+    const inCluster =
+      x.fact.host && /^service$/i.test(x.fact.resourceType ?? "")
+        ? clusterServiceAddress(x.fact.host)
+        : undefined;
+    if (inCluster) for (const h of clusterServiceHosts(inCluster)) addHost(g, h, x);
+    else if (x.fact.host) {
       const host = x.fact.host;
       if (g.manifestHosts.length && !g.manifestHosts.some((p) => hostMatches(p, host))) {
         hostDisputed.add(x);
@@ -934,7 +1018,8 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
       addHost(g, host, x);
     }
     if (x.fact.basePath) {
-      const path = x.fact.basePath;
+      // J1, beta.10: a base path written as a regular expression is its plain prefix.
+      const path = plainPathPrefix(x.fact.basePath);
       if (g.manifestBase && !sameSegments(pathSegments(g.manifestBase), pathSegments(path))) {
         pathDisputed.add(x);
         exposure.push({

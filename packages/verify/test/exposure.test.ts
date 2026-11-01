@@ -32,6 +32,42 @@ const FILES: Record<string, string> = {
     "  path: /forge-svc/payments",
   ].join("\n"),
   "charts/payments/values-prod.yaml": ["route:", "  host: apps.forge.internal"].join("\n"),
+  // J1 gaps: an Ingress whose path is a regular expression, and a Service's in-cluster address.
+  "apps/limits/ingress.yaml": [
+    "apiVersion: networking.k8s.io/v1",
+    "kind: Ingress",
+    "metadata:",
+    "  name: limits-api",
+    "spec:",
+    "  rules:",
+    "    - host: apps.forge.internal",
+    "      http:",
+    "        paths:",
+    "          - path: /forge/limits(/|$)(.*)",
+    "            pathType: ImplementationSpecific",
+    "            backend:",
+    "              service:",
+    "                name: limits-api",
+  ].join("\n"),
+  "apps/accounts/service.yaml": [
+    "apiVersion: v1",
+    "kind: Service",
+    "metadata:",
+    "  labels:",
+    "    team: accounts",
+    "  name: accounts-api",
+    "spec:",
+    "  selector:",
+    "    app: accounts-api",
+    "  ports:",
+    "    - port: 8080",
+    "      targetPort: http",
+  ].join("\n"),
+  "apps/accounts/kustomization.yaml": [
+    "resources:",
+    "  - service.yaml",
+    "namespace: forge-accounts",
+  ].join("\n"),
 };
 const source: FileSource = { list: () => Object.keys(FILES), read: (p) => FILES[p] };
 const C = "e5e0010";
@@ -159,5 +195,138 @@ describe("J1: an exposure names a component of the estate", () => {
       cite: { file: "apps/accounts/route.yaml", line: 10, value: "accounts-api" },
     });
     expect((await run([f, e])).rejected).toEqual([]);
+  });
+});
+
+describe("J1: an Ingress path written as a regular expression", () => {
+  const ingress = (basePath: string, part = "/forge/limits(/|$)(.*)") =>
+    route({
+      id: "ingress.limits",
+      resourceType: "ingress",
+      resourceName: "limits-api",
+      exposes: "limits-api",
+      host: "apps.forge.internal",
+      basePath,
+      cite: {
+        file: "apps/limits/ingress.yaml",
+        line: 4,
+        value: "limits-api",
+        with: [
+          { file: "apps/limits/ingress.yaml", line: 7, value: "apps.forge.internal" },
+          { file: "apps/limits/ingress.yaml", line: 10, value: part },
+        ],
+      },
+    });
+  const estate = { components: [...ESTATE.components, "limits-api"] };
+
+  it("keeps the plain prefix as the base path, the regex on the cited line", async () => {
+    expect((await run([ingress("/forge/limits")], estate)).rejected).toEqual([]);
+    expect((await run([ingress("/forge/limits", "/forge/limits")], estate)).rejected).toEqual([]);
+  });
+
+  it("rejects the regex itself as the base path: the plain prefix is written", async () => {
+    const r = await run([ingress("/forge/limits(/|$)(.*)")], estate);
+    expect(r.rejected.map((x) => [x.code, x.message])).toEqual([
+      [
+        "exposure-regex",
+        'deploy ingress.limits basePath "/forge/limits(/|$)(.*)" is a regular expression: write its plain prefix, "/forge/limits" (the segments before the first pattern), and keep the line that writes the expression cited',
+      ],
+    ]);
+  });
+
+  it("still rejects a prefix the line doesn't write", async () => {
+    const r = await run([ingress("/forge/caps")], estate);
+    expect(r.rejected.map((x) => x.code)).toEqual(["claim-not-on-line"]);
+  });
+});
+
+describe("J1: a Service's in-cluster address", () => {
+  const service = (host: string, o: Record<string, unknown> = {}) =>
+    route({
+      id: "service.accounts",
+      resourceType: "service",
+      resourceName: "accounts-api",
+      host,
+      cite: {
+        file: "apps/accounts/service.yaml",
+        line: 6,
+        value: "accounts-api",
+        with: [
+          { file: "apps/accounts/kustomization.yaml", line: 3, value: "forge-accounts" },
+          { file: "apps/accounts/service.yaml", line: 11, value: "8080" },
+        ],
+      },
+      ...o,
+    });
+  const without = (f: Fact) => {
+    delete (f as { basePath?: string }).basePath;
+    return f;
+  };
+
+  it("keeps <name>.<namespace>.svc.cluster.local:<port>, each part on a cited line", async () => {
+    for (const h of [
+      "accounts-api.forge-accounts.svc.cluster.local:8080",
+      "accounts-api.forge-accounts.svc.cluster.local",
+    ])
+      expect((await run([without(service(h))])).rejected, h).toEqual([]);
+  });
+
+  it("rejects a namespace or a port no cited line writes", async () => {
+    const r = await run([
+      without(service("accounts-api.forge-ledger.svc.cluster.local:8080")),
+      without(service("accounts-api.forge-accounts.svc.cluster.local:9090", { id: "service.b" })),
+    ]);
+    expect(r.rejected.map((x) => [x.code, x.message])).toEqual([
+      [
+        "claim-not-on-line",
+        'deploy service.accounts host\'s namespace claims "forge-ledger", which apps/accounts/service.yaml:6 (or the line either side) and its parts does not name',
+      ],
+      [
+        "claim-not-on-line",
+        'deploy service.b host\'s port claims "9090", which apps/accounts/service.yaml:6 (or the line either side) and its parts does not name',
+      ],
+    ]);
+  });
+
+  it("reads such a host on anything but a Service as written, so it must be on a line", async () => {
+    const r = await run([
+      without(service("accounts-api.forge-accounts.svc.cluster.local", { resourceType: "route" })),
+    ]);
+    expect(r.rejected.map((x) => x.code)).toEqual(["claim-not-on-line"]);
+  });
+});
+
+describe("J1: a module the manifest doesn't list, named <repo>/<module>", () => {
+  const estate = {
+    components: ESTATE.components,
+    repoComponents: { "forge-accounts": ["accounts-api", "statements"] },
+  };
+  const named = (exposes: string, id = "route.accounts") => route({ exposes, id });
+
+  it("keeps a module the repo's facts name", async () => {
+    expect((await run([named("forge-accounts/statements")], estate)).rejected).toEqual([]);
+    expect((await run([named("forge-accounts/Statements")], estate)).rejected).toEqual([]);
+  });
+
+  it("rejects a module the repo's facts don't name, and a repo the estate hasn't", async () => {
+    const r = await run(
+      [named("forge-accounts/ghost"), named("forge-ghost/statements", "route.ghost")],
+      estate,
+    );
+    expect(r.rejected.map((x) => [x.code, x.message])).toEqual([
+      [
+        "exposure-component",
+        'deploy route.accounts exposes "forge-accounts/ghost": forge-accounts\'s facts name no component ghost (they name accounts-api, statements); name the module as its facts do, or write a question when no file says which',
+      ],
+      [
+        "exposure-component",
+        'deploy route.ghost exposes "forge-ghost/statements", which is no component or repo of the estate (repos.manifest.yaml): name the component the route reaches, or write a question when no file says which',
+      ],
+    ]);
+  });
+
+  it("keeps the module of a repo whose facts aren't written yet: the join says if it names none", async () => {
+    const r = await run([named("deploy-config/anything")], estate);
+    expect(r.rejected).toEqual([]);
   });
 });

@@ -11,6 +11,7 @@ import {
   loadOrgPack,
   orgPackDirOf,
   parseCorrections,
+  parseFactsLines,
   QuestionDraft,
   raiseQuestions,
   serializeFacts,
@@ -239,12 +240,14 @@ export interface VerifySummary {
 
 /**
  * The estate an exposure may name (ADR 0143): every repo of the org pack's manifests, its
- * component and its modules' components. Undefined when there is no org pack, or it lists no
+ * component and its modules' components; and (beta.10) the components each repo's facts file
+ * names, so `<repo>/<module>` can name a module the manifest doesn't list. A repo with no facts
+ * file yet is left out of `repoComponents`. Undefined when there is no org pack, or it lists no
  * repo, so nothing checks the name then.
  */
 export async function estateComponentsOf(
   root: string,
-): Promise<{ components: string[] } | undefined> {
+): Promise<{ components: string[]; repoComponents: Record<string, string[]> } | undefined> {
   const op = await loadOrgPack(orgPackDirOf(root)).catch(() => undefined);
   const repos = (op?.profiles ?? []).flatMap((p) => p.repos?.repos ?? []);
   if (!repos.length) return undefined;
@@ -253,7 +256,18 @@ export async function estateComponentsOf(
     ...(r.component ? [r.component] : []),
     ...(r.modules ?? []).map((m) => m.component),
   ]);
-  return { components: [...new Set(components)].sort() };
+  const repoComponents: Record<string, string[]> = {};
+  for (const r of repos) {
+    const text = await readFile(join(factsDirOf(root), `${r.id}.jsonl`), "utf8").catch(
+      () => undefined,
+    );
+    if (text === undefined) continue;
+    const named = parseFactsLines(text).facts.flatMap((f) => (f.component ? [f.component] : []));
+    repoComponents[r.id] = [
+      ...new Set([r.component ?? r.id, ...(r.modules ?? []).map((m) => m.component), ...named]),
+    ].sort();
+  }
+  return { components: [...new Set(components)].sort(), repoComponents };
 }
 
 /**
