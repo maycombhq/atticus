@@ -4,6 +4,19 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## 2.0.0-beta.10 (2026-10-31)
 
+### Fixed before release: from the independent review
+
+- A proposed answer's citation must name the question's repo or one a manifest lists, and that repo must have a checkout here. Only a change's own question cites the metarepo, and never Atticus's own folders (proposals, questions, facts, knowledge, judgments, runs); links are followed and must stay inside the checkout, and a refused citation never says what the file holds.
+- A call a person sent outside the estate is no longer asked about, even when its config gives each environment a different repo's host, and it is listed with the outside calls.
+- A link joined by a host that came from a platform-wide setting, from a setting found only by its folder name, or from a deploy file the manifest disagrees with is `inferred` and flagged `joined-by-platform-setting`, `joined-by-folder-name` or `joined-despite-conflict`; Why is this linked?, the critic's guessed-link check, a change's impact (may break), question retiring and `atticus join measure` treat them as guesses (C4 2.38.0).
+- The sample audit, the prototype comparison and `atticus intake impact` join with the org pack's conventions, so they see the same links as the catalog.
+- A facts file, corrections file or reviewed list written on Windows (`src\main\...`) is read with `/`, so it verifies and joins exactly as one written with `/`.
+
+### Placeholders through valueFrom, and slips of form fixed everywhere
+
+- The join follows a Deployment's variable set `valueFrom` a ConfigMap (`configMapKeyRef:<configmap>/<key>` in the config fact's `source`) to that ConfigMap's entry, in the same repo or the caller's, citing both lines; one from a Secret (`secretKeyRef:`) is followed only to a plain host, and a Secret's values are never facts. A value with two placeholders (`${SCHEME}://${HOST}/v1`) is resolved when each has one value.
+- The reader's slips of form (a camelCase id, a flow with no cite) are now fixed in `atticus map`'s batches, across batches, and in the Map's facts API too, with the same notes as `atticus verify`.
+
 ### Upgrade everyone who shares the metarepo together
 
 - Facts written by beta.10 can carry new deploy fields (`host`, `basePath`, `exposes`; ADR 0143), which beta.9 and older reject, and `roles.yaml` moves to version 2 with `atticus upgrade`. Upgrade every teammate who reads the same `facts/` folder at once.
