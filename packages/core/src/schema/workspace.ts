@@ -81,7 +81,7 @@ const RelativePosixPath = z
  * takes calls on any port; with one ("localhost:9966", ADR 0088) only calls on that port, so
  * two services on one host are told apart.
  */
-const HostPattern = z
+export const HostPattern = z
   .string()
   .min(1)
   .max(259)

@@ -42,10 +42,12 @@ import {
   diffCatalogs,
   diffIsEmpty,
   estateFacts,
+  estateRepos,
   isPrototypeRepo,
   prototypeLeftOut,
   groupedTargetDrafts,
   readCatalog,
+  ruledTargets,
   splitTargetGroups,
   staleTargetQuestions,
   targetQuestionFor,
@@ -358,8 +360,14 @@ export async function writeFactsIntoCatalog(
     }
     const curated = await readCatalog(join(catalogDirOf(root), "curated"), { cacheRoot: root });
     const rerun = `atticus verify ${repo} --write`;
-    const answered = (await listQuestions(root, { repo, step: TARGETS_STEP })).questions;
-    const targets = targetsFromAnswers(repo, facts, answered);
+    const everyTarget = (await listQuestions(root, { step: TARGETS_STEP })).questions;
+    const answered = everyTarget.filter((q) => q.repo === repo);
+    // ADR 0153 (Q2): an answer's rule, from this repo's questions or another repo's whose scope
+    // is this repo's type, covers every call it matches.
+    const repoType = estateRepos(op).find((r) => r.id === repo)?.type;
+    const targetsOpts = repoType ? { repoType } : {};
+    const targets = targetsFromAnswers(repo, facts, everyTarget, targetsOpts);
+    const ruled = ruledTargets(repo, facts, everyTarget, targetsOpts);
     // The estate join (ADR 0124, C-join): the other repos' verified facts, so this repo's calls
     // join the entries that serve them and their calls into this repo are joined again.
     const estate = await estateFacts(root, op, repo);
@@ -477,6 +485,7 @@ export async function writeFactsIntoCatalog(
       open: answered.filter((q) => q.state === "open"),
       drafted,
       asked,
+      ruled,
       ...(result.join ? { join: result.join } : {}),
     })) {
       await retireQuestion(root, s.id, {

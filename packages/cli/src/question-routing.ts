@@ -1,11 +1,15 @@
-import { readdir } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { parse } from "yaml";
 import {
   changesDirOf,
   checkedProposals,
+  isPersonsQuestion,
   orderQuestions,
-  ownerOfQuestion,
+  peopleOfChange,
   questionWeights,
   readTeams,
+  routeOfQuestion,
   teamsOfPerson,
   type Api,
   type Question,
@@ -16,8 +20,30 @@ import { loadRepos } from "@maycombhq/workspace";
  * The questions as `atticus questions list`, `atticus next` and the app's Questions page show
  * them (ADR 0140): in the order to ask (what a change in flight rests on first, then the answers
  * that join the most calls, Q3), each with the team it goes to (Q4), and with `mine` only the
- * questions of the teams the person is on. Files only.
+ * questions of the teams the person is on. A change's own questions go to the change's people,
+ * its change.yaml's `owners` (ADR 0153). Files only.
  */
+
+/** The people of a change, from its change.yaml's `owners`; none when it doesn't read. */
+async function changePeopleOf(root: string, id: string): Promise<string[]> {
+  const text = await readFile(join(changesDirOf(root), id, "change.yaml"), "utf8").catch(
+    () => undefined,
+  );
+  if (text === undefined) return [];
+  let data: unknown;
+  try {
+    data = parse(text);
+  } catch {
+    return [];
+  }
+  const owners = (data as { owners?: unknown } | null)?.owners;
+  if (!owners || typeof owners !== "object" || Array.isArray(owners)) return [];
+  const lists: Record<string, string[]> = {};
+  for (const [role, v] of Object.entries(owners as Record<string, unknown>))
+    if (Array.isArray(v))
+      lists[role] = v.filter((h): h is string => typeof h === "string" && !!h.trim());
+  return peopleOfChange(lists);
+}
 
 type About = NonNullable<Api.QuestionListT["about"]>[string];
 export type Me = NonNullable<Api.QuestionListT["me"]>;
@@ -54,6 +80,9 @@ export async function routeQuestions(
       () => [] as string[],
     ),
   );
+  const changePeople = new Map<string, string[]>();
+  for (const id of new Set(questions.map((q) => q.repo)))
+    if (changes.has(id)) changePeople.set(id, await changePeopleOf(root, id));
   const weights = await questionWeights(root, questions);
   // ADR 0144 (Q5): an open question's proposed answer, only once every line it cites holds.
   const proposals = new Map(
@@ -66,7 +95,7 @@ export async function routeQuestions(
     const p = q.state === "open" ? proposals.get(q.id) : undefined;
     about[q.id] = {
       ...(weights.get(q.id) ?? { restsOn: [], joins: 0 }),
-      owner: ownerOfQuestion(q, { owners, teams, changes }),
+      owner: routeOfQuestion(q, { owners, teams, changes, changePeople }),
       ...(p
         ? {
             proposal: {
@@ -89,11 +118,8 @@ export async function routeQuestions(
       handle: o.mine,
       teams: mine.map((t) => ({ id: t.id, ...(t.name ? { name: t.name } : {}) })),
     };
-    const ids = new Set(mine.map((t) => t.id));
-    list = list.filter((q) => {
-      const w = about[q.id]!.owner;
-      return "team" in w && ids.has(w.team);
-    });
+    const handle = o.mine;
+    list = list.filter((q) => isPersonsQuestion(handle, about[q.id]!.owner, teams));
   }
   return { questions: list, about, ...(me ? { me } : {}), problems };
 }

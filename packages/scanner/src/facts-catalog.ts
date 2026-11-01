@@ -15,8 +15,13 @@ import {
   projectFacts,
   questionId,
   isGuessedJoin,
+  isPathMatch,
+  hostMatches,
   NO_TARGET,
   slugify,
+  TARGETS_SPLIT_LABEL,
+  TARGETS_STEP_ID,
+  urlHostPort,
   type CallersResult,
   type CatalogRecord,
   type CuratedProblem,
@@ -46,7 +51,7 @@ import { estateRepos, isPrototypeRepo, mergeEstate } from "./merge-input.js";
  */
 
 /** The step that asks which repo or system answers a call with no target and no host. */
-export const TARGETS_STEP = "facts-targets";
+export const TARGETS_STEP = TARGETS_STEP_ID;
 
 /** The last option of a targets question: nothing in the estate answers the call. */
 export const TARGETS_NONE = "None of these";
@@ -299,7 +304,7 @@ export function targetQuestionDrafts(
  * The option of a group's question (Q1) that says its calls don't all go to one place: nothing
  * is read from it, and each call is asked on its own on the next write.
  */
-export const TARGETS_SPLIT = "Not all to one place";
+export const TARGETS_SPLIT = TARGETS_SPLIT_LABEL;
 
 /** Segments a group's prefix keeps going past: an api root or a version. */
 const PREFIX_ROOT = /^(api|rest|services?|v\d+(\.\d+)*)$/i;
@@ -432,18 +437,95 @@ export function groupedTargetDrafts(
   return out.sort((a, b) => a.factId.localeCompare(b.factId));
 }
 
+/** A path's segments, a placeholder on either side being any one. */
+const segmentsOf = (p: string) =>
+  p
+    .split(/[?#]/)[0]!
+    .split("/")
+    .filter(Boolean)
+    .map((x) => (/^[{:<]/.test(x) ? "{}" : x));
+
+/**
+ * Whether a call is one an answer's rule covers (ADR 0153, Q2): a path prefix covers a call whose
+ * path starts with its segments (`/forge/limits/**` and `/forge/limits` alike); a host pattern, a
+ * call on a host it matches as the manifest matches hosts (the call's own host, or its base's URL).
+ */
+export function ruleCoversCall(match: string, f: FactOf<"call">, facts: readonly Fact[]): boolean {
+  if (isPathMatch(match)) {
+    const want = segmentsOf(match.replace(/\/\*\*$/, ""));
+    const got = segmentsOf(f.path);
+    return (
+      want.length <= got.length &&
+      want.every((x, i) => x === "{}" || got[i] === "{}" || x === got[i])
+    );
+  }
+  const url = urlOf(f, facts);
+  const hp = url ? urlHostPort(url) : undefined;
+  return !!hp?.host && hostMatches(match, hp.host, hp.port);
+}
+
+/** A call a rule answers: the question whose answer has the rule, and the rule. */
+export interface RuledCall {
+  id: string;
+  match: string;
+  label: string;
+}
+
+/**
+ * The calls of a repo the answers' rules cover (ADR 0153, Q2), by call fact id: each answered
+ * targets question with a rule (`answer.match`) whose scope allows the repo (this repo, or its
+ * type), for every call that still has no target, found now or later. Where two rules cover a
+ * call, the one scoped to the repo wins, then the longer rule, then the later answer.
+ */
+export function ruledTargets(
+  repo: string,
+  facts: readonly Fact[],
+  questions: readonly Question[],
+  o: { repoType?: string } = {},
+): Map<string, RuledCall> {
+  const rules = questions
+    .filter(
+      (q) =>
+        q.askedBy?.step === TARGETS_STEP &&
+        q.state === "answered" &&
+        !!q.answer?.match &&
+        (q.answer.scope.level === "repo"
+          ? q.answer.scope.id === repo
+          : !!o.repoType && q.answer.scope.id === o.repoType),
+    )
+    .sort(
+      (a, b) =>
+        (a.answer!.scope.level === "repo" ? 0 : 1) - (b.answer!.scope.level === "repo" ? 0 : 1) ||
+        b.answer!.match!.length - a.answer!.match!.length ||
+        b.answer!.at.localeCompare(a.answer!.at) ||
+        a.id.localeCompare(b.id),
+    );
+  const out = new Map<string, RuledCall>();
+  if (!rules.length) return out;
+  for (const f of facts) {
+    if (!needsTarget(f, facts)) continue;
+    const q = rules.find((r) => ruleCoversCall(r.answer!.match!, f, facts));
+    const label = q ? answerLabel(q) : undefined;
+    if (q && label && label !== TARGETS_SPLIT)
+      out.set(f.id, { id: q.id, match: q.answer!.match!, label });
+  }
+  return out;
+}
+
 /**
  * The targets people named for calls (the answers to targets questions), by call fact id. An
  * option is its label; words of the person's own are read as the target's name; "None of these"
  * names nothing. Only answered questions count. A call's own question is read first; else the
  * answer to its group's question (Q1) names it, when the call is one the group asked (its line
  * is the question's evidence) or one that still has no target and no host, so a call added to
- * the group later reads the same answer.
+ * the group later reads the same answer; else an answer's rule that covers it (ADR 0153, Q2),
+ * from any repo's question whose scope allows this repo (`repoType` for a repo-type scope).
  */
 export function targetsFromAnswers(
   repo: string,
   facts: readonly Fact[],
   questions: readonly Question[],
+  o: { repoType?: string } = {},
 ): Record<string, string> {
   const byId = new Map(questions.map((q) => [q.id, q]));
   const groups = new Map<string, Question>();
@@ -457,6 +539,7 @@ export function targetsFromAnswers(
     )
     .sort((a, b) => a.answer!.at.localeCompare(b.answer!.at) || a.id.localeCompare(b.id)))
     groups.set(q.question.trim(), q);
+  const ruled = ruledTargets(repo, facts, questions, o);
   const out: Record<string, string> = {};
   for (const f of [...facts].sort((a, b) => a.id.localeCompare(b.id))) {
     // A call that names a target is asked only when the estate has no such target and two or
@@ -469,8 +552,9 @@ export function targetsFromAnswers(
       const g = groups.get(targetGroupQuestion(repo, f));
       asked = g && (needsTarget(f, facts) || g.evidence.includes(q.evidence[0]!)) ? g : undefined;
     }
-    if (!asked || asked.state !== "answered" || !asked.answer) continue;
-    const label = answerLabel(asked);
+    let label =
+      asked && asked.state === "answered" && asked.answer ? answerLabel(asked) : undefined;
+    if (!label || label === TARGETS_SPLIT) label = ruled.get(f.id)?.label;
     if (!label || label === TARGETS_SPLIT) continue;
     // F3: "None of these" binds: the call is kept out of the join, not guessed by path.
     if (label === TARGETS_NONE) {
@@ -526,6 +610,8 @@ export function staleTargetQuestions(input: {
   /** The calls this write asks about. */
   asked: ReadonlySet<string>;
   join?: FactsJoinResult;
+  /** ADR 0153 (Q2): the calls an answer's rule covers (`ruledTargets`). */
+  ruled?: ReadonlyMap<string, RuledCall>;
 }): { id: string; why: string; replacedBy?: string[] }[] {
   const drafted = new Set(input.drafted.map((d) => d.id));
   const out: { id: string; why: string; replacedBy?: string[] }[] = [];
@@ -541,6 +627,8 @@ export function staleTargetQuestions(input: {
     }
     if (calls.some((c) => input.asked.has(c.id))) continue;
     const reasons = calls.map((c) => {
+      const rule = input.ruled?.get(c.id);
+      if (rule) return `${callWhat(c)} is answered by rule in ${rule.id} (${rule.match})`;
       const j = input.join?.joins.find(
         (x) => x.call.repo === input.repo && x.call.fact === c.id && x.how !== "answer",
       );
@@ -549,7 +637,15 @@ export function staleTargetQuestions(input: {
       if (!j && c.to) return `${callWhat(c)} now names ${c.to} in the code`;
       return undefined;
     });
-    if (reasons.every((r) => r !== undefined)) out.push({ id: q.id, why: reasons.join("; ") });
+    const rules = [
+      ...new Set(calls.flatMap((c) => (input.ruled?.get(c.id) ? [input.ruled.get(c.id)!.id] : []))),
+    ].sort();
+    if (reasons.every((r) => r !== undefined))
+      out.push({
+        id: q.id,
+        why: reasons.join("; "),
+        ...(rules.length ? { replacedBy: rules } : {}),
+      });
   }
   return out.sort((a, b) => a.id.localeCompare(b.id));
 }

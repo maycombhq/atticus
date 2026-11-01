@@ -32,7 +32,11 @@ export function aboutWords(a: About | undefined): string[] {
   if (!a) return [];
   return [
     ...(a.restsOn.length ? [C.restsOn(a.restsOn)] : []),
-    "team" in a.owner ? C.owner(a.owner.team, a.owner.name) : C.noOwner(a.owner.none),
+    "team" in a.owner
+      ? C.owner(a.owner.team, a.owner.name)
+      : "change" in a.owner
+        ? C.changeOwner(a.owner.change, a.owner.people)
+        : C.noOwner(a.owner.none),
     ...(a.joins ? [C.joins(a.joins)] : []),
     ...(a.proposal ? [C.proposal.listed] : []),
   ];
@@ -171,7 +175,12 @@ export interface AnswerForm {
   text: string;
   scope: "repo" | "repo-type";
   repoType: string;
+  /** ADR 0153 (Q2): a host pattern or a path prefix the answer covers; empty for none. */
+  match?: string;
 }
+
+/** The steps whose answers take a rule (ADR 0153): where calls go, by target or by host. */
+export const RULE_STEPS: ReadonlySet<string> = new Set(["facts-targets", "scan-hosts"]);
 
 /** The POST body for the form, or what is missing in words. */
 export function answerBody(f: AnswerForm): { body: Record<string, unknown> } | { error: string } {
@@ -179,11 +188,12 @@ export function answerBody(f: AnswerForm): { body: Record<string, unknown> } | {
   const what =
     f.pick === "words" ? (f.text.trim() ? { text: f.text.trim() } : undefined) : { option: f.pick };
   if (!what) return { error: C.needWords };
+  const rule = f.match?.trim() ? { match: f.match.trim() } : {};
   if (f.scope === "repo-type") {
     if (!f.repoType.trim()) return { error: C.needType };
-    return { body: { ...what, scope: "repo-type", repoType: f.repoType.trim() } };
+    return { body: { ...what, scope: "repo-type", repoType: f.repoType.trim(), ...rule } };
   }
-  return { body: { ...what, scope: "repo" } };
+  return { body: { ...what, scope: "repo", ...rule } };
 }
 
 const day = (iso: string) => iso.slice(0, 10);
@@ -236,7 +246,9 @@ export function QuestionList(p: {
               <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
                 {d.me.teams.length
                   ? C.mineTeams(d.me.teams.map((t) => t.name ?? t.id).join(", "))
-                  : C.mineNone(d.me.handle)}
+                  : d.questions.length
+                    ? C.mineChanges(d.me.handle)
+                    : C.mineNone(d.me.handle)}
               </p>
             )}
             {d.me && d.me.teams.length > 0 && d.questions.length === 0 && (
@@ -319,6 +331,7 @@ export function QuestionDetail(p: {
     text: q.answer?.text ?? "",
     scope: q.answer?.scope.level ?? q.scope.level,
     repoType: q.scope.level === "repo-type" ? q.scope.id : "",
+    match: q.answer?.match ?? "",
   });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>();
@@ -358,6 +371,7 @@ export function QuestionDetail(p: {
           ...(form.scope === "repo-type" && form.repoType.trim()
             ? { repoType: form.repoType.trim() }
             : {}),
+          ...(form.match?.trim() ? { match: form.match.trim() } : {}),
         },
       });
       setDone(r);
@@ -387,7 +401,25 @@ export function QuestionDetail(p: {
         <p style={{ margin: 0 }}>
           {C.answered(q.answer.by, day(q.answer.at))}:{" "}
           {q.answer.text ?? q.options[(q.answer.option ?? 1) - 1]?.label}
+          {q.answer.match ? ` · ${C.rule.answered(q.answer.match)}` : ""}
         </p>
+      )}
+      {q.answer?.proposal && (
+        <div className="stack" style={{ gap: 4 }}>
+          <p className="muted" style={{ margin: 0 }}>
+            {C.fromProposal(q.answer.proposal.by, day(q.answer.proposal.at))}
+          </p>
+          <ul style={{ margin: 0 }}>
+            {q.answer.proposal.cites.map((c) => (
+              <li key={`${c.repo ?? q.repo}:${c.file}:${c.line}`}>
+                <span className="mono">
+                  {c.repo ?? q.repo} {c.file}:{c.line}
+                </span>{" "}
+                <q>{c.quote}</q>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
       {q.state === "open" && p.proposal && !done && (
         <ProposalView
@@ -498,6 +530,23 @@ export function QuestionDetail(p: {
               </div>
             )}
           </fieldset>
+          {RULE_STEPS.has(q.askedBy.step) && (
+            <div className="stack" style={{ gap: 4 }}>
+              <label htmlFor={`${name}-match`} className="hud" style={{ fontSize: 10 }}>
+                {C.rule.label}
+              </label>
+              <input
+                id={`${name}-match`}
+                className="field mono"
+                value={form.match ?? ""}
+                aria-describedby={`${name}-match-d`}
+                onChange={(e) => set({ match: e.target.value })}
+              />
+              <span id={`${name}-match-d`} className="muted" style={{ fontSize: 12 }}>
+                {C.rule.hint}
+              </span>
+            </div>
+          )}
           {error && (
             <p role="alert" className="state error" style={{ margin: 0 }}>
               {error}

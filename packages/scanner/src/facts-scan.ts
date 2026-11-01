@@ -14,8 +14,13 @@ import {
 } from "@maycombhq/core";
 import { dirSource, sameCommit, verifyFacts } from "@maycombhq/verify";
 import { changesSince, type GitRunner } from "@maycombhq/workspace";
-import { componentRenames, factsRecords, targetsFromAnswers } from "./facts-catalog.js";
-import { productionRepos } from "./merge-input.js";
+import {
+  componentRenames,
+  factsRecords,
+  targetsFromAnswers,
+  TARGETS_STEP,
+} from "./facts-catalog.js";
+import { estateRepos, productionRepos } from "./merge-input.js";
 
 /**
  * A scan's use of a repo's verified facts (ADR 0124 §3): when the assistant has read a repo and
@@ -96,9 +101,14 @@ export async function factsForScan(
     const left = report.rejected.length;
     carriedSaid = `; ${report.carried.length} carried from commit ${from} to ${commit!.slice(0, 7)} (the files they cite are unchanged, their lines checked again)${left ? `, ${left} left out until read again (they cite a file changed since, or name a fact that does: /atticus-map ${repo}, then atticus verify ${repo} --write)` : ""}`;
   }
-  const questions = (await listQuestions(root, { repo }).catch(() => ({ questions: [] })))
-    .questions;
-  const targets = targetsFromAnswers(repo, facts, questions);
+  // ADR 0153 (Q2): every repo's targets questions, since an answer's rule reaches the repos its
+  // scope allows.
+  const questions = (
+    await listQuestions(root, { step: TARGETS_STEP }).catch(() => ({ questions: [] }))
+  ).questions;
+  const targets = targetsFromAnswers(repo, facts, questions, {
+    repoType: estateRepos(op).find((r) => r.id === repo)?.type,
+  });
   // B-fixes, problem 1: a component another repo's facts have too gets an estate-unique id,
   // as verify --write gives it.
   const others = (await estateFacts(root, op, repo)).repos;
@@ -155,6 +165,9 @@ export async function estateFacts(
   const repos: { repo: string; facts: Fact[] }[] = [];
   const targets: Record<string, Record<string, string>> = {};
   const notes: string[] = [];
+  const questions = (
+    await listQuestions(root, { step: TARGETS_STEP }).catch(() => ({ questions: [] }))
+  ).questions;
   // A prototype's facts are never part of the estate join (ADR 0133).
   for (const r of productionRepos(op)) {
     if (r.id === except) continue;
@@ -174,9 +187,7 @@ export async function estateFacts(
       continue;
     }
     repos.push({ repo: r.id, facts: parsed.facts });
-    const questions = (await listQuestions(root, { repo: r.id }).catch(() => ({ questions: [] })))
-      .questions;
-    const named = targetsFromAnswers(r.id, parsed.facts, questions);
+    const named = targetsFromAnswers(r.id, parsed.facts, questions, { repoType: r.type });
     if (Object.keys(named).length) targets[r.id] = named;
   }
   return { repos, targets, notes };

@@ -60,7 +60,10 @@ Every command under the twelve, with its options.
   atticus questions show <id> [--json]  One question on file, with its options, evidence and answer
   atticus questions answer <id> --option <n> | --text "..." | --accept-proposal   Write the answer to the file; prints the rerun
           [--scope repo|repo-type] [--type <repo type>] [--by who]  (--accept-proposal: the assistant's proposed answer, checked again, as yours)
+          [--match <host pattern or /path/**>]  (a target or hosts answer by rule: it covers every call that matches, the calls found later too)
   atticus questions proposed [--json]  The answers /atticus-propose proposed for open questions, each citation checked (the file, the line, the quote on it); exits 1 while one doesn't check
+  atticus questions sheet [--out <file>]   Every open question in one YAML answer sheet, each with an empty answer:, to answer in one sitting
+  atticus questions sheet --apply <file> [--by who] [--json]   Answer each filled entry as you; skips blanks, refuses one whose question changed since
   atticus change new "<title>"         Start a change from a template: --type <type>
           [--template id] [--id id] [--owner role=a,b]... [--system id]... [--like <archived change>]
           [--impact <vendor spec>]  (its footprint: what the spec's newer version reaches, see intake impact)

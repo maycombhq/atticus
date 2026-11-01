@@ -111,7 +111,7 @@ describe("atticus upgrade", () => {
       // ADR 0087: the Forge pack's gates.yaml is at version 1.
       ["gates-v2", ["org-pack/gates.yaml"]],
       ["flow-schema-v2", ["specs/forge-web/forge-web.save-customer.yaml"]],
-      ["questions-v2", ["questions/q-0f1e2d3c4b5a.yaml"]],
+      ["questions-v3", ["questions/q-0f1e2d3c4b5a.yaml"]],
       // The Forge pack's sources.yaml is at version 1.
       ["sources-v2", ["org-pack/sources.yaml"]],
       // ADR 0132: and on to version 3, in the same run.
@@ -168,7 +168,7 @@ describe("atticus upgrade", () => {
       "gates-v2",
       "flow-schema-v2",
       "change-types-v2",
-      "questions-v2",
+      "questions-v3",
       "starter-review",
       "catalog-schema-v3",
       "sources-v2",
@@ -209,7 +209,7 @@ describe("atticus upgrade", () => {
       },
     ]);
     expect(await readFile(join(root, "questions/q-0f1e2d3c4b5a.yaml"), "utf8")).toMatch(
-      /^schemaVersion: 2$/m,
+      /^schemaVersion: 3$/m,
     );
     expect(
       await readFile(join(root, "specs/forge-web/forge-web.save-customer.yaml"), "utf8"),

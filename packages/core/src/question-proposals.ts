@@ -16,7 +16,12 @@ import {
 import { checkoutDirOf } from "./repo-reads.js";
 import { answerQuestion, QuestionError, quotedIn, readQuestion } from "./questions.js";
 import { IsoDateTime, RecordId } from "./schema/common.js";
-import { QuestionId, QuestionScopeLevel, type Question } from "./schema/question.js";
+import {
+  QuestionId,
+  QuestionProposalCite,
+  QuestionScopeLevel,
+  type Question,
+} from "./schema/question.js";
 
 /**
  * The assistant proposes, a person confirms (ADR 0144, Q5). The `/atticus-propose` step reads the
@@ -32,21 +37,15 @@ import { QuestionId, QuestionScopeLevel, type Question } from "./schema/question
  * problem never says what the file holds. A proposal that fails is never shown as a proposal, only as its problems.
  * `acceptProposal` checks it again and records the answer as the person's (`answerQuestion`).
  *
- * * The proposals folder holds drafts for a person to review, not a contract: the
- * question file's format is unchanged.
+ * The proposals folder holds drafts for a person to review, not a contract. An accepted answer
+ * records, in the question file, that it was a proposal (ADR 0153): who proposed it, when, and the
+ * lines it cited.
  */
 
 export const QUESTION_PROPOSAL_SCHEMA_VERSION = 1 as const;
 
-/** A line the proposal rests on. */
-export const ProposalCite = z.strictObject({
-  /** The repo the file is in; the question's own when left out. */
-  repo: z.string().trim().min(1).optional(),
-  file: z.string().trim().min(1),
-  line: z.number().int().min(1),
-  /** The words on that line the proposal rests on. */
-  quote: z.string().trim().min(1),
-});
+/** A line the proposal rests on (the same shape an accepted answer keeps, ADR 0153). */
+export const ProposalCite = QuestionProposalCite;
 export type ProposalCite = z.infer<typeof ProposalCite>;
 
 export const QuestionProposal = z.strictObject({
@@ -295,7 +294,7 @@ export async function proposalOf(root: string, id: string): Promise<CheckedPropo
 export async function acceptProposal(
   root: string,
   id: string,
-  a: { by: string; at: string; scope?: QuestionScopeLevel; repoType?: string },
+  a: { by: string; at: string; scope?: QuestionScopeLevel; repoType?: string; match?: string },
 ): ReturnType<typeof answerQuestion> {
   const p = await proposalOf(root, id);
   if (!p?.proposal)
@@ -314,7 +313,9 @@ export async function acceptProposal(
       : { text: p.proposal.answer.text! }),
     ...(a.scope ? { scope: a.scope } : {}),
     ...(a.repoType ? { repoType: a.repoType } : {}),
+    ...(a.match ? { match: a.match } : {}),
     by: a.by,
     at: a.at,
+    proposal: { by: p.proposal.by, at: p.proposal.at, cites: p.proposal.cites },
   });
 }

@@ -110,7 +110,7 @@ describe("atticus questions proposed, list, show and answer --accept-proposal", 
     expect(r.err).toBe("");
     expect(r.code).toBe(0);
     expect(r.out).toContain(
-      "It was the assistant's proposal; you accepted it, so it is recorded as answered by pat.",
+      "It was the assistant's proposal; you accepted it, so it is recorded as answered by pat, with the proposal it came from.",
     );
     expect((await readQuestion(root, id))?.answer).toMatchObject({ option: 1, by: "pat" });
   });

@@ -69,8 +69,52 @@ export function ownerOfQuestion(
   return { none: `no repos.manifest.yaml lists ${q.repo}, so no team owns it` };
 }
 
-/** The owner in a few words: "team-ledger (Ledger team)", or "no owner: why". */
-export function ownerWords(o: QuestionOwner): string {
+/**
+ * Who a question goes to, a change's people included (ADR 0153, Q4): a change's own question,
+ * filed under the change's id, goes to the people its change.yaml names under `owners`, whatever
+ * they do on it; every other question goes to its repo's team (`ownerOfQuestion`).
+ */
+export type QuestionRoute = QuestionOwner | { change: string; people: string[] };
+
+/** Everyone a change.yaml's `owners` names, by handle, once each, sorted. */
+export function peopleOfChange(owners: Readonly<Record<string, readonly string[]>>): string[] {
+  const seen = new Map<string, string>();
+  for (const list of Object.values(owners))
+    for (const h of list)
+      if (!seen.has(handleKey(h))) seen.set(handleKey(h), h.trim().replace(/^@/, ""));
+  return [...seen.values()].sort((a, b) => a.localeCompare(b));
+}
+
+export function routeOfQuestion(
+  q: Pick<Question, "repo">,
+  o: Parameters<typeof ownerOfQuestion>[1] & {
+    /** The people of each change (`peopleOfChange`), by change id. */
+    changePeople?: ReadonlyMap<string, readonly string[]>;
+  },
+): QuestionRoute {
+  if (!o.owners.has(q.repo) && o.changes?.has(q.repo) && o.changePeople) {
+    const people = o.changePeople.get(q.repo) ?? [];
+    return people.length
+      ? { change: q.repo, people: [...people] }
+      : { none: `${q.repo} is a change, and its change.yaml names no owners` };
+  }
+  return ownerOfQuestion(q, o);
+}
+
+/** Whether a question is the person's: they are on its team, or one of its change's people. */
+export function isPersonsQuestion(
+  handle: string,
+  route: QuestionRoute,
+  teams: readonly Team[],
+): boolean {
+  if ("change" in route) return route.people.some((p) => handleKey(p) === handleKey(handle));
+  if ("none" in route) return false;
+  return teamsOfPerson(handle, teams).some((t) => t.id === route.team);
+}
+
+/** The owner in a few words: "team-ledger (Ledger team)", "add-pins's people: ari, sam", or "no owner: why". */
+export function ownerWords(o: QuestionRoute): string {
   if ("none" in o) return `no owner: ${o.none}`;
+  if ("change" in o) return `${o.change}'s people: ${o.people.join(", ")}`;
   return o.name ? `${o.team} (${o.name})` : o.team;
 }

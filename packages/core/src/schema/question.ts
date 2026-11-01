@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { IsoDateTime, RecordId } from "./common.js";
+import { BasePath, HostPattern } from "./workspace.js";
 
 /**
  * A question to a person (ADR 0078, C6): questions/<id>.yaml in the metarepo. People's and the
@@ -14,11 +15,16 @@ import { IsoDateTime, RecordId } from "./common.js";
  * narrower than) and a draft's `sameAs`. Both are optional, so version-1 files are read as they
  * are and come back as version 2 in memory; writers write version 2.
  */
-export const QUESTION_SCHEMA_VERSION = 2 as const;
+/**
+ * Version 3 (ADR 0153) adds two optional fields to an answer: `match`, the rule a target or host
+ * answer covers (a host pattern or a path prefix, Q2), and `proposal`, the assistant's proposal a
+ * person accepted as their answer (Q5). Version-1 and version-2 files read as before.
+ */
+export const QUESTION_SCHEMA_VERSION = 3 as const;
 
 const QuestionSchemaVersion = z
-  .union([z.literal(1), z.literal(QUESTION_SCHEMA_VERSION)])
-  .overwrite((): 1 | 2 => QUESTION_SCHEMA_VERSION);
+  .union([z.literal(1), z.literal(2), z.literal(QUESTION_SCHEMA_VERSION)])
+  .overwrite((): 1 | 2 | 3 => QUESTION_SCHEMA_VERSION);
 
 /** A question's id: q- and 12 hex characters of the fingerprint of what it asks about. */
 export const QuestionId = z.string().regex(/^q-[0-9a-f]{12}$/, "a question id is q- and 12 hex");
@@ -49,6 +55,37 @@ export const QuestionOption = z.strictObject({
 });
 export type QuestionOption = z.infer<typeof QuestionOption>;
 
+/**
+ * The rule an answer covers (ADR 0153, Q2): a host pattern as a manifest takes it
+ * (`*.payments.forge.internal`, `*` for any part of a label) or a path prefix
+ * (`/forge/limits/**`, or `/forge/limits`: the path and everything under it). One answer then
+ * covers every call that matches, found now or later, in each repo the answer's scope allows.
+ */
+export const AnswerMatch = z
+  .string()
+  .trim()
+  .min(1)
+  .refine(
+    (m) =>
+      m.startsWith("/")
+        ? BasePath.safeParse(m.replace(/\/\*\*$/, "")).success
+        : HostPattern.safeParse(m).success,
+    "a match is a host pattern (*.payments.forge.internal) or a path prefix (/forge/limits/**)",
+  );
+
+/** Whether a match is a path prefix (else it is a host pattern). */
+export const isPathMatch = (m: string): boolean => m.startsWith("/");
+
+/** A line a proposal rests on (ADR 0144): the repo (the question's own when left out), file, line, quote. */
+export const QuestionProposalCite = z.strictObject({
+  /** The repo the file is in; the question's own when left out. */
+  repo: z.string().trim().min(1).optional(),
+  file: z.string().trim().min(1),
+  line: z.number().int().min(1),
+  /** The words on that line the proposal rests on. */
+  quote: z.string().trim().min(1),
+});
+
 export const QuestionAnswer = z
   .strictObject({
     /** The option picked, counting from 1. */
@@ -62,6 +99,22 @@ export const QuestionAnswer = z
     scope: QuestionScope,
     /** For a repo-type answer: the type's skill file the answer goes in, relative to the root. */
     skill: z.string().min(1).optional(),
+    /**
+     * ADR 0153 (Q2): the rule the answer covers, for a target or hosts question: every call that
+     * matches, in each repo the scope allows, reads this answer.
+     */
+    match: AnswerMatch.optional(),
+    /**
+     * ADR 0153 (Q5): the answer was the assistant's proposal, confirmed by the person in `by`:
+     * which assistant proposed it, when, and the lines it cited (each checked when accepted).
+     */
+    proposal: z
+      .strictObject({
+        by: z.string().trim().min(1),
+        at: IsoDateTime,
+        cites: z.array(QuestionProposalCite).min(1),
+      })
+      .optional(),
   })
   .refine((a) => (a.option === undefined) !== (a.text === undefined), {
     message: "an answer is one option or the person's own words, not both or neither",

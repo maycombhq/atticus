@@ -171,7 +171,7 @@ describe("a question weighed against the questions on file (ADR 0117)", () => {
     const r = await raiseQuestions(root, [draft(c.new)], by("second"));
     expect(r.reused).toEqual([]);
     expect(r.raised[0]!.related).toEqual([{ id: existing.id, verdict: "unsure" }]);
-    expect(r.raised[0]!.schemaVersion).toBe(2);
+    expect(r.raised[0]!.schemaVersion).toBe(3);
   });
 
   it("follows the step's own reading when its words are in the earlier question, and keeps it", async () => {
