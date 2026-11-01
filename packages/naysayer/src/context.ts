@@ -1,5 +1,8 @@
 import type {
   CatalogRecord,
+  FactOf,
+  Question,
+  RepoRead,
   ChangeLifecycle,
   ChangeType,
   IntegrationPattern,
@@ -70,6 +73,18 @@ export interface CriticContext {
    * edit-and-apply, a waiver or a dismissal, each with its reason, who and when.
    */
   recorded?: RecordedFact[];
+  /**
+   * What the map the change rests on is made of (ADR 0140): the read of each repo the change's
+   * calls start or end in, and the open link questions with the calls each asks about. Loaded by
+   * the critic before the checks run; undefined where nothing loaded it.
+   */
+  estate?: EstateReads;
+}
+
+/** The reads and open link questions a change's calls rest on (ADR 0140). */
+export interface EstateReads {
+  reads: Map<string, RepoRead>;
+  questions: { question: Question; calls: FactOf<"call">[]; file: string }[];
 }
 
 export function buildContext(o: {
