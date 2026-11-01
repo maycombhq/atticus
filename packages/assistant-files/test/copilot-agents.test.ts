@@ -32,6 +32,7 @@ describe("the files Copilot reads", () => {
   it("writes a custom agent per kind of step, the two instruction files and the MCP server", () => {
     expect([...byPath.keys()].sort()).toEqual([
       ".github/agents/atticus-knowledge-reader.agent.md",
+      ".github/agents/atticus-question-proposer.agent.md",
       ".github/agents/atticus-repo-describer.agent.md",
       ".github/agents/atticus-repo-reader.agent.md",
       ".github/agents/atticus-stage-drafter.agent.md",
@@ -68,6 +69,18 @@ describe("the files Copilot reads", () => {
     ]);
     // The repo description has no slash command of its own: it is a step of the reading protocol.
     expect(by.get("atticus-repo-describer")?.commands).toEqual([]);
+    // ADR 0144 (Q5), caught up with beta.10: the proposed answers a person accepts or not.
+    expect(by.get("atticus-question-proposer")?.commands).toEqual(["atticus-propose"]);
+    expect(by.get("atticus-question-proposer")?.stepClass).toBe("read");
+  });
+
+  it("tells the reader of the second pass on the gaps and the proposer how a person accepts (beta.10)", () => {
+    const reader = agentText("atticus-repo-reader");
+    expect(reader).toContain("`atticus map <repo> --gaps`");
+    const proposer = agentText("atticus-question-proposer");
+    expect(proposer).toContain("`atticus questions proposed`");
+    expect(proposer).toContain("--accept-proposal");
+    expect(proposer).toContain("never answers");
   });
 
   it("names the agent, its description and the tools it needs, in front matter Copilot reads", () => {
@@ -236,6 +249,16 @@ describe("CLAUDE.md's rules, kept in what is generated", () => {
       expect(text, t).toContain(t);
     expect(text).toContain("atticus verify <repo>");
     expect(text).toContain("atticus handoff done <run>");
+    // What beta.10 added that an agent reads with (ADR 0141, 0144, 0148, 0157).
+    for (const c of [
+      "atticus estate fresh",
+      "atticus next --queue",
+      "atticus map <repo> --gaps",
+      "atticus change impact <change>",
+      "atticus questions proposed",
+      "atticus verify audit <repo> --report",
+    ])
+      expect(text, c).toContain(c);
     expect(text).toContain(
       "The only network call an Atticus step makes is to the model provider the organisation configured.",
     );

@@ -39,6 +39,7 @@ Every check in this step is a command Atticus already has, or a tool its MCP ser
 - `atticus map <repo> --estimate` for the folder, the commit and the facts file to write
 - `atticus verify <repo>` for whether a fact holds; read `<repo>.rejected.jsonl` for why each didn't
 - `atticus verify <repo> --write` only when a person asks for the facts to go to the catalog
+- `atticus map <repo> --gaps` for a second pass on what the last verify left, in a fresh chat that reads only `<repo>.gaps.md`
 - the `atticus` MCP server's `grep`, `files` and `outline` tools to search the repo, and `show_code` to read a cited line again
 
 If the `atticus` command isn't found, say so and stop; Atticus's install guide says how to install it, offline. If an MCP tool isn't offered here, use the command line instead.

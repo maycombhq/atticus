@@ -79,6 +79,7 @@ export const COPILOT_AGENTS: readonly CopilotAgentDef[] = [
       "`atticus map <repo> --estimate` for the folder, the commit and the facts file to write",
       "`atticus verify <repo>` for whether a fact holds; read `<repo>.rejected.jsonl` for why each didn't",
       "`atticus verify <repo> --write` only when a person asks for the facts to go to the catalog",
+      "`atticus map <repo> --gaps` for a second pass on what the last verify left, in a fresh chat that reads only `<repo>.gaps.md`",
       "the `atticus` MCP server's `grep`, `files` and `outline` tools to search the repo, and `show_code` to read a cited line again",
     ],
   },
@@ -127,6 +128,27 @@ export const COPILOT_AGENTS: readonly CopilotAgentDef[] = [
       "`atticus map <repo> --estimate`, which says whether anything says what the repo is yet",
       '`atticus repo describe <repo> --drafted "<one sentence>" --cites <file>:<line>`, which checks the citation',
       "`atticus repo describe <repo>` to read what is there before you draft another",
+    ],
+  },
+  {
+    id: "atticus-question-proposer",
+    description:
+      "Propose an answer to each open question from the code and config, citing its lines; Atticus checks every citation and a person accepts or answers.",
+    stepClass: "read",
+    target: "question",
+    commands: ["atticus-propose"],
+    purpose:
+      "You read the code and config behind each open question and propose an answer, with the lines it rests on (ADR 0144). The assistant never answers: `atticus questions proposed` checks every citation before anyone sees the proposal, and only a person's `atticus questions answer <id> --accept-proposal` (or Accept as my answer in the editor, or Accept on the app's Questions page) makes it an answer, recorded as theirs.",
+    writes: [
+      {
+        file: "`proposals/questions/<question id>.yaml`, one per question the code settles",
+        checkedBy: "`atticus questions proposed`",
+      },
+    ],
+    checks: [
+      "`atticus questions list --state open --json` for the questions, each question's `about` saying whether it has a proposal already",
+      "`atticus questions proposed`, run until it exits 0, which checks every file, line and quote a proposal cites",
+      "the `atticus` MCP server's `open_questions`, `show_code` and `grep` tools to read what a question rests on",
     ],
   },
   {
@@ -385,6 +407,8 @@ Atticus checks every answer deterministically. Use its commands and its MCP tool
 - A stage command with \`--handoff\` prints the prompt file, the result file and the two commands that finish the step: \`atticus handoff done <run>\`, then the same command with \`--resume <run>\`.
 - \`atticus task context <change> <task> --markdown\` loads a task's context, so nothing is pasted into the chat.
 - \`atticus findings <change>\` lists the critic's findings and their state. \`atticus questions list --state open\` lists the questions waiting on a person.
+- What a read rests on: \`atticus estate fresh\` lists every repo whose clone moved past its facts and the facts to read again; \`atticus next --queue\` lists the repos to read in the order that lands links early, with each one's cost; \`atticus map <repo> --gaps\` plans a second pass on what the last verify left, for a fresh chat; \`atticus verify audit <repo> --report\` gives a person's sample audit's precision.
+- What a change rests on: \`atticus change impact <change>\` says who each break reaches, up the chain, and its owner. \`atticus questions proposed\` checks every proposed answer's citations; a person accepts one with \`atticus questions answer <id> --accept-proposal\`.
 - The read-only \`atticus\` MCP server offers the same reading: \`next_step\`, \`waiting_on_you\`, \`task_context\`, \`findings\`, \`open_questions\`, \`knowledge_items\`, \`knowledge_ask\`, \`change_status\`, \`change_needs\`, and \`grep\`, \`files\`, \`outline\` and \`show_code\` over the code. Register it from \`.vscode/mcp.json\`.
 
 The only network call an Atticus step makes is to the model provider the organisation configured. Don't reach anywhere else.

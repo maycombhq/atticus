@@ -13,6 +13,7 @@ Atticus command that checks it, and iterates on what the check hands back.
 | `.github/agents/atticus-repo-reader.agent.md` | A custom agent: Read a repo into facts, each citing its file and line, and loop on atticus verify until every fact passes. A **read** step. |
 | `.github/agents/atticus-verifier.agent.md` | A custom agent: Check what was recorded about a repo against its code: the facts with atticus verify, an older scan with atticus scan verify. A **read** step. |
 | `.github/agents/atticus-repo-describer.agent.md` | A custom agent: Draft the one sentence that says what a repo is for, cited from its code, for a person to confirm. A **read** step. |
+| `.github/agents/atticus-question-proposer.agent.md` | A custom agent: Propose an answer to each open question from the code and config, citing its lines; Atticus checks every citation and a person accepts or answers. A **read** step. |
 | `.github/agents/atticus-stage-drafter.agent.md` | A custom agent: Draft a change's stage (feature, architecture, stories, the fast path or the first draft) and loop on Atticus's checks and the critic. A **draft** step. |
 | `.github/agents/atticus-task-runner.agent.md` | A custom agent: Implement one task of a change in its own worktree, from the context Atticus loads, with a test per acceptance criterion. A **draft** step. |
 | `.github/agents/atticus-knowledge-reader.agent.md` | A custom agent: Read the wikis into knowledge items, search them, answer from them only, and say what a change needs from the organisation. A **knowledge** step. |

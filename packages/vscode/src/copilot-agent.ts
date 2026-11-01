@@ -64,6 +64,8 @@ export const AGENT_BY_STEP: Readonly<Record<string, StepAgent>> = {
   find: { agent: "atticus-knowledge-reader", stepClass: "knowledge", slash: "atticus-find" },
   // The repo description a person confirms (ADR 0128).
   describe: { agent: "atticus-repo-describer", stepClass: "read" },
+  // beta.10 (ADR 0144): an answer proposed from the code for each open question; a person accepts.
+  propose: { agent: "atticus-question-proposer", stepClass: "read", slash: "atticus-propose" },
 };
 
 /** The agent for an `@atticus` command's name, or nothing when no agent covers that step. */
