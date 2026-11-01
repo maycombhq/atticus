@@ -4,6 +4,11 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## 2.0.0-beta.10 (2026-10-31)
 
+### A repo's starting spec, seeded from its verified flows (ADR 0146)
+
+- `atticus spec seed <repo>` proposes a repo's starting `openspec/specs` as the change `openspec/changes/seed-<repo>/`: a capability per verified flow, one requirement per flow, a scenario for its main path, each branch and each error case, every line citing the code it was read from. Nothing is written into a code repo or into `openspec/specs` until a person runs `atticus spec accept <repo>` (`openspec validate --strict`, then `openspec archive`).
+- The first change on a seeded flow then writes MODIFIED against the seed, keeping its scenarios, and OpenSpec's archive keeps the specs current from there.
+
 ### Lines the reader skipped
 
 - `atticus verify` lists the lines of the files read that write a path, URL or topic no fact cites or names (plain text patterns, any language; comments, imports, tests, generated and vendored folders left out), the reviewed globs whose files hold such lines, and the operations a repo's OpenAPI spec declares that no entry covers. Notes for the reader's second pass, never rejections: under `skipped`, `reviewedHolds` and `specOpsUncovered` in `<repo>.verify.yaml` (capped at 100, with counts); `atticus verify <repo> --skipped` prints every one.
