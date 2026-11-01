@@ -1,7 +1,14 @@
 import { existsSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { factsDirOf, factsRelOf, listQuestions, loadOrgPack, orgPackDirOf } from "@maycombhq/core";
+import {
+  factsDirOf,
+  factsRelOf,
+  listQuestions,
+  loadOrgPack,
+  orgPackDirOf,
+  stackHelpersOff,
+} from "@maycombhq/core";
 import {
   dirSource,
   frameworkFacts,
@@ -149,6 +156,7 @@ export async function verifyCommand(
   o: VerifyCommandOptions,
   io: Output,
 ): Promise<number> {
+  const off = stackHelpersOff();
   const rel = factsRelOf(root);
   const file = join(factsDirOf(root), `${repo}.jsonl`);
   if (!existsSync(file)) {
@@ -213,6 +221,9 @@ export async function verifyCommand(
     report = await verifyFacts({
       facts: parsed.facts,
       source,
+      // G4: the stack helpers this run switched off (ATTICUS_HELPERS_OFF).
+      ...(off.has("derived-names") ? { derivedNames: false } : {}),
+      ...(off.has("readers") ? { readers: false } : {}),
       ...(commit ? { commit, carry } : {}),
       ...(o.routed ? { routed: o.routed } : {}),
       exclude: await excludesOf(root, repo),
@@ -533,7 +544,10 @@ export async function verifyCommand(
       `(frameworkGaps in ${verifyYaml})`,
     );
   }
-  const learn = frameworksToLearn(report.accepted, await frameworksKnownTo(root));
+  // G4: with the framework models off, nothing is offered to learn.
+  const learn = off.has("framework-models")
+    ? []
+    : frameworksToLearn(report.accepted, await frameworksKnownTo(root));
   if (learn.length) {
     io.out(
       `${learn.length} ${learn.length === 1 ? "framework" : "frameworks"} of the house nothing here can read yet: teach ${learn.length === 1 ? "it" : "them"} once, rather than having each repo's annotations read as ordinary code.`,

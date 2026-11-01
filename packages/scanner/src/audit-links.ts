@@ -1,4 +1,5 @@
 import {
+  helperOn,
   joinFacts,
   joinFlagsOf,
   type AuditItemT,
@@ -29,6 +30,7 @@ export function estateJoinOf(
     repos: joinReposOf(op, repos, renames),
     ...(targets ? { targets } : {}),
     outside: outsideSystems(op),
+    walkGateways: helperOn("gateway-walk"),
   });
 }
 

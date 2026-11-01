@@ -44,6 +44,9 @@ import { hostHasPort, hostMatches, urlHostPort } from "./schema/workspace.js";
  * and a route that forwards back into a gateway already in the path is a question (`cycle`), not
  * a loop; a walk that runs past the bound is a question too. The join stops at the last gateway
  * whose next hop is asked, missed or forwards to several services, exactly as one hop does.
+ * The walk is a stack helper, optional (G4; `walkGateways: false`, or ATTICUS_HELPERS_OFF=
+ * gateway-walk): without it a call is joined to the route it lands on, and each route's
+ * forwarding call to its service on its own, so the chain is there in two links, not one.
  *
  * Placeholders (J0): a base URL, host or topic written as `${X}`, `${X:default}` or `env:X` is
  * each value the config facts setting `X` give it, read in the caller's repo and in any repo of
@@ -325,6 +328,12 @@ export interface JoinFactsInput {
    * leaves the hop a plain gateway.
    */
   facing?: FacingWords;
+  /**
+   * G4: follow a call through the gateway routes it lands on to the service behind them (the
+   * stack helper `gateway-walk`). False: a call is joined to the route it lands on, in the
+   * gateway's repo, and the route's forwarding call is joined on its own. Default true.
+   */
+  walkGateways?: boolean;
 }
 
 type Entry = FactOf<"entry">;
@@ -1157,7 +1166,7 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
   };
   const cycles: FactJoinAsk[] = [];
   for (const [i, j] of joins.entries()) {
-    if (j.how === "topic") continue;
+    if (j.how === "topic" || input.walkGateways === false) continue;
     let route = byKey.get(key(j.entry.repo, j.entry.fact))!;
     if (!isRoute(route)) continue;
     const caller = byKey.get(key(j.call.repo, j.call.fact))! as Node & { fact: Call };

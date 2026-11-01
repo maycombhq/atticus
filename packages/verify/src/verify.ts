@@ -312,6 +312,16 @@ export interface VerifyOptions {
    * names them. An exposure's `exposes` must be one of them. Left out, nothing checks the name.
    */
   estate?: { components: readonly string[] };
+  /**
+   * G4: the per-framework naming rules (`derived.ts`, the stack helper `derived-names`). False:
+   * a claim must be written on its cited line or a `cite.with` part. Default true.
+   */
+  derivedNames?: boolean;
+  /**
+   * G4: the OpenAPI reader behind the uncovered spec operations (R1; the stack helper
+   * `readers`). False: no spec is read and none is listed. Default true.
+   */
+  readers?: boolean;
 }
 
 /**
@@ -585,7 +595,7 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
                 parts.map((p) => p.value),
                 near(lines, cite.line),
               )))) ||
-      derivedHolds(c, derivedHere(), partLines, partsNamePath);
+      (o.derivedNames !== false && derivedHolds(c, derivedHere(), partLines, partsNamePath));
     if (claims && !claims.some(holds))
       return {
         code: "claim-not-on-line",
@@ -989,7 +999,7 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
   for (const p of sources) {
     if (notReadForSkipped(p)) continue;
     o.room?.();
-    const text = /\.(ya?ml|json)$/i.test(p) ? o.source.read(p) : undefined;
+    const text = o.readers !== false && /\.(ya?ml|json)$/i.test(p) ? o.source.read(p) : undefined;
     const ops = text === undefined ? undefined : specOpsUncoveredIn(p, text, accepted);
     if (!ops) continue;
     specs.add(p);
