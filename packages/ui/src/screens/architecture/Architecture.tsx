@@ -17,7 +17,8 @@ import { systemHash } from "../know/Systems.js";
 import { CopyButton, Facts } from "../run/shared.js";
 import { RunStep } from "../../app/runstep.js";
 import { ArchitectureCanvas } from "./Canvas.js";
-import { WhyLinked } from "./WhyLinked.js";
+import { LinkWrong, WhatMoved, WhyLinked } from "./WhyLinked.js";
+import { knownTargets, whatMoved } from "./links.js";
 import { Citation, EvidenceProvider, useEvidence } from "../../app/evidence.js";
 import {
   canvasGraph,
@@ -114,6 +115,8 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
   const [tidy, setTidy] = useState(0);
   const [keeping, setKeeping] = useState<Keeping>({ state: "idle" });
   const rowRefs = useRef(new Map<string, HTMLButtonElement>());
+  // C2 (ADR 0135): the calls a person said are wrong here, and the views as they were then.
+  const [watched, setWatched] = useState<{ calls: string[]; before: Views } | undefined>();
 
   const load = useCallback(
     async (id: string, into?: Views) => {
@@ -310,6 +313,20 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
   };
 
   const sel = selected ? find(selected) : undefined;
+  const known = knownTargets(loaded);
+  const moved = watched ? whatMoved(watched.before, loaded, watched.calls) : [];
+  const under = (j: Api.HierJoinT) => (
+    <LinkWrong
+      join={j}
+      known={known}
+      onSaved={(call) =>
+        setWatched((w) => ({
+          calls: [...new Set([...(w?.calls ?? []), call])],
+          before: w?.before ?? loaded,
+        }))
+      }
+    />
+  );
   const crumbs = view ? [...view.path, view.node] : [];
 
   return (
@@ -497,6 +514,7 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
                   (e) => e.from === sel.id || e.to === sel.id,
                 )}
                 labelOf={(id) => find(id)?.label ?? id}
+                under={under}
                 {...(!focus && graph.boxes.some((b) => b.id === sel.id)
                   ? { here: { open: inPlace.has(sel.id), toggle: () => void toggleHere(sel.id) } }
                   : {})}
@@ -504,6 +522,7 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
             ) : (
               <p>{WORDS.pick}</p>
             )}
+            {watched && <WhatMoved moved={moved} />}
           </Panel>
 
           <Panel title={WORDS.outline} span="1 / -1">

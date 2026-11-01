@@ -3335,7 +3335,8 @@ export const COPY = {
     copyCommit: "Copy the git command",
     moved: "What moved when the estate was joined again",
     movedTo: (what: string, was: string, now: string) => `${what}: was ${was}, now ${now}`,
-    movedOff: (what: string, was: string) => `${what}: was ${was}, now on no link`,
+    movedOff: (what: string, was: string) =>
+      `${what}: was ${was}, now on no link of the parts open here`,
     notYet:
       "No call has moved yet: run the verify command above. The picture reads the catalog again when it changes.",
   },
