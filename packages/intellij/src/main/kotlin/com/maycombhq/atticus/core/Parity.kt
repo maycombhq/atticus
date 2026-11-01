@@ -44,7 +44,7 @@ object Parity {
      * Each action a step of [Steps] does, by the VS Code command it answers: the AI steps handed
      * to Copilot Chat, and the commands Atticus runs itself.
      */
-    private val FROM_STEPS: Map<String, InIntelliJ> = Steps.ALL.associate { it.vsCode to action(it.actionId) }
+    private val FROM_STEPS: Map<String, InIntelliJ> = Steps.ALL.mapNotNull { s -> s.vsCode?.let { it to action(s.actionId) } }.toMap()
 
     val MAP: Map<String, InIntelliJ> =
         linkedMapOf<String, InIntelliJ>().apply {
@@ -54,6 +54,8 @@ object Parity {
             // The Next tab lists the next step and the setup checklist, each row with Run the step.
             put("atticus.setup", tab(Copy.NEXT_TAB))
             put("atticus.runStep", action("Atticus.RunStep"))
+            // ADR 0121 addendum: the next step for Copilot's agent mode, its agent named (ADR 0159).
+            put("atticus.runInCopilotAgent", action("Atticus.RunInCopilotAgent"))
             put("atticus.setupStep", action("Atticus.RunStep"))
 
             // ---------------------------------------------------------- what waits on you

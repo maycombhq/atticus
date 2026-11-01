@@ -337,8 +337,15 @@ class StepFlows(private val project: com.intellij.openapi.project.Project) {
                 !askTarget -> null
                 step.target == StepTarget.REPO -> flow.pickRepo(title, Copy.WHICH_REPO) ?: return
                 step.target == StepTarget.CHANGE -> flow.pickChange(title, Copy.WHICH_CHANGE) ?: return
+                step.target == StepTarget.FILE -> flow.pickFile(title, fileHint(step)) ?: return
                 else -> null
             }
+        // ADR 0159: a job that needs nothing else asked runs as it stands, its output in the Output tab.
+        if (step.direct) {
+            val argv = step.argv(target) + extra
+            flow.captured(argv) { flow.said(argv, it) }
+            return
+        }
         // What the row gave the command: its positionals first, then its options.
         val given = extra.takeWhile { !it.startsWith("-") }
         val options = Commands.optionPairs(extra.drop(given.size))
@@ -360,6 +367,14 @@ class StepFlows(private val project: com.intellij.openapi.project.Project) {
         flow.run(cmd, Commands.buildArgv(cmd, a))
     }
 
+    private fun fileHint(step: com.maycombhq.atticus.core.NativeStep) =
+        when (step.actionId) {
+            "Atticus.JoinMeasure" -> Copy.MEASURE_PICK
+            "Atticus.ApplySheet" -> Copy.APPLY_SHEET_PICK
+            "Atticus.IntakeTraffic" -> Copy.TRAFFIC_PICK
+            else -> Copy.FILE_PICK
+        }
+
     /** A step `atticus next` names, taken the way its kind needs. */
     fun take(step: NextStep) {
         when (val action = Next.actionFor(step)) {
@@ -370,6 +385,7 @@ class StepFlows(private val project: com.intellij.openapi.project.Project) {
                 val cmd = cat?.let { Commands.matchCommand(it, step.command)?.first }
                 flow.run(cmd, action.args)
             }
+            is NextAction.AcceptSeed -> EstateFlows(project).acceptSeed(action.repo, action.change)
             is NextAction.Person -> {
                 Notify.show(project, "${Copy.PERSON_STEP} ${step.why}", NotificationType.INFORMATION, Notify.action(Copy.copy("the command")) {
                     CopyPasteManager.getInstance().setContents(StringSelection(step.command))

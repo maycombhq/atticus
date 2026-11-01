@@ -137,6 +137,9 @@
             <action id="Atticus.RunStep" class="com.maycombhq.atticus.ide.RunStepAction"
                     text="Atticus: Run the Step" description="Run the step picked in the Next tab, or the next one when none is picked"
                     icon="AllIcons.Actions.Execute"/>
+            <action id="Atticus.RunInCopilotAgent" class="com.maycombhq.atticus.ide.RunInCopilotAgentAction"
+                    text="Atticus: Run the Next Step in Copilot's Agent Mode" description="The step's prompt on the clipboard, with the custom agent to pick in Copilot Chat's agent mode"
+                    icon="AllIcons.Actions.Execute"/>
             <separator/>
             <!-- Read a repo and check it (ADR 0124, 0128) -->
             <action id="Atticus.ReadRepo" class="com.maycombhq.atticus.ide.ReadRepoAction"
@@ -175,6 +178,34 @@
             <action id="Atticus.AcceptCatalog" class="com.maycombhq.atticus.ide.AcceptCatalogAction"
                     text="Atticus: Accept the Catalog..." description="The catalog as the baseline changes are checked against (atticus baseline)"
                     icon="AllIcons.Actions.Checked"/>
+            <!-- ADR 0159: what 2.0.0-beta.10 added to reading the estate and checking it -->
+            <action id="Atticus.EstateFresh" class="com.maycombhq.atticus.ide.EstateFreshAction"
+                    text="Atticus: Which Clones Moved On" description="Every repo whose clone moved past its facts' commit, the facts to read again and the command (atticus estate fresh)"
+                    icon="AllIcons.Actions.Refresh"/>
+            <action id="Atticus.ReadingQueue" class="com.maycombhq.atticus.ide.ReadingQueueAction"
+                    text="Atticus: The Reading Order and Its Costs" description="The repos to read next, callees and gateways first, each with its estimated cost (atticus next --queue)"
+                    icon="AllIcons.Actions.ListFiles"/>
+            <action id="Atticus.MapGaps" class="com.maycombhq.atticus.ide.MapGapsAction"
+                    text="Atticus: Read a Repo's Gaps with Copilot" description="Plan a second pass on what the last verify left, then /atticus-map &lt;repo&gt; --gaps on the clipboard for a new chat"
+                    icon="AllIcons.Actions.Search"/>
+            <action id="Atticus.AuditReport" class="com.maycombhq.atticus.ide.AuditReportAction"
+                    text="Atticus: The Sample Audit's Precision" description="Precision per kind of fact and for links, from the sample audit's answers (atticus verify audit --report)"
+                    icon="AllIcons.Actions.Checked"/>
+            <action id="Atticus.JoinMeasure" class="com.maycombhq.atticus.ide.JoinMeasureAction"
+                    text="Atticus: Measure the Links Against a Reference..." description="Score the map against the entries and calls you list by hand for a few repos (atticus join measure)"
+                    icon="AllIcons.Actions.Diff"/>
+            <action id="Atticus.IntakeTraffic" class="com.maycombhq.atticus.ide.IntakeTrafficAction"
+                    text="Atticus: Bring In a Traffic Export..." description="A gateway or API catalogue export kept only as counts, as evidence for links (atticus intake traffic)"
+                    icon="AllIcons.Actions.Download"/>
+            <action id="Atticus.SeedSpec" class="com.maycombhq.atticus.ide.SeedSpecAction"
+                    text="Atticus: Propose a Repo's Starting Spec" description="A starting openspec/specs from the repo's verified flows, as a change to review (atticus spec seed)"
+                    icon="AllIcons.Actions.Edit"/>
+            <action id="Atticus.AcceptSeed" class="com.maycombhq.atticus.ide.AcceptSeedAction"
+                    text="Atticus: Accept a Repo's Starting Spec..." description="Read the seed, then validate and archive it into openspec/specs (atticus spec accept)"
+                    icon="AllIcons.Actions.Checked"/>
+            <action id="Atticus.RenameRepo" class="com.maycombhq.atticus.ide.RenameRepoAction"
+                    text="Atticus: Rename a Repo's Id..." description="Move a repo's id with its facts, questions and records, in one change you review (atticus repo rename)"
+                    icon="AllIcons.Actions.Edit"/>
             <separator/>
             <!-- A change, stage by stage -->
             <action id="Atticus.Feature" class="com.maycombhq.atticus.ide.FeatureAction"
@@ -195,6 +226,9 @@
             <action id="Atticus.FindNeeds" class="com.maycombhq.atticus.ide.FindNeedsAction"
                     text="Atticus: Find What a Change Needs" description="What the organisation must supply before the change can ship (atticus change needs)"
                     icon="AllIcons.General.QuestionDialog"/>
+            <action id="Atticus.ChangeImpact" class="com.maycombhq.atticus.ide.ChangeImpactAction"
+                    text="Atticus: What a Change Breaks" description="Who calls what the change's target flows break, up to five hops up, each with its owner (atticus change impact)"
+                    icon="AllIcons.Actions.Diff"/>
             <action id="Atticus.RunTask" class="com.maycombhq.atticus.ide.RunTaskAction"
                     text="Atticus: Run a Task" description="A task's code written by an assistant on its own branch (atticus task run)"
                     icon="AllIcons.Actions.Execute"/>
@@ -216,6 +250,26 @@
             <action id="Atticus.ShowManualStep" class="com.maycombhq.atticus.ide.ShowManualStepAction"
                     text="Atticus: Show the Manual Step" description="What a manual step says to do, and how to mark it done (atticus todo show)"
                     icon="AllIcons.General.TodoDefault"/>
+            <separator/>
+            <!-- ADR 0159: the questions, in one sitting, proposed, and by rule (ADR 0144, 0153) -->
+            <action id="Atticus.Propose" class="com.maycombhq.atticus.ide.ProposeAnswersAction"
+                    text="Atticus: Have Copilot Propose Answers" description="/atticus-propose on the clipboard: your assistant proposes an answer to each open question, citing its lines"
+                    icon="AllIcons.Actions.IntentionBulb"/>
+            <action id="Atticus.CheckProposals" class="com.maycombhq.atticus.ide.CheckProposalsAction"
+                    text="Atticus: Check the Proposed Answers" description="Every proposed answer's citations checked: the file, the line, the quote on it (atticus questions proposed)"
+                    icon="AllIcons.Actions.Checked"/>
+            <action id="Atticus.AcceptProposal" class="com.maycombhq.atticus.ide.AcceptProposalAction"
+                    text="Atticus: Accept as My Answer" description="The checked proposal of the question picked in Waiting on you, as your answer (atticus questions answer --accept-proposal)"
+                    icon="AllIcons.Actions.Checked"/>
+            <action id="Atticus.QuestionsSheet" class="com.maycombhq.atticus.ide.QuestionsSheetAction"
+                    text="Atticus: Write the Questions into One Sheet" description="Every open question in one YAML answer sheet, opened to fill in (atticus questions sheet)"
+                    icon="AllIcons.Actions.Edit"/>
+            <action id="Atticus.ApplySheet" class="com.maycombhq.atticus.ide.ApplySheetAction"
+                    text="Atticus: Apply an Answer Sheet..." description="Answer each filled entry of the sheet as you; blanks are skipped (atticus questions sheet --apply)"
+                    icon="AllIcons.Actions.Commit"/>
+            <action id="Atticus.WaitingMine" class="com.maycombhq.atticus.ide.WaitingMineAction"
+                    text="Atticus: My Teams' Questions Only" description="Waiting on you lists only the questions for your teams (atticus questions list --mine), remembered"
+                    icon="AllIcons.General.User"/>
             <separator/>
             <!-- What the organisation knows -->
             <action id="Atticus.AddKnowledge" class="com.maycombhq.atticus.ide.AddKnowledgeAction"

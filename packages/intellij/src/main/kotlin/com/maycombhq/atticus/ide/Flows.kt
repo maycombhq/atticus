@@ -125,6 +125,52 @@ class CommandFlow(private val project: Project) {
     /** A repo, picked from the manifests (ADR 0105 addendum 2: every native step on a repo asks it). */
     fun pickRepo(title: String, prompt: String): String? = fromList(title, repos(), Copy.NO_REPOS, prompt)?.trim()?.takeIf { it.isNotEmpty() }
 
+    /** A file, typed or picked (ADR 0159: a reference, an answer sheet, a traffic export). */
+    fun pickFile(title: String, prompt: String, initial: String = cwd): String? {
+        val d = PathDialog(project, title, prompt, false, initial)
+        return if (d.showAndGet()) d.path().takeIf { it.isNotEmpty() } else null
+    }
+
+    /** One of a few values, picked from a list (nothing typed). */
+    fun pickOne(title: String, prompt: String, values: List<String>): String? {
+        val d = PickDialog(project, title, prompt, values, typed = false)
+        return if (d.showAndGet()) d.value() else null
+    }
+
+    /** A value typed in a dialog, with [initial] filled in. */
+    fun typedValue(title: String, prompt: String, initial: String? = null): String? =
+        Messages.showInputDialog(project, prompt, title, null, initial, null)?.trim()?.takeIf { it.isNotEmpty() }
+
+    /**
+     * A slash command for Copilot Chat on the clipboard, with [text] said and the ways it can be
+     * run here: open Copilot Chat where its action is registered, or Claude Code in a terminal.
+     * For the steps that have no command line of their own to hand off (ADR 0159).
+     */
+    fun slashOnClipboard(slash: String, text: String, vararg more: com.intellij.notification.NotificationAction) {
+        CopyPasteManager.getInstance().setContents(StringSelection(slash))
+        val noFile = if (metarepo != null && !Peer.hasPromptFile(metarepo, slash)) listOf(Copy.noPromptFile(slash)) else emptyList()
+        val chat = Copilot.chatAction()
+        val actions =
+            listOfNotNull(
+                if (chat != null) Notify.action(Copy.OPEN_COPILOT_CHAT) { Copilot.openChat() } else null,
+                Notify.action(Copy.copy(slash)) { CopyPasteManager.getInstance().setContents(StringSelection(slash)) },
+                if (noFile.isNotEmpty()) Notify.action(Copy.WRITE_PROMPT_FILES) { captured(listOf("assistant-files")) { said(listOf("assistant-files"), it) } } else null,
+                Notify.action(Copy.RUN_IN_CLAUDE_CODE) { inConsole("claude", Handoff.claudeCodeArgv(slash)) },
+            ) + more
+        val lines = listOf(text) + noFile + (if (chat != null) Copy.COPILOT_API else Copy.COPILOT_NO_API) + Copy.CLI_CHECKS_THE_ANSWER
+        Notify.show(project, lines.joinToString("<br>"), NotificationType.INFORMATION, *actions.toTypedArray()).also { it.setTitle(Copy.AI_TITLE) }
+    }
+
+    /** A file of the metarepo (or any path) opened in the editor. */
+    fun open(path: Path) {
+        val file = LocalFileSystem.getInstance().refreshAndFindFileByNioFile(path) ?: return
+        if (file.isDirectory) {
+            com.intellij.ide.projectView.ProjectView.getInstance(project).select(null, file, true)
+        } else {
+            FileEditorManager.getInstance(project).openFile(file, true)
+        }
+    }
+
     /** ADR 0113: one of a change's tasks, from its tasks.md. */
     fun pickTask(change: String): String? {
         val tasks = metarepo?.let { Lists.tasks(it, change) }.orEmpty()
@@ -436,7 +482,7 @@ class NextFlow(private val project: Project) {
         val message =
             buildString {
                 append(Words.stepTitle(n)).append("\n\n").append(n.why).append("\n\n")
-                if (action is NextAction.Person) append(Copy.PERSON_STEP).append(' ')
+                if (action is NextAction.Person || action is NextAction.AcceptSeed) append(Copy.PERSON_STEP).append(' ')
                 append(n.command)
                 if (slash != null) append("\n\nIn Copilot Chat: ").append(slash)
                 if (slash != null && Roots.metarepo(project)?.let { Peer.hasPromptFile(it, slash) } == false) append("\n\n").append(Copy.noPromptFile(slash))
@@ -464,6 +510,7 @@ class NextFlow(private val project: Project) {
                         },
                     )
                 is NextAction.Person -> listOf(Copy.OPEN_APP to openApp, Copy.copy("the command") to { copy(n.command) })
+                is NextAction.AcceptSeed -> listOf(Copy.ACCEPT_SEED to { EstateFlows(project).acceptSeed(action.repo, action.change) }, Copy.copy("the command") to { copy(n.command) })
             }
         val buttons = choices.map { it.first } + Copy.CLOSE
         val i = Messages.showDialog(project, message, Copy.NEXT_TITLE, buttons.toTypedArray(), 0, Messages.getInformationIcon())

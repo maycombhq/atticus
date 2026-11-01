@@ -14,7 +14,7 @@ class PeerFlows(private val project: Project) {
     /** Pick an open question, then answer it. */
     fun pickAndAnswer() {
         flow.captured(listOf("questions", "list", "--state", "open", "--json")) { r ->
-            val qs = com.maycombhq.atticus.core.Waiting.questions(r.stdout)
+            val qs = com.maycombhq.atticus.core.Waiting.listed(r.stdout)?.questions ?: com.maycombhq.atticus.core.Waiting.questions(r.stdout)
             if (qs.isEmpty()) {
                 Notify.show(project, if (r.ok) Copy.ANSWER_NONE else Copy.waitingCouldNotRead(Copy.firstLine(r.lines, r.code)))
                 return@captured
@@ -29,16 +29,8 @@ class PeerFlows(private val project: Project) {
     fun answer(q: OpenQuestion) {
         val d = AnswerDialog(project, q)
         if (!d.showAndGet()) return
-        val argv = Peer.answerArgv(q.id, d.option(), d.text()) ?: return
-        flow.captured(argv) { r ->
-            Notify.show(
-                project,
-                if (r.ok) Copy.answered(r.lines.firstOrNull().orEmpty()) else Copy.firstLine(r.lines, r.code),
-                if (r.ok) NotificationType.INFORMATION else NotificationType.WARNING,
-                Notify.showOutput(project),
-            )
-            AtticusStatus.of(project).refresh()
-        }
+        val argv = (if (d.accepted()) Peer.acceptArgv(q.id, d.match()) else Peer.answerArgv(q.id, d.option(), d.text(), d.match())) ?: return
+        EstateFlows(project).answered(argv)
     }
 
     fun watch() {

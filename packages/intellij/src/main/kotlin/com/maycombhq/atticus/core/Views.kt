@@ -524,8 +524,8 @@ sealed interface WaitingItem {
     /** The heading it sits under when the tree groups by kind. */
     val kind: String
 
-    data class Question(val question: OpenQuestion) : WaitingItem {
-        override val change: String? = null
+    /** A question; [change] when it is a change's own (asked of its `owners`, ADR 0153). */
+    data class Question(val question: OpenQuestion, override val change: String? = null) : WaitingItem {
         override val kind = Copy.WAITING_QUESTIONS
     }
 

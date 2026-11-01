@@ -36,6 +36,7 @@ import com.maycombhq.atticus.core.NeedRow
 import com.maycombhq.atticus.core.Needs
 import com.maycombhq.atticus.core.Next
 import com.maycombhq.atticus.core.NextStep
+import com.maycombhq.atticus.core.Peer
 import com.maycombhq.atticus.core.Pick
 import com.maycombhq.atticus.core.PromptRow
 import com.maycombhq.atticus.core.RepoRow
@@ -127,8 +128,36 @@ sealed interface Row {
 
     data class Question(val question: com.maycombhq.atticus.core.OpenQuestion) : Row {
         override val label get() = question.question
-        override val detail get() = question.repo
-        override val words get() = listOf(question.id, question.question, question.repo)
+        override val detail get() = question.detail
+        override val words get() = listOf(question.id, question.question, question.repo, question.owner?.let { Copy.ownerWords(it) })
+    }
+
+    /** ADR 0144: a question's checked proposal, under it; Accept as my answer takes it. */
+    data class Proposed(val question: com.maycombhq.atticus.core.OpenQuestion) : Row {
+        override val label get() = Copy.proposed(question.proposedAnswer.orEmpty(), question.proposal?.by.orEmpty())
+        override val detail get() = listOfNotNull(question.proposal?.why?.takeIf { it.isNotEmpty() }, question.proposal?.cites?.size?.let { Copy.proposalCites(it) }).joinToString(" · ")
+        override val words get() = listOf(question.id, question.proposedAnswer)
+    }
+
+    /** ADR 0141: a repo waiting to be read, in the onboarding queue's order. */
+    data class Queued(val row: com.maycombhq.atticus.core.QueueRow) : Row {
+        override val label get() = "${row.order}. ${row.repo}"
+        override val detail get() = row.detail
+        override val words get() = listOf(row.repo, row.reason, row.why)
+    }
+
+    /** ADR 0141: a repo read so far, with what its read took. */
+    data class ReadSoFar(val row: com.maycombhq.atticus.core.ReadRow) : Row {
+        override val label get() = row.repo
+        override val detail get() = row.detail
+        override val words get() = listOf(row.repo)
+    }
+
+    /** F5: a near id with facts, under the step of a repo that has none; a double-click renames. */
+    data class Near(val near: com.maycombhq.atticus.core.NearId) : Row {
+        override val label get() = Copy.nearId(near)
+        override val detail get() = near.rename.joinToString(" ", prefix = "atticus ")
+        override val words get() = listOf(near.repo, near.near)
     }
 
     data class Manual(val step: Pick) : Row {
@@ -365,6 +394,8 @@ class WaitingPanel(project: Project, parent: Disposable) :
         listOf(
             "Atticus.Refresh",
             "Atticus.AnswerQuestion",
+            "Atticus.AcceptProposal",
+            "Atticus.WaitingMine",
             "Atticus.WaitingByChange",
             "Atticus.WaitingByKind",
             "Atticus.FilterWaiting",
@@ -385,20 +416,31 @@ class WaitingPanel(project: Project, parent: Disposable) :
         if (cli.metarepo == null) return listOf(Row.Note(Copy.NO_METAREPO_TITLE))
         val waiting = com.maycombhq.atticus.core.Waiting.parse(cli.json(listOf("waiting"))) ?: return listOf(Row.Note(Copy.NO_METAREPO_TITLE))
         val titles = Changes.rows(cli.json(listOf("change", "list"))).associate { it.id to it.title }
+        // ADR 0140, 0144, 0153: the questions in the order to ask them, each with its owner and a
+        // checked proposal; only the person's teams' when My teams' is on.
+        val mine = AtticusSettings.get().state.waitingMine
+        val listed = com.maycombhq.atticus.core.Waiting.listed(cli.json(Peer.questionsArgv(mine)))
+        val questions = listed?.questions ?: if (mine) emptyList() else waiting.questions
         val items =
             buildList<WaitingItem> {
-                addAll(waiting.questions.map { WaitingItem.Question(it) })
+                addAll(questions.map { WaitingItem.Question(it, it.repo.takeIf { r -> r in titles }) })
                 addAll(cli.needs().map { WaitingItem.Need(it) })
                 for (c in waiting.changes.filter { it.openFindings > 0 }) addAll(cli.findings(c.id).map { WaitingItem.Finding(it) })
                 addAll(Lists.todos(cli.json(listOf("todo", "--all"))).map { WaitingItem.Manual(it, it.detail.split(" · ").firstOrNull()?.takeIf { d -> d in titles }) })
                 if (waiting.knowledgeToVerify > 0) add(WaitingItem.Knowledge(waiting.knowledgeToVerify))
             }
-        if (items.isEmpty()) return listOf(Row.Note(Copy.WAITING_NOTHING))
+        val who = if (mine) listOf(Row.Note(listed?.me?.let { Copy.mineFor(it) } ?: Copy.WAITING_MINE)) else emptyList()
+        if (items.isEmpty()) return who + Row.Note(if (mine) Copy.MINE_NONE else Copy.WAITING_NOTHING)
         val by = if (AtticusSettings.get().state.waitingByKind) Grouping.BY_KIND else Grouping.BY_CHANGE
-        return WaitingRows.groups(items, by) { c -> titles[c] ?: c }.flatMap { (title, these) ->
-            listOf(Row.Heading(title)) + these.map { rowOf(it) }
-        }
+        return who +
+            WaitingRows.groups(items, by) { c -> titles[c] ?: c }.flatMap { (title, these) ->
+                listOf(Row.Heading(title)) + these.map { rowOf(it) }
+            }
     }
+
+    /** A question's checked proposal sits under it (ADR 0144). */
+    override fun children(row: Row): List<Row> =
+        if (row is Row.Question && row.question.proposal != null) listOf(Row.Proposed(row.question)) else emptyList()
 
     private fun rowOf(i: WaitingItem): Row =
         when (i) {
@@ -412,6 +454,7 @@ class WaitingPanel(project: Project, parent: Disposable) :
     override fun open(row: Row) {
         when (row) {
             is Row.Question -> PeerFlows(project).answer(row.question)
+            is Row.Proposed -> PeerFlows(project).answer(row.question)
             is Row.Need -> openScreen(project, Commands.cockpitHash(row.need.change))
             is Row.Finding -> openScreen(project, Commands.cockpitHash(row.finding.change))
             is Row.Manual -> openScreen(project, "#/todo")
@@ -422,18 +465,49 @@ class WaitingPanel(project: Project, parent: Disposable) :
 
 /** What is next: the next step and the setup checklist, each row with Run the step. */
 class NextPanel(project: Project, parent: Disposable) :
-    RowTree(project, Copy.NEXT_TAB, Copy.CHECKING, Copy.NO_NEXT, listOf("Atticus.Refresh", "Atticus.RunStep", "Atticus.NextStep"), parent) {
+    RowTree(
+        project,
+        Copy.NEXT_TAB,
+        Copy.CHECKING,
+        Copy.NO_NEXT,
+        listOf("Atticus.Refresh", "Atticus.RunStep", "Atticus.RunInCopilotAgent", "Atticus.NextStep", "Atticus.EstateFresh"),
+        parent,
+    ) {
     private val cli = Reads(project)
 
     override fun read(): List<Row> {
         val view = Next.parse(cli.json(listOf("next"))) ?: return listOf(Row.Note(Copy.NO_NEXT))
-        val steps = listOfNotNull(view.next) + view.steps.filter { it !== view.next }
-        if (steps.isEmpty()) return listOf(Row.Note(Copy.NO_NEXT))
-        return listOf(Row.Heading(Copy.NEXT_TAB)) + steps.map { Row.Step(it) }
+        // The steps' list repeats the next step: it is shown once.
+        val steps = (listOfNotNull(view.next) + view.steps).distinct()
+        // ADR 0141: the reading order, why each repo sits where it does, and what each read costs.
+        val queue = com.maycombhq.atticus.core.Queue.parse(cli.json(listOf("next", "--queue")))
+        val queued =
+            if (queue == null || (queue.queue.isEmpty() && queue.read.isEmpty())) {
+                emptyList()
+            } else {
+                listOf(Row.Heading(Copy.QUEUE_HEADING)) + queue.queue.map { Row.Queued(it) } +
+                    (if (queue.read.isEmpty()) emptyList() else listOf(Row.Heading(Copy.READ_HEADING)) + queue.read.map { Row.ReadSoFar(it) }) +
+                    Row.Note(Copy.COSTS_ARE)
+            }
+        if (steps.isEmpty()) return listOf(Row.Note(Copy.NO_NEXT)) + queued
+        return listOf(Row.Heading(Copy.NEXT_TAB)) + steps.map { Row.Step(it) } + queued
     }
 
+    /** Under a step: why, in full, and the near ids it names (F5), each a rename away. */
+    override fun children(row: Row): List<Row> =
+        when (row) {
+            is Row.Step -> listOf(Row.Note(row.step.why)) + Next.nearIds(row.step).map { Row.Near(it) }
+            is Row.Queued -> listOf(Row.Note(row.row.why))
+            else -> emptyList()
+        }
+
     override fun open(row: Row) {
-        if (row is Row.Step) StepFlows(project).take(row.step)
+        when (row) {
+            is Row.Step -> StepFlows(project).take(row.step)
+            is Row.Queued -> StepFlows(project).take(row.row.step)
+            is Row.Near -> EstateFlows(project).rename(row.near.repo, row.near.near)
+            else -> Unit
+        }
     }
 }
 
@@ -444,7 +518,7 @@ class ChangesPanel(project: Project, parent: Disposable) :
         Copy.CHANGES_TAB,
         Copy.CHANGES_READING,
         Copy.NO_CHANGES,
-        listOf("Atticus.Refresh", "Atticus.NewChange", "Atticus.FilterChanges", "Atticus.ClearFilterChanges", "Atticus.StartTask"),
+        listOf("Atticus.Refresh", "Atticus.NewChange", "Atticus.FilterChanges", "Atticus.ClearFilterChanges", "Atticus.StartTask", "Atticus.ChangeImpact"),
         parent,
     ) {
     private val cli = Reads(project)
@@ -483,7 +557,19 @@ class ReposPanel(project: Project, parent: Disposable) :
         Copy.REPOS_TAB,
         Copy.REPOS_READING,
         Copy.REPOS_NONE,
-        listOf("Atticus.Refresh", "Atticus.AddRepos", "Atticus.DescribeRepo", "Atticus.OnboardRepo", "Atticus.ReadRepo", "Atticus.EstateJoin"),
+        listOf(
+            "Atticus.Refresh",
+            "Atticus.AddRepos",
+            "Atticus.DescribeRepo",
+            "Atticus.OnboardRepo",
+            "Atticus.ReadRepo",
+            "Atticus.MapGaps",
+            "Atticus.EstateJoin",
+            "Atticus.EstateFresh",
+            "Atticus.AuditReport",
+            "Atticus.SeedSpec",
+            "Atticus.RenameRepo",
+        ),
         parent,
     ) {
     private val cli = Reads(project)

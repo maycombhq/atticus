@@ -42,6 +42,9 @@ class AtticusSettings : SimplePersistentStateComponent<AtticusSettings.Values>(V
          */
         var waitingByKind by property(false)
 
+        /** ADR 0140: only the questions for the person's teams (`questions list --mine`), remembered. */
+        var waitingMine by property(false)
+
         // ADR 0121 addendum: the person's model for each kind of step; empty is runtime.yaml's.
         var modelRead by string("")
         var modelDraft by string("")
