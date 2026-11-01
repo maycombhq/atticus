@@ -321,5 +321,15 @@ export async function trustView(root: string): Promise<View> {
 }
 
 export function uiTrustRoutes(r: Router, ctx: ServerContext): Router {
-  return r.add("GET", "/api/trust", async () => ({ status: 200, body: await trustView(ctx.root) }));
+  return (
+    r
+      .add("GET", "/api/trust", async () => ({ status: 200, body: await trustView(ctx.root) }))
+      // ADR 0141 (P5): the estate's freshness. It runs read-only local git in the clones
+      // (`git diff --name-status` between two commits they have); nothing fetched or written.
+      .add("GET", "/api/trust/fresh", async () => {
+        const { estateFreshness } = await import("./estate-fresh.js");
+        const body: Api.FreshViewT = await estateFreshness(ctx.root);
+        return { status: 200, body };
+      })
+  );
 }

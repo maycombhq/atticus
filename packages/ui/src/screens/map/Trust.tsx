@@ -12,7 +12,9 @@ import "../work/work.css";
  * Per repo: the facts it kept and rejected, how much of the code they cover and the files not
  * read yet, the facts' commit against the checkout's, whether the catalog is built from the
  * facts or the built-in readers, and the command to run next. It reads files only
- * (`GET /api/trust`); the app runs nothing.
+ * (`GET /api/trust`); the app runs nothing. Above them, the estate's freshness (ADR 0141, P5):
+ * which clones have moved past their facts' commit and what reading each again costs, from
+ * `GET /api/trust/fresh`, which runs read-only local git and writes nothing.
  */
 
 const T = COPY.trust;
@@ -343,10 +345,110 @@ export function TrustRow({ r }: { r: Repo }) {
   );
 }
 
+const F = T.fresh;
+const short = (c: string) => c.slice(0, 7);
+
+/**
+ * The estate's freshness (ADR 0141, P5): the repos whose clone has moved past their facts'
+ * commit, most stale first, each with the files changed that its facts cite, the facts to read
+ * again and carried, and the command to copy. Fresh and unread repos are counted, not listed.
+ */
+export function FreshPanel({ of }: { of: Loaded<Api.FreshViewT> & { reload?: () => void } }) {
+  const read = of.state === "ready" ? of.data.repos.filter((r) => r.state !== "not-read") : [];
+  const moved = read.filter((r) => r.state !== "fresh");
+  return (
+    <Panel
+      title={F.title}
+      span="1 / -1"
+      meta={
+        read.length
+          ? F.summary(
+              moved.length,
+              read.length,
+              moved.reduce((n, r) => n + r.reread, 0),
+            )
+          : undefined
+      }
+    >
+      <p className="work-why" style={{ marginTop: 0 }}>
+        {F.intro}
+      </p>
+      <View
+        of={of}
+        empty={(v) => !v.repos.some((r) => r.state !== "not-read") && !v.problems.length}
+        emptyText={F.empty}
+      >
+        {(v) => (
+          <>
+            <Problems list={v.problems} />
+            {moved.length === 0 ? (
+              <p className="work-say">{F.allFresh(read.length)}</p>
+            ) : (
+              <>
+                <table className="run-table">
+                  <caption className="sr">{F.caption}</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">{F.col.repo}</th>
+                      <th scope="col">{F.col.state}</th>
+                      <th scope="col">{F.col.facts}</th>
+                      <th scope="col">{F.col.clone}</th>
+                      <th scope="col">{F.col.cited}</th>
+                      <th scope="col">{F.col.reread}</th>
+                      <th scope="col">{F.col.carried}</th>
+                      <th scope="col">{F.col.run}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {moved.map((r) => (
+                      <tr key={r.repo}>
+                        <th scope="row" className="mono">
+                          {r.repo}
+                        </th>
+                        <td>
+                          <span className={`chip ${r.state === "moved" ? "warn" : "blocking"}`}>
+                            {F.states[r.state]}
+                          </span>
+                        </td>
+                        <td className="mono">
+                          {r.factsCommits[0] ? short(r.factsCommits[0]) : ""}
+                          {r.factsCommits.length > 1 ? ` ${F.more(r.factsCommits.length - 1)}` : ""}
+                        </td>
+                        <td className="mono">{r.head ? short(r.head) : ""}</td>
+                        <td>{r.citedChanged}</td>
+                        <td>{r.reread}</td>
+                        <td>{r.carried}</td>
+                        <td>
+                          {r.slash && <Command text={r.slash} label={R.copySlash} />}
+                          {r.command && <Command text={r.command} label={R.copy} />}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {read.length > moved.length && (
+                  <p className="work-say">{F.freshCount(read.length - moved.length)}</p>
+                )}
+              </>
+            )}
+          </>
+        )}
+      </View>
+    </Panel>
+  );
+}
+
 /** The tab from loaded data, so tests can render every state. */
-export function TrustPage({ of }: { of: Loaded<Api.TrustViewT> & { reload?: () => void } }) {
+export function TrustPage({
+  of,
+  fresh,
+}: {
+  of: Loaded<Api.TrustViewT> & { reload?: () => void };
+  fresh?: Loaded<Api.FreshViewT> & { reload?: () => void };
+}) {
   return (
     <div className="bento">
+      {fresh && <FreshPanel of={fresh} />}
       <Panel
         title={COPY.nav.screens.trust}
         span="1 / -1"
@@ -383,9 +485,11 @@ export function TrustPage({ of }: { of: Loaded<Api.TrustViewT> & { reload?: () =
 export function Trust() {
   const view = useApi<Api.TrustViewT>("/api/trust");
   useReloadOnFiles(view);
+  const fresh = useApi<Api.FreshViewT>("/api/trust/fresh");
+  useReloadOnFiles(fresh);
   return (
     <EvidenceProvider>
-      <TrustPage of={view} />
+      <TrustPage of={view} fresh={fresh} />
     </EvidenceProvider>
   );
 }

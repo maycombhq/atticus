@@ -120,6 +120,7 @@ Every other command. `atticus legacy` lists them by area; each runs by its own n
   atticus estate flow <flow> [--depth 5] [--json]  A flow followed across repos, with the data at each crossing
   atticus estate lineage <flow> <field> [--depth 5] [--json]  Follow a field along a flow to the column it is stored in, or where it breaks
   atticus estate measure <reference> [--json]  The same as join measure
+  atticus estate fresh [--all] [--json]  Which repos' clones have moved past their facts' commit, most stale first: per repo the facts' commit, the clone's, the files changed that the facts cite, the facts to read again and the command to run; local git only, nothing fetched or written (--all lists the fresh ones too)
   atticus repo-type detect <repo> [--json]   Match a repo against the org pack's repo types by fingerprint, with the evidence for each signal
   atticus repo-type new <id> --from <repo> [--force]   Draft a repo type from a repo (its build files, dependencies, markers, folders) for you to edit
   atticus scan review <repo>           What the last scan couldn't read: your assistant gives a verdict on each gap and a rule for code it can read; checked [--gaps] [--attempts 3]

@@ -731,6 +731,39 @@ export const COPY = {
     unverifiedFix: "The verifier hasn't checked these on their lines yet:",
     moreFacts: (n: number, file: string) => `and ${n} more, in ${file}`,
     openCanvas: "Open the repo on the estate canvas",
+    /** ADR 0141 (P5): which repos' clones have moved past their facts' commit, most stale first. */
+    fresh: {
+      title: "Freshness",
+      intro:
+        "Which repos' clones have moved past the commit their facts were read at, and what reading each again costs: the files changed that the facts cite, the facts to read again (the rest are carried as they are), and the command to run. Most stale first. Read from the facts and the clones with local git only; nothing is fetched or written. The same list in a terminal: atticus estate fresh.",
+      empty: "No repo is read yet, so none can be stale. atticus next says which to read first.",
+      allFresh: (n: number) =>
+        `All ${n} repo${n === 1 ? "" : "s"} read ${n === 1 ? "is" : "are"} fresh: the facts are of the commit the clone is at.`,
+      summary: (stale: number, read: number, facts: number) =>
+        `${stale} of ${read} read moved on · ${facts} fact${facts === 1 ? "" : "s"} to read again`,
+      caption: "Repos whose clone has moved past their facts' commit, most stale first",
+      col: {
+        repo: "Repo",
+        state: "State",
+        facts: "Facts at",
+        clone: "Clone at",
+        cited: "Files cited that changed",
+        reread: "Facts to read again",
+        carried: "Carried",
+        run: "Run",
+      },
+      states: {
+        stale: "Read again",
+        "unknown-commit": "Commit not in the clone",
+        moved: "Moved, nothing cited changed",
+        "no-checkout": "No clone",
+        fresh: "Fresh",
+        "not-read": "Not read yet",
+      } as Record<string, string>,
+      more: (n: number) => `+${n} more`,
+      freshCount: (n: number) =>
+        `${n} more repo${n === 1 ? " is" : "s are"} fresh, and not listed here.`,
+    },
   },
   /** Change › Knowledge (ADR 0124, Part 5): the org knowledge that applies to the change. */
   changeKnowledge: {

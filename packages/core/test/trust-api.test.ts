@@ -190,3 +190,37 @@ describe("a change's knowledge per task, and pages that disagree (C4 2.25.0)", (
     expect(Api.KnowledgeItemView.safeParse(item).success).toBe(true);
   });
 });
+
+/** API 2.33.0 (ADR 0141, plan item P5): the estate's freshness, for the Trust tab. */
+describe("the estate's freshness (C4 2.33.0)", () => {
+  it("is 2.33.0 or later and documents GET /api/trust/fresh", () => {
+    const [major, minor] = API_VERSION.split(".").map(Number);
+    expect(major! > 2 || (major === 2 && minor! >= 33)).toBe(true);
+    expect(doc.paths["/api/trust/fresh"]!.get!.operationId).toBe("getTrustFresh");
+    expect(doc.components.schemas).toHaveProperty("FreshView");
+  });
+
+  it("holds each repo's commits, the files cited that changed, the facts to read again and the command", () => {
+    const repo = {
+      repo: "forge-ledger",
+      state: "stale",
+      factsFile: "facts/forge-ledger.jsonl",
+      facts: 17,
+      factsCommits: ["0123abc"],
+      head: "fedcba9",
+      current: 0,
+      carried: 14,
+      reread: 3,
+      citedChanged: 3,
+      changed: 4,
+      toRead: 3,
+      unknown: [],
+      command: "atticus map forge-ledger",
+      slash: "/atticus-map forge-ledger",
+    };
+    expect(Api.FreshView.parse({ factsDir: "facts", repos: [repo], problems: [] }).repos).toEqual([
+      repo,
+    ]);
+    expect(Api.FreshRepo.safeParse({ ...repo, state: "old" }).success).toBe(false);
+  });
+});

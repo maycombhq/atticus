@@ -5,6 +5,7 @@ import { screenOf, tabsOf } from "../src/app/screens.js";
 import { COPY } from "../src/copy.js";
 import {
   commitWords,
+  FreshPanel,
   RepoFactsList,
   TrustPage,
   TrustRow,
@@ -286,5 +287,97 @@ describe("Map › Trust: every count opens its list (ADR 0135, C3)", () => {
         <RepoFactsList repo="forge-events" of={{ state: "error", error: "no such file" }} />,
       ),
     ).toContain("no such file");
+  });
+});
+
+/** ADR 0141 (P5): the estate's freshness, a section of the Trust tab. */
+describe("Map › Trust › Freshness (ADR 0141)", () => {
+  const F = T.fresh;
+  const repo = (over: Partial<Api.FreshRepoT>): Api.FreshRepoT => ({
+    repo: "forge-ledger",
+    state: "stale",
+    factsFile: "facts/forge-ledger.jsonl",
+    facts: 17,
+    factsCommits: ["0123abc9999"],
+    head: "fedcba98888",
+    current: 0,
+    carried: 14,
+    reread: 3,
+    citedChanged: 3,
+    changed: 4,
+    toRead: 3,
+    unknown: [],
+    command: "atticus map forge-ledger",
+    slash: "/atticus-map forge-ledger",
+    ...over,
+  });
+  /** A fresh repo: nothing to run. */
+  const fresh = (name = "forge-ledger"): Api.FreshRepoT => {
+    const { command: _c, slash: _s, ...rest } = repo({ repo: name, state: "fresh", reread: 0 });
+    return rest;
+  };
+  const ready = (repos: Api.FreshRepoT[]) => ({
+    state: "ready" as const,
+    data: { factsDir: "facts", repos, problems: [] },
+  });
+
+  it("lists the repos that moved on, most stale first, with their commits, counts and command", () => {
+    const out = renderToStaticMarkup(
+      <FreshPanel
+        of={ready([
+          repo({}),
+          repo({
+            repo: "forge-notify",
+            state: "moved",
+            reread: 0,
+            citedChanged: 0,
+            carried: 17,
+            command: "atticus verify forge-notify --write",
+          }),
+          fresh("forge-cards"),
+          repo({ repo: "forge-gateway", state: "not-read", facts: 0 }),
+        ])}
+      />,
+    );
+    expect(out).toContain(esc(F.summary(2, 3, 3)));
+    expect(out).toContain(`<caption class="sr">${esc(F.caption)}</caption>`);
+    expect(out).toContain('<th scope="row" class="mono">forge-ledger</th>');
+    expect(out.indexOf("forge-ledger")).toBeLessThan(out.indexOf("forge-notify"));
+    expect(out).toContain("0123abc");
+    expect(out).toContain("fedcba9");
+    expect(out).toContain(esc(F.states.stale!));
+    expect(out).toContain(esc(F.states.moved!));
+    expect(out).toContain("atticus map forge-ledger");
+    expect(out).toContain("/atticus-map forge-ledger");
+    expect(out).toContain("atticus verify forge-notify --write");
+    // The fresh repo is counted, not listed; the unread one neither.
+    expect(out).not.toContain(">forge-cards<");
+    expect(out).toContain(esc(F.freshCount(1)));
+    expect(out).not.toContain("forge-gateway");
+  });
+
+  it("says when every repo read is fresh, and has loading, error and empty states", () => {
+    expect(renderToStaticMarkup(<FreshPanel of={ready([fresh()])} />)).toContain(
+      esc(F.allFresh(1)),
+    );
+    expect(renderToStaticMarkup(<FreshPanel of={{ state: "loading" }} />)).toContain(
+      'aria-busy="true"',
+    );
+    expect(renderToStaticMarkup(<FreshPanel of={{ state: "error", error: "boom" }} />)).toContain(
+      'role="alert"',
+    );
+    expect(
+      renderToStaticMarkup(<FreshPanel of={ready([repo({ state: "not-read", facts: 0 })])} />),
+    ).toContain(esc(F.empty));
+  });
+
+  it("sits above the repos on the Trust tab when it is given", () => {
+    const out = renderToStaticMarkup(
+      <TrustPage
+        of={{ state: "ready", data: { factsDir: "facts", repos: [LEDGER], problems: [] } }}
+        fresh={ready([repo({})])}
+      />,
+    );
+    expect(out.indexOf(esc(F.title))).toBeLessThan(out.indexOf("trust-forge-ledger"));
   });
 });
