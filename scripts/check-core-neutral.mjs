@@ -190,6 +190,28 @@ export const ALLOW = [
       "the wiki types sources.yaml takes are the C6 contract's enum (ADR 0101), named in the API for the app's source form; claude-code is a surface the prompt history records from, as runtime.yaml's assistants enum names it (ADR 0110); teams is the English word, roles.yaml's teams a question is routed to (ADR 0140)",
   },
   {
+    file: "packages/core/src/shared-maps.ts",
+    names: ["teams"],
+    reason:
+      "the English word: another team's Atticus map, shared read-only (ADR 0160), not the chat product",
+  },
+  {
+    file: "packages/changes/src/footprint.ts",
+    names: ["teams"],
+    reason: "the English word: other teams' systems a change calls (O2), not the chat product",
+  },
+  {
+    file: "packages/changes/src/risk.ts",
+    names: ["teams"],
+    reason: "the English word: other teams' systems in a change's risk (O2), not the chat product",
+  },
+  {
+    file: "packages/planner/src/stages/openspec-seed.ts",
+    names: ["remedy"],
+    reason:
+      "the English word: the remedy for a seed collision (ADR 0156), not the service desk product",
+  },
+  {
     file: "packages/core/src/question-owners.ts",
     names: ["teams"],
     reason:
