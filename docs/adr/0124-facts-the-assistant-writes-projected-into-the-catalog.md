@@ -957,4 +957,3 @@ The gateway batch's instructions go from about 7,401 characters (~1,850 tokens) 
 
 - The method an entry or call claims (GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS) must be written on its cited line, the next line or a `cite.with` line. A text check that reads any language: each line is split into words at non-letters and camelCase capitals (`@GetMapping`, `[HttpGet]`, `RequestMethod.POST`, `getForObject`, `export async function POST`).
 - A method found on none is a warning: `methodUnseen` in VerifyReport, `methodUnseenCount` and `methodUnseen` in `<repo>.verify.yaml`, and a line in verify's output. Whether to make it a rejection is left until the count is measured on the bench facts.
-
