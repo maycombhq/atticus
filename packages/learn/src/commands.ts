@@ -73,7 +73,8 @@ export const COMMANDS: readonly CommandHelp[] = [
   },
   {
     name: "verify",
-    usage: "atticus verify <repo> [--write] [--dir path] [--commit sha] [--routed a,b] [--json]",
+    usage:
+      "atticus verify <repo> [--write] [--dir path] [--commit sha] [--routed a,b] [--skipped] [--json]",
     what: "Checks every fact in a repo's facts file against the line it cites, keeps the ones that hold, writes the rest with why to <repo>.rejected.jsonl, and says which source files no fact has read yet. With --write the kept facts become catalog records.",
     who: ["developer", "architect"],
     changes:

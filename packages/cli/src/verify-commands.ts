@@ -65,6 +65,8 @@ export interface VerifyCommandOptions {
   /** With --write: list every record changed and flow written, not only the counts. */
   verbose?: boolean;
   json?: boolean;
+  /** R1: print every skipped line, reviewed glob holding some and uncovered spec operation. */
+  skipped?: boolean;
   now?: () => Date;
   /** The git runner the diff since the facts' commit is read with (tests mock it). */
   git?: GitRunner;
@@ -441,6 +443,44 @@ export async function verifyCommand(
     show(
       unseen.map((m) => m.message),
       `(methodUnseen in ${verifyYaml})`,
+    );
+  }
+  // R1: the lines the reader skipped, notes for its second pass; never a rejection, and nothing
+  // kept or dropped because of them. --skipped prints every one.
+  const all = o.skipped === true;
+  const list = (lines: readonly string[], more: string) => {
+    if (all) for (const l of lines) io.out(`  ${l}`);
+    else show(lines, more);
+  };
+  const seeAll = `atticus verify ${repo} --skipped prints every one`;
+  const skippedLines = report.skipped;
+  if (skippedLines.length) {
+    io.out(
+      `${skippedLines.length} ${skippedLines.length === 1 ? "line of the files read writes" : "lines of the files read write"} a path, URL or topic no fact cites (a note for the reader to check, not a rejection; under skipped in ${verifyYaml}; ${seeAll}):`,
+    );
+    list(
+      skippedLines.map((x) => `${x.cite} ${x.kind} ${x.value}`),
+      `(${seeAll})`,
+    );
+  }
+  const holds = report.reviewedHolds;
+  if (holds.length) {
+    io.out(
+      `${holds.length} reviewed ${holds.length === 1 ? "glob holds" : "globs hold"} lines that write a path, URL or topic (a note; under reviewedHolds in ${verifyYaml}): read them, then write their facts or say why there are none:`,
+    );
+    list(
+      holds.map((h) => h.message),
+      `(reviewedHolds in ${verifyYaml})`,
+    );
+  }
+  const ops = report.specOpsUncovered;
+  if (ops.length) {
+    io.out(
+      `${ops.length} ${ops.length === 1 ? "operation the repo's OpenAPI spec declares has" : "operations the repo's OpenAPI specs declare have"} no entry (a note, not a rejection; under specOpsUncovered in ${verifyYaml}; ${seeAll}):`,
+    );
+    list(
+      ops.map((x) => x.message),
+      `(${seeAll})`,
     );
   }
   if (report.redacted) io.out(`${report.redacted} quotes had a secret value redacted.`);

@@ -29,6 +29,19 @@ import { pageRouteMatches } from "./pages.js";
 import { isGlob, lineRangeOf, type ReviewedEntry } from "./reviewed.js";
 import { methodUnseenOf, type MethodUnseen } from "./method.js";
 import { insideRepo, type FileSource } from "./source.js";
+import {
+  candidatesIn,
+  factsCover,
+  indexFacts,
+  isCommentLine,
+  notReadForSkipped,
+  reviewedHoldsOf,
+  skippedOf,
+  specOpsUncoveredIn,
+  type ReviewedHolds,
+  type SkippedLine,
+  type SpecOpUncovered,
+} from "./skipped.js";
 
 /**
  * The verifier (ADR 0124). It never reads code to find facts; it checks the facts it is given:
@@ -199,6 +212,15 @@ export interface VerifyReport {
    */
   methodUnseen: MethodUnseen[];
   /**
+   * A note, not a rejection (R1): the lines of the files read that write a path, URL or topic no
+   * kept fact cites or names (`skipped.ts`), for the reader to check. Sorted by file and line.
+   */
+  skipped: SkippedLine[];
+  /** A note (R1): the reviewed globs whose files write a path, URL or topic no fact accounts for. */
+  reviewedHolds: ReviewedHolds[];
+  /** A note (R1): the operations a repo's OpenAPI spec declares that no kept entry covers. */
+  specOpsUncovered: SpecOpUncovered[];
+  /**
    * A note, not a rejection (ADR 0124 addendum A-framework): the frameworks the kept facts say
    * the repo is built on whose patterns none of those facts show — a Spring Boot repo with no
    * REST entry, a React repo with no screen. Usually the reader missed the real entry points, so
@@ -335,12 +357,6 @@ export function isSourceFile(path: string, firstLine = "", lines?: readonly stri
 }
 
 const lastPart = (s: string) => s.split(".").pop() ?? s;
-/** A line that is all comment: `//`, `/*`, `*`, `#` (not a C# directive), `<!--` or SQL's `-- `. */
-const isCommentLine = (l: string) =>
-  /^\s*(\/\/|\/\*|\*|<!--|-- |#(?!\s*(region|endregion|if|elif|else|endif|define|undef|pragma|nullable|include|import)\b)(?!!))/.test(
-    l,
-  );
-
 /** A value written as a template: Helm's or Go's `{{ }}`, a `${}` placeholder (ADR 0143). */
 const TEMPLATED = /\{\{|\}\}|\$\{/;
 
@@ -907,6 +923,7 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
   const reviewed: ReviewedFiles[] = [];
   const reviewedProblems: ReviewedProblem[] = [];
   const reviewedDropped: ReviewedProblem[] = [];
+  const reviewedGlobs: { entry: ReviewedEntry; files: string[] }[] = [];
   for (const r of o.reviewed ?? []) {
     const refuse = (message: string) =>
       reviewedProblems.push({
@@ -955,12 +972,42 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
     const files = matched.filter((p) => isSource.has(p) && !touched.has(p)).sort();
     for (const p of files) reviewedSet.add(p);
     reviewed.push({ path: r.path, why: r.why, files });
+    if (re) reviewedGlobs.push({ entry: r, files });
   }
   const read = sources.filter((p) => touched.has(p)).sort();
   const reviewedFiles = sources.filter((p) => reviewedSet.has(p)).sort();
   const unknown = sources.filter((p) => !touched.has(p) && !reviewedSet.has(p)).sort();
   const total = read.length + reviewedFiles.length + unknown.length;
   const ratio = total === 0 ? 1 : Math.round((read.length / total) * 1000) / 1000;
+
+  // R1: the lines the reader skipped, a note for it to check; nothing here keeps or drops a fact.
+  // A spec's operations are matched to the entries; every other file read is looked at for path,
+  // URL and topic strings the kept facts don't cite or name. One file's lines at a time.
+  const ix = indexFacts(accepted);
+  const specOpsUncovered: SpecOpUncovered[] = [];
+  const specs = new Set<string>();
+  for (const p of sources) {
+    if (notReadForSkipped(p)) continue;
+    o.room?.();
+    const text = /\.(ya?ml|json)$/i.test(p) ? o.source.read(p) : undefined;
+    const ops = text === undefined ? undefined : specOpsUncoveredIn(p, text, accepted);
+    if (!ops) continue;
+    specs.add(p);
+    specOpsUncovered.push(...ops);
+  }
+  const skippedIn = (p: string): SkippedLine[] => {
+    if (specs.has(p) || notReadForSkipped(p)) return [];
+    o.room?.();
+    const ls = readLines(p);
+    return ls
+      ? candidatesIn(p, ls).flatMap((c) => (factsCover(p, c, ix) ? [] : [skippedOf(p, c)]))
+      : [];
+  };
+  const skipped = read.flatMap(skippedIn);
+  const reviewedHolds = reviewedGlobs.flatMap(({ entry, files }) => {
+    const held = files.flatMap(skippedIn);
+    return held.length ? [reviewedHoldsOf(entry, held)] : [];
+  });
 
   return {
     accepted,
@@ -985,6 +1032,9 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
     reviewedDropped,
     authUncited: authUncited.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)),
     methodUnseen: methodUnseen.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)),
+    skipped,
+    reviewedHolds,
+    specOpsUncovered,
     frameworkGaps: frameworkGaps(accepted),
   };
 }

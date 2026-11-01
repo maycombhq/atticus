@@ -1,0 +1,19 @@
+openapi: 3.0.3
+info:
+  title: Forge Wallet
+  version: 1.0.0
+servers:
+  - url: https://wallet.forge.example/v1
+paths:
+  /wallets/{id}:
+    get:
+      operationId: getWallet
+  /wallets/{id}/holds:
+    post:
+      operationId: placeHold
+  /wallets/{id}/freeze:
+    post:
+      operationId: freezeWallet
+  /wallets/{id}/history:
+    get:
+      operationId: walletHistory

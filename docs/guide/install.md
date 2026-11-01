@@ -158,6 +158,10 @@ The catalog is stricter than the facts file, and that is where a claim is droppe
 - **An entry's `auth` reaches the catalog only when a line is cited for it** (`authCite`: the file and line that sets the auth, and what it writes there), or when you wrote the fact yourself. Without one, the claim stays in the facts file and no `Endpoint` or `Interface` record carries it, so the map never says an auth nothing shows.
 - `atticus verify` says how many entries that is, on **every** run, `--write` included, until a line is cited. If you see "N entries' auth rests on no cited line", have your assistant add an `authCite` to each and verify again; the number falls as the lines are cited, and not before.
 
+### Lines the read may have skipped
+
+`atticus verify` also looks at the files your assistant read for strings that look like a path (`/api/v1/accounts/{id}`), a URL (`https://host/x`) or a topic (`forge.accounts.created`) which no fact cites or names, by plain text patterns that work in any language. Comments, imports, tests, generated, build-output and vendored folders, asset and file-system paths are left out. It looks inside folders `<repo>.reviewed.jsonl` marks as holding nothing (`reviewedHolds`), and lists the operations an OpenAPI spec in the repo declares that no entry covers (`specOpsUncovered`). It prints the first few; `<repo>.verify.yaml` lists the first hundred under `skipped` with the count, and `atticus verify <repo> --skipped` prints every one. These are notes for your assistant to check on its next pass: nothing is rejected, kept or made a fact because of them.
+
 ### A big repo and memory
 
 A repo of a few thousand files with a few thousand facts needs a few hundred megabytes while it is verified. If `atticus verify` says a repo's facts need more memory than Node was given, run it again with more, or a repo at a time:

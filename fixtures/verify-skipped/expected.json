@@ -1,0 +1,80 @@
+{
+  "skipped": [
+    {
+      "cite": "src/main/java/forge/wallet/HoldEvents.java:11",
+      "kind": "topic",
+      "value": "forge.wallet.hold-released",
+      "text": "publisher.send(\"forge.wallet.hold-released\", h);"
+    },
+    {
+      "cite": "src/main/java/forge/wallet/LedgerClient.java:14",
+      "kind": "path",
+      "value": "/accounts/{id}/reversals",
+      "text": "rest.post().uri(\"/accounts/{id}/reversals\", id).retrieve().toBodilessEntity();"
+    },
+    {
+      "cite": "src/main/java/forge/wallet/WalletController.java:23",
+      "kind": "path",
+      "value": "/{id}/freeze",
+      "text": "@PostMapping(\"/{id}/freeze\")"
+    },
+    {
+      "cite": "src/main/resources/application.yml:8",
+      "kind": "url",
+      "value": "https://rates.forge.internal/v2",
+      "text": "url: https://rates.forge.internal/v2"
+    },
+    {
+      "cite": "src/main/resources/application.yml:10",
+      "kind": "topic",
+      "value": "forge.wallet.audit",
+      "text": "topic: forge.wallet.audit"
+    },
+    {
+      "cite": "src/main/resources/application.yml:14",
+      "kind": "path",
+      "value": "/actuator/health",
+      "text": "path: /actuator/health"
+    },
+    {
+      "cite": "web/src/api.ts:6",
+      "kind": "path",
+      "value": "/api/wallets/${id}/freeze",
+      "text": "export const freeze = (id: string) => client.post(`/api/wallets/${id}/freeze`);"
+    }
+  ],
+  "reviewedHolds": [
+    {
+      "path": "src/main/java/forge/wallet/support/**",
+      "why": "helpers, nothing to record",
+      "count": 1,
+      "skipped": [
+        {
+          "cite": "src/main/java/forge/wallet/support/Paths.java:4",
+          "kind": "path",
+          "value": "/wallets/{id}/limits",
+          "text": "public static final String LIMITS = \"/wallets/{id}/limits\";"
+        }
+      ],
+      "message": "line 2: src/main/java/forge/wallet/support/** is reviewed as holding nothing to record, but 1 line in it writes a path, URL or topic: src/main/java/forge/wallet/support/Paths.java:4 (/wallets/{id}/limits)"
+    }
+  ],
+  "specOpsUncovered": [
+    {
+      "spec": "api/openapi.yaml",
+      "method": "POST",
+      "path": "/wallets/{id}/freeze",
+      "operationId": "freezeWallet",
+      "cite": "api/openapi.yaml:15",
+      "message": "api/openapi.yaml:15 declares POST /wallets/{id}/freeze (freezeWallet), which no entry covers"
+    },
+    {
+      "spec": "api/openapi.yaml",
+      "method": "GET",
+      "path": "/wallets/{id}/history",
+      "operationId": "walletHistory",
+      "cite": "api/openapi.yaml:18",
+      "message": "api/openapi.yaml:18 declares GET /wallets/{id}/history (walletHistory), which no entry covers"
+    }
+  ]
+}
