@@ -344,6 +344,10 @@ export const FACT_RULE_PARTS: readonly (readonly RulePart[])[] = [
       when: ["deploy", "config"],
       text: "A value from one environment's file (`appsettings.Production.json`, `values-prod.yaml`, a release transform) has that environment in `env`.",
     },
+    {
+      when: ["deploy", "config"],
+      text: "An environment variable set for a deployment (a ConfigMap's `data`, a Helm values or Deployment `env` entry, a config repo's file) is a config fact whose `key` is the variable's name (`PAYMENTS_URL`, cited on the line that names it) and whose `value` is what it is set to, with `target` the deployment it is for when the file names it. A value written as a placeholder (`${PAYMENTS_URL}`, `${PAYMENTS_URL:http://localhost:8081}`) is the `value` as written: the join resolves it, never you.",
+    },
   ],
   [
     {

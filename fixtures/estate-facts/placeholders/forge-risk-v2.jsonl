@@ -1,0 +1,1 @@
+{"kind":"entry","id":"e-post-risk-check","repo":"forge-risk-v2","commit":"7777bbb","entryType":"rest","method":"POST","path":"/risk/checks","cite":{"file":"src/main/java/forge/risk/RiskController.java","line":19,"value":"/risk/checks","quote":"@PostMapping(\"/risk/checks\")"},"verified":"line","by":"assistant","conf":"declared"}
