@@ -778,7 +778,10 @@ export function nextSteps(s: NextState): NextStep[] {
                 ? `${r.id} is read in ${r.readPlan.total} parts (${r.readPlan.file}): ${partOfWords({ part: r.readPlan.next.part, total: r.readPlan.total })} is next, ${r.readPlan.done === 0 ? "none" : r.readPlan.done} ${r.readPlan.done === 1 ? "is" : "are"} read (${r.readPlan.next.paths.join(", ")}). Your assistant reads the part and writes its facts, each citing its line.`
                 : `${r.id} isn't read yet: your assistant reads it and writes its facts, each citing its line, and atticus verify ${r.id} checks them.`) +
               // Only a reason that moved it up the queue is worth a sentence here; --queue says all.
-              (r.queue && (r.queue.reason === "called" || r.queue.reason === "gateway")
+              (r.queue &&
+              (r.queue.reason === "called" ||
+                r.queue.reason === "gateway" ||
+                r.queue.reason === "places")
                 ? ` ${r.queue.why}`
                 : "") +
               costWords(r) +

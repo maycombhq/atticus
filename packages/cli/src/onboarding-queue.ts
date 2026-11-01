@@ -24,12 +24,15 @@ import { estateRepos, joinReposOf, outsideSystems } from "@maycombhq/scanner";
  *   or a host and base path its manifest lists), by how many repos;
  * - **gateway**: its manifest type is a gateway (`gateway`, `gateway-external`, ...), so the calls
  *   through it join once it is read;
+ * - **places**: its manifest type is a deploy or config repo (`deploy`, `config`, `deploy-config`,
+ *   ...): its Routes, Ingresses and values say where other repos are reached (ADR 0143) and set
+ *   their config placeholders (J0), so links land once it is read;
  * - **next**: nothing says yet: in the manifests' order.
  *
  * Files only: the manifests, the facts files and the org pack. It runs and calls nothing.
  */
 
-export type QueueReason = "started" | "called" | "gateway" | "next";
+export type QueueReason = "started" | "called" | "gateway" | "places" | "next";
 
 export interface QueueRepo {
   repo: string;
@@ -37,6 +40,8 @@ export interface QueueRepo {
   started?: boolean;
   /** Its manifest type is a gateway. */
   gateway?: boolean;
+  /** Its manifest type is a deploy or config repo: it says where other repos are reached. */
+  places?: boolean;
   /** The read repos whose calls wait on it, sorted. */
   callers?: string[];
   /** Its place in the manifests: the order among repos nothing else ranks. */
@@ -45,14 +50,23 @@ export interface QueueRepo {
 
 /** Why a repo sits where it does, from what ranks it. */
 export const reasonOf = (r: QueueRepo): QueueReason =>
-  r.started ? "started" : r.callers?.length ? "called" : r.gateway ? "gateway" : "next";
+  r.started
+    ? "started"
+    : r.callers?.length
+      ? "called"
+      : r.gateway
+        ? "gateway"
+        : r.places
+          ? "places"
+          : "next";
 
 /**
  * The order to read in: reads under way first; then the repos the most read repos call, a gateway
- * first among the same; then gateways; then the rest in the manifests' order. Pure and stable.
+ * first among the same; then gateways; then deploy and config repos; then the rest in the manifests' order. Pure and stable.
  */
 export function queueOrder(a: QueueRepo, b: QueueRepo): number {
-  const rank = (r: QueueRepo) => ["started", "called", "gateway", "next"].indexOf(reasonOf(r));
+  const rank = (r: QueueRepo) =>
+    ["started", "called", "gateway", "places", "next"].indexOf(reasonOf(r));
   return (
     rank(a) - rank(b) ||
     (b.callers?.length ?? 0) - (a.callers?.length ?? 0) ||
@@ -75,6 +89,8 @@ export function queueWhy(r: QueueRepo): string {
       return `${callers.length} read ${callers.length === 1 ? "repo calls" : "repos call"} it (${named})${r.gateway ? ", and it is a gateway" : ""}: read it next and ${callers.length === 1 ? "that link lands" : "those links land"}.`;
     case "gateway":
       return "It is a gateway (its manifest type): the calls through it join once it is read, so it goes before its callers.";
+    case "places":
+      return "It is a deploy or config repo (its manifest type): its Routes and values say where other repos are reached, so their links land once it is read.";
     default:
       return "Nothing read yet calls it: in the manifests' order.";
   }
@@ -165,6 +181,7 @@ export async function onboardingQueue(
         index,
         ...(w.started ? { started: true } : {}),
         ...(m && /^gateway(-|$)/.test(m.type) ? { gateway: true } : {}),
+        ...(m && /^(deploy|config)(-|$)/.test(m.type) ? { places: true } : {}),
         ...(by.length ? { callers: by } : {}),
       };
     })

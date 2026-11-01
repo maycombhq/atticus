@@ -98,52 +98,70 @@ const steps = async (root: string) => {
 };
 const mapSteps = (s: NextStep[]) => s.filter((x) => x.step === "map").map((x) => x.repo);
 
+/** With the deploy repo read, the services the read repos call come first, then the gateways. */
+const CALLED_ORDER = [
+  "forge-accounts",
+  "forge-notifications",
+  "forge-proxy-accounts-v1",
+  "forge-proxy-payments-v1",
+  "forge-proxy-northwind-v1",
+  "forge-cards",
+  "forge-starter",
+];
+
 describe("atticus next: the onboarding queue (P6, ADR 0141)", () => {
-  it("with nothing read, puts the gateways first, then the rest in the manifests' order", async () => {
+  it("with nothing read, puts the gateways first, then the deploy repo, then the rest in the manifests' order", async () => {
     const root = await estate([]);
     expect(mapSteps(await steps(root))).toEqual([
       "forge-proxy-accounts-v1",
       "forge-proxy-payments-v1",
       "forge-proxy-northwind-v1",
+      // A deploy repo next: its Routes and values say where the others are reached (J1, J0).
+      "forge-deploy-config",
       "forge-portal-bff",
       "forge-accounts",
       "forge-payments",
       "forge-cards",
       "forge-notifications",
       "forge-starter",
-      "forge-deploy-config",
     ]);
   });
 
-  it("puts the repos the read repos call first, so their links land, and says why", async () => {
-    // The portal and the payments service are read: the portal calls the accounts and payments
-    // proxies; the payments service calls the Northwind proxy and the notifications service.
+  it("puts the deploy repo next when the links wait on its Routes and values (J1, J0)", async () => {
+    // The portal and the payments service are read, but where the services and proxies are
+    // reached is in forge-deploy-config's Routes and values and the proxies' own BasePaths
+    // (J1): the manifest lists only the gateway host. So no link is known to wait on any one
+    // repo yet; the gateways go first, then the deploy repo, which places the others.
     const root = await estate(["forge-portal-bff", "forge-payments"]);
     const s = await steps(root);
     const order = mapSteps(s);
-    expect(order).not.toContain("forge-portal-bff");
-    expect(order).not.toContain("forge-payments");
     expect(order).toEqual([
       "forge-proxy-accounts-v1",
       "forge-proxy-payments-v1",
       "forge-proxy-northwind-v1",
-      // Called by forge-payments, so ahead of forge-accounts, listed before it.
-      "forge-notifications",
+      "forge-deploy-config",
       "forge-accounts",
       "forge-cards",
+      "forge-notifications",
       "forge-starter",
-      "forge-deploy-config",
     ]);
-    expect(s.find((x) => x.repo === "forge-notifications")!.why).toContain(
-      "1 read repo calls it (forge-payments): read it next and that link lands.",
-    );
-    const first = s.find((x) => x.repo === "forge-proxy-accounts-v1")!;
-    expect(first.why).toContain(
-      "1 read repo calls it (forge-portal-bff), and it is a gateway: read it next and that link lands.",
+    expect(s.find((x) => x.repo === "forge-deploy-config")!.why).toContain(
+      "It is a deploy or config repo (its manifest type): its Routes and values say where other repos are reached, so their links land once it is read.",
     );
     // A repo nothing read calls, and no gateway, waits in the manifests' order, saying no more.
     expect(s.find((x) => x.repo === "forge-starter")!.why).toBe(
       "forge-starter isn't read yet: your assistant reads it and writes its facts, each citing its line, and atticus verify forge-starter checks them.",
+    );
+  });
+
+  it("puts the repos the read repos call first once the deploy repo places them, and says why", async () => {
+    const root = await estate(["forge-portal-bff", "forge-payments", "forge-deploy-config"]);
+    const s = await steps(root);
+    const order = mapSteps(s);
+    expect(order).not.toContain("forge-deploy-config");
+    expect(order).toEqual(CALLED_ORDER);
+    expect(s.find((x) => x.repo === "forge-notifications")!.why).toContain(
+      "1 read repo calls it (forge-payments): read it next and that link lands.",
     );
   });
 
@@ -235,7 +253,7 @@ describe("atticus next: the onboarding queue (P6, ADR 0141)", () => {
       queue: { repo: string; reason: string; cost?: unknown }[];
       read: { repo: string; cost?: { reported?: { tokens: number } } }[];
     };
-    expect(parsed.queue[0]).toMatchObject({ repo: "forge-proxy-accounts-v1", reason: "called" });
+    expect(parsed.queue[0]).toMatchObject({ repo: "forge-proxy-accounts-v1", reason: "gateway" });
     expect(parsed.read[0]!.cost!.reported!.tokens).toBe(48_000);
     expect(
       await readFile(join(root, "facts", "forge-portal-bff.read-plan.yaml"), "utf8"),
