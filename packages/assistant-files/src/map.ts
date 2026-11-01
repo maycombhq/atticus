@@ -201,6 +201,10 @@ export const FACT_RULE_PARTS: readonly (readonly RulePart[])[] = [
       when: ["deploy"],
       text: "A deploy fact's `platform` is where the code runs in an environment: kubernetes, openshift, cloud-run, ecs, lambda, app-service, a VM. A Dockerfile only builds its image (`resourceType: image` on that platform's fact, or leave it out); local docker-compose and CI pipelines are not deploys (name a pipeline in `pipeline`), but compose a pipeline or the docs run on a server is (`platform: docker`, the host in `resourceName`).",
     },
+    {
+      when: ["deploy", "gateway"],
+      text: "Where a component is reached goes on a deploy fact: an OpenShift Route's or an Ingress rule's host in `host` and its path in `basePath`, an Apigee proxy's `<BasePath>` in `basePath` (`platform: apigee`, `resourceName` the proxy). `cite` is the resource's name line, with the host's and the path's lines in `cite.with`. A templated host (`{{ .Values.route.host }}`) is never the `host`: give the host the values file sets, its line in `cite.with`, one fact per environment's values file with its `env`. A Route or Ingress in a deploy or config repo names the component it reaches in `exposes`, as the manifest names it; when no file says which, ask.",
+    },
   ],
   [
     {

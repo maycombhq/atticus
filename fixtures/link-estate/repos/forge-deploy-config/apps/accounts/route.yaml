@@ -1,0 +1,13 @@
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: accounts-api
+  namespace: forge-accounts
+spec:
+  host: apps.forge.internal
+  path: /forge-svc/accounts
+  to:
+    kind: Service
+    name: accounts-api
+  tls:
+    termination: edge

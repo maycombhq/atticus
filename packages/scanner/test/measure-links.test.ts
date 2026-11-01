@@ -39,6 +39,15 @@ const reference = (): LinkReference => {
   return r.reference;
 };
 
+/** What the fixture's manifest still says of where each service and proxy is reached. */
+const manifestFree = () => {
+  const repos = op.profiles.flatMap((p) => p.repos?.repos ?? []);
+  return {
+    services: repos.filter((r) => r.type === "spring-boot" && (r.hosts.length || r.basePath)),
+    proxies: repos.filter((r) => /^gateway/.test(r.type) && r.basePath),
+  };
+};
+
 let op: OrgPack;
 beforeAll(async () => {
   op = await loadOrgPack(join(FIX, "org-pack"));
@@ -50,6 +59,12 @@ describe("the hand-written facts of the bank-shaped estate verify", () => {
       facts: factsOf(repo),
       source: dirSource(join(FIX, "repos", repo)),
       commit: COMMITS[repo],
+      // J1: each Route's `exposes` names a component the manifest lists.
+      estate: {
+        components: op.profiles.flatMap((p) =>
+          (p.repos?.repos ?? []).flatMap((r) => [r.id, ...(r.component ? [r.component] : [])]),
+        ),
+      },
     });
     expect(r.rejected).toEqual([]);
     expect(r.accepted).toHaveLength(factsOf(repo).length);
@@ -79,6 +94,31 @@ describe("measureLinks: the estate join against the reference links", () => {
       outside: { want: 4, got: 3, right: 3 },
       none: { want: 0, right: 0 },
     });
+  });
+
+  it("J1: takes the services' hosts and base paths from the deploy repo's Routes, and the proxies' from their BasePath", () => {
+    // repos.manifest.yaml lists only the gateway's host (ADR 0143): the same figures as when it
+    // listed every host and base path, so the facts say what the manifest no longer needs to.
+    const without = all().map(({ repo, facts }) => ({
+      repo,
+      facts: facts.map((f) =>
+        f.kind === "deploy" ? ({ ...f, host: undefined, basePath: undefined } as Fact) : f,
+      ),
+    }));
+    const m = measureLinks({ op, repos: without, reference: reference() });
+    // Without them nothing says where the services are: each call to the ingress host is asked,
+    // and the portal's calls stop at a proxy whose forwarding call is asked (0.5 and 0.231,
+    // against 0.909 and 0.769 with them).
+    expect(m.links).toMatchObject({
+      joined: 6,
+      right: 3,
+      precision: 0.5,
+      recall: 0.231,
+      asked: 6,
+    });
+    const exposed = manifestFree();
+    expect(exposed.services).toEqual([]);
+    expect(exposed.proxies).toEqual([]);
   });
 
   it("says, call by call, what each reached and how", () => {

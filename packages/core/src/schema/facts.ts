@@ -227,7 +227,37 @@ export const DeployFact = z.strictObject({
   region: z.string().optional(),
   pipeline: z.string().optional(),
   replicas: z.number().int().nonnegative().optional(),
+  /**
+   * Where the component is reached (ADR 0143): the host an OpenShift Route, an Ingress rule or a
+   * Helm value gives it, as served, never a template. Written on the cited line or one of its
+   * `cite.with` parts: a templated host (`{{ .Values.route.host }}`) cites the values file's line
+   * that sets it there.
+   */
+  host: z.string().min(1).max(253).optional(),
+  /**
+   * The path its routes sit under on that host (ADR 0143): a Route's `path`, an Ingress rule's,
+   * a gateway proxy's `BasePath`. Plain segments from a leading `/`; written on the cited line or
+   * a `cite.with` part, as `host` is.
+   */
+  basePath: z
+    .string()
+    .max(200)
+    .regex(/^\/[^\s]*$/, "a path after the host, starting with /")
+    .optional(),
+  /**
+   * The component the host and base path reach, when the fact is read in another repo (a deploy
+   * or config repo's Route): a component or repo of the estate, which the verifier resolves
+   * (ADR 0143). Left out, it is the fact's own component.
+   */
+  exposes: z.string().min(1).optional(),
 });
+
+/**
+ * The facts file's shape version (ADR 0143). No line carries it: a file written before has no
+ * number, reads as version 1 and parses unchanged, every field added since being optional.
+ * 1: the shapes of ADR 0124 and its addenda. 2: a deploy fact's `host`, `basePath` and `exposes`.
+ */
+export const FACTS_SCHEMA_VERSION = 2 as const;
 
 export const SETTING_KINDS = [
   "timeout",

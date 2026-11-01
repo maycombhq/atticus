@@ -836,15 +836,24 @@ function joinAbout(all: FactsJoinResult, repo: string): FactsJoinResult {
       !!j.gateway?.some((h) => h.entry.repo === repo) ||
       // J0: a join whose placeholder this repo's config sets (a deploy or config repo) is
       // written again with it, so a changed value moves the link.
-      [...(j.through ?? []), ...(j.entryThrough ?? [])].some((t) => t.repo === repo),
+      [...(j.through ?? []), ...(j.entryThrough ?? [])].some((t) => t.repo === repo) ||
+      // J1: and a join whose host or base path this repo's Route gives (a deploy repo's).
+      [...(j.exposedBy ?? []), ...(j.gateway ?? []).flatMap((h) => h.exposedBy ?? [])].some(
+        (t) => t.repo === repo,
+      ),
   );
   const ifaces = new Set(joins.map((j) => j.interface));
   const outside = (all.outside ?? []).filter((o) => o.call.repo === repo);
+  // J1: an exposure this repo holds, or one about this repo's component.
+  const exposure = (all.exposure ?? []).filter(
+    (x) => x.exposure.repo === repo || ("repo" in x && x.repo === repo),
+  );
   return {
     joins,
     asks: all.asks.filter((a) => a.call.repo === repo),
     misses: all.misses.filter((m) => m.call.repo === repo),
     ...(outside.length ? { outside } : {}),
+    ...(exposure.length ? { exposure } : {}),
     lineage: all.lineage.filter((l) => ifaces.has(l.interface)),
     gaps: all.gaps.filter((g) => ifaces.has(g.interface)),
   };

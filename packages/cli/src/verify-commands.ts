@@ -14,6 +14,7 @@ import type { Output } from "./commands.js";
 import {
   carryOf,
   checkoutOf,
+  estateComponentsOf,
   excludesOf,
   headOf,
   raiseReadQuestions,
@@ -204,6 +205,7 @@ export async function verifyCommand(
     );
   // ADR 0124 addendum A-read: the files the reader read and found nothing to record in.
   const reviewed = await readReviewed(root, repo);
+  const estate = await estateComponentsOf(root);
   let report;
   try {
     report = await verifyFacts({
@@ -215,6 +217,8 @@ export async function verifyCommand(
       corrections: corrections.corrections,
       reviewed: reviewed.entries,
       room,
+      // J1 (ADR 0143): an exposure read here names a component the manifest lists.
+      ...(estate ? { estate } : {}),
     });
   } catch (e) {
     if (!(e instanceof NoRoomError)) throw e;

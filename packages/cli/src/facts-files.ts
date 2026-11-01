@@ -6,6 +6,7 @@ import {
   factsDirOf,
   isAdopted,
   isSecretPath,
+  loadOrgPack,
   orgPackDirOf,
   parseCorrections,
   QuestionDraft,
@@ -204,6 +205,25 @@ export interface VerifySummary {
    * the facts show, which is usually a missed read. Left out when there are none.
    */
   frameworkGaps?: VerifyReport["frameworkGaps"];
+}
+
+/**
+ * The estate an exposure may name (ADR 0143): every repo of the org pack's manifests, its
+ * component and its modules' components. Undefined when there is no org pack, or it lists no
+ * repo, so nothing checks the name then.
+ */
+export async function estateComponentsOf(
+  root: string,
+): Promise<{ components: string[] } | undefined> {
+  const op = await loadOrgPack(orgPackDirOf(root)).catch(() => undefined);
+  const repos = (op?.profiles ?? []).flatMap((p) => p.repos?.repos ?? []);
+  if (!repos.length) return undefined;
+  const components = repos.flatMap((r) => [
+    r.id,
+    ...(r.component ? [r.component] : []),
+    ...(r.modules ?? []).map((m) => m.component),
+  ]);
+  return { components: [...new Set(components)].sort() };
 }
 
 /** A line of `<repo>.reviewed.jsonl` refused: not an entry, or naming no file of the repo. */

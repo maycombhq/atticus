@@ -9,9 +9,9 @@ asks, in the shapes a large bank's estate has:
 | `forge-portal-bff` | The portal's back end: calls the accounts and payments proxies on the gateway host `api.forge.example`, through the starter's `ForgeRestClient`. One of its calls (`GET .../payments/{id}`) is left out of the facts, a reading miss |
 | `forge-proxy-accounts-v1`, `forge-proxy-payments-v1` | Internal Apigee proxies, each its own repo (`type: gateway`), all on `api.forge.example`, told apart by base path (ADR 0134); each forwards by `<URL>` to its service on the ingress host |
 | `forge-proxy-northwind-v1` | An external proxy (`type: gateway-external`) on the same host, forwarding out to Northwind Pay |
-| `forge-accounts`, `forge-payments`, `forge-cards`, `forge-notifications` | Spring Boot services behind one OpenShift ingress host, `apps.forge.internal`, each under `/forge-svc/<module>` (its manifest `basePath`); their controllers write only `/accounts/{id}` and the like |
+| `forge-accounts`, `forge-payments`, `forge-cards`, `forge-notifications` | Spring Boot services behind one OpenShift ingress host, `apps.forge.internal`, each under `/forge-svc/<module>` (its Route's `path` in the deploy repo); their controllers write only `/accounts/{id}` and the like |
 | `forge-starter` | The house starter library: `ForgeRestClient` (`forBase(url)`, `forService(id)`) makes every HTTP call, and its `TokenClient` fetches each service's token from Forge SSO |
-| `forge-deploy-config` | The deploy repo: an OpenShift ConfigMap and Helm values that set the URLs (`NOTIFY_URL`, `ACCOUNTS_URL`, `FORGE_SSO_URL`) the services' `application.yml` leaves as `${PLACEHOLDERS}` |
+| `forge-deploy-config` | The deploy repo: an OpenShift ConfigMap and Helm values that set the URLs (`NOTIFY_URL`, `ACCOUNTS_URL`, `FORGE_SSO_URL`) the services' `application.yml` leaves as `${PLACEHOLDERS}`, and each service's OpenShift Route (payments' a Helm template whose host is in its chart's `values.yaml`) |
 
 `repos/` holds the source, `facts/` what a reader writes for each repo (verified against
 `repos/` in `packages/scanner/test/measure-links.test.ts`), `org-pack/` the manifest and profile
@@ -19,6 +19,14 @@ asks, in the shapes a large bank's estate has:
 estate), and `reference-links.yaml` the reference: each repo's entries and calls, each call with
 the repo it should reach, the outside system, or none. It is written in the format a person
 writes for their own estate (`atticus join measure`, docs/guide/measure.md).
+
+## Where each repo is reached (plan item J1, ADR 0143)
+
+`repos.manifest.yaml` lists only the gateway host `api.forge.example` on the proxies. The rest is
+read: the deploy repo's Routes give each service's host and base path (`deploy` facts with
+`host`, `basePath` and `exposes`, the templated one citing its values file), and each proxy's
+`<BasePath>` its base path. The figures below are the same as when the manifest listed every
+host and base path; with the exposure fields stripped they fall to precision 0.5 and recall 0.231.
 
 ## What the join makes of it today
 

@@ -2,3 +2,5 @@ image:
   repository: registry.forge.example/forge/payments-api
 env:
   ACCOUNTS_URL: https://apps.forge.internal/forge-svc/accounts
+route:
+  host: apps.forge.internal

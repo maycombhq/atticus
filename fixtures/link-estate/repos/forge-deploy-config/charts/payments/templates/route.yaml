@@ -1,0 +1,11 @@
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: payments-api
+  namespace: forge-payments
+spec:
+  host: {{ .Values.route.host }}
+  path: /forge-svc/payments
+  to:
+    kind: Service
+    name: payments-api
