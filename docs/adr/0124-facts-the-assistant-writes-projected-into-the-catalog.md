@@ -922,3 +922,9 @@ The gateway batch's instructions go from about 7,401 characters (~1,850 tokens) 
 - **The bug.** The estimate's session was `max(150K, 0.75 × the given limit)`, so a smaller model never shrank it: a 136K-token model was planned 150K-token parts, more than its whole context, before the reading rules and the facts it writes.
 - **The rule.** `sessionTokensFor(limit)`: with a limit (from `--max-tokens`, the probe or runtime.yaml), `⌊0.45 × limit⌋`, smaller or bigger than before (a 1M-token model's parts go from 750K to 450K); without one, 150K. 45% leaves the rest of the context to the protocol, the facts written and the verify loop; it is a measured guess to revisit on the bench, not a constant of nature. Line ranges (A-ranges) take the same session, so a range fits too.
 - **Plans already written** were made at the old size and are re-planned by the next `--estimate` (the session is part of what makes a plan the same).
+
+## Addendum (F-honest): a guessed join is inferred (no C1 to C6 change)
+
+- **The bug.** An Interface's confidence was `verified` whenever both facts were declared, however the callee was found. The join fallback (C-join: no target, the one entry that serves the path) and a host whose first label matches a component's name are guesses, not citations of the callee, yet they were shown as verified, and a wrong one drew an edge between services that don't talk.
+- **The rule.** An Interface is `verified` only when both ends are declared **and** the callee was named: by an answer, the call's `to`, or a host or base path the manifest lists. A join by path or by a host's first label is `inferred`, and its `flags` say which (`joined-by-path`, `joined-by-label`), as `declared-caller` does for a caller found from an entry's side. `flags` is already optional on the Interface, so C1 is unchanged.
+- **Catalogs already written** take the new confidence at the next `atticus verify --write`; no fact changes.

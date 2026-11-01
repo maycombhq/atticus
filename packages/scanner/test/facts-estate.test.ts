@@ -87,12 +87,14 @@ describe("catalogWithFacts with the estate: calls joined to the entries of the r
       "forge-web:src/environments/environment.ts:4:caller",
       "forge-customers:src/main/java/forge/customers/CustomerController.java:24:callee",
     ]);
-    // A gRPC call that names no target joins the one entry of the estate with its name.
+    // A gRPC call that names no target joins the one entry of the estate with its name: a guess
+    // by path, so inferred and flagged (F2).
     expect(byId(records, "if-fc58b23d49c7c652")).toMatchObject({
       from: "customers-api",
       to: "ledger-api",
       endpoint: "ledger-api.forge-ledger-v1-ledger-openaccount",
-      confidence: "verified",
+      confidence: "inferred",
+      flags: ["joined-by-path"],
     });
     // The fields that cross, and where the callee stores them.
     const maps = records

@@ -707,7 +707,7 @@ records:
     sync: async
     to: ledger-api
     via: event-bus
-  - confidence: verified
+  - confidence: inferred
     conflicts: []
     direction: outbound
     endpoint: ledger-api.forge-ledger-v1-ledger-openaccount
@@ -726,6 +726,8 @@ records:
         repo: forge-ledger
         side: callee
         source: code
+    flags:
+      - joined-by-path
     from: customers-api
     id: if-fc58b23d49c7c652
     kind: Interface

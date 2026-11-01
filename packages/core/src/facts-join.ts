@@ -125,6 +125,10 @@ export interface FactEnd {
   at: string;
 }
 
+/** F2: an Interface's flags when nobody named its callee: found by path, or by a host's first label. */
+export const JOINED_BY_PATH = "joined-by-path";
+export const JOINED_BY_LABEL = "joined-by-label";
+
 /**
  * How the callee was found: `answer` (a person named it), `named` (the call's `to` names the
  * component), `repo` (its `to` names the repo), `host` (a host or base URL the manifest lists,
@@ -145,6 +149,11 @@ export interface FactJoin {
    * the estate; `named` is the target the call gave, when it named one the estate doesn't have.
    */
   inferred?: { within: "repo" | "estate"; named?: string };
+  /**
+   * F2: the host named no repo; its first label happened to be a component's name. A guess, so
+   * the Interface is inferred and flagged `joined-by-label`.
+   */
+  byLabel?: true;
   /**
    * The gateway hops the call went through to reach `entry`, in the order it meets them
    * (A-gateway, many hops in A-gateway2); `path` is what the last hop's target receives. Left
@@ -577,6 +586,7 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
     }
     let scope: { scope: (e: Node) => boolean; target: string } | undefined;
     let how: JoinHow | undefined;
+    let byLabel = false;
     if (answer) {
       scope = named(answer);
       if (!scope) continue; // a vendor or "none": nothing in the estate to join
@@ -593,6 +603,7 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
       const comp = factIdPart(host.host.split(".")[0]!);
       scope = { scope: (e) => e.component === comp, target: comp };
       how = "host";
+      byLabel = true;
     } else if (f.to && (host || outside.has(factIdPart(f.to)))) {
       continue; // a target outside the estate (a vendor, a cloud service): the call keeps it
     } else if (host) {
@@ -631,6 +642,7 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
         ...tie,
         how,
         ...(within ? { inferred: { within, ...(f.to ? { named: f.to } : {}) } } : {}),
+        ...(byLabel ? { byLabel: true as const } : {}),
         callType: f.callType,
         ...(f.method || e.fact.method
           ? { method: (f.method ?? e.fact.method)!.toUpperCase() }
@@ -770,6 +782,7 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
       ...(j.tie ? { tie: j.tie } : {}),
       how: j.how,
       ...(j.inferred ? { inferred: j.inferred } : {}),
+      ...(j.byLabel ? { byLabel: j.byLabel } : {}),
       gateway: hops,
       ...(scopes.length ? { scopes } : {}),
       callType: j.callType,
@@ -972,6 +985,11 @@ export function joinRecords(result: FactsJoinResult, repos: readonly JoinRepo[])
     ];
   };
   const out = new Map<string, CatalogRecord>();
+  // F2: how a guessed join found its callee, as the Interface's flags.
+  const guessed = (j: FactJoin): string[] => [
+    ...(j.inferred ? [JOINED_BY_PATH] : []),
+    ...(j.byLabel ? [JOINED_BY_LABEL] : []),
+  ];
   for (const j of result.joins) {
     if (j.how === "topic") {
       // As the merge pairs a publish with a listener: via the bus, async, at the topic.
@@ -1009,7 +1027,7 @@ export function joinRecords(result: FactsJoinResult, repos: readonly JoinRepo[])
         entry,
         ...j.gateway.flatMap((h) => [fact(h.entry), fact(h.call)]),
       ].every((f) => f?.conf === "declared");
-      const confidence = declared ? "verified" : "inferred";
+      const confidence = declared && !guessed(j).length ? "verified" : "inferred";
       const auth = catalogAuth(route) ?? catalogAuth(entry);
       out.set(j.interface, {
         kind: "Interface",
@@ -1024,6 +1042,7 @@ export function joinRecords(result: FactsJoinResult, repos: readonly JoinRepo[])
           : {}),
         via: "gateway",
         route: g.route,
+        ...(guessed(j).length ? { flags: guessed(j) } : {}),
         ...(j.method ? { method: j.method } : {}),
         normalizedPath: servedPath(entry),
         ...(auth ? { auth } : {}),
@@ -1086,7 +1105,8 @@ export function joinRecords(result: FactsJoinResult, repos: readonly JoinRepo[])
       schemaVersion: 2,
       id: j.interface,
       status: "current",
-      confidence: declared ? "verified" : "inferred",
+      confidence: declared && !guessed(j).length ? "verified" : "inferred",
+      ...(guessed(j).length ? { flags: guessed(j) } : {}),
       from: j.call.component,
       to: j.entry.component,
       ...(entry.entryType !== "rest"

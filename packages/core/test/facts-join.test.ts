@@ -398,6 +398,86 @@ describe("joinFacts: a relative call whose target names nothing in the estate", 
   });
 });
 
+/**
+ * F2 (honest link confidence): a join nobody named is a guess, whatever the two ends' facts say.
+ * The path fallback and a host whose first label happens to be a component's name are marked
+ * inferred on the Interface, with a flag saying how the callee was found.
+ */
+describe("joinRecords: a guessed join is inferred, with how it was found (F2)", () => {
+  it("marks a join by path inferred and flags it joined-by-path", () => {
+    const repos: JoinRepo[] = [
+      {
+        repo: "forge-notes",
+        facts: [
+          call("forge-notes", "c-tags", {
+            component: "forge-notes-web",
+            method: "GET",
+            path: "/api/tags",
+          }),
+        ],
+      },
+      {
+        repo: "forge-archive",
+        facts: [entry("forge-archive", "e-tags", { method: "GET", path: "/api/tags" })],
+      },
+    ];
+    const ifaces = joinRecords(joinFacts({ repos }), repos).filter((r) => r.kind === "Interface");
+    expect(ifaces).toHaveLength(1);
+    expect(ifaces[0]).toMatchObject({ confidence: "inferred", flags: ["joined-by-path"] });
+  });
+
+  it("marks a join by a host's first label inferred and flags it joined-by-label", () => {
+    const repos: JoinRepo[] = [
+      {
+        repo: "forge-web",
+        facts: [
+          call("forge-web", "c-limits", {
+            component: "forge-web",
+            method: "GET",
+            path: "/limits/{id}",
+            host: "forge-limits.apps.forge.internal",
+          }),
+        ],
+      },
+      {
+        repo: "forge-limits",
+        facts: [entry("forge-limits", "e-limit", { method: "GET", path: "/limits/{limitId}" })],
+      },
+    ];
+    const out = joinFacts({ repos });
+    expect(out.joins).toHaveLength(1);
+    const ifaces = joinRecords(out, repos).filter((r) => r.kind === "Interface");
+    expect(ifaces[0]).toMatchObject({
+      to: "forge-limits",
+      confidence: "inferred",
+      flags: ["joined-by-label"],
+    });
+  });
+
+  it("keeps a join by a named target verified, with no flag", () => {
+    const repos: JoinRepo[] = [
+      {
+        repo: "forge-web",
+        facts: [
+          call("forge-web", "c-limits", {
+            component: "forge-web",
+            method: "GET",
+            path: "/limits/{id}",
+            to: "forge-limits",
+          }),
+        ],
+      },
+      {
+        repo: "forge-limits",
+        facts: [entry("forge-limits", "e-limit", { method: "GET", path: "/limits/{limitId}" })],
+      },
+    ];
+    const iface = joinRecords(joinFacts({ repos }), repos).find((r) => r.kind === "Interface");
+    expect(iface).toMatchObject({ confidence: "verified" });
+    expect(iface && "flags" in iface ? iface.flags : undefined).toBeUndefined();
+  });
+});
+
 describe("joinRecords: the joins as C1 records", () => {
   it("makes an Interface citing both ends and the config between, and a FieldMapping per crossing", () => {
     const repos = estate();

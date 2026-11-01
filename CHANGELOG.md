@@ -8,6 +8,10 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 - `atticus map --estimate` planned every part of a big repo at 150K tokens of source, whatever the model: `--max-tokens 136000` (Copilot's Claude Sonnet) still gave 150K parts, which overflowed the context, so the assistant cut a part short or summarised it mid-read and missed what was in it. A part's source is now 45% of the model's limit (about 61K for 136K, 450K for a 1M-token model), leaving room for the reading rules, the facts written and the verify loop; with no limit given it stays 150K. Line ranges of a file too big for a session are sized the same. Run `atticus map <repo> --estimate --max-tokens <limit>` again: the plan is redone at the new size.
 
+### Fixed: a guessed link says it is a guess
+
+- A link the join found without anyone naming the callee was shown as verified when the facts at both ends were: a call with no target joined to the one entry in the estate that serves its path, or a call on a host whose first label happened to be a service's name (`forge-limits.apps.example.internal`). Both are guesses, and a wrong one drew a line between two services that don't talk. Such a link is now `inferred`, with a flag saying how it was found (`joined-by-path` or `joined-by-label`), so it shows as unconfirmed on the map and in the drill-down. A link a call named, a person answered or the manifest's hosts and base paths decided is unchanged. No repo needs reading again: run `atticus verify --all --write`.
+
 ## 2.0.0-beta.9 (2026-10-29)
 
 ### A repo's `basePath` on a shared host (`repos.manifest.yaml` version 3)
