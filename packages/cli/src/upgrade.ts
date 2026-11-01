@@ -150,9 +150,9 @@ export const MIGRATIONS: Migration[] = [
     },
   },
   {
-    id: "questions-v2",
+    id: "questions-v3",
     summary:
-      "Questions at schema version 2: a question can name the earlier one it may be the same as (ADR 0117)",
+      "Questions at schema version 3: a question can name the earlier one it may be the same as (ADR 0117), and an answer can carry its rule and the proposal it accepted (ADR 0153)",
     pending: (root) => migrateQuestions(root, { dryRun: true }),
     apply: (root) => migrateQuestions(root),
   },

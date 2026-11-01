@@ -1,5 +1,5 @@
-import { stat } from "node:fs/promises";
-import { join } from "node:path";
+import { readFile, stat } from "node:fs/promises";
+import { isAbsolute, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import {
   acceptProposal,
@@ -9,11 +9,14 @@ import {
   proposalOf,
   proposalsRelOf,
   answerWords,
+  HOSTS_STEP,
   listQuestions,
+  TARGETS_STEP_ID,
   QuestionError,
   questionsRelOf,
   QuestionScopeLevel,
   QuestionState,
+  writeFileAtomic,
   type Question,
 } from "@maycombhq/core";
 // The light entry: listing the questions needn't load the whole planner (waiting.ts).
@@ -21,6 +24,7 @@ import { waitingQuestions } from "@maycombhq/planner/waiting";
 import { gitUser } from "@maycombhq/workspace";
 import type { Output } from "./commands.js";
 import { routeQuestions, type RoutedQuestions } from "./question-routing.js";
+import { answerSheet, applySheet } from "./question-sheet.js";
 
 /**
  * atticus questions list | show | answer (ADR 0078): the questions a step raised, as files in
@@ -28,6 +32,9 @@ import { routeQuestions, type RoutedQuestions } from "./question-routing.js";
  * the same file through the same functions. The older `atticus questions` (no subcommand)
  * still lists the knowledge gaps and their owner questions.
  */
+
+/** The steps whose answers take a rule (ADR 0153): where calls go, by target or by host. */
+const RULE_STEPS = new Set<string>([TARGETS_STEP_ID, HOSTS_STEP]);
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 const sentence = (s: string) => (/[.!?]$/.test(s.trim()) ? s.trim() : `${s.trim()}.`);
@@ -58,7 +65,11 @@ export function aboutLines(about: RoutedQuestions["about"][string] | undefined):
   if (!about) return [];
   const o = about.owner;
   return [
-    "team" in o ? `  Owner: ${o.team}${o.name ? ` (${o.name})` : ""}` : `  Owner: none (${o.none})`,
+    "team" in o
+      ? `  Owner: ${o.team}${o.name ? ` (${o.name})` : ""}`
+      : "change" in o
+        ? `  Owner: the people of ${o.change}: ${o.people.join(", ")}`
+        : `  Owner: none (${o.none})`,
     ...(about.restsOn.length
       ? [
           `  Ask it first: ${about.restsOn.join(", ")} ${about.restsOn.length === 1 ? "is a change in flight that rests" : "are changes in flight that rest"} on it.`,
@@ -89,6 +100,22 @@ export function proposalLines(q: Question, p: Proposal): string[] {
   ];
 }
 
+/**
+ * What an answer's rule covers (ADR 0153, Q2), in a sentence: every call it matches, found now or
+ * later, in each repo its scope allows.
+ */
+export function ruleLine(q: Question, change = false): string {
+  const a = q.answer!;
+  const where =
+    a.scope.level === "repo"
+      ? `${change ? "this change" : "this repo"}, ${a.scope.id}`
+      : scopeWords(a.scope);
+  const what = a.match!.startsWith("/")
+    ? `whose path is under ${a.match}`
+    : `on a host matching ${a.match}`;
+  return `It answers by rule: every call ${what}, in ${where}, reads this answer, the calls found later too.`;
+}
+
 /** The lines `atticus questions list` prints for one question; `change`: it is a change's. */
 export function questionLines(
   q: Question,
@@ -106,13 +133,18 @@ export function questionLines(
   ];
   if (q.answer)
     lines.push(
-      `  Answered by ${q.answer.by} on ${q.answer.at.slice(0, 10)}: ${answerWords(q)} (${scopeWords(q.answer.scope, true, o.change)})`,
+      `  Answered by ${q.answer.by} on ${q.answer.at.slice(0, 10)}: ${answerWords(q)} (${scopeWords(q.answer.scope, true, o.change)})${q.answer.match ? `, by rule: ${q.answer.match}` : ""}`,
+      ...(q.answer.proposal
+        ? [
+            `  It was ${q.answer.proposal.by}'s proposal (${q.answer.proposal.at.slice(0, 10)}), confirmed by ${q.answer.by}; it cited ${q.answer.proposal.cites.map((c) => `${c.repo ?? q.repo} ${c.file}:${c.line}`).join(", ")}.`,
+          ]
+        : []),
     );
   else if (q.state === "open")
     lines.push(
       ...(o.about?.proposal ? proposalLines(q, o.about.proposal) : []),
       `  Proposed scope: ${scopeWords(q.scope, false, o.change)}`,
-      `  Answer: atticus questions answer ${q.id}${q.options.length ? " --option <n>, or" : ""} --text "your own words"`,
+      `  Answer: atticus questions answer ${q.id}${q.options.length ? " --option <n>, or" : ""} --text "your own words"${RULE_STEPS.has(q.askedBy.step) ? ' (add --match "<host pattern or /path/**>" for every call it covers)' : ""}`,
     );
   return lines;
 }
@@ -139,6 +171,9 @@ export async function questionsFiles(
       by: { type: "string" },
       mine: { type: "boolean" },
       "accept-proposal": { type: "boolean" },
+      match: { type: "string" },
+      apply: { type: "string" },
+      out: { type: "string" },
     },
   });
   const str = (v: unknown) => (typeof v === "string" ? v : undefined);
@@ -174,7 +209,9 @@ export async function questionsFiles(
       io.out(
         routed.me.teams.length
           ? `The questions for ${routed.me.handle}'s ${routed.me.teams.length === 1 ? "team" : "teams"}: ${routed.me.teams.map((t) => (t.name ? `${t.id} (${t.name})` : t.id)).join(", ")}.`
-          : `${routed.me.handle} is on no team in org-pack/roles.yaml, so no question is theirs: add them under a team's people (roles.yaml schemaVersion 2), or list every question without --mine.`,
+          : r.questions.length
+            ? `The questions of the changes that name ${routed.me.handle} under owners in change.yaml; ${routed.me.handle} is on no team in org-pack/roles.yaml.`
+            : `${routed.me.handle} is on no team in org-pack/roles.yaml and no change names them under owners, so no question is theirs: add them under a team's people (roles.yaml schemaVersion 2), or list every question without --mine.`,
       );
     const changes = new Set<string>();
     for (const q of r.questions) if (await isChange(root, q.repo)) changes.add(q.repo);
@@ -263,6 +300,59 @@ export async function questionsFiles(
     );
     return bad ? 1 : 0;
   }
+  if (command === "sheet") {
+    // ADR 0153 (Q6): every open question in one file, answered in one sitting.
+    const at = (deps.now ?? new Date()).toISOString();
+    const apply = str(values.apply);
+    if (apply !== undefined) {
+      const file = isAbsolute(apply) ? apply : resolve(apply);
+      const text = await readFile(file, "utf8").catch(() => undefined);
+      if (text === undefined) {
+        io.err(`There is no answer sheet at ${apply}: write one with atticus questions sheet.`);
+        return 1;
+      }
+      const by = str(values.by)?.trim() || (await gitUser(root)).handle;
+      const r = await applySheet(root, text, { by, at });
+      if (r.problem) {
+        io.err(`${apply} can't be applied: ${r.problem}`);
+        return 2;
+      }
+      if (values.json === true) {
+        io.out(JSON.stringify(r, null, 2));
+        return r.outcomes.some((x) => x.status === "refused") ? 1 : 0;
+      }
+      for (const x of r.outcomes)
+        io.out(
+          x.status === "answered"
+            ? `Answered ${x.id}: ${x.answer} (as ${by}${x.question.answer?.match ? `, by rule: ${x.question.answer.match}` : ""}).`
+            : x.status === "skipped"
+              ? `Skipped ${x.id}: ${x.why}.`
+              : `Refused ${x.id}: ${sentence(x.why)}`,
+        );
+      const done = r.outcomes.filter((x) => x.status === "answered");
+      const refused = r.outcomes.filter((x) => x.status === "refused").length;
+      const skipped = r.outcomes.filter((x) => x.status === "skipped").length;
+      io.out(
+        `${plural(done.length, "question")} answered, ${skipped} skipped, ${refused} refused. Wrote each answer to ${questionsRelOf(root)}/<id>.yaml; commit them for review.`,
+      );
+      const reruns = [...new Set(done.map((x) => (x.status === "answered" ? x.rerun : "")))].filter(
+        Boolean,
+      );
+      for (const rerun of reruns) io.out(`Next: ${rerun}`);
+      return refused ? 1 : 0;
+    }
+    const open = (await listQuestions(root, { state: "open" })).questions;
+    const routed = await routeQuestions(root, open);
+    const out = str(values.out) ?? "questions-sheet.yaml";
+    const file = isAbsolute(out) ? out : join(root, out);
+    await writeFileAtomic(file, answerSheet(routed.questions, at));
+    io.out(
+      open.length
+        ? `Wrote ${plural(open.length, "open question")} to ${out}, in the order to ask them. Fill in the answers you know, leave the rest empty, then run: atticus questions sheet --apply ${out}`
+        : `No open questions: wrote an empty sheet to ${out}.`,
+    );
+    return 0;
+  }
   if (command === "answer") {
     if (!id) {
       io.err(
@@ -296,9 +386,12 @@ export async function questionsFiles(
     try {
       const by = str(values.by)?.trim() || (await gitUser(root)).handle;
       const at = (deps.now ?? new Date()).toISOString();
+      const match = str(values.match)?.trim() || undefined;
       const scoped = {
         ...(scope ? { scope: scope as QuestionScopeLevel } : {}),
         ...(str(values.type) ? { repoType: str(values.type)! } : {}),
+        // ADR 0153 (Q2): the rule the answer covers, for a target or hosts question.
+        ...(match ? { match } : {}),
       };
       // ADR 0144 (Q5): the assistant's proposal, checked again, becomes this person's answer.
       const r = accept
@@ -316,8 +409,9 @@ export async function questionsFiles(
       );
       if (accept)
         io.out(
-          `It was the assistant's proposal; you accepted it, so it is recorded as answered by ${q.answer!.by}.`,
+          `It was the assistant's proposal; you accepted it, so it is recorded as answered by ${q.answer!.by}, with the proposal it came from.`,
         );
+      if (q.answer!.match) io.out(ruleLine(q, await isChange(root, q.repo)));
       if (r.skill)
         io.out(
           r.skill.written
@@ -327,8 +421,12 @@ export async function questionsFiles(
       if (r.hosts)
         io.out(
           r.hosts.added
-            ? `Wrote ${r.hosts.host} under hosts for ${r.hosts.repo} in ${r.hosts.manifest}; review it in the same pull request.`
+            ? `Wrote ${r.hosts.host} under hosts for ${r.hosts.repo}${r.hosts.basePath ? `, with basePath ${r.hosts.basePath},` : ""} in ${r.hosts.manifest}; review it in the same pull request.`
             : `${r.hosts.repo} already lists ${r.hosts.host} under hosts in ${r.hosts.manifest}.`,
+        );
+      if (r.covered?.length)
+        io.out(
+          `The rule answers ${plural(r.covered.length, "more open question")} too, retired as answered by it: ${r.covered.join(", ")}.`,
         );
       if (r.system)
         io.out(
@@ -345,10 +443,10 @@ export async function questionsFiles(
     }
   }
   io.err(
-    `atticus questions ${command ?? ""} isn't a command: it is questions list, show, proposed or answer (atticus questions alone lists the knowledge gaps).`,
+    `atticus questions ${command ?? ""} isn't a command: it is questions list, show, proposed, answer or sheet (atticus questions alone lists the knowledge gaps).`,
   );
   io.err(
-    'Usage: atticus questions list [--state open|answered|retired] [--mine] [--json], atticus questions show <id> [--json], atticus questions proposed [--json], or atticus questions answer <id> --option <n> | --text "..." | --accept-proposal [--scope repo|repo-type] [--type <repo type>]',
+    'Usage: atticus questions list [--state open|answered|retired] [--mine] [--json], atticus questions show <id> [--json], atticus questions proposed [--json], or atticus questions answer <id> --option <n> | --text "..." | --accept-proposal [--scope repo|repo-type] [--type <repo type>] [--match <host pattern or /path/**>], or atticus questions sheet [--out <file>] | --apply <file>',
   );
   return 2;
 }

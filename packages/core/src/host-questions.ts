@@ -16,6 +16,14 @@ import { RepoManifest } from "./schema/workspace.js";
 /** The step that asks which repo answers on a host. */
 export const HOSTS_STEP = "scan-hosts";
 
+/**
+ * The step that asks which repo or system answers a call with no target (the scanner's
+ * TARGETS_STEP), and its group question's option that says the calls go to more than one place:
+ * named here so an answer's rule (ADR 0153) is checked where it is written.
+ */
+export const TARGETS_STEP_ID = "facts-targets";
+export const TARGETS_SPLIT_LABEL = "Not all to one place";
+
 /** The last option of a hosts question: no repo of the estate answers on it. */
 export const HOSTS_NONE = "None of these";
 
@@ -129,6 +137,11 @@ export async function addManifestHost(
   root: string,
   repo: string,
   host: string,
+  /**
+   * ADR 0153 (Q2): the path the repo answers under on the host, from an answer's path rule, set
+   * as its `basePath`. Refused when the repo gives another one.
+   */
+  o: { basePath?: string } = {},
 ): Promise<{ manifest: string; added: boolean }> {
   const profiles = join(orgPackDirOf(root), "profiles");
   const names = await readdir(profiles, { withFileTypes: true }).catch(() => []);
@@ -151,9 +164,15 @@ export async function addManifestHost(
       node.set("hosts", hosts);
     }
     const seq = hosts as YAMLSeq;
-    if (seq.items.some((h) => String((h as { value?: unknown })?.value ?? h) === host))
-      return { manifest: rel, added: false };
-    seq.add(host);
+    const had = node.get("basePath");
+    if (o.basePath && had !== undefined && String(had) !== o.basePath)
+      throw new Error(
+        `${repo} answers under ${String(had)} in ${rel}, not ${o.basePath}: change its basePath there by hand if it moved`,
+      );
+    const listed = seq.items.some((h) => String((h as { value?: unknown })?.value ?? h) === host);
+    if (listed && (!o.basePath || had !== undefined)) return { manifest: rel, added: false };
+    if (!listed) seq.add(host);
+    if (o.basePath && had === undefined) node.set("basePath", o.basePath);
     // The manifest must still be one Atticus reads before it is written.
     RepoManifest.parse(doc.toJS());
     await writeFileAtomic(file, doc.toString());

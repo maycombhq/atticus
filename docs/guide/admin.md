@@ -314,7 +314,7 @@ teams:
   - { id: team-portal, name: Portal team, people: [cy] }
 ```
 
-Every question then says its owner (`atticus questions list`, the app's Questions page), and `atticus questions list --mine` or _My teams'_ in the app lists only yours. It is a filter, not a permission: anyone can still read and answer any question. A question whose repo no manifest lists, or that a change's stage asked, says it has no owner.
+Every question then says its owner (`atticus questions list`, the app's Questions page), and `atticus questions list --mine` or _My teams'_ in the app lists only yours. It is a filter, not a permission: anyone can still read and answer any question. A question whose repo no manifest lists says it has no owner; a change's own question goes to the people its `change.yaml` names under `owners` (ADR 0153), and says it has no owner only when that names nobody.
 
 `process/change-policy.yaml` may also set `stages`, the stage path (ADR 0087 addendum): for each stage its `phase`, the `loop` file it keeps, the `command` that runs it, the files it `writes` and the change type's `artifacts` it writes. A change whose folder holds a stage's loop file is on the stage path: `change status` and the hand-off then want each phase's stage done and its files, not `proposal.md` and `specs/`. Left out, the built-in feature, architecture and stories stages apply; a list you write replaces them, so add `snow` to the stories stage's `artifacts` if your plan hand-off needs `snow.md`.
 

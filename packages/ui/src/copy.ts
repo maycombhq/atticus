@@ -215,6 +215,20 @@ export const COPY = {
     mineNone: (handle: string) =>
       `${handle} is on no team in org-pack/roles.yaml, so no question is yours here. Add yourself under a team's people there (schemaVersion 2), or show everyone's.`,
     emptyMine: "No questions are waiting for your teams.",
+    // ADR 0153 (Q4): a change's own questions go to the people its change.yaml names.
+    changeOwner: (change: string, people: string[]) =>
+      `Owner: the people of ${change} (${people.join(", ")})`,
+    mineChanges: (handle: string) =>
+      `Questions of the changes that name ${handle} under owners. ${handle} is on no team in org-pack/roles.yaml.`,
+    // ADR 0153 (Q2): one answer covers every call a host pattern or a path prefix matches.
+    rule: {
+      label: "Answer by rule (optional)",
+      hint: "A host pattern (*.payments.forge.internal) or a path prefix (/forge/limits/**): your answer then covers every call that matches, the calls found later too, in the repos the scope above allows.",
+      answered: (match: string) => `By rule: every call matching ${match}`,
+    },
+    // ADR 0153 (Q5): an answer accepted from the assistant's proposal says so.
+    fromProposal: (by: string, day: string) =>
+      `It was ${by}'s proposal (${day}), confirmed by the person who answered. It cited:`,
   },
   /** Knowledge managed in the metarepo (ADR 0101), in the app (ADR 0102). */
   knowledge: {

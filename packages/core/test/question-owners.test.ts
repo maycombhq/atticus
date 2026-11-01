@@ -4,6 +4,9 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parse as parseYaml } from "yaml";
 import {
+  isPersonsQuestion,
+  peopleOfChange,
+  routeOfQuestion,
   migrateRolesText,
   ownerOfQuestion,
   ownerWords,
@@ -99,5 +102,45 @@ describe("who a question goes to (ADR 0140)", () => {
     expect(teamsOfPerson("bo.chen", teams).map((t) => t.id)).toEqual(["team-ledger"]);
     expect(teamsOfPerson("cy", teams).map((t) => t.id)).toEqual(["team-portal"]);
     expect(teamsOfPerson("dee", teams)).toEqual([]);
+  });
+});
+
+describe("a change's own questions go to its people (ADR 0153, Q4)", () => {
+  const teams = Roles.parse(parseYaml(ROLES_V2)).teams;
+  const owners = new Map([["forge-ledger", "team-ledger"]]);
+  const changes = new Set(["add-pins", "fix-dates"]);
+  const changePeople = new Map([
+    ["add-pins", peopleOfChange({ architect: ["ari"], developer: ["@Bo.Chen", "ari"] })],
+    ["fix-dates", []],
+  ]);
+
+  it("names everyone change.yaml's owners lists, once each", () => {
+    expect(changePeople.get("add-pins")).toEqual(["ari", "Bo.Chen"]);
+  });
+
+  it("routes a change's question to its people, a repo's to its team", () => {
+    const o = { owners, teams, changes, changePeople };
+    expect(routeOfQuestion({ repo: "add-pins" }, o)).toEqual({
+      change: "add-pins",
+      people: ["ari", "Bo.Chen"],
+    });
+    expect(routeOfQuestion({ repo: "fix-dates" }, o)).toEqual({
+      none: "fix-dates is a change, and its change.yaml names no owners",
+    });
+    expect(routeOfQuestion({ repo: "forge-ledger" }, o)).toEqual({
+      team: "team-ledger",
+      name: "Ledger team",
+    });
+    expect(ownerWords(routeOfQuestion({ repo: "add-pins" }, o))).toBe(
+      "add-pins's people: ari, Bo.Chen",
+    );
+  });
+
+  it("a question is the person's by their team or by their change", () => {
+    const pins = { change: "add-pins", people: ["ari", "Bo.Chen"] };
+    expect(isPersonsQuestion("@bo.chen", pins, teams)).toBe(true);
+    expect(isPersonsQuestion("cy", pins, teams)).toBe(false);
+    expect(isPersonsQuestion("cy", { team: "team-portal" }, teams)).toBe(true);
+    expect(isPersonsQuestion("cy", { none: "x" }, teams)).toBe(false);
   });
 });

@@ -10,10 +10,15 @@ import {
   HOSTS_NONE,
   HOSTS_STEP,
   outsideBoundaryOf,
+  TARGETS_SPLIT_LABEL,
+  TARGETS_STEP_ID,
 } from "./host-questions.js";
 import { fileJudgments, judgmentKey, makeJudgment, type JudgmentStore } from "./judgments.js";
 import { isAdopted, questionsDirOf, questionsRelOf } from "./metarepo.js";
+import { hostMatches } from "./schema/workspace.js";
 import {
+  AnswerMatch,
+  isPathMatch,
   Question,
   QUESTION_SCHEMA_VERSION,
   QuestionId,
@@ -665,9 +670,10 @@ export async function raiseQuestions(
 }
 
 /**
- * Rewrite questions/<id>.yaml files written at question schema version 1 at version 2 (ADR
- * 0117): only the version changes, since what version 2 adds is optional. Returns the files,
- * relative to the root; with dryRun, the files it would rewrite.
+ * Rewrite questions/<id>.yaml files written at an older question schema version (1, ADR 0078;
+ * 2, ADR 0117) at the current one (3, ADR 0153): only the version changes, since what each
+ * version adds is optional. Returns the files, relative to the root; with dryRun, the files it
+ * would rewrite.
  */
 export async function migrateQuestions(
   root: string,
@@ -688,7 +694,8 @@ export async function migrateQuestions(
     } catch {
       continue;
     }
-    if ((data as { schemaVersion?: unknown } | null)?.schemaVersion !== 1) continue;
+    const v = (data as { schemaVersion?: unknown } | null)?.schemaVersion;
+    if (v !== 1 && v !== 2) continue;
     const q = Question.safeParse(data);
     if (!q.success) continue;
     if (!o.dryRun) await write(root, q.data);
@@ -796,8 +803,43 @@ export interface AnswerInput {
   scope?: QuestionScopeLevel;
   /** The repo type, when the person widens a repo question to its type. */
   repoType?: string;
+  /**
+   * ADR 0153 (Q2): the rule the answer covers, for a target or hosts question: a host pattern
+   * (`*.payments.forge.internal`) or a path prefix (`/forge/limits/**`).
+   */
+  match?: string;
+  /** ADR 0153 (Q5): the assistant's proposal this answer accepts (acceptProposal sets it). */
+  proposal?: NonNullable<Question["answer"]>["proposal"];
   by: string;
   at: string;
+}
+
+/**
+ * Whether a host a hosts question asks about (`localhost:9966`, `limits.payments.forge.internal`)
+ * is one a rule's host pattern covers, as the manifest matches hosts.
+ */
+export function hostRuleCovers(pattern: string, asked: string): boolean {
+  const [name, port] = asked.split(/:(?=\d+$)/);
+  return hostMatches(pattern, name!, port ? Number(port) : undefined);
+}
+
+/** Why a rule can't ride on this answer, or undefined when it can. */
+function ruleProblem(q: Question, match: string, label: string | undefined): string | undefined {
+  if (!AnswerMatch.safeParse(match).success)
+    return `${match} isn't a rule Atticus reads: give a host pattern (*.payments.forge.internal) or a path prefix (/forge/limits/**).`;
+  if (q.askedBy.step === TARGETS_STEP_ID) {
+    if (label === TARGETS_SPLIT_LABEL)
+      return `"${TARGETS_SPLIT_LABEL}" says the calls go to more than one place, so no rule rides on it: pick where the calls go.`;
+    return undefined;
+  }
+  if (q.askedBy.step !== HOSTS_STEP)
+    return "Only a question about where calls go (a target or a host) takes a rule: answer it without --match.";
+  const host = hostOfQuestion(q);
+  if (!label || label === HOSTS_NONE || outsideBoundaryOf(label))
+    return "A rule on a host question names the repo that answers: pick a repo, or answer without --match.";
+  if (!isPathMatch(match) && host && !hostRuleCovers(match, host))
+    return `${match} doesn't cover ${host}, the host this question asks about: give a pattern that does.`;
+  return undefined;
 }
 
 /**
@@ -813,7 +855,12 @@ export async function answerQuestion(
   question: Question;
   skill?: { path: string; written: boolean };
   /** For a hosts question answered with a repo (ADR 0088): the host written to the manifest. */
-  hosts?: { repo: string; host: string; manifest: string; added: boolean };
+  hosts?: { repo: string; host: string; manifest: string; added: boolean; basePath?: string };
+  /**
+   * ADR 0153 (Q2): the other open hosts questions the answer's host pattern covers, retired as
+   * answered by it.
+   */
+  covered?: string[];
   /**
    * For a hosts question answered with an outside system (O1): the system written to the
    * profile, with the host as its alias.
@@ -855,6 +902,12 @@ export async function answerQuestion(
       );
     scopeId = t;
   }
+  const match = a.match?.trim() || undefined;
+  const picked = a.option !== undefined ? q.options[a.option - 1]?.label : text;
+  if (match) {
+    const why = ruleProblem(q, match, picked);
+    if (why) throw new QuestionError("bad-answer", why);
+  }
   const skill = level === "repo-type" ? await repoTypeSkillRel(root, scopeId) : undefined;
   const answered = Question.parse({
     ...q,
@@ -865,13 +918,16 @@ export async function answerQuestion(
       at: a.at,
       scope: { level, id: scopeId },
       ...(skill ? { skill } : {}),
+      ...(match ? { match } : {}),
+      ...(a.proposal ? { proposal: a.proposal } : {}),
     },
   });
   // A hosts question answered with a repo: the host goes under that repo's hosts first, so a
   // manifest that refuses it leaves the question open.
   const label = a.option !== undefined ? q.options[a.option - 1]?.label : undefined;
   const host = q.askedBy.step === HOSTS_STEP ? hostOfQuestion(q) : undefined;
-  let hosts: { repo: string; host: string; manifest: string; added: boolean } | undefined;
+  let hosts:
+    { repo: string; host: string; manifest: string; added: boolean; basePath?: string } | undefined;
   let system:
     | { id: string; host: string; boundary: "internal" | "vendor"; profile: string; added: boolean }
     | undefined;
@@ -883,23 +939,49 @@ export async function answerQuestion(
       throw new QuestionError("bad-answer", (e as Error).message.split("\n")[0]!);
     }
   } else if (host && label && label !== HOSTS_NONE) {
+    // ADR 0153 (Q2): a host pattern goes under hosts in place of the host; a path prefix is the
+    // repo's basePath on the host. Either way the manifest's own matching answers every call.
+    const listed = match && !isPathMatch(match) ? match : host;
+    const basePath = match && isPathMatch(match) ? match.replace(/\/\*\*$/, "") : undefined;
     try {
-      hosts = { repo: label, host, ...(await addManifestHost(root, label, host)) };
+      hosts = {
+        repo: label,
+        host: listed,
+        ...(await addManifestHost(root, label, listed, basePath ? { basePath } : {})),
+        ...(basePath ? { basePath } : {}),
+      };
     } catch (e) {
       throw new QuestionError("bad-answer", (e as Error).message.split("\n")[0]!);
     }
   }
   await write(root, answered);
-  if (!skill)
-    return { question: answered, ...(hosts ? { hosts } : {}), ...(system ? { system } : {}) };
+  // ADR 0153 (Q2): the other open hosts questions the pattern covers are answered by it now.
+  const covered: string[] = [];
+  if (hosts && match && !isPathMatch(match))
+    for (const x of (await listQuestions(root, { state: "open", step: HOSTS_STEP })).questions) {
+      const h = hostOfQuestion(x);
+      if (x.id === q.id || !h || !hostRuleCovers(match, h)) continue;
+      await retireQuestion(root, x.id, {
+        why: `${q.id} answered it by rule: ${hosts.repo} lists ${match} under hosts in ${hosts.manifest}`,
+        replacedBy: [q.id],
+        at: a.at,
+      });
+      covered.push(x.id);
+    }
+  const extra = {
+    ...(hosts ? { hosts } : {}),
+    ...(system ? { system } : {}),
+    ...(covered.length ? { covered } : {}),
+  };
+  if (!skill) return { question: answered, ...extra };
   const file = join(root, ...skill.split("/"));
   let body: string | undefined;
   try {
     body = await readFile(file, "utf8");
   } catch {
     // TODO(lead, repo types): no skill file for this type yet; the path is in the answer.
-    return { question: answered, skill: { path: skill, written: false } };
+    return { question: answered, ...extra, skill: { path: skill, written: false } };
   }
   await writeFileAtomic(file, withSkillAnswer(body, answered));
-  return { question: answered, skill: { path: skill, written: true } };
+  return { question: answered, ...extra, skill: { path: skill, written: true } };
 }

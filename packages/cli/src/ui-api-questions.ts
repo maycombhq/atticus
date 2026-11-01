@@ -87,6 +87,7 @@ export function uiQuestionRoutes(r: Router, ctx: ServerContext, deps: { now?: ()
             ? await acceptProposalOf(ctx.root, params.id!, {
                 ...(given.scope ? { scope: given.scope } : {}),
                 ...(given.repoType ? { repoType: given.repoType } : {}),
+                ...(given.match ? { match: given.match } : {}),
                 by: ctx.user,
                 at: now().toISOString(),
               })

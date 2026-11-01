@@ -12,7 +12,7 @@ import {
 } from "./schema/kinds.js";
 import { ChangeArtifact, Phase, SOURCE_AUTHORITIES, SourceScope } from "./schema/orgpack.js";
 import { Finding, FindingAction, Lens, Severity } from "./schema/review.js";
-import { Question, QuestionScopeLevel } from "./schema/question.js";
+import { AnswerMatch, Question, QuestionScopeLevel } from "./schema/question.js";
 import { FactCorrection } from "./schema/fact-corrections.js";
 import { JOIN_GUESS_FLAGS } from "./facts-join.js";
 import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
@@ -109,8 +109,12 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   setting's folder name or despite an open exposure conflict is a guess: `LINK_HOWS` gains
  *   `platform-setting`, `folder-name` and `conflict`, and a change's impact caller's `guessed`
  *   takes any of `JOIN_GUESS_FLAGS`. Additive only.
+ * 2.41.0 (ADR 0153): a question's answer carries `match` (the rule it covers, Q2) and
+ *   `proposal` (the assistant's proposal it accepted, Q5); POST /api/questions/{id}/answer takes
+ *   `match`; and GET /api/questions' `about[id].owner` can be a change's people (`{ change,
+ *   people }`, Q4). Additive only.
  */
-export const API_VERSION = "2.38.0";
+export const API_VERSION = "2.41.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -2018,6 +2022,8 @@ export const QuestionList = z.object({
         joins: z.number().int(),
         owner: z.union([
           z.object({ team: z.string(), name: z.string().optional() }),
+          /** 2.41.0 (ADR 0153, Q4): a change's own question goes to the change's people. */
+          z.object({ change: z.string(), people: z.array(z.string()) }),
           z.object({ none: z.string() }),
         ]),
         /**
@@ -2070,6 +2076,11 @@ export const AnswerQuestionRequest = z.strictObject({
    * own (in place of option or text).
    */
   acceptProposal: z.literal(true).optional(),
+  /**
+   * 2.41.0 (ADR 0153, Q2): the rule the answer covers, for a target or hosts question: a host
+   * pattern (`*.payments.forge.internal`) or a path prefix (`/forge/limits/**`).
+   */
+  match: AnswerMatch.optional(),
 });
 
 /** ADR 0078: the answered question, the command to run next and, for a repo type, its skill file. */

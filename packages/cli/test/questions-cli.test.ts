@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
-import { Question, QuestionDraft, raiseQuestions } from "@maycombhq/core";
+import { changesDirOf, Question, QuestionDraft, raiseQuestions } from "@maycombhq/core";
 import { questionsFiles } from "../src/question-commands.js";
 
 const AT = "2026-10-21T12:00:00.000Z";
@@ -183,7 +183,7 @@ describe("atticus questions show, and a change's question (WP2.4)", () => {
     const { root } = await metarepo();
     const r = await run(root, ["shwo", "q-1"]);
     expect(r.code).toBe(2);
-    expect(r.err.join("\n")).toMatch(/questions list, show, proposed or answer/);
+    expect(r.err.join("\n")).toMatch(/questions list, show, proposed, answer or sheet/);
   });
 
   it("says a change's question was answered for this change, not this repo", async () => {
@@ -315,8 +315,47 @@ describe("questions asked in order and routed to their owner (ADR 0140)", () => 
     expect(r.out.at(-1)).toBe("1 question for your teams.");
     const none = await run(e.root, ["list", "--mine", "--by", "dee"]);
     expect(none.out).toEqual([
-      "dee is on no team in org-pack/roles.yaml, so no question is theirs: add them under a team's people (roles.yaml schemaVersion 2), or list every question without --mine.",
+      "dee is on no team in org-pack/roles.yaml and no change names them under owners, so no question is theirs: add them under a team's people (roles.yaml schemaVersion 2), or list every question without --mine.",
       "No questions for your teams.",
     ]);
+  });
+
+  it("a change's own questions go to the change's people, for --mine too (ADR 0153, Q4)", async () => {
+    const e = await estate();
+    const dir = join(changesDirOf(e.root), "add-pins");
+    await mkdir(dir, { recursive: true });
+    await writeFile(
+      join(dir, "change.yaml"),
+      "schemaVersion: 1\nid: add-pins\nowners:\n  architect: [ari]\n  developer: ['@sam', ari]\n",
+    );
+    const own = (
+      await raiseQuestions(
+        e.root,
+        [draft({ evidence: ["openspec/changes/add-pins/brief.md:3"] })],
+        {
+          ...asked,
+          step: "feature",
+          repo: "add-pins",
+        },
+      )
+    ).raised[0]!;
+    const all = await run(e.root, ["list", "--state", "open"]);
+    expect(all.out).toContain("  Owner: the people of add-pins: ari, sam");
+    const json = JSON.parse((await run(e.root, ["list", "--json"])).out.join("\n")) as {
+      about: Record<string, { owner: unknown }>;
+    };
+    expect(json.about[own.id]!.owner).toEqual({ change: "add-pins", people: ["ari", "sam"] });
+    const ari = await run(e.root, ["list", "--mine", "--by", "ari"]);
+    expect(ari.out[0]).toBe(
+      "The questions of the changes that name ari under owners in change.yaml; ari is on no team in org-pack/roles.yaml.",
+    );
+    expect(ari.out.filter((l) => /^q-/.test(l)).map((l) => l.split(" ")[0])).toEqual([own.id]);
+    const sam = await run(e.root, ["list", "--mine", "--by", "sam"]);
+    expect(
+      sam.out
+        .filter((l) => /^q-/.test(l))
+        .map((l) => l.split(" ")[0])
+        .sort(),
+    ).toEqual([e.theirs.id, own.id].sort());
   });
 });

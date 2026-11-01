@@ -857,6 +857,29 @@ describe("atticus verify <repo> --write asks a call's target once per group (Q1,
     );
   });
 
+  it("answers by rule: the calls found later under the prefix join too, and nothing is asked (ADR 0153)", async () => {
+    const root = await metarepo(noHost());
+    expect(await write(root)).toBe(0);
+    const [own] = (await listQuestions(root, { state: "open", step: "facts-targets" })).questions;
+    await answerQuestion(root, own!.id, {
+      option: 1,
+      match: "/notify/**",
+      by: "dana.okafor",
+      at: "2026-10-30T10:00:00Z",
+    });
+    const grown = await threeCalls();
+    cpSync(join(root, "questions"), join(grown, "questions"), { recursive: true });
+    expect(await write(grown)).toBe(0);
+    expect(
+      (await listQuestions(grown, { state: "open", step: "facts-targets" })).questions,
+    ).toEqual([]);
+    const catalog = (await readCatalog(join(grown, "catalog", "generated"))).records;
+    const into = catalog.filter(
+      (r) => r.kind === "Interface" && r.from === "ledger-api" && r.to === "notify-api",
+    );
+    expect(into.length).toBeGreaterThanOrEqual(3);
+  });
+
   it("retires a call's own open question when its call is asked in a group now (Q1)", async () => {
     const root = await metarepo(noHost());
     expect(await write(root)).toBe(0);
