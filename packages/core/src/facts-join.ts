@@ -435,6 +435,22 @@ function hostIn(
     : undefined;
 }
 
+/**
+ * The host a call goes to as the join reads it (P1): the call's own host, else the host of the
+ * config fact its `base` names (the first by id), else the base itself; `host:port` when the text
+ * writes a port. Undefined when nothing names one (a relative call, a `${PLACEHOLDER}` base with
+ * no key that reads as a host). The measure uses it to tell which outside system took a call.
+ */
+export function callHostOf(f: Call, repoFacts: readonly Fact[]): string | undefined {
+  const tie = repoFacts
+    .filter(
+      (n): n is Config => n.kind === "config" && !!f.base && n.key === f.base && !!hostIn(n.value),
+    )
+    .sort((x, y) => cmp(x.id, y.id))[0];
+  const h = hostIn(f.host) ?? (tie ? hostIn(tie.value) : undefined) ?? hostIn(f.base);
+  return h ? (h.named ? `${h.host}:${h.named}` : h.host) : undefined;
+}
+
 interface Node {
   repo: string;
   fact: Fact;

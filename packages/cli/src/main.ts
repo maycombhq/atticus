@@ -75,6 +75,7 @@ const NO_AI = new Set([
   "upgrade",
   "support",
   "change list",
+  "estate measure",
   "change status",
   // Reading the questions on file and printing one: files only, no model (question-commands.ts).
   "questions list",
@@ -476,6 +477,8 @@ Usage:
   atticus estate flow <flow> [--depth 5] [--json]  A flow followed across repos, with the data at each crossing
   atticus estate lineage <flow> <field> [--depth 5] [--json]  Follow a field along a flow to the column it is stored in, or where it breaks
   atticus join [--json]                Follow each repo's flows into the flows their calls reach, through the calls the repos' verified facts join (verify --write); the same as estate join
+  atticus join measure <reference> [--json]  Measure your map against a reference you write by hand for two or three repos you know (their entries and calls, each call with the repo it should reach): reading recall, and join precision and recall; reads files only (docs/guide/measure.md)
+  atticus estate measure <reference> [--json]  The same as join measure
   atticus repo-type detect <repo> [--json]   Match a repo against the org pack's repo types by fingerprint, with the evidence for each signal
   atticus repo-type new <id> --from <repo> [--force]   Draft a repo type from a repo (its build files, dependencies, markers, folders) for you to edit
   atticus scan review <repo>           What the last scan couldn't read: your assistant gives a verdict on each gap and a rule for code it can read; checked [--gaps] [--attempts 3]
@@ -1360,6 +1363,10 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
       }
       throw e;
     }
+  }
+  if (group === "estate" && command === "measure") {
+    const m = await import("./measure-commands.js");
+    return m.joinMeasure(root, arg, { json: values.json === true }, io);
   }
   if (group === "estate" && (command === "join" || command === "flow" || command === "lineage")) {
     const m = await loadEstateCommands();

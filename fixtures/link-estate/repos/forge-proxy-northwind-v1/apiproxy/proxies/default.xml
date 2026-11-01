@@ -1,0 +1,14 @@
+<ProxyEndpoint name="default">
+  <Flows>
+    <Flow name="CreateCharge">
+      <Condition>(proxy.pathsuffix MatchesPath "/charges") and (request.verb = "POST")</Condition>
+    </Flow>
+  </Flows>
+  <HTTPProxyConnection>
+    <BasePath>/forge/northwind/v1</BasePath>
+    <VirtualHost>external</VirtualHost>
+  </HTTPProxyConnection>
+  <RouteRule name="default">
+    <TargetEndpoint>northwind</TargetEndpoint>
+  </RouteRule>
+</ProxyEndpoint>

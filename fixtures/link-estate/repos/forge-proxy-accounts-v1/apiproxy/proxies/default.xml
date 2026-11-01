@@ -1,0 +1,14 @@
+<ProxyEndpoint name="default">
+  <Flows>
+    <Flow name="GetAccount">
+      <Condition>(proxy.pathsuffix MatchesPath "/accounts/*") and (request.verb = "GET")</Condition>
+    </Flow>
+  </Flows>
+  <HTTPProxyConnection>
+    <BasePath>/forge/accounts/v1</BasePath>
+    <VirtualHost>internal</VirtualHost>
+  </HTTPProxyConnection>
+  <RouteRule name="default">
+    <TargetEndpoint>accounts</TargetEndpoint>
+  </RouteRule>
+</ProxyEndpoint>
