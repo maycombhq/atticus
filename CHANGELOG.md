@@ -4,6 +4,12 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## 2.0.0-beta.10 (2026-10-31)
 
+### House conventions in the org pack, and frameworks taught before the first map (ADR 0147)
+
+- New optional `org-pack/conventions.yaml`: the API spec folders, gateway bundle folders, facing words, your own framework entries, the folders coverage and verify's skipped-lines note leave out, and your house's package prefixes. Each defaults to what Atticus used before.
+- With `housePrefixes` set, `atticus map <repo> --estimate` and `atticus next` warn before the first read of house packages no taught framework covers, naming the `atticus frameworks learn` command to run first.
+- `/atticus-map` now asks the reader to check verify's `skipped`, `reviewedHolds` and `specOpsUncovered`, record headers and enum values on fields and the HTTP status on error paths, and record the tokens a read used with `atticus map --spent` when its assistant shows them.
+
 ### A change's impact, and answers the assistant proposes (ADR 0144)
 
 - `atticus change impact <change>` and the change's Architecture tab (**What this change breaks**) show, from its target flows, who each broken entry or table is called or used by, the fields that stop crossing and the gateway routes to update, each with its owner team. A link the map only guessed may break and is never counted as a break; the critic's `constitution.change-links-known` asks about it. API 2.36.0: `GET /api/changes/{changeId}/impact`.

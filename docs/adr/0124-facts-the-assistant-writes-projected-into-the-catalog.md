@@ -990,3 +990,7 @@ The gateway batch's instructions go from about 7,401 characters (~1,850 tokens) 
 - In the files a kept fact cites (or the reader opened through Atticus's tools), language-neutral text patterns find strings that look like a path, a URL or a topic. Comments, import lines, namespaces, asset and file-system paths, placeholders, tests, generated, build-output and vendored folders, and the org pack's exclusions are left out.
 - Verify lists those that no kept fact cites (its line or the line either side) or names elsewhere (`skipped`); looks inside each reviewed glob and says when its files hold such strings (`reviewedHolds`); and, for each OpenAPI or Swagger file in the repo, lists the operations no kept entry covers (`specOpsUncovered`), read with the spec reader ADR 0130 shares (`readOpenApiDocument`).
 - The reader decides what each one is: nothing listed becomes a fact, and nothing kept or rejected changes because of it. The report holds up to 100 of each list with its count; `atticus verify <repo> --skipped` prints them all.
+
+## Addendum (A-taught, ADR 0147): house packages warned of before the first read
+
+- Before the first read, `atticus map --estimate` and `atticus next` warn of house packages the repo imports (the org pack's `conventions.yaml` `housePrefixes`) that no framework file's `packages` covers, with the learn command. Import lines only; nothing is a fact and nothing is written. A-framework: verify's framework table may be extended by `conventions.yaml` `frameworks`, looked at first.
