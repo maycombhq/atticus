@@ -772,6 +772,114 @@ describe("joinFacts: a person's target outranks every join rule (C2, ADR 0135)",
     const out = joinFacts({ repos });
     expect(out.joins.map((j) => [j.entry.repo, j.how])).toEqual([["forge-quotas", "repo"]]);
   });
+
+  /** A call whose base is set per environment to hosts two repos answer on (J0, A-gateway). */
+  const perEnvironment = (extra: Record<string, unknown>): JoinRepo[] => {
+    const setting = (id: string, env: string, value: string, line: number): Fact =>
+      ({
+        kind: "config",
+        id,
+        repo: "forge-web",
+        commit: "4444ddd",
+        key: "limits.url",
+        value,
+        env,
+        cite: { file: `src/main/resources/application-${env}.yml`, line, value: "limits.url" },
+        verified: "line",
+        by: "assistant",
+        conf: "declared",
+      }) as Fact;
+    return [
+      {
+        repo: "forge-web",
+        component: "forge-web",
+        facts: [
+          call("forge-web", "c-limits", {
+            method: "GET",
+            path: "/limits/{id}",
+            base: "limits.url",
+            ...extra,
+          }),
+          setting("cfg-limits-dev", "dev", "https://limits-a.forge.example", 3),
+          setting("cfg-limits-prod", "prod", "https://limits-b.forge.example", 4),
+        ],
+      },
+      {
+        repo: "forge-a",
+        component: "forge-a",
+        hosts: ["limits-a.forge.example"],
+        facts: [entry("forge-a", "e-limit", { method: "GET", path: "/limits/{limitId}" })],
+      },
+      {
+        repo: "forge-b",
+        component: "forge-b",
+        hosts: ["limits-b.forge.example"],
+        facts: [entry("forge-b", "e-limit", { method: "GET", path: "/limits/{limitId}" })],
+      },
+    ];
+  };
+
+  it("asks which host is meant when nobody named the target (the case the next ones outrank)", () => {
+    const out = joinFacts({ repos: perEnvironment({}) });
+    expect(out.asks.map((a) => a.reason)).toEqual(["ambiguous"]);
+  });
+
+  it("doesn't ask which of two environments' hosts is meant when a person sent the call outside", () => {
+    const out = joinFacts({
+      repos: perEnvironment({ to: "Northwind Pay", by: "person", verified: "person" }),
+    });
+    expect(out.asks).toEqual([]);
+    expect(out.joins).toEqual([]);
+    expect(out.misses).toEqual([]);
+    // and the call is listed outside with the person's target, as an answer naming a vendor is
+    expect(out.outside).toEqual([
+      {
+        call: expect.objectContaining({ repo: "forge-web", fact: "c-limits" }),
+        target: "Northwind Pay",
+      },
+    ]);
+  });
+
+  it("lists a person-corrected vendor call outside, as it lists a person's answer naming one", () => {
+    const corrected = joinFacts({
+      repos: perEnvironment({ to: "Northwind Pay", by: "person", verified: "person" }),
+    }).outside;
+    const answered = joinFacts({
+      repos: perEnvironment({}),
+      targets: { "forge-web": { "c-limits": "Northwind Pay" } },
+    }).outside;
+    expect(corrected).toEqual(answered);
+  });
+
+  it("lists outside a person's vendor target on a call whose host a repo lists", () => {
+    const out = joinFacts({
+      repos: [
+        {
+          repo: "forge-web",
+          facts: [
+            call("forge-web", "c-limits", {
+              component: "forge-web",
+              method: "GET",
+              path: "/limits/{id}",
+              host: "limits.forge.example",
+              to: "Northwind Pay",
+              by: "person",
+              verified: "person",
+            }),
+          ],
+        },
+        {
+          repo: "forge-limits",
+          component: "forge-limits",
+          hosts: ["limits.forge.example"],
+          facts: [entry("forge-limits", "e-limit", { method: "GET", path: "/limits/{limitId}" })],
+        },
+      ],
+    });
+    expect(out.outside?.map((o) => [o.call.fact, o.target])).toEqual([
+      ["c-limits", "Northwind Pay"],
+    ]);
+  });
 });
 
 describe("joinRecords: the joins as C1 records", () => {

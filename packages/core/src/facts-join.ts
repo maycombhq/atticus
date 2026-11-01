@@ -985,6 +985,14 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
       if (components.has(slug)) return { scope: (e: Node) => e.component === slug, target: slug };
       return undefined;
     };
+    if (answer === NO_TARGET) continue;
+    // C2 (ADR 0135): a target a person set (a correction from the Map) outranks every rule
+    // after an answer, the questions included: one naming nothing in the estate is outside it,
+    // never asked about, nor joined by its host, a host's label or its path.
+    if (!answer && f.by === "person" && f.to && !named(f.to)) {
+      if (f.to !== NO_TARGET) outsideCalls.push({ call: end(call), target: f.to });
+      continue;
+    }
     // A base whose values (a TargetServer or KVM entry per environment) are hosts different repos
     // answer on: which one is meant is asked, not taken from the first (A-gateway).
     if (!answer && !hostIn(f.host) && !(f.to && named(f.to)) && configs.length > 1) {
@@ -1010,11 +1018,6 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
     let how: JoinHow | undefined;
     let byLabel = false;
     let exposedBy: FactEnd[] = [];
-    if (answer === NO_TARGET) continue;
-    // C2 (ADR 0135): a target a person set (a correction from the Map) outranks every rule
-    // after an answer: one naming nothing in the estate is outside it, never joined by its host,
-    // a host's label or its path.
-    if (!answer && f.by === "person" && f.to && !named(f.to)) continue;
     if (answer) {
       scope = named(answer);
       if (!scope) {
