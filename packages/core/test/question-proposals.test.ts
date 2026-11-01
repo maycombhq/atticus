@@ -1,8 +1,9 @@
-import { cp, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { stringify } from "yaml";
 import {
   acceptProposal,
   checkedProposals,
@@ -23,9 +24,9 @@ import {
 const FIX = join(dirname(fileURLToPath(import.meta.url)), "../../../fixtures/question-proposals");
 const AT = "2026-10-31T12:00:00.000Z";
 
-async function estate(proposal?: string) {
+async function estate(proposal?: string, repo = "forge-notes") {
   const root = await mkdtemp(join(tmpdir(), "atticus-proposals-"));
-  await mkdir(join(root, "org-pack"), { recursive: true });
+  await cp(join(FIX, "org-pack"), join(root, "org-pack"), { recursive: true });
   await cp(join(FIX, "workspace"), join(root, "workspace"), { recursive: true });
   const q = (
     await raiseQuestions(
@@ -42,9 +43,9 @@ async function estate(proposal?: string) {
       ],
       {
         step: "scan-survey",
-        repo: "forge-notes",
-        command: "atticus scan survey forge-notes",
-        rerun: "atticus scan survey forge-notes --force",
+        repo,
+        command: `atticus scan survey ${repo}`,
+        rerun: `atticus scan survey ${repo} --force`,
         at: AT,
       },
     )
@@ -55,6 +56,25 @@ async function estate(proposal?: string) {
     await writeFile(f, await readFile(join(FIX, "proposals", `${proposal}.yaml`), "utf8"));
   }
   return { root, q };
+}
+
+/** Write a proposal for the question from its cites, and check it. */
+async function proposeWith(root: string, id: string, cites: object[]) {
+  const f = join(root, ...proposalRelOf(root, id).split("/"));
+  await mkdir(dirname(f), { recursive: true });
+  await writeFile(
+    f,
+    stringify({
+      schemaVersion: 1,
+      answer: { option: 1 },
+      why: "From the cited lines.",
+      cites,
+      by: "claude-code",
+      at: AT,
+    }),
+  );
+  const [p] = await checkedProposals(root);
+  return p!;
 }
 
 describe("a proposed answer, checked before it is shown (ADR 0144, Q5)", () => {
@@ -119,5 +139,95 @@ describe("a proposed answer, checked before it is shown (ADR 0144, Q5)", () => {
     await expect(acceptProposal(none.root, none.q.id, { by: "pat", at: AT })).rejects.toThrow(
       /no proposed answer/,
     );
+  });
+
+  it("cites another repo only when a manifest lists it", async () => {
+    const { root } = await estate("other-repo");
+    const [p] = await checkedProposals(root);
+    expect(p!.problems).toEqual([
+      "forge-unlisted isn't forge-notes or a repo the manifests list: cite a file in one of them.",
+    ]);
+  });
+
+  it("refuses a repo that climbs out of workspace/, or has no checkout, without reading a file", async () => {
+    const { root } = await estate("repo-escape");
+    await writeFile(join(root, "secret.txt"), "TOPSECRET\n");
+    await writeFile(join(dirname(root), "secret.txt"), "TOPSECRET\n").catch(() => undefined);
+    const [p] = await checkedProposals(root);
+    expect(p!.ok).toBe(false);
+    expect(p!.problems).toEqual([
+      "../.. isn't forge-notes or a repo the manifests list: cite a file in one of them.",
+      ".. isn't forge-notes or a repo the manifests list: cite a file in one of them.",
+      "nothing-here isn't forge-notes or a repo the manifests list: cite a file in one of them.",
+    ]);
+    expect(p!.problems.join("\n")).not.toMatch(/TOPSECRET|lines?, so/);
+  });
+
+  it("refuses a repo the manifests list but that has no checkout here", async () => {
+    const { root, q } = await estate();
+    const p = await proposeWith(root, q.id, [
+      { repo: "forge-ledger", file: "config/docs.yaml", line: 2, quote: "playground: generated" },
+    ]);
+    expect(p.ok).toBe(true);
+    // The ledger's checkout is in the fixture; take it away.
+    await rm(join(root, "workspace", "forge-ledger"), { recursive: true });
+    const [again] = await checkedProposals(root);
+    expect(again!.problems).toEqual([
+      "forge-ledger has no checkout here, so config/docs.yaml can't be read.",
+    ]);
+  });
+
+  it("never falls back to the metarepo for a repo's question: it can't cite its own proposal", async () => {
+    const { root, q } = await estate(undefined, "forge-gone");
+    const self = proposalRelOf(root, q.id);
+    const p = await proposeWith(root, q.id, [{ file: self, line: 1, quote: "schemaVersion: 1" }]);
+    expect(p.problems).toEqual([`forge-gone has no checkout here, so ${self} can't be read.`]);
+  });
+
+  it("a change's own question cites the metarepo, but not Atticus's own folders", async () => {
+    const { root, q } = await estate(undefined, "forge-add-notes");
+    const change = join(root, "openspec", "changes", "forge-add-notes");
+    await mkdir(change, { recursive: true });
+    await writeFile(join(change, "proposal.md"), "# Add notes\n\nNotes are generated.\n");
+    for (const [dir, name] of [
+      ["facts", "forge-notes.jsonl"],
+      ["knowledge/items", "notes.yaml"],
+    ] as const) {
+      await mkdir(join(root, ...dir.split("/")), { recursive: true });
+      await writeFile(join(root, ...dir.split("/"), name), "schemaVersion: 1\n");
+    }
+    const self = proposalRelOf(root, q.id);
+    const own = (f: string) =>
+      `${f} is Atticus's own file, not the code or config: cite what it is about.`;
+    const p = await proposeWith(root, q.id, [
+      {
+        file: "openspec/changes/forge-add-notes/proposal.md",
+        line: 3,
+        quote: "Notes are generated.",
+      },
+      { file: self, line: 1, quote: "schemaVersion: 1" },
+      { file: `questions/${q.id}.yaml`, line: 1, quote: "schemaVersion: 2" },
+      { file: "facts/forge-notes.jsonl", line: 1, quote: "schemaVersion: 1" },
+      { file: "knowledge/items/notes.yaml", line: 1, quote: "schemaVersion: 1" },
+    ]);
+    expect(p.problems).toEqual([
+      own(self),
+      own(`questions/${q.id}.yaml`),
+      own("facts/forge-notes.jsonl"),
+      own("knowledge/items/notes.yaml"),
+    ]);
+  });
+
+  it("refuses a link that leads out of the checkout, without reading what it leads to", async () => {
+    const { root, q } = await estate();
+    const outside = join(root, "outside");
+    await mkdir(outside, { recursive: true });
+    await writeFile(join(outside, "secret.txt"), "TOPSECRET\n");
+    // A junction needs no privilege on Windows; elsewhere it is a plain directory link.
+    await symlink(outside, join(root, "workspace", "forge-notes", "linked"), "junction");
+    const p = await proposeWith(root, q.id, [
+      { file: "linked/secret.txt", line: 1, quote: "anything" },
+    ]);
+    expect(p.problems).toEqual(["linked/secret.txt leaves the repo: cite a file in it."]);
   });
 });

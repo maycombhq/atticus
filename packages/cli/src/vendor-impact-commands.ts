@@ -1,7 +1,14 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
-import { inputsDirOf, readFlow, specFlowFiles, type Fact, type FactEnd } from "@maycombhq/core";
+import {
+  inputsDirOf,
+  joinConventions,
+  readFlow,
+  specFlowFiles,
+  type Fact,
+  type FactEnd,
+} from "@maycombhq/core";
 import {
   readVendorSpec,
   slug,
@@ -171,6 +178,8 @@ export async function loadVendorImpact(
     newer: { id: newer.id!, spec: newerSpec },
     repos,
     targets: estate.targets,
+    // The org pack's facing words and gateway bundle folders (ADR 0147), as the catalog joins.
+    ...joinConventions(op),
     flows,
     systemOfRepo,
   });

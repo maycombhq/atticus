@@ -1,8 +1,16 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
-import { loadOrgPack, parseFacts, type Fact, type OrgPack } from "@maycombhq/core";
-import { auditLinkCandidates, estateJoinOf } from "../src/index.js";
+import {
+  helperOn,
+  joinConventions,
+  joinFacts,
+  loadOrgPack,
+  parseFacts,
+  type Fact,
+  type OrgPack,
+} from "@maycombhq/core";
+import { auditLinkCandidates, estateJoinOf, joinReposOf, outsideSystems } from "../src/index.js";
 
 /**
  * P3: the links a sample audit draws from, on the invented bank-shaped estate
@@ -67,5 +75,74 @@ describe("auditLinkCandidates", () => {
       expect([...own].sort()).toEqual(own);
     }
     expect(ids.length).toBeGreaterThan(5);
+  });
+});
+
+describe("estateJoinOf joins with the org pack's conventions, as the catalog does", () => {
+  const DIR = join(__dirname, "..", "..", "..", "fixtures", "gateway-facts");
+  const moved = (f: string) => f.replace("/apiproxy/", "/proxy-bundles/");
+  const read = (repo: string, move?: (f: string) => string): Fact[] => {
+    const r = parseFacts(readFileSync(join(DIR, "facts", `${repo}.jsonl`), "utf8"));
+    if (!r.ok) throw new Error(JSON.stringify(r.issues));
+    return move
+      ? r.facts.map((f) => ({ ...f, cite: { ...f.cite, file: move(f.cite.file) } }))
+      : r.facts;
+  };
+  const list = (move?: (f: string) => string) => [
+    { repo: "forge-portal-api", facts: read("forge-portal-api") },
+    { repo: "forge-gateway", facts: read("forge-gateway", move) },
+    { repo: "forge-accounts", facts: read("forge-accounts") },
+  ];
+  /** The gateway untyped in the manifest, so only its bundle folder says its entries are routes. */
+  async function pack(bundleFolders?: string[]): Promise<OrgPack> {
+    const loaded = await loadOrgPack(join(DIR, "org-pack"));
+    const profiles = loaded.profiles.map((p) => ({
+      ...p,
+      ...(p.repos
+        ? {
+            repos: {
+              ...p.repos,
+              repos: p.repos.repos.map((r) =>
+                r.id === "forge-gateway" ? { ...r, type: "spring-boot" } : r,
+              ),
+            },
+          }
+        : {}),
+    }));
+    return {
+      ...loaded,
+      profiles,
+      ...(bundleFolders
+        ? {
+            conventions: {
+              ...loaded.conventions!,
+              gatewayBundleFolders: bundleFolders,
+            },
+          }
+        : {}),
+    } as OrgPack;
+  }
+  const through = (o: OrgPack, l: ReturnType<typeof list>) =>
+    auditLinkCandidates(estateJoinOf(o, l), l, "forge-portal-api").filter((x) =>
+      x.claim.includes(" via "),
+    ).length;
+  /** The catalog's join (scan, verify --write): the same repos, outside systems and conventions. */
+  const catalogThrough = (o: OrgPack, l: ReturnType<typeof list>) =>
+    joinFacts({
+      repos: joinReposOf(o, l),
+      outside: outsideSystems(o),
+      ...joinConventions(o),
+      walkGateways: helperOn("gateway-walk"),
+    }).joins.filter((j) => j.call.repo === "forge-portal-api" && j.gateway?.length).length;
+
+  it("a custom bundle folder changes the audit's links as it changes the catalog's", async () => {
+    const plain = await pack();
+    const custom = await pack(["proxy-bundles"]);
+    expect(through(plain, list())).toBeGreaterThan(0);
+    expect(through(plain, list(moved))).toBe(0);
+    expect(through(custom, list(moved))).toBe(through(plain, list()));
+    expect(through(custom, list())).toBe(0);
+    for (const o of [plain, custom])
+      for (const l of [list(), list(moved)]) expect(through(o, l)).toBe(catalogThrough(o, l));
   });
 });

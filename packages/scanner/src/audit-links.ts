@@ -1,5 +1,6 @@
 import {
   helperOn,
+  joinConventions,
   joinFacts,
   joinFlagsOf,
   type AuditItemT,
@@ -30,6 +31,8 @@ export function estateJoinOf(
     repos: joinReposOf(op, repos, renames),
     ...(targets ? { targets } : {}),
     outside: outsideSystems(op),
+    // The org pack's facing words and gateway bundle folders (ADR 0147), as the catalog joins.
+    ...joinConventions(op),
     walkGateways: helperOn("gateway-walk"),
   });
 }
