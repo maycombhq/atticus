@@ -1,11 +1,15 @@
 import { stat } from "node:fs/promises";
 import {
+  HOSTS_NONE,
+  HOSTS_OUTSIDE_INTERNAL,
+  HOSTS_OUTSIDE_VENDOR,
   HOSTS_STEP,
   hostMatches,
   hostOfQuestion,
   listQuestions,
   raiseQuestions,
   retireQuestion,
+  writeQuestion,
   type CatalogRecord,
   type Question,
 } from "@maycombhq/core";
@@ -25,6 +29,11 @@ export const HOSTS_RERUN = "atticus scan";
 export interface HostQuestions {
   /** Asked now. */
   raised: Question[];
+  /**
+   * Open questions asked before beta.10, re-asked with the same id and evidence now that a hosts
+   * question offers an outside system (O1).
+   */
+  reasked: Question[];
   /** Asked before and still open. */
   open: Question[];
 }
@@ -60,8 +69,26 @@ export async function askHosts(
   const asked = new Set(before.map((q) => hostOfQuestion(q)));
   const raised: Question[] = [];
   const at = (o.now ?? new Date()).toISOString();
+  const reasked: Question[] = [];
+  const OUTSIDE = new Set([HOSTS_OUTSIDE_INTERNAL, HOSTS_OUTSIDE_VENDOR]);
   for (const { repo, draft } of hostQuestionDrafts(asks)) {
-    if (asked.has(hostOfQuestion(draft))) continue;
+    if (asked.has(hostOfQuestion(draft))) {
+      // O1: a question asked before the outside-system options were offered gains them, while
+      // it is open: the same id, evidence and options it had, the new ones before "None of
+      // these", so a number someone read still names the same option. An answer is never touched.
+      const old = before.find((q) => hostOfQuestion(q) === hostOfQuestion(draft));
+      if (!old || old.state !== "open" || old.options.some((x) => OUTSIDE.has(x.label))) continue;
+      const add = draft.options.filter((x) => OUTSIDE.has(x.label));
+      const none = old.options.findIndex((x) => x.label === HOSTS_NONE);
+      const at = none < 0 ? old.options.length : none;
+      const next = {
+        ...old,
+        options: [...old.options.slice(0, at), ...add, ...old.options.slice(at)],
+      };
+      await writeQuestion(root, next);
+      reasked.push(next);
+      continue;
+    }
     const r = await raiseQuestions(root, [draft], {
       step: HOSTS_STEP,
       repo,
@@ -72,7 +99,9 @@ export async function askHosts(
     raised.push(...r.raised);
   }
   const hosts = new Set(asks.map((a) => a.host));
-  const open = before.filter((q) => q.state === "open" && hosts.has(hostOfQuestion(q)!));
+  const open = before
+    .map((q) => reasked.find((x) => x.id === q.id) ?? q)
+    .filter((q) => q.state === "open" && hosts.has(hostOfQuestion(q)!));
   const lines: string[] = [];
   // A host a person has since written into the manifest by hand (on a shared host, on every repo
   // that answers there) is answered by the manifest: its open question retires, saying which.
@@ -96,9 +125,13 @@ export async function askHosts(
     lines.push(
       `Calls to ${hostOfQuestion(q)} join no repo: no repo lists it under hosts. Asked ${q.id}: ${q.question} Answer it: atticus questions answer ${q.id} --option <n> (1 is ${q.options[0]!.label}). If several repos answer on it (a shared gateway or platform host), don't pick one: list it under hosts on each of them in repos.manifest.yaml (with each one's basePath where the path tells them apart), and the question retires itself. If a system outside the estate answers on it, pick an outside system (another team's or a vendor's): it goes into the profile with the host as its alias.`,
     );
+  for (const q of reasked)
+    lines.push(
+      `Re-asked ${q.id} (${q.question}): it now offers an outside system, another team's or a vendor's, for a host no repo of the estate answers on.`,
+    );
   for (const q of open)
     lines.push(
       `Still open: ${q.question} Answer it: atticus questions answer ${q.id} --option <n>, then ${o.rerun ?? HOSTS_RERUN}.`,
     );
-  return { raised, open, lines };
+  return { raised, reasked, open, lines };
 }

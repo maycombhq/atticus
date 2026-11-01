@@ -4,7 +4,16 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { HOSTS_STEP, listQuestions } from "@maycombhq/core";
+import {
+  answerQuestion,
+  HOSTS_NONE,
+  HOSTS_OUTSIDE_INTERNAL,
+  HOSTS_OUTSIDE_VENDOR,
+  HOSTS_STEP,
+  listQuestions,
+  readQuestion,
+  writeQuestion,
+} from "@maycombhq/core";
 import { readCatalog } from "@maycombhq/scanner";
 import { questionsFiles } from "../src/question-commands.js";
 import { scanCommand } from "../src/scan-commands.js";
@@ -115,5 +124,44 @@ describe("atticus scan asks which repo answers on a host (ADR 0088)", () => {
     expect(after[0]!.retired?.why).toMatch(/forge-customers lists localhost:9966 under hosts/);
     expect(s2.out.some((l) => l.includes(`Retired ${q!.id}`))).toBe(true);
     expect(await interfaces(root)).toContain("forge-web->forge-customers POST /owners");
+  }, 300_000);
+
+  it("re-asks an open question from before beta.10 with the outside-system options, never an answered one (O1)", async () => {
+    const root = await metarepo();
+    expect(await scanCommand(root, { noDrift: true }, io().io)).toBe(0);
+    const [q] = (await listQuestions(root, { step: HOSTS_STEP })).questions;
+    // As written before beta.10: no outside-system options.
+    const old = {
+      ...q!,
+      options: q!.options.filter((o) => !o.label.startsWith("An outside system")),
+    };
+    expect(old.options.map((o) => o.label)).toEqual(["forge-customers", HOSTS_NONE]);
+    await writeQuestion(root, old);
+    const s2 = io();
+    expect(await scanCommand(root, { noDrift: true }, s2.io)).toBe(0);
+    const [after] = (await listQuestions(root, { step: HOSTS_STEP })).questions;
+    expect(after!.id).toBe(q!.id);
+    expect(after!.evidence).toEqual(q!.evidence);
+    expect(after!.askedBy).toEqual(q!.askedBy);
+    expect(after!.options.map((o) => o.label)).toEqual([
+      "forge-customers",
+      HOSTS_OUTSIDE_INTERNAL,
+      HOSTS_OUTSIDE_VENDOR,
+      HOSTS_NONE,
+    ]);
+    expect(s2.out.some((l) => l.startsWith(`Re-asked ${q!.id}`))).toBe(true);
+    // Answered, an old question is left as it is.
+    await answerQuestion(root, q!.id, { option: 4, by: "priya.nair", at: "2026-11-01T12:00:00Z" });
+    const answered = (await readQuestion(root, q!.id))!;
+    await writeQuestion(root, {
+      ...answered,
+      options: old.options,
+      answer: { ...answered.answer!, option: 2 },
+    });
+    const before = await readFile(join(root, "questions", `${q!.id}.yaml`), "utf8");
+    const s3 = io();
+    expect(await scanCommand(root, { noDrift: true }, s3.io)).toBe(0);
+    expect(await readFile(join(root, "questions", `${q!.id}.yaml`), "utf8")).toBe(before);
+    expect(s3.out.some((l) => l.startsWith("Re-asked"))).toBe(false);
   }, 300_000);
 });
