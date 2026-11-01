@@ -4,6 +4,11 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## 2.0.0-beta.10 (2026-10-31)
 
+### A change's impact, and answers the assistant proposes (ADR 0144)
+
+- `atticus change impact <change>` and the change's Architecture tab (**What this change breaks**) show, from its target flows, who each broken entry or table is called or used by, the fields that stop crossing and the gateway routes to update, each with its owner team. A link the map only guessed may break and is never counted as a break; the critic's `constitution.change-links-known` asks about it. API 2.36.0: `GET /api/changes/{changeId}/impact`.
+- `/atticus-propose` has your assistant propose an answer to each open question from the code, citing its lines; `atticus questions proposed` checks every citation, only checked proposals are shown, and `atticus questions answer <id> --accept-proposal` (or Accept on the Questions page) makes it your answer. Question files are unchanged.
+
 ### A repo's starting spec, seeded from its verified flows (ADR 0146)
 
 - `atticus spec seed <repo>` proposes a repo's starting `openspec/specs` as the change `openspec/changes/seed-<repo>/`: a capability per verified flow, one requirement per flow, a scenario for its main path, each branch and each error case, every line citing the code it was read from. Nothing is written into a code repo or into `openspec/specs` until a person runs `atticus spec accept <repo>` (`openspec validate --strict`, then `openspec archive`).
