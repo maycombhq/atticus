@@ -1,0 +1,5 @@
+<TargetEndpoint name="accounts">
+  <HTTPTargetConnection>
+    <URL>https://apps.forge.internal/forge-svc/accounts</URL>
+  </HTTPTargetConnection>
+</TargetEndpoint>

@@ -4,6 +4,11 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## 2.0.0-beta.10 (2026-10-31)
 
+### Measuring the links the join makes
+
+- The estate join is measured against reference links on an invented estate shaped like a large bank's (a proxy per repo on one gateway host, services under one ingress host, a house starter, a deploy repo): reading recall, link precision and recall, and the calls asked, guessed and taken by outside systems, pinned in CI.
+- `atticus join measure <reference>` scores your own map against the entries and calls you list by hand for a few repos you know, each call with the repo it should reach (docs/guide/measure.md). It reads files only and writes nothing.
+
 ### Why a link is there, and every count opens its list (ADR 0135)
 
 - On the estate canvas, each link's details open **Why is this linked?**: every call on it, how it was joined (a person's answer, the target the call names, the host, a guess by path), verified or inferred, and its cited line at both ends. **This link is wrong** writes a person's correction (another repo, an outside system, or not a call), says what `atticus verify <repo> --write` will change and what moved afterwards; a person's target now outranks every join rule. Every Interface the join writes is flagged how it was joined (C4 2.32.0: `joins` on graph edges).

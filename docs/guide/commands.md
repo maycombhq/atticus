@@ -40,6 +40,7 @@ Every command under the twelve, with its options.
   atticus verify --all [--write]       Every repo read so far (each with a facts file), one after another; no model is called
   atticus map render <repo> [--json]   Render the repo's map from the catalog: map.md, a page per flow with its sequence diagram, an OpenAPI file per component, under map/<repo>/
   atticus join [--json]                Follow each repo's flows into the flows their calls reach, through the calls the repos' verified facts join (verify --write); the same as estate join
+  atticus join measure <reference> [--json]  Measure your map against a reference you write by hand for two or three repos you know (their entries and calls, each call with the repo it should reach): reading recall, and join precision and recall; reads files only (docs/guide/measure.md)
   atticus knowledge scan [--source s] [--mode m] [--resume run] [--full] [--batch-tokens n] [--max-tokens n]  Your assistant reads the snapshots into patterns, standards, processes, requests, decisions and constraints; every quote checked. A rescan reads only the pages that changed and says what changed
   atticus knowledge list [--tag t] [--kind k] [--unverified] [--json]  The knowledge items, by tag and kind
   atticus knowledge ask "<question>" [--mode m] [--resume run] [--max-tokens n]  An answer from the knowledge items only, citing them
@@ -118,6 +119,7 @@ Every other command. `atticus legacy` lists them by area; each runs by its own n
   atticus estate join [--json]         Join each repo's call-outs to the flows their targets start; writes specs/estate.yaml
   atticus estate flow <flow> [--depth 5] [--json]  A flow followed across repos, with the data at each crossing
   atticus estate lineage <flow> <field> [--depth 5] [--json]  Follow a field along a flow to the column it is stored in, or where it breaks
+  atticus estate measure <reference> [--json]  The same as join measure
   atticus repo-type detect <repo> [--json]   Match a repo against the org pack's repo types by fingerprint, with the evidence for each signal
   atticus repo-type new <id> --from <repo> [--force]   Draft a repo type from a repo (its build files, dependencies, markers, folders) for you to edit
   atticus scan review <repo>           What the last scan couldn't read: your assistant gives a verdict on each gap and a rule for code it can read; checked [--gaps] [--attempts 3]

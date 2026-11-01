@@ -1,0 +1,3 @@
+forge:
+  starter:
+    sso-url: ${FORGE_SSO_URL}

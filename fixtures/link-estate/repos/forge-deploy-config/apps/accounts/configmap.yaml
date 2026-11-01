@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: accounts-api
+  namespace: forge-accounts
+data:
+  NOTIFY_URL: https://apps.forge.internal/forge-svc/notifications
