@@ -19,7 +19,9 @@ import {
   type Fact,
 } from "@maycombhq/core";
 import { dirSource, repairFormSlips, verifyFacts } from "@maycombhq/verify";
+import { stringify } from "yaml";
 import { checkoutOf } from "./facts-files.js";
+import { repoContractsOf } from "./link-evidence-files.js";
 import { claimOf, factLabel } from "./ui-api-facts.js";
 import { verifyInputsOf } from "./verify-commands.js";
 
@@ -209,7 +211,19 @@ export async function verifyWritePreview(
 
   // Loaded here, as verify --write loads it: the catalog writer brings the scanner.
   const { projectFactsIntoCatalog } = await import("./map-render-commands.js");
-  const p = await projectFactsIntoCatalog(root, repo, report.accepted, op ? { op } : {});
+  // ADR 0151: the write first reads this repo's contract files in its checkout into
+  // `<repo>.contracts.yaml`; the preview reads them the same way, in memory, so it says what the
+  // write will. And it keeps no read cache: it writes nothing at all.
+  const contracts = await repoContractsOf(repo, dir, report.accepted);
+  const companion = join(factsDirOf(root), `${repo}.contracts.yaml`);
+  const onDisk = await readFile(companion, "utf8").catch(() => undefined);
+  const next = contracts.entries.length ? stringify(contracts, { lineWidth: 0 }) : undefined;
+  if (onDisk !== next) files.push(`${rel}/${repo}.contracts.yaml`);
+  const p = await projectFactsIntoCatalog(root, repo, report.accepted, {
+    ...(op ? { op } : {}),
+    contracts,
+    cache: false,
+  });
   const catalogRel = layoutOf(root).catalog.replace(/\/+$/, "");
   const recordFiles = [
     ...p.diff.added,

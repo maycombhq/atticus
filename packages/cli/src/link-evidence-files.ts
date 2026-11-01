@@ -35,11 +35,10 @@ import type { Output } from "./commands.js";
 const SHOWN = 5;
 
 /**
- * Read a repo's contract files in its checkout and keep them beside its facts; a repo with none
- * has no companion (an old one is removed).
+ * A repo's contract files as its checkout has them, in memory: what `writeRepoContracts` keeps,
+ * and what the preview of the next write (C4, ADR 0149) reads instead of the companion on disk.
  */
-export async function writeRepoContracts(
-  root: string,
+export async function repoContractsOf(
   repo: string,
   dir: string,
   facts: readonly Fact[],
@@ -50,7 +49,20 @@ export async function writeRepoContracts(
       ? [{ ...(f.method ? { method: f.method } : {}), path: f.path }]
       : [],
   );
-  const file = await readContractFiles(dir, { repo, ...(commit ? { commit } : {}), own });
+  return readContractFiles(dir, { repo, ...(commit ? { commit } : {}), own });
+}
+
+/**
+ * Read a repo's contract files in its checkout and keep them beside its facts; a repo with none
+ * has no companion (an old one is removed).
+ */
+export async function writeRepoContracts(
+  root: string,
+  repo: string,
+  dir: string,
+  facts: readonly Fact[],
+): Promise<ContractsFileT> {
+  const file = await repoContractsOf(repo, dir, facts);
   const path = join(factsDirOf(root), `${repo}.contracts.yaml`);
   if (file.entries.length) await writeFileAtomic(path, stringify(file, { lineWidth: 0 }));
   else await rm(path, { force: true });

@@ -31,6 +31,7 @@ import {
   writeFlow,
   writeSpecHeader,
   type CatalogRecord,
+  type ContractsFileT,
   type Fact,
   type FactsJoinResult,
   type ExposureFinding,
@@ -416,13 +417,24 @@ export async function projectFactsIntoCatalog(
   root: string,
   repo: string,
   facts: readonly Fact[],
-  given: { op?: Awaited<ReturnType<typeof loadOrgPack>>; existing?: readonly CatalogRecord[] } = {},
+  given: {
+    op?: Awaited<ReturnType<typeof loadOrgPack>>;
+    existing?: readonly CatalogRecord[];
+    /**
+     * This repo's contract files as its checkout has them (`repoContractsOf`), in place of its
+     * companion on disk: the write refreshes the companion first, so a preview passes them to
+     * read what the write will.
+     */
+    contracts?: ContractsFileT;
+    /** False for a preview: no read cache is kept, so nothing at all is written. */
+    cache?: boolean;
+  } = {},
 ) {
   const op = given.op ?? (await loadOrgPack(orgPackDirOf(root)));
+  const cacheOpts = given.cache === false ? {} : { cacheRoot: root };
   const existing =
-    given.existing ??
-    (await readCatalog(join(catalogDirOf(root), "generated"), { cacheRoot: root })).records;
-  const curated = await readCatalog(join(catalogDirOf(root), "curated"), { cacheRoot: root });
+    given.existing ?? (await readCatalog(join(catalogDirOf(root), "generated"), cacheOpts)).records;
+  const curated = await readCatalog(join(catalogDirOf(root), "curated"), cacheOpts);
   const everyTarget = (await listQuestions(root, { step: TARGETS_STEP })).questions;
   const answered = everyTarget.filter((q) => q.repo === repo);
   // ADR 0153 (Q2): an answer's rule, from this repo's questions or another repo's whose scope
@@ -435,9 +447,22 @@ export async function projectFactsIntoCatalog(
   // join the entries that serve them and their calls into this repo are joined again.
   const estate = await estateFacts(root, op, repo);
   // ADR 0151: every repo's contract files kept beside its facts, and the traffic aggregates
-  // people imported. (The write refreshes this repo's contracts first; a preview reads them as
-  // they are, so it writes nothing.)
-  const evidence = await loadLinkEvidence(root);
+  // people imported. The write refreshes this repo's contracts first; a preview reads them from
+  // the checkout in memory (`given.contracts`), so it says what the write will and writes nothing.
+  const onFile = await loadLinkEvidence(root);
+  const evidence = given.contracts
+    ? {
+        ...onFile,
+        contracts: [
+          ...onFile.contracts.filter((c) => c.repo !== repo),
+          ...(given.contracts.entries.length ? [given.contracts] : []),
+          // In the companions' file order, as `loadLinkEvidence` reads them.
+        ].sort((a, b) => {
+          const [x, y] = [`${a.repo}.contracts.yaml`, `${b.repo}.contracts.yaml`];
+          return x < y ? -1 : x > y ? 1 : 0;
+        }),
+      }
+    : onFile;
   // ADR 0160 (O3): the maps other teams share, read-only, under shared/<team>/.
   const shared = await readSharedMaps(root);
   const result = catalogWithFacts({
