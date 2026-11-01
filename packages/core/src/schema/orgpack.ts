@@ -88,9 +88,36 @@ export const Approver = z
     "name at least one role, group or person",
   );
 
+/**
+ * roles.yaml version 2 (ADR 0140) adds `teams`: who is on each team a repo manifest's `owner`
+ * names, so a question goes to the team that owns its repo and a person can list their own.
+ * Words, not permissions: nothing is allowed or refused by team. The rest of the file stays
+ * deprecated (ADR 0073). A version-1 file is read as it is; `teams` needs version 2.
+ */
+export const ROLES_SCHEMA_VERSION = 2 as const;
+
+/** A person on a team: their Git handle (`atticus questions answer` records it as `by`). */
+const TeamPerson = z
+  .string()
+  .min(1)
+  .max(100)
+  .regex(/^@?[A-Za-z0-9][A-Za-z0-9._-]*$/, "a person's Git handle, such as pat or pat.doe");
+
+export const Team = z.strictObject({
+  /** The id a repo manifest's `owner` names, e.g. team-ledger. */
+  id: RecordId,
+  /** What people call it, e.g. Ledger team. */
+  name: z.string().min(1).optional(),
+  /** The Git handles of the people on it. */
+  people: z.array(TeamPerson).default([]),
+});
+export type Team = z.infer<typeof Team>;
+
 export const Roles = z
   .strictObject({
-    schemaVersion: V,
+    schemaVersion: z.union([V, z.literal(ROLES_SCHEMA_VERSION)]),
+    /** Version 2 (ADR 0140): the teams repos are owned by, and who is on each. */
+    teams: z.array(Team).default([]),
     /** Extra roles; each is based on a built-in role's view. */
     custom: z
       .array(
@@ -115,6 +142,13 @@ export const Roles = z
   .superRefine((r, ctx) => {
     const known = new Set<string>([...BUILT_IN_ROLES, ...r.custom.map((c) => c.id)]);
     unique(r.custom, (c) => c.id, ctx, "custom");
+    unique(r.teams, (t) => t.id, ctx, "teams");
+    if (r.teams.length && r.schemaVersion < ROLES_SCHEMA_VERSION)
+      ctx.addIssue({
+        code: "custom",
+        path: ["teams"],
+        message: "teams needs schemaVersion 2: run atticus upgrade",
+      });
     r.custom.forEach((c, i) => {
       if ((BUILT_IN_ROLES as readonly string[]).includes(c.id)) {
         ctx.addIssue({

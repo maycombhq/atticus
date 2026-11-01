@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Atticus local API",
-    "version": "2.32.0",
+    "version": "2.33.0",
     "description": "Served by `atticus ui` on 127.0.0.1. The UI only calls this API, and the API only reads and writes files in the metarepo.",
     "license": {
       "name": "Apache-2.0",
@@ -7902,7 +7902,7 @@
     "/api/questions": {
       "get": {
         "operationId": "listQuestions",
-        "summary": "The questions to people in questions/ (ADR 0078), oldest first",
+        "summary": "The questions to people in questions/ (ADR 0078), in the order to ask them (ADR 0140): what a change in flight rests on first, then the answers that join the most calls",
         "tags": [
           "questions"
         ],
@@ -7919,6 +7919,18 @@
               ]
             },
             "description": "Only questions in this state",
+            "required": false
+          },
+          {
+            "name": "mine",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true"
+              ]
+            },
+            "description": "Only the questions of the teams the person is on (roles.yaml, ADR 0140)",
             "required": false
           }
         ],
@@ -24650,6 +24662,96 @@
               ],
               "additionalProperties": false
             }
+          },
+          "about": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "restsOn": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "joins": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "owner": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "team": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "team"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "none": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "none"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "restsOn",
+                "joins",
+                "owner"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "me": {
+            "type": "object",
+            "properties": {
+              "handle": {
+                "type": "string"
+              },
+              "teams": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "handle",
+              "teams"
+            ],
+            "additionalProperties": false
           }
         },
         "required": [

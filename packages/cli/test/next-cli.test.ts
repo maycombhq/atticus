@@ -598,3 +598,46 @@ describe("atticus next with a change in hand, and the assistant that was probed"
     expect(r.out[1]).toBe("In Claude Code: /atticus-map forge-notes");
   });
 });
+
+describe("atticus next asks first what a change needs (ADR 0140)", () => {
+  it("orders the open questions: the answer that joins most calls before a lone /ping", async () => {
+    const root = await metarepo();
+    const by = {
+      step: "facts-targets",
+      repo: "forge-notes",
+      command: "atticus verify forge-notes --write",
+      rerun: "atticus verify forge-notes --write",
+      at: "2026-10-21T12:00:00.000Z",
+    };
+    const ping = (
+      await raiseQuestions(
+        root,
+        [
+          {
+            question: "Which answers GET /ping?",
+            options: [],
+            evidence: ["src/p.ts:1"],
+            scope: "repo",
+          },
+        ],
+        by,
+      )
+    ).raised[0]!;
+    const group = (
+      await raiseQuestions(
+        root,
+        [
+          {
+            question: "Which answers the calls under /notes?",
+            options: [],
+            evidence: ["src/n.ts:1", "src/n.ts:5"],
+            scope: "repo",
+          },
+        ],
+        { ...by, at: "2026-10-22T12:00:00.000Z" },
+      )
+    ).raised[0]!;
+    const { readNextState } = await import("../src/next-commands.js");
+    expect((await readNextState(root)).openQuestions).toEqual([group.id, ping.id]);
+  });
+});

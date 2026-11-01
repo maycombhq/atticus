@@ -16,6 +16,7 @@ import {
 import { waitingQuestions } from "@maycombhq/planner/waiting";
 import { gitUser } from "@maycombhq/workspace";
 import type { Output } from "./commands.js";
+import { routeQuestions, type RoutedQuestions } from "./question-routing.js";
 
 /**
  * atticus questions list | show | answer (ADR 0078): the questions a step raised, as files in
@@ -45,11 +46,33 @@ async function isChange(root: string, id: string): Promise<boolean> {
   );
 }
 
+/**
+ * Who a question goes to, what change rests on it and how many calls its answer joins (ADR 0140),
+ * as `atticus questions list` prints them.
+ */
+export function aboutLines(about: RoutedQuestions["about"][string] | undefined): string[] {
+  if (!about) return [];
+  const o = about.owner;
+  return [
+    "team" in o ? `  Owner: ${o.team}${o.name ? ` (${o.name})` : ""}` : `  Owner: none (${o.none})`,
+    ...(about.restsOn.length
+      ? [
+          `  Ask it first: ${about.restsOn.join(", ")} ${about.restsOn.length === 1 ? "is a change in flight that rests" : "are changes in flight that rest"} on it.`,
+        ]
+      : []),
+    ...(about.joins ? [`  Its answer joins ${plural(about.joins, "call")}.`] : []),
+  ];
+}
+
 /** The lines `atticus questions list` prints for one question; `change`: it is a change's. */
-export function questionLines(q: Question, o: { change?: boolean } = {}): string[] {
+export function questionLines(
+  q: Question,
+  o: { change?: boolean; about?: RoutedQuestions["about"][string] } = {},
+): string[] {
   const lines = [
     `${q.id}  ${q.state}  ${q.repo}  (asked by ${q.askedBy.command} on ${q.askedBy.at.slice(0, 10)})`,
     `  ${q.question}`,
+    ...aboutLines(o.about),
     ...q.options.map(
       (o, i) =>
         `  ${i + 1}. ${o.label}: ${sentence(o.means)} It would change: ${sentence(o.changes)}`,
@@ -88,6 +111,7 @@ export async function questionsFiles(
       scope: { type: "string" },
       type: { type: "string" },
       by: { type: "string" },
+      mine: { type: "boolean" },
     },
   });
   const str = (v: unknown) => (typeof v === "string" ? v : undefined);
@@ -98,24 +122,44 @@ export async function questionsFiles(
       io.err("--state is open, answered or retired.");
       return 2;
     }
-    const r = await listQuestions(root, state ? { state: state as QuestionState } : {});
-    for (const p of r.problems) io.err(`${p.file} isn't a valid question: ${p.message}`);
+    const listed = await listQuestions(root, state ? { state: state as QuestionState } : {});
+    for (const p of listed.problems) io.err(`${p.file} isn't a valid question: ${p.message}`);
+    // ADR 0140: in the order to ask them, each with its owner; --mine, the person's teams' only.
+    const mine =
+      values.mine === true ? str(values.by)?.trim() || (await gitUser(root)).handle : undefined;
+    const routed = await routeQuestions(root, listed.questions, mine ? { mine } : {});
+    for (const p of routed.problems) io.err(`${p.file}: ${p.message}`);
+    const r = { ...listed, questions: routed.questions };
     // ADR 0117 addendum (2026-10-25): what the stages hold back over a stop's cap, from their
     // loop files, so a person sees what comes next.
     const waiting = !state || state === "open" ? await waitingQuestions(root) : [];
     if (values.json === true) {
-      io.out(JSON.stringify({ ...r, waiting }, null, 2));
+      io.out(
+        JSON.stringify(
+          { ...r, about: routed.about, ...(routed.me ? { me: routed.me } : {}), waiting },
+          null,
+          2,
+        ),
+      );
       return r.problems.length ? 1 : 0;
     }
+    if (routed.me)
+      io.out(
+        routed.me.teams.length
+          ? `The questions for ${routed.me.handle}'s ${routed.me.teams.length === 1 ? "team" : "teams"}: ${routed.me.teams.map((t) => (t.name ? `${t.id} (${t.name})` : t.id)).join(", ")}.`
+          : `${routed.me.handle} is on no team in org-pack/roles.yaml, so no question is theirs: add them under a team's people (roles.yaml schemaVersion 2), or list every question without --mine.`,
+      );
     const changes = new Set<string>();
     for (const q of r.questions) if (await isChange(root, q.repo)) changes.add(q.repo);
     for (const q of r.questions)
-      for (const l of questionLines(q, { change: changes.has(q.repo) })) io.out(l);
-    const what = state ?? "";
+      for (const l of questionLines(q, { change: changes.has(q.repo), about: routed.about[q.id] }))
+        io.out(l);
+    const what = state ? `${state} ` : "";
+    const yours = routed.me ? " for your teams" : "";
     io.out(
       r.questions.length
-        ? `${plural(r.questions.length, `${what ? `${what} ` : ""}question`)}.`
-        : `No ${what ? `${what} ` : ""}questions.`,
+        ? `${plural(r.questions.length, `${what}question`)}${yours}.`
+        : `No ${what}questions${yours}.`,
     );
     if (waiting.length) {
       io.out(
@@ -213,7 +257,7 @@ export async function questionsFiles(
     `atticus questions ${command ?? ""} isn't a command: it is questions list, show or answer (atticus questions alone lists the knowledge gaps).`,
   );
   io.err(
-    'Usage: atticus questions list [--state open|answered|retired] [--json], atticus questions show <id> [--json], or atticus questions answer <id> --option <n> | --text "..." [--scope repo|repo-type] [--type <repo type>]',
+    'Usage: atticus questions list [--state open|answered|retired] [--mine] [--json], atticus questions show <id> [--json], or atticus questions answer <id> --option <n> | --text "..." [--scope repo|repo-type] [--type <repo type>]',
   );
   return 2;
 }

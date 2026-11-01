@@ -17,7 +17,8 @@ import {
 
 /**
  * The questions API (ADR 0078, C4): read questions/<id>.yaml and write a person's answer to
- * it, through the same functions `atticus questions answer` uses. It never runs the step that
+ * it, through the same functions `atticus questions answer` uses. The list comes in the order
+ * to ask (ADR 0140), each question with its owner, and `mine=true` keeps the person's teams'. It never runs the step that
  * asked: the answer comes back with the command to run next.
  */
 export function uiQuestionRoutes(r: Router, ctx: ServerContext, deps: { now?: () => Date } = {}) {
@@ -28,7 +29,25 @@ export function uiQuestionRoutes(r: Router, ctx: ServerContext, deps: { now?: ()
         const state = strParam(query, "state");
         if (state !== undefined && !QuestionState.safeParse(state).success)
           throw badRequest("state is open, answered or retired.");
-        const body = await listQuestions(ctx.root, state ? { state: state as QuestionState } : {});
+        const mine = strParam(query, "mine");
+        if (mine !== undefined && mine !== "true") throw badRequest("mine is true, or left out.");
+        const listed = await listQuestions(
+          ctx.root,
+          state ? { state: state as QuestionState } : {},
+        );
+        // ADR 0140: in the order to ask them, each with its owner; mine, the person's teams' only.
+        const { routeQuestions } = await import("./question-routing.js");
+        const routed = await routeQuestions(
+          ctx.root,
+          listed.questions,
+          mine ? { mine: ctx.user } : {},
+        );
+        const body = {
+          questions: routed.questions,
+          problems: [...listed.problems, ...routed.problems],
+          about: routed.about,
+          ...(routed.me ? { me: routed.me } : {}),
+        };
         return { status: 200, body };
       })
       .add("GET", "/api/questions/{id}", async ({ params }) => {

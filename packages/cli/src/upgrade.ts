@@ -33,6 +33,7 @@ import {
   migrateGatesText,
   migrateManifests,
   migrateQuestions,
+  migrateRolesText,
   migrateRuntimeText,
   migrateSourcesText,
   orgPackDirOf,
@@ -224,6 +225,25 @@ export const MIGRATIONS: Migration[] = [
       const text = await readFile(join(root, rel), "utf8").catch(() => undefined);
       if (text === undefined) return [];
       const r = migrateRuntimeText(text);
+      if (!r.changed) return [];
+      await writeFileAtomic(join(root, rel), r.text);
+      return [rel];
+    },
+  },
+  {
+    id: "roles-v2",
+    summary:
+      "roles.yaml at version 2: it can name the teams repos are owned by and who is on each, so questions go to their owner; no team is named until a person writes one (ADR 0140)",
+    async pending(root) {
+      const rel = packRel(root, "roles.yaml");
+      const text = await readFile(join(root, rel), "utf8").catch(() => undefined);
+      return text !== undefined && migrateRolesText(text).changed ? [rel] : [];
+    },
+    async apply(root) {
+      const rel = packRel(root, "roles.yaml");
+      const text = await readFile(join(root, rel), "utf8").catch(() => undefined);
+      if (text === undefined) return [];
+      const r = migrateRolesText(text);
       if (!r.changed) return [];
       await writeFileAtomic(join(root, rel), r.text);
       return [rel];

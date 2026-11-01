@@ -66,6 +66,19 @@ describe("the questions API (ADR 0078)", () => {
     expect((await call("GET", "/api/questions?state=maybe")).status).toBe(400);
   });
 
+  it("says who each question goes to, and with mine=true keeps the person's teams' (ADR 0140)", async () => {
+    const all = Api.QuestionList.parse((await call("GET", "/api/questions")).body);
+    expect(all.about?.[id]).toEqual({
+      restsOn: [],
+      joins: 0,
+      owner: { none: "no repos.manifest.yaml lists forge-notes, so no team owns it" },
+    });
+    const mine = Api.QuestionList.parse((await call("GET", "/api/questions?mine=true")).body);
+    expect(mine.me).toEqual({ handle: "priya.nair", teams: [] });
+    expect(mine.questions).toEqual([]);
+    expect((await call("GET", "/api/questions?mine=yes")).status).toBe(400);
+  });
+
   it("returns one question, and 404 for one that isn't there", async () => {
     const one = await call("GET", `/api/questions/${id}`);
     expect(one.status).toBe(200);

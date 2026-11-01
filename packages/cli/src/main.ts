@@ -533,7 +533,8 @@ Usage:
   atticus patterns scan [--json]       Find integration patterns in the wikis and compare them with the org pack
   atticus coverage [--json]            What the catalog knows per system and area: verified, document-only, unknown
   atticus questions [--json]           Knowledge gaps and the owner questions that close them
-  atticus questions list [--state open] [--json]   The questions in questions/ a step raised for a person
+  atticus questions list [--state open] [--mine] [--json]   The questions in questions/ a step raised for a person,
+          in the order to ask them, each with its owner team; --mine, your teams' only
   atticus questions show <id> [--json]  One question on file, with its options, evidence and answer
   atticus questions answer <id> --option <n> | --text "..."   Write the answer to the file; prints the rerun
           [--scope repo|repo-type] [--type <repo type>] [--by who]
