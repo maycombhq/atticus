@@ -4,6 +4,10 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## 2.0.0-beta.10 (2026-10-31)
 
+### Lines the reader skipped
+
+- `atticus verify` lists the lines of the files read that write a path, URL or topic no fact cites or names (plain text patterns, any language; comments, imports, tests, generated and vendored folders left out), the reviewed globs whose files hold such lines, and the operations a repo's OpenAPI spec declares that no entry covers. Notes for the reader's second pass, never rejections: under `skipped`, `reviewedHolds` and `specOpsUncovered` in `<repo>.verify.yaml` (capped at 100, with counts); `atticus verify <repo> --skipped` prints every one.
+
 ### Where a component is reached, read from its Routes (ADR 0143)
 
 - A deploy fact can say where its component is reached: `host`, `basePath` and, for a deploy repo's Route, the component it `exposes` (facts schema version 2, every field optional, no upgrade step). The verifier checks each on its cited line (a templated host on its values file's line) and that the component is the estate's; the join takes hosts and base paths from these facts as well as from repos.manifest.yaml, and a conflict between them is reported by `atticus verify --write` and under `exposure` in the verify report, with both joined. So the manifest no longer has to list every service's host and base path by hand: reading the deploy repo is enough.

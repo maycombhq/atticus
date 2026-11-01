@@ -984,3 +984,9 @@ The gateway batch's instructions go from about 7,401 characters (~1,850 tokens) 
 ## Addendum (J1): where a component is reached (see ADR 0143)
 
 - A deploy fact's `host`, `basePath` and `exposes` (facts schema version 2) feed the join's hosts and base paths beside the manifest's; conflicts are findings. Decided and described in ADR 0143.
+
+## Addendum (R1): the cross-check section 3 promised, as notes
+
+- In the files a kept fact cites (or the reader opened through Atticus's tools), language-neutral text patterns find strings that look like a path, a URL or a topic. Comments, import lines, namespaces, asset and file-system paths, placeholders, tests, generated, build-output and vendored folders, and the org pack's exclusions are left out.
+- Verify lists those that no kept fact cites (its line or the line either side) or names elsewhere (`skipped`); looks inside each reviewed glob and says when its files hold such strings (`reviewedHolds`); and, for each OpenAPI or Swagger file in the repo, lists the operations no kept entry covers (`specOpsUncovered`), read with the spec reader ADR 0130 shares (`readOpenApiDocument`).
+- The reader decides what each one is: nothing listed becomes a fact, and nothing kept or rejected changes because of it. The report holds up to 100 of each list with its count; `atticus verify <repo> --skipped` prints them all.
