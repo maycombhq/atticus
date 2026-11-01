@@ -564,3 +564,133 @@ describe("atticus map render <repo>", () => {
     expect(existsSync(join(root, ".atticus", "catalog", "generated", "endpoint"))).toBe(true);
   });
 });
+
+/**
+ * Q1 and J6 end to end: the calls that go the same way are asked once and one answer joins them
+ * all; an open question the code now answers retires itself, saying how.
+ */
+describe("atticus verify <repo> --write asks a call's target once per group (Q1, J6)", () => {
+  const NOTIFIER = "src/main/java/forge/ledger/Notifier.java";
+  const noHost = () =>
+    readFileSync(join(VERIFY, "forge-ledger.facts.jsonl"), "utf8").replace(
+      '"host":"notify.internal",',
+      "",
+    );
+  /** Three calls under /notify with no host: the fixture's, and two more on the next lines. */
+  async function threeCalls(): Promise<string> {
+    const lines = noHost().trimEnd().split("\n");
+    const notify = JSON.parse(lines.find((l) => l.includes('"id":"c-notify"'))!) as {
+      cite: Record<string, unknown>;
+    };
+    const more = (id: string, path: string, line: number) =>
+      JSON.stringify({
+        ...notify,
+        id,
+        path,
+        cite: { ...notify.cite, line, value: path, quote: `client.post("${path}", body);` },
+      });
+    const root = await metarepo(
+      [
+        ...lines,
+        more("c-notify-batch", "/notify/batch", 10),
+        more("c-notify-sms", "/notify/sms", 11),
+      ].join("\n") + "\n",
+    );
+    const file = join(root, "workspace", "forge-ledger", NOTIFIER);
+    writeFileSync(
+      file,
+      readFileSync(file, "utf8").replace(
+        '    client.post("http://notify.internal/notify", body);\n',
+        '    client.post("http://notify.internal/notify", body);\n    client.post("/notify/batch", body);\n    client.post("/notify/sms", body);\n',
+      ),
+    );
+    return root;
+  }
+
+  it("asks the three /notify calls in one question, and one answer joins all three", async () => {
+    const root = await threeCalls();
+    const o = io();
+    expect(await write(root, o)).toBe(0);
+    const qs = (
+      await listQuestions(root, { state: "open", repo: "forge-ledger", step: "facts-targets" })
+    ).questions;
+    expect(qs.map((q) => q.question)).toEqual([
+      "Which repo or system answers the calls forge-ledger makes under /notify?",
+    ]);
+    const q = qs[0]!;
+    expect(q.evidence).toEqual([`${NOTIFIER}:9`, `${NOTIFIER}:10`, `${NOTIFIER}:11`]);
+    expect(o.out.join("\n")).toContain(`3 calls go the same way`);
+    await answerQuestion(root, q.id, { option: 1, by: "dana.okafor", at: "2026-10-30T10:00:00Z" });
+    expect(await write(root)).toBe(0);
+    const catalog = (await readCatalog(join(root, "catalog", "generated"))).records;
+    const into = catalog.filter(
+      (r) => r.kind === "Interface" && r.from === "ledger-api" && r.to === "notify-api",
+    );
+    expect(into.length).toBeGreaterThanOrEqual(3);
+    // Nothing more is asked about them.
+    expect(
+      (await listQuestions(root, { state: "open", repo: "forge-ledger", step: "facts-targets" }))
+        .questions,
+    ).toEqual([]);
+  });
+
+  it("keeps an answered per-call question working, and groups only the calls left", async () => {
+    const root = await metarepo(noHost());
+    expect(await write(root)).toBe(0);
+    const [own] = (await listQuestions(root, { state: "open", step: "facts-targets" })).questions;
+    expect(own!.question).toBe(
+      "Which repo or system answers POST /notify, which ledger-api calls?",
+    );
+    await answerQuestion(root, own!.id, {
+      option: 1,
+      by: "dana.okafor",
+      at: "2026-10-30T10:00:00Z",
+    });
+    // Two more calls under /notify arrive: they are asked together, the answered one isn't.
+    const grown = await threeCalls();
+    cpSync(join(root, "questions"), join(grown, "questions"), { recursive: true });
+    expect(await write(grown)).toBe(0);
+    const open = (await listQuestions(grown, { state: "open", step: "facts-targets" })).questions;
+    expect(open).toHaveLength(1);
+    expect(open[0]!.evidence).toEqual([`${NOTIFIER}:10`, `${NOTIFIER}:11`]);
+    expect((await listQuestions(grown, { state: "answered" })).questions.map((q) => q.id)).toEqual([
+      own!.id,
+    ]);
+  });
+
+  it("retires an open question once the call names its target in the code (J6)", async () => {
+    const root = await metarepo(noHost());
+    expect(await write(root)).toBe(0);
+    const [q] = (await listQuestions(root, { state: "open", step: "facts-targets" })).questions;
+    writeFileSync(
+      join(root, "facts", "forge-ledger.jsonl"),
+      noHost().replace('"id":"c-notify",', '"id":"c-notify","to":"notify-api",'),
+    );
+    const o = io();
+    expect(await write(root, o)).toBe(0);
+    const after = (await listQuestions(root, { step: "facts-targets" })).questions.find(
+      (x) => x.id === q!.id,
+    )!;
+    expect(after.state).toBe("retired");
+    expect(after.retired?.why).toBe("POST /notify now names notify-api in the code");
+    expect(o.out.join("\n")).toContain(
+      `Retired ${q!.id}: POST /notify now names notify-api in the code.`,
+    );
+  });
+
+  it("retires a call's own open question when its call is asked in a group now (Q1)", async () => {
+    const root = await metarepo(noHost());
+    expect(await write(root)).toBe(0);
+    const [own] = (await listQuestions(root, { state: "open", step: "facts-targets" })).questions;
+    const grown = await threeCalls();
+    cpSync(join(root, "questions"), join(grown, "questions"), { recursive: true });
+    expect(await write(grown)).toBe(0);
+    const all = (await listQuestions(grown, { step: "facts-targets" })).questions;
+    const group = all.find((x) => x.state === "open")!;
+    expect(group.evidence).toHaveLength(3);
+    expect(all.find((x) => x.id === own!.id)).toMatchObject({
+      state: "retired",
+      retired: { replacedBy: [group.id] },
+    });
+  });
+});
