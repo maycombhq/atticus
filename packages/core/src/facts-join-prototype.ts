@@ -5,6 +5,7 @@ import {
   routeScore,
   type FactEnd,
   type JoinHow,
+  type FacingWords,
   type JoinRepo,
 } from "./facts-join.js";
 import {
@@ -219,6 +220,10 @@ export interface ComparePrototypeInput {
   vendors?: readonly PrototypeVendor[];
   /** The org pack's outside systems (vendors' ids and names), as the estate join takes them. */
   outside?: readonly string[];
+  /** The org pack's facing words (ADR 0147), as the estate join takes them. */
+  facing?: FacingWords;
+  /** The org pack's gateway bundle folders (ADR 0147), as the estate join takes them. */
+  bundleFolders?: readonly string[];
 }
 
 /** The words of the comparison, in one place: the CLI, the attached document and the app say these. */
@@ -668,9 +673,12 @@ export function comparePrototype(input: ComparePrototypeInput): PrototypeCompari
     }),
   };
   const estate = [...input.estate].sort((a, b) => cmp(a.repo, b.repo));
+  const bundle = input.bundleFolders ? { bundleFolders: input.bundleFolders } : {};
   const join = joinFacts({
     repos: [...estate, probe],
     ...(input.outside ? { outside: input.outside } : {}),
+    ...(input.facing ? { facing: input.facing } : {}),
+    ...bundle,
   });
   const joinOf = new Map(
     join.joins.filter((j) => j.call.repo === probeRepo).map((j) => [j.call.fact, j] as const),
@@ -718,6 +726,7 @@ export function comparePrototype(input: ComparePrototypeInput): PrototypeCompari
   const vjoin = joinVendorOperations({
     repos: [{ repo: probeRepo, component: probeComponent, facts: vprobe, gateway: true }],
     vendors,
+    ...bundle,
   });
   const vendorHits = new Map<string, typeof vjoin.matches>();
   for (const m of vjoin.matches) {
@@ -725,7 +734,7 @@ export function comparePrototype(input: ComparePrototypeInput): PrototypeCompari
     vendorHits.set(i, [...(vendorHits.get(i) ?? []), m]);
   }
   // The estate's own forwarding calls to each vendor: where a new route for it goes.
-  const forwards = joinVendorOperations({ repos: estate, vendors });
+  const forwards = joinVendorOperations({ repos: estate, vendors, ...bundle });
   const throughOf = (system: string) =>
     sorted(forwards.matches.filter((m) => m.vendor === system).map((m) => m.call.repo));
 

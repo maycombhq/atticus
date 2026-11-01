@@ -53,6 +53,8 @@ export interface VendorImpactInput {
   /** People's answers naming where a call goes: repo → call fact id → name. */
   targets?: Readonly<Record<string, Readonly<Record<string, string>>>>;
   facing?: FacingWords;
+  /** The org pack's gateway bundle folders (ADR 0147), as the estate join takes them. */
+  bundleFolders?: readonly string[];
   flows?: readonly ImpactFlow[];
   /** Each repo's system, from the manifest. */
   systemOfRepo?: Readonly<Record<string, string>>;
@@ -169,20 +171,24 @@ export function vendorImpact(input: VendorImpactInput): {
   impact: VendorImpact;
 } {
   const diff = diffVendorSpecs(input.older.spec, input.newer.spec);
+  const bundle = input.bundleFolders ? { bundleFolders: input.bundleFolders } : {};
   const join = joinFacts({
     repos: input.repos,
     ...(input.targets ? { targets: input.targets } : {}),
     ...(input.facing ? { facing: input.facing } : {}),
+    ...bundle,
   });
   const today = joinVendorOperations({
     repos: input.repos,
     vendors: [joinVendorOf(input, input.older.spec)],
     ...(input.targets ? { targets: input.targets } : {}),
+    ...bundle,
   });
   const next = joinVendorOperations({
     repos: input.repos,
     vendors: [joinVendorOf(input, input.newer.spec)],
     ...(input.targets ? { targets: input.targets } : {}),
+    ...bundle,
   });
 
   const k = (e: { repo: string; fact: string }) => `${e.repo}\u0000${e.fact}`;

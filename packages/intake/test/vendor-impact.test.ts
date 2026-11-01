@@ -198,3 +198,32 @@ describe("vendorImpact", () => {
     expect(impact.changes[1]!.forwards).toEqual([]);
   });
 });
+
+describe("vendorImpact joins with the org pack's gateway bundle folders (ADR 0147)", () => {
+  /** The gateway untyped, so only its bundle folder says its entries are routes. */
+  const untyped = (move?: (f: string) => string): JoinRepo[] =>
+    estate().map((r) => {
+      if (r.repo !== "forge-partner-gateway") return r;
+      const { gateway: _g, ...rest } = r;
+      return move
+        ? {
+            ...rest,
+            facts: rest.facts.map((f) => ({ ...f, cite: { ...f.cite, file: move(f.cite.file) } })),
+          }
+        : rest;
+    });
+  const moved = (f: string) => f.replace("/apiproxy/", "/proxy-bundles/");
+  const forwards = (i: VendorImpactInput) =>
+    vendorImpact(i).impact.changes.reduce((n, c) => n + c.forwards.length, 0);
+
+  it("follows a bundle in a folder the organisation names, and not one it doesn't", async () => {
+    const base = await input();
+    const plain = forwards({ ...base, repos: untyped() });
+    expect(plain).toBeGreaterThan(0);
+    expect(forwards({ ...base, repos: untyped(moved) })).toBe(0);
+    expect(forwards({ ...base, repos: untyped(moved), bundleFolders: ["proxy-bundles"] })).toBe(
+      plain,
+    );
+    expect(forwards({ ...base, repos: untyped(), bundleFolders: ["proxy-bundles"] })).toBe(0);
+  });
+});

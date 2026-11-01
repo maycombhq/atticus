@@ -236,3 +236,36 @@ describe("what a prototype and a mock are", () => {
       );
   });
 });
+
+describe("comparePrototype joins with the org pack's gateway bundle folders (ADR 0147)", () => {
+  /** The gateway untyped, so only its bundle folder says its entries are routes. */
+  const untyped = (move?: (f: string) => string): JoinRepo[] =>
+    estate().map((r) => {
+      if (r.repo !== "forge-partner-gateway") return r;
+      const { gateway: _g, ...rest } = r;
+      return move
+        ? {
+            ...rest,
+            facts: rest.facts.map((f) => ({ ...f, cite: { ...f.cite, file: move(f.cite.file) } })),
+          }
+        : rest;
+    });
+  const moved = (f: string) => f.replace("/apiproxy/", "/proxy-bundles/");
+  const compare = (repos: JoinRepo[], bundleFolders?: string[]) =>
+    plain(
+      comparePrototype({
+        prototype: prototype(),
+        estate: repos,
+        vendors: [northwind()],
+        ...(bundleFolders ? { bundleFolders } : {}),
+      }),
+    );
+
+  it("compares through a bundle in a folder the organisation names as through the default", () => {
+    const strip = (c: ReturnType<typeof compare>) =>
+      JSON.stringify(c).replaceAll("/proxy-bundles/", "/apiproxy/");
+    const named = compare(untyped(moved), ["proxy-bundles"]);
+    expect(strip(named)).toBe(strip(compare(untyped())));
+    expect(strip(compare(untyped(moved)))).not.toBe(strip(compare(untyped())));
+  });
+});
