@@ -315,16 +315,28 @@ describe("J1: the join takes hosts and base paths from exposure facts as well as
         flags?: string[];
       };
     };
-    // the Route's host the manifest doesn't list, and the Route's base path it disagrees with
+    // the Route's host the manifest doesn't list, and the Route's base path it disagrees with:
+    // a link no other call shares is a guess
     expect(joinOf(out, "c-balance-route")[0]!.guesses).toEqual([JOINED_DESPITE_CONFLICT]);
-    expect(iface("c-balance-route")).toMatchObject({
-      confidence: "inferred",
-      flags: [JOINED_DESPITE_CONFLICT],
-    });
-    expect(iface("c-limit-route")).toMatchObject({
-      confidence: "inferred",
-      flags: [JOINED_DESPITE_CONFLICT],
-    });
+    const alone = estate().map((r) =>
+      r.repo === "forge-pay" ? { ...r, facts: r.facts.filter((f) => !/-manifest$/.test(f.id)) } : r,
+    );
+    const aloneOut = joinFacts({ repos: alone });
+    const aloneRecords = joinRecords(aloneOut, alone);
+    for (const c of ["c-balance-route", "c-limit-route"]) {
+      const id = joinOf(aloneOut, c)[0]!.interface;
+      expect(
+        aloneRecords.find((r) => r.kind === "Interface" && r.id === id),
+        c,
+      ).toMatchObject({ confidence: "inferred", flags: [JOINED_DESPITE_CONFLICT] });
+    }
+    // ADR 0135 section 5: the same link the manifest's host or base path also joins is cited, so
+    // verified, and keeps the disputed call's flag
+    for (const c of ["c-balance-route", "c-limit-route"])
+      expect(iface(c), c).toMatchObject({
+        confidence: "verified",
+        flags: [JOINED_BY_HOST, JOINED_DESPITE_CONFLICT],
+      });
     // the manifest's own host and base path are no guess, nor an exposure nobody disputes
     for (const c of ["c-balance-manifest", "c-limit-manifest", "c-account"])
       expect(joinOf(out, c)[0]!.guesses, c).toBeUndefined();
