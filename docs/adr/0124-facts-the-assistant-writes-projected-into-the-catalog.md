@@ -1026,3 +1026,8 @@ The gateway batch's instructions go from about 7,401 characters (~1,850 tokens) 
 - A-ranges, amended by ADR 0157 (R4): each range after the first starts `rangeOverlap(each)` lines (20, or 2% of the range if more, at most a fifth) before the last one ended; its tokens are its lines' share, so the overlap is counted once more and nothing else; a citation on a line two ranges share accounts for both. A second pass on verify's lists in a fresh session is `atticus map <repo> --gaps` (ADR 0157).
 - J1 (ADR 0143 addendum): a regex Ingress path's plain prefix; a Service's in-cluster address as an exposure; `exposes: <repo>/<module>`.
 - Shared links (ADR 0135 §5): an Interface several joins write is verified if any is, its flags the union, its evidence every join's.
+
+## Addendum (O3, ADR 0160): another team's map
+
+- After the estate join, `joinSharedMaps` takes the join's `outside` list and matches each call whose target names a system with a shared map (`shared/<team>/`, their verified entries only) to the one entry of their map that serves it: their repos on the call's host first, REST by method and `routeScore` with their manifest's base path in front, gRPC and SOAP by `nameScore`; a tie is asked, none is a gap. Their facts never enter `joinFacts`, the verifier or a model.
+- The call's Interface keeps its id, `to` (the system) and confidence; it gains `joined-to-shared-map` (in `JOIN_HOW_FLAGS`) and callee evidence on their line (`extractor: atticus-shared@1`, `by: <team>`, their code commit), or `not-in-shared-map`. Every write strips the marks and puts them back from the maps on file, over the whole estate's join.

@@ -4,6 +4,16 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## 2.0.0-beta.10 (2026-10-31)
 
+### Another team's map, read-only (ADR 0160)
+
+- `atticus join shared import <their metarepo> --team <id> --system <id>` brings in the map a team that runs Atticus shares, as files: only their verified entries, quotes redacted and the deny-list applied, go to `shared/<team>/` at their commit; `refresh` imports a newer commit over it, `list` says what is on file. Nothing is fetched, and their facts are never verified, corrected or reported on here.
+- `atticus verify <repo> --write` joins the calls the estate leaves to that team's system to the entry of their map that serves each: the link is flagged `joined-to-shared-map` and cites their line at their commit, or `not-in-shared-map` when they serve nothing like it. Why is this linked? says "joined to <team>'s map", and Map › Outside systems lists their entries with the calls that reach each. Local API 2.44.0, additive.
+
+### IntelliJ catches up with beta.10 (plugin 0.3.0, ADR 0159)
+
+- Tools → Atticus has an action for each job beta.10 added, matching VS Code's commands of the same jobs: which clones moved on (`atticus estate fresh`), the reading order and its costs (`next --queue`), a repo's gaps (`map <repo> --gaps`, then `/atticus-map <repo> --gaps` on the clipboard for a new Copilot chat), the sample audit's precision, measuring the links, a traffic export, a repo's starting spec proposed and accepted, a repo's id renamed, what a change breaks, `/atticus-propose`, the proposals checked, and the questions in one sheet and applied. Run the Next Step in Copilot's Agent Mode names the custom agent to pick.
+- Waiting on you lists the questions in the order to ask them, each with its owner, with My Teams' Questions Only (`--mine`), a checked proposal to Accept as My Answer, and a rule field for target and hosts answers (`--match`). The Next tab shows each step's reason, near ids to rename, the seed to accept, and the reading order with each repo's estimated cost and what each read took.
+
 ### The VS Code extension and @atticus catch up with beta.10
 
 - The Command Palette and the Repos, Changes and Questions menus run the new jobs (estate fresh, next --queue, map <repo> --gaps with /atticus-map <repo> --gaps opened in Copilot Chat, join measure, verify audit --report, change impact, spec seed and accept, questions sheet and --apply, questions proposed, /atticus-propose, intake traffic, repo rename), a report shown whole in a tab beside its app page. The Questions view lists questions in the order to ask them, each with its owner, filters to My teams' (`--mine`), offers Accept as my answer (`--accept-proposal`) and a rule for target and hosts answers (`--match`); Next shows the onboarding queue with reasons and costs, the re-read and accept-seed steps, and a near repo id to rename.
