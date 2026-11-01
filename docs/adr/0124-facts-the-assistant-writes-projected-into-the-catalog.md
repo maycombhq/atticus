@@ -980,3 +980,7 @@ The gateway batch's instructions go from about 7,401 characters (~1,850 tokens) 
 ## Addendum (O2-join, ADR 0142): another team's operations
 
 - A system outside the estate that isn't a vendor (F3; often added by O1 with its host as alias) can publish a spec, which intake reads as a vendor's. `JoinVendor.boundary: internal` makes `joinVendorOperations` also match a service's own call to it, by answer, `to` or host (the spec's servers and the system's host aliases), marked `direct`, with `route` set to the entry it is made under. A vendor's direct calls are still left to its gateway routes. `vendorImpact` makes a direct match its own caller. The prototype comparison reads every outside system's spec (`outsideProfileSystems`).
+
+## Addendum (J1): where a component is reached (see ADR 0143)
+
+- A deploy fact's `host`, `basePath` and `exposes` (facts schema version 2) feed the join's hosts and base paths beside the manifest's; conflicts are findings. Decided and described in ADR 0143.

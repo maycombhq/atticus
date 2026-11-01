@@ -59,3 +59,7 @@ The reader runs in the person's assistant (Copilot agent mode, Claude Code), so 
 - The queue reads callees and gateways first, so fewer calls wait unjoined while the estate is read; a mapped repo is offered again only when it moved.
 - Every estimated repo has its estimate on file, every read its stamps, and what the reader reports sits beside them; nothing is presented as metered.
 - Contracts: C4 goes to 2.34.0 (additive). The read plan, an Atticus-written companion, goes to schema 2 with a migration. C1 to C3, C5, C6 and the facts file are unchanged.
+
+## Addendum (2026-10-31, with ADR 0143)
+
+- A deploy or config repo (manifest type `deploy*` or `config*`) ranks right after the gateways (`places`): once hosts and base paths come from its Routes (ADR 0143) and its values set the placeholders (ADR 0124, J0), the queue can't see which repo a call waits on until it is read.

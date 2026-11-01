@@ -4,6 +4,11 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## 2.0.0-beta.10 (2026-10-31)
 
+### Where a component is reached, read from its Routes (ADR 0143)
+
+- A deploy fact can say where its component is reached: `host`, `basePath` and, for a deploy repo's Route, the component it `exposes` (facts schema version 2, every field optional, no upgrade step). The verifier checks each on its cited line (a templated host on its values file's line) and that the component is the estate's; the join takes hosts and base paths from these facts as well as from repos.manifest.yaml, and a conflict between them is reported by `atticus verify --write` and under `exposure` in the verify report, with both joined. So the manifest no longer has to list every service's host and base path by hand: reading the deploy repo is enough.
+- The link estate's services are now placed by their Routes and its proxies by their BasePath, with only the gateway host left in its manifest: precision 0.909 and recall 0.769 as before (0.5 and 0.231 without the facts). `atticus next` reads a deploy or config repo right after the gateways, since its Routes and values place the others.
+
 ### The estate's freshness, and the onboarding queue with what each read cost (ADR 0141)
 
 - `atticus estate fresh` lists, for every repo at once and most stale first, the facts' commit and the clone's, the files changed that the facts cite, the facts to read again and the command to run; local git only, nothing fetched or written. The Map's Trust tab shows the same under Freshness (`GET /api/trust/fresh`, C4 2.34.0).
