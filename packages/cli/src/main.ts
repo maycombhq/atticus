@@ -714,6 +714,8 @@ Usage:
   atticus standards accept             Put the proposed checks a person picks into org-pack/checklists/standards.yaml [--only <id,id>] [--dry-run] [--json]
   atticus openspec setup               Set up OpenSpec with the org-flow schema in the metarepo
   atticus openspec check               Check the OpenSpec version and validate every change and spec
+  atticus spec seed <repo> [--json]    Propose a repo's starting openspec/specs from its verified flows, as the change openspec/changes/seed-<repo>/: a requirement per flow, a scenario per path and error case, each citing its lines (ADR 0146)
+  atticus spec accept <repo>           Accept the repo's seeded spec: openspec validate --strict, then openspec archive into openspec/specs/; the next change modifies it
   atticus openspec <args...>           Run the bundled OpenSpec CLI in the metarepo with these arguments (openspec isn't on PATH; it ships inside Atticus). status, instructions and show take --change from the only change open when you don't name one
   atticus handoff done <run-id>        Tell Atticus a hand-off artifact is written; it validates it (a stage's draft: with the stage's checks, its problems listed with their lines until it is clean) [--model m: the model that wrote it, kept in the run record]
   atticus stage check <change> <stage> <file>  Run a stage's checks on a draft's file and list its problems with their lines; writes nothing (a drafter checks its draft before it hands it in)
@@ -1399,6 +1401,20 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
     return command === "flow"
       ? m.estateFlowCommand(root, arg, o, io)
       : m.estateLineage(root, arg, field!, o, io);
+  }
+  if (group === "spec" && (command === "seed" || command === "accept")) {
+    const m = await import("./spec-seed-commands.js");
+    if (!arg) {
+      io.err(
+        command === "seed"
+          ? "Usage: atticus spec seed <repo> [--json]"
+          : "Usage: atticus spec accept <repo> [--by you]",
+      );
+      return 2;
+    }
+    return command === "seed"
+      ? m.specSeed(root, arg, { json: values.json === true }, io)
+      : m.specAccept(root, arg, { by: who() }, io);
   }
   if (group === "spec" && (command === "draft" || command === "check")) {
     const text = (v: unknown) => (typeof v === "string" ? v : undefined);

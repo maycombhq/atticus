@@ -1,0 +1,28 @@
+schemaVersion: 1
+kind: Flow
+id: forge-orders.old-export
+status: retired
+confidence: inferred
+component: forge-orders
+errors: []
+evidence: []
+family: []
+name: The nightly export, retired
+steps:
+  - evidence:
+      - source: code
+        repo: forge-orders
+        path: src/main/java/forge/orders/Export.java
+        line: 3
+    kind: entry
+    refs: []
+    what: Export.run starts
+template: default@1
+trigger:
+  evidence:
+    - source: code
+      repo: forge-orders
+      path: src/main/java/forge/orders/Export.java
+      line: 3
+  kind: job
+  what: The scheduler starts the export

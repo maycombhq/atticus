@@ -43,6 +43,21 @@ Each flow a change adds or changes is a capability in `openspec/specs/`, named a
 
 A criterion whose outcome changed becomes a new scenario beside the old one, since OpenSpec never drops a scenario silently. Retire the old one in `openspec/specs/` in the change's pull request.
 
+## A repo's starting spec, from its verified flows
+
+A repo that has never had a change has nothing in `openspec/specs/`, so its first change would write every flow it touches as ADDED. Seed it first, once its flows are verified (`atticus verify <repo> --write`) ([ADR 0146](../adr/0146-a-repos-starting-spec-seeded-from-its-flows.md)):
+
+```text
+atticus spec seed forge-orders
+atticus spec accept forge-orders
+```
+
+1. `atticus spec seed <repo>` writes the change `openspec/changes/seed-<repo>/`: a capability per flow, named as the stories stage names it, with one requirement for the flow and a scenario for its main path, each branch and each error case. Every WHEN, THEN and AND is the flow's own words with the lines they cite; where the flow says nothing, the scenario says nothing. Retired and planned flows, and flows `openspec/specs/` already has, are left out and listed in its `proposal.md`. Nothing is written into a code repo or into `openspec/specs/`.
+2. Read each spec against the code it cites and edit what reads wrong. Delete a file's first line (the mark) and a second `spec seed` keeps it as you left it.
+3. `atticus spec accept <repo>` runs `openspec validate --strict` and `openspec archive`, which writes the capabilities into `openspec/specs/`, and records in the proposal who accepted it. Commit the metarepo and open its pull request.
+
+From then on the stories stage writes `## MODIFIED Requirements` for each seeded flow a change touches, keeping the seeded scenarios, and each change's archive keeps the specs current. Accept a repo's seed before a change on its flows reaches the stories stage; if one got there first, run its stories stage again after accepting.
+
 ## Exporting the stories to Azure DevOps or Jira
 
 With no API to your tracker, import a file:
