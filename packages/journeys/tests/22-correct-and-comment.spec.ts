@@ -129,11 +129,14 @@ test("a contract's citation shows its quote on focus, and its fact is marked wro
     .getByLabel("Why (required to mark it wrong)")
     .fill("The balance moved to the accounts service last quarter.");
   await form.getByRole("button", { name: "Save the correction" }).click();
-  await expect(form.getByRole("status")).toContainText(
-    "Written to facts/forge-ledger.corrections.jsonl",
-  );
-  await expect(form).toContainText("git add facts/forge-ledger.corrections.jsonl && git commit");
-  await expect(form).toContainText("atticus verify forge-ledger");
+  // ADR 0149 (C4): the app wrote only the correction file, then lists the commands to run, each
+  // with a copy button, and what the write will change (its own status while it works that out).
+  await expect(
+    form.getByRole("status").filter({ hasText: "Written to facts/forge-ledger.corrections.jsonl" }),
+  ).toBeVisible();
+  await expect(form).toContainText("atticus verify forge-ledger --write");
+  await expect(form).toContainText("git add facts/forge-ledger.corrections.jsonl");
+  await expect(form).toContainText("git commit -m");
   await accessible(page, "a fact corrected from the Map");
   const line = JSON.parse(
     (await readFile(join(root, "facts/forge-ledger.corrections.jsonl"), "utf8")).trim(),

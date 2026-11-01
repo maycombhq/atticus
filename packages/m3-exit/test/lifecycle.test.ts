@@ -200,7 +200,7 @@ describe("M3 exit step 2: the seeded feature from Define to Release", () => {
       const s = await run("change", "status", CHANGE);
       expect(s.out).toContain("State: define");
       expect(s.text).toMatch(
-        /Risk: high \(8\): .*crosses the vendor boundary \(northwind-pay\) \+3/,
+        /Risk: high \(8\): .*crosses the vendor boundary \(northwind-pay\); calls another team's system \(audit\) \+3/,
       );
       expect(s.out).toContain("  - brief.md still holds only the template.");
     },
