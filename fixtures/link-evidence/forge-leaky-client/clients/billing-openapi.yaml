@@ -1,0 +1,13 @@
+openapi: 3.0.3
+info:
+  title: forge-billing
+  version: 1.0.0
+servers:
+  - url: https://svcuser:hunter2pass@billing.forge.example/api/v2?key=s3cr3tkey99#top
+paths:
+  /invoices/{invoiceId}:
+    get:
+      operationId: getInvoice
+      responses:
+        "200":
+          description: An invoice

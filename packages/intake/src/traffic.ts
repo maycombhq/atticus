@@ -12,11 +12,15 @@ import { parseCsv, type TrafficColumns } from "@maycombhq/ingestors";
  * J4 (ADR 0151): a traffic export (a gateway's analytics, an API catalogue's usage), given as a
  * file, kept only as aggregate counts per caller app, method, path template, proxy and base path
  * over a date range. Raw rows are never kept. Every column but those is dropped before anything
- * is written; a value in a kept column that looks like an IP, an email, a token or an id is
- * dropped too (an app name becomes `(redacted)`, a path segment `{id}`); the query string is cut
- * off. The aggregate is then checked: no dropped value, no IP, email or token-looking string,
- * and nothing the deny-list names may be in it, or the import is refused and nothing written.
- * A file that doesn't read into that shape is refused, never stored.
+ * is written. A path is kept only as an estate route template it matches, or as the longest
+ * template its start matches followed by `/**`; any other path is dropped, so no segment of a
+ * request reaches the file however it looks. An app name is kept only when it is a component or
+ * repo id of the estate (or an app a reviewer named a component for); any other becomes a stable
+ * label (`app-<8 hex of its SHA-256>`) so its counts still group. A proxy that looks like an IP,
+ * an email, a token or an id is dropped; query strings, fragments and matrix params are cut off.
+ * The aggregate is then checked: no dropped value, no IP, email or token-looking string, and
+ * nothing the deny-list names may be in it, or the import is refused and nothing written. A
+ * file that doesn't read into that shape is refused, never stored.
  */
 
 export interface AggregateTrafficInput {
@@ -27,8 +31,13 @@ export interface AggregateTrafficInput {
   /** The day range to keep (YYYY-MM-DD, both ends kept); the rows' own range when left out. */
   from?: string;
   to?: string;
-  /** The estate's route templates, which a concrete path is normalised to. */
+  /** The estate's route templates, which a concrete path is normalised to (others are dropped). */
   templates: readonly string[];
+  /**
+   * The names an app may keep: the estate's component and repo ids, and the apps a reviewer
+   * named a component for. Any other app name is written as its label (`app-<8 hex>`).
+   */
+  apps?: readonly string[];
   /** SHA-256 hashes of denied words and two-word phrases (the `.denylist` format). */
   denyHashes?: ReadonlySet<string>;
 }
@@ -43,6 +52,8 @@ export type AggregateTrafficResult =
       read: number;
       outOfRange: number;
       skipped: number;
+      /** Rows whose path matched no route template of the estate, even in part: dropped. */
+      unmatched: number;
       /** The export's columns that were dropped, by name (never their values). */
       dropped: string[];
     }
@@ -53,8 +64,10 @@ const key = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
 const sha = (s: string) => createHash("sha256").update(s, "utf8").digest("hex");
 
 const IPV4 = /\b\d{1,3}(?:\.\d{1,3}){3}\b/;
-const IPV6 = /\b[0-9a-f]{1,4}(?::[0-9a-f]{0,4}){4,7}\b/i;
-const EMAIL = /[^\s@/]+@[^\s@/]+\.[a-z]{2,}/i;
+/** An IPv6 address: anything with `::`, or hex groups joined by two colons or more. */
+const IPV6 = /[0-9a-f]{0,4}::[0-9a-f]{0,4}|\b[0-9a-f]{1,4}(?::[0-9a-f]{1,4}){2,7}\b/i;
+/** An email, with or without a top-level domain. */
+const EMAIL = /[^\s@/]+@[^\s@/]+/;
 const JWT = /\beyJ[A-Za-z0-9_-]{6,}/;
 /** A long opaque string with letters and digits (a key, a client id, a token). */
 const OPAQUE = /\b(?=[A-Za-z0-9+_-]*\d)(?=[A-Za-z0-9+_-]*[A-Za-z])[A-Za-z0-9+_-]{24,}={0,2}/;
@@ -115,31 +128,82 @@ function dayOf(v: string): string | undefined {
 }
 
 const VERSION = /^v\d+(?:\.\d+)*$/i;
+/** A route parameter as a template writes it: `{id}`, `{accountId}`, `:id`, `<id>`. */
+const PARAM =
+  /^(?:\{[A-Za-z_][A-Za-z0-9_.-]{0,40}\}|:[A-Za-z_][A-Za-z0-9_]{0,40}|<[A-Za-z_][A-Za-z0-9_:]{0,40}>)$/;
 
-/** A path's segment kept as written, or `{id}`: anything with a digit (but a version), or sensitive. */
-const segmentOf = (s: string) =>
-  VERSION.test(s) || (!/\d/.test(s) && !looksSensitive(s) && !/[@%]/.test(s) && s.length <= 40)
+/**
+ * A path's segment kept as written, or `{id}`. Conservative: a segment is kept only when it is a
+ * version (`v1`), a route parameter, or a plain lower-case word or words (letters, `-`, `_`, `.`,
+ * at most 20 characters, with a vowel), so ids, tokens, keys, names in camel or mixed case, and
+ * long or vowel-less strings never are.
+ */
+export const segmentOf = (s: string) =>
+  VERSION.test(s) ||
+  PARAM.test(s) ||
+  (/^[a-z][a-z._-]*$/.test(s) && s.length <= 20 && /[aeiou]/.test(s) && !looksSensitive(s))
     ? s
     : "{id}";
 
-/** A concrete path as the estate's route template it is, else with its ids as `{id}`. */
-export function pathTemplateOf(path: string, templates: readonly string[]): string | undefined {
+/** A path with its scheme and host, query string, fragment and matrix params (`;k=v`) cut off. */
+function barePath(path: string): string {
   let p = path.trim().split(/[?#]/, 1)[0] ?? "";
   p = p.replace(/^[a-z][a-z0-9+.-]*:\/\/[^/]*/i, "");
+  return p.replace(/;[^/]*/g, "");
+}
+
+/** A path with only its safe segments kept (`segmentOf`), and no query, fragment or matrix params. */
+export function safePathOf(path: string): string | undefined {
+  const p = barePath(path);
   if (!p.startsWith("/")) return undefined;
+  return `/${p.split("/").filter(Boolean).map(segmentOf).join("/")}`;
+}
+
+/**
+ * The `routeScore` a template match needs: above it, the same number of segments with a literal
+ * one in common (`500` less a point a parameter) or a `**` template's fixed start (`100` and up);
+ * at or below it, only a tail in common, which is no match.
+ */
+const MATCH = 100;
+
+/**
+ * A concrete path as the estate's route template it is; else the longest template its start
+ * matches, then `/**`; else undefined (dropped). No segment of the request itself is ever kept.
+ */
+export function pathTemplateOf(path: string, templates: readonly string[]): string | undefined {
+  const p = barePath(path);
+  if (!p.startsWith("/")) return undefined;
+  const sorted = [...templates].sort();
   let best: string | undefined;
   let score = 0;
-  for (const t of [...templates].sort()) {
+  for (const t of sorted) {
     const s = routeScore(p, t);
-    if (s >= 500 && s > score) {
+    if (s > MATCH && s > score) {
       score = s;
       best = t;
     }
   }
   if (best) return best;
   const segs = p.split("/").filter(Boolean);
-  return `/${segs.map(segmentOf).join("/")}`;
+  let prefix: string | undefined;
+  let len = 0;
+  score = 0;
+  for (const t of sorted) {
+    const n = t.split("/").filter(Boolean).length;
+    if (n === 0 || n >= segs.length || n < len) continue;
+    const s = routeScore(`/${segs.slice(0, n).join("/")}`, t);
+    if (s <= MATCH) continue;
+    if (n > len || s > score) {
+      len = n;
+      score = s;
+      prefix = t;
+    }
+  }
+  return prefix ? `${prefix.replace(/\/+$/, "")}/**` : undefined;
 }
+
+/** The label an app name no component has is written as: stable, so its counts still group. */
+export const appLabelOf = (name: string) => `app-${sha(name).slice(0, 8)}`;
 
 /** The deny-list's hits in a text: lines holding a denied word or two-word phrase. */
 export function denyListHits(text: string, hashes: ReadonlySet<string>): number[] {
@@ -215,6 +279,9 @@ export function aggregateTraffic(input: AggregateTrafficInput): AggregateTraffic
   const agg = new Map<string, TrafficRowT>();
   let outOfRange = 0;
   let skipped = 0;
+  let unmatched = 0;
+  const known = new Map<string, string>();
+  for (const a of input.apps ?? []) if (a.trim() && !known.has(key(a))) known.set(key(a), a.trim());
   const days: string[] = [];
   for (const r of rows) {
     for (const n of dropped) {
@@ -223,8 +290,11 @@ export function aggregateTraffic(input: AggregateTrafficInput): AggregateTraffic
       if (q.length >= 6) secrets.add(q);
     }
     for (const n of [c.path, c.suffix, c.basepath]) {
-      const q = n ? ((r[n] ?? "").split(/[?#]/)[1] ?? "") : "";
+      const v = n ? (r[n] ?? "") : "";
+      const q = v.split(/[?#]/)[1] ?? "";
       if (q.length >= 4) secrets.add(q);
+      for (const m of (v.split(/[?#]/, 1)[0] ?? "").match(/;[^/]*/g) ?? [])
+        if (m.length >= 5) secrets.add(m.slice(1));
     }
     if (c.time) {
       const d = dayOf(r[c.time] ?? "");
@@ -243,20 +313,29 @@ export function aggregateTraffic(input: AggregateTrafficInput): AggregateTraffic
     const rawPath = c.path
       ? (r[c.path] ?? "")
       : `${(r[c.basepath!] ?? "").replace(/\/+$/, "")}/${(r[c.suffix!] ?? "").replace(/^\/+/, "")}`;
-    const path = pathTemplateOf(rawPath, input.templates);
     const countText = c.count ? (r[c.count] ?? "").trim() : "1";
     const count = Number(countText);
-    if (!/^[A-Z]{3,10}$/.test(method) || !path || !Number.isInteger(count) || count < 0) {
+    if (
+      !/^[A-Z]{3,10}$/.test(method) ||
+      !barePath(rawPath).startsWith("/") ||
+      !Number.isInteger(count) ||
+      count < 0
+    ) {
       skipped++;
+      continue;
+    }
+    const path = pathTemplateOf(rawPath, input.templates);
+    if (!path) {
+      unmatched++;
       continue;
     }
     if (count === 0) continue;
     const appRaw = (r[c.app!] ?? "").trim();
-    const app = !appRaw ? "(none)" : looksSensitive(appRaw) ? "(redacted)" : appRaw;
+    const app = !appRaw ? "(none)" : (known.get(key(appRaw)) ?? appLabelOf(appRaw));
     const proxyRaw = c.proxy ? (r[c.proxy] ?? "").trim() : "";
     const proxy = proxyRaw && !looksSensitive(proxyRaw) ? proxyRaw : undefined;
     const baseRaw = c.basepath ? (r[c.basepath] ?? "").trim() : "";
-    const basepath = baseRaw ? pathTemplateOf(baseRaw, []) : undefined;
+    const basepath = baseRaw ? safePathOf(baseRaw) : undefined;
     for (const v of [app, proxy, basepath, path]) if (v) keptValues.add(v);
     const k = [app, method, path, proxy ?? "", basepath ?? ""].join("\u0000");
     const row = agg.get(k) ?? {
@@ -273,7 +352,7 @@ export function aggregateTraffic(input: AggregateTrafficInput): AggregateTraffic
   if (!agg.size)
     return {
       ok: false,
-      message: `No row of the file is a request in the range (${rows.length} read, ${outOfRange} outside it, ${skipped} without a method, path or count): nothing to keep.`,
+      message: `No row of the file is a request in the range to a route of the estate (${rows.length} read, ${outOfRange} outside it, ${skipped} without a method, path or count, ${unmatched} matching no route template of the estate): nothing to keep.`,
     };
   days.sort();
   const from = input.from ?? days[0];
@@ -307,7 +386,7 @@ export function aggregateTraffic(input: AggregateTrafficInput): AggregateTraffic
       message: `Refused: ${leaked.length} value${leaked.length === 1 ? "" : "s"} of the export's dropped columns would be written. Nothing was written.`,
     };
   const body = out.replace(/^inputSha256: .*$/m, "");
-  if ([IPV4, EMAIL, JWT, OPAQUE, UUID].some((re) => re.test(body)))
+  if ([IPV4, IPV6, EMAIL, JWT, OPAQUE, UUID, HEX].some((re) => re.test(body)))
     return {
       ok: false,
       message:
@@ -326,6 +405,7 @@ export function aggregateTraffic(input: AggregateTrafficInput): AggregateTraffic
     read: rows.length,
     outOfRange,
     skipped,
+    unmatched,
     dropped,
   };
 }

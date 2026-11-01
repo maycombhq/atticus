@@ -93,7 +93,7 @@ describe("atticus intake traffic", () => {
     const junk = join(root, "junk.txt");
     writeFileSync(junk, "no columns here\nat all\n");
     expect(await intakeTraffic(root, junk, { source: "apigee" }, c.io)).toBe(1);
-    writeFileSync(join(root, ".denylist"), `${denyHash("mobile")}\n`);
+    writeFileSync(join(root, ".denylist"), `${denyHash("portal")}\n`);
     expect(
       await intakeTraffic(
         root,
@@ -125,10 +125,10 @@ describe("atticus verify --write with contract files and traffic", () => {
     expect(out).toContain(
       "  Contracts: 1 link confirmed by a consumer's contract file, 3 requests the join doesn't bear out",
     );
-    expect(out).toContain("no-link: the Pact interaction DELETE /forge/v1/accounts/ACC-1001");
+    expect(out).toContain("no-link: the Pact interaction DELETE /forge/v1/accounts/{id}");
     expect(out).toContain("  Traffic: 1 link seen in imported traffic, 2 findings; 1 app");
     expect(out).toContain(
-      "missed-link: portal-api (forge-portal-api) called GET /forge/v1/accounts/{id}/statements/{id} 7 times",
+      "missed-link: portal-api (forge-portal-api) called GET /forge/v1/accounts/{id}/** 7 times",
     );
     expect(out).toContain("unseen-link: portal-api → accounts-api POST /transfers");
 
@@ -156,5 +156,18 @@ describe("atticus verify --write with contract files and traffic", () => {
     // What Atticus wrote (not the checkout, whose Pact bodies are the consumer's own).
     const wrote = ["facts", "catalog", "evidence"].map((d) => textUnder(join(root, d))).join("\n");
     for (const s of SECRETS) expect(wrote).not.toContain(s);
+  });
+
+  it("leaves out a contract file the deny-list names a word of, and says which", async () => {
+    const root = metarepo();
+    writeFileSync(join(root, ".denylist"), `${denyHash("billing")}\n`);
+    const c = capture();
+    expect(await verify(root, c)).toBe(0);
+    expect(c.err.join("\n")).toContain(
+      "pacts/forge-portal-api-forge-billing.json: the deny-list names a word in it, so its requests are left out.",
+    );
+    expect(readFileSync(join(root, "facts", `${REPO}.contracts.yaml`), "utf8")).not.toMatch(
+      /billing/,
+    );
   });
 });

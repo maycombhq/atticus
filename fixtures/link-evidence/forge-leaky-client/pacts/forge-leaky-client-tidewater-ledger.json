@@ -1,0 +1,12 @@
+{
+  "consumer": { "name": "forge-leaky-client" },
+  "provider": { "name": "tidewater-ledger" },
+  "interactions": [
+    {
+      "description": "a ledger entry",
+      "request": { "method": "GET", "path": "/ledger/entries" },
+      "response": { "status": 200 }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

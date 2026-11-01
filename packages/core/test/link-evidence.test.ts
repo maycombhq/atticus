@@ -131,19 +131,14 @@ describe("J3: contract files confirm a join from the consumer's end, or say wher
       [
         "no-link",
         "DELETE",
-        "/forge/v1/accounts/ACC-1001",
+        "/forge/v1/accounts/{id}",
         "pacts/forge-portal-api-forge-accounts.json:22",
       ],
-      [
-        "unknown-provider",
-        "GET",
-        "/invoices/INV-77",
-        "pacts/forge-portal-api-forge-billing.json:7",
-      ],
+      ["unknown-provider", "GET", "/invoices/{id}", "pacts/forge-portal-api-forge-billing.json:7"],
       [
         "provider-differs",
         "POST",
-        "/forge/v1/accounts/ACC-1001/transfers",
+        "/forge/v1/accounts/{id}/transfers",
         "pacts/forge-portal-api-forge-ledger.json:10",
       ],
     ]);
@@ -193,16 +188,16 @@ describe("J4: a traffic aggregate marks the links used, and lists missed and uns
     expect(
       r.traffic.findings.map((f) => [f.reason, f.app ?? f.link?.interface, f.path ?? f.link?.path]),
     ).toEqual([
-      ["unknown-app", "forge-mobile", "/forge/v1/accounts/{id}"],
-      ["missed-link", "forge-portal-api", "/forge/v1/accounts/{id}/statements/{id}"],
+      ["unknown-app", "app-995600e3", "/forge/v1/accounts/{id}"],
+      ["missed-link", "forge-portal-api", "/forge/v1/accounts/{id}/**"],
       ["unseen-link", POST, "/transfers"],
     ]);
   });
 
   it("takes the component a person names for an app in the row", () => {
     const named = trafficText.replace(
-      "app: forge-mobile\n",
-      "app: forge-mobile\n    component: portal-api\n",
+      "app: app-995600e3\n",
+      "app: app-995600e3\n    component: portal-api\n",
     );
     const t = readTrafficFile(REL, named);
     if (!t.ok) throw new Error(t.message);

@@ -36,13 +36,15 @@ const SHOWN = 5;
 
 /**
  * Read a repo's contract files in its checkout and keep them beside its facts; a repo with none
- * has no companion (an old one is removed).
+ * has no companion (an old one is removed). A contract file the metarepo's deny-list names a word
+ * of is left out, and `onRefused` is told which.
  */
 export async function writeRepoContracts(
   root: string,
   repo: string,
   dir: string,
   facts: readonly Fact[],
+  onRefused?: (note: string) => void,
 ): Promise<ContractsFileT> {
   const commit = facts.map((f) => f.commit).sort()[0];
   const own = facts.flatMap((f) =>
@@ -50,7 +52,14 @@ export async function writeRepoContracts(
       ? [{ ...(f.method ? { method: f.method } : {}), path: f.path }]
       : [],
   );
-  const file = await readContractFiles(dir, { repo, ...(commit ? { commit } : {}), own });
+  const deny = await denyHashesAt(root);
+  const file = await readContractFiles(dir, {
+    repo,
+    ...(commit ? { commit } : {}),
+    own,
+    ...(deny.size ? { denyHashes: deny } : {}),
+    ...(onRefused ? { onRefused } : {}),
+  });
   const path = join(factsDirOf(root), `${repo}.contracts.yaml`);
   if (file.entries.length) await writeFileAtomic(path, stringify(file, { lineWidth: 0 }));
   else await rm(path, { force: true });
@@ -194,13 +203,14 @@ export async function intakeTraffic(
     return 2;
   }
   const bytes = new Uint8Array(await readFile(path));
-  const templates = await routeTemplates(root);
+  const { templates, apps } = await estateNames(root);
   const deny = await denyHashesAt(root);
   const r = aggregateTraffic({
     bytes,
     source: o.source!,
     columns,
     templates,
+    apps,
     ...(o.from ? { from: o.from } : {}),
     ...(o.to ? { to: o.to } : {}),
     ...(deny.size ? { denyHashes: deny } : {}),
@@ -232,33 +242,55 @@ export async function intakeTraffic(
     return 0;
   }
   io.out(
-    `Wrote ${rel}: ${r.file.rows.length} aggregate${r.file.rows.length === 1 ? "" : "s"} (caller app, method, path template, proxy and base path) from ${r.read} rows, ${r.file.from} to ${r.file.to}${r.outOfRange ? `; ${r.outOfRange} outside the range` : ""}${r.skipped ? `; ${r.skipped} without a method, path or count` : ""}.`,
+    `Wrote ${rel}: ${r.file.rows.length} aggregate${r.file.rows.length === 1 ? "" : "s"} (caller app, method, path template, proxy and base path) from ${r.read} rows, ${r.file.from} to ${r.file.to}${r.outOfRange ? `; ${r.outOfRange} outside the range` : ""}${r.skipped ? `; ${r.skipped} without a method, path or count` : ""}${r.unmatched ? `; ${r.unmatched} to a path no route template of the estate matches, dropped` : ""}.`,
   );
   if (r.dropped.length)
     io.out(
-      `  Dropped before anything was written: the columns ${r.dropped.join(", ")}, every query string, and any value that looked like an IP, an email or a token. No raw row is kept.`,
+      `  Dropped before anything was written: the columns ${r.dropped.join(", ")}, every query string and matrix param, any proxy that looked like an IP, an email or a token, and every path but as a route template of the estate. No raw row is kept.`,
     );
   io.out(
-    `  Review it in a pull request (an app named like no component gets a component: line in its row), then atticus verify <repo> --write marks the links it shows used, and lists the traffic no link carries and the links none used.`,
+    `  Review it in a pull request (an app named like no component is written as an app-<hash> label: give its row a component: line), then atticus verify <repo> --write marks the links it shows used, and lists the traffic no link carries and the links none used.`,
   );
   return 0;
 }
 
-/** The estate's route templates: the paths of every repo's verified entries and calls. */
-async function routeTemplates(root: string): Promise<string[]> {
-  const { estateFacts } = await import("@maycombhq/scanner");
+/**
+ * The estate's route templates (the paths of every repo's verified entries and calls) and the
+ * app names a traffic aggregate may keep: every repo, component and module id of the manifests
+ * and facts, and the apps (and components) reviewers named in the aggregates already on file.
+ */
+async function estateNames(root: string): Promise<{ templates: string[]; apps: string[] }> {
+  const { estateFacts, estateRepos } = await import("@maycombhq/scanner");
+  const apps = new Set<string>();
+  const tDir = join(evidenceDirOf(root), "traffic");
+  for (const n of (await readdir(tDir).catch(() => [] as string[])).sort()) {
+    if (!/\.ya?ml$/.test(n)) continue;
+    const r = readTrafficFile(n, await readFile(join(tDir, n), "utf8"));
+    if (r.ok)
+      for (const row of r.traffic.file.rows)
+        if (row.component) apps.add(row.app).add(row.component);
+  }
   const op = await loadOrgPack(orgPackDirOf(root)).catch(() => undefined);
-  if (!op) return [];
+  if (!op) return { templates: [], apps: [...apps].sort() };
+  for (const m of estateRepos(op)) {
+    apps.add(m.id);
+    if (m.component) apps.add(m.component);
+    for (const x of m.modules ?? []) apps.add(x.component);
+  }
   const { repos } = await estateFacts(root, op, "");
   const out = new Set<string>();
-  for (const r of repos)
-    for (const f of r.facts)
+  for (const r of repos) {
+    apps.add(r.repo);
+    for (const f of r.facts) {
+      if (f.component) apps.add(f.component);
       if (
         (f.kind === "entry" && f.entryType === "rest") ||
         (f.kind === "call" && f.callType === "rest")
       )
         if (f.path?.startsWith("/")) out.add(f.path);
-  return [...out].sort();
+    }
+  }
+  return { templates: [...out].sort(), apps: [...apps].sort() };
 }
 
 /** The metarepo's deny-list (`.denylist`: SHA-256 hashes, one a line), when it has one. */

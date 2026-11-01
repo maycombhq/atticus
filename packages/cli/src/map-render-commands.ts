@@ -513,7 +513,7 @@ export async function writeFactsIntoCatalog(
     }
     const rerun = `atticus verify ${repo} --write`;
     // ADR 0151: this repo's contract files, read at the facts' commit and kept beside its facts.
-    await writeRepoContracts(root, repo, o.dir, facts);
+    await writeRepoContracts(root, repo, o.dir, facts, (n) => io.err(n));
     const { answered, targets, ruled, estate, result, diff, links, evidenceProblems, sharedMaps } =
       await projectFactsIntoCatalog(root, repo, facts, { op, existing: existing.records });
     for (const p of evidenceProblems) io.err(p);
