@@ -4,7 +4,7 @@ The Atticus extension for VS Code. The command line's own changes are in the rep
 
 ## 0.7.8 (pre-release, with Atticus 2.0.0-beta.10)
 
-- **Ships with Atticus 2.0.0-beta.10.** No change to the extension itself; a read part now fits the model it is read with (45% of its limit), a guessed link is marked inferred with how it was found, and a "None of these" answer and other teams' declared systems hold in the join.
+- **Ships with Atticus 2.0.0-beta.10.** No change to the extension itself. The command line and the app gain the improvement plan's build order: read parts that fit the model, links that say how they were joined (Why is this linked?, This link is wrong), grouped questions with owners and AI-proposed answers, config placeholders and Routes read for hosts, freshness and an onboarding queue, measured links and a sample audit, a change's impact, specs seeded from code, and house conventions in the org pack. See the repository's CHANGELOG.
 
 ## 0.7.7 (pre-release, with Atticus 2.0.0-beta.9)
 
