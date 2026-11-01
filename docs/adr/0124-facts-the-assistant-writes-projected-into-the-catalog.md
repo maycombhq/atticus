@@ -1020,3 +1020,9 @@ The gateway batch's instructions go from about 7,401 characters (~1,850 tokens) 
 ## Addendum (A-evidence, ADR 0151): links confirmed from outside the code
 
 - After the estate join, the consumers' contract files (`<repo>.contracts.yaml`, read at the facts' commit) and the imported traffic aggregates (`evidence/traffic/`) are matched against the whole estate's join by consumer, method and path. A match adds evidence and a flag to the Interface (`confirmed-by-contract`, `seen-in-traffic`, or the gap `contract-disagrees`) and never changes its confidence. Each write takes the previous write's marks off first, so the catalog is the same whatever order the repos are written in.
+
+## Addendum (beta.10 follow-ups): ranges overlap, a gaps pass, Services, shared links
+
+- A-ranges, amended by ADR 0157 (R4): each range after the first starts `rangeOverlap(each)` lines (20, or 2% of the range if more, at most a fifth) before the last one ended; its tokens are its lines' share, so the overlap is counted once more and nothing else; a citation on a line two ranges share accounts for both. A second pass on verify's lists in a fresh session is `atticus map <repo> --gaps` (ADR 0157).
+- J1 (ADR 0143 addendum): a regex Ingress path's plain prefix; a Service's in-cluster address as an exposure; `exposes: <repo>/<module>`.
+- Shared links (ADR 0135 §5): an Interface several joins write is verified if any is, its flags the union, its evidence every join's.

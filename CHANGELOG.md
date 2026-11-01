@@ -4,6 +4,26 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## 2.0.0-beta.10 (2026-10-31)
 
+### A change's impact up the chain, an open seed's collisions, and a vendor's headers and errors (ADR 0156)
+
+- `atticus change impact` and the Architecture tab walk up from each caller a change breaks, up to five hops up: each hop with the callers it calls through and its owner, a hop resting on a guessed link shown as may break and counted apart (`upstream`). Local API 2.43.0 (`chain`, `capped`, `upstream`; additive).
+- The stories stage, `atticus spec seed` and `atticus next` warn when a change adds a flow that a repo's open seed adds too, and say to accept the seed (`atticus spec accept <repo>`), then run the change's stories stage again. The vendor spec reader reads response headers, and `atticus intake impact` lists the error responses added, removed or changed between two versions.
+
+### A second pass on the gaps, overlapping line ranges, and the method note measured (ADR 0157)
+
+- `atticus map <repo> --gaps` plans a second pass on what the last verify left (files no fact cites, skipped lines, reviewed globs that hold some, spec operations no entry covers, entries no flow follows) for a fresh session sized to the model, and writes its prompt to `facts/<repo>.gaps.md`; `/atticus-map <repo> --gaps` in a new chat reads it. The line ranges of a file bigger than a session now overlap by 20 lines or 2%, so nothing is cut at a boundary (a plan with ranges is re-planned at the next `--estimate`).
+- The HTTP-method note now reads the method chain a cited line is in and a gateway forward's route: over the fixture estates it went from 7 false notes of 78 to none, pinned in a test; it stays a note. `atticus map --estimate`'s help names the house-package warning.
+
+### Where a component is reached: regex paths, Services and modules
+
+- An Ingress path written as a regular expression gives its plain prefix as the base path, citing the line; a base path that is itself a regex is rejected (`exposure-regex`).
+- A Kubernetes Service's in-cluster address (`<name>.<namespace>.svc.cluster.local:<port>`) is an exposure: a call by that name, `<name>.<namespace>` or the bare name joins the component it selects, cited, instead of the host's first-label guess. `exposes` may name a module the manifest doesn't list as `<repo>/<module>`.
+
+### Another team's system is outside the estate everywhere, and a link several calls share
+
+- The target question, a change's footprint and risk, and the release plan, notes and estimate now treat a profile system no estate repo belongs to as outside, saying "another team's system". The critic checks a call to it against that team's published spec once the spec is in the catalog.
+- An Interface several calls share takes every call's citations and the union of their flags, and is verified when any call's join is (ADR 0135 §5).
+
 ### Corrections without git, the audit answered in the app, and the outside systems (ADR 0149)
 
 - After Correct this or This link is wrong, the app lists the commands to run, each with a copy button (`atticus verify <repo> --write`, then the branch, the exact files to add, the commit, the push and the pull request for your Git host), and what that write will change in the facts, the links and the catalog, worked out by the command's own checks without writing anything. The app still runs nothing.
