@@ -54,6 +54,64 @@ const does = [
   },
 ];
 
+// What the current release added, in plain words; the CHANGELOG has every item.
+const release = "2.0.0-beta.10";
+const news = [
+  {
+    body: "A big repo is read in parts sized to your model, so nothing is cut short mid-read, and `atticus map <repo> --gaps` plans a second pass on what the first left.",
+    link: "/guide/install.html",
+  },
+  {
+    body: "On the map, **Why is this linked?** shows how each link was joined, with the cited line at both ends, and **This link is wrong** records a person's correction. A link the join only guessed now says it is a guess.",
+    link: "/guide/install.html",
+  },
+  {
+    body: "Questions are asked once for a group of calls that go the same way, answered by a rule (`--match`) or all at once in one sheet, listed in the order a change needs them with each one's owner, and your assistant can propose answers from the code for a person to accept.",
+    link: "/guide/commands.html",
+  },
+  {
+    body: "Config placeholders (`${PAYMENTS_URL}`, a Deployment's `valueFrom`), Routes and Kubernetes Services are read for where each service is reached, so the manifest no longer has to list every host by hand.",
+    link: "/guide/frameworks.html",
+  },
+  {
+    body: "A repo's Pact files and the OpenAPI specs it keeps confirm links, and a gateway's traffic export, kept only as redacted counts, shows links used, unused and missing.",
+    link: "/guide/link-evidence.html",
+  },
+  {
+    body: "Another team's Atticus map comes in read-only, as files: your calls to their system join their entries, cited on their lines.",
+    link: "/guide/shared-maps.html",
+  },
+  {
+    body: "`atticus estate fresh` lists which clones moved past their facts, and `atticus next --queue` gives the onboarding order with each repo's estimated cost.",
+    link: "/guide/commands.html",
+  },
+  {
+    body: "`atticus join measure` scores the links against ones you list by hand, and the sample audit gives precision per kind of fact, in the terminal or on Map › Trust.",
+    link: "/guide/measure.html",
+  },
+  {
+    body: "`atticus change impact` shows what a change breaks, up the chain of callers, each with its owner; a hop resting on a guessed link may break. Another team's system counts as outside the estate everywhere.",
+    link: "/guide/vendor-specs.html",
+  },
+  {
+    body: "`atticus spec seed <repo>` proposes a repo's starting OpenSpec specs from its verified flows, written only when a person accepts them.",
+    link: "/guide/openspec.html",
+  },
+  {
+    body: "Your house's conventions (spec folders, package prefixes, folders left out of coverage) go in `org-pack/conventions.yaml`, and Atticus warns before a first read of house packages no framework covers.",
+    link: "/guide/frameworks.html",
+  },
+  {
+    body: "VS Code, `@atticus` in Copilot Chat and the IntelliJ plugin (0.3.0) run every new job.",
+    link: "/guide/intellij.html",
+  },
+];
+
+/** A news line as HTML: `line`, plus **bold** for the names of buttons. */
+function newsLine(text: string): string {
+  return line(text).replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+}
+
 const practice = [
   "npm install -g @maycombhq/atticus@beta",
   "atticus sandbox create ./practice",
@@ -211,6 +269,23 @@ const steps = [
       </dl>
     </section>
 
+    <section class="news" aria-labelledby="news-title">
+      <h2 id="news-title">What's new in {{ release }}</h2>
+      <ul class="news-list">
+        <li v-for="n in news" :key="n.body">
+          <span v-html="newsLine(n.body)" />
+          <a class="news-more" :href="withBase(n.link)">More</a>
+        </li>
+      </ul>
+      <p class="news-note">
+        Upgrade everyone who shares a metarepo together: facts written by {{ release }} carry fields
+        older versions reject. Run <code>atticus upgrade</code> in the metarepo (<a
+          :href="withBase('/guide/install.html#upgrade-and-uninstall')"
+          >how</a
+        >). Every item is in the <a :href="`${github}/blob/main/CHANGELOG.md`">changelog</a>.
+      </p>
+    </section>
+
     <section id="start" class="start" aria-labelledby="start-title">
       <h2 id="start-title">Start</h2>
       <p class="needs">
@@ -254,7 +329,7 @@ const steps = [
         Atticus is under the <a :href="`${github}/blob/main/LICENSE`">Apache 2.0 licence</a>. The
         code, the <a :href="`${github}/tree/main/docs/adr`">decisions</a> and
         <a :href="`${github}/blob/main/docs/build-status.md`">where it stands</a> are on
-        <a :href="github">GitHub</a>. It is in beta, and
+        <a :href="github">GitHub</a>. It is in beta ({{ release }}), and
         <a :href="withBase('/overview.html#measured-with-the-caveats')">its measurements</a> say
         which bars it doesn't meet yet.
       </p>
@@ -681,6 +756,35 @@ code {
 .does .more {
   margin-top: 6px;
   font-size: 0.9375rem;
+}
+
+/* What's new: one plain list, each line with a link to its guide. */
+.news {
+  margin-bottom: 72px;
+}
+.news-list {
+  margin: 0;
+  padding-left: 1.25rem;
+  list-style: disc;
+  display: grid;
+  gap: 12px;
+  max-width: 80ch;
+}
+.news-list li {
+  line-height: 1.65;
+}
+.news-list li::marker {
+  color: var(--a-muted);
+}
+.news-more {
+  margin-left: 0.5em;
+  font-size: 0.9375rem;
+}
+.news-note {
+  margin: 24px 0 0;
+  max-width: 80ch;
+  line-height: 1.65;
+  color: var(--a-muted);
 }
 
 /* Start. */

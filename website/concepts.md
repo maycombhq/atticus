@@ -16,7 +16,7 @@ Your assistant reads a repo and writes facts: what it serves, calls and stores, 
 
 ## The map
 
-The catalog drawn as a map: each repo's entries and calls, the flows through it, OpenAPI contracts, and, with several repos read, each call joined to the repo that serves it, citing both ends. Where a host matches no repo, Atticus asks a person rather than guessing. `atticus join` follows flows from repo to repo.
+The catalog drawn as a map: each repo's entries and calls, the flows through it, OpenAPI contracts, and, with several repos read, each call joined to the repo that serves it, citing both ends. A link is verified when the call names its target, a person answered, or the hosts and base paths decide it (from the manifest, or read from Routes, Services and config); a link found only by its path or a host's label is marked as a guess. A call to a vendor or another team's system goes to that system, outside the estate. Where nothing decides it, Atticus asks a person, once for every call that goes the same way, and the question goes to the repo's owner. On the map, **Why is this linked?** shows how each link was found, and **This link is wrong** records a person's correction. `atticus join` follows flows from repo to repo.
 
 ## A change
 
