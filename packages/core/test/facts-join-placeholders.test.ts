@@ -324,6 +324,44 @@ describe("J0: which settings count for a component, and the forms a placeholder 
     ]);
   });
 
+  it("reads a platform-wide setting only when nothing sets the variable for the component", () => {
+    const platform = (value: string, file: string, id: string) =>
+      fact("forge-deploy", id, "config", {
+        key: "LIMITS_URL",
+        value,
+        cite: { file, line: 2, value: "LIMITS_URL" },
+      });
+    const web = (extra: Fact[]): JoinRepo[] => [
+      {
+        repo: "forge-web",
+        facts: [
+          getLimit({ base: "limits.url" }),
+          fact("forge-web", "cfg-limits", "config", { key: "limits.url", value: "${LIMITS_URL}" }),
+        ],
+      },
+      {
+        repo: "forge-deploy",
+        facts: [
+          platform("https://limits.apps.forge.internal", "charts/platform/values.yaml", "cfg-all"),
+          ...extra,
+        ],
+      },
+      limits,
+    ];
+    // a platform chart sets it for every service: used, and cited
+    expect(joinFacts({ repos: web([]) }).joins).toMatchObject([
+      { how: "host", through: [{ repo: "forge-deploy", fact: "cfg-all" }] },
+    ]);
+    // the component's own value comes first: the platform's isn't read
+    const own = joinFacts({
+      repos: web([
+        platform("https://nobody.forge.internal", "apps/forge-web/values.yaml", "cfg-web"),
+      ]),
+    });
+    expect(own.joins).toEqual([]);
+    expect(own.asks).toMatchObject([{ reason: "unknown-host", host: "nobody.forge.internal" }]);
+  });
+
   it("gives up on a placeholder that refers back to itself, without a host", () => {
     const out = joinFacts({
       repos: [

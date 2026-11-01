@@ -465,7 +465,10 @@ export function callHostOf(f: Call, repoFacts: readonly Fact[]): string | undefi
       (n): n is Config => n.kind === "config" && !!f.base && n.key === f.base && !!hostIn(n.value),
     )
     .sort((x, y) => cmp(x.id, y.id))[0];
-  const h = hostIn(f.host) ?? (tie ? hostIn(tie.value) : undefined) ?? hostIn(f.base);
+  // A base that is a config key of the repo is never a host itself (J0).
+  const keyed = !!f.base && repoFacts.some((n) => n.kind === "config" && n.key === f.base);
+  const h =
+    hostIn(f.host) ?? (tie ? hostIn(tie.value) : undefined) ?? (keyed ? undefined : hostIn(f.base));
   return h ? (h.named ? `${h.host}:${h.named}` : h.host) : undefined;
 }
 
@@ -563,6 +566,20 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
     const deployed = deploysIn.get(key(n.repo, n.fact.cite.file));
     return !!deployed && [...names].some((x) => deployed.has(x));
   };
+  /** Names a setting's file or fields could be for: every component and repo of the estate. */
+  const known = new Set([...components, ...repoIds.keys()]);
+  /**
+   * A setting for no component in particular: another repo's, with no `target` or component of
+   * its own, in a file no folder or deployment of which names any component or repo of the estate
+   * (a platform chart's `charts/platform/values.yaml`). Read only when nothing sets the variable
+   * for the component itself.
+   */
+  const setsForAll = (n: Node & { fact: Config }, owner: Node): boolean => {
+    if (n.repo === owner.repo || n.fact.target || n.fact.component) return false;
+    const parts = n.fact.cite.file.split("/");
+    if (parts.some((p) => known.has(factIdPart(p.replace(/\.[^.]*$/, ""))))) return false;
+    return !deploysIn.has(key(n.repo, n.fact.cite.file));
+  };
   /**
    * A value with its placeholders resolved, once per setting that sets it (one per environment,
    * say), each with the config facts it went through; a placeholder nothing sets takes its
@@ -581,9 +598,12 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
     if (depth >= MAX_PLACEHOLDER_DEPTH) return [];
     const want = settingNameKey(p.name);
     const out: { value: string; through: (Node & { fact: Config })[] }[] = [];
-    for (const s of configNodes) {
+    const named = configNodes.filter(
+      (s) => !seen.has(key(s.repo, s.fact.id)) && settingNameKey(s.fact.key) === want,
+    );
+    const mine = named.filter((s) => setsFor(s, owner));
+    for (const s of mine.length ? mine : named.filter((x) => setsForAll(x, owner))) {
       const k = key(s.repo, s.fact.id);
-      if (seen.has(k) || settingNameKey(s.fact.key) !== want || !setsFor(s, owner)) continue;
       for (const r of resolve(
         s.fact.value ?? s.fact.source,
         owner,
@@ -835,7 +855,13 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
       host &&
       outside.has(factIdPart(host.named ? `${host.host}:${host.named}` : host.host))
     ) {
-      continue; // O1: an outside system the profile names by this host takes the call
+      // O1: an outside system the profile names by this host takes the call (J0: listed, so a
+      // host only a placeholder's setting gives is said outside too).
+      outsideCalls.push({
+        call: end(call),
+        target: host.named ? `${host.host}:${host.named}` : host.host,
+      });
+      continue;
     } else if (host && components.has(factIdPart(host.host.split(".")[0]!))) {
       const comp = factIdPart(host.host.split(".")[0]!);
       scope = { scope: (e) => e.component === comp, target: comp };

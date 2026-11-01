@@ -33,9 +33,12 @@ The scorer (`measureLinks`, scanner) runs the estate join and compares. Pinned i
   label; both right, both inferred. The accounts service's audit event, through the starter's
   service id `audit-gw`, joins notifications' own `POST /events` by path: inferred and wrong (it
   goes to Harbor Audit).
-- Asked: payments' `/limits/{id}` (two services serve it), and the three calls whose base URL is
-  a `${PLACEHOLDER}`: their config key is taken for an unknown host. They score as misses until
-  the deploy repo's values are read into the join (plan item J0).
+- Resolved through the deploy repo (plan item J0): the three calls whose base URL is a
+  `${PLACEHOLDER}`. `${NOTIFY_URL}` and `${ACCOUNTS_URL}` are set for their services in
+  `forge-deploy-config` and join notifications and accounts by host and base path, citing the
+  placeholder's line and the value's; `${FORGE_SSO_URL}`, set for every service in the platform
+  chart, gives Forge SSO's host, so the starter's token call is outside.
+- Asked: payments' `/limits/{id}` (two services serve it).
 - Missed: the cards service's `GET /ping` through the starter's service id: a path every service
   serves joins nobody.
 

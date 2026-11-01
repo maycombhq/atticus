@@ -524,9 +524,10 @@ describe("callHostOf: the host a call goes to, as the join reads it (P1)", () =>
     );
     const facts = [cfg("forge.lantern.url", { value: "http://mail.forge.internal:8025" })];
     expect(callHostOf(c({ base: "forge.lantern.url" }), facts)).toBe("mail.forge.internal:8025");
-    // A ${PLACEHOLDER} names no host, so the base's key is read as one, as the join does.
+    // A ${PLACEHOLDER} names no host in the repo, and a config key is never read as one (J0).
     const held = [cfg("forge.notify.url", { source: "${NOTIFY_URL}" })];
-    expect(callHostOf(c({ base: "forge.notify.url" }), held)).toBe("forge.notify.url");
+    expect(callHostOf(c({ base: "forge.notify.url" }), held)).toBeUndefined();
+    expect(callHostOf(c({ base: "notify.forge.internal" }), [])).toBe("notify.forge.internal");
     expect(callHostOf(c({}), [])).toBeUndefined();
   });
 });

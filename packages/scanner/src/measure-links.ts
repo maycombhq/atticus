@@ -318,6 +318,9 @@ export function measureLinks(input: MeasureLinksInput): MeasureLinksResult {
   }
   const asks = new Map(join.asks.map((a) => [key(a.call.repo, a.call.fact), a] as const));
   const misses = new Map(join.misses.map((m) => [key(m.call.repo, m.call.fact), m] as const));
+  const outsideOf = new Map(
+    (join.outside ?? []).map((o) => [key(o.call.repo, o.call.fact), o] as const),
+  );
 
   // The outside systems by every name they go by (id, name, aliases), to their id.
   const own = new Set(estateRepos(op).flatMap((r) => (r.system ? [r.system] : [])));
@@ -399,7 +402,12 @@ export function measureLinks(input: MeasureLinksInput): MeasureLinksResult {
     const answer = input.targets?.[repo]?.[f.id];
     if (answer === NO_TARGET) return { kind: "unlinked" };
     const host = callHostOf(f, facts);
-    const system = outsideName(answer) ?? outsideName(f.to) ?? outsideName(host);
+    // The join's own word first: it sees the host a placeholder's setting gives (J0).
+    const system =
+      outsideName(answer) ??
+      outsideName(outsideOf.get(k)?.target) ??
+      outsideName(f.to) ??
+      outsideName(host);
     if (system) return { kind: "outside", system };
     if (f.to && host) return { kind: "outside", system: f.to };
     return { kind: "unlinked" };
