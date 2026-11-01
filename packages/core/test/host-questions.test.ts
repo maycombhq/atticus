@@ -6,7 +6,12 @@ import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import {
   addManifestHost,
+  addOutsideSystem,
   answerQuestion,
+  HOSTS_OUTSIDE_INTERNAL,
+  HOSTS_OUTSIDE_VENDOR,
+  outsideSystemOf,
+  Profile,
   HOSTS_STEP,
   hostOfQuestion,
   hostQuestionText,
@@ -92,5 +97,101 @@ describe("which repo answers on a host (ADR 0088)", () => {
     expect(none.hosts).toBeUndefined();
     const m2 = RepoManifest.parse(parse(await readFile(join(other, ...MANIFEST), "utf8")));
     expect(m2.repos.every((x) => x.hosts.length === 0)).toBe(true);
+  });
+});
+
+/**
+ * O1: a host no repo of the estate answers on can be answered "an outside system (new)": the
+ * answer writes a system into the profile of the repo that asked, with the host as an alias,
+ * another team's (internal) or a vendor's, as a file change a person reviews.
+ */
+describe("an outside system from a host question (O1)", () => {
+  const PROFILE = ["org-pack", "profiles", "forge", "profile.yaml"];
+  const outsideDraft = {
+    ...hostDraft,
+    question: hostQuestionText("ledger.tidewater.example"),
+    options: [
+      hostDraft.options[0]!,
+      {
+        label: HOSTS_OUTSIDE_INTERNAL,
+        means: "Another team's system",
+        changes: "A system is added",
+      },
+      { label: HOSTS_OUTSIDE_VENDOR, means: "A vendor's system", changes: "A system is added" },
+      hostDraft.options[1]!,
+    ],
+  };
+
+  it("names the system after its host", () => {
+    expect(outsideSystemOf("ledger.tidewater.example")).toEqual({
+      id: "ledger-tidewater-example",
+      name: "ledger.tidewater.example",
+    });
+    expect(outsideSystemOf("localhost:9966").id).toBe("localhost-9966");
+  });
+
+  it("writes the system, with the host as its alias, into the profile (made when there is none)", async () => {
+    const root = await metarepo();
+    expect(
+      await addOutsideSystem(root, "forge-web", "ledger.tidewater.example", "internal"),
+    ).toEqual({
+      id: "ledger-tidewater-example",
+      profile: "org-pack/profiles/forge/profile.yaml",
+      added: true,
+    });
+    const p = Profile.parse(parse(await readFile(join(root, ...PROFILE), "utf8")));
+    expect(p.platform).toBe("forge");
+    expect(p.systems).toEqual([
+      expect.objectContaining({
+        id: "ledger-tidewater-example",
+        name: "ledger.tidewater.example",
+        boundary: "internal",
+        aliases: ["ledger.tidewater.example"],
+      }),
+    ]);
+    // Twice is once; and a host another system already names isn't added again.
+    expect(
+      (await addOutsideSystem(root, "forge-web", "ledger.tidewater.example", "vendor")).added,
+    ).toBe(false);
+    await expect(addOutsideSystem(root, "forge-nothing", "x.example", "vendor")).rejects.toThrow(
+      "forge-nothing isn't in any repos.manifest.yaml",
+    );
+  });
+
+  it("keeps the profile's comments and its other systems", async () => {
+    const root = await metarepo();
+    const { writeFile } = await import("node:fs/promises");
+    await writeFile(
+      join(root, ...PROFILE),
+      "# The Forge profile (invented).\nschemaVersion: 1\nplatform: forge\nname: Forge\nsystems:\n  - { id: forge, name: Forge, boundary: product }\n",
+    );
+    await addOutsideSystem(root, "forge-web", "api.lanternmail.example", "vendor");
+    const text = await readFile(join(root, ...PROFILE), "utf8");
+    expect(text).toContain("# The Forge profile (invented).");
+    expect(Profile.parse(parse(text)).systems.map((s) => [s.id, s.boundary])).toEqual([
+      ["forge", "product"],
+      ["api-lanternmail-example", "vendor"],
+    ]);
+  });
+
+  it("answering an outside system writes it; the question is answered with it", async () => {
+    const root = await metarepo();
+    const q = (await raiseQuestions(root, [outsideDraft], by)).raised[0]!;
+    const r = await answerQuestion(root, q.id, { option: 3, by: "priya.nair", at: AT });
+    expect(r.hosts).toBeUndefined();
+    expect(r.system).toEqual({
+      id: "ledger-tidewater-example",
+      host: "ledger.tidewater.example",
+      boundary: "vendor",
+      profile: "org-pack/profiles/forge/profile.yaml",
+      added: true,
+    });
+    expect((await readQuestion(root, q.id))!.state).toBe("answered");
+    const internal = await metarepo();
+    const q2 = (await raiseQuestions(internal, [outsideDraft], by)).raised[0]!;
+    expect(
+      (await answerQuestion(internal, q2.id, { option: 2, by: "priya.nair", at: AT })).system
+        ?.boundary,
+    ).toBe("internal");
   });
 });

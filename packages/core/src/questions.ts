@@ -3,7 +3,14 @@ import { mkdir, readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parse, stringify } from "yaml";
 import { writeFileAtomic } from "./fs.js";
-import { addManifestHost, hostOfQuestion, HOSTS_NONE, HOSTS_STEP } from "./host-questions.js";
+import {
+  addManifestHost,
+  addOutsideSystem,
+  hostOfQuestion,
+  HOSTS_NONE,
+  HOSTS_STEP,
+  outsideBoundaryOf,
+} from "./host-questions.js";
 import { fileJudgments, judgmentKey, makeJudgment, type JudgmentStore } from "./judgments.js";
 import { isAdopted, questionsDirOf, questionsRelOf } from "./metarepo.js";
 import {
@@ -807,6 +814,17 @@ export async function answerQuestion(
   skill?: { path: string; written: boolean };
   /** For a hosts question answered with a repo (ADR 0088): the host written to the manifest. */
   hosts?: { repo: string; host: string; manifest: string; added: boolean };
+  /**
+   * For a hosts question answered with an outside system (O1): the system written to the
+   * profile, with the host as its alias.
+   */
+  system?: {
+    id: string;
+    host: string;
+    boundary: "internal" | "vendor";
+    profile: string;
+    added: boolean;
+  };
 }> {
   const q = await readQuestion(root, id);
   if (!q) throw new QuestionError("not-found", `There is no question ${id}.`);
@@ -854,7 +872,17 @@ export async function answerQuestion(
   const label = a.option !== undefined ? q.options[a.option - 1]?.label : undefined;
   const host = q.askedBy.step === HOSTS_STEP ? hostOfQuestion(q) : undefined;
   let hosts: { repo: string; host: string; manifest: string; added: boolean } | undefined;
-  if (host && label && label !== HOSTS_NONE) {
+  let system:
+    | { id: string; host: string; boundary: "internal" | "vendor"; profile: string; added: boolean }
+    | undefined;
+  const boundary = outsideBoundaryOf(label);
+  if (host && label && boundary) {
+    try {
+      system = { host, boundary, ...(await addOutsideSystem(root, q.repo, host, boundary)) };
+    } catch (e) {
+      throw new QuestionError("bad-answer", (e as Error).message.split("\n")[0]!);
+    }
+  } else if (host && label && label !== HOSTS_NONE) {
     try {
       hosts = { repo: label, host, ...(await addManifestHost(root, label, host)) };
     } catch (e) {
@@ -862,7 +890,8 @@ export async function answerQuestion(
     }
   }
   await write(root, answered);
-  if (!skill) return { question: answered, ...(hosts ? { hosts } : {}) };
+  if (!skill)
+    return { question: answered, ...(hosts ? { hosts } : {}), ...(system ? { system } : {}) };
   const file = join(root, ...skill.split("/"));
   let body: string | undefined;
   try {

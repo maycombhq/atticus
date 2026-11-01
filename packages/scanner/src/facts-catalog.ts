@@ -177,25 +177,23 @@ const SERVES: Record<string, string[]> = {
   sftp: ["file-drop"],
 };
 
-/**
- * One question (ADR 0078) per call that has no target and no host: which repo or system answers
- * it. The options are the components of other repos that serve that kind of call, then the
- * vendor systems of the profiles, then "None of these".
- */
-export function targetQuestionDrafts(
+/** A call a target question asks about, with what its options are made of. */
+interface TargetAsk {
+  f: FactOf<"call">;
+  q: { question: string; evidence: string[] };
+  /** The components that could answer it, sorted. */
+  servers: string[];
+}
+
+/** The calls with no target (or an ambiguous one) and what could answer each. */
+function targetAsks(
   facts: readonly Fact[],
   records: readonly CatalogRecord[],
-  op: OrgPack,
-  /** The estate join's questions: a call two or more entries could answer offers only those. */
   asks?: readonly FactJoinAsk[],
-): { factId: string; id: string; repo: string; draft: QuestionDraft }[] {
+): { list: TargetAsk[]; repoOf: Map<string, string> } {
   const repoOf = new Map<string, string>();
   for (const r of records) if (r.kind === "Component" && r.repo) repoOf.set(r.id, r.repo);
-  const vendors = op.profiles
-    .flatMap((p) => p.profile?.systems ?? [])
-    .filter((s) => s.boundary === "vendor")
-    .sort((a, b) => a.id.localeCompare(b.id));
-  const out: { factId: string; id: string; repo: string; draft: QuestionDraft }[] = [];
+  const list: TargetAsk[] = [];
   for (const f of [...facts].sort((a, b) => a.id.localeCompare(b.id))) {
     const ask = asks?.find(
       (a) => a.reason === "ambiguous" && a.call.repo === f.repo && a.call.fact === f.id,
@@ -203,7 +201,6 @@ export function targetQuestionDrafts(
     // A call with no target, or one whose target names nothing in the estate that two or more
     // entries could answer (the join fallback, ADR 0124 addendum C-join).
     if (f.kind !== "call" || (!needsTarget(f, facts) && !ask)) continue;
-    const q = targetQuestionFor(f)!;
     const own = slugify(f.component ?? f.repo).replace(/\./g, "-");
     const types = new Set(SERVES[f.callType] ?? []);
     const servers = ask
@@ -219,7 +216,46 @@ export function targetQuestionDrafts(
               .map((r) => r.component),
           ),
         ].sort();
-    const what = [f.method?.toUpperCase(), f.path].filter(Boolean).join(" ");
+    list.push({ f, q: targetQuestionFor(f)!, servers });
+  }
+  return { list, repoOf };
+}
+
+const vendorsOf = (op: OrgPack) =>
+  op.profiles
+    .flatMap((p) => p.profile?.systems ?? [])
+    .filter((s) => s.boundary === "vendor")
+    .sort((a, b) => a.id.localeCompare(b.id));
+
+const callWhat = (f: FactOf<"call">) => [f.method?.toUpperCase(), f.path].filter(Boolean).join(" ");
+
+/** A target question's draft as it is written, with the calls it asks about. */
+export interface TargetQuestionDraft {
+  /** The first call it asks about. */
+  factId: string;
+  /** Every call it asks about (Q1): one for a call's own question, two or more for a group's. */
+  factIds: string[];
+  id: string;
+  repo: string;
+  draft: QuestionDraft;
+}
+
+/**
+ * One question (ADR 0078) per call that has no target and no host: which repo or system answers
+ * it. The options are the components of other repos that serve that kind of call, then the
+ * vendor systems of the profiles, then "None of these".
+ */
+export function targetQuestionDrafts(
+  facts: readonly Fact[],
+  records: readonly CatalogRecord[],
+  op: OrgPack,
+  /** The estate join's questions: a call two or more entries could answer offers only those. */
+  asks?: readonly FactJoinAsk[],
+): { factId: string; id: string; repo: string; draft: QuestionDraft }[] {
+  const { list, repoOf } = targetAsks(facts, records, asks);
+  const vendors = vendorsOf(op);
+  return list.map(({ f, q, servers }) => {
+    const what = callWhat(f);
     const draft: QuestionDraft = {
       question: q.question,
       options: [
@@ -242,7 +278,7 @@ export function targetQuestionDrafts(
       evidence: q.evidence,
       scope: "repo",
     };
-    out.push({
+    return {
       factId: f.id,
       id: questionId({
         step: TARGETS_STEP,
@@ -252,15 +288,154 @@ export function targetQuestionDrafts(
       }),
       repo: f.repo,
       draft,
+    };
+  });
+}
+
+/**
+ * The option of a group's question (Q1) that says its calls don't all go to one place: nothing
+ * is read from it, and each call is asked on its own on the next write.
+ */
+export const TARGETS_SPLIT = "Not all to one place";
+
+/** Segments a group's prefix keeps going past: an api root or a version. */
+const PREFIX_ROOT = /^(api|rest|services?|v\d+(\.\d+)*)$/i;
+
+/**
+ * The part of a call's path a group of target questions shares (Q1): its first segment, with an
+ * api root or version segment in front of it kept (/api/v2/accounts). A placeholder ends it.
+ */
+export function targetPathPrefix(path: string): string {
+  const lead = path.startsWith("/") ? "/" : "";
+  const out: string[] = [];
+  for (const s of path.split(/[?#]/)[0]!.split("/").filter(Boolean)) {
+    if (/^[{:<]/.test(s)) break;
+    out.push(s);
+    if (!PREFIX_ROOT.test(s)) break;
+  }
+  return out.length ? `${lead}${out.join("/")}` : "/";
+}
+
+/** What a group's calls go through: the target they name, else their host, else their base. */
+function groupVia(f: FactOf<"call">): string {
+  if (f.to) return ` naming ${f.to}`;
+  if (f.host) return ` on ${f.host}`;
+  if (f.base) return ` through ${f.base}`;
+  return "";
+}
+
+/**
+ * The question asked once for the calls of a repo that go the same way (Q1): the same target
+ * named, or host, or base, and the same path prefix. Its words name only what the group shares,
+ * so they stay the same as calls join or leave it.
+ */
+export function targetGroupQuestion(repo: string, f: FactOf<"call">): string {
+  return `Which repo or system answers the calls ${repo} makes under ${targetPathPrefix(f.path)}${groupVia(f)}?`;
+}
+
+const byLine = (a: string, b: string) => a.localeCompare(b, "en", { numeric: true });
+
+/** The answer's option label, or the person's words. */
+const answerLabel = (q: Question): string | undefined =>
+  q.answer?.option !== undefined ? q.options[q.answer.option - 1]?.label : q.answer?.text;
+
+/** The groups a person said don't all go to one place: their questions' words. */
+export function splitTargetGroups(questions: readonly Question[]): Set<string> {
+  return new Set(
+    questions
+      .filter(
+        (q) =>
+          q.askedBy?.step === TARGETS_STEP &&
+          q.state === "answered" &&
+          answerLabel(q) === TARGETS_SPLIT,
+      )
+      .map((q) => q.question.trim()),
+  );
+}
+
+/**
+ * The target questions to ask (Q1): the calls of `ask` that go the same way are asked once, as
+ * one question with every call's line as evidence, and one answer names the target of all of
+ * them. A call alone in its group, or in a group a person said is split, keeps its own question,
+ * word for word as before, so its id and any answer to it hold. Deterministic.
+ */
+export function groupedTargetDrafts(
+  facts: readonly Fact[],
+  records: readonly CatalogRecord[],
+  op: OrgPack,
+  asks: readonly FactJoinAsk[] | undefined,
+  o: { ask: ReadonlySet<string>; split?: ReadonlySet<string> },
+): TargetQuestionDraft[] {
+  const { list, repoOf } = targetAsks(facts, records, asks);
+  const own = new Map(targetQuestionDrafts(facts, records, op, asks).map((d) => [d.factId, d]));
+  const groups = new Map<string, TargetAsk[]>();
+  for (const a of list) {
+    if (!o.ask.has(a.f.id)) continue;
+    const k = targetGroupQuestion(a.f.repo, a.f);
+    groups.set(k, [...(groups.get(k) ?? []), a]);
+  }
+  const vendors = vendorsOf(op);
+  const out: TargetQuestionDraft[] = [];
+  for (const [question, members] of groups) {
+    if (members.length === 1 || o.split?.has(question)) {
+      for (const m of members) out.push({ ...own.get(m.f.id)!, factIds: [m.f.id] });
+      continue;
+    }
+    const repo = members[0]!.f.repo;
+    const whats = [...new Set(members.map((m) => callWhat(m.f)))];
+    const listed =
+      whats.length > 5
+        ? `${whats.slice(0, 5).join(", ")} and ${whats.length - 5} more`
+        : whats.join(", ");
+    const n = members.length;
+    const servers = [...new Set(members.flatMap((m) => m.servers))].sort();
+    const evidence = [...new Set(members.flatMap((m) => m.q.evidence))].sort(byLine);
+    const draft: QuestionDraft = {
+      question,
+      options: [
+        ...servers.map((c) => ({
+          label: c,
+          means: `${c}${repoOf.get(c) ? `, built in ${repoOf.get(c)},` : ""} answers all ${n} calls: ${listed}`,
+          changes: `The ${n} calls join ${c} when the facts are next written (atticus verify ${repo} --write)`,
+        })),
+        ...vendors.map((s) => ({
+          label: s.id,
+          means: `${s.name}, an outside system, answers all ${n} calls: ${listed}`,
+          changes: `The ${n} calls go to ${s.name} when the facts are next written`,
+        })),
+        {
+          label: TARGETS_SPLIT,
+          means: `The ${n} calls (${listed}) don't all go to one place`,
+          changes:
+            "Nothing is joined from this answer; each call is asked on its own when the facts are next written",
+        },
+        {
+          label: TARGETS_NONE,
+          means: "Nothing in the estate or the org pack's systems answers any of them",
+          changes: "The calls stay loose ends, and this isn't asked again",
+        },
+      ],
+      evidence,
+      scope: "repo",
+    };
+    out.push({
+      factId: members[0]!.f.id,
+      factIds: members.map((m) => m.f.id),
+      id: questionId({ step: TARGETS_STEP, repo, question, evidence }),
+      repo,
+      draft,
     });
   }
-  return out;
+  return out.sort((a, b) => a.factId.localeCompare(b.factId));
 }
 
 /**
  * The targets people named for calls (the answers to targets questions), by call fact id. An
  * option is its label; words of the person's own are read as the target's name; "None of these"
- * names nothing. Only answered questions count.
+ * names nothing. Only answered questions count. A call's own question is read first; else the
+ * answer to its group's question (Q1) names it, when the call is one the group asked (its line
+ * is the question's evidence) or one that still has no target and no host, so a call added to
+ * the group later reads the same answer.
  */
 export function targetsFromAnswers(
   repo: string,
@@ -268,6 +443,17 @@ export function targetsFromAnswers(
   questions: readonly Question[],
 ): Record<string, string> {
   const byId = new Map(questions.map((q) => [q.id, q]));
+  const groups = new Map<string, Question>();
+  for (const q of [...questions]
+    .filter(
+      (x) =>
+        x.askedBy?.step === TARGETS_STEP &&
+        x.state === "answered" &&
+        !!x.answer &&
+        typeof x.question === "string",
+    )
+    .sort((a, b) => a.answer!.at.localeCompare(b.answer!.at) || a.id.localeCompare(b.id)))
+    groups.set(q.question.trim(), q);
   const out: Record<string, string> = {};
   for (const f of [...facts].sort((a, b) => a.id.localeCompare(b.id))) {
     // A call that names a target is asked only when the estate has no such target and two or
@@ -275,13 +461,14 @@ export function targetsFromAnswers(
     if (f.kind !== "call") continue;
     const q = targetQuestionFor(f);
     if (!q) continue;
-    const asked = byId.get(questionId({ step: TARGETS_STEP, repo, ...q }));
+    let asked = byId.get(questionId({ step: TARGETS_STEP, repo, ...q }));
+    if (!asked || asked.state !== "answered" || !asked.answer) {
+      const g = groups.get(targetGroupQuestion(repo, f));
+      asked = g && (needsTarget(f, facts) || g.evidence.includes(q.evidence[0]!)) ? g : undefined;
+    }
     if (!asked || asked.state !== "answered" || !asked.answer) continue;
-    const label =
-      asked.answer.option !== undefined
-        ? asked.options[asked.answer.option - 1]?.label
-        : asked.answer.text;
-    if (!label) continue;
+    const label = answerLabel(asked);
+    if (!label || label === TARGETS_SPLIT) continue;
     // F3: "None of these" binds: the call is kept out of the join, not guessed by path.
     if (label === TARGETS_NONE) {
       out[f.id] = NO_TARGET;
@@ -291,6 +478,76 @@ export function targetsFromAnswers(
     if (to) out[f.id] = to;
   }
   return out;
+}
+
+/** How a join found its callee, in the words a retired question says. */
+const JOINED_BY: Partial<Record<FactJoin["how"], string>> = {
+  named: "the call names it",
+  repo: "the call names its repo",
+  host: "the manifest's hosts and base paths decide it",
+  topic: "it listens on the call's topic",
+};
+
+/** The calls an open target question asks about: by its id for a call's own, by its words and lines for a group's. */
+function callsOfTargetQuestion(
+  repo: string,
+  facts: readonly Fact[],
+  q: Question,
+): FactOf<"call">[] {
+  return facts.filter((f): f is FactOf<"call"> => {
+    if (f.kind !== "call") return false;
+    const own = targetQuestionFor(f)!;
+    if (questionId({ step: TARGETS_STEP, repo, ...own }) === q.id) return true;
+    return (
+      targetGroupQuestion(repo, f) === q.question.trim() && q.evidence.includes(own.evidence[0]!)
+    );
+  });
+}
+
+/**
+ * The open target questions to retire after a write (J6, Q1), each with why: one whose calls are
+ * asked now by another question (a group's, or each call's own once a group splits or shrinks)
+ * names the questions that replace it; one whose every call the code now answers, with no answer
+ * (it names its target, or joins by the manifest's hosts and base paths), says how each joins. A
+ * call joined only by a guess (by path, or a host's first label) keeps its question open, and an
+ * answered question is never listed: a person's answer stays what joins the call.
+ */
+export function staleTargetQuestions(input: {
+  repo: string;
+  facts: readonly Fact[];
+  /** The repo's open questions of the targets step. */
+  open: readonly Question[];
+  /** The questions this write asks (`groupedTargetDrafts`). */
+  drafted: readonly TargetQuestionDraft[];
+  /** The calls this write asks about. */
+  asked: ReadonlySet<string>;
+  join?: FactsJoinResult;
+}): { id: string; why: string; replacedBy?: string[] }[] {
+  const drafted = new Set(input.drafted.map((d) => d.id));
+  const out: { id: string; why: string; replacedBy?: string[] }[] = [];
+  for (const q of input.open) {
+    if (q.state !== "open" || q.askedBy.step !== TARGETS_STEP || drafted.has(q.id)) continue;
+    const calls = callsOfTargetQuestion(input.repo, input.facts, q);
+    if (!calls.length) continue;
+    const ids = new Set(calls.map((c) => c.id));
+    const by = input.drafted.filter((d) => d.factIds.some((x) => ids.has(x))).map((d) => d.id);
+    if (by.length) {
+      out.push({ id: q.id, why: `its calls are asked now in ${by.join(", ")}`, replacedBy: by });
+      continue;
+    }
+    if (calls.some((c) => input.asked.has(c.id))) continue;
+    const reasons = calls.map((c) => {
+      const j = input.join?.joins.find(
+        (x) => x.call.repo === input.repo && x.call.fact === c.id && x.how !== "answer",
+      );
+      if (j && !j.inferred && !j.byLabel && JOINED_BY[j.how])
+        return `${callWhat(c)} joins ${j.entry.component} in ${j.entry.repo}: ${JOINED_BY[j.how]}`;
+      if (!j && c.to) return `${callWhat(c)} now names ${c.to} in the code`;
+      return undefined;
+    });
+    if (reasons.every((r) => r !== undefined)) out.push({ id: q.id, why: reasons.join("; ") });
+  }
+  return out.sort((a, b) => a.id.localeCompare(b.id));
 }
 
 /** A repo's component renames: the id a fact's component had, and the estate-unique id it gets. */

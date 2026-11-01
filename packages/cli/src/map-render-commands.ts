@@ -15,9 +15,11 @@ import {
   orgPackDirOf,
   parseFacts,
   parseRecord,
+  questionId,
   questionsRelOf,
   raiseQuestions,
   readRepoSpec,
+  retireQuestion,
   removeFlow,
   SPEC_HEADER_SCHEMA_VERSION,
   specFileHash,
@@ -37,8 +39,11 @@ import {
   estateFacts,
   isPrototypeRepo,
   prototypeLeftOut,
+  groupedTargetDrafts,
   readCatalog,
-  targetQuestionDrafts,
+  splitTargetGroups,
+  staleTargetQuestions,
+  targetQuestionFor,
   targetsFromAnswers,
   TARGETS_STEP,
   writeCatalog,
@@ -154,6 +159,7 @@ export async function writeFactsIntoCatalog(
     const curated = await readCatalog(join(catalogDirOf(root), "curated"), { cacheRoot: root });
     const rerun = `atticus verify ${repo} --write`;
     const answered = (await listQuestions(root, { repo, step: TARGETS_STEP })).questions;
+    const targets = targetsFromAnswers(repo, facts, answered);
     // The estate join (ADR 0124, C-join): the other repos' verified facts, so this repo's calls
     // join the entries that serve them and their calls into this repo are joined again.
     const estate = await estateFacts(root, op, repo);
@@ -163,7 +169,7 @@ export async function writeFactsIntoCatalog(
       existing: existing.records,
       op,
       decisions: curated.records,
-      targets: targetsFromAnswers(repo, facts, answered),
+      targets,
       estate: estate.repos,
       estateTargets: estate.targets,
     });
@@ -230,9 +236,20 @@ export async function writeFactsIntoCatalog(
     const named = new Set(facts.filter((f) => f.kind === "call" && f.to).map((f) => f.id));
     const raised: Question[] = [...hosts.raised];
     const lines = [...hosts.lines];
-    for (const t of targetQuestionDrafts(facts, result.records, op, result.join?.asks)) {
-      if (!(loose.has(t.factId) || ambiguous.has(t.factId))) continue;
-      if (answered.some((q) => q.id === t.id)) continue;
+    // Q1: the calls that go the same way (the repo, the target named or host or base, the path
+    // prefix) are asked once; a call a person's answer already names isn't asked again.
+    const asked = new Set(
+      [...loose, ...ambiguous].filter(
+        (id) =>
+          targets[id] === undefined &&
+          !answered.some((q) => q.state === "answered" && q.id === targetId(facts, repo, id)),
+      ),
+    );
+    const drafted = groupedTargetDrafts(facts, result.records, op, result.join?.asks, {
+      ask: asked,
+      split: splitTargetGroups(answered),
+    });
+    for (const t of drafted) {
       const r = await raiseQuestions(root, [t.draft], {
         step: TARGETS_STEP,
         repo,
@@ -243,11 +260,31 @@ export async function writeFactsIntoCatalog(
       for (const q of r.raised) {
         raised.push(q);
         lines.push(
-          named.has(t.factId)
-            ? `A call names a target the estate doesn't have, and more than one entry serves it: asked ${q.id}: ${q.question} Answer it: atticus questions answer ${q.id} --option <n>, then ${rerun}.`
-            : `A call names no target: asked ${q.id}: ${q.question} Answer it: atticus questions answer ${q.id} --option <n>, then ${rerun}.`,
+          t.factIds.length > 1
+            ? `${t.factIds.length} calls go the same way and name no target the estate has: asked once, ${q.id}: ${q.question} One answer names the target of all of them. Answer it: atticus questions answer ${q.id} --option <n>, then ${rerun}.`
+            : named.has(t.factId)
+              ? `A call names a target the estate doesn't have, and more than one entry serves it: asked ${q.id}: ${q.question} Answer it: atticus questions answer ${q.id} --option <n>, then ${rerun}.`
+              : `A call names no target: asked ${q.id}: ${q.question} Answer it: atticus questions answer ${q.id} --option <n>, then ${rerun}.`,
         );
       }
+    }
+    // J6: an open question the code now answers (the call names its target, or the manifest's
+    // hosts and base paths join it) retires, saying how; one asked another way now (Q1) names
+    // the question that asks it. An answered question is never retired.
+    for (const s of staleTargetQuestions({
+      repo,
+      facts,
+      open: answered.filter((q) => q.state === "open"),
+      drafted,
+      asked,
+      ...(result.join ? { join: result.join } : {}),
+    })) {
+      await retireQuestion(root, s.id, {
+        why: s.why,
+        at,
+        ...(s.replacedBy ? { replacedBy: s.replacedBy } : {}),
+      });
+      lines.push(`Retired ${s.id}: ${s.why}.`);
     }
 
     // A few lines: counts by kind and the flows folder; every record and flow with --verbose
@@ -280,6 +317,13 @@ export async function writeFactsIntoCatalog(
   } finally {
     await lock.release();
   }
+}
+
+/** The id of a call's own target question (ADR 0078), as it was always asked. */
+function targetId(facts: readonly Fact[], repo: string, id: string): string | undefined {
+  const f = facts.find((x) => x.id === id);
+  const q = f ? targetQuestionFor(f) : undefined;
+  return q ? questionId({ step: TARGETS_STEP, repo, ...q }) : undefined;
 }
 
 /** What the estate join did for a repo's write, in a few lines. */

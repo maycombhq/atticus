@@ -195,6 +195,12 @@ export async function questionsFiles(
             ? `Wrote ${r.hosts.host} under hosts for ${r.hosts.repo} in ${r.hosts.manifest}; review it in the same pull request.`
             : `${r.hosts.repo} already lists ${r.hosts.host} under hosts in ${r.hosts.manifest}.`,
         );
+      if (r.system)
+        io.out(
+          r.system.added
+            ? `Wrote the system ${r.system.id} (boundary ${r.system.boundary}, alias ${r.system.host}) into ${r.system.profile}, so the calls to ${r.system.host} go to it; review it in the same pull request, and give it a better name and an owner there if you like.`
+            : `${r.system.profile} already has ${r.system.id}, which names ${r.system.host}.`,
+        );
       io.out(`Next: ${q.rerun}`);
       return 0;
     } catch (e) {

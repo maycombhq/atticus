@@ -607,6 +607,11 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
       const d = claimed(host, fullPath)!;
       scope = { scope: d.scope, target: d.target };
       how = "host";
+    } else if (
+      host &&
+      outside.has(factIdPart(host.named ? `${host.host}:${host.named}` : host.host))
+    ) {
+      continue; // O1: an outside system the profile names by this host takes the call
     } else if (host && components.has(factIdPart(host.host.split(".")[0]!))) {
       const comp = factIdPart(host.host.split(".")[0]!);
       scope = { scope: (e) => e.component === comp, target: comp };

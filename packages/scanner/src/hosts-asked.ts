@@ -2,6 +2,9 @@ import {
   hostMatches,
   hostQuestionText,
   HOSTS_NONE,
+  HOSTS_OUTSIDE_INTERNAL,
+  HOSTS_OUTSIDE_VENDOR,
+  outsideSystemOf,
   urlHostPort,
   type CatalogRecord,
   type QuestionDraft,
@@ -217,11 +220,22 @@ export function hostQuestionDrafts(
                 : `${s} serves HTTP`) + aboutOf(a, s),
             changes: `${a.host} goes under hosts for ${s} in repos.manifest.yaml, and the calls to it join ${s} on the next scan`,
           })),
+          // O1: a system outside the estate, declared in the profile with the host as its alias.
+          ...(
+            [
+              [HOSTS_OUTSIDE_INTERNAL, "internal", "another team's system"],
+              [HOSTS_OUTSIDE_VENDOR, "vendor", "a vendor's system"],
+            ] as const
+          ).map(([label, boundary, what]) => ({
+            label,
+            means: `${a.host} is ${what}, outside this estate, that the org pack doesn't name yet`,
+            changes: `A system ${outsideSystemOf(a.host).id} (boundary ${boundary}, alias ${a.host}) goes into the profile, and the calls to ${a.host} go to it on the next scan`,
+          })),
           {
             label: HOSTS_NONE,
-            means: `An outside system answers on ${a.host}, not a repo of this estate`,
+            means: `Neither a repo of this estate nor a system to add to the org pack answers on ${a.host}`,
             changes:
-              "Nothing is added to the manifest; the calls stay loose ends, and this isn't asked again",
+              "Nothing is added to the manifest or the profile; the calls stay loose ends, and this isn't asked again",
           },
         ],
         evidence: a.calls
