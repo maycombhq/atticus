@@ -132,6 +132,10 @@ Breaking: POST /v1/assessments: the request field channel is now required; a cal
 
 A vendor's direct calls are still left to the gateway's routes, as before (ADR 0142).
 
+## Every outside system on one page
+
+The app's Map › Outside systems (linked from Systems, and found by Ctrl+K) has a page for each system no repo of the estate belongs to, a vendor's or another team's. It shows who calls it (the catalog's links to it, the calls the join leaves to it, and the calls its spec's hosts and names match, with the services behind a gateway's route), the operations its newest spec in `inputs/` publishes with how many calls reach each, the calls that match nothing in that spec, and the questions open about it. Here every service's own call to a vendor is matched to its spec too, since who calls it is the point. A system with no spec says how to add one: `atticus intake add <file>`, then `atticus intake list` (and `atticus triage` if intake can't tell which system it is). It reads files only.
+
 ## Your own change's impact
 
 The same view works for a change of your own, once its architecture stage has written its target flows:

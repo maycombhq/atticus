@@ -5,13 +5,12 @@ import { Citation, useEvidence, type FactsView } from "../../app/evidence.js";
 import { escapeCloses } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
 import { message } from "../run/shared.js";
-import { Command } from "../work/RunNext.js";
+import { CorrectionNext } from "../../app/correction-next.js";
 import {
   callerLine,
   callFactsOf,
   linkCorrection,
   predict,
-  reJoinCommand,
   type Join,
   type LinkFix,
   type Moved,
@@ -266,9 +265,8 @@ export function LinkWrongForm(p: {
             </p>
           ))}
           <p className="ev-say">{W.saved(saving.result.file)}</p>
-          <Command text={reJoinCommand(line.repo)} label={W.copyVerify} />
-          <p className="ev-say">{W.then}</p>
-          <Command text={saving.result.commit} label={W.copyCommit} />
+          {/* C4 (ADR 0149): the commands to run and what the next verify --write changes. */}
+          <CorrectionNext repo={line.repo} result={saving.result} />
         </div>
       )}
     </form>

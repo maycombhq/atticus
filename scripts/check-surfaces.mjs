@@ -21,7 +21,7 @@ const CENSUS = {
   /** The twelve a person meets first (ADR 0124 addendum D-cli). */
   topCommands: 12,
   /** Pages in the app (`packages/ui/src/app/screens.ts`). */
-  screens: 53, // 2026-10-27: a change's Knowledge page, beside Feature design (it was only at Feature's foot)
+  screens: 54, // ADR 0149 (O4): the outside systems; 2026-10-27: a change's Knowledge page, beside Feature design (it was only at Feature's foot)
   /** Views in VS Code's Atticus container, and the commands its palette offers. */
   vscodeViews: 7,
   vscodePaletteCommands: 43,
@@ -41,6 +41,7 @@ const SCREENS = [
   "trust",
   "explore",
   "systems",
+  "outside",
   "map",
   "features",
   "mappings",

@@ -333,6 +333,65 @@ export function kindLine(byKind: Record<string, KindCount>): string {
  * about calls nothing joins, and render the map. One write at a time per metarepo (the scan's
  * lock), so a scan and a write never interleave.
  */
+/**
+ * The catalog a repo's verified facts make, with the estate join, and what it changes against the
+ * catalog on disk: computed in memory, nothing written. `writeFactsIntoCatalog` writes it, and
+ * the app's preview of the next `atticus verify <repo> --write` (C4, ADR 0149) shows it, so both
+ * say the same thing.
+ */
+export async function projectFactsIntoCatalog(
+  root: string,
+  repo: string,
+  facts: readonly Fact[],
+  given: { op?: Awaited<ReturnType<typeof loadOrgPack>>; existing?: readonly CatalogRecord[] } = {},
+) {
+  const op = given.op ?? (await loadOrgPack(orgPackDirOf(root)));
+  const existing =
+    given.existing ??
+    (await readCatalog(join(catalogDirOf(root), "generated"), { cacheRoot: root })).records;
+  const curated = await readCatalog(join(catalogDirOf(root), "curated"), { cacheRoot: root });
+  const everyTarget = (await listQuestions(root, { step: TARGETS_STEP })).questions;
+  const answered = everyTarget.filter((q) => q.repo === repo);
+  // ADR 0153 (Q2): an answer's rule, from this repo's questions or another repo's whose scope
+  // is this repo's type, covers every call it matches.
+  const repoType = estateRepos(op).find((r) => r.id === repo)?.type;
+  const targetsOpts = repoType ? { repoType } : {};
+  const targets = targetsFromAnswers(repo, facts, everyTarget, targetsOpts);
+  const ruled = ruledTargets(repo, facts, everyTarget, targetsOpts);
+  // The estate join (ADR 0124, C-join): the other repos' verified facts, so this repo's calls
+  // join the entries that serve them and their calls into this repo are joined again.
+  const estate = await estateFacts(root, op, repo);
+  // ADR 0151: every repo's contract files kept beside its facts, and the traffic aggregates
+  // people imported. (The write refreshes this repo's contracts first; a preview reads them as
+  // they are, so it writes nothing.)
+  const evidence = await loadLinkEvidence(root);
+  const result = catalogWithFacts({
+    repo,
+    facts,
+    existing: [...existing],
+    op,
+    decisions: curated.records,
+    targets,
+    estate: estate.repos,
+    estateTargets: estate.targets,
+    linkEvidence: { contracts: evidence.contracts, traffic: evidence.traffic },
+  });
+  const diff = diffCatalogs([...existing], result.records);
+  const links = linkChanges(repo, result.join, existing, result.records);
+  return {
+    op,
+    existing,
+    answered,
+    targets,
+    ruled,
+    estate,
+    result,
+    diff,
+    links,
+    evidenceProblems: evidence.problems,
+  };
+}
+
 export async function writeFactsIntoCatalog(
   root: string,
   repo: string,
@@ -375,40 +434,16 @@ export async function writeFactsIntoCatalog(
         },
       };
     }
-    const curated = await readCatalog(join(catalogDirOf(root), "curated"), { cacheRoot: root });
     const rerun = `atticus verify ${repo} --write`;
-    const everyTarget = (await listQuestions(root, { step: TARGETS_STEP })).questions;
-    const answered = everyTarget.filter((q) => q.repo === repo);
-    // ADR 0153 (Q2): an answer's rule, from this repo's questions or another repo's whose scope
-    // is this repo's type, covers every call it matches.
-    const repoType = estateRepos(op).find((r) => r.id === repo)?.type;
-    const targetsOpts = repoType ? { repoType } : {};
-    const targets = targetsFromAnswers(repo, facts, everyTarget, targetsOpts);
-    const ruled = ruledTargets(repo, facts, everyTarget, targetsOpts);
-    // The estate join (ADR 0124, C-join): the other repos' verified facts, so this repo's calls
-    // join the entries that serve them and their calls into this repo are joined again.
-    const estate = await estateFacts(root, op, repo);
-    // ADR 0151: this repo's contract files, read at the facts' commit and kept beside its facts,
-    // then every repo's, and the traffic aggregates people imported.
+    // ADR 0151: this repo's contract files, read at the facts' commit and kept beside its facts.
     await writeRepoContracts(root, repo, o.dir, facts);
-    const evidence = await loadLinkEvidence(root);
-    for (const p of evidence.problems) io.err(p);
-    const result = catalogWithFacts({
-      repo,
-      facts,
-      existing: existing.records,
-      op,
-      decisions: curated.records,
-      targets,
-      estate: estate.repos,
-      estateTargets: estate.targets,
-      linkEvidence: { contracts: evidence.contracts, traffic: evidence.traffic },
-    });
+    const { answered, targets, ruled, estate, result, diff, links, evidenceProblems } =
+      await projectFactsIntoCatalog(root, repo, facts, { op, existing: existing.records });
+    for (const p of evidenceProblems) io.err(p);
     for (const i of result.invalid)
       io.err(
         `A merged record isn't valid C1 (a bug): ${i.issues.map((x) => `${x.path}: ${x.message}`).join("; ")}`,
       );
-    const diff = diffCatalogs(existing.records, result.records);
     const written = await writeCatalog(generated, result.records);
 
     // Flows go to specs/<repo>/ (ADR 0079); those an earlier write made and the facts no longer
@@ -538,7 +573,6 @@ export async function writeFactsIntoCatalog(
     for (const l of joinLines(repo, result.join, estate.notes, { verbose: o.verbose === true }))
       io.out(l);
     // J2: the links the write made or unmade, with confidence and how each was found.
-    const links = linkChanges(repo, result.join, existing.records, result.records);
     for (const l of linkLines(links, `${factsRelOf(root)}/${repo}.verify.yaml`, {
       verbose: o.verbose === true,
     }))

@@ -178,76 +178,96 @@ export function uiFactsRoutes(
   deps: { now?: () => Date } = {},
 ): Router {
   const now = deps.now ?? (() => new Date());
-  return r
-    .add("GET", "/api/facts/{repo}", async ({ params }) => ({
-      status: 200,
-      body: await repoFactsView(ctx.root, repoOf(params.repo!)),
-    }))
-    .add("POST", "/api/facts/{repo}/corrections", async ({ params, body }) => {
-      const repo = repoOf(params.repo!);
-      const b = Api.FactCorrectionRequest.safeParse(body ?? {});
-      if (!b.success)
-        throw badRequest("Say which fact and what is wrong: { fact, action, set, line, reason }.", {
-          errors: b.error.issues.map((i) => ({ path: i.path.join("."), message: i.message })),
-        });
-      const f = await readFacts(ctx.root, repo);
-      if (!f.present) throw notFound(`There are no facts for ${repo} at ${f.file}.`);
-      const fact = f.facts.find((x) => x.id === b.data.fact);
-      if (!fact) throw notFound(`${f.file} has no fact ${b.data.fact}.`);
-      // A field that is unchanged is no correction: only what the person changed is kept.
-      const was = claimOf(fact);
-      const set = Object.fromEntries(
-        Object.entries(b.data.set ?? {})
-          .map(([k, v]) => [k, v.trim()] as const)
-          .filter(([k, v]) => was[k] !== v),
-      );
-      const line =
-        b.data.line !== undefined && b.data.line !== fact.cite.line ? b.data.line : undefined;
-      const c = FactCorrection.safeParse({
-        schemaVersion: 1,
-        fact: fact.id,
-        target: {
-          kind: fact.kind,
-          file: fact.cite.file,
-          line: fact.cite.line,
-          value: fact.cite.value,
-        },
-        action: b.data.action,
-        ...(b.data.action === "edit" && Object.keys(set).length ? { set } : {}),
-        ...(b.data.action === "edit" && line !== undefined ? { line } : {}),
-        ...(b.data.reason ? { reason: b.data.reason } : {}),
-        by: ctx.user,
-        at: now().toISOString(),
-      });
-      if (!c.success)
-        throw new HttpError(
-          422,
-          "Atticus can't record that",
-          c.error.issues.map((i) => i.message).join("; "),
+  return (
+    r
+      .add("GET", "/api/facts/{repo}", async ({ params }) => ({
+        status: 200,
+        body: await repoFactsView(ctx.root, repoOf(params.repo!)),
+      }))
+      // C4 (ADR 0149): the commands after a correction, and what the next verify --write changes,
+      // worked out in-process by that command's own functions; nothing is written, no git runs.
+      .add("GET", "/api/facts/{repo}/preview", async ({ params, query }) => {
+        const repo = repoOf(params.repo!);
+        const fact = query.get("fact") || undefined;
+        const { verifyWritePreview } = await import("./verify-preview.js");
+        const v = await verifyWritePreview(ctx.root, repo, fact ? { fact } : {});
+        if (!v)
+          throw notFound(
+            `There are no facts for ${repo} at ${factsRelOf(ctx.root)}/${repo}.jsonl.`,
+          );
+        return { status: 200, body: v };
+      })
+      .add("POST", "/api/facts/{repo}/corrections", async ({ params, body }) => {
+        const repo = repoOf(params.repo!);
+        const b = Api.FactCorrectionRequest.safeParse(body ?? {});
+        if (!b.success)
+          throw badRequest(
+            "Say which fact and what is wrong: { fact, action, set, line, reason }.",
+            {
+              errors: b.error.issues.map((i) => ({ path: i.path.join("."), message: i.message })),
+            },
+          );
+        const f = await readFacts(ctx.root, repo);
+        if (!f.present) throw notFound(`There are no facts for ${repo} at ${f.file}.`);
+        const fact = f.facts.find((x) => x.id === b.data.fact);
+        if (!fact) throw notFound(`${f.file} has no fact ${b.data.fact}.`);
+        // A field that is unchanged is no correction: only what the person changed is kept.
+        const was = claimOf(fact);
+        const set = Object.fromEntries(
+          Object.entries(b.data.set ?? {})
+            .map(([k, v]) => [k, v.trim()] as const)
+            .filter(([k, v]) => was[k] !== v),
         );
-      if (c.data.action === "edit") {
-        const fixedFact = correctedFact(fact, c.data);
-        if (typeof fixedFact === "string")
+        const line =
+          b.data.line !== undefined && b.data.line !== fact.cite.line ? b.data.line : undefined;
+        const c = FactCorrection.safeParse({
+          schemaVersion: 1,
+          fact: fact.id,
+          target: {
+            kind: fact.kind,
+            file: fact.cite.file,
+            line: fact.cite.line,
+            value: fact.cite.value,
+          },
+          action: b.data.action,
+          ...(b.data.action === "edit" && Object.keys(set).length ? { set } : {}),
+          ...(b.data.action === "edit" && line !== undefined ? { line } : {}),
+          ...(b.data.reason ? { reason: b.data.reason } : {}),
+          by: ctx.user,
+          at: now().toISOString(),
+        });
+        if (!c.success)
           throw new HttpError(
             422,
-            "That isn't a fact",
-            `The corrected ${fact.kind} isn't one: ${fixedFact}.`,
+            "Atticus can't record that",
+            c.error.issues.map((i) => i.message).join("; "),
           );
-      }
-      const rel = `${factsRelOf(ctx.root)}/${repo}.corrections.jsonl`;
-      await mkdir(factsDirOf(ctx.root), { recursive: true });
-      await appendFile(
-        join(factsDirOf(ctx.root), `${repo}.corrections.jsonl`),
-        `${correctionLine(c.data)}\n`,
-        "utf8",
-      );
-      ctx.events.publish({ type: "file.changed", path: rel });
-      const result: Api.FactCorrectionResultT = {
-        correction: c.data,
-        file: rel,
-        commit: `git add ${rel} && git commit -m "${repo}: a person's correction of ${fact.id}"`,
-        verify: `atticus verify ${repo}`,
-      };
-      return { status: 200, body: result };
-    });
+        if (c.data.action === "edit") {
+          const fixedFact = correctedFact(fact, c.data);
+          if (typeof fixedFact === "string")
+            throw new HttpError(
+              422,
+              "That isn't a fact",
+              `The corrected ${fact.kind} isn't one: ${fixedFact}.`,
+            );
+        }
+        const rel = `${factsRelOf(ctx.root)}/${repo}.corrections.jsonl`;
+        const written = correctionLine(c.data);
+        await mkdir(factsDirOf(ctx.root), { recursive: true });
+        await appendFile(
+          join(factsDirOf(ctx.root), `${repo}.corrections.jsonl`),
+          `${written}\n`,
+          "utf8",
+        );
+        ctx.events.publish({ type: "file.changed", path: rel });
+        const result: Api.FactCorrectionResultT = {
+          correction: c.data,
+          file: rel,
+          commit: `git add ${rel} && git commit -m "${repo}: a person's correction of ${fact.id}"`,
+          verify: `atticus verify ${repo}`,
+          line: written,
+        };
+        return { status: 200, body: result };
+      })
+  );
 }

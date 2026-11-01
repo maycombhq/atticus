@@ -6,6 +6,7 @@ import { Panel, View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
 import { Command, Problems } from "../work/RunNext.js";
 import "../work/work.css";
+import { AuditAnswer } from "./AuditAnswer.js";
 
 /**
  * Map › Trust (ADR 0124): how far to trust each repo's map, from the files the verifier writes.
@@ -21,6 +22,25 @@ const T = COPY.trust;
 const R = COPY.runNext;
 
 type Repo = Api.TrustRepoT;
+
+/** ADR 0149: the Sample audit's Answer a sample, opened in place. */
+function AnswerToggle({ repo }: { repo: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div>
+      <button
+        type="button"
+        className="btn"
+        aria-expanded={open}
+        aria-label={T.sample.openOf(repo)}
+        onClick={() => setOpen((o) => !o)}
+      >
+        {T.sample.open}
+      </button>
+      {open && <AuditAnswer repo={repo} />}
+    </div>
+  );
+}
 
 /** Why a repo is in its state, in words. */
 export function trustWhy(r: Repo): string {
@@ -306,6 +326,7 @@ export function TrustRow({ r }: { r: Repo }) {
           ) : (
             <span className="mono">{T.auditNone(r.repo)}</span>
           )}
+          {r.facts.present && <AnswerToggle repo={r.repo} />}
         </dd>
         <dt>{T.builtOn}</dt>
         <dd>

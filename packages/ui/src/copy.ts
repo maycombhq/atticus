@@ -667,6 +667,7 @@ export const COPY = {
       repos: "Repos",
       cockpit: "At a glance",
       systems: "Systems",
+      outside: "Outside systems",
       runs: "Model runs",
       history: "Prompt history",
       words: "What the words mean",
@@ -727,6 +728,53 @@ export const COPY = {
     auditFacts: "facts",
     auditLinks: "links",
     auditSmall: "A small sample: read the range, not the number.",
+    /** ADR 0149 (P3's follow-up): drawing and answering the sample audit here. */
+    sample: {
+      open: "Answer a sample",
+      openOf: (repo: string) => `Answer a sample audit of ${repo}`,
+      intro:
+        "A random sample of the repo's kept facts and the links the join makes from it, drawn as atticus verify audit draws it: the same seed draws the same sample on any machine. Read each item's lines and say whether it is right. Your answers go to the repo's audit file, a person's record you commit in a pull request; nothing is sent anywhere.",
+      seed: "Seed",
+      seedHint: (seed: string) => `Leave it empty for ${seed}, the repo at its facts' commit.`,
+      seedHintNone: "Leave it empty for the repo at its facts' commit.",
+      size: "How many facts and how many links",
+      draw: "Draw",
+      loading: "Drawing the sample…",
+      failed: (why: string) => `Couldn't draw the sample: ${why}`,
+      refused: {
+        "no-facts": (repo: string) =>
+          `${repo} has no facts to audit yet. Have your assistant read it (/atticus-map ${repo}), then run atticus verify ${repo}.`,
+        "bad-facts": (repo: string) =>
+          `${repo}'s facts file doesn't read as facts: run atticus verify ${repo} first.`,
+        unverified: (repo: string, n: number) =>
+          `${n} of ${repo}'s facts aren't verified yet, and an audit samples kept facts only. Run atticus verify ${repo} first.`,
+        "bad-file": (repo: string) =>
+          `${repo}'s audit file isn't one Atticus can read: atticus verify audit ${repo} --report says why.`,
+      } as Record<string, (repo: string, n: number) => string>,
+      empty: "Nothing to sample: the repo has no kept facts a reader wrote and no links.",
+      item: (k: number, n: number, what: string, claim: string) => `${k} of ${n}: ${what} ${claim}`,
+      fact: "fact",
+      link: (how: string) => `link (${how})`,
+      lines: "The lines it rests on",
+      noText: "(the line isn't in the checkout)",
+      choices: { right: "Right", wrong: "Wrong", unsure: "Unsure" } as Record<string, string>,
+      note: "Note (what is wrong with it)",
+      noteOptional: "Note (optional)",
+      onFile: (answer: string, by: string) => `On file: ${answer}, by ${by}`,
+      save: "Save the answers",
+      saving: "Writing the answers…",
+      nothingPicked: "Answer at least one item first.",
+      saved: (file: string, answered: number, open: number) =>
+        `Written to ${file}: ${answered} answered, ${open} open. The app wrote only that file; commit it in a pull request:`,
+      copyCommit: "Copy the git command",
+      sameInTerminal: "The same draw in a terminal:",
+      copyCommand: "Copy the audit command",
+      wrongFact: "Correct this fact",
+      wrongFactOf: (claim: string) => `Correct the fact ${claim}`,
+      wrongLink: (repo: string) =>
+        `Open ${repo} on the estate canvas, then the link's Why is this linked? › This link is wrong`,
+      factGone: "This fact isn't in the repo's facts any more, so there is nothing to correct.",
+    },
     /** ADR 0124 addendum A-framework: what each repo is built on, read from its build files. */
     builtOn: "Built on",
     builtOnNone: "Not read yet",
@@ -2775,6 +2823,55 @@ export const COPY = {
     noChanges: "No change in flight touches its repos.",
     questions: "Open questions about it",
     noQuestions: "No open question about it.",
+    outside: "The systems outside the estate: vendors and other teams",
+  },
+  /** O4 (ADR 0149): one page per system outside the estate (a vendor, another team's). */
+  outside: {
+    title: "Outside systems",
+    intro:
+      "The systems no repo of the estate belongs to: vendors, and other teams' systems. For each, who calls it, the operations its spec publishes, the calls that match nothing in that spec, and the questions open about it. Read from the facts, the catalog and the specs in inputs/; nothing is written.",
+    pick: "Which outside system",
+    empty:
+      "No outside system yet: the profiles name none that the estate's repos don't belong to. Add a vendor or another team's system to a profile's systems in the org pack.",
+    boundary: {
+      vendor: "A vendor",
+      internal: "Another team's system",
+      product: "A product no estate repo belongs to",
+    } as Record<string, string>,
+    owner: (owner: string) => `Owner: ${owner}`,
+    aliases: (list: string) => `Also called ${list}`,
+    callers: "Who calls it",
+    noCallers:
+      "No call in the estate's facts reaches it yet. A call reaches it when it names it, uses one of its hosts, or a person's answer says so.",
+    callerCols: {
+      from: "From",
+      call: "Call",
+      line: "Line",
+      operation: "Operation",
+      seen: "Seen in",
+    },
+    through: (repo: string, at: string) => `through ${repo} ${at}`,
+    seen: { interface: "the catalog", join: "the estate join", spec: "its spec" } as Record<
+      string,
+      string
+    >,
+    noOperation: "—",
+    operations: "Its operations",
+    specFrom: (path: string, title: string | undefined, version: string | undefined) =>
+      `From ${path}${title ? `, ${title}` : ""}${version ? ` ${version}` : ""}`,
+    opCols: { op: "Operation", line: "Spec line", calls: "Calls" },
+    unmatched: "Calls that match nothing in its spec",
+    noUnmatched: "Every call to it matches an operation its spec publishes.",
+    ambiguous: "Calls two or more operations answer",
+    ambiguousOf: (list: string) => `Could be ${list}`,
+    noSpec: "No spec of it is in inputs/ yet, so its operations aren't known. Add one:",
+    noSpecWhy:
+      "Then intake links it to this system by name (atticus triage asks when it can't tell), and this page lists its operations and the calls that match none.",
+    questions: "Open questions about it",
+    noQuestions: "No open question about it.",
+    answer: "Answer it",
+    copy: (cmd: string) => `Copy: ${cmd}`,
+    notes: "What the estate's facts left out",
   },
   /** WP7.1: the change cockpit, one change at a glance. */
   cockpit: {
@@ -3390,15 +3487,74 @@ export const COPY = {
     saving: "Writing the correction…",
     needReason: "Say why the fact is wrong first.",
     nothingChanged: "Change a field or the line first.",
-    saved: (file: string) =>
-      `Written to ${file}. Commit it with the metarepo's other files, then run atticus verify to apply it:`,
-    copyCommit: "Copy the git command",
-    copyVerify: "Copy the verify command",
+    saved: (file: string) => `Written to ${file}.`,
     correction: (action: string, by: string) =>
       action === "wrong" ? `Marked wrong by ${by}` : `Corrected by ${by}`,
     links: "Links",
     noLinks: "No link starts or ends here in this view.",
     linkOf: (from: string, to: string, type: string) => `${from} ${type} ${to}`,
+  },
+  /**
+   * C4 (ADR 0149): after any correction the app writes, the commands to run (the app runs none)
+   * and what the next verify --write will change, worked out without writing.
+   */
+  correctionNext: {
+    title: "What happens next",
+    onlyWrote: (file: string) =>
+      `The app wrote only ${file}. It runs no command: nothing else changes until you run the steps below, and a person reviews the pull request.`,
+    fileDiff: (file: string) => `The change to ${file}, as written`,
+    stepsTitle: "Run these, in order",
+    step: {
+      verify: "Apply it: verify checks the facts again and writes the catalog",
+      branch: "Make a branch for the change",
+      add: "Add the exact files the write changes",
+      commit: "Commit them",
+      push: "Push the branch",
+      pr: "Open a pull request",
+    } as Record<string, string>,
+    prByHand: (branch: string) =>
+      `Open a pull request from ${branch} on your Git host. Set adapters.gitHost in org-pack/runtime.yaml and Atticus gives its command here.`,
+    copy: (what: string) => `Copy: ${what}`,
+    previewTitle: "What atticus verify --write will change",
+    previewIntro:
+      "Worked out here by the same checks the command runs, without writing anything. It compares with the catalog on disk, so it also shows anything else waiting to be written.",
+    loading: "Working out what the write will change…",
+    failed: (why: string) => `Couldn't work out what the write will change: ${why}`,
+    unavailable: {
+      "no-checkout":
+        "There is no checkout of the repo here, so what the write changes can't be worked out. Clone it (atticus workspace sync); the commands still apply.",
+      "unreadable-facts":
+        "The repo's facts file doesn't read as facts, so the write would change nothing yet. Have your assistant read the repo again.",
+    } as Record<string, string>,
+    blocked: (n: number) =>
+      `The write puts nothing in the catalog: ${n} fact${n === 1 ? " is" : "s are"} rejected. Fix ${n === 1 ? "it" : "them"} first (Map › Trust lists ${n === 1 ? "it" : "them"}).`,
+    headMoved: (head: string, commit: string) =>
+      `The checkout is at ${head.slice(0, 7)}, past the facts' commit ${commit.slice(0, 7)}: verify reads the changed files' facts again, which this preview doesn't.`,
+    facts: "Facts",
+    dropped: "Left out",
+    droppedWhy: {
+      wrong: "marked wrong by a person",
+      rejected: "rejected by the verifier",
+    } as Record<string, string>,
+    edited: "Edited",
+    field: (name: string, was: string | undefined, now: string | undefined) =>
+      `${name}: ${was ?? "(none)"} → ${now ?? "(none)"}`,
+    noFactChange: "No fact changes.",
+    kept: (n: number) => `${n} fact${n === 1 ? "" : "s"} kept.`,
+    links: "Links",
+    moved: (what: string, was: string, now: string) => `${what}: moves from ${was} to ${now}`,
+    added: (what: string) => `${what}: added`,
+    removed: (what: string) => `${what}: removed`,
+    changed: (what: string, was: string, now: string) => `${what}: ${was} → ${now}`,
+    unmade: (what: string) =>
+      `${what}: this repo no longer makes it (the record stays, held by the other side, until that repo is written again)`,
+    linkWhat: (from: string, to: string, method: string | undefined, path: string) =>
+      `${from} → ${to} ${method ? `${method} ` : ""}${path}`,
+    noLinkChange: "No link changes.",
+    catalog: (added: number, changed: number, removed: number, evidence: number) =>
+      `Catalog records: ${added} added, ${changed} changed, ${removed} removed, ${evidence} with only their evidence changed.`,
+    stale: (ids: string) =>
+      `Corrections on file that meet no fact in this read (kept, applied when it is read again): ${ids}.`,
   },
   /** ADR 0135, C1 and C2: why a link is there, and saying it is wrong. */
   why: {
@@ -3474,10 +3630,7 @@ export const COPY = {
       dropped: (from: string, was: string) =>
         `The call is dropped from the catalog: ${from} → ${was} loses it, and goes if it was the link's only call.`,
     },
-    saved: (file: string) => `Written to ${file}. To apply it, run:`,
-    then: "Then commit the corrections file and the catalog files verify rewrote on a branch, and open a pull request: a person reviews the change before it merges.",
-    copyVerify: "Copy the verify command",
-    copyCommit: "Copy the git command",
+    saved: (file: string) => `Written to ${file}.`,
     moved: "What moved when the estate was joined again",
     movedTo: (what: string, was: string, now: string) => `${what}: was ${was}, now ${now}`,
     movedOff: (what: string, was: string) =>

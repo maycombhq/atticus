@@ -190,7 +190,7 @@ async function givenAnswers(
 }
 
 /** The line a cite names, from the checkout it is in; undefined when there is none. */
-function lineReader(root: string, o: AuditOptions, repo: string) {
+function lineReader(root: string, o: { dir?: string }, repo: string) {
   const dirs = new Map<string, Promise<string | undefined>>();
   const files = new Map<string, Promise<string[] | undefined>>();
   return async (cite: string): Promise<string | undefined> => {
@@ -216,6 +216,117 @@ function lineReader(root: string, o: AuditOptions, repo: string) {
   };
 }
 
+/** Why a repo can't be audited, in a code the app words and the CLI's own lines. */
+export type AuditRefusal = "no-facts" | "bad-facts" | "unverified" | "bad-file";
+
+/**
+ * A draw of a repo's sample audit, as `atticus verify audit` makes it and the app shows it (ADR
+ * 0148, ADR 0149): the kept facts a reader wrote and the estate join's links from the repo,
+ * `size` of each from `seed` (default `<repo>@<commit>`), merged into the file on record (its
+ * answers kept). Nothing is written: `writeAudit` does that once the answers are in.
+ */
+export async function prepareAudit(
+  root: string,
+  repo: string,
+  o: { size?: number; seed?: string; now?: () => Date } = {},
+): Promise<
+  | {
+      facts: Fact[];
+      drawn: AuditItemT[];
+      seed: string;
+      size: number;
+      audit: AuditFileT;
+      onFile: AuditFileT | undefined;
+      fileRel: string;
+      now: string;
+    }
+  | { refused: AuditRefusal; lines: string[]; unverified?: number }
+> {
+  const rel = factsRelOf(root);
+  const read = await readFactsOf(root, repo);
+  if (read.missing) return { refused: "no-facts", lines: [AUDIT_WORDS.noFacts(repo, rel)] };
+  if (read.bad || !read.facts)
+    return { refused: "bad-facts", lines: [AUDIT_WORDS.badFacts(`${rel}/${repo}.jsonl`)] };
+  const facts = read.facts;
+  const unverified = facts.filter((f) => f.verified === "none").length;
+  if (unverified)
+    return {
+      refused: "unverified",
+      lines: [AUDIT_WORDS.unverified(repo, unverified)],
+      unverified,
+    };
+  const fileRel = `${rel}/${repo}.audit.yaml`;
+  const onFile = await readAudit(root, repo);
+  if (onFile.issues)
+    return {
+      refused: "bad-file",
+      lines: [AUDIT_WORDS.badFile(fileRel), ...onFile.issues.map((i) => `  ${i}`)],
+    };
+  const commit = [...new Set(facts.map((f) => f.commit))].sort()[0];
+  const size = o.size && o.size > 0 ? Math.floor(o.size) : AUDIT_DEFAULT_SIZE;
+  const seed = o.seed ?? defaultAuditSeed(repo, commit);
+  const links = await linksOf(root, repo);
+  const drawn = drawAudit({ facts: auditCandidates(facts), links, size, seed });
+  const now = (o.now ?? (() => new Date()))().toISOString();
+  const audit = mergeDraw(onFile.file, repo, drawn, {
+    seed,
+    size,
+    ...(commit ? { commit } : {}),
+    at: now,
+  });
+  return { facts, drawn, seed, size, audit, onFile: onFile.file, fileRel, now };
+}
+
+/** The seed a draw takes when none is given: the repo at its facts' commit. */
+export const defaultAuditSeed = (repo: string, commit: string | undefined) =>
+  `${repo}@${(commit ?? "").slice(0, 7)}`;
+
+/**
+ * Answers put on the audit's items, by the item's id (or a fact's own id), each with who gave it
+ * and when; a note goes with the answer, and an answer without one clears it. Gives back the ids
+ * the audit doesn't have.
+ */
+export function answerAudit(
+  audit: AuditFileT,
+  answers: ReadonlyMap<string, { answer: AuditAnswer; note?: string }>,
+  by: string,
+  now: string,
+): string[] {
+  const byId = new Map(audit.items.map((i) => [i.id, i] as const));
+  const unknown: string[] = [];
+  for (const [id, a] of answers) {
+    const item = byId.get(id) ?? byId.get(`fact:${id}`) ?? byId.get(`link:${id}`);
+    if (!item) {
+      unknown.push(id);
+      continue;
+    }
+    item.answer = a.answer;
+    if (a.note) item.note = a.note;
+    else delete item.note;
+    item.by = by;
+    item.at = now;
+  }
+  return unknown;
+}
+
+/** The audit file written beside the facts: a person's record, nothing sent anywhere. */
+export async function writeAudit(root: string, repo: string, audit: AuditFileT): Promise<void> {
+  await writeFile(auditPath(root, repo), serializeAuditFile(audit), "utf8");
+}
+
+/** Each cited line's text as the checkout has it, by cite; none where the checkout or line isn't there. */
+export async function auditLines(
+  root: string,
+  repo: string,
+  items: readonly AuditItemT[],
+  dir?: string,
+): Promise<Map<string, string | undefined>> {
+  const lineOf = lineReader(root, dir ? { dir } : {}, repo);
+  const out = new Map<string, string | undefined>();
+  for (const i of items) for (const c of i.cites) if (!out.has(c)) out.set(c, await lineOf(c));
+  return out;
+}
+
 export async function auditCommand(
   root: string,
   repo: string | undefined,
@@ -227,68 +338,29 @@ export async function auditCommand(
     io.err(AUDIT_WORDS.usage);
     return 2;
   }
-  const rel = factsRelOf(root);
-  const read = await readFactsOf(root, repo);
-  if (read.missing) {
-    io.err(AUDIT_WORDS.noFacts(repo, rel));
-    return 2;
-  }
-  if (read.bad || !read.facts) {
-    io.err(AUDIT_WORDS.badFacts(`${rel}/${repo}.jsonl`));
-    return 2;
-  }
-  const facts = read.facts;
-  const unverified = facts.filter((f) => f.verified === "none").length;
-  if (unverified) {
-    io.err(AUDIT_WORDS.unverified(repo, unverified));
-    return 2;
-  }
-  const fileRel = `${rel}/${repo}.audit.yaml`;
-  const onFile = await readAudit(root, repo);
-  if (onFile.issues) {
-    io.err(AUDIT_WORDS.badFile(fileRel));
-    for (const i of onFile.issues) io.err(`  ${i}`);
-    return 2;
-  }
   const given = await givenAnswers(root, o);
+  const prepared = await prepareAudit(root, repo, {
+    ...(o.size !== undefined ? { size: o.size } : {}),
+    ...(o.seed !== undefined ? { seed: o.seed } : {}),
+    ...(o.now ? { now: o.now } : {}),
+  });
+  if ("refused" in prepared) {
+    for (const l of prepared.lines) io.err(l);
+    return 2;
+  }
   if (given.issues.length) {
     io.err(AUDIT_WORDS.badAnswers(o.answers ?? "--right/--wrong/--unsure"));
     for (const i of given.issues) io.err(`  ${i}`);
     return 2;
   }
-
-  const commit = [...new Set(facts.map((f) => f.commit))].sort()[0];
-  const size = o.size && o.size > 0 ? Math.floor(o.size) : AUDIT_DEFAULT_SIZE;
-  const seed = o.seed ?? `${repo}@${(commit ?? "").slice(0, 7)}`;
-  const links = await linksOf(root, repo);
-  const drawn = drawAudit({ facts: auditCandidates(facts), links, size, seed });
-  if (!drawn.length && !onFile.file) {
+  const { facts, drawn, seed, size, audit, fileRel, now, onFile } = prepared;
+  const rel = factsRelOf(root);
+  if (!drawn.length && !onFile) {
     io.out(AUDIT_WORDS.nothing(repo));
     return 0;
   }
-  const now = (o.now ?? (() => new Date()))().toISOString();
-  const audit = mergeDraw(onFile.file, repo, drawn, {
-    seed,
-    size,
-    ...(commit ? { commit } : {}),
-    at: now,
-  });
 
-  // The answers given: by the item's id, or a fact's own id.
-  const byId = new Map(audit.items.map((i) => [i.id, i] as const));
-  const unknown: string[] = [];
-  for (const [id, a] of given.answers) {
-    const item = byId.get(id) ?? byId.get(`fact:${id}`) ?? byId.get(`link:${id}`);
-    if (!item) {
-      unknown.push(id);
-      continue;
-    }
-    item.answer = a.answer;
-    if (a.note) item.note = a.note;
-    else delete item.note;
-    item.by = o.by;
-    item.at = now;
-  }
+  const unknown = answerAudit(audit, given.answers, o.by, now);
   if (unknown.length) {
     io.err(AUDIT_WORDS.unknownIds(unknown));
     return 2;
@@ -353,7 +425,7 @@ export async function auditCommand(
     }
   }
 
-  await writeFile(auditPath(root, repo), serializeAuditFile(audit), "utf8");
+  await writeAudit(root, repo, audit);
   const precision = await precisionOf(root, repo, audit, facts);
   if (o.json) {
     io.out(
@@ -380,7 +452,7 @@ export async function auditCommand(
 }
 
 /** Precision over the answers that still stand: the fact as drawn, the link still made. */
-async function precisionOf(
+export async function precisionOf(
   root: string,
   repo: string,
   audit: AuditFileT,

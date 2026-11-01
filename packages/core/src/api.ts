@@ -15,6 +15,7 @@ import { Finding, FindingAction, Lens, Severity } from "./schema/review.js";
 import { AnswerMatch, Question, QuestionScopeLevel } from "./schema/question.js";
 import { FactCorrection } from "./schema/fact-corrections.js";
 import { JOIN_GUESS_FLAGS } from "./facts-join.js";
+import { AUDIT_ANSWERS, AuditItem } from "./audit.js";
 import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
 
 /**
@@ -113,8 +114,12 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   `proposal` (the assistant's proposal it accepted, Q5); POST /api/questions/{id}/answer takes
  *   `match`; and GET /api/questions' `about[id].owner` can be a change's people (`{ change,
  *   people }`, Q4). Additive only.
+ * 2.42.0 (ADR 0149, plan items C4, O4 and P3's follow-up): after a correction, the commands to
+ *   run and a preview of the next verify --write (GET /api/facts/{repo}/preview, `line` on a
+ *   correction's result); the outside systems (GET /api/outside); and a sample audit drawn and
+ *   answered in the app (GET and POST /api/facts/{repo}/audit). Additive only.
  */
-export const API_VERSION = "2.41.0";
+export const API_VERSION = "2.42.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -1069,7 +1074,239 @@ export const FactCorrectionResult = z.object({
   commit: z.string(),
   /** The command that applies it: the verifier reads the corrections every time it runs. */
   verify: z.string(),
+  /** 2.42.0 (ADR 0149): the line appended to the file, exactly as written. */
+  line: z.string().optional(),
 });
+/**
+ * 2.42.0 (ADR 0149, C4): after a correction the app writes, the commands a person runs (the app
+ * runs none) and what the next `atticus verify <repo> --write` will change, computed in-process
+ * by the same functions that command uses, writing nothing.
+ */
+export const NextStepView = z.object({
+  step: z.enum(["verify", "branch", "add", "commit", "push", "pr"]),
+  /** The command to copy; absent for a pull request on a Git host Atticus has no command for. */
+  command: z.string().optional(),
+});
+export const PreviewLinkView = z.object({
+  id: z.string(),
+  from: z.string(),
+  to: z.string(),
+  method: z.string().optional(),
+  path: z.string(),
+  confidence: z.string(),
+  how: z.string().optional(),
+  flags: z.array(z.string()).optional(),
+  /** Under changed: the confidence and flags it had before. */
+  was: z.object({ confidence: z.string(), flags: z.array(z.string()).optional() }).optional(),
+});
+export const VerifyPreviewView = z.object({
+  repo: z.string(),
+  /** The one file the app wrote: `facts/<repo>.corrections.jsonl`. */
+  wrote: z.string(),
+  /** The branch the git steps make. */
+  branch: z.string(),
+  /** In order: verify --write, then branch, add (the exact files), commit, push, pull request. */
+  steps: z.array(NextStepView),
+  /** What the next verify --write will change; absent when it can't be worked out here (`unavailable`). */
+  preview: z
+    .object({
+      facts: z.object({
+        /** Facts the write leaves out: marked wrong by a person, or rejected by the verifier. */
+        dropped: z.array(
+          z.object({
+            id: z.string(),
+            kind: z.string(),
+            label: z.string(),
+            why: z.enum(["wrong", "rejected"]),
+            message: z.string().optional(),
+          }),
+        ),
+        /** Facts whose claim or line the write changes (a person's edit), field by field. */
+        edited: z.array(
+          z.object({
+            id: z.string(),
+            kind: z.string(),
+            label: z.string(),
+            fields: z.array(
+              z.object({
+                name: z.string(),
+                was: z.string().optional(),
+                now: z.string().optional(),
+              }),
+            ),
+          }),
+        ),
+        kept: z.number().int(),
+      }),
+      /** The write puts nothing in the catalog while facts are rejected: how many. */
+      blocked: z.object({ rejected: z.number().int() }).optional(),
+      /** The catalog records it adds, changes and removes; absent when blocked. */
+      catalog: z
+        .object({
+          added: z.number().int(),
+          changed: z.number().int(),
+          removed: z.number().int(),
+          /** Record files whose only change is their evidence (a line moved, a new commit). */
+          evidenceOnly: z.number().int(),
+          /** The record files it writes or removes, from the metarepo's root. */
+          files: z.array(z.string()),
+        })
+        .optional(),
+      /** The links (Interfaces) it adds, removes, changes, and moves (one call, another callee). */
+      links: z
+        .object({
+          added: z.array(PreviewLinkView),
+          removed: z.array(PreviewLinkView),
+          changed: z.array(PreviewLinkView),
+          /**
+           * Links this repo's calls no longer make whose record stays, held by the callee's side
+           * alone, until that repo is written again.
+           */
+          unmade: z.array(PreviewLinkView),
+          moved: z.array(
+            z.object({
+              from: z.string(),
+              method: z.string().optional(),
+              path: z.string(),
+              was: z.string(),
+              to: z.string(),
+            }),
+          ),
+        })
+        .optional(),
+      /** The checkout's HEAD is past the facts' commit: verify reads the changed files' facts again. */
+      headMoved: z.object({ head: z.string(), commit: z.string() }).optional(),
+      /** Corrections on file that meet no fact in this read (kept, applied when it is read again). */
+      staleCorrections: z.array(z.string()),
+    })
+    .optional(),
+  /** Why there is no preview: no checkout of the repo, or a facts file that doesn't read. */
+  unavailable: z.enum(["no-checkout", "unreadable-facts"]).optional(),
+});
+export type VerifyPreviewViewT = z.infer<typeof VerifyPreviewView>;
+export type PreviewLinkViewT = z.infer<typeof PreviewLinkView>;
+/**
+ * 2.42.0 (ADR 0149, P3's follow-up): a sample audit drawn and answered in the app, by the same
+ * functions as `atticus verify audit` (the same seed draws the same sample). Each item with the
+ * text of every line it cites, read from the checkout.
+ */
+export const AuditItemView = AuditItem.extend({
+  lines: z.array(z.object({ cite: z.string(), text: z.string().optional() })),
+});
+export const AuditSampleView = z.object({
+  repo: z.string(),
+  /** `facts/<repo>.audit.yaml`, from the metarepo's root. */
+  file: z.string(),
+  seed: z.string(),
+  size: z.number().int(),
+  /** The seed a draw takes when none is given, `<repo>@<commit>`, as the CLI's. */
+  defaultSeed: z.string().optional(),
+  /** This draw's items, with any answers on file. */
+  items: z.array(AuditItemView),
+  /** Why the repo can't be audited yet; then `items` is empty. */
+  refused: z.enum(["no-facts", "bad-facts", "unverified", "bad-file"]).optional(),
+  /** Under `unverified`: how many facts aren't verified. */
+  unverified: z.number().int().optional(),
+  /** The precision over the answers on file that still stand (links checked by the join). */
+  precision: z.object({ facts: AuditTallyView, links: AuditTallyView }).optional(),
+  /** The same draw in a terminal. */
+  command: z.string(),
+});
+export const AuditAnswerRequest = z.strictObject({
+  seed: z.string().min(1).max(200),
+  size: z.number().int().positive().max(100),
+  answers: z
+    .array(
+      z.strictObject({
+        id: z.string().min(1),
+        answer: z.enum(AUDIT_ANSWERS),
+        note: z.string().trim().max(500).optional(),
+      }),
+    )
+    .min(1),
+});
+export const AuditAnswerResult = z.object({
+  file: z.string(),
+  answered: z.number().int(),
+  open: z.number().int(),
+  items: z.array(AuditItemView),
+  precision: z.object({ facts: AuditTallyView, links: AuditTallyView }),
+  /** The git command that commits the file (the app runs no git). */
+  commit: z.string(),
+});
+export type AuditItemViewT = z.infer<typeof AuditItemView>;
+export type AuditSampleViewT = z.infer<typeof AuditSampleView>;
+export type AuditAnswerResultT = z.infer<typeof AuditAnswerResult>;
+
+/**
+ * 2.42.0 (ADR 0149, O4): the systems outside the estate (every profile system no estate repo
+ * belongs to: vendors and other teams), each with who calls it, the operations its intaken spec
+ * publishes, the calls that match nothing in that spec, and its open questions.
+ */
+export const OutsideCallView = z.object({
+  repo: z.string(),
+  component: z.string().optional(),
+  /** The call fact, when the join names it. */
+  fact: z.string().optional(),
+  /** `path:line` of the call. */
+  at: z.string(),
+  method: z.string().optional(),
+  path: z.string().optional(),
+  /**
+   * Where it was seen: a catalog Interface to the system, the estate join's outside list, the
+   * system's spec (its hosts or names matched the call, ADR 0130), or more than one.
+   */
+  seen: z.array(z.enum(["interface", "join", "spec"])),
+  /** The Interface record, when the catalog has one. */
+  interface: z.string().optional(),
+  /** The spec operation it reaches (its Endpoint id), when it matches one. */
+  operation: z.string().optional(),
+  /** Through a gateway's forwarding call (the route and the gateway's call), when it is. */
+  through: z.object({ repo: z.string(), at: z.string() }).optional(),
+});
+export const OutsideSystemView = z.object({
+  id: z.string(),
+  name: z.string(),
+  boundary: z.string(),
+  owner: z.string().optional(),
+  aliases: z.array(z.string()),
+  callers: z.array(OutsideCallView),
+  /** Its newest intaken spec in inputs/; absent when none is linked to it. */
+  spec: z
+    .object({
+      path: z.string(),
+      title: z.string().optional(),
+      version: z.string().optional(),
+      operations: z.array(
+        z.object({
+          id: z.string(),
+          method: z.string(),
+          path: z.string(),
+          cite: z.string(),
+          /** How many of the callers reach it. */
+          calls: z.number().int(),
+        }),
+      ),
+    })
+    .optional(),
+  /** Calls to it that match no operation of its spec, with why. */
+  unmatched: z.array(OutsideCallView.extend({ message: z.string() })),
+  /** Calls two or more of its operations answer equally well. */
+  ambiguous: z.array(OutsideCallView.extend({ candidates: z.array(z.string()) })),
+  /** Open questions about it: naming it, or citing a line one of its calls is on. */
+  questions: z.array(z.object({ id: z.string(), repo: z.string(), question: z.string() })),
+  /** With no spec: how to add one. */
+  addSpec: z.array(z.string()).optional(),
+});
+export const OutsideView = z.object({
+  systems: z.array(OutsideSystemView),
+  /** What the estate's facts left out (a repo not verified), said once. */
+  notes: z.array(z.string()),
+});
+export type OutsideSystemViewT = z.infer<typeof OutsideSystemView>;
+export type OutsideCallViewT = z.infer<typeof OutsideCallView>;
+export type OutsideViewT = z.infer<typeof OutsideView>;
+
 export type FactCiteViewT = z.infer<typeof FactCiteView>;
 export type RepoFactsViewT = z.infer<typeof RepoFactsView>;
 export type FactCorrectionResultT = z.infer<typeof FactCorrectionResult>;
@@ -3219,6 +3456,51 @@ const OPS: Record<string, Record<string, Op>> = {
       errors: [400, 404, 422],
     },
   },
+  "/api/facts/{repo}/preview": {
+    get: {
+      id: "previewVerifyWrite",
+      summary:
+        "After a correction: the commands to run (atticus verify <repo> --write, then the git steps with the exact files) and what that write will change in the facts and the catalog (links moved, added, removed; facts dropped or edited), computed in-process without writing (ADR 0149)",
+      tag: "workspace",
+      params: [p("repo"), q("fact", str, "The fact corrected, for the branch and commit message")],
+      ok: { status: 200, schema: "VerifyPreviewView", description: "OK" },
+      errors: [400, 404],
+    },
+  },
+  "/api/facts/{repo}/audit": {
+    get: {
+      id: "drawAudit",
+      summary:
+        "A repo's sample audit drawn as atticus verify audit draws it (the same seed, the same sample): each item with its cited lines and any answer on file, and the precision so far. Writes nothing (ADR 0149)",
+      tag: "workspace",
+      params: [
+        p("repo"),
+        q("seed", str, "The seed; default <repo>@<commit>"),
+        q("size", { type: "integer" }, "How many facts and how many links; default 10"),
+      ],
+      ok: { status: 200, schema: "AuditSampleView", description: "OK" },
+      errors: [400],
+    },
+    post: {
+      id: "answerAudit",
+      summary:
+        "Answer items of a draw right, wrong or unsure (with a note): written to facts/<repo>.audit.yaml by the same functions as atticus verify audit. Returns the precision and the git command (ADR 0149)",
+      tag: "workspace",
+      params: [p("repo")],
+      body: AuditAnswerRequest,
+      ok: { status: 200, schema: "AuditAnswerResult", description: "Recorded" },
+      errors: [400, 404, 422],
+    },
+  },
+  "/api/outside": {
+    get: {
+      id: "getOutsideSystems",
+      summary:
+        "The systems outside the estate (vendors and other teams): who calls each, the operations its intaken spec publishes, the calls that match nothing in it, its open questions, and how to add a spec (ADR 0149)",
+      tag: "views",
+      ok: { status: 200, schema: "OutsideView", description: "OK" },
+    },
+  },
   "/api/workspace/sync": {
     post: {
       id: "syncWorkspace",
@@ -4237,6 +4519,10 @@ export function openApiDocument(): Record<string, unknown> {
     SetChangeKnowledgeResult,
     RepoFactsView,
     FactCorrectionResult,
+    VerifyPreviewView,
+    AuditSampleView,
+    AuditAnswerResult,
+    OutsideView,
     StageReviewView,
     StageCommentResult,
     OrgPackDraftView,

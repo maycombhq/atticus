@@ -36,6 +36,8 @@ export const SCREENS = [
   "cockpit",
   "cockpit?change=add-transfer-limit",
   "systems",
+  // O4 (ADR 0149): the systems outside the estate.
+  "outside",
   "intake",
   "scans",
   "brief?change=add-transfer-limit",
