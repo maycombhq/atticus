@@ -550,6 +550,7 @@ Usage:
   atticus intake add <files...>        Drop documents, specs and diagrams into inputs/inbox for intake
   atticus intake list [--json]         What intake read from inputs/: kinds, systems, duplicates, versions
   atticus intake impact <spec> [--json]   A vendor spec against its other version: each change, breaking or not, and the gateway routes, service calls and callers it reaches
+  atticus intake traffic <file> --source apigee|catalog [--from YYYY-MM-DD --to YYYY-MM-DD] [--json]   A traffic export (a file) kept as aggregate counts in evidence/traffic/, client ids, IPs and tokens dropped; verify --write marks the links it shows used
   atticus triage [--json]              What needs a person: unknown names, conflicts with code, image edges
   atticus triage decide <item> <n>     Choose option n for a triage item; writes a curated decision
           [--reason text]
@@ -952,6 +953,7 @@ const OPTIONS = {
   catalog: { type: "string" },
   "from-catalog": { type: "boolean" },
   from: { type: "string" },
+  to: { type: "string" },
   package: { type: "string" },
   jars: { type: "string", multiple: true },
   learn: { type: "boolean" },
@@ -2908,6 +2910,20 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
       io,
     );
   if (group === "intake" && command === "list") return intakeList(root, io, { json });
+  if (group === "intake" && command === "traffic") {
+    const { intakeTraffic } = await import("./link-evidence-files.js");
+    return intakeTraffic(
+      root,
+      positionals[2] ?? "",
+      {
+        ...(str(values.source) ? { source: str(values.source)! } : {}),
+        ...(str(values.from) ? { from: str(values.from)! } : {}),
+        ...(str(values.to) ? { to: str(values.to)! } : {}),
+        json,
+      },
+      io,
+    );
+  }
   if (group === "intake" && command === "impact") {
     const { intakeImpact } = await import("./vendor-impact-commands.js");
     return intakeImpact(root, positionals[2] ?? "", { json }, io);

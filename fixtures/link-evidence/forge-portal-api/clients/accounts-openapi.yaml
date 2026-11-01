@@ -1,0 +1,19 @@
+openapi: 3.0.3
+info:
+  title: forge-accounts
+  version: 1.0.0
+servers:
+  - url: https://api.forge.example/forge/v1
+paths:
+  /forge/v1/accounts/{id}:
+    get:
+      operationId: getAccount
+      responses:
+        "200":
+          description: The account
+  /forge/v1/accounts/{id}/statements:
+    get:
+      operationId: listStatements
+      responses:
+        "200":
+          description: Statements the portal never asks for

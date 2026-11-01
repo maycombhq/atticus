@@ -491,6 +491,27 @@ describe("why is this linked: each link's joins, how each was made and both ends
     expect(link.gaps).toEqual(["inferred", "joined-by-path"]);
   });
 
+  it("counts a contract or traffic bearing a link out as no gap, and a contract that disagrees as one (ADR 0151)", () => {
+    const rs = records().map((r) =>
+      r.id === PATH
+        ? ({
+            ...r,
+            flags: [...(r.flags ?? []), "confirmed-by-contract", "seen-in-traffic"],
+          } as typeof r)
+        : r,
+    );
+    const v = nodeView(buildEstate(rs), "estate", { lens: "architecture" });
+    const link = v.edges.find((e) => e.from === "system:web" && e.to === "system:customers")!;
+    expect(link.gaps).toEqual(["inferred", "joined-by-path"]);
+    const off = records().map((r) =>
+      r.id === PATH ? ({ ...r, flags: [...(r.flags ?? []), "contract-disagrees"] } as typeof r) : r,
+    );
+    const w = nodeView(buildEstate(off), "estate", { lens: "architecture" });
+    expect(
+      w.edges.find((e) => e.from === "system:web" && e.to === "system:customers")!.gaps,
+    ).toContain("contract-disagrees");
+  });
+
   it.each([
     ["joined-by-platform-setting", "platform-setting"],
     ["joined-by-folder-name", "folder-name"],

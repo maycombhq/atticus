@@ -1,0 +1,22 @@
+{
+  "consumer": { "name": "forge-portal-api" },
+  "provider": { "name": "forge-ledger" },
+  "interactions": [
+    {
+      "type": "Synchronous/HTTP",
+      "description": "a transfer between accounts",
+      "request": {
+        "method": "POST",
+        "path": "/forge/v1/accounts/ACC-1001/transfers",
+        "body": { "content": { "amount": 10, "toAccount": "ACC-2002" } }
+      },
+      "response": { "status": 201 }
+    },
+    {
+      "type": "Asynchronous/Messages",
+      "description": "a transfer made event",
+      "contents": { "content": { "transferId": "T-1" } }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "4.0" } }
+}

@@ -1,0 +1,48 @@
+schemaVersion: 1
+repo: forge-portal-api
+commit: 8888bbb
+entries:
+  - format: openapi
+    file: clients/accounts-openapi.yaml
+    line: 9
+    provider: forge-accounts
+    hosts:
+      - https://api.forge.example/forge/v1
+    method: GET
+    path: /forge/v1/accounts/{id}
+  - format: openapi
+    file: clients/accounts-openapi.yaml
+    line: 15
+    provider: forge-accounts
+    hosts:
+      - https://api.forge.example/forge/v1
+    method: GET
+    path: /forge/v1/accounts/{id}/statements
+  - format: pact
+    file: pacts/forge-portal-api-forge-accounts.json
+    line: 10
+    consumer: forge-portal-api
+    provider: forge-accounts
+    method: GET
+    path: /forge/v1/accounts/ACC-1001
+  - format: pact
+    file: pacts/forge-portal-api-forge-accounts.json
+    line: 22
+    consumer: forge-portal-api
+    provider: forge-accounts
+    method: DELETE
+    path: /forge/v1/accounts/ACC-1001
+  - format: pact
+    file: pacts/forge-portal-api-forge-billing.json
+    line: 7
+    consumer: forge-portal-api
+    provider: forge-billing
+    method: GET
+    path: /invoices/INV-77
+  - format: pact
+    file: pacts/forge-portal-api-forge-ledger.json
+    line: 10
+    consumer: forge-portal-api
+    provider: forge-ledger
+    method: POST
+    path: /forge/v1/accounts/ACC-1001/transfers

@@ -45,6 +45,7 @@ describe("the files in the facts folder (ADR 0124)", () => {
       "reviewed.jsonl",
       "corrections.jsonl",
       "verify.yaml",
+      "contracts.yaml",
     ])
       expect(factsFileOf(`forge-studio.${companion}`)).toEqual({
         repo: "forge-studio",

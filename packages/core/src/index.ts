@@ -10,6 +10,7 @@ export * from "./facts-join-vendor.js";
 export * from "./facts-join-prototype.js";
 export * from "./facts-carry.js";
 export * from "./facts-callers.js";
+export * from "./link-evidence.js";
 export * from "./audit.js";
 export * from "./stack-helpers.js";
 export * from "./cite.js";

@@ -177,6 +177,7 @@ Every other command. `atticus legacy` lists them by area; each runs by its own n
   atticus intake add <files...>        Drop documents, specs and diagrams into inputs/inbox for intake
   atticus intake list [--json]         What intake read from inputs/: kinds, systems, duplicates, versions
   atticus intake impact <spec> [--json]   A vendor spec against its other version: each change, breaking or not, and the gateway routes, service calls and callers it reaches
+  atticus intake traffic <file> --source apigee|catalog [--from YYYY-MM-DD --to YYYY-MM-DD] [--json]   A traffic export (a file) kept as aggregate counts in evidence/traffic/, client ids, IPs and tokens dropped; verify --write marks the links it shows used
   atticus triage [--json]              What needs a person: unknown names, conflicts with code, image edges
   atticus triage decide <item> <n>     Choose option n for a triage item; writes a curated decision
           [--reason text]

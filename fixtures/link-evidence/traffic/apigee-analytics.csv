@@ -1,0 +1,6 @@
+apiproxy,proxy_basepath,proxy_pathsuffix,request_verb,developer_app,client_id,client_ip,useragent,request_uri,response_status_code,message_count,client_received_start_timestamp
+forge-accounts-v1,/forge/v1,/accounts/ACC-1001,GET,forge-portal-api,fk-client-8f2d7a91c3e4,203.0.113.45,ForgePortal/2.4 (JVM),/forge/v1/accounts/ACC-1001?access_token=eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJmYWtlLXVzZXIifQ.ZmFrZXNpZ25hdHVyZQ,200,120,2026-09-03T10:15:00Z
+forge-accounts-v1,/forge/v1,/accounts/ACC-2002,GET,forge-portal-api,fk-client-8f2d7a91c3e4,203.0.113.46,ForgePortal/2.4 (JVM),/forge/v1/accounts/ACC-2002,200,80,2026-09-04T11:00:00Z
+forge-accounts-v1,/forge/v1,/accounts/ACC-1001/statements/2026-08,GET,forge-portal-api,fk-client-8f2d7a91c3e4,203.0.113.45,ForgePortal/2.4 (JVM),/forge/v1/accounts/ACC-1001/statements/2026-08?apikey=fkKey9Qx7Lm2Pz8Rt4Vw6Yb1Nc3Hd5Jf0,200,7,2026-09-10T08:30:00Z
+forge-accounts-v1,/forge/v1,/accounts/ACC-3003,GET,forge-mobile,fk-client-55aa77bb99cc,198.51.100.23,ForgeMobile/3.1 (Android 14),/forge/v1/accounts/ACC-3003,200,15,2026-09-12T19:45:00Z
+forge-accounts-v1,/forge/v1,/accounts/ACC-1001,GET,forge-portal-api,fk-client-8f2d7a91c3e4,203.0.113.45,ForgePortal/2.4 (JVM),/forge/v1/accounts/ACC-1001,200,999,2026-10-02T09:00:00Z

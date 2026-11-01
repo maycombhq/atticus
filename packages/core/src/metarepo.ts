@@ -85,6 +85,16 @@ export function factsDirOf(root: string): string {
   return join(root, ...factsRelOf(root).split("/"));
 }
 
+/** Where evidence from outside the code lives (ADR 0151), relative to the root: `evidence`, or `.atticus/evidence` when adopted. */
+export function evidenceRelOf(root: string): string {
+  return isAdopted(root) ? ".atticus/evidence" : "evidence";
+}
+
+/** The evidence folder (ADR 0151): `traffic/<source>-<from>-<to>.yaml`, the traffic aggregates a person imported. */
+export function evidenceDirOf(root: string): string {
+  return join(root, ...evidenceRelOf(root).split("/"));
+}
+
 /**
  * The files the facts folder keeps beside a repo's facts file (ADR 0124): the questions the
  * assistant raised, what the verifier rejected, the files read and found to hold no fact, a
@@ -99,6 +109,8 @@ export const FACTS_COMPANIONS = [
   ".verify.yaml",
   ".read-plan.yaml",
   ".audit.yaml",
+  // ADR 0151: the contract files (Pact, a consumer's OpenAPI) read in the repo at the facts' commit.
+  ".contracts.yaml",
 ] as const;
 
 /**
