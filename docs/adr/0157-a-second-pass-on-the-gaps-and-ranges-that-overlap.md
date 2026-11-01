@@ -2,7 +2,7 @@
 
 - Status: accepted (pending review by the product owner)
 - Date: 2026-11-01
-- Builds on: ADR 0124 (facts the assistant writes) and its addenda A-read, A-ranges, A-budget and A-ledger, R1 (the lines a read may have skipped), P2 (the HTTP method on its line), ADR 0141 (what a read cost)
+- Builds on: ADR 0148 (a sample audit), ADR 0124 (facts the assistant writes) and its addenda A-read, A-ranges, A-budget and A-ledger, R1 (the lines a read may have skipped), P2 (the HTTP method on its line), ADR 0141 (what a read cost)
 
 ## Context
 
@@ -28,7 +28,12 @@ Each range of a big file after the first starts `rangeOverlap(each)` lines befor
 
 ### 3. The method note, measured (P2)
 
-See the measurement section below.
+Verify was run over every fixture estate that has its source (link-estate's ten repos, gateway-facts' three, gateway-chain's seven, verify-read, verify-skipped and the verify package's Forge ledger): 78 kept entries and calls claim an HTTP method, and 7 were noted. Each was read by hand, and all 7 were false notes, none a reader's slip:
+
+- 2 fluent clients (Spring's RestClient: `http.post()` opens the chain, the cited `.uri(...)` line continues it). The check now reads the chain a cited line belongs to: up from a line that starts with `.` or `?.` to the line the chain starts on, and down through the lines that continue it, at most 8 each way. It is a text rule, so it holds for Java, Kotlin, C#, JavaScript and any language that chains so (an Express `.route()` with its `.get()` lines below).
+- 5 gateway forwards (Apigee: an AssignMessage `<Path>` or a target `<URL>`, the method being the one the route matched). A call `from` an entry that claims the same method now takes the entry's cited line (the route's `<Condition>` with `request.verb`) and the line after it. A forward that claims another method is still noted unless a line it cites writes it.
+
+After: 0 of 78. The counts are pinned per repo (`packages/verify/test/method-estates.test.ts`). The note stays a note. The fixtures are facts people wrote to test other things, not a reader's own output, and 78 claims are too few to say how often a real read slips or how often a method that rests on a constant or a variable (`HttpMethod.valueOf(cfg)`) would be refused; it becomes a rejection only once a sample audit (ADR 0148) of real reads measures both.
 
 ## Consequences
 
