@@ -1015,6 +1015,7 @@ export const COPY = {
       "joined-by-platform-setting": "by a platform-wide setting",
       "joined-by-folder-name": "by a setting's folder name",
       "joined-despite-conflict": "despite an open host conflict",
+      "joined-by-service-name": "by a Service's short name",
     } as Record<string, string>,
     confirm: (rule: string) =>
       `Not counted as a break: the critic's ${rule} asks the caller's owner to confirm each guessed link.`,
@@ -3604,6 +3605,8 @@ export const COPY = {
         "Its host comes from a setting that is this service's only because its file sits in a folder named like it, so this is a guess.",
       conflict:
         "Its host or base path is one a deploy file gives and the manifest disagrees with (an open conflict on Map › Trust), so this is a guess.",
+      "service-name":
+        "Its host is a Kubernetes Service's short name, which reaches that Service only from its own namespace, and no deploy file says this service runs there, so this is a guess.",
       shared:
         "It calls another team's system, and the map that team shares has the entry that answers it.",
       unknown:

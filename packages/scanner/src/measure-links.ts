@@ -29,7 +29,8 @@ import { estateRepos, isPrototypeRepo } from "./merge-input.js";
  * - links: precision (of the listed calls the join linked to a repo, how many are right) and
  *   recall (of the listed calls that should reach a repo, how many it reached), with the calls
  *   it asked about, the guesses (inferred: joined by path, by a host's first label, by a
- *   platform-wide setting or a setting's folder name, or despite an open conflict) and the
+ *   platform-wide setting or a setting's folder name, despite an open conflict, or by a
+ *   Kubernetes Service's short name) and the
  *   outside systems counted on their own.
  *
  * Pure: it reads only what it is given and writes nothing. The reference stays wherever its

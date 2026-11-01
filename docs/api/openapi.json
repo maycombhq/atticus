@@ -18021,6 +18021,7 @@
               "platform-setting",
               "folder-name",
               "conflict",
+              "service-name",
               "shared",
               "unknown"
             ]
@@ -22704,7 +22705,8 @@
                           "joined-by-label",
                           "joined-by-platform-setting",
                           "joined-by-folder-name",
-                          "joined-despite-conflict"
+                          "joined-despite-conflict",
+                          "joined-by-service-name"
                         ]
                       },
                       "interfaces": {
@@ -22887,7 +22889,8 @@
                           "joined-by-label",
                           "joined-by-platform-setting",
                           "joined-by-folder-name",
-                          "joined-despite-conflict"
+                          "joined-despite-conflict",
+                          "joined-by-service-name"
                         ]
                       },
                       "restsOn": {

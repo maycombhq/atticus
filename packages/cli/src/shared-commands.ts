@@ -220,13 +220,16 @@ export async function readTheirMap(
       entries: list.length,
     });
   }
+  // Where it came from, only as a path inside the metarepo: one outside it is this machine's own
+  // (a user name, a drive letter) and would be committed, so it isn't kept.
   const rel = posix(relative(root, from));
+  const inside = !!rel && rel !== ".." && !rel.startsWith("../") && !isAbsolute(rel);
   const file = SharedMapFile.parse({
     schemaVersion: SHARED_MAP_SCHEMA_VERSION,
     team: o.team,
     name: o.name ?? o.team,
     system: o.system,
-    source: rel && !rel.startsWith("..") && !isAbsolute(rel) ? rel : posix(from),
+    ...(inside ? { source: rel } : {}),
     commit,
     importedAt: (o.now ?? new Date()).toISOString(),
     repos,
@@ -289,6 +292,10 @@ function sayImported(r: Extract<Imported, { ok: true }>, where: string, io: Outp
     io.out(
       `  ${lo.redacted} quote${lo.redacted === 1 ? "" : "s"} naming a secret-looking key redacted or dropped.`,
     );
+  if (!f.source)
+    io.out(
+      `  Their folder is outside this metarepo, so where it is isn't recorded: refresh with atticus join shared refresh ${f.team} <folder>.`,
+    );
   io.out(
     `  Their entries stay theirs: never verified, corrected or reported on here. Review ${where}/ in a pull request, then atticus verify --all --write joins the calls to ${f.system} to them.`,
   );
@@ -337,8 +344,17 @@ export async function sharedRefresh(
     return 2;
   }
   let failed = 0;
+  let noFolder = 0;
   for (const m of which) {
-    const src = o.dir ?? (isAbsolute(m.file.source) ? m.file.source : join(root, m.file.source));
+    const source = m.file.source;
+    if (!o.dir && !source) {
+      io.err(
+        `${m.team}'s map doesn't record where it came from (its folder was outside this metarepo): give the folder, atticus join shared refresh ${m.team} <folder>.`,
+      );
+      noFolder++;
+      continue;
+    }
+    const src = o.dir ?? (isAbsolute(source!) ? source! : join(root, ...source!.split("/")));
     const r = await readTheirMap(root, src, {
       team: m.team,
       name: m.name,
@@ -354,7 +370,7 @@ export async function sharedRefresh(
     sayImported(r, await writeTheirMap(root, r), io);
   }
   if (!which.length) io.out(`No shared maps in ${sharedRelOf(root)}/.`);
-  return failed ? 1 : 0;
+  return failed ? 1 : noFolder ? 2 : 0;
 }
 
 export async function sharedList(root: string, o: { json?: boolean }, io: Output): Promise<number> {
@@ -373,7 +389,7 @@ export async function sharedList(root: string, o: { json?: boolean }, io: Output
   for (const m of maps) {
     const n = m.file.repos.reduce((k, r) => k + r.entries, 0);
     io.out(
-      `${m.team}: ${m.name}'s map for ${m.system}, their commit ${m.commit.slice(0, 7)}, imported ${m.file.importedAt.slice(0, 10)} from ${m.file.source}: ${n} entr${n === 1 ? "y" : "ies"} in ${m.file.repos.map((r) => r.repo).join(", ")}.`,
+      `${m.team}: ${m.name}'s map for ${m.system}, their commit ${m.commit.slice(0, 7)}, imported ${m.file.importedAt.slice(0, 10)} from ${m.file.source ?? "a folder outside the metarepo"}: ${n} entr${n === 1 ? "y" : "ies"} in ${m.file.repos.map((r) => r.repo).join(", ")}.`,
     );
   }
   return problems.length ? 1 : 0;

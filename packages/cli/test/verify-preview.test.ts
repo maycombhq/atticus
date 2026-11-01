@@ -1,4 +1,4 @@
-import { cp, mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -35,12 +35,10 @@ const call = async (method: string, path: string, body?: unknown) => {
   return { status: r.status, body: (await r.json()) as Record<string, unknown> };
 };
 
-/** Every file under a folder with its text, by path from the root. */
+/** Every file under a folder with its text, by path from the root (Atticus's own `.atticus` state too). */
 async function snapshot(dir: string, base = dir, out = new Map<string, string>()) {
   for (const e of await readdir(dir, { withFileTypes: true }).catch(() => [])) {
     const p = join(dir, e.name);
-    // Atticus's own local state (the catalog's read cache), never committed.
-    if (e.name === ".atticus") continue;
     if (e.isDirectory()) await snapshot(p, base, out);
     else
       out.set(
@@ -53,6 +51,15 @@ async function snapshot(dir: string, base = dir, out = new Map<string, string>()
   }
   return out;
 }
+
+/**
+ * The files a write changed, Atticus's own local state left out (the catalog's read cache under
+ * `.atticus/`, never committed): the preview's add step names the rest.
+ */
+const changedFiles = (before: Map<string, string>, after: Map<string, string>) =>
+  [...new Set([...before.keys(), ...after.keys()])].filter(
+    (k) => before.get(k) !== after.get(k) && !k.split("/").includes(".atticus"),
+  );
 
 beforeAll(async () => {
   root = await mkdtemp(join(tmpdir(), "atticus-preview-"));
@@ -76,6 +83,55 @@ describe(
   "after a correction: the commands, and what verify --write will change",
   { timeout: 60_000 },
   () => {
+    it("reads a repo's contract files from its checkout as the write does: a Pact file it gained confirms the link in both", async () => {
+      // forge-payments gains a Pact file for its debits call to forge-accounts since its last write.
+      await mkdir(join(root, "workspace/forge-payments/pacts"), { recursive: true });
+      await writeFile(
+        join(root, "workspace/forge-payments/pacts/forge-payments-forge-accounts.json"),
+        JSON.stringify(
+          {
+            consumer: { name: "forge-payments" },
+            provider: { name: "forge-accounts" },
+            interactions: [
+              {
+                description: "a debit",
+                request: { method: "POST", path: "/accounts/ACC-1001/debits" },
+                response: { status: 201 },
+              },
+            ],
+            metadata: { pactSpecification: { version: "3.0.0" } },
+          },
+          null,
+          2,
+        ),
+      );
+      // No read cache on file: a preview that kept one would write it.
+      await rm(join(root, ".atticus"), { recursive: true, force: true });
+      const before = await snapshot(root);
+      const r = await call("GET", "/api/facts/forge-payments/preview");
+      expect(r.status).toBe(200);
+      const p = Api.VerifyPreviewView.parse(r.body).preview!;
+      // Nothing written, not even a cache file under .atticus.
+      expect(await snapshot(root)).toEqual(before);
+      expect(await verifyCommand(root, "forge-payments", { write: true }, quiet)).toBe(0);
+      const changed = changedFiles(before, await snapshot(root));
+      const catalog = changed.filter((k) => k.startsWith("catalog/generated/")).sort();
+      // The link the Pact file confirms is a change the preview names, as the write makes it.
+      expect(catalog.some((k) => k.startsWith("catalog/generated/interface/"))).toBe(true);
+      expect(p.catalog!.files).toEqual(catalog);
+      const add = Api.VerifyPreviewView.parse(r.body)
+        .steps[2]!.command!.replace(/^git add /, "")
+        .split(" ");
+      expect(changed).toContain("facts/forge-payments.contracts.yaml");
+      for (const k of changed)
+        expect(
+          add.some((a) => k === a || k.startsWith(`${a}/`)),
+          `${k} changed but isn't added`,
+        ).toBe(true);
+      const iface = catalog.find((k) => k.startsWith("catalog/generated/interface/"))!;
+      expect(await readFile(join(root, iface), "utf8")).toMatch(/confirmed-by-contract/);
+    });
+
     it("gives the line written, then a preview of the write that matches the write itself", async () => {
       const posted = await call("POST", "/api/facts/forge-payments/corrections", {
         fact: "call.post.accounts-id-debits",
@@ -142,9 +198,7 @@ describe(
       // The write itself: every file it changes is one the add step names (or under a folder it names).
       expect(await verifyCommand(root, "forge-payments", { write: true }, quiet)).toBe(0);
       const after = await snapshot(root);
-      const changed = [...new Set([...before.keys(), ...after.keys()])].filter(
-        (k) => before.get(k) !== after.get(k),
-      );
+      const changed = changedFiles(before, after);
       const add = v.steps[2]!.command!.replace(/^git add /, "").split(" ");
       expect(add[0]).toBe("facts/forge-payments.corrections.jsonl");
       for (const k of changed)

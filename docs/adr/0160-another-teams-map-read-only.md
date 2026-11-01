@@ -18,7 +18,7 @@ The rules that bind this: reads files only, no network (CLAUDE.md rules 4 and 5)
 
 `atticus join shared import <folder> --team <id> --system <id> [--name <name>] [--commit <sha>]` (also `atticus estate shared import`) reads a clone or an export of their metarepo: its facts folder (`factsDirOf`, else the folder itself) and every `org-pack/profiles/*/repos.manifest.yaml` it has. It writes, in our metarepo, under `shared/<team>/` (`sharedDirOf`; `.atticus/shared` when adopted):
 
-- `map.yaml`, schema 1 (`SharedMapFile`, core `shared-maps.ts`): `team`, `name`, `system` (the system of our profiles their map stands for), `source` (the folder as given, relative to the root when inside it), `commit` (their metarepo's), `importedAt`, and per repo the `component`, the code `commit` their facts cite, the `hosts` and `basePath` their manifest gives, and how many `entries` were kept;
+- `map.yaml`, schema 1 (`SharedMapFile`, core `shared-maps.ts`): `team`, `name`, `system` (the system of our profiles their map stands for), `source` (the folder it came from, as a path from the metarepo's root, and only when it is inside it: a folder outside is this machine's own path, a user name or a drive letter in a committed file, so none is kept and `refresh <team> <folder>` is given the folder), `commit` (their metarepo's), `importedAt`, and per repo the `component`, the code `commit` their facts cite, the `hosts` and `basePath` their manifest gives, and how many `entries` were kept;
 - `facts/<repo>.jsonl`: their entry facts.
 
 What is kept and what is refused:
@@ -28,7 +28,7 @@ What is kept and what is refused:
 - `--system` must be one of `outsideProfileSystems`: a system an estate repo belongs to is ours, not theirs. A repo id of our estate in their facts is refused. A system has at most one team's map.
 - The commit is `--commit`, else read from the clone's `.git` files (HEAD, loose refs, packed-refs, a worktree's `gitdir`). Git is never run. Neither, refused.
 
-`refresh [<team>] [<folder>]` imports again from the recorded source, or a new folder; a newer import replaces the old folder whole, commit and all. `list` prints what is on file. Their facts are never put in `facts/`, never passed to the verifier, the estate join or any model.
+`refresh [<team>] [<folder>]` imports again from the recorded source, or a new folder (the folder is required when no source is recorded, and the command says so); a newer import replaces the old folder whole, commit and all. `list` prints what is on file. Their facts are never put in `facts/`, never passed to the verifier, the estate join or any model.
 
 ### 2. The join: calls left to their system, matched to their entries
 
@@ -45,7 +45,7 @@ Chosen over adding their repos to `joinFacts` as read-only `JoinRepo`s: there, t
 The Interface a matched call made (from our component, to their system, citing our call's line) gets the flag `joined-to-shared-map` and an evidence entry on their entry's line: `source: code`, their repo, path, line and code commit, `side: callee`, `extractor: atticus-shared@1`, `by: <team>`. A call with no entry in their map gets `not-in-shared-map`, a gap.
 
 - The Interface's `to`, id and confidence don't change. `to` stays their system: naming their component would make a record of ours rest on their naming and rename our Interface whenever they rename a component; no Component or Endpoint of theirs is written. The confidence isn't raised: their line was checked by their verify, not ours.
-- Like contract and traffic evidence (ADR 0151), every write takes every shared mark off first (`stripSharedMaps`) and puts them back from the maps on file, over the whole estate's join (`applySharedMaps`), so the catalog is the same whatever order repos are written in, and a map taken away leaves nothing behind.
+- Like contract and traffic evidence (ADR 0151), every write takes every shared mark off first (`stripSharedMaps`) and puts them back from the maps on file, over the whole estate's join (`applySharedMaps`), so the catalog is the same whatever order repos are written in, and a map taken away leaves nothing behind: with no map on file the marks still come off every repo's links, not only the written repo's.
 - `joined-to-shared-map` is in `JOIN_HOW_FLAGS` (a how, never a gap).
 
 `atticus verify <repo> --write` prints a `Shared map:` line per team and writes `shared` (`joined`, `unmatched`, `asked`) into `<repo>.verify.yaml`.

@@ -19,7 +19,7 @@ import type { FlowDelta } from "./schema.js";
  *
  * A link the join guessed (an Interface `inferred` and flagged with one of core's
  * `JOIN_GUESS_FLAGS`: by path or a host's label, ADR 0124 addendum F2, ADR 0135; by a platform
- * setting or a setting's folder name, J0; despite an open conflict, J1) gives a false break as often as a real one:
+ * setting or a setting's folder name, J0; despite an open conflict or by a Service's short name, J1) gives a false break as often as a real one:
  * its caller may break, and is never counted as one that surely does. The critic's rule
  * `constitution.change-links-known` (ADR 0140) asks the caller's owner to confirm it; this view
  * links to that rule rather than asking again.

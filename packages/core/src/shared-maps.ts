@@ -82,8 +82,12 @@ export const SharedMapFile = z.strictObject({
   name: z.string().min(1),
   /** The system of our profiles their map stands for: one no estate repo belongs to. */
   system: Slug,
-  /** Where the person imported it from, as they gave it (a path to a clone or an export). */
-  source: z.string().min(1),
+  /**
+   * Where the person imported it from, relative to the metarepo's root: kept only for a clone or
+   * an export inside the metarepo. One outside it is this machine's own path (a user name, a
+   * drive) in a committed file, so it is left out and `refresh <team> <folder>` is given it.
+   */
+  source: z.string().min(1).optional(),
   /** Their metarepo's commit the files are at. */
   commit: Sha,
   importedAt: z.iso.datetime({ offset: true }),

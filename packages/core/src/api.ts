@@ -125,7 +125,9 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   (`LINK_HOWS`), with `HierJoin.shared` naming the team, their repo, the line and their commit;
  *   an outside system's view gains `shared` (the team's entries, each with the calls that reach
  *   it, and the calls their map has no entry for), and a caller its `entry` and `seen: shared`.
- *   Additive only.
+ *   And (J1) a link joined by a Kubernetes Service's bare name with no
+ *   cited namespace of the caller's the same is a guess: `LINK_HOWS` gains `service-name`, and
+ *   `JOIN_GUESS_FLAGS` `joined-by-service-name`. Additive only.
  */
 export const API_VERSION = "2.44.0";
 export const DEFAULT_PORT = 4321;
@@ -258,7 +260,8 @@ export const HIER_EDGE_TYPES = [
  * or a guess, by its `path` or a host's first `label`. `unknown` when the record doesn't say
  * (written before 2.32.0, or by the built-in readers). 2.38.0 (J0, J1): the guesses a join by
  * host can rest on, a `platform-setting` nobody aimed at the caller, a setting's `folder-name`,
- * or a host or base path an open `conflict` disputes.
+ * or a host or base path an open `conflict` disputes. 2.44.0 (J1): or a Kubernetes Service's
+ * short name (`service-name`) the caller's own cited namespace doesn't resolve.
  */
 export const LINK_HOWS = [
   "answer",
@@ -272,6 +275,7 @@ export const LINK_HOWS = [
   "platform-setting",
   "folder-name",
   "conflict",
+  "service-name",
   "shared",
   "unknown",
 ] as const;

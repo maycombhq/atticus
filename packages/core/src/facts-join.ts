@@ -167,7 +167,8 @@ export function clusterServiceAddress(
 /**
  * Every name a call reaches a Service by inside the cluster (J1): the whole address, `.svc`,
  * `<name>.<namespace>` and the bare `<name>` (from its own namespace), each with the port when
- * one is cited.
+ * one is cited. The bare name is the short one: a join by it is a guess (`joined-by-service-name`)
+ * unless the caller's own namespace is cited and is the Service's (`isShortServiceHost`).
  */
 export function clusterServiceHosts(a: {
   name: string;
@@ -182,6 +183,14 @@ export function clusterServiceHosts(a: {
     a.name,
   ].map((h) => `${h}${port}`);
 }
+
+/**
+ * Whether a name `clusterServiceHosts` gives is the short one: the bare `<name>`, which the
+ * cluster's DNS resolves only from the caller's own namespace. `<name>.<namespace>` resolves from
+ * any namespace through the search path, so it names the Service as surely as `.svc` does.
+ */
+export const isShortServiceHost = (host: string): boolean =>
+  !host.replace(/:\d+$/, "").includes(".");
 
 /** A character that makes a path segment a regular expression (an Ingress `ImplementationSpecific` path). */
 const PATH_PATTERN = /[()[\]|$^*+?\\]/;
@@ -231,9 +240,19 @@ export const JOINED_BY_HOST = "joined-by-host";
 export const JOINED_BY_PLATFORM_SETTING = "joined-by-platform-setting";
 export const JOINED_BY_FOLDER_NAME = "joined-by-folder-name";
 export const JOINED_DESPITE_CONFLICT = "joined-despite-conflict";
+/**
+ * J1 (beta.10): a call that reached a Kubernetes Service by its bare name,
+ * which resolves to that Service only from a pod of its own namespace, with no cited namespace
+ * of the caller's own (its own Service's in-cluster address) the same as the Service's. The
+ * `<name>.<namespace>` and the whole `<name>.<namespace>.svc[.cluster.local]` address are no guess.
+ */
+export const JOINED_BY_SERVICE_NAME = "joined-by-service-name";
 /** The guesses of J0 and J1 a join by host can carry (`FactJoin.guesses`). */
 export type JoinHostGuess =
-  typeof JOINED_BY_PLATFORM_SETTING | typeof JOINED_BY_FOLDER_NAME | typeof JOINED_DESPITE_CONFLICT;
+  | typeof JOINED_BY_PLATFORM_SETTING
+  | typeof JOINED_BY_FOLDER_NAME
+  | typeof JOINED_DESPITE_CONFLICT
+  | typeof JOINED_BY_SERVICE_NAME;
 /**
  * Every flag that says a link is a guess (F2, J0, J1): the only join flags that are gaps. A reader
  * that treats a guessed link apart (the critic, a change's impact, the measure, J6) reads these.
@@ -244,6 +263,7 @@ export const JOIN_GUESS_FLAGS = [
   JOINED_BY_PLATFORM_SETTING,
   JOINED_BY_FOLDER_NAME,
   JOINED_DESPITE_CONFLICT,
+  JOINED_BY_SERVICE_NAME,
 ] as const;
 export type JoinGuessFlag = (typeof JOIN_GUESS_FLAGS)[number];
 const GUESS_ORDER: readonly string[] = JOIN_GUESS_FLAGS;
@@ -900,7 +920,13 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
     manifestHosts: string[];
     manifestBase: string | undefined;
     /** Each host and base path, with the exposures that give it; `listed` when the manifest does. */
-    hosts: { pattern: string; by: Exposure[]; listed?: true }[];
+    hosts: {
+      pattern: string;
+      by: Exposure[];
+      listed?: true;
+      /** J1: the exposures that gave it as a Service's short name, with the Service's namespace. */
+      short?: Map<Exposure, string>;
+    }[];
     paths: { path: string | undefined; by: Exposure[]; listed?: true }[];
   }
   const reached = new Map<string, Reached>();
@@ -913,12 +939,18 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
     }
     return g;
   };
-  const addHost = (g: Reached, pattern: string, by?: Exposure) => {
-    const h = g.hosts.find((x) => x.pattern.toLowerCase() === pattern.toLowerCase());
+  const addHost = (g: Reached, pattern: string, by?: Exposure, shortIn?: string) => {
+    let h = g.hosts.find((x) => x.pattern.toLowerCase() === pattern.toLowerCase());
     if (h) {
       if (by) h.by.push(by);
-    } else g.hosts.push({ pattern, by: by ? [by] : [], ...(by ? {} : { listed: true as const }) });
+    } else {
+      h = { pattern, by: by ? [by] : [], ...(by ? {} : { listed: true as const }) };
+      g.hosts.push(h);
+    }
+    if (by && shortIn !== undefined) (h.short ??= new Map()).set(by, shortIn);
   };
+  /** J1: the namespaces each caller's own Service is cited in (its in-cluster address). */
+  const ownNamespaces: { repo: string; component: string | undefined; namespace: string }[] = [];
   const addPath = (g: Reached, path: string, by?: Exposure) => {
     const segs = pathSegments(path);
     const h = g.paths.find((x) => sameSegments(pathSegments(x.path), segs));
@@ -1008,8 +1040,11 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
       x.fact.host && /^service$/i.test(x.fact.resourceType ?? "")
         ? clusterServiceAddress(x.fact.host)
         : undefined;
-    if (inCluster) for (const h of clusterServiceHosts(inCluster)) addHost(g, h, x);
-    else if (x.fact.host) {
+    if (inCluster) {
+      ownNamespaces.push({ ...owner, namespace: inCluster.namespace });
+      for (const h of clusterServiceHosts(inCluster))
+        addHost(g, h, x, isShortServiceHost(h) ? inCluster.namespace : undefined);
+    } else if (x.fact.host) {
       const host = x.fact.host;
       if (g.manifestHosts.length && !g.manifestHosts.some((p) => hostMatches(p, host))) {
         hostDisputed.add(x);
@@ -1064,6 +1099,11 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
         disputed:
           (!h.listed && h.by.some((x) => hostDisputed.has(x))) ||
           (!p.listed && p.by.some((x) => pathDisputed.has(x))),
+        // J1: a host only Services' short names give: the namespaces it resolves in.
+        shortIn:
+          !h.listed && h.by.length && h.by.every((x) => h.short?.has(x))
+            ? [...new Set(h.by.map((x) => h.short!.get(x)!))]
+            : undefined,
       })),
     );
   });
@@ -1101,6 +1141,7 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
         key: `none|${h.host}`,
         by: [] as FactEnd[],
         disputed: () => false,
+        byServiceName: () => false,
       };
     const owns = (d: (typeof declared)[number]) => (e: Node) =>
       d.component ? e.component === d.component : e.repo === d.repo;
@@ -1112,6 +1153,20 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
       by: uniqueEnds(all.flatMap((d) => d.by)),
       /** Whether what joins the entry rests on a host or base path an open finding disputes. */
       disputed: (e: Node) => all.some((d) => d.disputed && owns(d)(e)),
+      /**
+       * J1: whether the entry is reached by a Service's short name the caller's own namespace,
+       * as cited, doesn't resolve: none of the caller's Services is cited in the Service's.
+       */
+      byServiceName: (e: Node, caller: Node) => {
+        const mine = new Set(
+          ownNamespaces
+            .filter((o) =>
+              o.component ? caller.component === o.component : caller.repo === o.repo,
+            )
+            .map((o) => o.namespace),
+        );
+        return all.some((d) => !!d.shortIn && owns(d)(e) && !d.shortIn.some((ns) => mine.has(ns)));
+      },
     };
   };
 
@@ -1272,6 +1327,7 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
     let byLabel = false;
     let exposedBy: FactEnd[] = [];
     let disputed: ((e: Node) => boolean) | undefined;
+    let byServiceName: ((e: Node, caller: Node) => boolean) | undefined;
     if (answer) {
       scope = named(answer);
       if (!scope) {
@@ -1290,6 +1346,7 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
       how = "host";
       exposedBy = d.by;
       disputed = d.disputed;
+      byServiceName = d.byServiceName;
     } else if (
       host &&
       outside.has(factIdPart(host.named ? `${host.host}:${host.named}` : host.host))
@@ -1346,6 +1403,7 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
           ? guessList([
               ...used.flatMap((x) => x.guesses),
               ...(disputed?.(e) ? [JOINED_DESPITE_CONFLICT as JoinHostGuess] : []),
+              ...(byServiceName?.(e, call) ? [JOINED_BY_SERVICE_NAME as JoinHostGuess] : []),
             ])
           : [];
       joins.push({
@@ -1682,8 +1740,8 @@ export function basePathOf(e: Entry): string {
 
 /**
  * What a join guessed, as flags in `JOIN_GUESS_FLAGS`' order: by path, by a host's first label
- * (F2), by a platform-wide setting or a setting's folder name (J0), or despite an open finding
- * (J1). Empty for a join nobody had to guess.
+ * (F2), by a platform-wide setting or a setting's folder name (J0), despite an open finding or
+ * by a Service's short name (J1). Empty for a join nobody had to guess.
  */
 export function joinGuessesOf(
   j: Pick<FactJoin, "inferred" | "byLabel" | "guesses">,
@@ -1701,7 +1759,7 @@ export const isGuessedJoin = (j: Pick<FactJoin, "inferred" | "byLabel" | "guesse
 /**
  * How a join found its callee, as its Interface's flags (C1, ADR 0135): a guess by its own F2
  * flags alone (`JOIN_GUESS_FLAGS`: by path or label, F2; by a platform setting or a folder name,
- * J0; despite a conflict, J1), any other by how it was made
+ * J0; despite a conflict or by a Service's short name, J1), any other by how it was made
  * (`joined-by-answer`, `-name`, `-repo`, `-host`); a publish joined to its listener has none.
  */
 export function joinFlagsOf(

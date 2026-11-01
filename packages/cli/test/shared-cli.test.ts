@@ -106,7 +106,16 @@ describe("atticus join shared (O3)", { timeout: 60_000 }, () => {
     expect(r.out[1]).toBe(
       "  Left out: 2 facts that aren't entries, 1 entry their verify didn't confirm.",
     );
+    // A clone outside the metarepo: its path is this machine's, so it isn't kept (the file is
+    // committed), and refreshing needs the folder.
+    expect(r.out).toContain(
+      "  Their folder is outside this metarepo, so where it is isn't recorded: refresh with atticus join shared refresh forge-risk-team <folder>.",
+    );
     const map = parse(await readFile(join(root, "shared/forge-risk-team/map.yaml"), "utf8"));
+    expect(map.source).toBeUndefined();
+    expect(await readFile(join(root, "shared/forge-risk-team/map.yaml"), "utf8")).not.toContain(
+      theirs.split("\\").join("/"),
+    );
     expect(map).toMatchObject({
       schemaVersion: 1,
       team: "forge-risk-team",
@@ -146,8 +155,8 @@ describe("atticus join shared (O3)", { timeout: 60_000 }, () => {
     );
     const l = capture();
     expect(await sharedList(root, {}, l.io)).toBe(0);
-    expect(l.out[0]).toMatch(
-      /^forge-risk-team: Forge Risk Team's map for forge-risk, their commit 9999abc, imported 2026-11-01 from /,
+    expect(l.out[0]).toBe(
+      "forge-risk-team: Forge Risk Team's map for forge-risk, their commit 9999abc, imported 2026-11-01 from a folder outside the metarepo: 3 entries in forge-risk-limits, forge-risk-scoring.",
     );
   });
 
@@ -227,14 +236,44 @@ describe("atticus join shared (O3)", { timeout: 60_000 }, () => {
   });
 
   it("a newer import replaces the old commit", async () => {
+    // No folder on record: refresh asks for it, and changes nothing.
+    const none = capture();
+    expect(
+      await sharedRefresh(root, "forge-risk-team", { commit: "aaaa111", now: NOW }, none.io),
+    ).toBe(2);
+    expect(none.err).toEqual([
+      "forge-risk-team's map doesn't record where it came from (its folder was outside this metarepo): give the folder, atticus join shared refresh forge-risk-team <folder>.",
+    ]);
     const c = capture();
     expect(
-      await sharedRefresh(root, "forge-risk-team", { commit: "aaaa111", now: NOW }, c.io),
+      await sharedRefresh(
+        root,
+        "forge-risk-team",
+        { dir: theirs, commit: "aaaa111", now: NOW },
+        c.io,
+      ),
     ).toBe(0);
     expect(c.out[0]).toMatch(
       /^Replaced Forge Risk Team's map at 9999abc with their commit aaaa111:/,
     );
     const map = parse(await readFile(join(root, "shared/forge-risk-team/map.yaml"), "utf8"));
     expect(map.commit).toBe("aaaa111");
+  });
+
+  it("records a clone inside the metarepo by its path from the root, and refreshes from it", async () => {
+    const { root: inside, theirs: from } = await metarepo();
+    await cp(from, join(inside, "vendor/risk-team"), { recursive: true });
+    const r = await imp(inside, join(inside, "vendor/risk-team"), { commit: "bbbb222" });
+    expect(r.code).toBe(0);
+    expect(r.out.some((l) => l.includes("isn't recorded"))).toBe(false);
+    const map = parse(await readFile(join(inside, "shared/forge-risk-team/map.yaml"), "utf8"));
+    expect(map.source).toBe("vendor/risk-team");
+    const c = capture();
+    expect(
+      await sharedRefresh(inside, "forge-risk-team", { commit: "cccc333", now: NOW }, c.io),
+    ).toBe(0);
+    expect(c.out[0]).toMatch(
+      /^Replaced Forge Risk Team's map at bbbb222 with their commit cccc333:/,
+    );
   });
 });

@@ -1213,9 +1213,14 @@ export function catalogWithFacts(given: FactsCatalogInput): FactsCatalogResult {
           systems,
         })
       : undefined;
-  const applied = sharedWhole
-    ? { ...evidenced, records: applySharedMaps(evidenced.records, sharedWhole, systems) }
-    : evidenced;
+  // With no map on file the marks are still taken off the whole catalog (every repo's links,
+  // as the link evidence's are), so a map taken away leaves nothing behind on any repo.
+  const applied = {
+    ...evidenced,
+    records: sharedWhole
+      ? applySharedMaps(evidenced.records, sharedWhole, systems)
+      : stripSharedMaps(evidenced.records),
+  };
 
   const newIds = new Set(
     applied.records.filter((r) => (r.evidence as unknown[]).some(mine)).map((r) => r.id),
