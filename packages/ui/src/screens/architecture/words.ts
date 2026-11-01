@@ -80,6 +80,9 @@ export const WORDS = {
     "no-endpoint": "Endpoint not found",
     "not-in-catalog": "Not in the catalog",
     conflicts: "Sources disagree",
+    // F2 and ADR 0135: a join nobody named; Why is this linked? says how it was found.
+    "joined-by-path": "Joined by its path: nobody named where it goes",
+    "joined-by-label": "Joined by its host's first part: a guess",
     // ADR 0124 addendum D-app, F3: from the repos' facts.
     unverified: "No fact verified from code",
     question: "A question is open on it",

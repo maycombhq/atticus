@@ -1,4 +1,10 @@
-import type { Api, CatalogRecord, EvidenceT, RecordOf } from "@maycombhq/core";
+import {
+  JOIN_HOW_FLAGS,
+  type Api,
+  type CatalogRecord,
+  type EvidenceT,
+  type RecordOf,
+} from "@maycombhq/core";
 
 /**
  * The estate as one hierarchy (ADR 0081, plan 4.6): estate → system → repo → component →
@@ -14,6 +20,7 @@ type Kind = Api.HierKindT;
 type HierNode = Api.HierNodeT;
 type HierEdge = Api.HierEdgeT;
 type Evidence = Api.HierEvidenceT;
+type Join = Api.HierJoinT;
 type EdgeType = HierEdge["type"];
 
 interface Raw {
@@ -37,6 +44,8 @@ interface Atom {
   via?: string;
   evidence: Evidence[];
   gaps: string[];
+  /** C1 (ADR 0135): the Interface the call is, how it was joined and its lines at both ends. */
+  join?: Join;
 }
 
 /** The model a view is cut from: build it once per catalog read. */
@@ -172,8 +181,56 @@ const STATE: Record<string, HierNode["state"]> = {
 function recordGaps(r: CatalogRecord): string[] {
   const g: string[] = [];
   if (r.confidence === "inferred") g.push("inferred");
-  for (const f of r.flags ?? []) g.push(f);
+  // C1 (ADR 0135): a flag that says how a link was made is no gap.
+  for (const f of r.flags ?? []) if (!JOIN_HOW_FLAGS.has(f)) g.push(f);
   return g;
+}
+
+/** The calls an edge lists (ADR 0135); `count` says how many it merged in all. */
+const MAX_JOINS = 20;
+
+const HOW_OF_FLAG: Record<string, Join["how"]> = {
+  "joined-by-path": "path",
+  "joined-by-label": "label",
+  "joined-by-answer": "answer",
+  "joined-by-name": "named",
+  "joined-by-repo": "repo",
+  "joined-by-host": "host",
+  "declared-caller": "declared",
+};
+
+/** How an Interface's call found its callee, from its flags and via (C1, ADR 0135). */
+export function joinHow(i: RecordOf<"Interface">): Join["how"] {
+  for (const f of i.flags ?? []) if (HOW_OF_FLAG[f]) return HOW_OF_FLAG[f]!;
+  if (i.via === "event-bus" || i.via === "mq") return "topic";
+  return "unknown";
+}
+
+function joinOf(i: RecordOf<"Interface">): Join {
+  const side = (s: string | undefined) => evidenceOf(i.evidence.filter((e) => e.side === s));
+  const sided = new Set(["caller", "callee", "gateway"]);
+  return {
+    interface: i.id,
+    from: i.from,
+    to: i.to,
+    how: joinHow(i),
+    gateway: i.via === "gateway",
+    verified: i.confidence === "verified",
+    ...(i.method ? { method: i.method } : {}),
+    ...(i.normalizedPath ? { path: i.normalizedPath } : {}),
+    caller: side("caller"),
+    callee: side("callee"),
+    hops: side("gateway"),
+    other: evidenceOf(i.evidence.filter((e) => !e.side || !sided.has(e.side))),
+  };
+}
+
+function mergeJoins(a: Join[], b: Join[]): Join[] {
+  const by = new Map(a.map((j) => [j.interface, j]));
+  for (const j of b) if (!by.has(j.interface)) by.set(j.interface, j);
+  return [...by.values()]
+    .sort((x, y) => (x.interface < y.interface ? -1 : x.interface > y.interface ? 1 : 0))
+    .slice(0, MAX_JOINS);
 }
 
 const props = (o: Record<string, unknown>): HierNode["properties"] => {
@@ -460,9 +517,10 @@ export function buildEstate(records: CatalogRecord[]): Estate {
     const ev = evidenceOf(i.evidence);
     const gaps = [...recordGaps(i), ...(i.conflicts.length ? ["conflicts"] : [])];
     const target = i.endpoint ? endpointNode.get(i.endpoint) : undefined;
+    const join = joinOf(i);
     if (target?.startsWith("topic:")) {
-      atoms.push({ from, to: target, type: "publishes", evidence: ev, gaps });
-      atoms.push({ from: to, to: target, type: "subscribes", evidence: ev, gaps });
+      atoms.push({ from, to: target, type: "publishes", evidence: ev, gaps, join });
+      atoms.push({ from: to, to: target, type: "subscribes", evidence: ev, gaps, join });
       continue;
     }
     let caller = from;
@@ -494,6 +552,7 @@ export function buildEstate(records: CatalogRecord[]): Estate {
       via: i.via,
       evidence: ev,
       gaps: [...gaps, ...(i.endpoint && !target ? ["no-endpoint"] : [])],
+      join,
     });
   }
 
@@ -649,9 +708,11 @@ function merge(mapped: { from: string; to: string; atom: Atom }[]): HierEdge[] {
         state: "current",
         gaps: [...new Set(atom.gaps)].sort(),
         evidence: mergeEvidence(atom.evidence),
+        ...(atom.join ? { joins: [atom.join] } : {}),
       });
       continue;
     }
+    if (atom.join) e.joins = mergeJoins(e.joins ?? [], [atom.join]);
     e.count++;
     if (atom.sync && e.sync !== atom.sync) e.sync = "mixed";
     if (atom.via && e.via !== atom.via) e.via = "mixed";

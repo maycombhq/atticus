@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import {
+  JOIN_HOW_FLAGS,
   joinFacts,
   joinRecords,
   NO_TARGET,
@@ -498,7 +499,7 @@ describe("joinRecords: a guessed join is inferred, with how it was found (F2)", 
     });
   });
 
-  it("keeps a join by a named target verified, with no flag", () => {
+  it("keeps a join by a named target verified, flagged how (C1: never a gap)", () => {
     const repos: JoinRepo[] = [
       {
         repo: "forge-web",
@@ -517,8 +518,175 @@ describe("joinRecords: a guessed join is inferred, with how it was found (F2)", 
       },
     ];
     const iface = joinRecords(joinFacts({ repos }), repos).find((r) => r.kind === "Interface");
-    expect(iface).toMatchObject({ confidence: "verified" });
-    expect(iface && "flags" in iface ? iface.flags : undefined).toBeUndefined();
+    expect(iface).toMatchObject({ confidence: "verified", flags: ["joined-by-repo"] });
+  });
+});
+
+describe("joinRecords: every Interface says how it was joined (C1, ADR 0135)", () => {
+  const callee: JoinRepo = {
+    repo: "forge-limits",
+    component: "forge-limits",
+    hosts: ["limits.forge.example"],
+    facts: [entry("forge-limits", "e-limit", { method: "GET", path: "/limits/{limitId}" })],
+  };
+  const caller = (extra: Record<string, unknown>): JoinRepo => ({
+    repo: "forge-web",
+    facts: [
+      call("forge-web", "c-limits", {
+        component: "forge-web",
+        method: "GET",
+        path: "/limits/{id}",
+        ...extra,
+      }),
+    ],
+  });
+  const flagsOf = (repos: JoinRepo[], targets?: Record<string, Record<string, string>>) => {
+    const out = joinFacts({ repos, ...(targets ? { targets } : {}) });
+    const i = joinRecords(out, repos).find((r) => r.kind === "Interface");
+    return i && "flags" in i ? i.flags : undefined;
+  };
+
+  it("flags a join a person's answer made joined-by-answer", () => {
+    expect(flagsOf([caller({}), callee], { "forge-web": { "c-limits": "forge-limits" } })).toEqual([
+      "joined-by-answer",
+    ]);
+  });
+
+  it("flags a join by the component the call names joined-by-name", () => {
+    expect(flagsOf([caller({ to: "limits-api" }), { ...callee, component: "limits-api" }])).toEqual(
+      ["joined-by-name"],
+    );
+  });
+
+  it("flags a join by the repo the call names joined-by-repo", () => {
+    expect(
+      flagsOf([caller({ to: "forge-limits" }), { ...callee, component: "limits-api" }]),
+    ).toEqual(["joined-by-repo"]);
+  });
+
+  it("flags a join by a host the manifest lists joined-by-host", () => {
+    expect(flagsOf([caller({ host: "limits.forge.example" }), callee])).toEqual(["joined-by-host"]);
+  });
+
+  it("flags a join of a publish to its listener with nothing: via says it", () => {
+    const repos: JoinRepo[] = [
+      {
+        repo: "forge-web",
+        facts: [
+          call("forge-web", "c-pub", {
+            component: "forge-web",
+            callType: "event-topic",
+            method: "publish",
+            path: "forge.limits.changed",
+          }),
+        ],
+      },
+      {
+        repo: "forge-limits",
+        facts: [
+          entry("forge-limits", "e-sub", {
+            entryType: "event-topic",
+            path: "forge.limits.changed",
+          }),
+        ],
+      },
+    ];
+    expect(flagsOf(repos)).toBeUndefined();
+  });
+
+  it("names every flag that says how in JOIN_HOW_FLAGS, apart from the guesses", () => {
+    expect([...JOIN_HOW_FLAGS].sort()).toEqual([
+      "declared-caller",
+      "joined-by-answer",
+      "joined-by-host",
+      "joined-by-name",
+      "joined-by-repo",
+    ]);
+  });
+});
+
+describe("joinFacts: a person's target outranks every join rule (C2, ADR 0135)", () => {
+  it("leaves a call a person sent outside the estate unjoined, though a repo lists its host", () => {
+    const repos: JoinRepo[] = [
+      {
+        repo: "forge-web",
+        facts: [
+          call("forge-web", "c-limits", {
+            component: "forge-web",
+            method: "GET",
+            path: "/limits/{id}",
+            host: "limits.forge.example",
+            to: "Northwind Pay",
+            by: "person",
+            verified: "person",
+          }),
+        ],
+      },
+      {
+        repo: "forge-limits",
+        component: "forge-limits",
+        hosts: ["limits.forge.example"],
+        facts: [entry("forge-limits", "e-limit", { method: "GET", path: "/limits/{limitId}" })],
+      },
+    ];
+    const out = joinFacts({ repos });
+    expect(out.joins).toEqual([]);
+    expect(out.asks).toEqual([]);
+  });
+
+  it("never joins a person's outside target by path", () => {
+    const repos: JoinRepo[] = [
+      {
+        repo: "forge-web",
+        facts: [
+          call("forge-web", "c-tags", {
+            component: "forge-web",
+            method: "GET",
+            path: "/api/tags",
+            to: "Northwind Pay",
+            by: "person",
+            verified: "person",
+          }),
+        ],
+      },
+      {
+        repo: "forge-archive",
+        facts: [entry("forge-archive", "e-tags", { method: "GET", path: "/api/tags" })],
+      },
+    ];
+    expect(joinFacts({ repos }).joins).toEqual([]);
+  });
+
+  it("joins a person's target in the estate by its name, whatever the host says", () => {
+    const repos: JoinRepo[] = [
+      {
+        repo: "forge-web",
+        facts: [
+          call("forge-web", "c-limits", {
+            component: "forge-web",
+            method: "GET",
+            path: "/limits/{id}",
+            host: "limits.forge.example",
+            to: "forge-quotas",
+            by: "person",
+            verified: "person",
+          }),
+        ],
+      },
+      {
+        repo: "forge-limits",
+        component: "forge-limits",
+        hosts: ["limits.forge.example"],
+        facts: [entry("forge-limits", "e-limit", { method: "GET", path: "/limits/{limitId}" })],
+      },
+      {
+        repo: "forge-quotas",
+        component: "forge-quotas",
+        facts: [entry("forge-quotas", "e-q", { method: "GET", path: "/limits/{limitId}" })],
+      },
+    ];
+    const out = joinFacts({ repos });
+    expect(out.joins.map((j) => [j.entry.repo, j.how])).toEqual([["forge-quotas", "repo"]]);
   });
 });
 

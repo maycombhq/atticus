@@ -79,8 +79,12 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  * 2.31.0 (ADR 0133): a prototype compared with the estate. GET
  *   /api/changes/{id}/prototypes: each prototype attached to the change, its calls placed as
  *   exists, changes, new or vendor, each cited. Additive only.
+ * 2.32.0 (ADR 0135): why a link is there and what each count on a repo holds. `joins` on a
+ *   graph edge (each call merged into it, how it was joined, verified or not, and its lines at
+ *   both ends), and in GET /api/trust the lists behind a repo's counts (`lists`: the facts
+ *   rejected, the files not read and excluded, the questions open). Additive only.
  */
-export const API_VERSION = "2.31.0";
+export const API_VERSION = "2.32.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -204,6 +208,46 @@ export const HIER_EDGE_TYPES = [
   "deployed-to",
 ] as const;
 
+/**
+ * 2.32.0 (ADR 0135, C1): how a link's call found its callee, from its Interface's flags and via:
+ * a person's `answer`, the component (`named`) or `repo` the call names, a `host` the manifest
+ * lists, a person who `declared` the caller of a gateway route, a publish heard on its `topic`;
+ * or a guess, by its `path` or a host's first `label`. `unknown` when the record doesn't say
+ * (written before 2.32.0, or by the built-in readers).
+ */
+export const LINK_HOWS = [
+  "answer",
+  "named",
+  "repo",
+  "host",
+  "declared",
+  "topic",
+  "path",
+  "label",
+  "unknown",
+] as const;
+export const HierJoin = z.object({
+  /** The catalog Interface the call is. */
+  interface: z.string(),
+  from: z.string(),
+  to: z.string(),
+  how: z.enum(LINK_HOWS),
+  /** Through one or more gateways (the Interface's via). */
+  gateway: z.boolean(),
+  /** The Interface is verified: both ends declared, and nobody had to guess the callee. */
+  verified: z.boolean(),
+  method: z.string().optional(),
+  path: z.string().optional(),
+  /** The caller's lines: the call, and the config that ties it to the host. */
+  caller: z.array(HierEvidence),
+  /** The callee's lines: the entry that serves it. */
+  callee: z.array(HierEvidence),
+  /** Each gateway hop's lines, in order. */
+  hops: z.array(HierEvidence),
+  /** Lines the record doesn't place at either end (a built-in reader's). */
+  other: z.array(HierEvidence),
+});
+
 /** Parallel edges between the same two nodes of the same type are one edge with a count. */
 export const HierEdge = z.object({
   id: z.string(),
@@ -218,6 +262,11 @@ export const HierEdge = z.object({
   gaps: z.array(z.string()),
   /** Up to five pieces of evidence across the merged edges. */
   evidence: z.array(HierEvidence),
+  /**
+   * 2.32.0 (ADR 0135, C1): the calls merged into the edge, each with how it was joined and its
+   * lines at both ends; at most 20, by Interface id (`count` says how many in all).
+   */
+  joins: z.array(HierJoin).optional(),
 });
 
 const Suggest = z.object({ mode: z.enum(["focus", "group"]), id: HierId.optional() });
@@ -269,6 +318,7 @@ export type GraphLensT = z.infer<typeof GraphLens>;
 export type HierKindT = z.infer<typeof HierKind>;
 export type HierNodeT = z.infer<typeof HierNode>;
 export type HierEdgeT = z.infer<typeof HierEdge>;
+export type HierJoinT = z.infer<typeof HierJoin>;
 export type HierEvidenceT = z.infer<typeof HierEvidence>;
 export type GraphNodeViewT = z.infer<typeof GraphNodeView>;
 export type GraphFocusViewT = z.infer<typeof GraphFocusView>;
@@ -3810,6 +3860,7 @@ export function openApiDocument(): Record<string, unknown> {
     Graph,
     HierNode,
     HierEdge,
+    HierJoin,
     GraphNodeView,
     GraphFocusView,
     ViewLayoutResult,

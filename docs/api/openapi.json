@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Atticus local API",
-    "version": "2.31.0",
+    "version": "2.32.0",
     "description": "Served by `atticus ui` on 127.0.0.1. The UI only calls this API, and the API only reads and writes files in the metarepo.",
     "license": {
       "name": "Apache-2.0",
@@ -17566,6 +17566,12 @@
               ],
               "additionalProperties": false
             }
+          },
+          "joins": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HierJoin"
+            }
           }
         },
         "required": [
@@ -17577,6 +17583,147 @@
           "state",
           "gaps",
           "evidence"
+        ],
+        "additionalProperties": false
+      },
+      "HierJoin": {
+        "type": "object",
+        "properties": {
+          "interface": {
+            "type": "string"
+          },
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          },
+          "how": {
+            "type": "string",
+            "enum": [
+              "answer",
+              "named",
+              "repo",
+              "host",
+              "declared",
+              "topic",
+              "path",
+              "label",
+              "unknown"
+            ]
+          },
+          "gateway": {
+            "type": "boolean"
+          },
+          "verified": {
+            "type": "boolean"
+          },
+          "method": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "caller": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "source": {
+                  "type": "string"
+                },
+                "repo": {
+                  "type": "string"
+                },
+                "at": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "source",
+                "at"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "callee": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "source": {
+                  "type": "string"
+                },
+                "repo": {
+                  "type": "string"
+                },
+                "at": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "source",
+                "at"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "hops": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "source": {
+                  "type": "string"
+                },
+                "repo": {
+                  "type": "string"
+                },
+                "at": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "source",
+                "at"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "other": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "source": {
+                  "type": "string"
+                },
+                "repo": {
+                  "type": "string"
+                },
+                "at": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "source",
+                "at"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "interface",
+          "from",
+          "to",
+          "how",
+          "gateway",
+          "verified",
+          "caller",
+          "callee",
+          "hops",
+          "other"
         ],
         "additionalProperties": false
       },

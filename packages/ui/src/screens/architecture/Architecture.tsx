@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
 import type { Api } from "@maycombhq/core";
 import { api, ApiError, useLiveEvents } from "../../api/client.js";
 import type { Laid, Point } from "../../app/layout/index.js";
@@ -9,6 +17,7 @@ import { systemHash } from "../know/Systems.js";
 import { CopyButton, Facts } from "../run/shared.js";
 import { RunStep } from "../../app/runstep.js";
 import { ArchitectureCanvas } from "./Canvas.js";
+import { WhyLinked } from "./WhyLinked.js";
 import { Citation, EvidenceProvider, useEvidence } from "../../app/evidence.js";
 import {
   canvasGraph,
@@ -543,7 +552,7 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
   );
 }
 
-function Inspector({
+export function Inspector({
   node,
   isCurrent,
   lens,
@@ -552,7 +561,10 @@ function Inspector({
   here,
   links = [],
   labelOf = (id) => id,
+  under,
 }: {
+  /** What to show under each call of a link (This link is wrong, C2). */
+  under?: (join: Api.HierJoinT) => ReactNode;
   node: Api.HierNodeT;
   /** The links in the view that start or end on the box, each with its evidence (F3). */
   links?: Api.HierEdgeT[];
@@ -637,15 +649,25 @@ function Inspector({
               {COPY.evidence.linkOf(labelOf(l.from), labelOf(l.to), l.type)}
               {l.gaps.length > 0 &&
                 ` · ${WORDS.gaps}: ${l.gaps.map((g) => WORDS.gap[g] ?? g).join(", ")}`}
-              {l.evidence.length > 0 && (
-                <ul>
-                  {l.evidence.map((e) => (
-                    <li key={`${e.repo ?? ""}:${e.at}`}>
-                      {e.repo && <span className="mono">{e.repo}: </span>}
-                      <Citation repo={e.repo} at={e.at} />
-                    </li>
-                  ))}
-                </ul>
+              {l.joins?.length ? (
+                // ADR 0135, C1: each call on the link, how it was joined and its lines.
+                <details>
+                  <summary>
+                    {COPY.why.openOf(COPY.evidence.linkOf(labelOf(l.from), labelOf(l.to), l.type))}
+                  </summary>
+                  <WhyLinked link={l} {...(under ? { under } : {})} />
+                </details>
+              ) : (
+                l.evidence.length > 0 && (
+                  <ul>
+                    {l.evidence.map((e) => (
+                      <li key={`${e.repo ?? ""}:${e.at}`}>
+                        {e.repo && <span className="mono">{e.repo}: </span>}
+                        <Citation repo={e.repo} at={e.at} />
+                      </li>
+                    ))}
+                  </ul>
+                )
               )}
             </li>
           ))}
