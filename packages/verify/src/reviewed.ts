@@ -11,6 +11,8 @@
  * is simply read. This is the verifier's input, like the routed files: not a facts-file field.
  */
 
+import { forwardSlashes } from "@maycombhq/core";
+
 /** A range of one file's lines in a read plan: `<file>#L<from>-L<to>`. */
 export const LINE_RANGE = /^(.+)#L(\d+)-L(\d+)$/;
 
@@ -66,7 +68,9 @@ export function parseReviewed(text: string): { entries: ReviewedEntry[]; bad: Ba
       bad.push({ line, raw, message: `line ${line} isn't ${SHAPE}: ${issues.join("; ")}` });
       return;
     }
-    entries.push({ line, path: (o!.path as string).trim(), why: (o!.why as string).trim() });
+    // W-paths: a path written on Windows (`src\calc\*.java`) is read with `/`, as facts are.
+    const path = forwardSlashes((o!.path as string).trim());
+    entries.push({ line, path, why: (o!.why as string).trim() });
   });
   return { entries, bad };
 }

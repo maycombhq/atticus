@@ -6,6 +6,7 @@ import { SCHEMA_VERSION, type EvidenceT } from "./schema/common.js";
 import { Fact, FactsFile, type FactOf } from "./schema/facts.js";
 import { NEVER_CHECKED_STEPS } from "./schema/kinds.js";
 import { migrationOf, type MigrationFile } from "./migration-files.js";
+import { normalizeFactPaths } from "./fact-paths.js";
 
 /**
  * The facts file (ADR 0124): read, write and project into catalog C1.
@@ -28,7 +29,7 @@ export type ParseFactsResult = { ok: true; facts: Fact[] } | { ok: false; issues
 export function parseFacts(text: string): ParseFactsResult {
   const trimmed = text.trim();
   if (trimmed.startsWith("[")) {
-    const r = FactsFile.safeParse(JSON.parse(trimmed));
+    const r = FactsFile.safeParse(normalizeFactPaths(JSON.parse(trimmed)));
     if (r.success) return { ok: true, facts: r.data };
     return { ok: false, issues: r.error.issues.map((i) => issueOf(i)) };
   }
@@ -45,7 +46,7 @@ export function parseFacts(text: string): ParseFactsResult {
       issues.push({ line, code: "not-json", message: (e as Error).message });
       return;
     }
-    const r = Fact.safeParse(json);
+    const r = Fact.safeParse(normalizeFactPaths(json));
     if (r.success) facts.push(r.data);
     else for (const iss of r.error.issues) issues.push({ line, ...issueOf(iss) });
   });
@@ -86,7 +87,7 @@ export function parseFactLine(
       bad: { line, raw, issues: [{ line, code: "not-json", message: (e as Error).message }] },
     };
   }
-  const r = Fact.safeParse(json);
+  const r = Fact.safeParse(normalizeFactPaths(json));
   if (!r.success)
     return {
       bad: { line, raw, issues: r.error.issues.map((iss) => ({ line, ...issueOf(iss) })) },
