@@ -383,6 +383,11 @@ describe("joinFacts: a relative call whose target names nothing in the estate", 
     });
     expect(out.joins).toEqual([]);
     expect(out.asks).toEqual([]);
+    // J2: each call left to a system outside the estate is listed, so a write can count them.
+    expect(out.outside?.map((o) => `${o.call.fact} ${o.target}`)).toEqual([
+      "c-host northwind-tags",
+      "c-pay Northwind Pay",
+    ]);
   });
 
   it("makes an Interface for each join by path, citing both ends", () => {
@@ -444,6 +449,12 @@ describe("joinFacts: an answer that names nothing binds (F3)", () => {
       repos[1]!,
     ];
     expect(joinFacts({ repos: named, outside: ["forge-risk-team"] }).joins).toEqual([]);
+  });
+
+  it("lists a call a person answered with a system outside the estate as outside (J2)", () => {
+    const out = joinFacts({ repos, targets: { "forge-notes": { "c-tags": "Northwind Pay" } } });
+    expect(out.joins).toEqual([]);
+    expect(out.outside?.map((o) => `${o.call.fact} ${o.target}`)).toEqual(["c-tags Northwind Pay"]);
   });
 });
 

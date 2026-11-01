@@ -13,6 +13,7 @@ import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import {
   answerQuestion,
+  interfaceId,
   listQuestions,
   loadOrgPack,
   parseRecord,
@@ -22,7 +23,7 @@ import {
 } from "@maycombhq/core";
 import { estateRepos, mergeEstate, readCatalog, writeCatalog } from "@maycombhq/scanner";
 import { main } from "../src/main.js";
-import { joinLines, mapRenderCommand } from "../src/map-render-commands.js";
+import { joinLines, linkChanges, linkLines, mapRenderCommand } from "../src/map-render-commands.js";
 import { verifyCommand } from "../src/verify-commands.js";
 
 /**
@@ -217,6 +218,162 @@ describe("joinLines: what the estate join did for a write", () => {
   });
 });
 
+/**
+ * J2: a write says what it did to the links between components, for review in the pull request:
+ * the calls joined (and of those, inferred), asked, left outside and not joined, and each
+ * Interface added, removed or changed in confidence, with how its callee was found.
+ */
+describe("linkChanges: the links a write added or removed (J2)", () => {
+  const end = (repo: string, fact: string, component: string, at: string) => ({
+    repo,
+    fact,
+    component,
+    at,
+  });
+  const ids = {
+    new: interfaceId("forge-notes-web", "forge-archive", "GET", "/api/tags"),
+    kept: interfaceId("forge-notes-web", "forge-notes", "GET", "/api/tags"),
+    gone: interfaceId("forge-notes-web", "forge-legacy", "GET", "/api/tags"),
+  };
+  const iface = (from: string, to: string, extra: object = {}): CatalogRecord => {
+    const p = parseRecord({
+      kind: "Interface",
+      schemaVersion: 2,
+      id: interfaceId(from, to, "GET", "/api/tags"),
+      status: "current",
+      confidence: "verified",
+      from,
+      to,
+      via: "direct",
+      method: "GET",
+      normalizedPath: "/api/tags",
+      sync: "sync",
+      direction: "outbound",
+      conflicts: [],
+      evidence: [{ source: "code", repo: "forge-notes", path: "web/a.ts", line: 1 }],
+      ...extra,
+    });
+    if (!p.ok) throw new Error(JSON.stringify(p.issues));
+    return p.record;
+  };
+  const join = {
+    joins: [
+      {
+        call: end("forge-notes", "c-tags", "forge-notes-web", "web/a.ts:9"),
+        entry: end("forge-archive", "e-tags", "forge-archive", "src/Tags.java:18"),
+        how: "path",
+        inferred: { within: "estate" },
+        callType: "rest",
+        method: "GET",
+        path: "/api/tags",
+        interface: ids.new,
+      },
+      {
+        call: end("forge-notes", "c-note", "forge-notes-web", "web/a.ts:5"),
+        entry: end("forge-notes", "e-note", "forge-notes", "api/Notes.java:14"),
+        how: "named",
+        callType: "rest",
+        method: "GET",
+        path: "/api/notes",
+        interface: ids.kept,
+      },
+      {
+        call: end("forge-archive", "c-back", "forge-archive", "src/Back.java:3"),
+        entry: end("forge-notes", "e-note", "forge-notes", "api/Notes.java:14"),
+        how: "named",
+        callType: "rest",
+        path: "/api/notes",
+        interface: "if-other",
+      },
+    ],
+    asks: [
+      {
+        call: end("forge-notes", "c-host", "forge-notes-web", "web/a.ts:12"),
+        reason: "unknown-host",
+        host: "tags.internal",
+        question: "Which repo answers on tags.internal?",
+        candidates: [],
+      },
+    ],
+    misses: [],
+    outside: [
+      {
+        call: end("forge-notes", "c-pay", "forge-notes-web", "web/a.ts:20"),
+        target: "Northwind Pay",
+      },
+    ],
+    lineage: [],
+    gaps: [],
+  } satisfies FactsJoinResult;
+  const before = [
+    iface("forge-notes-web", "forge-legacy"),
+    iface("forge-notes-web", "forge-notes"),
+  ];
+  const after = [
+    iface("forge-notes-web", "forge-notes", { confidence: "inferred" }),
+    iface("forge-notes-web", "forge-archive", {
+      confidence: "inferred",
+      flags: ["joined-by-path"],
+    }),
+  ];
+
+  it("counts the repo's calls joined, inferred, asked, outside and not joined", () => {
+    const l = linkChanges("forge-notes", join, before, after);
+    expect(l.calls).toEqual({ joined: 2, inferred: 1, asked: 1, outside: 1, missed: 0 });
+  });
+
+  it("lists each Interface added, removed or changed in confidence, with how it was found", () => {
+    const l = linkChanges("forge-notes", join, before, after);
+    expect(l.added).toEqual([
+      {
+        id: ids.new,
+        from: "forge-notes-web",
+        to: "forge-archive",
+        method: "GET",
+        path: "/api/tags",
+        confidence: "inferred",
+        how: "path",
+        flags: ["joined-by-path"],
+      },
+    ]);
+    expect(l.removed.map((r) => `${r.id} ${r.confidence}`)).toEqual([`${ids.gone} verified`]);
+    expect(l.changed).toEqual([
+      {
+        id: ids.kept,
+        from: "forge-notes-web",
+        to: "forge-notes",
+        method: "GET",
+        path: "/api/tags",
+        confidence: "inferred",
+        how: "named",
+        was: { confidence: "verified" },
+      },
+    ]);
+  });
+
+  it("says it in a few lines, each link with its confidence and how it was found", () => {
+    const l = linkChanges("forge-notes", join, before, after);
+    expect(linkLines(l, "facts/forge-notes.verify.yaml")).toEqual([
+      "  Links: 2 calls joined (1 inferred), 1 asked, 1 outside the estate, 0 not joined; Interfaces +1 -1 ~1 (all under links in facts/forge-notes.verify.yaml).",
+      "    + forge-notes-web → forge-archive GET /api/tags (inferred; found by path: joined-by-path)",
+      "    - forge-notes-web → forge-legacy GET /api/tags (verified)",
+      "    ~ forge-notes-web → forge-notes GET /api/tags (inferred, was verified; found by name)",
+    ]);
+  });
+
+  it("says no link changed when none did", () => {
+    const l = linkChanges(
+      "forge-notes",
+      { ...join, joins: [], asks: [], outside: [] },
+      after,
+      after,
+    );
+    expect(linkLines(l, "facts/forge-notes.verify.yaml")).toEqual([
+      "  Links: 0 calls joined, 0 asked, 0 outside the estate, 0 not joined; no Interface added or removed.",
+    ]);
+  });
+});
+
 describe("atticus verify <repo> --write (ADR 0124, A3b)", () => {
   it("writes the catalog, the flows and the map, as the golden files", async () => {
     const root = await metarepo();
@@ -350,9 +507,31 @@ describe("atticus verify <repo> --write (ADR 0124, A3b)", () => {
     expect(q).toBeDefined();
     expect(q.rerun).toBe("atticus verify forge-ledger --write");
     expect(o.out.join("\n")).toContain(q.id);
+    // J2: the links of the write, in the verify report for the pull request.
+    const first = parse(readFileSync(join(root, "facts", "forge-ledger.verify.yaml"), "utf8"));
+    expect(first.links.calls).toEqual({ joined: 0, inferred: 0, asked: 1, outside: 1, missed: 0 });
+    expect(o.out).toContain(
+      "  Links: 0 calls joined, 1 asked, 1 outside the estate, 0 not joined; Interfaces +1 (all under links in facts/forge-ledger.verify.yaml).",
+    );
+    expect(o.out).toContain("    + ledger-api → northwind-fx GET /v1/rates/{} (verified)");
     const n = q.options.findIndex((x) => x.label === "forge-notify") + 1;
     await answerQuestion(root, q.id, { option: n, by: "dana.okafor", at: "2026-10-24T10:00:00Z" });
-    expect(await write(root)).toBe(0);
+    const o2 = io();
+    expect(await write(root, o2)).toBe(0);
+    const second = parse(readFileSync(join(root, "facts", "forge-ledger.verify.yaml"), "utf8"));
+    // The answer's link is made by the merge from the host (forge-notify has no facts to join).
+    expect(second.links.calls).toEqual({ joined: 0, inferred: 0, asked: 0, outside: 1, missed: 0 });
+    expect(second.links.added).toEqual([
+      expect.objectContaining({
+        from: "ledger-api",
+        to: "notify-api",
+        method: "POST",
+        path: "/notify",
+        confidence: "verified",
+      }),
+    ]);
+    expect(second.links.removed).toEqual([]);
+    expect(o2.out).toContain("    + ledger-api → notify-api POST /notify (verified)");
     const catalog = (await readCatalog(join(root, "catalog", "generated"))).records;
     expect(
       catalog.some(
