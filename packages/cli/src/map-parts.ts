@@ -120,7 +120,7 @@ interface Unit {
   glob: string;
   dir: string;
   deep: boolean;
-  /** A range of one file too big for a session: done by a cited line in it (or its own path). */
+  /** A range of one file too big for a session: done by a cited line of its own, past the overlap (R4), or by its own path. */
   range?: { file: string; from: number; to: number };
 }
 
@@ -293,6 +293,30 @@ export async function readPlanProgress(
   return progressOf(plan, await coveredOf(root, repo), o);
 }
 
+/**
+ * R4: each line range's own first line, the line after the range before it in the same file
+ * ends (its `start` as `lineRanges` made it), recomputed from the plan's ranges so the plan's
+ * schema stays as it is. The first range of a file starts at its `from`.
+ */
+export function ownStarts(plan: Pick<ReadPlanFileT, "parts">): Map<string, number> {
+  const byFile = new Map<string, { glob: string; from: number; to: number }[]>();
+  for (const p of plan.parts)
+    for (const glob of p.paths) {
+      const r = lineRangeOf(glob);
+      if (r) byFile.set(r.file, [...(byFile.get(r.file) ?? []), { glob, from: r.from, to: r.to }]);
+    }
+  const out = new Map<string, number>();
+  for (const rs of byFile.values()) {
+    rs.sort((a, b) => a.from - b.from || a.to - b.to);
+    let end = 0;
+    for (const r of rs) {
+      out.set(r.glob, Math.min(r.to, Math.max(r.from, end + 1)));
+      end = Math.max(end, r.to);
+    }
+  }
+  return out;
+}
+
 /** Each part's state from what the facts folder accounts for. */
 function progressOf(
   plan: ReadPlanFileT,
@@ -301,14 +325,18 @@ function progressOf(
 ): ReadPlanProgress {
   const repo = plan.repo;
   const covered = of.paths.map(folderOf);
+  const own = ownStarts(plan);
   const parts: PartState[] = plan.parts.map((p) => {
     const units = p.paths.map(unitOf);
     const hit = (u: Unit) => {
       if (u.range) {
         const r = u.range;
+        // R4: only from the range's own first line; the lines it shares with the range before
+        // were read there, so a fact citing one says nothing of this range.
+        const start = own.get(u.glob) ?? r.from;
         return (
           of.ranges.has(u.glob) ||
-          of.lines.some((l) => l.file === r.file && l.line >= r.from && l.line <= r.to) ||
+          of.lines.some((l) => l.file === r.file && l.line >= start && l.line <= r.to) ||
           // The whole file reviewed, or a folder glob reviewed over it.
           of.reviewed.has(r.file) ||
           [...of.reviewed].some((c) => folderOf(c).deep && under(u.dir, folderOf(c).dir))
