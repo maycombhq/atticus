@@ -1,0 +1,10 @@
+schemaVersion: 1
+platform: forge
+name: Forge billing and the risk team's API (invented, for ADR 0142)
+systems:
+  - { id: shop, name: Shop, boundary: product, owner: team-shop, aliases: [] }
+  - { id: billing, name: Billing, boundary: product, owner: team-billing, aliases: [] }
+  # Another team's system: no repo of the estate belongs to it, and its host came from a hosts
+  # question (O1), so the host is its alias.
+  - { id: forge-risk, name: Forge Risk Team, boundary: internal, owner: team-risk, aliases: [risk.forge.internal] }
+environments: [dev, prod]

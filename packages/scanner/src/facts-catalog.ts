@@ -684,13 +684,32 @@ export function factsRecords(input: {
  * system the profiles declare that no estate repo belongs to, such as another team's.
  */
 export function outsideSystems(op: OrgPack): string[] {
-  const own = new Set(estateRepos(op).flatMap((r) => (r.system ? [r.system] : [])));
-  return op.profiles
-    .flatMap((p) => p.profile?.systems ?? [])
-    .filter((s) => s.boundary === "vendor" || !own.has(s.id))
+  return outsideProfileSystems(op)
     .flatMap((s) => [s.id, s.name, ...s.aliases])
     .sort();
 }
+
+/**
+ * The profiles' systems outside the estate, each once, by id: every vendor, and (F3) every other
+ * system no estate repo belongs to, such as another team's (ADR 0142: its published spec is read
+ * as a vendor's is).
+ */
+export function outsideProfileSystems(op: OrgPack) {
+  const own = new Set(estateRepos(op).flatMap((r) => (r.system ? [r.system] : [])));
+  const seen = new Set<string>();
+  return op.profiles
+    .flatMap((p) => p.profile?.systems ?? [])
+    .filter(
+      (s) => (s.boundary === "vendor" || !own.has(s.id)) && !seen.has(s.id) && !!seen.add(s.id),
+    )
+    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+}
+
+/** The aliases of a system that read as hosts (O1 adds one from a hosts question): `risk.forge.internal`. */
+export const hostAliases = (aliases: readonly string[]): string[] =>
+  aliases
+    .filter((a) => /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i.test(a))
+    .map((a) => a.toLowerCase());
 
 export function joinReposOf(
   op: OrgPack,

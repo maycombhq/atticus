@@ -49,6 +49,11 @@ export interface VendorOperation {
   cite: string;
   request: VendorField[];
   response: VendorField[];
+  /**
+   * The error responses the spec lists (ADR 0142): each 4xx or 5xx status, with the line of its
+   * key. Left out when it lists none.
+   */
+  errors?: { status: string; cite: string }[];
 }
 
 export interface VendorSpec {
@@ -130,6 +135,7 @@ export function readVendorSpec(path: string, text: string, system: string): Vend
       cite: `${path}:${op.methodLine ?? op.line ?? 1}`,
       request: requestFields(ctx, op, swagger2),
       response: responseFields(ctx, op, swagger2),
+      ...errorsOf(ctx, op),
     };
   });
   const ids = specEndpointIds(system, ops);
@@ -145,6 +151,19 @@ export function readVendorSpec(path: string, text: string, system: string): Vend
     basePath: swagger2 ? String(doc.get("basePath") ?? "") : "",
     operations: ops.map((o, i) => ({ id: ids[i]!, ...o })),
   };
+}
+
+/** An operation's 4xx and 5xx responses, each citing its status's line (ADR 0142). */
+function errorsOf(ctx: Ctx, op: OpenApiOperation): { errors?: { status: string; cite: string }[] } {
+  const responses = isMap(op.node) ? op.node.get("responses") : undefined;
+  if (!isMap(responses)) return {};
+  const errors = responses.items.flatMap((p) => {
+    const status = isScalar(p.key) ? String(p.key.value) : "";
+    if (!/^[45]\d\d$/.test(status)) return [];
+    const cite = ctx.at(isScalar(p.key) ? p.key.range?.[0] : undefined);
+    return cite ? [{ status, cite }] : [];
+  });
+  return errors.length ? { errors } : {};
 }
 
 interface Ctx {

@@ -7,11 +7,16 @@ import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { changeStore } from "@maycombhq/changes";
 import { Api } from "@maycombhq/core";
+import { readPrototypeArchitecture } from "@maycombhq/core";
 import { changeInputSources } from "@maycombhq/intake";
 import { startServer } from "@maycombhq/server";
 import { changeAttachCli } from "../src/attach-commands.js";
 import { changeNew } from "../src/change-commands.js";
-import { loadPrototypeComparison } from "../src/prototype-commands.js";
+import {
+  PROTOTYPE_CLI_WORDS,
+  loadPrototypeComparison,
+  prototypeLines,
+} from "../src/prototype-commands.js";
 import { uiRoutes } from "../src/ui-api.js";
 
 /**
@@ -216,5 +221,80 @@ describe("loadPrototypeComparison", () => {
     expect(got.notes).toEqual([]);
     const md = await readFile(join(FX, "expected/attach.txt"), "utf8");
     expect(md).toContain(v.sentence);
+  });
+});
+
+describe("the calls nothing serves, for the architecture stage (ADR 0142)", () => {
+  it("are listed in the attached comparison, which the stage reads back, cited by line", async () => {
+    const r = await root();
+    const c = capture();
+    expect(
+      await changeAttachCli(r, CHANGE, [], { by: "pat", prototype: PROTO, now: NOW }, c.io),
+    ).toBe(0);
+    const dir = join(r, "openspec/changes", CHANGE);
+    const doc = (await changeInputSources(dir, `openspec/changes/${CHANGE}`)).find(
+      (s) => s.id === `inputs/prototype-${PROTO}.md`,
+    )!;
+    const listed = readPrototypeArchitecture(doc.text);
+    expect(listed.map((l) => l.replace(/^\[[^\]]+\] /, ""))).toEqual([
+      "- GET /loyalty/summary, which checkout-ui calls on its BFF (forge-checkout-prototype ui/src/api.ts:13 → bff/src/server.ts:23)",
+      "- GET /loyalty/{sub}/balance, which checkout-bff calls on its mock (forge-checkout-prototype bff/src/server.ts:24 → mocks/handlers.ts:10); response points (number, mocks/handlers.ts:11), tier (string, mocks/handlers.ts:11)",
+    ]);
+    // Each cited by the attached file's own line.
+    expect(listed[0]).toMatch(/^\[inputs\/prototype-forge-checkout-prototype\.md:\d+\] - GET/);
+  });
+});
+
+describe("another team's spec (O2)", () => {
+  it("takes a call only another team publishes, said as theirs, through the host its alias gives", async () => {
+    const r = await root();
+    const profile = join(r, "org-pack/profiles/forge/profile.yaml");
+    const text = await readFile(profile, "utf8");
+    await writeFile(
+      profile,
+      text.replace(
+        "  - { id: northwind-pay,",
+        "  - { id: forge-loyalty, name: Forge Loyalty Team, boundary: internal, aliases: [loyalty.forge.internal] }\n  - { id: northwind-pay,",
+      ),
+    );
+    await writeFile(
+      join(r, "inputs/partner-specs/forge-loyalty-openapi.yaml"),
+      [
+        "openapi: 3.0.3",
+        "info: { title: Forge Loyalty Team API, version: 1.0.0 }",
+        "paths:",
+        "  /loyalty/{customerId}/balance:",
+        "    get:",
+        "      operationId: getBalance",
+        "      parameters:",
+        "        - { name: customerId, in: path, required: true, schema: { type: string } }",
+        "      responses:",
+        '        "200":',
+        "          description: The balance",
+        "          content:",
+        "            application/json:",
+        "              schema:",
+        "                type: object",
+        "                properties:",
+        "                  points: { type: integer }",
+        "                  tier: { type: string }",
+        "",
+      ].join("\n"),
+    );
+    const c = capture();
+    const got = await loadPrototypeComparison(r, PROTO, c.io);
+    if ("error" in got) throw new Error(got.error);
+    const call = got.comparison.calls.find((x) => x.id === "bff-mock.get-loyalty-sub-balance")!;
+    expect(call.group).toBe("vendor");
+    expect(call.vendor).toMatchObject({
+      system: "forge-loyalty",
+      name: "Forge Loyalty Team",
+      boundary: "internal",
+      through: [],
+    });
+    expect(call.differences).toEqual([]);
+    expect(call.sentence).toContain("only Forge Loyalty Team, another team's system, provides it");
+    expect(got.comparison.vendors).toEqual(["forge-loyalty", "northwind-pay"]);
+    expect(prototypeLines(got)).toContain(PROTOTYPE_CLI_WORDS.outside);
   });
 });

@@ -2,6 +2,7 @@ import {
   entryEndpointId,
   factIdPart,
   fieldNameKey,
+  interfaceId,
   joinFacts,
   joinVendorOperations,
   type FactEnd,
@@ -39,8 +40,12 @@ export interface ImpactFlow {
 }
 
 export interface VendorImpactInput {
-  /** The vendor: its org-pack system id, its name and aliases, and any host the org pack gives it. */
-  vendor: { system: string; names: string[]; hosts?: string[] };
+  /**
+   * The vendor: its org-pack system id, its name and aliases, and any host the org pack gives it.
+   * Any system outside the estate with a published spec is one (ADR 0142): `boundary: internal`
+   * says it is another team's, whose services call it directly, so those calls are matched too.
+   */
+  vendor: { system: string; names: string[]; hosts?: string[]; boundary?: "vendor" | "internal" };
   older: { id: string; spec: VendorSpec };
   newer: { id: string; spec: VendorSpec };
   /** The estate's facts, as the join reads them (with the manifest's hosts and gateway types). */
@@ -82,13 +87,19 @@ export interface ServiceCaller {
   upstream: UpstreamCall[];
 }
 
-/** An external gateway's forwarding call that reaches the changed operation. */
+/**
+ * An external gateway's forwarding call that reaches the changed operation, or (ADR 0142,
+ * `direct`) a service's own call to another team's system: then `route` is the entry the call is
+ * made under, and `callers` holds the call itself, with the field it sends or reads and who calls
+ * it, up the chain.
+ */
 export interface ForwardHit {
   call: FactEnd;
   route?: FactEnd;
   tie?: FactEnd;
   /** The vendor operation's Endpoint id. */
   operation: string;
+  direct?: true;
   callers: ServiceCaller[];
 }
 
@@ -136,6 +147,7 @@ const joinVendorOf = (input: VendorImpactInput, spec: VendorSpec): JoinVendor =>
   system: input.vendor.system,
   names: input.vendor.names,
   hosts: [...new Set([...spec.hosts, ...(input.vendor.hosts ?? [])])],
+  ...(input.vendor.boundary ? { boundary: input.vendor.boundary } : {}),
   operations: spec.operations.map((o) => ({
     id: o.id,
     method: o.method,
@@ -256,6 +268,31 @@ export function vendorImpact(input: VendorImpactInput): {
       ? today.matches.filter((m) => m.operation === older)
       : next.matches.filter((m) => m.operation === c.endpoints.newer);
     const forwards: ForwardHit[] = matches.map((m) => {
+      if (m.direct) {
+        // A service's own call: it is the caller, and its Interface is the one the projection
+        // gives a call to an outside system (from its component, to the system, method, path).
+        const f = facts.get(k(m.call))?.fact as FactOf<"call"> | undefined;
+        const field = fieldUse(m.call, c);
+        const self: ServiceCaller = {
+          call: m.call,
+          interface: interfaceId(
+            m.call.component,
+            factIdPart(f?.to ?? input.vendor.system),
+            m.method,
+            m.path,
+          ),
+          ...(field ? { field } : {}),
+          ...(m.route ? { under: m.route } : {}),
+          upstream: upstreamOf(m.route),
+        };
+        return {
+          call: m.call,
+          ...(m.route ? { route: m.route } : {}),
+          operation: m.operation,
+          direct: true as const,
+          callers: [self],
+        };
+      }
       const callers = m.route
         ? joins
             .filter(

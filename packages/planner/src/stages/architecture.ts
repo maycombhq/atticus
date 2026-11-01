@@ -2,7 +2,13 @@ import { briefEndpointNotes } from "./brief-endpoints.js";
 import { readdir, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { isMap, isSeq, LineCounter, parse, parseDocument, stringify } from "yaml";
-import { changesRelOf, serializeRecord, specTemplateFor, type SpecTemplate } from "@maycombhq/core";
+import {
+  changesRelOf,
+  readPrototypeArchitecture,
+  serializeRecord,
+  specTemplateFor,
+  type SpecTemplate,
+} from "@maycombhq/core";
 import type { SourceInput } from "@maycombhq/ai";
 import { changeFolder, changeStore, loadChangeContext, writeFileAtomic } from "@maycombhq/changes";
 import { changeInputSources } from "@maycombhq/intake";
@@ -1101,6 +1107,35 @@ export function consumersSource(e: Estate, p: FeaturePlacement): SourceInput[] {
 }
 
 /** The store facts as a data block of the step's pack, when the change may write a store. */
+/** What the architecture stage is told when an attached prototype has calls nothing serves (ADR 0142). */
+export const PROTOTYPE_NEW_RULE =
+  "The prototype-new-calls block lists the calls of an attached prototype that nothing in the estate serves. Place every one: the entry that will serve it, as a step of a new or changed target flow in the repo that should own it, citing the prototype's line; or say in the flow's why that it isn't built in this change, and why.";
+
+/**
+ * ADR 0142: the calls an attached prototype comparison lists as new (its "New calls, for the
+ * architecture stage" section), gathered from every attached comparison into one block, each line
+ * cited by the attached file's own line. Empty when no attached comparison lists one.
+ */
+export function prototypeNewCallsSource(
+  inputs: readonly { id: string; origin: string; text: string }[],
+): SourceInput[] {
+  const lines = inputs.flatMap((i) => readPrototypeArchitecture(i.text));
+  if (!lines.length) return [];
+  return [
+    {
+      id: "prototype-new-calls",
+      kind: "document",
+      origin: "the attached prototype comparisons (ADR 0133, ADR 0142)",
+      text: [
+        "Calls of a prototype attached to the change that nothing in the estate serves. Where each goes is this stage's to decide.",
+        ...lines,
+      ].join("\n"),
+      classification: "internal",
+      priority: 90,
+    },
+  ];
+}
+
 export function storeFactsSource(e: Estate, p: FeaturePlacement): SourceInput[] {
   const text = storeFacts(e, storesFor(e, p), touchedTables(e, p));
   return text
@@ -2390,6 +2425,9 @@ export async function architectureStage(
     .join("\n---\n");
   // ADR 0006 addendum: OpenSpec's instructions for the design come first, when set up.
   const osInstructions = await openspecInstructionSource(root, change.id, "architecture");
+  const attached = await changeInputSources(dir, rel);
+  // ADR 0142: the prototype's calls nothing serves, for this stage to place.
+  const newCalls = prototypeNewCallsSource(attached);
   const sources: SourceInput[] = [
     ...(osInstructions ? [osInstructions] : []),
     {
@@ -2416,7 +2454,8 @@ export async function architectureStage(
     // B-arch: who calls the entries and uses the tables of the flows the change touches.
     ...consumersSource(estate, placement),
     // ADR 0113: the files attached to the change, each cited by file and line or page.
-    ...(await changeInputSources(dir, rel)).map((s): SourceInput => ({
+    ...newCalls,
+    ...attached.map((s): SourceInput => ({
       id: s.id,
       kind: "document",
       origin: s.origin,
@@ -2484,6 +2523,7 @@ export async function architectureStage(
     formatFor(classificationLevels(ctx)),
     "",
     SELF_CHECK_RULE,
+    ...(newCalls.length ? ["", PROTOTYPE_NEW_RULE] : []),
     ...(past ? ["", past.rule] : []),
   ].join("\n");
   // The estate and the patterns the placement and today's flows lead to (ADR 0107), or all.

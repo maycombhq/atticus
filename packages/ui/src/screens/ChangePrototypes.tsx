@@ -25,7 +25,9 @@ function Call({ c }: { c: Api.PrototypeCallViewT }) {
       )}
       {c.vendor?.at && (
         <span className="muted mono" style={{ fontSize: 11.5, wordBreak: "break-all" }}>
-          {T.prototypeVendor(c.vendor.name, c.vendor.at)}
+          {c.vendor.boundary === "internal"
+            ? T.prototypeTeam(c.vendor.name, c.vendor.at)
+            : T.prototypeVendor(c.vendor.name, c.vendor.at)}
         </span>
       )}
       {c.differences.length > 0 && (

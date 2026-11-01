@@ -1,0 +1,48 @@
+openapi: 3.0.3
+info:
+  title: Forge Risk Team API
+  version: 1.0.0
+  description: Risk assessments of payments, published by the Forge Risk Team (invented).
+servers:
+  - url: https://risk.forge.internal
+paths:
+  /v1/assessments:
+    post:
+      operationId: assessPayment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssessmentRequest"
+      responses:
+        "200":
+          description: The assessment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Assessment"
+        "422":
+          description: The payment can't be assessed
+components:
+  schemas:
+    AssessmentRequest:
+      type: object
+      required: [orderId, amount]
+      properties:
+        orderId:
+          type: string
+        amount:
+          type: number
+        channel:
+          type: string
+          enum: [web, phone, shop]
+    Assessment:
+      type: object
+      required: [decision]
+      properties:
+        decision:
+          type: string
+          enum: [approve, review, decline]
+        score:
+          type: integer

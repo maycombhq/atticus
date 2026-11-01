@@ -8,10 +8,18 @@ import {
   vendorImpact,
   type ImpactFlow,
   type IntakeDocument,
+  type ServiceCaller,
+  type UpstreamCall,
   type VendorChange,
   type VendorImpact,
 } from "@maycombhq/intake";
-import { estateFacts, estateRepos, joinReposOf } from "@maycombhq/scanner";
+import {
+  estateFacts,
+  estateRepos,
+  hostAliases,
+  joinReposOf,
+  outsideProfileSystems,
+} from "@maycombhq/scanner";
 import type { Output } from "./commands.js";
 import { intakeContext } from "./intake-commands.js";
 
@@ -40,6 +48,8 @@ export const IMPACT_WORDS = {
       : `${all} change${all === 1 ? "" : "s"}: ${breaking} breaking, ${all - breaking} additive.`,
   severity: { breaking: "Breaking", additive: "Additive" } as const,
   reachesNothing: "Nothing in the estate reaches it.",
+  direct: (component: string, what: string, where: string, name: string) =>
+    `called directly by ${component}: ${what}, ${where} (on ${name})`,
   gap: (message: string, where: string) =>
     `Forwarded, but not in the older version either: ${message} (${where}).`,
   ask: (question: string) => `Asked: ${question}`,
@@ -146,8 +156,17 @@ export async function loadVendorImpact(
   const systemOfRepo = Object.fromEntries(
     estateRepos(op).flatMap((r) => (r.system ? [[r.id, r.system] as const] : [])),
   );
+  // Another team's system (any outside system that isn't a vendor, ADR 0142) is called directly.
+  const team =
+    system.boundary !== "vendor" && outsideProfileSystems(op).some((s) => s.id === system.id);
+  const hosts = hostAliases(system.aliases);
   const { diff, impact } = vendorImpact({
-    vendor: { system: systemId, names: [system.name, ...system.aliases] },
+    vendor: {
+      system: systemId,
+      names: [system.name, ...system.aliases],
+      ...(hosts.length ? { hosts } : {}),
+      ...(team ? { boundary: "internal" as const } : {}),
+    },
     older: { id: older.id!, spec: olderSpec },
     newer: { id: newer.id!, spec: newerSpec },
     repos,
@@ -161,6 +180,28 @@ export async function loadVendorImpact(
 }
 
 const where = (e: FactEnd) => `${e.repo} ${e.at}`;
+
+/** A call as a person reads it: its method and path, from its fact. */
+const callWhat = (l: LoadedImpact, e: FactEnd) => {
+  const call = l.facts.get(`${e.repo}\u0000${e.fact}`);
+  return call?.kind === "call"
+    ? [call.method?.toUpperCase(), call.path].filter(Boolean).join(" ")
+    : e.fact;
+};
+
+/** Whether a call sends or reads the changed field, when its facts say. */
+const fieldWords = (s: ServiceCaller, field: string | undefined) =>
+  s.field
+    ? s.field.uses === "sends" || s.field.uses === "reads"
+      ? `, ${s.field.uses} ${field}${s.field.at ? ` (${s.field.at})` : ""}`
+      : `, ${s.field.uses === "does-not-send" ? "doesn't send" : "doesn't read"} ${field}`
+    : "";
+
+/** One caller further up the chain. */
+const upstreamLine = (u: UpstreamCall, indent: string) => {
+  const uvia = u.via?.length ? `, through ${u.via.join(" → ")}` : "";
+  return `${indent}← ${u.call.component}: ${where(u.call)}${uvia}${u.under ? `, under ${where(u.under)}` : ""}`;
+};
 
 /** The impact as lines a person reads; the same lines go into the change's attached impact. */
 export function impactLines(l: LoadedImpact): string[] {
@@ -180,28 +221,27 @@ export function impactLines(l: LoadedImpact): string[] {
     if (cites.length) out.push(`  ${cites.join(", ")}`);
     if (!c.forwards.length) out.push(`  ${IMPACT_WORDS.reachesNothing}`);
     for (const f of c.forwards) {
-      const call = l.facts.get(`${f.call.repo}\u0000${f.call.fact}`);
-      const what =
-        call?.kind === "call"
-          ? [call.method?.toUpperCase(), call.path].filter(Boolean).join(" ")
-          : f.call.fact;
+      if (f.direct) {
+        // ADR 0142: a service's own call to another team's system; it is its own caller.
+        const s = f.callers[0]!;
+        out.push(
+          `  ${IMPACT_WORDS.direct(f.call.component, callWhat(l, f.call), where(f.call), l.name)}${fieldWords(s, d.field)}`,
+        );
+        if (s.under) out.push(`    under ${where(s.under)}`);
+        for (const u of s.upstream) out.push(upstreamLine(u, "    "));
+        continue;
+      }
       const to = f.tie ? `to ${l.name} through ${f.tie.at}` : `to ${l.name}`;
-      out.push(`  forwarded by ${f.call.component}: ${what}, ${where(f.call)} (${to})`);
+      out.push(
+        `  forwarded by ${f.call.component}: ${callWhat(l, f.call)}, ${where(f.call)} (${to})`,
+      );
       for (const s of f.callers) {
-        const field = s.field
-          ? s.field.uses === "sends" || s.field.uses === "reads"
-            ? `, ${s.field.uses} ${d.field}${s.field.at ? ` (${s.field.at})` : ""}`
-            : `, ${s.field.uses === "does-not-send" ? "doesn't send" : "doesn't read"} ${d.field}`
-          : "";
         const via = s.via?.length ? `, through ${s.via.join(" → ")}` : "";
-        out.push(`    called by ${s.call.component}: ${where(s.call)}${field}${via}`);
+        out.push(
+          `    called by ${s.call.component}: ${where(s.call)}${fieldWords(s, d.field)}${via}`,
+        );
         if (s.under) out.push(`      under ${where(s.under)}`);
-        for (const u of s.upstream) {
-          const uvia = u.via?.length ? `, through ${u.via.join(" → ")}` : "";
-          out.push(
-            `      ← ${u.call.component}: ${where(u.call)}${uvia}${u.under ? `, under ${where(u.under)}` : ""}`,
-          );
-        }
+        for (const u of s.upstream) out.push(upstreamLine(u, "      "));
       }
     }
   }

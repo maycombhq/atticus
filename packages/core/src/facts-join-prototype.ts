@@ -92,6 +92,10 @@ export interface PrototypeVendorField {
   name: string;
   type?: string;
   required?: boolean;
+  /** The values the spec's `enum` lists (ADR 0142). */
+  enum?: readonly string[];
+  /** Where a request field travels (`header` makes it a header, ADR 0142). */
+  in?: string;
   /** spec path:line of the property. */
   at?: string;
 }
@@ -100,15 +104,29 @@ export interface PrototypeVendorOperation extends JoinVendorOperation {
   auth?: string;
   scopes?: readonly string[];
   fields?: readonly PrototypeVendorField[];
+  /** The error statuses the spec lists (4xx, 5xx), each with its line (ADR 0142). */
+  errors?: readonly { status: string; at?: string }[];
 }
 
-/** A vendor with its published operations and their fields (ADR 0130's reading of its spec). */
+/**
+ * A vendor, or another team's system (O2, `boundary: internal`), with its published operations
+ * and their fields (ADR 0130's reading of its spec).
+ */
 export interface PrototypeVendor extends JoinVendor {
   operations: readonly PrototypeVendorOperation[];
 }
 
 export type PrototypeDifferenceKind =
-  "field-missing" | "field-type" | "field-required" | "scope-missing" | "auth";
+  | "field-missing"
+  | "field-type"
+  | "field-required"
+  | "field-enum"
+  | "header-missing"
+  | "header-required"
+  | "error-missing"
+  | "error-unhandled"
+  | "scope-missing"
+  | "auth";
 
 /** One way the estate (or the vendor) serves an operation other than as the prototype needs. */
 export interface PrototypeDifference {
@@ -116,6 +134,10 @@ export interface PrototypeDifference {
   side?: "request" | "response";
   field?: string;
   scope?: string;
+  /** field-enum: the value one side lists and the other doesn't. */
+  value?: string;
+  /** error-missing, error-unhandled: the status. */
+  status?: string;
   /** What the prototype says, and the line it says it on. */
   prototype: { value: string; at: string };
   /** What the estate says, when it says something. */
@@ -157,8 +179,13 @@ export interface PrototypeCall {
     method: string;
     path: string;
     at?: string;
-    /** The estate's repos that forward to this vendor already: where the new route goes. */
+    /**
+     * The estate's repos that forward to this vendor already: where the new route goes. For
+     * another team's system, the repos that call it already.
+     */
     through: string[];
+    /** `internal`: another team's system, which the change calls as it publishes it (O2). */
+    boundary?: "vendor" | "internal";
   };
   /** Two or more estate entries serve it equally well: a person says which. */
   candidates?: FactEnd[];
@@ -211,6 +238,52 @@ export const PROTOTYPE_WORDS = {
         ? `it needs a route through ${through.join(" or ")}, which forward${through.length === 1 ? "s" : ""} to ${name} already.`
         : `nothing in the estate forwards to ${name} yet, so it needs an external gateway route.`
     }`,
+  team: (what: string, who: string, name: string, op: string, at: string, through: string[]) =>
+    `${what}, which ${who}: only ${name}, another team's system, provides it (${op}${at ? `, ${at}` : ""}); ${
+      through.length
+        ? `${through.join(" and ")} call${through.length === 1 ? "s" : ""} it already, so the change calls it as it publishes it.`
+        : `nothing in the estate calls ${name} yet, so the change calls it as it publishes it.`
+    }`,
+  enumNotTaken: (
+    name: string,
+    v: string,
+    at: string,
+    repo: string,
+    theirs: string[],
+    theirAt: string,
+  ) =>
+    `the request field ${name} can be ${v} in the prototype (${at}), which ${repo} doesn't take (it takes ${theirs.join(", ")}; ${theirAt})`,
+  enumNotReturned: (
+    name: string,
+    v: string,
+    at: string,
+    repo: string,
+    theirs: string[],
+    theirAt: string,
+  ) =>
+    `the response field ${name} can be ${v} in the prototype (${at}), which ${repo} never returns (it returns ${theirs.join(", ")}; ${theirAt})`,
+  enumUnhandled: (
+    name: string,
+    v: string,
+    theirAt: string,
+    repo: string,
+    mine: string[],
+    at: string,
+  ) =>
+    `${repo} can return ${v} in the response field ${name} (${theirAt}), which the prototype doesn't handle (it lists ${mine.join(", ")}; ${at})`,
+  headerMissing: (side: string, name: string, at: string, repo: string, theirs: string[]) =>
+    side === "request"
+      ? `the prototype sends the header ${name} (${at}), which ${repo} doesn't read (it reads ${theirs.join(", ")})`
+      : `the prototype reads the response header ${name} (${at}), which ${repo} doesn't send (it sends ${theirs.join(", ")})`,
+  headerRequired: (name: string, theirAt: string, repo: string) =>
+    `${repo} requires the header ${name} (${theirAt}), which the prototype doesn't send`,
+  errorMissing: (status: string, at: string, repo: string, theirs: string[]) =>
+    `the prototype expects the error ${status} (${at}), which ${repo} never answers (it answers ${theirs.join(", ")})`,
+  errorUnhandled: (status: string, theirAt: string, repo: string, mine: string[]) =>
+    `${repo} answers ${status} (${theirAt}), which the prototype doesn't handle (it handles ${mine.join(", ")})`,
+  architectureHeading: "## New calls, for the architecture stage",
+  architectureIntro: (repo: string) =>
+    `Nothing in the estate serves these calls of the prototype ${repo}. Where each goes is the architecture stage's to decide: the entry that will serve it, in a new or changed flow.`,
   fieldMissing: (side: string, name: string, at: string, repo: string) =>
     `the ${side} field ${name} (${at}) isn't in ${repo}'s ${side}`,
   fieldType: (
@@ -268,11 +341,53 @@ function typeFamily(t: string | undefined): string | undefined {
   return undefined;
 }
 
+/**
+ * The values an enum field's `type` lists (ADR 0142), as the facts write it: a union of quoted
+ * literals (`"captured" | "failed"`), a named list (`ChargeStatus(CAPTURED|FAILED)`,
+ * `enum(EUR, USD)`), or the values alone (`EUR|USD`). Undefined when the type lists none: a
+ * plain `String`, or an enum named but not listed, whose values are unknown.
+ */
+export function enumValues(type: string | undefined): string[] | undefined {
+  const t = (type ?? "").trim();
+  if (!t) return undefined;
+  const quoted = /(['"`])((?:(?!\1).)*)\1/g;
+  if (/^['"`]/.test(t) && t.replace(quoted, "").replace(/[|\s]/g, "") === "")
+    return [...t.matchAll(quoted)].map((m) => m[2]!);
+  const named = /^([\w.$]*)\s*[(<{[]\s*([^)>}\]]*)[)>}\]]$/.exec(t);
+  const inner = named
+    ? named[2]!.includes("|") || /^enum$/i.test(named[1]!)
+      ? named[2]!
+      : undefined
+    : t.includes("|")
+      ? t
+      : undefined;
+  if (inner === undefined) return undefined;
+  const values = inner
+    .split(/[|,]/)
+    .map((v) => v.trim().replace(/^(['"`])(.*)\1$/, "$2"))
+    .filter(Boolean);
+  return values.length >= 2 && values.every((v) => /^[\w.:-]+$/.test(v)) ? values : undefined;
+}
+
+/**
+ * An HTTP header, by its name (ADR 0142): `X-` anything, a header every client knows, or
+ * hyphenated words each starting upper case (`Idempotency-Key`). A body field rarely has a
+ * hyphen, and never in that shape.
+ */
+const HEADER_NAME =
+  /^(x-[a-z0-9-]+|authorization|accept(-[a-z]+)*|content-[a-z]+|if-[a-z-]+|etag|location|cookie|set-cookie|user-agent|cache-control|retry-after|traceparent|tracestate|link)$/i;
+export const isHeaderName = (name: string): boolean =>
+  HEADER_NAME.test(name) || /^[A-Z][A-Za-z0-9]*(-[A-Z][A-Za-z0-9]*)+$/.test(name);
+
 interface SideField {
   side: "request" | "response";
   name: string;
   type?: string;
   required?: boolean;
+  /** The enum values it lists, when it lists some. */
+  values?: readonly string[];
+  /** A header rather than a body field. */
+  header?: boolean;
   at: string;
 }
 
@@ -282,29 +397,131 @@ const fieldsOf = (facts: readonly Fact[], owner: string): SideField[] =>
       (f): f is Field =>
         f.kind === "field" && f.owner === owner && (f.side === "request" || f.side === "response"),
     )
-    .map((f) => ({
-      side: f.side as "request" | "response",
-      name: f.name,
-      ...(f.type ? { type: f.type } : {}),
-      ...(f.required !== undefined ? { required: f.required } : {}),
-      at: at(f),
-    }))
+    .map((f) => {
+      const values = enumValues(f.type);
+      return {
+        side: f.side as "request" | "response",
+        name: f.name,
+        ...(f.type ? { type: f.type } : {}),
+        ...(f.required !== undefined ? { required: f.required } : {}),
+        ...(values ? { values } : {}),
+        ...(isHeaderName(f.name) ? { header: true } : {}),
+        at: at(f),
+      };
+    })
     .sort((a, b) => cmp(a.side, b.side) || cmp(a.name, b.name) || cmp(a.at, b.at));
 
-/** The fields the prototype needs and those the estate (or vendor) has: what differs. */
-function fieldDifferences(
+/** What the prototype sends or reads on a call: the entry it lands on, else the call's own fields. */
+const needsOf = (facts: readonly Fact[], call: string, lands: string): SideField[] => {
+  const own = fieldsOf(facts, lands);
+  return [...own, ...fieldsOf(facts, call).filter((f) => !own.some((g) => g.side === f.side))];
+};
+
+const lower = (v: string) => v.toLowerCase();
+
+/** The enum values the prototype and the estate (or vendor) list for one field: what differs. */
+function enumDifferences(f: SideField, t: SideField, repo: string): PrototypeDifference[] {
+  if (!f.values?.length || !t.values?.length) return [];
+  const out: PrototypeDifference[] = [];
+  const theirs = new Set(t.values.map(lower));
+  const mine = new Set(f.values.map(lower));
+  const base = { kind: "field-enum" as const, side: f.side, field: f.name };
+  for (const v of f.values)
+    if (!theirs.has(lower(v)))
+      out.push({
+        ...base,
+        value: v,
+        prototype: { value: v, at: f.at },
+        estate: { value: t.values.join("|"), at: t.at },
+        message: (f.side === "request"
+          ? PROTOTYPE_WORDS.enumNotTaken
+          : PROTOTYPE_WORDS.enumNotReturned)(f.name, v, f.at, repo, [...t.values], t.at),
+      });
+  // A value the estate may return that the prototype's screen or BFF doesn't list.
+  if (f.side === "response")
+    for (const v of t.values)
+      if (!mine.has(lower(v)))
+        out.push({
+          ...base,
+          value: v,
+          prototype: { value: f.values.join("|"), at: f.at },
+          estate: { value: v, at: t.at },
+          message: PROTOTYPE_WORDS.enumUnhandled(f.name, v, t.at, repo, [...f.values], f.at),
+        });
+  return out;
+}
+
+/**
+ * The headers the prototype sends or reads and those the estate (or vendor) reads or sends, on
+ * one side; compared only where the estate names some (an unknown isn't a miss), and a header the
+ * estate requires only where the prototype names some too.
+ */
+function headerDifferences(
+  side: "request" | "response",
   mine: readonly SideField[],
   theirs: readonly SideField[],
   repo: string,
 ): PrototypeDifference[] {
   const out: PrototypeDifference[] = [];
+  if (!theirs.length) return out;
+  const have = new Set(theirs.map((f) => lower(f.name)));
+  const names = [...new Set(theirs.map((f) => f.name))];
+  const seen = new Set<string>();
+  for (const f of mine) {
+    if (seen.has(lower(f.name))) continue;
+    seen.add(lower(f.name));
+    if (have.has(lower(f.name))) continue;
+    out.push({
+      kind: "header-missing",
+      side,
+      field: f.name,
+      prototype: { value: f.name, at: f.at },
+      message: PROTOTYPE_WORDS.headerMissing(side, f.name, f.at, repo, names),
+    });
+  }
+  if (side === "request" && mine.length) {
+    const sent = new Set(mine.map((f) => lower(f.name)));
+    for (const t of theirs)
+      if (t.required && !sent.has(lower(t.name)) && !seen.has(`!${lower(t.name)}`)) {
+        seen.add(`!${lower(t.name)}`);
+        out.push({
+          kind: "header-required",
+          side,
+          field: t.name,
+          prototype: { value: mine.map((f) => f.name).join(", "), at: mine[0]!.at },
+          estate: { value: t.name, at: t.at },
+          message: PROTOTYPE_WORDS.headerRequired(t.name, t.at, repo),
+        });
+      }
+  }
+  return out;
+}
+
+/** The fields the prototype needs and those the estate (or vendor) has: what differs. */
+function fieldDifferences(
+  allMine: readonly SideField[],
+  allTheirs: readonly SideField[],
+  repo: string,
+): PrototypeDifference[] {
+  const out: PrototypeDifference[] = [];
   for (const side of ["request", "response"] as const) {
-    const have = theirs.filter((f) => f.side === side);
+    const mine = allMine.filter((f) => f.side === side && !f.header);
+    const have = allTheirs.filter((f) => f.side === side && !f.header);
+    const headers = () =>
+      headerDifferences(
+        side,
+        allMine.filter((f) => f.side === side && f.header),
+        allTheirs.filter((f) => f.side === side && f.header),
+        repo,
+      );
     // A side the estate's facts say nothing about is unknown, not missing (ADR 0125's rule).
-    if (!have.length) continue;
+    if (!have.length) {
+      out.push(...headers());
+      continue;
+    }
     const byKey = new Map(have.map((f) => [fieldNameKey(f.name), f] as const));
     const seen = new Set<string>();
-    for (const f of mine.filter((x) => x.side === side)) {
+    for (const f of mine) {
       const k = fieldNameKey(f.name);
       if (seen.has(k)) continue;
       seen.add(k);
@@ -339,8 +556,63 @@ function fieldDifferences(
           estate: { value: String(t.required), at: t.at },
           message: PROTOTYPE_WORDS.fieldRequired(side, f.name, f.required, f.at, repo, t.at),
         });
+      out.push(...enumDifferences(f, t, repo));
     }
+    out.push(...headers());
   }
+  return out;
+}
+
+/** An HTTP error status written in an error path's words: `409`, `answers 404 Not Found`. */
+const ERROR_STATUS = /\b([45]\d\d)\b/g;
+
+/**
+ * The error statuses the flows give an entry (each flow fact's `errors`, ADR 0124), each with
+ * the first line that says it: the flows the entry starts, and, for a prototype's call, the
+ * flows with a step that makes it (a screen that handles the BFF's answer).
+ */
+function errorsOf(facts: readonly Fact[], entry: string, call?: string): Map<string, string> {
+  const out = new Map<string, string>();
+  const flows = facts
+    .filter(
+      (f): f is FactOf<"flow"> =>
+        f.kind === "flow" && (f.entry === entry || (!!call && f.steps.some((s) => s.ref === call))),
+    )
+    .sort((a, b) => cmp(a.id, b.id));
+  for (const f of flows)
+    for (const e of f.errors)
+      for (const m of `${e.when} ${e.then}`.matchAll(ERROR_STATUS))
+        if (!out.has(m[1]!)) out.set(m[1]!, `${e.cite.file}:${e.cite.line}`);
+  return out;
+}
+
+/** The errors the prototype expects and those the estate (or vendor) answers: compared where both say some. */
+function errorDifferences(
+  mine: Map<string, string>,
+  theirs: Map<string, string>,
+  repo: string,
+): PrototypeDifference[] {
+  if (!mine.size || !theirs.size) return [];
+  const out: PrototypeDifference[] = [];
+  const m = [...mine.keys()].sort();
+  const t = [...theirs.keys()].sort();
+  for (const s of m)
+    if (!theirs.has(s))
+      out.push({
+        kind: "error-missing",
+        status: s,
+        prototype: { value: s, at: mine.get(s)! },
+        message: PROTOTYPE_WORDS.errorMissing(s, mine.get(s)!, repo, t),
+      });
+  for (const s of t)
+    if (!mine.has(s))
+      out.push({
+        kind: "error-unhandled",
+        status: s,
+        prototype: { value: m.join(", "), at: mine.get(m[0]!)! },
+        estate: { value: s, at: theirs.get(s)! },
+        message: PROTOTYPE_WORDS.errorUnhandled(s, theirs.get(s)!, repo, m),
+      });
   return out;
 }
 
@@ -474,13 +746,9 @@ export function comparePrototype(input: ComparePrototypeInput): PrototypeCompari
       ...(s.lands.auth && s.lands.authCite ? { auth: s.lands.auth } : {}),
       ...(scopes.length ? { scopes } : {}),
     };
-    const mine = [
-      ...fieldsOf(pfacts, s.lands.id),
-      // A call's own fields stand in for a side the entry it lands on doesn't state.
-      ...fieldsOf(pfacts, c.id).filter(
-        (f) => !fieldsOf(pfacts, s.lands.id).some((g) => g.side === f.side),
-      ),
-    ];
+    // A call's own fields stand in for a side the entry it lands on doesn't state.
+    const mine = needsOf(pfacts, c.id, s.lands.id);
+    const myErrors = errorsOf(pfacts, s.lands.id, c.id);
     const j = joinOf.get(probeId(i));
     if (j) {
       const e = factOf.get(`${j.entry.repo}\u0000${j.entry.fact}`) as Entry;
@@ -488,6 +756,7 @@ export function comparePrototype(input: ComparePrototypeInput): PrototypeCompari
       const theirScopes = sorted([...(j.scopes ?? []), ...(e.scopes ?? []).map((x) => x.value)]);
       const repoFacts = estate.find((r) => r.repo === repo)?.facts ?? [];
       const differences = fieldDifferences(mine, fieldsOf(repoFacts, e.id), repo);
+      differences.push(...errorDifferences(myErrors, errorsOf(repoFacts, e.id), repo));
       // Scopes and auth are compared only where the estate states them: an unknown isn't a miss.
       if (theirScopes.length)
         for (const sc of s.lands.scopes ?? []) {
@@ -560,11 +829,31 @@ export function comparePrototype(input: ComparePrototypeInput): PrototypeCompari
       const name = v.names[0] ?? v.system;
       const through = throughOf(v.system);
       const opWhat = `${op.method.toUpperCase()} ${op.path}`;
+      const values = (f: PrototypeVendorField) => f.enum ?? enumValues(f.type);
       const differences = fieldDifferences(
         mine,
-        (op.fields ?? []).map((f) => ({ ...f, at: f.at ?? op.cite ?? "" })),
+        (op.fields ?? []).map((f): SideField => {
+          const v = values(f);
+          return {
+            side: f.side,
+            name: f.name,
+            ...(f.type ? { type: f.type } : {}),
+            ...(f.required !== undefined ? { required: f.required } : {}),
+            ...(v?.length ? { values: v } : {}),
+            ...(f.in === "header" || isHeaderName(f.name) ? { header: true } : {}),
+            at: f.at ?? op.cite ?? "",
+          };
+        }),
         name,
       );
+      differences.push(
+        ...errorDifferences(
+          myErrors,
+          new Map((op.errors ?? []).map((x) => [x.status, x.at ?? op.cite ?? ""] as const)),
+          name,
+        ),
+      );
+      const team = v.boundary === "internal";
       return {
         ...base,
         group: "vendor",
@@ -576,9 +865,17 @@ export function comparePrototype(input: ComparePrototypeInput): PrototypeCompari
           path: op.path,
           ...(op.cite ? { at: op.cite } : {}),
           through,
+          ...(team ? { boundary: "internal" as const } : {}),
         },
         differences,
-        sentence: PROTOTYPE_WORDS.vendor(what, who, name, opWhat, op.cite ?? "", through),
+        sentence: (team ? PROTOTYPE_WORDS.team : PROTOTYPE_WORDS.vendor)(
+          what,
+          who,
+          name,
+          opWhat,
+          op.cite ?? "",
+          through,
+        ),
       };
     }
     return { ...base, group: "new", differences: [], sentence: PROTOTYPE_WORDS.new(what, who) };
@@ -599,7 +896,8 @@ export function comparePrototype(input: ComparePrototypeInput): PrototypeCompari
   const vendorCalls = calls.filter((c) => c.group === "vendor");
   const repos = sorted([
     ...changing.map((c) => c.estate!.entry.repo),
-    ...vendorCalls.flatMap((c) => c.vendor!.through),
+    // Another team's operation is called as published: the repos calling it already don't change.
+    ...vendorCalls.flatMap((c) => (c.vendor!.boundary === "internal" ? [] : c.vendor!.through)),
   ]);
   return {
     prototype: proto.repo,
@@ -617,4 +915,64 @@ export function comparePrototype(input: ComparePrototypeInput): PrototypeCompari
     vendors: sorted(vendorCalls.map((c) => c.vendor!.system)),
     left: left.sort((a, b) => cmp(a.call.fact, b.call.fact)),
   };
+}
+
+/**
+ * The calls nothing in the estate serves, for the architecture stage (ADR 0142): a section of the
+ * attached comparison, each call with what it sends and reads, cited. Where each goes is that
+ * stage's to decide, so the footprint gains nothing from them; the stage reads this section back
+ * (`readPrototypeArchitecture`) and is told to place each one. Empty when nothing is new.
+ */
+export function prototypeArchitectureSection(
+  c: PrototypeComparison,
+  /** The prototype's facts, for the fields each call carries. */
+  facts: readonly Fact[],
+): string[] {
+  const fresh = c.calls.filter((x) => x.group === "new");
+  if (!fresh.length) return [];
+  const lines = fresh.map((x) => {
+    const what = [x.method, x.path].filter(Boolean).join(" ");
+    const who = `${x.call.component} calls ${PROTOTYPE_WORDS.leg[x.leg]}`;
+    const needs = needsOf(facts, x.call.fact, x.lands.fact);
+    const carried = (["request", "response"] as const)
+      .map((side) => {
+        const fs = needs.filter((f) => f.side === side);
+        return fs.length
+          ? `; ${side} ${fs.map((f) => `${f.name} (${f.type ? `${f.type}, ` : ""}${f.at})`).join(", ")}`
+          : "";
+      })
+      .join("");
+    return `- ${what}, which ${who} (${x.call.repo} ${x.call.at} → ${x.lands.at})${carried}`;
+  });
+  return [
+    PROTOTYPE_WORDS.architectureHeading,
+    "",
+    PROTOTYPE_WORDS.architectureIntro(c.prototype),
+    "",
+    ...lines,
+    "",
+  ];
+}
+
+/** A line as intake reads an attached file: `[inputs/<name>:<line>] text`. */
+const CITED = /^\[[^\]]+\] /;
+
+/**
+ * The calls an attached comparison lists for the architecture stage, as written (with the
+ * `[file:line]` an attached file's read text puts before each line, when it has one).
+ */
+export function readPrototypeArchitecture(text: string): string[] {
+  const out: string[] = [];
+  let inside = false;
+  for (const line of text.split(/\r?\n/)) {
+    const bare = line.replace(CITED, "");
+    if (bare.trim() === PROTOTYPE_WORDS.architectureHeading) {
+      inside = true;
+      continue;
+    }
+    if (!inside) continue;
+    if (bare.startsWith("#")) break;
+    if (bare.startsWith("- ")) out.push(line);
+  }
+  return out;
 }
