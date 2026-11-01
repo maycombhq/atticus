@@ -4,6 +4,12 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## 2.0.0-beta.10 (2026-10-31)
 
+### The VS Code extension and @atticus catch up with beta.10
+
+- The Command Palette and the Repos, Changes and Questions menus run the new jobs (estate fresh, next --queue, map <repo> --gaps with /atticus-map <repo> --gaps opened in Copilot Chat, join measure, verify audit --report, change impact, spec seed and accept, questions sheet and --apply, questions proposed, /atticus-propose, intake traffic, repo rename), a report shown whole in a tab beside its app page. The Questions view lists questions in the order to ask them, each with its owner, filters to My teams' (`--mine`), offers Accept as my answer (`--accept-proposal`) and a rule for target and hosts answers (`--match`); Next shows the onboarding queue with reasons and costs, the re-read and accept-seed steps, and a near repo id to rename.
+- `@atticus` gains /impact, /fresh, /queue, /gaps and /propose and routes plain requests ("what does this change break", "which repos are stale", "propose answers") to them; Copilot's agent mode gains `atticus-question-proposer` for /atticus-propose (`pnpm copilot-agents`). `map <repo> --gaps` is no longer run as an AI step by the editors.
+- `atticus commands --json`, which the editors' Run a Command reads, no longer takes a summary's first word as a flag's value or a flag named in a summary's words as the command's own.
+
 ### A change's impact up the chain, an open seed's collisions, and a vendor's headers and errors (ADR 0156)
 
 - `atticus change impact` and the Architecture tab walk up from each caller a change breaks, up to five hops up: each hop with the callers it calls through and its owner, a hop resting on a guessed link shown as may break and counted apart (`upstream`). Local API 2.43.0 (`chain`, `capped`, `upstream`; additive).
