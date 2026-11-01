@@ -1,6 +1,6 @@
 import { relative, sep } from "node:path";
-import { detectConflicts } from "@maycombhq/changes";
-import { loadEstimates, orgPackDirOf, type Api } from "@maycombhq/core";
+import { detectConflicts, outsideSystemsOf } from "@maycombhq/changes";
+import { loadEstimates, loadOrgPack, orgPackDirOf, type Api } from "@maycombhq/core";
 import { gateStatus, reviewedGates } from "@maycombhq/naysayer";
 import {
   estimateChange,
@@ -37,6 +37,11 @@ export async function estimateOf(
     if (r.kind === "Component") systemOf.set(r.id, (r as { system: string }).system);
   }
   const boundaryOf = (c: string) => systems.get(systemOf.get(c) ?? c);
+  // O2: another team's system (the profiles declare it, no estate repo belongs to it).
+  const op = await loadOrgPack(orgPackDirOf(root)).catch(() => undefined);
+  const outside = op ? outsideSystemsOf(op) : new Map<string, string>();
+  const otherTeam = (c: string) =>
+    boundaryOf(c) !== "vendor" && outside.get(systemOf.get(c) ?? c) === "other-team";
 
   let openBlocking = 0;
   for (const gate of await reviewedGates(root, change).catch(() => [] as string[]))
@@ -79,6 +84,7 @@ export async function estimateOf(
     flows,
     ...(estimates ? { table: estimates } : {}),
     boundaryOf,
+    otherTeam,
     openBlocking,
     conflicts,
     ...(waitDays !== undefined ? { waitDays } : {}),

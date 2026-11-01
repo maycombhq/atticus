@@ -4,7 +4,8 @@ import type { Estimates } from "@maycombhq/core";
  * A change's estimate (ADR 0109), worked out without AI and without guesses:
  *
  * - its size: each step a target flow adds, changes or removes is a unit of work, classed by
- *   what it is and what it reaches (`add/call-out/vendor/new-entry`); a new flow is one more unit
+ *   what it is and what it reaches (`add/call-out/vendor/new-entry`, `.../other-team/...` for another
+ *   team's system, O2); a new flow is one more unit
  *   and a removed flow one unit;
  * - its effort: the org pack's range for each class (`estimates.yaml`), summed by a simulation
  *   seeded by the change's id, so the same change always gets the same answer; a unit no class
@@ -61,6 +62,7 @@ export interface EstimateUnit {
 export interface EstimateDriver {
   id:
     | "new-vendor-call"
+    | "new-other-team-call"
     | "new-table"
     | "migration"
     | "unconfirmed-step"
@@ -95,6 +97,11 @@ export interface EstimateInput {
   table?: Estimates;
   /** The boundary of a component's system (product, internal, vendor). */
   boundaryOf: (component: string) => string | undefined;
+  /**
+   * O2: whether a component (or system) is another team's: a system the profiles declare, no
+   * vendor, that no estate repo belongs to. Left out, none is.
+   */
+  otherTeam?: (component: string) => boolean;
   openBlocking?: number;
   openQuestions?: number;
   /** Other open changes on the same systems or flows. */
@@ -114,10 +121,13 @@ const OP: Record<Exclude<Mark, "same">, string> = {
 export function classOf(
   s: EstimateFlow["steps"][number],
   boundaryOf: (component: string) => string | undefined,
+  otherTeam?: (component: string) => boolean,
 ): string {
   const parts = [OP[s.mark as Exclude<Mark, "same">] ?? "keep", s.kind];
   if (s.to && CALLS.has(s.kind)) {
     if (boundaryOf(s.to.component) === "vendor") parts.push("vendor");
+    // O2: another team's system, outside the estate though not the organisation.
+    else if (otherTeam?.(s.to.component)) parts.push("other-team");
     if (s.to.new) parts.push("new-entry");
   }
   if (s.store?.new) parts.push("new-table");
@@ -204,11 +214,13 @@ export function estimateChange(input: EstimateInput): ChangeEstimate {
       unit({
         ...(step !== undefined ? { step } : {}),
         what: s.what ?? s.kind,
-        class: classOf(s, input.boundaryOf),
+        class: classOf(s, input.boundaryOf, input.otherTeam),
       });
       if (s.mark === "removed") continue;
       if (s.to && CALLS.has(s.kind) && s.to.new && input.boundaryOf(s.to.component) === "vendor")
         drive("new-vendor-call", "New calls to a vendor", 1, f.file);
+      else if (s.to && CALLS.has(s.kind) && s.to.new && input.otherTeam?.(s.to.component))
+        drive("new-other-team-call", "New calls to another team's system", 1, f.file);
       if (s.store?.new) drive("new-table", "New tables", 1, f.file);
       else if (s.store?.migration) drive("migration", "Migrations", 1, f.file);
     }
@@ -226,6 +238,7 @@ export function estimateChange(input: EstimateInput): ChangeEstimate {
   if (repos.length > 1) drive("repos", "Repos to change", repos.length);
   const ORDER: EstimateDriver["id"][] = [
     "new-vendor-call",
+    "new-other-team-call",
     "new-table",
     "migration",
     "unconfirmed-step",

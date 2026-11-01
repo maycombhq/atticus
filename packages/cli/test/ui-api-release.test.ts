@@ -109,10 +109,8 @@ describe("release views over the API", () => {
         "forge-portal-ui:code",
       ]);
       expect(p.body.forecast).toMatchObject({ ready: "2026-10-28", status: "no-target" });
-      expect(p.body.unplaced.map((u: { id: string }) => u.id)).toEqual([
-        "audit-svc",
-        "risk-engine",
-      ]);
+      // O2: audit-svc is another team's system, external to the plan, not unplaced.
+      expect(p.body.unplaced.map((u: { id: string }) => u.id)).toEqual(["risk-engine"]);
       const nope = await call("/api/release/nope/plan");
       expect(nope.status).toBe(404);
       expect(nope.body.detail).toBe("There is no change nope.");
@@ -234,7 +232,8 @@ describe("atticus release and outcome in the terminal", () => {
       const text = c.out.join("\n");
       expect(text).toContain("1. forge-ledger (migration)");
       expect(text).toContain("rollback: GAP: No rollback step judged for");
-      expect(text).toMatch(/audit-svc \(callee of POST \/audit\/events\) has no repo/);
+      expect(text).toMatch(/risk-engine \(callee of POST \/risk\/assess\) isn't in the catalog/);
+      expect(text).not.toMatch(/audit-svc \(callee of POST \/audit\/events\) has no repo/);
     },
     T,
   );

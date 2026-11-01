@@ -205,8 +205,9 @@ export const publicEntryAuth: DeterministicCheckDef = {
     for (const h of ctx.hops) {
       if (h.status !== "planned-new" && h.status !== "planned-modify") continue;
       const calleeSystem = ctx.systemOf(h.callee);
-      // An unknown callee is the catalog rule's; a vendor's entry isn't ours to secure.
-      if (!calleeSystem || ctx.boundaryOf(calleeSystem) === "vendor") continue;
+      // An unknown callee is the catalog rule's; a vendor's entry isn't ours to secure. Another
+      // team's (O2) is asked about: its owner, in the organisation, says how it authenticates.
+      if (!calleeSystem || ctx.outsideOf(calleeSystem) === "vendor") continue;
       const callerSystem = ctx.systemOf(h.caller);
       const rec = interfaceOf(ctx, h);
       const routes = routesOf.get(h.line) ?? [];

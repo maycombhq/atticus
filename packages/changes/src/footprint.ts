@@ -13,6 +13,7 @@ import type { ChangeContext } from "./context.js";
 import { tableWith } from "./markdown.js";
 import type { SignalFactor } from "./policy.js";
 import { changeFolder } from "./store.js";
+import { outsideKindOf, outsideSystemsOf, type OutsideKind } from "./outside.js";
 
 /**
  * Something a change's deltas do that the risk score weighs (ADR 0124 addendum B-change): what it
@@ -51,6 +52,12 @@ export interface Footprint {
   repos: string[];
   /** Touched systems outside the organisation (boundary vendor). */
   vendors: string[];
+  /**
+   * O2: touched systems of another team: a system the profiles declare that is no vendor and that
+   * no estate repo belongs to. Outside the estate as a vendor is, though not the organisation.
+   * Left out by a footprint made before.
+   */
+  otherTeams?: string[];
   /** Catalog data with a personal classification that the change touches. */
   personal: { id: string; classification: string; field?: string }[];
   /** The flows the change changes, adds, removes or only reads (feature.yaml, target flows). */
@@ -215,6 +222,14 @@ export async function changeFootprint(
     ctx.orgPack.profiles.flatMap((p) => p.profile?.systems ?? []).map((s) => [s.id, s]),
   );
   const isSystem = (id: string) => get("System", id) !== undefined || profileSystems.has(id);
+  // O2: every system outside the estate (a vendor, another team's), with what it is.
+  const outsideSystems = outsideSystemsOf(ctx.orgPack);
+  const outsideKind = (id: string) =>
+    outsideKindOf(
+      outsideSystems,
+      id,
+      get("System", id)?.boundary ?? profileSystems.get(id)?.boundary,
+    );
 
   const systems = new Set(change.systems);
   const components = new Set<string>();
@@ -266,7 +281,7 @@ export async function changeFootprint(
   }
 
   // The stage path (B-change): feature.yaml, target-flows/ and tasks.md.
-  const staged = await stageFootprint(ctx, dir, { get, isSystem, profileSystems, ref });
+  const staged = await stageFootprint(ctx, dir, { get, isSystem, outsideKind, ref });
   for (const f of staged.from) from.add(f);
   for (const r of staged.repos) repos.add(r);
   for (const t of staged.tables) tables.add(t);
@@ -321,9 +336,8 @@ export async function changeFootprint(
     // an unreadable repos.yaml is the workspace's to report
   }
 
-  const vendors = [...systems].filter(
-    (s) => (get("System", s)?.boundary ?? profileSystems.get(s)?.boundary) === "vendor",
-  );
+  const vendors = [...systems].filter((s) => outsideKind(s) === "vendor");
+  const otherTeams = [...systems].filter((s) => outsideKind(s) === "other-team");
 
   // personal data: columns of touched tables, touched columns, schema fields of touched
   // interfaces, and the columns the change's own target flows classify (R5)
@@ -390,6 +404,7 @@ export async function changeFootprint(
     records: sorted(change.touches.records),
     repos: sorted(repos),
     vendors: vendors.sort(),
+    ...(otherTeams.length ? { otherTeams: otherTeams.sort() } : {}),
     personal,
     flows,
     entries: sorted(staged.entries),
@@ -439,7 +454,8 @@ async function stageFootprint(
   h: {
     get: <K extends CatalogRecord["kind"]>(kind: K, id: string) => RecordOf<K> | undefined;
     isSystem: (id: string) => boolean;
-    profileSystems: Map<string, { boundary: string }>;
+    /** O2: a system outside the estate, and what it is (a vendor, another team's). */
+    outsideKind: (id: string) => OutsideKind | undefined;
     ref: (id: string) => void;
   },
 ): Promise<Staged> {
@@ -465,7 +481,7 @@ async function stageFootprint(
   const tasksText = await read(join(dir, "tasks.md"));
   if (!files.length && !featureText && !tasksText) return out;
 
-  const { get, isSystem, profileSystems, ref } = h;
+  const { get, isSystem, outsideKind, ref } = h;
   const specs = await specIndex(ctx);
   const catalogRepos = new Set<string>();
   for (const r of ctx.records)
@@ -477,12 +493,14 @@ async function stageFootprint(
   const ifaces = ctx.records.filter((r) => r.kind === "Interface") as RecordOf<"Interface">[];
   const flows = new Map<string, FootprintFlow>();
 
-  /** A target outside the estate: a vendor system, or nothing the catalog or specs know. */
+  /**
+   * A target outside the estate: a vendor's system or another team's (O2), or nothing the
+   * catalog or specs know.
+   */
   const outsideOf = async (id: string): Promise<boolean> => {
     const c = get("Component", id);
-    if (c) return get("System", c.system)?.boundary === "vendor";
-    if (isSystem(id))
-      return (get("System", id)?.boundary ?? profileSystems.get(id)?.boundary) === "vendor";
+    if (c) return outsideKind(c.system) !== undefined;
+    if (isSystem(id)) return outsideKind(id) !== undefined;
     if (catalogRepos.has(id)) return false;
     return !(await specs.hasComponent(id)) && !(await specs.hasRepo(id));
   };

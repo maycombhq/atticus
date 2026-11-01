@@ -231,3 +231,92 @@ describe("a change's footprint from the stages' files (B-change)", () => {
     ]);
   });
 });
+
+describe("O2: a call to another team's system is a call outside the estate", () => {
+  /** The same change, its screen sent to Risk Team: a profile system no estate repo belongs to. */
+  async function teamEstate(): Promise<string> {
+    const root = await estate();
+    await mkdir(join(root, "org-pack/profiles/forge"), { recursive: true });
+    await writeFile(
+      join(root, "org-pack/profiles/forge/profile.yaml"),
+      [
+        "schemaVersion: 1",
+        "platform: forge",
+        "name: Forge",
+        "systems:",
+        "  - { id: forge, name: Forge, boundary: product, aliases: [] }",
+        "  - { id: risk-team, name: Risk Team, boundary: internal, aliases: [] }",
+        "",
+      ].join("\n"),
+    );
+    await writeFile(
+      join(root, "org-pack/profiles/forge/repos.manifest.yaml"),
+      [
+        "schemaVersion: 3",
+        "platform: forge",
+        "repos:",
+        "  - { id: forge-orders, url: https://git.forge.example/forge/forge-orders.git, type: spring-boot, owner: team-orders, component: forge-orders, system: forge }",
+        "",
+      ].join("\n"),
+    );
+    const flow = join(root, "openspec/changes", CHANGE, FLOW);
+    await writeFile(
+      flow,
+      readFileSync(flow, "utf8").replace("component: northwind-pay", "component: risk-team"),
+    );
+    return root;
+  }
+
+  it("lists it outside and among the other teams' systems, not the vendors", async () => {
+    const root = await teamEstate();
+    const ctx = await loadChangeContext(root);
+    const fp = await changeFootprint(ctx, await changeStore(root).read(CHANGE));
+    expect(fp.outside).toEqual([
+      { id: "risk-team", entries: ["POST /v1/screenings"], cite: `${FLOW}:32` },
+    ]);
+    expect(fp.vendors).toEqual([]);
+    expect(fp.otherTeams).toEqual(["risk-team"]);
+  });
+
+  it("weighs a touched team's system as a crossing, in its own words", () => {
+    const fp = {
+      systems: ["forge", "northwind-pay", "risk-team"],
+      components: [],
+      interfaces: [],
+      dataStores: [],
+      tables: [],
+      records: [],
+      repos: [],
+      vendors: ["northwind-pay"],
+      otherTeams: ["risk-team"],
+      personal: [],
+      flows: [],
+      entries: [],
+      newEntries: [],
+      calls: [],
+      columns: [],
+      fields: [],
+      outside: [],
+      signals: [],
+      from: ["proposal.md"],
+    };
+    expect(
+      scoreRisk({ type: "feature", footprint: fp }, DEFAULT_CHANGE_POLICY).factors.filter(
+        (f) => f.factor === "vendor",
+      ),
+    ).toEqual([
+      {
+        factor: "vendor",
+        detail:
+          "crosses the vendor boundary (northwind-pay); calls another team's system (risk-team)",
+        points: DEFAULT_CHANGE_POLICY.risk.weights.vendor,
+      },
+    ]);
+    const team = { ...fp, vendors: [], systems: ["forge", "risk-team"] };
+    expect(
+      scoreRisk({ type: "feature", footprint: team }, DEFAULT_CHANGE_POLICY).factors.find(
+        (f) => f.factor === "vendor",
+      )?.detail,
+    ).toBe("calls another team's system (risk-team)");
+  });
+});

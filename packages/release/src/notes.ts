@@ -1,4 +1,5 @@
 import { tableWith, docOf } from "@maycombhq/naysayer";
+import { outsideWords } from "@maycombhq/changes";
 import type { ReleaseContext } from "./context.js";
 import { BREAKING_SPEC, type Judged } from "@maycombhq/ai";
 import { breakingItem, judgedFor } from "./judged.js";
@@ -171,9 +172,10 @@ export async function releaseNotes(
     return {
       operation: opOf(h),
       caller: h.caller,
+      // O2: a callee outside the estate says what it is: a vendor's, or another team's system.
       callee:
-        h.calleeBoundary === "vendor" && h.calleeSystem
-          ? `${h.callee} (${m.systemName(h.calleeSystem)}, a vendor)`
+        h.calleeOutside && h.calleeSystem
+          ? `${h.callee} (${m.systemName(h.calleeSystem)}, ${outsideWords(h.calleeOutside)})`
           : h.callee,
       change: h.change.replace(/^planned-/, ""),
       ...b,

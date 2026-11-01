@@ -7,7 +7,9 @@
 # - ledger-api serves the new GET /accounts/{id}/limit and the changed POST /transfers that
 #   portal-bff calls; stories s2 and s3 (portal repos) depend on s1 (forge-ledger)
 # - the gateway request (5 working days, gateway-route.yaml) is tied to the route it deploys
-# - audit-svc has no repo, risk-engine isn't in the catalog: both unplaced
+# - risk-engine isn't in the catalog: unplaced
+# - audit-svc is Audit's, another team's system (the profile declares it, no repo of the manifest
+#   belongs to it): external, as Northwind Pay is, never unplaced (O2)
 steps:
   - { n: 1, repo: forge-ledger, kind: migration, after: [], earliest: 2026-10-21, waits: [] }
   - { n: 2, repo: forge-gateway, kind: gateway-route, after: [], earliest: 2026-10-28, waits: [Gateway proxy deployment] }
@@ -24,8 +26,10 @@ request:
   readyBy: 2026-10-28
   missing: [Target]
   source: snow.md:3
-unplaced: [audit-svc, risk-engine]
-external: { system: northwind-pay, beforeStep: 3 }
+unplaced: [risk-engine]
+external:
+  - { system: northwind-pay, beforeStep: 3 }
+  - { system: audit }
 sections:
   rollout: design.md:23
   rollback: gap
