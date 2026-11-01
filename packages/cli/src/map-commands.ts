@@ -22,7 +22,9 @@ import {
   factsDirOf,
   factsRelOf,
   listQuestions,
+  conventionsOf,
   loadOrgPack,
+  type Conventions,
   orgPackDirOf,
   parseFacts,
   runsDirOf,
@@ -73,10 +75,12 @@ import {
   type RereadPlan,
 } from "@maycombhq/verify";
 import { loadRepos, type GitRunner } from "@maycombhq/workspace";
+import { houseUntaughtLines, houseUntaughtOf } from "./house-imports.js";
 import type { Output } from "./commands.js";
 import {
   carryOf,
   checkoutOf,
+  conventionsAt,
   excludesOf,
   headOf,
   raiseReadQuestions,
@@ -294,7 +298,7 @@ async function frameworksFor(
   repo: string,
   facts: readonly Fact[],
 ): Promise<FrameworkTopic[]> {
-  const fromFacts = frameworkTopics(facts);
+  const fromFacts = frameworkTopics(facts, (await conventionsAt(root)).frameworks);
   if (fromFacts) return fromFacts;
   const type = (await loadRepos(root).catch(() => [])).find((r) => r.id === repo)?.type;
   return frameworkTopicsOfType(type);
@@ -480,11 +484,22 @@ async function rereadOf(
   source: FileSource,
   exclude: string[],
   git?: GitRunner,
+  conventions?: Conventions,
 ): Promise<{ plan?: RereadPlan; missing: string[] }> {
   if (!facts.some((f) => !sameCommit(f.commit, commit))) return { missing: [] };
   const { carry, missing } = await carryOf(dir, facts, commit, git);
   if (!Object.keys(carry).length) return { missing };
-  return { plan: rereadPlan({ facts, commit, carry, source, exclude }), missing };
+  return {
+    plan: rereadPlan({
+      facts,
+      commit,
+      carry,
+      source,
+      exclude,
+      ...(conventions ? { conventions } : {}),
+    }),
+    missing,
+  };
 }
 
 /** The prompt of one batch (or of the fix round), fitted to the model's limit. */
@@ -739,6 +754,8 @@ export async function mapCommand(
     return 2;
   }
   const op = await loadOrgPack(orgPackDirOf(root));
+  // ADR 0147: the org pack's folder lists, the house prefixes and frameworks.
+  const conventions = conventionsOf(op);
   const source = dirSource(dir);
   const exclude = await excludesOf(root, repo);
   const factsFile = `${factsRelOf(root)}/${repo}.jsonl`;
@@ -849,7 +866,7 @@ export async function mapCommand(
     // What the prompts of this read will carry framework rules for (A-framework), counted into
     // the room the plan leaves each batch.
     const frameworks = await frameworksFor(root, repo, existing);
-    const re = await rereadOf(dir, existing, commit, source, exclude, deps.git);
+    const re = await rereadOf(dir, existing, commit, source, exclude, deps.git, conventions);
     const reread = re.plan && !re.plan.unknown.length ? re.plan : undefined;
     const since = reread?.from.map((x) => x.commit.slice(0, 12)).join(", ");
     if (reread && !reread.files.length && !reread.reread.length) {
@@ -865,7 +882,7 @@ export async function mapCommand(
             reread.files.map((f) => f.path),
           )
         : source,
-      { room, exclude, overhead: overheadOf(repo, commit, frameworks) },
+      { room, exclude, overhead: overheadOf(repo, commit, frameworks), conventions },
     );
     // A file whose topic rules leave too little room beside them (A-lean).
     if (plan.leastRoom < MIN_ROOM) return tooSmall(room - plan.leastRoom);
@@ -1010,6 +1027,7 @@ async function takeAnswer(
     reviewed: reviewed.entries,
     // J1 (ADR 0143): an exposure names a component the manifest lists.
     ...(estate ? { estate } : {}),
+    conventions: await conventionsAt(root),
   });
   const q = await raiseReadQuestions(root, s.repo, answer.questions, source, {
     command: `atticus map ${s.repo}`,
@@ -1144,6 +1162,7 @@ async function estimate(
   io: Output,
 ): Promise<number> {
   const tier: TierReport = await tierHere(root, c.op);
+  const conventions = conventionsOf(c.op);
   const { limit: given, from } = limitOf(c.o, c.op, tier);
   const limit = given ?? EXAMPLE_LIMIT;
   const about = await aboutOf(root, repo);
@@ -1154,7 +1173,7 @@ async function estimate(
   const re =
     typeof existing === "string"
       ? { missing: [] as string[] }
-      : await rereadOf(c.dir, existing, c.commit, c.source, c.exclude, c.git);
+      : await rereadOf(c.dir, existing, c.commit, c.source, c.exclude, c.git, conventions);
   const reread = re.plan && !re.plan.unknown.length ? re.plan : undefined;
   const readSource = reread
     ? onlyFiles(
@@ -1163,14 +1182,19 @@ async function estimate(
       )
     : c.source;
   const repoWhole = reread
-    ? planBatches(c.source, { room: Number.MAX_SAFE_INTEGER, exclude: c.exclude })
+    ? planBatches(c.source, { room: Number.MAX_SAFE_INTEGER, exclude: c.exclude, conventions })
     : undefined;
-  const whole = planBatches(readSource, { room: Number.MAX_SAFE_INTEGER, exclude: c.exclude });
+  const whole = planBatches(readSource, {
+    room: Number.MAX_SAFE_INTEGER,
+    exclude: c.exclude,
+    conventions,
+  });
   const planned =
     room >= MIN_ROOM
       ? planBatches(readSource, {
           room,
           exclude: c.exclude,
+          conventions,
           overhead: overheadOf(
             repo,
             c.commit,
@@ -1245,6 +1269,13 @@ async function estimate(
   const questions = (await listQuestions(root, { repo })).questions.filter(
     (q) => q.state !== "retired",
   );
+  // R3 (ADR 0147): house packages it imports that no taught framework covers, to teach first.
+  const house = await houseUntaughtOf(root, repo, {
+    dir: c.dir,
+    source: c.source,
+    op: c.op,
+    exclude: c.exclude,
+  });
   if (c.o.json) {
     io.out(
       JSON.stringify(
@@ -1291,6 +1322,8 @@ async function estimate(
           tier,
           // A-taught: the frameworks of the organisation it is built on, as taught to Atticus.
           taughtFrameworks: taughtIn(c.source, c.op).map((m) => m.name),
+          // R3: the house packages to teach before the first read.
+          houseUntaught: house,
           questions: questions.map((q) => ({
             id: q.id,
             question: q.question,
@@ -1327,6 +1360,7 @@ async function estimate(
   // A-taught: the frameworks of the organisation it is built on, as /atticus-map's reader needs them.
   const taught = taughtFrameworksText(taughtIn(c.source, c.op));
   if (taught) for (const l of taught.split("\n")) io.out(l);
+  for (const l of houseUntaughtLines(repo, house)) io.out(l);
   if (reread) for (const l of rereadLines(repo, reread)) io.out(l);
   for (const m of re.missing)
     io.out(

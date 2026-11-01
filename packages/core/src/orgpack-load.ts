@@ -36,6 +36,7 @@ import {
 } from "./schema/orgpack.js";
 import { ChecklistPack } from "./schema/review.js";
 import { RepoManifest } from "./schema/workspace.js";
+import { Conventions, DEFAULT_CONVENTIONS } from "./schema/conventions.js";
 
 export interface OrgPackProblem {
   /** File relative to the org-pack folder. */
@@ -74,6 +75,11 @@ export interface OrgPack {
   /** Procedures (ADR 0033), from process/procedures/. */
   procedures: Procedure[];
   agents: AgentDefinition[];
+  /**
+   * The house conventions a read leans on (ADR 0147), from conventions.yaml: the built-in lists
+   * when the pack has none. Optional so a pack built in code (a test's) needs none.
+   */
+  conventions?: Conventions;
   /** Files that came from built-in defaults because the pack doesn't have them. */
   defaulted: string[];
   problems: OrgPackProblem[];
@@ -160,6 +166,10 @@ export async function loadOrgPack(dir: string): Promise<OrgPack> {
   const runtime = await single("runtime.yaml", Runtime, DEFAULT_RUNTIME);
   const sources = await single("sources.yaml", Sources, DEFAULT_SOURCES);
   const testStrategy = await single("test-strategy.yaml", TestStrategy, DEFAULT_TEST_STRATEGY);
+  // ADR 0147: optional, and never "defaulted": a pack without it reads as Atticus always did.
+  const conventions = (await exists(join(dir, "conventions.yaml")))
+    ? ((await load(join(dir, "conventions.yaml"), Conventions)) ?? DEFAULT_CONVENTIONS)
+    : DEFAULT_CONVENTIONS;
 
   const profiles: OrgPack["profiles"] = [];
   let platforms: string[] = [];
@@ -513,6 +523,7 @@ export async function loadOrgPack(dir: string): Promise<OrgPack> {
     serviceRequests,
     procedures,
     agents,
+    conventions,
     defaulted,
     problems,
   };
@@ -570,4 +581,17 @@ export async function loadEstimates(
   } catch (e) {
     return { problem: `estimates.yaml isn't YAML: ${(e as Error).message.split("\n")[0]}` };
   }
+}
+
+/** The conventions of a pack (ADR 0147), its defaults when it has none. */
+export const conventionsOf = (op: Pick<OrgPack, "conventions"> | undefined): Conventions =>
+  op?.conventions ?? DEFAULT_CONVENTIONS;
+
+/** What the estate join takes from a pack's conventions (ADR 0147): its facing words and bundle folders. */
+export function joinConventions(op: Pick<OrgPack, "conventions"> | undefined): {
+  facing: { internal: readonly string[]; external: readonly string[] };
+  bundleFolders: readonly string[];
+} {
+  const c = conventionsOf(op);
+  return { facing: c.facing, bundleFolders: c.gatewayBundleFolders };
 }

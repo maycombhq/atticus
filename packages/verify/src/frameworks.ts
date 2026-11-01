@@ -1,4 +1,4 @@
-import type { Fact, FactOf } from "@maycombhq/core";
+import type { ConventionFramework, Fact, FactOf } from "@maycombhq/core";
 
 /**
  * What a repo is built on (ADR 0124 addendum A-framework): the declarations Atticus knows, the
@@ -116,12 +116,36 @@ export function declarationKey(declared: string): string {
   return name.replace(/^['"]|['"]$/g, "");
 }
 
-/** The framework a declaration names, or undefined when Atticus doesn't know it. */
-export function frameworkOf(declared: string): Known | undefined {
+/**
+ * The org pack's own entries (ADR 0147, `conventions.yaml`'s `frameworks`) as the table's: a
+ * topic the reading protocol has no part for is dropped, so the entry still names and shapes.
+ */
+function houseKnown(extra: readonly ConventionFramework[]): (readonly [string, Known])[] {
+  return extra.map((e) => [
+    e.declares.toLowerCase(),
+    {
+      name: e.name,
+      ...(e.topic && (FRAMEWORKS as readonly string[]).includes(e.topic)
+        ? { topic: e.topic as FrameworkTopic }
+        : {}),
+      ...(e.shape ? { shape: e.shape } : {}),
+    },
+  ]);
+}
+
+/**
+ * The framework a declaration names, or undefined when Atticus doesn't know it. `extra` is the
+ * org pack's own table (ADR 0147), looked at first, so a house can name its starters and say
+ * what a known declaration means there.
+ */
+export function frameworkOf(
+  declared: string,
+  extra: readonly ConventionFramework[] = [],
+): Known | undefined {
   const key = declarationKey(declared);
   if (!key) return undefined;
   // an npm scope is part of the name (`@angular/core`), so try the whole thing first
-  for (const [pattern, known] of KNOWN) {
+  for (const [pattern, known] of extra.length ? [...houseKnown(extra), ...KNOWN] : KNOWN) {
     const star = pattern.endsWith("*");
     const p = star ? pattern.slice(0, -1) : pattern;
     if (star ? key.startsWith(p) : key === p) return known;
@@ -139,11 +163,14 @@ export function frameworkOf(declared: string): Known | undefined {
  * declaration itself, letter case, a group or scope and a version suffix aside, so a reader
  * can't put a name of its own on an artifact nobody here can read.
  */
-export function frameworkNameProblem(f: FrameworkFact): string | undefined {
-  const known = frameworkOf(f.cite.value);
+export function frameworkNameProblem(
+  f: FrameworkFact,
+  extra: readonly ConventionFramework[] = [],
+): string | undefined {
+  const known = frameworkOf(f.cite.value, extra);
   const name = f.name.trim().toLowerCase();
   if (known) {
-    return name === known.name
+    return name === known.name.toLowerCase()
       ? undefined
       : `names the framework "${f.name}", but ${f.cite.file}:${f.cite.line} declares ${f.cite.value}, which is ${known.name}`;
   }
@@ -163,12 +190,15 @@ export const frameworkFacts = (facts: readonly Fact[]): FrameworkFact[] =>
  * facts name no framework at all: nothing is known yet, so a prompt carries every framework's
  * rules, exactly as a file whose path can't say its kind gets every kind's (`fileKinds`).
  */
-export function frameworkTopics(facts: readonly Fact[]): FrameworkTopic[] | undefined {
+export function frameworkTopics(
+  facts: readonly Fact[],
+  extra: readonly ConventionFramework[] = [],
+): FrameworkTopic[] | undefined {
   const fws = frameworkFacts(facts);
   if (!fws.length) return undefined;
   const topics = new Set<FrameworkTopic>();
   for (const f of fws) {
-    const known = frameworkOf(f.cite.value);
+    const known = frameworkOf(f.cite.value, extra);
     // A house framework or one Atticus doesn't know: its own rule part, which tells the reader
     // that a house annotation may hide a route and to record the framework rather than guess.
     if (!known?.topic) topics.add("house");
@@ -247,13 +277,16 @@ const holdsShape = (facts: readonly Fact[], shape: FrameworkShape): boolean =>
  * not a repo whose entry points were missed. A house framework, or one Atticus doesn't know,
  * raises none: nothing here can say what its patterns look like until it is learned.
  */
-export function frameworkGaps(facts: readonly Fact[]): FrameworkGap[] {
+export function frameworkGaps(
+  facts: readonly Fact[],
+  extra: readonly ConventionFramework[] = [],
+): FrameworkGap[] {
   const fws = frameworkFacts(facts);
   if (!fws.length) return [];
   if (!facts.some((f) => f.kind !== "framework")) return [];
   const out: FrameworkGap[] = [];
   for (const f of fws) {
-    const shape = frameworkOf(f.cite.value)?.shape;
+    const shape = frameworkOf(f.cite.value, extra)?.shape;
     if (!shape || holdsShape(facts, shape)) continue;
     out.push({
       id: f.id,
@@ -306,13 +339,14 @@ export function isApigeeBundle(f: Pick<Fact, "cite"> & { name?: string }): boole
 export function frameworksToLearn(
   facts: readonly Fact[],
   known: readonly string[] = [],
+  extra: readonly ConventionFramework[] = [],
 ): FrameworkToLearn[] {
   const have = new Set(known.map(declarationKey));
   return frameworkFacts(facts)
     .filter(
       (f) =>
         !isApigeeBundle(f) &&
-        !frameworkOf(f.cite.value) &&
+        !frameworkOf(f.cite.value, extra) &&
         !have.has(declarationKey(f.name)) &&
         !have.has(declarationKey(f.cite.value)),
     )

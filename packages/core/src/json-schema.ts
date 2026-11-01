@@ -23,6 +23,7 @@ import { RepoType } from "./schema/repo-type.js";
 import { DiagramLayout } from "./schema/layout.js";
 import { ModelProviderPlugin, ScannerPlugin } from "./schema/plugin.js";
 import { SpecTemplate } from "./schema/spec.js";
+import { Conventions } from "./schema/conventions.js";
 import { ChecklistPack, Finding } from "./schema/review.js";
 import * as C6 from "./schema/orgpack.js";
 import * as C5 from "./schema/ai.js";
@@ -117,6 +118,7 @@ export function orgPackJsonSchemas(): Record<string, object> {
     TestStrategy: C6.TestStrategy,
     Estimates: C6.Estimates,
     OpenSpecSettings: C6.OpenSpecSettings,
+    Conventions,
     Profile: C6.Profile,
     AgentDefinition: C5.AgentDefinition,
   };

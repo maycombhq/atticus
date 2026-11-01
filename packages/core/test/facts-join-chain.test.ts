@@ -3,6 +3,8 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import {
+  Conventions,
+  joinConventions,
   joinFacts,
   joinRecords,
   MAX_GATEWAY_HOPS,
@@ -166,6 +168,13 @@ describe("joinFacts through a chain of gateways", () => {
         repos: odd,
         facing: { internal: ["vh1"], external: ["vh3"] },
       }).joins.find((x) => x.call.fact === ORDERS_CHARGE)!.gateway![0]!.facing,
+    ).toBe("external");
+    // ADR 0147: the same words, from the org pack's conventions.yaml.
+    const conventions = Conventions.parse({ schemaVersion: 1, facing: { external: ["vh3"] } });
+    expect(
+      joinFacts({ repos: odd, ...joinConventions({ conventions }) }).joins.find(
+        (x) => x.call.fact === ORDERS_CHARGE,
+      )!.gateway![0]!.facing,
     ).toBe("external");
     // The manifest's type wins over the proxy's virtual host.
     const typed = estate().map((r) =>

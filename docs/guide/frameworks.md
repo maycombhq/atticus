@@ -25,6 +25,18 @@ Three things follow from it.
 - **A framework whose patterns are nowhere in the facts is a question for a person.** A Spring Boot repo with no REST entry, a React app with no screen, a Sidekiq dependency with no `batch-job`: `atticus verify` says so (under `frameworkGaps` in the report), the map puts it in the open and the Trust tab marks it. It usually means the real entry points were missed. It is never a rejection and never a fact about the repo: the facts can't say which it is, so a person does.
 - **A house framework becomes a prompt to learn it.** A framework fact whose artifact is neither one Atticus knows nor one your org pack's framework files cover is offered to you as `atticus frameworks learn <name> --from <repo>` — the paths above. Until then the reading prompts tell the assistant that one of its annotations, base classes or wrapper clients may serve a route or read a table with nothing in the repo's own code to show it, and to write a question naming the annotation rather than a guess.
 
+**Teach it before the first read.** Name your house's package prefixes in `org-pack/conventions.yaml` (ADR 0147), and `atticus map <repo> --estimate` (and `atticus next`'s map step) warns, before anything is read, of each house package the repo imports that no framework model covers, with the `atticus frameworks learn` command to run first:
+
+```yaml
+# org-pack/conventions.yaml (optional)
+schemaVersion: 1
+housePrefixes: [com.forge., "@forge/"]
+```
+
+It reads import lines only and writes nothing; the read can still go ahead. Once a model's `packages` cover the package, the warning goes.
+
+The same file can name your own starters for the framework table (`frameworks: [{declares: forge-web-starter, name: forge-web, topic: spring, shape: rest}]`), so a declaration Atticus doesn't know turns on a framework's reading rules and its missed-read question without a model.
+
 A repo's type in the manifest follows the facts too: a framework a repo's own facts declare settles the type (`spring-boot`, `dotnet`, `frontend`, `node`, `python`) ahead of anything guessed from the files, because it was read from a build file's line and that line was checked.
 
 ## Cloud resources in Terraform

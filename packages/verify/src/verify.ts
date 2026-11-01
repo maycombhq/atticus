@@ -1,5 +1,4 @@
 import {
-  APIGEE_BUNDLE,
   citedFiles,
   claimOnLines,
   factIdPart,
@@ -14,6 +13,7 @@ import {
   staleCite,
   type Cite,
   type Claim,
+  type Conventions,
   type Fact,
   type FileChange,
   type StaleCite,
@@ -25,6 +25,7 @@ import { applyCorrections, type AppliedCorrection, type StaleCorrection } from "
 import { derivedHolds, derivedNamesAt, type DeriveEnv, type DerivedName } from "./derived.js";
 import { frameworkGaps, frameworkNameProblem, type FrameworkGap } from "./frameworks.js";
 import { isDataFile, isLocaleBundle } from "./not-product.js";
+import { DEFAULT_READ_RULES, readRulesOf, type ReadRules } from "./conventions.js";
 import { pageRouteMatches } from "./pages.js";
 import { isGlob, lineRangeOf, type ReviewedEntry } from "./reviewed.js";
 import { methodUnseenOf, type MethodUnseen } from "./method.js";
@@ -245,7 +246,10 @@ const FOLLOWED_TYPES: readonly string[] = ["event-topic", "mq-queue", "rest", "g
  * The listeners and `rest` or `grpc` entries no flow of these facts starts (a flow's `entry`),
  * in id order. Pure: `verifyFacts` runs it on the kept facts.
  */
-export function entriesNoFlowFollows(facts: readonly Fact[]): UnfollowedEntry[] {
+export function entriesNoFlowFollows(
+  facts: readonly Fact[],
+  rules: ReadRules = DEFAULT_READ_RULES,
+): UnfollowedEntry[] {
   const started = new Set(facts.flatMap((f) => (f.kind === "flow" ? [f.entry] : [])));
   return facts
     .flatMap((f) =>
@@ -253,7 +257,7 @@ export function entriesNoFlowFollows(facts: readonly Fact[]): UnfollowedEntry[] 
       FOLLOWED_TYPES.includes(f.entryType) &&
       !started.has(f.id) &&
       // An Apigee route forwards; its forwarding call is its flow (ADR 0124 addendum A-gateway).
-      !APIGEE_BUNDLE.test(f.cite.file)
+      !rules.gatewayBundle.test(f.cite.file)
         ? [
             {
               id: f.id,
@@ -312,6 +316,12 @@ export interface VerifyOptions {
    * names them. An exposure's `exposes` must be one of them. Left out, nothing checks the name.
    */
   estate?: { components: readonly string[] };
+  /**
+   * The org pack's conventions (ADR 0147, `conventions.yaml`): the folders coverage and the
+   * skipped-lines note leave out, the API spec and gateway bundle folders, the house's own
+   * frameworks. Left out, the built-in lists.
+   */
+  conventions?: Conventions;
 }
 
 /**
@@ -334,7 +344,6 @@ const LOCKFILE =
  * i18n message bundles.
  */
 const NOT_PRODUCT = [
-  /(^|\/)(src\/test|src\/it|test|tests|__tests__|__mocks__|spec|specs|e2e|testdata|test-data|fixtures)\//i,
   /(\.|_|-)(test|spec|tests|specs)\.[a-z0-9]+$/i,
   /(Test|Tests|IT|Spec)\.(java|kt|scala|groovy|cs|vb)$/,
   /(^|\/)test_[^/]+\.py$/,
@@ -348,10 +357,16 @@ const NOT_PRODUCT = [
  * Whether a repo file counts as source for coverage. Neither a locale bundle does nor, given its
  * lines, a JSON or XML file big enough to be data (ADR 0124 addendum A-big).
  */
-export function isSourceFile(path: string, firstLine = "", lines?: readonly string[]): boolean {
+export function isSourceFile(
+  path: string,
+  firstLine = "",
+  lines?: readonly string[],
+  rules: ReadRules = DEFAULT_READ_RULES,
+): boolean {
   if (isSecretPath(path) || LOCKFILE.test(path)) return false;
-  if (NOT_PRODUCT.some((re) => re.test(path)) || isLocaleBundle(path)) return false;
-  if (lines && isDataFile(path, lines)) return false;
+  if (rules.notProduct.test(path) || NOT_PRODUCT.some((re) => re.test(path))) return false;
+  if (isLocaleBundle(path)) return false;
+  if (lines && isDataFile(path, lines, rules)) return false;
   if (quoteNotRequired(path, firstLine)) return false;
   return SOURCE_EXT.test(path) || SOURCE_NAME.test(path);
 }
@@ -445,6 +460,8 @@ function refsOf(f: Fact): { field: string; id: string }[] {
 }
 
 export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
+  // ADR 0147: the org pack's folder lists and house frameworks, the built-in ones without.
+  const rules = readRulesOf(o.conventions);
   // A fact of an earlier commit whose cited files are all unchanged since is checked as a fact
   // of this commit (ADR 0124 addendum A-incremental); one citing a changed file is read again.
   const carriedFrom = new Map<string, string>();
@@ -748,7 +765,7 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
     // one is claimed, is written on that line or on one of its `cite.with` parts (a property, a
     // parent pom's version, a <TargetFramework>, a dependency-management block).
     if (f.kind === "framework") {
-      const bad = frameworkNameProblem(f);
+      const bad = frameworkNameProblem(f, rules.frameworks);
       if (bad) problem(f, "framework-name", `${label} ${bad}`);
       if (f.version !== undefined)
         add(f, checkCite(f.cite, [{ kind: "word", value: f.version }], `${label} version`, false));
@@ -907,7 +924,7 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
     // A-room: every file of the repo passes through here, and only to ask whether it counts as
     // source. Its lines are read, looked at and freed: nothing of a file nothing cites is held.
     const ls = readLines(p) ?? [""];
-    if (!isSourceFile(p, ls[0] ?? "", ls)) continue;
+    if (!isSourceFile(p, ls[0] ?? "", ls, rules)) continue;
     if (excludeRes.some((re) => re.test(p))) excluded.push(p);
     else sources.push(p);
   }
@@ -987,7 +1004,7 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
   const specOpsUncovered: SpecOpUncovered[] = [];
   const specs = new Set<string>();
   for (const p of sources) {
-    if (notReadForSkipped(p)) continue;
+    if (notReadForSkipped(p, rules)) continue;
     o.room?.();
     const text = /\.(ya?ml|json)$/i.test(p) ? o.source.read(p) : undefined;
     const ops = text === undefined ? undefined : specOpsUncoveredIn(p, text, accepted);
@@ -996,7 +1013,7 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
     specOpsUncovered.push(...ops);
   }
   const skippedIn = (p: string): SkippedLine[] => {
-    if (specs.has(p) || notReadForSkipped(p)) return [];
+    if (specs.has(p) || notReadForSkipped(p, rules)) return [];
     o.room?.();
     const ls = readLines(p);
     return ls
@@ -1026,7 +1043,7 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
       carriedFrom.has(f.id) ? [{ id: f.id, from: carriedFrom.get(f.id)! }] : [],
     ),
     corrections: { applied: corrected.applied, stale: corrected.stale },
-    entriesNoFlowFollows: entriesNoFlowFollows(accepted),
+    entriesNoFlowFollows: entriesNoFlowFollows(accepted, rules),
     reviewed,
     reviewedProblems,
     reviewedDropped,
@@ -1035,6 +1052,6 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
     skipped,
     reviewedHolds,
     specOpsUncovered,
-    frameworkGaps: frameworkGaps(accepted),
+    frameworkGaps: frameworkGaps(accepted, rules.frameworks),
   };
 }

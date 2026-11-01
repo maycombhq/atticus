@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import {
+  joinConventions,
   callerRecords,
   DECLARED_CALLER,
   callTargetQuestion,
@@ -953,12 +954,18 @@ export function catalogWithFacts(input: FactsCatalogInput): FactsCatalogResult {
       repos,
       targets: { ...input.estateTargets, [repo]: input.targets ?? {} },
       outside: outsideSystems(op),
+      ...joinConventions(op),
     });
     join = joinAbout(whole, repo);
     // A-callers: who this repo's gateway routes let in, read from the whole estate's join (a
     // route's scanned callers may be anywhere) and the systems people declared.
     records0 = applyFactJoins(records0, join, repos, {
-      callers: joinCallers({ repos, join: whole, declared: declaredCallsOf(op.profiles) }),
+      callers: joinCallers({
+        repos,
+        join: whole,
+        declared: declaredCallsOf(op.profiles),
+        ...joinConventions(op),
+      }),
       join: whole,
       only: [repo],
     });
@@ -1166,6 +1173,7 @@ export function estateFromFacts(input: {
       })),
     ),
     outside: outsideSystems(input.op),
+    ...joinConventions(input.op),
   });
   return { records, specs, join, invalid };
 }

@@ -1,3 +1,5 @@
+import { DEFAULT_READ_RULES, type ReadRules } from "./conventions.js";
+
 /**
  * Files coverage and the estimate don't count by default, beyond tests and build wrappers (ADR
  * 0124 addendum A-big, from a first read of a large monorepo): translation bundles, and JSON or
@@ -25,10 +27,10 @@ export const DATA_FILE_CHARS = 200_000;
 /**
  * An API spec (OpenAPI, Swagger, AsyncAPI): a name with the word in it, a `.oas.yaml`, or any
  * YAML or JSON in a folder named for one (`oas/`, `openapi/`, `swagger/`, `api-specs/`), as an
- * API gateway's repo keeps its proxy's spec. Code whatever its size.
+ * API gateway's repo keeps its proxy's spec. Code whatever its size. The folders are the org
+ * pack's `apiSpecFolders` (ADR 0147); this is the test with the built-in ones.
  */
-export const API_SPEC =
-  /(^|\/)[^/]*(openapi|swagger|asyncapi|api-docs)[^/]*\.(ya?ml|json|xml)$|\.oas\.(ya?ml|json)$|(^|\/)(oas|openapi|swagger|asyncapi|api-?specs?)\/(.+\/)?[^/]+\.(ya?ml|json)$/i;
+export const API_SPEC = DEFAULT_READ_RULES.apiSpec;
 
 const DATA_EXT = /\.(json|xml)$/i;
 /** Build, config, API and migration files, and MyBatis mappers: code whatever their size. */
@@ -36,8 +38,12 @@ const KEEP_BIG =
   /(^|\/)(pom\.xml|package\.json|composer\.json|angular\.json|project\.json|nx\.json|lerna\.json|workspace\.json|tsconfig[^/]*\.json|jsconfig\.json|appsettings[^/]*\.json|launchSettings\.json|[^/]*(openapi|swagger|asyncapi|api-docs)[^/]*\.(json|xml)|[^/]*mapper[^/]*\.xml)$|(^|\/)(config|configuration|migrations?|db|database|changelogs?|liquibase|flyway)\//i;
 
 /** Whether a file is a big data file, from its lines (as read, without line breaks). */
-export function isDataFile(path: string, lines: readonly string[]): boolean {
-  if (!DATA_EXT.test(path) || KEEP_BIG.test(path) || API_SPEC.test(path)) return false;
+export function isDataFile(
+  path: string,
+  lines: readonly string[],
+  rules: ReadRules = DEFAULT_READ_RULES,
+): boolean {
+  if (!DATA_EXT.test(path) || KEEP_BIG.test(path) || rules.apiSpec.test(path)) return false;
   // a split that kept the last line break ends in "", which isn't a line
   if (lines.length - (lines[lines.length - 1] === "" ? 1 : 0) > DATA_FILE_LINES) return true;
   let chars = 0;

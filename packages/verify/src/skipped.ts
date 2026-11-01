@@ -1,4 +1,5 @@
 import { normalizePath, redactSecrets, type Fact } from "@maycombhq/core";
+import { DEFAULT_READ_RULES, type ReadRules } from "./conventions.js";
 import { readOpenApiDocument } from "@maycombhq/extractors";
 
 /**
@@ -56,15 +57,12 @@ export interface SpecOpUncovered {
 }
 
 /**
- * Folders whose strings aren't the product's: generated code, build output and vendored copies.
- * Tests, fixtures and the rest coverage doesn't count are already left out (`isSourceFile`), and
- * so is what the org pack excludes.
+ * Folders whose strings aren't the product's: generated code, build output and vendored copies,
+ * the org pack's `notReadFolders` (ADR 0147). Tests, fixtures and the rest coverage doesn't count
+ * are already left out (`isSourceFile`), and so is what the org pack excludes.
  */
-const NOT_READ =
-  /(^|\/)(generated|generated-sources|__generated__|gen|dist|build|out|target|bin|obj|node_modules|vendor|vendored|third_party|third-party|\.next|\.nuxt|coverage)\//i;
-
-export function notReadForSkipped(path: string): boolean {
-  return NOT_READ.test(path);
+export function notReadForSkipped(path: string, rules: ReadRules = DEFAULT_READ_RULES): boolean {
+  return rules.notRead.test(path);
 }
 
 /** A line that is all comment: `//`, `/*`, `*`, `#` (not a C# directive), `<!--` or SQL's `-- `. */

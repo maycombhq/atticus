@@ -15,6 +15,7 @@ import {
   carryOf,
   checkoutOf,
   estateComponentsOf,
+  conventionsAt,
   excludesOf,
   headOf,
   raiseReadQuestions,
@@ -208,6 +209,8 @@ export async function verifyCommand(
   // ADR 0124 addendum A-read: the files the reader read and found nothing to record in.
   const reviewed = await readReviewed(root, repo);
   const estate = await estateComponentsOf(root);
+  // ADR 0147: the org pack's folder lists and house frameworks.
+  const conventions = await conventionsAt(root);
   let report;
   try {
     report = await verifyFacts({
@@ -221,6 +224,7 @@ export async function verifyCommand(
       room,
       // J1 (ADR 0143): an exposure read here names a component the manifest lists.
       ...(estate ? { estate } : {}),
+      conventions,
     });
   } catch (e) {
     if (!(e instanceof NoRoomError)) throw e;
@@ -533,7 +537,11 @@ export async function verifyCommand(
       `(frameworkGaps in ${verifyYaml})`,
     );
   }
-  const learn = frameworksToLearn(report.accepted, await frameworksKnownTo(root));
+  const learn = frameworksToLearn(
+    report.accepted,
+    await frameworksKnownTo(root),
+    (await conventionsAt(root)).frameworks,
+  );
   if (learn.length) {
     io.out(
       `${learn.length} ${learn.length === 1 ? "framework" : "frameworks"} of the house nothing here can read yet: teach ${learn.length === 1 ? "it" : "them"} once, rather than having each repo's annotations read as ordinary code.`,

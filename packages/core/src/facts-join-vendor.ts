@@ -2,6 +2,7 @@ import { factIdPart } from "./facts.js";
 import { APIGEE_BUNDLE, routeScore, type FactEnd, type JoinRepo } from "./facts-join.js";
 import type { Fact, FactOf } from "./schema/facts.js";
 import { hostMatches, urlHostPort } from "./schema/workspace.js";
+import { gatewayBundleTest } from "./schema/conventions.js";
 
 /**
  * A gateway's forwarding calls matched to the vendor operations they reach (ADR 0130). The facts
@@ -115,6 +116,8 @@ export interface JoinVendorOperationsInput {
   vendors: readonly JoinVendor[];
   /** A person's answer naming the repo or system a call goes to: repo → call fact id → name. */
   targets?: Readonly<Record<string, Readonly<Record<string, string>>>>;
+  /** The gateway bundle folders, as given to `joinFacts` (ADR 0147). */
+  bundleFolders?: readonly string[];
 }
 
 type Call = FactOf<"call">;
@@ -147,6 +150,7 @@ const sameMethod = (a: string | undefined, b: string | undefined) => {
 /** Match every gateway forwarding call that goes to a vendor to the vendor operation it reaches. */
 export function joinVendorOperations(input: JoinVendorOperationsInput): VendorJoinResult {
   const vendors = [...input.vendors].sort((a, b) => cmp(a.system, b.system));
+  const bundle = input.bundleFolders ? gatewayBundleTest(input.bundleFolders) : APIGEE_BUNDLE;
   const byName = new Map<string, JoinVendor>();
   for (const v of vendors)
     for (const n of [v.system, ...v.names]) if (n) byName.set(factIdPart(n), v);
@@ -182,7 +186,7 @@ export function joinVendorOperations(input: JoinVendorOperationsInput): VendorJo
     const entries = new Map(
       facts.filter((f): f is Entry => f.kind === "entry").map((f) => [f.id, f] as const),
     );
-    const isRoute = (e: Entry) => !!r.gateway || APIGEE_BUNDLE.test(e.cite.file);
+    const isRoute = (e: Entry) => !!r.gateway || bundle.test(e.cite.file);
     for (const f of facts) {
       if (f.kind !== "call" || f.callType !== "rest") continue;
       const routeFact = f.from ? entries.get(f.from) : undefined;

@@ -1,5 +1,6 @@
 import { parse } from "yaml";
 import {
+  joinConventions,
   callHostOf,
   factIdPart,
   joinFacts,
@@ -309,6 +310,7 @@ export function measureLinks(input: MeasureLinksInput): MeasureLinksResult {
     repos: joinReposOf(op, repos, renames),
     ...(input.targets ? { targets: input.targets } : {}),
     outside: outsideSystems(op),
+    ...joinConventions(op),
   });
   const key = (repo: string, fact: string) => `${repo}\u0000${fact}`;
   const joins = new Map<string, FactJoin[]>();

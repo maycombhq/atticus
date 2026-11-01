@@ -1,4 +1,11 @@
-import { staleCite, type Fact, type FileChange, type StaleCite } from "@maycombhq/core";
+import { readRulesOf } from "./conventions.js";
+import {
+  staleCite,
+  type Conventions,
+  type Fact,
+  type FileChange,
+  type StaleCite,
+} from "@maycombhq/core";
 import { globToRegExp } from "@maycombhq/sdk";
 import { readingOrder } from "./batches.js";
 import type { FileSource } from "./source.js";
@@ -39,6 +46,8 @@ export function rereadPlan(o: {
   carry: CarryChanges;
   source: FileSource;
   exclude?: readonly string[];
+  /** The org pack's conventions (ADR 0147): what counts as source. */
+  conventions?: Conventions;
 }): RereadPlan {
   let current = 0;
   let carried = 0;
@@ -68,7 +77,7 @@ export function rereadPlan(o: {
     const text = o.source.read(p);
     if (text === undefined || !text.trim()) return false;
     const ls = text.split(/\r?\n/);
-    if (!isSourceFile(p, ls[0] ?? "", ls)) return false;
+    if (!isSourceFile(p, ls[0] ?? "", ls, readRulesOf(o.conventions))) return false;
     return !excludeRes.some((re) => re.test(p));
   });
   const files = readingOrder(readable).map((path) => ({

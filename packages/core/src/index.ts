@@ -27,6 +27,7 @@ export * from "./schema/layout.js";
 export * from "./schema/plugin.js";
 export * from "./schema/review.js";
 export * from "./schema/orgpack.js";
+export * from "./schema/conventions.js";
 export * from "./schema/executors.js";
 export * from "./orgpack-defaults.js";
 export * from "./orgpack-load.js";
