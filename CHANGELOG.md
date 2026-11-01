@@ -4,6 +4,12 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## 2.0.0-beta.10 (2026-10-31)
 
+### Answers by rule, in one sitting, and where they came from (ADR 0153)
+
+- A target or hosts answer can carry a rule: `atticus questions answer <id> --option <n> --match "*.payments.forge.internal"` or `--match "/forge/limits/**"`, or the rule field on the Questions page. One answer then covers every call that matches, the calls found later too, in the repos its scope allows. A hosts rule goes into the manifest (the pattern under `hosts`, or the prefix as `basePath`) and retires the open hosts questions it covers.
+- `atticus questions sheet` writes every open question into one YAML answer sheet, and `--apply <file>` answers the filled entries as you, skipping blanks and refusing any whose question changed.
+- A change's own questions go to the people its `change.yaml` names under `owners`, for `--mine` and the Questions page. An answer accepted from the assistant's proposal records the proposal and the lines it cited. Open hosts questions asked before beta.10 gain the outside-system options on the next write. Question files are now schema version 3 (`atticus upgrade`, step `questions-v3`), and the local API is 2.41.0.
+
 ### Fixed before release: from the independent review
 
 - A proposed answer's citation must name the question's repo or one a manifest lists, and that repo must have a checkout here. Only a change's own question cites the metarepo, and never Atticus's own folders (proposals, questions, facts, knowledge, judgments, runs); links are followed and must stay inside the checkout, and a refused citation never says what the file holds.
