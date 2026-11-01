@@ -13,7 +13,7 @@ import {
   sampleConfirmed,
   type Fact,
 } from "@maycombhq/core";
-import { applyCorrections, correctedFact, correctionFor } from "@maycombhq/verify";
+import { applyCorrections, correctedFact, correctionFor, repairFormSlips } from "@maycombhq/verify";
 import {
   badRequest,
   HttpError,
@@ -82,15 +82,24 @@ async function readFacts(root: string, repo: string) {
     () => undefined,
   );
   if (text === undefined) return { file, present: false, facts: [] as Fact[], bad: [] };
-  const p = parseFactsLines(text);
+  // R6: the reader's slips of form are fixed as `atticus verify` fixes them, each said as a note
+  // (the app writes no facts: the next verify writes the fix into the file).
+  const read = parseFactsLines(text);
+  const p = repairFormSlips(read.facts, read.bad);
   return {
     file,
     present: true,
     facts: p.facts,
-    bad: p.bad.map((b) => ({
-      file,
-      message: `line ${b.line} isn't a fact: ${b.issues.map((i) => i.message).join("; ")}`,
-    })),
+    bad: [
+      ...p.slips.map((x) => ({
+        file,
+        message: `slip of form fixed as read (a note; atticus verify ${repo} writes the fix into the facts file): ${x.message}`,
+      })),
+      ...p.bad.map((b) => ({
+        file,
+        message: `line ${b.line} isn't a fact: ${b.issues.map((i) => i.message).join("; ")}`,
+      })),
+    ],
   };
 }
 

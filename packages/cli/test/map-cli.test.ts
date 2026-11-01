@@ -689,6 +689,61 @@ describe("readAnswer: what a model's answer holds", () => {
   });
 });
 
+describe("the reader's slips of form, fixed in the batch loop as verify fixes them (R6)", () => {
+  /** e-post-entry written ePostEntry everywhere, and the flow with no cite of its own. */
+  const slipped = (line: string): string =>
+    line
+      .split("\n")
+      .map((l) => {
+        if (!l.trim()) return l;
+        const x = JSON.parse(l.replaceAll('"e-post-entry"', '"ePostEntry"')) as Record<
+          string,
+          unknown
+        >;
+        if (x.kind === "flow") delete x.cite;
+        return JSON.stringify(x);
+      })
+      .join("\n");
+
+  it("readAnswer slugs an id, rewrites its references, gives a flow its entry's cite, and says each", () => {
+    const text = reference
+      .map(({ verified: _v, by: _b, ...rest }) => JSON.stringify(rest))
+      .join("\n");
+    const r = readAnswer(slipped(text), REPO, COMMIT);
+    expect(r.problems).toEqual([]);
+    expect(r.facts).toHaveLength(17);
+    expect(r.facts.some((f) => JSON.stringify(f).includes("ePostEntry"))).toBe(false);
+    expect(r.facts.every((f) => f.verified === "none" && f.by === "assistant")).toBe(true);
+    expect(r.slips.map((x) => x.code)).toEqual(
+      expect.arrayContaining(["id-slugged", "ref-rewritten", "flow-cite-from-entry"]),
+    );
+    expect(r.slips.map((x) => x.message)).toContain(
+      "line 2: fact id ePostEntry slugged to e-post-entry, and every reference to it",
+    );
+  });
+
+  it("keeps every fact across batches, with the same notes, and lists them under slips", async () => {
+    const root = adoptedRepo();
+    const reader = honestReader();
+    const runtime = new MockRuntime((r) => slipped(reader(r.pack.prompt)), { now: NOW });
+    const o = io();
+    const code = await mapCommand(root, REPO, { commit: COMMIT, maxTokens: 7000 }, o.io, {
+      runtime,
+      now: NOW,
+    });
+    expect(o.err).toEqual([]);
+    expect(code).toBe(0);
+    expect(factsOf(root)).toHaveLength(17);
+    expect(factsOf(root).join("\n")).not.toContain("ePostEntry");
+    const text = o.out.join("\n");
+    expect(text).toMatch(
+      /slips? of form fixed in the facts \(a note, not a rejection; under slips in \.atticus\/facts\/forge-ledger\.verify\.yaml\)/,
+    );
+    expect(text).toContain("fact id ePostEntry slugged to e-post-entry, and every reference to it");
+    expect(text).toContain("flow w-post-entry had no cite; it takes its entry e-post-entry's line");
+  });
+});
+
 /**
  * A printed command line as its words, as a shell reads them: a quoted word (a Windows path such
  * as "C:\Users\...\forge-meta" is printed quoted) loses its quotes.

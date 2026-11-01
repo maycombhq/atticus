@@ -120,6 +120,40 @@ describe("a repo's facts as the Map cites them", () => {
   });
 });
 
+describe("the reader's slips of form, fixed as the Map reads the facts (R6)", () => {
+  it("shows a camelCase id slugged and a flow with no cite on its entry's line, each said as a note", async () => {
+    const slipped = readFileSync(join(VERIFY, "forge-ledger.facts.jsonl"), "utf8")
+      .trim()
+      .split("\n")
+      .map((l) => {
+        const x = JSON.parse(l.replaceAll('"e-post-entry"', '"ePostEntry"')) as Record<
+          string,
+          unknown
+        >;
+        if (x.kind === "flow") delete x.cite;
+        return JSON.stringify(x);
+      })
+      .join("\n");
+    await writeFile(join(root, "facts/forge-slips.jsonl"), slipped + "\n");
+    const r = await call("GET", "/api/facts/forge-slips");
+    expect(r.status).toBe(200);
+    const v = Api.RepoFactsView.parse(r.body);
+    expect(v.facts).toHaveLength(17);
+    expect(v.facts.map((f) => f.id)).toContain("e-post-entry");
+    expect(v.facts.map((f) => f.id)).not.toContain("ePostEntry");
+    const flow = v.facts.find((f) => f.kind === "flow")!;
+    const entry = v.facts.find((f) => f.id === "e-post-entry")!;
+    expect(flow.cite).toEqual(entry.cite);
+    const notes = v.problems.map((p) => p.message);
+    expect(v.problems.every((p) => p.file === "facts/forge-slips.jsonl")).toBe(true);
+    expect(notes).toContain(
+      "slip of form fixed as read (a note; atticus verify forge-slips writes the fix into the facts file): line 2: fact id ePostEntry slugged to e-post-entry, and every reference to it",
+    );
+    expect(notes.some((m) => /line 17: flow w-post-entry had no cite/.test(m))).toBe(true);
+    expect(notes.some((m) => /isn't a fact/.test(m))).toBe(false);
+  });
+});
+
 describe("a person's correction from the Map", () => {
   it("marks a fact wrong only with why, as the signed-in person, and gives the git and verify commands", async () => {
     const none = await call("POST", "/api/facts/forge-ledger/corrections", {

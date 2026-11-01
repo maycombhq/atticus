@@ -280,6 +280,21 @@ export interface ReviewedLineProblem {
  * `auth` no line is cited for — is dropped on the way into the catalog (`catalogAuth`), not here,
  * so the warning for it is still raised the next time the facts are verified.
  */
+/**
+ * R6: the note a run gives for the slips of form it fixed (`atticus verify`, `atticus map`), the
+ * same words wherever the repair runs: a heading, the first `shown` fixes, and how many more.
+ */
+export function slipNoteLines(slips: readonly FormSlip[], verifyYaml: string, shown = 5): string[] {
+  if (!slips.length) return [];
+  return [
+    `${slips.length} ${slips.length === 1 ? "slip" : "slips"} of form fixed in the facts (a note, not a rejection; under slips in ${verifyYaml}):`,
+    ...slips.slice(0, shown).map((x) => `  ${x.message}`),
+    ...(slips.length > shown
+      ? [`  ... and ${slips.length - shown} more (slips in ${verifyYaml})`]
+      : []),
+  ];
+}
+
 export async function writeVerifyFiles(
   root: string,
   repo: string,

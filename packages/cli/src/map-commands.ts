@@ -35,6 +35,7 @@ import {
   type RepoDescription,
   type RepoDescriptionCite,
   stackHelpersOff,
+  type BadFactLine,
 } from "@maycombhq/core";
 import {
   buildContextPack,
@@ -61,6 +62,7 @@ import {
   planBatches,
   planParts,
   proposeExclusions,
+  repairFormSlips,
   SHOWN_PROPOSALS,
   rereadPlan,
   sessionTokensFor,
@@ -72,6 +74,7 @@ import {
   type FrameworkTopic,
   type FileSlice,
   type FileSource,
+  type FormSlip,
   type Rejected,
   type RereadPlan,
 } from "@maycombhq/verify";
@@ -89,6 +92,7 @@ import {
   estateComponentsOf,
   readReviewed,
   reviewedProblemsOf,
+  slipNoteLines,
   writeVerifyFiles,
   type VerifySummary,
 } from "./facts-files.js";
@@ -329,21 +333,30 @@ function claimOf(f: Fact): string {
   }
 }
 
-/** The answer's lines: facts (marked as the assistant's, unverified), questions, and problems. */
+/**
+ * The answer's lines: facts (marked as the assistant's, unverified), questions, and problems. The
+ * reader's slips of form (a camelCase id, a flow with no cite) are fixed as `atticus verify`
+ * fixes them (R6) and said in `slips`; `onFile` are the facts earlier batches kept, which a
+ * reference or a flow's entry may name.
+ */
 export function readAnswer(
   text: string,
   repo: string,
   commit: string,
+  onFile: readonly Fact[] = [],
 ): {
   facts: Fact[];
   questions: unknown[];
   problems: string[];
+  /** R6: the slips of form fixed in the answer's facts. */
+  slips: FormSlip[];
   /** The one-line description the reader drafted, when it wrote one (ADR 0128). */
   about?: { text: string; cites: RepoDescriptionCite[] };
 } {
   const facts = new Map<string, Fact>();
   const questions: unknown[] = [];
-  const problems: string[] = [];
+  const problems: { line: number; message: string }[] = [];
+  const refused: BadFactLine[] = [];
   let about: { text: string; cites: RepoDescriptionCite[] } | undefined;
   text.split(/\r?\n/).forEach((raw, i) => {
     const line = raw.trim();
@@ -352,11 +365,14 @@ export function readAnswer(
     try {
       json = JSON.parse(line);
     } catch {
-      problems.push(`line ${i + 1} is not one JSON object: ${line.slice(0, 80)}`);
+      problems.push({
+        line: i + 1,
+        message: `line ${i + 1} is not one JSON object: ${line.slice(0, 80)}`,
+      });
       return;
     }
     if (!json || typeof json !== "object" || Array.isArray(json)) {
-      problems.push(`line ${i + 1} is not one JSON object`);
+      problems.push({ line: i + 1, message: `line ${i + 1} is not one JSON object` });
       return;
     }
     const o = json as Record<string, unknown>;
@@ -369,7 +385,10 @@ export function readAnswer(
     if ("about" in o && !("kind" in o)) {
       const text = typeof o.about === "string" ? o.about.trim() : "";
       if (!text) {
-        problems.push(`line ${i + 1}: "about" needs one line saying what the repo is`);
+        problems.push({
+          line: i + 1,
+          message: `line ${i + 1}: "about" needs one line saying what the repo is`,
+        });
         return;
       }
       const cites: RepoDescriptionCite[] = (Array.isArray(o.cites) ? o.cites : [])
@@ -381,25 +400,46 @@ export function readAnswer(
         })
         .slice(0, 6);
       if (!cites.length) {
-        problems.push(
-          `line ${i + 1}: "about" needs "cites": the file and line it was read from, as a fact cites its line`,
-        );
+        problems.push({
+          line: i + 1,
+          message: `line ${i + 1}: "about" needs "cites": the file and line it was read from, as a fact cites its line`,
+        });
         return;
       }
       about ??= { text: text.slice(0, REPO_DESCRIPTION_MAX), cites };
       return;
     }
     // Only the verifier says a fact is verified, and only a person's edit says a person did.
-    const r = Fact.safeParse({ repo, commit, ...o, verified: "none", by: "assistant" });
+    const marked = { repo, commit, ...o, verified: "none", by: "assistant" };
+    const r = Fact.safeParse(marked);
     if (r.success) facts.set(r.data.id, r.data);
     else
-      problems.push(
-        `line ${i + 1}${typeof o.id === "string" ? ` (${o.id})` : ""}: ${r.error.issues
-          .map((x) => `${x.path.join(".") || "(fact)"}: ${x.message}`)
-          .join("; ")}`,
-      );
+      refused.push({
+        line: i + 1,
+        raw: JSON.stringify(marked),
+        issues: [
+          {
+            line: i + 1,
+            code: "schema",
+            message: `line ${i + 1}${typeof o.id === "string" ? ` (${o.id})` : ""}: ${r.error.issues
+              .map((x) => `${x.path.join(".") || "(fact)"}: ${x.message}`)
+              .join("; ")}`,
+          },
+        ],
+      });
   });
-  return { facts: [...facts.values()], questions, problems, ...(about ? { about } : {}) };
+  // R6: the slips of form fixed here as verify fixes them; what still doesn't read is a problem.
+  const repaired = repairFormSlips([...facts.values()], refused, onFile);
+  for (const b of repaired.bad)
+    problems.push({ line: b.line, message: b.issues.map((x) => x.message).join("; ") });
+  problems.sort((x, y) => x.line - y.line);
+  return {
+    facts: repaired.facts,
+    questions,
+    problems: problems.map((x) => x.message),
+    slips: repaired.slips,
+    ...(about ? { about } : {}),
+  };
 }
 
 /** A rejected fact as the reader gets it back: why, the fact, and the lines around its cite. */
@@ -1007,12 +1047,12 @@ async function takeAnswer(
     await saveState(root, { ...rest, next: batch });
     return 1;
   }
-  const answer = readAnswer(run.output ?? "", s.repo, s.commit);
   const existing = await readFactsFile(root, s.repo);
   if (typeof existing === "string") {
     io.err(existing);
     return 2;
   }
+  const answer = readAnswer(run.output ?? "", s.repo, s.commit, existing);
   const merged = new Map(existing.map((f) => [f.id, f]));
   for (const f of answer.facts) merged.set(f.id, f);
   // Facts of an earlier commit whose files are unchanged are carried (ADR 0124 addendum A-incremental).
@@ -1050,6 +1090,7 @@ async function takeAnswer(
     q.problems,
     [],
     reviewedProblemsOf(reviewed.bad, report),
+    answer.slips,
   );
   // The one line the reader drafted about the repo (ADR 0128): kept as a draft, marked
   // unconfirmed wherever it is shown, for a person to confirm, edit or reject.
@@ -1067,6 +1108,9 @@ async function takeAnswer(
   io.out(
     `${label}: ${plural(kept, "fact")} kept (${report.accepted.length} in all${report.carried.length ? `, ${report.carried.length} carried from an earlier commit` : ""}), ${report.rejected.length} rejected${q.raised.length ? `, ${plural(q.raised.length, "question")} raised for a person` : ""}${answer.problems.length ? `, ${plural(answer.problems.length, "line")} not read` : ""}.`,
   );
+  // R6: the slips of form fixed in this answer, said as verify says them.
+  for (const l of slipNoteLines(answer.slips, `${factsRelOf(root)}/${s.repo}.verify.yaml`))
+    io.out(l);
   const { waiting: _w, ...rest } = s;
   const rejected = report.rejected.map((r: Rejected) => ({
     id: r.fact.id,

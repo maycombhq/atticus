@@ -142,3 +142,47 @@ describe("repairFormSlips: a flow with no cite takes its entry's line (R6)", () 
     ]);
   });
 });
+
+describe("repairFormSlips beside facts already kept (R6, the batch loop)", () => {
+  /** The facts the entry's batch kept, its id slugged then; a later batch writes the rest. */
+  const split = () => {
+    const xs = camel();
+    const entry = xs.filter((x) => x.id === "postCheck");
+    const rest = xs.filter((x) => x.id !== "postCheck");
+    const first = parseFactsLines(text(entry));
+    const kept = repairFormSlips(first.facts, first.bad).facts;
+    return { kept, rest };
+  };
+
+  it("rewrites a reference to an id an earlier batch slugged", () => {
+    const { kept, rest } = split();
+    expect(kept.map((f) => f.id)).toEqual(["post-check"]);
+    const later = parseFactsLines(text(rest));
+    const r = repairFormSlips(later.facts, later.bad, kept);
+    expect(r.bad).toEqual([]);
+    expect(r.facts.some((f) => JSON.stringify(f).includes("postCheck"))).toBe(false);
+    expect(r.facts.map((f) => f.id)).not.toContain("post-check");
+    expect(r.slips.map((s) => s.code)).toContain("ref-rewritten");
+  });
+
+  it("gives a flow with no cite the line of an entry an earlier batch kept", () => {
+    const xs = lines();
+    const entry = xs.filter((x) => x.id === "e-post-check");
+    const flow = xs.filter((x) => x.kind === "flow").map((x) => ({ ...x, cite: undefined }));
+    const kept = parseFactsLines(text(entry)).facts;
+    const later = parseFactsLines(text(flow));
+    const r = repairFormSlips(later.facts, later.bad, kept);
+    expect(r.bad).toEqual([]);
+    expect(r.facts[0]!.cite).toEqual(kept[0]!.cite);
+    expect(r.slips.map((s) => s.code)).toEqual(["flow-cite-from-entry"]);
+  });
+
+  it("takes an id that slugs to an earlier batch's fact as that fact written again, not a collision", () => {
+    const { kept } = split();
+    const again = parseFactsLines(text(camel().filter((x) => x.id === "postCheck")));
+    const r = repairFormSlips(again.facts, again.bad, kept);
+    expect(r.bad).toEqual([]);
+    expect(r.facts.map((f) => f.id)).toEqual(["post-check"]);
+    expect(r.slips.map((s) => s.code)).toEqual(["id-slugged"]);
+  });
+});

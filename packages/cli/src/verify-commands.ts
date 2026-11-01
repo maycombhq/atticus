@@ -29,6 +29,7 @@ import {
   readCorrections,
   readReviewed,
   reviewedProblemsOf,
+  slipNoteLines,
   writeVerifyFiles,
   type QuestionProblem,
 } from "./facts-files.js";
@@ -430,15 +431,7 @@ export async function verifyCommand(
     );
   // R6: notes, never rejections. A slip of form fixed in the facts, and a reviewed glob that
   // matches nothing (it stands for no file, so it excuses none).
-  if (slips.length) {
-    io.out(
-      `${slips.length} ${slips.length === 1 ? "slip" : "slips"} of form fixed in the facts (a note, not a rejection; under slips in ${verifyYaml}):`,
-    );
-    show(
-      slips.map((x) => x.message),
-      `(slips in ${verifyYaml})`,
-    );
-  }
+  for (const l of slipNoteLines(slips, verifyYaml, SHOWN)) io.out(l);
   const dropped = report.reviewedDropped;
   if (dropped.length) {
     io.out(
