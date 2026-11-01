@@ -160,9 +160,10 @@ describe("lean batch prompts: the core and the topic rules a batch needs (ADR 01
     // beside the consumers a route names (A-callers), and when the framework fact said an Apigee
     // proxy or shared flow is not a framework (a gateway read offered them as house frameworks),
     // and when authCite was said to be {file, line, value} only (readers gave it a quote), and
-    // when a flow fact was told its own cite is the line that starts it (readers left it out).
+    // when a flow fact was told its own cite is the line that starts it (readers left it out),
+    // and when an environment variable a deployment sets was given its key and target (J0).
     expect(createHash("sha256").update(FACT_RULES).digest("hex")).toBe(
-      "f0f9cce6eec04db33fa3a146cbbf384e71bb08359affc50a305c4b21a9bca848",
+      "6d9f2636023c6c6c9e1266748e7c290faa75110f4afb0282f5bb7ef7b9d614cc",
     );
     expect(FACT_RULES).toBe(factRulesFor());
     expect(mapCommand().body).toContain(FACT_RULES);

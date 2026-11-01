@@ -43,9 +43,9 @@ describe("atticus join measure", () => {
     expect(c.out.slice(0, 5)).toEqual([
       "Measured against measure/links.yaml (forge-bank): 9 repos, 15 entries and 17 calls listed.",
       "Reading: 15 of 15 entries and 16 of 17 calls are in the facts (97%).",
-      "Join precision 0.889: 8 of the 9 listed calls joined to a repo reach the one you named.",
-      "Join recall 0.615: 8 of the 13 calls that should reach a repo of the estate do.",
-      "4 asked, 3 guessed (2 right), 2 of 4 outside right, 1 unlinked, 1 not read.",
+      "Join precision 0.909: 10 of the 11 listed calls joined to a repo reach the one you named.",
+      "Join recall 0.769: 10 of the 13 calls that should reach a repo of the estate do.",
+      "1 asked, 3 guessed (2 right), 3 of 4 outside right, 1 unlinked, 1 not read.",
     ]);
     expect(c.out).toContain(
       "  ok  forge-portal-bff GET /forge/accounts/v1/accounts/{id}: wanted forge-accounts, got forge-accounts GET /accounts/{id} via forge-proxy-accounts-v1",
@@ -54,7 +54,7 @@ describe("atticus join measure", () => {
       "  --  forge-accounts POST /events: wanted outside harbor-audit, got forge-notifications POST /events (a guess: joined-by-path)",
     );
     expect(c.out).toContain(
-      "  --  forge-payments POST /accounts/{id}/debits: wanted forge-accounts, got asked (unknown-host): atticus questions",
+      "  ok  forge-payments POST /accounts/{id}/debits: wanted forge-accounts, got forge-accounts POST /accounts/{id}/debits",
     );
     expect(c.out).toContain("  forge-portal-bff call GET /forge/payments/v1/payments/{id}");
     expect(c.out.at(-1)).toBe("Nothing was written.");
@@ -66,7 +66,7 @@ describe("atticus join measure", () => {
     const c = capture();
     expect(await joinMeasure(root, join(root, "measure/links.yaml"), { json: true }, c.io)).toBe(0);
     const m = JSON.parse(c.out.join("\n"));
-    expect(m.links).toMatchObject({ precision: 0.889, recall: 0.615, asked: 4 });
+    expect(m.links).toMatchObject({ precision: 0.909, recall: 0.769, asked: 1 });
     expect(m.reading.calls).toEqual({ want: 17, found: 16 });
     expect(m.calls).toHaveLength(17);
   });

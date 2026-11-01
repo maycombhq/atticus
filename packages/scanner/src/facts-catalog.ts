@@ -814,7 +814,10 @@ function joinAbout(all: FactsJoinResult, repo: string): FactsJoinResult {
     (j) =>
       j.call.repo === repo ||
       j.entry.repo === repo ||
-      !!j.gateway?.some((h) => h.entry.repo === repo),
+      !!j.gateway?.some((h) => h.entry.repo === repo) ||
+      // J0: a join whose placeholder this repo's config sets (a deploy or config repo) is
+      // written again with it, so a changed value moves the link.
+      [...(j.through ?? []), ...(j.entryThrough ?? [])].some((t) => t.repo === repo),
   );
   const ifaces = new Set(joins.map((j) => j.interface));
   const outside = (all.outside ?? []).filter((o) => o.call.repo === repo);

@@ -67,16 +67,16 @@ describe("measureLinks: the estate join against the reference links", () => {
     });
     expect(m.links).toEqual({
       want: 13,
-      joined: 9,
-      right: 8,
-      precision: 0.889,
-      recall: 0.615,
-      asked: 4,
+      joined: 11,
+      right: 10,
+      precision: 0.909,
+      recall: 0.769,
+      asked: 1,
       missed: 0,
       unlinked: 1,
       notRead: 1,
       inferred: { joined: 3, right: 2 },
-      outside: { want: 4, got: 2, right: 2 },
+      outside: { want: 4, got: 3, right: 3 },
       none: { want: 0, right: 0 },
     });
   });
@@ -102,19 +102,20 @@ describe("measureLinks: the estate join against the reference links", () => {
       "ok forge-proxy-accounts-v1 GET /forge-svc/accounts/accounts/{id} -> forge-accounts",
       "ok forge-proxy-payments-v1 POST /forge-svc/payments/payments -> forge-payments",
       "ok forge-proxy-northwind-v1 POST /v2/charges -> outside northwind-pay",
-      // ${NOTIFY_URL}: the config key is read as a host nobody lists (J0 resolves it).
-      "-- forge-accounts POST /notifications -> asked (unknown-host)",
+      // ${NOTIFY_URL}: resolved through forge-deploy-config's ConfigMap (J0).
+      "ok forge-accounts POST /notifications -> forge-notifications",
       // The starter's service id audit-gw names nothing here: a guess by path, and wrong.
       "-- forge-accounts POST /events -> forge-notifications (joined-by-path)",
       "-- forge-payments GET /limits/{id} -> asked (ambiguous)",
-      "-- forge-payments POST /accounts/{id}/debits -> asked (unknown-host)",
+      "ok forge-payments POST /accounts/{id}/debits -> forge-accounts",
       "ok forge-payments POST /forge/northwind/v1/charges -> forge-proxy-northwind-v1",
       "ok forge-payments POST /notifications -> forge-notifications",
       "ok forge-cards GET /accounts/{id} -> forge-accounts (joined-by-path)",
       "-- forge-cards GET /ping -> unlinked",
       "ok forge-notifications GET /accounts/{id} -> forge-accounts (joined-by-label)",
       "ok forge-notifications POST /v1/messages -> outside lantern-mail",
-      "-- forge-starter POST /oauth2/token -> asked (unknown-host)",
+      // ${FORGE_SSO_URL}: set for every service in the platform chart; its host is Forge SSO's alias.
+      "ok forge-starter POST /oauth2/token -> outside forge-sso",
     ]);
   });
 
@@ -129,13 +130,13 @@ describe("measureLinks: the estate join against the reference links", () => {
       },
     });
     expect(m.links).toMatchObject({
-      joined: 9,
-      right: 9,
+      joined: 11,
+      right: 11,
       precision: 1,
-      recall: 0.692,
-      asked: 3,
+      recall: 0.846,
+      asked: 0,
       inferred: { joined: 2, right: 2 },
-      outside: { want: 4, got: 3, right: 3 },
+      outside: { want: 4, got: 4, right: 4 },
     });
   });
 
@@ -148,7 +149,7 @@ describe("measureLinks: the estate join against the reference links", () => {
     });
     const row = m.calls.find((c) => c.repo === "forge-accounts" && c.call === "POST /events")!;
     expect(row.got).toEqual({ kind: "unlinked" });
-    expect(m.links).toMatchObject({ joined: 8, right: 8, precision: 1 });
+    expect(m.links).toMatchObject({ joined: 10, right: 10, precision: 1 });
   });
 
   it("scores only the repos and calls the reference lists, and says what it can't find", () => {

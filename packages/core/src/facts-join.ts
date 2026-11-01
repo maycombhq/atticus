@@ -45,6 +45,13 @@ import { hostHasPort, hostMatches, urlHostPort } from "./schema/workspace.js";
  * a loop; a walk that runs past the bound is a question too. The join stops at the last gateway
  * whose next hop is asked, missed or forwards to several services, exactly as one hop does.
  *
+ * Placeholders (J0): a base URL, host or topic written as `${X}`, `${X:default}` or `env:X` is
+ * each value the config facts setting `X` give it, read in the caller's repo and in any repo of
+ * the estate whose setting is for the caller's component (its folder, its deployment, its
+ * `component` or `target`); a placeholder nothing sets takes its default. Every value a manifest
+ * host or base path claims is accepted, values claimed by different repos are asked, and the join
+ * cites the lines used (`through`). No model.
+ *
  * Pure: the same facts and answers give the same result, whatever order the repos come in.
  */
 
@@ -106,6 +113,8 @@ export interface GatewayHop {
   call: FactEnd;
   /** The config fact (a TargetServer, a KVM entry) that ties the forwarding call to its host. */
   tie?: FactEnd;
+  /** J0: the config facts that set the tie's placeholder, as `FactJoin.through`. */
+  through?: FactEnd[];
   /** The catalog GatewayRoute of the route. */
   route: string;
   /** The auth a caller meets at this hop, when the route's facts say (A-gateway2). */
@@ -169,6 +178,15 @@ export interface FactJoin {
   entry: FactEnd;
   /** The config fact that gives the call's base URL, when one ties the call to the host. */
   tie?: FactEnd;
+  /**
+   * J0: where the tie's value is a placeholder (`${PAYMENTS_URL}`, `${X:default}`, `env:X`), or a
+   * topic is, the config facts that set it, in the caller's repo or in a deploy or config repo of
+   * the estate, each environment's line the join used; with every other tie that gave the same
+   * callee. Left out when the value is written where the call reads it.
+   */
+  through?: FactEnd[];
+  /** J0: the config facts that set a listener's placeholder topic (`${LEDGER_TOPIC}`). */
+  entryThrough?: FactEnd[];
   how: JoinHow;
   /**
    * A join by path (the join fallback): nobody named the callee, so it is inferred. `within`
@@ -447,7 +465,10 @@ export function callHostOf(f: Call, repoFacts: readonly Fact[]): string | undefi
       (n): n is Config => n.kind === "config" && !!f.base && n.key === f.base && !!hostIn(n.value),
     )
     .sort((x, y) => cmp(x.id, y.id))[0];
-  const h = hostIn(f.host) ?? (tie ? hostIn(tie.value) : undefined) ?? hostIn(f.base);
+  // A base that is a config key of the repo is never a host itself (J0).
+  const keyed = !!f.base && repoFacts.some((n) => n.kind === "config" && n.key === f.base);
+  const h =
+    hostIn(f.host) ?? (tie ? hostIn(tie.value) : undefined) ?? (keyed ? undefined : hostIn(f.base));
   return h ? (h.named ? `${h.host}:${h.named}` : h.host) : undefined;
 }
 
@@ -456,6 +477,48 @@ interface Node {
   fact: Fact;
   component: string;
 }
+
+/**
+ * J0: a config placeholder: `${X}` or Spring's `${X:default}` anywhere in a value (a URL may be
+ * written around it, `https://${HOST}/v2`), or `env:X` as the whole value. Two placeholders in
+ * one value are not resolved: which part each gives can't be read without guessing.
+ */
+export function placeholderIn(
+  s: string | undefined,
+): { name: string; fallback?: string; before: string; after: string } | undefined {
+  const t = (s ?? "").trim();
+  const env = /^env:([A-Za-z_][A-Za-z0-9_.-]*)$/i.exec(t);
+  if (env) return { name: env[1]!, before: "", after: "" };
+  const i = t.indexOf("${");
+  if (i < 0) return undefined;
+  let depth = 0;
+  let j = i + 2;
+  for (; j < t.length; j++) {
+    if (t[j] === "{") depth++;
+    else if (t[j] === "}") {
+      if (depth === 0) break;
+      depth--;
+    }
+  }
+  if (j >= t.length) return undefined;
+  const inner = t.slice(i + 2, j);
+  const after = t.slice(j + 1);
+  if (after.includes("${")) return undefined;
+  const colon = inner.indexOf(":");
+  const name = (colon < 0 ? inner : inner.slice(0, colon)).trim();
+  if (!/^[A-Za-z_][A-Za-z0-9_.[\]-]*$/.test(name)) return undefined;
+  const fallback = colon < 0 ? undefined : inner.slice(colon + 1).trim();
+  return { name, ...(fallback ? { fallback } : {}), before: t.slice(0, i), after };
+}
+
+/**
+ * A setting's name as a placeholder finds it: letter case, `.`, `-`, `_` and list brackets aside,
+ * as Spring's relaxed binding reads `PAYMENTS_URL` for `${payments.url}`.
+ */
+export const settingNameKey = (name: string) => name.toUpperCase().replace(/[^A-Z0-9]/g, "");
+
+/** How many placeholders deep a value is followed (`${A}` set to `${B}` set to a host). */
+const MAX_PLACEHOLDER_DEPTH = 4;
 
 /** Join every call of the estate's facts to the entry that serves it, or say why not. */
 export function joinFacts(input: JoinFactsInput): FactsJoinResult {
@@ -477,6 +540,100 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
   const components = new Set(nodes.map((n) => n.component));
   for (const r of repos) components.add(factIdPart(r.component ?? r.repo));
   const repoIds = new Map(repos.map((r) => [factIdPart(r.repo), r.repo] as const));
+
+  // ---- J0: placeholders resolved through the config facts that set them
+  const configNodes = nodes.filter((n): n is Node & { fact: Config } => n.fact.kind === "config");
+  /** Each file's deployments, by the name it deploys (a ConfigMap or Helm values beside one). */
+  const deploysIn = new Map<string, Set<string>>();
+  for (const n of nodes) {
+    if (n.fact.kind !== "deploy" || !n.fact.resourceName) continue;
+    const k = key(n.repo, n.fact.cite.file);
+    deploysIn.set(k, (deploysIn.get(k) ?? new Set()).add(factIdPart(n.fact.resourceName)));
+  }
+  /**
+   * Whether a setting is for a component: in its own repo, any of the component's or the
+   * repo's own; in another (a deploy or config repo), one whose component or `target` is the
+   * component, whose file sits in a folder named for it (`apps/<component>/values-prod.yaml`),
+   * or whose file deploys it (a Deployment's `env` beside its name).
+   */
+  const setsFor = (n: Node & { fact: Config }, owner: Node): boolean => {
+    const names = new Set([owner.component, factIdPart(owner.repo)]);
+    if (n.fact.target && names.has(factIdPart(n.fact.target))) return true;
+    if (n.repo === owner.repo) return n.component === owner.component || !n.fact.component;
+    if (n.component === owner.component) return true;
+    const parts = n.fact.cite.file.split("/");
+    if (parts.some((p) => names.has(factIdPart(p.replace(/\.[^.]*$/, ""))))) return true;
+    const deployed = deploysIn.get(key(n.repo, n.fact.cite.file));
+    return !!deployed && [...names].some((x) => deployed.has(x));
+  };
+  /** Names a setting's file or fields could be for: every component and repo of the estate. */
+  const known = new Set([...components, ...repoIds.keys()]);
+  /**
+   * A setting for no component in particular: another repo's, with no `target` or component of
+   * its own, in a file no folder or deployment of which names any component or repo of the estate
+   * (a platform chart's `charts/platform/values.yaml`). Read only when nothing sets the variable
+   * for the component itself.
+   */
+  const setsForAll = (n: Node & { fact: Config }, owner: Node): boolean => {
+    if (n.repo === owner.repo || n.fact.target || n.fact.component) return false;
+    const parts = n.fact.cite.file.split("/");
+    if (parts.some((p) => known.has(factIdPart(p.replace(/\.[^.]*$/, ""))))) return false;
+    return !deploysIn.has(key(n.repo, n.fact.cite.file));
+  };
+  /**
+   * A value with its placeholders resolved, once per setting that sets it (one per environment,
+   * say), each with the config facts it went through; a placeholder nothing sets takes its
+   * Spring default. A value nothing resolves gives none; a ring of placeholders ends.
+   */
+  const resolve = (
+    raw: string | undefined,
+    owner: Node,
+    seen: ReadonlySet<string>,
+    depth = 0,
+  ): { value: string; through: (Node & { fact: Config })[] }[] => {
+    const v = raw?.trim();
+    if (!v) return [];
+    const p = placeholderIn(v);
+    if (!p) return SECRETISH.test(v) ? [] : [{ value: v, through: [] }];
+    if (depth >= MAX_PLACEHOLDER_DEPTH) return [];
+    const want = settingNameKey(p.name);
+    const out: { value: string; through: (Node & { fact: Config })[] }[] = [];
+    const named = configNodes.filter(
+      (s) => !seen.has(key(s.repo, s.fact.id)) && settingNameKey(s.fact.key) === want,
+    );
+    const mine = named.filter((s) => setsFor(s, owner));
+    for (const s of mine.length ? mine : named.filter((x) => setsForAll(x, owner))) {
+      const k = key(s.repo, s.fact.id);
+      for (const r of resolve(
+        s.fact.value ?? s.fact.source,
+        owner,
+        new Set([...seen, k]),
+        depth + 1,
+      ))
+        out.push({ value: `${p.before}${r.value}${p.after}`, through: [s, ...r.through] });
+    }
+    if (out.length || !p.fallback) return out;
+    return resolve(p.fallback, owner, seen, depth + 1).map((r) => ({
+      value: `${p.before}${r.value}${p.after}`,
+      through: r.through,
+    }));
+  };
+  const uniqueEnds = (ns: readonly Node[]): FactEnd[] => {
+    const seen = new Set<string>();
+    return ns
+      .filter((n) => {
+        const k = key(n.repo, n.fact.id);
+        if (seen.has(k)) return false;
+        seen.add(k);
+        return true;
+      })
+      .map(end);
+  };
+  /** A topic as written, or each value its placeholder resolves to, with the settings it went through. */
+  const topicsOf = (n: Node, path: string) =>
+    placeholderIn(path)
+      ? resolve(path, n, new Set())
+      : [{ value: path, through: [] as (Node & { fact: Config })[] }];
   const declared = repos.flatMap((r) => [
     ...(r.modules ?? []).flatMap((m) =>
       m.hosts.map((h) => ({
@@ -565,44 +722,78 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
     const f = call.fact;
     if (EVENTS.has(f.callType)) {
       if (/^(subscribe|consume|listen)$/i.test(f.method ?? "")) continue;
-      for (const e of entries)
-        if (
-          e.fact.entryType === f.callType &&
-          e.component !== call.component &&
-          e.fact.path === f.path
-        )
-          joins.push({
-            call: end(call),
-            entry: end(e),
-            how: "topic",
-            callType: f.callType,
-            path: e.fact.path,
-            interface: interfaceId(call.component, e.component, undefined, e.fact.path),
-          });
+      // J0: a topic either side gives as a placeholder is each value its settings give it.
+      const sent = topicsOf(call, f.path);
+      for (const e of entries) {
+        if (e.fact.entryType !== f.callType || e.component === call.component) continue;
+        const heard = topicsOf(e, e.fact.path);
+        const both = sent.filter((s) => heard.some((h) => h.value === s.value));
+        if (!both.length) continue;
+        const path = both.map((s) => s.value).sort(cmp)[0]!;
+        const through = uniqueEnds(both.filter((s) => s.value === path).flatMap((s) => s.through));
+        const entryThrough = uniqueEnds(
+          heard.filter((h) => h.value === path).flatMap((h) => h.through),
+        );
+        joins.push({
+          call: end(call),
+          entry: end(e),
+          ...(through.length ? { through } : {}),
+          ...(entryThrough.length ? { entryThrough } : {}),
+          how: "topic",
+          callType: f.callType,
+          path,
+          interface: interfaceId(call.component, e.component, undefined, path),
+        });
+      }
       continue;
     }
     if (!SERVES[f.callType]) continue;
 
-    // The config fact that gives the call's base URL ties it to a host.
-    const configs = nodes
-      .filter(
-        (n): n is Node & { fact: Config } =>
-          n.repo === call.repo &&
-          n.fact.kind === "config" &&
-          !!f.base &&
-          n.fact.key === f.base &&
-          !!hostIn(n.fact.value),
-      )
-      .sort((x, y) => cmp(x.fact.id, y.fact.id));
-    const tieNode = configs[0];
-    const tie = tieNode ? { tie: end(tieNode) } : {};
+    // The config fact that gives the call's base URL ties it to a host; where its value is a
+    // placeholder (J0), each value the settings for the caller's component give it does.
+    const keyed = configNodes.filter(
+      (n) => n.repo === call.repo && !!f.base && n.fact.key === f.base,
+    );
+    type Cand = { value: string; tie?: Node & { fact: Config }; through: Node[] };
+    const cands: Cand[] = [];
+    if (!hostIn(f.host)) {
+      if (placeholderIn(f.host)) cands.push(...resolve(f.host, call, new Set()));
+      else if (keyed.length)
+        for (const t of keyed)
+          for (const r of resolve(
+            t.fact.value ?? t.fact.source,
+            call,
+            new Set([key(t.repo, t.fact.id)]),
+          ))
+            cands.push({ ...r, tie: t });
+      else if (placeholderIn(f.base)) cands.push(...resolve(f.base, call, new Set()));
+    }
+    const configs = cands.filter((x) => !!hostIn(x.value));
+    const claimOf = (x: Cand) => claimed(hostIn(x.value)!, joinPaths(urlPathOf(x.value), f.path));
+    // Every value a manifest host or base path claims is accepted, with the lines that gave it;
+    // with none claimed, the first stands, as one value always has.
+    const firstClaim = configs.map(claimOf).find((d) => !!d);
+    const used = firstClaim
+      ? configs.filter((x) => claimOf(x)?.key === firstClaim.key)
+      : configs.slice(0, 1);
+    const tieNode = used[0]?.tie;
+    const throughEnds = uniqueEnds(
+      used.flatMap((x) => [...(x.tie && x.tie !== tieNode ? [x.tie] : []), ...x.through]),
+    );
+    const tie = {
+      ...(tieNode ? { tie: end(tieNode) } : {}),
+      ...(throughEnds.length ? { through: throughEnds } : {}),
+    };
+    // A base that is a config key of the repo (resolved or not) is never read as a host itself.
     const host =
-      hostIn(f.host) ?? (tieNode ? hostIn(tieNode.fact.value) : undefined) ?? hostIn(f.base);
+      hostIn(f.host) ??
+      (used[0] ? hostIn(used[0].value) : undefined) ??
+      (keyed.length ? undefined : hostIn(f.base));
     // The whole path the call sends: a base URL's own path (`https://host/forge/limits`) in front.
     const fullPath = joinPaths(
       urlPathOf(f.host) ??
-        (tieNode ? urlPathOf(tieNode.fact.value) : undefined) ??
-        urlPathOf(f.base),
+        (used[0] ? urlPathOf(used[0].value) : undefined) ??
+        (keyed.length ? undefined : urlPathOf(f.base)),
       f.path,
     );
 
@@ -619,8 +810,8 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
     // answer on: which one is meant is asked, not taken from the first (A-gateway).
     if (!answer && !hostIn(f.host) && !(f.to && named(f.to)) && configs.length > 1) {
       const owners = new Map<string, (e: Node) => boolean>();
-      for (const n of configs) {
-        const d = claimed(hostIn(n.fact.value)!, joinPaths(urlPathOf(n.fact.value), f.path));
+      for (const x of configs) {
+        const d = claimOf(x);
         if (d) owners.set(d.key, d.scope);
       }
       if (owners.size > 1) {
@@ -664,7 +855,13 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
       host &&
       outside.has(factIdPart(host.named ? `${host.host}:${host.named}` : host.host))
     ) {
-      continue; // O1: an outside system the profile names by this host takes the call
+      // O1: an outside system the profile names by this host takes the call (J0: listed, so a
+      // host only a placeholder's setting gives is said outside too).
+      outsideCalls.push({
+        call: end(call),
+        target: host.named ? `${host.host}:${host.named}` : host.host,
+      });
+      continue;
     } else if (host && components.has(factIdPart(host.host.split(".")[0]!))) {
       const comp = factIdPart(host.host.split(".")[0]!);
       scope = { scope: (e) => e.component === comp, target: comp };
@@ -815,6 +1012,7 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
         entry: end(r),
         call: next.call,
         ...(next.tie ? { tie: next.tie } : {}),
+        ...(next.through ? { through: next.through } : {}),
         route: gatewayRouteId(r),
         // A-uncited: the gate on the way into C1, as the projection has it.
         ...(catalogAuth(r.fact) ? { auth: catalogAuth(r.fact) } : {}),
@@ -848,6 +1046,7 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
       call: j.call,
       entry: landed.entry,
       ...(j.tie ? { tie: j.tie } : {}),
+      ...(j.through ? { through: j.through } : {}),
       how: j.how,
       ...(j.inferred ? { inferred: j.inferred } : {}),
       ...(j.byLabel ? { byLabel: j.byLabel } : {}),
@@ -1088,7 +1287,12 @@ export function joinRecords(result: FactsJoinResult, repos: readonly JoinRepo[])
         sync: "async",
         direction: "outbound",
         conflicts: [],
-        evidence: [...ev(j.call, "code", "caller"), ...ev(j.entry, "code", "callee")],
+        evidence: once([
+          ...ev(j.call, "code", "caller"),
+          ...(j.through ?? []).flatMap((t) => ev(t, "config", "caller")),
+          ...ev(j.entry, "code", "callee"),
+          ...(j.entryThrough ?? []).flatMap((t) => ev(t, "config", "callee")),
+        ]),
       } as CatalogRecord);
       continue;
     }
@@ -1131,10 +1335,12 @@ export function joinRecords(result: FactsJoinResult, repos: readonly JoinRepo[])
         evidence: once([
           ...ev(j.call, "code", "caller"),
           ...(j.tie ? ev(j.tie, "config", "caller") : []),
+          ...(j.through ?? []).flatMap((t) => ev(t, "config", "caller")),
           ...j.gateway.flatMap((h) => [
             ...ev(h.entry, "gateway", "gateway"),
             ...ev(h.call, "gateway", "gateway"),
             ...(h.tie ? ev(h.tie, "config", "gateway") : []),
+            ...(h.through ?? []).flatMap((t) => ev(t, "config", "gateway")),
           ]),
           ...ev(j.entry, "code", "callee"),
         ]),
@@ -1198,11 +1404,12 @@ export function joinRecords(result: FactsJoinResult, repos: readonly JoinRepo[])
       sync: call.sync ?? "sync",
       direction: "outbound",
       conflicts: [],
-      evidence: [
+      evidence: once([
         ...ev(j.call, "code", "caller"),
         ...(j.tie ? ev(j.tie, "config", "caller") : []),
+        ...(j.through ?? []).flatMap((t) => ev(t, "config", "caller")),
         ...ev(j.entry, "code", "callee"),
-      ],
+      ]),
     } as CatalogRecord);
   }
   const mapping = (
