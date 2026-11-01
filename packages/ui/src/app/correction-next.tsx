@@ -90,7 +90,9 @@ function PreviewBody({ v }: { v: Preview }) {
           {N.catalog(p.catalog.added, p.catalog.changed, p.catalog.removed, p.catalog.evidenceOnly)}
         </p>
       )}
-      {p.staleCorrections.length > 0 && <p className="ev-say">{N.stale(p.staleCorrections)}</p>}
+      {p.staleCorrections.length > 0 && (
+        <p className="ev-say">{N.stale(p.staleCorrections.join(", "))}</p>
+      )}
     </div>
   );
 }

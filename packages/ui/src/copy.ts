@@ -3539,8 +3539,8 @@ export const COPY = {
     noLinkChange: "No link changes.",
     catalog: (added: number, changed: number, removed: number, evidence: number) =>
       `Catalog records: ${added} added, ${changed} changed, ${removed} removed, ${evidence} with only their evidence changed.`,
-    stale: (ids: string[]) =>
-      `Corrections on file that meet no fact in this read (kept, applied when it is read again): ${ids.join(", ")}.`,
+    stale: (ids: string) =>
+      `Corrections on file that meet no fact in this read (kept, applied when it is read again): ${ids}.`,
   },
   /** ADR 0135, C1 and C2: why a link is there, and saying it is wrong. */
   why: {
