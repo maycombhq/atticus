@@ -3,13 +3,31 @@ import { join } from "node:path";
 import { isMap, isScalar, isSeq, LineCounter, parseDocument, type YAMLMap } from "yaml";
 import { routeScore, type ContractEntryT, type ContractsFileT } from "@maycombhq/core";
 import { readOpenApiDocument } from "@maycombhq/extractors";
+import { denyListHits, safePathOf } from "./traffic.js";
 
 /**
  * J3 (ADR 0151): the contract files a consumer keeps, read as text and JSON whatever the repo's
  * language: Pact files (consumer-driven contracts, spec v2, v3 and v4) and the OpenAPI specs of
  * the APIs it calls (read with R1's `readOpenApiDocument`, ADR 0130). Each request becomes an
- * entry citing its file and line; nothing is run and nothing is fetched.
+ * entry citing its file and line; nothing is run and nothing is fetched. What is kept is the
+ * request's shape, never its example values: a path loses its query string, fragment and matrix
+ * params and has its id-looking segments as `{id}` (as a traffic import's), a server URL loses its
+ * credentials and query, and a file the deny-list names a word of is left out whole.
  */
+
+/** A server URL without its user info, query string or fragment, its path's ids as `{id}`. */
+export function safeServerUrl(url: string): string | undefined {
+  const m = /^([a-z][a-z0-9+.-]*:\/\/)([^/?#]*)(.*)$/i.exec(url.trim());
+  if (!m) {
+    const p = safePathOf(url);
+    return p === "/" ? undefined : p;
+  }
+  const host = m[2]!.replace(/^.*@/, "");
+  if (!host) return undefined;
+  const rest = (m[3] ?? "").split(/[?#]/, 1)[0] ?? "";
+  const path = rest && rest !== "/" ? safePathOf(rest) : "";
+  return `${m[1]!.toLowerCase()}${host}${path === "/" ? "" : (path ?? "")}`;
+}
 
 const str = (m: YAMLMap | undefined, key: string): string | undefined => {
   const v = m?.get(key);
@@ -50,7 +68,8 @@ export function readPactFile(text: string, file: string): ContractEntryT[] | und
     const method = str(req, "method");
     const pair = req.items.find((p) => isScalar(p.key) && p.key.value === "path");
     const path = pair && isScalar(pair.value) ? String(pair.value.value) : undefined;
-    if (!path || !path.startsWith("/")) continue;
+    const safe = path?.startsWith("/") ? safePathOf(path) : undefined;
+    if (!safe) continue;
     const range = (pair!.key as { range?: [number, number, number] }).range;
     out.push({
       format: "pact",
@@ -59,7 +78,7 @@ export function readPactFile(text: string, file: string): ContractEntryT[] | und
       consumer,
       provider,
       ...(method ? { method: method.toUpperCase() } : {}),
-      path,
+      path: safe,
     });
   }
   return out;
@@ -93,15 +112,23 @@ export function readConsumerOpenApi(
   if (served) return [];
   const title = read.doc.getIn(["info", "title"]);
   const provider = typeof title === "string" && title.trim() ? title.trim() : undefined;
-  return read.operations.map((op) => ({
-    format: "openapi" as const,
-    file,
-    line: op.methodLine ?? op.line ?? 1,
-    ...(provider ? { provider } : {}),
-    ...(read.servers.length ? { hosts: [...read.servers] } : {}),
-    method: op.method.toUpperCase(),
-    path: op.path,
-  }));
+  const hosts = [...new Set(read.servers.map(safeServerUrl).filter((h): h is string => !!h))];
+  return read.operations.flatMap((op) => {
+    const path = safePathOf(op.path);
+    return path
+      ? [
+          {
+            format: "openapi" as const,
+            file,
+            line: op.methodLine ?? op.line ?? 1,
+            ...(provider ? { provider } : {}),
+            ...(hosts.length ? { hosts } : {}),
+            method: op.method.toUpperCase(),
+            path,
+          },
+        ]
+      : [];
+  });
 }
 
 /** Folders never read for contract files: dependencies, builds and tool state. */
@@ -127,11 +154,19 @@ const SPEC = /(openapi|swagger)/i;
 /**
  * Every contract file in a checkout, as the facts companion `<repo>.contracts.yaml` holds them:
  * `.json` files under a path that says `pact`, and OpenAPI files (named `openapi` or `swagger`)
- * that the repo's own entries don't serve. Entries in file and line order.
+ * that the repo's own entries don't serve. Entries in file and line order. A file whose entries
+ * hold a word the deny-list names (`denyHashes`, the `.denylist` format) is left out whole, and
+ * `onRefused` is told which file (never the word).
  */
 export async function readContractFiles(
   dir: string,
-  o: { repo: string; commit?: string; own?: readonly { method?: string; path: string }[] },
+  o: {
+    repo: string;
+    commit?: string;
+    own?: readonly { method?: string; path: string }[];
+    denyHashes?: ReadonlySet<string>;
+    onRefused?: (note: string) => void;
+  },
 ): Promise<ContractsFileT> {
   const files: string[] = [];
   const walk = async (rel: string) => {
@@ -158,7 +193,19 @@ export async function readContractFiles(
     const got =
       (/\.json$/i.test(p) && PACT.test(p) ? readPactFile(text, p) : undefined) ??
       (SPEC.test(p) ? readConsumerOpenApi(text, p, o.own ?? []) : undefined);
-    if (got) entries.push(...got);
+    if (!got?.length) continue;
+    if (o.denyHashes?.size) {
+      const text = got
+        .map((e) =>
+          [e.file, e.consumer, e.provider, ...(e.hosts ?? []), e.method, e.path].join("\n"),
+        )
+        .join("\n");
+      if (denyListHits(text, o.denyHashes).length) {
+        o.onRefused?.(`${p}: the deny-list names a word in it, so its requests are left out.`);
+        continue;
+      }
+    }
+    entries.push(...got);
   }
   entries.sort((a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : a.line - b.line));
   return {

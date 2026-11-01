@@ -14,7 +14,7 @@ Nothing to set up. When you run `atticus verify <repo> --write`, Atticus reads t
 - Pact files (spec v2, v3 or v4): `.json` files under a folder or file name with `pact` in it. Each HTTP interaction counts; message interactions are skipped.
 - OpenAPI specs the repo keeps for an API it calls: files named `openapi` or `swagger`. A spec the repo's own entries serve is its own spec, and is left alone.
 
-It keeps what it found beside the repo's facts, in `facts/<repo>.contracts.yaml`, so every later write reads the same contracts.
+It keeps what it found beside the repo's facts, in `facts/<repo>.contracts.yaml`, so every later write reads the same contracts. It keeps each request's shape, never its example values: query strings, fragments and matrix params are cut, id-looking path segments are written as `{id}`, and a server URL loses any `user:password@`. A contract file holding a word on your metarepo's `.denylist` is left out, and the write says which.
 
 Each request is matched to the links from the consumer by its method and path:
 
@@ -37,7 +37,7 @@ atticus intake traffic september.csv --source apigee --from 2026-09-01 --to 2026
 
 Atticus never connects to the gateway: it reads the file you give it.
 
-**What is kept.** Only counts: how many requests per calling app, method, path, proxy and base path over the date range. No row of the export is kept. Client ids, API keys, IP addresses, user agents, query strings, bodies and every other column are dropped before anything is written. Paths are written as the estate's route templates (`/accounts/{id}`, never `/accounts/ACC-1001`). An app name, proxy or path segment that looks like an IP, an email or a token is dropped too.
+**What is kept.** Only counts: how many requests per calling app, method, path, proxy and base path over the date range. No row of the export is kept. Client ids, API keys, IP addresses, user agents, query strings, bodies and every other column are dropped before anything is written. Paths are written only as the estate's route templates (`/accounts/{id}`, never `/accounts/ACC-1001`). A path that goes past a template is written as that template and `/**` (`/accounts/{id}/**`); a path matching no template at all is dropped, and the import says how many were. An app name is kept only when it is a repo or component of the estate; any other is written as a label such as `app-995600e3` (the same label every import, so its counts still group). A proxy that looks like an IP, an email or a token is dropped too.
 
 **What is refused.** Atticus writes nothing when:
 
@@ -46,10 +46,10 @@ Atticus never connects to the gateway: it reads the file you give it.
 - what it would write still holds a dropped value, an IP, an email or a token-looking value;
 - a word in it is on your metarepo's `.denylist`.
 
-The counts go to `evidence/traffic/<source>-<from>-<to>.yaml`. **Review that file in a pull request** like any other. Where an app's name isn't a component, add the component to its row:
+The counts go to `evidence/traffic/<source>-<from>-<to>.yaml`. **Review that file in a pull request** like any other. Where an app is a label rather than a component, add the component to its row:
 
 ```yaml
-- app: forge-mobile
+- app: app-995600e3
   component: mobile-bff
   method: GET
   path: /forge/v1/accounts/{id}

@@ -1,0 +1,23 @@
+{
+  "consumer": { "name": "forge-leaky-client" },
+  "provider": { "name": "forge-accounts" },
+  "interactions": [
+    {
+      "description": "an account, with a token in the path",
+      "request": {
+        "method": "GET",
+        "path": "/forge/v1/accounts/ACC-1001?token=abc123secretvalue"
+      },
+      "response": { "status": 200 }
+    },
+    {
+      "description": "a session, with matrix params and a long opaque segment",
+      "request": {
+        "method": "GET",
+        "path": "/forge/v1/sessions/abcdefghijklmnopqrstuvwxyzABCDEFGHIJ;jsessionid=ABCDEFGHIJKLMNOPQRSTU/items#frag"
+      },
+      "response": { "status": 200 }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

@@ -79,12 +79,12 @@ export type ContractsFileT = z.infer<typeof ContractsFile>;
 
 /** One aggregate of an imported traffic export: never a raw row. */
 export const TrafficRow = z.strictObject({
-  /** The calling application as the export names it (an app or developer app name). */
+  /** The calling app: a component or repo id of the estate, else its label (`app-<8 hex>`). */
   app: z.string().min(1),
   /** The component a person says the app is, when its name isn't one (set in review). */
   component: z.string().optional(),
   method: z.string().min(1),
-  /** The path, normalised to the estate's route templates (`{id}` where nothing matched). */
+  /** The path as an estate route template, or a template's start then `/**` (ADR 0151). */
   path: z.string().min(1),
   proxy: z.string().optional(),
   basepath: z.string().optional(),

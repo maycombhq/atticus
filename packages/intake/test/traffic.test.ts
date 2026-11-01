@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { TRAFFIC_SOURCES } from "@maycombhq/ingestors";
-import { aggregateTraffic } from "../src/index.js";
+import { aggregateTraffic, looksSensitive, safePathOf } from "../src/index.js";
 
 /**
  * J4 (ADR 0151): a gateway traffic export, given as a file, kept only as aggregate counts per
@@ -22,6 +22,10 @@ const templates = [
   "/accounts/{id}",
   "/transfers",
 ];
+/** The estate's component and repo ids: an app named like one keeps its name. */
+const apps = ["forge-portal-api", "forge-accounts", "forge-web"];
+const label = (name: string) =>
+  `app-${createHash("sha256").update(name, "utf8").digest("hex").slice(0, 8)}`;
 /** Every value of the export that must never be written. */
 const SECRETS = [
   "fk-client-8f2d7a91c3e4",
@@ -51,6 +55,7 @@ const run = (
     source: "apigee",
     columns: TRAFFIC_SOURCES.apigee!,
     templates,
+    apps,
     ...o,
   });
 
@@ -116,31 +121,111 @@ describe("aggregateTraffic", () => {
     if (!r.ok) expect(r.message).toMatch(/--from and --to/);
   });
 
-  it("never keeps an app name, proxy or path segment that looks like a token, an IP or an email", () => {
+  it("never keeps an app name, proxy or path that looks like a token, an IP or an email", () => {
     const r = run(
       Buffer.from(
         "developer_app,apiproxy,request_verb,request_uri,message_count\n" +
-          "203.0.113.77,forge-accounts-v1,GET,/people/someone@forge.example/cards,3\n" +
+          "203.0.113.77,forge-accounts-v1,GET,/accounts/someone@forge.example/cards,3\n" +
           "forge-web,fkProxy9Qx7Lm2Pz8Rt4Vw6Yb1Nc3Hd5Jf,GET,/transfers?session=abc123,2\n",
       ),
     );
     if (!r.ok) throw new Error(r.message);
-    expect(r.text).not.toMatch(/203\.0\.113\.77|someone@forge|fkProxy|abc123|session/);
+    expect(r.text).not.toMatch(/203\.0\.113\.77|someone@forge|fkProxy|abc123|session|cards/);
     expect(r.file.rows.map((x) => [x.app, x.path, x.proxy])).toEqual([
-      ["(redacted)", "/people/{id}/cards", "forge-accounts-v1"],
+      [label("203.0.113.77"), "/accounts/{id}/**", "forge-accounts-v1"],
       ["forge-web", "/transfers", undefined],
     ]);
   });
 
+  it("keeps no compressed IPv6, opaque or personal path segment, matrix param, name or email", () => {
+    const bytes = readFileSync(join(FX, "traffic", "apigee-identifying.csv"));
+    const r = run(bytes);
+    if (!r.ok) throw new Error(r.message);
+    const all = JSON.stringify(r) + r.text;
+    for (const s of [
+      "2001:db8",
+      "fe80",
+      "abcdefghijklmnopqrstuvwxyz",
+      "ABCDEFGHIJKLMNOPQRSTU",
+      "jsessionid",
+      "johnsmith",
+      "janedoe",
+      "profile",
+      "token",
+      "Jane Doe",
+      "jane@forge",
+    ])
+      expect(all).not.toContain(s);
+    expect(all.toLowerCase()).not.toContain("jane");
+    expect(r.file.rows.map((x) => [x.app, x.method, x.path, x.proxy, x.count])).toEqual(
+      [
+        [label("Jane Doe"), "GET", "/accounts/{id}", "forge-accounts-v1", 5],
+        [label("fe80::abcd"), "GET", "/transfers", "forge-accounts-v1", 2],
+        [label("jane@forge"), "POST", "/transfers", "forge-accounts-v1", 1],
+        ["forge-web", "GET", "/accounts/{id}/**", undefined, 4],
+        ["forge-web", "GET", "/transfers", "forge-accounts-v1", 6],
+      ].sort((a, b) => (`${a[0]}${a[3] ?? ""}${a[2]}` < `${b[0]}${b[3] ?? ""}${b[2]}` ? -1 : 1)),
+    );
+    // The token path and the people path match no route template of the estate: dropped.
+    expect(r.unmatched).toBe(2);
+  });
+
+  it("drops every path when the estate has no route templates, and says so", () => {
+    const r = aggregateTraffic({
+      bytes: csv,
+      source: "apigee",
+      columns: TRAFFIC_SOURCES.apigee!,
+      templates: [],
+      apps,
+      from: "2026-09-01",
+      to: "2026-09-30",
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.message).toMatch(/route template/);
+  });
+
+  it("refuses rather than trims when a kept value is an IPv6 address", () => {
+    const r = aggregateTraffic({
+      bytes: Buffer.from(
+        "developer_app,request_verb,request_path,message_count\n2001:db8::1,GET,/transfers,1\n",
+      ),
+      source: "apigee",
+      columns: TRAFFIC_SOURCES.apigee!,
+      templates,
+      // A component id that is an IP (never in a real estate): the final check still refuses.
+      apps: ["2001:db8::1"],
+      from: "2026-09-01",
+      to: "2026-09-30",
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.message).toMatch(/^Refused/);
+  });
+
+  it("tells compressed IPv6 addresses, and templates segments that look like ids", () => {
+    for (const v of ["2001:db8::1", "fe80::abcd", "::1", "fe80:0:0:1", "jane@forge"])
+      expect(looksSensitive(v)).toBe(true);
+    for (const v of ["forge-web", "forge-accounts-v1", "/forge/v1"])
+      expect(looksSensitive(v)).toBe(false);
+    expect(safePathOf("/v1/token/abcdefghijklmnopqrstuvwxyzABCDEFGHIJ")).toBe("/v1/token/{id}");
+    expect(safePathOf("/accounts;jsessionid=ABCDEFGHIJKLMNOPQRSTU/cards?x=1#f")).toBe(
+      "/accounts/cards",
+    );
+    expect(safePathOf("/forge/v1/accounts/{accountId}/getStatements/xkcdq")).toBe(
+      "/forge/v1/accounts/{accountId}/{id}/{id}",
+    );
+    expect(safePathOf("/forge/v1/accounts/ACC-1001")).toBe("/forge/v1/accounts/{id}");
+  });
+
   it("refuses the aggregate when the deny-list names a word in it", () => {
     const deny = new Set([
-      createHash("sha256").update("forge-mobile".split("-")[1]!).digest("hex"),
+      createHash("sha256").update("forge-portal-api".split("-")[1]!).digest("hex"),
     ]);
     const r = aggregateTraffic({
       bytes: csv,
       source: "apigee",
       columns: TRAFFIC_SOURCES.apigee!,
       templates,
+      apps,
       from: "2026-09-01",
       to: "2026-09-30",
       denyHashes: deny,
@@ -167,6 +252,7 @@ describe("aggregateTraffic", () => {
       source: "catalog",
       columns: TRAFFIC_SOURCES.catalog!,
       templates,
+      apps,
     });
     if (!r.ok) throw new Error(r.message);
     expect(r.file.rows).toEqual([

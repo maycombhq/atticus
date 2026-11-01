@@ -1,0 +1,8 @@
+developer_app,apiproxy,request_verb,request_path,message_count
+2001:db8::1,forge-accounts-v1,GET,/v1/token/abcdefghijklmnopqrstuvwxyzABCDEFGHIJ,3
+fe80::abcd,forge-accounts-v1,GET,/transfers,2
+forge-web,fe80::1:2,GET,/accounts/johnsmith/profile,4
+Jane Doe,forge-accounts-v1,GET,/accounts/ACC-1;jsessionid=ABCDEFGHIJKLMNOPQRSTU,5
+jane@forge,forge-accounts-v1,POST,/transfers,1
+forge-web,forge-accounts-v1,GET,/transfers;jsessionid=ABCDEFGHIJKLMNOPQRSTU,6
+forge-web,forge-accounts-v1,GET,/people/janedoe/cards,8
