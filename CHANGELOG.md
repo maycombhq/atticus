@@ -2,6 +2,13 @@
 
 All notable changes to Atticus. Versions follow [Semantic Versioning](https://semver.org); contracts C1 to C6 change only with an ADR, a schema version and a migration (`atticus upgrade`).
 
+## Unreleased
+
+### Map the whole estate in one command (ADR 0161)
+
+- `atticus map --all` plans every repo's read at your model's limit (`--max-tokens`, runtime.yaml's `maxInput` or the probe; it won't guess), in the onboarding queue's order, and skips what is read and fresh. Under Copilot it prints one line per part, puts it on the clipboard and waits for the facts, then verifies them and moves on (`s` skip, `r` retry, `q` stop; running it again resumes). Where runtime.yaml allows model mode it runs unattended, capped by `--max-parts` or `--budget-tokens`. It joins the estate once at the end and lists what is unfinished with the command for each. `--stale`, `--gaps`, `--repos` and `--dry-run` narrow it. In IntelliJ: Tools → Atticus → Map the Estate…; in VS Code: Map the estate.
+- A Copilot chat that fails partway loses nothing: after 15 quiet minutes (`--idle`) Atticus says so, and `r` keeps the good facts and gives a new line for only what is left of the part (`atticus map <repo> --part n --gaps`). After three tries it suggests a smaller limit.
+
 ## 2.0.0-beta.10 (2026-10-31)
 
 ### Fixed before release: from the second review
