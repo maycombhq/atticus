@@ -67,6 +67,12 @@ import {
 import { baseClonePath, loadRepos } from "@maycombhq/workspace";
 import type { Output } from "./commands.js";
 import { askHosts } from "./host-questions.js";
+import {
+  linkEvidenceAbout,
+  linkEvidenceLines,
+  loadLinkEvidence,
+  writeRepoContracts,
+} from "./link-evidence-files.js";
 import { diffLines } from "./scan-commands.js";
 
 /**
@@ -247,6 +253,8 @@ async function writeLinksIntoReport(
   links: LinkChanges,
   /** J1 (ADR 0143): the exposure findings about this repo, put beside the links; none, none. */
   exposure: readonly ExposureFinding[] = [],
+  /** ADR 0151: what the contract files and traffic say of this repo's links. */
+  evidence?: ReturnType<typeof linkEvidenceAbout>,
 ): Promise<void> {
   const file = join(factsDirOf(root), `${repo}.verify.yaml`);
   const text = await readFile(file, "utf8").catch(() => undefined);
@@ -258,7 +266,14 @@ async function writeLinksIntoReport(
     return;
   }
   if (!report || typeof report !== "object" || Array.isArray(report)) return;
-  const { exposure: _old, ...rest } = report as { exposure?: unknown };
+  const {
+    exposure: _old,
+    contracts: _c,
+    traffic: _t,
+    ...rest
+  } = report as { exposure?: unknown; contracts?: unknown; traffic?: unknown };
+  const c = evidence?.contracts;
+  const t = evidence?.traffic;
   await writeFileAtomic(
     file,
     stringify({
@@ -274,6 +289,8 @@ async function writeLinksIntoReport(
             })),
           }
         : {}),
+      ...(c && (c.confirmed.length || c.findings.length) ? { contracts: c } : {}),
+      ...(t && (t.seen.length || t.findings.length || t.unknownApps.length) ? { traffic: t } : {}),
     }),
   );
 }
@@ -371,6 +388,11 @@ export async function writeFactsIntoCatalog(
     // The estate join (ADR 0124, C-join): the other repos' verified facts, so this repo's calls
     // join the entries that serve them and their calls into this repo are joined again.
     const estate = await estateFacts(root, op, repo);
+    // ADR 0151: this repo's contract files, read at the facts' commit and kept beside its facts,
+    // then every repo's, and the traffic aggregates people imported.
+    await writeRepoContracts(root, repo, o.dir, facts);
+    const evidence = await loadLinkEvidence(root);
+    for (const p of evidence.problems) io.err(p);
     const result = catalogWithFacts({
       repo,
       facts,
@@ -380,6 +402,7 @@ export async function writeFactsIntoCatalog(
       targets,
       estate: estate.repos,
       estateTargets: estate.targets,
+      linkEvidence: { contracts: evidence.contracts, traffic: evidence.traffic },
     });
     for (const i of result.invalid)
       io.err(
@@ -520,7 +543,15 @@ export async function writeFactsIntoCatalog(
       verbose: o.verbose === true,
     }))
       io.out(l);
-    await writeLinksIntoReport(root, repo, links, result.join?.exposure);
+    const about = result.linkEvidence
+      ? linkEvidenceAbout(repo, result.linkEvidence, result.join)
+      : undefined;
+    if (about)
+      for (const l of linkEvidenceLines(about, `${factsRelOf(root)}/${repo}.verify.yaml`, {
+        verbose: o.verbose === true,
+      }))
+        io.out(l);
+    await writeLinksIntoReport(root, repo, links, result.join?.exposure, about);
     for (const l of lines) io.out(l);
     const map = await renderRepoMap(root, repo, io);
     return {

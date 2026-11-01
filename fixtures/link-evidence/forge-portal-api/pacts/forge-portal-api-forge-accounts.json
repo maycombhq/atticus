@@ -1,0 +1,28 @@
+{
+  "consumer": { "name": "forge-portal-api" },
+  "provider": { "name": "forge-accounts" },
+  "interactions": [
+    {
+      "description": "a request for an account",
+      "providerState": "account ACC-1001 exists",
+      "request": {
+        "method": "GET",
+        "path": "/forge/v1/accounts/ACC-1001",
+        "headers": { "Accept": "application/json" }
+      },
+      "response": {
+        "status": 200,
+        "body": { "id": "ACC-1001", "status": "OPEN" }
+      }
+    },
+    {
+      "description": "closing an account",
+      "request": {
+        "method": "DELETE",
+        "path": "/forge/v1/accounts/ACC-1001"
+      },
+      "response": { "status": 204 }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "3.0.0" } }
+}

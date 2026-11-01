@@ -37,6 +37,12 @@ import {
   type QuestionDraft,
   type RecordIssue,
   applyCurated,
+  applyLinkEvidence,
+  linkEvidenceOf,
+  stripLinkEvidence,
+  type ContractsFileT,
+  type LinkEvidenceResult,
+  type TrafficOnFile,
 } from "@maycombhq/core";
 import { estateRepos, isPrototypeRepo, mergeEstate } from "./merge-input.js";
 
@@ -76,6 +82,11 @@ export interface FactsCatalogInput {
   estate?: readonly { repo: string; facts: readonly Fact[] }[];
   /** The targets people named for the other repos' calls, by repo and call fact id. */
   estateTargets?: Readonly<Record<string, Readonly<Record<string, string>>>>;
+  /**
+   * ADR 0151: the consumers' contract files (each repo's `<repo>.contracts.yaml`) and the traffic
+   * aggregates people imported (`evidence/traffic/`), read against the estate's join.
+   */
+  linkEvidence?: { contracts?: readonly ContractsFileT[]; traffic?: readonly TrafficOnFile[] };
 }
 
 /** A call of the repo that is still a loose end after the merge. */
@@ -106,6 +117,8 @@ export interface FactsCatalogResult {
    * their field lineage, and what is asked about this repo's calls (ADR 0124 addendum C-join).
    */
   join?: FactsJoinResult;
+  /** With the estate: the links contract files and traffic bear out, and where they disagree (ADR 0151). */
+  linkEvidence?: LinkEvidenceResult;
 }
 
 type Rec = CatalogRecord & Record<string, unknown>;
@@ -959,9 +972,12 @@ function joinAbout(all: FactsJoinResult, repo: string): FactsJoinResult {
   };
 }
 
-export function catalogWithFacts(input: FactsCatalogInput): FactsCatalogResult {
-  const { repo, op } = input;
-  if (isPrototypeRepo(op, repo)) return prototypeLeftOut(input);
+export function catalogWithFacts(given: FactsCatalogInput): FactsCatalogResult {
+  const { repo, op } = given;
+  if (isPrototypeRepo(op, repo)) return prototypeLeftOut(given);
+  // ADR 0151: what an earlier write's contract files and traffic added is taken off first, so
+  // it never keeps a record alive and is made again below from the evidence on file now.
+  const input = { ...given, existing: stripLinkEvidence(given.existing) };
   // B-fixes, problem 1: a component id another repo has too (in the estate's facts, or a
   // Component of another repo the catalog already holds) is made unique by the repo's id.
   // A prototype's facts are never part of the estate (ADR 0133).
@@ -1046,6 +1062,7 @@ export function catalogWithFacts(input: FactsCatalogInput): FactsCatalogResult {
   /** A joined call's projected record id → the callee and the entry a call-out step reaches. */
   const stepTo = new Map<string, { component: string; entry: string }>();
   let join: FactsJoinResult | undefined;
+  let estateJoin: { whole: FactsJoinResult; repos: JoinRepo[] } | undefined;
   let records0 = [...kept, ...newRecords];
   if (input.estate) {
     const repos = joinReposOf(op, [{ repo, facts }, ...others], renames);
@@ -1058,6 +1075,7 @@ export function catalogWithFacts(input: FactsCatalogInput): FactsCatalogResult {
       walkGateways: helperOn("gateway-walk"),
     });
     join = joinAbout(whole, repo);
+    estateJoin = { whole, repos };
     // A-callers: who this repo's gateway routes let in, read from the whole estate's join (a
     // route's scanned callers may be anywhere) and the systems people declared.
     records0 = applyFactJoins(records0, join, repos, {
@@ -1151,7 +1169,20 @@ export function catalogWithFacts(input: FactsCatalogInput): FactsCatalogResult {
     if (r.kind === "FieldMapping") return { ...r, interface: re(r.interface) };
     return r;
   });
-  const applied = applyCurated([...records].sort(byKindId), input.decisions);
+  const curated = applyCurated([...records].sort(byKindId), input.decisions);
+  // ADR 0151 (J3, J4): the links the consumers' contract files and the imported traffic bear
+  // out, read against the whole estate's join so every repo's write marks the same links.
+  const linkEvidence = estateJoin
+    ? linkEvidenceOf({
+        join: estateJoin.whole,
+        repos: estateJoin.repos,
+        contracts: input.linkEvidence?.contracts ?? [],
+        traffic: input.linkEvidence?.traffic ?? [],
+      })
+    : undefined;
+  const applied = linkEvidence
+    ? { ...curated, records: applyLinkEvidence(curated.records, linkEvidence.marks) }
+    : curated;
 
   const newIds = new Set(
     applied.records.filter((r) => (r.evidence as unknown[]).some(mine)).map((r) => r.id),
@@ -1202,6 +1233,7 @@ export function catalogWithFacts(input: FactsCatalogInput): FactsCatalogResult {
     invalid: merged.invalid,
     notes: merged.notes,
     ...(join ? { join } : {}),
+    ...(linkEvidence ? { linkEvidence } : {}),
   };
 }
 

@@ -1,0 +1,24 @@
+schemaVersion: 1
+source: apigee
+from: 2026-09-01
+to: 2026-09-30
+inputSha256: 2a4d5bd961e3ef71e75077805273bbe8caf61d447f19c75aea40f7d647b743ec
+rows:
+  - app: forge-mobile
+    method: GET
+    path: /forge/v1/accounts/{id}
+    proxy: forge-accounts-v1
+    basepath: /forge/v1
+    count: 15
+  - app: forge-portal-api
+    method: GET
+    path: /forge/v1/accounts/{id}
+    proxy: forge-accounts-v1
+    basepath: /forge/v1
+    count: 200
+  - app: forge-portal-api
+    method: GET
+    path: /forge/v1/accounts/{id}/statements/{id}
+    proxy: forge-accounts-v1
+    basepath: /forge/v1
+    count: 7

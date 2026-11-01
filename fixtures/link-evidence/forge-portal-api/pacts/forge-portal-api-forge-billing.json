@@ -1,0 +1,12 @@
+{
+  "consumer": { "name": "forge-portal-api" },
+  "provider": { "name": "forge-billing" },
+  "interactions": [
+    {
+      "description": "an invoice",
+      "request": { "method": "GET", "path": "/invoices/INV-77" },
+      "response": { "status": 200 }
+    }
+  ],
+  "metadata": { "pactSpecification": { "version": "2.0.0" } }
+}

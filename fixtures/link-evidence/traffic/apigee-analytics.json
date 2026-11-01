@@ -1,0 +1,72 @@
+[
+  {
+    "apiproxy": "forge-accounts-v1",
+    "proxy_basepath": "/forge/v1",
+    "proxy_pathsuffix": "/accounts/ACC-1001",
+    "request_verb": "GET",
+    "developer_app": "forge-portal-api",
+    "client_id": "fk-client-8f2d7a91c3e4",
+    "client_ip": "203.0.113.45",
+    "useragent": "ForgePortal/2.4 (JVM)",
+    "request_uri": "/forge/v1/accounts/ACC-1001?access_token=eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJmYWtlLXVzZXIifQ.ZmFrZXNpZ25hdHVyZQ",
+    "response_status_code": "200",
+    "message_count": 120,
+    "client_received_start_timestamp": "2026-09-03T10:15:00Z"
+  },
+  {
+    "apiproxy": "forge-accounts-v1",
+    "proxy_basepath": "/forge/v1",
+    "proxy_pathsuffix": "/accounts/ACC-2002",
+    "request_verb": "GET",
+    "developer_app": "forge-portal-api",
+    "client_id": "fk-client-8f2d7a91c3e4",
+    "client_ip": "203.0.113.46",
+    "useragent": "ForgePortal/2.4 (JVM)",
+    "request_uri": "/forge/v1/accounts/ACC-2002",
+    "response_status_code": "200",
+    "message_count": 80,
+    "client_received_start_timestamp": "2026-09-04T11:00:00Z"
+  },
+  {
+    "apiproxy": "forge-accounts-v1",
+    "proxy_basepath": "/forge/v1",
+    "proxy_pathsuffix": "/accounts/ACC-1001/statements/2026-08",
+    "request_verb": "GET",
+    "developer_app": "forge-portal-api",
+    "client_id": "fk-client-8f2d7a91c3e4",
+    "client_ip": "203.0.113.45",
+    "useragent": "ForgePortal/2.4 (JVM)",
+    "request_uri": "/forge/v1/accounts/ACC-1001/statements/2026-08?apikey=fkKey9Qx7Lm2Pz8Rt4Vw6Yb1Nc3Hd5Jf0",
+    "response_status_code": "200",
+    "message_count": 7,
+    "client_received_start_timestamp": "2026-09-10T08:30:00Z"
+  },
+  {
+    "apiproxy": "forge-accounts-v1",
+    "proxy_basepath": "/forge/v1",
+    "proxy_pathsuffix": "/accounts/ACC-3003",
+    "request_verb": "GET",
+    "developer_app": "forge-mobile",
+    "client_id": "fk-client-55aa77bb99cc",
+    "client_ip": "198.51.100.23",
+    "useragent": "ForgeMobile/3.1 (Android 14)",
+    "request_uri": "/forge/v1/accounts/ACC-3003",
+    "response_status_code": "200",
+    "message_count": 15,
+    "client_received_start_timestamp": "2026-09-12T19:45:00Z"
+  },
+  {
+    "apiproxy": "forge-accounts-v1",
+    "proxy_basepath": "/forge/v1",
+    "proxy_pathsuffix": "/accounts/ACC-1001",
+    "request_verb": "GET",
+    "developer_app": "forge-portal-api",
+    "client_id": "fk-client-8f2d7a91c3e4",
+    "client_ip": "203.0.113.45",
+    "useragent": "ForgePortal/2.4 (JVM)",
+    "request_uri": "/forge/v1/accounts/ACC-1001",
+    "response_status_code": "200",
+    "message_count": 999,
+    "client_received_start_timestamp": "2026-10-02T09:00:00Z"
+  }
+]

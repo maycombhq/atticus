@@ -1,5 +1,6 @@
 import {
   JOIN_HOW_FLAGS,
+  LINK_EVIDENCE_NOT_GAPS,
   type Api,
   type CatalogRecord,
   type EvidenceT,
@@ -182,7 +183,9 @@ function recordGaps(r: CatalogRecord): string[] {
   const g: string[] = [];
   if (r.confidence === "inferred") g.push("inferred");
   // C1 (ADR 0135): a flag that says how a link was made is no gap.
-  for (const f of r.flags ?? []) if (!JOIN_HOW_FLAGS.has(f)) g.push(f);
+  // ADR 0151: nor one that says a contract or traffic bears the link out.
+  for (const f of r.flags ?? [])
+    if (!JOIN_HOW_FLAGS.has(f) && !LINK_EVIDENCE_NOT_GAPS.has(f)) g.push(f);
   return g;
 }
 
