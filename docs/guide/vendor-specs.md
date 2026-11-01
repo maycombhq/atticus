@@ -131,3 +131,15 @@ Breaking: POST /v1/assessments: the request field channel is now required; a cal
 ```
 
 A vendor's direct calls are still left to the gateway's routes, as before (ADR 0142).
+
+## Your own change's impact
+
+The same view works for a change of your own, once its architecture stage has written its target flows:
+
+```sh
+atticus change impact hold-stock
+```
+
+For each entry or table the target flows break (a field a response stops returning, an entry that reads another field, a field now required, a column whose type changes, a flow removed), it lists who calls or uses it today, the fields that stop crossing, and the gateway routes the callers go through, which need updating. Each part names the team that owns it: the repo manifest's `owner`, with the name `roles.yaml` gives the team. The same view is on the change's Architecture tab in the app, under **What this change breaks**.
+
+A link the map only guessed (joined by path, or by a host's first label) is shown as **may break (link guessed)** and is never counted as a break. The critic's `constitution.change-links-known` asks the caller's owner to confirm it ([ADR 0140](../adr/0140-a-change-warns-on-guessed-links-and-questions-go-to-their-owner.md)); see [ADR 0144](../adr/0144-a-changes-impact-and-proposed-answers.md).

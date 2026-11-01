@@ -1,4 +1,5 @@
 import {
+  acceptProposal as acceptProposalOf,
   answerQuestion,
   Api,
   listQuestions,
@@ -80,11 +81,20 @@ export function uiQuestionRoutes(r: Router, ctx: ServerContext, deps: { now?: ()
             errors: b.error.issues.map((i) => ({ path: i.path.join("."), message: i.message })),
           });
         try {
-          const r = await answerQuestion(ctx.root, params.id!, {
-            ...b.data,
-            by: ctx.user,
-            at: now().toISOString(),
-          });
+          // ADR 0144 (Q5): the person accepts the assistant's proposal; it becomes their answer.
+          const { acceptProposal, ...given } = b.data;
+          const r = acceptProposal
+            ? await acceptProposalOf(ctx.root, params.id!, {
+                ...(given.scope ? { scope: given.scope } : {}),
+                ...(given.repoType ? { repoType: given.repoType } : {}),
+                by: ctx.user,
+                at: now().toISOString(),
+              })
+            : await answerQuestion(ctx.root, params.id!, {
+                ...given,
+                by: ctx.user,
+                at: now().toISOString(),
+              });
           return {
             status: 200,
             body: {

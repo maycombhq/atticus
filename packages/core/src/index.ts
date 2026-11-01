@@ -58,6 +58,7 @@ export * from "./host-questions.js";
 export * from "./repo-reads.js";
 export * from "./question-order.js";
 export * from "./question-owners.js";
+export * from "./question-proposals.js";
 export * from "./repo-description.js";
 export * from "./manifest-edit.js";
 export * from "./schema/spec.js";

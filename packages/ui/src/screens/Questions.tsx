@@ -34,7 +34,66 @@ export function aboutWords(a: About | undefined): string[] {
     ...(a.restsOn.length ? [C.restsOn(a.restsOn)] : []),
     "team" in a.owner ? C.owner(a.owner.team, a.owner.name) : C.noOwner(a.owner.none),
     ...(a.joins ? [C.joins(a.joins)] : []),
+    ...(a.proposal ? [C.proposal.listed] : []),
   ];
+}
+
+type Proposal = NonNullable<About["proposal"]>;
+
+/**
+ * The answer the assistant proposed (ADR 0144, Q5), shown only once every line it cites was
+ * checked, with Accept: the person's click makes it their answer, by them. It never answers alone.
+ */
+export function ProposalView(p: {
+  question: QuestionView;
+  proposal: Proposal;
+  busy: boolean;
+  onAccept: () => void;
+}) {
+  const P = C.proposal;
+  const { question: q, proposal: x } = p;
+  const head = `proposal-${q.id}`;
+  return (
+    <section aria-labelledby={head} className="stack" style={{ gap: 6 }}>
+      <h3 id={head} className="hud" style={{ margin: 0, fontSize: 10 }}>
+        {P.title}
+      </h3>
+      <p className="muted" style={{ margin: 0 }}>
+        {P.notYet(x.by)}
+      </p>
+      <p style={{ margin: 0 }}>
+        <strong>
+          {x.answer.option !== undefined
+            ? P.option(x.answer.option, q.options[x.answer.option - 1]?.label ?? "")
+            : P.words(x.answer.text ?? "")}
+        </strong>
+      </p>
+      <p style={{ margin: 0 }}>{x.why}</p>
+      <h4 className="hud" style={{ margin: 0, fontSize: 10 }}>
+        {P.cites}
+      </h4>
+      <ul style={{ margin: 0 }}>
+        {x.cites.map((c) => (
+          <li key={`${c.repo ?? q.repo}:${c.file}:${c.line}`}>
+            <span className="mono">
+              {c.repo ?? q.repo} {c.file}:{c.line}
+            </span>{" "}
+            <q>{c.quote}</q>
+          </li>
+        ))}
+      </ul>
+      <div className="row" style={{ gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <button type="button" className="btn primary" disabled={p.busy} onClick={p.onAccept}>
+          {p.busy ? P.accepting : P.accept}
+        </button>
+        <code className="mono">{P.command(q.id)}</code>
+        <CopyButton text={P.command(q.id)} label={C.copy} />
+      </div>
+      <p className="muted" style={{ margin: 0 }}>
+        {P.orAnswer}
+      </p>
+    </section>
+  );
 }
 export interface AnsweredResult {
   question: QuestionView;
@@ -251,6 +310,8 @@ export function AnsweredView({ result }: { result: AnsweredResult }) {
 export function QuestionDetail(p: {
   question: QuestionView;
   onAnswered: (r: AnsweredResult) => void;
+  /** ADR 0144: the checked proposal for it, from the list's about. */
+  proposal?: Proposal;
 }) {
   const q = p.question;
   const [form, setForm] = useState<AnswerForm>({
@@ -285,6 +346,28 @@ export function QuestionDetail(p: {
       setBusy(false);
     }
   };
+  const accept = async () => {
+    setBusy(true);
+    setError(undefined);
+    try {
+      const r = await api<AnsweredResult>(`/api/questions/${q.id}/answer`, {
+        method: "POST",
+        body: {
+          acceptProposal: true,
+          scope: form.scope,
+          ...(form.scope === "repo-type" && form.repoType.trim()
+            ? { repoType: form.repoType.trim() }
+            : {}),
+        },
+      });
+      setDone(r);
+      p.onAnswered(r);
+    } catch (x) {
+      setError(message(x));
+    } finally {
+      setBusy(false);
+    }
+  };
   const name = `q-${q.id}`;
   return (
     <div className="stack" style={{ gap: 12 }}>
@@ -305,6 +388,14 @@ export function QuestionDetail(p: {
           {C.answered(q.answer.by, day(q.answer.at))}:{" "}
           {q.answer.text ?? q.options[(q.answer.option ?? 1) - 1]?.label}
         </p>
+      )}
+      {q.state === "open" && p.proposal && !done && (
+        <ProposalView
+          question={q}
+          proposal={p.proposal}
+          busy={busy}
+          onAccept={() => void accept()}
+        />
       )}
       {q.state === "retired" ? (
         <p className="state">{C.retired}</p>
@@ -424,7 +515,15 @@ export function QuestionDetail(p: {
   );
 }
 
-function Detail({ id, onAnswered }: { id: string; onAnswered: () => void }) {
+function Detail({
+  id,
+  onAnswered,
+  proposal,
+}: {
+  id: string;
+  onAnswered: () => void;
+  proposal?: Proposal;
+}) {
   const q = useApi<QuestionView>(`/api/questions/${id}`);
   useReloadOnFiles(q);
   const heading = useRef<HTMLDivElement>(null);
@@ -435,7 +534,14 @@ function Detail({ id, onAnswered }: { id: string; onAnswered: () => void }) {
   return (
     <div ref={heading} tabIndex={-1}>
       <View of={q}>
-        {(d) => <QuestionDetail key={d.id} question={d} onAnswered={onAnswered} />}
+        {(d) => (
+          <QuestionDetail
+            key={d.id}
+            question={d}
+            onAnswered={onAnswered}
+            {...(proposal ? { proposal } : {})}
+          />
+        )}
       </View>
     </div>
   );
@@ -521,7 +627,13 @@ export function Questions({ hash }: { hash: string }) {
         </Panel>
         <section className="panel" style={{ gridColumn: "span 7" }}>
           {current ? (
-            <Detail id={current} onAnswered={list.reload} />
+            <Detail
+              id={current}
+              onAnswered={list.reload}
+              {...(list.state === "ready" && list.data.about?.[current]?.proposal
+                ? { proposal: list.data.about[current].proposal }
+                : {})}
+            />
           ) : (
             <div className="state">{C.pickFromList}</div>
           )}

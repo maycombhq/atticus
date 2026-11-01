@@ -148,6 +148,20 @@ export const COPY = {
     openTargets: "Its target flows",
   },
   questions: {
+    /** ADR 0144 (Q5): the answer the assistant proposed, for a person to confirm. */
+    proposal: {
+      title: "Proposed by your assistant",
+      listed: "An answer is proposed",
+      notYet: (by: string) =>
+        `${by} read the code and proposes this. It is not an answer until you accept it.`,
+      option: (n: number, label: string) => `Option ${n}: ${label}`,
+      words: (text: string) => `In words: ${text}`,
+      cites: "The lines it rests on (each checked: the quoted words are on that line)",
+      accept: "Accept as my answer",
+      accepting: "Accepting…",
+      orAnswer: "Or answer it yourself below.",
+      command: (id: string) => `atticus questions answer ${id} --accept-proposal`,
+    },
     title: "Questions",
     intro:
       "When the code doesn't settle something, Atticus asks here. Your answer is written to the question's file in questions/; then run the command shown, and the step reads it.",
@@ -894,6 +908,39 @@ export const COPY = {
     run: "Check the code again",
   },
   /** ADR 0109: a change's estimate, from its target flows. */
+  /** ADR 0144 (V1): a change's impact, as designed, on its Architecture tab. */
+  changeImpact: {
+    title: "What this change breaks",
+    intro:
+      "From the change's target flows: each entry or table they break, who calls or uses it today, the fields that stop crossing and the gateway routes to update, each with the team that owns it. A link the map only guessed may break, and isn't counted as a break until someone confirms it.",
+    noTargets: (id: string) =>
+      `${id} has no target flows yet, so there is nothing to weigh. Its architecture stage writes them:`,
+    nothing: "Its target flows break nothing the map shows.",
+    counts: (breaks: number, mayBreak: number, routes: number) =>
+      `${breaks} caller${breaks === 1 ? "" : "s"} ${breaks === 1 ? "breaks" : "break"}, ${mayBreak} may break (link guessed), ${routes} gateway route${routes === 1 ? "" : "s"} to update.`,
+    owned: (owner: string) => `Owned by ${owner}`,
+    why: "Why it breaks",
+    gone: "Stops crossing",
+    required: "Callers must now send",
+    callersCaption: (name: string) => `Who calls or uses ${name}, and whether it breaks`,
+    col: { who: "Caller", verdict: "Breaks?", owner: "Owner", where: "Where" },
+    breaks: "Breaks",
+    mayBreak: (how: string) => `May break (link guessed ${how})`,
+    guessWords: {
+      "joined-by-path": "by path",
+      "joined-by-label": "by a host's first label",
+    } as Record<string, string>,
+    confirm: (rule: string) =>
+      `Not counted as a break: the critic's ${rule} asks the caller's owner to confirm each guessed link.`,
+    nobody: "The map shows nobody calling or using it.",
+    routes: "Gateway routes to update",
+    route: (id: string, callers: readonly string[]) =>
+      `${id}: ${[...callers].join(", ")} ${callers.length === 1 ? "calls" : "call"} through it`,
+    teams: "Teams to involve",
+    noTeam: (why: string) => `no team (${why})`,
+    problems: "Notes",
+    command: (id: string) => `atticus change impact ${id}`,
+  },
   estimate: {
     title: "Estimate",
     intro:
@@ -1018,6 +1065,12 @@ export const COPY = {
         args: "",
         where: "metarepo",
         what: "Shows Atticus what the assistant can do here (open a file, write one, run a command) after atticus probe, so the first read of a repo is handed to it the way it can take it.",
+      },
+      {
+        name: "/atticus-propose",
+        args: "[question id]",
+        where: "metarepo",
+        what: "Reads the code and config behind each open question and proposes an answer with the lines it rests on; Atticus checks every citation, and a person accepts it or answers otherwise.",
       },
       {
         name: "/atticus-survey",

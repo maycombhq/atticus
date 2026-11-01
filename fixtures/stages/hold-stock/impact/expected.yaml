@@ -1,0 +1,84 @@
+# The impact of the clean draft (../drafts/clean.yaml) on the scenario with ./catalog.yaml added,
+# owners from ./owners.yaml (V1). forge-stock's response stops returning reservationId: forge-orders
+# (read from code, and its spec flow) and forge-partner (through gw-stock-v1) break; forge-mobile
+# only may break, its link joined by path. forge-orders widens quantity: forge-reports, which no
+# manifest lists, breaks. The gateway route is forge-gateway's to update.
+change: hold-stock
+breaks: 3
+mayBreak: 1
+routes: 1
+rule: constitution.change-links-known
+items:
+  - kind: endpoint
+    flow: forge-stock.reserve-stock
+    repo: forge-stock
+    id: forge-stock.post-stock-reservations
+    name: POST /stock/reservations
+    why: [it no longer returns reservationId]
+    fields: { gone: [reservationId], required: [] }
+    owner: { team: team-stock, name: Stock team }
+    callers:
+      - component: forge-mobile
+        repo: forge-mobile
+        verdict: may-break
+        guessed: joined-by-path
+        interfaces: [if-1a9099e78c189509]
+        flows: []
+        routes: []
+        at: [forge-mobile src/stock/reserve.ts:7]
+        owner: { team: team-mobile }
+      - component: forge-orders
+        repo: forge-orders
+        verdict: breaks
+        interfaces: [if-0e787b233e2b4272]
+        flows: [forge-orders.place-order]
+        routes: []
+        at: [forge-orders src/main/java/forge/orders/StockClient.java:14]
+        owner: { team: team-orders, name: Orders team }
+      - component: forge-partner
+        repo: forge-partner
+        verdict: breaks
+        interfaces: [if-8fafe6cc046fe865]
+        flows: []
+        routes: [gw-stock-v1]
+        at: [forge-partner src/partner/StockClient.java:22]
+        owner: { team: team-partners }
+    routes:
+      - id: gw-stock-v1
+        proxy: stock-v1
+        basepath: /stock/v1
+        repo: forge-gateway
+        at: [forge-gateway proxies/stock-v1/apiproxy/proxies/default.xml:9]
+        callers: [forge-partner]
+        owner: { team: team-platform }
+  - kind: table
+    flow: forge-orders.place-order
+    repo: forge-orders
+    id: forge-orders-db.orders
+    name: forge-orders-db.orders
+    why: [it changes the type of quantity from INT to BIGINT]
+    fields: { gone: [], required: [] }
+    owner: { team: team-orders, name: Orders team }
+    callers:
+      - component: forge-reports
+        repo: forge-reports
+        verdict: breaks
+        interfaces: []
+        flows: []
+        routes: []
+        at: []
+        owner: { none: "no repos.manifest.yaml lists forge-reports, so no team owns it" }
+    routes: []
+owners:
+  - owner: { team: team-mobile }
+    repos: [forge-mobile]
+  - owner: { team: team-orders, name: Orders team }
+    repos: [forge-orders]
+  - owner: { team: team-partners }
+    repos: [forge-partner]
+  - owner: { team: team-platform }
+    repos: [forge-gateway]
+  - owner: { team: team-stock, name: Stock team }
+    repos: [forge-stock]
+  - owner: { none: "no repos.manifest.yaml lists forge-reports, so no team owns it" }
+    repos: [forge-reports]

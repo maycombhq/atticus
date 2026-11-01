@@ -96,8 +96,11 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   `header-missing`, `header-required`, `error-missing`, `error-unhandled`, with the difference's
  *   `value` or `status`), and a vendor-group call's `boundary` (`internal`: another team's
  *   system). Additive only.
+ * 2.36.0 (ADR 0144): a change's impact, as designed, GET /api/changes/{changeId}/impact (V1);
+ *   and a question's checked proposal (`about[id].proposal`) with POST
+ *   /api/questions/{id}/answer's `acceptProposal` (Q5). Additive only.
  */
-export const API_VERSION = "2.35.0";
+export const API_VERSION = "2.36.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -1382,6 +1385,68 @@ export const ChangeEstimate = z.object({
 });
 export type ChangeEstimateT = z.infer<typeof ChangeEstimate>;
 
+/** A team a question or a repo goes to, or why none does (ADR 0140). */
+const OwnerOf = z.union([
+  z.object({ team: z.string(), name: z.string().optional() }),
+  z.object({ none: z.string() }),
+]);
+
+/**
+ * 2.36.0 (ADR 0144, V1): a change's impact, as designed. For each entry or table its target flows
+ * break: who calls or uses it today (`breaks`, or `may-break` when the join only guessed the link),
+ * the fields that stop crossing, the gateway routes to update, each with its owner team.
+ */
+export const ChangeImpact = z.object({
+  change: RecordId,
+  /** How many target flows the change has; none means the architecture stage hasn't run. */
+  flows: z.number().int(),
+  breaks: z.number().int(),
+  mayBreak: z.number().int(),
+  routes: z.number().int(),
+  /** The critic's rule that asks about a guessed link. */
+  rule: z.string(),
+  items: z.array(
+    z.object({
+      kind: z.enum(["endpoint", "table"]),
+      flow: z.string(),
+      repo: z.string(),
+      id: z.string().optional(),
+      name: z.string(),
+      why: z.array(z.string()),
+      fields: z.object({ gone: z.array(z.string()), required: z.array(z.string()) }),
+      owner: OwnerOf,
+      callers: z.array(
+        z.object({
+          component: z.string(),
+          repo: z.string().optional(),
+          verdict: z.enum(["breaks", "may-break"]),
+          guessed: z.enum(["joined-by-path", "joined-by-label"]).optional(),
+          interfaces: z.array(z.string()),
+          flows: z.array(z.string()),
+          routes: z.array(z.string()),
+          at: z.array(z.string()),
+          owner: OwnerOf,
+        }),
+      ),
+      routes: z.array(
+        z.object({
+          id: z.string(),
+          proxy: z.string().optional(),
+          basepath: z.string().optional(),
+          repo: z.string().optional(),
+          at: z.array(z.string()),
+          callers: z.array(z.string()),
+          owner: OwnerOf,
+        }),
+      ),
+    }),
+  ),
+  owners: z.array(z.object({ owner: OwnerOf, repos: z.array(z.string()) })),
+  /** What couldn't be read: target flows, the manifests, roles.yaml. */
+  problems: z.array(z.string()),
+});
+export type ChangeImpactT = z.infer<typeof ChangeImpact>;
+
 /** Where a conformance item is: a file of the repo at the branch's commit, or the target flow. */
 const ConformCite = z.object({
   source: z.enum(["artifact", "code"]),
@@ -1912,6 +1977,30 @@ export const QuestionList = z.object({
           z.object({ team: z.string(), name: z.string().optional() }),
           z.object({ none: z.string() }),
         ]),
+        /**
+         * 2.36.0 (ADR 0144, Q5): the answer the assistant proposed, for an open question, when
+         * every line it cites says what it quotes. A person accepts it or answers otherwise.
+         */
+        proposal: z
+          .object({
+            answer: z.object({
+              option: z.number().int().optional(),
+              text: z.string().optional(),
+            }),
+            why: z.string(),
+            cites: z.array(
+              z.object({
+                repo: z.string().optional(),
+                file: z.string(),
+                line: z.number().int(),
+                quote: z.string(),
+              }),
+            ),
+            by: z.string(),
+            at: z.string(),
+            file: z.string(),
+          })
+          .optional(),
       }),
     )
     .optional(),
@@ -1933,6 +2022,11 @@ export const AnswerQuestionRequest = z.strictObject({
   scope: QuestionScopeLevel.optional(),
   /** The repo type, when a repo question is widened to its type. */
   repoType: RecordId.optional(),
+  /**
+   * 2.36.0 (ADR 0144, Q5): accept the assistant's proposed answer, checked again, as the person's
+   * own (in place of option or text).
+   */
+  acceptProposal: z.literal(true).optional(),
 });
 
 /** ADR 0078: the answered question, the command to run next and, for a repo type, its skill file. */
@@ -2960,6 +3054,17 @@ const OPS: Record<string, Record<string, Op>> = {
       tag: "changes",
       params: [p("changeId")],
       ok: { status: 200, schema: "ChangeMap", description: "OK" },
+      errors: [400, 404],
+    },
+  },
+  "/api/changes/{changeId}/impact": {
+    get: {
+      id: "getChangeImpact",
+      summary:
+        "The change's impact, as designed: who each entry or table it breaks is called or used by, the fields that stop crossing and the gateway routes to update, each with its owner; a guessed link may break (ADR 0144)",
+      tag: "changes",
+      params: [p("changeId")],
+      ok: { status: 200, schema: "ChangeImpact", description: "OK" },
       errors: [400, 404],
     },
   },
@@ -4037,6 +4142,7 @@ export function openApiDocument(): Record<string, unknown> {
     TargetFlowView,
     ChangeMap,
     ChangeEstimate,
+    ChangeImpact,
     ChangeInput,
     ChangeInputList,
     AttachResult,

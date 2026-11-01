@@ -190,6 +190,12 @@ export const ALLOW = [
       "the wiki types sources.yaml takes are the C6 contract's enum (ADR 0101), named in the API for the app's source form; claude-code is a surface the prompt history records from, as runtime.yaml's assistants enum names it (ADR 0110)",
   },
   {
+    file: "packages/planner/src/stages/impact.ts",
+    names: ["teams"],
+    reason:
+      "the English word: roles.yaml's teams that own the repos a change breaks (ADR 0144), not the chat product",
+  },
+  {
     file: "packages/knowledge/src/knowledge-scan.ts",
     names: ["teams"],
     reason:

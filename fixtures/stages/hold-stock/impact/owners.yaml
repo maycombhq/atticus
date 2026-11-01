@@ -1,0 +1,10 @@
+# Each repo's owner team, as the repo manifests name them, and roles.yaml's teams (V1). Invented.
+owners:
+  forge-stock: team-stock
+  forge-orders: team-orders
+  forge-mobile: team-mobile
+  forge-partner: team-partners
+  forge-gateway: team-platform
+teams:
+  - { id: team-stock, name: Stock team, people: [pat] }
+  - { id: team-orders, name: Orders team, people: [sam] }

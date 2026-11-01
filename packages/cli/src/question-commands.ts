@@ -2,8 +2,12 @@ import { stat } from "node:fs/promises";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 import {
+  acceptProposal,
   answerQuestion,
   changesDirOf,
+  checkedProposals,
+  proposalOf,
+  proposalsRelOf,
   answerWords,
   listQuestions,
   QuestionError,
@@ -64,6 +68,27 @@ export function aboutLines(about: RoutedQuestions["about"][string] | undefined):
   ];
 }
 
+type Proposal = NonNullable<RoutedQuestions["about"][string]["proposal"]>;
+
+/**
+ * An open question's proposed answer (ADR 0144, Q5), every cited line checked, and how a person
+ * accepts it. The assistant proposed it; nobody has answered until a person accepts.
+ */
+export function proposalLines(q: Question, p: Proposal): string[] {
+  const what =
+    p.answer.option !== undefined
+      ? `option ${p.answer.option}, ${q.options[p.answer.option - 1]?.label ?? "?"}`
+      : `"${p.answer.text}"`;
+  return [
+    `  Proposed by ${p.by} (not answered yet): ${what}. ${sentence(p.why)}`,
+    ...p.cites.map(
+      (c) =>
+        `    Cites ${c.repo ?? q.repo} ${c.file}:${c.line}: "${c.quote}" (checked: it is on that line)`,
+    ),
+    `  Accept it as your answer: atticus questions answer ${q.id} --accept-proposal`,
+  ];
+}
+
 /** The lines `atticus questions list` prints for one question; `change`: it is a change's. */
 export function questionLines(
   q: Question,
@@ -85,6 +110,7 @@ export function questionLines(
     );
   else if (q.state === "open")
     lines.push(
+      ...(o.about?.proposal ? proposalLines(q, o.about.proposal) : []),
       `  Proposed scope: ${scopeWords(q.scope, false, o.change)}`,
       `  Answer: atticus questions answer ${q.id}${q.options.length ? " --option <n>, or" : ""} --text "your own words"`,
     );
@@ -112,6 +138,7 @@ export async function questionsFiles(
       type: { type: "string" },
       by: { type: "string" },
       mine: { type: "boolean" },
+      "accept-proposal": { type: "boolean" },
     },
   });
   const str = (v: unknown) => (typeof v === "string" ? v : undefined);
@@ -186,9 +213,55 @@ export async function questionsFiles(
       io.err(`No question ${id}: atticus questions list shows them.`);
       return 1;
     }
-    if (values.json === true) io.out(JSON.stringify(q, null, 2));
-    else for (const l of questionLines(q, { change: await isChange(root, q.repo) })) io.out(l);
+    // ADR 0144 (Q5): its proposed answer, shown only once every line it cites holds.
+    const p = q.state === "open" ? await proposalOf(root, q.id) : undefined;
+    const proposal = p?.ok && p.proposal ? { ...p.proposal, file: p.file } : undefined;
+    if (values.json === true) io.out(JSON.stringify(proposal ? { ...q, proposal } : q, null, 2));
+    else {
+      const routed = await routeQuestions(root, [q]);
+      const about = routed.about[q.id];
+      for (const l of questionLines(q, {
+        change: await isChange(root, q.repo),
+        ...(about ? { about: { ...about, ...(proposal ? { proposal } : {}) } } : {}),
+      }))
+        io.out(l);
+      if (p && !p.ok && !p.stale)
+        io.out(
+          `  A proposed answer is on file (${p.file}) but doesn't check, so it isn't shown: ${p.problems.join(" ")}`,
+        );
+    }
     return 0;
+  }
+  if (command === "proposed") {
+    // ADR 0144 (Q5): every proposal on file, checked as the person will see it; the assistant's loop.
+    const all = await checkedProposals(root);
+    const dir = `${proposalsRelOf(root)}/questions`;
+    if (values.json === true) {
+      io.out(JSON.stringify({ dir, proposals: all }, null, 2));
+      return all.some((p) => !p.ok && !p.stale) ? 1 : 0;
+    }
+    if (!all.length) {
+      io.out(
+        `No proposed answers yet. /atticus-propose writes one per open question to ${dir}/<question id>.yaml.`,
+      );
+      return 0;
+    }
+    for (const p of all) {
+      if (p.ok) io.out(`${p.id}  checked: every line it cites says what it quotes (${p.file}).`);
+      else if (p.stale) io.out(`${p.id}  nothing to propose: ${p.problems.join(" ")}`);
+      else {
+        io.out(`${p.id}  doesn't check, so nobody sees it (${p.file}):`);
+        for (const x of p.problems) io.out(`  ${x}`);
+      }
+    }
+    const bad = all.filter((p) => !p.ok && !p.stale).length;
+    const ok = all.filter((p) => p.ok).length;
+    io.out(
+      bad
+        ? `${plural(bad, "proposal")} ${bad === 1 ? "doesn't" : "don't"} check: fix each citation from the file's line, or remove the proposal.`
+        : `${plural(ok, "proposal")} checked. A person accepts each with atticus questions answer <id> --accept-proposal, or on the Questions page.`,
+    );
+    return bad ? 1 : 0;
   }
   if (command === "answer") {
     if (!id) {
@@ -199,7 +272,14 @@ export async function questionsFiles(
     }
     const opt = str(values.option);
     const text = str(values.text)?.trim() || undefined;
-    if ((opt === undefined) === (text === undefined)) {
+    const accept = values["accept-proposal"] === true;
+    if (accept && (opt !== undefined || text !== undefined)) {
+      io.err(
+        "--accept-proposal takes the proposed answer: give it alone, or answer with --option or --text instead.",
+      );
+      return 2;
+    }
+    if (!accept && (opt === undefined) === (text === undefined)) {
       io.err('Answer with --option <n> or --text "your own words", one of the two.');
       return 2;
     }
@@ -215,18 +295,29 @@ export async function questionsFiles(
     }
     try {
       const by = str(values.by)?.trim() || (await gitUser(root)).handle;
-      const r = await answerQuestion(root, id, {
-        ...(option !== undefined ? { option } : {}),
-        ...(text !== undefined ? { text } : {}),
+      const at = (deps.now ?? new Date()).toISOString();
+      const scoped = {
         ...(scope ? { scope: scope as QuestionScopeLevel } : {}),
         ...(str(values.type) ? { repoType: str(values.type)! } : {}),
-        by,
-        at: (deps.now ?? new Date()).toISOString(),
-      });
+      };
+      // ADR 0144 (Q5): the assistant's proposal, checked again, becomes this person's answer.
+      const r = accept
+        ? await acceptProposal(root, id, { ...scoped, by, at })
+        : await answerQuestion(root, id, {
+            ...(option !== undefined ? { option } : {}),
+            ...(text !== undefined ? { text } : {}),
+            ...scoped,
+            by,
+            at,
+          });
       const q = r.question;
       io.out(
         `Answered ${q.id}: ${answerWords(q)} (for ${q.answer!.scope.level === "repo" ? `${(await isChange(root, q.repo)) ? "this change" : "this repo"}, ${q.repo}` : scopeWords(q.answer!.scope)}). Wrote ${questionsRelOf(root)}/${q.id}.yaml; commit it for review.`,
       );
+      if (accept)
+        io.out(
+          `It was the assistant's proposal; you accepted it, so it is recorded as answered by ${q.answer!.by}.`,
+        );
       if (r.skill)
         io.out(
           r.skill.written
@@ -254,10 +345,10 @@ export async function questionsFiles(
     }
   }
   io.err(
-    `atticus questions ${command ?? ""} isn't a command: it is questions list, show or answer (atticus questions alone lists the knowledge gaps).`,
+    `atticus questions ${command ?? ""} isn't a command: it is questions list, show, proposed or answer (atticus questions alone lists the knowledge gaps).`,
   );
   io.err(
-    'Usage: atticus questions list [--state open|answered|retired] [--mine] [--json], atticus questions show <id> [--json], or atticus questions answer <id> --option <n> | --text "..." [--scope repo|repo-type] [--type <repo type>]',
+    'Usage: atticus questions list [--state open|answered|retired] [--mine] [--json], atticus questions show <id> [--json], atticus questions proposed [--json], or atticus questions answer <id> --option <n> | --text "..." | --accept-proposal [--scope repo|repo-type] [--type <repo type>]',
   );
   return 2;
 }
