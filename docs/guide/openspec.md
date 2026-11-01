@@ -56,7 +56,7 @@ atticus spec accept forge-orders
 2. Read each spec against the code it cites and edit what reads wrong. Delete a file's first line (the mark) and a second `spec seed` keeps it as you left it.
 3. `atticus spec accept <repo>` runs `openspec validate --strict` and `openspec archive`, which writes the capabilities into `openspec/specs/`, and records in the proposal who accepted it. Commit the metarepo and open its pull request.
 
-From then on the stories stage writes `## MODIFIED Requirements` for each seeded flow a change touches, keeping the seeded scenarios, and each change's archive keeps the specs current. Accept a repo's seed before a change on its flows reaches the stories stage; if one got there first, run its stories stage again after accepting.
+From then on the stories stage writes `## MODIFIED Requirements` for each seeded flow a change touches, keeping the seeded scenarios, and each change's archive keeps the specs current. Accept a repo's seed before a change on its flows reaches the stories stage; if one got there first, run its stories stage again after accepting. Atticus warns when this happens ([ADR 0156](../adr/0156-a-changes-impact-up-the-chain-seeds-and-vendor-headers-and-errors.md)): the stories stage, when it writes ADDED for a flow an open seed adds too; `atticus spec seed`, naming each change that already adds one of the seed's flows; and `atticus next`, whose first step for that change is for a person to accept the seed (`atticus spec accept <repo>`), then run the change's stories stage again.
 
 ## Exporting the stories to Azure DevOps or Jira
 

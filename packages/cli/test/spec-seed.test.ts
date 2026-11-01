@@ -1,5 +1,5 @@
 import { existsSync, readdirSync } from "node:fs";
-import { cp, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -176,6 +176,33 @@ describe("atticus spec seed and accept", () => {
       expect(d!.modified[0]!.scenarios.map((s) => s.name)).toEqual([
         ...seeded.scenarios.map((s) => s.name),
         "202 says it waits",
+      ]);
+    },
+    T,
+  );
+
+  it(
+    "warns when a change already adds a flow the seed adds (ADR 0156)",
+    async () => {
+      const root = await metarepo();
+      const change = join(root, "openspec/changes/hold-big-orders/specs/forge-orders-place-order");
+      await mkdir(change, { recursive: true });
+      await cp(join(FIX, "collision/hold-big-orders.spec.md"), join(change, "spec.md"));
+      const a = io();
+      expect(await specSeed(root, "forge-orders", {}, a.io)).toBe(0);
+      expect(a.err.join("\n")).toContain(
+        "hold-big-orders's stories add flow forge-orders.place-order (capability forge-orders-place-order) as new, and the open seed seed-forge-orders adds it too",
+      );
+      const j = io();
+      expect(await specSeed(root, "forge-orders", { json: true }, j.io)).toBe(0);
+      expect(JSON.parse(j.out.join("\n")).collisions).toEqual([
+        {
+          change: "hold-big-orders",
+          seed: "seed-forge-orders",
+          repo: "forge-orders",
+          capability: "forge-orders-place-order",
+          flow: "forge-orders.place-order",
+        },
       ]);
     },
     T,

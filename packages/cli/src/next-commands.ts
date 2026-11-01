@@ -24,7 +24,13 @@ import {
 import { stepClassOfNextStep } from "@maycombhq/ai";
 import { changeStore, loadChangePolicy, stageCompletion } from "@maycombhq/changes";
 import { readKnowledge, snapshotDates, workingDays } from "@maycombhq/knowledge";
-import { metarepoOpenSpec, openspecProgress, readNeeds } from "@maycombhq/planner";
+import {
+  metarepoOpenSpec,
+  openspecProgress,
+  readNeeds,
+  seedCollisions,
+  type SeedCollision,
+} from "@maycombhq/planner";
 import { readChangeFiles } from "@maycombhq/naysayer";
 import { readChangeTasks } from "@maycombhq/speckit";
 import { readCatalog } from "@maycombhq/scanner";
@@ -179,6 +185,11 @@ export interface NextState {
      * (org-flow v2), in a metarepo set up with OpenSpec. Left out when every artifact is done.
      */
     openspecStage?: "feature" | "architecture" | "stories";
+    /**
+     * ADR 0156: flows its spec files add as new that a repo's open seed adds too: archiving both
+     * would fail, so a person accepts the seed and the stories stage runs again.
+     */
+    seedCollisions?: { seed: string; repo: string; capability: string; flow: string }[];
   }[];
   problems: { file: string; message: string }[];
 }
@@ -397,8 +408,13 @@ export async function readNextState(root: string): Promise<NextState> {
   // B-change: which stages each change has done, read the way the lifecycle reads them.
   const { policy } = await loadChangePolicy(orgPackDirOf(root));
   const os = metarepoOpenSpec(root);
+  // ADR 0156: the flows a change adds that an open seed adds too.
+  const clashes = await seedCollisions(root).catch(() => [] as SeedCollision[]);
   try {
     for (const c of await changeStore(root).list()) {
+      const clash = clashes
+        .filter((x) => x.change === c.id)
+        .map(({ seed, repo, capability, flow }) => ({ seed, repo, capability, flow }));
       const files = await readChangeFiles(join(changesDirOf(root), c.id)).catch(() => undefined);
       const stagesDone = (await stageCompletion({ root, policy }, c))
         .filter((s) => s.state === "done")
@@ -437,6 +453,7 @@ export async function readNextState(root: string): Promise<NextState> {
         feature: existsSync(join(changesDirOf(root), c.id, "feature.yaml")),
         ...(stagesDone.length ? { stagesDone } : {}),
         ...(progress?.next ? { openspecStage: progress.next } : {}),
+        ...(clash.length ? { seedCollisions: clash } : {}),
         ...((await isFast(root, c, types))
           ? {
               fast: true,
@@ -576,7 +593,22 @@ export function changeSteps(c: NextState["changes"][number]): NextStep[] {
           },
         ]
       : [];
-  return [...find, ...stage, ...raise];
+  // ADR 0156: a seed the change collides with is accepted first, then its stories run again.
+  const seeds: NextStep[] = done
+    ? []
+    : [...new Set((c.seedCollisions ?? []).map((x) => x.repo))].sort().map((repo) => {
+        const xs = c.seedCollisions!.filter((x) => x.repo === repo);
+        return {
+          step: "accept-seed",
+          command: `atticus spec accept ${repo}`,
+          where: METAREPO,
+          why: `${id} adds ${xs.map((x) => x.flow).join(", ")} as new, and ${repo}'s starting spec (${xs[0]!.seed}), not accepted yet, adds ${xs.length === 1 ? "it" : "them"} too: archiving both would fail on a requirement added twice. A person reads and accepts the seed. Then run the change's stories stage again (atticus plan stories ${id}) so it modifies the seeded requirement (ADR 0156).`,
+          person: true,
+          change: id,
+          repo,
+        };
+      });
+  return [...find, ...seeds, ...stage, ...raise];
 }
 
 function stageSteps(c: NextState["changes"][number]): NextStep[] {
