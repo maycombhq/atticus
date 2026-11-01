@@ -65,7 +65,7 @@ export function topHelp(versionLine: string): string {
 /**
  * The words a command line names, as the command that exists: `legacy <words>` is `<words>`,
  * `stories` is `plan stories`, `task <change> <task>` is `task run`, `join` is `estate join`.
- * `positions` are the indexes of argv's positional words (the parser's tokens), so an option and
+ * `join measure` is `estate measure`. `positions` are the indexes of argv's positional words (the parser's tokens), so an option and
  * its value stay where they are. Anything else, and a line already rewritten, is left as it is.
  */
 export function aliasArgv(argv: readonly string[], positions: readonly number[]): string[] {
@@ -80,7 +80,9 @@ export function aliasArgv(argv: readonly string[], positions: readonly number[])
   if (first === undefined) return out;
   const word = out[first];
   const second = at[1] === undefined ? undefined : out[at[1]];
-  if (word === "join") out.splice(first, 1, "estate", "join");
+  // `join measure` (R5) is `estate measure`: the map measured against a person's reference.
+  if (word === "join" && second === "measure") out.splice(first, 2, "estate", "measure");
+  else if (word === "join") out.splice(first, 1, "estate", "join");
   else if (word === "stories") out.splice(first, 1, "plan", "stories");
   else if (word === "task" && second !== "run" && second !== "context")
     out.splice(first + 1, 0, "run");

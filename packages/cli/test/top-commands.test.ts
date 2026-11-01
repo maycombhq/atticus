@@ -156,6 +156,12 @@ describe("the new names are the commands that exist", () => {
       "t1",
     ]);
     expect(at(["join", "--json"], [0])).toEqual(["estate", "join", "--json"]);
+    expect(at(["join", "measure", "ref.yaml", "--json"], [0, 1, 2])).toEqual([
+      "estate",
+      "measure",
+      "ref.yaml",
+      "--json",
+    ]);
     expect(at(["--by", "pat", "legacy", "plan", "stories", "c"], [2, 3, 4, 5])).toEqual([
       "--by",
       "pat",
