@@ -2,6 +2,7 @@ import {
   APIGEE_BUNDLE,
   citedFiles,
   claimOnLines,
+  factIdPart,
   lineNamesClaim,
   partsBuildWord,
   partsNamePath,
@@ -71,7 +72,14 @@ export type RejectCode =
    * A framework fact whose `name` is not the framework the declaration on its cited line means
    * (ADR 0124 addendum A-framework): a reader can't rename an artifact.
    */
-  | "framework-name";
+  | "framework-name"
+  /** A deploy fact's host written as a template (`{{ .Values.host }}`, `${HOST}`) (ADR 0143). */
+  | "exposure-template"
+  /**
+   * An exposure (a deploy fact with a host or base path) that names no component of the estate,
+   * or names none in a repo whose facts serve nothing, a deploy repo's (ADR 0143).
+   */
+  | "exposure-component";
 
 /** One thing wrong with a fact. */
 export interface Problem {
@@ -277,6 +285,11 @@ export interface VerifyOptions {
    * the caller's, and `verifyFacts` lets it through untouched.
    */
   room?: () => void;
+  /**
+   * The estate the repo is part of (ADR 0143): its components and repos, as repos.manifest.yaml
+   * names them. An exposure's `exposes` must be one of them. Left out, nothing checks the name.
+   */
+  estate?: { components: readonly string[] };
 }
 
 /**
@@ -327,6 +340,9 @@ const isCommentLine = (l: string) =>
   /^\s*(\/\/|\/\*|\*|<!--|-- |#(?!\s*(region|endregion|if|elif|else|endif|define|undef|pragma|nullable|include|import)\b)(?!!))/.test(
     l,
   );
+
+/** A value written as a template: Helm's or Go's `{{ }}`, a `${}` placeholder (ADR 0143). */
+const TEMPLATED = /\{\{|\}\}|\$\{/;
 
 const routeOrWord = (v: string): Claim =>
   v.includes("/") ? { kind: "route", value: v } : { kind: "word", value: v };
@@ -608,6 +624,9 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
       : [routeOrWord(value)];
   };
 
+  // J1: the estate's components an exposure may name, and whether this repo serves anything.
+  const estate = o.estate ? new Set(o.estate.components.map(factIdPart)) : undefined;
+  const serves = facts.some((f) => f.kind === "entry");
   for (const f of facts) {
     const label = `${f.kind} ${f.id}`;
     if (o.commit && !sameCommit(f.commit, o.commit)) {
@@ -675,6 +694,40 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
           ),
         ),
       );
+    // J1 (ADR 0143): where a component is reached. The host and the base path are on the cited
+    // line or a part (a templated host's values-file line); the component it reaches resolves.
+    if (f.kind === "deploy" && (f.host !== undefined || f.basePath !== undefined)) {
+      if (f.host !== undefined && TEMPLATED.test(f.host))
+        problem(
+          f,
+          "exposure-template",
+          `${label} host "${f.host}" is a template: give the host the values file sets, with that line in cite.with (one fact per environment's values file, each with its env)`,
+        );
+      else if (f.host !== undefined)
+        add(f, checkCite(f.cite, [{ kind: "word", value: f.host }], `${label} host`, false));
+      if (f.basePath !== undefined)
+        add(
+          f,
+          checkCite(
+            f.cite,
+            [routeOrWord(f.basePath), { kind: "word", value: f.basePath }],
+            `${label} basePath`,
+            false,
+          ),
+        );
+      if (f.exposes !== undefined && estate && !estate.has(factIdPart(f.exposes)))
+        problem(
+          f,
+          "exposure-component",
+          `${label} exposes "${f.exposes}", which is no component or repo of the estate (repos.manifest.yaml): name the component the route reaches, or write a question when no file says which`,
+        );
+      if (f.exposes === undefined && !serves)
+        problem(
+          f,
+          "exposure-component",
+          `${label} says where a component is reached and names none: this repo's facts serve nothing, so its routes reach another repo's component; name it in exposes (one of the estate's components), or write a question when no file says which`,
+        );
+    }
     // A-framework: the name follows from the declaration on the cited line, and a version, where
     // one is claimed, is written on that line or on one of its `cite.with` parts (a property, a
     // parent pom's version, a <TargetFramework>, a dependency-management block).

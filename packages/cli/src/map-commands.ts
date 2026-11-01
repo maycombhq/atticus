@@ -81,6 +81,7 @@ import {
   headOf,
   raiseReadQuestions,
   readCorrections,
+  estateComponentsOf,
   readReviewed,
   reviewedProblemsOf,
   writeVerifyFiles,
@@ -995,6 +996,7 @@ async function takeAnswer(
   // Facts of an earlier commit whose files are unchanged are carried (ADR 0124 addendum A-incremental).
   const { carry } = await carryOf(at.dir, [...merged.values()], s.commit, at.git);
   const reviewed = await readReviewed(root, s.repo);
+  const estate = await estateComponentsOf(root);
   const report = await verifyFacts({
     facts: [...merged.values()],
     source,
@@ -1005,6 +1007,8 @@ async function takeAnswer(
     corrections: (await readCorrections(root, s.repo)).corrections,
     // ADR 0124 addendum A-read: files the reader read and found nothing in, if it wrote any.
     reviewed: reviewed.entries,
+    // J1 (ADR 0143): an exposure names a component the manifest lists.
+    ...(estate ? { estate } : {}),
   });
   const q = await raiseReadQuestions(root, s.repo, answer.questions, source, {
     command: `atticus map ${s.repo}`,

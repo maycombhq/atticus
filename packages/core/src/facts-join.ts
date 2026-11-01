@@ -115,6 +115,8 @@ export interface GatewayHop {
   tie?: FactEnd;
   /** J0: the config facts that set the tie's placeholder, as `FactJoin.through`. */
   through?: FactEnd[];
+  /** J1: the exposure facts the forwarding call's host or base path came from, as `FactJoin.exposedBy`. */
+  exposedBy?: FactEnd[];
   /** The catalog GatewayRoute of the route. */
   route: string;
   /** The auth a caller meets at this hop, when the route's facts say (A-gateway2). */
@@ -189,6 +191,12 @@ export interface FactJoin {
   entryThrough?: FactEnd[];
   how: JoinHow;
   /**
+   * J1 (ADR 0143): the exposure facts (a Route's, an Ingress's, a Helm value's, a proxy's
+   * BasePath) whose host or base path the call's matched, when the manifest alone didn't give
+   * them. Left out when the manifest's hosts and base paths were all it took.
+   */
+  exposedBy?: FactEnd[];
+  /**
    * A join by path (the join fallback): nobody named the callee, so it is inferred. `within`
    * says where the one entry that serves the call was found: the caller's own repo first, else
    * the estate; `named` is the target the call gave, when it named one the estate doesn't have.
@@ -231,6 +239,28 @@ export interface FactJoinAsk {
   /** The entries that could answer (none for an unknown host). */
   candidates: FactEnd[];
 }
+
+/**
+ * J1 (ADR 0143): what an exposure fact says that the estate can't take as it is. `no-component`:
+ * its `exposes` names no component or repo of the estate, so nothing is joined by it.
+ * `host-conflict`: the manifest lists hosts for the component and the fact's is none of them;
+ * `base-path-conflict`: the manifest gives a base path and the fact another. Both values are
+ * joined in a conflict; the finding asks a person to settle it, and neither silently wins.
+ */
+export type ExposureFinding =
+  | { reason: "no-component"; exposure: FactEnd; names: string; message: string }
+  | {
+      reason: "host-conflict" | "base-path-conflict";
+      exposure: FactEnd;
+      /** The repo the component is of, and the component. */
+      repo: string;
+      component: string;
+      /** The fact's host or base path. */
+      fact: string;
+      /** What repos.manifest.yaml says instead. */
+      manifest: string[];
+      message: string;
+    };
 
 /** J2: a call left to a system outside the estate (a vendor, a cloud service), with the name it gave. */
 export interface FactJoinOutside {
@@ -276,6 +306,8 @@ export interface FactsJoinResult {
   gaps: FieldGap[];
   /** J2: the calls left to a system outside the estate, by the name each gave; left out when none. */
   outside?: FactJoinOutside[];
+  /** J1: exposure facts that conflict with the manifest or name no component; left out when none. */
+  exposure?: ExposureFinding[];
 }
 
 export interface JoinFactsInput {
@@ -300,6 +332,7 @@ type Call = FactOf<"call">;
 type Field = FactOf<"field">;
 type Store = FactOf<"store">;
 type Config = FactOf<"config">;
+type Deploy = FactOf<"deploy">;
 
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 const at = (f: Fact) => `${f.cite.file}:${f.cite.line}`;
@@ -424,6 +457,9 @@ function pathSegments(p: string | undefined): string[] | undefined {
 
 /** A base path's segment and a call's, the same: a `{placeholder}` on either side is any one. */
 const sameSegment = (a: string, b: string) => a === "{}" || b === "{}" || a === b;
+/** Two base paths, the same segment for segment (none and none are the same). */
+const sameSegments = (a: string[] | undefined, b: string[] | undefined) =>
+  (a?.length ?? 0) === (b?.length ?? 0) && (a ?? []).every((x, i) => sameSegment(x, b![i]!));
 
 /** The path part of a URL (`https://host/forge/limits` gives `/forge/limits`), when it has one. */
 function urlPathOf(s: string | undefined): string | undefined {
@@ -634,22 +670,151 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
     placeholderIn(path)
       ? resolve(path, n, new Set())
       : [{ value: path, through: [] as (Node & { fact: Config })[] }];
-  const declared = repos.flatMap((r) => [
-    ...(r.modules ?? []).flatMap((m) =>
-      m.hosts.map((h) => ({
-        pattern: h,
-        repo: r.repo,
-        component: factIdPart(m.component),
-        basePath: pathSegments(m.basePath),
+  // ---- J1 (ADR 0143): where each component is reached, from the manifest's hosts and base
+  // paths and from the exposure facts (a Route's, an Ingress's, a Helm value's or a proxy's
+  // BasePath). Both are accepted; where they disagree the finding says so, and neither wins.
+  type Exposure = Node & { fact: Deploy };
+  interface Reached {
+    repo: string;
+    /** A module's component; left out for the repo itself. */
+    component: string | undefined;
+    manifestHosts: string[];
+    manifestBase: string | undefined;
+    /** Each host and base path, with the exposures that give it; `listed` when the manifest does. */
+    hosts: { pattern: string; by: Exposure[]; listed?: true }[];
+    paths: { path: string | undefined; by: Exposure[]; listed?: true }[];
+  }
+  const reached = new Map<string, Reached>();
+  const reachedOf = (repo: string, component: string | undefined): Reached => {
+    const k = `${repo}\u0000${component ?? ""}`;
+    let g = reached.get(k);
+    if (!g) {
+      g = { repo, component, manifestHosts: [], manifestBase: undefined, hosts: [], paths: [] };
+      reached.set(k, g);
+    }
+    return g;
+  };
+  const addHost = (g: Reached, pattern: string, by?: Exposure) => {
+    const h = g.hosts.find((x) => x.pattern.toLowerCase() === pattern.toLowerCase());
+    if (h) {
+      if (by) h.by.push(by);
+    } else g.hosts.push({ pattern, by: by ? [by] : [], ...(by ? {} : { listed: true as const }) });
+  };
+  const addPath = (g: Reached, path: string, by?: Exposure) => {
+    const segs = pathSegments(path);
+    const h = g.paths.find((x) => sameSegments(pathSegments(x.path), segs));
+    if (h) {
+      if (by) h.by.push(by);
+    } else g.paths.push({ path, by: by ? [by] : [], ...(by ? {} : { listed: true as const }) });
+  };
+  for (const r of repos) {
+    const g = reachedOf(r.repo, undefined);
+    g.manifestHosts = [...(r.hosts ?? [])];
+    g.manifestBase = r.basePath;
+    for (const h of g.manifestHosts) addHost(g, h);
+    if (r.basePath) addPath(g, r.basePath);
+    for (const m of r.modules ?? []) {
+      const mg = reachedOf(r.repo, factIdPart(m.component));
+      mg.manifestHosts = [...m.hosts];
+      mg.manifestBase = m.basePath;
+      for (const h of m.hosts) addHost(mg, h);
+      if (m.basePath) addPath(mg, m.basePath);
+    }
+  }
+  const mainOf = new Map(repos.map((r) => [factIdPart(r.component ?? r.repo), r.repo] as const));
+  const moduleOf = new Map(
+    repos.flatMap((r) => (r.modules ?? []).map((m) => [factIdPart(m.component), r.repo] as const)),
+  );
+  /** The repo (and module) an exposure reaches: its `exposes`, else its own component. */
+  const exposedOwner = (
+    n: Exposure,
+  ): { repo: string; component: string | undefined } | undefined => {
+    const own = (repo: string, component: string) =>
+      mainOf.get(component) === repo ? { repo, component: undefined } : { repo, component };
+    if (!n.fact.exposes) return own(n.repo, n.component);
+    const slug = factIdPart(n.fact.exposes);
+    const repo = repoIds.get(slug) ?? mainOf.get(slug);
+    if (repo) return { repo, component: undefined };
+    const mod = moduleOf.get(slug);
+    if (mod) return { repo: mod, component: slug };
+    // A component the facts name (a module the manifest doesn't list), or one made estate-unique.
+    const named = nodes.find(
+      (x) =>
+        x.repo !== n.repo &&
+        (x.component === slug || x.component === factIdPart(`${x.repo}-${slug}`)),
+    );
+    return named ? own(named.repo, named.component) : undefined;
+  };
+  const exposure: ExposureFinding[] = [];
+  for (const n of nodes) {
+    if (n.fact.kind !== "deploy" || (!n.fact.host && !n.fact.basePath)) continue;
+    const x = n as Exposure;
+    const where = `${x.repo}'s ${x.fact.id} (${at(x.fact)})`;
+    const owner = exposedOwner(x);
+    if (!owner) {
+      exposure.push({
+        reason: "no-component",
+        exposure: end(x),
+        names: x.fact.exposes!,
+        message: `${where} exposes ${x.fact.exposes}, which is no component or repo of the estate: name the component the route reaches, or drop the fact`,
+      });
+      continue;
+    }
+    const g = reachedOf(owner.repo, owner.component);
+    const component =
+      owner.component ??
+      factIdPart(repos.find((r) => r.repo === owner.repo)?.component ?? owner.repo);
+    const holder = owner.component ? `${owner.repo}'s module ${owner.component}` : owner.repo;
+    const env = x.fact.env ? ` (${x.fact.env})` : "";
+    if (x.fact.host) {
+      const host = x.fact.host;
+      if (g.manifestHosts.length && !g.manifestHosts.some((p) => hostMatches(p, host)))
+        exposure.push({
+          reason: "host-conflict",
+          exposure: end(x),
+          repo: owner.repo,
+          component,
+          fact: host,
+          manifest: [...g.manifestHosts],
+          message: `${component} is reached on ${host}${env} by ${where}, and repos.manifest.yaml lists ${g.manifestHosts.join(", ")} for ${holder}: both are joined; list the host in the manifest, or correct the one that is wrong`,
+        });
+      addHost(g, host, x);
+    }
+    if (x.fact.basePath) {
+      const path = x.fact.basePath;
+      if (g.manifestBase && !sameSegments(pathSegments(g.manifestBase), pathSegments(path)))
+        exposure.push({
+          reason: "base-path-conflict",
+          exposure: end(x),
+          repo: owner.repo,
+          component,
+          fact: path,
+          manifest: [g.manifestBase],
+          message: `${component} is reached under ${path}${env} by ${where}, and repos.manifest.yaml gives ${g.manifestBase} for ${holder}: both are joined; set the manifest's basePath to it, or correct the one that is wrong`,
+        });
+      addPath(g, path, x);
+    }
+  }
+  const declared = [...reached.values()].flatMap((g) => {
+    // A module (or a repo's component) with a base path and no hosts of its own answers on its
+    // repo's hosts (ADR 0134), whether the manifest or an exposure gave them.
+    const hosts = g.hosts.length
+      ? g.hosts
+      : g.component
+        ? (reached.get(`${g.repo}\u0000`)?.hosts ?? [])
+        : [];
+    const paths = g.paths.length ? g.paths : [{ path: undefined, by: [] as Exposure[] }];
+    return hosts.flatMap((h) =>
+      paths.map((p) => ({
+        pattern: h.pattern,
+        repo: g.repo,
+        component: g.component,
+        basePath: pathSegments(p.path),
+        // The exposures the pair rests on: none for what the manifest lists itself.
+        by: [...(h.listed ? [] : h.by), ...(p.listed ? [] : p.by)],
       })),
-    ),
-    ...(r.hosts ?? []).map((h) => ({
-      pattern: h,
-      repo: r.repo,
-      component: undefined,
-      basePath: pathSegments(r.basePath),
-    })),
-  ]);
+    );
+  });
   /**
    * Every repo (or module) that lists a host: those naming its port, else those that don't. A
    * host several repos list (a shared API gateway host, each proxy in a repo of its own) is
@@ -682,6 +847,7 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
         scope: () => false,
         target: `${h.host} (no repo's base path starts ${path ?? "the call's path"})`,
         key: `none|${h.host}`,
+        by: [] as FactEnd[],
       };
     const owns = (d: (typeof declared)[number]) => (e: Node) =>
       d.component ? e.component === d.component : e.repo === d.repo;
@@ -690,6 +856,7 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
       scope: (e: Node) => all.some((d) => owns(d)(e)),
       target: targets.join(", "),
       key: targets.join("|"),
+      by: uniqueEnds(all.flatMap((d) => d.by)),
     };
   };
 
@@ -830,6 +997,7 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
     let scope: { scope: (e: Node) => boolean; target: string } | undefined;
     let how: JoinHow | undefined;
     let byLabel = false;
+    let exposedBy: FactEnd[] = [];
     if (answer === NO_TARGET) continue;
     // C2 (ADR 0135): a target a person set (a correction from the Map) outranks every rule
     // after an answer: one naming nothing in the estate is outside it, never joined by its host,
@@ -851,6 +1019,7 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
       const d = claimed(host, fullPath)!;
       scope = { scope: d.scope, target: d.target };
       how = "host";
+      exposedBy = d.by;
     } else if (
       host &&
       outside.has(factIdPart(host.named ? `${host.host}:${host.named}` : host.host))
@@ -908,6 +1077,7 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
         how,
         ...(within ? { inferred: { within, ...(f.to ? { named: f.to } : {}) } } : {}),
         ...(byLabel ? { byLabel: true as const } : {}),
+        ...(exposedBy.length ? { exposedBy } : {}),
         callType: f.callType,
         ...(f.method || e.fact.method
           ? { method: (f.method ?? e.fact.method)!.toUpperCase() }
@@ -1013,6 +1183,7 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
         call: next.call,
         ...(next.tie ? { tie: next.tie } : {}),
         ...(next.through ? { through: next.through } : {}),
+        ...(next.exposedBy ? { exposedBy: next.exposedBy } : {}),
         route: gatewayRouteId(r),
         // A-uncited: the gate on the way into C1, as the projection has it.
         ...(catalogAuth(r.fact) ? { auth: catalogAuth(r.fact) } : {}),
@@ -1157,6 +1328,7 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
     misses: misses.sort(byEnds),
     // Left out when none, so a join with nothing outside reads as it did before J2.
     ...(outsideCalls.length ? { outside: outsideCalls.sort(byEnds) } : {}),
+    ...(exposure.length ? { exposure } : {}),
     lineage: lineage.sort(
       (x, y) =>
         cmp(x.interface, y.interface) ||
@@ -1336,11 +1508,13 @@ export function joinRecords(result: FactsJoinResult, repos: readonly JoinRepo[])
           ...ev(j.call, "code", "caller"),
           ...(j.tie ? ev(j.tie, "config", "caller") : []),
           ...(j.through ?? []).flatMap((t) => ev(t, "config", "caller")),
+          ...(j.exposedBy ?? []).flatMap((t) => ev(t, "infrastructure", "gateway")),
           ...j.gateway.flatMap((h) => [
             ...ev(h.entry, "gateway", "gateway"),
             ...ev(h.call, "gateway", "gateway"),
             ...(h.tie ? ev(h.tie, "config", "gateway") : []),
             ...(h.through ?? []).flatMap((t) => ev(t, "config", "gateway")),
+            ...(h.exposedBy ?? []).flatMap((t) => ev(t, "infrastructure", "callee")),
           ]),
           ...ev(j.entry, "code", "callee"),
         ]),
@@ -1409,6 +1583,7 @@ export function joinRecords(result: FactsJoinResult, repos: readonly JoinRepo[])
         ...(j.tie ? ev(j.tie, "config", "caller") : []),
         ...(j.through ?? []).flatMap((t) => ev(t, "config", "caller")),
         ...ev(j.entry, "code", "callee"),
+        ...(j.exposedBy ?? []).flatMap((t) => ev(t, "infrastructure", "callee")),
       ]),
     } as CatalogRecord);
   }

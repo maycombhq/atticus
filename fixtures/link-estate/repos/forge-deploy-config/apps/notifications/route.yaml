@@ -1,0 +1,13 @@
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: notifications-api
+  namespace: forge-notifications
+spec:
+  host: apps.forge.internal
+  path: /forge-svc/notifications
+  to:
+    kind: Service
+    name: notifications-api
+  tls:
+    termination: edge

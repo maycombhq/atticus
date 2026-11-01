@@ -32,6 +32,7 @@ import {
   type CatalogRecord,
   type Fact,
   type FactsJoinResult,
+  type ExposureFinding,
   type JoinHow,
   type Question,
 } from "@maycombhq/core";
@@ -237,7 +238,13 @@ export function linkLines(l: LinkChanges, report: string, o: { verbose?: boolean
  * so the pull request shows what the write did to the links. A report that isn't there or
  * doesn't read is left alone.
  */
-async function writeLinksIntoReport(root: string, repo: string, links: LinkChanges): Promise<void> {
+async function writeLinksIntoReport(
+  root: string,
+  repo: string,
+  links: LinkChanges,
+  /** J1 (ADR 0143): the exposure findings about this repo, put beside the links; none, none. */
+  exposure: readonly ExposureFinding[] = [],
+): Promise<void> {
   const file = join(factsDirOf(root), `${repo}.verify.yaml`);
   const text = await readFile(file, "utf8").catch(() => undefined);
   if (text === undefined) return;
@@ -248,7 +255,24 @@ async function writeLinksIntoReport(root: string, repo: string, links: LinkChang
     return;
   }
   if (!report || typeof report !== "object" || Array.isArray(report)) return;
-  await writeFileAtomic(file, stringify({ ...(report as object), links }));
+  const { exposure: _old, ...rest } = report as { exposure?: unknown };
+  await writeFileAtomic(
+    file,
+    stringify({
+      ...rest,
+      links,
+      ...(exposure.length
+        ? {
+            exposure: exposure.map((x) => ({
+              reason: x.reason,
+              fact: x.exposure.fact,
+              at: x.exposure.at,
+              message: x.message,
+            })),
+          }
+        : {}),
+    }),
+  );
 }
 
 /** How many records of a kind a write added, changed (fields or only evidence) and removed. */
@@ -486,7 +510,7 @@ export async function writeFactsIntoCatalog(
       verbose: o.verbose === true,
     }))
       io.out(l);
-    await writeLinksIntoReport(root, repo, links);
+    await writeLinksIntoReport(root, repo, links, result.join?.exposure);
     for (const l of lines) io.out(l);
     const map = await renderRepoMap(root, repo, io);
     return {
@@ -548,6 +572,8 @@ export function joinLines(
       }
   }
   for (const m of join.misses) out.push(`Not joined: ${m.message} (${m.call.at}).`);
+  // J1 (ADR 0143): where an exposure fact and the manifest disagree, or it names nothing.
+  for (const x of join.exposure ?? []) out.push(`Exposure: ${x.message}.`);
   for (const g of join.gaps.slice(0, 10)) out.push(`Field gap: ${g.message}.`);
   return out;
 }

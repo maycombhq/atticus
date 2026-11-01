@@ -4,6 +4,10 @@
 # each under /forge-svc/<module>; the house starter library whose ForgeRestClient makes every HTTP
 # call; and the deploy repo whose ConfigMaps and Helm values set the URLs the services' config
 # leaves as ${PLACEHOLDERS}.
+#
+# Where each repo is reached comes from the facts (ADR 0143): the deploy repo's OpenShift Routes
+# give each service's host and base path, and each proxy's own BasePath its base path. Only the
+# gateway's host is listed here, as it is written in no proxy repo.
 schemaVersion: 3
 platform: forge
 repos:
@@ -20,7 +24,6 @@ repos:
     component: proxy-accounts-v1
     system: platform
     hosts: [api.forge.example]
-    basePath: /forge/accounts/v1
   - id: forge-proxy-payments-v1
     url: https://git.forge.example/apigee/forge-proxy-payments-v1.git
     type: gateway
@@ -28,7 +31,6 @@ repos:
     component: proxy-payments-v1
     system: platform
     hosts: [api.forge.example]
-    basePath: /forge/payments/v1
   - id: forge-proxy-northwind-v1
     url: https://git.forge.example/apigee/forge-proxy-northwind-v1.git
     type: gateway-external
@@ -36,39 +38,30 @@ repos:
     component: proxy-northwind-v1
     system: platform
     hosts: [api.forge.example]
-    basePath: /forge/northwind/v1
   - id: forge-accounts
     url: https://git.forge.example/forge/forge-accounts.git
     type: spring-boot
     owner: team-accounts
     component: accounts-api
     system: accounts
-    hosts: [apps.forge.internal]
-    basePath: /forge-svc/accounts
   - id: forge-payments
     url: https://git.forge.example/forge/forge-payments.git
     type: spring-boot
     owner: team-payments
     component: payments-api
     system: payments
-    hosts: [apps.forge.internal]
-    basePath: /forge-svc/payments
   - id: forge-cards
     url: https://git.forge.example/forge/forge-cards.git
     type: spring-boot
     owner: team-cards
     component: cards-api
     system: cards
-    hosts: [apps.forge.internal]
-    basePath: /forge-svc/cards
   - id: forge-notifications
     url: https://git.forge.example/forge/forge-notifications.git
     type: spring-boot
     owner: team-notifications
     component: notifications-api
     system: notifications
-    hosts: [apps.forge.internal]
-    basePath: /forge-svc/notifications
   - id: forge-starter
     url: https://git.forge.example/platform/forge-starter.git
     type: library

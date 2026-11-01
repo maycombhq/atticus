@@ -161,9 +161,12 @@ describe("lean batch prompts: the core and the topic rules a batch needs (ADR 01
     // proxy or shared flow is not a framework (a gateway read offered them as house frameworks),
     // and when authCite was said to be {file, line, value} only (readers gave it a quote), and
     // when a flow fact was told its own cite is the line that starts it (readers left it out),
-    // and when an environment variable a deployment sets was given its key and target (J0).
+    // and when an environment variable a deployment sets was given its key and target (J0),
+    // and when a deploy fact was told where its component is reached: host, base path, the
+    // values file a templated host comes from, and the component a deploy repo's Route exposes
+    // (J1, ADR 0143).
     expect(createHash("sha256").update(FACT_RULES).digest("hex")).toBe(
-      "6d9f2636023c6c6c9e1266748e7c290faa75110f4afb0282f5bb7ef7b9d614cc",
+      "c5ca5fbbcc6164a60d09c17bc13403c911a5a0bf9a11fb99f5d003d1ec1ea0d8",
     );
     expect(FACT_RULES).toBe(factRulesFor());
     expect(mapCommand().body).toContain(FACT_RULES);
