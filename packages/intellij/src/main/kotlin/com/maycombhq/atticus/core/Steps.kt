@@ -54,9 +54,9 @@ object Steps {
     private fun cmd(actionId: String, vsCode: String, target: StepTarget, vararg words: String) =
         NativeStep(actionId, vsCode, target, words.toList(), ai = false)
 
-    /** A job of the command line with no VS Code command yet (ADR 0159), run as it stands. */
-    private fun job(actionId: String, target: StepTarget, words: List<String>, after: List<String> = emptyList(), targetFlag: String? = null) =
-        NativeStep(actionId, null, target, words, ai = false, targetFlag = targetFlag, after = after, direct = true)
+    /** A job beta.10 added to the command line (ADR 0159), run as it stands; [vsCode] is VS Code's jobs.ts command. */
+    private fun job(actionId: String, vsCode: String, target: StepTarget, words: List<String>, after: List<String> = emptyList(), targetFlag: String? = null) =
+        NativeStep(actionId, vsCode, target, words, ai = false, targetFlag = targetFlag, after = after, direct = true)
 
     /**
      * The AI steps: each hands its prompt and slash command to Copilot Chat, or runs on
@@ -126,36 +126,36 @@ object Steps {
     val READ_SOURCE = ai("Atticus.ReadSource", "atticus.readSource", StepTarget.NONE, "knowledge", "scan")
 
     /**
-     * What 2.0.0-beta.10 added to the command line, each an action of its own (ADR 0159). VS Code
-     * has no command for these yet, so none is a Parity.MAP key; each runs in the background with
+     * What 2.0.0-beta.10 added to the command line, each an action of its own (ADR 0159), answering
+     * VS Code's command of the same job (its jobs.ts), so each is a Parity.MAP key; each runs in the background with
      * its output in the Output tab, as the commands above do. The second pass on the gaps and the
      * assistant's proposed answers also put their slash command on the clipboard for Copilot Chat.
      */
     val ESTATE: List<NativeStep> =
         listOf(
             // ADR 0141: which clones moved past their facts, and the reading order with its costs.
-            job("Atticus.EstateFresh", StepTarget.NONE, listOf("estate", "fresh")),
-            job("Atticus.ReadingQueue", StepTarget.NONE, listOf("next"), after = listOf("--queue")),
+            job("Atticus.EstateFresh", "atticus.estateFresh", StepTarget.NONE, listOf("estate", "fresh")),
+            job("Atticus.ReadingQueue", "atticus.nextQueue", StepTarget.NONE, listOf("next"), after = listOf("--queue")),
             // ADR 0157: the second pass on what the last verify left; then /atticus-map <repo> --gaps.
-            job("Atticus.MapGaps", StepTarget.REPO, listOf("map"), after = listOf("--gaps")),
+            job("Atticus.MapGaps", "atticus.mapGaps", StepTarget.REPO, listOf("map"), after = listOf("--gaps")),
             // Measuring the join against a reference written by hand (docs/guide/measure.md).
-            job("Atticus.JoinMeasure", StepTarget.FILE, listOf("join", "measure")),
+            job("Atticus.JoinMeasure", "atticus.joinMeasure", StepTarget.FILE, listOf("join", "measure")),
             // ADR 0148: precision from the sample audit's answers.
-            job("Atticus.AuditReport", StepTarget.REPO, listOf("verify", "audit"), after = listOf("--report")),
+            job("Atticus.AuditReport", "atticus.auditReport", StepTarget.REPO, listOf("verify", "audit"), after = listOf("--report")),
             // ADR 0144, 0156: what a change breaks, up the chain.
-            job("Atticus.ChangeImpact", StepTarget.CHANGE, listOf("change", "impact")),
+            job("Atticus.ChangeImpact", "atticus.changeImpact", StepTarget.CHANGE, listOf("change", "impact")),
             // ADR 0146: a repo's starting spec, proposed, then accepted by a person.
-            job("Atticus.SeedSpec", StepTarget.REPO, listOf("spec", "seed")),
-            job("Atticus.AcceptSeed", StepTarget.REPO, listOf("spec", "accept")),
+            job("Atticus.SeedSpec", "atticus.specSeed", StepTarget.REPO, listOf("spec", "seed")),
+            job("Atticus.AcceptSeed", "atticus.specAccept", StepTarget.REPO, listOf("spec", "accept")),
             // ADR 0153: every open question in one sheet, and the sheet's answers applied.
-            job("Atticus.QuestionsSheet", StepTarget.NONE, listOf("questions", "sheet")),
-            job("Atticus.ApplySheet", StepTarget.FILE, listOf("questions", "sheet"), targetFlag = "--apply"),
+            job("Atticus.QuestionsSheet", "atticus.questionsSheet", StepTarget.NONE, listOf("questions", "sheet")),
+            job("Atticus.ApplySheet", "atticus.questionsApply", StepTarget.FILE, listOf("questions", "sheet"), targetFlag = "--apply"),
             // ADR 0144: the assistant's proposals, each citation checked.
-            job("Atticus.CheckProposals", StepTarget.NONE, listOf("questions", "proposed")),
+            job("Atticus.CheckProposals", "atticus.questionsProposed", StepTarget.NONE, listOf("questions", "proposed")),
             // ADR 0151: a gateway or API catalogue export, kept only as counts.
-            job("Atticus.IntakeTraffic", StepTarget.FILE, listOf("intake", "traffic")),
+            job("Atticus.IntakeTraffic", "atticus.intakeTraffic", StepTarget.FILE, listOf("intake", "traffic")),
             // F5: a repo's id moved with everything filed under it.
-            job("Atticus.RenameRepo", StepTarget.REPO, listOf("repo", "rename")),
+            job("Atticus.RenameRepo", "atticus.repoRename", StepTarget.REPO, listOf("repo", "rename")),
         )
 
     /** `/atticus-propose`: the assistant proposes an answer to each open question (ADR 0144). */

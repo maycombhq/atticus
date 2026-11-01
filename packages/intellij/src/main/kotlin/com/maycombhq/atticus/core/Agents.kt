@@ -41,6 +41,8 @@ object Agents {
             "needs" to StepAgent("atticus-knowledge-reader", "knowledge", "atticus-needs"),
             "find" to StepAgent("atticus-knowledge-reader", "knowledge", "atticus-find"),
             "describe" to StepAgent("atticus-repo-describer", "read"),
+            // beta.10 (ADR 0144): an answer proposed from the code for each open question.
+            "propose" to StepAgent("atticus-question-proposer", "read", "atticus-propose"),
         )
 
     private val BY_TWO =

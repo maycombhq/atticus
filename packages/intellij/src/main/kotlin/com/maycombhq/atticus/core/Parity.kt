@@ -56,6 +56,8 @@ object Parity {
             put("atticus.runStep", action("Atticus.RunStep"))
             // ADR 0121 addendum: the next step for Copilot's agent mode, its agent named (ADR 0159).
             put("atticus.runInCopilotAgent", action("Atticus.RunInCopilotAgent"))
+            // VS Code's "Open the step in Copilot Chat" (agent mode where the agent file is there).
+            put("atticus.openChatStep", action("Atticus.RunInCopilotAgent"))
             put("atticus.setupStep", action("Atticus.RunStep"))
 
             // ---------------------------------------------------------- what waits on you
@@ -68,6 +70,11 @@ object Parity {
             put("atticus.clearFilterWaiting", action("Atticus.ClearFilterWaiting"))
             put("atticus.findingAction", action("Atticus.FindingAction"))
             put("atticus.raiseNeeds", action("Atticus.RaiseNeeds"))
+            // beta.10 (ADR 0159): the proposals, and My teams' (one toggle here for VS Code's two).
+            put("atticus.propose", action("Atticus.Propose"))
+            put("atticus.acceptProposal", action("Atticus.AcceptProposal"))
+            put("atticus.questionsMine", action("Atticus.WaitingMine"))
+            put("atticus.questionsAll", action("Atticus.WaitingMine"))
             put("atticus.openNeedPage", app("#/home"))
 
             // ---------------------------------------------------------- my changes
