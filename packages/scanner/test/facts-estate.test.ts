@@ -5,6 +5,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { stringify } from "yaml";
 import {
   loadOrgPack,
+  NO_TARGET,
   parseFacts,
   serializeRecord,
   type CatalogRecord,
@@ -311,6 +312,55 @@ describe("a repo holding an app and its API, the app's calls relative", () => {
       how: "answer",
       entry: { fact: "e-get-archive-replica" },
     });
+  });
+});
+
+/**
+ * F3: a "None of these" answer binds. The person said nothing in the estate answers the call,
+ * so it is neither joined by path nor asked again.
+ */
+describe("a targets answer of None of these (F3)", () => {
+  const notes = (): Fact[] => {
+    const r = parseFacts(readFileSync(join(ESTATE, "relative", "forge-notes.jsonl"), "utf8"));
+    if (!r.ok) throw new Error(JSON.stringify(r.issues));
+    return r.facts;
+  };
+  it("keeps the call out of the join and stops asking", () => {
+    const first = catalogWithFacts({
+      repo: "forge-notes",
+      facts: notes(),
+      existing: [],
+      op,
+      decisions: [],
+      estate: [],
+    });
+    const q = targetQuestionDrafts(notes(), first.records, op, first.join?.asks).find(
+      (d) => d.factId === "c-archive",
+    )!;
+    const none = {
+      id: q.id,
+      state: "answered",
+      options: q.draft.options,
+      answer: { option: q.draft.options.length },
+      askedBy: { step: TARGETS_STEP },
+    } as unknown as Question;
+    expect(q.draft.options.at(-1)!.label).toBe("None of these");
+    const targets = targetsFromAnswers("forge-notes", notes(), [none]);
+    expect(targets).toEqual({ "c-archive": NO_TARGET });
+    const again = catalogWithFacts({
+      repo: "forge-notes",
+      facts: notes(),
+      existing: [],
+      op,
+      decisions: [],
+      estate: [],
+      targets,
+    });
+    expect(again.invalid).toEqual([]);
+    expect(again.join?.asks).toEqual([]);
+    expect(again.join?.joins.some((j) => j.call.fact === "c-archive")).toBe(false);
+    // the answer is no target: no record takes it as a name
+    expect(JSON.stringify(again.records)).not.toContain(NO_TARGET);
   });
 });
 

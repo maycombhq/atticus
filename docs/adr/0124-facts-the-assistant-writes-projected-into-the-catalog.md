@@ -928,3 +928,8 @@ The gateway batch's instructions go from about 7,401 characters (~1,850 tokens) 
 - **The bug.** An Interface's confidence was `verified` whenever both facts were declared, however the callee was found. The join fallback (C-join: no target, the one entry that serves the path) and a host whose first label matches a component's name are guesses, not citations of the callee, yet they were shown as verified, and a wrong one drew an edge between services that don't talk.
 - **The rule.** An Interface is `verified` only when both ends are declared **and** the callee was named: by an answer, the call's `to`, or a host or base path the manifest lists. A join by path or by a host's first label is `inferred`, and its `flags` say which (`joined-by-path`, `joined-by-label`), as `declared-caller` does for a caller found from an entry's side. `flags` is already optional on the Interface, so C1 is unchanged.
 - **Catalogs already written** take the new confidence at the next `atticus verify --write`; no fact changes.
+
+## Addendum (F-bind): answers and outside systems bind (no C1 to C6 change)
+
+- **"None of these".** The targets answer that nothing in the estate serves a call was read as no answer, so the join fallback could still guess it. It is now the target `(none)` (`NO_TARGET`, not a valid fact id, so it never names a component): the call is neither joined nor asked again, and no record takes it as a name.
+- **Outside systems.** `outsideSystems` and the merge's host-label match took vendors only. They now take every profile system that no estate repo's `system` names (another team's, with boundary `internal`), and still every vendor. A system an estate repo belongs to stays the estate's own.

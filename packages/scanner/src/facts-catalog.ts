@@ -12,6 +12,7 @@ import {
   parseRecord,
   projectFacts,
   questionId,
+  NO_TARGET,
   slugify,
   type CallersResult,
   type CatalogRecord,
@@ -280,7 +281,12 @@ export function targetsFromAnswers(
       asked.answer.option !== undefined
         ? asked.options[asked.answer.option - 1]?.label
         : asked.answer.text;
-    if (!label || label === TARGETS_NONE) continue;
+    if (!label) continue;
+    // F3: "None of these" binds: the call is kept out of the join, not guessed by path.
+    if (label === TARGETS_NONE) {
+      out[f.id] = NO_TARGET;
+      continue;
+    }
     const to = slugify(label);
     if (to) out[f.id] = to;
   }
@@ -363,7 +369,7 @@ export function factsRecords(input: {
   const facts = withComponents(repo, input.facts, op, input.renames).map((f): Fact => {
     let g: Fact = f;
     const to = input.targets?.[g.id];
-    if (g.kind === "call" && !g.to && to) g = { ...g, to };
+    if (g.kind === "call" && !g.to && to && to !== NO_TARGET) g = { ...g, to };
     return g;
   });
   const projected = projectFacts(facts, manifest?.system ? { system: manifest.system } : {});
@@ -416,13 +422,15 @@ export function factsRecords(input: {
 
 /** The estate's repos as the join reads them (ADR 0124, C-join): the manifest's component, hosts and modules. */
 /**
- * The outside systems a call's `to` may name (the org pack's vendors: id, name and aliases): a
- * call naming one keeps it and is never joined by path (ADR 0124 addendum C-join).
+ * The outside systems a call's `to` may name (id, name and aliases): a call naming one keeps it
+ * and is never joined by path (ADR 0124 addendum C-join). Every vendor, and (F3) every other
+ * system the profiles declare that no estate repo belongs to, such as another team's.
  */
 export function outsideSystems(op: OrgPack): string[] {
+  const own = new Set(estateRepos(op).flatMap((r) => (r.system ? [r.system] : [])));
   return op.profiles
     .flatMap((p) => p.profile?.systems ?? [])
-    .filter((s) => s.boundary === "vendor")
+    .filter((s) => s.boundary === "vendor" || !own.has(s.id))
     .flatMap((s) => [s.id, s.name, ...s.aliases])
     .sort();
 }

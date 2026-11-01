@@ -9,6 +9,7 @@ import {
   serializeRecord,
   type CatalogRecord,
   type Fact,
+  NO_TARGET,
   type OrgPack,
   type Question,
 } from "@maycombhq/core";
@@ -16,6 +17,7 @@ import {
   catalogWithFacts,
   estateRepos,
   mergeEstate,
+  outsideSystems,
   readCatalog,
   targetQuestionFor,
   targetQuestionDrafts,
@@ -291,6 +293,41 @@ describe("a call with no target and no host becomes a question (ADR 0078)", () =
       ...q,
       answer: { option: drafts[0]!.draft.options.length },
     } as unknown as Question;
-    expect(targetsFromAnswers("forge-ledger", noHost(), [none])).toEqual({});
+    // F3: "None of these" binds: the call is kept out of the join, never guessed by path.
+    expect(targetsFromAnswers("forge-ledger", noHost(), [none])).toEqual({ "c-notify": NO_TARGET });
+  });
+});
+
+/**
+ * F3: another team's system the profile declares is outside the estate as a vendor is, so a
+ * call that names it keeps it rather than being joined by path. A system an estate repo belongs
+ * to is the estate's own, whatever its boundary.
+ */
+describe("outsideSystems: every declared system no estate repo belongs to (F3)", () => {
+  it("counts an internal team's system with no repo, and the vendors, but not the estate's own", () => {
+    const op = {
+      profiles: [
+        {
+          platform: "forge",
+          profile: {
+            systems: [
+              { id: "ledger", name: "Ledger", boundary: "product", aliases: [] },
+              { id: "forge-gateway", name: "Forge Gateway", boundary: "internal", aliases: [] },
+              { id: "risk-team", name: "Risk Team", boundary: "internal", aliases: ["risk"] },
+              { id: "northwind-pay", name: "Northwind Pay", boundary: "vendor", aliases: [] },
+            ],
+          },
+          repos: {
+            repos: [
+              { id: "forge-ledger", system: "ledger", type: "service" },
+              { id: "forge-gw", system: "forge-gateway", type: "gateway" },
+            ],
+          },
+        },
+      ],
+    } as unknown as OrgPack;
+    expect(outsideSystems(op)).toEqual(
+      ["Northwind Pay", "Risk Team", "northwind-pay", "risk", "risk-team"].sort(),
+    );
   });
 });

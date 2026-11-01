@@ -296,7 +296,7 @@ describe("mergeCatalog: hosts and gateways (ADR 0053)", () => {
         return `${i.from}->${i.to} ${i.via} ${i.method ?? ""} ${i.normalizedPath} ${i.confidence}`;
       });
 
-  it("reaches a vendor system through a host label that is its name or alias, and only then", () => {
+  it("reaches an outside system through a host label that is its name or alias, and only then", () => {
     const vendors = [
       ...systems,
       {
@@ -317,7 +317,7 @@ describe("mergeCatalog: hosts and gateways (ADR 0053)", () => {
         call("bff", "POST https://api.lanternmail.example/v3/messages"),
         // "lantern" alone names two vendors: left loose.
         call("bff", "POST https://lantern.example/x"),
-        // Not a vendor: the rule is for vendor systems only.
+        // F3: another team's system no estate repo belongs to is outside too, as a vendor is.
         call("bff", "GET https://api.crm.example/contacts"),
       ],
       repos,
@@ -329,6 +329,7 @@ describe("mergeCatalog: hosts and gateways (ADR 0053)", () => {
         .filter((i) => !i.startsWith("bff->api") && !i.startsWith("bff->cards"))
         .sort(),
     ).toEqual([
+      "bff->harbor-crm direct GET /contacts inferred",
       "bff->lantern-mail direct POST /v3/messages inferred",
       "bff->northwind-pay direct POST /v1/charges inferred",
       "bff->northwind-pay direct POST /v2/refunds inferred",

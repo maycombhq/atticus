@@ -125,6 +125,13 @@ export interface FactEnd {
   at: string;
 }
 
+/**
+ * F3: the target a person gave a call by answering "None of these": nothing in the estate
+ * answers it. Not a name (no fact id has brackets), so it never names a component, and the call
+ * is neither joined by path nor asked again.
+ */
+export const NO_TARGET = "(none)";
+
 /** F2: an Interface's flags when nobody named its callee: found by path, or by a host's first label. */
 export const JOINED_BY_PATH = "joined-by-path";
 export const JOINED_BY_LABEL = "joined-by-label";
@@ -587,6 +594,7 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
     let scope: { scope: (e: Node) => boolean; target: string } | undefined;
     let how: JoinHow | undefined;
     let byLabel = false;
+    if (answer === NO_TARGET) continue;
     if (answer) {
       scope = named(answer);
       if (!scope) continue; // a vendor or "none": nothing in the estate to join

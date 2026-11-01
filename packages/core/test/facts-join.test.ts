@@ -5,6 +5,7 @@ import { parse } from "yaml";
 import {
   joinFacts,
   joinRecords,
+  NO_TARGET,
   parseFacts,
   parseRecord,
   type Fact,
@@ -403,6 +404,49 @@ describe("joinFacts: a relative call whose target names nothing in the estate", 
  * The path fallback and a host whose first label happens to be a component's name are marked
  * inferred on the Interface, with a flag saying how the callee was found.
  */
+describe("joinFacts: an answer that names nothing binds (F3)", () => {
+  const repos: JoinRepo[] = [
+    {
+      repo: "forge-notes",
+      facts: [
+        call("forge-notes", "c-tags", {
+          component: "forge-notes-web",
+          method: "GET",
+          path: "/api/tags",
+        }),
+      ],
+    },
+    {
+      repo: "forge-archive",
+      facts: [entry("forge-archive", "e-tags", { method: "GET", path: "/api/tags" })],
+    },
+  ];
+  it("never joins by path a call a person said nothing in the estate answers", () => {
+    expect(joinFacts({ repos }).joins).toHaveLength(1);
+    const out = joinFacts({ repos, targets: { "forge-notes": { "c-tags": NO_TARGET } } });
+    expect(out.joins).toEqual([]);
+    expect(out.asks).toEqual([]);
+  });
+
+  it("keeps a call to an outside system it names out of the path join", () => {
+    const named: JoinRepo[] = [
+      {
+        ...repos[0]!,
+        facts: [
+          call("forge-notes", "c-tags", {
+            component: "forge-notes-web",
+            method: "GET",
+            path: "/api/tags",
+            to: "Forge Risk Team",
+          }),
+        ],
+      },
+      repos[1]!,
+    ];
+    expect(joinFacts({ repos: named, outside: ["forge-risk-team"] }).joins).toEqual([]);
+  });
+});
+
 describe("joinRecords: a guessed join is inferred, with how it was found (F2)", () => {
   it("marks a join by path inferred and flags it joined-by-path", () => {
     const repos: JoinRepo[] = [

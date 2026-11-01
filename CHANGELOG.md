@@ -12,6 +12,11 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 - A link the join found without anyone naming the callee was shown as verified when the facts at both ends were: a call with no target joined to the one entry in the estate that serves its path, or a call on a host whose first label happened to be a service's name (`forge-limits.apps.example.internal`). Both are guesses, and a wrong one drew a line between two services that don't talk. Such a link is now `inferred`, with a flag saying how it was found (`joined-by-path` or `joined-by-label`), so it shows as unconfirmed on the map and in the drill-down. A link a call named, a person answered or the manifest's hosts and base paths decided is unchanged. No repo needs reading again: run `atticus verify --all --write`.
 
+### Fixed: "None of these" and another team's system now hold
+
+- Answering a "Which repo or system answers …?" question with **None of these** was dropped, so the next `atticus verify --write` could still join the call by path to whichever entry happened to serve it. The answer now binds: the call is left out of the join and not asked again.
+- Only systems with `boundary: vendor` counted as outside the estate, so a call to another internal team's system (declared in the profile with `boundary: internal` and no repo of yours) was guessed onto one of your own services. Every system the profile declares that no repo in `repos.manifest.yaml` belongs to is now outside, as a vendor is: a call naming it, or on a host named for it, goes to that system. Declare other teams' systems in the profile with `boundary: internal` (the workaround of marking them `vendor` still works). Run `atticus verify --all --write`.
+
 ## 2.0.0-beta.9 (2026-10-29)
 
 ### A repo's `basePath` on a shared host (`repos.manifest.yaml` version 3)
