@@ -1,0 +1,14 @@
+<ProxyEndpoint name="default">
+  <Flows>
+    <Flow name="CreatePayment">
+      <Condition>(proxy.pathsuffix MatchesPath "/payments") and (request.verb = "POST")</Condition>
+    </Flow>
+  </Flows>
+  <HTTPProxyConnection>
+    <BasePath>/forge/payments/v1</BasePath>
+    <VirtualHost>internal</VirtualHost>
+  </HTTPProxyConnection>
+  <RouteRule name="default">
+    <TargetEndpoint>payments</TargetEndpoint>
+  </RouteRule>
+</ProxyEndpoint>

@@ -1,0 +1,17 @@
+schemaVersion: 1
+platform: forge
+name: Forge, shaped like a large bank's estate (invented, for measuring the links the estate join makes)
+systems:
+  - { id: portal, name: Portal, boundary: product, owner: team-portal, aliases: [] }
+  - { id: platform, name: Platform, boundary: product, owner: team-platform, aliases: [] }
+  - { id: accounts, name: Accounts, boundary: product, owner: team-accounts, aliases: [] }
+  - { id: payments, name: Payments, boundary: product, owner: team-payments, aliases: [] }
+  - { id: cards, name: Cards, boundary: product, owner: team-cards, aliases: [] }
+  - { id: notifications, name: Notifications, boundary: product, owner: team-notifications, aliases: [] }
+  # Other teams' systems no repo here belongs to: outside the estate, though inside Forge.
+  - { id: harbor-audit, name: Harbor Audit, boundary: internal, owner: team-harbor, aliases: [] }
+  - { id: forge-sso, name: Forge SSO, boundary: internal, owner: team-identity, aliases: [sso.forge.internal] }
+  # Invented vendors, each named by the host the code calls it on.
+  - { id: northwind-pay, name: Northwind Pay, boundary: vendor, owner: team-payments, aliases: [api.northwindpay.example] }
+  - { id: lantern-mail, name: Lantern Mail, boundary: vendor, owner: team-notifications, aliases: [api.lanternmail.example] }
+environments: [dev, prod]

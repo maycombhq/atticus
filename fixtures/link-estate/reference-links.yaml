@@ -1,0 +1,108 @@
+# The reference links of the invented estate (fixtures/link-estate/README.md), written by hand:
+# for each repo, the entries it serves and the calls it makes, each call with the estate repo it
+# should reach (`reaches`, after any gateway that forwards it), the outside system it should reach
+# (`outside`: a vendor, or another team's system no repo here belongs to), or `reaches: none`.
+# A call is found by its line (`at`, within 3 lines) and its method and path (`call`).
+# The same format a person writes for their own estate (docs/guide/measure.md).
+estate: forge-bank
+repos:
+  - repo: forge-portal-bff
+    entries:
+      - GET /portal/accounts/{id}
+      - POST /portal/payments
+      - GET /portal/payments/{id}
+    calls:
+      - call: GET /forge/accounts/v1/accounts/{id}
+        at: src/main/java/forge/portal/AccountsClient.java:16
+        reaches: forge-accounts
+      - call: POST /forge/payments/v1/payments
+        at: src/main/java/forge/portal/PaymentsClient.java:16
+        reaches: forge-payments
+      # The facts leave this one out: a reading miss.
+      - call: GET /forge/payments/v1/payments/{id}
+        at: src/main/java/forge/portal/PaymentsClient.java:20
+        reaches: forge-payments
+  - repo: forge-proxy-accounts-v1
+    entries:
+      - GET /forge/accounts/v1/accounts/{id}
+    calls:
+      - call: GET /forge-svc/accounts/accounts/{id}
+        at: apiproxy/proxies/default.xml:4
+        reaches: forge-accounts
+  - repo: forge-proxy-payments-v1
+    entries:
+      - POST /forge/payments/v1/payments
+    calls:
+      - call: POST /forge-svc/payments/payments
+        at: apiproxy/proxies/default.xml:4
+        reaches: forge-payments
+  - repo: forge-proxy-northwind-v1
+    entries:
+      - POST /forge/northwind/v1/charges
+    calls:
+      - call: POST /v2/charges
+        at: apiproxy/proxies/default.xml:4
+        outside: northwind-pay
+  - repo: forge-accounts
+    entries:
+      - GET /accounts/{id}
+      - GET /limits/{id}
+      - POST /accounts/{id}/debits
+    calls:
+      # Its base URL is ${NOTIFY_URL}, set in forge-deploy-config's ConfigMap.
+      - call: POST /notifications
+        at: src/main/java/forge/accounts/NotifyClient.java:16
+        reaches: forge-notifications
+      # The starter's service id audit-gw: Harbor Audit, which no repo here holds.
+      - call: POST /events
+        at: src/main/java/forge/accounts/AuditClient.java:11
+        outside: harbor-audit
+  - repo: forge-payments
+    entries:
+      - POST /payments
+      - GET /ping
+    calls:
+      # The starter's service id limits: the cards service's limits.
+      - call: GET /limits/{id}
+        at: src/main/java/forge/payments/PaymentsService.java:24
+        reaches: forge-cards
+      # Its base URL is ${ACCOUNTS_URL}, set in forge-deploy-config's Helm values.
+      - call: POST /accounts/{id}/debits
+        at: src/main/java/forge/payments/PaymentsService.java:25
+        reaches: forge-accounts
+      # Through the external proxy, which forwards it out to Northwind Pay.
+      - call: POST /forge/northwind/v1/charges
+        at: src/main/java/forge/payments/PaymentsService.java:26
+        reaches: forge-proxy-northwind-v1
+      - call: POST /notifications
+        at: src/main/java/forge/payments/PaymentsService.java:27
+        reaches: forge-notifications
+  - repo: forge-cards
+    entries:
+      - GET /limits/{id}
+      - GET /cards/{id}/ready
+    calls:
+      - call: GET /accounts/{id}
+        at: src/main/java/forge/cards/CardsController.java:15
+        reaches: forge-accounts
+      - call: GET /ping
+        at: src/main/java/forge/cards/CardsController.java:21
+        reaches: forge-payments
+  - repo: forge-notifications
+    entries:
+      - POST /notifications
+      - POST /events
+    calls:
+      # The accounts service's cluster address: its first label names the component.
+      - call: GET /accounts/{id}
+        at: src/main/java/forge/notifications/NotificationsService.java:20
+        reaches: forge-accounts
+      - call: POST /v1/messages
+        at: src/main/java/forge/notifications/NotificationsService.java:21
+        outside: lantern-mail
+  - repo: forge-starter
+    calls:
+      # Every service's token, from ${FORGE_SSO_URL}, set in forge-deploy-config's Helm values.
+      - call: POST /oauth2/token
+        at: src/main/java/forge/starter/http/TokenClient.java:16
+        outside: forge-sso

@@ -1,0 +1,8 @@
+spring:
+  application:
+    name: notifications-api
+forge:
+  lantern:
+    base-url: https://api.lanternmail.example
+  accounts:
+    base-url: http://accounts-api.forge-accounts.svc.cluster.local:8080

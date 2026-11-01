@@ -1,0 +1,83 @@
+# Ten invented Forge repos, shaped like a large bank's estate (see fixtures/link-estate/README.md):
+# one Apigee proxy per repo, all behind the gateway host api.forge.example, each told apart by its
+# base path (ADR 0134); Spring Boot services behind one OpenShift ingress host, apps.forge.internal,
+# each under /forge-svc/<module>; the house starter library whose ForgeRestClient makes every HTTP
+# call; and the deploy repo whose ConfigMaps and Helm values set the URLs the services' config
+# leaves as ${PLACEHOLDERS}.
+schemaVersion: 3
+platform: forge
+repos:
+  - id: forge-portal-bff
+    url: https://git.forge.example/forge/forge-portal-bff.git
+    type: spring-boot
+    owner: team-portal
+    component: portal-bff
+    system: portal
+  - id: forge-proxy-accounts-v1
+    url: https://git.forge.example/apigee/forge-proxy-accounts-v1.git
+    type: gateway
+    owner: team-platform
+    component: proxy-accounts-v1
+    system: platform
+    hosts: [api.forge.example]
+    basePath: /forge/accounts/v1
+  - id: forge-proxy-payments-v1
+    url: https://git.forge.example/apigee/forge-proxy-payments-v1.git
+    type: gateway
+    owner: team-platform
+    component: proxy-payments-v1
+    system: platform
+    hosts: [api.forge.example]
+    basePath: /forge/payments/v1
+  - id: forge-proxy-northwind-v1
+    url: https://git.forge.example/apigee/forge-proxy-northwind-v1.git
+    type: gateway-external
+    owner: team-platform
+    component: proxy-northwind-v1
+    system: platform
+    hosts: [api.forge.example]
+    basePath: /forge/northwind/v1
+  - id: forge-accounts
+    url: https://git.forge.example/forge/forge-accounts.git
+    type: spring-boot
+    owner: team-accounts
+    component: accounts-api
+    system: accounts
+    hosts: [apps.forge.internal]
+    basePath: /forge-svc/accounts
+  - id: forge-payments
+    url: https://git.forge.example/forge/forge-payments.git
+    type: spring-boot
+    owner: team-payments
+    component: payments-api
+    system: payments
+    hosts: [apps.forge.internal]
+    basePath: /forge-svc/payments
+  - id: forge-cards
+    url: https://git.forge.example/forge/forge-cards.git
+    type: spring-boot
+    owner: team-cards
+    component: cards-api
+    system: cards
+    hosts: [apps.forge.internal]
+    basePath: /forge-svc/cards
+  - id: forge-notifications
+    url: https://git.forge.example/forge/forge-notifications.git
+    type: spring-boot
+    owner: team-notifications
+    component: notifications-api
+    system: notifications
+    hosts: [apps.forge.internal]
+    basePath: /forge-svc/notifications
+  - id: forge-starter
+    url: https://git.forge.example/platform/forge-starter.git
+    type: library
+    owner: team-platform
+    component: forge-starter
+    system: platform
+  - id: forge-deploy-config
+    url: https://git.forge.example/platform/forge-deploy-config.git
+    type: deploy-config
+    owner: team-platform
+    component: deploy-config
+    system: platform

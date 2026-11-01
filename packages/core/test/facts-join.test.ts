@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import {
+  callHostOf,
   joinFacts,
   joinRecords,
   NO_TARGET,
@@ -483,6 +484,38 @@ describe("joinFacts: a call on a host an outside system names (O1)", () => {
     const listed = [repos[0]!, { ...repos[1]!, hosts: ["forge-archive.tidewater.example"] }];
     const out = joinFacts({ repos: listed, outside: ["forge-archive-tidewater-example"] });
     expect(out.joins.map((j) => j.how)).toEqual(["host"]);
+  });
+});
+
+describe("callHostOf: the host a call goes to, as the join reads it (P1)", () => {
+  const c = (o: Record<string, unknown>) =>
+    call("forge-notes", "c-x", { method: "GET", path: "/api/x", ...o }) as Fact & {
+      kind: "call";
+    };
+  const cfg = (key: string, v: Record<string, unknown>): Fact =>
+    ({
+      kind: "config",
+      id: `cfg-${key}`,
+      repo: "forge-notes",
+      commit: "abc1234",
+      settingKind: "config",
+      key,
+      ...v,
+      cite: { file: "application.yml", line: 1, value: key },
+      verified: "line",
+      by: "assistant",
+      conf: "declared",
+    }) as Fact;
+  it("takes the call's host, else its base's config value, else the base itself", () => {
+    expect(callHostOf(c({ host: "https://api.lanternmail.example/v1" }), [])).toBe(
+      "api.lanternmail.example",
+    );
+    const facts = [cfg("forge.lantern.url", { value: "http://mail.forge.internal:8025" })];
+    expect(callHostOf(c({ base: "forge.lantern.url" }), facts)).toBe("mail.forge.internal:8025");
+    // A ${PLACEHOLDER} names no host, so the base's key is read as one, as the join does.
+    const held = [cfg("forge.notify.url", { source: "${NOTIFY_URL}" })];
+    expect(callHostOf(c({ base: "forge.notify.url" }), held)).toBe("forge.notify.url");
+    expect(callHostOf(c({}), [])).toBeUndefined();
   });
 });
 

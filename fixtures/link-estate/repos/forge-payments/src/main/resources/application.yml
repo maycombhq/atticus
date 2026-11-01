@@ -1,0 +1,10 @@
+spring:
+  application:
+    name: payments-api
+forge:
+  accounts:
+    base-url: ${ACCOUNTS_URL}
+  notify:
+    base-url: https://apps.forge.internal/forge-svc/notifications
+  gateway:
+    base-url: https://api.forge.example
