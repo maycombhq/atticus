@@ -4,6 +4,7 @@ import {
   FACTS_SCHEMA_VERSION,
   interfaceId,
   JOINED_BY_HOST,
+  JOINED_BY_SERVICE_NAME,
   JOINED_DESPITE_CONFLICT,
   joinFacts,
   joinRecords,
@@ -435,6 +436,47 @@ describe("J1: a Service's in-cluster address, and a module named <repo>/<module>
       expect(j!.byLabel, c).toBeUndefined();
     }
     expect(out.exposure).toBeUndefined();
+  });
+
+  it("a bare name or <name>.<ns> is a guess (J1): it resolves only in the caller's own namespace", () => {
+    const out = joinFacts({ repos: repos([svc]) });
+    expect(joinOf(out, "c-fqdn")[0]!.guesses).toBeUndefined();
+    for (const c of ["c-short", "c-ns"])
+      expect(joinOf(out, c)[0]!.guesses, c).toEqual([JOINED_BY_SERVICE_NAME]);
+    // the bare name alone makes the link: inferred, flagged
+    const alone = repos([svc]).map((r) =>
+      r.repo === "forge-pay" ? { ...r, facts: r.facts.filter((f) => f.id === "c-short") } : r,
+    );
+    const aloneOut = joinFacts({ repos: alone });
+    const id = joinOf(aloneOut, "c-short")[0]!.interface;
+    expect(
+      joinRecords(aloneOut, alone).find((r) => r.kind === "Interface" && r.id === id),
+    ).toMatchObject({ confidence: "inferred", flags: [JOINED_BY_SERVICE_NAME] });
+  });
+
+  it("a bare name is verified when the caller's own Service is cited in the same namespace", () => {
+    const own = (ns: string): Fact =>
+      fact({
+        kind: "deploy",
+        id: "service.pay",
+        repo: "forge-deploy",
+        platform: "kubernetes",
+        resourceType: "service",
+        resourceName: "pay-api",
+        host: `pay-api.${ns}.svc.cluster.local:8080`,
+        exposes: "pay-api",
+        cite: { file: "apps/pay/service.yaml", line: 4, value: "pay-api" },
+      });
+    // pay-api runs in forge-pay: accounts-api in forge-accounts is not what its bare name reaches
+    const elsewhere = joinFacts({ repos: repos([svc, own("forge-pay")]) });
+    for (const c of ["c-short", "c-ns"])
+      expect(joinOf(elsewhere, c)[0]!.guesses, c).toEqual([JOINED_BY_SERVICE_NAME]);
+    const same = joinFacts({ repos: repos([svc, own("forge-accounts")]) });
+    for (const c of ["c-short", "c-ns"]) {
+      const [j] = joinOf(same, c);
+      expect(j, c).toMatchObject({ entry: { fact: "e-account" }, how: "host" });
+      expect(j!.guesses, c).toBeUndefined();
+    }
   });
 
   it("without the Service, the short name is the host first-label guess it was", () => {

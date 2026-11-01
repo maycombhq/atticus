@@ -200,6 +200,7 @@ const HOW_OF_FLAG: Record<string, Join["how"]> = {
   "joined-by-platform-setting": "platform-setting",
   "joined-by-folder-name": "folder-name",
   "joined-despite-conflict": "conflict",
+  "joined-by-service-name": "service-name",
   "joined-by-answer": "answer",
   "joined-by-name": "named",
   "joined-by-repo": "repo",

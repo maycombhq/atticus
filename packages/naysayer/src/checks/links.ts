@@ -27,7 +27,7 @@ import { calls, rowLocator, type Call } from "./interfaces.js";
  * A change that rests on a map error says so (ADR 0140, P4), so a map error never becomes a
  * design error: a link the join guessed (an Interface `inferred` and flagged with one of core's
  * `JOIN_GUESS_FLAGS`: `joined-by-path`, `-label`, `-platform-setting`, `-folder-name` or
- * `joined-despite-conflict`), a link question still open about a call the change plans, or a repo whose
+ * `joined-despite-conflict` or `joined-by-service-name`), a link question still open about a call the change plans, or a repo whose
  * read is stale or incomplete. It says only what the files show: a link a person, a name, a repo
  * or a host made says nothing, and a repo never read by the assistant is left to the checks that
  * ask about what the catalog doesn't know.
@@ -42,6 +42,8 @@ const GUESSES: Record<JoinGuessFlag, string> = {
   "joined-by-platform-setting": "by a platform-wide setting nobody set for it",
   "joined-by-folder-name": "by the folder name of the setting that gives its host",
   "joined-despite-conflict": "by a host or base path an open conflict disputes",
+  "joined-by-service-name":
+    "by a Kubernetes Service's short name, from a namespace not shown to be its",
 };
 const guessOf = (f: string): f is JoinGuessFlag => Object.hasOwn(GUESSES, f);
 

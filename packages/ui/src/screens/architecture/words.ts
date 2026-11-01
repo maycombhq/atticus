@@ -86,6 +86,7 @@ export const WORDS = {
     "joined-by-platform-setting": "Joined by a platform-wide setting: a guess",
     "joined-by-folder-name": "Joined by the folder its host's setting is in: a guess",
     "joined-despite-conflict": "Joined by a host the manifest disagrees with: a guess",
+    "joined-by-service-name": "Joined by a Service's short name from another namespace: a guess",
     // ADR 0124 addendum D-app, F3: from the repos' facts.
     unverified: "No fact verified from code",
     question: "A question is open on it",
@@ -113,6 +114,8 @@ export const WORDS = {
       "Open Why is this linked?, and say where it goes if the guess is wrong; or name the service in the setting's target.",
     "joined-despite-conflict":
       "Settle the host conflict on Map › Trust (list the host in the manifest, or correct the deploy file).",
+    "joined-by-service-name":
+      "Open Why is this linked?, and say where it goes if the guess is wrong; or have the caller's own Service read so its namespace is known, or call the Service by its full .svc.cluster.local name.",
     unverified: "Read the repo and verify it; Map › Trust lists what isn't checked yet.",
     question: "Answer the open question on Questions; Map › Trust lists the repo's questions.",
     corrected: "Run atticus verify on the repo with --write to apply the correction.",

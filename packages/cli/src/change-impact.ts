@@ -62,6 +62,7 @@ const GUESS_WORDS: Record<string, string> = {
   "joined-by-platform-setting": "by a platform-wide setting",
   "joined-by-folder-name": "by a setting's folder name",
   "joined-despite-conflict": "despite an open host conflict",
+  "joined-by-service-name": "by a Service's short name",
 };
 
 function n(count: number, what: string): string {

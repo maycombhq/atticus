@@ -685,6 +685,7 @@ describe("joinRecords: every Interface says how it was joined (C1, ADR 0135)", (
       "joined-by-label",
       "joined-by-path",
       "joined-by-platform-setting",
+      "joined-by-service-name",
       "joined-despite-conflict",
     ]);
     for (const g of JOIN_GUESS_FLAGS) expect(JOIN_HOW_FLAGS.has(g)).toBe(false);
