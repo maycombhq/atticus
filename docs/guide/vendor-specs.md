@@ -29,7 +29,9 @@ OpenAPI 3 and Swagger 2 specs are compared. For each operation, Atticus reads:
 
 - its method and path;
 - its auth and scopes;
-- its request and response fields, each with its type, whether it is required, and its enum values.
+- its request and response fields, each with its type, whether it is required, and its enum values;
+- the headers its success response lists (OpenAPI 3's `responses.<2xx>.headers`, and Swagger 2's), as response fields that are headers;
+- its error responses (each 4xx and 5xx status) and the fields of each one's body.
 
 Every operation and field cites the line of the spec it comes from. The newer version's operations go into the catalog as the vendor's Endpoints, each with a request Schema and a response Schema.
 
@@ -78,6 +80,11 @@ Atticus marks each change as breaking or additive by fixed rules, from a caller'
 - **Auth and scopes:**
   - the auth changed: breaking;
   - a new scope the token needs: breaking.
+- **A response header** is compared as a response field is, and said as a header.
+- **Error responses** (4xx and 5xx):
+  - one the operation may now answer: breaking (a caller must handle it);
+  - one it no longer answers: additive;
+  - one whose body changed: each field compared by the response rules above, said with its status ("its 402 response").
 
 The full table is in ADR 0130.
 

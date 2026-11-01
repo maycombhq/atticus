@@ -22,7 +22,11 @@ import type { VendorField, VendorOperation, VendorSpec } from "./vendor-ops.js";
  * - enum values: a request field that no longer takes a value breaks, one that takes a new value
  *   doesn't; a response field that may return a new value breaks, one that no longer returns one
  *   doesn't;
- * - auth changed breaks; a scope the token now needs breaks, one it no longer needs doesn't.
+ * - auth changed breaks; a scope the token now needs breaks, one it no longer needs doesn't;
+ * - (ADR 0156) a response header is compared as a response field is, and said as a header;
+ * - (ADR 0156) an error response (4xx, 5xx) added breaks (a caller must handle it), one removed
+ *   doesn't; an error response in both whose body changed is compared field by field by the
+ *   response rules above (`error-schema`, with its status).
  *
  * A rename is a field removed and one added in the same operation, side, place and parent, of the
  * same type, when exactly one of each: deterministic, and said as a rename so a person checks it.
@@ -39,7 +43,10 @@ export type VendorChangeKind =
   | "field-added"
   | "field-required"
   | "field-type"
-  | "field-enum";
+  | "field-enum"
+  | "error-added"
+  | "error-removed"
+  | "error-schema";
 
 const KIND_ORDER: VendorChangeKind[] = [
   "operation-removed",
@@ -53,6 +60,9 @@ const KIND_ORDER: VendorChangeKind[] = [
   "field-required",
   "field-type",
   "field-enum",
+  "error-added",
+  "error-schema",
+  "error-removed",
 ];
 
 export interface VendorChangeEnd {
@@ -73,6 +83,8 @@ export interface VendorChange {
   side?: "request" | "response";
   /** The field as the older version names it (the newer one's, when it is new). */
   field?: string;
+  /** The error response's status (ADR 0156): error-added, error-removed, error-schema. */
+  status?: string;
   before?: VendorChangeEnd;
   after?: VendorChangeEnd;
   /** One sentence: what changed and what it means for a caller. */
@@ -162,9 +174,20 @@ const opOf = (o: VendorOperation) => ({
   ...(o.operationId ? { operationId: o.operationId } : {}),
 });
 
-function changeId(kind: VendorChangeKind, o: VendorOperation, side?: string, field?: string) {
+function changeId(
+  kind: VendorChangeKind,
+  o: VendorOperation,
+  side?: string,
+  field?: string,
+  status?: string,
+) {
   const op = slug(`${o.method} ${o.path}`);
-  return [kind, op, ...(side && field ? [side, slug(field)] : [])].join(".");
+  return [
+    kind,
+    op,
+    ...(status ? [status] : []),
+    ...(side && field ? [side, slug(field)] : []),
+  ].join(".");
 }
 
 function operationChanges(o: VendorOperation, n: VendorOperation): VendorChange[] {
@@ -203,6 +226,60 @@ function operationChanges(o: VendorOperation, n: VendorOperation): VendorChange[
   }
   for (const side of ["request", "response"] as const)
     out.push(...fieldChanges(o[side], n[side], side, at, base));
+  out.push(...errorChanges(o, n, at));
+  return out;
+}
+
+/** ADR 0156: the error responses (4xx, 5xx) added, removed, and those whose body changed. */
+function errorChanges(o: VendorOperation, n: VendorOperation, at: string): VendorChange[] {
+  const out: VendorChange[] = [];
+  const olds = new Map((o.errors ?? []).map((e) => [e.status, e]));
+  const news = new Map((n.errors ?? []).map((e) => [e.status, e]));
+  const head = (kind: VendorChangeKind, status: string) => ({
+    id: changeId(kind, n, undefined, undefined, status),
+    kind,
+    operation: opOf(n),
+    endpoints: { older: o.id, newer: n.id },
+    status,
+  });
+  for (const [status, e] of news)
+    if (!olds.has(status))
+      out.push({
+        ...head("error-added", status),
+        severity: "breaking",
+        after: { value: status, cite: e.cite },
+        says: `${at}: it may now answer ${status}; a caller that doesn't handle ${status} must.`,
+      });
+  for (const [status, e] of olds)
+    if (!news.has(status))
+      out.push({
+        ...head("error-removed", status),
+        severity: "additive",
+        before: { value: status, cite: e.cite },
+        says: `${at}: it no longer answers ${status}; no caller has to change.`,
+      });
+  for (const [status, a] of olds) {
+    const b = news.get(status);
+    if (!b) continue;
+    const base: Base = (_kind, side, field) => ({
+      id: changeId("error-schema", n, side, field, status),
+      kind: "error-schema",
+      operation: opOf(n),
+      endpoints: { older: o.id, newer: n.id },
+      ...(side ? { side } : {}),
+      ...(field ? { field } : {}),
+      status,
+    });
+    out.push(
+      ...fieldChanges(
+        a.fields ?? [],
+        b.fields ?? [],
+        "response",
+        `${at} (its ${status} response)`,
+        base,
+      ),
+    );
+  }
   return out;
 }
 
@@ -220,6 +297,8 @@ function fieldChanges(
   base: Base,
 ): VendorChange[] {
   const out: VendorChange[] = [];
+  // ADR 0156: a header is said as one; a body (or query, form) field as a field.
+  const what = (f: VendorField) => `${side} ${f.in === "header" ? "header" : "field"}`;
   const key = (f: VendorField) => `${f.in}|${f.name}`;
   const byOld = new Map(olds.map((f) => [key(f), f]));
   const byNew = new Map(news.map((f) => [key(f), f]));
@@ -245,7 +324,7 @@ function fieldChanges(
       severity: "breaking",
       before: { value: r.name, cite: r.cite },
       after: { value: a.name, cite: a.cite },
-      says: `${at}: the ${side} field ${r.name} is now ${a.name}; ${req ? `a caller that still sends ${r.name} no longer sets it` : `a caller that reads ${r.name} gets nothing`}.`,
+      says: `${at}: the ${what(r)} ${r.name} is now ${a.name}; ${req ? `a caller that still sends ${r.name} no longer sets it` : `a caller that reads ${r.name} gets nothing`}.`,
     });
   }
   removed = removed.filter((f) => !renamed.some(([r]) => r === f));
@@ -260,8 +339,8 @@ function fieldChanges(
       severity: "breaking",
       before: { value: f.name, cite: f.cite },
       says: req
-        ? `${at}: the request field ${f.name} is gone; a caller that sends it may be refused, and what it meant is lost.`
-        : `${at}: the response field ${f.name} is gone; a caller that reads it gets nothing.`,
+        ? `${at}: the ${what(f)} ${f.name} is gone; a caller that sends it may be refused, and what it meant is lost.`
+        : `${at}: the ${what(f)} ${f.name} is gone; a caller that reads it gets nothing.`,
     });
   for (const f of topAdded) {
     const breaks = req && f.required === true;
@@ -270,10 +349,10 @@ function fieldChanges(
       severity: breaks ? "breaking" : "additive",
       after: { value: f.name, cite: f.requiredCite ?? f.cite },
       says: !req
-        ? `${at}: the response has a new field ${f.name}; no caller has to change.`
+        ? `${at}: the response has a new ${f.in === "header" ? "header" : "field"} ${f.name}; no caller has to change.`
         : breaks
-          ? `${at}: the request needs a new field ${f.name}; a caller that doesn't send it is refused.`
-          : `${at}: the request takes a new optional field ${f.name}; no caller has to change.`,
+          ? `${at}: the request needs a new ${f.in === "header" ? "header" : "field"} ${f.name}; a caller that doesn't send it is refused.`
+          : `${at}: the request takes a new optional ${f.in === "header" ? "header" : "field"} ${f.name}; no caller has to change.`,
     });
   }
 
@@ -291,11 +370,11 @@ function fieldChanges(
         after: { value: b.required ? "required" : "optional", cite: b.requiredCite ?? b.cite },
         says: req
           ? nowRequired
-            ? `${at}: the request field ${a.name} is now required; a caller that leaves it out is refused.`
-            : `${at}: the request field ${a.name} is now optional; no caller has to change.`
+            ? `${at}: the ${what(a)} ${a.name} is now required; a caller that leaves it out is refused.`
+            : `${at}: the ${what(a)} ${a.name} is now optional; no caller has to change.`
           : nowRequired
-            ? `${at}: the response field ${a.name} is now always there; no caller has to change.`
-            : `${at}: the response field ${a.name} may now be left out; a caller that counts on it must allow for that.`,
+            ? `${at}: the ${what(a)} ${a.name} is now always there; no caller has to change.`
+            : `${at}: the ${what(a)} ${a.name} may now be left out; a caller that counts on it must allow for that.`,
       });
     }
     if (a.type && b.type && a.type !== b.type)
@@ -304,7 +383,7 @@ function fieldChanges(
         severity: "breaking",
         before: { value: a.type, cite: a.cite },
         after: { value: b.type, cite: b.cite },
-        says: `${at}: the ${side} field ${a.name} was ${a.type} and is now ${b.type}; a caller that ${req ? "sends" : "reads"} it must change.`,
+        says: `${at}: the ${what(a)} ${a.name} was ${a.type} and is now ${b.type}; a caller that ${req ? "sends" : "reads"} it must change.`,
       });
     if (a.enum || b.enum) {
       const was = a.enum ?? [];
@@ -315,11 +394,11 @@ function fieldChanges(
       const breaks = req ? lost.length > 0 : gained.length > 0;
       const words = req
         ? lost.length
-          ? `${at}: the request field ${a.name} no longer takes ${list(lost)}${gained.length ? ` and now takes ${list(gained)}` : ""}; a caller that sends a value it no longer takes is refused.`
-          : `${at}: the request field ${a.name} now also takes ${list(gained)}; no caller has to change.`
+          ? `${at}: the ${what(a)} ${a.name} no longer takes ${list(lost)}${gained.length ? ` and now takes ${list(gained)}` : ""}; a caller that sends a value it no longer takes is refused.`
+          : `${at}: the ${what(a)} ${a.name} now also takes ${list(gained)}; no caller has to change.`
         : gained.length
-          ? `${at}: the response field ${a.name} may now be ${orList(gained)}; a caller that reads it must handle the new value${gained.length > 1 ? "s" : ""}.`
-          : `${at}: the response field ${a.name} no longer returns ${list(lost)}; no caller has to change.`;
+          ? `${at}: the ${what(a)} ${a.name} may now be ${orList(gained)}; a caller that reads it must handle the new value${gained.length > 1 ? "s" : ""}.`
+          : `${at}: the ${what(a)} ${a.name} no longer returns ${list(lost)}; no caller has to change.`;
       out.push({
         ...base("field-enum", side, a.name),
         severity: breaks ? "breaking" : "additive",

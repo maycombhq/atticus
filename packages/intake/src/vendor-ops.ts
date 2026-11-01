@@ -12,7 +12,10 @@ import { readOpenApiDocument, type OpenApiOperation } from "@maycombhq/extractor
  * operation is. Files only: no network, no model, no clock.
  */
 
-/** Where a request field travels. A path parameter is left to the path. */
+/**
+ * Where a request field travels (a path parameter is left to the path); a response field is in
+ * the body, or (ADR 0156) a header the response lists.
+ */
 export type FieldIn = "body" | "query" | "header" | "cookie" | "form";
 
 export interface VendorField {
@@ -51,9 +54,10 @@ export interface VendorOperation {
   response: VendorField[];
   /**
    * The error responses the spec lists (ADR 0142): each 4xx or 5xx status, with the line of its
-   * key. Left out when it lists none.
+   * key and (ADR 0156) the fields of its body, when its schema has some. Left out when it lists
+   * none.
    */
-  errors?: { status: string; cite: string }[];
+  errors?: { status: string; cite: string; fields?: VendorField[] }[];
 }
 
 export interface VendorSpec {
@@ -135,7 +139,7 @@ export function readVendorSpec(path: string, text: string, system: string): Vend
       cite: `${path}:${op.methodLine ?? op.line ?? 1}`,
       request: requestFields(ctx, op, swagger2),
       response: responseFields(ctx, op, swagger2),
-      ...errorsOf(ctx, op),
+      ...errorsOf(ctx, op, swagger2),
     };
   });
   const ids = specEndpointIds(system, ops);
@@ -153,17 +157,64 @@ export function readVendorSpec(path: string, text: string, system: string): Vend
   };
 }
 
-/** An operation's 4xx and 5xx responses, each citing its status's line (ADR 0142). */
-function errorsOf(ctx: Ctx, op: OpenApiOperation): { errors?: { status: string; cite: string }[] } {
+/**
+ * An operation's 4xx and 5xx responses, each citing its status's line (ADR 0142), with the
+ * fields of its body (ADR 0156).
+ */
+function errorsOf(
+  ctx: Ctx,
+  op: OpenApiOperation,
+  swagger2: boolean,
+): { errors?: NonNullable<VendorOperation["errors"]> } {
   const responses = isMap(op.node) ? op.node.get("responses") : undefined;
   if (!isMap(responses)) return {};
   const errors = responses.items.flatMap((p) => {
     const status = isScalar(p.key) ? String(p.key.value) : "";
     if (!/^[45]\d\d$/.test(status)) return [];
     const cite = ctx.at(isScalar(p.key) ? p.key.range?.[0] : undefined);
-    return cite ? [{ status, cite }] : [];
+    if (!cite) return [];
+    const fields: VendorField[] = [];
+    schemaFields(ctx, bodySchema(ctx, p.value, swagger2), "body", "", 0, new Set(), fields);
+    return [{ status, cite, ...(fields.length ? { fields } : {}) }];
   });
   return errors.length ? { errors } : {};
+}
+
+/** A response's body schema: Swagger 2's `schema`, OpenAPI 3's JSON `content`. */
+function bodySchema(ctx: Ctx, response: unknown, swagger2: boolean): unknown {
+  if (!swagger2) return contentSchema(ctx, response);
+  const r = deref(ctx, response);
+  return isMap(r) ? r.get("schema", true) : undefined;
+}
+
+/**
+ * The headers a response lists (ADR 0156), as response fields `in: header`: OpenAPI 3's header
+ * object (its `schema`, and `required`, false when absent), or Swagger 2's (the type on the
+ * header itself; it has no `required`). Each cites its name's line.
+ */
+function responseHeaders(ctx: Ctx, response: unknown, swagger2: boolean): VendorField[] {
+  const r = deref(ctx, response);
+  const headers = isMap(r) ? r.get("headers") : undefined;
+  if (!isMap(headers)) return [];
+  const out: VendorField[] = [];
+  for (const pair of headers.items) {
+    if (!isScalar(pair.key)) continue;
+    const h = deref(ctx, pair.value);
+    if (!isMap(h)) continue;
+    const schema = swagger2 ? h : deref(ctx, h.get("schema", true));
+    const sm = isMap(schema) ? schema : undefined;
+    const type = sm ? typeOf(sm) : undefined;
+    const values = sm ? strings(sm.get("enum")) : undefined;
+    out.push({
+      name: String(pair.key.value),
+      in: "header",
+      ...(type ? { type } : {}),
+      ...(swagger2 ? {} : { required: h.get("required") === true }),
+      ...(values ? { enum: values } : {}),
+      cite: ctx.at(pair.key.range?.[0]) ?? `${ctx.path}:1`,
+    });
+  }
+  return out;
 }
 
 interface Ctx {
@@ -353,13 +404,9 @@ function responseFields(ctx: Ctx, op: OpenApiOperation, swagger2: boolean): Vend
     )[0];
   if (!ok) return [];
   const out: VendorField[] = [];
-  const schema = swagger2
-    ? (() => {
-        const r = deref(ctx, ok.value);
-        return isMap(r) ? r.get("schema", true) : undefined;
-      })()
-    : contentSchema(ctx, ok.value);
-  schemaFields(ctx, schema, "body", "", 0, new Set(), out);
+  schemaFields(ctx, bodySchema(ctx, ok.value, swagger2), "body", "", 0, new Set(), out);
+  // ADR 0156: the headers it answers with, beside its body.
+  out.push(...responseHeaders(ctx, ok.value, swagger2));
   return out;
 }
 
