@@ -8,6 +8,8 @@ import {
   planBatches,
   planParts,
   proposeExclusions,
+  RANGE_OVERLAP_LINES,
+  rangeOverlap,
   SESSION_TOKENS,
   type FileTokens,
 } from "../src/index.js";
@@ -468,17 +470,38 @@ describe("reading a big repo in parts (A-big)", () => {
       expect(all[0]).toBe("apiproxy/**");
       const ranges = all.filter((g) => g.startsWith("oas/"));
       expect(ranges.length).toBeGreaterThan(1);
-      // Every line once, in order: L1-La, L(a+1)-Lb, ... to the last line.
+      // R4: every line, in order, each range starting a few lines before the last one ended so
+      // nothing is cut at a boundary: L1-La, L(a+1-o)-Lb, ... to the last line.
       let next = 1;
-      for (const r of ranges) {
+      let overlapped = 0;
+      for (const [i, r] of ranges.entries()) {
         const m = /^oas\/Forge Ledger 1\.0\.yaml#L(\d+)-L(\d+)$/.exec(r)!;
         expect(m, r).not.toBeNull();
-        expect(Number(m[1])).toBe(next);
-        next = Number(m[2]) + 1;
+        const [from, to] = [Number(m[1]), Number(m[2])];
+        if (i === 0) expect(from).toBe(1);
+        else {
+          expect(from).toBeLessThan(next);
+          expect(next - from).toBeGreaterThanOrEqual(RANGE_OVERLAP_LINES);
+          overlapped += next - from;
+        }
+        next = to + 1;
       }
       expect(next).toBe(lines + 1);
       expect(parts.reduce((n, p) => n + p.files, 0)).toBe(2);
+      // The budget counts the overlap once more and nothing else: the ranges' tokens are the
+      // file's plus the overlapped lines' (rounded up per range).
+      const sumParts = parts.reduce((n, p) => n + p.tokens, 0);
+      const extra = sumParts - 9_000 - tokens;
+      expect(extra).toBeGreaterThanOrEqual(Math.floor((tokens * overlapped) / lines));
+      expect(extra).toBeLessThanOrEqual(Math.ceil((tokens * overlapped) / lines) + ranges.length);
     }
+  });
+
+  it("overlaps ranges by 20 lines or 2% of the range, never more than a fifth of it (R4)", () => {
+    expect(rangeOverlap(500)).toBe(20);
+    expect(rangeOverlap(10_000)).toBe(200);
+    expect(rangeOverlap(40)).toBe(8);
+    expect(rangeOverlap(1)).toBe(0);
   });
 
   it("keeps a big file whole when its lines aren't known", () => {

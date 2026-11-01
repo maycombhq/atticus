@@ -464,7 +464,8 @@ Usage:
   atticus scan survey <repo>           Your assistant reads the repo and drafts its scan settings (folders to leave out, path prefixes, client base URLs); checked against the code [--attempts 3] [--force] [--max-tokens n]
   atticus scan verify <repo>           Your assistant compares the code with the last scan: what it missed, what it has wrong, a fix for each; checked, kept in proposals/scan/ [--attempts 3] [--json] [--accept] [--max-tokens n]
   atticus map <repo>                   Read a repo into facts in batches that fit your model, one hand-off at a time, each answer verified at once; for an assistant without file tools (ADR 0124; /atticus-map reads it in one session) [--mode m] [--max-tokens n] [--next] [--resume run] [--force] [--dir path] [--commit sha] [--json]
-          [--estimate]                 Say what the first read costs: the checkout, commit, facts file, source files, tokens, your assistant's tier and the batches at the limit
+          [--estimate]                 Say what the first read costs: the checkout, commit, facts file, source files, tokens, your assistant's tier and the batches at the limit; with housePrefixes in conventions.yaml, it warns of house packages the repo imports that no taught framework covers, with the frameworks learn command for each (ADR 0147)
+          [--gaps]                     Plan a second pass on what the last verify left (files no fact cites, skipped lines, spec operations, entries no flow follows) for a new chat, sized to the session: writes facts/<repo>.gaps.md (ADR 0157)
           [--copy]                     Print the next batch's prompt to paste into a chat
           [--answer <file>]            With --copy: read the pasted answer back from a file (- for stdin)
           [--spent <tokens>] [--sessions n] [--part n]  Record what the read took as your assistant reports it, in facts/<repo>.read-plan.yaml beside --estimate's estimate (Atticus can't meter an assistant's tokens; ADR 0141)
@@ -1479,7 +1480,7 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
     const repo = command;
     if (!repo) {
       io.err(
-        "Usage: atticus map <repo> [--estimate] [--handoff | --copy [--answer <file>] | --mode m] [--next] [--max-tokens n] [--force]",
+        "Usage: atticus map <repo> [--estimate | --gaps] [--handoff | --copy [--answer <file>] | --mode m] [--next] [--max-tokens n] [--force]",
       );
       return 2;
     }
@@ -1506,12 +1507,13 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
       ...(text(values.resume) ? { resume: text(values.resume)! } : {}),
       ...(text(values.answer) !== undefined ? { answer: text(values.answer)! } : {}),
       estimate: values.estimate === true,
+      gaps: values.gaps === true,
       next: values.next === true,
       force: values.force === true,
       copy: values.copy === true,
       json: values.json === true,
     };
-    if (o.estimate) return mapCommand(root, repo, o, io);
+    if (o.estimate || o.gaps) return mapCommand(root, repo, o, io);
     try {
       // A batch's answer may be empty (no fact in those files): any result file is an answer.
       const { runtime } = await runtimeForCli(root, {

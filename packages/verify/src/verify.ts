@@ -895,6 +895,9 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
   };
   const authUncited: UncitedAuth[] = [];
   const methodUnseen: MethodUnseen[] = [];
+  // P2: a forwarding call's route, among the kept facts.
+  const kept = new Map(facts.filter((f) => !rejected.has(f.id)).map((f) => [f.id, f]));
+  const factById = (id: string) => kept.get(id);
   const accepted: Fact[] = facts
     .filter((f) => !rejected.has(f.id))
     .map((f) => {
@@ -914,7 +917,7 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
           cite: `${base.cite.file}:${base.cite.line}`,
         });
       // P2: the method claimed, looked for on the lines the fact cites; a note, never a rejection.
-      const unseen = methodUnseenOf(base, linesOf);
+      const unseen = methodUnseenOf(base, linesOf, factById);
       if (unseen) methodUnseen.push(unseen);
       if (base.kind === "flow")
         return {

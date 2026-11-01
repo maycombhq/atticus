@@ -26,6 +26,15 @@ describe("methodOnLines: the method written in the code, in any language", () =>
     ["GET", "Rails", ['get "/notes/:id", to: "notes#show"']],
     ["POST", "Next.js route handler", ["export async function POST(request: Request) {"]],
     ["GET", "Laravel", ["Route::get('/notes', [NoteController::class, 'index']);"]],
+    ["POST", "Gin", ['r.POST("/notes", create)']],
+    ["DELETE", "Go 1.22 pattern", ['mux.HandleFunc("DELETE /notes/{id}", remove)']],
+    ["POST", "Ktor", ['post("/notes") {']],
+    [
+      "PUT",
+      "Kotlin Spring, on the next line",
+      ['@RequestMapping("/notes/{id}",', "  method = [RequestMethod.PUT])"],
+    ],
+    ["GET", "Express route chain", ["app.route('/notes').get(list).post(create);"]],
   ];
   for (const [method, what, lines] of cases)
     it(`finds ${method} in ${what}`, () => {
@@ -52,6 +61,80 @@ const facts = (): Fact[] => {
 };
 const J = "src/main/java/forge/limits";
 
+/** A fact of `kind` claiming `method`, cited at `file:line`. */
+const claim = (kind: "entry" | "call", method: string, file: string, line: number, extra = {}) =>
+  ({
+    kind,
+    id: `${kind}-x`,
+    repo: "forge-notes",
+    commit: "4d1c0de",
+    ...(kind === "entry" ? { entryType: "rest" } : { callType: "rest" }),
+    method,
+    path: "/notes",
+    cite: { file, line, value: "/notes" },
+    verified: "line",
+    by: "assistant",
+    conf: "declared",
+    ...extra,
+  }) as Fact;
+
+describe("methodUnseenOf: the lines a method may be written on (P2, measured)", () => {
+  it("reads the whole chain a cited line continues: a fluent call's method above its .uri line", () => {
+    const lines: Record<string, string[]> = {
+      // Java's RestClient and WebClient, Kotlin's WebClient: the method opens the chain.
+      "Client.java": [
+        "  public View transfer(String id, Body body) {",
+        "    return http.post()",
+        '        .uri("/forge/v1/accounts/{id}/transfers", id)',
+        "        .body(body)",
+        "        .retrieve()",
+        "        .body(View.class);",
+      ],
+      // Express: the route, then its methods, a line each.
+      "notes.js": ["router", "  .route('/notes/:id')", "  .get(show)", "  .put(update);"],
+      "Rates.java": [
+        "    Rate a = rest.get(url);",
+        "    Rate b = client",
+        '        .uri("/v1/rates")',
+      ],
+    };
+    const at = (p: string) => lines[p];
+    expect(methodUnseenOf(claim("call", "POST", "Client.java", 3), at)).toBeUndefined();
+    expect(methodUnseenOf(claim("entry", "PUT", "notes.js", 2), at)).toBeUndefined();
+    // A chain doesn't reach past a statement that isn't part of it.
+    expect(methodUnseenOf(claim("call", "GET", "Rates.java", 3), at)).toMatchObject({
+      method: "GET",
+    });
+    expect(methodUnseenOf(claim("call", "GET", "Client.java", 3), at)).toMatchObject({
+      method: "GET",
+    });
+  });
+
+  it("takes a forwarding call's method from the route it forwards, when the two agree", () => {
+    const lines: Record<string, string[]> = {
+      "proxies/default.xml": [
+        "<Flow>",
+        '  <Condition>(proxy.pathsuffix MatchesPath "/transfers") and (request.verb = "POST")</Condition>',
+      ],
+      "policies/AM-Rewrite.xml": ["<AssignMessage>", "  <Set>", "    <Path>/transfers</Path>"],
+    };
+    const route = {
+      ...claim("entry", "POST", "proxies/default.xml", 2),
+      id: "entry.post.transfers",
+    };
+    const forward = claim("call", "POST", "policies/AM-Rewrite.xml", 3, {
+      from: "entry.post.transfers",
+    });
+    const byId = (id: string) => (id === route.id ? route : undefined);
+    expect(methodUnseenOf(forward, (p) => lines[p], byId)).toBeUndefined();
+    // Without the route, or when the forward claims another method, the note stands.
+    expect(methodUnseenOf(forward, (p) => lines[p])).toMatchObject({ method: "POST" });
+    expect(
+      methodUnseenOf({ ...forward, method: "PUT" } as Fact, (p) => lines[p], byId),
+    ).toMatchObject({ method: "PUT" });
+  });
+});
+
 describe("verifyFacts: a method its lines don't write is a note, never a rejection (P2)", () => {
   it("notes nothing when every method is on its line", async () => {
     const r = await verifyFacts({ facts: facts(), source: repo, commit: "4d1c0de" });
@@ -71,7 +154,7 @@ describe("verifyFacts: a method its lines don't write is a note, never a rejecti
         kind: "entry",
         method: "PUT",
         cite: `${J}/LimitController.java:18`,
-        message: `e-post-check claims PUT, which neither ${J}/LimitController.java:18, the next line, nor a cite.with line writes`,
+        message: `e-post-check claims PUT, which neither ${J}/LimitController.java:18, the chain it is in, the next line, a cite.with line nor the route it forwards writes`,
       },
     ]);
   });
