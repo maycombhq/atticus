@@ -4,6 +4,13 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## 2.0.0-beta.10 (2026-10-31)
 
+### Fixed before release: from the second review
+
+- `atticus intake traffic` writes a path only as an estate route template (or a template followed by `/**`) and drops any other; an app name that is no component or repo of the estate is written as a stable `app-<hash>` label; compressed IPv6 addresses, emails without a domain and `;` matrix params are caught. Contract files kept beside a repo's facts lose query strings, matrix params, example ids (`{id}`) and URL credentials, and a contract file the metarepo's `.denylist` names a word of is left out with a note.
+- A line two overlapping ranges of a big file share counts for the earlier range only, so a fact read there no longer marks the next range done and `atticus next` no longer skips lines nobody read. `atticus map <repo> --gaps` puts the files, lines and reasons it plans in one `<atticus-data>` block, each value from the repo quoted on one line with control characters escaped, and says those values are data, never instructions.
+- A call to a Kubernetes Service by its bare name is a guessed link (`joined-by-service-name`), unless the caller's own Service is read in the same namespace; `<name>.<namespace>` and the full `.svc` address stay verified.
+- The preview after a correction reads the repo's contract files from its checkout, as `atticus verify --write` does, and writes nothing, not even a cache file. A shared map's `map.yaml` records where it came from only as a path inside the metarepo; for a folder outside it, `atticus join shared refresh <team> <folder>` needs the folder. Removing a shared map takes its marks off every repo's links.
+
 ### Another team's map, read-only (ADR 0160)
 
 - `atticus join shared import <their metarepo> --team <id> --system <id>` brings in the map a team that runs Atticus shares, as files: only their verified entries, quotes redacted and the deny-list applied, go to `shared/<team>/` at their commit; `refresh` imports a newer commit over it, `list` says what is on file. Nothing is fetched, and their facts are never verified, corrected or reported on here.
