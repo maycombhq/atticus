@@ -605,6 +605,11 @@ export function Inspector({
             {COPY.flows.openFlows}
           </a>
         )}
+        {node.kind === "repo" && (
+          <a className="btn" href="#/trust">
+            {WORDS.repoCounts}
+          </a>
+        )}
         {/* WP7.7: a system's page, its guide, questions and changes. */}
         {/* Only a System record has a page: a system the manifest or a call names has none yet. */}
         {node.kind === "system" && node.id.startsWith("system:") && node.record && (
@@ -622,7 +627,10 @@ export function Inspector({
       {node.gaps.length ? (
         <ul>
           {node.gaps.map((g) => (
-            <li key={g}>{WORDS.gap[g] ?? g}</li>
+            <li key={g}>
+              {WORDS.gap[g] ?? g}
+              {WORDS.gapFix[g] && <span className="hud"> · {WORDS.gapFix[g]}</span>}
+            </li>
           ))}
         </ul>
       ) : (

@@ -738,6 +738,34 @@ export const TrustRepo = z.object({
       }),
     )
     .optional(),
+  /**
+   * 2.32.0 (ADR 0135, C3): what the counts count, so each opens its list. `rejected`: every line
+   * of `<repo>.rejected.jsonl` (a rejected fact with its file and line, or a refused question,
+   * reviewed entry or line that isn't a fact); `excluded`: the files the scan settings exclude
+   * (the first 50); `asked`: the open questions about the repo with the lines they read;
+   * `unverified`: the facts not checked yet (the first 50). Not read is `verify.report.unknownFiles`.
+   */
+  lists: z
+    .object({
+      rejected: z.array(
+        z.object({
+          fact: z.string().optional(),
+          kind: z.string().optional(),
+          file: z.string().optional(),
+          line: z.number().int().optional(),
+          code: z.string(),
+          message: z.string(),
+        }),
+      ),
+      excluded: z.array(z.string()),
+      asked: z.array(
+        z.object({ id: z.string(), question: z.string(), lines: z.array(z.string()) }),
+      ),
+      unverified: z.array(
+        z.object({ fact: z.string(), kind: z.string(), file: z.string(), line: z.number().int() }),
+      ),
+    })
+    .optional(),
 });
 export const TrustView = z.object({
   /** Where the facts files are, relative to the metarepo. */

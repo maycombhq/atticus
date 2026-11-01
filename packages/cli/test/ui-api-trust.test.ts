@@ -10,6 +10,7 @@ import {
   parseFacts,
   parseRecord,
   projectFacts,
+  raiseQuestions,
   recordPath,
   serializeRecord,
   type CatalogRecord,
@@ -148,10 +149,48 @@ beforeAll(async () => {
     if (repos.size === 1 && repos.has("forge-gateway")) await write(p.record);
   }
 
-  // A repo no manifest lists, read all the same.
+  // forge-events' rejected fact and a line that isn't a question, as the verifier writes them.
+  const rejectedFact = JSON.parse(text.split("\n")[1]!) as Record<string, unknown>;
+  await writeFile(
+    join(root, "facts/forge-events.rejected.jsonl"),
+    [
+      JSON.stringify({
+        code: "claim-not-on-line",
+        message: "line 22 doesn't say /accounts/{accountId}/entries",
+        fact: { ...rejectedFact, repo: "forge-events" },
+      }),
+      JSON.stringify({ code: "bad-question", message: "no options", question: { question: "?" } }),
+      "",
+    ].join("\n"),
+  );
+  // ADR 0135: a question open on forge-ledger, so its count opens it.
+  await raiseQuestions(
+    root,
+    [
+      {
+        question: "Which ledger does the nightly job post to?",
+        options: [
+          { label: "Main", means: "the main ledger", changes: "nothing" },
+          { label: "Shadow", means: "a shadow ledger", changes: "the job's calls move" },
+        ],
+        evidence: ["src/main/java/forge/ledger/EntryController.java:22"],
+        scope: "repo",
+      },
+    ],
+    {
+      step: "map",
+      repo: "forge-ledger",
+      command: "atticus verify forge-ledger",
+      rerun: "atticus verify forge-ledger",
+      at: "2026-10-31T12:00:00Z",
+    },
+  );
+
+  // A repo no manifest lists, read all the same; its facts not checked yet.
   await writeFile(
     join(root, "facts/side-tool.jsonl"),
-    text.replace(/forge-ledger/g, "side-tool") + "\n",
+    text.replace(/forge-ledger/g, "side-tool").replace(/"verified":"line"/g, '"verified":"none"') +
+      "\n",
   );
 
   srv = await startServer({ root, port: 0, extend: (r, ctx) => uiTrustRoutes(r, ctx) });
@@ -263,6 +302,45 @@ describe("GET /api/trust (ADR 0124)", () => {
     ]);
     // A repo whose facts name no framework says nothing here: nothing is guessed.
     expect(v.repos.find((r) => r.repo === "forge-ledger")!.frameworks).toBeUndefined();
+  });
+
+  it("lists what each count counts, with file and line (ADR 0135, C3)", async () => {
+    const v = await view(srv);
+    const of = (repo: string) => v.repos.find((r) => r.repo === repo)!;
+    expect(of("forge-events").lists!.rejected).toEqual([
+      {
+        fact: "e-post-entry",
+        kind: "entry",
+        file: "src/main/java/forge/ledger/EntryController.java",
+        line: 22,
+        code: "claim-not-on-line",
+        message: "line 22 doesn't say /accounts/{accountId}/entries",
+      },
+      { code: "bad-question", message: "no options" },
+    ]);
+    expect(of("forge-ledger").lists).toMatchObject({
+      rejected: [],
+      excluded: ["generated/client.ts"],
+      unverified: [],
+      asked: [
+        {
+          question: "Which ledger does the nightly job post to?",
+          lines: ["src/main/java/forge/ledger/EntryController.java:22"],
+        },
+      ],
+    });
+    expect(of("forge-ledger").lists!.asked[0]!.id).toMatch(/^q-/);
+    expect(of("side-tool").lists!.unverified.map((f) => [f.fact, f.file, f.line])).toEqual([
+      ["e-get-account", "src/main/java/forge/ledger/AccountController.java", 18],
+      ["e-post-entry", "src/main/java/forge/ledger/EntryController.java", 22],
+    ]);
+    // A repo not read has nothing to list.
+    expect(of("forge-gateway").lists).toEqual({
+      rejected: [],
+      excluded: [],
+      asked: [],
+      unverified: [],
+    });
   });
 
   it("answers with nothing, not an error, on a metarepo with no manifest and no facts", async () => {

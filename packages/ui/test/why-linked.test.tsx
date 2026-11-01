@@ -5,6 +5,7 @@ import type { Api } from "@maycombhq/core";
 import { COPY } from "../src/copy.js";
 import { Inspector } from "../src/screens/architecture/Architecture.js";
 import { WhyLinked } from "../src/screens/architecture/WhyLinked.js";
+import { WORDS } from "../src/screens/architecture/words.js";
 
 /** Why is this linked (ADR 0135, C1): each call on a link, how it was joined and both ends. */
 
@@ -108,5 +109,29 @@ describe("why is this linked", () => {
     );
     expect(page).toContain("<details>");
     expect(page).toContain(esc(W.openOf(COPY.evidence.linkOf("Web", "Customers", "calls"))));
+  });
+});
+
+describe("the details panel: each gap with what closes it (ADR 0135, C3)", () => {
+  it("says beside each gap what closes it, and opens a repo's counts on Map › Trust", () => {
+    const page = html(
+      <Inspector
+        node={{
+          id: "repo:forge-web",
+          kind: "repo",
+          label: "forge-web",
+          childCount: 0,
+          state: "current",
+          gaps: ["unverified"],
+          evidence: [],
+          properties: {},
+        }}
+        lens="repo"
+        onOpen={() => undefined}
+        onFocus={() => undefined}
+      />,
+    );
+    expect(page).toContain(esc(WORDS.gapFix.unverified!));
+    expect(page).toContain('href="#/trust"');
   });
 });
