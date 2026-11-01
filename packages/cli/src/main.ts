@@ -486,7 +486,7 @@ Usage:
   atticus join measure <reference> [--json]  Measure your map against a reference you write by hand for two or three repos you know (their entries and calls, each call with the repo it should reach): reading recall, and join precision and recall; reads files only (docs/guide/measure.md)
   atticus estate measure <reference> [--json]  The same as join measure
   atticus join shared import <their metarepo> --team <id> --system <id>  Bring in another team's Atticus map, read-only: their verified entries (quotes redacted, the deny-list applied) go to shared/<team>/ at their commit, and verify --write joins your calls to that system to them, cited on their lines; files only (docs/guide/shared-maps.md) [--name <team name>] [--commit <sha>] [--json]
-  atticus join shared refresh [<team>] [<folder>]  Import a team's map again from where it came from (or a new folder); a newer commit replaces the old [--commit <sha>]
+  atticus join shared refresh [<team>] [<folder>]  Import a team's map again from where it came from (a folder inside the metarepo), or the folder given (needed when it was outside); a newer commit replaces the old [--commit <sha>]
   atticus join shared list [--json]    The shared maps on file: whose, for which system, their commit and entries
   atticus estate shared import|refresh|list  The same as join shared
   atticus estate fresh [--all] [--json]  Which repos' clones have moved past their facts' commit, most stale first: per repo the facts' commit, the clone's, the files changed that the facts cite, the facts to read again and the command to run; local git only, nothing fetched or written (--all lists the fresh ones too)

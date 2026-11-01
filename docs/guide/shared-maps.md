@@ -33,7 +33,7 @@ Atticus reads the commit of a clone from its `.git` folder (it never runs git). 
 
 **What is kept.** Only their entries that their own verify confirmed, under `shared/forge-risk-team/`:
 
-- `map.yaml`: the team, the system of yours it stands for, where it came from, their commit, and per repo the hosts and base path their manifest gives and how many entries were kept;
+- `map.yaml`: the team, the system of yours it stands for, where it came from (only when their folder is inside your metarepo, as a path from its root), their commit, and per repo the hosts and base path their manifest gives and how many entries were kept;
 - `facts/<repo>.jsonl`: their entry facts.
 
 Everything else in their facts (calls, fields, stores, entries their verify didn't confirm, lines that don't read) is left out. A quote that names a secret-looking key is redacted or dropped, and if your metarepo's `.denylist` names a word in what would be kept, the import is refused and nothing is written. Their facts are data: nothing in them is ever read as an instruction or sent to a model.
@@ -70,5 +70,7 @@ atticus join shared refresh forge-risk-team          # from where it came from
 atticus join shared refresh forge-risk-team ../new-export --commit 1a2b3c4
 atticus join shared list
 ```
+
+`map.yaml` is committed, so it never records a path outside your metarepo (`../forge-risk-metarepo`, `C:/Users/…`): that path is your machine's own, and would name you and break on everyone else's. For a folder outside it, the import says so and `refresh` needs the folder: `atticus join shared refresh forge-risk-team <folder>`. Keep their clone inside the metarepo (for example under a folder your `.gitignore` leaves out) if you want `refresh <team>` alone to find it.
 
 A newer import replaces the old one, commit and all. Then run `atticus verify --all --write` again. To stop using a team's map, delete its folder under `shared/` and write again: every mark it made comes off.

@@ -18,7 +18,7 @@ The rules that bind this: reads files only, no network (CLAUDE.md rules 4 and 5)
 
 `atticus join shared import <folder> --team <id> --system <id> [--name <name>] [--commit <sha>]` (also `atticus estate shared import`) reads a clone or an export of their metarepo: its facts folder (`factsDirOf`, else the folder itself) and every `org-pack/profiles/*/repos.manifest.yaml` it has. It writes, in our metarepo, under `shared/<team>/` (`sharedDirOf`; `.atticus/shared` when adopted):
 
-- `map.yaml`, schema 1 (`SharedMapFile`, core `shared-maps.ts`): `team`, `name`, `system` (the system of our profiles their map stands for), `source` (the folder as given, relative to the root when inside it), `commit` (their metarepo's), `importedAt`, and per repo the `component`, the code `commit` their facts cite, the `hosts` and `basePath` their manifest gives, and how many `entries` were kept;
+- `map.yaml`, schema 1 (`SharedMapFile`, core `shared-maps.ts`): `team`, `name`, `system` (the system of our profiles their map stands for), `source` (the folder it came from, as a path from the metarepo's root, and only when it is inside it: a folder outside is this machine's own path, a user name or a drive letter in a committed file, so none is kept and `refresh <team> <folder>` is given the folder), `commit` (their metarepo's), `importedAt`, and per repo the `component`, the code `commit` their facts cite, the `hosts` and `basePath` their manifest gives, and how many `entries` were kept;
 - `facts/<repo>.jsonl`: their entry facts.
 
 What is kept and what is refused:
@@ -28,7 +28,7 @@ What is kept and what is refused:
 - `--system` must be one of `outsideProfileSystems`: a system an estate repo belongs to is ours, not theirs. A repo id of our estate in their facts is refused. A system has at most one team's map.
 - The commit is `--commit`, else read from the clone's `.git` files (HEAD, loose refs, packed-refs, a worktree's `gitdir`). Git is never run. Neither, refused.
 
-`refresh [<team>] [<folder>]` imports again from the recorded source, or a new folder; a newer import replaces the old folder whole, commit and all. `list` prints what is on file. Their facts are never put in `facts/`, never passed to the verifier, the estate join or any model.
+`refresh [<team>] [<folder>]` imports again from the recorded source, or a new folder (the folder is required when no source is recorded, and the command says so); a newer import replaces the old folder whole, commit and all. `list` prints what is on file. Their facts are never put in `facts/`, never passed to the verifier, the estate join or any model.
 
 ### 2. The join: calls left to their system, matched to their entries
 
