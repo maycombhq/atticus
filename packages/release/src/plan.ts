@@ -97,7 +97,10 @@ export interface DeploymentPlan {
   steps: PlanStep[];
   /** Requests no step is tied to: they wait before the first step. */
   before: RequestWait[];
-  /** Systems outside the estate the plan relies on (vendors): nothing of theirs deploys here. */
+  /**
+   * Systems outside the estate the plan relies on (a vendor's, another team's: O2): nothing of
+   * theirs deploys here.
+   */
   external: { system: string; name: string; what: string; beforeStep?: number }[];
   /** Components the change touches that the plan can't place, with why. */
   unplaced: { id: string; why: string }[];
@@ -260,8 +263,9 @@ export async function deploymentPlan(ctx: ReleaseContext): Promise<DeploymentPla
     const live = /^planned-(new|modify)$/.test(h.change);
     const op = opOf(h);
     const src = `interfaces.md:${h.line}`;
-    const callerInternal = h.callerBoundary !== "vendor";
-    const calleeInternal = h.calleeBoundary !== "vendor";
+    // O2: a vendor's system or another team's is outside the estate: nothing of it deploys here.
+    const callerInternal = !h.callerOutside;
+    const calleeInternal = !h.calleeOutside;
     const verb =
       h.change === "planned-new" ? "new" : h.change === "planned-modify" ? "changed" : h.change;
     if (live && callerInternal) {
@@ -274,7 +278,10 @@ export async function deploymentPlan(ctx: ReleaseContext): Promise<DeploymentPla
       else unplaced.set(h.callee, placeWhy(ctx, h.callee, `callee of ${op}`));
     }
     if (live && !calleeInternal && h.calleeSystem) {
-      const what = `${op} must be live on ${m.systemName(h.calleeSystem)}'s side (a vendor: nothing of theirs deploys here)`;
+      const what =
+        h.calleeOutside === "other-team"
+          ? `${op} must be live on ${m.systemName(h.calleeSystem)}'s side (another team's system: it deploys on its own team's plan, not here)`
+          : `${op} must be live on ${m.systemName(h.calleeSystem)}'s side (a vendor: nothing of theirs deploys here)`;
       external.push({ system: h.calleeSystem, name: m.systemName(h.calleeSystem), what });
       if (h.callerRepo) externalCaller.set(what, `code:${h.callerRepo}`);
     }

@@ -1,7 +1,10 @@
 import {
   citedFiles,
   claimOnLines,
+  clusterServiceAddress,
   factIdPart,
+  isPatternPath,
+  plainPathPrefix,
   lineNamesClaim,
   partsBuildWord,
   partsNamePath,
@@ -89,6 +92,11 @@ export type RejectCode =
   | "framework-name"
   /** A deploy fact's host written as a template (`{{ .Values.host }}`, `${HOST}`) (ADR 0143). */
   | "exposure-template"
+  /**
+   * A deploy fact's base path written as a regular expression (an Ingress `ImplementationSpecific`
+   * path, `/forge/limits(/|$)(.*)`): its plain prefix is the base path (ADR 0143, beta.10).
+   */
+  | "exposure-regex"
   /**
    * An exposure (a deploy fact with a host or base path) that names no component of the estate,
    * or names none in a repo whose facts serve nothing, a deploy repo's (ADR 0143).
@@ -315,7 +323,15 @@ export interface VerifyOptions {
    * The estate the repo is part of (ADR 0143): its components and repos, as repos.manifest.yaml
    * names them. An exposure's `exposes` must be one of them. Left out, nothing checks the name.
    */
-  estate?: { components: readonly string[] };
+  estate?: {
+    components: readonly string[];
+    /**
+     * The components each repo's facts name, by repo id (ADR 0143, beta.10): an exposure naming
+     * `<repo>/<module>` must name one of its repo's. A repo left out has no facts yet, so its
+     * module isn't checked here (the join reports one that names nothing).
+     */
+    repoComponents?: Readonly<Record<string, readonly string[]>>;
+  };
   /**
    * The org pack's conventions (ADR 0147, `conventions.yaml`): the folders coverage and the
    * skipped-lines note leave out, the API spec and gateway bundle folders, the house's own
@@ -384,6 +400,18 @@ export function isSourceFile(
 const lastPart = (s: string) => s.split(".").pop() ?? s;
 /** A value written as a template: Helm's or Go's `{{ }}`, a `${}` placeholder (ADR 0143). */
 const TEMPLATED = /\{\{|\}\}|\$\{/;
+
+/** A Service exposure's in-cluster address (J1, beta.10): only a Service's host is read so. */
+const serviceAddress = (f: { resourceType?: string; host?: string }) =>
+  f.host !== undefined && /^service$/i.test(f.resourceType ?? "")
+    ? clusterServiceAddress(f.host)
+    : undefined;
+
+/** `<repo>/<module>`, as an exposure names a module the manifest doesn't list (J1, beta.10). */
+export const repoModule = (exposes: string): { repo: string; module: string } | undefined => {
+  const m = /^([^/]+)\/([^/]+)$/.exec(exposes.trim());
+  return m ? { repo: m[1]!, module: m[2]! } : undefined;
+};
 
 const routeOrWord = (v: string): Claim =>
   v.includes("/") ? { kind: "route", value: v } : { kind: "word", value: v };
@@ -670,6 +698,11 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
   // J1: the estate's components an exposure may name, and whether this repo serves anything.
   const estate = o.estate ? new Set(o.estate.components.map(factIdPart)) : undefined;
   const serves = facts.some((f) => f.kind === "entry");
+  const repoComponents = new Map(
+    Object.entries(o.estate?.repoComponents ?? {}).map(
+      ([r, cs]) => [factIdPart(r), new Set(cs.map(factIdPart))] as const,
+    ),
+  );
   for (const f of facts) {
     const label = `${f.kind} ${f.id}`;
     if (o.commit && !sameCommit(f.commit, o.commit)) {
@@ -746,9 +779,26 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
           "exposure-template",
           `${label} host "${f.host}" is a template: give the host the values file sets, with that line in cite.with (one fact per environment's values file, each with its env)`,
         );
-      else if (f.host !== undefined)
+      else if (f.host !== undefined && serviceAddress(f) !== undefined) {
+        // A Service's in-cluster address is written whole on no line: its name, its namespace
+        // and its port each are, on the cited line or a part (beta.10).
+        const a = serviceAddress(f)!;
+        const parts: [string, string][] = [
+          ["name", a.name],
+          ["namespace", a.namespace],
+          ...(a.port !== undefined ? [["port", String(a.port)] as [string, string]] : []),
+        ];
+        for (const [what, value] of parts)
+          add(f, checkCite(f.cite, [{ kind: "word", value }], `${label} host's ${what}`, false));
+      } else if (f.host !== undefined)
         add(f, checkCite(f.cite, [{ kind: "word", value: f.host }], `${label} host`, false));
-      if (f.basePath !== undefined)
+      if (f.basePath !== undefined && isPatternPath(f.basePath))
+        problem(
+          f,
+          "exposure-regex",
+          `${label} basePath "${f.basePath}" is a regular expression: write its plain prefix, "${plainPathPrefix(f.basePath)}" (the segments before the first pattern), and keep the line that writes the expression cited`,
+        );
+      else if (f.basePath !== undefined)
         add(
           f,
           checkCite(
@@ -758,7 +808,20 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
             false,
           ),
         );
-      if (f.exposes !== undefined && estate && !estate.has(factIdPart(f.exposes)))
+      const inModule = f.exposes !== undefined ? repoModule(f.exposes) : undefined;
+      if (inModule && estate && estate.has(factIdPart(inModule.repo))) {
+        const known = repoComponents.get(factIdPart(inModule.repo));
+        if (known && !known.has(factIdPart(inModule.module)))
+          problem(
+            f,
+            "exposure-component",
+            `${label} exposes "${f.exposes}": ${inModule.repo}'s facts name no component ${inModule.module} (they name ${[...known].sort().join(", ")}); name the module as its facts do, or write a question when no file says which`,
+          );
+      } else if (
+        f.exposes !== undefined &&
+        estate &&
+        !estate.has(factIdPart(inModule?.repo ?? f.exposes))
+      )
         problem(
           f,
           "exposure-component",

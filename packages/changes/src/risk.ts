@@ -53,7 +53,7 @@ function detailsOf(signals: RiskSignal[]): string {
 
 /**
  * A deterministic risk score: the change type's weight, plus points per extra system, per
- * data store, for crossing the vendor boundary, and per interface planned to change or
+ * data store, for crossing the vendor boundary or touching another team's system (O2), and per interface planned to change or
  * retire; then, from the stages' deltas (ADR 0124 addendum B-change), once each for a call to
  * an outside system, a change to who may do what, personal or consent data, a schema change,
  * a breaking change, and per repo beyond the first, each citing the steps that raised it.
@@ -78,10 +78,20 @@ export function scoreRisk(
       (f.systems.length - 1) * w.extraSystem,
     );
   for (const s of f.dataStores) add("data-store", `data store ${s}`, w.dataStore);
-  // A vendor a step calls is said once, by the call (B-change).
-  const crossed = f.vendors.filter((v) => !(f.outside ?? []).some((o) => o.id === v));
-  if (crossed.length > 0)
-    add("vendor", `crosses the vendor boundary (${crossed.join(", ")})`, w.vendor);
+  // A vendor a step calls is said once, by the call (B-change); so is another team's system (O2),
+  // which is outside the estate as a vendor is, and weighed the same.
+  const notCalled = (v: string) => !(f.outside ?? []).some((o) => o.id === v);
+  const crossed = f.vendors.filter(notCalled);
+  const teams = (f.otherTeams ?? []).filter(notCalled);
+  if (crossed.length > 0 || teams.length > 0)
+    add(
+      "vendor",
+      [
+        ...(crossed.length ? [`crosses the vendor boundary (${crossed.join(", ")})`] : []),
+        ...(teams.length ? [`calls another team's system (${teams.join(", ")})`] : []),
+      ].join("; "),
+      w.vendor,
+    );
   for (const i of f.interfaces) {
     if (i.status === "planned-modify")
       add("interface", `interface ${i.id} planned-modify`, w.interfaceModify);

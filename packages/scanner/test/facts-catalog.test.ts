@@ -266,6 +266,36 @@ describe("a call with no target and no host becomes a question (ADR 0078)", () =
     );
   });
 
+  it("offers every outside system: a vendor, and another team's system no estate repo belongs to (O2)", () => {
+    const withTeam = {
+      ...op,
+      profiles: op.profiles.map((p) => ({
+        ...p,
+        profile: p.profile && {
+          ...p.profile,
+          systems: [
+            ...p.profile.systems,
+            { id: "risk-team", name: "Risk Team", boundary: "internal" as const, aliases: [] },
+          ],
+        },
+      })),
+    } as OrgPack;
+    const out = catalogWithFacts({
+      repo: "forge-ledger",
+      facts: noHost(),
+      existing: before,
+      op: withTeam,
+      decisions,
+    });
+    const d = targetQuestionDrafts(noHost(), out.records, withTeam)[0]!;
+    expect(d.draft.options.map((o) => [o.label, o.means])).toEqual([
+      ["notify-api", "notify-api, built in forge-notify, answers POST /notify"],
+      ["northwind-fx", "Northwind FX, an outside system, answers POST /notify"],
+      ["risk-team", "Risk Team, another team's system, answers POST /notify"],
+      ["None of these", "Nothing in the estate or the org pack's systems answers it"],
+    ]);
+  });
+
   it("reads the answer back as the call's target on the next write", () => {
     const drafts = targetQuestionDrafts(noHost(), before, op);
     const q = {

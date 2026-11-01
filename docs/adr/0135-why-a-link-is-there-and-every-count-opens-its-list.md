@@ -43,6 +43,18 @@ From Why is this linked?, each call has This link is wrong, with three choices: 
 
 A target a person set outranks every join rule after an answer: in `joinFacts`, a call fact `by: person` whose `to` names nothing in the estate is outside it: it is never asked about (not even which of several environments' hosts is meant), never joined by its host, a host's label or its path, and the join lists it in `outside` with the person's target, as it lists a person's answer that names a vendor. A `to` that names a repo or component is joined by that name, as before, ahead of the host.
 
+### 5. A link several calls share (addendum, beta.10)
+
+Two calls of one component that send the same method and path to the same entry make one Interface (its id is the caller, the callee, the method and the path). `joinRecords` used to write it once per join, so the link took the flags, the confidence and the evidence of whichever join came last: a link one call reached by a listed host and another by its path could read as a guess, or as cited, by the order of the calls.
+
+Now every join of the link adds to it (`putLink`):
+
+- **Confidence**: `verified` when at least one join is (its ends declared and nothing guessed): a cited link exists, whatever the other calls guessed. Else `inferred`.
+- **Flags**: the union of the joins' flags (`sharedLinkFlags`), each once. A verified link lists how its cited joins were made first (`joined-by-answer`, `-name`, `-repo`, `-host`), then the guesses its other calls rest on; an inferred link its guesses first. The first flag is what Why is this linked? shows as the link's how, so it says what the link rests on either way; the guesses are kept, so the hierarchy still counts the guessed call as a gap to confirm, and the critic and a change's impact, which treat a link as guessed only when it is `inferred`, don't call a cited link a guess.
+- **Evidence**: every join's cited lines, each once, so the link cites each call that shares it.
+
+The other fields (from, to, method, path, endpoint, auth, via) are the first join's: they are the same for every join of one Interface id. A link one call makes is unchanged.
+
 ## Consequences
 
 - Catalogs written from facts gain one flag per Interface the next time a repo is verified with `--write`; the golden estate gained two. Nothing reads these flags as a gap.

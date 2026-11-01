@@ -242,11 +242,14 @@ function targetAsks(
   return { list, repoOf };
 }
 
-const vendorsOf = (op: OrgPack) =>
-  op.profiles
-    .flatMap((p) => p.profile?.systems ?? [])
-    .filter((s) => s.boundary === "vendor")
-    .sort((a, b) => a.id.localeCompare(b.id));
+/**
+ * The outside systems a target question offers (O2): every vendor, and every other system the
+ * profiles declare that no estate repo belongs to (another team's), by id.
+ */
+const vendorsOf = (op: OrgPack) => outsideProfileSystems(op);
+/** What an outside system is, in a target question's words (O2). */
+const outsideAs = (s: { boundary: string }) =>
+  s.boundary === "vendor" ? "an outside system" : "another team's system";
 
 const callWhat = (f: FactOf<"call">) => [f.method?.toUpperCase(), f.path].filter(Boolean).join(" ");
 
@@ -264,7 +267,7 @@ export interface TargetQuestionDraft {
 /**
  * One question (ADR 0078) per call that has no target and no host: which repo or system answers
  * it. The options are the components of other repos that serve that kind of call, then the
- * vendor systems of the profiles, then "None of these".
+ * outside systems of the profiles (a vendor, another team's: O2), then "None of these".
  */
 export function targetQuestionDrafts(
   facts: readonly Fact[],
@@ -287,7 +290,7 @@ export function targetQuestionDrafts(
         })),
         ...vendors.map((s) => ({
           label: s.id,
-          means: `${s.name}, an outside system, answers ${what}`,
+          means: `${s.name}, ${outsideAs(s)}, answers ${what}`,
           changes: `The call goes to ${s.name} when the facts are next written`,
         })),
         {
@@ -421,7 +424,7 @@ export function groupedTargetDrafts(
         })),
         ...vendors.map((s) => ({
           label: s.id,
-          means: `${s.name}, an outside system, answers all ${n} calls: ${listed}`,
+          means: `${s.name}, ${outsideAs(s)}, answers all ${n} calls: ${listed}`,
           changes: `The ${n} calls go to ${s.name} when the facts are next written`,
         })),
         {

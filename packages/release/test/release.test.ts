@@ -53,7 +53,7 @@ describe("deployment plan", () => {
       }[];
       request: Record<string, unknown>;
       unplaced: string[];
-      external: { system: string; beforeStep: number };
+      external: { system: string; beforeStep?: number }[];
       sections: Record<string, string>;
       rollbackGaps: number;
       earliest: string;
@@ -71,7 +71,7 @@ describe("deployment plan", () => {
     ).toEqual(want.steps);
     expect(p.steps[1]!.waitsOn[0]).toMatchObject(want.request);
     expect(p.unplaced.map((u) => u.id)).toEqual(want.unplaced);
-    expect(p.external).toEqual([expect.objectContaining(want.external)]);
+    expect(p.external).toEqual(want.external.map((x) => expect.objectContaining(x)));
     expect(Object.fromEntries(p.sections.map((s) => [s.name, s.text ? s.source : "gap"]))).toEqual(
       want.sections,
     );
@@ -111,8 +111,10 @@ describe("deployment plan", () => {
     expect(p.gaps).toContain(
       "data.md:8: the change to ledger-db.limit_change names no migration file, so the migration step can't say what runs.",
     );
-    expect(p.gaps).toContain(
-      "audit-svc (callee of POST /audit/events) has no repo in the catalog or the repos manifest, so Atticus can't place its deploy.",
+    // O2: audit-svc is another team's system, outside the estate: not a gap, but external.
+    expect(p.gaps.some((g) => g.startsWith("audit-svc"))).toBe(false);
+    expect(p.external.find((x) => x.system === "audit")?.what).toBe(
+      "POST /audit/events must be live on Audit's side (another team's system: it deploys on its own team's plan, not here)",
     );
     expect(p.gaps).toContain(
       "risk-engine (callee of POST /risk/assess) isn't in the catalog or the repos manifest, so Atticus can't place its deploy.",

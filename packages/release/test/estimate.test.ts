@@ -164,3 +164,41 @@ describe("a change's estimate (ADR 0109)", () => {
     expect(e.effort).toBeUndefined();
   });
 });
+
+describe("O2: a call to another team's system", () => {
+  const boundaryOf = (c: string) => (c === "northwind-pay" ? "vendor" : undefined);
+  const otherTeam = (c: string) => c === "risk-team";
+  const step = (component: string) => ({
+    mark: "added" as const,
+    kind: "call-out",
+    target: 2,
+    what: "The order is screened",
+    to: { component, entry: "POST /v1/screenings", new: true },
+  });
+
+  it("is a class of its own, beside a vendor's", () => {
+    expect(classOf(step("risk-team"), boundaryOf, otherTeam)).toBe(
+      "add/call-out/other-team/new-entry",
+    );
+    expect(classOf(step("northwind-pay"), boundaryOf, otherTeam)).toBe(
+      "add/call-out/vendor/new-entry",
+    );
+    expect(classOf(step("risk-team"), boundaryOf)).toBe("add/call-out/new-entry");
+  });
+
+  it("drives the estimate as a new call outside the estate, in its own words", () => {
+    const e = estimateChange({
+      change: "screen-orders",
+      flows: [{ ...FLOWS[0]!, steps: [step("risk-team")] }],
+      table: TABLE,
+      boundaryOf,
+      otherTeam,
+    });
+    expect(e.drivers.map((d) => [d.id, d.what, d.count])).toContainEqual([
+      "new-other-team-call",
+      "New calls to another team's system",
+      1,
+    ]);
+    expect(e.drivers.map((d) => d.id)).not.toContain("new-vendor-call");
+  });
+});

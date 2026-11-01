@@ -71,7 +71,9 @@ export const observabilityPresent: DeterministicCheckDef = {
     const design = docOf(ctx.files, "design.md");
     for (const id of ctx.footprint.components) {
       const c = ctx.get("Component", id);
-      if (!c || ctx.boundaryOf(c.system) === "vendor") continue;
+      // A vendor's monitoring is nobody's here to add. Another team's system (O2) still is asked
+      // about: it has an owner in the organisation who can answer (vendor-only on purpose).
+      if (!c || ctx.outsideOf(c.system) === "vendor") continue;
       const assets = ctx.records.filter(
         (r) => r.kind === "ObservabilityAsset" && r.component === id && kinds.includes(r.assetKind),
       );
@@ -166,9 +168,11 @@ export const knowledgeCheck: DeterministicCheckDef = {
         subject,
       });
     }
+    // A vendor's gaps aren't asked; another team's system's are (O2: its owner is in the
+    // organisation and can fill them), so this stays vendor-only on purpose.
     const subjects = [...fp.components, ...fp.systems].filter((id) => {
       const sys = ctx.systemOf(id);
-      return !sys || ctx.boundaryOf(sys) !== "vendor";
+      return !sys || ctx.outsideOf(sys) !== "vendor";
     });
     return { hits, subjects };
   },
@@ -263,23 +267,32 @@ export const vendorOperationKnown: DeterministicCheckDef = {
   id: "vendor-operation-known",
   question: "true",
   description:
-    "Each new or changed call to a vendor uses an operation in the vendor's published spec (as read into the catalog).",
+    "Each new or changed call to a vendor, or to another team's system, uses an operation in its published spec (as read into the catalog).",
   params: z.strictObject({}),
   run(ctx) {
     const doc = docOf(ctx.files, "interfaces.md");
     const hits: Hit[] = [];
     const subjects = new Set<string>();
     if (!doc) return { hits, subjects: [] };
+    const ofSystem = (component: string, sys: string) =>
+      ctx.systemOf(component) === sys || component === sys;
     for (const h of ctx.hops) {
       if (h.status !== "planned-new" && h.status !== "planned-modify") continue;
       const sys = ctx.systemOf(h.callee);
-      if (!sys || ctx.boundaryOf(sys) !== "vendor" || !h.method || !h.path) continue;
+      // O2: a vendor's, or another team's whose published spec is read as a vendor's (ADR 0142).
+      // Another team's is checked only once its spec is in the catalog: before that, the gap
+      // rules ask its owner for the spec, and this would say the same again.
+      const outside = sys ? ctx.outsideOf(sys) : undefined;
+      if (!sys || !outside || !h.method || !h.path) continue;
+      const vendor = outside === "vendor";
+      if (!vendor && !ctx.records.some((r) => r.kind === "Endpoint" && ofSystem(r.component, sys)))
+        continue;
       subjects.add(sys);
       const want = normalizePath(h.path);
       const found = ctx.records.some(
         (r) =>
           r.kind === "Endpoint" &&
-          (r.component === h.callee || ctx.systemOf(r.component) === sys || r.component === sys) &&
+          (r.component === h.callee || ofSystem(r.component, sys)) &&
           (r.method ?? "").toUpperCase() === h.method &&
           normalizePath(r.normalizedPath ?? r.pathOrTopic) === want,
       );
@@ -290,9 +303,13 @@ export const vendorOperationKnown: DeterministicCheckDef = {
         artifact: "interfaces.md",
         locator: { line: h.line, record: sys },
         summary: sentence(`${name}'s published spec has no ${h.method} ${h.path}.`),
-        why: "The change plans a call to a vendor operation the catalog has never seen in the vendor's spec, so its contract, limits and errors are unknown.",
+        why: vendor
+          ? "The change plans a call to a vendor operation the catalog has never seen in the vendor's spec, so its contract, limits and errors are unknown."
+          : "The change plans a call to an operation of another team's system that the catalog has never seen in that team's published spec, so its contract, limits and errors are unknown.",
         fix: {
-          text: `Get the operation's spec from ${name} and add it to inputs/partner-specs, or correct the operation.`,
+          text: vendor
+            ? `Get the operation's spec from ${name} and add it to inputs/partner-specs, or correct the operation.`
+            : `Get the operation's spec from the team that owns ${name} and add it to inputs/partner-specs, or correct the operation.`,
         },
         evidence: [lineEvidence(doc, h.line), ...subjectEvidence(ctx, sys)],
         question: {

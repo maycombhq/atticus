@@ -11,8 +11,11 @@ import type {
 import { PHASES } from "@maycombhq/core";
 import {
   artifactPhase,
+  outsideKindOf,
+  outsideSystemsOf,
   type ChangeContext,
   type Footprint,
+  type OutsideKind,
   type PhaseId,
 } from "@maycombhq/changes";
 import type { ChangeAnswer } from "./answers.js";
@@ -48,6 +51,11 @@ export interface CriticContext {
   /** The system a component, system, interface end or table belongs to. */
   systemOf(id: string): string | undefined;
   boundaryOf(system: string): string | undefined;
+  /**
+   * O2: whether a system is outside the estate, and what it is: `vendor`, or `other-team` (a
+   * system the profiles declare that no estate repo belongs to). Undefined for the estate's own.
+   */
+  outsideOf(system: string): OutsideKind | undefined;
   ownerOf(system: string): string | undefined;
   /** A caller or callee the catalog (or the profile) knows. */
   isKnown(id: string): boolean;
@@ -107,6 +115,7 @@ export function buildContext(o: {
   const profileSystems = new Map(
     lifecycle.orgPack.profiles.flatMap((p) => p.profile?.systems ?? []).map((s) => [s.id, s]),
   );
+  const outside = outsideSystemsOf(lifecycle.orgPack);
   const endpointOwners = new Set(
     records.filter((r) => r.kind === "Endpoint").map((r) => (r as RecordOf<"Endpoint">).component),
   );
@@ -148,6 +157,8 @@ export function buildContext(o: {
     get,
     systemOf,
     boundaryOf: (s) => get("System", s)?.boundary ?? profileSystems.get(s)?.boundary,
+    outsideOf: (s) =>
+      outsideKindOf(outside, s, get("System", s)?.boundary ?? profileSystems.get(s)?.boundary),
     ownerOf: (s) => profileSystems.get(s)?.owner ?? get("System", s)?.owner,
     isKnown: (id) =>
       get("Component", id) !== undefined ||

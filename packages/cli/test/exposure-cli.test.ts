@@ -61,6 +61,19 @@ describe("atticus verify: exposure facts in a deploy repo", () => {
     );
   });
 
+  it("checks <repo>/<module> against the components the repo's facts name", async () => {
+    const ok = metarepo({
+      facts: (s) => s.replace('"exposes":"cards-api"', '"exposes":"forge-cards/cards-api"'),
+    });
+    expect(await verify(ok, false)).toBe(0);
+    const root = metarepo({
+      facts: (s) => s.replace('"exposes":"cards-api"', '"exposes":"forge-cards/ghost"'),
+    });
+    expect(await verify(root, false)).toBe(1);
+    const rejected = readFileSync(join(root, "facts", `${REPO}.rejected.jsonl`), "utf8");
+    expect(rejected).toContain("forge-cards's facts name no component ghost (they name cards-api)");
+  });
+
   it("--write reports a Route that disagrees with the manifest, in its output and its verify report", async () => {
     // The manifest says the accounts service sits under /forge/accounts; its Route says otherwise.
     const root = metarepo({

@@ -11,6 +11,7 @@ import {
   type Doc,
   type Hop,
 } from "@maycombhq/naysayer";
+import { outsideKindOf, outsideSystemsOf, type OutsideKind } from "@maycombhq/changes";
 import type { ReleaseContext } from "./context.js";
 
 /**
@@ -36,6 +37,10 @@ export interface ResolvedHop extends Hop {
   calleeSystem?: string;
   callerBoundary?: Boundary;
   calleeBoundary?: Boundary;
+  /** O2: the caller's system is outside the estate: a vendor's, or another team's. */
+  callerOutside?: OutsideKind;
+  /** O2: the callee's system is outside the estate: a vendor's, or another team's. */
+  calleeOutside?: OutsideKind;
   /** The topic, when the hop is an event. */
   topic?: string;
   newTopic: boolean;
@@ -52,6 +57,11 @@ export interface Model {
   componentsOfRepo(repo: string): string[];
   systemOf(id: string): string | undefined;
   boundaryOf(system: string | undefined): Boundary | undefined;
+  /**
+   * O2: whether a system is outside the estate, and what it is: `vendor`, or `other-team` (a
+   * system the profiles declare that no estate repo belongs to). Undefined for the estate's own.
+   */
+  outsideOf(system: string | undefined): OutsideKind | undefined;
   systemName(system: string): string;
   /** The repo that holds gateway proxies, from existing routes' evidence or the manifest. */
   gatewayRepo?: string;
@@ -93,6 +103,8 @@ export function buildModel(ctx: ReleaseContext): Model {
   };
   const boundaryOf = (s: string | undefined): Boundary | undefined =>
     s ? (ctx.get("System", s)?.boundary ?? profileSystems.get(s)?.boundary) : undefined;
+  const outside = outsideSystemsOf(ctx.orgPack);
+  const outsideOf = (s: string | undefined) => outsideKindOf(outside, s, boundaryOf(s));
   const systemName = (s: string) => ctx.get("System", s)?.name ?? profileSystems.get(s)?.name ?? s;
   const evidenceRepo = (
     records: { evidence: { source: string; repo?: string }[] }[],
@@ -135,6 +147,8 @@ export function buildModel(ctx: ReleaseContext): Model {
     const calleeRepo = repoOfComponent(h.callee);
     const callerBoundary = boundaryOf(callerSystem);
     const calleeBoundary = boundaryOf(calleeSystem);
+    const callerOutside = outsideOf(callerSystem);
+    const calleeOutside = outsideOf(calleeSystem);
     return {
       ...h,
       change: /^planned-/.test(h.status) ? h.status : (touched.get(h.id) ?? h.status),
@@ -147,6 +161,8 @@ export function buildModel(ctx: ReleaseContext): Model {
       ...(calleeSystem ? { calleeSystem } : {}),
       ...(callerBoundary ? { callerBoundary } : {}),
       ...(calleeBoundary ? { calleeBoundary } : {}),
+      ...(callerOutside ? { callerOutside } : {}),
+      ...(calleeOutside ? { calleeOutside } : {}),
       ...(topic ? { topic } : {}),
       newTopic: !!topic && !topics.some((t) => t.pathOrTopic === topic),
       notes: hopNotes(ctx.files, h),
@@ -159,6 +175,7 @@ export function buildModel(ctx: ReleaseContext): Model {
     componentsOfRepo,
     systemOf,
     boundaryOf,
+    outsideOf,
     systemName,
     ...(gatewayRepo ? { gatewayRepo } : {}),
     ...(eventsRepo ? { eventsRepo } : {}),

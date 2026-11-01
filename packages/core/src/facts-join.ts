@@ -144,6 +144,69 @@ export interface FactEnd {
  */
 export const NO_TARGET = "(none)";
 
+/**
+ * J1 (ADR 0143, beta.10): a Kubernetes Service's in-cluster address as an exposure's `host` is
+ * written, `<name>.<namespace>.svc.cluster.local`, with `:<port>` when the Service's port is
+ * cited: its name, namespace and port, or undefined for any other host.
+ */
+export function clusterServiceAddress(
+  host: string,
+): { name: string; namespace: string; port?: number } | undefined {
+  const m =
+    /^([a-z0-9]([a-z0-9-]*[a-z0-9])?)\.([a-z0-9]([a-z0-9-]*[a-z0-9])?)\.svc\.cluster\.local(?::(\d+))?$/i.exec(
+      host.trim(),
+    );
+  if (!m) return undefined;
+  return {
+    name: m[1]!.toLowerCase(),
+    namespace: m[3]!.toLowerCase(),
+    ...(m[5] ? { port: Number(m[5]) } : {}),
+  };
+}
+
+/**
+ * Every name a call reaches a Service by inside the cluster (J1): the whole address, `.svc`,
+ * `<name>.<namespace>` and the bare `<name>` (from its own namespace), each with the port when
+ * one is cited.
+ */
+export function clusterServiceHosts(a: {
+  name: string;
+  namespace: string;
+  port?: number;
+}): string[] {
+  const port = a.port !== undefined ? `:${a.port}` : "";
+  return [
+    `${a.name}.${a.namespace}.svc.cluster.local`,
+    `${a.name}.${a.namespace}.svc`,
+    `${a.name}.${a.namespace}`,
+    a.name,
+  ].map((h) => `${h}${port}`);
+}
+
+/** A character that makes a path segment a regular expression (an Ingress `ImplementationSpecific` path). */
+const PATH_PATTERN = /[()[\]|$^*+?\\]/;
+
+/** Whether a base path is written as a regular expression (J1): `/forge/limits(/|$)(.*)`. */
+export const isPatternPath = (path: string): boolean => PATH_PATTERN.test(path);
+
+/**
+ * A base path's plain prefix (J1): the segments before the first one a regular expression's
+ * pattern is in, `/forge/limits(/|$)(.*)` giving `/forge/limits`. A plain path is itself.
+ */
+export function plainPathPrefix(path: string): string {
+  const segs: string[] = [];
+  for (const s of path.split("/").filter(Boolean)) {
+    const at = s.search(PATH_PATTERN);
+    if (at < 0) {
+      segs.push(s);
+      continue;
+    }
+    if (at > 0) segs.push(s.slice(0, at));
+    break;
+  }
+  return `/${segs.join("/")}`;
+}
+
 /** F2: an Interface's flags when nobody named its callee: found by path, or by a host's first label. */
 export const JOINED_BY_PATH = "joined-by-path";
 export const JOINED_BY_LABEL = "joined-by-label";
@@ -880,6 +943,20 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
     const own = (repo: string, component: string) =>
       mainOf.get(component) === repo ? { repo, component: undefined } : { repo, component };
     if (!n.fact.exposes) return own(n.repo, n.component);
+    // beta.10: `<repo>/<module>`, a module the manifest doesn't list, as the repo's facts name it.
+    const inRepo = /^([^/]+)\/([^/]+)$/.exec(n.fact.exposes.trim());
+    if (inRepo) {
+      const repo = repoIds.get(factIdPart(inRepo[1]!)) ?? mainOf.get(factIdPart(inRepo[1]!));
+      const mod = factIdPart(inRepo[2]!);
+      const named = repo
+        ? nodes.find(
+            (x) =>
+              x.repo === repo &&
+              (x.component === mod || x.component === factIdPart(`${repo}-${mod}`)),
+          )
+        : undefined;
+      return named ? own(named.repo, named.component) : undefined;
+    }
     const slug = factIdPart(n.fact.exposes);
     const repo = repoIds.get(slug) ?? mainOf.get(slug);
     if (repo) return { repo, component: undefined };
@@ -917,7 +994,14 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
       factIdPart(repos.find((r) => r.repo === owner.repo)?.component ?? owner.repo);
     const holder = owner.component ? `${owner.repo}'s module ${owner.component}` : owner.repo;
     const env = x.fact.env ? ` (${x.fact.env})` : "";
-    if (x.fact.host) {
+    // beta.10: a Service's in-cluster address, by each name a call in the cluster reaches it by;
+    // never a conflict with the manifest's hosts, which say where it is reached from outside.
+    const inCluster =
+      x.fact.host && /^service$/i.test(x.fact.resourceType ?? "")
+        ? clusterServiceAddress(x.fact.host)
+        : undefined;
+    if (inCluster) for (const h of clusterServiceHosts(inCluster)) addHost(g, h, x);
+    else if (x.fact.host) {
       const host = x.fact.host;
       if (g.manifestHosts.length && !g.manifestHosts.some((p) => hostMatches(p, host))) {
         hostDisputed.add(x);
@@ -934,7 +1018,8 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
       addHost(g, host, x);
     }
     if (x.fact.basePath) {
-      const path = x.fact.basePath;
+      // J1, beta.10: a base path written as a regular expression is its plain prefix.
+      const path = plainPathPrefix(x.fact.basePath);
       if (g.manifestBase && !sameSegments(pathSegments(g.manifestBase), pathSegments(path))) {
         pathDisputed.add(x);
         exposure.push({
@@ -1625,6 +1710,36 @@ export function joinFlagsOf(
   return HOW[j.how] ? [HOW[j.how]!] : [];
 }
 
+type SharedLink = CatalogRecord & {
+  kind: "Interface";
+  confidence: string;
+  flags?: string[];
+  evidence: EvidenceT[];
+};
+
+/** How a join nobody guessed found its callee, in the order a shared link lists them. */
+const HOW_FLAG_ORDER: readonly string[] = [
+  JOINED_BY_ANSWER,
+  JOINED_BY_NAME,
+  JOINED_BY_REPO,
+  JOINED_BY_HOST,
+];
+
+/**
+ * A shared link's flags (ADR 0135, section 5): each once, the union of its joins'. A verified link
+ * lists how its cited joins were made first, then the guesses its other calls rest on; an
+ * inferred one its guesses first, so the first flag says what the link rests on either way.
+ */
+export function sharedLinkFlags(flags: readonly string[], confidence: string): string[] {
+  const all = new Set(flags);
+  const guesses = GUESS_ORDER.filter((f) => all.has(f));
+  const hows = HOW_FLAG_ORDER.filter((f) => all.has(f));
+  const rest = [...all].filter((f) => !guesses.includes(f) && !hows.includes(f)).sort(cmp);
+  return confidence === "verified"
+    ? [...hows, ...guesses, ...rest]
+    : [...guesses, ...hows, ...rest];
+}
+
 /**
  * The joins as C1 records: an Interface per call joined to an entry (a publish to each
  * listener, as the merge would pair them), citing the caller's call, the config that ties it to
@@ -1656,6 +1771,29 @@ export function joinRecords(result: FactsJoinResult, repos: readonly JoinRepo[])
     ];
   };
   const out = new Map<string, CatalogRecord>();
+  /**
+   * A link several calls share (ADR 0135, section 5): the Interface every join of it writes, as
+   * one. Its evidence is every join's, its flags their union (`sharedLinkFlags`), and it is
+   * verified when one join is: a cited link exists, whatever the other calls guessed.
+   */
+  const putLink = (r: CatalogRecord) => {
+    const was = out.get(r.id) as SharedLink | undefined;
+    if (!was || was.kind !== "Interface") {
+      out.set(r.id, r);
+      return;
+    }
+    const now = r as SharedLink;
+    const confidence =
+      was.confidence === "verified" || now.confidence === "verified" ? "verified" : "inferred";
+    const flags = sharedLinkFlags([...(was.flags ?? []), ...(now.flags ?? [])], confidence);
+    const { flags: _f, ...rest } = was;
+    out.set(r.id, {
+      ...rest,
+      confidence,
+      ...(flags.length ? { flags } : {}),
+      evidence: once([...was.evidence, ...now.evidence]),
+    } as CatalogRecord);
+  };
   const flagsOf = joinFlagsOf;
   // F2, J0, J1: a guess (by path, a host's first label, a platform setting, a folder name, or
   // despite a conflict) is inferred, however declared its ends are.
@@ -1665,7 +1803,7 @@ export function joinRecords(result: FactsJoinResult, repos: readonly JoinRepo[])
       // As the merge pairs a publish with a listener: via the bus, async, at the topic.
       const call = fact(j.call) as Call;
       const entry = fact(j.entry) as Entry;
-      out.set(j.interface, {
+      putLink({
         kind: "Interface",
         schemaVersion: 2,
         id: j.interface,
@@ -1709,7 +1847,7 @@ export function joinRecords(result: FactsJoinResult, repos: readonly JoinRepo[])
       ].every((f) => f?.conf === "declared");
       const confidence = declared && !guessed(j) ? "verified" : "inferred";
       const auth = catalogAuth(route) ?? catalogAuth(entry);
-      out.set(j.interface, {
+      putLink({
         kind: "Interface",
         schemaVersion: 2,
         id: j.interface,
@@ -1784,7 +1922,7 @@ export function joinRecords(result: FactsJoinResult, repos: readonly JoinRepo[])
     }
     const declared = call.conf === "declared" && entry.conf === "declared";
     const method = (call.method ?? entry.method)?.toUpperCase();
-    out.set(j.interface, {
+    putLink({
       kind: "Interface",
       schemaVersion: 2,
       id: j.interface,
