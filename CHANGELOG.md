@@ -4,6 +4,11 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## 2.0.0-beta.10 (2026-10-31)
 
+### Config placeholders resolved through the config that sets them
+
+- A call whose base URL is a placeholder (`${PAYMENTS_URL}`, Spring's `${PAYMENTS_URL:default}`, `env:PAYMENTS_URL`), or a publish or listener whose topic is one, is joined through the config facts that set it: in its own repo, or in a deploy or config repo of the estate where the setting is for its component (a folder named for it, a Deployment of that name in the file, or the fact's `target`), else one for every service (a platform chart). Every environment's host the manifest's hosts and base paths claim is accepted, and the link cites the placeholder's line and the value's; environments pointing at different repos are asked. No model; run `atticus verify --all --write` again.
+- A config key is no longer read as a host (it was asked about as "Which repo answers on forge.notify.base-url?"), and the reading rules say how to write an environment variable a deployment sets. On the bank-shaped link estate, precision goes from 0.889 to 0.909 and recall from 0.615 to 0.769, with 1 call asked instead of 4.
+
 ### Measuring the links the join makes
 
 - The estate join is measured against reference links on an invented estate shaped like a large bank's (a proxy per repo on one gateway host, services under one ingress host, a house starter, a deploy repo): reading recall, link precision and recall, and the calls asked, guessed and taken by outside systems, pinned in CI.
