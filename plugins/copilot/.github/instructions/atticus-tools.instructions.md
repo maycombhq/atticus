@@ -14,6 +14,8 @@ Atticus checks every answer deterministically. Use its commands and its MCP tool
 - A stage command with `--handoff` prints the prompt file, the result file and the two commands that finish the step: `atticus handoff done <run>`, then the same command with `--resume <run>`.
 - `atticus task context <change> <task> --markdown` loads a task's context, so nothing is pasted into the chat.
 - `atticus findings <change>` lists the critic's findings and their state. `atticus questions list --state open` lists the questions waiting on a person.
+- What a read rests on: `atticus estate fresh` lists every repo whose clone moved past its facts and the facts to read again; `atticus next --queue` lists the repos to read in the order that lands links early, with each one's cost; `atticus map <repo> --gaps` plans a second pass on what the last verify left, for a fresh chat; `atticus verify audit <repo> --report` gives a person's sample audit's precision.
+- What a change rests on: `atticus change impact <change>` says who each break reaches, up the chain, and its owner. `atticus questions proposed` checks every proposed answer's citations; a person accepts one with `atticus questions answer <id> --accept-proposal`.
 - The read-only `atticus` MCP server offers the same reading: `next_step`, `waiting_on_you`, `task_context`, `findings`, `open_questions`, `knowledge_items`, `knowledge_ask`, `change_status`, `change_needs`, and `grep`, `files`, `outline` and `show_code` over the code. Register it from `.vscode/mcp.json`.
 
 The only network call an Atticus step makes is to the model provider the organisation configured. Don't reach anywhere else.

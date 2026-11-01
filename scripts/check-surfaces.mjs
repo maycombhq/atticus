@@ -24,7 +24,11 @@ const CENSUS = {
   screens: 54, // ADR 0149 (O4): the outside systems; 2026-10-27: a change's Knowledge page, beside Feature design (it was only at Feature's foot)
   /** Views in VS Code's Atticus container, and the commands its palette offers. */
   vscodeViews: 7,
-  vscodePaletteCommands: 43,
+  // 2026-11-01 (beta.10 caught up in VS Code): counted as the commands the palette offers (every
+  // declared command but those its `commandPalette` menu hides with `when: false`), no longer the
+  // menu's entries, which grew only when a command was hidden. 69 offered before, 86 with the 14
+  // jobs, Accept as my answer and My teams' / every question.
+  vscodePaletteCommands: 86,
   /** Tabs of IntelliJ's tool window (`Copy.kt`'s `*_TAB`). */
   intellijTabs: 9,
   retired: [],
@@ -149,9 +153,14 @@ if (unwired.length)
 // ------------------------------------------------------------------ VS Code
 const vscode = JSON.parse(read("packages/vscode/package.json"));
 expect("VS Code views", vscode.contributes.views.atticus.length, CENSUS.vscodeViews);
+const hiddenInPalette = new Set(
+  (vscode.contributes.menus?.commandPalette ?? [])
+    .filter((m) => m.when === "false")
+    .map((m) => m.command),
+);
 expect(
   "VS Code palette commands",
-  (vscode.contributes.menus?.commandPalette ?? []).length,
+  vscode.contributes.commands.filter((c) => !hiddenInPalette.has(c.command)).length,
   CENSUS.vscodePaletteCommands,
 );
 

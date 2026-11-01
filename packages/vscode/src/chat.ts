@@ -1,3 +1,5 @@
+import { readdirSync } from "node:fs";
+import { join } from "node:path";
 import * as vscode from "vscode";
 import {
   actionFor,
@@ -16,6 +18,7 @@ import { parseJson } from "./cli";
 import { block, describeEnd, endFiles } from "./describe";
 import { ChatSessions, promptText, recordChat, recordingStream } from "./history";
 import type { StepEnd } from "./runner";
+import { jobByCommand, routeAsk, type JobArgs } from "./jobs";
 import { stepTitle, WORDS } from "./words";
 import type { Service } from "./service";
 import type { OpenQuestion } from "./types";
@@ -209,6 +212,114 @@ async function runTyped(
   svc.fireChanged();
 }
 
+const printed = (r: { stdout: string; stderr: string }) =>
+  [...r.stdout.trimEnd().split("\n"), ...r.stderr.trimEnd().split("\n")].filter(Boolean);
+
+/** The repos and changes the metarepo has, by folder, for naming one in a plain request. */
+function knownIds(root: string): { repos: string[]; changes: string[] } {
+  const dirs = (p: string) => {
+    try {
+      return readdirSync(p, { withFileTypes: true })
+        .filter((d) => d.isDirectory())
+        .map((d) => d.name);
+    } catch {
+      return [];
+    }
+  };
+  return {
+    repos: dirs(join(root, "workspace")),
+    changes: [
+      ...dirs(join(root, "openspec", "changes")),
+      ...dirs(join(root, ".atticus", "openspec", "changes")),
+    ].filter((c) => c !== "archive"),
+  };
+}
+
+/**
+ * beta.10's jobs in the chat (`/impact`, `/fresh`, `/queue`, `/gaps`, `/propose`, and a plain
+ * request routed to one): a report runs here and its output is shown, as /estimate's is; the
+ * rest gets a button to the editor's command, which asks what it still needs. The app page that
+ * shows the same is a button away.
+ */
+async function job(
+  svc: Service,
+  root: string,
+  command: string,
+  a: JobArgs,
+  stream: vscode.ChatResponseStream,
+  token: vscode.CancellationToken,
+) {
+  const j = jobByCommand(command);
+  const args = [a.repo, a.change].filter((x): x is string => !!x);
+  if (!j || j.how === "chat") {
+    stream.button({ command, arguments: args, title: j?.title ?? "Do it" });
+    return;
+  }
+  const enough =
+    j.how === "report" &&
+    (j.needs === undefined || (j.needs === "change" && !!a.change) || j.needs === "repo-or-estate");
+  if (!enough) {
+    stream.button({ command, arguments: args, title: j.title });
+    return;
+  }
+  const argv = j.argv(a);
+  stream.progress(`Running atticus ${argv.join(" ")}...`);
+  const r = await svc.cli(root)([...argv, "--root", root], token);
+  const out = printed(r);
+  stream.markdown(
+    `${inline(`atticus ${argv.join(" ")}`)}: ${WORDS.endedWith(r.code)}${block(out.slice(0, 200).length ? out.slice(0, 200) : ["(nothing printed)"])}`,
+  );
+  if (out.length > 200)
+    stream.markdown(`${out.length - 200} more lines are in the Atticus output.`);
+  if (j.app)
+    stream.button({ command: "atticus.showApp", arguments: [j.app(a)], title: WORDS.openInApp });
+}
+
+/** The jobs a slash command names, by its name. */
+const SLASH_JOBS: Record<string, { command: string; arg?: "repo" | "change"; say?: string }> = {
+  impact: { command: "atticus.changeImpact", arg: "change", say: "/impact add-pins" },
+  fresh: { command: "atticus.estateFresh" },
+  queue: { command: "atticus.nextQueue" },
+  gaps: { command: "atticus.mapGaps", arg: "repo", say: "/gaps forge-ledger" },
+  propose: { command: "atticus.propose" },
+};
+
+async function slashJob(
+  svc: Service,
+  root: string,
+  name: string,
+  prompt: string,
+  stream: vscode.ChatResponseStream,
+  token: vscode.CancellationToken,
+) {
+  const s = SLASH_JOBS[name]!;
+  const target = argsOf(`atticus ${prompt}`).find((w) => !w.startsWith("-"));
+  if (s.arg && !target) {
+    stream.markdown(`Say which ${s.arg}: ${s.say}`);
+    return;
+  }
+  if (name === "gaps") {
+    // The second pass's plan: written here, no model; the new chat that reads it is a button away.
+    stream.progress(`Planning a second pass on ${target}'s gaps...`);
+    const r = await svc.cli(root)(["map", target!, "--gaps", "--root", root], token);
+    stream.markdown(block(printed(r).length ? printed(r) : [WORDS.endedWith(r.code)]));
+    if (r.code === 0)
+      stream.button({
+        command: "atticus.openChatStep",
+        arguments: ["map", `${target} --gaps`],
+        title: `Open /atticus-map ${target} --gaps in a new chat`,
+      });
+    return;
+  }
+  if (name === "propose") {
+    stream.markdown(routeAsk("propose answers")?.says ?? "");
+    stream.button({ command: "atticus.propose", title: WORDS.openInChat });
+    stream.button({ command: "atticus.questionsProposed", title: "Check the proposals" });
+    return;
+  }
+  return job(svc, root, s.command, s.arg && target ? { [s.arg]: target } : {}, stream, token);
+}
+
 /**
  * The participant, with each request and its reply recorded in the prompt history (ADR 0110):
  * the request as typed, then everything the reply streamed as markdown, through `atticus
@@ -258,9 +369,26 @@ function participant(
       return;
     }
     const cmd = request.command;
+    // beta.10: a plain request about one of the new jobs goes to it ("what does this change
+    // break", "which repos are stale", "propose answers"); anything else says what is next.
+    if (!cmd && request.prompt.trim()) {
+      const route = routeAsk(request.prompt, knownIds(root));
+      if (route) {
+        if (route.args?.change) ranOn(route.args.change);
+        stream.markdown(`${route.says}\n`);
+        return job(svc, root, route.command, route.args ?? {}, stream, token);
+      }
+    }
     if (!cmd || cmd === "next") {
       if (!cmd && request.prompt.trim()) stream.markdown(`${WORDS.chatUse}\n\n`);
       return next(svc, root, stream, token);
+    }
+    if (cmd in SLASH_JOBS) {
+      if (cmd === "impact") {
+        const c = argsOf(`atticus ${request.prompt}`)[0];
+        if (c) ranOn(c);
+      }
+      return slashJob(svc, root, cmd, request.prompt, stream, token);
     }
     if (cmd === "answer") return answer(svc, root, stream, token);
     // ADR 0113: a task starts in Copilot's agent mode with its context, nothing pasted.

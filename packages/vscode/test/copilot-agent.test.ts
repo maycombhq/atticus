@@ -32,11 +32,31 @@ describe("which agent takes a step", () => {
     expect(agentForStep("knowledge")?.stepClass).toBe("knowledge");
     expect(agentForStep("verify")?.agent).toBe("atticus-verifier");
     expect(agentForStep("describe")?.agent).toBe("atticus-repo-describer");
+    // beta.10 (ADR 0144): proposed answers, from the code, for a person to accept.
+    expect(agentForStep("propose")).toEqual({
+      agent: "atticus-question-proposer",
+      stepClass: "read",
+      slash: "atticus-propose",
+    });
+  });
+
+  it("opens the second pass on the gaps and the proposals in agent mode with their slash commands", () => {
+    expect(openForStep("map", "forge-ledger --gaps", there)).toMatchObject({
+      kind: "agent",
+      agent: "atticus-repo-reader",
+      chat: { query: "/atticus-map forge-ledger --gaps" },
+    });
+    expect(openForStep("propose", undefined, there)).toMatchObject({
+      kind: "agent",
+      agent: "atticus-question-proposer",
+      chat: { query: "/atticus-propose" },
+    });
   });
 
   it("covers reading, verifying, the stage drafts, task runs, knowledge and the description", () => {
     expect([...new Set(Object.values(AGENT_BY_STEP).map((a) => a.agent))].sort()).toEqual([
       "atticus-knowledge-reader",
+      "atticus-question-proposer",
       "atticus-repo-describer",
       "atticus-repo-reader",
       "atticus-stage-drafter",

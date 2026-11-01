@@ -149,6 +149,26 @@
             "description": "A change's estimate: its size from the target flows, the org pack's ranges and what drives it: /estimate <change>"
           },
           {
+            "name": "impact",
+            "description": "What a change breaks, up the chain, each hop with its owner: /impact <change>"
+          },
+          {
+            "name": "fresh",
+            "description": "Which repos' clones moved past their facts, most stale first"
+          },
+          {
+            "name": "queue",
+            "description": "The repos to read, in the order that lands links early, each with its cost"
+          },
+          {
+            "name": "gaps",
+            "description": "Plan a second pass on what a repo's last verify left, for a new chat: /gaps <repo>"
+          },
+          {
+            "name": "propose",
+            "description": "Have Copilot propose answers to the open questions from the code, each citation checked"
+          },
+          {
             "name": "ask",
             "description": "Ask the catalog a plain question: /ask <question>"
           },
@@ -703,6 +723,102 @@
         "title": "Show the manual step",
         "category": "Atticus",
         "icon": "$(checklist)"
+      },
+      {
+        "command": "atticus.estateFresh",
+        "title": "Which repos are stale (estate fresh)",
+        "category": "Atticus",
+        "icon": "$(history)"
+      },
+      {
+        "command": "atticus.nextQueue",
+        "title": "The onboarding queue, with each read's cost (next --queue)",
+        "category": "Atticus",
+        "icon": "$(list-ordered)"
+      },
+      {
+        "command": "atticus.mapGaps",
+        "title": "Plan a second pass on a repo's gaps (map --gaps)",
+        "category": "Atticus"
+      },
+      {
+        "command": "atticus.joinMeasure",
+        "title": "Measure the links against your reference (join measure)",
+        "category": "Atticus"
+      },
+      {
+        "command": "atticus.auditReport",
+        "title": "The sample audit's precision (verify audit --report)",
+        "category": "Atticus"
+      },
+      {
+        "command": "atticus.changeImpact",
+        "title": "What a change breaks, up the chain (change impact)",
+        "category": "Atticus"
+      },
+      {
+        "command": "atticus.specSeed",
+        "title": "Seed a repo's starting spec from its verified flows (spec seed)",
+        "category": "Atticus"
+      },
+      {
+        "command": "atticus.specAccept",
+        "title": "Accept a repo's seeded spec (spec accept)",
+        "category": "Atticus"
+      },
+      {
+        "command": "atticus.questionsSheet",
+        "title": "Write every open question to one answer sheet (questions sheet)",
+        "category": "Atticus"
+      },
+      {
+        "command": "atticus.questionsApply",
+        "title": "Answer from a filled answer sheet (questions sheet --apply)",
+        "category": "Atticus"
+      },
+      {
+        "command": "atticus.questionsProposed",
+        "title": "Check the proposed answers' citations (questions proposed)",
+        "category": "Atticus"
+      },
+      {
+        "command": "atticus.propose",
+        "title": "Propose answers from the code with Copilot (/atticus-propose)",
+        "category": "Atticus",
+        "icon": "$(lightbulb)"
+      },
+      {
+        "command": "atticus.intakeTraffic",
+        "title": "Keep a gateway's traffic export as evidence (intake traffic)",
+        "category": "Atticus"
+      },
+      {
+        "command": "atticus.repoRename",
+        "title": "Rename a repo's id with its facts (repo rename)",
+        "category": "Atticus"
+      },
+      {
+        "command": "atticus.acceptProposal",
+        "title": "Accept as my answer",
+        "category": "Atticus",
+        "icon": "$(check)"
+      },
+      {
+        "command": "atticus.questionsMine",
+        "title": "Show my teams' questions",
+        "category": "Atticus",
+        "icon": "$(filter)"
+      },
+      {
+        "command": "atticus.questionsAll",
+        "title": "Show every question",
+        "category": "Atticus",
+        "icon": "$(filter-filled)"
+      },
+      {
+        "command": "atticus.openChatStep",
+        "title": "Open the step in Copilot Chat",
+        "category": "Atticus"
       }
     ],
     "viewsContainers": {
@@ -939,6 +1055,66 @@
           "command": "atticus.ask",
           "when": "view == atticus.catalog",
           "group": "navigation@1"
+        },
+        {
+          "command": "atticus.questionsMine",
+          "when": "view == atticus.questions && !atticus.questionsMine",
+          "group": "navigation@1"
+        },
+        {
+          "command": "atticus.questionsAll",
+          "when": "view == atticus.questions && atticus.questionsMine",
+          "group": "navigation@1"
+        },
+        {
+          "command": "atticus.propose",
+          "when": "view == atticus.questions",
+          "group": "navigation@2"
+        },
+        {
+          "command": "atticus.acceptProposal",
+          "when": "view == atticus.questions",
+          "group": "1_answer@1"
+        },
+        {
+          "command": "atticus.questionsProposed",
+          "when": "view == atticus.questions",
+          "group": "1_answer@2"
+        },
+        {
+          "command": "atticus.questionsSheet",
+          "when": "view == atticus.questions",
+          "group": "2_sheet@1"
+        },
+        {
+          "command": "atticus.questionsApply",
+          "when": "view == atticus.questions",
+          "group": "2_sheet@2"
+        },
+        {
+          "command": "atticus.nextQueue",
+          "when": "view == atticus.view",
+          "group": "more"
+        },
+        {
+          "command": "atticus.estateFresh",
+          "when": "view == atticus.repos",
+          "group": "more@4"
+        },
+        {
+          "command": "atticus.auditReport",
+          "when": "view == atticus.repos",
+          "group": "more@5"
+        },
+        {
+          "command": "atticus.joinMeasure",
+          "when": "view == atticus.repos",
+          "group": "more@6"
+        },
+        {
+          "command": "atticus.intakeTraffic",
+          "when": "view == atticus.repos",
+          "group": "more@7"
         }
       ],
       "view/item/context": [
@@ -1181,6 +1357,46 @@
           "command": "atticus.keepCandidate",
           "when": "view == atticus.knowledge && viewItem == atticus.findCandidate.new",
           "group": "atticus"
+        },
+        {
+          "command": "atticus.acceptProposal",
+          "when": "view == atticus.questions && viewItem == atticus.questionProposed",
+          "group": "inline"
+        },
+        {
+          "command": "atticus.acceptProposal",
+          "when": "view == atticus.questions && viewItem == atticus.questionProposed",
+          "group": "atticus"
+        },
+        {
+          "command": "atticus.changeImpact",
+          "when": "view == atticus.changes && viewItem == atticus.change",
+          "group": "atticus"
+        },
+        {
+          "command": "atticus.mapGaps",
+          "when": "view == atticus.repos && viewItem == atticus.repo",
+          "group": "atticus"
+        },
+        {
+          "command": "atticus.auditReport",
+          "when": "view == atticus.repos && viewItem == atticus.repo",
+          "group": "atticus"
+        },
+        {
+          "command": "atticus.specSeed",
+          "when": "view == atticus.repos && viewItem == atticus.repo",
+          "group": "atticus"
+        },
+        {
+          "command": "atticus.specAccept",
+          "when": "view == atticus.repos && viewItem == atticus.repo",
+          "group": "atticus"
+        },
+        {
+          "command": "atticus.repoRename",
+          "when": "view == atticus.repos && viewItem == atticus.repo",
+          "group": "atticus"
         }
       ],
       "commandPalette": [
@@ -1290,6 +1506,10 @@
         },
         {
           "command": "atticus.openRunAnswer",
+          "when": "false"
+        },
+        {
+          "command": "atticus.openChatStep",
           "when": "false"
         },
         {

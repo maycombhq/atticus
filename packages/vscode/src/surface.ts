@@ -85,6 +85,13 @@ export const DEFAULT_CHAT = [
   "diagram",
   "changemap",
   "estimate",
+  // beta.10 caught up: a change's impact, the estate's freshness, the onboarding queue, the second
+  // pass on a repo's gaps and the answers Copilot proposes.
+  "impact",
+  "fresh",
+  "queue",
+  "gaps",
+  "propose",
   "ask",
   "run",
 ];

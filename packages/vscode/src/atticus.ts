@@ -1,5 +1,13 @@
 import { parseJson } from "./cli";
-import type { Cancel, Cli, NextStep, OpenQuestion } from "./types";
+import type {
+  Cancel,
+  Cli,
+  NextStep,
+  OpenQuestion,
+  QuestionAbout,
+  QueueEntry,
+  QuestionsMe,
+} from "./types";
 
 /**
  * The deterministic commands the extension reads (ADR 0090): `atticus next --json` and
@@ -29,29 +37,90 @@ export async function readNext(
   };
 }
 
+type QuestionList = {
+  questions?: OpenQuestion[];
+  about?: Record<string, QuestionAbout>;
+  me?: QuestionsMe;
+};
+
+/** Each question with what the list says of it under `about` (beta.10), in the list's order. */
+const withAbout = (j: QuestionList): OpenQuestion[] =>
+  (j.questions ?? []).map((q) => {
+    const about = j.about?.[q.id];
+    return about ? { ...q, about } : q;
+  });
+
 export async function readOpenQuestions(
   cli: Cli,
   root: string,
   token?: Cancel,
 ): Promise<Read<OpenQuestion[]>> {
   const r = await cli(["questions", "list", "--state", "open", "--json", "--root", root], token);
-  const j = parseJson<{ questions?: OpenQuestion[] }>(r.stdout);
+  const j = parseJson<QuestionList>(r.stdout);
   if (!j) return { ok: false, message: why(r.stderr, r.stdout, r.code) };
-  return { ok: true, value: j.questions ?? [] };
+  return { ok: true, value: withAbout(j) };
 }
 
-/** Answer a question: an option (counting from 1) or the person's own words. */
+/**
+ * My teams' questions (ADR 0140, 0153): `--mine`, from roles.yaml's teams and the changes that
+ * name the person under owners, and who the command line took the person to be.
+ */
+export async function readMyQuestions(
+  cli: Cli,
+  root: string,
+  token?: Cancel,
+): Promise<Read<{ questions: OpenQuestion[]; me?: QuestionsMe }>> {
+  const r = await cli(
+    ["questions", "list", "--state", "open", "--mine", "--json", "--root", root],
+    token,
+  );
+  const j = parseJson<QuestionList>(r.stdout);
+  if (!j) return { ok: false, message: why(r.stderr, r.stdout, r.code) };
+  return { ok: true, value: { questions: withAbout(j), ...(j.me ? { me: j.me } : {}) } };
+}
+
+/** The steps whose answers take a rule (ADR 0153): where calls go, by target or by host. */
+const RULE_STEPS = new Set(["facts-targets", "scan-hosts"]);
+
+/** Whether a question's answer can carry a rule (`--match`). */
+export const takesRule = (q: Pick<OpenQuestion, "askedBy">) =>
+  RULE_STEPS.has(q.askedBy?.step ?? "");
+
+/** The onboarding queue (ADR 0141): the repos to read, in order, each with why and its cost. */
+export async function readQueue(
+  cli: Cli,
+  root: string,
+  token?: Cancel,
+): Promise<Read<QueueEntry[]>> {
+  const r = await cli(["next", "--queue", "--json", "--root", root], token);
+  const j = parseJson<{ queue?: QueueEntry[] }>(r.stdout);
+  if (!j) return { ok: false, message: why(r.stderr, r.stdout, r.code) };
+  return { ok: true, value: j.queue ?? [] };
+}
+
+/**
+ * Answer a question: an option (counting from 1), the person's own words, or the assistant's
+ * checked proposal taken as theirs (ADR 0144). A target or hosts answer may carry a rule.
+ */
 export async function answerQuestion(
   cli: Cli,
   root: string,
   id: string,
-  answer: { option: number } | { text: string },
+  answer: { option: number } | { text: string } | { acceptProposal: true },
+  o: { match?: string } = {},
 ): Promise<{ ok: boolean; lines: string[] }> {
+  const how =
+    "option" in answer
+      ? ["--option", String(answer.option)]
+      : "text" in answer
+        ? ["--text", answer.text]
+        : ["--accept-proposal"];
   const r = await cli([
     "questions",
     "answer",
     id,
-    ...("option" in answer ? ["--option", String(answer.option)] : ["--text", answer.text]),
+    ...how,
+    ...(o.match && !("acceptProposal" in answer) ? ["--match", o.match] : []),
     "--root",
     root,
   ]);
@@ -107,7 +176,9 @@ export function actionFor(step: NextStep): NextAction {
     args[1] &&
     !args[1].startsWith("-") &&
     args[1] !== "render" &&
-    !args.includes("--estimate")
+    !args.includes("--estimate") &&
+    // beta.10 (ADR 0157): --gaps only writes the second pass's prompt; a new chat reads it.
+    !args.includes("--gaps")
   )
     return { kind: "ai", args };
   return { kind: "run", args };

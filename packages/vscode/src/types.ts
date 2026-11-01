@@ -73,6 +73,48 @@ export interface OpenQuestion {
   question: string;
   options: { label: string; means?: string; changes?: string }[];
   evidence: string[];
+  /** The step and command that asked it: a target or hosts question takes a rule (ADR 0153). */
+  askedBy?: { step?: string; command?: string };
+  /** beta.10 (ADR 0140, 0144, 0153): its owner, what rests on it and its checked proposal. */
+  about?: QuestionAbout;
+}
+
+/** What `atticus questions list --json` says of a question under `about` (C4 2.33.0 to 2.41.0). */
+export interface QuestionAbout {
+  /** The changes in flight that rest on it. */
+  restsOn: string[];
+  /** How many calls its answer joins. */
+  joins: number;
+  owner: { team: string; name?: string } | { change: string; people: string[] } | { none: string };
+  /** The assistant's proposal, shown only once every line it cites holds. */
+  proposal?: {
+    answer: { option?: number; text?: string };
+    why: string;
+    cites: { repo?: string; file: string; line: number; quote: string }[];
+    by: string;
+    at: string;
+    file: string;
+  };
+}
+
+/** With `--mine`: the person, and the teams roles.yaml puts them on. */
+export interface QuestionsMe {
+  handle: string;
+  teams: { id: string; name?: string }[];
+}
+
+/** One repo of `atticus next --queue --json` (ADR 0141). */
+export interface QueueEntry {
+  repo: string;
+  order: number;
+  reason: string;
+  why: string;
+  command: string;
+  slash?: string;
+  cost?: {
+    estimated?: { tokens: number; sessions: number; reread?: boolean };
+    reported?: { tokens?: number; sessions?: number };
+  };
 }
 
 /** One step of `atticus next --json`. */

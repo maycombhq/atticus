@@ -27,6 +27,14 @@
       "commands": []
     },
     {
+      "id": "atticus-question-proposer",
+      "file": ".github/agents/atticus-question-proposer.agent.md",
+      "stepClass": "read",
+      "commands": [
+        "atticus-propose"
+      ]
+    },
+    {
       "id": "atticus-stage-drafter",
       "file": ".github/agents/atticus-stage-drafter.agent.md",
       "stepClass": "draft",

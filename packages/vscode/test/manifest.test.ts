@@ -13,6 +13,7 @@ import {
   TOP_COMMANDS,
 } from "../src/surface";
 import { SETTINGS_WORDS } from "../src/words";
+import { JOBS } from "../src/jobs";
 
 /**
  * ADR 0096: what the extension offers in VS Code (package.json) and what its code registers agree,
@@ -40,6 +41,8 @@ describe("the extension's manifest and its code", () => {
     [
       ...src.matchAll(/reg\(\s*"(atticus\.[A-Za-z]+)"/g),
       ...src.matchAll(/\["(atticus\.[A-Za-z]+)", "/g),
+      // beta.10's jobs are registered in a loop over JOBS (jobs.ts).
+      ...src.matchAll(/command: "(atticus\.[A-Za-z]+)",\s*\n\s*title: "/g),
     ].map((m) => m[1]!),
   );
   // The step commands are registered in a loop over STEP_COMMANDS.
@@ -366,6 +369,40 @@ describe("the extension's manifest and its code", () => {
       when?: string;
     }[];
     expect(hidden.find((m) => m.command === "atticus.openRunAnswer")?.when).toBe("false");
+  });
+
+  it("offers beta.10's jobs: the palette with the titles jobs.ts runs, rows' menus and the Questions view", () => {
+    const titles = Object.fromEntries(
+      (pkg.contributes.commands as { command: string; title: string }[]).map((c) => [
+        c.command,
+        c.title,
+      ]),
+    );
+    for (const j of JOBS) expect(titles[j.command], j.command).toBe(j.title);
+    const when = palette();
+    // Every job is in the Command Palette, without the setting.
+    for (const j of JOBS) expect(when[j.command], j.command).toBeUndefined();
+    const item = pkg.contributes.menus["view/item/context"] as {
+      command?: string;
+      when?: string;
+    }[];
+    const on = (c: string, w: RegExp) => item.some((m) => m.command === c && w.test(m.when ?? ""));
+    for (const c of [
+      "atticus.mapGaps",
+      "atticus.specSeed",
+      "atticus.specAccept",
+      "atticus.repoRename",
+    ])
+      expect(on(c, /viewItem == atticus\.repo$/), c).toBe(true);
+    expect(on("atticus.changeImpact", /viewItem == atticus\.change$/)).toBe(true);
+    expect(on("atticus.acceptProposal", /viewItem == atticus\.questionProposed$/)).toBe(true);
+    const q = titleBar("atticus.questions");
+    expect(q.find((m) => m.command === "atticus.questionsMine")?.when).toBe(
+      "view == atticus.questions && !atticus.questionsMine",
+    );
+    expect(q.find((m) => m.command === "atticus.questionsAll")?.when).toBe(
+      "view == atticus.questions && atticus.questionsMine",
+    );
   });
 
   it("asks the catalog from the Catalog section's title bar", () => {

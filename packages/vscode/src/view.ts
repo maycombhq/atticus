@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import * as vscode from "vscode";
-import { readNext, readOpenQuestions } from "./atticus";
+import { readNext, readOpenQuestions, readQueue, type Read } from "./atticus";
+import { queueRow, renameHint } from "./jobs";
 import { parseJson } from "./cli";
 import type { SetupStep } from "./guided";
 import { nextRow, type NextNode } from "./next-rows";
@@ -10,7 +11,7 @@ import { choicesFor, isStepClass } from "./step-models";
 import { modelSettings } from "./vscode-model";
 import { errorLabel } from "./feedback";
 import { Loads } from "./loads";
-import type { NextStep, OpenQuestion } from "./types";
+import type { NextStep, OpenQuestion, QuestionsMe } from "./types";
 import { filterItems } from "./filter";
 import {
   questionsRows,
@@ -112,12 +113,15 @@ export class AtticusView implements vscode.TreeDataProvider<Node> {
       return;
     }
     const cli = this.svc.cli(root);
-    const [n, q, setup] = await Promise.all([
+    const [n, q, setup, queue] = await Promise.all([
       readNext(cli, root),
       readOpenQuestions(cli, root),
       cli(["setup", "--json", "--root", root]).then((r) =>
         parseJson<{ steps?: SetupStep[]; baselined?: boolean }>(r.stdout),
       ),
+      // beta.10 (ADR 0141): the onboarding queue, each repo with why and its cost. An older
+      // command line has no --queue: then no row, as before.
+      readQueue(cli, root).catch(() => undefined),
     ]);
     // Read again meanwhile (the command line found missing, another folder): that read wins.
     if (read !== this.reads) return;
@@ -125,9 +129,20 @@ export class AtticusView implements vscode.TreeDataProvider<Node> {
     const nodes: Node[] = [];
     if (!n.ok) nodes.push({ kind: "error", message: `Couldn't read the next step: ${n.message}` });
     else if (n.value.next) {
+      // F5 (beta.10): a step for a repo whose id is near one with facts offers the rename.
+      const hint = (step: NextStep) => {
+        const h = renameHint(step);
+        if (h) nodes.push({ kind: "hint", ...h });
+      };
       nodes.push({ kind: "next", step: n.value.next });
-      for (const s of n.value.steps.slice(1, 1 + THEN)) nodes.push({ kind: "then", step: s });
+      hint(n.value.next);
+      for (const s of n.value.steps.slice(1, 1 + THEN)) {
+        nodes.push({ kind: "then", step: s });
+        hint(s);
+      }
     } else nodes.push({ kind: "no-next" });
+    if (queue?.ok && queue.value.length)
+      nodes.push({ kind: "queue", repos: queue.value.length, rows: queue.value.map(queueRow) });
     // What waits on you, under the steps (Phase D).
     if (this.waiting) nodes.push({ kind: "waiting" });
     // The setup checklist, until the catalog is accepted.
@@ -152,6 +167,8 @@ export class AtticusView implements vscode.TreeDataProvider<Node> {
 
   getChildren(node?: Node): Node[] {
     if (node?.kind === "setup") return node.steps.map((step) => ({ kind: "setup-step", step }));
+    if (node?.kind === "queue")
+      return (node.rows ?? []).map((row) => ({ kind: "queue-repo", row }));
     const under = (rows: WNode[]): Node[] => rows.map((row) => ({ kind: "under", row }));
     if (node?.kind === "waiting") return under(this.waiting?.getChildren() ?? []);
     if (node?.kind === "under") return under(this.waiting?.getChildren(node.row) ?? []);
@@ -393,17 +410,62 @@ export class QuestionsView implements vscode.TreeDataProvider<WaitingRow> {
   private readonly sub: vscode.Disposable;
   /** The questions last read, kept on show while they are read again. */
   private shown: OpenQuestion[] | string | undefined;
+  /**
+   * My teams' (beta.10, ADR 0140): the questions `--mine` lists, read on their own, and who the
+   * command line took the person to be. Undefined: every question, as the Next section read them.
+   */
+  private mine: { questions: OpenQuestion[] | string | undefined; me?: QuestionsMe } | undefined;
+  private mineReads = 0;
 
-  constructor(private readonly next: AtticusView) {
+  constructor(
+    private readonly next: AtticusView,
+    private readonly readMine?: () => Promise<
+      Read<{ questions: OpenQuestion[]; me?: QuestionsMe }> | undefined
+    >,
+  ) {
     this.sub = next.onQuestions(() => {
       if (next.questions !== undefined) this.shown = next.questions;
+      if (this.mine && next.questions !== undefined) void this.loadMine();
       this.changed.fire(undefined);
     });
+  }
+
+  /** Whether only My teams' questions are shown. */
+  get mineOnly(): boolean {
+    return !!this.mine;
+  }
+
+  /** Show only My teams' questions, or every one again. */
+  setMine(on: boolean) {
+    this.mine = on ? { questions: undefined } : undefined;
+    this.changed.fire(undefined);
+    if (on) void this.loadMine();
+  }
+
+  private async loadMine() {
+    const read = ++this.mineReads;
+    const r = await this.readMine?.().catch((e: unknown) => ({
+      ok: false as const,
+      message: (e as Error)?.message ?? String(e),
+    }));
+    if (read !== this.mineReads || !this.mine) return;
+    this.mine = !r
+      ? { questions: [] }
+      : r.ok
+        ? { questions: r.value.questions, ...(r.value.me ? { me: r.value.me } : {}) }
+        : { questions: `Couldn't read your teams' questions: ${r.message}` };
+    this.changed.fire(undefined);
+  }
+
+  /** The questions on show: My teams' when that is on, else every open one. */
+  get questions(): OpenQuestion[] | string | undefined {
+    return this.mine ? this.mine.questions : (this.shown ?? this.next.questions);
   }
 
   /** Forget what was read (another metarepo opened): Reading… again. */
   reset() {
     this.shown = undefined;
+    if (this.mine) this.mine = { questions: undefined };
     this.changed.fire(undefined);
   }
 
@@ -411,6 +473,8 @@ export class QuestionsView implements vscode.TreeDataProvider<WaitingRow> {
     if (node) return node.rows ?? [];
     // No metarepo or no command line: empty, and the view isn't shown.
     if (!this.next.hasMetarepo) return [];
+    if (this.mine)
+      return questionsRows(this.mine.questions, this.mine.me ? { me: this.mine.me } : {});
     return questionsRows(this.shown ?? this.next.questions);
   }
 
