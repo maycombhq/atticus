@@ -9,8 +9,65 @@ data class PastChangeRow(val id: String, val title: String, val archived: String
 /** One choice of a question: what it is called and what it means. */
 data class QuestionOption(val label: String, val means: String)
 
-/** A question waiting for a person, with its choices and the lines it read. */
-data class OpenQuestion(val id: String, val repo: String, val question: String, val options: List<QuestionOption>, val evidence: List<String>)
+/** Who a question goes to (ADR 0140; a change's own question, ADR 0153), as `questions list --json` says. */
+sealed interface QuestionOwner {
+    data class Team(val team: String, val name: String?) : QuestionOwner
+
+    data class ChangePeople(val change: String, val people: List<String>) : QuestionOwner
+
+    data class Nobody(val why: String) : QuestionOwner
+}
+
+/**
+ * The answer the assistant proposed for an open question (ADR 0144), listed only once every line
+ * it cites says what it quotes. A person accepts it as theirs or answers otherwise.
+ */
+data class Proposal(val option: Int?, val text: String?, val why: String, val cites: List<String>, val by: String, val file: String)
+
+/**
+ * A question waiting for a person, with its choices and the lines it read. What `questions list
+ * --json` adds (ADR 0140, 0144, 0153): the step that asked it, its owner, the changes in flight
+ * that rest on it, how many calls its answer joins, and a checked proposal.
+ */
+data class OpenQuestion(
+    val id: String,
+    val repo: String,
+    val question: String,
+    val options: List<QuestionOption>,
+    val evidence: List<String>,
+    val step: String? = null,
+    val owner: QuestionOwner? = null,
+    val restsOn: List<String> = emptyList(),
+    val joins: Int = 0,
+    val proposal: Proposal? = null,
+) {
+    /** ADR 0153: a target or hosts question can be answered by a rule (`--match`). */
+    val takesRule: Boolean get() = step in Peer.RULE_STEPS
+
+    /** The proposal's answer in words: the option's label, or its own words. */
+    val proposedAnswer: String?
+        get() =
+            proposal?.let { p ->
+                p.option?.let { n -> options.getOrNull(n - 1)?.label?.let { "$n. $it" } ?: Copy.optionNumber(n) } ?: p.text
+            }
+
+    /** The line beside the question: its repo or change, its owner, what rests on it, its proposal. */
+    val detail: String
+        get() =
+            listOfNotNull(
+                repo.takeIf { it.isNotEmpty() },
+                owner?.let { Copy.ownerWords(it) },
+                restsOn.takeIf { it.isNotEmpty() }?.let { Copy.restsOn(it) },
+                joins.takeIf { it > 1 }?.let { Copy.joinsCalls(it) },
+                proposal?.let { Copy.PROPOSAL_CHECKED },
+            ).joinToString(" · ")
+}
+
+/** Who `questions list --mine` took the person to be, and their teams (ADR 0140). */
+data class QuestionsMe(val handle: String, val teams: List<String>)
+
+/** `atticus questions list --json`: the open questions in the order to ask them, and who "mine" is. */
+data class QuestionsView(val questions: List<OpenQuestion>, val me: QuestionsMe?)
 
 /** A change with something waiting on a person. */
 data class WaitingChange(val id: String, val title: String, val state: String, val openFindings: Int, val blocking: Int, val needs: Int, val manualSteps: Int)
@@ -42,10 +99,53 @@ object Waiting {
         return root.objs("questions").filter { (it.str("state") ?: "open") == "open" }.mapNotNull(::question)
     }
 
+    /**
+     * `atticus questions list --state open [--mine] --json` (ADR 0140, 0144, 0153): the open
+     * questions in the order the command line gives them (what a change in flight rests on first,
+     * then the answers that join the most calls), each with its owner and a checked proposal.
+     * Null when it printed no JSON.
+     */
+    fun listed(json: String): QuestionsView? {
+        val root = runCatching { Json.objectIn(json) }.getOrNull().obj() ?: return null
+        val about = root["about"].obj()
+        val qs =
+            root.objs("questions").filter { (it.str("state") ?: "open") == "open" }.mapNotNull { q ->
+                val base = question(q) ?: return@mapNotNull null
+                val a = about?.get(base.id).obj() ?: return@mapNotNull base
+                base.copy(
+                    owner = ownerOf(a["owner"].obj()),
+                    restsOn = a.strs("restsOn").orEmpty(),
+                    joins = (a["joins"] as? Number)?.toInt() ?: 0,
+                    proposal = proposalOf(a["proposal"].obj()),
+                )
+            }
+        val me = root["me"].obj()?.let { m -> m.str("handle")?.let { h -> QuestionsMe(h, m.objs("teams").mapNotNull { t -> t.str("name") ?: t.str("id") }) } }
+        return QuestionsView(qs, me)
+    }
+
+    private fun ownerOf(o: Map<*, *>?): QuestionOwner? {
+        if (o == null) return null
+        o.str("team")?.let { return QuestionOwner.Team(it, o.str("name")) }
+        o.str("change")?.let { return QuestionOwner.ChangePeople(it, o.strs("people").orEmpty()) }
+        return o.str("none")?.let { QuestionOwner.Nobody(it) }
+    }
+
+    private fun proposalOf(p: Map<*, *>?): Proposal? {
+        if (p == null) return null
+        val answer = p["answer"].obj() ?: return null
+        val cites =
+            p.objs("cites").mapNotNull { c ->
+                val file = c.str("file") ?: return@mapNotNull null
+                val line = (c["line"] as? Number)?.toInt()
+                listOfNotNull(c.str("repo"), file).joinToString("/") + (line?.let { ":$it" } ?: "")
+            }
+        return Proposal((answer["option"] as? Number)?.toInt(), answer.str("text"), p.str("why") ?: "", cites, p.str("by") ?: "", p.str("file") ?: "")
+    }
+
     internal fun question(q: Map<*, *>): OpenQuestion? {
         val id = q.str("id") ?: return null
         val options = q.objs("options").mapNotNull { o -> o.str("label")?.let { QuestionOption(it, o.str("means") ?: "") } }
-        return OpenQuestion(id, q.str("repo") ?: "", q.str("question") ?: id, options, q.strs("evidence").orEmpty())
+        return OpenQuestion(id, q.str("repo") ?: "", q.str("question") ?: id, options, q.strs("evidence").orEmpty(), step = q["askedBy"].obj()?.str("step"))
     }
 }
 
@@ -88,13 +188,30 @@ object Peer {
 
     private fun plural(n: Int, word: String) = "$n $word${if (n == 1) "" else "s"}"
 
-    /** `atticus questions answer`: by option number (from 1) or in the person's own words; null when neither. */
-    fun answerArgv(id: String, option: Int?, text: String?): List<String>? =
-        when {
-            option != null -> listOf("questions", "answer", id, "--option", option.toString())
-            !text.isNullOrBlank() -> listOf("questions", "answer", id, "--text", text.trim())
-            else -> null
-        }
+    /** ADR 0153: the steps whose questions take a rule: a call's target, and a host's repo. */
+    val RULE_STEPS = setOf("facts-targets", "scan-hosts")
+
+    /**
+     * `atticus questions answer`: by option number (from 1) or in the person's own words; null when
+     * neither. [match] is the rule the answer covers (ADR 0153), for a question that takes one.
+     */
+    fun answerArgv(id: String, option: Int?, text: String?, match: String? = null): List<String>? {
+        val base =
+            when {
+                option != null -> listOf("questions", "answer", id, "--option", option.toString())
+                !text.isNullOrBlank() -> listOf("questions", "answer", id, "--text", text.trim())
+                else -> return null
+            }
+        return base + rule(match)
+    }
+
+    /** ADR 0144: the assistant's checked proposal, checked again by the command line, as the person's answer. */
+    fun acceptArgv(id: String, match: String? = null): List<String> = listOf("questions", "answer", id, "--accept-proposal") + rule(match)
+
+    private fun rule(match: String?): List<String> = match?.trim()?.takeIf { it.isNotEmpty() }?.let { listOf("--match", it) } ?: emptyList()
+
+    /** The questions to read: the person's teams' only when [mine] (ADR 0140), else every open one. */
+    fun questionsArgv(mine: Boolean): List<String> = listOf("questions", "list", "--state", "open") + (if (mine) listOf("--mine") else emptyList())
 
     /** What the gutter says about a cited line. */
     fun citeTip(l: CiteLine): String =

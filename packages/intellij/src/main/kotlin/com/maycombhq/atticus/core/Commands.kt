@@ -193,12 +193,45 @@ object Commands {
     fun slashFor(argv: List<String>): String? {
         // `critic <change>`: its AI lenses, one at a time (ADR 0119).
         if (isCriticStep(argv)) return "/atticus-critic ${argv[1]}"
-        // ADR 0124 §4: the assistant reads a repo into facts (`atticus map <repo>`).
-        if (isMapStep(argv)) return "/atticus-map ${argv[1]}"
+        // ADR 0124 §4: the assistant reads a repo into facts (`atticus map <repo>`); ADR 0157: a
+        // second pass on the gaps the last verify left, in a new chat (`/atticus-map <repo> --gaps`).
+        if (isMapStep(argv)) return gapsOr(argv[1], "--gaps" in argv)
         val slash = SLASH[argv.take(2).joinToString(" ")] ?: return null
         val target = argv.getOrNull(2)?.takeIf { !it.startsWith("--") }
         return if (target != null) "$slash $target" else slash
     }
+
+    private fun gapsOr(repo: String, gaps: Boolean) = if (gaps) gapsSlash(repo) else "/atticus-map $repo"
+
+    /** ADR 0157: the slash command that reads only what the last verify left, in a fresh chat. */
+    fun gapsSlash(repo: String) = "/atticus-map $repo --gaps"
+
+    /**
+     * ADR 0157: the prompt `atticus map <repo> --gaps` writes beside the facts, in a metarepo
+     * (`facts/`) or in a repo adopted in place (`.atticus/facts/`).
+     */
+    fun gapsPrompt(root: java.nio.file.Path, repo: String): java.nio.file.Path? =
+        listOf(root.resolve("facts/$repo.gaps.md"), root.resolve(".atticus/facts/$repo.gaps.md")).firstOrNull { java.nio.file.Files.isRegularFile(it) }
+
+    /** ADR 0146: the change a repo's starting spec is proposed as, and its proposal to read first. */
+    fun seedChange(root: java.nio.file.Path, repo: String): java.nio.file.Path? =
+        listOf(root.resolve("openspec/changes/seed-$repo"), root.resolve(".atticus/openspec/changes/seed-$repo")).firstOrNull { java.nio.file.Files.isDirectory(it) }
+
+    /** F5: `atticus repo rename <old> <new>`; null when the new id is no id or is the old one. */
+    fun renameArgv(old: String, new: String): List<String>? {
+        val o = old.trim()
+        val n = new.trim()
+        if (o.isEmpty() || n == o || !Regex("^[A-Za-z0-9][A-Za-z0-9._-]*$").matches(n)) return null
+        return listOf("repo", "rename", o, n)
+    }
+
+    /** ADR 0151: the two kinds of traffic export `atticus intake traffic` reads. */
+    val TRAFFIC_SOURCES = listOf("apigee", "catalog")
+
+    /** ADR 0151: `atticus intake traffic <file> --source <kind>`, with the dates when both are given. */
+    fun trafficArgv(file: String, source: String, from: String? = null, to: String? = null): List<String> =
+        listOf("intake", "traffic", file.trim(), "--source", source.trim()) +
+            if (!from.isNullOrBlank() && !to.isNullOrBlank()) listOf("--from", from.trim(), "--to", to.trim()) else emptyList()
 
     /**
      * `atticus ui` for the tool window: on a free port, for the project. With `--parent <the IDE's pid>`

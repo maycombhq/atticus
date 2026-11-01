@@ -367,6 +367,129 @@ object Copy {
 
     fun settingsCheckFailed(why: String) = "Couldn't run atticus: $why"
 
+    // ADR 0159: what 2.0.0-beta.10 added to the command line, as actions and rows here.
+    // The Waiting tab's questions (ADR 0140, 0144, 0153)
+    fun optionNumber(n: Int) = "option $n"
+
+    fun ownerWords(o: QuestionOwner) =
+        when (o) {
+            is QuestionOwner.Team -> "team ${o.name ?: o.team}"
+            is QuestionOwner.ChangePeople -> if (o.people.isEmpty()) "${o.change}'s owners" else "for ${o.people.joinToString(", ")}"
+            is QuestionOwner.Nobody -> "no owner team"
+        }
+
+    fun restsOn(changes: List<String>) = "${changes.joinToString(", ")} ${if (changes.size == 1) "rests" else "rest"} on it"
+
+    fun joinsCalls(n: Int) = "its answer joins $n calls"
+
+    const val PROPOSAL_CHECKED = "a checked proposal waits"
+
+    fun proposed(answer: String, by: String) = "Proposed by ${by.ifEmpty { "your assistant" }}: $answer"
+
+    fun proposalCites(n: Int) = "cites $n line${if (n == 1) "" else "s"}, each checked"
+
+    const val WAITING_MINE = "Questions for your teams"
+
+    fun mineFor(me: QuestionsMe) =
+        if (me.teams.isEmpty()) {
+            "${me.handle} is on no team in org-pack/roles.yaml: only the changes that name ${me.handle} under owners are yours."
+        } else {
+            "Questions for ${me.handle}'s ${if (me.teams.size == 1) "team" else "teams"}: ${me.teams.joinToString(", ")}"
+        }
+
+    const val MINE_NONE = "No open question is for your teams. Turn off My teams' to see every one."
+    const val ACCEPT_PROPOSAL = "Accept the assistant's proposal as my answer"
+    const val NO_PROPOSAL = "Pick a question with a checked proposal in Waiting on you first."
+    const val ANSWER_RULE = "Answer by rule (optional):"
+    const val ANSWER_RULE_HINT =
+        "A host pattern such as *.payments.forge.internal, or a path such as /forge/limits/**. The answer then covers every call that matches, the calls found later too."
+
+    // The Next tab: the reading order and what each read costs (ADR 0141), near ids (F5)
+    const val QUEUE_HEADING = "Reading order: callees and gateways first"
+    const val READ_HEADING = "Read so far"
+
+    fun queueReason(reason: String) =
+        when (reason) {
+            "started" -> "its read is under way"
+            "called" -> "repos read so far call it"
+            "gateway" -> "a gateway"
+            "places" -> "a deploy or config repo: it places the others"
+            else -> "next in the manifests"
+        }
+
+    fun costEstimated(tokens: String, sessions: Int) = "estimated about $tokens tokens in $sessions session${if (sessions == 1) "" else "s"}"
+
+    fun partsRead(read: Int, of: Int) = "$read of $of part${if (of == 1) "" else "s"} read"
+
+    fun costReported(tokens: String, sessions: Int?) =
+        "your assistant reported $tokens tokens${sessions?.let { " in $it session${if (it == 1) "" else "s"}" } ?: ""}"
+
+    const val COST_NOT_ESTIMATED = "cost not estimated yet (atticus map <repo> --estimate)"
+    const val NO_COST_ON_FILE = "no cost on file"
+    const val STALE_CLONE = "its clone moved past its facts: Atticus: Which Clones Moved On"
+    const val COSTS_ARE = "Estimated tokens are counted from the source; reported ones are your assistant's word. Atticus meters neither."
+
+    fun nearId(n: NearId) = "${n.near} has facts (${n.file}) and its id is near ${n.repo}'s: double-click to keep one id"
+
+    // Renaming a repo's id (F5)
+    const val RENAME_TITLE = "Atticus: rename a repo's id"
+    const val RENAME_WHICH = "Rename which repo's id?"
+    const val RENAME_TO = "Its new id: lower case letters, digits, dots and hyphens."
+
+    fun renameConfirm(old: String, new: String) =
+        "Move $old's id to $new, with its facts, read plan, reviewed file, questions and catalog records? " +
+            "Atticus moves and rewrites the files in one change for you to review; it commits and pushes nothing."
+
+    const val RENAME = "Rename"
+
+    // A repo's starting spec (ADR 0146, 0156)
+    const val SEED_TITLE = "Atticus: accept a starting spec"
+
+    fun seedConfirm(repo: String, where: String?) =
+        "Accept $repo's starting spec? Read it first${where?.let { " ($it)" } ?: ""}: atticus spec accept runs openspec validate --strict, " +
+            "then archives it into openspec/specs/, and the next change on its flows modifies it."
+
+    const val OPEN_SEED = "Open the seed"
+    const val ACCEPT_SEED = "Accept it"
+
+    fun seedThenStories(change: String) = "Now write $change's stories again, so they modify the seeded requirement (ADR 0156)."
+
+    const val WRITE_STORIES_AGAIN = "Write the stories again"
+
+    // The second pass on the gaps (ADR 0157), and the assistant's proposals (ADR 0144)
+    fun gapsCopied(slash: String) =
+        "<b>$slash</b> is on the clipboard. Start a new chat in Copilot Chat (agent mode) and paste it: a fresh session holds only the files and lines the last verify left."
+
+    const val OPEN_GAPS = "Open the gaps prompt"
+
+    fun proposeCopied(slash: String) =
+        "<b>$slash</b> is on the clipboard. Paste it in Copilot Chat in agent mode: your assistant proposes an answer to each open question, citing its lines. " +
+            "Then Atticus: Check the Proposed Answers, and accept each one in Waiting on you."
+
+    const val CHECK_PROPOSALS = "Check the proposed answers"
+
+    // Files a job reads
+    const val MEASURE_PICK = "The reference you wrote by hand: a few repos' entries and calls, each call with the repo it should reach (docs/guide/measure.md)."
+    const val APPLY_SHEET_PICK = "The filled answer sheet (Atticus: Write the Questions into One Sheet writes questions-sheet.yaml)."
+    const val TRAFFIC_PICK = "The gateway or API catalogue export. Only counts are kept; client ids, keys, IPs, user agents and tokens are dropped first."
+    const val TRAFFIC_SOURCE = "Which kind of export is it?"
+    const val SHEET_FILE = "questions-sheet.yaml"
+    const val OPEN_SHEET = "Open the sheet"
+    const val FILE_PICK = "Pick the file."
+
+    // Copilot's agent mode (ADR 0121 addendum, 2026-10-26)
+    const val AGENT_NO_STEP = "Atticus has no next step to hand to Copilot's agent mode. The Next tab says what is waiting."
+
+    fun agentCopied(agent: String, stepClass: String, prompt: Boolean) =
+        "${if (prompt) "The step's prompt" else "The step's slash command"} is on the clipboard. In Copilot Chat, choose <b>Agent</b>, pick the <b>$agent</b> agent " +
+            "where your Copilot lists the workspace's custom agents (.github/agents/$agent.agent.md), then paste and send. " +
+            "It writes where Atticus expects, runs Atticus's own check and fixes what comes back. This is a $stepClass step: pick the model your organisation names for $stepClass steps."
+
+    fun agentNoFile(agent: String) =
+        "This metarepo has no .github/agents/$agent.agent.md yet: atticus assistant-files writes it. The step goes to Copilot Chat with its slash command instead."
+
+    fun agentNoAgent(step: String) = "No Copilot agent covers the $step step, so it goes to Copilot Chat with its slash command instead."
+
     // Settings
     const val SETTINGS_PATH = "Path to atticus:"
     const val SETTINGS_PATH_HINT =

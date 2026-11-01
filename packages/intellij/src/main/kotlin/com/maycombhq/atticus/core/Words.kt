@@ -10,6 +10,11 @@ object Words {
             "discover" to { _ -> "Add the repos to the manifest" },
             // ADR 0124: the read of a repo into facts (VS Code has no title for it yet).
             "map" to { s -> "Read ${s.repo ?: "the repo"}'s code into facts with Copilot" },
+            // ADR 0141: a mapped repo whose clone moved past its facts' commit.
+            "reread" to { s -> "Read ${s.repo ?: "the repo"}'s changed files again with Copilot" },
+            "write" to { s -> "Check ${s.repo ?: "the repo"}'s facts and put them in the catalog" },
+            // ADR 0156: a repo's open seed a change collides with.
+            "accept-seed" to { s -> "Accept ${s.repo ?: "the repo"}'s starting spec, then write ${s.change ?: "the change"}'s stories again" },
             "sync" to { _ -> "Clone or update the repos" },
             "survey" to { s -> "Draft ${s.repo ?: "the repo"}'s scan settings with Copilot" },
             "scan" to { s -> if (s.repo != null) "Scan ${s.repo}" else "Scan the repos" },

@@ -224,10 +224,16 @@ class AnswerDialog(project: Project, private val q: OpenQuestion) : DialogWrappe
     private val own = JBRadioButton(Copy.ANSWER_OWN_WORDS)
     private val words = JBTextArea(3, 60).apply { lineWrap = true; wrapStyleWord = true }
 
+    /** ADR 0144: the assistant's checked proposal, taken as the person's answer. */
+    private val accept = q.proposal?.let { JBRadioButton(Copy.ACCEPT_PROPOSAL) }
+
+    /** ADR 0153: the rule a target or hosts answer covers (`--match`). */
+    private val rule = if (q.takesRule) JBTextField().apply { emptyText.text = "*.payments.forge.internal" } else null
+
     init {
         title = Copy.ANSWER_TITLE
-        (choices + own).forEach { group.add(it) }
-        if (choices.isEmpty()) own.isSelected = true
+        (listOfNotNull(accept) + choices + own).forEach { group.add(it) }
+        if (accept != null) accept.isSelected = true else if (choices.isEmpty()) own.isSelected = true
         words.addFocusListener(
             object : java.awt.event.FocusAdapter() {
                 override fun focusGained(e: java.awt.event.FocusEvent) {
@@ -241,12 +247,20 @@ class AnswerDialog(project: Project, private val q: OpenQuestion) : DialogWrappe
     override fun createCenterPanel(): JComponent =
         panel {
             row { text("<b>${StringUtil.escapeXmlEntities(q.question)}</b>", maxLineLength = 90) }
-            row { comment(q.repo) }
+            row { comment(StringUtil.escapeXmlEntities(q.detail)) }
+            if (accept != null) {
+                val p = q.proposal!!
+                row { cell(accept).comment(StringUtil.escapeXmlEntities(Copy.proposed(q.proposedAnswer.orEmpty(), p.by) + (if (p.why.isNotEmpty()) " — ${p.why}" else ""))) }
+                for (c in p.cites.take(6)) row { comment(StringUtil.escapeXmlEntities(c)) }
+            }
             for ((i, b) in choices.withIndex()) {
                 row { cell(b).comment(q.options[i].means.takeIf { it.isNotBlank() }) }
             }
             row { cell(own) }
             row { cell(JBScrollPane(words)).align(AlignX.FILL) }
+            if (rule != null) {
+                row(Copy.ANSWER_RULE) { cell(rule).align(AlignX.FILL).comment(Copy.ANSWER_RULE_HINT) }
+            }
             if (q.evidence.isNotEmpty()) {
                 row { label(Copy.ANSWER_IT_READ) }
                 for (e in q.evidence.take(8)) row { comment(StringUtil.escapeXmlEntities(e)) }
@@ -255,6 +269,7 @@ class AnswerDialog(project: Project, private val q: OpenQuestion) : DialogWrappe
 
     override fun doValidate(): ValidationInfo? =
         when {
+            accept?.isSelected == true -> null
             choices.none { it.isSelected } && !own.isSelected -> ValidationInfo(Copy.ANSWER_PICK)
             own.isSelected && words.text.isBlank() -> ValidationInfo(Copy.ANSWER_PICK, words)
             else -> null
@@ -264,4 +279,10 @@ class AnswerDialog(project: Project, private val q: OpenQuestion) : DialogWrappe
     fun option(): Int? = choices.indexOfFirst { it.isSelected }.takeIf { it >= 0 }?.plus(1)
 
     fun text(): String? = if (own.isSelected) words.text.trim() else null
+
+    /** Whether the person took the assistant's proposal as their answer. */
+    fun accepted(): Boolean = accept?.isSelected == true
+
+    /** The rule the answer covers, when one was given. */
+    fun match(): String? = rule?.text?.trim()?.takeIf { it.isNotEmpty() }
 }
