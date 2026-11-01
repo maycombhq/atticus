@@ -21,6 +21,7 @@ import {
   patternCodeInRegistry,
   settingsPresent,
 } from "./interfaces.js";
+import { changeLinksKnown } from "./links.js";
 import {
   breakingDeltaConsumers,
   callTimeoutStated,
@@ -72,6 +73,8 @@ export const BUILT_IN_CHECKS: readonly DeterministicCheckDef[] = [
   routeCallersKnown,
   // ADR 0113 addendum (2026-10-26): a criterion an attached note gives quotes the note's line.
   noteCitesOnLine,
+  // ADR 0140: a change that rests on a guessed link, an open link question or a stale read.
+  changeLinksKnown,
 ];
 
 export function checkRegistry(

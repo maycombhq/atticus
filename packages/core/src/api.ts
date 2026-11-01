@@ -83,8 +83,13 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   graph edge (each call merged into it, how it was joined, verified or not, and its lines at
  *   both ends), and in GET /api/trust the lists behind a repo's counts (`lists`: the facts
  *   rejected, the files not read and excluded, the questions open). Additive only.
+ * 2.33.0 (ADR 0140): questions asked in order and routed to their owner. GET /api/questions
+ *   lists them in the order to ask (what a change in flight rests on first, then the answers
+ *   that join the most calls), with `about` (the changes each rests on, the calls it joins, its
+ *   owner team or why it has none) and, with `mine=true`, only the person's teams' (`me`).
+ *   Additive only.
  */
-export const API_VERSION = "2.32.0";
+export const API_VERSION = "2.33.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -1816,7 +1821,33 @@ export const ReconcileRequest = z.strictObject({ diagram: z.string().min(1) });
 export const QuestionList = z.object({
   questions: z.array(Question),
   problems: z.array(z.object({ file: z.string(), message: z.string() })),
+  /**
+   * 2.33.0 (ADR 0140), by question id: the changes in flight that rest on it, how many calls its
+   * answer joins, and the team it goes to (the repo manifest's owner, named by roles.yaml) or why
+   * none does.
+   */
+  about: z
+    .record(
+      z.string(),
+      z.object({
+        restsOn: z.array(z.string()),
+        joins: z.number().int(),
+        owner: z.union([
+          z.object({ team: z.string(), name: z.string().optional() }),
+          z.object({ none: z.string() }),
+        ]),
+      }),
+    )
+    .optional(),
+  /** 2.33.0 (ADR 0140): with mine=true, who the person is and the teams roles.yaml puts them on. */
+  me: z
+    .object({
+      handle: z.string(),
+      teams: z.array(z.object({ id: z.string(), name: z.string().optional() })),
+    })
+    .optional(),
 });
+export type QuestionListT = z.infer<typeof QuestionList>;
 
 /** ADR 0078: answer a question with one of its options or in the person's own words. */
 export const AnswerQuestionRequest = z.strictObject({
@@ -3600,13 +3631,19 @@ const OPS: Record<string, Record<string, Op>> = {
   "/api/questions": {
     get: {
       id: "listQuestions",
-      summary: "The questions to people in questions/ (ADR 0078), oldest first",
+      summary:
+        "The questions to people in questions/ (ADR 0078), in the order to ask them (ADR 0140): what a change in flight rests on first, then the answers that join the most calls",
       tag: "questions",
       params: [
         q(
           "state",
           { type: "string", enum: ["open", "answered", "retired"] },
           "Only questions in this state",
+        ),
+        q(
+          "mine",
+          { type: "string", enum: ["true"] },
+          "Only the questions of the teams the person is on (roles.yaml, ADR 0140)",
         ),
       ],
       ok: { status: 200, schema: "QuestionList", description: "OK" },

@@ -19,6 +19,22 @@ export type QuestionView = Question;
 export interface QuestionListView {
   questions: QuestionView[];
   problems: { file: string; message: string }[];
+  /** ADR 0140: what each rests on, the calls it joins and its owner. */
+  about?: Api.QuestionListT["about"];
+  /** ADR 0140: with mine=true, the person and their teams. */
+  me?: Api.QuestionListT["me"];
+}
+
+type About = NonNullable<Api.QuestionListT["about"]>[string];
+
+/** Who a question goes to, what change rests on it and how many calls it joins (ADR 0140). */
+export function aboutWords(a: About | undefined): string[] {
+  if (!a) return [];
+  return [
+    ...(a.restsOn.length ? [C.restsOn(a.restsOn)] : []),
+    "team" in a.owner ? C.owner(a.owner.team, a.owner.name) : C.noOwner(a.owner.none),
+    ...(a.joins ? [C.joins(a.joins)] : []),
+  ];
 }
 export interface AnsweredResult {
   question: QuestionView;
@@ -126,10 +142,20 @@ export const shownQuestions = (qs: QuestionView[], f: { text: string; repo: stri
 
 const FILTER_ID = "questions-filter";
 
+/** The list's address: open or all, everyone's or the person's teams' (ADR 0140). */
+export function questionsUrl(filter: "open" | "all", whose: "all" | "mine"): string {
+  const q = [
+    ...(filter === "open" ? ["state=open"] : []),
+    ...(whose === "mine" ? ["mine=true"] : []),
+  ];
+  return `/api/questions${q.length ? `?${q.join("&")}` : ""}`;
+}
+
 export function QuestionList(p: {
   of: Loaded<QuestionListView>;
   current?: string;
   all?: boolean;
+  mine?: boolean;
   text?: string;
   repo?: string;
   onClear?: () => void;
@@ -139,14 +165,24 @@ export function QuestionList(p: {
   return (
     <View
       of={p.of}
-      empty={(d) => d.questions.length === 0 && d.problems.length === 0}
-      emptyText={p.all ? C.emptyAll : C.empty}
+      empty={(d) => d.questions.length === 0 && d.problems.length === 0 && !d.me}
+      emptyText={p.mine ? C.emptyMine : p.all ? C.emptyAll : C.empty}
     >
       {(d) => {
         const shown = shownQuestions(d.questions, { text, repo });
         const active = !!text.trim() || !!repo;
         return (
           <div className="stack" style={{ gap: 8 }}>
+            {d.me && (
+              <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
+                {d.me.teams.length
+                  ? C.mineTeams(d.me.teams.map((t) => t.name ?? t.id).join(", "))
+                  : C.mineNone(d.me.handle)}
+              </p>
+            )}
+            {d.me && d.me.teams.length > 0 && d.questions.length === 0 && (
+              <div className="state">{C.emptyMine}</div>
+            )}
             {d.problems.map((x) => (
               <p key={x.file} className="state error" role="alert" style={{ margin: 0 }}>
                 {C.unreadable(x.file)} {x.message}
@@ -174,6 +210,11 @@ export function QuestionList(p: {
                       <span className="hud" style={{ fontSize: 10 }}>
                         {q.repo} · {q.state} · {q.id}
                       </span>
+                      {aboutWords(d.about?.[q.id]).map((w) => (
+                        <span key={w} className="muted" style={{ fontSize: 12 }}>
+                          {w}
+                        </span>
+                      ))}
                     </a>
                   </li>
                 ))}
@@ -402,9 +443,8 @@ function Detail({ id, onAnswered }: { id: string; onAnswered: () => void }) {
 
 export function Questions({ hash }: { hash: string }) {
   const [filter, setFilter] = useState<"open" | "all">("open");
-  const list = useApi<QuestionListView>(
-    filter === "open" ? "/api/questions?state=open" : "/api/questions",
-  );
+  const [whose, setWhose] = useState<"all" | "mine">("all");
+  const list = useApi<QuestionListView>(questionsUrl(filter, whose));
   useReloadOnFiles(list);
   const current = questionRoute(hash);
   const [text, setText] = useState("");
@@ -442,6 +482,15 @@ export function Questions({ hash }: { hash: string }) {
             </select>
           </div>
           <Choice
+            label={C.whose}
+            value={whose}
+            options={[
+              { value: "all", label: C.whoseAll },
+              { value: "mine", label: C.whoseMine },
+            ]}
+            onChange={setWhose}
+          />
+          <Choice
             label={C.filter}
             value={filter}
             options={[
@@ -461,6 +510,7 @@ export function Questions({ hash }: { hash: string }) {
             of={list}
             current={current}
             all={filter === "all"}
+            mine={whose === "mine"}
             text={text}
             repo={repo}
             onClear={() => {

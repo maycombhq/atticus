@@ -166,6 +166,7 @@ describe("every rule answers one of the four questions, as data", () => {
       "store-write-rollback": "ship",
       "route-callers-known": "complete",
       "note-cites-on-line": "true",
+      "change-links-known": "true",
     });
   });
 
@@ -190,6 +191,7 @@ describe("every rule answers one of the four questions, as data", () => {
       "constitution.public-entry-auth": ["safe", "active", "blocking"],
       "constitution.breaking-delta-consumers": ["safe", "active", "blocking"],
       "constitution.route-callers-known": ["complete", "active", "risk"],
+      "constitution.change-links-known": ["true", "active", "risk"],
     });
     // A rule's question is its own, then its question lens, then its check's, then its old lens's.
     for (const r of c.rules) expect(questionOfRule(r)).toBe(r.question);

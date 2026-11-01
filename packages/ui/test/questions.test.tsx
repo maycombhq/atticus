@@ -3,12 +3,14 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { COPY } from "../src/copy.js";
 import {
+  aboutWords,
   answerBody,
   AnsweredView,
   ExcerptView,
   QuestionDetail,
   QuestionList,
   questionRoute,
+  questionsUrl,
   type QuestionView,
 } from "../src/screens/Questions.js";
 
@@ -162,5 +164,69 @@ describe("evidence beside a question (WP7.2)", () => {
     );
     expect(out).toContain(COPY.questions.notShown.replace(/'/g, "&#x27;"));
     expect(out).not.toContain("<pre");
+  });
+});
+
+describe("the Questions page asks in order and routes to the owner (ADR 0140)", () => {
+  it("asks for everyone's or the person's teams' questions", () => {
+    expect(questionsUrl("open", "all")).toBe("/api/questions?state=open");
+    expect(questionsUrl("open", "mine")).toBe("/api/questions?state=open&mine=true");
+    expect(questionsUrl("all", "mine")).toBe("/api/questions?mine=true");
+    expect(questionsUrl("all", "all")).toBe("/api/questions");
+  });
+
+  it("says under each question who owns it, what change rests on it and the calls it joins", () => {
+    const out = html(
+      <QuestionList
+        of={{
+          state: "ready",
+          data: {
+            questions: [question],
+            problems: [],
+            about: {
+              [question.id]: {
+                restsOn: ["add-transfer-limit"],
+                joins: 3,
+                owner: { team: "team-ledger", name: "Ledger team" },
+              },
+            },
+          },
+        }}
+      />,
+    );
+    expect(out).toContain(C.restsOn(["add-transfer-limit"]));
+    expect(out).toContain(C.owner("team-ledger", "Ledger team"));
+    expect(out).toContain(C.joins(3));
+    expect(
+      aboutWords({ restsOn: [], joins: 0, owner: { none: "no repos.manifest.yaml lists x" } }),
+    ).toEqual([C.noOwner("no repos.manifest.yaml lists x")]);
+  });
+
+  it("says when the person is on no team, and when their teams have nothing waiting", () => {
+    const none = html(
+      <QuestionList
+        mine
+        of={{
+          state: "ready",
+          data: { questions: [], problems: [], me: { handle: "dee", teams: [] } },
+        }}
+      />,
+    );
+    expect(none).toContain(C.mineNone("dee").replace(/'/g, "&#x27;"));
+    const empty = html(
+      <QuestionList
+        mine
+        of={{
+          state: "ready",
+          data: {
+            questions: [],
+            problems: [],
+            me: { handle: "sam", teams: [{ id: "team-ledger", name: "Ledger team" }] },
+          },
+        }}
+      />,
+    );
+    expect(empty).toContain(C.mineTeams("Ledger team"));
+    expect(empty).toContain(C.emptyMine);
   });
 });

@@ -285,7 +285,18 @@ Atticus has no roles, views or sign-in (ADR 0073). Each person is the metarepo's
 
 Every write to a shared outside system (the Git host, the work tracker, the service desk, notifications) still needs the person's explicit confirmation: the command is a dry run until they add `--approve`, and the app's buttons say exactly what they send. This can't be configured away.
 
-`roles.yaml` is deprecated. A pack that has one still loads and validates, but nothing reads it: not its `mappings`, `approvals` or `separation`, nor the `approvers` and `minApprovals` in `gates.yaml`, the `approvals` in `change-types.yaml`, or `privacy.role`, `risk.approvals` and `selfApproval` in `process/change-policy.yaml`. `atticus init` no longer writes it. Move what it said to branch protection and CODEOWNERS, then delete it.
+`roles.yaml` is deprecated except for `teams` (ADR 0140). A pack that has one still loads and validates, but nothing reads its `mappings`, `approvals` or `separation`, nor the `approvers` and `minApprovals` in `gates.yaml`, the `approvals` in `change-types.yaml`, or `privacy.role`, `risk.approvals` and `selfApproval` in `process/change-policy.yaml`. `atticus init` no longer writes it. Move what it said to branch protection and CODEOWNERS.
+
+To send each question to the team that owns its repo, name the teams there (version 2; `atticus upgrade` moves a version-1 file up). A team's `id` is the `owner` a repo has in `repos.manifest.yaml`; `people` are Git handles, as Atticus records you (the email's local part, else your name):
+
+```yaml
+schemaVersion: 2
+teams:
+  - { id: team-ledger, name: Ledger team, people: [ari, bo.chen] }
+  - { id: team-portal, name: Portal team, people: [cy] }
+```
+
+Every question then says its owner (`atticus questions list`, the app's Questions page), and `atticus questions list --mine` or _My teams'_ in the app lists only yours. It is a filter, not a permission: anyone can still read and answer any question. A question whose repo no manifest lists, or that a change's stage asked, says it has no owner.
 
 `process/change-policy.yaml` may also set `stages`, the stage path (ADR 0087 addendum): for each stage its `phase`, the `loop` file it keeps, the `command` that runs it, the files it `writes` and the change type's `artifacts` it writes. A change whose folder holds a stage's loop file is on the stage path: `change status` and the hand-off then want each phase's stage done and its files, not `proposal.md` and `specs/`. Left out, the built-in feature, architecture and stories stages apply; a list you write replaces them, so add `snow` to the stories stage's `artifacts` if your plan hand-off needs `snow.md`.
 

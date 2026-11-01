@@ -118,6 +118,8 @@ describe("atticus upgrade", () => {
       ["sources-v3", ["org-pack/sources.yaml"]],
       // ADR 0121 addendum: and its runtime.yaml.
       ["runtime-v2", ["org-pack/runtime.yaml"]],
+      // ADR 0140: roles.yaml's number, so it can name the teams that own repos.
+      ["roles-v2", ["org-pack/roles.yaml"]],
       // ADR 0128: the manifest's number, so a repo can say what it is.
       ["manifest-schema-v2", ["org-pack/profiles/forge/repos.manifest.yaml"]],
       // ADR 0134: and on to version 3, in the same run, so a repo can give its base path.
@@ -125,7 +127,7 @@ describe("atticus upgrade", () => {
     ]);
     const r = io();
     expect(await upgradeCommand(root, { check: true }, r.io, "1.0.0")).toBe(1);
-    expect(r.out[0]).toMatch(/11 upgrade steps to run/);
+    expect(r.out[0]).toMatch(/12 upgrade steps to run/);
     // A dry run changes nothing.
     const before = await readFile(join(root, "catalog/generated/system/ledger.yaml"), "utf8");
     expect(await upgradeCommand(root, { dryRun: true }, io().io, "1.0.0")).toBe(0);
@@ -173,6 +175,7 @@ describe("atticus upgrade", () => {
       "sources-v3",
       "stamp-committed",
       "runtime-v2",
+      "roles-v2",
       // ADR 0006 addendum: no OpenSpec here, so nothing to do, but recorded as done.
       "org-flow-v2",
       "stories-b-short",
@@ -185,6 +188,10 @@ describe("atticus upgrade", () => {
     const was = await readFile(join(FIXTURES, "forge/metarepo/org-pack/runtime.yaml"), "utf8");
     expect(runtime).toBe(was.replace(/^schemaVersion: 1$/m, "schemaVersion: 2"));
     expect(parse(runtime).models).toBeUndefined();
+    // roles.yaml at version 2 (ADR 0140): the number only, so it names no team yet.
+    const roles = await readFile(join(root, "org-pack/roles.yaml"), "utf8");
+    const had = await readFile(join(FIXTURES, "forge/metarepo/org-pack/roles.yaml"), "utf8");
+    expect(roles).toBe(had.replace(/^schemaVersion: 1$/m, "schemaVersion: 2"));
     // sources.yaml at version 3 (ADR 0132), its wiki as it was: every page still read, ranked as
     // a team's and applying everywhere; only the number changed.
     const sources = await readFile(join(root, "org-pack/sources.yaml"), "utf8");

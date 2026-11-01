@@ -9,6 +9,8 @@ import {
   factsRelOf,
   fastPathOf,
   listQuestions,
+  orderQuestions,
+  questionWeights,
   proposalsDirOf,
   loadOrgPack,
   orgPackDirOf,
@@ -363,7 +365,11 @@ export async function readNextState(root: string): Promise<NextState> {
   return {
     repos,
     catalogRecords: view.catalog.records,
-    openQuestions: open.questions.map((q) => q.id),
+    // ADR 0140 (Q3): in the order to ask them, what a change in flight rests on first.
+    openQuestions: orderQuestions(
+      open.questions,
+      await questionWeights(root, open.questions).catch(() => new Map()),
+    ).map((q) => q.id),
     ...(Object.keys(changeQuestions).length ? { changeQuestions } : {}),
     ...(active ? { active: active.id } : {}),
     sources,

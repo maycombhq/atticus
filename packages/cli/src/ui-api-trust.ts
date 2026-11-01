@@ -1,11 +1,12 @@
 import { readdir, readFile, stat } from "node:fs/promises";
-import { join, relative, resolve, sep } from "node:path";
+import { join, relative, sep } from "node:path";
 import { parse } from "yaml";
 import {
   catalogDirOf,
   factsDirOf,
   factsFileOf,
   factsRelOf,
+  headFromFiles,
   isAdopted,
   listQuestions,
   parseFacts,
@@ -59,7 +60,6 @@ export function rejectedLines(text: string | undefined): Lists["rejected"] {
 }
 
 const SHA = /^[0-9a-f]{7,64}$/;
-const FULL_SHA = /^[0-9a-f]{40,64}$/;
 /**
  * A projected fact's evidence says whose fact it was (ADR 0124: an assistant's, a reader's or a
  * person's) and names no extractor; a built-in reader's evidence is the rest.
@@ -70,35 +70,8 @@ const UNKNOWN_SHOWN = 50;
 const firstLine = (e: unknown) => String((e as Error).message ?? e).split("\n")[0]!;
 const text = (p: string) => readFile(p, "utf8").catch(() => undefined);
 
-/**
- * The commit a checkout is at, read from its `.git` files: HEAD, a loose ref or packed-refs,
- * following a worktree's `gitdir:` and `commondir`. Undefined when there is no checkout.
- */
-export async function headFromFiles(dir: string): Promise<string | undefined> {
-  let git = join(dir, ".git");
-  const st = await stat(git).catch(() => undefined);
-  if (!st) return undefined;
-  if (st.isFile()) {
-    const m = /^gitdir:\s*(.+)$/m.exec((await text(git)) ?? "");
-    if (!m) return undefined;
-    git = resolve(dir, m[1]!.trim());
-  }
-  const common = (await text(join(git, "commondir")))?.trim();
-  const commonDir = common ? resolve(git, common) : git;
-  const head = ((await text(join(git, "HEAD"))) ?? "").trim();
-  if (FULL_SHA.test(head)) return head;
-  const ref = /^ref:\s*(refs\/[A-Za-z0-9._/-]+)$/.exec(head)?.[1];
-  if (!ref || ref.split("/").includes("..")) return undefined;
-  for (const d of [git, commonDir]) {
-    const loose = ((await text(join(d, ...ref.split("/")))) ?? "").trim();
-    if (FULL_SHA.test(loose)) return loose;
-  }
-  for (const line of ((await text(join(commonDir, "packed-refs"))) ?? "").split(/\r?\n/)) {
-    const [sha, name] = line.split(" ");
-    if (name === ref && sha && FULL_SHA.test(sha)) return sha;
-  }
-  return undefined;
-}
+/** The commit a checkout is at, from its `.git` files (core, ADR 0140). */
+export { headFromFiles };
 
 /** The verifier's report (`<repo>.verify.yaml`, `writeVerifyFiles`), or why it can't be read. */
 function reportOf(raw: unknown): Report | string {

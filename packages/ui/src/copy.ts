@@ -186,6 +186,19 @@ export const COPY = {
     answered: (by: string, day: string) => `Answered by ${by} on ${day}`,
     retired: "This question is retired; nothing reads its answer.",
     change: "Change the answer",
+    // ADR 0140: asked in order, routed to the team that owns the repo.
+    whose: "Whose",
+    whoseAll: "Everyone's",
+    whoseMine: "My teams'",
+    owner: (team: string, name?: string) => `Owner: ${name ? `${name} (${team})` : team}`,
+    noOwner: (why: string) => `No owner: ${why}`,
+    restsOn: (changes: string[]) =>
+      `Ask first: ${changes.join(", ")} ${changes.length === 1 ? "rests" : "rest"} on it`,
+    joins: (n: number) => `Its answer joins ${n} ${n === 1 ? "call" : "calls"}`,
+    mineTeams: (teams: string) => `Questions for your teams: ${teams}.`,
+    mineNone: (handle: string) =>
+      `${handle} is on no team in org-pack/roles.yaml, so no question is yours here. Add yourself under a team's people there (schemaVersion 2), or show everyone's.`,
+    emptyMine: "No questions are waiting for your teams.",
   },
   /** Knowledge managed in the metarepo (ADR 0101), in the app (ADR 0102). */
   knowledge: {

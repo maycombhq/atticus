@@ -1,3 +1,4 @@
+import { loadEstateReads } from "./checks/links.js";
 import { join } from "node:path";
 import {
   changeFolder,
@@ -178,6 +179,8 @@ export async function prepareLayers(
   ctx.answers = await changeAnswers(root, change.id);
   // What people recorded on the change's findings, at any gate (W2): the lenses read it as data.
   ctx.recorded = await recordedFacts(root, change.id);
+  // ADR 0140: the reads and open link questions the change's calls rest on.
+  ctx.estate = await loadEstateReads(root, ctx);
 
   const { sources, problems } = await ruleSources(ctx, teamPacks);
   const layered = layerRules(sources);

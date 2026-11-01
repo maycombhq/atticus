@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -57,6 +57,7 @@ describe("atticus questions list and answer (ADR 0078)", () => {
     expect(r.out).toEqual([
       `${id}  open  forge-notes  (asked by atticus scan survey forge-notes on 2026-10-21)`,
       "  Is docs/ a generated playground or part of the product?",
+      "  Owner: none (no repos.manifest.yaml lists forge-notes, so no team owns it)",
       "  1. Generated: nobody edits it. It would change: the scan leaves docs/ out.",
       "  2. Product: it ships. It would change: the scan reads docs/.",
       "  Evidence: docs/playground.js:1",
@@ -245,6 +246,77 @@ describe("atticus questions show, and a change's question (WP2.4)", () => {
     expect(json.waiting.map((w) => [w.change, w.stage, w.question])).toEqual([
       ["add-pins", "feature", "How many notes can be pinned?"],
       ["add-pins", "feature", "Who may unpin a note?"],
+    ]);
+  });
+});
+
+describe("questions asked in order and routed to their owner (ADR 0140)", () => {
+  const ESTATE = join(__dirname, "../../../fixtures/estate/org-pack");
+  const target = (question: string, evidence: string[]) =>
+    QuestionDraft.parse({ question, options: [], evidence });
+  const by = {
+    step: "facts-targets",
+    repo: "forge-web",
+    command: "atticus verify forge-web --write",
+    rerun: "atticus verify forge-web --write",
+    at: AT,
+  };
+
+  async function estate() {
+    const root = await mkdtemp(join(tmpdir(), "atticus-questions-route-"));
+    await cp(ESTATE, join(root, "org-pack"), { recursive: true });
+    await writeFile(
+      join(root, "org-pack/roles.yaml"),
+      "schemaVersion: 2\nteams:\n  - { id: team-web, name: Web team, people: [priya.nair] }\n  - { id: team-customers, people: [sam] }\n",
+    );
+    const ping = (
+      await raiseQuestions(root, [target("Which answers GET /ping?", ["src/ping.ts:3"])], by)
+    ).raised[0]!;
+    const group = (
+      await raiseQuestions(
+        root,
+        [
+          target("Which answers the calls forge-web makes under /owners?", [
+            "src/owners.ts:4",
+            "src/owners.ts:9",
+            "src/owners.ts:15",
+          ]),
+        ],
+        { ...by, at: "2026-10-22T12:00:00.000Z" },
+      )
+    ).raised[0]!;
+    const theirs = (await raiseQuestions(root, [draft()], { ...asked, repo: "forge-customers" }))
+      .raised[0]!;
+    return { root, ping, group, theirs };
+  }
+
+  it("lists the answer that joins most first, a lone /ping after it, each with its owner", async () => {
+    const e = await estate();
+    const r = await run(e.root, ["list", "--state", "open"]);
+    expect(r.code).toBe(0);
+    const heads = r.out.filter((l) => /^q-/.test(l)).map((l) => l.split(" ")[0]);
+    expect(heads).toEqual([e.group.id, e.ping.id, e.theirs.id]);
+    expect(r.out).toContain("  Owner: team-web (Web team)");
+    expect(r.out).toContain("  Its answer joins 3 calls.");
+    expect(r.out).toContain("  Owner: team-customers");
+    const json = JSON.parse((await run(e.root, ["list", "--json"])).out.join("\n")) as {
+      questions: Question[];
+      about: Record<string, { joins: number; owner: { team?: string } }>;
+    };
+    expect(json.questions.map((q) => q.id)).toEqual([e.group.id, e.ping.id, e.theirs.id]);
+    expect(json.about[e.group.id]).toMatchObject({ joins: 3, owner: { team: "team-web" } });
+  });
+
+  it("--mine lists only the questions of the person's teams, and says when they are on none", async () => {
+    const e = await estate();
+    const r = await run(e.root, ["list", "--mine", "--by", "sam"]);
+    expect(r.out[0]).toBe("The questions for sam's team: team-customers.");
+    expect(r.out.filter((l) => /^q-/.test(l)).map((l) => l.split(" ")[0])).toEqual([e.theirs.id]);
+    expect(r.out.at(-1)).toBe("1 question for your teams.");
+    const none = await run(e.root, ["list", "--mine", "--by", "dee"]);
+    expect(none.out).toEqual([
+      "dee is on no team in org-pack/roles.yaml, so no question is theirs: add them under a team's people (roles.yaml schemaVersion 2), or list every question without --mine.",
+      "No questions for your teams.",
     ]);
   });
 });

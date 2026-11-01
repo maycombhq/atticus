@@ -284,3 +284,22 @@ rules:
     waivable: false
     source: Atticus constitution
     needs: []
+
+  # ADR 0140: a map error never becomes a design error. A call the change plans that rests on a
+  # link the join guessed, a link question nobody has answered, or a repo whose read is stale or
+  # incomplete is said, never passed in silence; a risk, so a person answers or reads again rather
+  # than the gate blocking.
+  - id: constitution.change-links-known
+    title: A change says when it rests on a guessed link or a read that isn't whole
+    description: A call the change plans whose Interface the join guessed (inferred, joined by path or by a host's first label), that an open link question still asks about, or that starts or ends in a repo whose read is stale or incomplete. The guess and the open question are asked of the caller's owner; a stale or incomplete read says the command that reads it again.
+    layer: constitution
+    lens: architecture
+    question: "true"
+    appliesTo: { artifacts: [interfaces, catalog] }
+    severity: risk
+    check:
+      type: deterministic
+      check: change-links-known
+    waivable: false
+    source: Atticus constitution
+    needs: []
