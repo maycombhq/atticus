@@ -245,6 +245,7 @@ Every other command. `atticus legacy` lists them by area; each runs by its own n
   atticus unadopt <path>               Remove Atticus from an adopted repo, leaving it as it was
   atticus repos discover <folder> | --org <org>  Propose repos.manifest.yaml entries [--platform p] [--dry-run]
   atticus repo add <url|path>          Add one repo to the manifest, with what it is in your own words; with a folder and no --type, its type is read from its files (or, where they say nothing, from what you wrote) [--id x] [--type t] [--owner team] [--system s] [--component c] [--platform p] [--description "what it is"] [--no-description] [--json]
+  atticus repo rename <old> <new>      Move a repo's id with its facts, read plan, reviewed file, questions and catalog records, in one change you review (files moved and rewritten; nothing committed or pushed)
   atticus repo describe [<repo>]       Say what a repo is, in one line, for a repo that has none (or edit what it says); with no repo, the repos with no description and the drafts waiting for a person [--description "..."] [--accept] [--reject] [--json]
           [--drafted "..." --cites f:n]  Your assistant hands over the line it drafted, with the lines it read it from; kept unconfirmed until a person confirms it
   atticus absorb <git-url|path> --id <id>  Translate another team's prompts, agents, checklists, OpenSpec, Spec Kit, TypeSpec or Atticus repo

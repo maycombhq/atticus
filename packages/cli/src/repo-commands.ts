@@ -17,6 +17,7 @@ import {
 } from "@maycombhq/core";
 import { gitUser, loadRepos } from "@maycombhq/workspace";
 import type { Output } from "./commands.js";
+import { nearRepos } from "./repo-ids.js";
 
 /**
  * `atticus repo add` and `atticus repo describe` (ADR 0128): a repo into the manifest with what
@@ -236,6 +237,9 @@ export async function repoAdd(
   const detected = o.type?.trim()
     ? undefined
     : await typeOf(url.trim(), text, await declaredFrameworks(root, id));
+  // F5: an entry like one already listed (the same clone URL, or a near id) is warned of.
+  const listed = await loadRepos(root).catch(() => []);
+  const near = nearRepos({ id, url: clone?.origin ?? url.trim() }, listed);
   try {
     const file = await addManifestRepo(root, platform, {
       id,
@@ -247,8 +251,18 @@ export async function repoAdd(
       ...(o.component?.trim() ? { component: o.component.trim() } : {}),
       ...(description ? { description } : {}),
     });
+    for (const n of near)
+      io.err(
+        `Warning: ${id} looks like ${n.id}, already listed (${n.why}). If they are one repo, remove this entry from ${file.rel}, or keep one id: atticus repo rename <old> <new>.`,
+      );
     if (o.json) {
-      io.out(JSON.stringify({ repo: id, platform, file: file.rel, description }, null, 2));
+      io.out(
+        JSON.stringify(
+          { repo: id, platform, file: file.rel, description, ...(near.length ? { near } : {}) },
+          null,
+          2,
+        ),
+      );
       return 0;
     }
     io.out(`Added ${id} to ${file.rel}: commit it in a pull request.`);
