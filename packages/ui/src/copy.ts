@@ -216,8 +216,8 @@ export const COPY = {
       `${handle} is on no team in org-pack/roles.yaml, so no question is yours here. Add yourself under a team's people there (schemaVersion 2), or show everyone's.`,
     emptyMine: "No questions are waiting for your teams.",
     // ADR 0153 (Q4): a change's own questions go to the people its change.yaml names.
-    changeOwner: (change: string, people: string[]) =>
-      `Owner: the people of ${change} (${people.join(", ")})`,
+    changeOwner: (change: string, people: readonly string[] | string) =>
+      `Owner: the people of ${change} (${(typeof people === "string" ? [people] : people).join(", ")})`,
     mineChanges: (handle: string) =>
       `Questions of the changes that name ${handle} under owners. ${handle} is on no team in org-pack/roles.yaml.`,
     // ADR 0153 (Q2): one answer covers every call a host pattern or a path prefix matches.
