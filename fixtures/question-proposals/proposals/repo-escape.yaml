@@ -1,0 +1,9 @@
+schemaVersion: 1
+answer: { option: 1 }
+why: A repo that climbs out of workspace/, and one with no checkout here.
+cites:
+  - { repo: "../..", file: secret.txt, line: 1, quote: "anything" }
+  - { repo: "..", file: secret.txt, line: 1, quote: "anything" }
+  - { repo: nothing-here, file: build.sh, line: 1, quote: "anything" }
+by: claude-code
+at: 2026-10-31T12:00:00.000Z

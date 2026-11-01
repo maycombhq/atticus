@@ -1,0 +1,8 @@
+schemaVersion: 1
+answer: { option: 1 }
+why: The ledger's docs config marks the playground generated; a repo no manifest lists can't be cited.
+cites:
+  - { repo: forge-ledger, file: config/docs.yaml, line: 2, quote: "playground: generated" }
+  - { repo: forge-unlisted, file: docs.yaml, line: 2, quote: "playground: generated" }
+by: claude-code
+at: 2026-10-31T12:00:00.000Z

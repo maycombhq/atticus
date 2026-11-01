@@ -1,0 +1,15 @@
+# The invented Forge repos a proposal may cite (ADR 0144): the question's own, and one more the
+# manifest lists. forge-unlisted has a checkout but no manifest lists it.
+schemaVersion: 1
+platform: forge
+repos:
+  - id: forge-notes
+    url: https://git.forge.example/forge/forge-notes.git
+    type: node
+    owner: team-notes
+    system: notes
+  - id: forge-ledger
+    url: https://git.forge.example/forge/forge-ledger.git
+    type: spring-boot
+    owner: team-ledger
+    system: ledger
