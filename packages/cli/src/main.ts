@@ -469,7 +469,9 @@ Usage:
           [--gaps]                     Plan a second pass on what the last verify left (files no fact cites, skipped lines, spec operations, entries no flow follows) for a new chat, sized to the session: writes facts/<repo>.gaps.md (ADR 0157)
           [--copy]                     Print the next batch's prompt to paste into a chat
           [--answer <file>]            With --copy: read the pasted answer back from a file (- for stdin)
+          [--gaps --part n]            With --gaps: only what is left of part n of the read plan, for a read that stopped in it (ADR 0161); /atticus-map <repo> --part n --gaps in a new chat reads it
           [--spent <tokens>] [--sessions n] [--part n]  Record what the read took as your assistant reports it, in facts/<repo>.read-plan.yaml beside --estimate's estimate (Atticus can't meter an assistant's tokens; ADR 0141)
+  atticus map --all                    Map or re-map the whole estate in one command (ADR 0161): every repo's read planned at the model's limit, in the onboarding queue's order, fresh repos skipped. Under Copilot you paste one line per part into a new chat and Atticus waits for the facts, verifies them and moves on (s skip, r retry what's left, q stop; it resumes); where runtime.yaml allows model mode it runs unattended. Then the estate is joined once [--max-tokens n] [--stale | --gaps] [--repos a,b] [--dry-run] [--mode model|hand-off] [--max-parts n] [--budget-tokens n] [--idle minutes]
   atticus verify <repo>                Check the facts your assistant wrote for a repo (/atticus-map) against its code: the claim on each cited line, the quote, references, secrets, coverage; raises the questions it wrote for a person; rejected facts go back to the assistant (ADR 0124) [--dir path] [--commit sha] [--routed a,b] [--skipped] [--json]
           [--write]                    When nothing is rejected: put the facts in the catalog, the flows in specs/<repo>/, ask about calls nothing joins, and render the map
           [--verbose]                  With --write: list every record changed and flow written, not only the counts
@@ -917,6 +919,11 @@ const OPTIONS = {
   draft: { type: "boolean" },
   story: { type: "string" },
   gaps: { type: "boolean" },
+  // ADR 0161: atticus map --all.
+  stale: { type: "boolean" },
+  "max-parts": { type: "string" },
+  "budget-tokens": { type: "string" },
+  idle: { type: "string" },
   full: { type: "boolean" },
   "dry-run": { type: "boolean" },
   json: { type: "boolean" },
@@ -1513,11 +1520,96 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
     const { mapRenderCommand } = await import("./map-render-commands.js");
     return mapRenderCommand(root, repo, { json: values.json === true }, io);
   }
+  if (group === "map" && !command && values.all === true) {
+    // ADR 0161: atticus map --all, the whole estate in one command.
+    const text = (v: unknown) => (typeof v === "string" ? v : undefined);
+    const count = (flag: string) => {
+      const raw = text(values[flag as keyof typeof values]);
+      if (raw === undefined) return undefined;
+      const n = Number(raw);
+      return Number.isInteger(n) && n > 0 ? n : NaN;
+    };
+    const numbers = {
+      maxParts: count("max-parts"),
+      budgetTokens: count("budget-tokens"),
+      idle: count("idle"),
+    };
+    for (const [k, v] of Object.entries(numbers))
+      if (Number.isNaN(v)) {
+        io.err(
+          `--${k === "maxParts" ? "max-parts" : k === "budgetTokens" ? "budget-tokens" : "idle"} is a whole number above 0.`,
+        );
+        return 2;
+      }
+    const asked = text(values.mode);
+    if (asked && !["model", "hand-off", "copilot"].includes(asked)) {
+      io.err(
+        "atticus map --all takes --mode model or --mode hand-off (Copilot Chat, a line pasted per part).",
+      );
+      return 2;
+    }
+    const { mapAllCommand } = await import("./map-all.js");
+    const { copyToClipboard } = await import("./clipboard.js");
+    const typed: string[] = [];
+    const { createInterface } = await import("node:readline");
+    const rl = process.stdin.readable
+      ? createInterface({ input: process.stdin, terminal: false })
+      : undefined;
+    rl?.on("line", (l) => typed.push(l));
+    const ac = new AbortController();
+    const onInt = () => {
+      // A second Ctrl+C stops at once; the first stops cleanly after the step under way.
+      if (ac.signal.aborted) process.exit(130);
+      ac.abort();
+      io.err("Stopping after this step (Ctrl+C again stops at once)...");
+    };
+    process.on("SIGINT", onInt);
+    try {
+      return await mapAllCommand(
+        root,
+        {
+          ...(text(values.repos)
+            ? {
+                repos: text(values.repos)!
+                  .split(",")
+                  .map((x) => x.trim())
+                  .filter(Boolean),
+              }
+            : {}),
+          stale: values.stale === true,
+          gaps: values.gaps === true,
+          dryRun: values["dry-run"] === true,
+          json: values.json === true,
+          ...(asked ? { mode: asked === "model" ? ("model" as const) : ("copilot" as const) } : {}),
+          ...(numbers.maxParts ? { maxParts: numbers.maxParts } : {}),
+          ...(numbers.budgetTokens ? { budgetTokens: numbers.budgetTokens } : {}),
+          ...(numbers.idle ? { idleMinutes: numbers.idle } : {}),
+        },
+        io,
+        {
+          clipboard: copyToClipboard,
+          input: { take: () => typed.shift() },
+          signal: ac.signal,
+          makeRuntime: async () =>
+            (await runtimeForCli(root, { mode: "model", handoffValidate: async () => [] })).runtime,
+        },
+      );
+    } catch (e) {
+      if (e instanceof (await loadAi()).RuntimeConfigError) {
+        io.err(e.message);
+        return 2;
+      }
+      throw e;
+    } finally {
+      process.off("SIGINT", onInt);
+      rl?.close();
+    }
+  }
   if (group === "map") {
     const repo = command;
     if (!repo) {
       io.err(
-        "Usage: atticus map <repo> [--estimate | --gaps] [--handoff | --copy [--answer <file>] | --mode m] [--next] [--max-tokens n] [--force]",
+        "Usage: atticus map <repo> [--estimate | --gaps [--part n]] [--handoff | --copy [--answer <file>] | --mode m] [--next] [--max-tokens n] [--force], or atticus map --all [--stale | --gaps] [--repos a,b] [--dry-run] [--max-tokens n]",
       );
       return 2;
     }
@@ -1545,6 +1637,12 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
       ...(text(values.answer) !== undefined ? { answer: text(values.answer)! } : {}),
       estimate: values.estimate === true,
       gaps: values.gaps === true,
+      // ADR 0161: with --gaps, the rest of one part of the read plan.
+      ...(values.gaps === true &&
+      Number.isInteger(Number(text(values.part))) &&
+      Number(text(values.part)) > 0
+        ? { part: Number(text(values.part)) }
+        : {}),
       next: values.next === true,
       force: values.force === true,
       copy: values.copy === true,

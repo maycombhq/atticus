@@ -7,7 +7,16 @@ import {
   readQueue,
   takesRule,
 } from "../src/atticus";
-import { JOBS, jobArgv, jobByCommand, routeAsk, renameHint, queueRow } from "../src/jobs";
+import {
+  JOBS,
+  jobArgv,
+  jobByCommand,
+  limitOf,
+  routeAsk,
+  renameHint,
+  queueRow,
+  runtimeMaxInput,
+} from "../src/jobs";
 import { nextRow } from "../src/next-rows";
 import { questionsRows } from "../src/waiting-data";
 import { stepTitle, WORDS } from "../src/words";
@@ -294,6 +303,27 @@ describe("the Next view's beta.10 steps", () => {
       title: WORDS.renameRepo,
       args: ["forge_ledger", "forge-ledger"],
     });
+  });
+});
+
+describe("Map the estate (ADR 0161)", () => {
+  it("runs atticus map --all at the limit given, in a terminal the person types into", () => {
+    const j = jobByCommand("atticus.mapEstate")!;
+    expect(j.how).toBe("terminal");
+    expect(j.needs).toBe("limit");
+    expect(jobArgv(j, { maxTokens: "128000" })).toEqual(["map", "--all", "--max-tokens", "128000"]);
+  });
+
+  it("offers runtime.yaml's maxInput, and takes a whole number of tokens", () => {
+    const yaml =
+      "schemaVersion: 2\nadapters:\n  model:\n    type: anthropic\n    settings:\n      maxInput: 200000 # the model's window\n";
+    expect(runtimeMaxInput(yaml)).toBe("200000");
+    expect(runtimeMaxInput("schemaVersion: 2\n")).toBeUndefined();
+    expect(runtimeMaxInput(undefined)).toBeUndefined();
+    expect(limitOf("128,000")).toBe("128000");
+    expect(limitOf(" 64000 ")).toBe("64000");
+    expect(limitOf("12")).toBeUndefined();
+    expect(limitOf("lots")).toBeUndefined();
   });
 });
 

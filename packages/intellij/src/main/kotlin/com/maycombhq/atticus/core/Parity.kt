@@ -107,6 +107,8 @@ object Parity {
             put("atticus.diagram", app("#/diagrams"))
             put("atticus.showStep", app("#/flows"))
             put("atticus.showFlow", app("#/flows"))
+            // ADR 0161: atticus map --all, in a console here and a terminal there.
+            put("atticus.mapEstate", action("Atticus.MapEstate"))
             put("atticus.createMetarepo", action("Atticus.CreateMetarepo"))
             put("atticus.adoptRepo", action("Atticus.Adopt"))
             put("atticus.practiceSandbox", action("Atticus.Sandbox"))

@@ -462,6 +462,14 @@ object Copy {
 
     const val OPEN_GAPS = "Open the gaps prompt"
 
+    // Map the estate in one command (ADR 0161)
+    const val MAP_ESTATE_TITLE = "Map the Estate"
+    const val MAP_ESTATE_LIMIT =
+        "Your model's limit in tokens (the context window of the model Copilot Chat uses). Each part is planned to fit it. " +
+            "The console then shows each part's line, also put on the clipboard: paste it into a new Copilot Chat in agent mode. " +
+            "Type s (skip), r (retry what's left) or q (stop) and Enter in the console."
+    const val MAP_ESTATE_BAD_LIMIT = "The limit is a whole number of tokens, such as 128000."
+
     fun proposeCopied(slash: String) =
         "<b>$slash</b> is on the clipboard. Paste it in Copilot Chat in agent mode: your assistant proposes an answer to each open question, citing its lines. " +
             "Then Atticus: Check the Proposed Answers, and accept each one in Waiting on you."

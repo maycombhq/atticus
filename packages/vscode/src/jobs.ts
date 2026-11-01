@@ -18,11 +18,13 @@ export interface JobArgs {
   source?: string;
   old?: string;
   new?: string;
+  /** The model's limit, in tokens (map --all, ADR 0161). */
+  maxTokens?: string;
 }
 
 /** What a job asks for before it runs. */
 export type JobNeeds =
-  "repo" | "repo-or-estate" | "change" | "reference" | "sheet" | "traffic" | "rename";
+  "repo" | "repo-or-estate" | "change" | "reference" | "sheet" | "traffic" | "rename" | "limit";
 
 export interface Job {
   /** The VS Code command. */
@@ -35,9 +37,10 @@ export interface Job {
   /**
    * report: read-only, what it printed shown whole in a tab; run: what it printed in a notice;
    * confirm: a person's yes first (it moves or archives files in the metarepo); chat: only opens
-   * Copilot Chat on a step.
+   * Copilot Chat on a step; terminal: a long-running command in a terminal the person sees and
+   * types into (map --all waits on Copilot and reads s, r and q, ADR 0161).
    */
-  how: "report" | "run" | "confirm" | "chat";
+  how: "report" | "run" | "confirm" | "chat" | "terminal";
   /** The app page that shows the same, offered after it ran. */
   app?: (a: JobArgs) => string;
   /** The step to open in Copilot Chat (agent mode where its agent file is there). */
@@ -49,7 +52,29 @@ const req = (v: string | undefined, what: string) => {
   return v;
 };
 
+/**
+ * ADR 0161: runtime.yaml's `maxInput` (under adapters.model), the limit map --all is offered with;
+ * undefined when it names none. A line read, not a YAML parse: the editor only pre-fills a box.
+ */
+export function runtimeMaxInput(runtimeYaml: string | undefined): string | undefined {
+  const m = /^\s*maxInput:\s*(\d+)\s*(#.*)?$/m.exec(runtimeYaml ?? "");
+  return m?.[1];
+}
+
+/** A limit as typed: a whole number of tokens, at least 1,000 (commas and spaces allowed). */
+export function limitOf(typed: string): string | undefined {
+  const n = typed.replace(/[,_\s]/g, "");
+  return /^\d+$/.test(n) && Number(n) >= 1000 ? String(Number(n)) : undefined;
+}
+
 export const JOBS: readonly Job[] = [
+  {
+    command: "atticus.mapEstate",
+    title: "Map the estate, one part at a time (map --all)",
+    needs: "limit",
+    argv: (a) => ["map", "--all", "--max-tokens", req(a.maxTokens, "model limit")],
+    how: "terminal",
+  },
   {
     command: "atticus.estateFresh",
     title: "Which repos are stale (estate fresh)",

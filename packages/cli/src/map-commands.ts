@@ -58,6 +58,7 @@ import {
   frameworkTopics,
   frameworkTopicsOfType,
   kindsOf,
+  lineRangeOf,
   numberedSlice,
   onlyFiles,
   planBatches,
@@ -146,6 +147,11 @@ export interface MapOptions {
    * and write its prompt beside the facts; nothing else.
    */
   gaps?: boolean;
+  /**
+   * With gaps (ADR 0161): only what is left of this part of the read plan, for a read that
+   * stopped partway through it: the part's files no kept fact or reviewed line accounts for yet.
+   */
+  part?: number;
 }
 
 export interface MapDeps {
@@ -218,6 +224,14 @@ const batches = (n: number) => `${n} ${n === 1 ? "batch" : "batches"}`;
 const changeOf = (repo: string) => `map-${repo}`;
 const stateFile = (root: string, repo: string) =>
   join(runsDirOf(root), changeOf(repo), "state.json");
+
+/** Where a batched read of `repo` stands (ADR 0161: `map --all` reads it to resume a model read). */
+export async function mapStateOf(
+  root: string,
+  repo: string,
+): Promise<Pick<MapState, "commit" | "done" | "next" | "batches" | "last"> | undefined> {
+  return readState(root, repo).catch(() => undefined);
+}
 
 async function readState(root: string, repo: string): Promise<MapState | undefined> {
   const text = await readFile(stateFile(root, repo), "utf8").catch(() => undefined);
@@ -814,6 +828,23 @@ export async function mapCommand(
   if (o.gaps) {
     const { mapGaps } = await import("./map-gaps.js");
     const tier = await tierHere(root, op);
+    let part: { n: number; left: string[] } | undefined;
+    if (o.part !== undefined) {
+      // ADR 0161: the rest of one part of the read plan, for a read that stopped in it.
+      const p = (await readPlanProgress(root, repo))?.parts.find((x) => x.part === o.part);
+      if (!p) {
+        io.err(
+          `${repo}'s read plan has no part ${o.part} (${readPlanRelOf(root, repo)}): atticus map ${repo} --estimate plans it.`,
+        );
+        return 2;
+      }
+      // Its folders whole (a file of a folder the facts touch may be unread: the last verify's
+      // unknown files say which) and the line ranges nothing accounts for yet.
+      part = {
+        n: p.part,
+        left: [...p.paths.filter((g) => !lineRangeOf(g)), ...p.left.filter((g) => lineRangeOf(g))],
+      };
+    }
     return mapGaps(
       root,
       repo,
@@ -822,6 +853,7 @@ export async function mapCommand(
         source,
         session: sessionTokensFor(limitOf(o, op, tier).limit),
         ...(o.json ? { json: true } : {}),
+        ...(part ? { part } : {}),
       },
       io,
     );

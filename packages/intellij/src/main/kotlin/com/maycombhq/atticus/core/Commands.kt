@@ -207,6 +207,25 @@ object Commands {
     fun gapsSlash(repo: String) = "/atticus-map $repo --gaps"
 
     /**
+     * ADR 0161: `atticus map --all --max-tokens <n>`, the whole estate in one command, run in a
+     * console the person types s, r and q into; null when the limit typed is no whole number of
+     * tokens (at least 1,000; commas and spaces allowed).
+     */
+    fun mapAllArgv(limit: String): List<String>? {
+        val n = limit.replace(Regex("[,_\\s]"), "")
+        if (!n.matches(Regex("\\d{4,9}"))) return null
+        return listOf("map", "--all", "--max-tokens", n.trimStart('0').ifEmpty { return null })
+    }
+
+    /** ADR 0161: runtime.yaml's `maxInput`, the limit Map the Estate is pre-filled with; null when it names none. */
+    fun runtimeMaxInput(orgPack: java.nio.file.Path?): String? {
+        val file = orgPack?.resolve("runtime.yaml") ?: return null
+        if (!java.nio.file.Files.isRegularFile(file)) return null
+        val text = runCatching { java.nio.file.Files.readString(file) }.getOrNull() ?: return null
+        return Regex("""(?m)^\s*maxInput:\s*(\d+)\s*(#.*)?$""").find(text)?.groupValues?.get(1)
+    }
+
+    /**
      * ADR 0157: the prompt `atticus map <repo> --gaps` writes beside the facts, in a metarepo
      * (`facts/`) or in a repo adopted in place (`.atticus/facts/`).
      */

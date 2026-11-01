@@ -144,6 +144,8 @@ export const LOCAL_ONLY = [
   "history/",
   "probe/",
   "cache/",
+  // ADR 0161: where `atticus map --all` is in the estate, so running it again resumes.
+  "map-all/",
 ] as const;
 
 /**
