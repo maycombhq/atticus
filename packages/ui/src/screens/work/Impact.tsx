@@ -33,6 +33,9 @@ export function ImpactView({ i }: { i: Api.ChangeImpactT }) {
       ) : (
         <>
           <p className="est-big">{I.counts(i.breaks, i.mayBreak, i.routes)}</p>
+          {i.upstream && (i.upstream.breaks > 0 || i.upstream.mayBreak > 0) && (
+            <p>{I.upstream(i.upstream.breaks, i.upstream.mayBreak)}</p>
+          )}
           {i.items.map((it, n) => {
             const head = `impact-${n}`;
             return (
@@ -89,7 +92,63 @@ export function ImpactView({ i }: { i: Api.ChangeImpactT }) {
                     </tbody>
                   </table>
                 )}
-                {it.callers.some((c) => c.verdict === "may-break") && (
+                {(it.chain ?? []).length > 0 && (
+                  <>
+                    <h4 className="hud">{I.chain}</h4>
+                    <table className="run-table">
+                      <caption className="sr">{I.chainCaption(it.name)}</caption>
+                      <thead>
+                        <tr>
+                          <th scope="col">{I.chainCol.who}</th>
+                          <th scope="col">{I.chainCol.via}</th>
+                          <th scope="col">{I.chainCol.verdict}</th>
+                          <th scope="col">{I.chainCol.owner}</th>
+                          <th scope="col">{I.chainCol.where}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(it.chain ?? []).map((h) => {
+                          const how = I.guessWords[h.guessed ?? ""] ?? "";
+                          return (
+                            <tr key={h.component}>
+                              <td
+                                className="mono"
+                                style={{ paddingLeft: `${(h.depth - 1) * 14}px` }}
+                              >
+                                {h.component} <span className="sr">({I.depth(h.depth)})</span>
+                              </td>
+                              <td>
+                                <span className="mono">{I.via(h.via)}</span>
+                                {h.entries.length > 0 && (
+                                  <span className="muted mono"> ({h.entries.join(", ")})</span>
+                                )}
+                              </td>
+                              <td>
+                                {h.verdict === "breaks" ? (
+                                  <strong>{I.breaks}</strong>
+                                ) : h.restsOn ? (
+                                  I.restsOn(h.restsOn, how)
+                                ) : (
+                                  I.restsOwn(how)
+                                )}
+                              </td>
+                              <td>{ownerWords(h.owner)}</td>
+                              <td className="mono">
+                                {[...h.at, ...h.flows, ...h.routes].join(", ")}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </>
+                )}
+                {it.capped && (
+                  <p className="muted">
+                    {I.capped(Math.max(...(it.chain ?? []).map((h) => h.depth)))}
+                  </p>
+                )}
+                {[...it.callers, ...(it.chain ?? [])].some((c) => c.verdict === "may-break") && (
                   <p role="note" className="muted">
                     {I.confirm(i.rule)}
                   </p>

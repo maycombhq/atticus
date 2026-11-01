@@ -2,11 +2,14 @@
 # owners from ./owners.yaml (V1). forge-stock's response stops returning reservationId: forge-orders
 # (read from code, and its spec flow) and forge-partner (through gw-stock-v1) break; forge-mobile
 # only may break, its link joined by path. forge-orders widens quantity: forge-reports, which no
-# manifest lists, breaks. The gateway route is forge-gateway's to update.
+# manifest lists, breaks. The gateway route is forge-gateway's to update. Up the chain (ADR 0156):
+# forge-web calls forge-orders' POST /orders, the entry of forge-orders' flow that makes the call,
+# so it breaks through forge-orders; nothing calls forge-mobile, forge-partner or forge-reports.
 change: hold-stock
 breaks: 3
 mayBreak: 1
 routes: 1
+upstream: { breaks: 1, mayBreak: 0 }
 rule: constitution.change-links-known
 items:
   - kind: endpoint
@@ -51,6 +54,18 @@ items:
         at: [forge-gateway proxies/stock-v1/apiproxy/proxies/default.xml:9]
         callers: [forge-partner]
         owner: { team: team-platform }
+    chain:
+      - component: forge-web
+        repo: forge-web
+        depth: 2
+        via: [forge-orders]
+        entries: [forge-orders.post-orders]
+        verdict: breaks
+        interfaces: [if-446819711bae9430]
+        flows: []
+        routes: []
+        at: [forge-web src/app/orders/order.service.ts:12]
+        owner: { none: "no repos.manifest.yaml lists forge-web, so no team owns it" }
   - kind: table
     flow: forge-orders.place-order
     repo: forge-orders
@@ -69,6 +84,7 @@ items:
         at: []
         owner: { none: "no repos.manifest.yaml lists forge-reports, so no team owns it" }
     routes: []
+    chain: []
 owners:
   - owner: { team: team-mobile }
     repos: [forge-mobile]
@@ -82,3 +98,5 @@ owners:
     repos: [forge-stock]
   - owner: { none: "no repos.manifest.yaml lists forge-reports, so no team owns it" }
     repos: [forge-reports]
+  - owner: { none: "no repos.manifest.yaml lists forge-web, so no team owns it" }
+    repos: [forge-web]

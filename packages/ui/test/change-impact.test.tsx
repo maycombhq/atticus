@@ -96,4 +96,48 @@ describe("a change's impact on its Architecture tab (ADR 0144)", () => {
     const clean = renderToStaticMarkup(<ImpactView i={{ ...IMPACT, items: [] }} />);
     expect(clean).toContain(esc(I.nothing));
   });
+
+  it("shows who calls the callers, each hop with what it calls through, and a guessed hop apart", () => {
+    const chain: NonNullable<Api.ChangeImpactT["items"][number]["chain"]> = [
+      {
+        component: "forge-web",
+        repo: "forge-web",
+        depth: 2,
+        via: ["forge-partner"],
+        entries: ["forge-partner.get-partner-stock"],
+        verdict: "breaks",
+        interfaces: ["if-0000000000000001"],
+        flows: [],
+        routes: [],
+        at: ["forge-web src/app/stock.ts:3"],
+        owner: { team: "team-web" },
+      },
+      {
+        component: "forge-tablet",
+        depth: 2,
+        via: ["forge-mobile"],
+        entries: [],
+        verdict: "may-break",
+        guessed: "joined-by-path",
+        restsOn: "forge-mobile",
+        interfaces: [],
+        flows: [],
+        routes: [],
+        at: [],
+        owner: { none: "the catalog names no repo for forge-tablet, so no team owns it" },
+      },
+    ];
+    const i = {
+      ...IMPACT,
+      upstream: { breaks: 1, mayBreak: 1 },
+      items: [{ ...IMPACT.items[0]!, chain, capped: true as const }],
+    };
+    const out = renderToStaticMarkup(<ImpactView i={i} />);
+    expect(out).toContain(esc(I.chain));
+    expect(out).toContain(esc(I.upstream(1, 1)));
+    expect(out).toContain(esc(I.chainCaption("POST /stock/reservations")));
+    expect(out).toContain(esc(I.via(["forge-partner"])));
+    expect(out).toContain(esc(I.restsOn("forge-mobile", "by path")));
+    expect(out).toContain(esc(I.capped(2)));
+  });
 });

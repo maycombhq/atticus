@@ -971,6 +971,18 @@ export const COPY = {
     confirm: (rule: string) =>
       `Not counted as a break: the critic's ${rule} asks the caller's owner to confirm each guessed link.`,
     nobody: "The map shows nobody calling or using it.",
+    /** ADR 0156: who calls the callers, up the chain. */
+    chain: "Up the chain: who calls the callers",
+    upstream: (breaks: number, mayBreak: number) =>
+      `Up the chain, ${breaks} more ${breaks === 1 ? "breaks" : "break"} and ${mayBreak} may break (resting on a guessed link).`,
+    chainCaption: (name: string) => `Who calls the callers of ${name}, hop by hop`,
+    chainCol: { who: "Caller", via: "Calls", verdict: "Breaks?", owner: "Owner", where: "Where" },
+    via: (via: readonly string[]) => `via ${[...via].join(", ")}`,
+    depth: (n: number) => `${n} hops up`,
+    restsOwn: (how: string) => `May break (its link guessed ${how})`,
+    restsOn: (who: string, how: string) => `May break (rests on ${who}, guessed ${how})`,
+    capped: (n: number) =>
+      `The walk stops at ${n} hops up; more callers are above the last ones listed.`,
     routes: "Gateway routes to update",
     route: (id: string, callers: readonly string[]) =>
       `${id}: ${[...callers].join(", ")} ${callers.length === 1 ? "calls" : "call"} through it`,
