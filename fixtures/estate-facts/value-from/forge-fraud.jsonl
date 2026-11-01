@@ -1,0 +1,1 @@
+{"kind":"entry","id":"e-post-fraud-score","repo":"forge-fraud","commit":"7777bbb","entryType":"rest","method":"POST","path":"/fraud/scores","cite":{"file":"src/main/java/forge/fraud/ScoreController.java","line":22,"value":"/fraud/scores","quote":"@PostMapping(\"/fraud/scores\")"},"verified":"line","by":"assistant","conf":"declared"}

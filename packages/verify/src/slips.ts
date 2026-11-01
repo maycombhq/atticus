@@ -50,10 +50,15 @@ const REF_FIELDS = ["from", "under", "owner", "mappedTo", "entry"] as const;
 /**
  * The facts with the slips of form among the refused lines fixed: the facts that now read, the
  * lines still refused (a collision among their issues), and every fix and collision said.
+ * `onFile` are facts already on file beside these (`atticus map`'s earlier batches): a reference may
+ * name one by an id it slugs to, a flow may take the cite of an entry among them, and a line whose
+ * id slugs to one of theirs writes that fact again, as the batch loop merges by id. They are not
+ * returned.
  */
 export function repairFormSlips(
   facts: readonly Fact[],
   bad: readonly BadFactLine[],
+  onFile: readonly Fact[] = [],
 ): { facts: Fact[]; bad: BadFactLine[]; slips: FormSlip[] } {
   const slips: FormSlip[] = [];
   // The lines that are JSON objects and were refused by the schema (not a repeated id).
@@ -79,6 +84,7 @@ export function repairFormSlips(
       const s = slugFactId(json.id);
       if (isId(s)) wanted.set(s, (wanted.get(s) ?? 0) + 1);
     }
+  const known = new Set([...facts, ...onFile].map((f) => f.id));
   const renames = new Map<string, string>();
   const collided = new Map<BadFactLine, string>();
   for (const { b, json } of cands) {
@@ -107,7 +113,14 @@ export function repairFormSlips(
       });
       o.id = renames.get(o.id)!;
     }
-    const ref = (v: unknown) => (typeof v === "string" ? renames.get(v) : undefined);
+    // A reference to an id renamed here, or one that slugs to a fact's id (an earlier batch's).
+    const ref = (v: unknown) => {
+      if (typeof v !== "string") return undefined;
+      if (renames.has(v)) return renames.get(v);
+      if (isId(v)) return undefined;
+      const s = slugFactId(v);
+      return known.has(s) ? s : undefined;
+    };
     const said = (field: string, from: string, to: string) =>
       fixes.push({
         line: b.line,
@@ -136,7 +149,8 @@ export function repairFormSlips(
 
   // ---- a flow with no cite: its entry's
   const entries = new Map<string, Obj>();
-  for (const f of facts) if (f.kind === "entry") entries.set(f.id, f as unknown as Obj);
+  for (const f of [...onFile, ...facts])
+    if (f.kind === "entry") entries.set(f.id, f as unknown as Obj);
   for (const { o } of rewritten)
     if (o.kind === "entry" && typeof o.id === "string" && isObj(o.cite)) entries.set(o.id, o);
   for (const r of rewritten) {
