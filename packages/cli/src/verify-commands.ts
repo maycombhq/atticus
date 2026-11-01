@@ -413,6 +413,17 @@ export async function verifyCommand(
       `(reviewedDropped in ${verifyYaml})`,
     );
   }
+  // P2: a warning, counted, never a rejection (yet).
+  const unseen = report.methodUnseen;
+  if (unseen.length) {
+    io.out(
+      `${unseen.length} ${unseen.length === 1 ? "entry or call claims" : "entries or calls claim"} an HTTP method ${unseen.length === 1 ? "its" : "their"} lines don't write (a warning, not a rejection; under methodUnseen in ${verifyYaml}):`,
+    );
+    show(
+      unseen.map((m) => m.message),
+      `(methodUnseen in ${verifyYaml})`,
+    );
+  }
   if (report.redacted) io.out(`${report.redacted} quotes had a secret value redacted.`);
   // A-uncited: the quote a file of that kind can't bear is left off the kept fact, and counted.
   if (report.quotesDropped)

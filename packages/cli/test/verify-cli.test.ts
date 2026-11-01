@@ -470,6 +470,27 @@ describe("atticus verify: files read with nothing to record, and a read that is 
     expect(codes).toContain("flow-cite-from-entry");
   });
 
+  // P2: a method its lines don't write is a counted note in the report, and the run passes.
+  it("notes a claimed HTTP method its lines don't write, counted, and exits 0 (P2)", async () => {
+    const root = limits(reviewedFixture());
+    const file = join(root, ".atticus", "facts", "forge-limits.jsonl");
+    writeFileSync(
+      file,
+      readFileSync(file, "utf8").replace(
+        '"method":"POST","path":"/limits/checks"',
+        '"method":"PUT","path":"/limits/checks"',
+      ),
+    );
+    const o = io();
+    expect(await verifyCommand(root, "forge-limits", { commit: "4d1c0de" }, o.io)).toBe(0);
+    expect(o.out).toContain(
+      "1 entry or call claims an HTTP method its lines don't write (a warning, not a rejection; under methodUnseen in .atticus/facts/forge-limits.verify.yaml):",
+    );
+    const r = report(root);
+    expect(r.methodUnseenCount).toBe(1);
+    expect(r.methodUnseen.map((m: { id: string }) => m.id)).toEqual(["e-post-check"]);
+  });
+
   // A-uncited: the claim stays in the reader's own file, and out of the catalog. It used to be
   // stripped from the file here, which erased this very warning on the next run.
   it("keeps an entry's uncited auth in the facts file, says so, and says the same next run", async () => {

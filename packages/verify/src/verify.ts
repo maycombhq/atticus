@@ -26,6 +26,7 @@ import { frameworkGaps, frameworkNameProblem, type FrameworkGap } from "./framew
 import { isDataFile, isLocaleBundle } from "./not-product.js";
 import { pageRouteMatches } from "./pages.js";
 import { isGlob, lineRangeOf, type ReviewedEntry } from "./reviewed.js";
+import { methodUnseenOf, type MethodUnseen } from "./method.js";
 import { insideRepo, type FileSource } from "./source.js";
 
 /**
@@ -184,6 +185,11 @@ export interface VerifyReport {
    * order.
    */
   authUncited: UncitedAuth[];
+  /**
+   * A note, not a rejection (P2): the kept entries and calls whose HTTP method is written on
+   * neither the cited line, the next line nor a `cite.with` line. In id order.
+   */
+  methodUnseen: MethodUnseen[];
   /**
    * A note, not a rejection (ADR 0124 addendum A-framework): the frameworks the kept facts say
    * the repo is built on whose patterns none of those facts show — a Spring Boot repo with no
@@ -792,6 +798,7 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
     return { ...c, quote: q };
   };
   const authUncited: UncitedAuth[] = [];
+  const methodUnseen: MethodUnseen[] = [];
   const accepted: Fact[] = facts
     .filter((f) => !rejected.has(f.id))
     .map((f) => {
@@ -810,6 +817,9 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
           auth: base.auth,
           cite: `${base.cite.file}:${base.cite.line}`,
         });
+      // P2: the method claimed, looked for on the lines the fact cites; a note, never a rejection.
+      const unseen = methodUnseenOf(base, linesOf);
+      if (unseen) methodUnseen.push(unseen);
       if (base.kind === "flow")
         return {
           ...base,
@@ -921,6 +931,7 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
     reviewedProblems,
     reviewedDropped,
     authUncited: authUncited.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)),
+    methodUnseen: methodUnseen.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)),
     frameworkGaps: frameworkGaps(accepted),
   };
 }

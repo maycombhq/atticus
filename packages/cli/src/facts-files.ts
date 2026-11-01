@@ -183,6 +183,10 @@ export interface VerifySummary {
   reviewed?: VerifyReport["reviewed"];
   /** R6: the reviewed globs that match no file, dropped with a note. Left out when none. */
   reviewedDropped?: VerifyReport["reviewedDropped"];
+  /** P2: how many kept entries and calls claim a method their lines don't write; left out when none. */
+  methodUnseenCount?: number;
+  /** P2: those entries and calls, each with where it is cited (a warning, not a rejection). */
+  methodUnseen?: VerifyReport["methodUnseen"];
   /** R6: the slips of form fixed in the facts (a slugged id, a flow's cite). Left out when none. */
   slips?: FormSlip[];
   /**
@@ -291,6 +295,10 @@ export async function writeVerifyFiles(
     summary.entriesNoFlowFollows = report.entriesNoFlowFollows;
   if (report.reviewed.length) summary.reviewed = report.reviewed;
   if (report.reviewedDropped.length) summary.reviewedDropped = report.reviewedDropped;
+  if (report.methodUnseen.length) {
+    summary.methodUnseenCount = report.methodUnseen.length;
+    summary.methodUnseen = report.methodUnseen;
+  }
   if (slips.length) summary.slips = [...slips];
   if (report.authUncited.length) summary.authUncited = report.authUncited;
   // A-framework: what the repo is built on, and the frameworks whose patterns nothing shows.
