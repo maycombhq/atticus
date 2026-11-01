@@ -81,6 +81,8 @@ atticus verify audit forge-payments --size 5 --seed s2   # another sample, the s
 
 Each fact and link is shown with every line it rests on (a link with how it was joined, and each gateway hop), and on a terminal you answer right, wrong or unsure. A wrong fact is corrected with Correct this on the Map; a wrong link with Why is this linked? › This link is wrong. The answers go to `facts/<repo>.audit.yaml`, your record: commit it in a pull request. Nothing is sent anywhere.
 
+In the app, Map › Trust's Sample audit has **Answer a sample**: it draws the same sample (the same seed and size give the same items as the command), shows each item with its lines, and writes your right, wrong or unsure (with a note) to the same file. A wrong fact opens Correct this in place; a wrong link points to the canvas, where the link's Why is this linked? › This link is wrong corrects it. The app writes only the audit file and gives the `git` command; it runs none.
+
 From a script or an agent, give the answers instead of being asked: `--answers answers.yaml` (each item id, as the sample lists it, mapped to `right`, `wrong` or `unsure`, or to `{ answer: wrong, note: ... }`), or `--right`, `--wrong` and `--unsure` with comma-separated ids.
 
 ```sh
