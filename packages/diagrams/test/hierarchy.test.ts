@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
-import { parseRecord, type CatalogRecord } from "@maycombhq/core";
+import { interfaceId, parseRecord, type CatalogRecord } from "@maycombhq/core";
 import { buildEstate, focusView, nodeView, viewKey } from "../src/index.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -332,5 +332,162 @@ describe("view keys name a layout file", () => {
     expect(viewKey("data", "table:ledger-db.entry", "focus")).toBe(
       "data.focus.table-ledger-db.entry",
     );
+  });
+});
+
+describe("why is this linked: each link's joins, how each was made and both ends (C1, ADR 0135)", () => {
+  const cite = (repo: string, path: string, line: number, side: string, source = "code") => ({
+    source,
+    repo,
+    path,
+    line,
+    side,
+    by: "assistant",
+  });
+  const HOST = interfaceId("web-app", "customers-api", "POST", "/api/customers");
+  const PATH = interfaceId("web-app", "customers-api", "GET", "/api/tags");
+  const OLD = interfaceId("web-app", "customers-api", "GET", "/api/old");
+  const records = () =>
+    [
+      {
+        kind: "Component",
+        id: "web-app",
+        confidence: "verified",
+        system: "web",
+        repo: "forge-web",
+        type: "spa",
+        evidence: [cite("forge-web", "src/main.ts", 1, "caller")],
+      },
+      {
+        kind: "Component",
+        id: "customers-api",
+        confidence: "verified",
+        system: "customers",
+        repo: "forge-customers",
+        type: "service",
+        evidence: [cite("forge-customers", "src/App.java", 1, "callee")],
+      },
+      {
+        kind: "Interface",
+        id: HOST,
+        confidence: "verified",
+        flags: ["joined-by-host"],
+        from: "web-app",
+        to: "customers-api",
+        via: "direct",
+        method: "POST",
+        normalizedPath: "/api/customers",
+        sync: "sync",
+        direction: "outbound",
+        conflicts: [],
+        evidence: [
+          cite("forge-web", "src/customer.service.ts", 21, "caller"),
+          cite("forge-web", "src/environment.ts", 4, "caller", "config"),
+          cite("forge-customers", "src/CustomerController.java", 24, "callee"),
+        ],
+      },
+      {
+        kind: "Interface",
+        id: PATH,
+        confidence: "inferred",
+        flags: ["joined-by-path"],
+        from: "web-app",
+        to: "customers-api",
+        via: "gateway",
+        route: "gw-edge-get-tags",
+        method: "GET",
+        normalizedPath: "/api/tags",
+        sync: "sync",
+        direction: "outbound",
+        conflicts: [],
+        evidence: [
+          cite("forge-web", "src/tags.ts", 7, "caller"),
+          cite("forge-edge", "proxies/tags.xml", 3, "gateway", "gateway"),
+          cite("forge-customers", "src/TagsController.java", 12, "callee"),
+        ],
+      },
+      {
+        kind: "Interface",
+        id: OLD,
+        confidence: "verified",
+        from: "web-app",
+        to: "customers-api",
+        via: "direct",
+        method: "GET",
+        normalizedPath: "/api/old",
+        sync: "sync",
+        direction: "outbound",
+        conflicts: [],
+        evidence: [{ source: "code", repo: "forge-web", path: "src/old.ts", line: 2 }],
+      },
+    ].map((r) => {
+      const p = parseRecord({ schemaVersion: 1, status: "current", ...r });
+      if (!p.ok) throw new Error(`${r.id}: ${JSON.stringify(p.issues)}`);
+      return p.record;
+    });
+
+  it("lists every call merged into a link, with how it was joined and its cited lines", () => {
+    const v = nodeView(buildEstate(records()), "estate", { lens: "architecture" });
+    const link = v.edges.find((e) => e.from === "system:web" && e.to === "system:customers")!;
+    expect(link.count).toBe(3);
+    const byId = (a: { interface: string }, b: { interface: string }) =>
+      a.interface < b.interface ? -1 : 1;
+    expect(link.joins).toEqual(
+      [
+        {
+          interface: HOST,
+          from: "web-app",
+          to: "customers-api",
+          how: "host",
+          gateway: false,
+          verified: true,
+          method: "POST",
+          path: "/api/customers",
+          caller: [
+            { source: "code", repo: "forge-web", at: "src/customer.service.ts:21" },
+            { source: "config", repo: "forge-web", at: "src/environment.ts:4" },
+          ],
+          callee: [
+            { source: "code", repo: "forge-customers", at: "src/CustomerController.java:24" },
+          ],
+          hops: [],
+          other: [],
+        },
+        {
+          interface: OLD,
+          from: "web-app",
+          to: "customers-api",
+          how: "unknown",
+          gateway: false,
+          verified: true,
+          method: "GET",
+          path: "/api/old",
+          caller: [],
+          callee: [],
+          hops: [],
+          other: [{ source: "code", repo: "forge-web", at: "src/old.ts:2" }],
+        },
+        {
+          interface: PATH,
+          from: "web-app",
+          to: "customers-api",
+          how: "path",
+          gateway: true,
+          verified: false,
+          method: "GET",
+          path: "/api/tags",
+          caller: [{ source: "code", repo: "forge-web", at: "src/tags.ts:7" }],
+          callee: [{ source: "code", repo: "forge-customers", at: "src/TagsController.java:12" }],
+          hops: [{ source: "gateway", repo: "forge-edge", at: "proxies/tags.xml:3" }],
+          other: [],
+        },
+      ].sort(byId),
+    );
+  });
+
+  it("counts a guess as a gap, and how a link was made as none", () => {
+    const v = nodeView(buildEstate(records()), "estate", { lens: "architecture" });
+    const link = v.edges.find((e) => e.from === "system:web" && e.to === "system:customers")!;
+    expect(link.gaps).toEqual(["inferred", "joined-by-path"]);
   });
 });

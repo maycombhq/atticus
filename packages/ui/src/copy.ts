@@ -699,6 +699,38 @@ export const COPY = {
     unknownFiles: (n: number) => `The ${n} file${n === 1 ? "" : "s"} no fact cites yet`,
     more: (n: number, path: string) => `and ${n} more, listed in ${path}`,
     files: (facts: string, report: string) => `Files: ${facts}, ${report}`,
+    // ADR 0135, C3: every count opens what it counts, with the action that closes each.
+    none: "None",
+    show: (n: number, what: string) => `${n} ${what}: show them`,
+    what: {
+      kept: "facts kept",
+      redacted: "quotes redacted",
+      rejected: "lines rejected",
+      unknown: "files not read",
+      excluded: "files excluded",
+      asked: "questions open",
+      unverified: "facts not checked",
+    } as Record<string, string>,
+    asked: "Questions open",
+    unverified: "Not checked yet",
+    keptFix:
+      "Each is checked on its line. Open a citation to see the quote, and Correct this if the fact is wrong.",
+    redactedFix:
+      "A secret value in the quote was replaced with <redacted> before the facts were kept. Nothing to do: the claim is still checked on its line.",
+    rejectedFix: (file: string) =>
+      `The cited line doesn't say what the fact claims, or the line isn't a fact. Your assistant fixes each from ${file}, then the verifier checks them again:`,
+    rejectedLine: (code: string, message: string) => (message ? `${code}: ${message}` : code),
+    rejectedNoLine: "No file or line: the line isn't a fact",
+    unknownFix: (repo: string) =>
+      `No fact cites these yet. Have your assistant read them, or exclude generated code in org-pack/scan/${repo}.yaml:`,
+    excludedFix: (repo: string) =>
+      `Left out of the read by org-pack/scan/${repo}.yaml. If one should be read, take its exclusion out of that file and read the repo again.`,
+    askedFix:
+      "Atticus asked because the code doesn't say. Answer each; the next verify reads the answer.",
+    answer: "Answer it",
+    unverifiedFix: "The verifier hasn't checked these on their lines yet:",
+    moreFacts: (n: number, file: string) => `and ${n} more, in ${file}`,
+    openCanvas: "Open the repo on the estate canvas",
   },
   /** Change › Knowledge (ADR 0124, Part 5): the org knowledge that applies to the change. */
   changeKnowledge: {
@@ -3228,6 +3260,85 @@ export const COPY = {
     links: "Links",
     noLinks: "No link starts or ends here in this view.",
     linkOf: (from: string, to: string, type: string) => `${from} ${type} ${to}`,
+  },
+  /** ADR 0135, C1 and C2: why a link is there, and saying it is wrong. */
+  why: {
+    open: "Why is this linked?",
+    openOf: (link: string) => `Why is ${link} linked?`,
+    intro:
+      "Each call on this link, how Atticus joined it to what it calls, and the line it cites at each end. A verified call is read from code at both ends and named by someone; an inferred one is a guess.",
+    call: (from: string, to: string, what: string) => `${from} → ${to}${what ? `: ${what}` : ""}`,
+    how: {
+      answer: "A person answered which repo or system it calls.",
+      named: "The call names the component it goes to.",
+      repo: "The call names the repo it goes to.",
+      host: "The call's host is one the manifest lists for that repo.",
+      declared: "A person declared who calls this gateway route.",
+      topic: "It publishes a topic the other side listens to.",
+      path: "Nobody named where it goes: it is the only entry in the estate that serves its path, so this is a guess.",
+      label:
+        "Its host names no repo; the host's first part happens to be a component's name, so this is a guess.",
+      unknown:
+        "The catalog doesn't say how this was joined: it was written before Atticus kept that, or by a built-in reader. Run atticus verify on the caller's repo with --write to record it.",
+    } as Record<string, string>,
+    gateway: "It goes through a gateway on the way.",
+    verified: "✓ Verified",
+    inferred: "△ Inferred",
+    caller: "The call",
+    callee: "What answers it",
+    hops: "Through the gateway",
+    other: "Lines cited",
+    noLine: "No line cited at this end.",
+    more: (n: number) =>
+      `${n} more call${n === 1 ? "" : "s"} on this link. Open either end to see its calls one by one, or list the Interface records with atticus query "kind:interface".`,
+    none: "This link isn't a call, so there is no join to explain: its lines are listed under it.",
+    // C2: this link is wrong
+    wrong: "This link is wrong",
+    wrongOf: (call: string) => `Say the call ${call} is wrong`,
+    wrongTitle: (call: string) => `What is wrong with ${call}?`,
+    wrongIntro:
+      "Your word outranks every join rule. Atticus writes it to the caller's repo's corrections file through the local API; atticus verify applies it every time it runs. Nothing changes until you run the command below and the change is reviewed in a pull request.",
+    pickCall: "The call on that line",
+    choice: {
+      estate: "It calls another repo or component of the estate",
+      outside: "It calls an outside system (a vendor, a cloud service)",
+      "not-a-call": "It isn't a call",
+    } as Record<string, string>,
+    target: "What it calls",
+    targetHint: "A repo or component id, as the manifest names it.",
+    outsideTarget: "The outside system",
+    outsideHint: "The system's name, e.g. Northwind Pay.",
+    reason: "Why (required when it isn't a call)",
+    reasonOptional: "Why (optional)",
+    save: "Write the correction",
+    saving: "Writing the correction…",
+    needTarget: "Say what it calls first.",
+    sameTarget: "The call names that already: pick another target.",
+    needReason: "Say why it isn't a call first.",
+    noCall: (repo: string) =>
+      `No call fact of ${repo} is on this line, so there is nothing to correct here. Read the repo again (/atticus-map ${repo}) or correct the line's facts from its citation.`,
+    loadingFacts: "Reading the caller's facts…",
+    factsFailed: (why: string) => `Couldn't read the caller's facts: ${why}`,
+    will: {
+      moves: (from: string, was: string, to: string) =>
+        `This call leaves ${from} → ${was} and goes to ${to}: verify joins it to the entry of ${to} that serves it, or says none does.`,
+      outside: (from: string, was: string, to: string) =>
+        `This call leaves ${from} → ${was} and goes to ${to}, outside the estate: no repo is joined to it.`,
+      unknown: (to: string) =>
+        `Atticus doesn't know ${to} as a repo or component of the estate, so verify will take it as outside.`,
+      dropped: (from: string, was: string) =>
+        `The call is dropped from the catalog: ${from} → ${was} loses it, and goes if it was the link's only call.`,
+    },
+    saved: (file: string) => `Written to ${file}. To apply it, run:`,
+    then: "Then commit the corrections file and the catalog files verify rewrote on a branch, and open a pull request: a person reviews the change before it merges.",
+    copyVerify: "Copy the verify command",
+    copyCommit: "Copy the git command",
+    moved: "What moved when the estate was joined again",
+    movedTo: (what: string, was: string, now: string) => `${what}: was ${was}, now ${now}`,
+    movedOff: (what: string, was: string) =>
+      `${what}: was ${was}, now on no link of the parts open here`,
+    notYet:
+      "No call has moved yet: run the verify command above. The picture reads the catalog again when it changes.",
   },
   /** ADR 0124 addendum D-app, B10: a stage tab's critic findings, their options and a comment box. */
   stageReview: {

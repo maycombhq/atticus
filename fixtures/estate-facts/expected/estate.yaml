@@ -633,6 +633,8 @@ records:
         repo: forge-customers
         side: callee
         source: code
+    flags:
+      - joined-by-host
     from: web-app
     id: if-0f06d434a34c81c9
     kind: Interface
@@ -669,6 +671,8 @@ records:
         repo: forge-customers
         side: callee
         source: code
+    flags:
+      - joined-by-host
     from: web-app
     id: if-32758fa9e8968383
     kind: Interface

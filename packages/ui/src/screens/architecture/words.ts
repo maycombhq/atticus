@@ -80,11 +80,33 @@ export const WORDS = {
     "no-endpoint": "Endpoint not found",
     "not-in-catalog": "Not in the catalog",
     conflicts: "Sources disagree",
+    // F2 and ADR 0135: a join nobody named; Why is this linked? says how it was found.
+    "joined-by-path": "Joined by its path: nobody named where it goes",
+    "joined-by-label": "Joined by its host's first part: a guess",
     // ADR 0124 addendum D-app, F3: from the repos' facts.
     unverified: "No fact verified from code",
     question: "A question is open on it",
     corrected: "A correction waits for atticus verify",
   } as Record<string, string>,
+  /** ADR 0135, C3: what closes each gap, beside it in the details panel. */
+  gapFix: {
+    inferred:
+      "Only one side's code shows it. Read the other side's repo, or open Why is this linked? on its links.",
+    "no-repo": "Add the repo that builds it to the manifest, then read it.",
+    "no-system": "Say which system it is part of in the manifest.",
+    "no-component": "Read the repo so its components are known.",
+    "no-owner": "Name the owner in the manifest.",
+    "no-store": "Read the repo that owns the store.",
+    "no-endpoint": "Read the callee's repo so its entry is known.",
+    "not-in-catalog": "Read the repo that has it.",
+    conflicts: "Open the record and settle which source is right.",
+    "joined-by-path": "Open Why is this linked?, and say where it goes if the guess is wrong.",
+    "joined-by-label": "Open Why is this linked?, and say where it goes if the guess is wrong.",
+    unverified: "Read the repo and verify it; Map › Trust lists what isn't checked yet.",
+    question: "Answer the open question on Questions; Map › Trust lists the repo's questions.",
+    corrected: "Run atticus verify on the repo with --write to apply the correction.",
+  } as Record<string, string>,
+  repoCounts: "See what each count holds on Map › Trust",
   edges: (n: number, hidden: number) =>
     `${n} link${n === 1 ? "" : "s"}${hidden ? `, ${hidden} implied link${hidden === 1 ? "" : "s"} hidden` : ""}`,
   outsideMark: "outside",

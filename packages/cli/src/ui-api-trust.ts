@@ -7,6 +7,7 @@ import {
   factsFileOf,
   factsRelOf,
   isAdopted,
+  listQuestions,
   parseFacts,
   type Api,
   type CatalogRecord,
@@ -26,6 +27,36 @@ import { baseClonePath, loadRepos } from "@maycombhq/workspace";
 type View = Api.TrustViewT;
 type Repo = View["repos"][number];
 type Report = NonNullable<Repo["verify"]["report"]>;
+type Lists = NonNullable<Repo["lists"]>;
+
+/**
+ * The lines of `<repo>.rejected.jsonl` (`writeVerifyFiles`), each with what it is about: a
+ * rejected fact's id, kind, file and line, or a refused question, reviewed entry or line.
+ */
+export function rejectedLines(text: string | undefined): Lists["rejected"] {
+  const out: Lists["rejected"] = [];
+  for (const raw of (text ?? "").split(/\r?\n/)) {
+    if (!raw.trim()) continue;
+    let l: { code?: unknown; message?: unknown; fact?: Record<string, unknown> };
+    try {
+      l = JSON.parse(raw) as typeof l;
+    } catch {
+      out.push({ code: "unreadable", message: raw.slice(0, 200) });
+      continue;
+    }
+    const f = l.fact && typeof l.fact === "object" ? l.fact : undefined;
+    const cite = f?.cite as { file?: unknown; line?: unknown } | undefined;
+    out.push({
+      ...(typeof f?.id === "string" ? { fact: f.id } : {}),
+      ...(typeof f?.kind === "string" ? { kind: f.kind } : {}),
+      ...(typeof cite?.file === "string" ? { file: cite.file } : {}),
+      ...(typeof cite?.line === "number" && Number.isInteger(cite.line) ? { line: cite.line } : {}),
+      code: typeof l.code === "string" ? l.code : "rejected",
+      message: typeof l.message === "string" ? l.message : "",
+    });
+  }
+  return out;
+}
 
 const SHA = /^[0-9a-f]{7,64}$/;
 const FULL_SHA = /^[0-9a-f]{40,64}$/;
@@ -171,6 +202,12 @@ export async function trustView(root: string): Promise<View> {
   };
   for (const r of catalog.records) count(r);
 
+  // ADR 0135: the open questions, by repo, so the asked count opens them.
+  const open = await listQuestions(root, { state: "open" }).then(
+    (l) => l.questions,
+    () => [],
+  );
+
   const adopted = isAdopted(root);
   const repos: Repo[] = [];
   for (const repo of ids) {
@@ -183,11 +220,19 @@ export async function trustView(root: string): Promise<View> {
       unverified: 0,
     };
     let frameworks: Repo["frameworks"];
+    const lists: Lists = { rejected: [], excluded: [], asked: [], unverified: [] };
     if (raw !== undefined && raw.trim()) {
       const parsed = parseFacts(raw);
       if (parsed.ok) {
         facts.count = parsed.facts.length;
-        facts.unverified = parsed.facts.filter((f) => f.verified === "none").length;
+        const unchecked = parsed.facts.filter((f) => f.verified === "none");
+        facts.unverified = unchecked.length;
+        lists.unverified = unchecked.slice(0, UNKNOWN_SHOWN).map((f) => ({
+          fact: f.id,
+          kind: f.kind,
+          file: f.cite.file,
+          line: f.cite.line,
+        }));
         const commit = parsed.facts[0]?.commit;
         if (commit) facts.commit = commit;
         // A-framework: what the repo is built on, and the frameworks whose patterns the facts
@@ -210,17 +255,28 @@ export async function trustView(root: string): Promise<View> {
 
     const reportPath = join(dir, `${repo}.verify.yaml`);
     let report: Report | null = null;
+    let excluded: string[] = [];
     const reportText = await text(reportPath);
     if (reportText !== undefined) {
       try {
-        const r = reportOf(parse(reportText));
+        const doc = parse(reportText) as { coverage?: { excluded?: unknown } } | null;
+        const r = reportOf(doc);
         if (typeof r === "string") problems.push({ file: rel(reportPath), message: r });
-        else report = r;
+        else {
+          report = r;
+          const ex = doc?.coverage?.excluded;
+          if (Array.isArray(ex)) excluded = ex.map(String).slice(0, UNKNOWN_SHOWN);
+        }
       } catch (e) {
         problems.push({ file: rel(reportPath), message: `can't read YAML: ${firstLine(e)}` });
       }
     }
     if (!facts.commit && report?.commit) facts.commit = report.commit;
+    lists.rejected = rejectedLines(await text(join(dir, `${repo}.rejected.jsonl`)));
+    lists.excluded = excluded;
+    lists.asked = open
+      .filter((q) => q.repo === repo)
+      .map((q) => ({ id: q.id, question: q.question, lines: q.evidence }));
 
     let checkoutDir: string | undefined;
     try {
@@ -258,6 +314,7 @@ export async function trustView(root: string): Promise<View> {
       state,
       ...(next ? { next } : {}),
       ...(frameworks ? { frameworks } : {}),
+      lists,
     });
   }
   return { factsDir: factsRel, repos, problems };

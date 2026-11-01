@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
 import type { Api } from "@maycombhq/core";
 import { api, ApiError, useLiveEvents } from "../../api/client.js";
 import type { Laid, Point } from "../../app/layout/index.js";
@@ -9,6 +17,8 @@ import { systemHash } from "../know/Systems.js";
 import { CopyButton, Facts } from "../run/shared.js";
 import { RunStep } from "../../app/runstep.js";
 import { ArchitectureCanvas } from "./Canvas.js";
+import { LinkWrong, WhatMoved, WhyLinked } from "./WhyLinked.js";
+import { knownTargets, whatMoved } from "./links.js";
 import { Citation, EvidenceProvider, useEvidence } from "../../app/evidence.js";
 import {
   canvasGraph,
@@ -105,6 +115,8 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
   const [tidy, setTidy] = useState(0);
   const [keeping, setKeeping] = useState<Keeping>({ state: "idle" });
   const rowRefs = useRef(new Map<string, HTMLButtonElement>());
+  // C2 (ADR 0135): the calls a person said are wrong here, and the views as they were then.
+  const [watched, setWatched] = useState<{ calls: string[]; before: Views } | undefined>();
 
   const load = useCallback(
     async (id: string, into?: Views) => {
@@ -301,6 +313,20 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
   };
 
   const sel = selected ? find(selected) : undefined;
+  const known = knownTargets(loaded);
+  const moved = watched ? whatMoved(watched.before, loaded, watched.calls) : [];
+  const under = (j: Api.HierJoinT) => (
+    <LinkWrong
+      join={j}
+      known={known}
+      onSaved={(call) =>
+        setWatched((w) => ({
+          calls: [...new Set([...(w?.calls ?? []), call])],
+          before: w?.before ?? loaded,
+        }))
+      }
+    />
+  );
   const crumbs = view ? [...view.path, view.node] : [];
 
   return (
@@ -488,6 +514,7 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
                   (e) => e.from === sel.id || e.to === sel.id,
                 )}
                 labelOf={(id) => find(id)?.label ?? id}
+                under={under}
                 {...(!focus && graph.boxes.some((b) => b.id === sel.id)
                   ? { here: { open: inPlace.has(sel.id), toggle: () => void toggleHere(sel.id) } }
                   : {})}
@@ -495,6 +522,7 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
             ) : (
               <p>{WORDS.pick}</p>
             )}
+            {watched && <WhatMoved moved={moved} />}
           </Panel>
 
           <Panel title={WORDS.outline} span="1 / -1">
@@ -543,7 +571,7 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
   );
 }
 
-function Inspector({
+export function Inspector({
   node,
   isCurrent,
   lens,
@@ -552,7 +580,10 @@ function Inspector({
   here,
   links = [],
   labelOf = (id) => id,
+  under,
 }: {
+  /** What to show under each call of a link (This link is wrong, C2). */
+  under?: (join: Api.HierJoinT) => ReactNode;
   node: Api.HierNodeT;
   /** The links in the view that start or end on the box, each with its evidence (F3). */
   links?: Api.HierEdgeT[];
@@ -593,6 +624,11 @@ function Inspector({
             {COPY.flows.openFlows}
           </a>
         )}
+        {node.kind === "repo" && (
+          <a className="btn" href="#/trust">
+            {WORDS.repoCounts}
+          </a>
+        )}
         {/* WP7.7: a system's page, its guide, questions and changes. */}
         {/* Only a System record has a page: a system the manifest or a call names has none yet. */}
         {node.kind === "system" && node.id.startsWith("system:") && node.record && (
@@ -610,7 +646,10 @@ function Inspector({
       {node.gaps.length ? (
         <ul>
           {node.gaps.map((g) => (
-            <li key={g}>{WORDS.gap[g] ?? g}</li>
+            <li key={g}>
+              {WORDS.gap[g] ?? g}
+              {WORDS.gapFix[g] && <span className="hud"> · {WORDS.gapFix[g]}</span>}
+            </li>
           ))}
         </ul>
       ) : (
@@ -637,15 +676,25 @@ function Inspector({
               {COPY.evidence.linkOf(labelOf(l.from), labelOf(l.to), l.type)}
               {l.gaps.length > 0 &&
                 ` · ${WORDS.gaps}: ${l.gaps.map((g) => WORDS.gap[g] ?? g).join(", ")}`}
-              {l.evidence.length > 0 && (
-                <ul>
-                  {l.evidence.map((e) => (
-                    <li key={`${e.repo ?? ""}:${e.at}`}>
-                      {e.repo && <span className="mono">{e.repo}: </span>}
-                      <Citation repo={e.repo} at={e.at} />
-                    </li>
-                  ))}
-                </ul>
+              {l.joins?.length ? (
+                // ADR 0135, C1: each call on the link, how it was joined and its lines.
+                <details>
+                  <summary>
+                    {COPY.why.openOf(COPY.evidence.linkOf(labelOf(l.from), labelOf(l.to), l.type))}
+                  </summary>
+                  <WhyLinked link={l} {...(under ? { under } : {})} />
+                </details>
+              ) : (
+                l.evidence.length > 0 && (
+                  <ul>
+                    {l.evidence.map((e) => (
+                      <li key={`${e.repo ?? ""}:${e.at}`}>
+                        {e.repo && <span className="mono">{e.repo}: </span>}
+                        <Citation repo={e.repo} at={e.at} />
+                      </li>
+                    ))}
+                  </ul>
+                )
               )}
             </li>
           ))}

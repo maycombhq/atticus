@@ -1,5 +1,7 @@
+import { useState, type ReactNode } from "react";
 import type { Api } from "@maycombhq/core";
 import { useApi, useReloadOnFiles, type Loaded } from "../../api/client.js";
+import { Citation, EvidenceProvider } from "../../app/evidence.js";
 import { Panel, View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
 import { Command, Problems } from "../work/RunNext.js";
@@ -51,9 +53,71 @@ export function commitWords(r: Repo): string {
 export const trustChip = (s: Repo["state"]) =>
   s === "trusted" ? "done" : s === "rejected" || s === "stale" ? "blocking" : "warn";
 
+/**
+ * A count that opens what it counts (ADR 0135, C3): a disclosure whose summary is the count, its
+ * list and the action that closes each item inside. Zero says so and opens nothing.
+ */
+export function CountList(p: { n: number; what: string; children: (open: boolean) => ReactNode }) {
+  const [open, setOpen] = useState(false);
+  if (p.n === 0) return <>{T.none}</>;
+  return (
+    <details className="trust-list" onToggle={(e) => setOpen(e.currentTarget.open)}>
+      <summary>{T.show(p.n, p.what)}</summary>
+      {p.children(open)}
+    </details>
+  );
+}
+
+const placeOf = (file?: string, line?: number) =>
+  file ? (line ? `${file}:${line}` : file) : undefined;
+
+const SHOWN = 50;
+
+/** The repo's kept facts, read when the count is opened (GET /api/facts/{repo}), each cited. */
+export function RepoFactsList(p: {
+  repo: string;
+  of: Loaded<Api.RepoFactsViewT>;
+  only?: (f: Api.FactCiteViewT) => boolean;
+}) {
+  return (
+    <View
+      of={p.of}
+      empty={(v) => !(p.only ? v.facts.filter(p.only) : v.facts).length}
+      emptyText={T.none}
+    >
+      {(v) => {
+        const all = p.only ? v.facts.filter(p.only) : v.facts;
+        return (
+          <>
+            <ul className="mono trust-items">
+              {all.slice(0, SHOWN).map((f) => (
+                <li key={f.id}>
+                  <Citation repo={p.repo} at={`${f.cite.file}:${f.cite.line}`} /> {f.label}
+                </li>
+              ))}
+            </ul>
+            {all.length > SHOWN && (
+              <p className="work-say">{T.moreFacts(all.length - SHOWN, v.file)}</p>
+            )}
+          </>
+        );
+      }}
+    </View>
+  );
+}
+
+function LoadFacts(p: { repo: string; only?: (f: Api.FactCiteViewT) => boolean }) {
+  const of = useApi<Api.RepoFactsViewT>(`/api/facts/${encodeURIComponent(p.repo)}`);
+  return <RepoFactsList repo={p.repo} of={of} {...(p.only ? { only: p.only } : {})} />;
+}
+
+const redactedQuote = (f: Api.FactCiteViewT) => !!f.cite.quote?.includes("<redacted>");
+
 export function TrustRow({ r }: { r: Repo }) {
   const report = r.verify.report;
   const head = `trust-${r.repo}`;
+  const lists = r.lists;
+  const rejectedFile = r.verify.path.replace(/\.verify\.yaml$/, ".rejected.jsonl");
   return (
     <article className="list-row" style={{ display: "block" }} aria-labelledby={head}>
       <div className="row between" style={{ flexWrap: "wrap", gap: 8 }}>
@@ -70,9 +134,52 @@ export function TrustRow({ r }: { r: Repo }) {
         <dd>
           {report ? report.accepted : T.noReport}
           {report && report.redacted > 0 ? ` (${T.redacted(report.redacted)})` : ""}
+          {report && r.facts.present && (
+            <CountList n={report.accepted} what={T.what.kept!}>
+              {(open) => (
+                <>
+                  <p className="work-say">{T.keptFix}</p>
+                  {open && <LoadFacts repo={r.repo} />}
+                </>
+              )}
+            </CountList>
+          )}
+          {report && report.redacted > 0 && r.facts.present && (
+            <CountList n={report.redacted} what={T.what.redacted!}>
+              {(open) => (
+                <>
+                  <p className="work-say">{T.redactedFix}</p>
+                  {open && <LoadFacts repo={r.repo} only={redactedQuote} />}
+                </>
+              )}
+            </CountList>
+          )}
         </dd>
         <dt>{T.rejected}</dt>
-        <dd>{report ? report.rejected : T.noReport}</dd>
+        <dd>
+          {report ? report.rejected : T.noReport}
+          {lists && lists.rejected.length > 0 && (
+            <CountList n={lists.rejected.length} what={T.what.rejected!}>
+              {() => (
+                <>
+                  <ul className="trust-items">
+                    {lists.rejected.map((x, i) => (
+                      <li key={`${x.fact ?? x.code}-${i}`}>
+                        <code className="mono">{placeOf(x.file, x.line) ?? T.rejectedNoLine}</code>
+                        {x.fact && <span className="mono"> {x.fact}</span>}
+                        {" · "}
+                        {T.rejectedLine(x.code, x.message)}
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="work-say">{T.rejectedFix(rejectedFile)}</p>
+                  <Command text={`/atticus-map ${r.repo}`} label={R.copySlash} />
+                  <Command text={`atticus verify ${r.repo}`} label={R.copy} />
+                </>
+              )}
+            </CountList>
+          )}
+        </dd>
         <dt>{T.coverage}</dt>
         <dd>
           {report
@@ -83,7 +190,105 @@ export function TrustRow({ r }: { r: Repo }) {
                 report.coverage.excluded,
               )
             : T.noReport}
+          {report && report.coverage.unknown > 0 && (
+            <CountList n={report.coverage.unknown} what={T.what.unknown!}>
+              {() => (
+                <>
+                  <ul className="mono trust-items">
+                    {report.unknownFiles.map((f) => (
+                      <li key={f}>{f}</li>
+                    ))}
+                  </ul>
+                  {report.coverage.unknown > report.unknownFiles.length && (
+                    <p className="work-say">
+                      {T.more(report.coverage.unknown - report.unknownFiles.length, r.verify.path)}
+                    </p>
+                  )}
+                  <p className="work-say">{T.unknownFix(r.repo)}</p>
+                  <Command text={`/atticus-map ${r.repo}`} label={R.copySlash} />
+                </>
+              )}
+            </CountList>
+          )}
+          {report && report.coverage.excluded > 0 && (
+            <CountList n={report.coverage.excluded} what={T.what.excluded!}>
+              {() => (
+                <>
+                  <ul className="mono trust-items">
+                    {(lists?.excluded ?? []).map((f) => (
+                      <li key={f}>{f}</li>
+                    ))}
+                  </ul>
+                  {report.coverage.excluded > (lists?.excluded.length ?? 0) && (
+                    <p className="work-say">
+                      {T.more(
+                        report.coverage.excluded - (lists?.excluded.length ?? 0),
+                        r.verify.path,
+                      )}
+                    </p>
+                  )}
+                  <p className="work-say">{T.excludedFix(r.repo)}</p>
+                </>
+              )}
+            </CountList>
+          )}
         </dd>
+        {lists && (
+          <>
+            <dt>{T.asked}</dt>
+            <dd>
+              {lists.asked.length}
+              <CountList n={lists.asked.length} what={T.what.asked!}>
+                {() => (
+                  <>
+                    <p className="work-say">{T.askedFix}</p>
+                    <ul className="trust-items">
+                      {lists.asked.map((q) => (
+                        <li key={q.id}>
+                          {q.question}{" "}
+                          {q.lines.map((l) => (
+                            <code key={l} className="mono">
+                              {l}{" "}
+                            </code>
+                          ))}
+                          <a href={`#/questions/${q.id}`}>{T.answer}</a>
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+              </CountList>
+            </dd>
+          </>
+        )}
+        {r.facts.unverified > 0 && (
+          <>
+            <dt>{T.unverified}</dt>
+            <dd>
+              {r.facts.unverified}
+              <CountList n={r.facts.unverified} what={T.what.unverified!}>
+                {() => (
+                  <>
+                    <p className="work-say">{T.unverifiedFix}</p>
+                    <ul className="mono trust-items">
+                      {(lists?.unverified ?? []).map((f) => (
+                        <li key={f.fact}>
+                          {f.file}:{f.line} {f.fact}
+                        </li>
+                      ))}
+                    </ul>
+                    {r.facts.unverified > (lists?.unverified.length ?? 0) && (
+                      <p className="work-say">
+                        {T.more(r.facts.unverified - (lists?.unverified.length ?? 0), r.facts.path)}
+                      </p>
+                    )}
+                    <Command text={`atticus verify ${r.repo}`} label={R.copy} />
+                  </>
+                )}
+              </CountList>
+            </dd>
+          </>
+        )}
         <dt>{T.builtOn}</dt>
         <dd>
           {r.frameworks?.length
@@ -101,6 +306,14 @@ export function TrustRow({ r }: { r: Repo }) {
         <dt>{T.catalogFrom}</dt>
         <dd>
           {T.from[r.catalog.from]} · {T.records(r.catalog.fromFacts, r.catalog.fromReaders)}
+          {r.catalog.fromFacts + r.catalog.fromReaders > 0 && (
+            <>
+              {" · "}
+              <a href={`#/canvas?lens=repo&node=${encodeURIComponent(`repo:${r.repo}`)}`}>
+                {T.openCanvas}
+              </a>
+            </>
+          )}
         </dd>
       </dl>
       {/* A-framework: a framework the repo declares whose patterns the facts show none of. */}
@@ -111,21 +324,6 @@ export function TrustRow({ r }: { r: Repo }) {
             <strong>{T.builtOnGap(f.name)}</strong> {f.gap}
           </p>
         ))}
-      {report && report.unknownFiles.length > 0 && (
-        <details>
-          <summary>{T.unknownFiles(report.coverage.unknown)}</summary>
-          <ul className="mono" style={{ margin: "4px 0 0", paddingLeft: 18, fontSize: 12 }}>
-            {report.unknownFiles.map((f) => (
-              <li key={f}>{f}</li>
-            ))}
-          </ul>
-          {report.coverage.unknown > report.unknownFiles.length && (
-            <p className="work-say">
-              {T.more(report.coverage.unknown - report.unknownFiles.length, r.verify.path)}
-            </p>
-          )}
-        </details>
-      )}
       {r.next && (
         <div style={{ marginTop: 8 }}>
           {r.next.slash && (
@@ -185,5 +383,9 @@ export function TrustPage({ of }: { of: Loaded<Api.TrustViewT> & { reload?: () =
 export function Trust() {
   const view = useApi<Api.TrustViewT>("/api/trust");
   useReloadOnFiles(view);
-  return <TrustPage of={view} />;
+  return (
+    <EvidenceProvider>
+      <TrustPage of={view} />
+    </EvidenceProvider>
+  );
 }

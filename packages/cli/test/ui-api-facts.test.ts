@@ -249,4 +249,28 @@ describe("a person's correction from the Map", () => {
       correction: { action: "edit" },
     });
   });
+
+  it("sets where a call goes (This link is wrong, ADR 0135): kept as the person's by the next verify", async () => {
+    const r = await call("POST", "/api/facts/forge-ledger/corrections", {
+      fact: "c-fx-rate",
+      action: "edit",
+      set: { to: "Northwind Pay" },
+      reason: "the rates come from the vendor",
+    });
+    expect(r.status).toBe(200);
+    expect(r.body.correction).toMatchObject({ action: "edit", set: { to: "Northwind Pay" } });
+    const code = await verifyCommand(
+      root,
+      "forge-ledger",
+      { dir: join(VERIFY, "repo"), commit: "0123abc" },
+      { out: () => undefined, err: () => undefined },
+    );
+    expect(code).toBe(0);
+    const kept = parseFacts(await readFile(join(root, "facts/forge-ledger.jsonl"), "utf8"));
+    if (!kept.ok) throw new Error("the kept facts don't parse");
+    expect(kept.facts.find((f) => f.id === "c-fx-rate")).toMatchObject({
+      to: "Northwind Pay",
+      by: "person",
+    });
+  });
 });

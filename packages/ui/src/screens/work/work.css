@@ -136,3 +136,13 @@
   font-size: 15px;
   margin: 2px 0 0;
 }
+
+/* ADR 0135, C3: a count on Map › Trust that opens what it counts. */
+.trust-list {
+  margin: 4px 0 0;
+}
+.trust-items {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+}

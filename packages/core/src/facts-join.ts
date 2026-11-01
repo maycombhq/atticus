@@ -135,6 +135,26 @@ export const NO_TARGET = "(none)";
 /** F2: an Interface's flags when nobody named its callee: found by path, or by a host's first label. */
 export const JOINED_BY_PATH = "joined-by-path";
 export const JOINED_BY_LABEL = "joined-by-label";
+/**
+ * C1 (ADR 0135): how a join nobody had to guess found its callee, as the Interface's flags, so
+ * the app can say why two services are linked from the record alone: a person's answer, the
+ * component or the repo the call names, or a host the manifest lists. A publish joined to its
+ * listener carries none (its `via`, the bus, says it). These say how, never that something is
+ * missing: the guesses (`joined-by-path`, `joined-by-label`) are the only join flags that are gaps.
+ */
+export const JOINED_BY_ANSWER = "joined-by-answer";
+export const JOINED_BY_NAME = "joined-by-name";
+export const JOINED_BY_REPO = "joined-by-repo";
+export const JOINED_BY_HOST = "joined-by-host";
+/** Flags that say how a link was made and nothing more: never a gap (C1, ADR 0135). */
+export const JOIN_HOW_FLAGS: ReadonlySet<string> = new Set([
+  JOINED_BY_ANSWER,
+  JOINED_BY_NAME,
+  JOINED_BY_REPO,
+  JOINED_BY_HOST,
+  // A-callers: a person declared who calls a gateway route (`DECLARED_CALLER`, facts-callers).
+  "declared-caller",
+]);
 
 /**
  * How the callee was found: `answer` (a person named it), `named` (the call's `to` names the
@@ -595,6 +615,10 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
     let how: JoinHow | undefined;
     let byLabel = false;
     if (answer === NO_TARGET) continue;
+    // C2 (ADR 0135): a target a person set (a correction from the Map) outranks every rule
+    // after an answer: one naming nothing in the estate is outside it, never joined by its host,
+    // a host's label or its path.
+    if (!answer && f.by === "person" && f.to && !named(f.to)) continue;
     if (answer) {
       scope = named(answer);
       if (!scope) continue; // a vendor or "none": nothing in the estate to join
@@ -1003,6 +1027,15 @@ export function joinRecords(result: FactsJoinResult, repos: readonly JoinRepo[])
     ...(j.inferred ? [JOINED_BY_PATH] : []),
     ...(j.byLabel ? [JOINED_BY_LABEL] : []),
   ];
+  // C1 (ADR 0135): how any other join found it; a guess says it by its own flag alone.
+  const HOW: Partial<Record<JoinHow, string>> = {
+    answer: JOINED_BY_ANSWER,
+    named: JOINED_BY_NAME,
+    repo: JOINED_BY_REPO,
+    host: JOINED_BY_HOST,
+  };
+  const flagsOf = (j: FactJoin): string[] =>
+    guessed(j).length ? guessed(j) : HOW[j.how] ? [HOW[j.how]!] : [];
   for (const j of result.joins) {
     if (j.how === "topic") {
       // As the merge pairs a publish with a listener: via the bus, async, at the topic.
@@ -1055,7 +1088,7 @@ export function joinRecords(result: FactsJoinResult, repos: readonly JoinRepo[])
           : {}),
         via: "gateway",
         route: g.route,
-        ...(guessed(j).length ? { flags: guessed(j) } : {}),
+        ...(flagsOf(j).length ? { flags: flagsOf(j) } : {}),
         ...(j.method ? { method: j.method } : {}),
         normalizedPath: servedPath(entry),
         ...(auth ? { auth } : {}),
@@ -1119,7 +1152,7 @@ export function joinRecords(result: FactsJoinResult, repos: readonly JoinRepo[])
       id: j.interface,
       status: "current",
       confidence: declared && !guessed(j).length ? "verified" : "inferred",
-      ...(guessed(j).length ? { flags: guessed(j) } : {}),
+      ...(flagsOf(j).length ? { flags: flagsOf(j) } : {}),
       from: j.call.component,
       to: j.entry.component,
       ...(entry.entryType !== "rest"
