@@ -4,6 +4,29 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## 2.0.0-beta.10 (2026-10-31)
 
+### Why a link is there, and every count opens its list (ADR 0135)
+
+- On the estate canvas, each link's details open **Why is this linked?**: every call on it, how it was joined (a person's answer, the target the call names, the host, a guess by path), verified or inferred, and its cited line at both ends. **This link is wrong** writes a person's correction (another repo, an outside system, or not a call), says what `atticus verify <repo> --write` will change and what moved afterwards; a person's target now outranks every join rule. Every Interface the join writes is flagged how it was joined (C4 2.32.0: `joins` on graph edges).
+- On Map › Trust every count on a repo (kept, redacted, rejected, not read, excluded, questions open, not checked) opens its list with file and line and what closes each (`lists` in GET /api/trust). The canvas's "thing missing" count says beside each gap what closes it.
+
+### Verify --write says what it did to the links
+
+- `atticus verify <repo> --write` counts the repo's calls joined (of them inferred), asked, outside the estate and not joined, and lists each Interface added, removed or changed in confidence, with how its callee was found; all of it under `links` in `<repo>.verify.yaml` for the pull request.
+
+### The reader's slips of form are fixed, not refused
+
+- A fact id that isn't a lowercase slug is slugged and every reference to it rewritten (a collision is reported and stays refused); a flow with no cite takes its entry's line; both listed under `slips` in the verify report. Each fixed fact is still checked on its cited line.
+- A reviewed glob that matches no file is dropped with a note (`reviewedDropped`) instead of failing the run.
+
+### The HTTP method is looked for on its line
+
+- The method an entry or call claims is looked for on its cited line, the next line or a `cite.with` line, in any language; a method found on none is a warning, counted in the verify report (`methodUnseenCount`, `methodUnseen`), never a rejection.
+
+### Repo ids that don't drift
+
+- `atticus repo add` warns when an entry looks like one already listed (same clone URL, or an id equal once case, `_`/`-` and a version suffix are set aside), and `atticus next` names a near id that has facts when a repo has none.
+- `atticus repo rename <old> <new>` moves a repo's id with its facts and their companions, scan settings, questions and catalog records, in one change you review; Atticus commits and pushes nothing.
+
 ### Questions asked once, and retired when the code answers them
 
 - A call's "Which repo or system answers…" question is asked once for every call of a repo that goes the same way (the target it names, or its host or base, and its path prefix); one answer names the target of all of them, and a call added later reads it too. "Not all to one place" asks each on its own. Answered per-call questions keep working.

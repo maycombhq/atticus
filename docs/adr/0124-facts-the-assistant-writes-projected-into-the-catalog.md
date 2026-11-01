@@ -940,3 +940,21 @@ The gateway batch's instructions go from about 7,401 characters (~1,850 tokens) 
 - **J-retire.** After a write, an open targets question whose calls another question now asks is retired with `replacedBy`; one whose every call joins without an answer (named, repo, or by the manifest's hosts and base paths) or now names its target is retired saying how. A join by path or by a host's first label is a guess and retires nothing. An answered question is never retired.
 - **O-outside.** A hosts question offers "An outside system (new)", another team's (internal, the default) or a vendor's. The answer writes a system named after the host, with the host as its alias, into the asking repo's profile. The merge and the join give a call on a host an outside system names, exactly (or with its port), to that system, before any first-label guess; a host the manifest lists still wins.
 
+## Addendum (F-how): every join says how (amended by ADR 0135; no C1 to C6 change)
+
+- Every Interface the join writes says how it was joined: `joined-by-answer`, `joined-by-name`, `joined-by-repo` or `joined-by-host`. A guess carries only `joined-by-path` or `joined-by-label`, and a publish carries none. Only the guesses are gaps (`JOIN_HOW_FLAGS` lists the rest, plus A-callers' `declared-caller`).
+- A call fact by a person whose `to` names nothing in the estate is outside it, and is never joined by host, label or path, so a person's correction outranks every join rule.
+- The join result gains an optional `outside` list (the calls left to an outside system), and `<repo>.verify.yaml` gains `links` after a `--write` (J2).
+
+## Addendum (R6): the reader's slips of form, fixed in code (amends A-read; no C1 to C6 change, the facts schema unchanged)
+
+- Two slips of form made `atticus verify` refuse a read whose claims all held. They are now fixed before the check, on the lines the schema refused (`repairFormSlips`, `packages/verify/src/slips.ts`): a fact id that isn't a lowercase slug is slugged (`postCheck` → `post-check`) and every reference to it rewritten (a call's `from`, a store's `under`, a field's `owner` and `mappedTo`, a flow's `entry` and steps' `ref`); a slug another fact has, or two ids slugging to one, is a collision, reported, and those lines stay refused. A flow with no `cite` takes its entry's cite (parts included).
+- Each repaired line is parsed by the same schema again and then verified like any fact, so its claim must still be on its cited line: nothing checked against the code is loosened. The fixes are written back to `<repo>.jsonl`, listed under `slips` in `<repo>.verify.yaml`, and said as a note.
+- A-read point 2's refuse rule is amended: a reviewed glob that matches no file at the commit is dropped with a note (`reviewedDropped`) rather than refused, since a glob that stands for no file excuses none. A plain path that isn't in the repo, a path outside it and a secret's file are still refused.
+- Not done: the `atticus map` batch loop and the Map's facts API don't run the repair.
+
+## Addendum (P2): the HTTP method looked for on its line (a note, not a rejection)
+
+- The method an entry or call claims (GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS) must be written on its cited line, the next line or a `cite.with` line. A text check that reads any language: each line is split into words at non-letters and camelCase capitals (`@GetMapping`, `[HttpGet]`, `RequestMethod.POST`, `getForObject`, `export async function POST`).
+- A method found on none is a warning: `methodUnseen` in VerifyReport, `methodUnseenCount` and `methodUnseen` in `<repo>.verify.yaml`, and a line in verify's output. Whether to make it a rejection is left until the count is measured on the bench facts.
+
