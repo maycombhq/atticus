@@ -64,6 +64,21 @@ describe("the command catalogue (ADR 0096)", () => {
     expect(byId.get("critic stats")!.runs).toBe("local");
   });
 
+  it("reads beta.10's options as written: no summary word as a value, no prose flag required", () => {
+    // `--report  Precision from…`: the summary's first word isn't the flag's value.
+    expect(byId.get("verify audit --report")!.flags.find((f) => f.name === "--report")).toEqual({
+      name: "--report",
+      required: true,
+    });
+    // `--option <n> | --text "..." | --accept-proposal`: each is one way to answer, not all.
+    const answer = byId.get("questions answer")!.flags;
+    expect(answer.find((f) => f.name === "--accept-proposal")).toMatchObject({ required: false });
+    expect(answer.find((f) => f.name === "--accept-proposal")!.value).toBeUndefined();
+    // A flag another command takes, named in the summary's words, isn't this one's.
+    expect(byId.get("spec accept")!.flags.map((f) => f.name)).not.toContain("--strict");
+    expect(byId.get("intake traffic")!.flags.map((f) => f.name)).not.toContain("--write");
+  });
+
   it("marks what writes to a shared system, and the flag a person adds to approve it", () => {
     expect(byId.get("ado sync")).toMatchObject({ runs: "shared", approve: "--approve" });
     expect(byId.get("change handoff")).toMatchObject({ runs: "shared", approve: "--approve" });

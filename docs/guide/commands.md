@@ -181,7 +181,7 @@ Every other command. `atticus legacy` lists them by area; each runs by its own n
   atticus intake add <files...>        Drop documents, specs and diagrams into inputs/inbox for intake
   atticus intake list [--json]         What intake read from inputs/: kinds, systems, duplicates, versions
   atticus intake impact <spec> [--json]   A vendor spec against its other version: each change, breaking or not, and the gateway routes, service calls and callers it reaches
-  atticus intake traffic <file> --source apigee|catalog [--from YYYY-MM-DD --to YYYY-MM-DD] [--json]   A traffic export (a file) kept as aggregate counts in evidence/traffic/, client ids, IPs and tokens dropped; verify --write marks the links it shows used
+  atticus intake traffic <file> --source apigee|catalog [--from YYYY-MM-DD --to YYYY-MM-DD] [--json]   A traffic export (a file) kept as aggregate counts in evidence/traffic/, client ids, IPs and tokens dropped; the next verify write marks the links it shows used
   atticus triage [--json]              What needs a person: unknown names, conflicts with code, image edges
   atticus triage decide <item> <n>     Choose option n for a triage item; writes a curated decision
           [--reason text]
@@ -318,7 +318,7 @@ Every other command. `atticus legacy` lists them by area; each runs by its own n
   atticus openspec setup               Set up OpenSpec with the org-flow schema in the metarepo
   atticus openspec check               Check the OpenSpec version and validate every change and spec
   atticus spec seed <repo> [--json]    Propose a repo's starting openspec/specs from its verified flows, as the change openspec/changes/seed-<repo>/: a requirement per flow, a scenario per path and error case, each citing its lines (ADR 0146)
-  atticus spec accept <repo>           Accept the repo's seeded spec: openspec validate --strict, then openspec archive into openspec/specs/; the next change modifies it
+  atticus spec accept <repo>           Accept the repo's seeded spec: OpenSpec validates it strictly, then archives it into openspec/specs/; the next change modifies it
   atticus openspec <args...>           Run the bundled OpenSpec CLI in the metarepo with these arguments (openspec isn't on PATH; it ships inside Atticus). status, instructions and show take --change from the only change open when you don't name one
   atticus handoff done <run-id>        Tell Atticus a hand-off artifact is written; it validates it (a stage's draft: with the stage's checks, its problems listed with their lines until it is clean) [--model m: the model that wrote it, kept in the run record]
   atticus stage check <change> <stage> <file>  Run a stage's checks on a draft's file and list its problems with their lines; writes nothing (a drafter checks its draft before it hands it in)
