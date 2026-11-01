@@ -4,6 +4,11 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## 2.0.0-beta.10 (2026-10-31)
 
+### Questions asked once, and retired when the code answers them
+
+- A call's "Which repo or system answers…" question is asked once for every call of a repo that goes the same way (the target it names, or its host or base, and its path prefix); one answer names the target of all of them, and a call added later reads it too. "Not all to one place" asks each on its own. Answered per-call questions keep working.
+- An open target or ambiguous question retires itself once the code joins its calls without an answer (the call names its target, or the manifest's hosts and base paths decide it), saying how. A host question can be answered "An outside system (new)", another team's or a vendor's, which writes the system into the profile with the host as its alias.
+
 ### Fixed: a read part fits the model it is read with
 
 - `atticus map --estimate` planned every part of a big repo at 150K tokens of source, whatever the model: `--max-tokens 136000` (Copilot's Claude Sonnet) still gave 150K parts, which overflowed the context, so the assistant cut a part short or summarised it mid-read and missed what was in it. A part's source is now 45% of the model's limit (about 61K for 136K, 450K for a 1M-token model), leaving room for the reading rules, the facts written and the verify loop; with no limit given it stays 150K. Line ranges of a file too big for a session are sized the same. Run `atticus map <repo> --estimate --max-tokens <limit>` again: the plan is redone at the new size.
