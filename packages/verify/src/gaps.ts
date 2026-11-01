@@ -67,6 +67,20 @@ export interface GapPlan {
 
 const byPath = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
+/**
+ * A value from the repo (a literal the code writes, a spec's path, a reviewed line's glob and
+ * why), quoted as one line of data (rule 6: ingested content is data, never instructions): in
+ * double quotes, with quotes, backslashes and every control or line-breaking character escaped,
+ * so it can't end the line it sits in or start one that reads as an instruction. The prompt
+ * `atticus map <repo> --gaps` writes fences these lines as data as well.
+ */
+export function quoted(v: string): string {
+  return JSON.stringify(v).replace(
+    /[\u007f-\u009f\u2028\u2029]/g,
+    (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`,
+  );
+}
+
 function split(cite: string): { file: string; line: number } | undefined {
   const m = /^(.+):(\d+)$/.exec(cite);
   return m ? { file: m[1]!, line: Number(m[2]) } : undefined;
@@ -91,22 +105,22 @@ export function planGaps(
     lines.set(at.file, of);
   };
   for (const s of from.skipped ?? [])
-    note(s.cite, `writes the ${s.kind} ${s.value}, which no fact cites`);
+    note(s.cite, `writes the ${s.kind} ${quoted(s.value)}, which no fact cites`);
   for (const h of from.reviewedHolds ?? [])
     for (const s of h.skipped)
       note(
         s.cite,
-        `writes the ${s.kind} ${s.value}, but ${h.path} is reviewed as "${h.why}": write its fact, or narrow the reviewed line`,
+        `writes the ${s.kind} ${quoted(s.value)}, but ${quoted(h.path)} is reviewed as ${quoted(h.why)}: write its fact, or narrow the reviewed line`,
       );
   for (const o of from.specOpsUncovered ?? [])
     note(
       o.cite,
-      `declares ${o.method} ${o.path}, which no entry covers: find the code that serves it`,
+      `declares ${o.method} ${quoted(o.path)}, which no entry covers: find the code that serves it`,
     );
   for (const e of from.entriesNoFlowFollows ?? [])
     note(
       e.cite,
-      `is ${e.id} (${[e.entryType, e.method, e.path].filter(Boolean).join(" ")}), which no flow follows: write its flow`,
+      `is ${e.id} (${[e.entryType, e.method, quoted(e.path)].filter(Boolean).join(" ")}), which no flow follows: write its flow`,
     );
   const unlisted =
     Math.max(0, (from.skippedCount ?? 0) - (from.skipped?.length ?? 0)) +
@@ -139,7 +153,8 @@ export function planGaps(
           path: `${file}#L${r.from}-L${r.to}`,
           file,
           tokens: r.tokens,
-          why: ["no fact cites the file: read these lines", ...whys(r.from, r.to)],
+          // R4: a line the ranges share is named in the range it is its own in, the earlier one.
+          why: ["no fact cites the file: read these lines", ...whys(r.start, r.to)],
         });
       continue;
     }

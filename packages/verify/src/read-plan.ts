@@ -238,8 +238,9 @@ export function sessionTokensFor(limit: number | undefined): number {
 /**
  * R4: the lines two neighbouring ranges of a big file share, so nothing is cut at a boundary:
  * 20, or 2% of the range when that is more, but never more than a fifth of it (a range of few,
- * long lines would otherwise pass the room). A range is done as any is: a kept fact cites a line
- * in it, or the reviewed file names it.
+ * long lines would otherwise pass the room). A range is done when a kept fact cites one of its own
+ * lines (from its `start`, never the lines it shares with the range before: those count for that
+ * one), or the reviewed file names it.
  */
 export const RANGE_OVERLAP_LINES = 20;
 export const RANGE_OVERLAP_SHARE = 0.02;

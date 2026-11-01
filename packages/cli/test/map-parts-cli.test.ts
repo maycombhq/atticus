@@ -184,6 +184,40 @@ describe("the read ledger of a repo read in parts (A-ledger)", () => {
     expect(from(second)).toBeGreaterThan(1);
   });
 
+  it("counts a range done only from its own lines, never from the overlap it shares (R4)", async () => {
+    const root = mkdtempSync(join(tmpdir(), "atticus-read-overlap-"));
+    cpSync(join(fixtures, "repo"), root, { recursive: true });
+    mkdirSync(join(root, ".atticus", "org-pack"), { recursive: true });
+    const spec = "oas/Forge_Ledger_1.0.yaml";
+    write(
+      root,
+      spec,
+      `openapi: 3.0.1\npaths:\n${rows(24_000, (i) => `  /v1/ledger/entries/${i}/lines/{lineId}/postings/{postingId}: { get: { operationId: getPosting${i} } }`)}`,
+    );
+    expect(await mapCommand(root, REPO, { estimate: true, commit: COMMIT }, io().io)).toBe(0);
+    const p = (await readPlanProgress(root, REPO))!;
+    const ranges = p.parts.flatMap((x) => x.paths).filter((g) => g.startsWith(`${spec}#L`));
+    const [first, second] = ranges as [string, string];
+    const at = (g: string) => /#L(\d+)-L(\d+)$/.exec(g)!.slice(1).map(Number) as [number, number];
+    const [secondFrom] = at(second);
+    const [, firstTo] = at(first);
+    // The two share lines secondFrom..firstTo; a fact read in the first range cites one of them.
+    expect(secondFrom).toBeLessThanOrEqual(firstTo);
+    const facts = join(root, ".atticus", "facts", `${REPO}.jsonl`);
+    const cite = (line: number) =>
+      `${JSON.stringify({ kind: "config", id: `k-${line}`, repo: REPO, commit: COMMIT, settingKind: "config", key: `k${line}`, value: "x", cite: { file: spec, line, value: "x" } })}\n`;
+    writeFileSync(facts, cite(secondFrom));
+    const once = (await readPlanProgress(root, REPO))!;
+    const covered = once.parts.flatMap((x) => x.covered);
+    expect(covered).toContain(first);
+    expect(covered).not.toContain(second);
+    // A line of the second range's own (past the first's end) accounts for it.
+    writeFileSync(facts, cite(firstTo + 1));
+    const twice = (await readPlanProgress(root, REPO))!;
+    expect(twice.parts.flatMap((x) => x.covered)).toContain(second);
+    expect(twice.parts.flatMap((x) => x.covered)).not.toContain(first);
+  });
+
   it("plans each part within the model's limit (F1: a 136K model got 150K parts)", async () => {
     const root = bigRepo();
     const o = io();
