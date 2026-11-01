@@ -1,0 +1,105 @@
+# Added to the hold-stock scenario for a change's impact (V1): who calls forge-stock's
+# POST /stock/reservations, and how each link was made. forge-orders calls it (an Interface read
+# from code, as well as its spec flow's step 2); forge-mobile is joined to it by path only (the
+# join guessed: nothing in forge-mobile's code names forge-stock), so it may break, not surely;
+# forge-partner calls it through the gateway route gw-stock-v1, which forge-gateway holds, so
+# the route is one to update. Invented, written by hand.
+- kind: Component
+  schemaVersion: 2
+  id: forge-mobile
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-mobile, path: src/stock/reserve.ts, line: 1 }]
+  system: forge
+  repo: forge-mobile
+  type: web
+- kind: Component
+  schemaVersion: 2
+  id: forge-partner
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-partner, path: src/partner/StockClient.java, line: 1 }]
+  system: forge
+  repo: forge-partner
+  type: service
+- kind: Interface
+  schemaVersion: 2
+  id: if-0e787b233e2b4272
+  status: current
+  confidence: verified
+  flags: [joined-by-name]
+  evidence:
+    - {
+        source: code,
+        repo: forge-orders,
+        path: src/main/java/forge/orders/StockClient.java,
+        line: 14,
+        side: caller,
+      }
+  from: forge-orders
+  to: forge-stock
+  endpoint: forge-stock.post-stock-reservations
+  via: direct
+  method: POST
+  normalizedPath: /stock/reservations
+  sync: sync
+- kind: Interface
+  schemaVersion: 2
+  id: if-1a9099e78c189509
+  status: current
+  confidence: inferred
+  flags: [joined-by-path]
+  evidence:
+    - { source: code, repo: forge-mobile, path: src/stock/reserve.ts, line: 7, side: caller }
+  from: forge-mobile
+  to: forge-stock
+  endpoint: forge-stock.post-stock-reservations
+  via: direct
+  method: POST
+  normalizedPath: /stock/reservations
+  sync: sync
+- kind: Interface
+  schemaVersion: 2
+  id: if-8fafe6cc046fe865
+  status: current
+  confidence: verified
+  flags: [joined-by-host]
+  evidence:
+    - {
+        source: code,
+        repo: forge-partner,
+        path: src/partner/StockClient.java,
+        line: 22,
+        side: caller,
+      }
+    - {
+        source: gateway,
+        repo: forge-gateway,
+        path: proxies/stock-v1/apiproxy/proxies/default.xml,
+        line: 9,
+        side: gateway,
+      }
+  from: forge-partner
+  to: forge-stock
+  endpoint: forge-stock.post-stock-reservations
+  via: gateway
+  route: gw-stock-v1
+  method: POST
+  normalizedPath: /stock/reservations
+  sync: sync
+- kind: GatewayRoute
+  schemaVersion: 2
+  id: gw-stock-v1
+  status: current
+  confidence: verified
+  evidence:
+    - {
+        source: gateway,
+        repo: forge-gateway,
+        path: proxies/stock-v1/apiproxy/proxies/default.xml,
+        line: 9,
+        side: gateway,
+      }
+  proxy: stock-v1
+  basepath: /stock/v1
+  target: http://forge-stock.forge.internal

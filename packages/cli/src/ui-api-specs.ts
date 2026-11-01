@@ -183,6 +183,15 @@ export function uiSpecRoutes(r: Router, ctx: ServerContext): Router {
     return { status: 200, body: e };
   });
 
+  // ADR 0144 (V1): what the change's target flows break, and whose each part is.
+  r.add("GET", "/api/changes/{changeId}/impact", async ({ params }) => {
+    const change = idOf(params.changeId!, "change");
+    const { changeImpactOf } = await import("./change-impact.js");
+    const i = await changeImpactOf(root, change);
+    if (!i) throw notFound(`There is no change ${change}.`);
+    return { status: 200, body: i satisfies Api.ChangeImpactT };
+  });
+
   // ADR 0108: the change's picture, drawn from the same target flows.
   r.add("GET", "/api/changes/{changeId}/map", async ({ params }) => {
     const change = idOf(params.changeId!, "change");

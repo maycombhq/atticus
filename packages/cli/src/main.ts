@@ -581,6 +581,7 @@ Usage:
   atticus change new "<title>"         Start a change from a template: --type <type>
           [--template id] [--id id] [--owner role=a,b]... [--system id]... [--like <archived change>]
           [--impact <vendor spec>]  (its footprint: what the spec's newer version reaches, see intake impact)
+  atticus change impact <change> [--json]  What the change's target flows break across the estate: each entry or table, who calls or uses it (a link the map guessed: may break, not counted), the fields that stop crossing and the gateway routes to update, each with its owner team
   atticus change similar "<brief>"     The archived changes nearest a new brief (or --change <id>: a change's own), to start from one with change new --like or change attach --like [--limit n] [--json]
   atticus domain profile <system>      A system as a domain profile, filled from the catalog [--out file]
   atticus change feature <change>      The feature stage: your assistant places the change on the estate's flows and features from the brief, stories or a design; checked and criticised every draft until done [--from-figma f.json] [--mode m] [--resume run] [--force] [--context-tokens n] [--whole-context] [--max-tokens n]
@@ -2668,6 +2669,11 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
         },
         io,
       );
+    if (command === "impact") {
+      // ADR 0144 (V1): what the change's target flows break across the estate, and whose it is.
+      const { changeImpactCli } = await import("./change-impact.js");
+      return changeImpactCli(root, arg, { json }, io);
+    }
     if (command === "similar") {
       const { changeSimilarCli } = await import("./similar-changes.js");
       const limit = Number(str(values.limit) ?? 5);

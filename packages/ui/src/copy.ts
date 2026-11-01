@@ -894,6 +894,39 @@ export const COPY = {
     run: "Check the code again",
   },
   /** ADR 0109: a change's estimate, from its target flows. */
+  /** ADR 0144 (V1): a change's impact, as designed, on its Architecture tab. */
+  changeImpact: {
+    title: "What this change breaks",
+    intro:
+      "From the change's target flows: each entry or table they break, who calls or uses it today, the fields that stop crossing and the gateway routes to update, each with the team that owns it. A link the map only guessed may break, and isn't counted as a break until someone confirms it.",
+    noTargets: (id: string) =>
+      `${id} has no target flows yet, so there is nothing to weigh. Its architecture stage writes them:`,
+    nothing: "Its target flows break nothing the map shows.",
+    counts: (breaks: number, mayBreak: number, routes: number) =>
+      `${breaks} caller${breaks === 1 ? "" : "s"} ${breaks === 1 ? "breaks" : "break"}, ${mayBreak} may break (link guessed), ${routes} gateway route${routes === 1 ? "" : "s"} to update.`,
+    owned: (owner: string) => `Owned by ${owner}`,
+    why: "Why it breaks",
+    gone: "Stops crossing",
+    required: "Callers must now send",
+    callersCaption: (name: string) => `Who calls or uses ${name}, and whether it breaks`,
+    col: { who: "Caller", verdict: "Breaks?", owner: "Owner", where: "Where" },
+    breaks: "Breaks",
+    mayBreak: (how: string) => `May break (link guessed ${how})`,
+    guessWords: {
+      "joined-by-path": "by path",
+      "joined-by-label": "by a host's first label",
+    } as Record<string, string>,
+    confirm: (rule: string) =>
+      `Not counted as a break: the critic's ${rule} asks the caller's owner to confirm each guessed link.`,
+    nobody: "The map shows nobody calling or using it.",
+    routes: "Gateway routes to update",
+    route: (id: string, callers: readonly string[]) =>
+      `${id}: ${[...callers].join(", ")} ${callers.length === 1 ? "calls" : "call"} through it`,
+    teams: "Teams to involve",
+    noTeam: (why: string) => `no team (${why})`,
+    problems: "Notes",
+    command: (id: string) => `atticus change impact ${id}`,
+  },
   estimate: {
     title: "Estimate",
     intro:

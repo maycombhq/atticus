@@ -10,7 +10,13 @@ import {
   type CatalogRecord,
 } from "@maycombhq/core";
 import { changeView, toDrawio, toMermaid, type FlowView } from "@maycombhq/diagrams";
-import { mergeDelta, readDeltas, TARGET_DIR, type MergedFlow } from "@maycombhq/planner";
+import {
+  mergeDelta,
+  readDeltas,
+  TARGET_DIR,
+  type FlowDelta,
+  type MergedFlow,
+} from "@maycombhq/planner";
 import type { Output } from "./commands.js";
 import { loadCatalog } from "./diagram-commands.js";
 
@@ -34,6 +40,8 @@ export interface TargetFlows {
   /** The target-flow folder, relative to the metarepo. */
   source: string;
   merged: MergedFlow[];
+  /** The target flows as the change folder has them. */
+  deltas: FlowDelta[];
   problems: string[];
   records: CatalogRecord[];
   /** Every component today's specs name, catalog or not. */
@@ -76,6 +84,7 @@ export async function targetFlowsOf(
     title,
     source: `${changesRelOf(root)}/${change}/${TARGET_DIR}`,
     merged,
+    deltas,
     problems,
     records,
     known,

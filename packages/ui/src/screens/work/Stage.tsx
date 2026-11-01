@@ -19,6 +19,7 @@ import {
 } from "./next.js";
 import { Command, NoChangeYet, PickAChange, RunNextPanel } from "./RunNext.js";
 import { RunsLink } from "../runs/Runs.js";
+import { ChangeImpactPanel } from "./Impact.js";
 
 /**
  * Feature design, Stories and Tasks (plan 4.5): for now each shows the change's files and the
@@ -400,6 +401,11 @@ export function ArchitecturePage({ hash }: { hash: string }) {
   return (
     <>
       <ArchitectureStep list={list} wanted={wanted} {...(picked ? { cockpit } : {})} />
+      {picked && (
+        <div className="bento" style={{ marginBottom: 12 }}>
+          <ChangeImpactPanel change={picked.id} />
+        </div>
+      )}
       <ArchitectureReview list={list} wanted={queryParam(hash, "change")} />
       <Architecture hash={hash} />
     </>

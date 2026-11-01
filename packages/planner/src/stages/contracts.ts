@@ -114,15 +114,22 @@ export function requestFieldsOf(e: Estate, endpoint: string): SchemaFieldOf[] {
  * or one it has with required unknown, or one today's flow reads that the catalog doesn't
  * describe, says nothing: an unknown is never taken for optional.
  */
-function requiredWhy(required: string[], reads: string[], have: SchemaFieldOf[]): string[] {
+function requiredWhy(
+  required: string[],
+  reads: string[],
+  have: SchemaFieldOf[],
+): { why: string[]; fields: string[] } {
   const known = new Map(have.map((f) => [leaf(f.name), f] as const));
   const read = new Set(reads.map(leaf));
   const added = required.filter((f) => !known.has(leaf(f)) && !read.has(leaf(f)));
   const made = required.filter((f) => known.get(leaf(f))?.required === false);
-  return [
-    ...(added.length ? [`it requires a new field ${all(added)}`] : []),
-    ...(made.length ? [`it makes ${all(made)} required`] : []),
-  ];
+  return {
+    why: [
+      ...(added.length ? [`it requires a new field ${all(added)}`] : []),
+      ...(made.length ? [`it makes ${all(made)} required`] : []),
+    ],
+    fields: [...added, ...made],
+  };
 }
 
 /** A column type as compared: case and spaces folded, and the common spellings of one type. */
@@ -181,6 +188,12 @@ export interface BreakingChange {
   target: string;
   /** The delta step, from 1, for a table's change. */
   change?: number;
+  /**
+   * The fields that stop crossing the entry (V1): returned or read today and not once the change
+   * is in, every one of them when the entry or the flow goes; and the request fields its callers
+   * must now send. An endpoint's only.
+   */
+  fields?: { gone: string[]; required: string[] };
 }
 
 /** The breaking contract changes of a change's target flows, in the order the deltas give them. */
@@ -195,35 +208,55 @@ export function breakingChanges(deltas: FlowDelta[], e: Estate): BreakingChange[
     const ep = ref && e.byId.get(ref)?.kind === "Endpoint" ? ref : undefined;
     // ---- the flow's own entry
     const why: string[] = [];
-    if (d.change === "remove") why.push("the flow is removed");
+    const goneFields: string[] = [];
+    const requiredFields: string[] = [];
+    /** Every field a step of today's flow takes in at its entry or gives back in its response. */
+    const crossing = (kind: "entry" | "respond") =>
+      today.steps
+        .filter((s) => s.kind === kind)
+        .flatMap((s) => (kind === "entry" ? (s.data?.reads ?? []) : (s.data?.returns ?? [])));
+    if (d.change === "remove") {
+      why.push("the flow is removed");
+      goneFields.push(...crossing("entry"), ...crossing("respond"));
+    }
     d.steps.forEach((s, i) => {
       const was = s.step ? today.steps[s.step - 1] : undefined;
       const kind = s.kind ?? was?.kind;
       if (s.store) return;
-      if (s.op === "remove" && was?.kind === "entry") why.push("its entry step is removed");
-      if (s.op === "remove" && was?.kind === "respond") why.push("its response step is removed");
+      if (s.op === "remove" && was?.kind === "entry") {
+        why.push("its entry step is removed");
+        goneFields.push(...(was.data?.reads ?? []));
+      }
+      if (s.op === "remove" && was?.kind === "respond") {
+        why.push("its response step is removed");
+        goneFields.push(...(was.data?.returns ?? []));
+      }
       if (s.op === "change" && was && kind === "respond" && s.fields?.returns) {
         const now = new Set(s.fields.returns.map(leaf));
         const gone = (was.data?.returns ?? []).filter((f) => !now.has(leaf(f)));
         if (gone.length) why.push(`it no longer returns ${all(gone)}`);
+        goneFields.push(...gone);
       }
       if (s.op === "change" && was && kind === "entry" && s.fields?.reads) {
         const before = was.data?.reads ?? [];
         const now = new Set(s.fields.reads.map(leaf));
         const gone = before.filter((f) => !now.has(leaf(f)));
         const added = s.fields.reads.filter((f) => !before.some((b) => leaf(b) === leaf(f)));
-        if (gone.length && added.length)
+        if (gone.length && added.length) {
           why.push(`its entry reads ${all(added)} in place of ${all(gone)}`);
+          goneFields.push(...gone);
+        }
       }
       // ADR 0125: a new required request field, or one made required, against the catalog.
-      if (s.op !== "remove" && kind === "entry" && s.fields?.required?.length)
-        why.push(
-          ...requiredWhy(
-            s.fields.required,
-            was?.kind === "entry" ? (was.data?.reads ?? []) : [],
-            ep ? requestFieldsOf(e, ep) : [],
-          ),
+      if (s.op !== "remove" && kind === "entry" && s.fields?.required?.length) {
+        const r = requiredWhy(
+          s.fields.required,
+          was?.kind === "entry" ? (was.data?.reads ?? []) : [],
+          ep ? requestFieldsOf(e, ep) : [],
         );
+        why.push(...r.why);
+        requiredFields.push(...r.fields);
+      }
       if (s.breaking && s.op !== "remove")
         why.push(`change ${i + 1} is marked breaking${s.why?.trim() ? `: ${bare(s.why)}` : ""}`);
     });
@@ -239,6 +272,7 @@ export function breakingChanges(deltas: FlowDelta[], e: Estate): BreakingChange[
         seen: ep ? endpointConsumers(e, ep) : [],
         listed: d.consumers ?? [],
         target: d.flow,
+        fields: { gone: [...new Set(goneFields)], required: [...new Set(requiredFields)] },
       });
     }
     // ---- each table a step changes the type of a column of
