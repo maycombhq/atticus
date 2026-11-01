@@ -1,4 +1,10 @@
-import { ownerOfQuestion, type QuestionOwner, type Team } from "@maycombhq/core";
+import {
+  JOIN_GUESS_FLAGS,
+  ownerOfQuestion,
+  type JoinGuessFlag,
+  type QuestionOwner,
+  type Team,
+} from "@maycombhq/core";
 import { breakingChanges, endpointName, tableConsumers, type BreakingChange } from "./contracts.js";
 import { endpointKey, systemOf, type Estate } from "./estate.js";
 import type { FlowDelta } from "./schema.js";
@@ -11,8 +17,9 @@ import type { FlowDelta } from "./schema.js";
  * `owner`, named by roles.yaml's `teams`, ADR 0140). It is `atticus intake impact` (ADR 0130) for
  * our own changes: there a vendor's newer spec is the change, here the target flows are.
  *
- * A link the join guessed (an Interface `inferred` and flagged `joined-by-path` or
- * `joined-by-label`, ADR 0124 addendum F2, ADR 0135) gives a false break as often as a real one:
+ * A link the join guessed (an Interface `inferred` and flagged with one of core's
+ * `JOIN_GUESS_FLAGS`: by path or a host's label, ADR 0124 addendum F2, ADR 0135; by a platform
+ * setting or a setting's folder name, J0; despite an open conflict, J1) gives a false break as often as a real one:
  * its caller may break, and is never counted as one that surely does. The critic's rule
  * `constitution.change-links-known` (ADR 0140) asks the caller's owner to confirm it; this view
  * links to that rule rather than asking again.
@@ -23,9 +30,9 @@ import type { FlowDelta } from "./schema.js";
 /** The critic's rule that asks about a guessed link (ADR 0140, P4). */
 export const GUESSED_LINK_RULE = "constitution.change-links-known";
 
-/** The join's guesses: an Interface it made by path or by a host's first label. */
-const GUESSES = ["joined-by-path", "joined-by-label"] as const;
-export type GuessedBy = (typeof GUESSES)[number];
+/** The join's guesses (core's `JOIN_GUESS_FLAGS`). */
+const GUESSES: readonly JoinGuessFlag[] = JOIN_GUESS_FLAGS;
+export type GuessedBy = JoinGuessFlag;
 
 type Rec = Estate["records"][number] & Record<string, unknown>;
 const str = (v: unknown) => (typeof v === "string" ? v : undefined);

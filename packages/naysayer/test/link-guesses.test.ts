@@ -118,6 +118,18 @@ describe("a change that rests on a guessed link says so (ADR 0140)", () => {
     expect(f[0]!.finding.summary).toContain("by a host's first label");
   });
 
+  it.each([
+    ["joined-by-platform-setting", "by a platform-wide setting nobody set for it"],
+    ["joined-by-folder-name", "by the folder name of the setting that gives its host"],
+    ["joined-despite-conflict", "by a host or base path an open conflict disputes"],
+  ])("says a join flagged %s is a guess too (J0, J1)", async (flag, words) => {
+    const root = await forgeChangeRoot();
+    await guessed(root, "if-5c55930b735276a9", [flag]);
+    const f = of(await runCritic(root, CHANGE, { now: NOW }));
+    expect(f).toHaveLength(1);
+    expect(f[0]!.finding.summary).toContain(words);
+  });
+
   it("asks nothing of a join a person, a name, a repo or a host made", async () => {
     const root = await forgeChangeRoot();
     await guessed(root, "if-d99f508a2ac9b6e0", ["joined-by-answer"]);

@@ -24,6 +24,7 @@ import {
   listQuestions,
   conventionsOf,
   loadOrgPack,
+  normalizeFactPaths,
   type Conventions,
   orgPackDirOf,
   parseFacts,
@@ -375,7 +376,8 @@ export function readAnswer(
       problems.push({ line: i + 1, message: `line ${i + 1} is not one JSON object` });
       return;
     }
-    const o = json as Record<string, unknown>;
+    // W-paths: every file the line names is read with `/`, whichever OS the reader ran on.
+    const o = normalizeFactPaths(json) as Record<string, unknown>;
     if ("question" in o && !("kind" in o)) {
       questions.push(o);
       return;

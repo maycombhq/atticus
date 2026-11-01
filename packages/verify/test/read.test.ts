@@ -100,6 +100,36 @@ describe("files read with nothing to record (A-read, problem 2)", () => {
     for (const b of r.bad) expect(b.message.length).toBeGreaterThan(10);
   });
 
+  it("reads a reviewed path written with backslashes with / (W-paths, Windows)", async () => {
+    const back = (p: string) => p.replace(/\//g, "\\");
+    const text = readFileSync(join(FIX, "forge-limits.reviewed.jsonl"), "utf8")
+      .split("\n")
+      .filter((l) => l.trim())
+      .map((l) => {
+        const o = JSON.parse(l) as { path: string; why: string };
+        return JSON.stringify({ ...o, path: back(o.path) });
+      })
+      .join("\n");
+    expect(text).toContain("\\\\calc\\\\");
+    const r = parseReviewed(text);
+    expect(r.bad).toEqual([]);
+    expect(r.entries).toEqual(reviewedLines());
+  });
+
+  it("verifies and counts a facts file whose cites are written with backslashes as the same file with /", async () => {
+    const text = readFileSync(join(FIX, "forge-limits.facts.jsonl"), "utf8").replace(
+      /"file":"([^"]*)"/g,
+      (_, f: string) => `"file":${JSON.stringify(f.replace(/\//g, "\\"))}`,
+    );
+    expect(text).toContain("src\\\\main");
+    const r = parseFacts(text);
+    if (!r.ok) throw new Error(JSON.stringify(r.issues));
+    expect(r.facts).toEqual(facts());
+    const [fwd, back] = [await run(facts(), reviewedLines()), await run(r.facts, reviewedLines())];
+    expect(back.rejected).toEqual([]);
+    expect(back.coverage).toEqual(fwd.coverage);
+  });
+
   it("counts reviewed files apart from read ones, never as read, and leaves none unknown", async () => {
     const r = await run(facts(), reviewedLines());
     expect(r.coverage.reviewed).toEqual([

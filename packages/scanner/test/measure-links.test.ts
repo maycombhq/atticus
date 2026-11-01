@@ -159,6 +159,33 @@ describe("measureLinks: the estate join against the reference links", () => {
     ]);
   });
 
+  it("counts a join by a platform-wide setting as a guess, as a join by path is (J0)", () => {
+    // ${NOTIFY_URL}'s setting with no target: no longer aimed at accounts-api, so read as the
+    // platform's, for every service, and the link it gives is a guess.
+    const repos = all().map((r) =>
+      r.repo === "forge-deploy-config"
+        ? {
+            ...r,
+            facts: r.facts.map((f) =>
+              f.id === "config.notify-url" ? ({ ...f, target: undefined } as Fact) : f,
+            ),
+          }
+        : r,
+    );
+    const before = measureLinks({ op, repos: all(), reference: reference() });
+    const m = measureLinks({ op, repos, reference: reference() });
+    const row = m.calls.find(
+      (c) => c.repo === "forge-accounts" && c.call === "POST /notifications",
+    )!;
+    expect(row.got).toMatchObject({
+      kind: "joined",
+      repo: "forge-notifications",
+      inferred: "joined-by-platform-setting",
+    });
+    expect(m.links.inferred.joined).toBe(before.links.inferred.joined + 1);
+    expect(m.links.inferred.right).toBe(before.links.inferred.right + 1);
+  });
+
   it("counts a person's answers: one naming a repo joins, one naming an outside system takes the call out", () => {
     const m = measureLinks({
       op,

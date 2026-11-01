@@ -490,4 +490,16 @@ describe("why is this linked: each link's joins, how each was made and both ends
     const link = v.edges.find((e) => e.from === "system:web" && e.to === "system:customers")!;
     expect(link.gaps).toEqual(["inferred", "joined-by-path"]);
   });
+
+  it.each([
+    ["joined-by-platform-setting", "platform-setting"],
+    ["joined-by-folder-name", "folder-name"],
+    ["joined-despite-conflict", "conflict"],
+  ] as const)("reads %s as a guess: a gap, and how the link was joined (J0, J1)", (flag, how) => {
+    const rs = records().map((r) => (r.id === PATH ? ({ ...r, flags: [flag] } as typeof r) : r));
+    const v = nodeView(buildEstate(rs), "estate", { lens: "architecture" });
+    const link = v.edges.find((e) => e.from === "system:web" && e.to === "system:customers")!;
+    expect(link.gaps).toEqual(["inferred", flag]);
+    expect(link.joins!.find((j) => j.interface === PATH)).toMatchObject({ how, verified: false });
+  });
 });

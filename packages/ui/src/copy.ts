@@ -950,6 +950,9 @@ export const COPY = {
     guessWords: {
       "joined-by-path": "by path",
       "joined-by-label": "by a host's first label",
+      "joined-by-platform-setting": "by a platform-wide setting",
+      "joined-by-folder-name": "by a setting's folder name",
+      "joined-despite-conflict": "despite an open host conflict",
     } as Record<string, string>,
     confirm: (rule: string) =>
       `Not counted as a break: the critic's ${rule} asks the caller's owner to confirm each guessed link.`,
@@ -3400,6 +3403,12 @@ export const COPY = {
       path: "Nobody named where it goes: it is the only entry in the estate that serves its path, so this is a guess.",
       label:
         "Its host names no repo; the host's first part happens to be a component's name, so this is a guess.",
+      "platform-setting":
+        "Its host comes from a platform-wide setting nobody set for this service, so this is a guess.",
+      "folder-name":
+        "Its host comes from a setting that is this service's only because its file sits in a folder named like it, so this is a guess.",
+      conflict:
+        "Its host or base path is one a deploy file gives and the manifest disagrees with (an open conflict on Map › Trust), so this is a guess.",
       unknown:
         "The catalog doesn't say how this was joined: it was written before Atticus kept that, or by a built-in reader. Run atticus verify on the caller's repo with --write to record it.",
     } as Record<string, string>,

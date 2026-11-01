@@ -308,3 +308,46 @@ describe("joinRecords through a gateway: the Interface, its route and the auth a
     expect(iface(served)).toMatchObject({ auth: "mtls", via: "gateway" });
   });
 });
+
+describe("joinRecords through a gateway: a hop that guessed makes the whole link a guess (J0, J1)", () => {
+  it("marks the Interface inferred and flagged when the forwarding call's host is one an open conflict disputes", () => {
+    // The manifest lists another host for forge-accounts; a Route says accounts.forge.internal.
+    const repos: JoinRepo[] = [
+      ...estate().map((r) =>
+        r.repo === "forge-accounts" ? { ...r, hosts: ["accounts.other.internal"] } : r,
+      ),
+      {
+        repo: "forge-deploy",
+        component: "deploy-config",
+        facts: [
+          {
+            kind: "deploy",
+            id: "d-accounts-route",
+            repo: "forge-deploy",
+            commit: "7777aaa",
+            platform: "openshift",
+            resourceType: "route",
+            resourceName: "forge-accounts",
+            host: "accounts.forge.internal",
+            exposes: "forge-accounts",
+            cite: { file: "routes/accounts.yaml", line: 5, value: "accounts.forge.internal" },
+            verified: "line",
+            by: "assistant",
+            conf: "declared",
+          } as Fact,
+        ],
+      },
+    ];
+    const out = joinFacts({ repos });
+    expect(out.exposure?.map((x) => x.reason)).toEqual(["host-conflict"]);
+    const post = out.joins.find((j) => j.call.fact === PORTAL_POST)!;
+    expect(post.gateway?.length).toBe(1);
+    expect(post.guesses).toEqual(["joined-despite-conflict"]);
+    const iface = joinRecords(out, repos).find((r) => r.id === post.interface)!;
+    expect(iface).toMatchObject({
+      confidence: "inferred",
+      via: "gateway",
+      flags: ["joined-despite-conflict"],
+    });
+  });
+});

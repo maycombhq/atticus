@@ -343,6 +343,24 @@ describe("staleTargetQuestions: questions the code answers now, or asked another
     ).toEqual([]);
   });
 
+  it("keeps an open question whose call is joined by host only through a guessed setting or a disputed host (J0, J1)", () => {
+    const q = perCall("c-notify");
+    for (const guess of [
+      "joined-by-platform-setting",
+      "joined-by-folder-name",
+      "joined-despite-conflict",
+    ] as const) {
+      const join = {
+        ...emptyJoin(),
+        joins: [{ ...joinOf("c-notify", "host"), guesses: [guess] }],
+      };
+      expect(
+        staleTargetQuestions({ repo: REPO, facts, open: [q], drafted: [], asked: new Set(), join }),
+        guess,
+      ).toEqual([]);
+    }
+  });
+
   it("retires a group question only once every call of it joins", () => {
     const [g] = groupedTargetDrafts(facts, records, op, undefined, { ask: ALL });
     const q = open({ ...g!.draft, id: g!.id });

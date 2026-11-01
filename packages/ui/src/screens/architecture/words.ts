@@ -83,6 +83,9 @@ export const WORDS = {
     // F2 and ADR 0135: a join nobody named; Why is this linked? says how it was found.
     "joined-by-path": "Joined by its path: nobody named where it goes",
     "joined-by-label": "Joined by its host's first part: a guess",
+    "joined-by-platform-setting": "Joined by a platform-wide setting: a guess",
+    "joined-by-folder-name": "Joined by the folder its host's setting is in: a guess",
+    "joined-despite-conflict": "Joined by a host the manifest disagrees with: a guess",
     // ADR 0124 addendum D-app, F3: from the repos' facts.
     unverified: "No fact verified from code",
     question: "A question is open on it",
@@ -102,6 +105,12 @@ export const WORDS = {
     conflicts: "Open the record and settle which source is right.",
     "joined-by-path": "Open Why is this linked?, and say where it goes if the guess is wrong.",
     "joined-by-label": "Open Why is this linked?, and say where it goes if the guess is wrong.",
+    "joined-by-platform-setting":
+      "Open Why is this linked?, and say where it goes if the guess is wrong; or set the variable for this service.",
+    "joined-by-folder-name":
+      "Open Why is this linked?, and say where it goes if the guess is wrong; or name the service in the setting's target.",
+    "joined-despite-conflict":
+      "Settle the host conflict on Map › Trust (list the host in the manifest, or correct the deploy file).",
     unverified: "Read the repo and verify it; Map › Trust lists what isn't checked yet.",
     question: "Answer the open question on Questions; Map › Trust lists the repo's questions.",
     corrected: "Run atticus verify on the repo with --write to apply the correction.",

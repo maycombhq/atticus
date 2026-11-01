@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { normalizeFactPaths } from "../fact-paths.js";
 import { FactId, FACT_KINDS } from "./facts.js";
 
 /**
@@ -94,7 +95,8 @@ export function parseCorrections(text: string): {
       bad.push({ line: i + 1, message: `not JSON: ${(e as Error).message}` });
       return;
     }
-    const r = FactCorrection.safeParse(json);
+    // W-paths: the target's file with `/`, as the facts it meets are read.
+    const r = FactCorrection.safeParse(normalizeFactPaths(json));
     if (r.success) corrections.push(r.data);
     else
       bad.push({

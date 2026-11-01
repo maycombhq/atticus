@@ -1,7 +1,7 @@
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import type { Api } from "@maycombhq/core";
+import { Api as CoreApi, JOIN_GUESS_FLAGS, type Api } from "@maycombhq/core";
 import { COPY } from "../src/copy.js";
 import { Inspector } from "../src/screens/architecture/Architecture.js";
 import { WhyLinked } from "../src/screens/architecture/WhyLinked.js";
@@ -81,6 +81,25 @@ describe("why is this linked", () => {
       expect(page).toContain(f);
     expect(page).toContain(esc(W.noLine));
     expect(page).toContain(esc(W.more(1)));
+  });
+
+  it("has words for every way a call is joined, and says a J0 or J1 guess is one (ADR 0124 addendum)", () => {
+    for (const how of CoreApi.LINK_HOWS) expect(W.how[how], how).toBeTruthy();
+    for (const how of ["platform-setting", "folder-name", "conflict"] as const) {
+      const page = html(
+        <WhyLinked link={{ ...LINK, joins: [{ ...GUESS, how, gateway: false }] }} />,
+      );
+      expect(page).toContain(esc(W.how[how]!));
+      expect(page).toContain(W.inferred);
+    }
+  });
+
+  it("names every guess as a gap with what closes it, and in a change's impact", () => {
+    for (const g of JOIN_GUESS_FLAGS) {
+      expect(WORDS.gap[g], g).toBeTruthy();
+      expect(WORDS.gapFix[g], g).toBeTruthy();
+      expect(COPY.changeImpact.guessWords[g], g).toBeTruthy();
+    }
   });
 
   it("says a link that isn't a call has no join to explain", () => {

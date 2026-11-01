@@ -16,7 +16,7 @@ When a line is wrong (the call goes to another repo, to an outside system, or is
 
 ### 1. Every Interface says how it was joined (C1 content, no schema change)
 
-`joinRecords` writes one flag on every Interface it makes, from `FactJoin.how`: `joined-by-answer` (a person's answer to a targets question), `joined-by-name` (the call's `to` names the component), `joined-by-repo` (it names the repo), `joined-by-host` (a host the manifest lists). The guesses keep their F2 flags, alone. A publish joined to its listener carries none: its `via` (`event-bus`, `mq`) says it. A gateway join is `via: gateway` with the flag of how its first hop was found.
+`joinRecords` writes one flag on every Interface it makes, from `FactJoin.how`: `joined-by-answer` (a person's answer to a targets question), `joined-by-name` (the call's `to` names the component), `joined-by-repo` (it names the repo), `joined-by-host` (a host the manifest lists). The guesses keep their flags, alone: F2's, and J0's and J1's (`joined-by-platform-setting`, `joined-by-folder-name`, `joined-despite-conflict`, ADR 0124 addendum J-guess), each with its words in Why is this linked?. A publish joined to its listener carries none: its `via` (`event-bus`, `mq`) says it. A gateway join is `via: gateway` with the flag of how its first hop was found.
 
 `flags` is the optional string array every record already has, so C1's schema is unchanged; a catalog written before this reads as `how: unknown` until the caller's repo is verified with `--write` again. `JOIN_HOW_FLAGS` (core) lists the flags that say how and nothing more — these four and A-callers' `declared-caller` — and the hierarchy never counts them as gaps; the guesses still are.
 
@@ -41,7 +41,7 @@ Not read (`unknownFiles`) was there already; its action is now said beside it. K
 
 From Why is this linked?, each call has This link is wrong, with three choices: it calls another repo or component of the estate, it calls an outside system, or it isn't a call. The app finds the call fact on the caller's cited line in the repo's facts and writes the correction through the existing POST /api/facts/{repo}/corrections: `edit` with `set.to` for the first two, `wrong` with a reason for the third. It then says what `atticus verify <repo> --write` will change (the call moves to the named target; goes outside the estate; or is dropped), shows that command and the git command for the file, and asks for a pull request. It runs neither (build-status B1). When the catalog changes, the panel says what moved: each corrected call's link before and after, or that it is on none.
 
-A target a person set outranks every join rule after an answer: in `joinFacts`, a call fact `by: person` whose `to` names nothing in the estate is outside it and is never joined by its host, a host's label or its path. A `to` that names a repo or component is joined by that name, as before, ahead of the host.
+A target a person set outranks every join rule after an answer: in `joinFacts`, a call fact `by: person` whose `to` names nothing in the estate is outside it: it is never asked about (not even which of several environments' hosts is meant), never joined by its host, a host's label or its path, and the join lists it in `outside` with the person's target, as it lists a person's answer that names a vendor. A `to` that names a repo or component is joined by that name, as before, ahead of the host.
 
 ## Consequences
 

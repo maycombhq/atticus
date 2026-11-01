@@ -687,6 +687,29 @@ describe("readAnswer: what a model's answer holds", () => {
     expect(r.problems).toHaveLength(1);
     expect(r.problems[0]).toMatch(/cfg-db-password.*looks like a secret/);
   });
+
+  it("reads a fact's and the about line's files written with backslashes with / (W-paths)", () => {
+    const r = readAnswer(
+      [
+        JSON.stringify({
+          about: "The Forge ledger.",
+          cites: [{ file: "docs\\README.md", line: 1 }],
+        }),
+        JSON.stringify({
+          kind: "deploy",
+          id: "d-ledger",
+          platform: "kubernetes",
+          resourceName: "ledger-api",
+          cite: { file: "k8s\\ledger-api.yaml", line: 4, value: "ledger-api" },
+        }),
+      ].join("\n"),
+      REPO,
+      COMMIT,
+    );
+    expect(r.problems).toEqual([]);
+    expect(r.facts[0]!.cite.file).toBe("k8s/ledger-api.yaml");
+    expect(r.about?.cites).toEqual([{ file: "docs/README.md", line: 1 }]);
+  });
 });
 
 describe("the reader's slips of form, fixed in the batch loop as verify fixes them (R6)", () => {

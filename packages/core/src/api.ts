@@ -14,6 +14,7 @@ import { ChangeArtifact, Phase, SOURCE_AUTHORITIES, SourceScope } from "./schema
 import { Finding, FindingAction, Lens, Severity } from "./schema/review.js";
 import { Question, QuestionScopeLevel } from "./schema/question.js";
 import { FactCorrection } from "./schema/fact-corrections.js";
+import { JOIN_GUESS_FLAGS } from "./facts-join.js";
 import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
 
 /**
@@ -104,8 +105,12 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   what was drawn, answered right, wrong and unsure, still open or gone, and a 95% interval —
  *   and GET /api/facts/{repo} gives `verified: sample` for a fact answered right there that still
  *   cites the line the person saw. Additive only.
+ * 2.38.0 (ADR 0124 addendum J0/J1 guesses): a link joined by a platform-wide setting, a
+ *   setting's folder name or despite an open exposure conflict is a guess: `LINK_HOWS` gains
+ *   `platform-setting`, `folder-name` and `conflict`, and a change's impact caller's `guessed`
+ *   takes any of `JOIN_GUESS_FLAGS`. Additive only.
  */
-export const API_VERSION = "2.37.0";
+export const API_VERSION = "2.38.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -234,7 +239,9 @@ export const HIER_EDGE_TYPES = [
  * a person's `answer`, the component (`named`) or `repo` the call names, a `host` the manifest
  * lists, a person who `declared` the caller of a gateway route, a publish heard on its `topic`;
  * or a guess, by its `path` or a host's first `label`. `unknown` when the record doesn't say
- * (written before 2.32.0, or by the built-in readers).
+ * (written before 2.32.0, or by the built-in readers). 2.38.0 (J0, J1): the guesses a join by
+ * host can rest on, a `platform-setting` nobody aimed at the caller, a setting's `folder-name`,
+ * or a host or base path an open `conflict` disputes.
  */
 export const LINK_HOWS = [
   "answer",
@@ -245,6 +252,9 @@ export const LINK_HOWS = [
   "topic",
   "path",
   "label",
+  "platform-setting",
+  "folder-name",
+  "conflict",
   "unknown",
 ] as const;
 export const HierJoin = z.object({
@@ -1453,7 +1463,7 @@ export const ChangeImpact = z.object({
           component: z.string(),
           repo: z.string().optional(),
           verdict: z.enum(["breaks", "may-break"]),
-          guessed: z.enum(["joined-by-path", "joined-by-label"]).optional(),
+          guessed: z.enum(JOIN_GUESS_FLAGS).optional(),
           interfaces: z.array(z.string()),
           flows: z.array(z.string()),
           routes: z.array(z.string()),
