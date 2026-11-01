@@ -4,6 +4,11 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## 2.0.0-beta.10 (2026-10-31)
 
+### A change warns on guessed links; questions come in the order a change needs them, each to its owner (ADR 0140)
+
+- The critic's new constitution rule `constitution.change-links-known` says when a call the change plans rests on a link the join guessed (joined by path or by a host's label), on a link question still open, or on a repo whose read is stale or incomplete, with the question to answer or the command that reads it again.
+- `atticus questions list`, `atticus next` and the Questions page list first what a change in flight rests on, then the answers that join the most calls, so a lone /ping comes last. Each question names the team that owns its repo (or says it has none), and `questions list --mine` / My teams' lists only yours, from `roles.yaml` version 2's `teams` (`atticus upgrade` runs `roles-v2`). GET /api/questions gains `about`, `me` and `mine=true` (C4 2.33.0).
+
 ### Config placeholders resolved through the config that sets them
 
 - A call whose base URL is a placeholder (`${PAYMENTS_URL}`, Spring's `${PAYMENTS_URL:default}`, `env:PAYMENTS_URL`), or a publish or listener whose topic is one, is joined through the config facts that set it: in its own repo, or in a deploy or config repo of the estate where the setting is for its component (a folder named for it, a Deployment of that name in the file, or the fact's `target`), else one for every service (a platform chart). Every environment's host the manifest's hosts and base paths claim is accepted, and the link cites the placeholder's line and the value's; environments pointing at different repos are asked. No model; run `atticus verify --all --write` again.
