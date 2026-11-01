@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import type { StepFact } from "../src/commands.js";
 import { mapCommand } from "../src/map-commands.js";
+import { SESSION_SHARE, SESSION_TOKENS } from "@maycombhq/verify";
 import { readPlanProgress } from "../src/map-parts.js";
 
 /**
@@ -181,5 +182,21 @@ describe("the read ledger of a repo read in parts (A-ledger)", () => {
     const twice = (await readPlanProgress(root, REPO))!;
     expect(twice.parts.flatMap((x) => x.covered)).toContain(second);
     expect(from(second)).toBeGreaterThan(1);
+  });
+
+  it("plans each part within the model's limit (F1: a 136K model got 150K parts)", async () => {
+    const root = bigRepo();
+    const o = io();
+    expect(
+      await mapCommand(root, REPO, { estimate: true, commit: COMMIT, maxTokens: 136_000 }, o.io),
+    ).toBe(0);
+    const plan = parse(
+      await readFile(join(root, ".atticus/facts/forge-ledger.read-plan.yaml"), "utf8"),
+    );
+    // The source a part reads is a share of the context, leaving room for the reading rules, the
+    // facts it writes and the verify loop: well under the 136K the model holds.
+    expect(plan.session).toBe(Math.floor(136_000 * SESSION_SHARE));
+    expect(plan.session).toBeLessThan(SESSION_TOKENS);
+    for (const p of plan.parts) expect(p.tokens).toBeLessThanOrEqual(plan.session);
   });
 });

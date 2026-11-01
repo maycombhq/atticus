@@ -128,7 +128,8 @@ describe("atticus map <repo> --estimate on a big repo (A-big)", () => {
       j.io,
     );
     const r = JSON.parse(j.out.join("\n"));
-    expect(r.parts).toEqual({ session: 750_000, parts: [] });
+    // F1: 45% of the model's limit (it was 75%, and a smaller model never went below 150K).
+    expect(r.parts).toEqual({ session: 450_000, parts: [] });
   });
 
   it("plans the parts over the source left with the proposals out, and says so", async () => {

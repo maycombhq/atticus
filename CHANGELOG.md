@@ -2,6 +2,12 @@
 
 All notable changes to Atticus. Versions follow [Semantic Versioning](https://semver.org); contracts C1 to C6 change only with an ADR, a schema version and a migration (`atticus upgrade`).
 
+## Unreleased
+
+### Fixed: a read part fits the model it is read with
+
+- `atticus map --estimate` planned every part of a big repo at 150K tokens of source, whatever the model: `--max-tokens 136000` (Copilot's Claude Sonnet) still gave 150K parts, which overflowed the context, so the assistant cut a part short or summarised it mid-read and missed what was in it. A part's source is now 45% of the model's limit (about 61K for 136K, 450K for a 1M-token model), leaving room for the reading rules, the facts written and the verify loop; with no limit given it stays 150K. Line ranges of a file too big for a session are sized the same. Run `atticus map <repo> --estimate --max-tokens <limit>` again: the plan is redone at the new size.
+
 ## 2.0.0-beta.9 (2026-10-29)
 
 ### A repo's `basePath` on a shared host (`repos.manifest.yaml` version 3)

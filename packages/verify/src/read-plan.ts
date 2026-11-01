@@ -217,10 +217,23 @@ export function exclusionYaml(proposals: readonly ExclusionProposal[]): string {
 }
 
 /**
- * Tokens of source one assistant session reads with room left for the protocol, the facts it
- * writes and the verify loop: three quarters of a 200k-token context.
+ * Tokens of source one assistant session reads when the model's limit isn't known, with room left
+ * for the protocol, the facts it writes and the verify loop: three quarters of a 200k-token context.
  */
 export const SESSION_TOKENS = 150_000;
+
+/**
+ * The share of a model's context a session's source takes when the model's limit is known: the
+ * rest holds the reading rules, the facts the reader writes and the verify loop. Below half, so a
+ * 136K-token model reads parts of about 61K (F1: they were planned at 150K, past the model's whole
+ * context, and cut short or summarised mid-read), and a 1M-token model parts of 450K.
+ */
+export const SESSION_SHARE = 0.45;
+
+/** The source one session reads: a share of the model's limit when known, else SESSION_TOKENS. */
+export function sessionTokensFor(limit: number | undefined): number {
+  return limit && limit > 0 ? Math.floor(limit * SESSION_SHARE) : SESSION_TOKENS;
+}
 
 /** One part of a big repo's read: globs over its files, in path order. */
 export interface ReadPart {

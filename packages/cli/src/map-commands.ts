@@ -60,7 +60,7 @@ import {
   proposeExclusions,
   SHOWN_PROPOSALS,
   rereadPlan,
-  SESSION_TOKENS,
+  sessionTokensFor,
   sameCommit,
   sliceText,
   staleMessage,
@@ -1184,7 +1184,8 @@ async function estimate(
         saysNotProduct: saysNotProduct(about),
       });
   const left = proposed.proposals.map((p) => p.path.slice(0, -2));
-  const session = Math.max(SESSION_TOKENS, Math.floor(0.75 * (given ?? 0)));
+  // F1: a session's source is a share of the model's limit, smaller or bigger; 150K when unknown.
+  const session = sessionTokensFor(given);
   // A-big2: the parts are of the product code left with every proposal out.
   const product = files
     .filter((f) => !left.some((d) => f.path.startsWith(d)))

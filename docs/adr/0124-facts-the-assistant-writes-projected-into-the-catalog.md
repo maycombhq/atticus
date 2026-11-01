@@ -916,3 +916,9 @@ The gateway batch's instructions go from about 7,401 characters (~1,850 tokens) 
 - **Done.** A range is accounted for by a kept fact citing a line inside it (its cite, a part, a step or an error), by `<repo>.reviewed.jsonl` naming the range itself, or by the whole file (or a folder glob over it) reviewed. A citation in one range never accounts for another.
 - **Verify.** A reviewed range must name a file at the commit and lines it has; it reviews the file for coverage, as a whole-file line does. The facts file is unchanged.
 - **The reader.** `/atticus-map` step 4 says a path ending `#L<from>-L<to>` is read by line range, never whole. `FACT_RULES` is unchanged; the golden and plugins change.
+
+## Addendum (A-budget): a session's source is a share of the model (no C1 to C6 change)
+
+- **The bug.** The estimate's session was `max(150K, 0.75 × the given limit)`, so a smaller model never shrank it: a 136K-token model was planned 150K-token parts, more than its whole context, before the reading rules and the facts it writes.
+- **The rule.** `sessionTokensFor(limit)`: with a limit (from `--max-tokens`, the probe or runtime.yaml), `⌊0.45 × limit⌋`, smaller or bigger than before (a 1M-token model's parts go from 750K to 450K); without one, 150K. 45% leaves the rest of the context to the protocol, the facts written and the verify loop; it is a measured guess to revisit on the bench, not a constant of nature. Line ranges (A-ranges) take the same session, so a range fits too.
+- **Plans already written** were made at the old size and are re-planned by the next `--estimate` (the session is part of what makes a plan the same).
