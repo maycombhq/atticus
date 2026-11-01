@@ -4,6 +4,11 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## 2.0.0-beta.10 (2026-10-31)
 
+### Contract files and traffic as evidence for links (ADR 0151)
+
+- `atticus verify <repo> --write` reads the repo's Pact files and the OpenAPI specs it keeps for the APIs it calls, flags each link they bear out `confirmed-by-contract` (citing the line), and lists the requests that name another provider, or that no link carries, in its output and the verify report. A guessed link stays a guess.
+- `atticus intake traffic <file> --source apigee|catalog [--from --to]` keeps a gateway or API catalogue export only as counts per app, method, path template, proxy and base path in `evidence/traffic/`, for review in a pull request. Client ids, keys, IPs, user agents, query strings and tokens are dropped before anything is written, and a file that fails a check is refused. Links get `seen-in-traffic`, and the write lists traffic with no link and links nobody used.
+
 ### Answers by rule, in one sitting, and where they came from (ADR 0153)
 
 - A target or hosts answer can carry a rule: `atticus questions answer <id> --option <n> --match "*.payments.forge.internal"` or `--match "/forge/limits/**"`, or the rule field on the Questions page. One answer then covers every call that matches, the calls found later too, in the repos its scope allows. A hosts rule goes into the manifest (the pattern under `hosts`, or the prefix as `basePath`) and retires the open hosts questions it covers.

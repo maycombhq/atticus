@@ -1016,3 +1016,7 @@ The gateway batch's instructions go from about 7,401 characters (~1,850 tokens) 
 ## Addendum (Q2, ADR 0153): answers by rule
 
 - An answered targets question may carry a rule (`answer.match`, a host pattern or a path prefix). `targetsFromAnswers` reads it after a call's own answer and its group's, for every call with no target that matches, in each repo the answer's scope allows (`ruledTargets`). `staleTargetQuestions` retires an open question whose calls a rule covers, naming the rule's question in `replacedBy`.
+
+## Addendum (A-evidence, ADR 0151): links confirmed from outside the code
+
+- After the estate join, the consumers' contract files (`<repo>.contracts.yaml`, read at the facts' commit) and the imported traffic aggregates (`evidence/traffic/`) are matched against the whole estate's join by consumer, method and path. A match adds evidence and a flag to the Interface (`confirmed-by-contract`, `seen-in-traffic`, or the gap `contract-disagrees`) and never changes its confidence. Each write takes the previous write's marks off first, so the catalog is the same whatever order the repos are written in.
