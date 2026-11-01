@@ -6,7 +6,7 @@
 
 ## Context
 
-The join guesses when nobody names a call's target: an Interface it made by path or by a host's first label is `inferred` and flagged `joined-by-path` or `joined-by-label` (F2). A call whose target nobody knows is asked as a question (`facts-targets`, the estate join's `estate-targets`, `scan-hosts`). A repo's read can be stale (its facts were read at an older commit than its checkout) or incomplete (facts rejected, not verified, files unread); Map › Trust says so. None of this reached the critic: a change could design against a guessed link, an unanswered link question or a stale read, and a map error became a design error nobody saw.
+The join guesses when nobody names a call's target: an Interface it made by path or by a host's first label is `inferred` and flagged with a guess (`joined-by-path`, `joined-by-label`, or J0's and J1's `joined-by-platform-setting`, `joined-by-folder-name`, `joined-despite-conflict`, ADR 0124 addendum J-guess) (F2). A call whose target nobody knows is asked as a question (`facts-targets`, the estate join's `estate-targets`, `scan-hosts`). A repo's read can be stale (its facts were read at an older commit than its checkout) or incomplete (facts rejected, not verified, files unread); Map › Trust says so. None of this reached the critic: a change could design against a guessed link, an unanswered link question or a stale read, and a map error became a design error nobody saw.
 
 Questions were listed oldest first. A person with forty open questions answered a lone `/ping` before the one a change in flight waited on, or the one whose single answer joins a dozen calls.
 

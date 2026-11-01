@@ -5,13 +5,13 @@ import {
   factIdPart,
   helperOn,
   joinFacts,
-  JOINED_BY_LABEL,
-  JOINED_BY_PATH,
+  joinGuessesOf,
   NO_TARGET,
   type Fact,
   type FactJoin,
   type FactJoinAsk,
   type FactOf,
+  type JoinGuessFlag,
   type OrgPack,
 } from "@maycombhq/core";
 import { componentRenames, joinReposOf, outsideSystems } from "./facts-catalog.js";
@@ -28,7 +28,8 @@ import { estateRepos, isPrototypeRepo } from "./merge-input.js";
  * - reading: how many of the listed entries and calls the facts have;
  * - links: precision (of the listed calls the join linked to a repo, how many are right) and
  *   recall (of the listed calls that should reach a repo, how many it reached), with the calls
- *   it asked about, the guesses (inferred: joined by path or by a host's first label) and the
+ *   it asked about, the guesses (inferred: joined by path, by a host's first label, by a
+ *   platform-wide setting or a setting's folder name, or despite an open conflict) and the
  *   outside systems counted on their own.
  *
  * Pure: it reads only what it is given and writes nothing. The reference stays wherever its
@@ -164,8 +165,8 @@ export type LinkGot =
       entry: string;
       /** The gateway repos it went through, in order. */
       via?: string[];
-      /** A guess: joined by path, or by a host's first label. */
-      inferred?: typeof JOINED_BY_PATH | typeof JOINED_BY_LABEL;
+      /** A guess: the first of core's `JOIN_GUESS_FLAGS` the join carries. */
+      inferred?: JoinGuessFlag;
     }
   | { kind: "outside"; system: string }
   | { kind: "asked"; reason: FactJoinAsk["reason"] }
@@ -390,7 +391,7 @@ export function measureLinks(input: MeasureLinksInput): MeasureLinksResult {
     const j = joins.get(k)?.[0];
     if (j) {
       const via = (j.gateway ?? []).map((h) => h.entry.repo);
-      const inferred = j.byLabel ? JOINED_BY_LABEL : j.inferred ? JOINED_BY_PATH : undefined;
+      const inferred = joinGuessesOf(j)[0];
       return {
         kind: "joined",
         repo: j.entry.repo,

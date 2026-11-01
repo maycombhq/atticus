@@ -3,8 +3,9 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   interfaceId,
-  JOINED_BY_HOST,
+  JOINED_BY_FOLDER_NAME,
   JOINED_BY_PATH,
+  JOINED_BY_PLATFORM_SETTING,
   joinFacts,
   joinRecords,
   parseFacts,
@@ -141,8 +142,9 @@ describe("J0: config placeholders resolved through the config that sets them", (
       confidence: string;
       evidence: { repo: string; path: string; line: number; side?: string }[];
     };
-    expect(pay.flags).toEqual([JOINED_BY_HOST]);
-    expect(pay.confidence).toBe("verified");
+    // the prod value is pay-api's only because its file is in a folder named pay-api: a guess (J0)
+    expect(pay.flags).toEqual([JOINED_BY_FOLDER_NAME]);
+    expect(pay.confidence).toBe("inferred");
     expect(pay.evidence.map((e) => `${e.side}:${e.repo}:${e.path}:${e.line}`)).toEqual([
       "caller:forge-pay:src/main/java/forge/pay/PaymentsClient.java:21",
       "caller:forge-pay:src/main/resources/application.yml:4",
@@ -157,6 +159,8 @@ describe("J0: config placeholders resolved through the config that sets them", (
         r.via === "event-bus",
     ) as { normalizedPath: string; evidence: { repo: string; path: string; side?: string }[] };
     expect(topic.normalizedPath).toBe("forge.payment.made");
+    // the listener's topic is set in apps/ledger-api/: found by the folder's name, a guess
+    expect(topic).toMatchObject({ confidence: "inferred", flags: [JOINED_BY_FOLDER_NAME] });
     expect(topic.evidence.map((e) => `${e.side}:${e.repo}:${e.path}`)).toEqual([
       "caller:forge-pay:src/main/java/forge/pay/PaymentEvents.java",
       "caller:forge-pay:src/main/resources/application.yml",
@@ -286,6 +290,8 @@ describe("J0: which settings count for a component, and the forms a placeholder 
         through: [{ repo: "forge-deploy", fact: "cfg-web-limits" }],
       },
     ]);
+    // the setting's own file deploys forge-web: cited, not guessed
+    expect(out.joins[0]!.guesses).toBeUndefined();
   });
 
   it("puts a placeholder inside a URL together with its value", () => {
@@ -322,6 +328,8 @@ describe("J0: which settings count for a component, and the forms a placeholder 
     expect(out.joins).toMatchObject([
       { how: "host", entry: { fact: "e-get-limit" }, through: [{ fact: "cfg-limits-host" }] },
     ]);
+    // a setting whose target is the component is for it by its own word
+    expect(out.joins[0]!.guesses).toBeUndefined();
   });
 
   it("reads a platform-wide setting only when nothing sets the variable for the component", () => {
@@ -348,10 +356,19 @@ describe("J0: which settings count for a component, and the forms a placeholder 
       },
       limits,
     ];
-    // a platform chart sets it for every service: used, and cited
-    expect(joinFacts({ repos: web([]) }).joins).toMatchObject([
-      { how: "host", through: [{ repo: "forge-deploy", fact: "cfg-all" }] },
+    // a platform chart sets it for every service: used, and cited, but a guess (nobody aimed it)
+    const all = joinFacts({ repos: web([]) });
+    expect(all.joins).toMatchObject([
+      {
+        how: "host",
+        through: [{ repo: "forge-deploy", fact: "cfg-all" }],
+        guesses: [JOINED_BY_PLATFORM_SETTING],
+      },
     ]);
+    expect(joinRecords(all, web([])).find((r) => r.kind === "Interface")).toMatchObject({
+      confidence: "inferred",
+      flags: [JOINED_BY_PLATFORM_SETTING],
+    });
     // the component's own value comes first: the platform's isn't read
     const own = joinFacts({
       repos: web([

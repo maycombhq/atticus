@@ -8,6 +8,7 @@ import {
   questionsRelOf,
   repoReadOf,
   type FactOf,
+  type JoinGuessFlag,
 } from "@maycombhq/core";
 import { docOf, normalizePath } from "../artifacts.js";
 import type { CriticContext, EstateReads } from "../context.js";
@@ -24,8 +25,9 @@ import { calls, rowLocator, type Call } from "./interfaces.js";
 
 /**
  * A change that rests on a map error says so (ADR 0140, P4), so a map error never becomes a
- * design error: a link the join guessed (an Interface `inferred` and flagged `joined-by-path` or
- * `joined-by-label`), a link question still open about a call the change plans, or a repo whose
+ * design error: a link the join guessed (an Interface `inferred` and flagged with one of core's
+ * `JOIN_GUESS_FLAGS`: `joined-by-path`, `-label`, `-platform-setting`, `-folder-name` or
+ * `joined-despite-conflict`), a link question still open about a call the change plans, or a repo whose
  * read is stale or incomplete. It says only what the files show: a link a person, a name, a repo
  * or a host made says nothing, and a repo never read by the assistant is left to the checks that
  * ask about what the catalog doesn't know.
@@ -33,11 +35,15 @@ import { calls, rowLocator, type Call } from "./interfaces.js";
 
 const IFACES = "interfaces.md";
 
-/** The join's guesses (core's JOINED_BY_PATH, JOINED_BY_LABEL), in words. */
-const GUESSES: Record<string, string> = {
+/** The join's guesses (core's JOIN_GUESS_FLAGS), in words. */
+const GUESSES: Record<JoinGuessFlag, string> = {
   "joined-by-path": "by path",
   "joined-by-label": "by a host's first label",
+  "joined-by-platform-setting": "by a platform-wide setting nobody set for it",
+  "joined-by-folder-name": "by the folder name of the setting that gives its host",
+  "joined-despite-conflict": "by a host or base path an open conflict disputes",
 };
+const guessOf = (f: string): f is JoinGuessFlag => Object.hasOwn(GUESSES, f);
 
 /** The repos a change's calls start or end in, and the ones it names: what its design rests on. */
 function reposOf(ctx: CriticContext): string[] {
@@ -119,7 +125,7 @@ export const changeLinksKnown: DeterministicCheckDef = {
   id: "change-links-known",
   question: "true",
   description:
-    "Every call the change plans rests on a link read from code: not one the join guessed (by path or by a host's first label), not one a link question still asks about, and not in a repo whose read is stale or incomplete.",
+    "Every call the change plans rests on a link read from code: not one the join guessed (by path, by a host's first label, by a platform-wide setting or a setting's folder name, or despite an open conflict), not one a link question still asks about, and not in a repo whose read is stale or incomplete.",
   params: z.strictObject({}),
   run(ctx) {
     const hits: Hit[] = [];
@@ -128,10 +134,7 @@ export const changeLinksKnown: DeterministicCheckDef = {
       const rec = c.record;
       const place = placeOf(ctx, c);
       // A link the join guessed.
-      const flag =
-        rec?.confidence === "inferred"
-          ? rec.flags?.find((f) => GUESSES[f] !== undefined)
-          : undefined;
+      const flag = rec?.confidence === "inferred" ? rec.flags?.find(guessOf) : undefined;
       if (rec && flag)
         hits.push({
           kind: "knowledge-gap",

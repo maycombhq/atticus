@@ -8,6 +8,7 @@ import {
   factsDirOf,
   factsRelOf,
   isAdopted,
+  isGuessedJoin,
   listQuestions,
   loadOrgPack,
   LockHeldError,
@@ -181,7 +182,7 @@ export function linkChanges(
   return {
     calls: {
       joined: joined.length,
-      inferred: joined.filter((j) => j.inferred || j.byLabel).length,
+      inferred: joined.filter(isGuessedJoin).length,
       asked: mine(join?.asks).filter((a) => !linked.has(`${a.call.repo}|${a.call.at}`)).length,
       outside: mine(join?.outside).length,
       missed: mine(join?.misses).length,

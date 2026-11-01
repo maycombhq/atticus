@@ -113,6 +113,24 @@ describe("a change's impact, as designed (V1)", () => {
     expect(got.breaks).toBe(3);
   });
 
+  it.each(["joined-by-platform-setting", "joined-by-folder-name", "joined-despite-conflict"])(
+    "a caller whose only link is flagged %s may break (J0, J1)",
+    async (flag) => {
+      const r = await root();
+      const e = await loadEstate(r, (await loadChangeContext(r)).records);
+      const records = e.records.map((x) =>
+        x.kind === "Interface" && x.from === "forge-partner"
+          ? { ...x, confidence: "inferred" as const, flags: [flag] }
+          : x,
+      );
+      const { estateOf } = await import("../src/index.js");
+      const got = changeImpact("hold-stock", draft(), estateOf(records, e.flows), owners);
+      const partner = got.items[0]!.callers.find((c) => c.component === "forge-partner")!;
+      expect(partner.verdict).toBe("may-break");
+      expect(partner.guessed).toBe(flag);
+    },
+  );
+
   it("a flow removed: every field its entry takes and returns stops crossing", async () => {
     const got = await impactOf([
       FlowDelta.parse({

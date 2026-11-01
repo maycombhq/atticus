@@ -192,6 +192,9 @@ const MAX_JOINS = 20;
 const HOW_OF_FLAG: Record<string, Join["how"]> = {
   "joined-by-path": "path",
   "joined-by-label": "label",
+  "joined-by-platform-setting": "platform-setting",
+  "joined-by-folder-name": "folder-name",
+  "joined-despite-conflict": "conflict",
   "joined-by-answer": "answer",
   "joined-by-name": "named",
   "joined-by-repo": "repo",

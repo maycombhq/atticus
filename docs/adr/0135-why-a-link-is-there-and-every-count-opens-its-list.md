@@ -16,7 +16,7 @@ When a line is wrong (the call goes to another repo, to an outside system, or is
 
 ### 1. Every Interface says how it was joined (C1 content, no schema change)
 
-`joinRecords` writes one flag on every Interface it makes, from `FactJoin.how`: `joined-by-answer` (a person's answer to a targets question), `joined-by-name` (the call's `to` names the component), `joined-by-repo` (it names the repo), `joined-by-host` (a host the manifest lists). The guesses keep their F2 flags, alone. A publish joined to its listener carries none: its `via` (`event-bus`, `mq`) says it. A gateway join is `via: gateway` with the flag of how its first hop was found.
+`joinRecords` writes one flag on every Interface it makes, from `FactJoin.how`: `joined-by-answer` (a person's answer to a targets question), `joined-by-name` (the call's `to` names the component), `joined-by-repo` (it names the repo), `joined-by-host` (a host the manifest lists). The guesses keep their flags, alone: F2's, and J0's and J1's (`joined-by-platform-setting`, `joined-by-folder-name`, `joined-despite-conflict`, ADR 0124 addendum J-guess), each with its words in Why is this linked?. A publish joined to its listener carries none: its `via` (`event-bus`, `mq`) says it. A gateway join is `via: gateway` with the flag of how its first hop was found.
 
 `flags` is the optional string array every record already has, so C1's schema is unchanged; a catalog written before this reads as `how: unknown` until the caller's repo is verified with `--write` again. `JOIN_HOW_FLAGS` (core) lists the flags that say how and nothing more — these four and A-callers' `declared-caller` — and the hierarchy never counts them as gaps; the guesses still are.
 

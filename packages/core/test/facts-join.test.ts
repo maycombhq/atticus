@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import {
   callHostOf,
+  JOIN_GUESS_FLAGS,
   JOIN_HOW_FLAGS,
   joinFacts,
   joinRecords,
@@ -676,6 +677,17 @@ describe("joinRecords: every Interface says how it was joined (C1, ADR 0135)", (
       },
     ];
     expect(flagsOf(repos)).toBeUndefined();
+  });
+
+  it("names every guess in JOIN_GUESS_FLAGS, and none of them says how", () => {
+    expect([...JOIN_GUESS_FLAGS].sort()).toEqual([
+      "joined-by-folder-name",
+      "joined-by-label",
+      "joined-by-path",
+      "joined-by-platform-setting",
+      "joined-despite-conflict",
+    ]);
+    for (const g of JOIN_GUESS_FLAGS) expect(JOIN_HOW_FLAGS.has(g)).toBe(false);
   });
 
   it("names every flag that says how in JOIN_HOW_FLAGS, apart from the guesses", () => {

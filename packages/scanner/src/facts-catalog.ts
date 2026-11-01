@@ -14,6 +14,7 @@ import {
   parseRecord,
   projectFacts,
   questionId,
+  isGuessedJoin,
   NO_TARGET,
   slugify,
   type CallersResult,
@@ -511,7 +512,8 @@ function callsOfTargetQuestion(
  * asked now by another question (a group's, or each call's own once a group splits or shrinks)
  * names the questions that replace it; one whose every call the code now answers, with no answer
  * (it names its target, or joins by the manifest's hosts and base paths), says how each joins. A
- * call joined only by a guess (by path, or a host's first label) keeps its question open, and an
+ * call joined only by a guess (by path, a host's first label, a platform-wide setting, a
+ * setting's folder name, or despite an open conflict) keeps its question open, and an
  * answered question is never listed: a person's answer stays what joins the call.
  */
 export function staleTargetQuestions(input: {
@@ -542,7 +544,7 @@ export function staleTargetQuestions(input: {
       const j = input.join?.joins.find(
         (x) => x.call.repo === input.repo && x.call.fact === c.id && x.how !== "answer",
       );
-      if (j && !j.inferred && !j.byLabel && JOINED_BY[j.how])
+      if (j && !isGuessedJoin(j) && JOINED_BY[j.how])
         return `${callWhat(c)} joins ${j.entry.component} in ${j.entry.repo}: ${JOINED_BY[j.how]}`;
       if (!j && c.to) return `${callWhat(c)} now names ${c.to} in the code`;
       return undefined;

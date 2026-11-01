@@ -55,7 +55,7 @@ The report says:
   reader left it out: read the repo again (`atticus map <repo>`), or check the line and path you
   wrote.
 - **Join precision**: of your listed calls the join linked to a repo, how many reach the repo you
-  named. A wrong one is usually a guess (joined by path, or by a host's first label).
+  named. A wrong one is usually a guess (joined by path, by a host's first label, by a platform-wide setting or a setting's folder name, or despite an open host conflict).
 - **Join recall**: of the calls that should reach a repo, how many do.
 - **The rest**: calls asked about (answer them with `atticus questions`, then
   `atticus verify --all --write`), guesses and how many were right, outside systems, calls nothing

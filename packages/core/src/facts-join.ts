@@ -158,6 +158,36 @@ export const JOINED_BY_ANSWER = "joined-by-answer";
 export const JOINED_BY_NAME = "joined-by-name";
 export const JOINED_BY_REPO = "joined-by-repo";
 export const JOINED_BY_HOST = "joined-by-host";
+/**
+ * J0, J1: the guesses a join by host can rest on, though the host itself was cited. The setting
+ * that gave the host is a platform-wide one nobody aimed at the caller (`setsForAll`), or one that
+ * is the caller's only because a folder of its file is named like it (`apps/<component>/...`); or
+ * the host or base path is an exposure fact's that an open `host-conflict` or `base-path-conflict`
+ * finding disputes. A join with one is `inferred`, flagged with it, as a join by path is.
+ */
+export const JOINED_BY_PLATFORM_SETTING = "joined-by-platform-setting";
+export const JOINED_BY_FOLDER_NAME = "joined-by-folder-name";
+export const JOINED_DESPITE_CONFLICT = "joined-despite-conflict";
+/** The guesses of J0 and J1 a join by host can carry (`FactJoin.guesses`). */
+export type JoinHostGuess =
+  typeof JOINED_BY_PLATFORM_SETTING | typeof JOINED_BY_FOLDER_NAME | typeof JOINED_DESPITE_CONFLICT;
+/**
+ * Every flag that says a link is a guess (F2, J0, J1): the only join flags that are gaps. A reader
+ * that treats a guessed link apart (the critic, a change's impact, the measure, J6) reads these.
+ */
+export const JOIN_GUESS_FLAGS = [
+  JOINED_BY_PATH,
+  JOINED_BY_LABEL,
+  JOINED_BY_PLATFORM_SETTING,
+  JOINED_BY_FOLDER_NAME,
+  JOINED_DESPITE_CONFLICT,
+] as const;
+export type JoinGuessFlag = (typeof JOIN_GUESS_FLAGS)[number];
+const GUESS_ORDER: readonly string[] = JOIN_GUESS_FLAGS;
+/** The guesses, each once, in `JOIN_GUESS_FLAGS`' order. */
+const guessList = (gs: Iterable<JoinHostGuess>): JoinHostGuess[] =>
+  [...new Set(gs)].sort((a, b) => GUESS_ORDER.indexOf(a) - GUESS_ORDER.indexOf(b));
+
 /** Flags that say how a link was made and nothing more: never a gap (C1, ADR 0135). */
 export const JOIN_HOW_FLAGS: ReadonlySet<string> = new Set([
   JOINED_BY_ANSWER,
@@ -208,6 +238,12 @@ export interface FactJoin {
    * the Interface is inferred and flagged `joined-by-label`.
    */
   byLabel?: true;
+  /**
+   * J0, J1: what the join by host (or a topic) guessed on the way, though the host was cited: a
+   * platform-wide setting, a setting's folder name, or an exposure an open finding disputes. The
+   * Interface is inferred and flagged with each. Left out when nothing was guessed.
+   */
+  guesses?: JoinHostGuess[];
   /**
    * The gateway hops the call went through to reach `entry`, in the order it meets them
    * (A-gateway, many hops in A-gateway2); `path` is what the last hop's target receives. Left
@@ -568,6 +604,13 @@ export const settingNameKey = (name: string) => name.toUpperCase().replace(/[^A-
 /** How many placeholders deep a value is followed (`${A}` set to `${B}` set to a host). */
 const MAX_PLACEHOLDER_DEPTH = 4;
 
+/** A value with its placeholders resolved: the settings it went through and what it guessed (J0). */
+interface Resolved {
+  value: string;
+  through: (Node & { fact: Config })[];
+  guesses: JoinHostGuess[];
+}
+
 /** Join every call of the estate's facts to the entry that serves it, or say why not. */
 export function joinFacts(input: JoinFactsInput): FactsJoinResult {
   const repos = [...input.repos].sort((x, y) => cmp(x.repo, y.repo));
@@ -604,15 +647,18 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
    * component, whose file sits in a folder named for it (`apps/<component>/values-prod.yaml`),
    * or whose file deploys it (a Deployment's `env` beside its name).
    */
-  const setsFor = (n: Node & { fact: Config }, owner: Node): boolean => {
+  const setsFor = (n: Node & { fact: Config }, owner: Node): "cited" | "folder" | false => {
     const names = new Set([owner.component, factIdPart(owner.repo)]);
-    if (n.fact.target && names.has(factIdPart(n.fact.target))) return true;
-    if (n.repo === owner.repo) return n.component === owner.component || !n.fact.component;
-    if (n.component === owner.component) return true;
-    const parts = n.fact.cite.file.split("/");
-    if (parts.some((p) => names.has(factIdPart(p.replace(/\.[^.]*$/, ""))))) return true;
+    if (n.fact.target && names.has(factIdPart(n.fact.target))) return "cited";
+    if (n.repo === owner.repo)
+      return n.component === owner.component || !n.fact.component ? "cited" : false;
+    if (n.component === owner.component) return "cited";
     const deployed = deploysIn.get(key(n.repo, n.fact.cite.file));
-    return !!deployed && [...names].some((x) => deployed.has(x));
+    if (deployed && [...names].some((x) => deployed.has(x))) return "cited";
+    // Only a folder named like the component: a guess (J0), though the line is cited.
+    const parts = n.fact.cite.file.split("/");
+    if (parts.some((p) => names.has(factIdPart(p.replace(/\.[^.]*$/, ""))))) return "folder";
+    return false;
   };
   /** Names a setting's file or fields could be for: every component and repo of the estate. */
   const known = new Set([...components, ...repoIds.keys()]);
@@ -638,19 +684,28 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
     owner: Node,
     seen: ReadonlySet<string>,
     depth = 0,
-  ): { value: string; through: (Node & { fact: Config })[] }[] => {
+  ): Resolved[] => {
     const v = raw?.trim();
     if (!v) return [];
     const p = placeholderIn(v);
-    if (!p) return SECRETISH.test(v) ? [] : [{ value: v, through: [] }];
+    if (!p) return SECRETISH.test(v) ? [] : [{ value: v, through: [], guesses: [] }];
     if (depth >= MAX_PLACEHOLDER_DEPTH) return [];
     const want = settingNameKey(p.name);
-    const out: { value: string; through: (Node & { fact: Config })[] }[] = [];
+    const out: Resolved[] = [];
     const named = configNodes.filter(
       (s) => !seen.has(key(s.repo, s.fact.id)) && settingNameKey(s.fact.key) === want,
     );
-    const mine = named.filter((s) => setsFor(s, owner));
-    for (const s of mine.length ? mine : named.filter((x) => setsForAll(x, owner))) {
+    const mine = named.flatMap((s) => {
+      const how = setsFor(s, owner);
+      const guess: JoinHostGuess[] = how === "folder" ? [JOINED_BY_FOLDER_NAME] : [];
+      return how ? [{ s, guess }] : [];
+    });
+    const settings: { s: Node & { fact: Config }; guess: JoinHostGuess[] }[] = mine.length
+      ? mine
+      : named
+          .filter((x) => setsForAll(x, owner))
+          .map((s) => ({ s, guess: [JOINED_BY_PLATFORM_SETTING as JoinHostGuess] }));
+    for (const { s, guess } of settings) {
       const k = key(s.repo, s.fact.id);
       for (const r of resolve(
         s.fact.value ?? s.fact.source,
@@ -658,12 +713,16 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
         new Set([...seen, k]),
         depth + 1,
       ))
-        out.push({ value: `${p.before}${r.value}${p.after}`, through: [s, ...r.through] });
+        out.push({
+          value: `${p.before}${r.value}${p.after}`,
+          through: [s, ...r.through],
+          guesses: guessList([...guess, ...r.guesses]),
+        });
     }
     if (out.length || !p.fallback) return out;
     return resolve(p.fallback, owner, seen, depth + 1).map((r) => ({
+      ...r,
       value: `${p.before}${r.value}${p.after}`,
-      through: r.through,
     }));
   };
   const uniqueEnds = (ns: readonly Node[]): FactEnd[] => {
@@ -678,10 +737,8 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
       .map(end);
   };
   /** A topic as written, or each value its placeholder resolves to, with the settings it went through. */
-  const topicsOf = (n: Node, path: string) =>
-    placeholderIn(path)
-      ? resolve(path, n, new Set())
-      : [{ value: path, through: [] as (Node & { fact: Config })[] }];
+  const topicsOf = (n: Node, path: string): Resolved[] =>
+    placeholderIn(path) ? resolve(path, n, new Set()) : [{ value: path, through: [], guesses: [] }];
   // ---- J1 (ADR 0143): where each component is reached, from the manifest's hosts and base
   // paths and from the exposure facts (a Route's, an Ingress's, a Helm value's or a proxy's
   // BasePath). Both are accepted; where they disagree the finding says so, and neither wins.
@@ -758,6 +815,9 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
     return named ? own(named.repo, named.component) : undefined;
   };
   const exposure: ExposureFinding[] = [];
+  /** The exposures an open finding disputes: their host, and their base path (J1). */
+  const hostDisputed = new Set<Exposure>();
+  const pathDisputed = new Set<Exposure>();
   for (const n of nodes) {
     if (n.fact.kind !== "deploy" || (!n.fact.host && !n.fact.basePath)) continue;
     const x = n as Exposure;
@@ -780,7 +840,8 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
     const env = x.fact.env ? ` (${x.fact.env})` : "";
     if (x.fact.host) {
       const host = x.fact.host;
-      if (g.manifestHosts.length && !g.manifestHosts.some((p) => hostMatches(p, host)))
+      if (g.manifestHosts.length && !g.manifestHosts.some((p) => hostMatches(p, host))) {
+        hostDisputed.add(x);
         exposure.push({
           reason: "host-conflict",
           exposure: end(x),
@@ -790,11 +851,13 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
           manifest: [...g.manifestHosts],
           message: `${component} is reached on ${host}${env} by ${where}, and repos.manifest.yaml lists ${g.manifestHosts.join(", ")} for ${holder}: both are joined; list the host in the manifest, or correct the one that is wrong`,
         });
+      }
       addHost(g, host, x);
     }
     if (x.fact.basePath) {
       const path = x.fact.basePath;
-      if (g.manifestBase && !sameSegments(pathSegments(g.manifestBase), pathSegments(path)))
+      if (g.manifestBase && !sameSegments(pathSegments(g.manifestBase), pathSegments(path))) {
+        pathDisputed.add(x);
         exposure.push({
           reason: "base-path-conflict",
           exposure: end(x),
@@ -804,6 +867,7 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
           manifest: [g.manifestBase],
           message: `${component} is reached under ${path}${env} by ${where}, and repos.manifest.yaml gives ${g.manifestBase} for ${holder}: both are joined; set the manifest's basePath to it, or correct the one that is wrong`,
         });
+      }
       addPath(g, path, x);
     }
   }
@@ -824,6 +888,10 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
         basePath: pathSegments(p.path),
         // The exposures the pair rests on: none for what the manifest lists itself.
         by: [...(h.listed ? [] : h.by), ...(p.listed ? [] : p.by)],
+        // J1: a host or base path only an exposure an open finding disputes gives.
+        disputed:
+          (!h.listed && h.by.some((x) => hostDisputed.has(x))) ||
+          (!p.listed && p.by.some((x) => pathDisputed.has(x))),
       })),
     );
   });
@@ -860,6 +928,7 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
         target: `${h.host} (no repo's base path starts ${path ?? "the call's path"})`,
         key: `none|${h.host}`,
         by: [] as FactEnd[],
+        disputed: () => false,
       };
     const owns = (d: (typeof declared)[number]) => (e: Node) =>
       d.component ? e.component === d.component : e.repo === d.repo;
@@ -869,6 +938,8 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
       target: targets.join(", "),
       key: targets.join("|"),
       by: uniqueEnds(all.flatMap((d) => d.by)),
+      /** Whether what joins the entry rests on a host or base path an open finding disputes. */
+      disputed: (e: Node) => all.some((d) => d.disputed && owns(d)(e)),
     };
   };
 
@@ -913,11 +984,16 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
         const entryThrough = uniqueEnds(
           heard.filter((h) => h.value === path).flatMap((h) => h.through),
         );
+        const guesses = guessList([
+          ...both.filter((s) => s.value === path).flatMap((s) => s.guesses),
+          ...heard.filter((h) => h.value === path).flatMap((h) => h.guesses),
+        ]);
         joins.push({
           call: end(call),
           entry: end(e),
           ...(through.length ? { through } : {}),
           ...(entryThrough.length ? { entryThrough } : {}),
+          ...(guesses.length ? { guesses } : {}),
           how: "topic",
           callType: f.callType,
           path,
@@ -933,7 +1009,12 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
     const keyed = configNodes.filter(
       (n) => n.repo === call.repo && !!f.base && n.fact.key === f.base,
     );
-    type Cand = { value: string; tie?: Node & { fact: Config }; through: Node[] };
+    type Cand = {
+      value: string;
+      tie?: Node & { fact: Config };
+      through: Node[];
+      guesses: JoinHostGuess[];
+    };
     const cands: Cand[] = [];
     if (!hostIn(f.host)) {
       if (placeholderIn(f.host)) cands.push(...resolve(f.host, call, new Set()));
@@ -1018,6 +1099,7 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
     let how: JoinHow | undefined;
     let byLabel = false;
     let exposedBy: FactEnd[] = [];
+    let disputed: ((e: Node) => boolean) | undefined;
     if (answer) {
       scope = named(answer);
       if (!scope) {
@@ -1035,6 +1117,7 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
       scope = { scope: d.scope, target: d.target };
       how = "host";
       exposedBy = d.by;
+      disputed = d.disputed;
     } else if (
       host &&
       outside.has(factIdPart(host.named ? `${host.host}:${host.named}` : host.host))
@@ -1085,6 +1168,14 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
     } else hits = serving(call, scope?.scope ?? (() => true), false);
     if (hits.length === 1) {
       const e = hits[0]!;
+      // J0, J1: the guesses the host rests on, when the host is what joined it.
+      const guesses =
+        how === "host" && !byLabel
+          ? guessList([
+              ...used.flatMap((x) => x.guesses),
+              ...(disputed?.(e) ? [JOINED_DESPITE_CONFLICT as JoinHostGuess] : []),
+            ])
+          : [];
       joins.push({
         call: end(call),
         entry: end(e),
@@ -1092,6 +1183,7 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
         how,
         ...(within ? { inferred: { within, ...(f.to ? { named: f.to } : {}) } } : {}),
         ...(byLabel ? { byLabel: true as const } : {}),
+        ...(guesses.length ? { guesses } : {}),
         ...(exposedBy.length ? { exposedBy } : {}),
         callType: f.callType,
         ...(f.method || e.fact.method
@@ -1178,6 +1270,7 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
     if (!isRoute(route)) continue;
     const caller = byKey.get(key(j.call.repo, j.call.fact))! as Node & { fact: Call };
     const hops: GatewayHop[] = [];
+    const walked: FactJoin[] = [];
     const seen = new Set<string>();
     let landed: FactJoin | undefined;
     let looped: { at: Node; hop: FactJoin } | undefined;
@@ -1207,6 +1300,7 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
         ...(facing ? { facing } : {}),
       });
       landed = next;
+      walked.push(next);
       route = byKey.get(key(next.entry.repo, next.entry.fact))!;
     }
     // A ring of routes: where the call ends can't be read from the facts, so it is asked.
@@ -1229,6 +1323,8 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
     const forward = byKey.get(key(landed.call.repo, landed.call.fact))!.fact as Call;
     const method = (forward.method ?? caller.fact.method ?? callee.fact.method)?.toUpperCase();
     const scopes = [...new Set(hops.flatMap((h) => h.scopes ?? []))];
+    // A hop that guessed (J0, J1) makes the whole link a guess.
+    const hopGuesses = guessList([...(j.guesses ?? []), ...walked.flatMap((h) => h.guesses ?? [])]);
     joins[i] = {
       call: j.call,
       entry: landed.entry,
@@ -1237,6 +1333,7 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
       how: j.how,
       ...(j.inferred ? { inferred: j.inferred } : {}),
       ...(j.byLabel ? { byLabel: j.byLabel } : {}),
+      ...(hopGuesses.length ? { guesses: hopGuesses } : {}),
       gateway: hops,
       ...(scopes.length ? { scopes } : {}),
       callType: j.callType,
@@ -1412,15 +1509,33 @@ export function basePathOf(e: Entry): string {
 }
 
 /**
+ * What a join guessed, as flags in `JOIN_GUESS_FLAGS`' order: by path, by a host's first label
+ * (F2), by a platform-wide setting or a setting's folder name (J0), or despite an open finding
+ * (J1). Empty for a join nobody had to guess.
+ */
+export function joinGuessesOf(
+  j: Pick<FactJoin, "inferred" | "byLabel" | "guesses">,
+): JoinGuessFlag[] {
+  const out: JoinGuessFlag[] = [];
+  if (j.inferred) out.push(JOINED_BY_PATH);
+  if (j.byLabel) out.push(JOINED_BY_LABEL);
+  return [...out, ...guessList(j.guesses ?? [])];
+}
+
+/** Whether a join guessed its callee anywhere on the way (`joinGuessesOf` gives how). */
+export const isGuessedJoin = (j: Pick<FactJoin, "inferred" | "byLabel" | "guesses">): boolean =>
+  joinGuessesOf(j).length > 0;
+
+/**
  * How a join found its callee, as its Interface's flags (C1, ADR 0135): a guess by its own F2
- * flag alone (`joined-by-path`, `joined-by-label`), any other by how it was made
+ * flags alone (`JOIN_GUESS_FLAGS`: by path or label, F2; by a platform setting or a folder name,
+ * J0; despite a conflict, J1), any other by how it was made
  * (`joined-by-answer`, `-name`, `-repo`, `-host`); a publish joined to its listener has none.
  */
-export function joinFlagsOf(j: Pick<FactJoin, "how" | "inferred" | "byLabel">): string[] {
-  const guessed = [
-    ...(j.inferred ? [JOINED_BY_PATH] : []),
-    ...(j.byLabel ? [JOINED_BY_LABEL] : []),
-  ];
+export function joinFlagsOf(
+  j: Pick<FactJoin, "how" | "inferred" | "byLabel" | "guesses">,
+): string[] {
+  const guessed = joinGuessesOf(j);
   if (guessed.length) return guessed;
   const HOW: Partial<Record<JoinHow, string>> = {
     answer: JOINED_BY_ANSWER,
@@ -1463,8 +1578,9 @@ export function joinRecords(result: FactsJoinResult, repos: readonly JoinRepo[])
   };
   const out = new Map<string, CatalogRecord>();
   const flagsOf = joinFlagsOf;
-  // F2: a guess (by path or a host's label) is inferred, however declared its ends are.
-  const guessed = (j: FactJoin): boolean => !!(j.inferred || j.byLabel);
+  // F2, J0, J1: a guess (by path, a host's first label, a platform setting, a folder name, or
+  // despite a conflict) is inferred, however declared its ends are.
+  const guessed = isGuessedJoin;
   for (const j of result.joins) {
     if (j.how === "topic") {
       // As the merge pairs a publish with a listener: via the bus, async, at the topic.
@@ -1475,7 +1591,12 @@ export function joinRecords(result: FactsJoinResult, repos: readonly JoinRepo[])
         schemaVersion: 2,
         id: j.interface,
         status: "current",
-        confidence: call.conf === "declared" && entry.conf === "declared" ? "verified" : "inferred",
+        confidence:
+          call.conf === "declared" && entry.conf === "declared" && !guessed(j)
+            ? "verified"
+            : "inferred",
+        // A publish carries no flag of how; a topic a guessed setting gave carries the guess (J0).
+        ...(flagsOf(j).length ? { flags: flagsOf(j) } : {}),
         from: j.call.component,
         to: j.entry.component,
         endpoint: entryEndpointId(entry, j.entry.component),

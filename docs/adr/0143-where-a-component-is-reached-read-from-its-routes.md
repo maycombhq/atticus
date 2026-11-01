@@ -48,7 +48,7 @@ A Route written `host: {{ .Values.route.host }}` is the Helm analogue of J0's `$
 - `base-path-conflict`: the manifest gives a base path and the exposure another;
 - `no-component`: `exposes` names nothing of the estate, so nothing is joined by it.
 
-In a conflict **both** values are joined: the manifest is a person's configuration and the Route is code, and neither may quietly win (a document never overrides a fact verified from code, and a fact doesn't rewrite a person's word). `atticus verify <repo> --write` prints each finding (`Exposure: …`) and writes them under `exposure` in `<repo>.verify.yaml`, for the deploy repo and for the component's repo; a person settles it by fixing the manifest or the code.
+In a conflict **both** values are joined: the manifest is a person's configuration and the Route is code, and neither may quietly win (a document never overrides a fact verified from code, and a fact doesn't rewrite a person's word). A link joined by the disputed value is a guess until the finding is settled: its Interface is `inferred` and flagged `joined-despite-conflict` (ADR 0124 addendum J-guess); a link by the manifest's own host and base path stays verified. `atticus verify <repo> --write` prints each finding (`Exposure: …`) and writes them under `exposure` in `<repo>.verify.yaml`, for the deploy repo and for the component's repo; a person settles it by fixing the manifest or the code.
 
 `joinAbout` writes a join again with the repo whose exposure it cites, as J0 does for a setting, so a changed Route moves the link at its repo's `verify --write`.
 

@@ -3,6 +3,8 @@ import {
   Fact,
   FACTS_SCHEMA_VERSION,
   interfaceId,
+  JOINED_BY_HOST,
+  JOINED_DESPITE_CONFLICT,
   joinFacts,
   joinRecords,
   type JoinRepo,
@@ -303,5 +305,29 @@ describe("J1: the join takes hosts and base paths from exposure facts as well as
         side: "callee",
       }),
     );
+  });
+  it("marks a join that took a host or base path an open conflict disputes inferred and flagged (J1)", () => {
+    const records = joinRecords(out, estate());
+    const iface = (call: string) => {
+      const id = joinOf(out, call)[0]!.interface;
+      return records.find((r) => r.kind === "Interface" && r.id === id) as {
+        confidence: string;
+        flags?: string[];
+      };
+    };
+    // the Route's host the manifest doesn't list, and the Route's base path it disagrees with
+    expect(joinOf(out, "c-balance-route")[0]!.guesses).toEqual([JOINED_DESPITE_CONFLICT]);
+    expect(iface("c-balance-route")).toMatchObject({
+      confidence: "inferred",
+      flags: [JOINED_DESPITE_CONFLICT],
+    });
+    expect(iface("c-limit-route")).toMatchObject({
+      confidence: "inferred",
+      flags: [JOINED_DESPITE_CONFLICT],
+    });
+    // the manifest's own host and base path are no guess, nor an exposure nobody disputes
+    for (const c of ["c-balance-manifest", "c-limit-manifest", "c-account"])
+      expect(joinOf(out, c)[0]!.guesses, c).toBeUndefined();
+    expect(iface("c-account")).toMatchObject({ confidence: "verified", flags: [JOINED_BY_HOST] });
   });
 });
