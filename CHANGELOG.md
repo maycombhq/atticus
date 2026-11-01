@@ -4,6 +4,11 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## 2.0.0-beta.10 (2026-10-31)
 
+### Corrections without git, the audit answered in the app, and the outside systems (ADR 0149)
+
+- After Correct this or This link is wrong, the app lists the commands to run, each with a copy button (`atticus verify <repo> --write`, then the branch, the exact files to add, the commit, the push and the pull request for your Git host), and what that write will change in the facts, the links and the catalog, worked out by the command's own checks without writing anything. The app still runs nothing.
+- Map › Trust's Sample audit can be answered in the app: the same seed draws the same sample as `atticus verify audit`, and the answers go to the same `facts/<repo>.audit.yaml`. Map › Outside systems has a page per vendor or other team's system: who calls it, its spec's operations, the calls matching none, its questions, and how to add a spec. Local API 2.42.0, additive.
+
 ### Contract files and traffic as evidence for links (ADR 0151)
 
 - `atticus verify <repo> --write` reads the repo's Pact files and the OpenAPI specs it keeps for the APIs it calls, flags each link they bear out `confirmed-by-contract` (citing the line), and lists the requests that name another provider, or that no link carries, in its output and the verify report. A guessed link stays a guess.
