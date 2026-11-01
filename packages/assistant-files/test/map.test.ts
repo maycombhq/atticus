@@ -164,9 +164,10 @@ describe("lean batch prompts: the core and the topic rules a batch needs (ADR 01
     // and when an environment variable a deployment sets was given its key and target (J0),
     // and when a deploy fact was told where its component is reached: host, base path, the
     // values file a templated host comes from, and the component a deploy repo's Route exposes
-    // (J1, ADR 0143).
+    // (J1, ADR 0143), and when a field was told to list an enum's values in its `type` and to
+    // record headers as fields, and a flow's error path to name its HTTP status (V3, ADR 0142).
     expect(createHash("sha256").update(FACT_RULES).digest("hex")).toBe(
-      "c5ca5fbbcc6164a60d09c17bc13403c911a5a0bf9a11fb99f5d003d1ec1ea0d8",
+      "66138d8fed8dfdb0e7a67aa19469567a834c54134c6844e92873a6356efd0ece",
     );
     expect(FACT_RULES).toBe(factRulesFor());
     expect(mapCommand().body).toContain(FACT_RULES);

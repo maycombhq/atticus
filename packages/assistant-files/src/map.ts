@@ -310,7 +310,7 @@ export const FACT_RULE_PARTS: readonly (readonly RulePart[])[] = [
   [
     {
       when: ["backend", "frontend", "data", "protocols"],
-      text: "A field fact belongs to the fact it crosses (`owner`): an entry's or call's `request` or `response`, a message, a store's column (`side: column`).",
+      text: "A field fact belongs to the fact it crosses (`owner`): an entry's or call's `request` or `response`, a message, a store's column (`side: column`). A header is a `request` or `response` field named as sent (`Idempotency-Key`); an enum's `type` lists its values (`\"A\" | \"B\"`).",
     },
     {
       when: ["data"],
@@ -361,7 +361,7 @@ export const FACT_RULE_PARTS: readonly (readonly RulePart[])[] = [
   [
     {
       when: ["flows"],
-      text: "A `flow` fact follows one journey from where it starts to its outcome, step by step in order. Like every fact it has its own `cite`: the line that starts it, as its `entry` fact cites it (the route's annotation, the listener, the screen). It starts where something triggers it: a button or form in a UI (its `entry` is the screen's entry fact, the first step cites the handler the button calls), a page load, an entry another system calls, a listener or a job. Each step is one thing the code does: `validate`, `lookup` or `read`, `transform`, `write`, `call-out`, `publish`, `respond`, each citing the line that does it (the client's HTTP call, the mapper, the repository's write, the schema rule that validates), with the calling line in `cite.with` when they differ, and with `ref` naming the fact it touches (a call-out's is the call fact it makes, or, for a call through a cloud SDK with no path, the config fact of the client's setting; a publish's is the `event-topic` or `mq-queue` call it publishes; a call-out or publish step without one is rejected); each error path goes in `errors`.",
+      text: "A `flow` fact follows one journey from where it starts to its outcome, step by step in order. Like every fact it has its own `cite`: the line that starts it, as its `entry` fact cites it (the route's annotation, the listener, the screen). It starts where something triggers it: a button or form in a UI (its `entry` is the screen's entry fact, the first step cites the handler the button calls), a page load, an entry another system calls, a listener or a job. Each step is one thing the code does: `validate`, `lookup` or `read`, `transform`, `write`, `call-out`, `publish`, `respond`, each citing the line that does it (the client's HTTP call, the mapper, the repository's write, the schema rule that validates), with the calling line in `cite.with` when they differ, and with `ref` naming the fact it touches (a call-out's is the call fact it makes, or, for a call through a cloud SDK with no path, the config fact of the client's setting; a publish's is the `event-topic` or `mq-queue` call it publishes; a call-out or publish step without one is rejected); each error path goes in `errors`, `then` naming its HTTP status (`409`) if it sets one.",
     },
     {
       when: ["backend"],
