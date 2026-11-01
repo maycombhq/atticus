@@ -4,6 +4,16 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## 2.0.0-beta.10 (2026-10-31)
 
+### Sample audit (ADR 0148)
+
+- `atticus verify audit <repo> [--size n] [--seed s]` draws a reproducible random sample of a repo's kept facts and its links (with how each was joined), shows each with its cited lines and asks right, wrong or unsure, or takes the answers from `--answers` or `--right`/`--wrong`/`--unsure`; the answers go to `facts/<repo>.audit.yaml`, a person's record for a pull request. A wrong one points to Correct this or This link is wrong.
+- `atticus verify audit <repo> --report` (and `--report` alone for the estate) gives precision per kind of fact and for links, with the sample size and a 95% interval. Map › Trust shows it, and a fact answered right shows as `verified: sample` on the Map (C4 2.37.0).
+
+### Stack helpers stay optional
+
+- The framework models, the gateway walk, the built-in readers and the verifier's per-framework naming rules can each be switched off for a run with `ATTICUS_HELPERS_OFF` (a comma list, or `all`); docs/guide/frameworks.md says what the read does without each.
+- A test verifies and joins the bank-shaped estate with every helper off: every fact is kept, and every link lands but the two that stop at their gateway proxy.
+
 ### House conventions in the org pack, and frameworks taught before the first map (ADR 0147)
 
 - New optional `org-pack/conventions.yaml`: the API spec folders, gateway bundle folders, facing words, your own framework entries, the folders coverage and verify's skipped-lines note leave out, and your house's package prefixes. Each defaults to what Atticus used before.

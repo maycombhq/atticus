@@ -994,3 +994,8 @@ The gateway batch's instructions go from about 7,401 characters (~1,850 tokens) 
 ## Addendum (A-taught, ADR 0147): house packages warned of before the first read
 
 - Before the first read, `atticus map --estimate` and `atticus next` warn of house packages the repo imports (the org pack's `conventions.yaml` `housePrefixes`) that no framework file's `packages` covers, with the learn command. Import lines only; nothing is a fact and nothing is written. A-framework: verify's framework table may be extended by `conventions.yaml` `frameworks`, looked at first.
+
+## Addendum (G4, ADR 0148): stack helpers optional, and the sample mark
+
+- The framework models, the gateway walk (A-gateway, A-gateway2), the built-in readers (§3) and the derived names (A-derived) are each optional, switched off by an option on the pure function or by `ATTICUS_HELPERS_OFF` for a run. Without them the facts are still kept; what is lost is pinned in `packages/scanner/test/stack-helpers-off.test.ts`.
+- `verified: sample` (ADR 0148) is given by the facts API from a person's sample audit, never written into the facts file.
