@@ -3,7 +3,9 @@ import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parse } from "yaml";
 import {
+  catalogDirOf,
   changesDirOf,
+  isAdopted,
   factsDirOf,
   factsFileOf,
   factsRelOf,
@@ -23,6 +25,8 @@ import { readKnowledge, snapshotDates, workingDays } from "@maycombhq/knowledge"
 import { metarepoOpenSpec, openspecProgress, readNeeds } from "@maycombhq/planner";
 import { readChangeFiles } from "@maycombhq/naysayer";
 import { readChangeTasks } from "@maycombhq/speckit";
+import { readCatalog } from "@maycombhq/scanner";
+import { baseClonePath } from "@maycombhq/workspace";
 import type { Output } from "./commands.js";
 import { onboardingView } from "./ui-api-onboarding.js";
 import {
@@ -32,7 +36,18 @@ import {
   whatRunsWhere,
 } from "@maycombhq/assistant-files";
 import { isMetarepo, notMetarepo } from "./metarepo-guard.js";
-import { partOfWords, readPlanProgress, readPlanRelOf } from "./map-parts.js";
+import {
+  loadReadPlan,
+  partOfWords,
+  readCostOf,
+  readCostWords,
+  readPlanProgress,
+  readPlanRelOf,
+  tokensWords,
+  type ReadCost,
+} from "./map-parts.js";
+import { onboardingQueue, queueWhy, reasonOf, type QueueReason } from "./onboarding-queue.js";
+import { catalogSources, headFromFiles } from "./ui-api-trust.js";
 import { repoIdKey } from "./repo-ids.js";
 
 /**
@@ -88,6 +103,18 @@ export interface RepoState {
     next?: { part: number; paths: string[] };
     file: string;
   };
+  /**
+   * ADR 0141 (P6): where it sits in the onboarding queue (0 first) and why, for a repo not mapped
+   * yet: reads under way, then the repos the read repos call, then gateways, then the rest.
+   */
+  queue?: { order: number; reason: QueueReason; why: string };
+  /** ADR 0141: what its read is estimated to cost and what it took, as its read plan records. */
+  cost?: ReadCost;
+  /**
+   * ADR 0141: a mapped repo whose clone has moved past its facts' commit (the verifier's report
+   * against the clone's HEAD, read from its .git files): it is read again.
+   */
+  stale?: { facts: string; head: string };
   /**
    * What it is, in a person's words (ADR 0128): `none` when nothing says, `draft` when the
    * assistant wrote one and nobody has confirmed it, `said` when a person did.
@@ -178,6 +205,33 @@ async function verifyState(root: string, repo: string): Promise<RepoState["verif
   return "done";
 }
 
+/**
+ * ADR 0141: a mapped repo's facts' commit (the verifier's report) against its clone's HEAD, read
+ * from the clone's .git files (no git runs); undefined when they are the same or either is unknown.
+ */
+async function staleOf(root: string, repo: string): Promise<RepoState["stale"]> {
+  const text = await readFile(join(factsDirOf(root), `${repo}.verify.yaml`), "utf8").catch(
+    () => undefined,
+  );
+  let facts: string | undefined;
+  try {
+    const c = (parse(text ?? "") as { commit?: unknown } | null)?.commit;
+    if (typeof c === "string" && /^[0-9a-f]{7,64}$/.test(c)) facts = c;
+  } catch {
+    return undefined;
+  }
+  if (!facts) return undefined;
+  let dir: string;
+  try {
+    dir = isAdopted(root) ? root : baseClonePath(root, repo);
+  } catch {
+    return undefined;
+  }
+  const head = await headFromFiles(dir);
+  if (!head || head.startsWith(facts) || facts.startsWith(head)) return undefined;
+  return { facts, head };
+}
+
 /** Read everything the steps depend on. Files that don't read are problems, never a crash. */
 export async function readNextState(root: string): Promise<NextState> {
   const view = await onboardingView(root);
@@ -187,6 +241,11 @@ export async function readNextState(root: string): Promise<NextState> {
   const factIds = (await readdir(factsDirOf(root)).catch(() => [] as string[]))
     .map((n) => factsFileOf(n))
     .flatMap((f) => (f?.facts ? [f.repo] : []));
+  // ADR 0141: a repo is mapped once the catalog holds records from its facts (verify --write),
+  // whatever its spec header says: a header an earlier draft left keeps its own template.
+  const fromFacts = catalogSources(
+    (await readCatalog(join(catalogDirOf(root), "generated"), { cacheRoot: root })).records,
+  );
   for (const r of view.repos) {
     const hasFacts = existsSync(join(factsDirOf(root), `${r.id}.jsonl`));
     const near = hasFacts
@@ -200,6 +259,11 @@ export async function readNextState(root: string): Promise<NextState> {
     const findings = await readSpecFindings(root, r.id);
     // A-ledger: the parts a repo is read in, and which the facts account for.
     const plan = await readPlanProgress(root, r.id);
+    // ADR 0141: what the read is estimated to cost, and what it took.
+    const planFile = await loadReadPlan(root, r.id);
+    const mapped =
+      !!spec.header?.template.startsWith("facts@") || (fromFacts.get(r.id)?.facts ?? 0) > 0;
+    const stale = mapped && hasFacts ? await staleOf(root, r.id) : undefined;
     repos.push({
       id: r.id,
       cloned: r.cloned,
@@ -210,7 +274,9 @@ export async function readNextState(root: string): Promise<NextState> {
       checked: !!findings && findings.draftedAt === spec.header?.drafted?.at,
       findings: findings?.findings.filter((f) => !f.question).length ?? 0,
       described: !r.description ? "none" : r.description.trust === "suggested" ? "draft" : "said",
-      ...(spec.header?.template.startsWith("facts@") ? { facts: true } : {}),
+      ...(mapped ? { facts: true } : {}),
+      ...(stale ? { stale } : {}),
+      ...(planFile ? { cost: readCostOf(planFile) } : {}),
       ...(hasFacts ? { read: true } : {}),
       ...(near.length ? { nearFacts: near } : {}),
       ...(plan
@@ -223,6 +289,22 @@ export async function readNextState(root: string): Promise<NextState> {
             },
           }
         : {}),
+    });
+  }
+  // ADR 0141 (P6): the repos not mapped yet, in the order that lands links early.
+  const waiting = repos.filter((r) => r.cloned && !r.facts && !r.scanned);
+  if (waiting.length) {
+    const q = await onboardingQueue(
+      root,
+      waiting.map((r) => ({
+        repo: r.id,
+        ...(r.read || (r.readPlan?.done ?? 0) > 0 ? { started: true } : {}),
+      })),
+    );
+    problems.push(...q.problems);
+    q.queue.forEach((x, order) => {
+      const r = repos.find((y) => y.id === x.repo)!;
+      r.queue = { order, reason: reasonOf(x), why: queueWhy(x) };
     });
   }
   const open = await listQuestions(root, { state: "open" });
@@ -629,6 +711,13 @@ function nearFactsWords(r: RepoState): string {
     .join("");
 }
 
+/** ADR 0141: a repo's estimated cost for its map step, when --estimate recorded one. */
+function costWords(r: RepoState): string {
+  const e = r.cost?.estimated;
+  if (!e) return "";
+  return ` Estimated about ${tokensWords(e.tokens)} tokens in ${e.sessions} session${e.sessions === 1 ? "" : "s"} (atticus map ${r.id} --estimate; an estimate, not a meter).`;
+}
+
 export function nextSteps(s: NextState): NextStep[] {
   const out: NextStep[] = [];
   // The change in hand first (a live run, 2026-10-25, was pointed at eleven repo questions while
@@ -658,7 +747,11 @@ export function nextSteps(s: NextState): NextStep[] {
   // repo neither read nor scanned is read by the assistant (/atticus-map) and its facts written
   // with verify --write; the reader path (survey, scan, verify, spec) goes on only for a repo a
   // scan already read.
-  const unread = s.repos.filter((r) => r.cloned && !r.facts && !r.scanned);
+  // ADR 0141 (P6): in the onboarding queue's order (callees and gateways first), each saying why
+  // it sits there and what its read is estimated to cost.
+  const unread = s.repos
+    .filter((r) => r.cloned && !r.facts && !r.scanned)
+    .sort((a, b) => (a.queue?.order ?? Infinity) - (b.queue?.order ?? Infinity));
   for (const r of unread)
     out.push(
       r.read
@@ -678,10 +771,25 @@ export function nextSteps(s: NextState): NextStep[] {
               (r.readPlan?.next
                 ? `${r.id} is read in ${r.readPlan.total} parts (${r.readPlan.file}): ${partOfWords({ part: r.readPlan.next.part, total: r.readPlan.total })} is next, ${r.readPlan.done === 0 ? "none" : r.readPlan.done} ${r.readPlan.done === 1 ? "is" : "are"} read (${r.readPlan.next.paths.join(", ")}). Your assistant reads the part and writes its facts, each citing its line.`
                 : `${r.id} isn't read yet: your assistant reads it and writes its facts, each citing its line, and atticus verify ${r.id} checks them.`) +
+              // Only a reason that moved it up the queue is worth a sentence here; --queue says all.
+              (r.queue && (r.queue.reason === "called" || r.queue.reason === "gateway")
+                ? ` ${r.queue.why}`
+                : "") +
+              costWords(r) +
               nearFactsWords(r),
             repo: r.id,
           },
     );
+  // ADR 0141: a mapped repo is never read again unless its clone moved past its facts' commit.
+  for (const r of s.repos.filter((x) => x.cloned && x.facts && x.stale))
+    out.push({
+      step: "reread",
+      command: `atticus map ${r.id}`,
+      slash: `/atticus-map ${r.id}`,
+      where: METAREPO,
+      why: `${r.id}'s clone moved past its facts' commit (facts ${r.stale!.facts.slice(0, 12)}, clone ${r.stale!.head.slice(0, 12)}): atticus estate fresh says how many facts to read again; your assistant reads only the files that changed.`,
+      repo: r.id,
+    });
   const cloned = s.repos.filter((r) => r.cloned && !r.facts && r.scanned);
   for (const r of cloned.filter((x) => !x.settings))
     out.push({
@@ -836,7 +944,7 @@ export function nextSteps(s: NextState): NextStep[] {
 
 export async function nextCommand(
   root: string,
-  o: { json?: boolean; all?: boolean },
+  o: { json?: boolean; all?: boolean; queue?: boolean },
   io: Output,
 ): Promise<number> {
   // Outside a metarepo, there is no next step to read: say how to make or open one (ADR 0119).
@@ -845,6 +953,7 @@ export async function nextCommand(
     return 2;
   }
   const state = await readNextState(root);
+  if (o.queue) return queueOut(state, o, io);
   const steps = nextSteps(state);
   const runtime = await loadOrgPack(orgPackDirOf(root))
     .then((op) => op.runtime)
@@ -914,5 +1023,67 @@ export async function nextCommand(
     if (sl) io.out(`   ${sl}`);
     io.out(`   ${x.why}`);
   });
+  return 0;
+}
+
+/**
+ * atticus next --queue (ADR 0141, P6): the repos to read, in the onboarding queue's order, each
+ * with why it sits there and its estimated cost; then the repos read, each with what its read
+ * took as its read plan records it. Estimates and reports are said for what they are.
+ */
+function queueOut(s: NextState, o: { json?: boolean }, io: Output): number {
+  const waiting = s.repos.filter((r) => r.queue).sort((a, b) => a.queue!.order - b.queue!.order);
+  const read = s.repos.filter((r) => r.facts);
+  if (o.json) {
+    io.out(
+      JSON.stringify(
+        {
+          queue: waiting.map((r) => ({
+            repo: r.id,
+            order: r.queue!.order + 1,
+            reason: r.queue!.reason,
+            why: r.queue!.why,
+            command: `atticus map ${r.id}`,
+            slash: `/atticus-map ${r.id}`,
+            ...(r.cost ? { cost: r.cost } : {}),
+          })),
+          read: read.map((r) => ({
+            repo: r.id,
+            ...(r.cost ? { cost: r.cost } : {}),
+            ...(r.stale ? { stale: r.stale } : {}),
+          })),
+          problems: s.problems,
+        },
+        null,
+        2,
+      ),
+    );
+    return 0;
+  }
+  for (const p of s.problems) io.err(`Couldn't read ${p.file}: ${p.message}`);
+  io.out(
+    waiting.length
+      ? `${plural(waiting.length, "repo")} to read, in the order that lands links early (callees and gateways first):`
+      : "No repo is waiting to be read.",
+  );
+  waiting.forEach((r, i) =>
+    io.out(
+      `  ${i + 1}. ${r.id}: ${r.queue!.why} ${
+        r.cost?.estimated
+          ? `Cost: ${readCostWords(r.cost)}.`
+          : `Cost: not estimated yet (atticus map ${r.id} --estimate).`
+      }`,
+    ),
+  );
+  if (read.length) {
+    io.out(`${plural(read.length, "repo")} read:`);
+    for (const r of read)
+      io.out(
+        `  ${r.id}: ${r.cost ? readCostWords(r.cost) || "no cost on file" : "no cost on file (read before Atticus recorded one)"}${r.stale ? `; its clone moved past its facts' commit: atticus estate fresh` : ""}`,
+      );
+  }
+  io.out(
+    "Tokens estimated are counted from the source; reported ones are your assistant's word (atticus map <repo> --spent); Atticus meters neither.",
+  );
   return 0;
 }

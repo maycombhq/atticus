@@ -24,6 +24,7 @@ import {
   type QuestionProblem,
 } from "./facts-files.js";
 import { NoRoomError, roomGuard, streamFacts } from "./memory-room.js";
+import { recordReadProgress } from "./map-parts.js";
 
 /**
  * atticus verify <repo> (ADR 0124): check the facts the assistant wrote for a repo against the
@@ -264,6 +265,20 @@ export async function verifyCommand(
   );
   const failed =
     report.rejected.length + qProblems.length + badLines.length + reviewedBad.length > 0;
+  // ADR 0141: the parts (or the one-session read) the facts now account for are stamped in the
+  // read plan, so what a read took is on file; a stamp is never moved.
+  await recordReadProgress(root, repo, {
+    commit,
+    kept: report.accepted.length,
+    ...(o.now
+      ? {
+          now: o
+            .now()
+            .toISOString()
+            .replace(/\.\d{3}Z$/, "Z"),
+        }
+      : {}),
+  });
 
   // --write (ADR 0124, A3b): the kept facts become the catalog, only when none was rejected,
   // so a half-fixed read never replaces the repo's records.
