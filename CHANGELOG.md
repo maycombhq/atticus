@@ -4,6 +4,11 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## 2.0.0-beta.10 (2026-10-31)
 
+### Upgrade everyone who shares the metarepo together
+
+- Facts written by beta.10 can carry new deploy fields (`host`, `basePath`, `exposes`; ADR 0143), which beta.9 and older reject, and `roles.yaml` moves to version 2 with `atticus upgrade`. Upgrade every teammate who reads the same `facts/` folder at once.
+- A key in the new `org-pack/conventions.yaml` replaces its default list whole: to add a folder to `notProductFolders`, list the defaults with it (docs/guide/admin.md, "Your house's conventions"), or tests come back into coverage.
+
 ### Sample audit (ADR 0148)
 
 - `atticus verify audit <repo> [--size n] [--seed s]` draws a reproducible random sample of a repo's kept facts and its links (with how each was joined), shows each with its cited lines and asks right, wrong or unsure, or takes the answers from `--answers` or `--right`/`--wrong`/`--unsure`; the answers go to `facts/<repo>.audit.yaml`, a person's record for a pull request. A wrong one points to Correct this or This link is wrong.
