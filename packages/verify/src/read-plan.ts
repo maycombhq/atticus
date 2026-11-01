@@ -235,6 +235,23 @@ export function sessionTokensFor(limit: number | undefined): number {
   return limit && limit > 0 ? Math.floor(limit * SESSION_SHARE) : SESSION_TOKENS;
 }
 
+/**
+ * R4: the lines two neighbouring ranges of a big file share, so nothing is cut at a boundary:
+ * 20, or 2% of the range when that is more, but never more than a fifth of it (a range of few,
+ * long lines would otherwise pass the room). A range is done as any is: a kept fact cites a line
+ * in it, or the reviewed file names it.
+ */
+export const RANGE_OVERLAP_LINES = 20;
+export const RANGE_OVERLAP_SHARE = 0.02;
+
+/** The lines a range of `each` lines shares with the one before it. */
+export function rangeOverlap(each: number): number {
+  return Math.min(
+    Math.floor(each / 5),
+    Math.max(RANGE_OVERLAP_LINES, Math.ceil(RANGE_OVERLAP_SHARE * each)),
+  );
+}
+
 /** One part of a big repo's read: globs over its files, in path order. */
 export interface ReadPart {
   paths: string[];
@@ -289,13 +306,18 @@ export function planParts(files: readonly FileTokens[], room = SESSION_TOKENS): 
   for (const f of big) {
     const n = Math.min(f.lines!, Math.ceil(f.tokens / (0.8 * room)));
     const each = Math.ceil(f.lines! / n);
-    for (let from = 1, i = 0; from <= f.lines!; from += each, i++) {
-      const to = Math.min(f.lines!, from + each - 1);
+    // R4: each range after the first starts a few lines before the last one ended, so a block
+    // cut at the boundary is whole in one of them. Its tokens count those lines once more, and
+    // nothing else: the range is still its own lines' share of the file.
+    const overlap = rangeOverlap(each);
+    for (let start = 1, i = 0; start <= f.lines!; start += each, i++) {
+      const from = i === 0 ? 1 : start - overlap;
+      const to = Math.min(f.lines!, start + each - 1);
       ranges.push({
         glob: `${f.path}#L${from}-L${to}`,
         files: i === 0 ? 1 : 0,
         tokens: Math.ceil((f.tokens * (to - from + 1)) / f.lines!),
-        key: `${f.path}\u0000${String(from).padStart(12, "0")}`,
+        key: `${f.path}\u0000${String(start).padStart(12, "0")}`,
       });
     }
   }
