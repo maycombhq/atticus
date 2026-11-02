@@ -5,6 +5,8 @@ import {
   orgPackDirOf,
   slugify,
   TARGETS_STEP_ID,
+  topicOfQuestion,
+  TOPICS_STEP_ID,
   type Question,
 } from "@maycombhq/core";
 import { readdir } from "node:fs/promises";
@@ -26,7 +28,15 @@ export type TargetAnswer =
       text: string;
       pick: TargetPick | undefined;
       /** The system written into the profile, when one was. */
-      system?: { id: string; profile: string; added: boolean; boundary: AddSystem; owner?: string };
+      system?: {
+        id: string;
+        profile: string;
+        added: boolean;
+        boundary: AddSystem;
+        owner?: string;
+        /** A topics answer: the topic written into the system's aliases. */
+        aliased?: string[];
+      };
     }
   | {
       problem: string;
@@ -58,9 +68,10 @@ export async function targetAnswerOf(
   target: string,
   o: { addSystem?: AddSystem; name?: string } = {},
 ): Promise<TargetAnswer> {
-  if (q.askedBy.step !== TARGETS_STEP_ID)
+  const topic = q.askedBy.step === TOPICS_STEP_ID ? topicOfQuestion(q) : undefined;
+  if (q.askedBy.step !== TARGETS_STEP_ID && !topic)
     return {
-      problem: `${q.id} doesn't ask where a call goes, so it takes no --target: answer it with --option <n> or --text.`,
+      problem: `${q.id} doesn't ask where a call goes or who owns a topic, so it takes no --target: answer it with --option <n> or --text.`,
     };
   const op = await loadOrgPack(orgPackDirOf(root));
   const picks = targetPicker(op, await readRepos(root));
@@ -72,7 +83,11 @@ export async function targetAnswerOf(
     (byComponent ? picks.find((p) => p.kind === "repo" && p.id === byComponent.id) : undefined);
   const add = async (s: { id: string; name: string; boundary: AddSystem; owner?: string }) => {
     try {
-      const r = await addProfileSystem(root, q.repo, s);
+      // A topics answer puts the topic among the system's aliases (ADR 0162).
+      const r = await addProfileSystem(root, q.repo, {
+        ...s,
+        ...(topic ? { aliases: [topic] } : {}),
+      });
       return {
         text: r.id,
         pick,
@@ -82,7 +97,22 @@ export async function targetAnswerOf(
       return { problem: (e as Error).message.split("\n")[0]! };
     }
   };
+  if (pick?.kind === "repo" && topic)
+    return {
+      problem: `${pick.id} is a repo of the estate: its own facts say what it publishes and listens on. Read it (/atticus-map ${pick.id}, then atticus verify ${pick.id} --write) and ${topic} joins it; answer "None of these" until then.`,
+    };
   if (pick?.kind === "repo") return { text: byComponent?.component ?? pick.id, pick };
+  const systemOf = (id: string) =>
+    op.profiles.flatMap((p) => p.profile?.systems ?? []).find((s) => s.id === id)!;
+  if (pick?.kind === "system" && topic) {
+    const s = systemOf(pick.id);
+    return add({
+      id: s.id,
+      name: s.name,
+      boundary: s.boundary === "vendor" ? "vendor" : "internal",
+      ...(s.owner ? { owner: s.owner } : {}),
+    });
+  }
   if (pick?.kind === "system") return { text: pick.id, pick };
   if (pick?.kind === "team") {
     const theirs = op.profiles
@@ -90,6 +120,15 @@ export async function targetAnswerOf(
       .filter((s) => s.owner === pick.id)
       .map((s) => s.id)
       .sort();
+    if (theirs.length && topic) {
+      const s = systemOf(theirs[0]!);
+      return add({
+        id: s.id,
+        name: s.name,
+        boundary: s.boundary === "vendor" ? "vendor" : "internal",
+        owner: pick.id,
+      });
+    }
     if (theirs.length) return { text: theirs[0]!, pick };
     const adds = pick.adds!;
     if (o.addSystem) return add({ ...adds, ...(o.name ? { name: o.name } : {}) });

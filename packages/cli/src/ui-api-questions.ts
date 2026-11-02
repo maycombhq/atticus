@@ -7,6 +7,7 @@ import {
   QuestionState,
   readQuestion,
   TARGETS_STEP_ID,
+  TOPICS_STEP_ID,
 } from "@maycombhq/core";
 import {
   badRequest,
@@ -67,11 +68,11 @@ export function uiQuestionRoutes(r: Router, ctx: ServerContext, deps: { now?: ()
       .add("GET", "/api/questions/{id}/targets", async ({ params }) => {
         const q = await readQuestion(ctx.root, params.id!).catch(() => undefined);
         if (!q) throw notFound(`There is no question ${params.id}.`);
-        if (q.askedBy.step !== TARGETS_STEP_ID)
+        if (q.askedBy.step !== TARGETS_STEP_ID && q.askedBy.step !== TOPICS_STEP_ID)
           throw new HttpError(
             422,
-            "That question doesn't ask where a call goes",
-            `${q.id} isn't a targets question, so it has no picker.`,
+            "That question doesn't ask where a call goes or who owns a topic",
+            `${q.id} isn't a targets or topics question, so it has no picker.`,
           );
         const { pickerOf } = await import("./target-answer.js");
         return { status: 200, body: { picks: await pickerOf(ctx.root) } };

@@ -23,6 +23,7 @@ import {
   readRepoSpec,
   orgPackRelOf,
   reopenQuestion,
+  TOPICS_STEP_ID,
   retireQuestion,
   removeFlow,
   SPEC_HEADER_SCHEMA_VERSION,
@@ -60,6 +61,7 @@ import {
   targetQuestionFor,
   targetsFromAnswers,
   TARGETS_STEP,
+  topicQuestionDrafts,
   writeCatalog,
   type CatalogDiff,
 } from "@maycombhq/scanner";
@@ -651,6 +653,23 @@ export async function writeFactsIntoCatalog(
             : named.has(t.factId)
               ? `A call names a target the estate doesn't have, and more than one entry serves it: asked ${q.id}: ${q.question} Answer it: atticus questions answer ${q.id} --option <n>, then ${rerun}.`
               : `A call names no target: asked ${q.id}: ${q.question} Answer it: atticus questions answer ${q.id} --option <n>, then ${rerun}.`,
+        );
+      }
+    }
+    // ADR 0162 (F8): a topic or queue no estate repo serves the other side of, that no system
+    // of the profile names: who owns it (a system or a team, from the picker).
+    for (const t of topicQuestionDrafts(repo, result.records)) {
+      const r = await raiseQuestions(root, [t.draft], {
+        step: TOPICS_STEP_ID,
+        repo,
+        command: o.command,
+        rerun,
+        at,
+      });
+      for (const q of r.raised) {
+        raised.push(q);
+        lines.push(
+          `No repo of the estate serves the other side of ${t.topic}: asked ${q.id}: ${q.question} If another team or a vendor owns it, name them: atticus questions answer ${q.id} --target <system or team id> (it goes under the system's aliases in the profile, for review), then ${rerun}.`,
         );
       }
     }

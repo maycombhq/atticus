@@ -10,7 +10,7 @@ import {
   HOSTS_NONE,
   HOSTS_STEP,
   outsideBoundaryOf,
-  TARGETS_ANOTHER_LABEL,
+  PICKER_LABELS,
   TARGETS_SPLIT_LABEL,
   TARGETS_STEP_ID,
 } from "./host-questions.js";
@@ -919,10 +919,11 @@ export async function answerQuestion(
         : `There is no option ${a.option}: this question has no options, so answer in your own words.`,
     );
   // ADR 0162 (F8): "Another repo…" opens the picker; it names nothing, so it isn't an answer.
-  if (a.option !== undefined && q.options[a.option - 1]?.label === TARGETS_ANOTHER_LABEL)
+  const pickerLabel = a.option !== undefined ? q.options[a.option - 1]?.label : undefined;
+  if (pickerLabel && PICKER_LABELS.has(pickerLabel))
     throw new QuestionError(
       "bad-answer",
-      `"${TARGETS_ANOTHER_LABEL}" opens the list of every repo, system and team: name the one you mean with --target <id> (atticus questions answer ${q.id} --target <id>), or in your own words.`,
+      `"${pickerLabel}" opens the list of every repo, system and team: name the one you mean with --target <id> (atticus questions answer ${q.id} --target <id>), or in your own words.`,
     );
   const level = a.scope ?? q.scope.level;
   let scopeId: string;

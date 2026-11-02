@@ -12,6 +12,8 @@ import {
   HOSTS_STEP,
   listQuestions,
   TARGETS_STEP_ID,
+  topicOfQuestion,
+  TOPICS_STEP_ID,
   QuestionError,
   questionsRelOf,
   QuestionScopeLevel,
@@ -400,7 +402,7 @@ export async function questionsFiles(
       if ("problem" in r) {
         io.err(r.problem);
         if (r.offer) io.err(offerLine(id, target, r.offer));
-        else if (q0.askedBy.step === TARGETS_STEP_ID) {
+        else if (q0.askedBy.step === TARGETS_STEP_ID || q0.askedBy.step === TOPICS_STEP_ID) {
           io.err("The repos, systems and teams --target takes:");
           for (const l of pickerText(await pickerOf(root))) io.err(`  ${l}`);
         }
@@ -409,8 +411,10 @@ export async function questionsFiles(
       text = r.text;
       if (r.system)
         added = r.system.added
-          ? `Wrote the system ${r.system.id} (boundary ${r.system.boundary}${r.system.owner ? `, owner ${r.system.owner}` : ""}) into ${r.system.profile}; review it in the same pull request.`
-          : `${r.system.profile} already has ${r.system.id}.`;
+          ? `Wrote the system ${r.system.id} (boundary ${r.system.boundary}${r.system.owner ? `, owner ${r.system.owner}` : ""}${r.system.aliased?.length || q0.askedBy.step !== TARGETS_STEP_ID ? `, alias ${topicOfQuestion(q0) ?? ""}` : ""}) into ${r.system.profile}; review it in the same pull request.`
+          : r.system.aliased?.length
+            ? `Wrote ${r.system.aliased.join(", ")} under aliases of ${r.system.id} in ${r.system.profile}, so the next write lands it there; review it in the same pull request.`
+            : `${r.system.profile} already has ${r.system.id}${q0.askedBy.step !== TARGETS_STEP_ID ? `, with ${topicOfQuestion(q0) ?? "the topic"} among its aliases` : ""}.`;
     }
     if (accept && (opt !== undefined || text !== undefined)) {
       io.err(

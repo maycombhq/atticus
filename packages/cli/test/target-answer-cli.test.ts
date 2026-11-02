@@ -8,6 +8,9 @@ import {
   readQuestion,
   TARGETS_ANOTHER_LABEL,
   TARGETS_STEP_ID,
+  topicQuestionText,
+  TOPICS_OUTSIDE_LABEL,
+  TOPICS_STEP_ID,
 } from "@maycombhq/core";
 import { questionsFiles } from "../src/question-commands.js";
 
@@ -72,7 +75,7 @@ const run = async (root: string, args: string[]) => {
 const systems = async (root: string) =>
   (
     parse(await readFile(join(root, ...PROFILE), "utf8")) as {
-      systems: { id: string; name: string; boundary: string; owner?: string }[];
+      systems: { id: string; name: string; boundary: string; owner?: string; aliases?: string[] }[];
     }
   ).systems;
 
@@ -145,5 +148,77 @@ describe("atticus questions answer --target (ADR 0162)", () => {
     expect(r.err[0]).toContain("--target <id>");
     expect(r.err[1]).toMatch(/^ {2}Repos \(10\): forge-accounts \(not read yet\), /);
     expect(r.err[3]).toBe("  Teams (2): team-cards, team-ledger-ops (no system yet)");
+  });
+});
+
+describe("atticus questions answer --target on a topics question (ADR 0162)", () => {
+  async function topicQuestion() {
+    const root = await mkdtemp(join(tmpdir(), "atticus-topic-answer-"));
+    await cp(join(FIX, "org-pack"), join(root, "org-pack"), { recursive: true });
+    await writeFile(join(root, "org-pack", "roles.yaml"), ROLES);
+    const { raised } = await raiseQuestions(
+      root,
+      [
+        {
+          question: topicQuestionText("harbor.audit.events", "cards-api", "listen"),
+          options: [
+            { label: TOPICS_OUTSIDE_LABEL, means: "the picker", changes: "an alias" },
+            { label: "None of these", means: "nothing", changes: "a loose end" },
+          ],
+          evidence: ["src/main/java/forge/cards/AuditListener.java:9"],
+          scope: "repo",
+        },
+      ],
+      {
+        step: TOPICS_STEP_ID,
+        repo: "forge-cards",
+        command: "atticus verify forge-cards --write",
+        rerun: "atticus verify forge-cards --write",
+        at: AT,
+      },
+    );
+    return { root, id: raised[0]!.id };
+  }
+
+  it("adds the topic to another team's system's aliases", async () => {
+    const { root, id } = await topicQuestion();
+    const r = await run(root, ["answer", id, "--target", "harbor-audit", "--by", "pat"]);
+    expect(r.code).toBe(0);
+    expect(r.out[0]).toBe(
+      "Wrote harbor.audit.events under aliases of harbor-audit in org-pack/profiles/forge/profile.yaml, so the next write lands it there; review it in the same pull request.",
+    );
+    const text = await readFile(join(root, ...PROFILE), "utf8");
+    expect(text).toContain("# Invented vendors, each named by the host the code calls it on.");
+    expect((await systems(root)).find((s) => s.id === "harbor-audit")).toMatchObject({
+      aliases: ["harbor.audit.events"],
+    });
+    expect((await readQuestion(root, id))!.answer?.text).toBe("harbor-audit");
+  });
+
+  it("creates a team's system with the topic as its alias, and refuses a repo of the estate", async () => {
+    const { root, id } = await topicQuestion();
+    const repo = await run(root, ["answer", id, "--target", "forge-payments"]);
+    expect(repo.code).toBe(2);
+    expect(repo.err[0]).toContain("forge-payments is a repo of the estate");
+    const w = await run(root, [
+      "answer",
+      id,
+      "--target",
+      "team-ledger-ops",
+      "--add-system",
+      "internal",
+    ]);
+    expect(w.code).toBe(0);
+    expect((await systems(root)).find((s) => s.id === "team-ledger-ops-system")).toMatchObject({
+      owner: "team-ledger-ops",
+      aliases: ["harbor.audit.events"],
+    });
+  });
+
+  it("prints the picker when the topic option is picked as an option", async () => {
+    const { root, id } = await topicQuestion();
+    const r = await run(root, ["answer", id, "--option", "1"]);
+    expect(r.code).toBe(2);
+    expect(r.err[1]).toMatch(/^ {2}Repos \(10\)/);
   });
 });

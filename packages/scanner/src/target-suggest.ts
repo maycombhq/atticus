@@ -1,6 +1,10 @@
 import {
   factIdPart,
+  questionId,
   slugify,
+  topicQuestionText,
+  TOPICS_OUTSIDE_LABEL,
+  TOPICS_STEP_ID,
   TARGETS_ANOTHER_LABEL,
   TARGETS_SPLIT_LABEL,
   TARGETS_STEP_ID,
@@ -9,6 +13,7 @@ import {
   type FactOf,
   type OrgPack,
   type Question,
+  type QuestionDraft,
 } from "@maycombhq/core";
 import { estateRepos } from "./merge-input.js";
 
@@ -491,4 +496,57 @@ export function pickerLines(picks: readonly TargetPick[]): string[] {
         .join(", ") || "none"
     }`,
   ];
+}
+
+/**
+ * ADR 0162 (F8): one question per topic or queue the repo publishes to or listens on that is
+ * still a loose end after the merge (no estate repo serves the other side, and no system of the
+ * profile names it): who owns it. Its first option opens the picker of systems and teams; the
+ * answer adds the topic to that system's aliases (or adds the system, owner the team), so the
+ * next write lands the publish or the listener on it, declared.
+ */
+export function topicQuestionDrafts(
+  repo: string,
+  records: readonly CatalogRecord[],
+): { topic: string; id: string; draft: QuestionDraft }[] {
+  const out = new Map<string, { topic: string; id: string; draft: QuestionDraft }>();
+  for (const r of records) {
+    if (r.kind !== "Unresolved") continue;
+    const x = r as unknown as {
+      unresolvedKind: string;
+      raw: string;
+      owner?: string;
+      evidence: { repo?: string; path?: string; line?: number; source: string }[];
+    };
+    if (x.unresolvedKind !== "event-publish" && x.unresolvedKind !== "event-subscribe") continue;
+    const topic = String(x.raw);
+    if (!topic || topic.includes("${") || /\s/.test(topic)) continue;
+    const ev = x.evidence
+      .filter((e) => e.repo === repo && e.path && e.line && !/[\s:]/.test(e.path))
+      .map((e) => `${e.path}:${e.line}`)
+      .sort();
+    if (!ev.length) continue;
+    const side = x.unresolvedKind === "event-publish" ? "publish" : "listen";
+    const question = topicQuestionText(topic, x.owner ?? repo, side);
+    const draft = {
+      question,
+      options: [
+        {
+          label: TOPICS_OUTSIDE_LABEL,
+          means: `${topic} belongs to another team's system or a vendor's: name it, or the team, from the list`,
+          changes: `${topic} is added to that system's aliases in the profile (or the system is added, owner the team), as a file change for review; the next write ${side === "publish" ? "sends the publish to it" : "takes the listener's messages from it"}, marked as your word`,
+        },
+        {
+          label: "None of these",
+          means: `Nothing outside the estate owns ${topic}, or a repo not read yet serves it`,
+          changes: `It stays a loose end, and this isn't asked again`,
+        },
+      ],
+      evidence: [...new Set(ev)],
+      scope: "repo" as const,
+    };
+    const id = questionId({ step: TOPICS_STEP_ID, repo, question, evidence: draft.evidence });
+    if (!out.has(id)) out.set(id, { topic, id, draft });
+  }
+  return [...out.values()].sort((a, b) => a.topic.localeCompare(b.topic));
 }

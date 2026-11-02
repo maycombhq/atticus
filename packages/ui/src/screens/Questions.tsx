@@ -309,6 +309,13 @@ export interface AnswerForm {
 
 /** The option of a targets question that opens the picker (ADR 0162). */
 export const ANOTHER_REPO = "Another repo…";
+/** The option of a topics question that opens the same picker (ADR 0162). */
+export const TOPIC_OUTSIDE = "A topic owned by another team or vendor";
+/** The steps whose questions have a picker, with the option that opens it. */
+export const PICKER_OPTIONS: Readonly<Record<string, string>> = {
+  "facts-targets": ANOTHER_REPO,
+  "facts-topics": TOPIC_OUTSIDE,
+};
 
 /** The steps whose answers take a rule (ADR 0153): where calls go, by target or by host. */
 export const RULE_STEPS: ReadonlySet<string> = new Set(["facts-targets", "scan-hosts"]);
@@ -601,7 +608,7 @@ export function QuestionDetail(p: {
                     onChange={() =>
                       set({
                         pick: i + 1,
-                        another: q.askedBy.step === "facts-targets" && o.label === ANOTHER_REPO,
+                        another: PICKER_OPTIONS[q.askedBy.step] === o.label,
                       })
                     }
                     aria-describedby={`${id}-d`}
