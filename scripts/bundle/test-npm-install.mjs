@@ -394,8 +394,11 @@ ui.stdout.on("data", (b) => {
     res.on("data", (c) => (body += c));
     res.on("end", () => {
       console.log(m[1] + "; GET /api/health: " + res.statusCode + " " + body.slice(0, 120));
+      // Wait for the app to stop before leaving, so nothing it writes races the clean-up.
+      const code = res.statusCode === 200 ? 0 : 1;
+      ui.once("exit", () => process.exit(code));
       ui.kill();
-      process.exit(res.statusCode === 200 ? 0 : 1);
+      setTimeout(() => process.exit(code), 10000);
     });
   });
   req.on("error", (e) => { console.log("the app didn't answer: " + e.message); ui.kill(); process.exit(1); });
@@ -427,5 +430,11 @@ if (uiRun.status !== 0) fail(`atticus ui didn't answer:\n${uiRun.stdout}${uiRun.
 console.log(
   `npm install test passed: npm install -g ${MAIN} on ${process.platform}-${process.arch}, scripts off, ${installed.length} packages installed, nothing downloaded after install, searches by meaning (${want}).`,
 );
-if (!keep) rmSync(work, { recursive: true, force: true, maxRetries: 5 });
-else console.log(`Kept: ${work}`);
+if (!keep) {
+  // The test has passed; a folder a stopped process still held is left for the OS to clear.
+  try {
+    rmSync(work, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 });
+  } catch (e) {
+    console.log(`Couldn't remove ${work} (${e.code ?? e.message}); left in place.`);
+  }
+} else console.log(`Kept: ${work}`);
