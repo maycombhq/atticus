@@ -96,20 +96,51 @@ describe("term facts rest on their lines", () => {
 
   it("checks the note relied on against the notes given; none given, it isn't checked", async () => {
     const id = "term.cmdb.app000123";
-    const r = await run("forge-cards-proxy", change("forge-cards-proxy", id, { note: 9 }));
-    expect(codes(r)).toEqual([[id, "term-meaning"]]);
-    expect(r.rejected[0]!.message).toContain("notes it was given are 1 to 4");
     const quoted = await run(
       "forge-cards-proxy",
       change("forge-cards-proxy", id, { note: "lists every owner team" }),
     );
     expect(codes(quoted)).toEqual([[id, "term-meaning"]]);
     const none = await verifyFacts({
-      facts: change("forge-cards-proxy", id, { note: 9 }),
+      facts: change("forge-cards-proxy", id, { note: "lists every owner team" }),
       source: dirSource(join(FIX, "repos", "forge-cards-proxy")),
       commit: "ccc3333",
     });
     expect(none.rejected).toEqual([]);
+  });
+
+  it("refuses a note quoted by a word or two, which any note would hold (review 10)", async () => {
+    const id = "term.cmdb.app000123";
+    const r = await run("forge-cards-proxy", change("forge-cards-proxy", id, { note: "a" }));
+    expect(codes(r)).toEqual([[id, "term-meaning"]]);
+    expect(r.rejected[0]!.message).toContain("at least 4 words");
+  });
+
+  it("flags a term whose note was changed or removed since the read, never keeping it (review 10)", async () => {
+    // the type's first note, reworded since the facts were written: its key is no longer given
+    const reworded = notesFor(
+      {
+        ...type("forge-apigee-proxy")!,
+        notes: [
+          "`cmdb` in userAccess.json lists the owner teams of this proxy.",
+          ...type("forge-apigee-proxy")!.notes!.slice(1),
+        ],
+      },
+      op.conventions,
+    );
+    const r = await run("forge-accounts-proxy", factsOf("forge-accounts-proxy"), reworded);
+    expect(codes(r)).toEqual([
+      ["term.cmdb.app000123", "term-note-stale"],
+      ["term.cmdb.app000456", "term-note-stale"],
+    ]);
+    expect(r.rejected[0]!.message).toContain("changed or removed since the read");
+    // reordered, every key still holds
+    const reordered = await run(
+      "forge-accounts-proxy",
+      factsOf("forge-accounts-proxy"),
+      [...PROXY_NOTES].reverse(),
+    );
+    expect(reordered.rejected).toEqual([]);
   });
 });
 
@@ -119,6 +150,40 @@ describe("a call's auth and TLS rest on the lines that set them", () => {
     const r = await run("forge-payments", without("forge-payments", id, "tlsCite"));
     expect(codes(r)).toEqual([[id, "security-uncited"]]);
     expect(r.rejected[0]!.message).toContain("claims tls mtls and cites no line");
+  });
+
+  const client = "src/main/java/forge/payments/NorthwindClient.java";
+  it.each([
+    // mTLS on the https URL's line: TLS, but no client certificate there
+    ["tls", "mtls", { file: client, line: 7, value: "https" }],
+    // TLS on the token's line
+    ["tls", "tls", { file: client, line: 8, value: "Bearer" }],
+    // none on a line that writes https
+    ["tls", "none", { file: client, line: 7, value: "https" }],
+    // an OAuth token on the URL's line
+    ["auth", "oauth2", { file: client, line: 7, value: "https" }],
+    // an API key on the client certificate's line
+    ["auth", "api-key", { file: client, line: 11, value: "mtlsContext" }],
+  ] as const)(
+    "rejects %s %s on a line that writes no such thing (review 5)",
+    async (what, claim, at) => {
+      const r = await run(
+        "forge-payments",
+        change("forge-payments", id, { [what]: claim, [`${what}Cite`]: at }),
+      );
+      expect(codes(r)).toEqual([[id, "security-line-kind"]]);
+      expect(r.rejected[0]!.message).toContain(`${what} ${claim}`);
+    },
+  );
+
+  it("takes mTLS from the client certificate a cited part names (review 5)", async () => {
+    const r = await run(
+      "forge-payments",
+      change("forge-payments", id, { tlsCite: { file: client, line: 4, value: "sslContext" } }),
+    );
+    expect(codes(r)).toEqual([[id, "security-line-kind"]]);
+    expect(r.rejected[0]!.message).toContain("client certificate");
+    expect((await run("forge-payments")).rejected).toEqual([]);
   });
 
   it("rejects one cited on a line that doesn't set it", async () => {
@@ -154,6 +219,13 @@ describe("a second stack, inline: a .NET service's settings and a Node client", 
       "const agent = new https.Agent({ cert, key });",
       "export const upload = (body) =>",
       "  fetch('https://files.tidewater.example/v2/upload', { agent, method: 'POST', body, headers: { 'x-api-key': process.env.TIDEWATER_KEY } });",
+    ].join("\n"),
+    "Clients/LanternClient.cs": [
+      "var handler = new HttpClientHandler();",
+      'handler.ClientCertificates.Add(LoadCertificate("lantern-client.pfx"));',
+      'var http = new HttpClient(handler) { BaseAddress = new Uri("https://api.lanternmail.example") };',
+      'http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);',
+      'await http.PostAsync("/v1/send", body);',
     ].join("\n"),
   });
   const base = {
@@ -209,6 +281,42 @@ describe("a second stack, inline: a .NET service's settings and a Node client", 
       cite: { file: "client/tidewater.js", line: 4, value: "/v2/upload" },
     },
   ] as unknown as Fact[];
+
+  const lantern = {
+    ...base,
+    kind: "call",
+    id: "call.post.lantern-send",
+    callType: "rest",
+    method: "POST",
+    path: "/v1/send",
+    to: "lantern-mail",
+    tls: "mtls",
+    tlsCite: { file: "Clients/LanternClient.cs", line: 2, value: "ClientCertificates" },
+    auth: "oauth2",
+    authCite: { file: "Clients/LanternClient.cs", line: 4, value: "Bearer" },
+    cite: { file: "Clients/LanternClient.cs", line: 5, value: "/v1/send" },
+  } as unknown as Fact;
+
+  it("judges a .NET and a Node client's security by the words on their lines (review 5)", async () => {
+    const ok = await verifyFacts({ facts: [lantern], source, commit: "ddd4444" });
+    expect(ok.rejected).toEqual([]);
+    const tidewater = facts.find((f) => f.id === "call.post.tidewater-upload")!;
+    for (const [f, at] of [
+      // mTLS on the BaseAddress line: https, no client certificate
+      [lantern, { tlsCite: { file: "Clients/LanternClient.cs", line: 3, value: "https" } }],
+      // mTLS on the fetch line: https and an API key, no certificate
+      [tidewater, { tlsCite: { file: "client/tidewater.js", line: 4, value: "https" } }],
+      // an API key on the Agent's line
+      [tidewater, { authCite: { file: "client/tidewater.js", line: 2, value: "cert" } }],
+    ] as const) {
+      const r = await verifyFacts({
+        facts: [{ ...f, ...at } as Fact],
+        source,
+        commit: "ddd4444",
+      });
+      expect(r.rejected.map((x) => x.code)).toEqual(["security-line-kind"]);
+    }
+  });
 
   it("keeps the terms of a nested settings object and a cited key and client certificate", async () => {
     const parsed = parseFacts(facts.map((f) => JSON.stringify(f)).join("\n"));

@@ -7,6 +7,7 @@ import {
   CONVENTIONS_SCHEMA_VERSION,
   loadOrgPack,
   noteRuleDrafts,
+  noteKey,
   notesFor,
   OrgNote,
   orgPackDirOf,
@@ -196,12 +197,14 @@ export async function repoTypeNote(
       io.out(
         `${noteRel(type)} has no notes yet. Add one: atticus repo-type note ${type ?? "--org-wide"} --add "..."`,
       );
-    notes.forEach((n, i) => io.out(`${i + 1}. ${String(n)}`));
+    // the number as the read lists it, and the key a term fact and a rule draft name it by
+    notes.forEach((n, i) => io.out(`${i + 1}. ${String(n)} (note ${noteKey(String(n))})`));
     return 0;
   }
-  const note = OrgNote.safeParse(o.add);
+  // A note is one line (review 6): line breaks in what was given become spaces.
+  const note = OrgNote.safeParse(o.add.replace(/\s*[\r\n]+\s*/g, " "));
   if (!note.success) {
-    io.err("A note is plain text, from 1 to 1000 characters.");
+    io.err("A note is plain text, from 1 to 1000 characters, on one line.");
     return 2;
   }
   if (notes.some((n) => String(n).trim() === note.data)) {
@@ -220,7 +223,7 @@ export async function repoTypeNote(
   await mkdir(join(file, ".."), { recursive: true });
   await writeFile(file, doc.toString({ lineWidth: 0 }), "utf8");
   io.out(
-    `Added note ${notes.length + 1} to ${noteRel(type)}. The next read of ${type ? `each ${type} repo` : "every repo"} is handed it; review it in a pull request.`,
+    `Added note ${notes.length + 1} (note ${noteKey(note.data)}) to ${noteRel(type)}. The next read of ${type ? `each ${type} repo` : "every repo"} is handed it; review it in a pull request.`,
   );
   if (RULE_WORDS.test(note.data))
     io.out(

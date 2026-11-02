@@ -135,7 +135,7 @@ describe("a change to a route's contract lists everyone the route lets in", () =
       await record(root, {
         kind: "AccessGrant",
         id: `ag-ledger-v1-cmdb-${value.toLowerCase()}`,
-        subjectKind: "oauth-client",
+        subjectKind: "service-account",
         subject: value,
         resource: "gw-ledger-v1",
         scopesOrPermissions: [],

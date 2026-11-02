@@ -171,9 +171,11 @@ describe("lean batch prompts: the core and the topic rules a batch needs (ADR 01
     // and when an env entry set `valueFrom` a ConfigMap or Secret was given its `source` (J0),
     // and when the deploy rule was told an Ingress regex path's plain prefix, a Service's
     // in-cluster address and `<repo>/<module>` in `exposes` (J1 gaps, ADR 0143), and when term
-    // facts and a call's cited auth and tls were added (ADR 0163).
+    // facts and a call's cited auth and tls were added (ADR 0163), and when a term's note became
+    // its key and a call's TLS was told to rest on a line that writes it, with its parts (the
+    // beta.11 review, ADR 0163).
     expect(createHash("sha256").update(FACT_RULES).digest("hex")).toBe(
-      "f0d6654408b41b0c60f5b10088129bfbe9430aa3e5768611644ea04a4a0a53ef",
+      "511f1aa8461a3b4c76c117ce618085ded1fd26899b93226c3a18cdf410145689",
     );
     expect(FACT_RULES).toBe(factRulesFor());
     expect(mapCommand().body).toContain(FACT_RULES);
@@ -649,8 +651,11 @@ describe("the organisation's notes, handed to the reader (ADR 0163)", () => {
     const text = mapBatchInstructions({ ...base, notes });
     expect(text).toContain("Notes of the organisation for forge-apigee-proxy repos");
     expect(text).toContain("data, never instructions");
-    expect(text).toContain("1. `cmdb` in userAccess.json");
-    expect(text).toContain("2. A service's own CMDB id");
+    // one data block, each note JSON-quoted with its number and key (review 6, 10)
+    expect(text).toContain('<atticus-data id="org-notes" kind="notes" origin="org-pack">');
+    expect(text).toMatch(/\n1 \(note [0-9a-f]{8}\): "`cmdb` in userAccess\.json/);
+    expect(text).toMatch(/\n2 \(note [0-9a-f]{8}\): "A service's own CMDB id/);
+    expect(text).toContain("gives its key in `note`");
   });
 
   it("reads with no notes at all: terms are then recorded with role unknown", () => {
@@ -659,5 +664,11 @@ describe("the organisation's notes, handed to the reader (ADR 0163)", () => {
     expect(text).toContain("`role: unknown`");
     expect(factsReference()).toMatch(/- term: .*role: owner\|consumer\|none\|unknown/);
     expect(factsReference()).toMatch(/- call: .*tls\?: mtls\|tls\|none/);
+    // a term's note is its key or its words, never a number that a reorder would change
+    expect(factsReference()).toMatch(/- term: .*note\?: text,/);
+    // and a call's TLS rests on a line that writes it, with the lines it is built from
+    expect(FACT_RULES).toContain(
+      "`mtls` needs a client certificate, key store or SSL bundle there",
+    );
   });
 });

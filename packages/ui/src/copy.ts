@@ -826,8 +826,11 @@ export const COPY = {
     } as Record<string, string>,
     termOne: (term: string, value: string, role: string, where: string) =>
       `${term} ${value}: ${role} (${where})`,
+    // a note's key (8 hex digits, ADR 0163) or its number reads as "note ...", its words quoted
     termNote: (note: number | string) =>
-      typeof note === "number" ? `note ${note}` : `the note "${note}"`,
+      typeof note === "number" || /^[0-9a-f]{8}$/.test(note)
+        ? `note ${note}`
+        : `the note "${note}"`,
     builtOnIntro:
       "What each repo's build files declare it is built on, each read from the line that declares it. Where a repo declares a framework and its facts show none of that framework's patterns — a Spring Boot service with no route, a React app with no screen — the entry points were probably missed, and that is a question for a person rather than something to be decided here.",
     kept: "Facts kept",

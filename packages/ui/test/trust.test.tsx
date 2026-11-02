@@ -128,7 +128,7 @@ describe("Map › Trust (ADR 0124)", () => {
               role: "owner",
               cite: "forge-app.yaml:2",
               meaning: "forge-app.yaml:1",
-              note: 1,
+              note: "28ba1b42",
             },
             { term: "cmdb", value: "APP000123", role: "unknown", cite: "userAccess.json:4" },
           ],
@@ -137,7 +137,9 @@ describe("Map › Trust (ADR 0124)", () => {
     );
     expect(out).toContain(esc(T.terms));
     expect(out).toContain(
-      esc(`${T.termOne("appId", "APP000456", T.termRole.owner!, "forge-app.yaml:2")}; note 1`),
+      esc(
+        `${T.termOne("appId", "APP000456", T.termRole.owner!, "forge-app.yaml:2")}; note 28ba1b42`,
+      ),
     );
     expect(out).toContain(
       esc(T.termOne("cmdb", "APP000123", T.termRole.unknown!, "userAccess.json:4")),
