@@ -283,7 +283,7 @@ Some of what Atticus reads by is your organisation's convention, not Atticus's: 
 
 ```yaml
 # org-pack/conventions.yaml (optional)
-schemaVersion: 1
+schemaVersion: 2
 apiSpecFolders: [oas, openapi, swagger, contracts] # YAML and JSON here are API specs
 gatewayBundleFolders: [apiproxy, sharedflowbundle] # an entry here is a gateway route
 facing: { internal: [internal, private], external: [external, partner, public] }
@@ -291,9 +291,25 @@ notProductFolders: [src/test, test, tests, __mocks__, fixtures, qa] # coverage d
 notReadFolders: [generated, dist, build, target, node_modules, vendor] # verify's skipped-lines note skips these
 frameworks: [{ declares: forge-web-starter, name: forge-web, topic: spring, shape: rest }]
 housePrefixes: [com.forge., "@forge/"] # warn before a first read of house packages nobody taught
+notes: ["A service's own CMDB id is the `appId` in its forge-app.yaml."] # every read is handed these
 ```
 
 Folders are names or short paths (`src/test`), matched as whole folders anywhere in a path, never globs. The file-name rules (`FooTest.java`, `mvnw`) stay built in. The full schema is in [C6](../spec/contracts/c6-org-pack.md#conventions).
+
+### Notes: what your terms mean, and what must hold
+
+Your repos write identifiers of your own that no code explains: an access list of the applications let in to a proxy, a CMDB id, a cost centre. Say what they mean in plain words, as notes on a repo type (`notes:` in `org-pack/repo-types/<type>/type.yaml`) or for every repo (`notes:` in `conventions.yaml`) (ADR 0163). Atticus never parses a note: each read of a repo is handed its type's notes and the org-wide ones, numbered, as data, and the reader records each identifier as a `term` fact, cited on its line, with the role the note gives it (`owner`: the repo's own system; `consumer`: a system it lets in; `none`) and the note's number. Without notes the reader still records the identifiers it meets, with role `unknown`, and Atticus asks one question per term and repo type ("What does `cmdb` mean in userAccess.json across 3 forge-apigee-proxy repos?"); the answer offers the note to save.
+
+```yaml
+# org-pack/repo-types/forge-apigee-proxy/type.yaml
+schemaVersion: 2
+# ...fingerprint as before...
+notes:
+  - "`cmdb` in userAccess.json lists the applications let in to this proxy's API: each entry is a consumer, named by its CMDB id."
+  - "Every call to a vendor must use mTLS and present auth, on the call itself or on the gateway in front of it."
+```
+
+`atticus repo-type note <type> --add "..."` (or `--org-wide`) adds one; `atticus repo-type note <type>` lists them. With the terms read, `atticus verify <repo> --write` ties each owner id to its repo's component, makes a gateway's consumers access grants on its routes (so the critic names every one when a route changes), says where a repo calls the routes without being listed and where a listed consumer makes no call, and shows the same value in two repos as a possible link for you to confirm. A note that reads as a rule (all, every, must) is drafted as a checklist rule by `atticus repo-type rules --save` into `org-pack/checklists/org-notes.yaml`, as `status: draft`; set what it checks and make it `active`, and each `verify --write` checks it on the facts (a call's cited `tls` and `auth`, or a gateway hop's). What you say is done outside the repos goes in the rule's `params.declared`, and is shown as your word, never verified. A version-1 type or conventions file still reads as it is.
 
 ### Who you are and how approving works
 
