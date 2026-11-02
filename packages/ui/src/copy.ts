@@ -3278,6 +3278,47 @@ export const COPY = {
   graph: {
     map: "Map",
   },
+  /** The diagram viewer every picture shares (F10): fit, zoom, search, focus and full screen. */
+  viewer: {
+    toolbar: "Picture controls",
+    zoomIn: "Zoom in",
+    zoomOut: "Zoom out",
+    reset: "Actual size",
+    fit: "Fit to screen",
+    fitSelection: "Zoom to the picked box",
+    focus: "Focus on the picked box",
+    focusOff: "Show everything",
+    fullScreen: "Full screen",
+    leaveFullScreen: "Leave full screen",
+    zoomLevel: (pct: number) => `Zoom ${pct}%`,
+    search: "Find a box",
+    searchPlaceholder: "Find a repo, system or topic",
+    found: (label: string) => `${label}: centred and picked.`,
+    notFound: (q: string) => `Nothing here is called ${q}.`,
+    minimap: "Map of the whole picture",
+    /** What each key does, said once beside the picture. */
+    keys: "Keys: + and − zoom, 0 fits, 1 is actual size, arrows pan, S zooms to the picked box, M focuses on it, F is full screen, / finds a box, Esc leaves full screen.",
+    region: (title: string) => `${title}: picture`,
+    fullScreenOn: "Full screen. Press Esc to leave.",
+    focusOn: (label: string) =>
+      `Focus on ${label} and what it links to; everything else is dimmed.`,
+    details: "Details",
+    hideDetails: "Hide details",
+    showDetails: "Show details",
+  },
+  /** Topics and queues on the picture (F10): who owns each, and what the estate lacks on it. */
+  topics: {
+    owner: (who: string) => `Owner: ${who}`,
+    ownerOutside: (who: string) => `Owner: ${who} (outside the estate)`,
+    ownerUnknown: "Owner not known",
+    noListener: "No listener in the estate",
+    noPublisher: "No publisher in the estate",
+    noListenerFix:
+      "Read the repo that listens on it, or, if a system outside the estate does, name that system so its listener is known.",
+    noPublisherFix:
+      "Read the repo that publishes to it, or, if a system outside the estate does, name that system so its publisher is known.",
+    listens: "listens",
+  },
   me: {
     aiIsOffHere: "AI is off here, so write it yourself: the critic's rule checks still review it.",
   },

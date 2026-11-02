@@ -441,6 +441,7 @@ export function buildEstate(records: CatalogRecord[]): Estate {
   }
 
   const endpointNode = new Map<string, string>();
+  const topicByPath = new Map<string, string>();
   for (const e of all(records, "Endpoint")) {
     const topic = TOPIC_TYPES.has(e.endpointType);
     const id = `${topic ? "topic" : "endpoint"}:${e.id}`;
@@ -467,7 +468,31 @@ export function buildEstate(records: CatalogRecord[]): Estate {
       ),
     );
     endpointNode.set(e.id, id);
+    if (topic) topicByPath.set(e.pathOrTopic, id);
   }
+
+  // A topic or queue with no Endpoint record (one a publish names that nobody in the estate
+  // listens on, or one an outside system claims) is drawn as a topic of its own, keyed by name.
+  const busTopic = (name: string, parent: string, ev: Evidence[] = []) => {
+    const known = topicByPath.get(name);
+    if (known) return known;
+    const id = add({
+      id: `topic:bus.${slug(name)}`,
+      kind: "topic",
+      label: name,
+      parent,
+      state: "current",
+      gaps: [],
+      evidence: ev,
+      properties: { pathOrTopic: name },
+      next: {
+        command: `atticus query "${name}"`,
+        why: "List the records that name this topic or queue.",
+      },
+    });
+    topicByPath.set(name, id);
+    return id;
+  };
 
   const storeNode = new Map<string, string>();
   for (const d of all(records, "DataStore")) {
@@ -552,6 +577,23 @@ export function buildEstate(records: CatalogRecord[]): Estate {
       atoms.push({ from: to, to: target, type: "subscribes", evidence: ev, gaps, join });
       continue;
     }
+    // A publish on the bus or a queue with no topic record: the topic is a node of its own,
+    // the system it goes to (an outside one, or a team's shared map) owning it.
+    if (!i.endpoint && (i.via === "event-bus" || i.via === "mq") && i.normalizedPath) {
+      const t = busTopic(i.normalizedPath, to);
+      const owner = nodes.get(t)!;
+      if (owner.parent === to && (to.startsWith("system:") || to.startsWith("unknown:"))) {
+        owner.properties = { ...owner.properties, owner: nodes.get(to)?.label ?? to };
+        if (outside.has(i.to) || nodes.get(to)?.properties.boundary === "vendor")
+          owner.properties.ownerOutside = true;
+      }
+      if (join.shared)
+        owner.properties = { ...owner.properties, owner: join.shared.team, ownerOutside: true };
+      atoms.push({ from, to: t, type: "publishes", evidence: ev, gaps, join });
+      if (to.startsWith("component:"))
+        atoms.push({ from: to, to: t, type: "subscribes", evidence: ev, gaps, join });
+      continue;
+    }
     let caller = from;
     if (from.startsWith("component:")) {
       caller = add({
@@ -582,6 +624,23 @@ export function buildEstate(records: CatalogRecord[]): Estate {
       evidence: ev,
       gaps: [...gaps, ...(i.endpoint && !target ? ["no-endpoint"] : [])],
       join,
+    });
+  }
+
+  // Loose ends on the bus (a scan's merge, or a facts read the join found no partner for): a
+  // publish nobody in the estate listens to, and a listener nobody in the estate publishes to.
+  for (const u of all(records, "Unresolved")) {
+    if (u.unresolvedKind !== "event-publish" && u.unresolvedKind !== "event-subscribe") continue;
+    if (!u.raw || u.raw.includes("${")) continue;
+    const owner = u.owner ? partNode(u.owner) : "estate";
+    const ev = evidenceOf(u.evidence);
+    const t = busTopic(u.raw, u.unresolvedKind === "event-subscribe" ? owner : "estate", ev);
+    atoms.push({
+      from: owner,
+      to: t,
+      type: u.unresolvedKind === "event-publish" ? "publishes" : "subscribes",
+      evidence: ev,
+      gaps: recordGaps(u),
     });
   }
 
@@ -638,6 +697,34 @@ export function buildEstate(records: CatalogRecord[]): Estate {
       evidence: evidenceOf(k.evidence),
       gaps: recordGaps(k),
     });
+  }
+
+  // Each topic says who owns it (the system, else the repo, it sits in, unless an outside system
+  // or a team claimed it above) and whether the estate both publishes to it and listens on it.
+  const busy = new Set<string>();
+  const internal = (id: string) => {
+    const n = nodes.get(id);
+    return !!n && n.kind !== "unknown" && n.properties.boundary !== "outside";
+  };
+  for (const a of atoms)
+    if (a.type === "publishes" || a.type === "subscribes")
+      if (internal(a.from)) busy.add(`${a.type}|${a.to}`);
+  for (const n of nodes.values()) {
+    if (n.kind !== "topic") continue;
+    if (n.properties.owner === undefined) {
+      let p = n.parent ? nodes.get(n.parent) : undefined;
+      while (p && p.kind !== "system" && p.kind !== "repo" && p.kind !== "estate")
+        p = p.parent ? nodes.get(p.parent) : undefined;
+      if (p && p.kind !== "estate") {
+        let sys: Raw | undefined = p;
+        while (sys && sys.kind !== "system") sys = sys.parent ? nodes.get(sys.parent) : undefined;
+        n.properties = { ...n.properties, owner: (sys ?? p).label };
+        if (sys && (sys.properties.boundary === "outside" || sys.properties.boundary === "vendor"))
+          n.properties.ownerOutside = true;
+      }
+    }
+    if (!busy.has(`publishes|${n.id}`)) n.gaps.push("no-publisher");
+    if (!busy.has(`subscribes|${n.id}`)) n.gaps.push("no-listener");
   }
 
   // Children, in a stable order: by kind, then id.
@@ -800,29 +887,46 @@ export function nodeView(est: Estate, id: string, o: NodeViewOptions): Api.Graph
     return ax[i] ?? x;
   };
   const types = LENS_EDGES[lens];
+  // A topic or queue is drawn as itself, wherever it sits (publishers → topic → listeners), and
+  // every publisher and listener of a topic the view draws is drawn with it.
+  const onBus = (atom: Atom, b: string) =>
+    (atom.type === "publishes" || atom.type === "subscribes") &&
+    est.nodes.get(b)?.kind === "topic" &&
+    b !== id;
+  const drawnTopics = new Set<string>();
+  for (const atom of est.atoms) {
+    if (!types.has(atom.type)) continue;
+    const a = lift(est, lens, atom.from);
+    const b = lift(est, lens, atom.to);
+    if (onBus(atom, b) && (inside(a) || inside(b))) drawnTopics.add(b);
+  }
   const mapped: { from: string; to: string; atom: Atom }[] = [];
   for (const atom of est.atoms) {
     if (!types.has(atom.type)) continue;
     const a = lift(est, lens, atom.from);
     const b = lift(est, lens, atom.to);
-    if (!inside(a) && !inside(b)) continue;
+    const bus = onBus(atom, b);
+    if (!inside(a) && !inside(b) && !(bus && drawnTopics.has(b))) continue;
     const from = place(a);
-    const to = place(b);
+    const to = bus ? b : place(b);
     if (from === to) continue;
     mapped.push({ from, to, atom });
   }
   let edges = merge(mapped);
   let hidden = 0;
   if (!o.all) ({ edges, hidden } = reduceUses(edges));
-  const outside = [...new Set(edges.flatMap((e) => [e.from, e.to]))]
-    .filter((n) => n !== id && !shownSet.has(n))
-    .sort();
-  const children = shown.map((n) => toNode(est, lens, n));
+  const ends = [...new Set(edges.flatMap((e) => [e.from, e.to]))].filter(
+    (n) => n !== id && !shownSet.has(n),
+  );
+  // A topic inside the open node, deeper than the view's depth, is one of its children here.
+  const deeper = ends.filter((n) => drawnTopics.has(n) && inside(n)).sort();
+  const outside = ends.filter((n) => !deeper.includes(n)).sort();
+  const children = [...shown, ...deeper].map((n) => toNode(est, lens, n));
   const firstTable = children.find((c) => c.kind === "table");
   const suggest =
     lens === "data" && firstTable
       ? { mode: "focus" as const, id: firstTable.id }
-      : shown.length + outside.length > DETAILED_LIMIT
+      : shown.length + deeper.length + outside.length > DETAILED_LIMIT
         ? { mode: "group" as const }
         : undefined;
   return {

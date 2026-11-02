@@ -331,12 +331,7 @@ export function Explore({ hash }: { hash: string }) {
         )}
       </Panel>
 
-      <Panel
-        title={focusId ? T.around(focusId) : T.theWholeEstate}
-        kind="hero"
-        span={picked ? "span 5" : "span 9"}
-        rows="span 2"
-      >
+      <Panel title={focusId ? T.around(focusId) : T.theWholeEstate} kind="hero" span="1 / -1">
         <View of={graph} empty={(g) => g.nodes.length === 0} emptyText={T.theCatalogIsEmpty}>
           {(g) => (
             <GraphView
