@@ -1,4 +1,4 @@
-schemaVersion: 3
+schemaVersion: 4
 kind: Column
 id: ledger-db.entry.account_id
 status: current
@@ -16,7 +16,7 @@ nullable: false
 table: ledger-db.entry
 type: bigint
 ---
-schemaVersion: 3
+schemaVersion: 4
 kind: Column
 id: ledger-db.entry.amount
 status: current
@@ -36,7 +36,7 @@ nullable: false
 table: ledger-db.entry
 type: numeric(18,2)
 ---
-schemaVersion: 3
+schemaVersion: 4
 kind: Component
 id: ledger-api
 status: current
@@ -53,7 +53,7 @@ runtime: kubernetes
 system: ledger
 type: service
 ---
-schemaVersion: 3
+schemaVersion: 4
 kind: Component
 id: notify-api
 status: current
@@ -68,7 +68,7 @@ repo: forge-notify
 system: messaging
 type: service
 ---
-schemaVersion: 3
+schemaVersion: 4
 kind: DataStore
 id: ledger-db
 status: current
@@ -86,7 +86,7 @@ evidence:
 ownerComponent: ledger-api
 storeType: relational
 ---
-schemaVersion: 3
+schemaVersion: 4
 kind: DataStore
 id: notify-db
 status: current
@@ -102,7 +102,7 @@ evidence:
 ownerComponent: notify-api
 storeType: relational
 ---
-schemaVersion: 3
+schemaVersion: 4
 kind: Deployment
 id: ledger-api.prod
 status: current
@@ -120,7 +120,7 @@ networkPolicies: []
 platform: kubernetes
 replicas: 3
 ---
-schemaVersion: 3
+schemaVersion: 4
 kind: Endpoint
 id: ledger-api.get-account
 status: current
@@ -141,7 +141,7 @@ normalizedPath: /accounts/{}
 pathOrTopic: /accounts/{accountId}
 schemaRefs: []
 ---
-schemaVersion: 3
+schemaVersion: 4
 kind: Endpoint
 id: ledger-api.on-forge-payments-settled
 status: current
@@ -159,7 +159,7 @@ evidence:
 pathOrTopic: forge.payments.settled
 schemaRefs: []
 ---
-schemaVersion: 3
+schemaVersion: 4
 kind: Endpoint
 id: ledger-api.post-entry
 status: current
@@ -180,7 +180,7 @@ pathOrTopic: /accounts/{accountId}/entries
 schemaRefs:
   - ledger-api.post-entry.request
 ---
-schemaVersion: 3
+schemaVersion: 4
 kind: Endpoint
 id: notify-api.post-notify
 status: current
@@ -199,7 +199,7 @@ normalizedPath: /notify
 pathOrTopic: /notify
 schemaRefs: []
 ---
-schemaVersion: 3
+schemaVersion: 4
 kind: Interface
 id: if-0bb6f0b5cb457f7f
 status: current
@@ -221,7 +221,7 @@ sync: sync
 to: northwind-fx
 via: direct
 ---
-schemaVersion: 3
+schemaVersion: 4
 kind: Interface
 id: if-3bbb3af22ed63158
 status: current
@@ -251,7 +251,7 @@ sync: sync
 to: ledger-api
 via: direct
 ---
-schemaVersion: 3
+schemaVersion: 4
 kind: Migration
 id: ledger-db.v2
 status: current
@@ -276,7 +276,7 @@ operations:
 tool: flyway
 version: "2"
 ---
-schemaVersion: 3
+schemaVersion: 4
 kind: Schema
 id: if-0bb6f0b5cb457f7f.request
 status: current
@@ -294,7 +294,7 @@ fields:
 format: other
 ref: if-0bb6f0b5cb457f7f
 ---
-schemaVersion: 3
+schemaVersion: 4
 kind: Schema
 id: ledger-api.post-entry.request
 status: current
@@ -321,7 +321,7 @@ fields:
 format: other
 ref: ledger-api.post-entry
 ---
-schemaVersion: 3
+schemaVersion: 4
 kind: Setting
 id: ledger-api.fx.client.base-url
 status: current
@@ -339,7 +339,7 @@ settingKind: config
 target: northwind-fx
 valueOrRef: https://fx.northwind.example/api
 ---
-schemaVersion: 3
+schemaVersion: 4
 kind: Setting
 id: ledger-api.fx.client.read-timeout
 status: current
@@ -357,7 +357,7 @@ settingKind: timeout
 target: northwind-fx
 valueOrRef: 1500ms
 ---
-schemaVersion: 3
+schemaVersion: 4
 kind: Setting
 id: ledger-api.spring.datasource.password
 status: current
@@ -374,7 +374,7 @@ key: spring.datasource.password
 settingKind: config
 valueOrRef: env:LEDGER_DB_PASSWORD
 ---
-schemaVersion: 3
+schemaVersion: 4
 kind: System
 id: ledger
 status: current
@@ -394,7 +394,7 @@ repos:
   - forge-ledger
 tags: []
 ---
-schemaVersion: 3
+schemaVersion: 4
 kind: System
 id: messaging
 status: current
@@ -413,7 +413,7 @@ repos:
   - forge-notify
 tags: []
 ---
-schemaVersion: 3
+schemaVersion: 4
 kind: System
 id: northwind-fx
 status: current
@@ -428,7 +428,7 @@ repos: []
 tags:
   - saas
 ---
-schemaVersion: 3
+schemaVersion: 4
 kind: Table
 id: ledger-db.account
 status: current
@@ -448,7 +448,7 @@ readers:
 tableKind: table
 writers: []
 ---
-schemaVersion: 3
+schemaVersion: 4
 kind: Table
 id: ledger-db.entry
 status: current
@@ -468,7 +468,7 @@ tableKind: table
 writers:
   - ledger-api
 ---
-schemaVersion: 3
+schemaVersion: 4
 kind: Table
 id: notify-db.outbox
 status: current
@@ -487,7 +487,7 @@ tableKind: table
 writers:
   - notify-api
 ---
-schemaVersion: 3
+schemaVersion: 4
 kind: Unresolved
 id: unresolved.c-notify
 status: current
@@ -504,7 +504,7 @@ owner: ledger-api
 raw: POST http://notify.internal/notify
 unresolvedKind: http-call
 ---
-schemaVersion: 3
+schemaVersion: 4
 kind: Unresolved
 id: unresolved.ledger-api.on-forge-payments-settled
 status: current
