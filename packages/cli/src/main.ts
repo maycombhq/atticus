@@ -470,8 +470,9 @@ Usage:
           [--copy]                     Print the next batch's prompt to paste into a chat
           [--answer <file>]            With --copy: read the pasted answer back from a file (- for stdin)
           [--gaps --part n]            With --gaps: only what is left of part n of the read plan, for a read that stopped in it (ADR 0161); /atticus-map <repo> --part n --gaps in a new chat reads it
+          [--rules]                    Top up a repo read before reading rules added since (estate fresh says rules-changed): only the rule parts its read lacked, over the files they apply to, the facts kept listed by id; writes facts/<repo>.rules.md for a new chat (/atticus-map <repo> --rules), or reads it in batches with --mode or --handoff; once verify passes the read records the rules (ADR 0167)
           [--spent <tokens>] [--sessions n] [--part n]  Record what the read took as your assistant reports it, in facts/<repo>.read-plan.yaml beside --estimate's estimate (Atticus can't meter an assistant's tokens; ADR 0141)
-  atticus map --all                    Map or re-map the whole estate in one command (ADR 0161): every repo's read planned at the model's limit, in the onboarding queue's order, fresh repos skipped. Under Copilot you paste one line per part into a new chat and Atticus waits for the facts, verifies them and moves on (s skip, r retry what's left, q stop; it resumes); where runtime.yaml allows model mode it runs unattended. Then the estate is joined once [--max-tokens n] [--stale | --gaps] [--repos a,b] [--dry-run] [--mode model|hand-off] [--max-parts n] [--budget-tokens n] [--idle minutes]
+  atticus map --all                    Map or re-map the whole estate in one command (ADR 0161): every repo's read planned at the model's limit, in the onboarding queue's order, fresh repos skipped, and repos read before the reading rules there are now topped up for the new rules only (ADR 0167). Under Copilot you paste one line per part into a new chat and Atticus waits for the facts, verifies them and moves on (s skip, r retry what's left, q stop; it resumes); where runtime.yaml allows model mode it runs unattended. Then the estate is joined once [--max-tokens n] [--stale | --gaps] [--repos a,b] [--dry-run] [--mode model|hand-off] [--max-parts n] [--budget-tokens n] [--idle minutes]
   atticus verify <repo>                Check the facts your assistant wrote for a repo (/atticus-map) against its code: the claim on each cited line, the quote, references, secrets, coverage; raises the questions it wrote for a person; rejected facts go back to the assistant (ADR 0124) [--dir path] [--commit sha] [--routed a,b] [--skipped] [--json]
           [--write]                    When nothing is rejected: put the facts in the catalog, the flows in specs/<repo>/, ask about calls nothing joins, and render the map
           [--verbose]                  With --write: list every record changed and flow written, not only the counts
@@ -493,7 +494,7 @@ Usage:
   atticus estate shared import|refresh|list  The same as join shared
   atticus join contracts [--json]      Compare the payload on both sides of every link (REST calls, gateway hops, topics, calls to outside systems) from the field facts and the specs on file (a repo's own, a consumer's copy, a topic's .proto, Avro, JSON Schema or AsyncAPI, a vendor's or team's taken in through intake): missing and extra fields, required but not sent, types, error statuses, protobuf field numbers; a mapping nobody traced is unconfirmed, never a mismatch; reads files only (ADR 0164)
   atticus estate contracts [--json]    The same as join contracts
-  atticus estate fresh [--all] [--json]  Which repos' clones have moved past their facts' commit, most stale first: per repo the facts' commit, the clone's, the files changed that the facts cite, the facts to read again and the command to run; local git only, nothing fetched or written (--all lists the fresh ones too)
+  atticus estate fresh [--all] [--json]  Which repos' clones have moved past their facts' commit, most stale first: per repo the facts' commit, the clone's, the files changed that the facts cite, the facts to read again and the command to run; local git only, nothing fetched or written (--all lists the fresh ones too); a repo whose facts are fresh but read before reading rules added since is rules-changed, with its top-up command (ADR 0167)
   atticus repo-type detect <repo> [--json]   Match a repo against the org pack's repo types by fingerprint, with the evidence for each signal
   atticus repo-type new <id> --from <repo> [--force]   Draft a repo type from a repo (its build files, dependencies, markers, folders) for you to edit
   atticus repo-type note <type> | --org-wide [--add "..."]   List a repo type's notes (or the org-wide ones), or add one: what the organisation's terms mean and what must hold, in its own words; each read of a repo is handed them
@@ -518,7 +519,7 @@ Usage:
   atticus setup [--json]               The setup checklist until the catalog is accepted, with a fix for each step
   atticus baseline                     Accept the as-is catalog as the baseline [--note text] [--site dir]
   atticus doctor [--json]              Check this machine: Node, Git, OpenSpec, proxy, TLS, disk, port, assistant, and the tier your assistant reads a repo at
-  atticus doctor --counts [--json]     How far the map has got, in counts and flags only (questions, links by how joined, repos read and stale, facts, tokens reported): nothing named, safe to paste
+  atticus doctor --counts [--json]     How far the map has got, in counts and flags only (questions, target questions by the calls each covers, links by how joined, asked and unresolved calls by why the join left them, repos read and stale, facts, tokens reported): nothing named, safe to paste
   atticus probe                        Measure what your assistant can do here (open a file, write one, run a command), so the tier it reads a repo at is measured, not read off runtime.yaml; then /atticus-probe in the assistant (ADR 0124) [--assistant id] [--max-tokens n] [--json]
   atticus probe answer <code>          Check the assistant's answer (none when it couldn't open the file) and keep what it measured in .atticus/probe/<assistant>.yaml, on this machine only [--pasted] [--max-tokens n] [--json]
   atticus secret set|check|forget <name>  Keep a model provider's key in this machine's credential store under the name runtime.yaml gives as keyEnv; read from stdin, never printed
@@ -928,6 +929,8 @@ const OPTIONS = {
   draft: { type: "boolean" },
   story: { type: "string" },
   gaps: { type: "boolean" },
+  // ADR 0167: atticus map <repo> --rules, a top-up for reading rules added since a read.
+  rules: { type: "boolean" },
   // ADR 0161: atticus map --all.
   stale: { type: "boolean" },
   "max-parts": { type: "string" },
@@ -1641,7 +1644,7 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
     const repo = command;
     if (!repo) {
       io.err(
-        "Usage: atticus map <repo> [--estimate | --gaps [--part n]] [--handoff | --copy [--answer <file>] | --mode m] [--next] [--max-tokens n] [--force], or atticus map --all [--stale | --gaps] [--repos a,b] [--dry-run] [--max-tokens n]",
+        "Usage: atticus map <repo> [--estimate | --gaps [--part n] | --rules] [--handoff | --copy [--answer <file>] | --mode m] [--next] [--max-tokens n] [--force], or atticus map --all [--stale | --gaps] [--repos a,b] [--dry-run] [--max-tokens n]",
       );
       return 2;
     }
@@ -1669,6 +1672,7 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
       ...(text(values.answer) !== undefined ? { answer: text(values.answer)! } : {}),
       estimate: values.estimate === true,
       gaps: values.gaps === true,
+      rules: values.rules === true,
       // ADR 0161: with --gaps, the rest of one part of the read plan.
       ...(values.gaps === true &&
       Number.isInteger(Number(text(values.part))) &&
@@ -1680,7 +1684,9 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
       copy: values.copy === true,
       json: values.json === true,
     };
-    if (o.estimate || o.gaps) return mapCommand(root, repo, o, io);
+    // ADR 0167: --rules alone writes the top-up's prompt for a new chat; with a mode, its batches.
+    if (o.estimate || o.gaps || (o.rules && !o.copy && !text(values.mode)))
+      return mapCommand(root, repo, o, io);
     try {
       // A batch's answer may be empty (no fact in those files): any result file is an answer.
       const { runtime } = await runtimeForCli(root, {

@@ -36,6 +36,7 @@ import {
 import { NoRoomError, roomGuard, streamFacts } from "./memory-room.js";
 import { notesAt } from "./org-notes.js";
 import { recordReadProgress } from "./map-parts.js";
+import { recordTopUpVerified } from "./map-rules.js";
 
 /**
  * atticus verify <repo> (ADR 0124): check the facts the assistant wrote for a repo against the
@@ -318,6 +319,9 @@ export async function verifyCommand(
         }
       : {}),
   });
+  // ADR 0167: a top-up session given before this verify is done when it passes; after the last,
+  // the read records the reading rules there are now.
+  if (!failed) await recordTopUpVerified(root, repo, { commit });
 
   // --write (ADR 0124, A3b): the kept facts become the catalog, only when none was rejected,
   // so a half-fixed read never replaces the repo's records.

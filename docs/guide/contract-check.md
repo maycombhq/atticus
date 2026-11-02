@@ -37,4 +37,4 @@ Nothing is configured: the check follows the mappings the code shows, each a cit
 - A **mapper** (MapStruct, AutoMapper, a converter) that renames a field: `mappedTo` the field it becomes.
 - A **gateway policy** that reshapes the payload (AssignMessage, JavaScript, XSL): the route's field `mappedTo` the forwarding call's.
 
-A field a policy or converter writes that nobody traced is **unconfirmed**, never a mismatch, and so is a field the other side lacks while such an untraced field there matched nothing: the converter may have renamed it (`acctBal`, written by a serializer, read as `balance`). Repos read before this check need reading again for their DTOs, mappers and policies: `atticus map --all --stale`.
+A field a policy or converter writes that nobody traced is **unconfirmed**, never a mismatch, and so is a field the other side lacks while such an untraced field there matched nothing: the converter may have renamed it (`acctBal`, written by a serializer, read as `balance`). Repos read before this check need reading again for their DTOs, mappers and policies: `atticus map --all --stale` tops them up, reading only those files for the new rules (ADR 0167).

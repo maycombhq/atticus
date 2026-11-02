@@ -5,7 +5,9 @@ import {
   assistantTier,
   ABOUT_RULE,
   mapBatchInstructions,
+  rulesNow,
   taughtFrameworksText,
+  type RuleSet,
   readProbes,
   tierSource,
   tierWords,
@@ -154,6 +156,11 @@ export interface MapOptions {
    * stopped partway through it: the part's files no kept fact or reviewed line accounts for yet.
    */
   part?: number;
+  /**
+   * ADR 0167: a top-up for the reading rules added since the repo was read: without a runtime,
+   * the prompt of its next session for a new chat (`<repo>.rules.md`); with one, its batches.
+   */
+  rules?: boolean;
 }
 
 export interface MapDeps {
@@ -219,6 +226,8 @@ interface MapState {
    * batches hold only the files changed since; the facts citing them were handed back to rewrite.
    */
   reread?: { from: string[]; carried: number; facts: number };
+  /** ADR 0167: a top-up: only these rule sets go in each prompt. */
+  sets?: RuleSet[];
 }
 
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
@@ -709,7 +718,9 @@ async function packFor(
         // build files are read first, so from the second batch on this is what the code says.
         frameworks: await frameworksFor(root, s.repo, facts),
         // Nothing says what this repo is: ask for one line, cited, for a person to confirm.
-        ...(about ? {} : { askAbout: true }),
+        ...(about || s.sets ? {} : { askAbout: true }),
+        // ADR 0167: a top-up carries only the rule sets the read lacked.
+        ...(s.sets ? { sets: s.sets } : {}),
         // A-taught: how to read the wrapper calls and annotations of the frameworks it is built on.
         ...taughtOption(taughtIn(source, op)),
         // ADR 0163: what the organisation's terms mean here and what must hold, as data.
@@ -921,6 +932,25 @@ export async function mapCommand(
       io,
     );
   }
+  if (o.rules && !deps.runtime) {
+    // ADR 0167: the next session of a top-up, for a new chat (/atticus-map <repo> --rules).
+    const { mapRules } = await import("./map-rules.js");
+    const tier = await tierHere(root, op);
+    return mapRules(
+      root,
+      repo,
+      {
+        commit,
+        source,
+        exclude,
+        conventions,
+        session: sessionTokensFor(limitOf(o, op, tier).limit),
+        notes: notesPrompt,
+        ...(o.json ? { json: true } : {}),
+      },
+      io,
+    );
+  }
   if (o.estimate)
     return estimate(
       root,
@@ -1027,62 +1057,115 @@ export async function mapCommand(
     // What the prompts of this read will carry framework rules for (A-framework), counted into
     // the room the plan leaves each batch.
     const frameworks = await frameworksFor(root, repo, existing);
-    const re = await rereadOf(dir, existing, commit, source, exclude, deps.git, conventions);
-    const reread = re.plan && !re.plan.unknown.length ? re.plan : undefined;
-    const since = reread?.from.map((x) => x.commit.slice(0, 12)).join(", ");
-    if (reread && !reread.files.length && !reread.reread.length) {
-      io.out(
-        `Nothing ${repo}'s facts cite changed since ${since}, and no source file did: atticus verify ${repo} carries its ${plural(reread.carried, "fact")} to ${commit.slice(0, 12)}.`,
+    if (o.rules) {
+      // ADR 0167: a top-up. Only the rule sets the read lacked, over the files they apply to; the
+      // facts kept are listed by id in every prompt, as in any read.
+      const { topUpOf, recordRulesNow, ruleSetsOfFiles } = await import("./map-rules.js");
+      const t = await topUpOf(root, repo, {
+        commit,
+        facts: existing,
+        source,
+        exclude,
+        conventions,
+      });
+      if ("error" in t) {
+        io.err(t.error);
+        return 2;
+      }
+      if (!t.lacking.length) {
+        io.out(`${repo} was read under the reading rules there are now: nothing to top up.`);
+        return 0;
+      }
+      if (!t.files.length) {
+        await recordRulesNow(root, repo, commit);
+        io.out(
+          `No file of ${repo} is one the reading rules added since it was read apply to (${t.lacking.join(", ")}): its read is recorded as under the rules there are now.`,
+        );
+        return 0;
+      }
+      const sets = ruleSetsOfFiles(t.files);
+      const plan = planBatches(
+        onlyFiles(
+          source,
+          t.files.map((f) => f.path),
+        ),
+        { room, exclude, overhead: overheadOf(repo, commit, frameworks), conventions },
       );
-      return 0;
-    }
-    const plan = planBatches(
-      reread
-        ? onlyFiles(
-            source,
-            reread.files.map((f) => f.path),
-          )
-        : source,
-      { room, exclude, overhead: overheadOf(repo, commit, frameworks), conventions },
-    );
-    // A file whose topic rules leave too little room beside them (A-lean).
-    if (plan.leastRoom < MIN_ROOM) return tooSmall(room - plan.leastRoom);
-    if (!plan.batches.length && !reread) {
+      if (plan.leastRoom < MIN_ROOM) return tooSmall(room - plan.leastRoom);
+      s = {
+        schemaVersion: 1,
+        repo,
+        commit,
+        ...(limit ? { maxTokens: limit } : {}),
+        room,
+        batches: plan.batches,
+        next: 0,
+        rejected: [],
+        problems: [],
+        sets,
+      };
+      await saveState(root, s);
       io.out(
-        `${repo} has no source files to read${plan.excluded.length ? ` (${plural(plan.excluded.length, "file")} excluded)` : ""}.`,
+        `Topping up ${repo} at ${commit.slice(0, 12)} for the reading rules added since it was read (${sets.join(", ")}): ${plural(plan.files, "source file")} in ${batches(plan.batches.length)}; facts go to ${factsFile}.`,
       );
-      return 0;
+    } else {
+      const re = await rereadOf(dir, existing, commit, source, exclude, deps.git, conventions);
+      const reread = re.plan && !re.plan.unknown.length ? re.plan : undefined;
+      const since = reread?.from.map((x) => x.commit.slice(0, 12)).join(", ");
+      if (reread && !reread.files.length && !reread.reread.length) {
+        io.out(
+          `Nothing ${repo}'s facts cite changed since ${since}, and no source file did: atticus verify ${repo} carries its ${plural(reread.carried, "fact")} to ${commit.slice(0, 12)}.`,
+        );
+        return 0;
+      }
+      const plan = planBatches(
+        reread
+          ? onlyFiles(
+              source,
+              reread.files.map((f) => f.path),
+            )
+          : source,
+        { room, exclude, overhead: overheadOf(repo, commit, frameworks), conventions },
+      );
+      // A file whose topic rules leave too little room beside them (A-lean).
+      if (plan.leastRoom < MIN_ROOM) return tooSmall(room - plan.leastRoom);
+      if (!plan.batches.length && !reread) {
+        io.out(
+          `${repo} has no source files to read${plan.excluded.length ? ` (${plural(plan.excluded.length, "file")} excluded)` : ""}.`,
+        );
+        return 0;
+      }
+      const byId = new Map(existing.map((f) => [f.id, f]));
+      s = {
+        schemaVersion: 1,
+        repo,
+        commit,
+        ...(limit ? { maxTokens: limit } : {}),
+        room,
+        batches: plan.batches,
+        next: 0,
+        rejected: (reread?.reread ?? []).map((r) => {
+          const fact = byId.get(r.id)!;
+          return { id: r.id, code: "cite-changed", message: staleMessage(fact, r, commit), fact };
+        }),
+        problems: [],
+        ...(reread
+          ? {
+              reread: {
+                from: reread.from.map((x) => x.commit),
+                carried: reread.carried,
+                facts: reread.reread.length,
+              },
+            }
+          : {}),
+      };
+      await saveState(root, s);
+      io.out(
+        reread
+          ? `Re-reading ${repo} at ${commit.slice(0, 12)}: ${plural(plan.files, "source file")} changed since ${since}, in ${batches(plan.batches.length)}${plan.batches.length ? ` (about ${plan.tokens} tokens${limit ? `, each prompt within ${limit} tokens` : ""})` : ""}; ${plural(reread.reread.length, "fact")} to rewrite, ${reread.carried} carried as they are; facts go to ${factsFile}.`
+          : `Reading ${repo} at ${commit.slice(0, 12)} in ${batches(plan.batches.length)} (${plural(plan.files, "source file")}, about ${plan.tokens} tokens${limit ? `, each prompt within ${limit} tokens` : ""}); facts go to ${factsFile}.`,
+      );
     }
-    const byId = new Map(existing.map((f) => [f.id, f]));
-    s = {
-      schemaVersion: 1,
-      repo,
-      commit,
-      ...(limit ? { maxTokens: limit } : {}),
-      room,
-      batches: plan.batches,
-      next: 0,
-      rejected: (reread?.reread ?? []).map((r) => {
-        const fact = byId.get(r.id)!;
-        return { id: r.id, code: "cite-changed", message: staleMessage(fact, r, commit), fact };
-      }),
-      problems: [],
-      ...(reread
-        ? {
-            reread: {
-              from: reread.from.map((x) => x.commit),
-              carried: reread.carried,
-              facts: reread.reread.length,
-            },
-          }
-        : {}),
-    };
-    await saveState(root, s);
-    io.out(
-      reread
-        ? `Re-reading ${repo} at ${commit.slice(0, 12)}: ${plural(plan.files, "source file")} changed since ${since}, in ${batches(plan.batches.length)}${plan.batches.length ? ` (about ${plan.tokens} tokens${limit ? `, each prompt within ${limit} tokens` : ""})` : ""}; ${plural(reread.reread.length, "fact")} to rewrite, ${reread.carried} carried as they are; facts go to ${factsFile}.`
-        : `Reading ${repo} at ${commit.slice(0, 12)} in ${batches(plan.batches.length)} (${plural(plan.files, "source file")}, about ${plan.tokens} tokens${limit ? `, each prompt within ${limit} tokens` : ""}); facts go to ${factsFile}.`,
-    );
   }
 
   if (!s) return 2;
@@ -1254,6 +1337,12 @@ async function finish(root: string, s: MapState, io: Output, o: MapOptions): Pro
   s.done = true;
   await saveState(root, s);
   const last = s.last;
+  // ADR 0167: a read whose facts all pass was given these rules: a top-up, or a whole read (a
+  // re-read reads only what changed, so it keeps what the read on file was given).
+  if (last && !last.rejected && !s.reread) {
+    const { recordRulesNow } = await import("./map-rules.js");
+    await recordRulesNow(root, s.repo, s.commit);
+  }
   const rel = factsRelOf(root);
   if (o.json) {
     io.out(
@@ -1424,6 +1513,11 @@ async function estimate(
     plan0.estimate.tokens === estimate.tokens &&
     plan0.estimate.sessions === estimate.sessions &&
     plan0.estimate.reread === estimate.reread;
+  // ADR 0167: the rules the read is given. A first read (no facts yet) is given these; a re-read
+  // reads only what changed, and a plan made again over facts already read reads nothing anew, so
+  // either keeps what the read on file was given (nothing, for a read before they were recorded).
+  const firstRead = typeof existing !== "string" && existing.length === 0 && !reread;
+  const readRules = firstRead ? rulesNow() : plan0?.rules;
   if (!same)
     await writeReadPlan(root, repo, {
       commit: c.commit,
@@ -1432,8 +1526,10 @@ async function estimate(
       estimate,
       // What the reader reported of an earlier plan stays, under the commit it was of.
       ...(plan0?.reported ? { reported: plan0.reported } : {}),
+      ...(readRules ? { rules: readRules } : {}),
     });
-  else if (!sameEstimate) await saveReadPlan(root, { ...plan0, estimate });
+  else if (!sameEstimate || (firstRead && plan0.rules?.hash !== readRules?.hash))
+    await saveReadPlan(root, { ...plan0, estimate, ...(readRules ? { rules: readRules } : {}) });
   const progress = parts.length
     ? await readPlanProgress(root, repo, { commit: c.commit })
     : undefined;

@@ -1,10 +1,12 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { rulesLacking } from "@maycombhq/assistant-files";
 import { citedFiles, factsDirOf, factsFileOf, factsRelOf, parseFacts } from "@maycombhq/core";
 import { dirSource, rereadPlan, sameCommit } from "@maycombhq/verify";
 import { loadRepos, type GitRunner } from "@maycombhq/workspace";
 import type { Output } from "./commands.js";
 import { carryOf, checkoutOf, excludesOf } from "./facts-files.js";
+import { loadReadPlan } from "./map-parts.js";
 import { isMetarepo, notMetarepo } from "./metarepo-guard.js";
 import { headFromFiles } from "./ui-api-trust.js";
 
@@ -26,6 +28,11 @@ export const FRESH_STATES = [
   "unknown-commit",
   /** The clone moved, but nothing the facts cite changed and no source file did: carry them. */
   "moved",
+  /**
+   * ADR 0167: the facts are of the clone's commit, but the read lacked rule sets added since
+   * (or recorded none, before 2.0.0-beta.12): a top-up reads the files those sets apply to.
+   */
+  "rules-changed",
   /** No clone to compare with. */
   "no-checkout",
   /** The facts are of the commit the clone is at. */
@@ -60,6 +67,8 @@ export interface FreshRepo {
   toRead: number;
   /** The commits the clone doesn't have. */
   unknown: string[];
+  /** ADR 0167: the rule sets the read lacks (`rules-changed`). */
+  rulesLacking?: string[];
   /** The command to run, absent when the facts are fresh. */
   command?: string;
   /** The assistant's slash command for it, when one does it. */
@@ -142,8 +151,20 @@ async function freshOf(
   const head = dir ? await headFromFiles(dir) : undefined;
   if (!dir || !head) return { ...counted, state: "no-checkout", command: "atticus workspace sync" };
   const at = { ...counted, head };
-  if (facts.every((f) => sameCommit(f.commit, head)))
-    return { ...at, state: "fresh", current: facts.length };
+  if (facts.every((f) => sameCommit(f.commit, head))) {
+    // ADR 0167: fresh by commit; read under the rules there are now, or topped up for them.
+    const lacking = rulesLacking((await loadReadPlan(root, repo).catch(() => undefined))?.rules);
+    return lacking.length
+      ? {
+          ...at,
+          state: "rules-changed",
+          current: facts.length,
+          rulesLacking: lacking,
+          command: `atticus map ${repo} --rules`,
+          slash: `/atticus-map ${repo} --rules`,
+        }
+      : { ...at, state: "fresh", current: facts.length };
+  }
   let carry;
   try {
     carry = await carryOf(dir, facts, head, o.git);
@@ -237,6 +258,8 @@ export function freshWhy(r: FreshRepo): string {
       return `The clone doesn't have ${r.unknown.map(short).join(", ")}, the commit the facts were read at: sync it, or read the repo again whole.`;
     case "moved":
       return `The clone moved, but nothing the facts cite changed and no source file did: verify carries all ${plural(r.carried + r.current, "fact")}.`;
+    case "rules-changed":
+      return `Its facts are of the clone's commit, but it was read before these reading rules: ${(r.rulesLacking ?? []).join(", ")}. A top-up reads only the files they apply to.`;
     case "no-checkout":
       return "No clone to compare the facts with.";
     case "fresh":
@@ -272,12 +295,20 @@ export async function estateFresh(
     return 0;
   }
   const stale = read.filter((r) => r.state !== "fresh");
-  const facts = stale.reduce((n, r) => n + r.reread, 0);
-  io.out(
-    stale.length
-      ? `${plural(stale.length, "repo")} of ${read.length} read ${stale.length === 1 ? "has" : "have"} moved past ${stale.length === 1 ? "its" : "their"} facts' commit: ${plural(facts, "fact")} to read again. Most stale first:`
-      : `All ${plural(read.length, "repo")} read are fresh: each one's facts are of the commit its clone is at.`,
-  );
+  const moved = stale.filter((r) => r.state !== "rules-changed");
+  const rules = stale.length - moved.length;
+  const facts = moved.reduce((n, r) => n + r.reread, 0);
+  if (moved.length || !rules)
+    io.out(
+      moved.length
+        ? `${plural(moved.length, "repo")} of ${read.length} read ${moved.length === 1 ? "has" : "have"} moved past ${moved.length === 1 ? "its" : "their"} facts' commit: ${plural(facts, "fact")} to read again. Most stale first:`
+        : `All ${plural(read.length, "repo")} read are fresh: each one's facts are of the commit its clone is at.`,
+    );
+  // ADR 0167: fresh by commit, read before reading rules added since.
+  if (rules)
+    io.out(
+      `${plural(rules, "repo")} of ${read.length} read ${rules === 1 ? "was" : "were"} read before reading rules added since: atticus map --all --stale tops ${rules === 1 ? "it" : "them"} up, reading only the files the new rules apply to.`,
+    );
   const shown = o.all ? read : stale;
   if (shown.length) {
     const rows = shown.map((r) => [

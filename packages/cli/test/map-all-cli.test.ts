@@ -12,7 +12,9 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
+import { stringify } from "yaml";
 import { MockRuntime, type AiRuntime } from "@maycombhq/ai";
+import { rulesNow } from "@maycombhq/assistant-files";
 import {
   mapAllCommand,
   readMapAllState,
@@ -202,7 +204,23 @@ describe("atticus map --all: the plan (ADR 0161)", () => {
   });
 
   it("skips a repo whose read is complete and fresh, and limits to --repos", async () => {
-    const root = linkEstate(LINK_REPOS.filter((r) => r !== "forge-cards" && r !== "forge-starter"));
+    const read = LINK_REPOS.filter((r) => r !== "forge-cards" && r !== "forge-starter");
+    const root = linkEstate(read);
+    // Read under the rules there are now (ADR 0167): a read before them is topped up instead.
+    for (const id of read)
+      write(
+        root,
+        `facts/${id}.read-plan.yaml`,
+        stringify({
+          schemaVersion: 2,
+          repo: id,
+          commit: SHA("a"),
+          session: 45000,
+          plannedAt: "2026-10-30T10:00:00Z",
+          parts: [],
+          rules: rulesNow(),
+        }),
+      );
     const plan = await dryRun(root);
     expect(plan.items.map((i) => i.repo)).toEqual(["forge-cards", "forge-starter"]);
     expect(plan.skipped).toContainEqual({ repo: "forge-accounts", why: "read and fresh" });

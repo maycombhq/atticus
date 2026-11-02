@@ -358,7 +358,18 @@ export function uiTrustRoutes(r: Router, ctx: ServerContext): Router {
       // (`git diff --name-status` between two commits they have); nothing fetched or written.
       .add("GET", "/api/trust/fresh", async () => {
         const { estateFreshness } = await import("./estate-fresh.js");
-        const body: Api.FreshViewT = await estateFreshness(ctx.root);
+        const v = await estateFreshness(ctx.root);
+        // ADR 0167: the local API's states are the commit's (2.34.0); a repo read before the
+        // reading rules there are now is fresh by its commit. `atticus estate fresh` says more.
+        const body: Api.FreshViewT = {
+          ...v,
+          repos: v.repos.map(({ rulesLacking: _r, ...r }) => {
+            if (r.state !== "rules-changed")
+              return { ...r, state: r.state as Api.FreshViewT["repos"][number]["state"] };
+            const { command: _c, slash: _s, ...x } = r;
+            return { ...x, state: "fresh" as const };
+          }),
+        };
         return { status: 200, body };
       })
   );

@@ -130,13 +130,25 @@ describe("atticus doctor --counts (F10)", () => {
       inferred: 3,
       inferredBy: { "joined-by-label": 1, "joined-by-path": 2 },
       asked: 1,
+      // Why, in the join's own words: two services serve /limits/{id}.
+      askedBy: { ambiguous: 1 },
       outside: 3,
       unresolved: 1,
+      // GET /ping: a health path with no target, which every service serves.
+      unresolvedBy: { "generic-path": 1 },
+    });
+    expect(c.questions.targets).toEqual({
+      open: 0,
+      calls: 0,
+      alone: 0,
+      groups: 0,
+      inGroups: 0,
+      bySize: {},
     });
     expect(c.repos.byState["no-checkout"]).toBe(10);
     expect(c.facts).toEqual({ accepted: 52, rejected: 0, notVerified: 0, filesNotRead: 0 });
     expect(c.tokens).toEqual({ reported: 50000, reports: 2, repos: 1 });
-    expect(c.questions).toEqual({ open: 1, byKind: { "scan-survey": 1 } });
+    expect(c.questions).toMatchObject({ open: 1, byKind: { "scan-survey": 1 } });
   });
 
   it("prints only counts and flags: no repo id, component, system, owner or host", async () => {
@@ -209,6 +221,49 @@ describe("atticus doctor --counts (F10)", () => {
     const all = [...t.out, ...t.err, ...j.out, ...j.err].join("\n");
     expect(all).not.toContain(r);
     expect(all).not.toMatch(/EACCES|forge-payments/);
+  });
+
+  it("counts the target questions by how many calls each covers: alone or in a group", async () => {
+    const r = await mkdtemp(join(tmpdir(), "atticus-doctor-counts-targets-"));
+    await cp(ESTATE, r, { recursive: true });
+    const ask = (question: string, lines: number[]) =>
+      writeQuestion(
+        r,
+        questionFromDraft(
+          QuestionDraft.parse({
+            question,
+            // A group's question cites every call's line; a call's own, its one line.
+            evidence: lines.map((l) => `src/main/java/forge/payments/PaymentsService.java:${l}`),
+          }),
+          {
+            step: "facts-targets",
+            repo: "forge-payments",
+            command: "atticus verify forge-payments --write",
+            rerun: "atticus verify forge-payments --write",
+            at: "2026-10-30T10:00:00Z",
+          },
+        ),
+      );
+    await ask("Which repo or system answers GET /a?", [10]);
+    await ask("Which repo or system answers GET /b?", [11]);
+    await ask("Which repo or system answers the calls under /c?", [12, 13, 14]);
+    await ask("Which repo or system answers the calls under /d?", [20, 21, 22, 23, 24, 25]);
+    const c = await doctorCounts(r, { git: noGit });
+    expect(c.questions.targets).toEqual({
+      open: 4,
+      calls: 11,
+      alone: 2,
+      groups: 2,
+      inGroups: 9,
+      bySize: { "1": 2, "2-4": 1, "5-9": 1 },
+    });
+    const lines = countsLines(c).join("\n");
+    expect(lines).toContain(
+      "Target questions: 4 open, covering 11 calls: 2 asked alone, 2 groups holding 9 (by calls each: 1 2, 2-4 1, 5-9 1)",
+    );
+    expect(lines).toContain("asked by why: ambiguous 1");
+    expect(lines).toContain("unresolved by why: generic-path 1");
+    expect(lines).not.toContain("forge-payments");
   });
 
   it("counts an empty metarepo as zeros, never an error", async () => {

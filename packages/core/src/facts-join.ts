@@ -396,6 +396,42 @@ export interface FactJoinOutside {
   target: string;
 }
 
+/**
+ * Why the join left a call it neither joined, asked about nor left to an outside system (with
+ * `explain`), in its own words, at the point it gave up:
+ * - `no-host`: no host, base or target in the code, and no entry of the estate serves its path;
+ * - `unresolved-placeholder`: the host or base it names (a placeholder or a config key) no
+ *   setting resolves (J0), and no entry serves its path;
+ * - `host-no-route`: a host the manifest or an exposure lists, and no route there serves its path
+ *   or method; `label-no-route`: the same for a host's first label naming a component;
+ * - `target-no-route`: the repo or component it names (or a person's answer names) has no entry
+ *   serving it;
+ * - `generic-path`: a health, status or metrics path with no target, which every service serves;
+ * - `answered-none`: a person answered that nothing in the estate answers it;
+ * - `topic-unheard`: a publish no listener's topic matches; `topic-unresolved`: a placeholder
+ *   topic no setting resolves (J0);
+ * - `type-not-joined`: a call of a type the join doesn't join (`SERVES`).
+ */
+export const JOIN_LEFT_REASONS = [
+  "no-host",
+  "unresolved-placeholder",
+  "host-no-route",
+  "label-no-route",
+  "target-no-route",
+  "generic-path",
+  "answered-none",
+  "topic-unheard",
+  "topic-unresolved",
+  "type-not-joined",
+] as const;
+export type JoinLeftReason = (typeof JOIN_LEFT_REASONS)[number];
+
+/** A call the join left, and why (with `explain`). */
+export interface FactJoinLeft {
+  call: FactEnd;
+  reason: JoinLeftReason;
+}
+
 /** A call whose named target (a repo or component of the estate) has no entry for it. */
 export interface FactJoinMiss {
   call: FactEnd;
@@ -436,6 +472,8 @@ export interface FactsJoinResult {
   outside?: FactJoinOutside[];
   /** J1: exposure facts that conflict with the manifest or name no component; left out when none. */
   exposure?: ExposureFinding[];
+  /** With `explain`: every call left, with why; left out otherwise. */
+  left?: FactJoinLeft[];
 }
 
 export interface JoinFactsInput {
@@ -464,6 +502,8 @@ export interface JoinFactsInput {
    * gateway's repo, and the route's forwarding call is joined on its own. Default true.
    */
   walkGateways?: boolean;
+  /** Say why each call left unjoined, unasked and not outside was left (`left`). Default false. */
+  explain?: boolean;
 }
 
 type Entry = FactOf<"entry">;
@@ -1175,6 +1215,10 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
   const asks: FactJoinAsk[] = [];
   const misses: FactJoinMiss[] = [];
   const outsideCalls: FactJoinOutside[] = [];
+  const left: FactJoinLeft[] = [];
+  const leave = (c: Node, reason: JoinLeftReason) => {
+    if (input.explain) left.push({ call: end(c), reason });
+  };
 
   /** The entries of a scope that serve a call, best first: score and node. */
   const serving = (c: Node & { fact: Call }, inScope: (e: Node) => boolean, loose: boolean) => {
@@ -1201,6 +1245,7 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
       if (/^(subscribe|consume|listen)$/i.test(f.method ?? "")) continue;
       // J0: a topic either side gives as a placeholder is each value its settings give it.
       const sent = topicsOf(call, f.path);
+      const before = joins.length;
       for (const e of entries) {
         if (e.fact.entryType !== f.callType || e.component === call.component) continue;
         const heard = topicsOf(e, e.fact.path);
@@ -1227,9 +1272,13 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
           interface: interfaceId(call.component, e.component, undefined, path),
         });
       }
+      if (joins.length === before) leave(call, sent.length ? "topic-unheard" : "topic-unresolved");
       continue;
     }
-    if (!SERVES[f.callType]) continue;
+    if (!SERVES[f.callType]) {
+      leave(call, "type-not-joined");
+      continue;
+    }
 
     // The config fact that gives the call's base URL ties it to a host; where its value is a
     // placeholder (J0), each value the settings for the caller's component give it does.
@@ -1293,12 +1342,16 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
       if (components.has(slug)) return { scope: (e: Node) => e.component === slug, target: slug };
       return undefined;
     };
-    if (answer === NO_TARGET) continue;
+    if (answer === NO_TARGET) {
+      leave(call, "answered-none");
+      continue;
+    }
     // C2 (ADR 0135): a target a person set (a correction from the Map) outranks every rule
     // after an answer, the questions included: one naming nothing in the estate is outside it,
     // never asked about, nor joined by its host, a host's label or its path.
     if (!answer && f.by === "person" && f.to && !named(f.to)) {
       if (f.to !== NO_TARGET) outsideCalls.push({ call: end(call), target: f.to });
+      else leave(call, "answered-none");
       continue;
     }
     // A base whose values (a TargetServer or KVM entry per environment) are hosts different repos
@@ -1381,7 +1434,10 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
       // The join fallback: no host, and a target that names nothing in the estate (a relative
       // call's guessed name) or none. The one entry of the caller's own repo that serves it,
       // else of the estate; two or more is a question.
-      if (GENERIC.test(f.path)) continue;
+      if (GENERIC.test(f.path)) {
+        leave(call, "generic-path");
+        continue;
+      }
       how = "path";
     }
 
@@ -1436,7 +1492,13 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
         target: scope.target,
         message: `${call.component} calls ${what} on ${scope.target}, and no entry of ${scope.target} the facts name serves it`,
       });
-    }
+      leave(
+        call,
+        how === "host" ? (byLabel ? "label-no-route" : "host-no-route") : "target-no-route",
+      );
+    } else if (how === "path")
+      // The fallback found no entry: a host or base the code names that nothing resolved, or none.
+      leave(call, f.host || f.base ? "unresolved-placeholder" : "no-host");
   }
 
   // ---- through the gateways (A-gateway; a chain of them, A-gateway2): a call that lands on a
@@ -1672,6 +1734,7 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
     // Left out when none, so a join with nothing outside reads as it did before J2.
     ...(outsideCalls.length ? { outside: outsideCalls.sort(byEnds) } : {}),
     ...(exposure.length ? { exposure } : {}),
+    ...(input.explain ? { left: left.sort(byEnds) } : {}),
     lineage: lineage.sort(
       (x, y) =>
         cmp(x.interface, y.interface) ||
