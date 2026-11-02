@@ -190,6 +190,18 @@ export const ALLOW = [
       "the wiki types sources.yaml takes are the C6 contract's enum (ADR 0101), named in the API for the app's source form; claude-code is a surface the prompt history records from, as runtime.yaml's assistants enum names it (ADR 0110); teams is the English word, roles.yaml's teams a question is routed to (ADR 0140)",
   },
   {
+    file: "packages/scanner/src/target-suggest.ts",
+    names: ["apigee", "teams"],
+    reason:
+      "apigee is the deploy fact's platform value the gateway reading rules write (ADR 0124 addendum A-gateway), used only to word why a BasePath is suggested; teams is the English word, roles.yaml's teams a picker lists (ADR 0162)",
+  },
+  {
+    file: "packages/scanner/src/facts-catalog.ts",
+    names: ["teams"],
+    reason:
+      "the English word: roles.yaml's teams the target picker lists (ADR 0162), not the chat product",
+  },
+  {
     file: "packages/core/src/shared-maps.ts",
     names: ["teams"],
     reason:
