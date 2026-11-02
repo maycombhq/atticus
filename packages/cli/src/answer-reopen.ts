@@ -46,7 +46,9 @@ export async function readNotSettled(
     return `its second pass (atticus map ${repo} --gaps) is planned and not read yet`;
   const fresh = (await estateFreshness(root, { repos: [repo], ...(o.git ? { git: o.git } : {}) }))
     .repos[0];
-  if (!fresh || fresh.state !== "fresh")
+  // A read that lacks reading rules added since (ADR 0167) still has every route at this commit:
+  // routes were read under every rule set, so it is fresh enough to check an answer against.
+  if (!fresh || (fresh.state !== "fresh" && fresh.state !== "rules-changed"))
     return `its facts aren't fresh (atticus estate fresh says ${fresh?.state ?? "not-read"})`;
   return undefined;
 }
