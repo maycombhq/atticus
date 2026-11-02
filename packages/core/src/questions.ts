@@ -10,6 +10,7 @@ import {
   HOSTS_NONE,
   HOSTS_STEP,
   outsideBoundaryOf,
+  PICKER_LABELS,
   TARGETS_SPLIT_LABEL,
   TARGETS_STEP_ID,
 } from "./host-questions.js";
@@ -695,7 +696,7 @@ export async function migrateQuestions(
       continue;
     }
     const v = (data as { schemaVersion?: unknown } | null)?.schemaVersion;
-    if (v !== 1 && v !== 2) continue;
+    if (v !== 1 && v !== 2 && v !== 3) continue;
     const q = Question.safeParse(data);
     if (!q.success) continue;
     if (!o.dryRun) await write(root, q.data);
@@ -747,6 +748,33 @@ export async function retireQuestion(
       why: o.why,
       ...(o.replacedBy?.length ? { replacedBy: o.replacedBy } : {}),
     },
+  });
+  await write(root, next);
+  return next;
+}
+
+/**
+ * ADR 0162 (F8): open an answered targets question again, because the code read since disagrees
+ * with its answer (the repo it named has no route that serves the call). The answer it had is
+ * kept under `reopened` with why, so the person sees what they said and what the code says.
+ */
+export async function reopenQuestion(
+  root: string,
+  id: string,
+  o: { why: string; at: string },
+): Promise<Question> {
+  const q = await readQuestion(root, id);
+  if (!q) throw new QuestionError("not-found", `There is no question ${id}.`);
+  if (q.state !== "answered" || !q.answer)
+    throw new QuestionError(
+      "retired",
+      `Question ${id} is ${q.state}; only an answered one reopens.`,
+    );
+  const { answer, ...rest } = q;
+  const next = Question.parse({
+    ...rest,
+    state: "open",
+    reopened: { at: o.at, why: o.why, answer },
   });
   await write(root, next);
   return next;
@@ -889,6 +917,13 @@ export async function answerQuestion(
       q.options.length
         ? `There is no option ${a.option}: pick 1 to ${q.options.length}.`
         : `There is no option ${a.option}: this question has no options, so answer in your own words.`,
+    );
+  // ADR 0162 (F8): "Another repo…" opens the picker; it names nothing, so it isn't an answer.
+  const pickerLabel = a.option !== undefined ? q.options[a.option - 1]?.label : undefined;
+  if (pickerLabel && PICKER_LABELS.has(pickerLabel))
+    throw new QuestionError(
+      "bad-answer",
+      `"${pickerLabel}" opens the list of every repo, system and team: name the one you mean with --target <id> (atticus questions answer ${q.id} --target <id>), or in your own words.`,
     );
   const level = a.scope ?? q.scope.level;
   let scopeId: string;

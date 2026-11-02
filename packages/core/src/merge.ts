@@ -46,6 +46,12 @@ export interface MergePattern {
   detection: { via: string[]; sync?: string; targetBoundary?: string; sameSystem?: boolean };
 }
 
+/**
+ * ADR 0162 (F8): the flag on an Interface a topic or queue makes to an outside system because the
+ * profile names the topic among the system's aliases: a person's word, not the code's.
+ */
+export const DECLARED_TOPIC = "declared-topic";
+
 export interface MergeInput {
   records: CatalogRecord[];
   repos: MergeRepo[];
@@ -528,6 +534,24 @@ export function mergeCatalog(input: MergeInput): MergeResult {
   });
 
   // ---- 5. events
+  // ADR 0162 (F8): the topics and queues the profile names among an outside system's aliases.
+  const topicOwner = new Map<string, string>();
+  for (const s of input.systems)
+    if (s.boundary === "vendor" || !ownSystems.has(s.id))
+      for (const a of s.aliases) {
+        if (!topicOwner.has(a)) topicOwner.set(a, s.id);
+        if (!topicOwner.has(a.toLowerCase())) topicOwner.set(a.toLowerCase(), s.id);
+      }
+  const topicJoined = new Set(
+    (input.records as unknown as Rec[])
+      .filter(
+        (r) =>
+          r.kind === "Interface" &&
+          r.via === "event-bus" &&
+          !((r.flags as string[] | undefined) ?? []).includes(DECLARED_TOPIC),
+      )
+      .map((r) => String(r.normalizedPath)),
+  );
   const topics = new Map<string, { pub: Map<string, Evidence[]>; sub: Map<string, Evidence[]> }>();
   for (const l of loose.filter(
     (x) => x.unresolvedKind === "event-publish" || x.unresolvedKind === "event-subscribe",
@@ -580,6 +604,42 @@ export function mergeCatalog(input: MergeInput): MergeResult {
           evidence: unionEvidence(pc.length > 0 ? pc : pev, def, sc.length > 0 ? sc : sev),
         });
       }
+    }
+    // ADR 0162 (F8): a topic or queue no estate repo serves the other side of, named among an
+    // outside system's aliases in the profile (another team's, or a vendor's), lands on that
+    // system: the person's word, marked declared, never over a counterpart the estate has.
+    const owner = topicOwner.get(topic) ?? topicOwner.get(topic.toLowerCase());
+    // An Interface the code already makes on the topic (the estate join's) is the counterpart.
+    const joined = topicJoined.has(topic);
+    if (owner && !joined && (sub.size === 0 || pub.size === 0)) {
+      const said = {
+        source: "manual",
+        path: input.profilePath ?? "org-pack/profiles",
+        by: "person",
+      } as Evidence;
+      const sides = sub.size === 0 ? [...pub.entries()] : [...sub.entries()];
+      for (const [c, ev] of sides.sort()) {
+        const code = ev.filter((e) => e.source === "code");
+        if (!code.length) continue;
+        const [from, to] = sub.size === 0 ? [c, owner] : [owner, c];
+        addInterface({
+          schemaVersion: 1,
+          kind: "Interface",
+          id: interfaceId(from, to, undefined, topic),
+          status: "current",
+          confidence: "asserted",
+          from,
+          to,
+          via: "event-bus",
+          normalizedPath: topic,
+          sync: "async",
+          direction: "outbound",
+          conflicts: [],
+          flags: [DECLARED_TOPIC],
+          evidence: unionEvidence(code, [said]),
+        });
+      }
+      continue;
     }
     // A publisher or subscriber with no counterpart stays a loose end.
     if (sub.size === 0)

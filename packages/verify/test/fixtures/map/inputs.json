@@ -8,6 +8,13 @@
   },
   "questions": [
     {
+      "id": "q-073e3b615030",
+      "question": "Who owns the topic forge.payments.settled, which ledger-api listens on?",
+      "evidence": [
+        "src/main/java/forge/ledger/SettlementListener.java:14"
+      ]
+    },
+    {
       "id": "q-53bbda8a5c5f",
       "question": "Which repo answers on notify.internal?",
       "evidence": [

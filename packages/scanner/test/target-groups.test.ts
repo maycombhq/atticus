@@ -25,6 +25,7 @@ import {
   targetQuestionDrafts,
   targetsFromAnswers,
   TARGETS_NONE,
+  TARGETS_ANOTHER,
   TARGETS_SPLIT,
   TARGETS_STEP,
 } from "../src/index.js";
@@ -149,6 +150,7 @@ describe("groupedTargetDrafts: one question for the calls that go the same way (
     expect(d.draft.options.map((o) => o.label)).toEqual([
       "notify-api",
       "northwind-fx",
+      TARGETS_ANOTHER,
       TARGETS_SPLIT,
       TARGETS_NONE,
     ]);
