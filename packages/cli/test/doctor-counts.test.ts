@@ -3,11 +3,48 @@ import { readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { parse } from "yaml";
 import { QuestionDraft, questionFromDraft, writeQuestion } from "@maycombhq/core";
 import type { GitRunner } from "@maycombhq/workspace";
-import { doctorCounts, doctorCountsCommand, countsLines } from "../src/doctor-counts.js";
+import {
+  doctorCounts,
+  doctorCountsCommand,
+  countsLines,
+  QUESTION_STEPS,
+} from "../src/doctor-counts.js";
+
+/** Review 18: a read that throws, its message naming the file it read. */
+const fail = vi.hoisted(() => ({ plan: false, facts: false }));
+vi.mock("../src/map-parts.js", async (orig) => {
+  const m = await orig<typeof import("../src/map-parts.js")>();
+  return {
+    ...m,
+    loadReadPlan: (root: string, repo: string) => {
+      if (fail.plan)
+        throw new Error(`EACCES: permission denied, open '${root}/facts/${repo}.read-plan.yaml'`);
+      return m.loadReadPlan(root, repo);
+    },
+  };
+});
+vi.mock("@maycombhq/scanner", async (orig) => {
+  const m = await orig<typeof import("@maycombhq/scanner")>();
+  return {
+    ...m,
+    estateFacts: (
+      root: string,
+      ...rest: Parameters<typeof m.estateFacts> extends [unknown, ...infer R] ? R : never
+    ) => {
+      if (fail.facts)
+        throw new Error(`EACCES: permission denied, open '${root}/facts/forge-payments.jsonl'`);
+      return m.estateFacts(root, ...rest);
+    },
+  };
+});
+afterEach(() => {
+  fail.plan = false;
+  fail.facts = false;
+});
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), "../../../fixtures");
 const ESTATE = join(FIXTURES, "link-estate");
@@ -124,6 +161,54 @@ describe("atticus doctor --counts (F10)", () => {
     expect(lines).toContain(`${c.links.verified} verified`);
     expect(lines).toContain(`${c.repos.read} read`);
     expect(lines).toContain(`${c.tokens.reported} tokens`);
+  });
+
+  it("counts a question asked by a step that isn't Atticus's own as other (review 18)", async () => {
+    const r = await mkdtemp(join(tmpdir(), "atticus-doctor-counts-steps-"));
+    await cp(ESTATE, r, { recursive: true });
+    const ask = (step: string, question: string) =>
+      writeQuestion(
+        r,
+        questionFromDraft(
+          QuestionDraft.parse({
+            question,
+            evidence: ["src/main/java/forge/payments/PaymentsService.java:24"],
+          }),
+          {
+            step,
+            repo: "forge-payments",
+            command: "atticus map forge-payments",
+            rerun: "atticus map forge-payments",
+            at: "2026-10-30T10:00:00Z",
+          },
+        ),
+      );
+    // A plugin's step can carry an organisation's name: it is never printed.
+    await ask("northwind-pay-ledger-check", "Is the ledger posted nightly?");
+    await ask("facts-targets", "Which repo answers this call?");
+    const c = await doctorCounts(r, { git: noGit });
+    expect(c.questions.byKind).toEqual({ "facts-targets": 1, other: 1 });
+    const t = capture();
+    await doctorCountsCommand(r, {}, t.io, { git: noGit });
+    expect(t.out.join("\n")).not.toContain("northwind");
+    for (const s of ["map", "scan-survey", "facts-targets", "facts-topics", "scan-hosts"])
+      expect(QUESTION_STEPS.has(s), s).toBe(true);
+  });
+
+  it("counts a part it can't read as a problem, printing no message or path (review 18)", async () => {
+    const r = await mkdtemp(join(tmpdir(), "atticus-doctor-counts-broken-"));
+    await cp(ESTATE, r, { recursive: true });
+    fail.plan = true;
+    fail.facts = true;
+    const c = await doctorCounts(r, { git: noGit });
+    expect(c.problems).toBeGreaterThan(0);
+    const t = capture();
+    expect(await doctorCountsCommand(r, {}, t.io, { git: noGit })).toBe(0);
+    const j = capture();
+    expect(await doctorCountsCommand(r, { json: true }, j.io, { git: noGit })).toBe(0);
+    const all = [...t.out, ...t.err, ...j.out, ...j.err].join("\n");
+    expect(all).not.toContain(r);
+    expect(all).not.toMatch(/EACCES|forge-payments/);
   });
 
   it("counts an empty metarepo as zeros, never an error", async () => {

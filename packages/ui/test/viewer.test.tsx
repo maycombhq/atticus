@@ -13,6 +13,9 @@ import {
   fitRect,
   keyAction,
   LABELS_FROM,
+  leavesFullScreen,
+  returnFocus,
+  trapTab,
   MINIMAP_FROM,
   neighbourhood,
   panBy,
@@ -44,6 +47,47 @@ const esc = (s: string) =>
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#x27;");
 const noop = () => undefined;
+
+describe("full screen keeps the keyboard inside it (review 17)", () => {
+  const [a, b, c] = ["a", "b", "c"];
+  const frame = "frame";
+  it("cycles Tab and Shift+Tab inside the frame", () => {
+    const list = [a, b, c];
+    expect(trapTab(list, c, false, frame)).toBe(a);
+    expect(trapTab(list, a, true, frame)).toBe(c);
+    // The frame itself (focused on F) goes to the first, or back to the last.
+    expect(trapTab(list, frame, false, frame)).toBe(a);
+    expect(trapTab(list, frame, true, frame)).toBe(c);
+    // Focus somewhere outside comes back in.
+    expect(trapTab(list, "page", false, frame)).toBe(a);
+    // Between the ends the browser's own order holds.
+    expect(trapTab(list, b, false, frame)).toBeUndefined();
+    expect(trapTab(list, b, true, frame)).toBeUndefined();
+    // Nothing to focus inside: the frame keeps it.
+    expect(trapTab([], frame, false, frame)).toBe(frame);
+  });
+
+  it("leaves on Escape, but not on the Escape that clears the search", () => {
+    const inside = (sel: string | null) => ({
+      closest: (q: string) => (sel && q.includes(sel) ? {} : null),
+    });
+    expect(leavesFullScreen({ key: "Escape", target: inside(null) })).toBe(true);
+    expect(leavesFullScreen({ key: "Escape", target: inside('[role="search"]') })).toBe(false);
+    expect(leavesFullScreen({ key: "Escape", defaultPrevented: true, target: null })).toBe(false);
+    expect(leavesFullScreen({ key: "Enter", target: null })).toBe(false);
+  });
+
+  it("gives focus back to the full screen button on leaving", () => {
+    let focused = "";
+    const button = { focus: () => (focused = "button") };
+    const f = {
+      querySelector: (q: string) => (q === '[data-viewer-action="full-screen"]' ? button : null),
+    };
+    returnFocus(f);
+    expect(focused).toBe("button");
+    expect(() => returnFocus(null)).not.toThrow();
+  });
+});
 
 describe("the viewer's maths (F10)", () => {
   it("fits a picture whole and centred, never past actual size", () => {
@@ -362,10 +406,14 @@ const laid: Laid = {
   over: [],
 };
 
-const canvas = (o: Partial<Parameters<typeof ArchitectureCanvas>[0]> = {}, g = graph) => (
+const canvas = (
+  o: Partial<Parameters<typeof ArchitectureCanvas>[0]> = {},
+  g = graph,
+  ld = laid,
+) => (
   <ReactFlowProvider
-    initialNodes={flowElements(g, laid, "RIGHT", o.selected).nodes}
-    initialEdges={flowElements(g, laid, "RIGHT", o.selected).edges}
+    initialNodes={flowElements(g, ld, "RIGHT", o.selected).nodes}
+    initialEdges={flowElements(g, ld, "RIGHT", o.selected).edges}
     initialWidth={1000}
     initialHeight={600}
   >
@@ -378,7 +426,7 @@ const canvas = (o: Partial<Parameters<typeof ArchitectureCanvas>[0]> = {}, g = g
       onToggle={noop}
       onMoved={noop}
       onLaid={noop}
-      initial={laid}
+      initial={ld}
       height={600}
       {...o}
     />
@@ -398,6 +446,13 @@ describe("the Architecture canvas in the viewer", () => {
     expect(html(canvas({ initialFull: true }))).toContain("viewer-full");
   });
 
+  it("is a dialog in full screen only, with a button focus can come back to (review 17)", () => {
+    const full = html(canvas({ initialFull: true }));
+    expect(full).toMatch(/role="region"[^>]*aria-modal="true"/);
+    expect(full).toContain('data-viewer-action="full-screen"');
+    expect(html(canvas())).not.toContain("aria-modal");
+  });
+
   it("draws a topic as its own box with its owner, and marks one with no listener", () => {
     const out = html(canvas());
     expect(out).toMatch(/class="arch-box[^"]*\btopic\b/);
@@ -411,6 +466,58 @@ describe("the Architecture canvas in the viewer", () => {
     );
     expect(WORDS.gap["no-publisher"]).toBe(COPY.topics.noPublisher);
     expect(WORDS.gapFix["no-listener"]).toBe(COPY.topics.noListenerFix);
+  });
+
+  it("says on a declared topic's box and link that it is the person's word (ADR 0162 §6)", () => {
+    const g: CanvasGraph = {
+      boxes: [
+        ...graph.boxes,
+        box("topic:rates", "tidewater.rates", "topic", {
+          owner: "tidewater",
+          ownerOutside: true,
+          declared: true,
+          gaps: ["declared-topic", "no-publisher"],
+        }),
+      ],
+      links: [
+        ...graph.links,
+        {
+          id: "d",
+          from: "topic:rates",
+          to: "system:ledger",
+          type: "subscribes",
+          count: 1,
+          label: `listens · ${COPY.topics.declaredMark}`,
+          async: true,
+          gaps: ["declared-topic"],
+          declared: true,
+        },
+      ],
+    };
+    const l: Laid = {
+      ...laid,
+      boxes: {
+        ...laid.boxes,
+        "topic:rates": {
+          id: "topic:rates",
+          x: 960,
+          y: 0,
+          width: 200,
+          height: 82,
+          group: false,
+        },
+      },
+    };
+    const n = flowElements(g, l, "RIGHT").nodes.find((x) => x.id === "topic:rates")!;
+    expect(n.ariaLabel).toBe(
+      `topic tidewater.rates, ${COPY.topics.ownerOutside("tidewater")}, ${COPY.topics.declared}, ${WORDS.gap["declared-topic"]}, ${COPY.topics.noPublisher}`,
+    );
+    const out = html(canvas({}, g, l));
+    expect(out).toContain(
+      esc(`${COPY.topics.ownerOutside("tidewater")} · ${COPY.topics.declared}`),
+    );
+    expect(WORDS.gap["declared-topic"]).toBeTruthy();
+    expect(WORDS.gapFix["declared-topic"]).toBeTruthy();
   });
 
   it("in focus mode dims what is not the picked box or a neighbour; search finds topics", () => {
@@ -525,6 +632,49 @@ describe("publishers → topic → listeners on the canvas (F10)", () => {
     expect(g.links.map((l) => [l.from, l.to, l.label, l.async])).toEqual([
       ["system:portal", "topic:payments", "publishes", true],
       ["topic:payments", "system:ledger", COPY.topics.listens, true],
+    ]);
+  });
+
+  it("carries a declared topic's mark to its box and its links (ADR 0162 §6)", () => {
+    const declared = {
+      ...edge("system:ledger", "topic:rates", "subscribes"),
+      gaps: ["declared-topic"],
+    };
+    const views: Views = new Map([
+      [
+        "estate",
+        {
+          lens: "architecture",
+          node: node("estate", "estate"),
+          path: [],
+          children: [
+            node("system:ledger", "system"),
+            node("system:tidewater", "system"),
+            node("topic:rates", "topic", {
+              properties: { owner: "tidewater", ownerOutside: true, declared: true },
+              gaps: ["declared-topic", "no-publisher"],
+            }),
+          ],
+          outside: [],
+          edges: [
+            { ...edge("system:tidewater", "topic:rates", "publishes"), gaps: ["declared-topic"] },
+            declared,
+          ],
+          reduced: true,
+          hiddenEdges: 0,
+        } as Api.GraphNodeViewT,
+      ],
+    ]);
+    const g = canvasGraph(views, "estate", new Set());
+    expect(g.boxes.find((b) => b.id === "topic:rates")).toMatchObject({ declared: true });
+    expect(g.links.map((l) => [l.from, l.to, l.label, l.declared])).toEqual([
+      ["system:tidewater", "topic:rates", `publishes · ${COPY.topics.declaredMark}`, true],
+      [
+        "topic:rates",
+        "system:ledger",
+        `${COPY.topics.listens} · ${COPY.topics.declaredMark}`,
+        true,
+      ],
     ]);
   });
 });

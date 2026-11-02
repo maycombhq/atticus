@@ -134,6 +134,49 @@ describe("why is this linked", () => {
     expect(WORDS.gapFix["not-in-shared-map"]).toBeTruthy();
   });
 
+  it("says a declared topic is the person's word, with the profile's line, never inferred (ADR 0162 §6)", () => {
+    const declared: Api.HierJoinT = {
+      interface: "if-3",
+      from: "tidewater",
+      to: "ledger-api",
+      how: "declared",
+      gateway: false,
+      verified: false,
+      path: "tidewater.rates",
+      caller: [],
+      callee: [],
+      hops: [],
+      other: [
+        { source: "code", repo: "forge-ledger", at: "src/main/java/forge/ledger/Bus.java:7" },
+        { source: "manual", at: "org-pack/profiles/ledger.yaml" },
+      ],
+    };
+    const page = html(
+      <WhyLinked
+        link={{
+          ...LINK,
+          type: "subscribes",
+          count: 1,
+          gaps: ["declared-topic"],
+          joins: [declared],
+        }}
+      />,
+    );
+    expect(page).toContain(esc(W.declaredTopic));
+    expect(page).toContain(esc(W.declared));
+    expect(page).not.toContain(W.inferred);
+    expect(page).not.toContain(esc(W.how.declared!));
+    expect(page).toContain(esc(W.declaredIn));
+    expect(page).toContain("org-pack/profiles/ledger.yaml");
+    expect(page).toContain("Bus.java:7");
+    // A gateway route's declared caller keeps its own words.
+    const route = html(
+      <WhyLinked link={{ ...LINK, joins: [{ ...GUESS, how: "declared", gateway: true }] }} />,
+    );
+    expect(route).toContain(esc(W.how.declared!));
+    expect(route).not.toContain(esc(W.declaredTopic));
+  });
+
   it("says a link that isn't a call has no join to explain", () => {
     expect(html(<WhyLinked link={{ ...LINK, joins: [] }} />)).toContain(esc(W.none));
   });

@@ -207,6 +207,38 @@ export function neighbourhood(
   return out;
 }
 
+/**
+ * Where Tab or Shift+Tab goes in full screen, so focus cycles inside the frame (WCAG 2.1.2,
+ * 2.4.3): past the last control back to the first, before the first to the last, and from the
+ * frame itself or anywhere outside it into it. Undefined where the browser's own order holds.
+ */
+export function trapTab<T>(list: readonly T[], active: T | null, shift: boolean, frame: T) {
+  if (!list.length) return frame;
+  const i = active === null ? -1 : list.indexOf(active);
+  if (shift) return i <= 0 ? list[list.length - 1] : undefined;
+  return i === -1 || i === list.length - 1 ? list[0] : undefined;
+}
+
+/** Whether an Escape leaves full screen: not the one that clears Find a box, or one handled. */
+export function leavesFullScreen(e: {
+  key: string;
+  defaultPrevented?: boolean;
+  target: { closest?: (q: string) => unknown } | null;
+}): boolean {
+  if (e.key !== "Escape" || e.defaultPrevented) return false;
+  return !e.target?.closest?.('[role="search"]');
+}
+
+/** On leaving full screen, focus goes back to the button that toggles it. */
+export function returnFocus(
+  frame: { querySelector: (q: string) => { focus: () => void } | null } | null,
+) {
+  frame?.querySelector('[data-viewer-action="full-screen"]')?.focus();
+}
+
+const FOCUSABLE =
+  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
 /** Full screen on and off: Esc leaves; the page behind does not scroll while it is on. */
 export function useFullScreen(initial = false): [boolean, (on?: boolean) => void] {
   const [full, setFull] = useState(initial);
@@ -214,7 +246,9 @@ export function useFullScreen(initial = false): [boolean, (on?: boolean) => void
   useEffect(() => {
     if (!full || typeof window === "undefined") return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setFull(false);
+      const target = e.target as HTMLElement | null;
+      if (leavesFullScreen({ key: e.key, defaultPrevented: e.defaultPrevented, target }))
+        setFull(false);
     };
     window.addEventListener("keydown", onKey);
     const body = document.body;
@@ -319,6 +353,7 @@ export function ViewerToolbar(p: {
       className={`btn viewer-btn ${o.on ? "primary" : ""}`}
       aria-label={label}
       title={label}
+      data-viewer-action={a}
       disabled={o.off}
       {...(o.on !== undefined ? { "aria-pressed": o.on } : {})}
       onClick={() => p.onAction(a)}
@@ -372,8 +407,10 @@ export function ViewerToolbar(p: {
             if (p.nodes.some((n) => n.label === e.target.value)) find(e.target.value);
           }}
           onKeyDown={(e) => {
-            if (e.key === "Escape" && q) {
+            // Escape here clears the search only, never leaves full screen (review 17).
+            if (e.key === "Escape") {
               e.stopPropagation();
+              e.preventDefault();
               setQ("");
             }
           }}
@@ -412,7 +449,42 @@ export function DiagramFrame(p: {
 }) {
   const [open, setOpen] = useState(true);
   const asideId = useId();
+  const own = useRef<HTMLDivElement | null>(null);
+  const ref = p.frameRef ?? own;
+  // Leaving full screen gives focus back to its button (review 17).
+  const wasFull = useRef(p.full);
+  useEffect(() => {
+    if (wasFull.current && !p.full) returnFocus(ref.current);
+    wasFull.current = p.full;
+    if (!p.full || typeof document === "undefined") return;
+    // Focus that lands outside the frame (a click behind it) is brought back in.
+    const frame = ref.current;
+    if (frame && !frame.contains(document.activeElement)) frame.focus();
+    const onFocus = (e: FocusEvent) => {
+      if (frame && !frame.contains(e.target as Node)) frame.focus();
+    };
+    document.addEventListener("focusin", onFocus);
+    return () => document.removeEventListener("focusin", onFocus);
+  }, [p.full, ref]);
   const onKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    // In full screen the frame is a dialog: Tab and Shift+Tab cycle inside it.
+    if (p.full && e.key === "Tab" && ref.current) {
+      const frame = ref.current;
+      const list = [...frame.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(
+        (x) => x !== frame && !x.closest("[hidden]") && x.getClientRects().length > 0,
+      );
+      const next = trapTab<HTMLElement>(
+        list,
+        document.activeElement as HTMLElement | null,
+        e.shiftKey,
+        frame,
+      );
+      if (next) {
+        e.preventDefault();
+        next.focus();
+      }
+      return;
+    }
     const t = e.target as HTMLElement;
     if (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT") return;
     if (t.isContentEditable) return;
@@ -428,7 +500,7 @@ export function DiagramFrame(p: {
   };
   return (
     <div
-      ref={p.frameRef}
+      ref={ref}
       className={`viewer ${p.full ? "viewer-full" : ""} ${p.className ?? ""}`}
       role="region"
       tabIndex={0}

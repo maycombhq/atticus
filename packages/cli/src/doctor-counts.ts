@@ -5,6 +5,11 @@ import {
   factsDirOf,
   factsFileOf,
   helperOn,
+  HOSTS_STEP,
+  LINK_QUESTION_STEPS,
+  TARGETS_STEP_ID,
+  TERM_STEP,
+  TOPICS_STEP_ID,
   isGuessedJoin,
   joinConventions,
   joinFacts,
@@ -77,6 +82,31 @@ export interface DoctorCounts {
   tokens: { reported: number; reports: number; repos: number };
 }
 
+/**
+ * The steps of Atticus's own that ask questions. A question asked by any other step (a plugin's,
+ * whose id can carry an organisation's name) is counted as `other`, so nothing is named.
+ */
+export const QUESTION_STEPS: ReadonlySet<string> = new Set([
+  "map",
+  "scan-survey",
+  "scan-verify",
+  "spec-draft",
+  "spec-check",
+  HOSTS_STEP,
+  TARGETS_STEP_ID,
+  TOPICS_STEP_ID,
+  TERM_STEP,
+  ...LINK_QUESTION_STEPS,
+  // The planner's, a change's stages (planner/src/stages) and its gaps; the knowledge conflicts.
+  "change-feature",
+  "change-architecture",
+  "change-stories",
+  "change-small",
+  "context-gap",
+  "knowledge-conflict",
+]);
+export const OTHER_STEP = "other";
+
 const bump = (m: Record<string, number>, k: string, n = 1) => {
   m[k] = (m[k] ?? 0) + n;
 };
@@ -93,16 +123,21 @@ export async function doctorCounts(
   let problems = 0;
 
   // Questions: the open ones, by the step that asked.
-  const qs = await listQuestions(root, { state: "open" }).catch(() => ({
-    questions: [],
-    problems: [],
-  }));
+  // Every read is caught: an error's message names a file, so it is counted, never printed.
+  const qs = await listQuestions(root, { state: "open" }).catch(() => {
+    problems++;
+    return { questions: [], problems: [] };
+  });
   problems += qs.problems.length;
   const byKind: Record<string, number> = {};
-  for (const q of qs.questions) bump(byKind, q.askedBy.step);
+  for (const q of qs.questions)
+    bump(byKind, QUESTION_STEPS.has(q.askedBy.step) ? q.askedBy.step : OTHER_STEP);
 
   // Repos: each one's freshness, as `atticus estate fresh` reads it.
-  const fresh = await estateFreshness(root, o.git ? { git: o.git } : {});
+  const fresh = await estateFreshness(root, o.git ? { git: o.git } : {}).catch(() => {
+    problems++;
+    return { repos: [], problems: [] };
+  });
   problems += fresh.problems.length;
   const byState = Object.fromEntries(FRESH_STATES.map((s) => [s, 0])) as Record<FreshState, number>;
   for (const r of fresh.repos) byState[r.state]++;
@@ -118,7 +153,10 @@ export async function doctorCounts(
     const of = factsFileOf(n);
     if (!of) continue;
     const text = await read(n);
-    if (text === undefined) continue;
+    if (text === undefined) {
+      problems++;
+      continue;
+    }
     if (of.facts) {
       const p = parseFacts(text);
       if (!p.ok) {
@@ -143,7 +181,12 @@ export async function doctorCounts(
   // Tokens: what readers reported, per repo's read plan.
   const tokens = { reported: 0, reports: 0, repos: 0 };
   for (const r of fresh.repos) {
-    const plan = await loadReadPlan(root, r.repo);
+    const plan = await Promise.resolve()
+      .then(() => loadReadPlan(root, r.repo))
+      .catch(() => {
+        problems++;
+        return undefined;
+      });
     const cost = plan ? readCostOf(plan).reported : undefined;
     if (!cost) continue;
     tokens.repos++;
@@ -159,7 +202,12 @@ export async function doctorCounts(
   } catch {
     if (total) problems++;
   }
-  if (op) Object.assign(links, await linkCounts(root, op));
+  if (op)
+    try {
+      Object.assign(links, await linkCounts(root, op));
+    } catch {
+      problems++;
+    }
 
   return {
     questions: { open: qs.questions.length, byKind: sorted(byKind) },

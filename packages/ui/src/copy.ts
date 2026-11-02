@@ -3385,7 +3385,7 @@ export const COPY = {
     /** What each key does, said once beside the picture. */
     keys: "Keys: + and − zoom, 0 fits, 1 is actual size, arrows pan, S zooms to the picked box, M focuses on it, F is full screen, / finds a box, Esc leaves full screen.",
     region: (title: string) => `${title}: picture`,
-    fullScreenOn: "Full screen. Press Esc to leave.",
+    fullScreenOn: "Full screen: Tab stays inside the picture. Press Esc to leave.",
     focusOn: (label: string) =>
       `Focus on ${label} and what it links to; everything else is dimmed.`,
     details: "Details",
@@ -3404,6 +3404,12 @@ export const COPY = {
     noPublisherFix:
       "Read the repo that publishes to it, or, if a system outside the estate does, name that system so its publisher is known.",
     listens: "listens",
+    // ADR 0162 §6 (F8): a topic or queue the profile names as an outside system's.
+    declared: "Declared in the profile",
+    declaredMark: "declared",
+    declaredGap: "Only the profile says so: no repo of the estate shows the other side",
+    declaredFix:
+      "A person named it in the profile, so it rests on their word. If a repo of the estate serves the other side, read that repo: the code's link takes its place.",
   },
   me: {
     aiIsOffHere: "AI is off here, so write it yourself: the critic's rule checks still review it.",
@@ -3745,6 +3751,11 @@ export const COPY = {
         "The catalog doesn't say how this was joined: it was written before Atticus kept that, or by a built-in reader. Run atticus verify on the caller's repo with --write to record it.",
     } as Record<string, string>,
     gateway: "It goes through a gateway on the way.",
+    // ADR 0162 §6 (F8): a topic or queue a person named as an outside system's in the profile.
+    declared: "Declared in the profile",
+    declaredTopic:
+      "Declared in the profile: a person named this topic or queue as that system's, and no repo of the estate serves the other side. It rests on their word, not on code at both ends.",
+    declaredIn: "In the profile",
     // ADR 0160 (O3): the answering side is another team's map.
     sharedMap: (team: string, commit: string | undefined) =>
       `Joined to ${team}'s map${commit ? ` (their commit ${commit.slice(0, 7)})` : ""}.`,
