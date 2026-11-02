@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { CatalogRecord } from "./catalog.js";
 import { factIdPart } from "./facts.js";
 import { gatewayRouteId, type FactEnd, type FactsJoinResult, type JoinRepo } from "./facts-join.js";
@@ -31,7 +32,8 @@ export interface TermSeen extends FactEnd {
   role: TermRole;
   /** path:line of the line that gives it its role. */
   meaningAt?: string;
-  note?: number | string;
+  /** The note's key, or its words quoted. */
+  note?: string;
 }
 
 /** A consumer a repo lists, and the repo whose own value it is, when one says so. */
@@ -61,12 +63,14 @@ export interface TermGrant {
 
 /**
  * What the consumers a repo lists say against the calls the join found. `caller-not-listed`: a
- * repo calls its routes and none of its own values is listed (a finding); `listed-no-call`: a
- * listed consumer's repo is known and makes no call into them (a note).
+ * repo calls its routes and none of its own values is listed (a finding); `caller-no-id`: a repo
+ * calls them and no fact of it names its own value, so whether it is listed is unknown (a note,
+ * review 12); `listed-no-call`: a listed consumer's repo is known and makes no call into them (a
+ * note).
  */
 export type TermAccessFinding =
   | {
-      reason: "caller-not-listed";
+      reason: "caller-not-listed" | "caller-no-id";
       repo: string;
       route: FactEnd;
       call: FactEnd;
@@ -149,8 +153,10 @@ export function joinTerms(input: JoinTermsInput): TermsResult {
   for (const [value, seen] of [...byValue].sort(([a], [b]) => cmp(a, b))) {
     if (new Set(seen.map((s) => s.repo)).size < 2) continue;
     const ownerRepos = new Set(seen.filter((s) => s.role === "owner").map((s) => s.repo));
+    // One owner and its consumers; or only consumers, no owner known (review 21): repos that let
+    // in the same system are not linked to each other by it.
     const explained =
-      ownerRepos.size === 1 &&
+      ownerRepos.size <= 1 &&
       seen.every((s) => s.role === "consumer" || (s.role === "owner" && ownerRepos.has(s.repo)));
     if (!explained) possible.push({ value, seen, inferred: true, flag: LINKED_BY_TERM_VALUE });
   }
@@ -197,7 +203,8 @@ export function joinTerms(input: JoinTermsInput): TermsResult {
         .map((t) => t.value);
       if (own.some((v) => values.has(v))) continue;
       access.push({
-        reason: "caller-not-listed",
+        // with no own value to look for, whether it is listed is unknown, not a difference
+        reason: own.length ? "caller-not-listed" : "caller-no-id",
         repo: r.repo,
         route,
         call,
@@ -258,6 +265,7 @@ export function termGrantRecords(
     });
     const id = fit(
       `ag-${g.gatewayRoute.replace(/^gw-/, "")}-${factIdPart(f.term)}-${factIdPart(f.value)}`,
+      `${g.gatewayRoute}\u0000${f.term}\u0000${f.value}`,
     );
     out.set(id, {
       kind: "AccessGrant",
@@ -265,7 +273,9 @@ export function termGrantRecords(
       id,
       status: "current",
       confidence: f.conf === "declared" ? "verified" : "inferred",
-      subjectKind: "oauth-client",
+      // An organisation's id names a system, not a credential: of C1's subject kinds, a system's
+      // own non-person identity (review 19). `term:<term>` says what the id is.
+      subjectKind: "service-account",
       subject: f.value,
       resource: g.gatewayRoute,
       scopesOrPermissions: [],
@@ -279,7 +289,15 @@ export function termGrantRecords(
   return [...out.values()].sort((a, b) => cmp(a.id, b.id));
 }
 
-const fit = (id: string) => (id.length <= 120 ? id : id.slice(0, 120).replace(/[-.]+$/, ""));
+/**
+ * An id at most 120 characters long. A longer one (a long value, whose slug is cut too) is cut
+ * and given a short hash of what it is made from, the value as written included, so two long
+ * values that share their first characters stay two grants (review 19).
+ */
+const fit = (id: string, whole: string) =>
+  id.length <= 120
+    ? id
+    : `${id.slice(0, 111).replace(/[-.]+$/, "")}-${createHash("sha256").update(whole).digest("hex").slice(0, 8)}`;
 
 /**
  * The flag an owner term gives its repo's Component (ADR 0163): `term:<term>=<value>`, the

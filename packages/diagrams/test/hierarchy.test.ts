@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
-import { interfaceId, parseRecord, type CatalogRecord } from "@maycombhq/core";
+import { DECLARED_TOPIC, interfaceId, parseRecord, type CatalogRecord } from "@maycombhq/core";
 import { buildEstate, focusView, nodeView, viewKey } from "../src/index.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -322,6 +322,84 @@ describe("topics and queues as nodes of their own (F10)", () => {
     const v = nodeView(est, "system:ledger", { lens: "architecture" });
     expect(edge(v)).toContain(`repo:forge-ledger publishes ${q.id}`);
     expect(ids(v.outside)).toContain(q.id);
+  });
+
+  // ADR 0162 §6 (F8): a topic the profile names among an outside system's, no repo of the estate
+  // serving the other side: the person's word, drawn on that system and marked declared.
+  const said = {
+    source: "manual",
+    path: "org-pack/profiles/ledger.yaml",
+    by: "person",
+  };
+  const declared = (from: string, to: string, path: string, line: number, via = "event-bus") => ({
+    kind: "Interface",
+    id: interfaceId(from, to, undefined, path),
+    confidence: "asserted",
+    from,
+    to,
+    via,
+    normalizedPath: path,
+    sync: "async",
+    direction: "outbound",
+    conflicts: [],
+    flags: [DECLARED_TOPIC],
+    evidence: [
+      { source: "code", repo: "forge-ledger", path: "src/main/java/forge/ledger/Bus.java", line },
+      said,
+    ],
+  });
+
+  it("places a vendor's declared topic the estate listens on under the vendor, the person's word", () => {
+    const est = buildEstate(forge([declared("tidewater", "ledger-api", "tidewater.rates", 7)]));
+    const t = [...est.nodes.values()].find((n) => n.label === "tidewater.rates")!;
+    expect(t).toMatchObject({ kind: "topic", parent: "system:tidewater" });
+    expect(t.properties).toMatchObject({ owner: "tidewater", ownerOutside: true, declared: true });
+    expect(t.gaps).toEqual(["declared-topic", "no-publisher"]);
+    expect(t.evidence).toContainEqual({ source: "manual", at: "org-pack/profiles/ledger.yaml" });
+    const v = nodeView(est, "estate", { lens: "architecture" });
+    expect(edge(v)).toEqual(
+      expect.arrayContaining([
+        `system:tidewater publishes ${t.id}`,
+        `system:ledger subscribes ${t.id}`,
+      ]),
+    );
+    for (const e of v.edges.filter((x) => x.to === t.id)) {
+      expect(e.gaps).toContain("declared-topic");
+      expect(e.joins?.[0]).toMatchObject({ how: "declared", path: "tidewater.rates" });
+      expect(e.joins?.[0]!.other).toContainEqual({
+        source: "manual",
+        at: "org-pack/profiles/ledger.yaml",
+      });
+    }
+  });
+
+  it("places a declared queue the estate sends to under the other team's system, the person's word", () => {
+    const est = buildEstate(
+      forge([declared("ledger-api", "harbor-audit", "harbor.audit.events", 9, "mq")]),
+    );
+    const t = [...est.nodes.values()].find((n) => n.label === "harbor.audit.events")!;
+    expect(t).toMatchObject({ kind: "topic", parent: "system:harbor-audit" });
+    expect(t.properties).toMatchObject({
+      owner: "harbor-audit",
+      ownerOutside: true,
+      declared: true,
+    });
+    expect(t.gaps).toEqual(["declared-topic", "no-listener"]);
+    const v = nodeView(est, "estate", { lens: "architecture" });
+    const pub = v.edges.find((e) => e.to === t.id)!;
+    expect(pub).toMatchObject({ from: "system:ledger", type: "publishes" });
+    expect(pub.gaps).toContain("declared-topic");
+    expect(pub.joins?.[0]?.how).toBe("declared");
+  });
+
+  it("never counts a vendor System record's publish as the estate's", () => {
+    const est = buildEstate(
+      forge([declared("northwind-pay", "ledger-api", "northwind.settlements", 11)]),
+    );
+    const t = [...est.nodes.values()].find((n) => n.label === "northwind.settlements")!;
+    expect(t).toMatchObject({ kind: "topic", parent: "system:northwind-pay" });
+    expect(t.properties).toMatchObject({ owner: "Northwind Pay", ownerOutside: true });
+    expect(t.gaps).toEqual(["declared-topic", "no-publisher"]);
   });
 });
 

@@ -284,8 +284,21 @@ const seg = (s: string) =>
     .toLowerCase()
     .replace(/\[\]/g, "")
     .replace(/[^a-z0-9]/g, "");
-const keyOf = (name: string) => name.split(".").map(seg).filter(Boolean).join(".");
-const tailOf = (name: string) => seg(name.split(".").pop() ?? name);
+/** A name's normalised forms, kept: the same few names come on every link of an estate. */
+const memo = (fn: (s: string) => string) => {
+  const kept = new Map<string, string>();
+  return (s: string) => {
+    let v = kept.get(s);
+    if (v === undefined) {
+      if (kept.size > 50_000) kept.clear();
+      v = fn(s);
+      kept.set(s, v);
+    }
+    return v;
+  };
+};
+const keyOf = memo((name: string) => name.split(".").map(seg).filter(Boolean).join("."));
+const tailOf = memo((name: string) => seg(name.split(".").pop() ?? name));
 const atOf = (f: Fact) => `${f.cite.file}:${f.cite.line}`;
 const where = (repo: string | undefined, at: string) => (repo ? `${repo} ${at}` : at);
 
@@ -311,20 +324,14 @@ const isOutbound = (owner: "entry" | "call", side: Side) =>
  * target dropped (inbound), and a field with an untraced `transform` marked.
  */
 function wireOf(
-  facts: readonly Fact[],
+  ix: RepoIndex,
   repo: string,
   owner: string,
   ownerKind: "entry" | "call",
   side: Side,
 ): WireField[] | undefined {
-  const crossing = mappingFields(facts);
-  const own = facts.filter(
-    (f): f is Field =>
-      f.kind === "field" &&
-      f.owner === owner &&
-      (f.side ?? "request") === side &&
-      !isMessageType(f) &&
-      !crossing.has(f.id),
+  const own = (ix.fields.get(owner) ?? []).filter(
+    (f) => (f.side ?? "request") === side && !isMessageType(f) && !ix.crossing.has(f.id),
   );
   if (!own.length) return undefined;
   const byId = new Map(own.map((f) => [f.id, f] as const));
@@ -369,6 +376,50 @@ function wireOf(
 }
 
 /**
+ * A repo's facts, indexed once per check (review item 4): by id (the first of an id), its field
+ * facts by owner in the order they come, the mapping fields, and its flows by entry and by the
+ * call a step names. Every lookup of the check is a map read, never a scan of the repo.
+ */
+interface RepoIndex {
+  byId: Map<string, Fact>;
+  fields: Map<string, Field[]>;
+  crossing: Set<string>;
+  flowsByEntry: Map<string, FactOf<"flow">[]>;
+  flowsByCall: Map<string, FactOf<"flow">[]>;
+  /** The payload sides and errors of each entry or call, worked out once. */
+  faces: Map<string, Pick<Face, "sides" | "errors">>;
+}
+
+function indexOf(facts: readonly Fact[]): RepoIndex {
+  const byId = new Map<string, Fact>();
+  const fields = new Map<string, Field[]>();
+  const flowsByEntry = new Map<string, FactOf<"flow">[]>();
+  const flowsByCall = new Map<string, FactOf<"flow">[]>();
+  const add = <T>(m: Map<string, T[]>, k: string, v: T) => {
+    const list = m.get(k);
+    if (list) list.push(v);
+    else m.set(k, [v]);
+  };
+  for (const f of facts) {
+    if (!byId.has(f.id)) byId.set(f.id, f);
+    if (f.kind === "field") add(fields, f.owner, f);
+    else if (f.kind === "flow") {
+      if (f.entry) add(flowsByEntry, f.entry, f);
+      for (const ref of new Set(f.steps.flatMap((x) => (x.ref ? [x.ref] : []))))
+        add(flowsByCall, ref, f);
+    }
+  }
+  return {
+    byId,
+    fields,
+    crossing: mappingFields(facts),
+    flowsByEntry,
+    flowsByCall,
+    faces: new Map(),
+  };
+}
+
+/**
  * The field facts that are a mapping between two payloads, not a payload: a field of an entry or
  * a call `mappedTo` a field of another entry or call (a gateway policy's), and the field it maps
  * to. A field mapped to a column stays its payload's.
@@ -392,15 +443,14 @@ function mappingFields(facts: readonly Fact[]): Set<string> {
 
 /** The error statuses the flows give an entry or a call (ADR 0142's reading), each with its first line. */
 const STATUS = /\b([45]\d\d)\b/g;
-function flowErrors(facts: readonly Fact[], entry?: string, call?: string): Map<string, string> {
+function flowErrors(ix: RepoIndex, entry?: string, call?: string): Map<string, string> {
   const out = new Map<string, string>();
-  const flows = facts
-    .filter(
-      (f): f is FactOf<"flow"> =>
-        f.kind === "flow" &&
-        ((!!entry && f.entry === entry) || (!!call && f.steps.some((s) => s.ref === call))),
-    )
-    .sort((a, b) => cmp(a.id, b.id));
+  const flows = [
+    ...new Set([
+      ...(entry ? (ix.flowsByEntry.get(entry) ?? []) : []),
+      ...(call ? (ix.flowsByCall.get(call) ?? []) : []),
+    ]),
+  ].sort((a, b) => cmp(a.id, b.id));
   for (const f of flows)
     for (const e of f.errors)
       for (const m of `${e.when} ${e.then}`.matchAll(STATUS))
@@ -408,16 +458,22 @@ function flowErrors(facts: readonly Fact[], entry?: string, call?: string): Map<
   return out;
 }
 
-function codeFace(facts: readonly Fact[], repo: string, fact: Entry | Call, what: string): Face {
-  const ownerKind = fact.kind === "entry" ? "entry" : "call";
-  const sides: Face["sides"] = {};
-  for (const side of ["request", "response", "message"] as const) {
-    const w = wireOf(facts, repo, fact.id, ownerKind, side);
-    if (w) sides[side] = w;
+function codeFace(ix: RepoIndex, repo: string, fact: Entry | Call, what: string): Face {
+  const k = `${fact.kind}|${fact.id}`;
+  let got = ix.faces.get(k);
+  if (!got) {
+    const ownerKind = fact.kind === "entry" ? "entry" : "call";
+    const sides: Face["sides"] = {};
+    for (const side of ["request", "response", "message"] as const) {
+      const w = wireOf(ix, repo, fact.id, ownerKind, side);
+      if (w) sides[side] = w;
+    }
+    const errors =
+      fact.kind === "entry" ? flowErrors(ix, fact.id) : flowErrors(ix, undefined, fact.id);
+    got = { sides, ...(errors.size ? { errors } : {}) };
+    ix.faces.set(k, got);
   }
-  const errors =
-    fact.kind === "entry" ? flowErrors(facts, fact.id) : flowErrors(facts, undefined, fact.id);
-  return { what, repo, role: "code", sides, ...(errors.size ? { errors } : {}) };
+  return { what, repo, role: "code", ...got };
 }
 
 function specFace(
@@ -468,10 +524,11 @@ interface Hop {
   untraced: Map<string, string>;
 }
 
-function hopOf(facts: readonly Fact[], repo: string, route: string, forward: string): Hop {
-  const fields = facts.filter(
-    (f): f is Field => f.kind === "field" && (f.owner === route || f.owner === forward),
-  );
+function hopOf(ix: RepoIndex, repo: string, route: string, forward: string): Hop {
+  const fields = [
+    ...(ix.fields.get(route) ?? []),
+    ...(route === forward ? [] : (ix.fields.get(forward) ?? [])),
+  ];
   const byId = new Map(fields.map((f) => [f.id, f] as const));
   const pairs: Hop["pairs"] = [];
   const untraced = new Map<string, string>();
@@ -587,6 +644,29 @@ function matchOf(w: WireField, list: readonly WireField[]): WireField | undefine
 }
 
 /**
+ * An untraced mapping on the other side that matched nothing (review item 1): a field with a
+ * `transform` and no `mappedTo` that no field across the boundary matched may be the one a
+ * missing or extra field became, renamed by the converter, so the difference is unconfirmed.
+ * The first by name, preferring one of the same type family, so the finding cites one line.
+ */
+function strayUntraced(
+  list: readonly WireField[] | undefined,
+  matched: ReadonlySet<WireField>,
+  across: readonly WireField[],
+  like?: WireField,
+): string | undefined {
+  const stray = (list ?? []).filter((x) => x.untraced && !matched.has(x) && !matchOf(x, across));
+  if (!stray.length) return undefined;
+  const fam = family(like?.type);
+  const same = fam ? stray.find((x) => family(x.type) === fam) : undefined;
+  return (same ?? stray[0])!.untraced;
+}
+
+/** A field as the finding carries it, marked with the untraced mapping it may rest on. */
+const marked = (w: WireField, u: string | undefined): WireField =>
+  u && !w.untraced ? { ...w, untraced: u } : w;
+
+/**
  * Compare a sender's face (who calls, or publishes) with the receiver's (who serves, or listens):
  * the request or message it sends against what the receiver takes, and the response the receiver
  * returns against what the sender reads. Returns whether anything was compared.
@@ -605,35 +685,43 @@ function compare(S: Face, R: Face, ctx: Ctx): boolean {
         // Headers are compared only where both sides name some; a body where both list fields.
         if (!sent.length || !took.length) continue;
         const matched = new Set<WireField>();
+        const sentMatched = new Set<WireField>();
+        for (const w of sent) {
+          const t = matchOf(w, took);
+          if (t) {
+            matched.add(t);
+            sentMatched.add(w);
+          }
+        }
         for (const w of sent) {
           const t = matchOf(w, took);
           if (!t) {
             if (header) continue;
-            const u = hopUntraced(ctx.hop, side, w.key);
+            const u = hopUntraced(ctx.hop, side, w.key) ?? strayUntraced(took, matched, sent, w);
             push(
               ctx,
               "field-extra",
               side,
               w.name,
-              { face: S, w: u ? { ...w, untraced: u } : w },
+              { face: S, w: marked(w, u) },
               { face: R },
               CONTRACT_WORDS.extra(side, w.name, S.what, w.at, R.what),
             );
             continue;
           }
-          matched.add(t);
           fieldPair(ctx, side, w, t, S, R);
         }
         for (const t of took)
           if (t.required === true && !matched.has(t) && !matchOf(t, sent)) {
-            const u = hopUntraced(ctx.hop, side, t.key);
+            const u =
+              hopUntraced(ctx.hop, side, t.key) ?? strayUntraced(sent, sentMatched, took, t);
             push(
               ctx,
               "field-not-sent",
               side,
               t.name,
               { face: S, value: sent.map((x) => x.name).join(", ") },
-              { face: R, w: u ? { ...t, untraced: u } : t },
+              { face: R, w: marked(t, u) },
               CONTRACT_WORDS.notSent(side, t.name, R.what, t.at, S.what),
             );
           }
@@ -646,19 +734,26 @@ function compare(S: Face, R: Face, ctx: Ctx): boolean {
   if (sent?.length && took?.length) {
     compared = true;
     const matched = new Set<WireField>();
+    const tookMatched = new Set<WireField>();
     for (const t of took) {
       const w = matchOf(t, sent);
       if (w) {
         matched.add(w);
-        fieldPair(ctx, "message", w, t, S, R);
-      } else if (R.role !== "code" && t.required === true)
+        tookMatched.add(t);
+      }
+    }
+    for (const t of took) {
+      const w = matchOf(t, sent);
+      const u = w ? undefined : strayUntraced(sent, matched, took, t);
+      if (w) fieldPair(ctx, "message", w, t, S, R);
+      else if (R.role !== "code" && t.required === true)
         push(
           ctx,
           "field-not-sent",
           "message",
           t.name,
           { face: S, value: sent.map((x) => x.name).join(", ") },
-          { face: R, w: t },
+          { face: R, w: marked(t, u) },
           CONTRACT_WORDS.notSent("message", t.name, R.what, t.at, S.what),
         );
       else if (R.role === "code" || S.role !== "code")
@@ -668,7 +763,7 @@ function compare(S: Face, R: Face, ctx: Ctx): boolean {
           "message",
           t.name,
           { face: S, value: sent.map((x) => x.name).join(", ") },
-          { face: R, w: t },
+          { face: R, w: marked(t, u) },
           CONTRACT_WORDS.messageMissing(t.name, R.what, t.at, S.what),
         );
     }
@@ -680,7 +775,7 @@ function compare(S: Face, R: Face, ctx: Ctx): boolean {
             "field-extra",
             "message",
             w.name,
-            { face: S, w },
+            { face: S, w: marked(w, strayUntraced(took, tookMatched, sent, w)) },
             { face: R },
             CONTRACT_WORDS.messageExtra(w.name, S.what, w.at, R.what),
           );
@@ -690,22 +785,29 @@ function compare(S: Face, R: Face, ctx: Ctx): boolean {
   if (read?.length && back?.length) {
     compared = true;
     const matched = new Set<WireField>();
+    const readMatched = new Set<WireField>();
+    for (const w of read) {
+      const t = matchOf(w, back);
+      if (t) {
+        matched.add(t);
+        readMatched.add(w);
+      }
+    }
     for (const w of read) {
       const t = matchOf(w, back);
       if (!t) {
-        const u = hopUntraced(ctx.hop, "response", w.key);
+        const u = hopUntraced(ctx.hop, "response", w.key) ?? strayUntraced(back, matched, read, w);
         push(
           ctx,
           "field-missing",
           "response",
           w.name,
-          { face: S, w: u && !w.untraced ? { ...w, untraced: u } : w },
+          { face: S, w: marked(w, u) },
           { face: R },
           CONTRACT_WORDS.missing(w.name, S.what, w.at, R.what),
         );
         continue;
       }
-      matched.add(t);
       fieldPair(ctx, "response", w, t, S, R);
     }
     // A published spec documents all it returns; a caller reading less is normal.
@@ -718,7 +820,7 @@ function compare(S: Face, R: Face, ctx: Ctx): boolean {
             "response",
             t.name,
             { face: S },
-            { face: R, w: t },
+            { face: R, w: marked(t, strayUntraced(read, readMatched, back, t)) },
             CONTRACT_WORDS.undocumented(t.name, R.what, t.at, S.what),
           );
   }
@@ -852,9 +954,9 @@ function typeNames(t: string): string[] {
 }
 
 /** The message type a publish or listener names, from its `$message` field fact. */
-function messageTypeOf(facts: readonly Fact[], owner: string): Field | undefined {
-  return facts
-    .filter((f): f is Field => f.kind === "field" && f.owner === owner && isMessageType(f))
+function messageTypeOf(ix: RepoIndex, owner: string): Field | undefined {
+  return (ix.fields.get(owner) ?? [])
+    .filter((f) => isMessageType(f))
     .sort((a, b) => cmp(a.id, b.id))[0];
 }
 
@@ -868,8 +970,15 @@ interface Held {
 
 /** Compare the payload on both sides of every link the join made, and of every call to an outside system with a spec. */
 export function checkContracts(input: ContractCheckInput): ContractCheckResult {
-  const factsOf = new Map(input.repos.map((r) => [r.repo, r.facts] as const));
-  const factOf = (repo: string, id: string) => factsOf.get(repo)?.find((f) => f.id === id);
+  // Each repo's facts indexed once (the last repo of a name, as a lookup by name gave it).
+  const indexes = new Map(
+    [...new Map(input.repos.map((r) => [r.repo, r.facts] as const))].map(
+      ([repo, f]) => [repo, indexOf(f)] as const,
+    ),
+  );
+  const EMPTY = indexOf([]);
+  const ixOf = (repo: string) => indexes.get(repo) ?? EMPTY;
+  const factOf = (repo: string, id: string) => indexes.get(repo)?.byId.get(id);
   const specsOf = new Map<string, ContractSpecT[]>();
   for (const f of input.specs ?? [])
     specsOf.set(f.repo, [...(specsOf.get(f.repo) ?? []), ...f.specs]);
@@ -965,8 +1074,8 @@ export function checkContracts(input: ContractCheckInput): ContractCheckResult {
   }
 
   function restLink(j: FactJoin, call: Call, entry: Entry) {
-    const cFacts = factsOf.get(j.call.repo) ?? [];
-    const eFacts = factsOf.get(j.entry.repo) ?? [];
+    const cFacts = ixOf(j.call.repo);
+    const eFacts = ixOf(j.entry.repo);
     const specs: string[] = [];
     let caller = codeFace(cFacts, j.call.repo, call, what.call(j.call));
     // J3: a consumer's copy of the API it calls stands in for a call with no fields of its own.
@@ -1016,7 +1125,7 @@ export function checkContracts(input: ContractCheckInput): ContractCheckResult {
         let current: Face = caller;
         let lastHop: Hop | undefined;
         for (const h of hops) {
-          const hFacts = factsOf.get(h.entry.repo) ?? [];
+          const hFacts = ixOf(h.entry.repo);
           const published = (specsOf.get(h.entry.repo) ?? []).find(
             (s) => s.kind === "operation" && s.role === "own" && s.entry === h.entry.fact,
           );
@@ -1062,8 +1171,8 @@ export function checkContracts(input: ContractCheckInput): ContractCheckResult {
     const call = factOf(j.call.repo, j.call.fact);
     const entry = factOf(j.entry.repo, j.entry.fact);
     if (call?.kind !== "call" || entry?.kind !== "entry") continue;
-    const cFacts = factsOf.get(j.call.repo) ?? [];
-    const eFacts = factsOf.get(j.entry.repo) ?? [];
+    const cFacts = ixOf(j.call.repo);
+    const eFacts = ixOf(j.entry.repo);
     const pub = codeFace(cFacts, j.call.repo, call, what.publish(j.call));
     const lis = codeFace(eFacts, j.entry.repo, entry, what.listener(j.entry));
     const typeOf = (f: Field | undefined) => f?.type ?? f?.name;
@@ -1118,7 +1227,7 @@ export function checkContracts(input: ContractCheckInput): ContractCheckResult {
     for (const f of r.facts) {
       if (f.kind !== "entry" || f.entryType !== "event-topic" || heard.has(`${r.repo}|${f.id}`))
         continue;
-      const mt = messageTypeOf(r.facts, f.id);
+      const mt = messageTypeOf(ixOf(r.repo), f.id);
       const type = mt?.type ?? mt?.name;
       const h = messageSpec(r.repo, type, f.path);
       if (!h?.system) continue;
@@ -1128,7 +1237,7 @@ export function checkContracts(input: ContractCheckInput): ContractCheckResult {
         component: factIdPart(f.component ?? r.repo),
         at: atOf(f),
       };
-      const lis = codeFace(r.facts, r.repo, f, `${r.repo}'s listener`);
+      const lis = codeFace(ixOf(r.repo), r.repo, f, `${r.repo}'s listener`);
       run(
         {
           key: `${h.system}|${r.repo}|${f.id}`,
@@ -1154,7 +1263,7 @@ export function checkContracts(input: ContractCheckInput): ContractCheckResult {
     const op = o?.specs.find((s) => s.kind === "operation" && s.id === m.operation);
     const call = factOf(m.call.repo, m.call.fact);
     if (!o || !op || call?.kind !== "call") continue;
-    const cFacts = factsOf.get(m.call.repo) ?? [];
+    const cFacts = ixOf(m.call.repo);
     let sender = codeFace(cFacts, m.call.repo, call, what.call(m.call));
     // A gateway's forwarding call with no fields of its own forwards its route's published payload.
     if (!sender.sides.request && !sender.sides.response && m.route) {

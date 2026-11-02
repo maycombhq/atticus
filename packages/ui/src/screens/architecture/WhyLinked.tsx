@@ -69,18 +69,35 @@ function Lines({ title, list }: { title: string; list: readonly Api.HierEvidence
 }
 
 /** One call on the link: how it was joined, verified or inferred, and its lines. */
-export function JoinView({ join, children }: { join: Api.HierJoinT; children?: ReactNode }) {
+export function JoinView({
+  join,
+  topic,
+  children,
+}: {
+  join: Api.HierJoinT;
+  /** The link publishes to or listens on a topic or queue. */
+  topic?: boolean;
+  children?: ReactNode;
+}) {
   const what = [join.method, join.path].filter(Boolean).join(" ");
+  // ADR 0162 §6 (F8): a topic the profile names as an outside system's is the person's word.
+  const declared = !!topic && join.how === "declared" && !join.gateway;
+  const said = declared ? join.other.filter((e) => e.source === "manual") : [];
+  const other = declared ? join.other.filter((e) => e.source !== "manual") : join.other;
   return (
     <article className="stack" style={{ gap: 4 }} aria-label={W.call(join.from, join.to, what)}>
       <p style={{ margin: 0 }}>
         <code className="mono">{W.call(join.from, join.to, what)}</code>{" "}
-        <span className={`chip ${join.verified ? "done" : "warn"}`}>
-          {join.verified ? W.verified : W.inferred}
-        </span>
+        {declared ? (
+          <span className="chip">{W.declared}</span>
+        ) : (
+          <span className={`chip ${join.verified ? "done" : "warn"}`}>
+            {join.verified ? W.verified : W.inferred}
+          </span>
+        )}
       </p>
       <p className="ev-say" style={{ margin: 0 }}>
-        {W.how[join.how] ?? W.how.unknown}
+        {declared ? W.declaredTopic : (W.how[join.how] ?? W.how.unknown)}
         {join.gateway && ` ${W.gateway}`}
         {join.shared && ` ${W.sharedMap(join.shared.team, join.shared.commit)}`}
       </p>
@@ -97,7 +114,8 @@ export function JoinView({ join, children }: { join: Api.HierJoinT; children?: R
         ) : (
           <Lines title={W.callee} list={join.callee} />
         )}
-        {join.other.length > 0 && <Lines title={W.other} list={join.other} />}
+        {other.length > 0 && <Lines title={W.other} list={other} />}
+        {said.length > 0 && <TheirLines title={W.declaredIn} list={said} />}
       </dl>
       {children}
     </article>
@@ -151,7 +169,11 @@ export function WhyLinked(p: {
         {W.intro}
       </p>
       {joins.map((j) => (
-        <JoinView key={j.interface} join={j}>
+        <JoinView
+          key={j.interface}
+          join={j}
+          topic={p.link.type === "publishes" || p.link.type === "subscribes"}
+        >
           {p.contracts && <ContractFindings list={findingsOfJoin(j, p.contracts)} />}
           {p.under?.(j)}
         </JoinView>

@@ -1,7 +1,9 @@
-import { readdir, readFile, rm } from "node:fs/promises";
-import { join } from "node:path";
+import { existsSync } from "node:fs";
+import { readdir, readFile, rm, stat } from "node:fs/promises";
+import { join, resolve } from "node:path";
 import { parse, stringify } from "yaml";
 import {
+  catalogDirOf,
   checkContracts,
   factsDirOf,
   factsRelOf,
@@ -9,6 +11,8 @@ import {
   joinConventions,
   joinVendorOperations,
   newFindings,
+  orgPackDirOf,
+  questionsDirOf,
   SpecsFile,
   writeFileAtomic,
   type ContractCheckResult,
@@ -24,6 +28,7 @@ import {
   readContractSpecs,
   readRepoSpecs,
   readVendorSpec,
+  type SpecTree,
 } from "@maycombhq/intake";
 import {
   componentRenames,
@@ -33,32 +38,133 @@ import {
   joinReposOf,
   outsideProfileSystems,
 } from "@maycombhq/scanner";
+import { sameCommit } from "@maycombhq/verify";
+import { createGit, type GitRunner } from "@maycombhq/workspace";
 import { intakeContext } from "./intake-commands.js";
+import { headCommitOf } from "./shared-commands.js";
 import { denyHashesAt } from "./link-evidence-files.js";
 
 /**
  * The files the contract check reads (plan item F7, ADR 0164): each repo's specs, read in its
  * checkout at the facts' commit by `verify --write` and kept beside its facts
  * (`<repo>.specs.yaml`), and the specs of outside systems taken in through intake (inputs/), the
- * newest of each and the one it replaced. Files only: nothing is fetched, no git runs.
+ * newest of each and the one it replaced. Nothing is fetched: a repo's specs are read with the
+ * clone's local git (`ls-tree` and `cat-file` of the facts' commit), and the check runs no git.
  */
 
 /** The intake classifications a contract spec comes in. */
 const SPEC_CLASSES = new Set(["openapi", "swagger", "asyncapi", "protobuf", "avro"]);
 
-/** Read a repo's specs in its checkout and keep them beside its facts; none, no companion. */
+/**
+ * The commit a repo's facts were read at (review item 13): the checkout's own commit when the
+ * facts have it (a write carries every fact to it), else the one most facts are of, a tie going
+ * to the newest as the clone's git dates them.
+ */
+export async function specsCommitOf(
+  facts: readonly Fact[],
+  dir: string,
+  git: GitRunner = createGit(),
+): Promise<string | undefined> {
+  const counts = new Map<string, number>();
+  for (const f of facts) counts.set(f.commit, (counts.get(f.commit) ?? 0) + 1);
+  if (!counts.size) return undefined;
+  const head = await headCommitOf(dir);
+  const atHead = head ? [...counts.keys()].find((c) => sameCommit(c, head)) : undefined;
+  if (atHead) return atHead;
+  const most = Math.max(...counts.values());
+  const top = [...counts]
+    .filter(([, n]) => n === most)
+    .map(([c]) => c)
+    .sort();
+  if (top.length === 1) return top[0];
+  const newest = await git(["rev-list", "--no-walk", ...top], dir).then(
+    (r) => r.stdout.split("\n")[0]?.trim(),
+    () => undefined,
+  );
+  return top.find((c) => !!newest && sameCommit(c, newest)) ?? top[0];
+}
+
+/** The files of one commit of a clone, from its local git: blobs only (no link, no submodule). */
+async function commitTree(
+  dir: string,
+  commit: string,
+  git: GitRunner,
+): Promise<SpecTree | undefined> {
+  const listed = await git(["ls-tree", "-r", "-l", "-z", "--full-tree", commit], dir).then(
+    (r) => r.stdout,
+    () => undefined,
+  );
+  if (listed === undefined) return undefined;
+  const files = listed
+    .split("\0")
+    .filter(Boolean)
+    .flatMap((line) => {
+      const tab = line.indexOf("\t");
+      const [mode, type, , size] = line.slice(0, tab).trim().split(/\s+/);
+      if (tab < 0 || type !== "blob" || mode === "120000") return [];
+      return [{ path: line.slice(tab + 1), size: Number(size) || 0 }];
+    });
+  return {
+    files: async () => files,
+    read: (p) =>
+      git(["cat-file", "blob", `${commit}:${p}`], dir).then(
+        (r) => r.stdout,
+        () => undefined,
+      ),
+  };
+}
+
+/**
+ * Where a repo's specs are read from, and the commit that is: the facts' commit in the clone;
+ * the clone's HEAD, said, when that commit isn't in it; the folder as it is (stamped with the
+ * facts' commit) when the checkout isn't a git clone.
+ */
+async function specTreeOf(
+  repo: string,
+  dir: string,
+  commit: string | undefined,
+  git: GitRunner,
+  note?: (n: string) => void,
+): Promise<{ tree?: SpecTree; commit?: string }> {
+  const as = commit ? { commit } : {};
+  if (!existsSync(join(dir, ".git"))) return as;
+  if (commit) {
+    const tree = await commitTree(dir, commit, git);
+    if (tree) return { tree, commit };
+    note?.(
+      `${repo}: the facts' commit ${commit.slice(0, 12)} isn't in the clone, so its specs are read at the clone's HEAD; fetch it, or read the repo again.`,
+    );
+  }
+  const tree = await commitTree(dir, "HEAD", git);
+  if (!tree) {
+    note?.(`${repo}: git can't list the clone's files, so its specs are read from the folder.`);
+    return as;
+  }
+  const head = await headCommitOf(dir);
+  return { tree, ...(head ? { commit: head } : as) };
+}
+
+/** Read a repo's specs at the facts' commit and keep them beside its facts; none, no companion. */
 export async function writeRepoSpecs(
   root: string,
   repo: string,
   dir: string,
   facts: readonly Fact[],
   onRefused?: (note: string) => void,
+  git: GitRunner = createGit(),
 ): Promise<SpecsFileT> {
-  const commit = facts.map((f) => f.commit).sort()[0];
+  const { tree, commit } = await specTreeOf(
+    repo,
+    dir,
+    await specsCommitOf(facts, dir, git),
+    git,
+    onRefused,
+  );
   const deny = await denyHashesAt(root);
   const file = await readRepoSpecs(dir, {
     repo,
     ...(commit ? { commit } : {}),
+    ...(tree ? { tree } : {}),
     facts,
     ...(deny.size ? { denyHashes: deny } : {}),
     ...(onRefused ? { onRefused } : {}),
@@ -149,8 +255,60 @@ export interface ContractCheckOnFile {
   newBySystem: Map<string, ContractMismatch[]>;
 }
 
-/** The contract check over the whole estate, from the files on disk. */
+/**
+ * What the check reads, as a stamp (review item 4): every file under facts/, the inputs, the org
+ * pack, the questions and the curated catalog, by path, size and modification time. The
+ * generated catalog is left out: only a write of the facts changes it, and that changes facts/.
+ */
+async function stampOf(root: string): Promise<string> {
+  const out: string[] = [];
+  const walk = async (dir: string, rel: string): Promise<void> => {
+    const entries = await readdir(dir, { withFileTypes: true }).catch(() => undefined);
+    if (!entries) return;
+    await Promise.all(
+      entries.map(async (e) => {
+        const p = join(dir, e.name);
+        if (e.isDirectory()) return walk(p, `${rel}/${e.name}`);
+        const s = await stat(p).catch(() => undefined);
+        if (s) out.push(`${rel}/${e.name}\u0000${s.size}\u0000${s.mtimeMs}`);
+      }),
+    );
+  };
+  const dirs = [
+    factsDirOf(root),
+    inputsDirOf(root),
+    orgPackDirOf(root),
+    questionsDirOf(root),
+    join(catalogDirOf(root), "curated"),
+  ];
+  await Promise.all(dirs.map((d, i) => walk(d, String(i))));
+  return out.sort().join("\n");
+}
+
+/** Each metarepo's check, kept with the stamp it was worked out at. */
+const kept = new Map<string, { stamp: string; value: Promise<ContractCheckOnFile> }>();
+
+/**
+ * The contract check over the whole estate, from the files on disk (ADR 0164). Worked out once
+ * per metarepo and kept while nothing it reads changes, so Map › Mismatches, the canvas's
+ * marks, the Trust tab and the Outside systems page share one check; asks that come at once
+ * share one run. The result is shared: callers read it, never change it.
+ */
 export async function contractCheckOf(root: string): Promise<ContractCheckOnFile> {
+  const key = resolve(root);
+  const stamp = await stampOf(root);
+  const hit = kept.get(key);
+  if (hit && hit.stamp === stamp) return hit.value;
+  const value = workOutContractCheck(root);
+  kept.set(key, { stamp, value });
+  // A run that failed isn't kept: the next ask tries again.
+  value.catch(() => {
+    if (kept.get(key)?.value === value) kept.delete(key);
+  });
+  return value;
+}
+
+async function workOutContractCheck(root: string): Promise<ContractCheckOnFile> {
   const quiet = { out: () => undefined, err: () => undefined };
   const { op, inputs } = await intakeContext(root, quiet);
   const estate = await estateFacts(root, op, "");

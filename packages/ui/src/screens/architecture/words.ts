@@ -101,6 +101,8 @@ export const WORDS = {
     // F10: a topic or queue the estate publishes to but never listens on, or the other way.
     "no-listener": COPY.topics.noListener,
     "no-publisher": COPY.topics.noPublisher,
+    // ADR 0162 §6 (F8): the profile's word, not code, says whose the topic is.
+    "declared-topic": COPY.topics.declaredGap,
   } as Record<string, string>,
   /** ADR 0135, C3: what closes each gap, beside it in the details panel. */
   gapFix: {
@@ -131,6 +133,7 @@ export const WORDS = {
       "Ask the team that owns the system (their map is theirs to change), refresh it with atticus join shared refresh, or correct the call if it goes elsewhere.",
     "no-listener": COPY.topics.noListenerFix,
     "no-publisher": COPY.topics.noPublisherFix,
+    "declared-topic": COPY.topics.declaredFix,
   } as Record<string, string>,
   repoCounts: "See what each count holds on Map › Trust",
   edges: (n: number, hidden: number) =>

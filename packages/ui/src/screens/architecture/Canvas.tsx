@@ -99,7 +99,12 @@ function BoxView({ data }: NodeProps<BoxNode>) {
         {box.label}
         {box.outside && ` (${WORDS.outsideMark})`}
       </div>
-      {box.kind === "topic" && <div className="hud arch-box-owner">{ownerText(box)}</div>}
+      {box.kind === "topic" && (
+        <div className="hud arch-box-owner">
+          {ownerText(box)}
+          {box.declared && ` · ${TOPIC.declared}`}
+        </div>
+      )}
       {(box.gaps.length > 0 || box.inside > 0) && (
         <div className="arch-box-foot">
           {box.gaps.length > 0 && <GapMark n={box.gaps.length} />}
@@ -225,7 +230,7 @@ export function flowElements(
         data: { box: b, dir, selected: b.id === selected },
         width: p.width,
         height: p.height,
-        ariaLabel: `${b.kind} ${b.label}${b.kind === "topic" ? `, ${ownerText(b)}` : ""}${b.gaps.length ? `, ${b.gaps.map((g) => WORDS.gap[g] ?? g).join(", ")}` : ""}`,
+        ariaLabel: `${b.kind} ${b.label}${b.kind === "topic" ? `, ${ownerText(b)}` : ""}${b.declared ? `, ${TOPIC.declared}` : ""}${b.gaps.length ? `, ${b.gaps.map((g) => WORDS.gap[g] ?? g).join(", ")}` : ""}`,
         ...(b.parent ? { parentId: b.parent, expandParent: true } : {}),
         ...(b.group ? { zIndex: -1 } : {}),
       };

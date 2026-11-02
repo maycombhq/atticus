@@ -25,8 +25,17 @@ const RepoTypeSchemaVersion = z
  * when it reads a repo of the type, never parsed by Atticus. One may say what a term means
  * ("`cmdb` in userAccess.json lists the apps let in to the API") or what must hold ("every call to
  * a vendor uses mTLS"); a note that reads as a rule is offered as a checklist rule draft.
+ *
+ * One line: a note is handed to the assistant as one quoted line of a data block, so a line break
+ * is refused (the edges are trimmed first, so a folded YAML scalar's last break is fine).
+ * `atticus repo-type note --add` and a term answer's offered note put a break as a space.
  */
-export const OrgNote = z.string().trim().min(1).max(1000);
+export const OrgNote = z
+  .string()
+  .trim()
+  .min(1)
+  .max(1000)
+  .regex(/^[^\r\n]*$/, "a note is one line: put a line break as a space");
 export const OrgNotes = z.array(OrgNote).max(50);
 
 /** A repo-relative glob with forward slashes; never absolute, never leaving the repo. */
