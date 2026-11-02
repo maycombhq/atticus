@@ -1031,3 +1031,21 @@ The gateway batch's instructions go from about 7,401 characters (~1,850 tokens) 
 
 - After the estate join, `joinSharedMaps` takes the join's `outside` list and matches each call whose target names a system with a shared map (`shared/<team>/`, their verified entries only) to the one entry of their map that serves it: their repos on the call's host first, REST by method and `routeScore` with their manifest's base path in front, gRPC and SOAP by `nameScore`; a tie is asked, none is a gap. Their facts never enter `joinFacts`, the verifier or a model.
 - The call's Interface keeps its id, `to` (the system) and confidence; it gains `joined-to-shared-map` (in `JOIN_HOW_FLAGS`) and callee evidence on their line (`extractor: atticus-shared@1`, `by: <team>`, their code commit), or `not-in-shared-map`. Every write strips the marks and puts them back from the maps on file, over the whole estate's join.
+
+## Addendum (F8, ADR 0162): answers that carry, topics other teams own
+
+ADR 0162 (F8): the join's misses for a call whose target is a person's answer are `answerMisses` of the write (of the caller's repo, and of the repo named); the CLI reopens that answer's question. In the merge, an event-publish or event-subscribe loose end whose topic no estate repo serves the other side of, and that no estate-join Interface links, lands on the outside system whose `aliases` name the topic: an `asserted` Interface flagged `declared-topic`, citing the code's line and the profile (`source: manual, by: person`).
+
+## Addendum (A-terms, ADR 0163): org notes and terms
+
+A-terms (ADR 0163): a `term` fact kind (term, value, role owner|consumer|none|unknown, note, meaning) and a call's cited `auth`/`tls`. The reader is handed its repo type's and the org-wide notes, numbered, as data. Term values join word for word across repos (`joinTerms`): owner → Component flag `term:<term>=<value>`, consumer → the owning repo, an unexplained shared value → a possible link (`linked-by-term-value`, inferred, not an Interface). A gateway's consumers become AccessGrants flagged `caller:<term>`, which the critic already reads.
+
+## Addendum (A-contracts, ADR 0164): wrapping on field facts
+
+A-contracts (ADR 0164). The facts file is unchanged. A field fact's `mappedTo` and `transform` now also carry wrapping, which the contract check follows:
+
+- A field `mappedTo` a field of the same owner and side, with a `transform` saying envelope, travels inside it (`data.id`).
+- With any other `transform` it is a mapper: outbound the target travels, inbound the source does.
+- A route field `mappedTo` its forwarding call's field, or the other way, is a gateway policy's reshape, and is no payload of its own.
+- A `transform` with no `mappedTo` is a mapping nobody traced: differences it touches are unconfirmed.
+- A `message` field with `transform: message type` names a publish's or listener's message type (its `name` as written, its `type` the full name), and ties the payload to its spec.
