@@ -52,7 +52,7 @@ records:
     kind: Column
     name: email_address
     nullable: false
-    schemaVersion: 3
+    schemaVersion: 4
     status: current
     table: customers-db.customers
     type: varchar(255)
@@ -68,7 +68,7 @@ records:
     kind: Column
     name: first_name
     nullable: false
-    schemaVersion: 3
+    schemaVersion: 4
     status: current
     table: customers-db.customers
     type: varchar(30)
@@ -84,7 +84,7 @@ records:
     kind: Column
     name: last_name
     nullable: false
-    schemaVersion: 3
+    schemaVersion: 4
     status: current
     table: customers-db.customers
     type: varchar(30)
@@ -100,7 +100,7 @@ records:
     kind: Column
     name: customer_id
     nullable: false
-    schemaVersion: 3
+    schemaVersion: 4
     status: current
     table: ledger-db.accounts
     type: varchar(36)
@@ -115,7 +115,7 @@ records:
     id: customers-api
     kind: Component
     repo: forge-customers
-    schemaVersion: 3
+    schemaVersion: 4
     status: current
     system: customers
     type: service
@@ -130,7 +130,7 @@ records:
     id: ledger-api
     kind: Component
     repo: forge-ledger
-    schemaVersion: 3
+    schemaVersion: 4
     status: current
     system: ledger
     type: service
@@ -145,7 +145,7 @@ records:
     id: web-app
     kind: Component
     repo: forge-web
-    schemaVersion: 3
+    schemaVersion: 4
     status: current
     system: customers
     type: spa
@@ -162,7 +162,7 @@ records:
     id: customers-db
     kind: DataStore
     ownerComponent: customers-api
-    schemaVersion: 3
+    schemaVersion: 4
     status: current
     storeType: relational
   - confidence: verified
@@ -178,7 +178,7 @@ records:
     id: ledger-db
     kind: DataStore
     ownerComponent: ledger-api
-    schemaVersion: 3
+    schemaVersion: 4
     status: current
     storeType: relational
   - component: customers-api
@@ -198,7 +198,7 @@ records:
     normalizedPath: /api/accounts/{}
     pathOrTopic: /api/accounts/{id}
     schemaRefs: []
-    schemaVersion: 3
+    schemaVersion: 4
     status: current
   - component: customers-api
     confidence: verified
@@ -218,7 +218,7 @@ records:
     pathOrTopic: /api/customers/{customerId}
     schemaRefs:
       - customers-api.get-customer.response
-    schemaVersion: 3
+    schemaVersion: 4
     status: current
   - component: customers-api
     confidence: verified
@@ -239,7 +239,7 @@ records:
     schemaRefs:
       - customers-api.post-customer.request
       - customers-api.post-customer.response
-    schemaVersion: 3
+    schemaVersion: 4
     status: current
   - component: ledger-api
     confidence: verified
@@ -259,7 +259,7 @@ records:
     schemaRefs:
       - ledger-api.forge-ledger-v1-ledger-openaccount.request
       - ledger-api.forge-ledger-v1-ledger-openaccount.response
-    schemaVersion: 3
+    schemaVersion: 4
     status: current
   - component: ledger-api
     confidence: verified
@@ -278,7 +278,7 @@ records:
     normalizedPath: /api/accounts/{}
     pathOrTopic: /api/accounts/{accountId}
     schemaRefs: []
-    schemaVersion: 3
+    schemaVersion: 4
     status: current
   - component: ledger-api
     confidence: verified
@@ -296,7 +296,7 @@ records:
     pathOrTopic: forge.customers.created
     schemaRefs:
       - ledger-api.on-forge-customers-created.message
-    schemaVersion: 3
+    schemaVersion: 4
     status: current
   - component: web-app
     confidence: verified
@@ -314,7 +314,7 @@ records:
     normalizedPath: /customers/{}
     pathOrTopic: /customers/:id
     schemaRefs: []
-    schemaVersion: 3
+    schemaVersion: 4
     status: current
   - component: web-app
     confidence: verified
@@ -332,7 +332,7 @@ records:
     normalizedPath: /customers/new
     pathOrTopic: /customers/new
     schemaRefs: []
-    schemaVersion: 3
+    schemaVersion: 4
     status: current
   - confidence: verified
     evidence:
@@ -351,7 +351,7 @@ records:
     id: if-0f06d434a34c81c9.column.email-to-customers-email_address
     interface: if-0f06d434a34c81c9
     kind: FieldMapping
-    schemaVersion: 3
+    schemaVersion: 4
     sourceField: email
     status: current
     targetField: customers.email_address
@@ -372,7 +372,7 @@ records:
     id: if-0f06d434a34c81c9.column.firstname-to-customers-first_name
     interface: if-0f06d434a34c81c9
     kind: FieldMapping
-    schemaVersion: 3
+    schemaVersion: 4
     sourceField: firstName
     status: current
     targetField: customers.first_name
@@ -393,7 +393,7 @@ records:
     id: if-0f06d434a34c81c9.column.lastname-to-customers-last_name
     interface: if-0f06d434a34c81c9
     kind: FieldMapping
-    schemaVersion: 3
+    schemaVersion: 4
     sourceField: lastName
     status: current
     targetField: customers.last_name
@@ -414,7 +414,7 @@ records:
     id: if-0f06d434a34c81c9.request.email-to-email
     interface: if-0f06d434a34c81c9
     kind: FieldMapping
-    schemaVersion: 3
+    schemaVersion: 4
     sourceField: email
     status: current
     targetField: email
@@ -435,7 +435,7 @@ records:
     id: if-0f06d434a34c81c9.request.firstname-to-firstname
     interface: if-0f06d434a34c81c9
     kind: FieldMapping
-    schemaVersion: 3
+    schemaVersion: 4
     sourceField: firstName
     status: current
     targetField: firstName
@@ -456,7 +456,7 @@ records:
     id: if-0f06d434a34c81c9.request.lastname-to-lastname
     interface: if-0f06d434a34c81c9
     kind: FieldMapping
-    schemaVersion: 3
+    schemaVersion: 4
     sourceField: lastName
     status: current
     targetField: lastName
@@ -477,7 +477,7 @@ records:
     id: if-0f06d434a34c81c9.response.id-to-id
     interface: if-0f06d434a34c81c9
     kind: FieldMapping
-    schemaVersion: 3
+    schemaVersion: 4
     sourceField: id
     status: current
     targetField: id
@@ -498,7 +498,7 @@ records:
     id: if-32758fa9e8968383.response.email-to-email
     interface: if-32758fa9e8968383
     kind: FieldMapping
-    schemaVersion: 3
+    schemaVersion: 4
     sourceField: email
     status: current
     targetField: email
@@ -519,7 +519,7 @@ records:
     id: if-32758fa9e8968383.response.firstname-to-firstname
     interface: if-32758fa9e8968383
     kind: FieldMapping
-    schemaVersion: 3
+    schemaVersion: 4
     sourceField: firstName
     status: current
     targetField: firstName
@@ -540,7 +540,7 @@ records:
     id: if-b0f886eee91a68ad.message.customerid-to-customerid
     interface: if-b0f886eee91a68ad
     kind: FieldMapping
-    schemaVersion: 3
+    schemaVersion: 4
     sourceField: customerId
     status: current
     targetField: customerId
@@ -561,7 +561,7 @@ records:
     id: if-fc58b23d49c7c652.column.customer_id-to-accounts-customer_id
     interface: if-fc58b23d49c7c652
     kind: FieldMapping
-    schemaVersion: 3
+    schemaVersion: 4
     sourceField: customer_id
     status: current
     targetField: accounts.customer_id
@@ -582,7 +582,7 @@ records:
     id: if-fc58b23d49c7c652.request.customerid-to-customer_id
     interface: if-fc58b23d49c7c652
     kind: FieldMapping
-    schemaVersion: 3
+    schemaVersion: 4
     sourceField: customerId
     status: current
     targetField: customer_id
@@ -603,7 +603,7 @@ records:
     id: if-fc58b23d49c7c652.response.account_id-to-accountid
     interface: if-fc58b23d49c7c652
     kind: FieldMapping
-    schemaVersion: 3
+    schemaVersion: 4
     sourceField: account_id
     status: current
     targetField: accountId
@@ -640,7 +640,7 @@ records:
     kind: Interface
     method: POST
     normalizedPath: /api/customers
-    schemaVersion: 3
+    schemaVersion: 4
     status: current
     sync: sync
     to: customers-api
@@ -678,7 +678,7 @@ records:
     kind: Interface
     method: GET
     normalizedPath: /api/customers/{}
-    schemaVersion: 3
+    schemaVersion: 4
     status: current
     sync: sync
     to: customers-api
@@ -706,7 +706,7 @@ records:
     id: if-b0f886eee91a68ad
     kind: Interface
     normalizedPath: forge.customers.created
-    schemaVersion: 3
+    schemaVersion: 4
     status: current
     sync: async
     to: ledger-api
@@ -736,7 +736,7 @@ records:
     id: if-fc58b23d49c7c652
     kind: Interface
     normalizedPath: forge.ledger.v1.Ledger/OpenAccount
-    schemaVersion: 3
+    schemaVersion: 4
     status: current
     sync: sync
     to: ledger-api
@@ -767,7 +767,7 @@ records:
     kind: Migration
     operations:
       - table customers (first_name, last_name, email_address)
-    schemaVersion: 3
+    schemaVersion: 4
     status: current
     tool: flyway
     version: "1"
@@ -785,7 +785,7 @@ records:
     kind: Migration
     operations:
       - table accounts (customer_id)
-    schemaVersion: 3
+    schemaVersion: 4
     status: current
     tool: flyway
     version: "1"
@@ -820,7 +820,7 @@ records:
     id: customers-api.get-customer.response
     kind: Schema
     ref: customers-api.get-customer
-    schemaVersion: 3
+    schemaVersion: 4
     status: current
   - confidence: verified
     evidence:
@@ -856,7 +856,7 @@ records:
     id: customers-api.post-customer.request
     kind: Schema
     ref: customers-api.post-customer
-    schemaVersion: 3
+    schemaVersion: 4
     status: current
   - confidence: verified
     evidence:
@@ -881,7 +881,7 @@ records:
     id: customers-api.post-customer.response
     kind: Schema
     ref: customers-api.post-customer
-    schemaVersion: 3
+    schemaVersion: 4
     status: current
   - confidence: verified
     evidence:
@@ -922,7 +922,7 @@ records:
     id: if-0f06d434a34c81c9.request
     kind: Schema
     ref: if-0f06d434a34c81c9
-    schemaVersion: 3
+    schemaVersion: 4
     status: current
   - confidence: verified
     evidence:
@@ -939,7 +939,7 @@ records:
     id: if-0f06d434a34c81c9.response
     kind: Schema
     ref: if-0f06d434a34c81c9
-    schemaVersion: 3
+    schemaVersion: 4
     status: current
   - confidence: verified
     evidence:
@@ -964,7 +964,7 @@ records:
     id: if-32758fa9e8968383.response
     kind: Schema
     ref: if-32758fa9e8968383
-    schemaVersion: 3
+    schemaVersion: 4
     status: current
   - confidence: verified
     evidence:
@@ -989,7 +989,7 @@ records:
     id: if-b0f886eee91a68ad.message
     kind: Schema
     ref: if-b0f886eee91a68ad
-    schemaVersion: 3
+    schemaVersion: 4
     status: current
   - confidence: verified
     evidence:
@@ -1006,7 +1006,7 @@ records:
     id: if-fc58b23d49c7c652.request
     kind: Schema
     ref: if-fc58b23d49c7c652
-    schemaVersion: 3
+    schemaVersion: 4
     status: current
   - confidence: verified
     evidence:
@@ -1023,7 +1023,7 @@ records:
     id: if-fc58b23d49c7c652.response
     kind: Schema
     ref: if-fc58b23d49c7c652
-    schemaVersion: 3
+    schemaVersion: 4
     status: current
   - confidence: verified
     evidence:
@@ -1040,7 +1040,7 @@ records:
     id: ledger-api.forge-ledger-v1-ledger-openaccount.request
     kind: Schema
     ref: ledger-api.forge-ledger-v1-ledger-openaccount
-    schemaVersion: 3
+    schemaVersion: 4
     status: current
   - confidence: verified
     evidence:
@@ -1057,7 +1057,7 @@ records:
     id: ledger-api.forge-ledger-v1-ledger-openaccount.response
     kind: Schema
     ref: ledger-api.forge-ledger-v1-ledger-openaccount
-    schemaVersion: 3
+    schemaVersion: 4
     status: current
   - confidence: verified
     evidence:
@@ -1074,7 +1074,7 @@ records:
     id: ledger-api.on-forge-customers-created.message
     kind: Schema
     ref: ledger-api.on-forge-customers-created
-    schemaVersion: 3
+    schemaVersion: 4
     status: current
   - component: web-app
     confidence: verified
@@ -1088,7 +1088,7 @@ records:
     id: web-app.environment.customersapi
     key: environment.customersApi
     kind: Setting
-    schemaVersion: 3
+    schemaVersion: 4
     settingKind: config
     status: current
     valueOrRef: https://customers.forge.example
@@ -1115,7 +1115,7 @@ records:
     repos:
       - forge-web
       - forge-customers
-    schemaVersion: 3
+    schemaVersion: 4
     status: current
     tags: []
   - accessGroup: everyone
@@ -1134,7 +1134,7 @@ records:
     owner: team-ledger
     repos:
       - forge-ledger
-    schemaVersion: 3
+    schemaVersion: 4
     status: current
     tags: []
   - accessGroup: everyone
@@ -1147,7 +1147,7 @@ records:
     kind: System
     name: Northwind Risk
     repos: []
-    schemaVersion: 3
+    schemaVersion: 4
     status: current
     tags:
       - saas
@@ -1172,7 +1172,7 @@ records:
     ownerComponent: customers-api
     readers:
       - customers-api
-    schemaVersion: 3
+    schemaVersion: 4
     status: current
     tableKind: table
     writers:
@@ -1191,7 +1191,7 @@ records:
     name: accounts
     ownerComponent: ledger-api
     readers: []
-    schemaVersion: 3
+    schemaVersion: 4
     status: current
     tableKind: table
     writers:
@@ -1209,7 +1209,7 @@ records:
     kind: Unresolved
     owner: web-app
     raw: GET /api/accounts/{id}
-    schemaVersion: 3
+    schemaVersion: 4
     status: current
     unresolvedKind: call
   - confidence: verified
@@ -1225,7 +1225,7 @@ records:
     kind: Unresolved
     owner: customers-api
     raw: POST http://risk.vendor.example/v2/score
-    schemaVersion: 3
+    schemaVersion: 4
     status: current
     unresolvedKind: http-call
 specs:
