@@ -14,13 +14,13 @@ The join (ADR 0124 C-join) says which entry each call reaches, through which gat
 
 `checkContracts` (core `contract-check.ts`) takes the estate join, every repo's facts, the specs on file and the outside systems' intaken specs, and compares, for every link:
 
-| Link | Boundaries |
-| --- | --- |
-| A REST call joined to an entry | caller → each gateway route's published spec (when its repo has one) → the service; a route with no spec is passed through |
-| A gateway's forwarding call | checked as a hop of the calls through it (once), and its own Interface named on each finding (`interfaces`) |
-| A publish joined to a listener | publisher → listener; publisher → the spec its message type names; listener → the spec it reads by; that spec → the publisher's (protobuf numbers) |
-| A listener whose publisher is outside | the intaken spec → the listener |
-| A call to an outside system matched to an operation (ADR 0130's match) | the call (or a forwarding call's route spec, translated) → the operation |
+| Link                                                                   | Boundaries                                                                                                                                         |
+| ---------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A REST call joined to an entry                                         | caller → each gateway route's published spec (when its repo has one) → the service; a route with no spec is passed through                         |
+| A gateway's forwarding call                                            | checked as a hop of the calls through it (once), and its own Interface named on each finding (`interfaces`)                                        |
+| A publish joined to a listener                                         | publisher → listener; publisher → the spec its message type names; listener → the spec it reads by; that spec → the publisher's (protobuf numbers) |
+| A listener whose publisher is outside                                  | the intaken spec → the listener                                                                                                                    |
+| A call to an outside system matched to an operation (ADR 0130's match) | the call (or a forwarding call's route spec, translated) → the operation                                                                           |
 
 Kinds: `field-missing` (read, never sent or returned), `field-extra` (sent, not taken; or returned and not published, when the sender is a published spec), `field-not-sent` (required, not sent), `field-required` (required on one side only), `field-type` (another type family), `field-number` (a protobuf number given to another name or type), `error-unlisted` (answered, not listed or handled), `error-unanswered` (a published spec lists it, the service never answers it; 401, 403, 429 and 502–504 are a gateway's own and skipped behind one). ADR 0125's rule holds everywhere: a side that lists nothing is unknown, not different. Names compare dotted segment by segment, case, `_`, `-` and `[]` aside; a path that differs only in its prefix matches its one field with the same last segment.
 

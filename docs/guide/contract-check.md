@@ -11,15 +11,15 @@ In the app it is **Map › Mismatches** (linked from the Trust tab's count). A l
 
 ## What it compares
 
-| Finding | Means |
-| --- | --- |
-| Read, never sent | A caller reads a response field, or a listener a message field, the other side never gives |
-| Sent, not taken | A request or message field the other side doesn't take; or a field a service returns that its published spec doesn't document |
-| Required, not sent | The receiving side requires a field nothing sends |
-| Required on one side only | A spec says always there, the service may leave it out (or the other way for a request) |
-| Types differ | A string on one side, a number on the other |
-| Field number reused | Two copies of a `.proto` give one number to different fields: every reader of one breaks on the other |
-| Error not listed / never answered | A status one side answers that the other doesn't list or handle |
+| Finding                           | Means                                                                                                                         |
+| --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| Read, never sent                  | A caller reads a response field, or a listener a message field, the other side never gives                                    |
+| Sent, not taken                   | A request or message field the other side doesn't take; or a field a service returns that its published spec doesn't document |
+| Required, not sent                | The receiving side requires a field nothing sends                                                                             |
+| Required on one side only         | A spec says always there, the service may leave it out (or the other way for a request)                                       |
+| Types differ                      | A string on one side, a number on the other                                                                                   |
+| Field number reused               | Two copies of a `.proto` give one number to different fields: every reader of one breaks on the other                         |
+| Error not listed / never answered | A status one side answers that the other doesn't list or handle                                                               |
 
 A side that says nothing about a payload is unknown, never different.
 
