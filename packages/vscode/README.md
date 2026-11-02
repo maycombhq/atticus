@@ -160,6 +160,21 @@ Each runs the command line as **Run a command…** does, asking with the metarep
 
 Why is this linked?, This link is wrong, the Sample audit and Outside systems are the app's own pages (Map › canvas, Trust, Outside systems), in the Atticus tab.
 
+## What beta.11 added (ADR 0166)
+
+| Command (Atticus: …)                                                | Runs                                                                                       |
+| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| Contract mismatches on every link (join contracts)                  | `atticus join contracts`; **Open in the app** for Map › Mismatches                         |
+| A repo type's notes, or the org-wide ones (repo-type note)          | `atticus repo-type note <type>` or `--org-wide`                                            |
+| Add a note to a repo type, in your own words (repo-type note --add) | `atticus repo-type note <type> --add "..."`, the command shown and run only after your yes |
+| Draft checklist rules from the notes (repo-type rules)              | `atticus repo-type rules`, read-only, then **Save the drafts…**                            |
+| Save the notes' rule drafts for review (repo-type rules --save)     | `atticus repo-type rules --save`, after your yes; nothing is committed or pushed           |
+| How far the map has got, in counts safe to paste (doctor --counts)  | `atticus doctor --counts` in a read-only tab, with **Copy it**                             |
+
+- **Another repo…** on a target question (and **A topic owned by another team or vendor** on a topic question) opens a picker of every repo of the manifest, read or not, every system of the profiles and every team in roles.yaml (`atticus questions show <id> --json` lists them), and answers with `--target <id>`. A team with no system, or a name the list doesn't have, is offered as a new system, the command shown, and added to the profile with `--add-system vendor` or `internal` only after your yes.
+- The status bar counts the contract check's mismatches beside the questions (`atticus join contracts --json`); its tooltip gives the unconfirmed ones too.
+- **The diagram viewer's keys in the Atticus tab.** The app runs in a frame of its own inside the tab, so while it has focus F (full screen), / (Find a box), Esc (leave full screen, or clear Find a box) and the other viewer keys go to the picture and never reach VS Code; VS Code binds none of them there. VS Code's own shortcuts come back once focus leaves the tab: click outside it.
+
 ## Small changes, files and tasks (ADR 0113)
 
 - **A small change** (its change type is small, or its brief says `Size: small` where the type allows it) has one step before its tasks: Next's **Run it** (and, with `atticus.fullUi`, Atticus 1's **Run a small change's fast path** in the palette or `@atticus /small <change>`). Copilot places it, writes its target flows and words its stories in one answer; Atticus checks it as the three stages would.

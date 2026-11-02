@@ -2,6 +2,16 @@
 
 The Atticus extension for VS Code. The command line's own changes are in the repository's [CHANGELOG](https://github.com/maycombhq/atticus/blob/main/CHANGELOG.md).
 
+## 0.7.9 (pre-release, with Atticus 2.0.0-beta.11)
+
+- **Ships with Atticus 2.0.0-beta.11**, and the extension catches up with what it added: answers that carry and suggestions that know the estate, org notes per repo type, a contract check on every link, and diagrams you can see. See the repository's CHANGELOG.
+- **Another repo… names any repo, system or team.** On a target question, Another repo… (and a topic question's A topic owned by another team or vendor) opens a picker of every repo of the manifest (read or not), every system of the profiles and every team in roles.yaml, as the app's Questions page does, and answers with `atticus questions answer <id> --target <id>`. A team with no system yet, or a name the list doesn't have, is offered as a new system for the profile, with the command that writes it, and written only after your yes (`--add-system vendor` or `internal`), for review in the pull request.
+- **Contract mismatches on every link** (`join contracts`) opens the check whole in a read-only tab, with **Open in the app** for Map › Mismatches; the status bar counts the mismatches beside the questions, and its tooltip gives the unconfirmed ones too.
+- **A repo type's notes** (`repo-type note <type>`, or the org-wide ones), **Add a note** (`--add "..."`, after your yes, the command shown first), **Draft checklist rules from the notes** (`repo-type rules`) and **Save the drafts** (`--save`, a click and a yes) are in the Command Palette. Nothing is committed or pushed.
+- **How far the map has got** (`doctor --counts`) shows the counts in a read-only tab, with **Copy it**: counts and flags only, nothing named, safe to paste.
+- The app's diagram viewer and its keys work in the Atticus tab as in a browser: the app runs in a frame of its own inside the tab, so while it has focus F, / and Esc go to the picture and never reach VS Code (no shortcut of VS Code's is bound to them there). VS Code's own shortcuts come back once focus leaves the tab: click outside it.
+- **`@atticus`** sends a plain request about contract mismatches, counts to paste, notes or rule drafts to the command that does it.
+
 ## 0.7.8 (pre-release, with Atticus 2.0.0-beta.10)
 
 - **Ships with Atticus 2.0.0-beta.10**, and the extension catches up with what it added to the command line and the app: read parts that fit the model, links that say how they were joined (Why is this linked?, This link is wrong), grouped questions with owners and AI-proposed answers, config placeholders and Routes read for hosts, freshness and an onboarding queue, measured links and a sample audit, a change's impact, specs seeded from code, and house conventions in the org pack. See the repository's CHANGELOG.

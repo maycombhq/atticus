@@ -1,7 +1,7 @@
 {
   "name": "atticus",
   "displayName": "Atticus",
-  "version": "0.7.8",
+  "version": "0.7.9",
   "description": "Run Atticus's AI steps with Copilot's own model, in VS Code. Atticus's command line does all the checking.",
   "license": "Apache-2.0",
   "publisher": "maycombhq",
@@ -800,6 +800,36 @@
       {
         "command": "atticus.repoRename",
         "title": "Rename a repo's id with its facts (repo rename)",
+        "category": "Atticus"
+      },
+      {
+        "command": "atticus.contractMismatches",
+        "title": "Contract mismatches on every link (join contracts)",
+        "category": "Atticus"
+      },
+      {
+        "command": "atticus.repoTypeNotes",
+        "title": "A repo type's notes, or the org-wide ones (repo-type note)",
+        "category": "Atticus"
+      },
+      {
+        "command": "atticus.repoTypeAddNote",
+        "title": "Add a note to a repo type, in your own words (repo-type note --add)",
+        "category": "Atticus"
+      },
+      {
+        "command": "atticus.repoTypeRules",
+        "title": "Draft checklist rules from the notes (repo-type rules)",
+        "category": "Atticus"
+      },
+      {
+        "command": "atticus.repoTypeRulesSave",
+        "title": "Save the notes' rule drafts for review (repo-type rules --save)",
+        "category": "Atticus"
+      },
+      {
+        "command": "atticus.doctorCounts",
+        "title": "How far the map has got, in counts safe to paste (doctor --counts)",
         "category": "Atticus"
       },
       {

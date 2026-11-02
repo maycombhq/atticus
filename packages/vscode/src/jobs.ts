@@ -1,5 +1,6 @@
 import type { NextRow } from "./next-rows";
 import type { NextStep, QueueEntry } from "./types";
+import { noteArgs } from "./beta11";
 import { WORDS } from "./words";
 
 /**
@@ -20,11 +21,24 @@ export interface JobArgs {
   new?: string;
   /** The model's limit, in tokens (map --all, ADR 0161). */
   maxTokens?: string;
+  /** A repo type, or "" for the org-wide notes (repo-type note, ADR 0163). */
+  repoType?: string;
+  /** A note in the organisation's own words, one line. */
+  note?: string;
 }
 
 /** What a job asks for before it runs. */
 export type JobNeeds =
-  "repo" | "repo-or-estate" | "change" | "reference" | "sheet" | "traffic" | "rename" | "limit";
+  | "repo"
+  | "repo-or-estate"
+  | "change"
+  | "reference"
+  | "sheet"
+  | "traffic"
+  | "rename"
+  | "limit"
+  | "repo-type"
+  | "note";
 
 export interface Job {
   /** The VS Code command. */
@@ -45,6 +59,10 @@ export interface Job {
   app?: (a: JobArgs) => string;
   /** The step to open in Copilot Chat (agent mode where its agent file is there). */
   chat?: (a: JobArgs) => { step: string; target?: string };
+  /** ADR 0166: what it printed, offered on the clipboard too (doctor --counts, safe to paste). */
+  copy?: boolean;
+  /** ADR 0166: the job a button offers next (rules, then Save the drafts), only on a click. */
+  then?: { label: string; command: string };
 }
 
 const req = (v: string | undefined, what: string) => {
@@ -171,6 +189,48 @@ export const JOBS: readonly Job[] = [
       req(a.source, "source"),
     ],
     how: "report",
+  },
+  // ---------------------------------------------------------------- beta.11 (ADR 0166)
+  {
+    command: "atticus.contractMismatches",
+    title: "Contract mismatches on every link (join contracts)",
+    argv: () => ["join", "contracts"],
+    how: "report",
+    app: () => "#/mismatches",
+  },
+  {
+    command: "atticus.repoTypeNotes",
+    title: "A repo type's notes, or the org-wide ones (repo-type note)",
+    needs: "repo-type",
+    argv: (a) => noteArgs(a.repoType ?? ""),
+    how: "report",
+  },
+  {
+    command: "atticus.repoTypeAddNote",
+    title: "Add a note to a repo type, in your own words (repo-type note --add)",
+    needs: "note",
+    argv: (a) => noteArgs(a.repoType ?? "", req(a.note, "note")),
+    how: "confirm",
+  },
+  {
+    command: "atticus.repoTypeRules",
+    title: "Draft checklist rules from the notes (repo-type rules)",
+    argv: () => ["repo-type", "rules"],
+    how: "report",
+    then: { label: "Save the drafts…", command: "atticus.repoTypeRulesSave" },
+  },
+  {
+    command: "atticus.repoTypeRulesSave",
+    title: "Save the notes' rule drafts for review (repo-type rules --save)",
+    argv: () => ["repo-type", "rules", "--save"],
+    how: "confirm",
+  },
+  {
+    command: "atticus.doctorCounts",
+    title: "How far the map has got, in counts safe to paste (doctor --counts)",
+    argv: () => ["doctor", "--counts"],
+    how: "report",
+    copy: true,
   },
   {
     command: "atticus.repoRename",
@@ -302,6 +362,27 @@ const RULES: { test: RegExp; command: string; says: string }[] = [
     test: /\b(mine|my team|my teams|my questions)\b/,
     command: "atticus.questionsMine",
     says: "atticus questions list --mine lists only the questions for your teams (roles.yaml) and the changes that name you under owners; the Questions view's My teams' button does the same.",
+  },
+  // ADR 0166 (beta.11), after beta.10's, so "forge-notes" still seeds a spec.
+  {
+    test: /\b(mismatch|mismatches|contract|contracts|payload)\b/,
+    command: "atticus.contractMismatches",
+    says: "atticus join contracts compares the payload on both sides of every link, from the fields read and the specs on file: missing and extra fields, types, error statuses; a mapping nobody traced makes a difference unconfirmed, never a mismatch. Map › Mismatches shows the same.",
+  },
+  {
+    test: /\b(counts|safe to paste|how far)\b/,
+    command: "atticus.doctorCounts",
+    says: "atticus doctor --counts says how far the map has got in counts and flags only, nothing named, so it is safe to paste out of the estate.",
+  },
+  {
+    test: /\b(draft|drafts)\b.*\brules?\b|\brules?\b.*\bnotes?\b/,
+    command: "atticus.repoTypeRules",
+    says: "atticus repo-type rules drafts a checklist rule from each note that reads as a rule (all, every, must); --save writes the new drafts to org-pack/checklists/org-notes.yaml for review, only after your yes.",
+  },
+  {
+    test: /\b(note|notes|term|terms)\b/,
+    command: "atticus.repoTypeNotes",
+    says: 'atticus repo-type note <type> lists a repo type\'s notes (--org-wide the ones every repo is read with); --add "..." adds one, after your yes, for review in a pull request.',
   },
 ];
 

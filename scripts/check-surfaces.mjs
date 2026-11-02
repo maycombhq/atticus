@@ -29,7 +29,9 @@ const CENSUS = {
   // menu's entries, which grew only when a command was hidden. 69 offered before, 86 with the 14
   // jobs, Accept as my answer and My teams' / every question.
   // ADR 0161: Map the estate (map --all, in a terminal).
-  vscodePaletteCommands: 87,
+  // ADR 0166 (beta.11 caught up): Contract mismatches, a repo type's notes and Add a note, Draft
+  // and Save the rule drafts, and doctor --counts.
+  vscodePaletteCommands: 93,
   /** Tabs of IntelliJ's tool window (`Copy.kt`'s `*_TAB`). */
   intellijTabs: 9,
   retired: [],
