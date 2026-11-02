@@ -236,13 +236,13 @@ export const FACT_RULE_PARTS: readonly (readonly RulePart[])[] = [
     },
     {
       when: ["backend", "frontend", "config", "gateway"],
-      text: "A call's `auth` (the token, key or client certificate it presents) goes with `authCite`, its `tls` (`mtls` with a client certificate, `tls` for https, `none` for http) with `tlsCite`: the line that sets it, as `{file, line, value}`.",
+      text: "A call's `auth` (the token, key or client certificate it presents) goes with `authCite`, its `tls` (`mtls` with a client certificate, `tls` for https, `none` for http) with `tlsCite`: the line that sets it, as `{file, line, value}`, with the line that builds what it passes (the client certificate's context, the key store) in `with`. Claim only what those lines write: `mtls` needs a client certificate, key store or SSL bundle there, an https URL alone is `tls`.",
     },
   ],
   [
     {
       when: ["config", "deploy", "gateway", "data"],
-      text: "A `term` fact is an identifier of the organisation's own as a file writes it (an app or CMDB id, a cost centre): `term` its key, `value` cited on its line, `meaning` the line at or above it in the file that gives its role (the list's or block's key). `role` from the notes given, the note's number in `note`: `owner` (names this repo's own system), `consumer` (a system it lets in), `none`. No note says: record ids that look like the organisation's own (id-like values, entries of a list of apps or teams) as `role: unknown`; never guess.",
+      text: "A `term` fact is an identifier of the organisation's own as a file writes it (an app or CMDB id, a cost centre): `term` its key, `value` cited on its line, `meaning` the line at or above it in the file that gives its role (the list's or block's key). `role` from the notes given, the note's key in `note` (the 8 characters after \"note\", never its number): `owner` (names this repo's own system), `consumer` (a system it lets in), `none`. No note says: record ids that look like the organisation's own (id-like values, entries of a list of apps or teams) as `role: unknown`; never guess.",
     },
   ],
   [
