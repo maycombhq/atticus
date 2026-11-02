@@ -9,6 +9,10 @@ export type Classification =
   | "openapi"
   | "swagger"
   | "asyncapi"
+  /** A `.proto` file's messages (ADR 0164): a topic's contract, ours or another team's. */
+  | "protobuf"
+  /** An Avro schema (`.avsc`, or JSON whose top is a record with fields; ADR 0164). */
+  | "avro"
   | "diagram"
   | "image"
   | "document"
@@ -168,6 +172,15 @@ export function classify(fileName: string, bytes: Uint8Array): Classified {
   )
     return { classification: "diagram" };
   if (/^<(!doctype html|html)\b/i.test(head)) return { classification: "document" };
+  // ADR 0164: a topic's message spec. A .proto by its name or its first statements; Avro by its
+  // name or a top-level record with fields.
+  if (ext === "proto" || /^(syntax\s*=\s*["']proto[23]["']|package\s+[\w.]+\s*;)/m.test(head))
+    return { classification: "protobuf" };
+  if (
+    ext === "avsc" ||
+    (/^\{/.test(head) && /"type"\s*:\s*"record"/.test(head) && /"fields"\s*:/.test(head))
+  )
+    return { classification: "avro" };
 
   if (["json", "yaml", "yml"].includes(ext) || /^[[{]/.test(head)) {
     let data: unknown;

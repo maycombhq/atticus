@@ -6,6 +6,7 @@ import { escapeCloses } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
 import { message } from "../run/shared.js";
 import { CorrectionNext } from "../../app/correction-next.js";
+import { findingsOfJoin, mismatchesHash } from "../../app/contracts.js";
 import {
   callerLine,
   callFactsOf,
@@ -103,11 +104,44 @@ export function JoinView({ join, children }: { join: Api.HierJoinT; children?: R
   );
 }
 
+/**
+ * The contract check's findings on one call of the link (ADR 0164): each mismatch, or a
+ * difference a mapping nobody traced leaves unconfirmed, with both lines; a way to all of them.
+ */
+export function ContractFindings({ list }: { list: readonly Api.ContractMismatchViewT[] }) {
+  if (!list.length) return null;
+  const m = list.filter((f) => f.status === "mismatch").length;
+  return (
+    <section className="stack" style={{ gap: 2 }} aria-label={W.contracts}>
+      <p className="ev-say" style={{ margin: 0 }}>
+        <span className="chip warn">
+          <span aria-hidden="true">⚠ </span>
+          {W.contracts}
+        </span>{" "}
+        {W.contractsOf(m, list.length - m)}
+      </p>
+      <ul className="ev-list" style={{ margin: 0 }}>
+        {list.map((f) => (
+          <li key={f.id}>
+            <span className={`chip ${f.status === "mismatch" ? "warn" : ""}`}>
+              {COPY.mismatches.status[f.status]}
+            </span>{" "}
+            {f.message}
+          </li>
+        ))}
+      </ul>
+      <a href={mismatchesHash}>{W.contractsAll}</a>
+    </section>
+  );
+}
+
 /** Why a link is there: every call on it, or, for a link that isn't a call, that there is none. */
 export function WhyLinked(p: {
   link: Api.HierEdgeT;
   /** What to show under each call (This link is wrong, C2). */
   under?: (join: Api.HierJoinT) => ReactNode;
+  /** ADR 0164: the contract check's findings, of which each call's are shown under it. */
+  contracts?: readonly Api.ContractMismatchViewT[];
 }) {
   const joins = p.link.joins ?? [];
   if (!joins.length) return <p className="ev-say">{W.none}</p>;
@@ -118,6 +152,7 @@ export function WhyLinked(p: {
       </p>
       {joins.map((j) => (
         <JoinView key={j.interface} join={j}>
+          {p.contracts && <ContractFindings list={findingsOfJoin(j, p.contracts)} />}
           {p.under?.(j)}
         </JoinView>
       ))}

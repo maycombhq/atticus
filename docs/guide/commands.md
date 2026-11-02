@@ -50,6 +50,7 @@ Every command under the twelve, with its options.
   atticus join shared import <their metarepo> --team <id> --system <id>  Bring in another team's Atticus map, read-only: their verified entries (quotes redacted, the deny-list applied) go to shared/<team>/ at their commit, and verify --write joins your calls to that system to them, cited on their lines; files only (docs/guide/shared-maps.md) [--name <team name>] [--commit <sha>] [--json]
   atticus join shared refresh [<team>] [<folder>]  Import a team's map again from where it came from (a folder inside the metarepo), or the folder given (needed when it was outside); a newer commit replaces the old [--commit <sha>]
   atticus join shared list [--json]    The shared maps on file: whose, for which system, their commit and entries
+  atticus join contracts [--json]      Compare the payload on both sides of every link (REST calls, gateway hops, topics, calls to outside systems) from the field facts and the specs on file (a repo's own, a consumer's copy, a topic's .proto, Avro, JSON Schema or AsyncAPI, a vendor's or team's taken in through intake): missing and extra fields, required but not sent, types, error statuses, protobuf field numbers; a mapping nobody traced is unconfirmed, never a mismatch; reads files only (ADR 0164)
   atticus knowledge scan [--source s] [--mode m] [--resume run] [--full] [--batch-tokens n] [--max-tokens n]  Your assistant reads the snapshots into patterns, standards, processes, requests, decisions and constraints; every quote checked. A rescan reads only the pages that changed and says what changed
   atticus knowledge list [--tag t] [--kind k] [--unverified] [--json]  The knowledge items, by tag and kind
   atticus knowledge ask "<question>" [--mode m] [--resume run] [--max-tokens n]  An answer from the knowledge items only, citing them
@@ -138,6 +139,7 @@ Every other command. `atticus legacy` lists them by area; each runs by its own n
   atticus estate lineage <flow> <field> [--depth 5] [--json]  Follow a field along a flow to the column it is stored in, or where it breaks
   atticus estate measure <reference> [--json]  The same as join measure
   atticus estate shared import|refresh|list  The same as join shared
+  atticus estate contracts [--json]    The same as join contracts
   atticus estate fresh [--all] [--json]  Which repos' clones have moved past their facts' commit, most stale first: per repo the facts' commit, the clone's, the files changed that the facts cite, the facts to read again and the command to run; local git only, nothing fetched or written (--all lists the fresh ones too)
   atticus repo-type detect <repo> [--json]   Match a repo against the org pack's repo types by fingerprint, with the evidence for each signal
   atticus repo-type new <id> --from <repo> [--force]   Draft a repo type from a repo (its build files, dependencies, markers, folders) for you to edit

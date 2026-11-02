@@ -1,0 +1,10 @@
+<AssignMessage name="AM-RenameBalance">
+  <AssignTo createNew="false" type="response"/>
+  <AssignVariable>
+    <Name>forge.balance</Name>
+    <JSONPath>$.data.balance</JSONPath>
+  </AssignVariable>
+  <Set>
+    <Payload contentType="application/json">{"data":{"id":"{forge.id}","status":"{forge.status}","availableBalance":{forge.balance}}}</Payload>
+  </Set>
+</AssignMessage>

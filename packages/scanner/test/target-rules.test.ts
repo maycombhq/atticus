@@ -68,7 +68,7 @@ const ruleQ = (o: {
   at?: string;
 }): Question =>
   ({
-    schemaVersion: 3,
+    schemaVersion: 4,
     id: o.id ?? "q-aaaaaaaaaaaa",
     askedBy: {
       step: TARGETS_STEP,

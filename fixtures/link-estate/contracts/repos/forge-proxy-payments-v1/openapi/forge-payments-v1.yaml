@@ -1,0 +1,41 @@
+openapi: 3.0.3
+info:
+  title: Forge Payments API
+  version: 1.2.0
+servers:
+  - url: https://api.forge.example/forge/payments/v1
+paths:
+  /payments:
+    post:
+      operationId: createPayment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [accountId, amount, currency]
+              properties:
+                accountId:
+                  type: string
+                amount:
+                  type: number
+                currency:
+                  type: string
+      responses:
+        "201":
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [paymentId, status]
+                properties:
+                  paymentId:
+                    type: string
+                  status:
+                    type: string
+        "401":
+          description: No valid token
+        "422":
+          description: The payment can't be made

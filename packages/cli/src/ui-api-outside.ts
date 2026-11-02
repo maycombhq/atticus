@@ -27,6 +27,7 @@ import {
 } from "@maycombhq/scanner";
 import type { Router, ServerContext } from "@maycombhq/server";
 import { intakeContext } from "./intake-commands.js";
+import { contractCheckOf } from "./contract-check-files.js";
 
 /**
  * The outside systems (plan item O4, ADR 0149): one view per system no estate repo belongs to
@@ -109,6 +110,9 @@ export async function outsideView(root: string): Promise<View> {
       })
     : { matches: [], gaps: [], asks: [] };
 
+  // ADR 0164: the calls to each system checked against its newest spec, and what it brought.
+  const contracts = await contractCheckOf(root).catch(() => undefined);
+
   const catalog = records.length
     ? records
     : (await readCatalog(join(catalogDirOf(root), "generated"), { cacheRoot: root })).records;
@@ -135,6 +139,14 @@ export async function outsideView(root: string): Promise<View> {
       at: e.at,
       ...(x?.method ? { method: x.method.toUpperCase() } : {}),
       ...(x?.path ? { path: x.path } : {}),
+    };
+  };
+  const contractsOf = (id: string): Pick<System, "contracts"> => {
+    const findings = contracts?.result.findings.filter((f) => f.system === id) ?? [];
+    const fresh = contracts?.newBySystem.get(id);
+    if (!findings.length && !fresh) return {};
+    return {
+      contracts: { findings, ...(fresh ? { new: fresh.map((f) => f.id) } : {}) },
     };
   };
   const out: System[] = systems.map((s) => {
@@ -252,6 +264,7 @@ export async function outsideView(root: string): Promise<View> {
         .map((a) => ({ ...callOf(a.call), seen: ["spec" as const], candidates: a.candidates })),
       questions,
       ...(spec ? {} : { addSpec: OUTSIDE_ADD_SPEC(s.id) }),
+      ...contractsOf(s.id),
       ...(map
         ? {
             shared: {

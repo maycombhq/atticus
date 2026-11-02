@@ -21,6 +21,7 @@ import { readCatalog } from "@maycombhq/scanner";
 import { frameworkFacts, frameworkGaps } from "@maycombhq/verify";
 import type { Router, ServerContext } from "@maycombhq/server";
 import { baseClonePath, loadRepos } from "@maycombhq/workspace";
+import { contractCheckOf } from "./contract-check-files.js";
 
 /**
  * GET /api/trust (ADR 0124 addendum, C4 2.22.0): how far to trust each repo's map, for the Map's
@@ -341,7 +342,12 @@ export async function trustView(root: string): Promise<View> {
       ...(audit ? { audit } : {}),
     });
   }
-  return { factsDir: factsRel, repos, problems };
+  // ADR 0164: the contract check's counts, when some link had a payload on both sides.
+  const contracts = await contractCheckOf(root).then(
+    (c) => (c.result.counts.compared ? c.result.counts : undefined),
+    () => undefined,
+  );
+  return { factsDir: factsRel, repos, problems, ...(contracts ? { contracts } : {}) };
 }
 
 export function uiTrustRoutes(r: Router, ctx: ServerContext): Router {

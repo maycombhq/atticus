@@ -178,10 +178,18 @@ describe("the app's map: six entries (the Surfaces design)", () => {
     for (const g of more) if (g.section !== "Change") expect(g.phases).toBeUndefined();
   });
 
-  it("reaches a change's picture, Ask, a system, an outside system, the first steps and the words by link", () => {
+  it("reaches a change's picture, Ask, a system, an outside system, the mismatches, the first steps and the words by link", () => {
     const aside = SCREENS.filter((s) => s.aside).map((s) => s.id);
     expect(aside.sort()).toEqual(
-      ["change-diagram", "explore", "onboarding", "outside", "systems", "words"].sort(),
+      [
+        "change-diagram",
+        "explore",
+        "mismatches",
+        "onboarding",
+        "outside",
+        "systems",
+        "words",
+      ].sort(),
     );
   });
 

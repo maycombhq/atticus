@@ -57,7 +57,7 @@ describe("federation in the scan", () => {
     const fed = scan.records.filter((r) => r.flags?.includes("federated:payments"));
     expect(fed).toEqual([
       {
-        schemaVersion: 3,
+        schemaVersion: 4,
         kind: "Component",
         id: "payments-api",
         status: "current",
@@ -76,7 +76,7 @@ describe("federation in the scan", () => {
         type: "spring-boot",
       },
       {
-        schemaVersion: 3,
+        schemaVersion: 4,
         kind: "Endpoint",
         id: "payments-api.post.payments",
         status: "current",
@@ -103,7 +103,7 @@ describe("federation in the scan", () => {
         schemaRefs: [],
       },
       {
-        schemaVersion: 3,
+        schemaVersion: 4,
         kind: "Interface",
         id: "if-f834203081e831d1",
         status: "current",

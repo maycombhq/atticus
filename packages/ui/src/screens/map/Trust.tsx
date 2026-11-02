@@ -7,6 +7,7 @@ import { COPY } from "../../copy.js";
 import { Command, Problems } from "../work/RunNext.js";
 import "../work/work.css";
 import { AuditAnswer } from "./AuditAnswer.js";
+import { mismatchesHash } from "../../app/contracts.js";
 
 /**
  * Map › Trust (ADR 0124): how far to trust each repo's map, from the files the verifier writes.
@@ -521,6 +522,18 @@ export function TrustPage({
             <>
               <Problems list={v.problems} />
               <p className="work-say">{T.reportIn(v.factsDir)}</p>
+              {v.contracts && (
+                // ADR 0164: the contract check's counts, and the way to every finding.
+                <p className="work-say">
+                  {v.contracts.mismatches > 0 && <span aria-hidden="true">⚠ </span>}
+                  {T.contracts(
+                    v.contracts.mismatches,
+                    v.contracts.unconfirmed,
+                    v.contracts.compared,
+                  )}{" "}
+                  <a href={mismatchesHash}>{T.contractsOpen}</a>
+                </p>
+              )}
               <div className="stack" style={{ gap: 12 }}>
                 {v.repos.map((r) => (
                   <TrustRow key={r.repo} r={r} />

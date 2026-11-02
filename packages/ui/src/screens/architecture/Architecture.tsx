@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import type { Api } from "@maycombhq/core";
-import { api, ApiError, useLiveEvents } from "../../api/client.js";
+import { api, ApiError, useApi, useLiveEvents } from "../../api/client.js";
 import type { Laid, Point } from "../../app/layout/index.js";
 import { Panel } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
@@ -24,6 +24,7 @@ import {
   canvasGraph,
   directionFor,
   evidenceRepos,
+  withContractGaps,
   withEvidenceGaps,
   keyStep,
   legibility,
@@ -82,6 +83,8 @@ export function Architecture(p: {
   );
 }
 
+const NO_FINDINGS: readonly Api.ContractMismatchViewT[] = [];
+
 function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: string }) {
   const lensParam = queryParam(hash, "lens");
   const lens: Lens = (LENSES as readonly string[]).includes(lensParam ?? "")
@@ -96,13 +99,19 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
   useEffect(() => {
     for (const r of repos.split(" ").filter(Boolean)) ev?.need(r);
   }, [repos, ev]);
+  // ADR 0164: the contract check's findings, each link whose two sides disagree marked.
+  const contracts = useApi<Api.ContractsViewT>("/api/contracts");
+  const findings = contracts.state === "ready" ? contracts.data.findings : NO_FINDINGS;
   const views = useMemo(
     () =>
-      withEvidenceGaps(loaded, (r) => {
-        const v = ev?.of(r);
-        return v?.state === "ready" ? v.data : undefined;
-      }),
-    [loaded, ev],
+      withContractGaps(
+        withEvidenceGaps(loaded, (r) => {
+          const v = ev?.of(r);
+          return v?.state === "ready" ? v.data : undefined;
+        }),
+        findings,
+      ),
+    [loaded, ev, findings],
   );
   const [status, setStatus] = useState<Status>({ state: "loading" });
   const [current, setCurrent] = useState("estate");
@@ -510,6 +519,7 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
                         )}
                         labelOf={(id) => find(id)?.label ?? id}
                         under={under}
+                        contracts={findings}
                         {...(!focus && graph.boxes.some((b) => b.id === sel.id)
                           ? {
                               here: {
@@ -588,9 +598,12 @@ export function Inspector({
   links = [],
   labelOf = (id) => id,
   under,
+  contracts,
 }: {
   /** What to show under each call of a link (This link is wrong, C2). */
   under?: (join: Api.HierJoinT) => ReactNode;
+  /** ADR 0164: the contract check's findings, each call's shown under it. */
+  contracts?: readonly Api.ContractMismatchViewT[];
   node: Api.HierNodeT;
   /** The links in the view that start or end on the box, each with its evidence (F3). */
   links?: Api.HierEdgeT[];
@@ -689,7 +702,11 @@ export function Inspector({
                   <summary>
                     {COPY.why.openOf(COPY.evidence.linkOf(labelOf(l.from), labelOf(l.to), l.type))}
                   </summary>
-                  <WhyLinked link={l} {...(under ? { under } : {})} />
+                  <WhyLinked
+                    link={l}
+                    {...(under ? { under } : {})}
+                    {...(contracts ? { contracts } : {})}
+                  />
                 </details>
               ) : (
                 l.evidence.length > 0 && (

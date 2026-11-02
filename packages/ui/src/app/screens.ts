@@ -71,6 +71,8 @@ export const SCREENS: ScreenDef[] = [
   { id: "systems", label: S.systems, section: "Map", aside: true },
   // O4 (ADR 0149): one page per system outside the estate, linked from Systems.
   { id: "outside", label: S.outside, section: "Map", aside: true },
+  // F7 (ADR 0164): the contract check on every link, linked from Trust and Why is this linked?.
+  { id: "mismatches", label: S.mismatches, section: "Map", aside: true },
   { id: "map", label: S.map, section: "Map", full: true },
   { id: "features", label: S.features, section: "Map", full: true },
   { id: "mappings", label: S.mappings, section: "Map", full: true },

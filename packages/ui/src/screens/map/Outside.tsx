@@ -229,6 +229,29 @@ export function OutsideSystemPanels({ system: s }: { system: System }) {
           )}
         </Panel>
       )}
+      {(s.spec || s.contracts) && (
+        // ADR 0164: the calls to it against its newest spec; what that spec brought, marked.
+        <Panel title={O.contracts} span="1 / -1" labelledBy={`${id}-contracts`}>
+          <p className="work-say">{O.contractsIntro}</p>
+          {s.contracts?.findings.length ? (
+            <ul className="ev-list" style={{ margin: 0 }}>
+              {s.contracts.findings.map((f) => (
+                <li key={f.id}>
+                  <span className={`chip ${f.status === "mismatch" ? "warn" : ""}`}>
+                    {COPY.mismatches.status[f.status]}
+                  </span>{" "}
+                  {s.contracts?.new?.includes(f.id) && (
+                    <span className="chip warn">{O.newWithSpec}</span>
+                  )}{" "}
+                  {f.message}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="work-say">{O.noContracts}</p>
+          )}
+        </Panel>
+      )}
       <Panel title={O.questions} span="1 / -1" labelledBy={`${id}-questions`}>
         {s.questions.length ? (
           <ul className="ev-list" style={{ margin: 0 }}>

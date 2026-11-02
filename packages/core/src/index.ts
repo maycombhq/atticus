@@ -14,6 +14,7 @@ export * from "./facts-terms.js";
 export * from "./org-notes.js";
 export * from "./link-evidence.js";
 export * from "./shared-maps.js";
+export * from "./contract-check.js";
 export * from "./audit.js";
 export * from "./stack-helpers.js";
 export * from "./cite.js";

@@ -15,6 +15,7 @@ import type { Ingestor, ScanContext } from "@maycombhq/sdk";
 import { classify, type Classification } from "./classify.js";
 import { screenFile } from "./screen-file.js";
 import { readAsyncApiSpec, readOpenApiSpec, readPayload, READERS } from "./readers.js";
+import { readAvroSpecs, readProtoSpecs } from "./contract-specs.js";
 import { operationSchemas, readVendorSpec } from "./vendor-ops.js";
 import {
   boundedId,
@@ -59,6 +60,8 @@ const EVIDENCE_SOURCE: Record<Classification, "spec" | "diagram" | "document" | 
   openapi: "spec",
   swagger: "spec",
   asyncapi: "spec",
+  protobuf: "spec",
+  avro: "spec",
   diagram: "diagram",
   image: "document",
   document: "document",
@@ -470,6 +473,44 @@ export async function scanInputs(o: ScanInputsOptions): Promise<ScanInputsResult
         }
       } catch {
         // not readable as draw.io: the ingestor (if any) reports it
+      }
+    }
+
+    // ---- a topic's message spec (ADR 0164): a .proto's messages or an Avro schema's records, each
+    // a Schema record of its system (the system its name, or its package, names)
+    if (cls === "protobuf" || cls === "avro") {
+      const specs =
+        cls === "protobuf" ? readProtoSpecs(f.path, text()) : readAvroSpecs(f.path, text());
+      const named = new Set(systemsInName(f.stem, systems));
+      for (const s of specs) {
+        const res = s.name ? resolveName(s.name.split(".").slice(0, -1).join(" ")) : undefined;
+        if (res?.id && !named.size) named.add(systemOf(res.id));
+      }
+      for (const s of named) linked.add(s);
+      if (current && specs.length) {
+        for (const s of specs) {
+          const p = parseRecord({
+            schemaVersion: 1,
+            kind: "Schema",
+            id: boundedId("schema.", slug(s.name ?? f.stem)),
+            status: "current",
+            confidence: "verified",
+            format: cls,
+            ref: `${f.path}#${s.name ?? ""}`,
+            fields: s.fields.map((x) => ({
+              name: x.name,
+              ...(x.type ? { type: x.type } : {}),
+              ...(x.required !== undefined ? { required: x.required } : {}),
+            })),
+            evidence: [{ source: "spec", path: f.path, line: s.line, side: "definition" }],
+          });
+          if (!p.ok) continue;
+          const schema = p.record as unknown as Rec;
+          out.push(schema);
+          f.doc.records.push(schema.id);
+        }
+        f.doc.status = "read";
+        f.doc.reader = cls === "protobuf" ? READERS.protobuf : READERS.avro;
       }
     }
 

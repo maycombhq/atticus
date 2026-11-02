@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+package forge.payments.v1;
+
+option java_multiple_files = true;
+
+// A copy of the payments team's message, taken when notifications started listening.
+message PaymentSettled {
+  string payment_id = 1;
+  string account_id = 2;
+  string currency = 3;
+  int64 amount_minor = 4;
+}

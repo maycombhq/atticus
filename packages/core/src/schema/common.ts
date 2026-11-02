@@ -5,20 +5,20 @@ import { SCHEMA_VERSION } from "./version.js";
 export { SCHEMA_VERSION };
 
 /** Every catalog schema version a reader accepts, oldest first. */
-export const SUPPORTED_SCHEMA_VERSIONS = [1, 2, 3] as const;
+export const SUPPORTED_SCHEMA_VERSIONS = [1, 2, 3, 4] as const;
 
 /**
- * A record's schema version. Version-1 and version-2 files differ from version 3 only in this
- * number (nothing they hold changed meaning), so they are read as they are and come back as
- * version 3 in memory; writers always write the current version, and `migrateCatalog` rewrites
- * old files. The type stays `1 | 2 | 3` so code that builds older records in memory keeps
- * compiling until it is updated.
+ * A record's schema version. Version-1, -2 and -3 files differ from version 4 only in this
+ * number (nothing they hold changed meaning: version 4, ADR 0164, only added `protobuf` to a
+ * Schema's formats), so they are read as they are and come back as version 4 in memory; writers
+ * always write the current version, and `migrateCatalog` rewrites old files. The type stays
+ * `1 | 2 | 3 | 4` so code that builds older records in memory keeps compiling until it is updated.
  */
 export const SchemaVersion = z
-  .union([z.literal(1), z.literal(2), z.literal(3)], {
-    error: "schemaVersion must be 1, 2 or 3 (older files are read as version 3)",
+  .union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)], {
+    error: "schemaVersion must be 1, 2, 3 or 4 (older files are read as version 4)",
   })
-  .overwrite((): 1 | 2 | 3 => SCHEMA_VERSION);
+  .overwrite((): 1 | 2 | 3 | 4 => SCHEMA_VERSION);
 
 /**
  * Stable record id. Lowercase slug, safe as a file name on Linux, macOS and Windows

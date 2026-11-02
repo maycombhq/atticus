@@ -1,5 +1,6 @@
 import type { Api } from "@maycombhq/core";
 import { gapsOfEvidence, type FactsView } from "../../app/evidence-model.js";
+import { contractGaps } from "../../app/contracts.js";
 import { COPY } from "../../copy.js";
 import { WORDS } from "./words.js";
 
@@ -169,6 +170,27 @@ export function withEvidenceGaps(views: Views, of: (repo: string) => FactsView |
       children: v.children.map(node),
       outside: v.outside.map(node),
       edges: v.edges.map((e) => add(e, gapsOfEvidence(e.evidence, of))),
+    });
+  return out;
+}
+
+/**
+ * The views with the contract check's findings (ADR 0164) added to each link's gaps: a link one
+ * of whose calls the two sides' payloads disagree on, or may (a mapping nobody traced).
+ */
+export function withContractGaps(
+  views: Views,
+  findings: readonly Api.ContractMismatchViewT[],
+): Views {
+  if (!findings.length) return views;
+  const out: Views = new Map();
+  for (const [id, v] of views)
+    out.set(id, {
+      ...v,
+      edges: v.edges.map((e) => {
+        const g = contractGaps(e.joins ?? [], findings).filter((x) => !e.gaps.includes(x));
+        return g.length ? { ...e, gaps: [...e.gaps, ...g] } : e;
+      }),
     });
   return out;
 }

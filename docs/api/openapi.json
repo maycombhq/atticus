@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Atticus local API",
-    "version": "2.46.0",
+    "version": "2.48.0",
     "description": "Served by `atticus ui` on 127.0.0.1. The UI only calls this API, and the API only reads and writes files in the metarepo.",
     "license": {
       "name": "Apache-2.0",
@@ -4185,6 +4185,37 @@
           },
           "422": {
             "description": "Atticus refused: the problem carries the command's own words (ADR 0043)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/contracts": {
+      "get": {
+        "operationId": "getContracts",
+        "summary": "The contract check on every link: the payload on both sides of each REST call, gateway hop, topic and call to an outside system, compared from the field facts and the specs on file; each mismatch and unconfirmed difference with both lines (ADR 0164)",
+        "tags": [
+          "views"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContractsView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -10287,6 +10318,10 @@
               {
                 "type": "number",
                 "const": 3
+              },
+              {
+                "type": "number",
+                "const": 4
               }
             ]
           },
@@ -10460,6 +10495,10 @@
               {
                 "type": "number",
                 "const": 3
+              },
+              {
+                "type": "number",
+                "const": 4
               }
             ]
           },
@@ -10632,6 +10671,10 @@
               {
                 "type": "number",
                 "const": 3
+              },
+              {
+                "type": "number",
+                "const": 4
               }
             ]
           },
@@ -10824,6 +10867,10 @@
               {
                 "type": "number",
                 "const": 3
+              },
+              {
+                "type": "number",
+                "const": 4
               }
             ]
           },
@@ -11085,6 +11132,10 @@
               {
                 "type": "number",
                 "const": 3
+              },
+              {
+                "type": "number",
+                "const": 4
               }
             ]
           },
@@ -11258,6 +11309,10 @@
               {
                 "type": "number",
                 "const": 3
+              },
+              {
+                "type": "number",
+                "const": 4
               }
             ]
           },
@@ -11366,6 +11421,7 @@
               "openapi",
               "json-schema",
               "avro",
+              "protobuf",
               "xsd",
               "other"
             ]
@@ -11438,6 +11494,10 @@
               {
                 "type": "number",
                 "const": 3
+              },
+              {
+                "type": "number",
+                "const": 4
               }
             ]
           },
@@ -11591,6 +11651,10 @@
               {
                 "type": "number",
                 "const": 3
+              },
+              {
+                "type": "number",
+                "const": 4
               }
             ]
           },
@@ -11744,6 +11808,10 @@
               {
                 "type": "number",
                 "const": 3
+              },
+              {
+                "type": "number",
+                "const": 4
               }
             ]
           },
@@ -11930,6 +11998,10 @@
               {
                 "type": "number",
                 "const": 3
+              },
+              {
+                "type": "number",
+                "const": 4
               }
             ]
           },
@@ -12179,6 +12251,10 @@
               {
                 "type": "number",
                 "const": 3
+              },
+              {
+                "type": "number",
+                "const": 4
               }
             ]
           },
@@ -12362,6 +12438,10 @@
               {
                 "type": "number",
                 "const": 3
+              },
+              {
+                "type": "number",
+                "const": 4
               }
             ]
           },
@@ -12535,6 +12615,10 @@
               {
                 "type": "number",
                 "const": 3
+              },
+              {
+                "type": "number",
+                "const": 4
               }
             ]
           },
@@ -12756,6 +12840,10 @@
               {
                 "type": "number",
                 "const": 3
+              },
+              {
+                "type": "number",
+                "const": 4
               }
             ]
           },
@@ -12929,6 +13017,10 @@
               {
                 "type": "number",
                 "const": 3
+              },
+              {
+                "type": "number",
+                "const": 4
               }
             ]
           },
@@ -13089,6 +13181,10 @@
               {
                 "type": "number",
                 "const": 3
+              },
+              {
+                "type": "number",
+                "const": 4
               }
             ]
           },
@@ -13254,6 +13350,10 @@
               {
                 "type": "number",
                 "const": 3
+              },
+              {
+                "type": "number",
+                "const": 4
               }
             ]
           },
@@ -13415,6 +13515,10 @@
               {
                 "type": "number",
                 "const": 3
+              },
+              {
+                "type": "number",
+                "const": 4
               }
             ]
           },
@@ -13578,6 +13682,10 @@
               {
                 "type": "number",
                 "const": 3
+              },
+              {
+                "type": "number",
+                "const": 4
               }
             ]
           },
@@ -13733,6 +13841,10 @@
               {
                 "type": "number",
                 "const": 3
+              },
+              {
+                "type": "number",
+                "const": 4
               }
             ]
           },
@@ -14085,6 +14197,10 @@
               {
                 "type": "number",
                 "const": 3
+              },
+              {
+                "type": "number",
+                "const": 4
               }
             ]
           },
@@ -14434,6 +14550,10 @@
               {
                 "type": "number",
                 "const": 3
+              },
+              {
+                "type": "number",
+                "const": 4
               }
             ]
           },
@@ -14610,6 +14730,10 @@
               {
                 "type": "number",
                 "const": 3
+              },
+              {
+                "type": "number",
+                "const": 4
               }
             ]
           },
@@ -14942,6 +15066,10 @@
               {
                 "type": "number",
                 "const": 3
+              },
+              {
+                "type": "number",
+                "const": 4
               }
             ]
           },
@@ -15129,6 +15257,10 @@
               {
                 "type": "number",
                 "const": 3
+              },
+              {
+                "type": "number",
+                "const": 4
               }
             ]
           },
@@ -15311,6 +15443,10 @@
               {
                 "type": "number",
                 "const": 3
+              },
+              {
+                "type": "number",
+                "const": 4
               }
             ]
           },
@@ -15487,6 +15623,10 @@
               {
                 "type": "number",
                 "const": 3
+              },
+              {
+                "type": "number",
+                "const": 4
               }
             ]
           },
@@ -15785,6 +15925,10 @@
               {
                 "type": "number",
                 "const": 3
+              },
+              {
+                "type": "number",
+                "const": 4
               }
             ]
           },
@@ -15946,6 +16090,10 @@
               {
                 "type": "number",
                 "const": 3
+              },
+              {
+                "type": "number",
+                "const": 4
               }
             ]
           },
@@ -16242,6 +16390,10 @@
               {
                 "type": "number",
                 "const": 3
+              },
+              {
+                "type": "number",
+                "const": 4
               }
             ]
           },
@@ -17153,6 +17305,10 @@
               {
                 "type": "number",
                 "const": 3
+              },
+              {
+                "type": "number",
+                "const": 4
               }
             ]
           },
@@ -17299,6 +17455,10 @@
               {
                 "type": "number",
                 "const": 3
+              },
+              {
+                "type": "number",
+                "const": 4
               }
             ]
           },
@@ -28353,6 +28513,38 @@
               "additionalProperties": false
             }
           },
+          "contracts": {
+            "type": "object",
+            "properties": {
+              "links": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "compared": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "mismatches": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "unconfirmed": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "links",
+              "compared",
+              "mismatches",
+              "unconfirmed"
+            ],
+            "additionalProperties": false
+          },
           "problems": {
             "type": "array",
             "items": {
@@ -30885,6 +31077,196 @@
                     "unmatched"
                   ],
                   "additionalProperties": false
+                },
+                "contracts": {
+                  "type": "object",
+                  "properties": {
+                    "findings": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "interface": {
+                            "type": "string"
+                          },
+                          "interfaces": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "call": {
+                            "type": "object",
+                            "properties": {
+                              "repo": {
+                                "type": "string"
+                              },
+                              "fact": {
+                                "type": "string"
+                              },
+                              "component": {
+                                "type": "string"
+                              },
+                              "at": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "repo",
+                              "fact",
+                              "component",
+                              "at"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "entry": {
+                            "type": "object",
+                            "properties": {
+                              "repo": {
+                                "type": "string"
+                              },
+                              "fact": {
+                                "type": "string"
+                              },
+                              "component": {
+                                "type": "string"
+                              },
+                              "at": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "repo",
+                              "fact",
+                              "component",
+                              "at"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "system": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "mismatch",
+                              "unconfirmed"
+                            ]
+                          },
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "field-missing",
+                              "field-extra",
+                              "field-not-sent",
+                              "field-required",
+                              "field-type",
+                              "field-number",
+                              "error-unlisted",
+                              "error-unanswered"
+                            ]
+                          },
+                          "side": {
+                            "type": "string",
+                            "enum": [
+                              "request",
+                              "response",
+                              "message"
+                            ]
+                          },
+                          "field": {
+                            "type": "string"
+                          },
+                          "error": {
+                            "type": "string"
+                          },
+                          "sender": {
+                            "type": "object",
+                            "properties": {
+                              "repo": {
+                                "type": "string"
+                              },
+                              "system": {
+                                "type": "string"
+                              },
+                              "what": {
+                                "type": "string"
+                              },
+                              "value": {
+                                "type": "string"
+                              },
+                              "at": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "what"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "receiver": {
+                            "type": "object",
+                            "properties": {
+                              "repo": {
+                                "type": "string"
+                              },
+                              "system": {
+                                "type": "string"
+                              },
+                              "what": {
+                                "type": "string"
+                              },
+                              "value": {
+                                "type": "string"
+                              },
+                              "at": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "what"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "via": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "untraced": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "call",
+                          "status",
+                          "kind",
+                          "sender",
+                          "receiver",
+                          "message"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "new": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "findings"
+                  ],
+                  "additionalProperties": false
                 }
               },
               "required": [
@@ -30909,6 +31291,355 @@
         },
         "required": [
           "systems",
+          "notes"
+        ],
+        "additionalProperties": false
+      },
+      "ContractsView": {
+        "type": "object",
+        "properties": {
+          "links": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "interface": {
+                  "type": "string"
+                },
+                "interfaces": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "call": {
+                  "type": "object",
+                  "properties": {
+                    "repo": {
+                      "type": "string"
+                    },
+                    "fact": {
+                      "type": "string"
+                    },
+                    "component": {
+                      "type": "string"
+                    },
+                    "at": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "repo",
+                    "fact",
+                    "component",
+                    "at"
+                  ],
+                  "additionalProperties": false
+                },
+                "entry": {
+                  "type": "object",
+                  "properties": {
+                    "repo": {
+                      "type": "string"
+                    },
+                    "fact": {
+                      "type": "string"
+                    },
+                    "component": {
+                      "type": "string"
+                    },
+                    "at": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "repo",
+                    "fact",
+                    "component",
+                    "at"
+                  ],
+                  "additionalProperties": false
+                },
+                "system": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "rest",
+                    "topic",
+                    "outside"
+                  ]
+                },
+                "method": {
+                  "type": "string"
+                },
+                "path": {
+                  "type": "string"
+                },
+                "through": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "specs": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "compared": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "mismatches": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "unconfirmed": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "key",
+                "call",
+                "kind",
+                "path",
+                "through",
+                "specs",
+                "compared",
+                "mismatches",
+                "unconfirmed"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "findings": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "interface": {
+                  "type": "string"
+                },
+                "interfaces": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "call": {
+                  "type": "object",
+                  "properties": {
+                    "repo": {
+                      "type": "string"
+                    },
+                    "fact": {
+                      "type": "string"
+                    },
+                    "component": {
+                      "type": "string"
+                    },
+                    "at": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "repo",
+                    "fact",
+                    "component",
+                    "at"
+                  ],
+                  "additionalProperties": false
+                },
+                "entry": {
+                  "type": "object",
+                  "properties": {
+                    "repo": {
+                      "type": "string"
+                    },
+                    "fact": {
+                      "type": "string"
+                    },
+                    "component": {
+                      "type": "string"
+                    },
+                    "at": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "repo",
+                    "fact",
+                    "component",
+                    "at"
+                  ],
+                  "additionalProperties": false
+                },
+                "system": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "mismatch",
+                    "unconfirmed"
+                  ]
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "field-missing",
+                    "field-extra",
+                    "field-not-sent",
+                    "field-required",
+                    "field-type",
+                    "field-number",
+                    "error-unlisted",
+                    "error-unanswered"
+                  ]
+                },
+                "side": {
+                  "type": "string",
+                  "enum": [
+                    "request",
+                    "response",
+                    "message"
+                  ]
+                },
+                "field": {
+                  "type": "string"
+                },
+                "error": {
+                  "type": "string"
+                },
+                "sender": {
+                  "type": "object",
+                  "properties": {
+                    "repo": {
+                      "type": "string"
+                    },
+                    "system": {
+                      "type": "string"
+                    },
+                    "what": {
+                      "type": "string"
+                    },
+                    "value": {
+                      "type": "string"
+                    },
+                    "at": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "what"
+                  ],
+                  "additionalProperties": false
+                },
+                "receiver": {
+                  "type": "object",
+                  "properties": {
+                    "repo": {
+                      "type": "string"
+                    },
+                    "system": {
+                      "type": "string"
+                    },
+                    "what": {
+                      "type": "string"
+                    },
+                    "value": {
+                      "type": "string"
+                    },
+                    "at": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "what"
+                  ],
+                  "additionalProperties": false
+                },
+                "via": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "untraced": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "call",
+                "status",
+                "kind",
+                "sender",
+                "receiver",
+                "message"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "counts": {
+            "type": "object",
+            "properties": {
+              "links": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "compared": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "mismatches": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "unconfirmed": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "links",
+              "compared",
+              "mismatches",
+              "unconfirmed"
+            ],
+            "additionalProperties": false
+          },
+          "notes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "links",
+          "findings",
+          "counts",
           "notes"
         ],
         "additionalProperties": false

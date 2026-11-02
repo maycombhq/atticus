@@ -55,8 +55,9 @@ function statedVersion(text: string): number | undefined {
  * current schema version, in canonical form. Readers accept old files anyway; migrating once
  * keeps diffs clean afterwards. A file that isn't a catalog record (no known `kind`) is not
  * touched, nor is an old one that fails C1: it is reported, so nothing is half-migrated.
- * Version 1 → 2 (ADR 0031) and 2 → 3 (ADR 0125) change only `schemaVersion`: version 3 adds
- * `required` on a Schema field, and a migrated record gains none, since nothing knew it. The
+ * Version 1 → 2 (ADR 0031), 2 → 3 (ADR 0125) and 3 → 4 (ADR 0164) change only `schemaVersion`:
+ * version 3 adds `required` on a Schema field, and a migrated record gains none, since nothing
+ * knew it; version 4 adds `protobuf` to a Schema's formats, which no older record can hold. The
  * canonical form also writes list defaults a hand-written file left out, exactly as a scan
  * would write the record. `versions` limits it to files at those versions (each `atticus
  * upgrade` step lists its own); what it writes is always the current version.
