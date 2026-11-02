@@ -21,6 +21,7 @@ import {
   questionsRelOf,
   raiseQuestions,
   readRepoSpec,
+  reopenQuestion,
   retireQuestion,
   removeFlow,
   SPEC_HEADER_SCHEMA_VERSION,
@@ -41,6 +42,7 @@ import {
   type SharedJoinResult,
 } from "@maycombhq/core";
 import {
+  answeredQuestionOfCall,
   catalogWithFacts,
   diffCatalogs,
   diffIsEmpty,
@@ -668,6 +670,23 @@ export async function writeFactsIntoCatalog(
         ...(s.replacedBy ? { replacedBy: s.replacedBy } : {}),
       });
       lines.push(`Retired ${s.id}: ${s.why}.`);
+    }
+    // ADR 0162 (F8): an answer the code read since disagrees with (the repo it names is read,
+    // and no route of it serves the call) opens its question again, saying why.
+    const reopened = new Set<string>();
+    for (const m of result.answerMisses ?? []) {
+      const callerFacts =
+        m.call.repo === repo ? facts : estate.repos.find((x) => x.repo === m.call.repo)?.facts;
+      const q = callerFacts
+        ? answeredQuestionOfCall(m.call.repo, callerFacts, everyTarget, m.call.fact)
+        : undefined;
+      if (!q || reopened.has(q.id)) continue;
+      reopened.add(q.id);
+      const why = `${m.target} is read now, and no route of it serves the call: ${m.message} (${m.call.at})`;
+      await reopenQuestion(root, q.id, { why, at });
+      lines.push(
+        `Asked again ${q.id}: ${why}. Answer it again: atticus questions answer ${q.id} --option <n> | --target <id>, then atticus verify ${m.call.repo} --write.`,
+      );
     }
 
     // A few lines: counts by kind and the flows folder; every record and flow with --verbose

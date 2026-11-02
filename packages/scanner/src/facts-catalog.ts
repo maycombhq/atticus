@@ -29,6 +29,7 @@ import {
   type FactOf,
   type FactJoin,
   type FactJoinAsk,
+  type FactJoinMiss,
   type FactsJoinResult,
   type FlowRecord,
   type JoinRepo,
@@ -141,6 +142,12 @@ export interface FactsCatalogResult {
   linkEvidence?: LinkEvidenceResult;
   /** With the estate and shared maps: this repo's calls joined to another team's map (ADR 0160). */
   shared?: SharedJoinResult;
+  /**
+   * ADR 0162 (F8): with the estate, the calls a person's answer sends to a repo that is read, where
+   * no route of it serves the call: this repo's calls, and the other repos' calls answered to this
+   * repo. Their questions open again with the reason.
+   */
+  answerMisses?: FactJoinMiss[];
 }
 
 type Rec = CatalogRecord & Record<string, unknown>;
@@ -691,6 +698,33 @@ export function targetsFromAnswers(
   return out;
 }
 
+/**
+ * ADR 0162 (F8): the answered targets question whose answer names a call's target: the call's own,
+ * else its group's (Q1) when the call is one the group asked. A target only a rule gives (Q2) has
+ * none here: one call that disagrees doesn't reopen a rule that covers many.
+ */
+export function answeredQuestionOfCall(
+  repo: string,
+  facts: readonly Fact[],
+  questions: readonly Question[],
+  factId: string,
+): Question | undefined {
+  const f = facts.find((x) => x.id === factId);
+  if (!f || f.kind !== "call") return undefined;
+  const own = targetQuestionFor(f)!;
+  const ownId = questionId({ step: TARGETS_STEP, repo, ...own });
+  const answered = questions.filter(
+    (q) => q.askedBy?.step === TARGETS_STEP && q.state === "answered" && q.repo === repo,
+  );
+  return (
+    answered.find((q) => q.id === ownId) ??
+    answered.find(
+      (q) =>
+        q.question.trim() === targetGroupQuestion(repo, f) && q.evidence.includes(own.evidence[0]!),
+    )
+  );
+}
+
 /** How a join found its callee, in the words a retired question says. */
 const JOINED_BY: Partial<Record<FactJoin["how"], string>> = {
   named: "the call names it",
@@ -1174,6 +1208,7 @@ export function catalogWithFacts(given: FactsCatalogInput): FactsCatalogResult {
   /** A joined call's projected record id → the callee and the entry a call-out step reaches. */
   const stepTo = new Map<string, { component: string; entry: string }>();
   let join: FactsJoinResult | undefined;
+  let answerMisses: FactJoinMiss[] | undefined;
   let estateJoin: { whole: FactsJoinResult; repos: JoinRepo[] } | undefined;
   let records0 = [...kept, ...newRecords];
   if (input.estate) {
@@ -1188,6 +1223,21 @@ export function catalogWithFacts(given: FactsCatalogInput): FactsCatalogResult {
     });
     join = joinAbout(whole, repo);
     estateJoin = { whole, repos };
+    // F8: an answer the code now disagrees with, about a call of this repo or into it.
+    const named = { ...input.estateTargets, [repo]: input.targets ?? {} };
+    const mine = new Set([
+      factIdPart(repo),
+      ...repos
+        .filter((r) => r.repo === repo)
+        .flatMap((r) => [r.component, ...(r.modules ?? []).map((m) => m.component)])
+        .filter((x): x is string => !!x)
+        .map(factIdPart),
+      ...facts.flatMap((f) => (f.component ? [factIdPart(f.component)] : [])),
+    ]);
+    answerMisses = whole.misses.filter((m) => {
+      const t = named[m.call.repo]?.[m.call.fact];
+      return !!t && t !== NO_TARGET && (m.call.repo === repo || mine.has(factIdPart(m.target)));
+    });
     // A-callers: who this repo's gateway routes let in, read from the whole estate's join (a
     // route's scanned callers may be anywhere) and the systems people declared.
     records0 = applyFactJoins(records0, join, repos, {
@@ -1367,6 +1417,7 @@ export function catalogWithFacts(given: FactsCatalogInput): FactsCatalogResult {
     ...(join ? { join } : {}),
     ...(linkEvidence ? { linkEvidence } : {}),
     ...(sharedWhole ? { shared: sharedJoinAbout(sharedWhole, repo) } : {}),
+    ...(answerMisses?.length ? { answerMisses } : {}),
   };
 }
 

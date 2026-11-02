@@ -572,6 +572,57 @@ describe("atticus verify <repo> --write (ADR 0124, A3b)", () => {
   });
 });
 
+describe("an answer the code disagrees with opens again (ADR 0162, F8)", () => {
+  it("reopens the targets question once the repo it names is read and no route serves the call", async () => {
+    const facts = readFileSync(join(VERIFY, "forge-ledger.facts.jsonl"), "utf8").replace(
+      '"host":"notify.internal",',
+      "",
+    );
+    const root = await metarepo(facts);
+    expect(await write(root)).toBe(0);
+    const q = (await listQuestions(root, { state: "open", repo: "forge-ledger" })).questions.find(
+      (x) => x.askedBy.step === "facts-targets",
+    )!;
+    await answerQuestion(root, q.id, { option: 1, by: "dana.okafor", at: "2026-10-24T10:00:00Z" });
+    // forge-notify is read since, and serves only GET /status: nothing of it takes POST /notify.
+    writeFileSync(
+      join(root, "facts", "forge-notify.jsonl"),
+      `${JSON.stringify({
+        kind: "entry",
+        id: "entry.get.status",
+        repo: "forge-notify",
+        commit: "0456def",
+        entryType: "rest",
+        method: "GET",
+        path: "/status",
+        cite: {
+          file: "src/Status.java",
+          line: 3,
+          value: "/status",
+          quote: '@GetMapping("/status")',
+        },
+        verified: "line",
+        by: "assistant",
+        conf: "declared",
+      })}\n`,
+    );
+    const o = io();
+    expect(await write(root, o)).toBe(0);
+    const again = (await listQuestions(root, { repo: "forge-ledger" })).questions.find(
+      (x) => x.id === q.id,
+    )!;
+    expect(again.state).toBe("open");
+    expect(again.answer).toBeUndefined();
+    expect(again.reopened?.answer.option).toBe(1);
+    expect(again.reopened?.why).toMatch(
+      /^notify-api is read now, and no route of it serves the call: ledger-api calls POST \/notify on notify-api, and no entry of notify-api the facts name serves it \(/,
+    );
+    expect(o.out.some((l) => l.startsWith(`Asked again ${q.id}: notify-api is read now`))).toBe(
+      true,
+    );
+  });
+});
+
 /**
  * ADR 0124 addendum A-uncited. A trial on a 4,900-file repo found that `verify --write` rewrote
  * the assistant's own facts file with the facts stripped of every uncited `auth` — 221 of them —
