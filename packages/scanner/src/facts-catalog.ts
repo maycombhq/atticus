@@ -736,6 +736,18 @@ export function answeredQuestionOfCall(
   return q?.answer?.match ? undefined : q;
 }
 
+/**
+ * Review item 2: the question reopened, and the person gave the answer it had again (the same
+ * option, or the same target in their own words). Their word holds: it is not reopened again for
+ * the same disagreement.
+ */
+export function answerReconfirmed(q: Question): boolean {
+  if (!q.answer || !q.reopened) return false;
+  const now = answerLabel(q);
+  const was = answerLabel({ ...q, answer: q.reopened.answer });
+  return !!now && !!was && slugify(now) === slugify(was);
+}
+
 /** How a join found its callee, in the words a retired question says. */
 const JOINED_BY: Partial<Record<FactJoin["how"], string>> = {
   named: "the call names it",

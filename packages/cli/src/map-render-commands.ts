@@ -44,6 +44,7 @@ import {
 } from "@maycombhq/core";
 import {
   answeredQuestionOfCall,
+  answerReconfirmed,
   answerRuleOffers,
   catalogWithFacts,
   diffCatalogs,
@@ -64,6 +65,7 @@ import {
   writeCatalog,
   type CatalogDiff,
 } from "@maycombhq/scanner";
+import { readNotSettled, repoOfTarget } from "./answer-reopen.js";
 import {
   codeLinkerFor,
   frameworkFacts,
@@ -699,6 +701,7 @@ export async function writeFactsIntoCatalog(
     // ADR 0162 (F8): an answer the code read since disagrees with (the repo it names is read,
     // and no route of it serves the call) opens its question again, saying why.
     const reopened = new Set<string>();
+    const unsettled = new Map<string, string | undefined>();
     for (const m of result.answerMisses ?? []) {
       const callerFacts =
         m.call.repo === repo ? facts : estate.repos.find((x) => x.repo === m.call.repo)?.facts;
@@ -706,6 +709,18 @@ export async function writeFactsIntoCatalog(
         ? answeredQuestionOfCall(m.call.repo, callerFacts, everyTarget, m.call.fact)
         : undefined;
       if (!q || reopened.has(q.id)) continue;
+      // Review item 2: the person gave the same answer again after it reopened: their word holds.
+      if (answerReconfirmed(q)) continue;
+      // Review item 9: only a read of the repo named that is whole and fresh disagrees.
+      const named = repoOfTarget(op, m.target);
+      if (!unsettled.has(named)) unsettled.set(named, await readNotSettled(root, named));
+      const notYet = unsettled.get(named);
+      if (notYet) {
+        lines.push(
+          `${m.target} is read, but ${notYet}: ${q.id}'s answer is checked against it once the read is whole and fresh.`,
+        );
+        continue;
+      }
       reopened.add(q.id);
       const why = `${m.target} is read now, and no route of it serves the call: ${m.message} (${m.call.at})`;
       await reopenQuestion(root, q.id, { why, at });

@@ -11,6 +11,7 @@ import {
 } from "@maycombhq/core";
 import {
   answeredQuestionOfCall,
+  answerReconfirmed,
   catalogWithFacts,
   targetQuestionFor,
   TARGETS_STEP,
@@ -91,14 +92,46 @@ describe("answeredQuestionOfCall (ADR 0162)", () => {
   };
 
   it("finds the call's own answered question", () => {
-    expect(
-      answeredQuestionOfCall("forge-payments", facts, [q()], "call.get.limits-id")?.id,
-    ).toBe(q().id);
+    expect(answeredQuestionOfCall("forge-payments", facts, [q()], "call.get.limits-id")?.id).toBe(
+      q().id,
+    );
   });
 
   it("never names a question answered by rule (Q2): one call doesn't reopen a rule", () => {
     expect(
       answeredQuestionOfCall("forge-payments", facts, [q("/limits/**")], "call.get.limits-id"),
     ).toBeUndefined();
+  });
+});
+
+describe("answerReconfirmed (review item 2)", () => {
+  const AT = "2026-11-01T12:00:00.000Z";
+  const base = {
+    state: "answered",
+    options: [
+      { label: "notify-api", means: "m", changes: "c" },
+      { label: "northwind-fx", means: "m", changes: "c" },
+    ],
+  };
+  const a = (x: { option?: number; text?: string }) => ({
+    ...x,
+    by: "pat",
+    at: AT,
+    scope: { level: "repo", id: "forge-ledger" },
+  });
+  const q = (now: { option?: number; text?: string }, was?: { option?: number; text?: string }) =>
+    ({
+      ...base,
+      answer: a(now),
+      ...(was ? { reopened: { at: AT, why: "w", answer: a(was) } } : {}),
+    }) as unknown as Question;
+
+  it("is the answer it had when it reopened, by option or in the same words", () => {
+    expect(answerReconfirmed(q({ option: 1 }, { option: 1 }))).toBe(true);
+    expect(answerReconfirmed(q({ text: "Notify API" }, { option: 1 }))).toBe(true);
+  });
+  it("isn't a question that never reopened, or a different answer", () => {
+    expect(answerReconfirmed(q({ option: 1 }))).toBe(false);
+    expect(answerReconfirmed(q({ option: 2 }, { option: 1 }))).toBe(false);
   });
 });
