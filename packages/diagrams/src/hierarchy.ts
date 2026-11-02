@@ -1,4 +1,5 @@
 import {
+  DECLARED_TOPIC,
   JOIN_HOW_FLAGS,
   JOINED_TO_SHARED_MAP,
   LINK_EVIDENCE_NOT_GAPS,
@@ -206,6 +207,8 @@ const HOW_OF_FLAG: Record<string, Join["how"]> = {
   "joined-by-repo": "repo",
   "joined-by-host": "host",
   "declared-caller": "declared",
+  // ADR 0162 §6 (F8): a topic or queue the profile names as an outside system's: a person's word.
+  [DECLARED_TOPIC]: "declared",
   // ADR 0160 (O3): answered by an entry of another team's shared map.
   [JOINED_TO_SHARED_MAP]: "shared",
 };
@@ -578,17 +581,31 @@ export function buildEstate(records: CatalogRecord[]): Estate {
       continue;
     }
     // A publish on the bus or a queue with no topic record: the topic is a node of its own,
-    // the system it goes to (an outside one, or a team's shared map) owning it.
+    // the system at either end (an outside one, or a team's shared map) owning it: the one it
+    // goes to, or the one it comes from when the estate listens on a system's topic (F8).
     if (!i.endpoint && (i.via === "event-bus" || i.via === "mq") && i.normalizedPath) {
-      const t = busTopic(i.normalizedPath, to);
+      const isSystem = (n: string) => n.startsWith("system:") || n.startsWith("unknown:");
+      const [home, homeRef] = !isSystem(to) && isSystem(from) ? [from, i.from] : [to, i.to];
+      const t = busTopic(i.normalizedPath, home);
       const owner = nodes.get(t)!;
-      if (owner.parent === to && (to.startsWith("system:") || to.startsWith("unknown:"))) {
-        owner.properties = { ...owner.properties, owner: nodes.get(to)?.label ?? to };
-        if (outside.has(i.to) || nodes.get(to)?.properties.boundary === "vendor")
+      if (owner.parent === home && isSystem(home)) {
+        owner.properties = { ...owner.properties, owner: nodes.get(home)?.label ?? home };
+        const b = nodes.get(home)?.properties.boundary;
+        if (outside.has(homeRef) || b === "vendor" || b === "outside")
           owner.properties.ownerOutside = true;
       }
       if (join.shared)
         owner.properties = { ...owner.properties, owner: join.shared.team, ownerOutside: true };
+      // ADR 0162 §6: the profile's word, not code, says whose it is: kept on the topic, with
+      // the profile's line, as on its links (their gaps and joins carry the flag).
+      if (i.flags?.includes(DECLARED_TOPIC)) {
+        owner.properties = { ...owner.properties, declared: true };
+        owner.gaps = [...new Set([...owner.gaps, DECLARED_TOPIC])];
+        owner.evidence = mergeEvidence(
+          owner.evidence,
+          evidenceOf(i.evidence.filter((e) => e.source === "manual")),
+        );
+      }
       atoms.push({ from, to: t, type: "publishes", evidence: ev, gaps, join });
       if (to.startsWith("component:"))
         atoms.push({ from: to, to: t, type: "subscribes", evidence: ev, gaps, join });
@@ -704,7 +721,12 @@ export function buildEstate(records: CatalogRecord[]): Estate {
   const busy = new Set<string>();
   const internal = (id: string) => {
     const n = nodes.get(id);
-    return !!n && n.kind !== "unknown" && n.properties.boundary !== "outside";
+    return (
+      !!n &&
+      n.kind !== "unknown" &&
+      n.properties.boundary !== "outside" &&
+      n.properties.boundary !== "vendor"
+    );
   };
   for (const a of atoms)
     if (a.type === "publishes" || a.type === "subscribes")

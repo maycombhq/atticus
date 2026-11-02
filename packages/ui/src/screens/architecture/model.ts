@@ -4,6 +4,9 @@ import { contractGaps } from "../../app/contracts.js";
 import { COPY } from "../../copy.js";
 import { WORDS } from "./words.js";
 
+/** The gap a declared topic's node and links carry: core's DECLARED_TOPIC (ADR 0162 §6). */
+export const DECLARED_TOPIC = "declared-topic";
+
 /**
  * The Architecture workspace's state, apart from React: the views loaded so far (one per opened
  * node, from GET /api/graph/node/{id}), the outline built from them, keyboard moves, and the
@@ -99,6 +102,8 @@ export interface CanvasBox {
   /** A topic or queue (F10): who owns it, and whether that is outside the estate. */
   owner?: string;
   ownerOutside?: boolean;
+  /** ADR 0162 §6 (F8): the profile names it as an outside system's: a person's word. */
+  declared?: boolean;
 }
 
 export interface CanvasLink {
@@ -111,6 +116,8 @@ export interface CanvasLink {
   async: boolean;
   gaps: string[];
   mark?: "new" | "modify" | "retire";
+  /** ADR 0162 §6 (F8): a link to or from a topic the profile declared. */
+  declared?: boolean;
 }
 
 export interface CanvasGraph {
@@ -135,6 +142,7 @@ const box = (n: Api.HierNodeT, o: Partial<CanvasBox> = {}): CanvasBox => ({
         ...(n.properties.ownerOutside === true ? { ownerOutside: true } : {}),
       }
     : {}),
+  ...(n.kind === "topic" && n.properties.declared === true ? { declared: true } : {}),
   ...o,
 });
 
@@ -262,15 +270,18 @@ export function canvasGraph(
     if (sharper(e)) continue;
     // F10: a listener's link is drawn from the topic to it (publishers → topic → listeners).
     const listens = e.type === "subscribes" && boxes.get(e.to)!.kind === "topic";
+    const declared = e.gaps.includes(DECLARED_TOPIC);
+    const label = linkLabel(e.count, listens ? COPY.topics.listens : e.type);
     links.push({
       id: e.id,
       from: listens ? e.to : e.from,
       to: listens ? e.from : e.to,
       type: e.type,
       count: e.count,
-      label: linkLabel(e.count, listens ? COPY.topics.listens : e.type),
+      label: declared ? `${label} · ${COPY.topics.declaredMark}` : label,
       async: e.sync === "async" || e.type === "publishes" || e.type === "subscribes",
       gaps: e.gaps,
+      ...(declared ? { declared: true } : {}),
     });
   }
   // A gap every part inside has (two or more parts) is said once, not on every box.
