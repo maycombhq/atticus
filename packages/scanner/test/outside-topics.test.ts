@@ -9,11 +9,16 @@ import {
   type Fact,
   type OrgPack,
 } from "@maycombhq/core";
-import { catalogWithFacts, topicQuestionDrafts } from "../src/index.js";
+import {
+  catalogWithFacts,
+  hostAliases,
+  outsideSystems,
+  topicQuestionDrafts,
+} from "../src/index.js";
 
 /**
  * ADR 0162 (F8): a topic or queue no estate repo serves the other side of, named among an outside
- * system's aliases in the profile, lands on that system (another team's or a vendor's), marked
+ * system's topics in the profile (its amendment: `topics`, kept apart from aliases), lands on that system (another team's or a vendor's), marked
  * declared, never over a counterpart the estate has. On the invented bank-shaped estate
  * (fixtures/link-estate), with a publish, a send to a queue and a listener added.
  */
@@ -84,9 +89,9 @@ beforeAll(async () => {
         ...p.profile,
         systems: p.profile.systems.map((s) =>
           s.id === "harbor-audit"
-            ? { ...s, aliases: [...s.aliases, "harbor.audit.events"] }
+            ? { ...s, topics: ["harbor.audit.events"] }
             : s.id === "lantern-mail"
-              ? { ...s, aliases: [...s.aliases, "LANTERN.MAIL.OUTBOX"] }
+              ? { ...s, topics: ["LANTERN.MAIL.OUTBOX"] }
               : s,
         ),
       },
@@ -168,7 +173,7 @@ describe("the topics question (ADR 0162)", () => {
           ...p.profile,
           systems: p.profile.systems.map((s) => ({
             ...s,
-            aliases: s.aliases.filter((a) => a !== "harbor.audit.events"),
+            topics: (s.topics ?? []).filter((a) => a !== "harbor.audit.events"),
           })),
         },
       })),
@@ -190,8 +195,51 @@ describe("the topics question (ADR 0162)", () => {
       TOPICS_OUTSIDE_LABEL,
       "None of these",
     ]);
-    // With the alias in the profile, it lands, and nothing is asked.
+    // With the topic in the profile, it lands, and nothing is asked.
     const landed = write("forge-cards", cards(), [{ repo: "forge-payments", facts: payments() }]);
     expect(topicQuestionDrafts("forge-cards", landed.records)).toEqual([]);
+  });
+});
+
+describe("topics apart from aliases (ADR 0162 amendment, review item 15)", () => {
+  /** The profile with Harbor Audit's topic written among its aliases, as beta.11 builds did. */
+  const asAlias = () =>
+    ({
+      ...op,
+      profiles: op.profiles.map((p) => ({
+        ...p,
+        profile: p.profile && {
+          ...p.profile,
+          systems: p.profile.systems.map((s) =>
+            s.id === "harbor-audit"
+              ? { ...s, topics: [], aliases: [...s.aliases, "harbor.audit.events"] }
+              : s,
+          ),
+        },
+      })),
+    }) as OrgPack;
+
+  it("reads a system's topics only: a topic among its aliases doesn't land", () => {
+    const out = catalogWithFacts({
+      repo: "forge-cards",
+      facts: cards(),
+      existing: [],
+      op: asAlias(),
+      decisions: [],
+      estate: [{ repo: "forge-payments", facts: payments() }],
+    });
+    expect(iface(out.records, "harbor-audit", "cards-api")).toBeUndefined();
+    expect(topicQuestionDrafts("forge-cards", out.records).map((q) => q.topic)).toEqual([
+      "harbor.audit.events",
+    ]);
+  });
+
+  it("keeps a dotted topic out of the names and hosts a call joins an outside system by", () => {
+    expect(outsideSystems(op)).not.toContain("harbor.audit.events");
+    expect(outsideSystems(op)).not.toContain("LANTERN.MAIL.OUTBOX");
+    const lantern = op.profiles
+      .flatMap((p) => p.profile?.systems ?? [])
+      .find((s) => s.id === "lantern-mail")!;
+    expect(hostAliases(lantern.aliases)).toEqual(["api.lanternmail.example"]);
   });
 });

@@ -51,6 +51,7 @@ export * from "./change-types-migrate.js";
 export * from "./sources-migrate.js";
 export * from "./runtime-migrate.js";
 export * from "./roles-migrate.js";
+export * from "./profile-migrate.js";
 export * from "./metarepo.js";
 export * from "./fs.js";
 export * from "./record-cache.js";

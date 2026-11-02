@@ -35,6 +35,8 @@ export interface MergeSystem {
   boundary: "product" | "internal" | "vendor";
   owner?: string;
   aliases: string[];
+  /** ADR 0162 amendment: the topics and queues it owns, kept apart from its aliases. */
+  topics?: string[];
   /** Copied to the System record (ADR 0040: saas marks a SaaS vendor). */
   tags?: string[];
 }
@@ -48,7 +50,7 @@ export interface MergePattern {
 
 /**
  * ADR 0162 (F8): the flag on an Interface a topic or queue makes to an outside system because the
- * profile names the topic among the system's aliases: a person's word, not the code's.
+ * profile names the topic under the system's topics: a person's word, not the code's.
  */
 export const DECLARED_TOPIC = "declared-topic";
 
@@ -534,11 +536,12 @@ export function mergeCatalog(input: MergeInput): MergeResult {
   });
 
   // ---- 5. events
-  // ADR 0162 (F8): the topics and queues the profile names among an outside system's aliases.
+  // ADR 0162 (F8, amended): the topics and queues the profile names under an outside system's
+  // topics. Never its aliases: those are names and hosts, and a dotted topic would read as a host.
   const topicOwner = new Map<string, string>();
   for (const s of input.systems)
     if (s.boundary === "vendor" || !ownSystems.has(s.id))
-      for (const a of s.aliases) {
+      for (const a of s.topics ?? []) {
         if (!topicOwner.has(a)) topicOwner.set(a, s.id);
         if (!topicOwner.has(a.toLowerCase())) topicOwner.set(a.toLowerCase(), s.id);
       }
@@ -605,8 +608,8 @@ export function mergeCatalog(input: MergeInput): MergeResult {
         });
       }
     }
-    // ADR 0162 (F8): a topic or queue no estate repo serves the other side of, named among an
-    // outside system's aliases in the profile (another team's, or a vendor's), lands on that
+    // ADR 0162 (F8): a topic or queue no estate repo serves the other side of, named under an
+    // outside system's topics in the profile (another team's, or a vendor's), lands on that
     // system: the person's word, marked declared, never over a counterpart the estate has.
     const owner = topicOwner.get(topic) ?? topicOwner.get(topic.toLowerCase());
     // An Interface the code already makes on the topic (the estate join's) is the counterpart.

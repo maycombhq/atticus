@@ -417,10 +417,10 @@ export async function questionsFiles(
         beforeWrite = async () => {
           const sys = await writeSystem();
           added = sys.added
-            ? `Wrote the system ${sys.id} (boundary ${sys.boundary}${sys.owner ? `, owner ${sys.owner}` : ""}${sys.aliased?.length || q0.askedBy.step !== TARGETS_STEP_ID ? `, alias ${topicOfQuestion(q0) ?? ""}` : ""}) into ${sys.profile}; review it in the same pull request.`
-            : sys.aliased?.length
-              ? `Wrote ${sys.aliased.join(", ")} under aliases of ${sys.id} in ${sys.profile}, so the next write lands it there; review it in the same pull request.`
-              : `${sys.profile} already has ${sys.id}${q0.askedBy.step !== TARGETS_STEP_ID ? `, with ${topicOfQuestion(q0) ?? "the topic"} among its aliases` : ""}.`;
+            ? `Wrote the system ${sys.id} (boundary ${sys.boundary}${sys.owner ? `, owner ${sys.owner}` : ""}${q0.askedBy.step !== TARGETS_STEP_ID ? `, topic ${topicOfQuestion(q0) ?? ""}` : ""}) into ${sys.profile}; review it in the same pull request.`
+            : sys.topics?.length
+              ? `Wrote ${sys.topics.join(", ")} under topics of ${sys.id} in ${sys.profile}, so the next write lands it there; review it in the same pull request.`
+              : `${sys.profile} already has ${sys.id}${q0.askedBy.step !== TARGETS_STEP_ID ? `, with ${topicOfQuestion(q0) ?? "the topic"} among its topics` : ""}.`;
         };
       }
     }

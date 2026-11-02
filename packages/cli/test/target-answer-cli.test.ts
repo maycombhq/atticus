@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import {
+  loadOrgPack,
   raiseQuestions,
   readQuestion,
   TARGETS_ANOTHER_LABEL,
@@ -76,7 +77,14 @@ const run = async (root: string, args: string[]) => {
 const systems = async (root: string) =>
   (
     parse(await readFile(join(root, ...PROFILE), "utf8")) as {
-      systems: { id: string; name: string; boundary: string; owner?: string; aliases?: string[] }[];
+      systems: {
+        id: string;
+        name: string;
+        boundary: string;
+        owner?: string;
+        aliases?: string[];
+        topics?: string[];
+      }[];
     }
   ).systems;
 
@@ -221,22 +229,28 @@ describe("atticus questions answer --target on a topics question (ADR 0162)", ()
     return { root, id: raised[0]!.id };
   }
 
-  it("adds the topic to another team's system's aliases", async () => {
+  it("adds the topic under another team's system's topics, not its aliases", async () => {
     const { root, id } = await topicQuestion();
     const r = await run(root, ["answer", id, "--target", "harbor-audit", "--by", "pat"]);
     expect(r.code).toBe(0);
     expect(r.out[0]).toBe(
-      "Wrote harbor.audit.events under aliases of harbor-audit in org-pack/profiles/forge/profile.yaml, so the next write lands it there; review it in the same pull request.",
+      "Wrote harbor.audit.events under topics of harbor-audit in org-pack/profiles/forge/profile.yaml, so the next write lands it there; review it in the same pull request.",
     );
     const text = await readFile(join(root, ...PROFILE), "utf8");
     expect(text).toContain("# Invented vendors, each named by the host the code calls it on.");
     expect((await systems(root)).find((s) => s.id === "harbor-audit")).toMatchObject({
-      aliases: ["harbor.audit.events"],
+      aliases: [],
+      topics: ["harbor.audit.events"],
     });
+    // The org pack still loads, at profile version 2, with the topic apart from the aliases.
+    const op = await loadOrgPack(join(root, "org-pack"));
+    const p = op.profiles.find((x) => x.platform === "forge")!.profile!;
+    expect(p.schemaVersion).toBe(2);
+    expect(p.systems.find((s) => s.id === "harbor-audit")?.topics).toEqual(["harbor.audit.events"]);
     expect((await readQuestion(root, id))!.answer?.text).toBe("harbor-audit");
   });
 
-  it("creates a team's system with the topic as its alias, and refuses a repo of the estate", async () => {
+  it("creates a team's system with the topic under its topics, and refuses a repo of the estate", async () => {
     const { root, id } = await topicQuestion();
     const repo = await run(root, ["answer", id, "--target", "forge-payments"]);
     expect(repo.code).toBe(2);
@@ -252,8 +266,10 @@ describe("atticus questions answer --target on a topics question (ADR 0162)", ()
     expect(w.code).toBe(0);
     expect((await systems(root)).find((s) => s.id === "team-ledger-ops-system")).toMatchObject({
       owner: "team-ledger-ops",
-      aliases: ["harbor.audit.events"],
+      aliases: [],
+      topics: ["harbor.audit.events"],
     });
+    expect(w.out[0]).toContain("topic harbor.audit.events");
   });
 
   it("prints the picker when the topic option is picked as an option", async () => {

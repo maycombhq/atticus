@@ -29,8 +29,8 @@ export interface TargetSystem {
   added: boolean;
   boundary: AddSystem;
   owner?: string;
-  /** A topics answer: the topic written into the system's aliases. */
-  aliased?: string[];
+  /** A topics answer: the topic written under the system's topics. */
+  topics?: string[];
 }
 
 export type TargetAnswer =
@@ -98,10 +98,10 @@ export async function targetAnswerOf(
     text: s.id,
     pick,
     write: async (): Promise<TargetSystem> => {
-      // A topics answer puts the topic among the system's aliases (ADR 0162).
+      // A topics answer puts the topic under the system's topics (ADR 0162, amended).
       const r = await addProfileSystem(root, q.repo, {
         ...s,
-        ...(topic ? { aliases: [topic] } : {}),
+        ...(topic ? { topics: [topic] } : {}),
       });
       return { ...r, boundary: s.boundary, ...(s.owner ? { owner: s.owner } : {}) };
     },

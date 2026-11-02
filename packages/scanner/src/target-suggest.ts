@@ -502,7 +502,7 @@ export function pickerLines(picks: readonly TargetPick[]): string[] {
  * ADR 0162 (F8): one question per topic or queue the repo publishes to or listens on that is
  * still a loose end after the merge (no estate repo serves the other side, and no system of the
  * profile names it): who owns it. Its first option opens the picker of systems and teams; the
- * answer adds the topic to that system's aliases (or adds the system, owner the team), so the
+ * answer adds the topic under that system's topics (or adds the system, owner the team), so the
  * next write lands the publish or the listener on it, declared.
  */
 export function topicQuestionDrafts(
@@ -534,7 +534,7 @@ export function topicQuestionDrafts(
         {
           label: TOPICS_OUTSIDE_LABEL,
           means: `${topic} belongs to another team's system or a vendor's: name it, or the team, from the list`,
-          changes: `${topic} is added to that system's aliases in the profile (or the system is added, owner the team), as a file change for review; the next write ${side === "publish" ? "sends the publish to it" : "takes the listener's messages from it"}, marked as your word`,
+          changes: `${topic} is added under that system's topics in the profile (or the system is added, owner the team), as a file change for review; the next write ${side === "publish" ? "sends the publish to it" : "takes the listener's messages from it"}, marked as your word`,
         },
         {
           label: "None of these",

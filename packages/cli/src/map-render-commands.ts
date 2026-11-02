@@ -675,7 +675,7 @@ export async function writeFactsIntoCatalog(
       for (const q of r.raised) {
         raised.push(q);
         lines.push(
-          `No repo of the estate serves the other side of ${t.topic}: asked ${q.id}: ${q.question} If another team or a vendor owns it, name them: atticus questions answer ${q.id} --target <system or team id> (it goes under the system's aliases in the profile, for review), then ${rerun}.`,
+          `No repo of the estate serves the other side of ${t.topic}: asked ${q.id}: ${q.question} If another team or a vendor owns it, name them: atticus questions answer ${q.id} --target <system or team id> (it goes under the system's topics in the profile, for review), then ${rerun}.`,
         );
       }
     }
