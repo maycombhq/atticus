@@ -725,13 +725,15 @@ export function answeredQuestionOfCall(
   const answered = questions.filter(
     (q) => q.askedBy?.step === TARGETS_STEP && q.state === "answered" && q.repo === repo,
   );
-  return (
-    answered.find((q) => q.id === ownId) ??
+  const q =
+    answered.find((x) => x.id === ownId) ??
     answered.find(
-      (q) =>
-        q.question.trim() === targetGroupQuestion(repo, f) && q.evidence.includes(own.evidence[0]!),
-    )
-  );
+      (x) =>
+        x.question.trim() === targetGroupQuestion(repo, f) && x.evidence.includes(own.evidence[0]!),
+    );
+  // An answer given as a rule (Q2, `match`) covers many calls: one call that disagrees doesn't
+  // name it, so it is never reopened from here.
+  return q?.answer?.match ? undefined : q;
 }
 
 /** How a join found its callee, in the words a retired question says. */
@@ -1567,7 +1569,6 @@ export function answerRuleOffers(input: {
         label === TARGETS_ANOTHER
       )
         continue;
-      if (q.answer?.match) continue;
       const url = urlOf(f, r.facts);
       const host = url ? urlHostPort(url)?.host : undefined;
       const via = host ? `on ${host.toLowerCase()}` : f.base ? `through ${f.base}` : undefined;
