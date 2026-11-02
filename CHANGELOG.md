@@ -2,7 +2,7 @@
 
 All notable changes to Atticus. Versions follow [Semantic Versioning](https://semver.org); contracts C1 to C6 change only with an ADR, a schema version and a migration (`atticus upgrade`).
 
-## Unreleased
+## 2.0.0-beta.11 (2026-11-02)
 
 ### Fixed before release: from the review
 
@@ -39,6 +39,11 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 - Every picture (the estate canvas, Design, Know, Explore, Home's map, a change's diagram) takes the page's width and the height left on it, with the details laid over it, and has one viewer: fit on open, zoom in, out, to actual size and to the picked box, wheel and pinch zoom, drag pan, Find a box, Focus (all but a box and its neighbours dimmed), a minimap on large pictures, keys, and Full screen (F, Esc to leave), the same in VS Code and IntelliJ. A flow's sequence has Full screen too. On the canvas each event topic and MQ queue is a box of its own (publishers → topic → listeners) with its owner, marked "No listener in the estate" or "No publisher in the estate".
 - `atticus doctor --counts [--json]`: open questions by kind, links verified and inferred by join flag, asked, outside and unresolved, repos read, unread and stale, facts accepted, rejected and not verified, and tokens reported: counts and flags only, nothing named, safe to paste out of a client's estate.
+
+### The editors catch up (ADR 0166)
+
+- VS Code (0.7.9) and IntelliJ (0.4.0): Another repo… on a target question (and A topic owned by another team or vendor on a topic question) opens the editor's own picker of every repo of the manifest, system of the profiles and team in roles.yaml, and answers with `--target`; a new system is offered with the command that writes it and added (`--add-system`) only after your yes. `atticus questions show <id> --json` gives the picker (`picks`). Contract mismatches (`join contracts`, Map › Mismatches a click away) and its count in the status bar; a repo type's notes, Add a note, Draft and Save the rule drafts, each write after your yes with the command shown; `doctor --counts` in a panel to copy.
+- The diagram viewer's keys work in both editors' hosting: in IntelliJ's App tab Esc goes to the app (leave full screen, clear Find a box) instead of moving focus to the editor; Shift+Esc still hides the tool window.
 
 ## 2.0.0-beta.10 (2026-10-31)
 
