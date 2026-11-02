@@ -6,8 +6,9 @@ import { answerRuleOffers, targetQuestionFor, TARGETS_STEP } from "../src/index.
 
 /**
  * ADR 0162 (F8): an answer given the same way in several repos (the same target for calls through
- * the same config key, or on the same host) offers to become one rule (Q2) or a note on the repo
- * type (ADR 0163). On the invented bank-shaped estate (fixtures/link-estate).
+ * the same config key, or on the same host) offers to become one rule (Q2) for the repo type. Never
+ * a note: a note saying where calls go is a routing claim no code backs (review item 8). On the
+ * invented bank-shaped estate (fixtures/link-estate).
  */
 
 const FIX = join(__dirname, "..", "..", "..", "fixtures", "link-estate");
@@ -57,7 +58,7 @@ const repos = [
 ];
 
 describe("answerRuleOffers (ADR 0162)", () => {
-  it("offers one rule for the repo type, and a note on it, for the same answer in two repos", () => {
+  it("offers one rule for the repo type for the same answer in two repos, and no note", () => {
     const qs = [
       answered("forge-payments", payments, "call.get.limits-id", "forge-cards"),
       answered("forge-cards", cards, "call.get.accounts-id", "forge-cards"),
@@ -72,14 +73,29 @@ describe("answerRuleOffers (ADR 0162)", () => {
       match: "/limits/**",
       type: "spring-boot",
       command: `atticus questions answer ${first.id} --option 2 --match /limits/** --scope repo-type --type spring-boot`,
-      note: {
-        file: "org-pack/repo-types/spring-boot/type.yaml",
-        text: "Calls through forge.limits.base-url go to forge-cards.",
-      },
     });
+    expect(o).not.toHaveProperty("note");
     expect(o!.line).toContain(
       "2 repos (forge-cards, forge-payments) answer the calls through forge.limits.base-url the same way, forge-cards",
     );
+    expect(o!.line).toContain(`As a rule: ${o!.command}.`);
+    expect(o!.line).not.toMatch(/notes?:|type\.yaml|go to forge-cards/);
+  });
+
+  it("offers nothing when the repos share no type, so no rule can cover them", () => {
+    const qs = [
+      answered("forge-payments", payments, "call.get.limits-id", "forge-cards"),
+      answered("forge-cards", cards, "call.get.accounts-id", "forge-cards"),
+    ];
+    expect(
+      answerRuleOffers({
+        repos: [
+          { repo: "forge-payments", facts: payments, type: "spring-boot" },
+          { repo: "forge-cards", facts: cards, type: "node-service" },
+        ],
+        questions: qs,
+      }),
+    ).toEqual([]);
   });
 
   it("offers nothing when the answers differ, for one repo alone, or when a rule says it already", () => {

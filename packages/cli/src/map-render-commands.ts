@@ -21,7 +21,6 @@ import {
   questionsRelOf,
   raiseQuestions,
   readRepoSpec,
-  orgPackRelOf,
   reopenQuestion,
   TOPICS_STEP_ID,
   retireQuestion,
@@ -714,7 +713,7 @@ export async function writeFactsIntoCatalog(
         `Asked again ${q.id}: ${why}. Answer it again: atticus questions answer ${q.id} --option <n> | --target <id>, then atticus verify ${m.call.repo} --write.`,
       );
     }
-    // ADR 0162 (F8): the same answer in several repos offers to become one rule or a type's note.
+    // ADR 0162 (F8): the same answer in several repos offers to become one rule.
     const typeOf = new Map(estateRepos(op).map((r) => [r.id, r.type] as const));
     for (const offer of answerRuleOffers({
       repos: [{ repo, facts }, ...estate.repos].map((r) => ({
@@ -722,7 +721,6 @@ export async function writeFactsIntoCatalog(
         ...(typeOf.get(r.repo) ? { type: typeOf.get(r.repo)! } : {}),
       })),
       questions: everyTarget.filter((q) => !reopened.has(q.id)),
-      orgPack: orgPackRelOf(root),
     }))
       if (offer.repos.includes(repo)) lines.push(offer.line);
 

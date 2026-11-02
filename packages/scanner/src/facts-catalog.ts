@@ -1513,9 +1513,10 @@ export function estateFromFacts(input: {
 /**
  * ADR 0162 (F8): an answer given the same way in several repos: the calls on one host (or through
  * one config key) that people answered with the same target in two or more repos. One answer can
- * say it for all of them: as a rule (Q2, an answer's `match` with a repo-type scope) when the repos
- * share a type, or as a note on that repo type (repo-types/<type>/type.yaml `notes:`, ADR 0163).
- * Only the offer's words and its command are made here; nothing is written.
+ * say it for all of them, as a rule (Q2, an answer's `match` with a repo-type scope), when the repos
+ * share a type and the calls share a host or a path prefix. Never as a note on the type: a note is
+ * what a term means (ADR 0163), not where calls go. Only the offer's words and its command are
+ * made here; nothing is written.
  */
 export interface AnswerRuleOffer {
   /** `on <host>` or `through <config key>`. */
@@ -1526,13 +1527,11 @@ export interface AnswerRuleOffer {
   /** The answered questions, sorted. */
   questions: string[];
   /** The rule the answer would carry: the host, or the calls' shared path prefix. */
-  match?: string;
-  /** The repos' one type, when they share it. */
-  type?: string;
-  /** The command that makes it a rule, when it can be one. */
-  command?: string;
-  /** The note it would be on the repo type, and the file it goes in. */
-  note?: { file: string; text: string };
+  match: string;
+  /** The repos' one type. */
+  type: string;
+  /** The command that makes it a rule. */
+  command: string;
   /** The offer in a person's words. */
   line: string;
 }
@@ -1540,10 +1539,7 @@ export interface AnswerRuleOffer {
 export function answerRuleOffers(input: {
   repos: readonly { repo: string; facts: readonly Fact[]; type?: string }[];
   questions: readonly Question[];
-  /** The org pack's folder as a message names it (org-pack, or .atticus/org-pack). */
-  orgPack?: string;
 }): AnswerRuleOffer[] {
-  const pack = input.orgPack ?? "org-pack";
   const ruled = input.questions.filter(
     (q) => q.askedBy?.step === TARGETS_STEP && q.state === "answered" && !!q.answer?.match,
   );
@@ -1603,31 +1599,20 @@ export function answerRuleOffers(input: {
     const first = xs.find((x) => x.q.id === questions[0])!.q;
     const n = first.options.findIndex((o) => o.label === label);
     const pick = n >= 0 ? `--option ${n + 1}` : `--text "${label}"`;
-    const command =
-      match && type
-        ? `atticus questions answer ${first.id} ${pick} --match ${match} --scope repo-type --type ${type}`
-        : undefined;
-    const note = type
-      ? { file: `${pack}/repo-types/${type}/type.yaml`, text: `Calls ${via} go to ${label}.` }
-      : undefined;
+    // Review item 8: only the rule is offered. A note saying where calls go would be a routing
+    // claim the reader writes from a person's words, not from code (ADR 0163 notes say what terms
+    // mean); with no rule to offer (no match, or no type the repos share) nothing is offered.
+    if (!match || !type) continue;
+    const command = `atticus questions answer ${first.id} ${pick} --match ${match} --scope repo-type --type ${type}`;
     out.push({
       via,
       label,
       repos,
       questions,
-      ...(match ? { match } : {}),
-      ...(type ? { type } : {}),
-      ...(command ? { command } : {}),
-      ...(note ? { note } : {}),
-      line: [
-        `${repos.length} repos (${repos.join(", ")}) answer the calls ${via} the same way, ${label} (${questions.join(", ")}): one answer can say it for every ${type ?? "such"} repo.`,
-        command ? `As a rule: ${command}.` : undefined,
-        note
-          ? `Or as a note on the repo type: add "${note.text}" under notes: in ${note.file}.`
-          : undefined,
-      ]
-        .filter(Boolean)
-        .join(" "),
+      match,
+      type,
+      command,
+      line: `${repos.length} repos (${repos.join(", ")}) answer the calls ${via} the same way, ${label} (${questions.join(", ")}): one answer can say it for every ${type} repo. As a rule: ${command}.`,
     });
   }
   return out;
