@@ -3385,7 +3385,7 @@ export const COPY = {
     /** What each key does, said once beside the picture. */
     keys: "Keys: + and − zoom, 0 fits, 1 is actual size, arrows pan, S zooms to the picked box, M focuses on it, F is full screen, / finds a box, Esc leaves full screen.",
     region: (title: string) => `${title}: picture`,
-    fullScreenOn: "Full screen. Press Esc to leave.",
+    fullScreenOn: "Full screen: Tab stays inside the picture. Press Esc to leave.",
     focusOn: (label: string) =>
       `Focus on ${label} and what it links to; everything else is dimmed.`,
     details: "Details",

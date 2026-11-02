@@ -13,6 +13,9 @@ import {
   fitRect,
   keyAction,
   LABELS_FROM,
+  leavesFullScreen,
+  returnFocus,
+  trapTab,
   MINIMAP_FROM,
   neighbourhood,
   panBy,
@@ -44,6 +47,47 @@ const esc = (s: string) =>
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#x27;");
 const noop = () => undefined;
+
+describe("full screen keeps the keyboard inside it (review 17)", () => {
+  const [a, b, c] = ["a", "b", "c"];
+  const frame = "frame";
+  it("cycles Tab and Shift+Tab inside the frame", () => {
+    const list = [a, b, c];
+    expect(trapTab(list, c, false, frame)).toBe(a);
+    expect(trapTab(list, a, true, frame)).toBe(c);
+    // The frame itself (focused on F) goes to the first, or back to the last.
+    expect(trapTab(list, frame, false, frame)).toBe(a);
+    expect(trapTab(list, frame, true, frame)).toBe(c);
+    // Focus somewhere outside comes back in.
+    expect(trapTab(list, "page", false, frame)).toBe(a);
+    // Between the ends the browser's own order holds.
+    expect(trapTab(list, b, false, frame)).toBeUndefined();
+    expect(trapTab(list, b, true, frame)).toBeUndefined();
+    // Nothing to focus inside: the frame keeps it.
+    expect(trapTab([], frame, false, frame)).toBe(frame);
+  });
+
+  it("leaves on Escape, but not on the Escape that clears the search", () => {
+    const inside = (sel: string | null) => ({
+      closest: (q: string) => (sel && q.includes(sel) ? {} : null),
+    });
+    expect(leavesFullScreen({ key: "Escape", target: inside(null) })).toBe(true);
+    expect(leavesFullScreen({ key: "Escape", target: inside('[role="search"]') })).toBe(false);
+    expect(leavesFullScreen({ key: "Escape", defaultPrevented: true, target: null })).toBe(false);
+    expect(leavesFullScreen({ key: "Enter", target: null })).toBe(false);
+  });
+
+  it("gives focus back to the full screen button on leaving", () => {
+    let focused = "";
+    const button = { focus: () => (focused = "button") };
+    const f = {
+      querySelector: (q: string) => (q === '[data-viewer-action="full-screen"]' ? button : null),
+    };
+    returnFocus(f);
+    expect(focused).toBe("button");
+    expect(() => returnFocus(null)).not.toThrow();
+  });
+});
 
 describe("the viewer's maths (F10)", () => {
   it("fits a picture whole and centred, never past actual size", () => {
@@ -400,6 +444,13 @@ describe("the Architecture canvas in the viewer", () => {
 
   it("goes full screen", () => {
     expect(html(canvas({ initialFull: true }))).toContain("viewer-full");
+  });
+
+  it("is a dialog in full screen only, with a button focus can come back to (review 17)", () => {
+    const full = html(canvas({ initialFull: true }));
+    expect(full).toMatch(/role="region"[^>]*aria-modal="true"/);
+    expect(full).toContain('data-viewer-action="full-screen"');
+    expect(html(canvas())).not.toContain("aria-modal");
   });
 
   it("draws a topic as its own box with its owner, and marks one with no listener", () => {
