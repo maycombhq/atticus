@@ -1495,3 +1495,126 @@ export function estateFromFacts(input: {
   });
   return { records, specs, join, invalid };
 }
+
+/**
+ * ADR 0162 (F8): an answer given the same way in several repos: the calls on one host (or through
+ * one config key) that people answered with the same target in two or more repos. One answer can
+ * say it for all of them: as a rule (Q2, an answer's `match` with a repo-type scope) when the repos
+ * share a type, or as a note on that repo type (repo-types/<type>/type.yaml `notes:`, ADR 0163).
+ * Only the offer's words and its command are made here; nothing is written.
+ */
+export interface AnswerRuleOffer {
+  /** `on <host>` or `through <config key>`. */
+  via: string;
+  /** The target every answer names. */
+  label: string;
+  repos: string[];
+  /** The answered questions, sorted. */
+  questions: string[];
+  /** The rule the answer would carry: the host, or the calls' shared path prefix. */
+  match?: string;
+  /** The repos' one type, when they share it. */
+  type?: string;
+  /** The command that makes it a rule, when it can be one. */
+  command?: string;
+  /** The note it would be on the repo type, and the file it goes in. */
+  note?: { file: string; text: string };
+  /** The offer in a person's words. */
+  line: string;
+}
+
+export function answerRuleOffers(input: {
+  repos: readonly { repo: string; facts: readonly Fact[]; type?: string }[];
+  questions: readonly Question[];
+  /** The org pack's folder as a message names it (org-pack, or .atticus/org-pack). */
+  orgPack?: string;
+}): AnswerRuleOffer[] {
+  const pack = input.orgPack ?? "org-pack";
+  const ruled = input.questions.filter(
+    (q) => q.askedBy?.step === TARGETS_STEP && q.state === "answered" && !!q.answer?.match,
+  );
+  const groups = new Map<
+    string,
+    {
+      repo: string;
+      q: Question;
+      label: string;
+      f: FactOf<"call">;
+      facts: readonly Fact[];
+      type?: string;
+    }[]
+  >();
+  for (const r of input.repos)
+    for (const f of r.facts) {
+      if (f.kind !== "call") continue;
+      const q = answeredQuestionOfCall(r.repo, r.facts, input.questions, f.id);
+      const label = q ? answerLabel(q) : undefined;
+      if (
+        !q ||
+        !label ||
+        label === TARGETS_NONE ||
+        label === TARGETS_SPLIT ||
+        label === TARGETS_ANOTHER
+      )
+        continue;
+      if (q.answer?.match) continue;
+      const url = urlOf(f, r.facts);
+      const host = url ? urlHostPort(url)?.host : undefined;
+      const via = host ? `on ${host.toLowerCase()}` : f.base ? `through ${f.base}` : undefined;
+      if (!via) continue;
+      groups.set(via, [
+        ...(groups.get(via) ?? []),
+        { repo: r.repo, q, label, f, facts: r.facts, ...(r.type ? { type: r.type } : {}) },
+      ]);
+    }
+  const out: AnswerRuleOffer[] = [];
+  for (const [via, xs] of [...groups].sort(([a], [b]) => a.localeCompare(b))) {
+    const repos = [...new Set(xs.map((x) => x.repo))].sort();
+    const labels = new Set(xs.map((x) => slugify(x.label)));
+    if (repos.length < 2 || labels.size !== 1) continue;
+    // Already said once by a rule that covers every call.
+    if (xs.every((x) => ruled.some((q) => ruleCoversCall(q.answer!.match!, x.f, x.facts))))
+      continue;
+    const label = xs[0]!.label;
+    const prefixes = new Set(xs.map((x) => targetPathPrefix(x.f.path)));
+    const prefix = prefixes.size === 1 ? [...prefixes][0]! : undefined;
+    const match = via.startsWith("on ")
+      ? via.slice(3)
+      : prefix && prefix !== "/"
+        ? `${prefix}/**`
+        : undefined;
+    const types = new Set(xs.map((x) => x.type));
+    const type = types.size === 1 ? xs[0]!.type : undefined;
+    const questions = [...new Set(xs.map((x) => x.q.id))].sort();
+    const first = xs.find((x) => x.q.id === questions[0])!.q;
+    const n = first.options.findIndex((o) => o.label === label);
+    const pick = n >= 0 ? `--option ${n + 1}` : `--text "${label}"`;
+    const command =
+      match && type
+        ? `atticus questions answer ${first.id} ${pick} --match ${match} --scope repo-type --type ${type}`
+        : undefined;
+    const note = type
+      ? { file: `${pack}/repo-types/${type}/type.yaml`, text: `Calls ${via} go to ${label}.` }
+      : undefined;
+    out.push({
+      via,
+      label,
+      repos,
+      questions,
+      ...(match ? { match } : {}),
+      ...(type ? { type } : {}),
+      ...(command ? { command } : {}),
+      ...(note ? { note } : {}),
+      line: [
+        `${repos.length} repos (${repos.join(", ")}) answer the calls ${via} the same way, ${label} (${questions.join(", ")}): one answer can say it for every ${type ?? "such"} repo.`,
+        command ? `As a rule: ${command}.` : undefined,
+        note
+          ? `Or as a note on the repo type: add "${note.text}" under notes: in ${note.file}.`
+          : undefined,
+      ]
+        .filter(Boolean)
+        .join(" "),
+    });
+  }
+  return out;
+}
