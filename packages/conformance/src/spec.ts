@@ -60,6 +60,8 @@ const CONTRACTS: Contract[] = [
         "DeployFact",
         "ConfigFact",
         "FlowFact",
+        // ADR 0163: a term of the organisation's, as a repo writes it.
+        "TermFact",
       ].map((name) => ({
         name,
         where: ".atticus/facts/<repo>.jsonl (one fact per line; ADR 0124)",

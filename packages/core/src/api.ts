@@ -128,8 +128,11 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   And (J1) a link joined by a Kubernetes Service's bare name with no
  *   cited namespace of the caller's the same is a guess: `LINK_HOWS` gains `service-name`, and
  *   `JOIN_GUESS_FLAGS` `joined-by-service-name`. Additive only.
+ * 2.45.0 (ADR 0163): the organisation's terms a repo writes. `terms` on a repo in GET
+ *   /api/trust: each term fact's term, value, role and line, with the line giving it its role
+ *   and the note it rests on. Additive only.
  */
-export const API_VERSION = "2.44.0";
+export const API_VERSION = "2.45.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -814,6 +817,23 @@ export const TrustRepo = z.object({
         cite: z.string(),
         /** The question its missing patterns raise, when the facts show none of them. */
         gap: z.string().optional(),
+      }),
+    )
+    .optional(),
+  /**
+   * 2.45.0 (ADR 0163): the organisation's terms the repo writes, from its term facts: the term,
+   * the value as written, the role a note gave it (`unknown` when none says), where it is cited
+   * (`file:line`), the line that gives it its role and the note it rests on. Empty until read.
+   */
+  terms: z
+    .array(
+      z.object({
+        term: z.string(),
+        value: z.string(),
+        role: z.enum(["owner", "consumer", "none", "unknown"]),
+        cite: z.string(),
+        meaning: z.string().optional(),
+        note: z.union([z.number(), z.string()]).optional(),
       }),
     )
     .optional(),

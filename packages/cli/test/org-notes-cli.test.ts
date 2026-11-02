@@ -120,6 +120,29 @@ describe("verify --write: terms across the estate", () => {
     );
   });
 
+  it("lists the terms on map.md: a consumer names the repo whose own id it is", async () => {
+    const root = metarepo();
+    await verify(root, "forge-payments");
+    await verify(root, "forge-ledger");
+    await verify(root, "forge-accounts-proxy");
+    // The payments map lists who lets it in once the proxy's grants are in the catalog.
+    const proxy = readFileSync(join(root, "map", "forge-accounts-proxy", "map.md"), "utf8");
+    const section = proxy.slice(proxy.indexOf("## Terms"), proxy.indexOf("## Flows"));
+    expect(section).toContain(
+      "- `cmdb` `APP000123`: a consumer it lets in: forge-payments [userAccess.json:4]",
+    );
+    expect(section).toContain("- `cmdb` `APP000456`: a consumer it lets in: forge-ledger");
+    expect(section).toContain("- `costCentre` `CC-4410`: names no system");
+    expect(section).toContain("(its role from [userAccess.json:3]");
+    await verify(root, "forge-payments");
+    const pays = readFileSync(join(root, "map", "forge-payments", "map.md"), "utf8");
+    expect(pays).toContain("- `appId` `APP000123`: this repo's own id; let in by forge-accounts");
+    // An id no list names is the repo's own, and nothing more.
+    await verify(root, "forge-statements");
+    const st = readFileSync(join(root, "map", "forge-statements", "map.md"), "utf8");
+    expect(st).toContain("- `appId` `APP000999`: this repo's own id [forge-app.yaml:2]");
+  });
+
   it("asks one question per unknown term and repo type, and offers its answer as a note", async () => {
     const unknown = (_repo: string, t: string) =>
       t

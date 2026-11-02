@@ -1,12 +1,6 @@
 import type { CatalogRecord } from "./catalog.js";
 import { factIdPart } from "./facts.js";
-import {
-  APIGEE_BUNDLE,
-  gatewayRouteId,
-  type FactEnd,
-  type FactsJoinResult,
-  type JoinRepo,
-} from "./facts-join.js";
+import { gatewayRouteId, type FactEnd, type FactsJoinResult, type JoinRepo } from "./facts-join.js";
 import type { EvidenceT } from "./schema/common.js";
 import type { FactOf, TermRole } from "./schema/facts.js";
 import { gatewayBundleTest } from "./schema/conventions.js";
@@ -162,7 +156,7 @@ export function joinTerms(input: JoinTermsInput): TermsResult {
   }
 
   // ---- who each repo's routes let in, and the calls the join found into them
-  const bundle = input.bundleFolders ? gatewayBundleTest(input.bundleFolders) : APIGEE_BUNDLE;
+  const bundle = gatewayBundleTest(input.bundleFolders);
   const grants: TermGrant[] = [];
   const access: TermAccessFinding[] = [];
   for (const r of repos) {

@@ -810,6 +810,7 @@ async function renderRepoMap(
     url ? { url } : { dir: adopted ? "" : posix(relative(root, baseClonePath(root, repo))) },
   );
   const rel = `${mapRelOf(root)}/${repo}`;
+  const kept = await factsOf(root, repo);
   const files = renderMap({
     repo,
     records,
@@ -827,7 +828,9 @@ async function renderRepoMap(
       : {}),
     // What the repo is built on (ADR 0124 addendum A-framework): read from the facts, since no
     // catalog record holds a framework.
-    ...builtOnOf(await factsOf(root, repo)),
+    ...builtOnOf(kept),
+    // ADR 0163: the organisation's terms it writes, read from the facts as the frameworks are.
+    ...termsOfFacts(kept),
     questions: open.map((q) => ({ id: q.id, question: q.question, evidence: q.evidence })),
     paths: { map: rel, questions: questionsRelOf(root), specs: specRelOf(root, repo) },
     codeLink,
@@ -871,6 +874,26 @@ export function builtOnOf(facts: readonly Fact[]): Pick<RenderMapInput, "framewo
   if (!built.length) return {};
   const gaps = frameworkGaps(facts).map((g) => ({ framework: g.framework, question: g.question }));
   return { frameworks: { built, ...(gaps.length ? { gaps } : {}) } };
+}
+
+/** The term facts as the map lists them (ADR 0163); nothing when the facts hold none. */
+export function termsOfFacts(facts: readonly Fact[]): Pick<RenderMapInput, "terms"> {
+  const terms = facts.flatMap((f) =>
+    f.kind === "term"
+      ? [
+          {
+            term: f.term,
+            value: f.value,
+            role: f.role,
+            cite: { path: f.cite.file, line: f.cite.line, commit: f.commit },
+            ...(f.meaning
+              ? { meaning: { path: f.meaning.file, line: f.meaning.line, commit: f.commit } }
+              : {}),
+          },
+        ]
+      : [],
+  );
+  return terms.length ? { terms } : {};
 }
 
 async function listFiles(dir: string): Promise<string[]> {

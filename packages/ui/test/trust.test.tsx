@@ -115,6 +115,37 @@ describe("Map › Trust (ADR 0124)", () => {
     expect(out).toContain(esc("Were its screens missed?"));
   });
 
+  // ADR 0163: the organisation's terms the repo writes, each with its role and its line.
+  it("lists a repo's terms with the role a note gave each, and says none when there are none", () => {
+    const out = renderToStaticMarkup(
+      <TrustRow
+        r={{
+          ...LEDGER,
+          terms: [
+            {
+              term: "appId",
+              value: "APP000456",
+              role: "owner",
+              cite: "forge-app.yaml:2",
+              meaning: "forge-app.yaml:1",
+              note: 1,
+            },
+            { term: "cmdb", value: "APP000123", role: "unknown", cite: "userAccess.json:4" },
+          ],
+        }}
+      />,
+    );
+    expect(out).toContain(esc(T.terms));
+    expect(out).toContain(
+      esc(`${T.termOne("appId", "APP000456", T.termRole.owner!, "forge-app.yaml:2")}; note 1`),
+    );
+    expect(out).toContain(
+      esc(T.termOne("cmdb", "APP000123", T.termRole.unknown!, "userAccess.json:4")),
+    );
+    expect(out).toContain('aria-label="Terms: forge-ledger"');
+    expect(renderToStaticMarkup(<TrustRow r={LEDGER} />)).toContain(esc(T.termsNone));
+  });
+
   // ADR 0148 (P3): the sample audit's precision, with the size and the range.
   it("says a sample audit's precision for facts and links, how small it is, or how to start one", () => {
     const tally = (right: number, wrong: number, precision: number | null) => ({

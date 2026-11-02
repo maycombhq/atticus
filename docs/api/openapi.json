@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Atticus local API",
-    "version": "2.44.0",
+    "version": "2.45.0",
     "description": "Served by `atticus ui` on 127.0.0.1. The UI only calls this API, and the API only reads and writes files in the metarepo.",
     "license": {
       "name": "Apache-2.0",
@@ -27665,6 +27665,48 @@
                     "additionalProperties": false
                   }
                 },
+                "terms": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "term": {
+                        "type": "string"
+                      },
+                      "value": {
+                        "type": "string"
+                      },
+                      "role": {
+                        "type": "string",
+                        "enum": [
+                          "owner",
+                          "consumer",
+                          "none",
+                          "unknown"
+                        ]
+                      },
+                      "cite": {
+                        "type": "string"
+                      },
+                      "meaning": {
+                        "type": "string"
+                      },
+                      "note": {
+                        "type": [
+                          "number",
+                          "string"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "term",
+                      "value",
+                      "role",
+                      "cite"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
                 "lists": {
                   "type": "object",
                   "properties": {
@@ -28632,7 +28674,8 @@
                             "deploy",
                             "config",
                             "framework",
-                            "flow"
+                            "flow",
+                            "term"
                           ]
                         },
                         "file": {
@@ -28832,7 +28875,8 @@
                       "deploy",
                       "config",
                       "framework",
-                      "flow"
+                      "flow",
+                      "term"
                     ]
                   },
                   "file": {
