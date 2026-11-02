@@ -185,6 +185,25 @@
             <action id="Atticus.ReadingQueue" class="com.maycombhq.atticus.ide.ReadingQueueAction"
                     text="Atticus: The Reading Order and Its Costs" description="The repos to read next, callees and gateways first, each with its estimated cost (atticus next --queue)"
                     icon="AllIcons.Actions.ListFiles"/>
+            <!-- ADR 0166: what 2.0.0-beta.11 added: the contract check, a repo type's notes, counts safe to paste -->
+            <action id="Atticus.ContractMismatches" class="com.maycombhq.atticus.ide.ContractMismatchesAction"
+                    text="Atticus: Contract Mismatches" description="The payload on both sides of every link compared, its counts said, and Map › Mismatches a click away (atticus join contracts)"
+                    icon="AllIcons.Actions.Diff"/>
+            <action id="Atticus.RepoTypeNotes" class="com.maycombhq.atticus.ide.RepoTypeNotesAction"
+                    text="Atticus: A Repo Type's Notes..." description="What the organisation's terms mean and what must hold, in its own words, for a repo type or org-wide (atticus repo-type note)"
+                    icon="AllIcons.General.Information"/>
+            <action id="Atticus.AddNote" class="com.maycombhq.atticus.ide.AddNoteAction"
+                    text="Atticus: Add a Note to a Repo Type..." description="A note in your own words, added after your yes with the command shown (atticus repo-type note --add)"
+                    icon="AllIcons.General.Add"/>
+            <action id="Atticus.DraftRules" class="com.maycombhq.atticus.ide.DraftRulesAction"
+                    text="Atticus: Draft Checklist Rules from the Notes" description="A rule draft from each note that reads as a rule, read-only; Save the drafts is a click and a yes (atticus repo-type rules)"
+                    icon="AllIcons.Actions.ListFiles"/>
+            <action id="Atticus.SaveRules" class="com.maycombhq.atticus.ide.SaveRulesAction"
+                    text="Atticus: Save the Notes' Rule Drafts..." description="Write the new rule drafts to org-pack/checklists/org-notes.yaml for review, after your yes (atticus repo-type rules --save)"
+                    icon="AllIcons.Actions.MenuSaveall"/>
+            <action id="Atticus.DoctorCounts" class="com.maycombhq.atticus.ide.DoctorCountsAction"
+                    text="Atticus: How Far the Map Has Got" description="Counts and flags only, nothing named, in a panel to copy: safe to paste out of the estate (atticus doctor --counts)"
+                    icon="AllIcons.Actions.Copy"/>
             <!-- ADR 0161: the whole estate in one command, in a console the person types s, r, q into -->
             <action id="Atticus.MapEstate" class="com.maycombhq.atticus.ide.MapEstateAction"
                     text="Atticus: Map the Estate..." description="Read every repo one part at a time: each part's line on the clipboard for a new Copilot Chat, verified as it lands, then the estate joined (atticus map --all)"

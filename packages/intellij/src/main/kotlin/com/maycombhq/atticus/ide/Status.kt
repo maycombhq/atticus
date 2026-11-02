@@ -12,7 +12,9 @@ import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.vfs.newvfs.BulkFileListener
 import com.intellij.openapi.vfs.newvfs.events.VFileEvent
 import com.intellij.util.Alarm
+import com.maycombhq.atticus.core.Beta11
 import com.maycombhq.atticus.core.Commands
+import com.maycombhq.atticus.core.ContractCounts
 import com.maycombhq.atticus.core.Copy
 import com.maycombhq.atticus.core.Next
 import com.maycombhq.atticus.core.NextView
@@ -29,6 +31,8 @@ data class Snapshot(
     val waiting: WaitingView?,
     val watched: List<String>,
     val problem: String? = null,
+    /** ADR 0166 (F7): the contract check's counts, from `atticus join contracts --json`. */
+    val contracts: ContractCounts? = null,
 )
 
 /**
@@ -83,6 +87,7 @@ class AtticusStatus(private val project: Project) : Disposable {
         if (next.code == 127) return Snapshot(cliOk = false, next = null, waiting = null, watched = emptyList(), problem = next.stderr)
         val waiting = AtticusCli.run(project, cwd, Commands.withRoot(listOf("waiting", "--json"), cwd))
         val watch = AtticusCli.run(project, cwd, Commands.withRoot(listOf("watch", "--json"), cwd))
+        val contracts = AtticusCli.run(project, cwd, Commands.withRoot(Beta11.CONTRACTS_ARGV + "--json", cwd))
         val w = Waiting.parse(waiting.stdout)
         return Snapshot(
             cliOk = true,
@@ -90,6 +95,7 @@ class AtticusStatus(private val project: Project) : Disposable {
             waiting = w,
             watched = if (watch.ok) Peer.watchLines(watch.stdout) else emptyList(),
             problem = if (w == null) Copy.firstLine(waiting.lines, waiting.code) else null,
+            contracts = if (contracts.ok) Beta11.contractCounts(contracts.stdout) else null,
         )
     }
 

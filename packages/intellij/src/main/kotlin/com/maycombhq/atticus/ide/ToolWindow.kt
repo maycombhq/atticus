@@ -161,9 +161,29 @@ class AppPanel(private val project: Project, parent: Disposable) : SimpleToolWin
             Disposer.register(life, it)
             browser = it
             browserUrl = url
+            escapeToPage(it)
         }
         return b.component
     }
+}
+
+/**
+ * ADR 0166 (F10): Esc in the app is the app's (leave full screen, clear Find a box). The keymap
+ * binds Esc to Focus Editor, and the platform runs a keymap action before the browser sees the
+ * key, so the tool window takes Esc itself while the page has focus and hands it to the page.
+ * Shift+Esc still hides the tool window; a click in the editor leaves it. F and / are bound to
+ * nothing and reach the page as they are.
+ */
+private fun escapeToPage(b: JBCefBrowser) {
+    object : com.intellij.openapi.project.DumbAwareAction() {
+        override fun actionPerformed(e: com.intellij.openapi.actionSystem.AnActionEvent) {
+            b.cefBrowser.executeJavaScript(com.maycombhq.atticus.core.Beta11.ESCAPE_TO_PAGE, b.cefBrowser.url, 0)
+        }
+    }.registerCustomShortcutSet(
+        com.intellij.openapi.actionSystem.CustomShortcutSet(javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_ESCAPE, 0)),
+        b.component,
+        b,
+    )
 }
 
 /** Every command run and what it printed. */

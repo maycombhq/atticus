@@ -476,6 +476,70 @@ object Copy {
 
     const val CHECK_PROPOSALS = "Check the proposed answers"
 
+    // What beta.11 added (ADR 0166): the Another repo… picker, the contract check, notes, counts
+    const val PICK_REPO = "repo"
+    const val PICK_READ = "read"
+    const val PICK_NOT_READ = "not read yet"
+    const val PICK_SYSTEM = "system"
+    const val PICK_TEAM = "team"
+    const val PICK_NO_SYSTEM = "no system yet: adds one to the profile, after your yes"
+    const val PICK_TARGET_TITLE = "Another Repo, System or Team"
+    const val PICK_TARGET =
+        "Every repo of the manifest (read or not), every system of the profiles and every team in roles.yaml. Pick one, or type a vendor's or another team's system the profile doesn't have yet."
+    const val PICK_OWNER =
+        "Every system of the profiles and every team in roles.yaml. Pick the one that owns the topic, or type a vendor's or another team's system the profile doesn't have yet."
+    const val PICKS_OLD =
+        "This atticus lists no repos, systems and teams for the question (it needs 2.0.0-beta.11). Answer in your own words, or run atticus questions answer <id> --target <id>."
+
+    fun picksFailed(why: String) = "Couldn't list the repos, systems and teams: $why"
+
+    const val ADD_SYSTEM_TITLE = "Add a System to the Profile"
+    const val ADD_AS_VENDOR = "Add It as a Vendor"
+    const val ADD_AS_INTERNAL = "Add It as Another Team's System"
+
+    fun addSystemAsk(o: TargetPlan.Offer, command: String) =
+        (
+            if (o.vendor) {
+                "${o.name} isn't a repo of the manifest, a system of the profile or a team in roles.yaml. Add it to the profile as a new system (id ${o.id}), for review in the pull request?"
+            } else {
+                "${o.owner ?: o.name} has no system in the profile yet. Add ${o.name} (id ${o.id}, owner ${o.owner ?: ""}) as another team's system, for review in the pull request?"
+            }
+        ) + "\n\nThe command it runs:\n$command\n\nNothing is committed or pushed."
+
+    const val CONTRACTS_TITLE = "Contract Mismatches"
+    const val CONTRACTS_NONE = "Contract check: no link has a payload on both sides to compare yet."
+
+    fun contractsCounts(mismatches: Int, unconfirmed: Int, compared: Int) =
+        "Contract check: $mismatches mismatch${if (mismatches == 1) "" else "es"}, $unconfirmed unconfirmed, on $compared link${if (compared == 1) "" else "s"} compared (Map › Mismatches)."
+
+    const val OPEN_MISMATCHES = "Open Map › Mismatches"
+    const val SHOW_CHECK = "Show the whole check"
+
+    const val NOTES_TITLE = "A Repo Type's Notes"
+    const val ADD_NOTE_TITLE = "Add a Note to a Repo Type"
+    const val NOTES_WHICH = "Which repo type's notes? Org-wide notes are handed to every read."
+    const val ORG_WIDE_NOTES = "Org-wide (every repo is read with them)"
+    const val NOTE_ASK =
+        "The note, in your own words, on one line: what a term means or what must hold. Each read of the type's repos is handed it."
+    const val NOTE_BAD = "A note is one line of plain text, up to 1,000 characters."
+
+    fun noteConfirm(type: String?, command: String) =
+        "Add the note to ${if (type == null) "org-pack/conventions.yaml" else "org-pack/repo-types/$type/type.yaml"}? " +
+            "The next read of ${if (type == null) "every repo" else "each $type repo"} is handed it; review it in a pull request.\n\nThe command it runs:\n$command\n\nNothing is committed or pushed."
+
+    const val ADD_NOTE = "Add the Note"
+    const val RULES_TITLE = "Draft Checklist Rules from the Notes"
+    const val SAVE_RULES = "Save the drafts"
+    const val SAVE_RULES_TITLE = "Save the Rule Drafts"
+
+    fun rulesSaveConfirm(command: String) =
+        "Save the new rule drafts to org-pack/checklists/org-notes.yaml? Each is a draft for a person to review and make active.\n\nThe command it runs:\n$command\n\nNothing is committed or pushed."
+
+    const val SAVE = "Save"
+    const val COUNTS_TITLE = "How Far the Map Has Got"
+    const val COUNTS_HINT = "Counts and flags only, nothing named: safe to paste out of the estate (atticus doctor --counts)."
+    const val COPY_ALL = "Copy"
+
     // Files a job reads
     const val MEASURE_PICK = "The reference you wrote by hand: a few repos' entries and calls, each call with the repo it should reach (docs/guide/measure.md)."
     const val APPLY_SHEET_PICK = "The filled answer sheet (Atticus: Write the Questions into One Sheet writes questions-sheet.yaml)."
