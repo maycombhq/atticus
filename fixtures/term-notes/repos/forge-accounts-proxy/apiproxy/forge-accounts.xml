@@ -1,0 +1,3 @@
+<APIProxy name="forge-accounts">
+  <BasePath>/forge/accounts</BasePath>
+</APIProxy>

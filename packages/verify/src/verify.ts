@@ -9,6 +9,8 @@ import {
   partsBuildWord,
   partsNamePath,
   isSecretPath,
+  noteProblem,
+  type NumberedNote,
   NEVER_CHECKED_STEPS,
   quoteMatches,
   quoteNotRequired,
@@ -101,7 +103,17 @@ export type RejectCode =
    * An exposure (a deploy fact with a host or base path) that names no component of the estate,
    * or names none in a repo whose facts serve nothing, a deploy repo's (ADR 0143).
    */
-  | "exposure-component";
+  | "exposure-component"
+  /**
+   * A call's `auth` or `tls` with no line cited for it (ADR 0163): a call's security is a claim
+   * like any other, checked on the line that sets it.
+   */
+  | "security-uncited"
+  /**
+   * A term fact whose meaning line is in another file or below the value's line, or whose
+   * `note` is none of the notes the read was given (ADR 0163).
+   */
+  | "term-meaning";
 
 /** One thing wrong with a fact. */
 export interface Problem {
@@ -344,6 +356,11 @@ export interface VerifyOptions {
    */
   derivedNames?: boolean;
   /**
+   * The notes the read was handed (ADR 0163, `notesFor`): the repo type's and the org-wide ones,
+   * numbered. A term fact's `note` must be one of them. Left out, a note is not checked.
+   */
+  notes?: readonly NumberedNote[];
+  /**
    * G4: the OpenAPI reader behind the uncovered spec operations (R1; the stack helper
    * `readers`). False: no spec is read and none is listed. Default true.
    */
@@ -453,6 +470,9 @@ function claimsOf(f: Fact): Claim[] {
     }
     case "flow":
       return [routeOrWord(f.cite.value)];
+    // ADR 0163: the value as written, on its line.
+    case "term":
+      return [{ kind: "word", value: f.value }];
   }
 }
 
@@ -833,6 +853,51 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
           "exposure-component",
           `${label} says where a component is reached and names none: this repo's facts serve nothing, so its routes reach another repo's component; name it in exposes (one of the estate's components), or write a question when no file says which`,
         );
+    }
+    // ADR 0163: a call's auth and TLS each rest on the line that sets them, as an entry's auth.
+    if (f.kind === "call") {
+      for (const [what, claim, at] of [
+        ["auth", f.auth, f.authCite],
+        ["tls", f.tls, f.tlsCite],
+      ] as const) {
+        if (claim !== undefined && !at && f.by !== "person")
+          problem(
+            f,
+            "security-uncited",
+            `${label} claims ${what} ${claim} and cites no line for it: give ${what}Cite, the line that sets it (a client certificate, a token, an https URL) and what it writes there, or leave ${what} out`,
+          );
+        if (at)
+          add(
+            f,
+            checkCite(
+              { ...at },
+              [{ kind: "word", value: at.value }],
+              `${label} ${what}Cite${claim ? ` (${what} ${claim})` : ""}`,
+              false,
+            ),
+          );
+      }
+    }
+    // ADR 0163: a term's value is on its line (above); the line that gives it its role is in the
+    // same file, at or above it, and writes what the fact says; a note it relies on is one given.
+    if (f.kind === "term") {
+      const m = f.meaning;
+      if (m && m.file !== f.cite.file)
+        problem(
+          f,
+          "term-meaning",
+          `${label} says ${m.file}:${m.line} gives "${f.value}" its meaning, and the value is in ${f.cite.file}: cite the line of the same file (the list's or the block's key) that does`,
+        );
+      else if (m && m.line > f.cite.line)
+        problem(
+          f,
+          "term-meaning",
+          `${label} says line ${m.line} gives "${f.value}" its meaning, below the value's line ${f.cite.line}: cite the line above it (the list's or the block's key) that does`,
+        );
+      else if (m)
+        add(f, checkCite({ ...m }, [{ kind: "word", value: m.value }], `${label} meaning`, false));
+      const bad = f.note !== undefined && o.notes ? noteProblem(f.note, o.notes) : undefined;
+      if (bad) problem(f, "term-meaning", `${label} ${bad}`);
     }
     // A-framework: the name follows from the declaration on the cited line, and a version, where
     // one is claimed, is written on that line or on one of its `cite.with` parts (a property, a

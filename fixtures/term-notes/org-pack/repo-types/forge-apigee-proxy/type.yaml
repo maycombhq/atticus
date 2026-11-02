@@ -1,0 +1,13 @@
+schemaVersion: 2
+id: forge-apigee-proxy
+name: Forge Apigee proxy
+description: One Apigee API proxy per repo, with the list of applications let in to it.
+fingerprint:
+  - kind: layout
+    globs: ["apiproxy/**"]
+    weight: 5
+    required: true
+notes:
+  - "`cmdb` in userAccess.json (or userAccess.yaml) lists the applications let in to this proxy's API: each entry is a consumer, named by its CMDB id (APP and six digits)."
+  - "`costCentre` beside a consumer is a billing code: it names no system."
+  - "Every call to a vendor must use mTLS and present auth, on the call itself or on the gateway in front of it."

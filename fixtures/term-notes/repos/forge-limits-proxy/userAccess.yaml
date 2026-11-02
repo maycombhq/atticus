@@ -1,0 +1,3 @@
+proxy: forge-limits
+consumers:
+  - cmdb: APP000789

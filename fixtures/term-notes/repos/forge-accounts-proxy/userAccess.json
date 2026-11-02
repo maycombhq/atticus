@@ -1,0 +1,7 @@
+{
+  "proxy": "forge-accounts",
+  "consumers": [
+    { "cmdb": "APP000123", "costCentre": "CC-4410" },
+    { "cmdb": "APP000456" }
+  ]
+}

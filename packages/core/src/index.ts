@@ -10,6 +10,8 @@ export * from "./facts-join-vendor.js";
 export * from "./facts-join-prototype.js";
 export * from "./facts-carry.js";
 export * from "./facts-callers.js";
+export * from "./facts-terms.js";
+export * from "./org-notes.js";
 export * from "./link-evidence.js";
 export * from "./shared-maps.js";
 export * from "./audit.js";
