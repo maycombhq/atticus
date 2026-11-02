@@ -145,9 +145,9 @@ describe("atticus upgrade", () => {
     );
     expect(code).toBe(0);
     expect(r.out.join("\n")).toMatch(/Commit the changes in a pull request/);
-    // A version-1 record is written at the current version (3, ADR 0125) by the version-2 step.
+    // A version-1 record is written at the current version (4, ADR 0164) by the version-2 step.
     expect(await readFile(join(root, "catalog/generated/system/ledger.yaml"), "utf8")).toMatch(
-      /^schemaVersion: 3/m,
+      /^schemaVersion: 4/m,
     );
     const backup = join(root, ".atticus/backups/20261019-100000");
     expect(await readFile(join(backup, "catalog/generated/system/ledger.yaml"), "utf8")).toMatch(
@@ -171,6 +171,7 @@ describe("atticus upgrade", () => {
       "questions-v3",
       "starter-review",
       "catalog-schema-v3",
+      "catalog-schema-v4",
       "sources-v2",
       "sources-v3",
       "stamp-committed",
@@ -252,7 +253,7 @@ describe("atticus upgrade", () => {
     expect((await upgradeCheck(root, "1.0.0")).pending).toEqual([]);
   });
 
-  it("moves version-2 catalog records to version 3 in their own step, changing only the number (ADR 0125)", async () => {
+  it("moves version-2 catalog records to the current version in their own step, changing only the number (ADR 0125)", async () => {
     const root = await oldMetarepo();
     const v2 = [
       "schemaVersion: 2",
@@ -286,7 +287,7 @@ describe("atticus upgrade", () => {
       files: ["catalog/generated/schema/ledger-api.post-entries.request.yaml"],
     });
     expect(await upgradeCommand(root, { by: "pat" }, io().io, "1.0.0")).toBe(0);
-    expect(await readFile(f, "utf8")).toBe(v2.replace(/^schemaVersion: 2\n/, "schemaVersion: 3\n"));
+    expect(await readFile(f, "utf8")).toBe(v2.replace(/^schemaVersion: 2\n/, "schemaVersion: 4\n"));
     expect((await upgradeCheck(root, "1.0.0")).pending).toEqual([]);
   });
 

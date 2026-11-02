@@ -65,7 +65,7 @@ export function topHelp(versionLine: string): string {
 /**
  * The words a command line names, as the command that exists: `legacy <words>` is `<words>`,
  * `stories` is `plan stories`, `task <change> <task>` is `task run`, `join` is `estate join`.
- * `join measure` is `estate measure`, `join shared` is `estate shared`. `positions` are the indexes of argv's positional words (the parser's tokens), so an option and
+ * `join measure` is `estate measure`, `join shared` is `estate shared`, `join contracts` is `estate contracts`. `positions` are the indexes of argv's positional words (the parser's tokens), so an option and
  * its value stay where they are. Anything else, and a line already rewritten, is left as it is.
  */
 export function aliasArgv(argv: readonly string[], positions: readonly number[]): string[] {
@@ -84,6 +84,8 @@ export function aliasArgv(argv: readonly string[], positions: readonly number[])
   if (word === "join" && second === "measure") out.splice(first, 2, "estate", "measure");
   // `join shared` (O3, ADR 0160) is `estate shared`: another team's map, read-only.
   else if (word === "join" && second === "shared") out.splice(first, 2, "estate", "shared");
+  // `join contracts` (F7, ADR 0164) is `estate contracts`: the payload on both sides of each link.
+  else if (word === "join" && second === "contracts") out.splice(first, 2, "estate", "contracts");
   else if (word === "join") out.splice(first, 1, "estate", "join");
   else if (word === "stories") out.splice(first, 1, "plan", "stories");
   else if (word === "task" && second !== "run" && second !== "context")

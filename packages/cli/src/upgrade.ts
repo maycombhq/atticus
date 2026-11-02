@@ -178,6 +178,12 @@ export const MIGRATIONS: Migration[] = [
     "Catalog records at schema version 3: a Schema field can say whether it is required (ADR 0125)",
     [2],
   ),
+  // The version-3 files: only the number changes; version 4 adds a Schema format (ADR 0164).
+  catalogStep(
+    "catalog-schema-v4",
+    "Catalog records at schema version 4: a Schema can be a protobuf message (ADR 0164)",
+    [3],
+  ),
   sourcesStep(
     "sources-v2",
     "sources.yaml at version 2: a wiki can include and exclude pages by pattern; every wiki still reads every page (ADR 0083)",

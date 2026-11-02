@@ -329,15 +329,18 @@ const sameMethod = (a: string | undefined, b: string | undefined) => {
   return !x || !y || x === "ANY" || y === "ANY" || x === y;
 };
 
-/** The family a declared type belongs to, compared across languages; undefined when unsure. */
-function typeFamily(t: string | undefined): string | undefined {
+/**
+ * The family a declared type belongs to, compared across languages; undefined when unsure. The
+ * contract check (ADR 0164) reads it too, with protobuf's and Avro's scalar names.
+ */
+export function typeFamily(t: string | undefined): string | undefined {
   const x = (t ?? "").trim().toLowerCase();
   if (!x) return undefined;
   if (/\[\]$|^(array|list|set|collection|seq|vec)\b|^(list|set|array)</.test(x)) return "array";
-  if (/^(string|str|text|char|character|uuid|guid|date|datetime|instant|localdate)$/.test(x))
+  if (/^(string|str|text|char|character|uuid|guid|date|datetime|instant|localdate|bytes)$/.test(x))
     return "string";
   if (
-    /^(number|int|integer|long|short|byte|float|double|decimal|bigdecimal|biginteger|numeric|int32|int64|u?int\d*)$/.test(
+    /^(number|int|integer|long|short|byte|float|double|decimal|bigdecimal|biginteger|numeric|int32|int64|u?int\d*|sint\d+|s?fixed\d+|uint\d+)$/.test(
       x,
     )
   )

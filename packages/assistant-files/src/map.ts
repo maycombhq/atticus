@@ -317,6 +317,21 @@ export const FACT_RULE_PARTS: readonly (readonly RulePart[])[] = [
       text: "Cite a column in the migration that adds or last changes it, and one in the newest migration. Cite the schema or entity file only when the repo has no migrations.",
     },
   ],
+  // ADR 0164 (F7): what the contract check on every link compares, and the mappings it follows.
+  [
+    {
+      when: ["backend", "frontend", "protocols"],
+      text: "A request or response body's fields are field facts with `type` as declared and `required` where the code says (`@NotNull`, `[Required]`, a property that isn't optional), each cited on its declaration. A wrapper every answer or message shares (`Response<T>` with a `data` field) is a mapping: its field (`data`) is a field fact of that side, and each field inside it has `mappedTo` that field and `transform: envelope <wrapper>`. A mapper that renames a field (a MapStruct `@Mapping`, an AutoMapper profile, a converter): the source field has `mappedTo` the field it becomes and `transform` naming the mapper, cited on the mapping's line.",
+    },
+    {
+      when: ["backend", "frontend", "protocols"],
+      text: "A publish and a listener name their message type: a `message` field fact whose `name` is the type as the code writes it (the generated proto class, the Avro record), `type` its full name when the code gives it (`forge.payments.v1.PaymentSettled`) and `transform: message type`, cited where the publish or listener names it, beside the message's fields.",
+    },
+    {
+      when: ["gateway"],
+      text: "A policy that reshapes a payload (`AssignMessage`, a JavaScript or XSL policy) is read as field mappings: the route's field, as the caller sees it, with `mappedTo` its forwarding call's field, as the service sees it, or the other way, `transform` naming the policy, cited on the policy's line. A field a policy writes from nothing you can trace has `transform` naming the policy and no `mappedTo`.",
+    },
+  ],
   [
     {
       when: ["frontend"],

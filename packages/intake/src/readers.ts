@@ -14,6 +14,9 @@ export const READERS = {
   openapi: `${openapiExtractor.id}@${openapiExtractor.version}`,
   asyncapi: "asyncapi@0.1.0",
   payload: "payload@0.1.0",
+  // ADR 0164: a topic's message spec.
+  protobuf: "protobuf@0.1.0",
+  avro: "avro@0.1.0",
 } as const;
 
 type Rec = Record<string, unknown> & { id: string; evidence: Record<string, unknown>[] };

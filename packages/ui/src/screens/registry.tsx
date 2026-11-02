@@ -3,6 +3,7 @@ import { Architecture } from "./architecture/Architecture.js";
 import { Changes } from "./Changes.js";
 import { Trust } from "./map/Trust.js";
 import { Outside } from "./map/Outside.js";
+import { Mismatches } from "./map/Mismatches.js";
 import { CommandCenter } from "./CommandCenter.js";
 import { Explore } from "./Explore.js";
 import { Flows } from "./flows/Flows.js";
@@ -41,6 +42,8 @@ export const SCREEN_COMPONENTS: Record<string, Screen> = {
   trust: () => <Trust />,
   // O4 (ADR 0149): the systems outside the estate, one page each.
   outside: Outside,
+  // F7 (ADR 0164): the contract check on every link, estate-wide.
+  mismatches: Mismatches,
   // Home: one page, Waiting on you with the Overview merged in.
   home: () => <CommandCenter />,
   // Every other page, unchanged (behind --full, or reached by a link).

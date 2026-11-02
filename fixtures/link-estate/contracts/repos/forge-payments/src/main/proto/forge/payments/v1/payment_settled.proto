@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+package forge.payments.v1;
+
+option java_multiple_files = true;
+
+// Published on forge.payments.settled when a payment is settled.
+message PaymentSettled {
+  string payment_id = 1;
+  string account_id = 2;
+  int64 amount_minor = 3;
+  string currency = 4;
+  string settled_at = 5;
+}

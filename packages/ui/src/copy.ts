@@ -297,6 +297,8 @@ export const COPY = {
         openapi: "OpenAPI spec",
         swagger: "Swagger spec",
         asyncapi: "AsyncAPI spec",
+        protobuf: "Protobuf spec",
+        avro: "Avro schema",
         payload: "Payload sample",
         "ticket-export": "Ticket export",
         unknown: "Unknown",
@@ -694,6 +696,7 @@ export const COPY = {
       cockpit: "At a glance",
       systems: "Systems",
       outside: "Outside systems",
+      mismatches: "Mismatches",
       runs: "Model runs",
       history: "Prompt history",
       words: "What the words mean",
@@ -706,6 +709,10 @@ export const COPY = {
   },
   /** Map › Trust (ADR 0124): how far to trust each repo's map, from the verifier's report. */
   trust: {
+    // ADR 0164: the contract check's counts, with the way to the Mismatches page.
+    contracts: (m: number, u: number, links: number) =>
+      `Contracts: ${m} mismatch${m === 1 ? "" : "es"} and ${u} unconfirmed on ${links} link${links === 1 ? "" : "s"} with a payload on both sides.`,
+    contractsOpen: "Open Mismatches",
     intro:
       "How far to trust each repo's map. Your assistant reads a repo and writes facts, each citing a file and line; the verifier keeps the facts whose line says what they claim and rejects the rest. Here is what it kept and rejected, how much of the code the facts cover, whether they are of the commit the checkout is at, and whether the catalog is built from them or from the built-in readers.",
     empty:
@@ -2865,8 +2872,48 @@ export const COPY = {
     outside: "The systems outside the estate: vendors and other teams",
   },
   /** O4 (ADR 0149): one page per system outside the estate (a vendor, another team's). */
+  // ADR 0164 (F7): the contract check on every link, estate-wide.
+  mismatches: {
+    title: "Mismatches",
+    intro:
+      "The payload on both sides of every link compared: each REST call, each hop through a gateway, each topic's publisher and listeners, and each call to an outside system, from the fields your assistant read and the specs on file. A difference that a mapping nobody traced touches is unconfirmed, never a mismatch. Read from the facts and the specs; nothing is written.",
+    empty:
+      "No link has a payload on both sides yet. Your assistant records what each call sends and each entry takes when it reads a repo (/atticus-map); atticus verify <repo> --write reads the repo's specs; atticus intake add takes a vendor's or another team's.",
+    counts: (m: number, u: number, links: number, compared: number) =>
+      `${m} mismatch${m === 1 ? "" : "es"}, ${u} unconfirmed; ${compared} of ${links} link${links === 1 ? "" : "s"} had a payload on both sides.`,
+    filter: "Show",
+    filters: { all: "Everything", mismatch: "Mismatches", unconfirmed: "Unconfirmed" } as Record<
+      string,
+      string
+    >,
+    link: (from: string, what: string, to: string, through: string) =>
+      `${from} ${what} → ${to}${through ? ` via ${through}` : ""}`,
+    cols: { kind: "What", says: "Says", sender: "One side", receiver: "The other" },
+    kinds: {
+      "field-missing": "Read, never sent",
+      "field-extra": "Sent, not taken",
+      "field-not-sent": "Required, not sent",
+      "field-required": "Required on one side only",
+      "field-type": "Types differ",
+      "field-number": "Field number reused",
+      "error-unlisted": "Error not listed",
+      "error-unanswered": "Error never answered",
+    } as Record<string, string>,
+    status: { mismatch: "Mismatch", unconfirmed: "Unconfirmed" } as Record<string, string>,
+    via: (list: string) => `Through ${list}`,
+    specs: (list: string) => `Specs read: ${list}`,
+    notes: "Left out",
+    command: "atticus join contracts",
+    commandLabel: "Copy the command that prints this list",
+  },
   outside: {
     title: "Outside systems",
+    // ADR 0164: the calls to the system against its newest spec.
+    contracts: "The calls against this spec",
+    contractsIntro:
+      "Each call to this system compared with the operation or message its newest spec publishes. Marked new: what this spec brings that the one it replaced didn't.",
+    noContracts: "No call to it differs from its spec, or none says what it sends.",
+    newWithSpec: "New with this spec",
     intro:
       "The systems no repo of the estate belongs to: vendors, and other teams' systems. For each, who calls it, the operations its spec publishes, the calls that match nothing in that spec, and the questions open about it. Read from the facts, the catalog and the specs in inputs/; nothing is written.",
     pick: "Which outside system",
@@ -3651,6 +3698,11 @@ export const COPY = {
   },
   /** ADR 0135, C1 and C2: why a link is there, and saying it is wrong. */
   why: {
+    // ADR 0164: the contract check's findings on a call of the link.
+    contracts: "Contract",
+    contractsOf: (m: number, u: number) =>
+      `${m} mismatch${m === 1 ? "" : "es"}${u ? `, ${u} unconfirmed` : ""} between what each side sends and takes`,
+    contractsAll: "All mismatches",
     open: "Why is this linked?",
     openOf: (link: string) => `Why is ${link} linked?`,
     intro:

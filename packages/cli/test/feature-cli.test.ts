@@ -363,7 +363,7 @@ describe("atticus feature suggest-names", () => {
 });
 
 describe("atticus catalog migrate", () => {
-  it("rewrites older catalog files at the current version (3) and says which", async () => {
+  it("rewrites older catalog files at the current version (4) and says which", async () => {
     const root = await forgeRoot();
     await mkdir(join(root, "catalog/curated/curateddecision"), { recursive: true });
     await writeFile(
@@ -374,7 +374,7 @@ describe("atticus catalog migrate", () => {
     expect(await catalogMigrate(root, c.io)).toBe(0);
     expect(c.out).toEqual([
       "  catalog/curated/curateddecision/alias.ledger-platform.yaml",
-      "Migrated 1 file to catalog schema version 3; 46 already current. Commit the change.",
+      "Migrated 1 file to catalog schema version 4; 46 already current. Commit the change.",
     ]);
     expect(
       (
@@ -383,10 +383,10 @@ describe("atticus catalog migrate", () => {
           "utf8",
         )
       ).split("\n")[0],
-    ).toBe("schemaVersion: 3");
+    ).toBe("schemaVersion: 4");
     const again = capture();
     expect(await catalogMigrate(root, again.io)).toBe(0);
-    expect(again.out).toEqual(["Every catalog file is already at schema version 3."]);
+    expect(again.out).toEqual(["Every catalog file is already at schema version 4."]);
     expect((await readdir(join(root, "catalog/generated"))).length).toBeGreaterThan(0);
   });
 });

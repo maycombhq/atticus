@@ -1,4 +1,4 @@
-schemaVersion: 3
+schemaVersion: 4
 kind: System
 id: ledger
 status: current

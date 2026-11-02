@@ -26,6 +26,7 @@ import { uiTrustRoutes } from "./ui-api-trust.js";
 import { uiFactsRoutes } from "./ui-api-facts.js";
 import { uiAuditRoutes } from "./ui-api-audit.js";
 import { uiOutsideRoutes } from "./ui-api-outside.js";
+import { uiContractsRoutes } from "./ui-api-contracts.js";
 import { uiStageRoutes } from "./ui-api-stages.js";
 
 /**
@@ -98,17 +99,21 @@ export async function startUi(
       // evidence and a person's correction of a fact (F3); a stage tab's findings and a comment
       // on one (B10).
       // ADR 0149: a sample audit answered in the app, and the outside systems.
+      // ADR 0164: the contract check on every link (Map › Mismatches).
       return uiStageRoutes(
-        uiOutsideRoutes(
-          uiAuditRoutes(
-            uiFactsRoutes(
-              uiTrustRoutes(
-                uiCockpitRoutes(
-                  uiRepoRoutes(
-                    uiDocumentRoutes(
-                      uiAiRoutes(
-                        uiHistoryRoutes(
-                          uiModelRunRoutes(uiKnowledgeRoutes(uiCiteRoutes(specs, ctx), ctx), ctx),
+        uiContractsRoutes(
+          uiOutsideRoutes(
+            uiAuditRoutes(
+              uiFactsRoutes(
+                uiTrustRoutes(
+                  uiCockpitRoutes(
+                    uiRepoRoutes(
+                      uiDocumentRoutes(
+                        uiAiRoutes(
+                          uiHistoryRoutes(
+                            uiModelRunRoutes(uiKnowledgeRoutes(uiCiteRoutes(specs, ctx), ctx), ctx),
+                            ctx,
+                          ),
                           ctx,
                         ),
                         ctx,

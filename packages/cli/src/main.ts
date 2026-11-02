@@ -491,6 +491,8 @@ Usage:
   atticus join shared refresh [<team>] [<folder>]  Import a team's map again from where it came from (a folder inside the metarepo), or the folder given (needed when it was outside); a newer commit replaces the old [--commit <sha>]
   atticus join shared list [--json]    The shared maps on file: whose, for which system, their commit and entries
   atticus estate shared import|refresh|list  The same as join shared
+  atticus join contracts [--json]      Compare the payload on both sides of every link (REST calls, gateway hops, topics, calls to outside systems) from the field facts and the specs on file (a repo's own, a consumer's copy, a topic's .proto, Avro, JSON Schema or AsyncAPI, a vendor's or team's taken in through intake): missing and extra fields, required but not sent, types, error statuses, protobuf field numbers; a mapping nobody traced is unconfirmed, never a mismatch; reads files only (ADR 0164)
+  atticus estate contracts [--json]    The same as join contracts
   atticus estate fresh [--all] [--json]  Which repos' clones have moved past their facts' commit, most stale first: per repo the facts' commit, the clone's, the files changed that the facts cite, the facts to read again and the command to run; local git only, nothing fetched or written (--all lists the fresh ones too)
   atticus repo-type detect <repo> [--json]   Match a repo against the org pack's repo types by fingerprint, with the evidence for each signal
   atticus repo-type new <id> --from <repo> [--force]   Draft a repo type from a repo (its build files, dependencies, markers, folders) for you to edit
@@ -1437,6 +1439,10 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
     if (arg === "list" || arg === undefined) return m.sharedList(root, { json }, io);
     io.err("Usage: atticus join shared import|refresh|list (atticus help join)");
     return 2;
+  }
+  if (group === "estate" && command === "contracts") {
+    const m = await import("./contracts-commands.js");
+    return m.joinContracts(root, { json: values.json === true }, io);
   }
   if (group === "estate" && command === "measure") {
     const m = await import("./measure-commands.js");

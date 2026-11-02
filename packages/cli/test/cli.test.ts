@@ -11,7 +11,7 @@ function capture() {
   return { io: { out: (l: string) => out.push(l), err: (l: string) => err.push(l) }, out, err };
 }
 
-const SYSTEM = `schemaVersion: 3
+const SYSTEM = `schemaVersion: 4
 kind: System
 id: ledger
 status: current
@@ -112,8 +112,8 @@ describe("atticus CLI", () => {
 
   it("flags invalid, misplaced and non-canonical files with exit code 1", async () => {
     const reordered = SYSTEM.replace("name: Ledger\n", "").replace(
-      "schemaVersion: 3\n",
-      "name: Ledger\nschemaVersion: 3\n",
+      "schemaVersion: 4\n",
+      "name: Ledger\nschemaVersion: 4\n",
     );
     const dir = await catalogWith({
       "system/ledger.yaml": reordered,
@@ -130,8 +130,8 @@ describe("atticus CLI", () => {
 
   it("rewrites non-canonical files with --fix", async () => {
     const reordered = SYSTEM.replace("name: Ledger\n", "").replace(
-      "schemaVersion: 3\n",
-      "name: Ledger\nschemaVersion: 3\n",
+      "schemaVersion: 4\n",
+      "name: Ledger\nschemaVersion: 4\n",
     );
     const dir = await catalogWith({ "system/ledger.yaml": reordered });
     const c = capture();

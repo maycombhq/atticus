@@ -73,6 +73,9 @@ export const WORDS = {
   copied: "Copied",
   state: { current: "Current", new: "New", changed: "Changed", retired: "Retired" },
   gap: {
+    // ADR 0164: the contract check found the two sides' payloads apart.
+    "contract-mismatch": "The two sides' payloads don't match",
+    "contract-unconfirmed": "The payloads may not match: a mapping isn't traced",
     inferred: "Seen at one end only",
     "no-repo": "No repo known",
     "no-system": "No system known",
