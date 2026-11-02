@@ -55,54 +55,34 @@ const does = [
 ];
 
 // What the current release added, in plain words; the CHANGELOG has every item.
-const release = "2.0.0-beta.10";
+const release = "2.0.0-beta.11";
 const news = [
   {
-    body: "A big repo is read in parts sized to your model, so nothing is cut short mid-read, and `atticus map <repo> --gaps` plans a second pass on what the first left.",
-    link: "/guide/install.html",
-  },
-  {
-    body: "On the map, **Why is this linked?** shows how each link was joined, with the cited line at both ends, and **This link is wrong** records a person's correction. A link the join only guessed now says it is a guess.",
-    link: "/guide/install.html",
-  },
-  {
-    body: "Questions are asked once for a group of calls that go the same way, answered by a rule (`--match`) or all at once in one sheet, listed in the order a change needs them with each one's owner, and your assistant can propose answers from the code for a person to accept.",
+    body: "`atticus map --all` maps the whole estate in one command, in the order that lands links early, and picks up where it stopped when a Copilot chat fails partway. In IntelliJ: **Map the Estate…**.",
     link: "/guide/commands.html",
   },
   {
-    body: "Config placeholders (`${PAYMENTS_URL}`, a Deployment's `valueFrom`), Routes and Kubernetes Services are read for where each service is reached, so the manifest no longer has to list every host by hand.",
-    link: "/guide/frameworks.html",
-  },
-  {
-    body: "A repo's Pact files and the OpenAPI specs it keeps confirm links, and a gateway's traffic export, kept only as redacted counts, shows links used, unused and missing.",
-    link: "/guide/link-evidence.html",
-  },
-  {
-    body: "Another team's Atticus map comes in read-only, as files: your calls to their system join their entries, cited on their lines.",
-    link: "/guide/shared-maps.html",
-  },
-  {
-    body: "`atticus estate fresh` lists which clones moved past their facts, and `atticus next --queue` gives the onboarding order with each repo's estimated cost.",
+    body: "A call's target question suggests every repo of the manifest, read or not, saying why; **Another repo…** names any repo, system or team, and an answer the code later disagrees with opens again.",
     link: "/guide/commands.html",
   },
   {
-    body: "`atticus join measure` scores the links against ones you list by hand, and the sample audit gives precision per kind of fact, in the terminal or on Map › Trust.",
-    link: "/guide/measure.html",
+    body: "Topics and queues other teams own go under their system's `topics:` in the profile, and every topic is drawn as its own box: publishers, the topic, its listeners, its owner.",
+    link: "/guide/admin.html",
   },
   {
-    body: "`atticus change impact` shows what a change breaks, up the chain of callers, each with its owner; a hop resting on a guessed link may break. Another team's system counts as outside the estate everywhere.",
-    link: "/guide/vendor-specs.html",
+    body: "A contract check on every link compares the payload on both sides of REST calls, gateway hops and topics, including protobuf and Avro specs; a mapping nobody traced is unconfirmed, never a mismatch. See **Map › Mismatches**.",
+    link: "/guide/contract-check.html",
   },
   {
-    body: "`atticus spec seed <repo>` proposes a repo's starting OpenSpec specs from its verified flows, written only when a person accepts them.",
-    link: "/guide/openspec.html",
+    body: "Repo types hold notes in your own words: what your identifiers mean where they sit, and rules your code should follow (vendor calls use mTLS), checked on the cited lines once a person accepts them.",
+    link: "/guide/admin.html",
   },
   {
-    body: "Your house's conventions (spec folders, package prefixes, folders left out of coverage) go in `org-pack/conventions.yaml`, and Atticus warns before a first read of house packages no framework covers.",
-    link: "/guide/frameworks.html",
+    body: "Diagrams fill the page, with fit, zoom, find, focus, a minimap, keys and full screen; `atticus doctor --counts` gives counts only, safe to paste.",
+    link: "/guide/roles.html",
   },
   {
-    body: "VS Code, `@atticus` in Copilot Chat and the IntelliJ plugin (0.3.0) run every new job.",
+    body: "VS Code (0.7.9), `@atticus` in Copilot Chat and the IntelliJ plugin (0.4.0) run every new job.",
     link: "/guide/intellij.html",
   },
 ];
