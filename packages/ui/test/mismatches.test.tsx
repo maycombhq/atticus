@@ -145,6 +145,47 @@ describe("the warning on a link and in Why is this linked?", () => {
     ]);
   });
 
+  it("finds a listener's findings against an outside publisher's spec, by the listener's line", () => {
+    // forge-reports-py listens on a topic Tidewater (an invented outside system) publishes: the
+    // finding names no Interface, and the link's listener line is on its callee side.
+    const listener = {
+      repo: "forge-reports-py",
+      fact: "entry.listen.ledger-posted",
+      component: "reports",
+      at: "reports/consumer.py:5",
+    };
+    const outside = Api.ContractMismatchView.parse({
+      id: "tidewater|forge-reports-py|entry.listen.ledger-posted#0:field-missing:message:currency",
+      call: listener,
+      entry: listener,
+      system: "tidewater",
+      status: "mismatch",
+      kind: "field-missing",
+      side: "message",
+      field: "currency",
+      sender: { system: "tidewater", what: "tidewater's spec ledger_posted.avsc" },
+      receiver: {
+        repo: "forge-reports-py",
+        what: "forge-reports-py's listener",
+        at: "reports/consumer.py:9",
+      },
+      message:
+        "forge-reports-py's listener reads the message field currency, which tidewater's spec never sends",
+    });
+    const topic: Api.HierJoinT = {
+      ...join("if-tidewater-ledger-posted"),
+      from: "tidewater",
+      to: "reports",
+      how: "topic",
+      caller: [],
+      callee: [{ source: "code", repo: "forge-reports-py", at: "reports/consumer.py:5" }],
+    };
+    expect(findingsOfJoin(topic, [outside, ...VIEW.findings])).toEqual([outside]);
+    expect(contractGaps([topic], [outside])).toEqual(["contract-mismatch"]);
+    // Another link of the same repo's lines doesn't take it.
+    expect(findingsOfJoin(join("if-9"), [outside])).toEqual([]);
+  });
+
   it("marks the link on the canvas as it marks every gap", () => {
     const edge: Api.HierEdgeT = {
       id: "e1",
