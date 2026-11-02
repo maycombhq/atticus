@@ -1,4 +1,4 @@
-import { cp, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -13,6 +13,7 @@ import {
   TOPICS_STEP_ID,
 } from "@maycombhq/core";
 import { questionsFiles } from "../src/question-commands.js";
+import { pickerOf } from "../src/target-answer.js";
 
 /**
  * ADR 0162 (F8): `atticus questions answer <id> --target <id>` names any repo of the manifest, any
@@ -139,6 +140,46 @@ describe("atticus questions answer --target (ADR 0162)", () => {
       name: "Tidewater",
       boundary: "vendor",
     });
+  });
+
+  it("writes nothing into the profile when the answer is refused (review item 14)", async () => {
+    const { root, id } = await metarepo();
+    const before = await readFile(join(root, ...PROFILE), "utf8");
+    // A repo-type scope with no type: the answer can't be taken, so no vendor is added either.
+    const r = await run(root, [
+      "answer",
+      id,
+      "--target",
+      "Tidewater",
+      "--add-system",
+      "vendor",
+      "--scope",
+      "repo-type",
+    ]);
+    expect(r.code).not.toBe(0);
+    expect(r.err.join(" ")).toContain("Say which repo type");
+    expect(await readFile(join(root, ...PROFILE), "utf8")).toBe(before);
+    expect((await readQuestion(root, id))!.state).toBe("open");
+  });
+
+  it("counts a dotted repo id as read by its facts file, and a companion file as nothing (review item 16)", async () => {
+    const { root } = await metarepo();
+    const manifest = join(root, "org-pack", "profiles", "forge", "repos.manifest.yaml");
+    await writeFile(
+      manifest,
+      `${await readFile(manifest, "utf8")}  - id: forge-ledger.v2
+    url: https://git.forge.example/forge/forge-ledger.v2.git
+    type: spring-boot
+    owner: team-ledger
+    component: ledger-api-v2
+`,
+    );
+    await mkdir(join(root, "facts"), { recursive: true });
+    await writeFile(join(root, "facts", "forge-ledger.v2.jsonl"), "");
+    await writeFile(join(root, "facts", "forge-cards.reviewed.jsonl"), "");
+    const picks = await pickerOf(root);
+    expect(picks.find((p) => p.id === "forge-ledger.v2")?.read).toBe(true);
+    expect(picks.find((p) => p.id === "forge-cards")?.read).toBe(false);
   });
 
   it("prints the picker when Another repo… is picked as an option", async () => {

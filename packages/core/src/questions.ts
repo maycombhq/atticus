@@ -838,6 +838,12 @@ export interface AnswerInput {
   match?: string;
   /** ADR 0153 (Q5): the assistant's proposal this answer accepts (acceptProposal sets it). */
   proposal?: NonNullable<Question["answer"]>["proposal"];
+  /**
+   * Review item 14: a file change the answer brings (a system written into the profile, ADR
+   * 0162), made only once the answer is checked and just before it is written. When it throws,
+   * nothing is answered (a `bad-answer` with its first line).
+   */
+  beforeWrite?: () => Promise<void>;
   by: string;
   at: string;
 }
@@ -957,6 +963,12 @@ export async function answerQuestion(
       ...(a.proposal ? { proposal: a.proposal } : {}),
     },
   });
+  if (a.beforeWrite)
+    try {
+      await a.beforeWrite();
+    } catch (e) {
+      throw new QuestionError("bad-answer", (e as Error).message.split("\n")[0]!);
+    }
   // A hosts question answered with a repo: the host goes under that repo's hosts first, so a
   // manifest that refuses it leaves the question open.
   const label = a.option !== undefined ? q.options[a.option - 1]?.label : undefined;

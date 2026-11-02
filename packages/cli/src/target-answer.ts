@@ -1,6 +1,7 @@
 import {
   addProfileSystem,
   factsDirOf,
+  factsFileOf,
   loadOrgPack,
   orgPackDirOf,
   slugify,
@@ -22,21 +23,27 @@ import { estateRepos, pickerLines, targetPicker, type TargetPick } from "@maycom
 
 export type AddSystem = "vendor" | "internal";
 
+export interface TargetSystem {
+  id: string;
+  profile: string;
+  added: boolean;
+  boundary: AddSystem;
+  owner?: string;
+  /** A topics answer: the topic written into the system's aliases. */
+  aliased?: string[];
+}
+
 export type TargetAnswer =
   | {
       /** The words the answer records: a repo's or system's id. */
       text: string;
       pick: TargetPick | undefined;
-      /** The system written into the profile, when one was. */
-      system?: {
-        id: string;
-        profile: string;
-        added: boolean;
-        boundary: AddSystem;
-        owner?: string;
-        /** A topics answer: the topic written into the system's aliases. */
-        aliased?: string[];
-      };
+      /**
+       * The profile change the answer brings, when it brings one: made by the caller only once
+       * the answer is accepted (`answerQuestion`'s `beforeWrite`, review item 14), so a refused
+       * answer leaves the profile as it was. It throws when the profile would not be valid.
+       */
+      write?: () => Promise<TargetSystem>;
     }
   | {
       problem: string;
@@ -44,12 +51,18 @@ export type TargetAnswer =
       offer?: { id: string; name: string; boundary: AddSystem; owner?: string; flag: string };
     };
 
-/** The repos whose facts are on file (facts/<repo>.jsonl). */
+/**
+ * The repos whose facts are on file (facts/<repo>.jsonl). By `factsFileOf`, so a dotted repo id
+ * (`forge-ledger.v2`) counts and a companion file (`<repo>.reviewed.jsonl`) doesn't.
+ */
 async function readRepos(root: string): Promise<Set<string>> {
   const names = await readdir(factsDirOf(root)).catch(() => [] as string[]);
-  return new Set(
-    names.filter((n) => /^[^.]+\.jsonl$/.test(n)).map((n) => n.replace(/\.jsonl$/, "")),
-  );
+  const out = new Set<string>();
+  for (const n of names) {
+    const of = factsFileOf(n);
+    if (of?.facts) out.add(of.repo);
+  }
+  return out;
 }
 
 /** The picker of the whole estate for a root: repos (read or not), systems and teams. */
@@ -81,22 +94,18 @@ export async function targetAnswerOf(
   const pick =
     picks.find((p) => p.id.toLowerCase() === want) ??
     (byComponent ? picks.find((p) => p.kind === "repo" && p.id === byComponent.id) : undefined);
-  const add = async (s: { id: string; name: string; boundary: AddSystem; owner?: string }) => {
-    try {
+  const add = (s: { id: string; name: string; boundary: AddSystem; owner?: string }) => ({
+    text: s.id,
+    pick,
+    write: async (): Promise<TargetSystem> => {
       // A topics answer puts the topic among the system's aliases (ADR 0162).
       const r = await addProfileSystem(root, q.repo, {
         ...s,
         ...(topic ? { aliases: [topic] } : {}),
       });
-      return {
-        text: r.id,
-        pick,
-        system: { ...r, boundary: s.boundary, ...(s.owner ? { owner: s.owner } : {}) },
-      };
-    } catch (e) {
-      return { problem: (e as Error).message.split("\n")[0]! };
-    }
-  };
+      return { ...r, boundary: s.boundary, ...(s.owner ? { owner: s.owner } : {}) };
+    },
+  });
   if (pick?.kind === "repo" && topic)
     return {
       problem: `${pick.id} is a repo of the estate: its own facts say what it publishes and listens on. Read it (/atticus-map ${pick.id}, then atticus verify ${pick.id} --write) and ${topic} joins it; answer "None of these" until then.`,
