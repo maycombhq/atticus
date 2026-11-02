@@ -514,6 +514,7 @@ Usage:
   atticus setup [--json]               The setup checklist until the catalog is accepted, with a fix for each step
   atticus baseline                     Accept the as-is catalog as the baseline [--note text] [--site dir]
   atticus doctor [--json]              Check this machine: Node, Git, OpenSpec, proxy, TLS, disk, port, assistant, and the tier your assistant reads a repo at
+  atticus doctor --counts [--json]     How far the map has got, in counts and flags only (questions, links by how joined, repos read and stale, facts, tokens reported): nothing named, safe to paste
   atticus probe                        Measure what your assistant can do here (open a file, write one, run a command), so the tier it reads a repo at is measured, not read off runtime.yaml; then /atticus-probe in the assistant (ADR 0124) [--assistant id] [--max-tokens n] [--json]
   atticus probe answer <code>          Check the assistant's answer (none when it couldn't open the file) and keep what it measured in .atticus/probe/<assistant>.yaml, on this machine only [--pasted] [--max-tokens n] [--json]
   atticus secret set|check|forget <name>  Keep a model provider's key in this machine's credential store under the name runtime.yaml gives as keyEnv; read from stdin, never printed
@@ -907,6 +908,8 @@ const OPTIONS = {
   sessions: { type: "string" },
   part: { type: "string" },
   queue: { type: "boolean" },
+  // F10: atticus doctor --counts.
+  counts: { type: "boolean" },
   version: { type: "boolean", short: "v" },
   fix: { type: "boolean" },
   root: { type: "string" },
@@ -1887,6 +1890,13 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
       io,
     );
   if (group === "setup" && !command) return setupCommand(root, { json: values.json === true }, io);
+  if (group === "doctor" && values.counts === true)
+    // F10: counts and flags only, nothing named, safe to paste out of a client's estate.
+    return (await import("./doctor-counts.js")).doctorCountsCommand(
+      root,
+      { json: values.json === true },
+      io,
+    );
   if (group === "doctor") return doctorCommand(root, { json: values.json === true }, io);
   if (group === "probe") {
     // ADR 0124 addendum A-probe: the tier measured with the person's assistant.

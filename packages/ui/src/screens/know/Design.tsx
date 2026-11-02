@@ -689,7 +689,7 @@ export function Diagrams({ hash }: { hash: string }) {
           </span>
         </div>
       </Panel>
-      <Panel title={T.view2(v.label)} kind="hero" span="span 7" rows="span 2">
+      <Panel title={T.view2(v.label)} kind="hero" span="1 / -1">
         {canvas ? (
           <View
             of={flow}
@@ -706,8 +706,7 @@ export function Diagrams({ hash }: { hash: string }) {
       </Panel>
       <Panel
         title={T.mermaid}
-        span="span 5"
-        rows="span 2"
+        span="1 / -1"
         meta={
           text.state === "ready" ? (
             <button

@@ -177,8 +177,7 @@ export function EcosystemMap() {
       <Panel
         title={focus ? T.around(focus) : T.ecosystemMap}
         kind="hero"
-        span="span 8"
-        rows="span 2"
+        span="1 / -1"
         meta={
           focus ? (
             <button type="button" className="btn" onClick={() => setFocus(undefined)}>
@@ -580,12 +579,12 @@ export function ImpactExplorer({ hash }: { hash: string }) {
       )}
       {!q ? null : (
         <>
-          <Panel title={T.blastRadiusOf(q)} kind="hero" span="span 9">
+          <Panel title={T.blastRadiusOf(q)} kind="hero" span="1 / -1">
             <View of={imp} empty={(d) => d.affected.length === 0} emptyText={T.nothingDependsOnIt}>
               {() => <GraphView g={blast!} focus={q} height={380} />}
             </View>
           </Panel>
-          <Panel title={T.blastRadius} span="span 3" kind="dark">
+          <Panel title={T.blastRadius} span="1 / -1" kind="dark">
             <View of={imp}>
               {(d) => (
                 <div className="stack">
