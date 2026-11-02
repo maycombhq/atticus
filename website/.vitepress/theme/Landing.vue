@@ -55,8 +55,16 @@ const does = [
 ];
 
 // What the current release added, in plain words; the CHANGELOG has every item.
-const release = "2.0.0-beta.11";
+const release = "2.0.0-beta.12";
 const news = [
+  {
+    body: "Repos read before a release that added reading rules get a short top-up with only the new rules (field types, mappings, message types, terms, a call's auth and TLS): `atticus map --all --stale`, or `atticus map <repo> --rules` for one.",
+    link: "/guide/install.html",
+  },
+  {
+    body: "`atticus doctor --counts` says why calls are left unlinked (no host in the code, a placeholder nothing resolves, a host with no matching route) and how many calls each target question covers. From beta.11, below:",
+    link: "/guide/admin.html",
+  },
   {
     body: "`atticus map --all` maps the whole estate in one command, in the order that lands links early, and picks up where it stopped when a Copilot chat fails partway. In IntelliJ: **Map the Estate…**.",
     link: "/guide/commands.html",

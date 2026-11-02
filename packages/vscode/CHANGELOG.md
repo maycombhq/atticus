@@ -2,6 +2,10 @@
 
 The Atticus extension for VS Code. The command line's own changes are in the repository's [CHANGELOG](https://github.com/maycombhq/atticus/blob/main/CHANGELOG.md).
 
+## 0.7.10 (pre-release, with Atticus 2.0.0-beta.12)
+
+- **Ships with Atticus 2.0.0-beta.12.** No change to the extension itself: Map the estate now tops up repos read before the reading rules they lack (field types, mappings, message types, terms, a call's auth and TLS) instead of finding nothing to read, and How far the map has got says why calls are left unlinked.
+
 ## 0.7.9 (pre-release, with Atticus 2.0.0-beta.11)
 
 - **Ships with Atticus 2.0.0-beta.11**, and the extension catches up with what it added: answers that carry and suggestions that know the estate, org notes per repo type, a contract check on every link, and diagrams you can see. See the repository's CHANGELOG.

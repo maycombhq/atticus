@@ -2,6 +2,13 @@
 
 All notable changes to Atticus. Versions follow [Semantic Versioning](https://semver.org); contracts C1 to C6 change only with an ADR, a schema version and a migration (`atticus upgrade`).
 
+## 2.0.0-beta.12 (2026-11-02)
+
+### A top-up for reading rules added since a read (ADR 0167), and why calls are left
+
+- A read records which reading rules it was given (the rules' hash and rule sets, in its read plan). A repo whose facts are fresh but whose read lacked rules added since — every repo read before beta.12 lacks beta.11's field types and required, mappings and envelopes, message types, terms and a call's auth and TLS — is `rules-changed` in `atticus estate fresh`, `atticus next` and `doctor --counts`. `atticus map --all --stale` (and `map --all`) now tops it up instead of saying "nothing to read": a new chat per part, given only the rule parts it lacked, the files they apply to and the facts it has by id; `atticus map <repo> --rules` does one repo (Copilot, or batches with a mode), and a passing verify records the rules (ADR 0167).
+- `atticus doctor --counts` breaks unresolved calls down by why the join left them (`no-host`, `unresolved-placeholder`, `host-no-route`, `target-no-route`, ...) and asked calls by the join's reason, and counts the open target questions by how many calls each covers (alone, or in groups of 2-4, 5-9, 10+). Counts only, nothing named.
+
 ## 2.0.0-beta.11 (2026-11-02)
 
 ### Fixed before release: from the review
