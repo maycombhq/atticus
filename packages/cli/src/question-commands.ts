@@ -259,8 +259,22 @@ export async function questionsFiles(
     // ADR 0144 (Q5): its proposed answer, shown only once every line it cites holds.
     const p = q.state === "open" ? await proposalOf(root, q.id) : undefined;
     const proposal = p?.ok && p.proposal ? { ...p.proposal, file: p.file } : undefined;
-    if (values.json === true) io.out(JSON.stringify(proposal ? { ...q, proposal } : q, null, 2));
-    else {
+    if (values.json === true) {
+      // ADR 0166: a targets or topics question carries its "Another repo…" picker, so the
+      // editors' own pickers list the same repos, systems and teams the app's does.
+      const picks =
+        q.state === "open" &&
+        (q.askedBy.step === TARGETS_STEP_ID || q.askedBy.step === TOPICS_STEP_ID)
+          ? await (await import("./target-answer.js")).pickerOf(root)
+          : undefined;
+      io.out(
+        JSON.stringify(
+          { ...q, ...(proposal ? { proposal } : {}), ...(picks ? { picks } : {}) },
+          null,
+          2,
+        ),
+      );
+    } else {
       const routed = await routeQuestions(root, [q]);
       const about = routed.about[q.id];
       for (const l of questionLines(q, {
