@@ -214,6 +214,37 @@ describe("readRepoSpecs", () => {
   });
 });
 
+describe("readRepoSpecs from the files of a commit (review item 13)", () => {
+  it("reads only the files the tree lists, never what else lies in the folder", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "atticus-specs-tree-"));
+    // In the folder, not in the commit: an untracked copy, never a spec of the repo.
+    await mkdir(join(dir, "proto"), { recursive: true });
+    await writeFile(join(dir, "proto", "scratch.proto"), PROTO);
+    const files = new Map([
+      ["proto/blocked.proto", PROTO],
+      ["node_modules/forge-x/blocked.proto", PROTO],
+      [".hidden/blocked.proto", PROTO],
+      ["README.md", "# not a spec"],
+      ["proto/huge.proto", PROTO + " ".repeat(1024 * 1024)],
+    ]);
+    const asked: string[] = [];
+    const f = await readRepoSpecs(dir, {
+      repo: "forge-cards",
+      facts: [],
+      tree: {
+        files: async () =>
+          [...files.keys()].map((path) => ({ path, size: files.get(path)!.length })),
+        read: async (p) => {
+          asked.push(p);
+          return files.get(p);
+        },
+      },
+    });
+    expect([...new Set(f.specs.map((s) => s.file))]).toEqual(["proto/blocked.proto"]);
+    expect(asked).toEqual(["proto/blocked.proto"]);
+  });
+});
+
 describe("intake takes a .proto or an .avsc for an outside topic", () => {
   it("classifies them by name and by content", () => {
     const bytes = (s: string) => new TextEncoder().encode(s);

@@ -405,7 +405,65 @@ const sameShape = (a: string, b: string) =>
   normalizePath(a).replace(/\{[^}]*\}/g, "{}") === normalizePath(b).replace(/\{[^}]*\}/g, "{}");
 
 /**
- * Every spec in a checkout (ADR 0164), as the facts companion `<repo>.specs.yaml` holds them. An
+ * The files of one commit of a repo (review item 13): each file's path (relative, with forward
+ * slashes) and size, and its text. The CLI gives it from the clone's git at the facts' commit;
+ * without one, the checkout's folder is walked.
+ */
+export interface SpecTree {
+  files(): Promise<{ path: string; size: number }[]>;
+  read(path: string): Promise<string | undefined>;
+}
+
+const SPEC_FILE = /\.(proto|avsc|ya?ml|json)$/i;
+
+/** Paths in the order a walk of sorted folders gives them: segment by segment. */
+function cmpPath(a: string, b: string): number {
+  const x = a.split("/");
+  const y = b.split("/");
+  for (let i = 0; i < Math.min(x.length, y.length); i++) {
+    const c = cmp(x[i]!, y[i]!);
+    if (c) return c;
+  }
+  return x.length - y.length;
+}
+
+/** A path in a folder the walk skips (a dependency, a build output, a dot folder). */
+const skipped = (p: string) =>
+  p
+    .split("/")
+    .slice(0, -1)
+    .some((d) => SKIP.has(d) || d.startsWith("."));
+
+/** The checkout's folder as a tree: every file in it, tracked or not. */
+function folderTree(dir: string): SpecTree {
+  return {
+    async files() {
+      const out: { path: string; size: number }[] = [];
+      const walk = async (rel: string) => {
+        const entries = await readdir(join(dir, ...rel.split("/").filter(Boolean)), {
+          withFileTypes: true,
+        }).catch(() => []);
+        for (const e of [...entries].sort((a, b) => cmp(a.name, b.name))) {
+          const p = rel ? `${rel}/${e.name}` : e.name;
+          if (e.isDirectory()) {
+            if (!SKIP.has(e.name) && !e.name.startsWith(".")) await walk(p);
+          } else if (e.isFile() && SPEC_FILE.test(e.name)) {
+            const size = (await stat(join(dir, ...p.split("/"))).catch(() => undefined))?.size;
+            out.push({ path: p, size: size ?? 0 });
+          }
+        }
+      };
+      await walk("");
+      return out;
+    },
+    read: (p) => readFile(join(dir, ...p.split("/")), "utf8").catch(() => undefined),
+  };
+}
+
+/**
+ * Every spec in a checkout (ADR 0164), as the facts companion `<repo>.specs.yaml` holds them:
+ * the files of `tree` when given (the facts' commit, so a file nobody committed is no spec),
+ * else every file in the folder. An
  * OpenAPI operation one of the repo's own REST entries serves (same method, the same path with
  * the spec's server path in front or without it) is the repo's own published contract, tied to
  * that entry; any other is a consumer's copy of an API it calls. Message specs are any repo's to
@@ -419,31 +477,22 @@ export async function readRepoSpecs(
     facts: readonly Fact[];
     denyHashes?: ReadonlySet<string>;
     onRefused?: (note: string) => void;
+    /** The files of the facts' commit; left out, the folder as it is. */
+    tree?: SpecTree;
   },
 ): Promise<SpecsFileT> {
-  const files: string[] = [];
-  const walk = async (rel: string) => {
-    const entries = await readdir(join(dir, ...rel.split("/").filter(Boolean)), {
-      withFileTypes: true,
-    }).catch(() => []);
-    for (const e of [...entries].sort((a, b) => cmp(a.name, b.name))) {
-      const p = rel ? `${rel}/${e.name}` : e.name;
-      if (e.isDirectory()) {
-        if (!SKIP.has(e.name) && !e.name.startsWith(".")) await walk(p);
-      } else if (e.isFile() && /\.(proto|avsc|ya?ml|json)$/i.test(e.name)) files.push(p);
-    }
-  };
-  await walk("");
+  const tree = o.tree ?? folderTree(dir);
+  const files = (await tree.files())
+    .filter((f) => SPEC_FILE.test(f.path) && !skipped(f.path) && f.size > 0 && f.size <= MAX_BYTES)
+    .sort((a, b) => cmpPath(a.path, b.path))
+    .map((f) => f.path);
   const own = o.facts.filter(
     (f): f is Extract<Fact, { kind: "entry" }> => f.kind === "entry" && f.entryType === "rest",
   );
   const specs: ContractSpecT[] = [];
   for (const p of files) {
-    const full = join(dir, ...p.split("/"));
-    const size = (await stat(full).catch(() => undefined))?.size ?? 0;
-    if (size === 0 || size > MAX_BYTES) continue;
-    const text = await readFile(full, "utf8");
-    if (!specFormatOf(p, text)) continue;
+    const text = await tree.read(p);
+    if (text === undefined || !specFormatOf(p, text)) continue;
     const got = readContractSpecs(p, text);
     if (!got.length) continue;
     if (o.denyHashes?.size && denyListHits(text, o.denyHashes).length) {
