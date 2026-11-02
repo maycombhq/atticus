@@ -234,6 +234,16 @@ export const FACT_RULE_PARTS: readonly (readonly RulePart[])[] = [
       when: ["backend", "frontend"],
       text: "A call through a client generated at build time and not committed (NSwag, an OpenAPI generator) is cited at its call site, with the server's route line in `cite.with`, `conf: inferred`. Requests a load generator or smoke test makes are not calls, nor are a page script's requests to the app that serves it; a front end's requests that reach another service (through its own origin's proxy or a gateway) are.",
     },
+    {
+      when: ["backend", "frontend", "config", "gateway"],
+      text: "A call's `auth` (the token, key or client certificate it presents) goes with `authCite`, and its `tls` (`mtls` when it presents a client certificate, `tls` for https or a TLS setting without one, `none` for plain http) with `tlsCite`: each the line that sets it and what it writes there, as `{file, line, value}`. One without its line is rejected.",
+    },
+  ],
+  [
+    {
+      when: ["config", "deploy", "gateway", "data"],
+      text: "A `term` fact is an identifier of the organisation's own as a file writes it (an application or CMDB id, a cost centre): `term` its key as written, `value` the value, cited on the value's line, and `meaning` the line of the same file, at or above it, that gives it its role (the list's or block's key). Its `role` comes from the notes given with this read, the note's number in `note`: `owner` (it names this repo's own system), `consumer` (a system this repo lets in or serves), `none` (it names no system). Where no note says, record the identifiers you meet that look like the organisation's own (keys with id-like values, entries of a list of apps or teams) with `role: unknown`; never guess a role, and never record a secret.",
+    },
   ],
   [
     {
@@ -541,6 +551,11 @@ export function mapBatchInstructions(o: {
    * (`taughtFrameworksText`, ADR 0124 addendum A-taught). Left out when it is built on none.
    */
   taught?: string;
+  /**
+   * The organisation's notes for this repo (ADR 0163, `notesText` in @maycombhq/core): its repo
+   * type's and the org-wide ones, numbered, as data. Left out when there are none.
+   */
+  notes?: string;
 }): string {
   return [
     `Read the repo ${o.repo} at commit ${o.commit} into facts: what it answers to and calls, the data it reads and writes, the fields crossing those boundaries, its deployment and the config it depends on.`,
@@ -557,5 +572,6 @@ export function mapBatchInstructions(o: {
     "- When these files hold no fact, answer with nothing.",
     ...(o.askAbout ? [ABOUT_RULE] : []),
     ...(o.taught ? ["", o.taught] : []),
+    ...(o.notes ? ["", o.notes] : []),
   ].join("\n");
 }

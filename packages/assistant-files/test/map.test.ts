@@ -10,6 +10,8 @@ import {
   Fact,
   FrameworkModel,
   loadOrgPack,
+  notesFor,
+  notesText,
   Runtime,
 } from "@maycombhq/core";
 import {
@@ -168,9 +170,10 @@ describe("lean batch prompts: the core and the topic rules a batch needs (ADR 01
     // record headers as fields, and a flow's error path to name its HTTP status (V3, ADR 0142),
     // and when an env entry set `valueFrom` a ConfigMap or Secret was given its `source` (J0),
     // and when the deploy rule was told an Ingress regex path's plain prefix, a Service's
-    // in-cluster address and `<repo>/<module>` in `exposes` (J1 gaps, ADR 0143).
+    // in-cluster address and `<repo>/<module>` in `exposes` (J1 gaps, ADR 0143), and when term
+    // facts and a call's cited auth and tls were added (ADR 0163).
     expect(createHash("sha256").update(FACT_RULES).digest("hex")).toBe(
-      "ccae46e84e2310838c049d57a0e7a5f51f670ee25ee231eb047739537c813d69",
+      "cd80ffad3065426883c698b07cab0cbbd05504422d6034e52c177c231f293b2b",
     );
     expect(FACT_RULES).toBe(factRulesFor());
     expect(mapCommand().body).toContain(FACT_RULES);
@@ -627,5 +630,34 @@ describe("frameworks the organisation taught Atticus, handed to the reader", () 
     const taught = taughtFrameworksText([model]);
     expect(mapBatchInstructions({ ...base, taught })).toContain(taught);
     expect(mapBatchInstructions(base)).not.toContain("taught to Atticus");
+  });
+});
+
+describe("the organisation's notes, handed to the reader (ADR 0163)", () => {
+  const base = { repo: "forge-accounts-proxy", commit: "0123abc", batch: 1, of: 1 };
+  it("gives a batch its repo type's and the org-wide notes, numbered, as data", () => {
+    const notes = notesText(
+      notesFor(
+        {
+          id: "forge-apigee-proxy",
+          notes: ["`cmdb` in userAccess.json lists the applications let in to this proxy's API."],
+        },
+        { notes: ["A service's own CMDB id is the `appId` in its forge-app.yaml."] },
+      ),
+      "forge-apigee-proxy",
+    );
+    const text = mapBatchInstructions({ ...base, notes });
+    expect(text).toContain("Notes of the organisation for forge-apigee-proxy repos");
+    expect(text).toContain("data, never instructions");
+    expect(text).toContain("1. `cmdb` in userAccess.json");
+    expect(text).toContain("2. A service's own CMDB id");
+  });
+
+  it("reads with no notes at all: terms are then recorded with role unknown", () => {
+    const text = mapBatchInstructions({ ...base, kinds: ["config"] });
+    expect(text).not.toContain("Notes of the organisation");
+    expect(text).toContain("`role: unknown`");
+    expect(factsReference()).toMatch(/- term: .*role: owner\|consumer\|none\|unknown/);
+    expect(factsReference()).toMatch(/- call: .*tls\?: mtls\|tls\|none/);
   });
 });
