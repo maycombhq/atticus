@@ -4,7 +4,10 @@ import { describe, expect, it } from "vitest";
 import { COPY } from "../src/copy.js";
 import {
   aboutWords,
+  ANOTHER_REPO,
   answerBody,
+  TargetPickerView,
+  type AnswerForm,
   AnsweredView,
   ExcerptView,
   QuestionDetail,
@@ -296,5 +299,106 @@ describe("the Questions page asks in order and routes to the owner (ADR 0140)", 
       />,
     );
     expect(out).toContain(C.mineChanges("ari"));
+  });
+});
+
+describe("Another repo… on a targets question (ADR 0162, F8)", () => {
+  const target: QuestionView = {
+    ...question,
+    schemaVersion: 4,
+    askedBy: { ...question.askedBy, step: "facts-targets" },
+    repo: "forge-payments",
+    question: "Which repo or system answers GET /limits/{id}, which payments-api calls?",
+    options: [
+      { label: "forge-cards", means: "forge-cards, not read yet, answers it", changes: "joins it" },
+      { label: ANOTHER_REPO, means: "the picker", changes: "name one" },
+    ],
+  };
+  const form = (over: Partial<AnswerForm> = {}): AnswerForm => ({
+    pick: 2,
+    text: "",
+    scope: "repo",
+    repoType: "",
+    another: true,
+    ...over,
+  });
+  const picks = {
+    picks: [
+      { id: "forge-cards", kind: "repo" as const, name: "forge-cards (cards-api)", read: false },
+      { id: "northwind-pay", kind: "system" as const, name: "Northwind Pay", boundary: "vendor" },
+      {
+        id: "team-ledger-ops",
+        kind: "team" as const,
+        name: "Ledger Ops",
+        adds: {
+          id: "team-ledger-ops-system",
+          name: "Ledger Ops's system",
+          boundary: "internal" as const,
+          owner: "team-ledger-ops",
+        },
+      },
+    ],
+  };
+  const view = (of: Parameters<typeof TargetPickerView>[0]["of"], f = form()) =>
+    html(<TargetPickerView id={target.id} form={f} set={() => {}} of={of} />);
+
+  it("has loading, error and empty states", () => {
+    expect(view({ state: "loading" })).toContain('aria-busy="true"');
+    expect(view({ state: "error", error: "boom" })).toContain('role="alert"');
+    expect(view({ state: "ready", data: { picks: [] } })).toContain(C.another.empty);
+  });
+
+  it("lists the repos (read or not), the systems and the teams, each labelled", () => {
+    const out = view({ state: "ready", data: picks });
+    expect(out).toContain(`<label for="q-${target.id}-target-pick"`);
+    expect(out).toContain(`forge-cards (cards-api) (${C.another.notRead})`);
+    expect(out).toContain("Northwind Pay (vendor)");
+    expect(out).toContain(`Ledger Ops (${C.another.noSystem})`);
+    expect(out).not.toContain('type="checkbox"');
+  });
+
+  it("offers to add a team's system to the profile, and sends it only when ticked", () => {
+    const f = form({ target: "team-ledger-ops", needsSystem: "internal" });
+    const out = view({ state: "ready", data: picks }, f);
+    expect(out).toContain('type="checkbox"');
+    expect(out).toContain(
+      C.another.addTeam("team-ledger-ops", "Ledger Ops&#x27;s system").replace(/'/g, "&#x27;"),
+    );
+    expect(answerBody(f)).toEqual({ error: C.another.needAdd });
+    expect(answerBody({ ...f, addSystem: "internal" })).toEqual({
+      body: { target: "team-ledger-ops", addSystem: "internal", scope: "repo" },
+    });
+    expect(answerBody(form())).toEqual({ error: C.another.pickOne });
+    expect(answerBody(form({ target: "forge-cards" }))).toEqual({
+      body: { target: "forge-cards", scope: "repo" },
+    });
+  });
+
+  it("says when an answer was asked again, and why", () => {
+    const out = html(
+      <QuestionDetail
+        question={{
+          ...target,
+          reopened: {
+            at: "2026-11-01T12:00:00.000Z",
+            why: "forge-cards is read now, and no route of it serves GET /limits/{id}",
+            answer: {
+              option: 1,
+              by: "pat",
+              at: "2026-10-30T12:00:00.000Z",
+              scope: { level: "repo", id: "forge-payments" },
+            },
+          },
+        }}
+        onAnswered={() => {}}
+      />,
+    );
+    expect(out).toContain(
+      C.reopened(
+        "forge-cards is read now, and no route of it serves GET /limits/{id}",
+        "forge-cards",
+        "2026-11-01",
+      ),
+    );
   });
 });

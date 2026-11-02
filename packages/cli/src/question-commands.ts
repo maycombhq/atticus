@@ -174,6 +174,9 @@ export async function questionsFiles(
       match: { type: "string" },
       apply: { type: "string" },
       out: { type: "string" },
+      target: { type: "string" },
+      "add-system": { type: "string" },
+      name: { type: "string" },
     },
   });
   const str = (v: unknown) => (typeof v === "string" ? v : undefined);
@@ -361,8 +364,54 @@ export async function questionsFiles(
       return 2;
     }
     const opt = str(values.option);
-    const text = str(values.text)?.trim() || undefined;
+    let text = str(values.text)?.trim() || undefined;
     const accept = values["accept-proposal"] === true;
+    // ADR 0162 (F8): --target names any repo, system or team (Another repo…).
+    const target = str(values.target)?.trim() || undefined;
+    const addSystem = str(values["add-system"]);
+    if (addSystem !== undefined && addSystem !== "vendor" && addSystem !== "internal") {
+      io.err("--add-system is vendor (an outside vendor) or internal (another team's system).");
+      return 2;
+    }
+    if (addSystem !== undefined && !target) {
+      io.err("--add-system goes with --target <the system's name>.");
+      return 2;
+    }
+    let added: string | undefined;
+    if (target) {
+      if (opt !== undefined || text !== undefined || accept) {
+        io.err(
+          "--target names the answer: give it alone, not with --option, --text or --accept-proposal.",
+        );
+        return 2;
+      }
+      const { readQuestion } = await import("@maycombhq/core");
+      const { targetAnswerOf, pickerOf, pickerText, offerLine } =
+        await import("./target-answer.js");
+      const q0 = await readQuestion(root, id).catch(() => undefined);
+      if (!q0) {
+        io.err(`There is no question ${id}.`);
+        return 1;
+      }
+      const r = await targetAnswerOf(root, q0, target, {
+        ...(addSystem ? { addSystem: addSystem as "vendor" | "internal" } : {}),
+        ...(str(values.name) ? { name: str(values.name)! } : {}),
+      });
+      if ("problem" in r) {
+        io.err(r.problem);
+        if (r.offer) io.err(offerLine(id, target, r.offer));
+        else if (q0.askedBy.step === TARGETS_STEP_ID) {
+          io.err("The repos, systems and teams --target takes:");
+          for (const l of pickerText(await pickerOf(root))) io.err(`  ${l}`);
+        }
+        return 2;
+      }
+      text = r.text;
+      if (r.system)
+        added = r.system.added
+          ? `Wrote the system ${r.system.id} (boundary ${r.system.boundary}${r.system.owner ? `, owner ${r.system.owner}` : ""}) into ${r.system.profile}; review it in the same pull request.`
+          : `${r.system.profile} already has ${r.system.id}.`;
+    }
     if (accept && (opt !== undefined || text !== undefined)) {
       io.err(
         "--accept-proposal takes the proposed answer: give it alone, or answer with --option or --text instead.",
@@ -370,7 +419,9 @@ export async function questionsFiles(
       return 2;
     }
     if (!accept && (opt === undefined) === (text === undefined)) {
-      io.err('Answer with --option <n> or --text "your own words", one of the two.');
+      io.err(
+        'Answer with --option <n> or --text "your own words" (--target <repo, system or team id> for where a call goes): one of them.',
+      );
       return 2;
     }
     const option = opt === undefined ? undefined : Number(opt);
@@ -404,6 +455,7 @@ export async function questionsFiles(
             at,
           });
       const q = r.question;
+      if (added) io.out(added);
       io.out(
         `Answered ${q.id}: ${answerWords(q)} (for ${q.answer!.scope.level === "repo" ? `${(await isChange(root, q.repo)) ? "this change" : "this repo"}, ${q.repo}` : scopeWords(q.answer!.scope)}). Wrote ${questionsRelOf(root)}/${q.id}.yaml; commit it for review.`,
       );
@@ -439,6 +491,10 @@ export async function questionsFiles(
     } catch (e) {
       if (!(e instanceof QuestionError)) throw e;
       io.err(e.message);
+      if (/opens the list of every repo/.test(e.message)) {
+        const { pickerOf, pickerText } = await import("./target-answer.js");
+        for (const l of pickerText(await pickerOf(root))) io.err(`  ${l}`);
+      }
       return e.code === "bad-answer" ? 2 : 1;
     }
   }
@@ -446,7 +502,7 @@ export async function questionsFiles(
     `atticus questions ${command ?? ""} isn't a command: it is questions list, show, proposed, answer or sheet (atticus questions alone lists the knowledge gaps).`,
   );
   io.err(
-    'Usage: atticus questions list [--state open|answered|retired] [--mine] [--json], atticus questions show <id> [--json], atticus questions proposed [--json], or atticus questions answer <id> --option <n> | --text "..." | --accept-proposal [--scope repo|repo-type] [--type <repo type>] [--match <host pattern or /path/**>], or atticus questions sheet [--out <file>] | --apply <file>',
+    'Usage: atticus questions list [--state open|answered|retired] [--mine] [--json], atticus questions show <id> [--json], atticus questions proposed [--json], or atticus questions answer <id> --option <n> | --text "..." | --target <id> [--add-system vendor|internal] [--name "..."] | --accept-proposal [--scope repo|repo-type] [--type <repo type>] [--match <host pattern or /path/**>], or atticus questions sheet [--out <file>] | --apply <file>',
   );
   return 2;
 }

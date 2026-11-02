@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Atticus local API",
-    "version": "2.44.0",
+    "version": "2.45.0",
     "description": "Served by `atticus ui` on 127.0.0.1. The UI only calls this API, and the API only reads and writes files in the metarepo.",
     "license": {
       "name": "Apache-2.0",
@@ -2862,6 +2862,67 @@
           },
           "404": {
             "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/questions/{id}/targets": {
+      "get": {
+        "operationId": "getQuestionTargets",
+        "summary": "The Another repo… picker of a targets question: every repo of the manifest (read or not), every system of the profiles and every team in roles.yaml",
+        "tags": [
+          "questions"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TargetPickList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Atticus refused: the problem carries the command's own words (ADR 0043)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -8459,6 +8520,21 @@
                     "const": true
                   },
                   "match": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "target": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "addSystem": {
+                    "type": "string",
+                    "enum": [
+                      "vendor",
+                      "internal"
+                    ]
+                  },
+                  "name": {
                     "type": "string",
                     "minLength": 1
                   }
@@ -24351,6 +24427,74 @@
         ],
         "additionalProperties": false
       },
+      "TargetPickList": {
+        "type": "object",
+        "properties": {
+          "picks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "repo",
+                    "system",
+                    "team"
+                  ]
+                },
+                "name": {
+                  "type": "string"
+                },
+                "read": {
+                  "type": "boolean"
+                },
+                "boundary": {
+                  "type": "string"
+                },
+                "adds": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "boundary": {
+                      "type": "string",
+                      "const": "internal"
+                    },
+                    "owner": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "boundary",
+                    "owner"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "id",
+                "kind",
+                "name"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "picks"
+        ],
+        "additionalProperties": false
+      },
       "PromoteResult": {
         "type": "object",
         "properties": {
@@ -25313,6 +25457,10 @@
               {
                 "type": "number",
                 "const": 3
+              },
+              {
+                "type": "number",
+                "const": 4
               }
             ]
           },
@@ -25606,6 +25754,138 @@
             ],
             "additionalProperties": false
           },
+          "reopened": {
+            "type": "object",
+            "properties": {
+              "at": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+              },
+              "why": {
+                "type": "string",
+                "minLength": 1
+              },
+              "answer": {
+                "type": "object",
+                "properties": {
+                  "option": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                  },
+                  "text": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "by": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                  },
+                  "scope": {
+                    "type": "object",
+                    "properties": {
+                      "level": {
+                        "type": "string",
+                        "enum": [
+                          "repo",
+                          "repo-type"
+                        ]
+                      },
+                      "id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 120,
+                        "pattern": "^[a-z0-9][a-z0-9._-]*$"
+                      }
+                    },
+                    "required": [
+                      "level",
+                      "id"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "skill": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "match": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "proposal": {
+                    "type": "object",
+                    "properties": {
+                      "by": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                      },
+                      "cites": {
+                        "minItems": 1,
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "repo": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "file": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "line": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 9007199254740991
+                            },
+                            "quote": {
+                              "type": "string",
+                              "minLength": 1
+                            }
+                          },
+                          "required": [
+                            "file",
+                            "line",
+                            "quote"
+                          ],
+                          "additionalProperties": false
+                        }
+                      }
+                    },
+                    "required": [
+                      "by",
+                      "at",
+                      "cites"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "by",
+                  "at",
+                  "scope"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "at",
+              "why",
+              "answer"
+            ],
+            "additionalProperties": false
+          },
           "related": {
             "type": "array",
             "items": {
@@ -25883,6 +26163,37 @@
             "required": [
               "path",
               "written"
+            ],
+            "additionalProperties": false
+          },
+          "system": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "profile": {
+                "type": "string"
+              },
+              "added": {
+                "type": "boolean"
+              },
+              "boundary": {
+                "type": "string",
+                "enum": [
+                  "vendor",
+                  "internal"
+                ]
+              },
+              "owner": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "profile",
+              "added",
+              "boundary"
             ],
             "additionalProperties": false
           }

@@ -103,6 +103,127 @@ export interface AnsweredResult {
   question: QuestionView;
   rerun: string;
   skill?: { path: string; written: boolean };
+  /** ADR 0162: the system a target answer wrote into the profile. */
+  system?: { id: string; profile: string; added: boolean };
+}
+
+type Pick = Api.TargetPickListT["picks"][number];
+
+/**
+ * The "Another repo…" picker (ADR 0162, F8): every repo of the manifest (read or not), every system
+ * of the profile and every team in roles.yaml, from GET /api/questions/{id}/targets; or a vendor's
+ * name not listed. A team with no system, or a new vendor, is added to the profile only when the
+ * person ticks the box: a file change for review, never a write to a shared system.
+ */
+export function TargetPicker(p: {
+  id: string;
+  form: AnswerForm;
+  set: (f: Partial<AnswerForm>) => void;
+}) {
+  const list = useApi<Api.TargetPickListT>(`/api/questions/${p.id}/targets`);
+  return <TargetPickerView {...p} of={list} />;
+}
+
+/** The picker as it renders the list's loading, error, empty and ready states. */
+export function TargetPickerView(p: {
+  id: string;
+  form: AnswerForm;
+  set: (f: Partial<AnswerForm>) => void;
+  of: Loaded<Api.TargetPickListT>;
+}) {
+  const A = C.another;
+  const list = p.of;
+  const name = `q-${p.id}-target`;
+  if (list.state === "loading")
+    return (
+      <p role="status" aria-busy="true" className="muted" style={{ margin: 0 }}>
+        {A.loading}
+      </p>
+    );
+  if (list.state === "error")
+    return (
+      <p role="alert" className="state error" style={{ margin: 0 }}>
+        {A.failed(list.error)}
+      </p>
+    );
+  const picks = list.data.picks;
+  if (!picks.length)
+    return (
+      <p className="state" style={{ margin: 0 }}>
+        {A.empty}
+      </p>
+    );
+  const chosen = picks.find((x) => x.id === p.form.target);
+  const typed = !chosen && p.form.target ? p.form.target : "";
+  const pickTo = (x: Pick | undefined, words?: string) =>
+    p.set({
+      target: x ? x.id : (words ?? ""),
+      addSystem: undefined,
+      needsSystem: x ? (x.adds ? "internal" : undefined) : words?.trim() ? "vendor" : undefined,
+    });
+  const group = (kind: Pick["kind"], label: string) => {
+    const xs = picks.filter((x) => x.kind === kind);
+    return xs.length ? (
+      <optgroup label={label}>
+        {xs.map((x) => (
+          <option key={x.id} value={x.id}>
+            {x.name}
+            {kind === "repo" && !x.read ? ` (${A.notRead})` : ""}
+            {kind === "system" && x.boundary ? ` (${x.boundary})` : ""}
+            {kind === "team" && x.adds ? ` (${A.noSystem})` : ""}
+          </option>
+        ))}
+      </optgroup>
+    ) : null;
+  };
+  return (
+    <div className="stack" style={{ gap: 6, marginLeft: 24 }}>
+      <label htmlFor={`${name}-pick`} className="hud" style={{ fontSize: 10 }}>
+        {A.label}
+      </label>
+      <select
+        id={`${name}-pick`}
+        className="field"
+        value={chosen?.id ?? ""}
+        onChange={(e) => pickTo(picks.find((x) => x.id === e.target.value))}
+      >
+        <option value="">{A.choose}</option>
+        {group("repo", A.repos)}
+        {group("system", A.systems)}
+        {group("team", A.teams)}
+      </select>
+      <label htmlFor={`${name}-new`} className="hud" style={{ fontSize: 10 }}>
+        {A.newVendor}
+      </label>
+      <input
+        id={`${name}-new`}
+        className="field"
+        value={typed}
+        aria-describedby={`${name}-new-d`}
+        onChange={(e) => pickTo(undefined, e.target.value)}
+      />
+      <span id={`${name}-new-d`} className="muted" style={{ fontSize: 12 }}>
+        {A.newVendorHint}
+      </span>
+      {p.form.needsSystem && (
+        <div className="row" style={{ gap: 8, alignItems: "flex-start" }}>
+          <input
+            type="checkbox"
+            id={`${name}-add`}
+            checked={!!p.form.addSystem}
+            onChange={(e) =>
+              p.set({ addSystem: e.target.checked ? p.form.needsSystem : undefined })
+            }
+          />
+          <label htmlFor={`${name}-add`}>
+            {chosen?.adds
+              ? A.addTeam(chosen.id, chosen.adds.name)
+              : A.addVendor(p.form.target ?? "")}
+          </label>
+        </div>
+      )}
+    </div>
+  );
 }
 
 const ID = /^q-[0-9a-f]{12}$/;
@@ -177,7 +298,17 @@ export interface AnswerForm {
   repoType: string;
   /** ADR 0153 (Q2): a host pattern or a path prefix the answer covers; empty for none. */
   match?: string;
+  /** ADR 0162 (F8): the option picked is "Another repo…": the target named from the picker. */
+  another?: boolean;
+  target?: string;
+  /** A vendor or a team with no system: the person agreed to add it to the profile. */
+  addSystem?: "vendor" | "internal";
+  /** The picked target needs a system added (a team with none, or a vendor not listed). */
+  needsSystem?: "vendor" | "internal";
 }
+
+/** The option of a targets question that opens the picker (ADR 0162). */
+export const ANOTHER_REPO = "Another repo…";
 
 /** The steps whose answers take a rule (ADR 0153): where calls go, by target or by host. */
 export const RULE_STEPS: ReadonlySet<string> = new Set(["facts-targets", "scan-hosts"]);
@@ -185,8 +316,17 @@ export const RULE_STEPS: ReadonlySet<string> = new Set(["facts-targets", "scan-h
 /** The POST body for the form, or what is missing in words. */
 export function answerBody(f: AnswerForm): { body: Record<string, unknown> } | { error: string } {
   if (f.pick === undefined) return { error: C.pickOne };
-  const what =
-    f.pick === "words" ? (f.text.trim() ? { text: f.text.trim() } : undefined) : { option: f.pick };
+  if (f.another) {
+    if (!f.target?.trim()) return { error: C.another.pickOne };
+    if (f.needsSystem && !f.addSystem) return { error: C.another.needAdd };
+  }
+  const what = f.another
+    ? { target: f.target!.trim(), ...(f.addSystem ? { addSystem: f.addSystem } : {}) }
+    : f.pick === "words"
+      ? f.text.trim()
+        ? { text: f.text.trim() }
+        : undefined
+      : { option: f.pick };
   if (!what) return { error: C.needWords };
   const rule = f.match?.trim() ? { match: f.match.trim() } : {};
   if (f.scope === "repo-type") {
@@ -303,6 +443,9 @@ export function AnsweredView({ result }: { result: AnsweredResult }) {
   return (
     <div role="status" className="stack" style={{ gap: 6 }}>
       <p style={{ margin: 0 }}>{C.saved(`questions/${result.question.id}.yaml`)}</p>
+      {result.system?.added && (
+        <p style={{ margin: 0 }}>{C.another.added(result.system.id, result.system.profile)}</p>
+      )}
       {result.skill && (
         <p style={{ margin: 0 }}>
           {result.skill.written
@@ -404,6 +547,15 @@ export function QuestionDetail(p: {
           {q.answer.match ? ` · ${C.rule.answered(q.answer.match)}` : ""}
         </p>
       )}
+      {q.reopened && (
+        <p className="state" style={{ margin: 0 }}>
+          {C.reopened(
+            q.reopened.why,
+            q.reopened.answer.text ?? q.options[(q.reopened.answer.option ?? 1) - 1]?.label ?? "",
+            day(q.reopened.at),
+          )}
+        </p>
+      )}
       {q.answer?.proposal && (
         <div className="stack" style={{ gap: 4 }}>
           <p className="muted" style={{ margin: 0 }}>
@@ -446,7 +598,12 @@ export function QuestionDetail(p: {
                     id={id}
                     name={`${name}-pick`}
                     checked={form.pick === i + 1}
-                    onChange={() => set({ pick: i + 1 })}
+                    onChange={() =>
+                      set({
+                        pick: i + 1,
+                        another: q.askedBy.step === "facts-targets" && o.label === ANOTHER_REPO,
+                      })
+                    }
                     aria-describedby={`${id}-d`}
                   />
                   <label htmlFor={id} className="stack" style={{ gap: 2 }}>
@@ -460,13 +617,14 @@ export function QuestionDetail(p: {
                 </div>
               );
             })}
+            {form.another && <TargetPicker id={q.id} form={form} set={set} />}
             <div className="row" style={{ gap: 8, alignItems: "flex-start" }}>
               <input
                 type="radio"
                 id={`${name}-words`}
                 name={`${name}-pick`}
                 checked={form.pick === "words"}
-                onChange={() => set({ pick: "words" })}
+                onChange={() => set({ pick: "words", another: false })}
               />
               <label htmlFor={`${name}-words`}>{C.ownWords}</label>
             </div>
