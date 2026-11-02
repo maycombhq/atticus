@@ -587,6 +587,29 @@ function matchOf(w: WireField, list: readonly WireField[]): WireField | undefine
 }
 
 /**
+ * An untraced mapping on the other side that matched nothing (review item 1): a field with a
+ * `transform` and no `mappedTo` that no field across the boundary matched may be the one a
+ * missing or extra field became, renamed by the converter, so the difference is unconfirmed.
+ * The first by name, preferring one of the same type family, so the finding cites one line.
+ */
+function strayUntraced(
+  list: readonly WireField[] | undefined,
+  matched: ReadonlySet<WireField>,
+  across: readonly WireField[],
+  like?: WireField,
+): string | undefined {
+  const stray = (list ?? []).filter((x) => x.untraced && !matched.has(x) && !matchOf(x, across));
+  if (!stray.length) return undefined;
+  const fam = family(like?.type);
+  const same = fam ? stray.find((x) => family(x.type) === fam) : undefined;
+  return (same ?? stray[0])!.untraced;
+}
+
+/** A field as the finding carries it, marked with the untraced mapping it may rest on. */
+const marked = (w: WireField, u: string | undefined): WireField =>
+  u && !w.untraced ? { ...w, untraced: u } : w;
+
+/**
  * Compare a sender's face (who calls, or publishes) with the receiver's (who serves, or listens):
  * the request or message it sends against what the receiver takes, and the response the receiver
  * returns against what the sender reads. Returns whether anything was compared.
@@ -605,35 +628,43 @@ function compare(S: Face, R: Face, ctx: Ctx): boolean {
         // Headers are compared only where both sides name some; a body where both list fields.
         if (!sent.length || !took.length) continue;
         const matched = new Set<WireField>();
+        const sentMatched = new Set<WireField>();
+        for (const w of sent) {
+          const t = matchOf(w, took);
+          if (t) {
+            matched.add(t);
+            sentMatched.add(w);
+          }
+        }
         for (const w of sent) {
           const t = matchOf(w, took);
           if (!t) {
             if (header) continue;
-            const u = hopUntraced(ctx.hop, side, w.key);
+            const u = hopUntraced(ctx.hop, side, w.key) ?? strayUntraced(took, matched, sent, w);
             push(
               ctx,
               "field-extra",
               side,
               w.name,
-              { face: S, w: u ? { ...w, untraced: u } : w },
+              { face: S, w: marked(w, u) },
               { face: R },
               CONTRACT_WORDS.extra(side, w.name, S.what, w.at, R.what),
             );
             continue;
           }
-          matched.add(t);
           fieldPair(ctx, side, w, t, S, R);
         }
         for (const t of took)
           if (t.required === true && !matched.has(t) && !matchOf(t, sent)) {
-            const u = hopUntraced(ctx.hop, side, t.key);
+            const u =
+              hopUntraced(ctx.hop, side, t.key) ?? strayUntraced(sent, sentMatched, took, t);
             push(
               ctx,
               "field-not-sent",
               side,
               t.name,
               { face: S, value: sent.map((x) => x.name).join(", ") },
-              { face: R, w: u ? { ...t, untraced: u } : t },
+              { face: R, w: marked(t, u) },
               CONTRACT_WORDS.notSent(side, t.name, R.what, t.at, S.what),
             );
           }
@@ -646,19 +677,26 @@ function compare(S: Face, R: Face, ctx: Ctx): boolean {
   if (sent?.length && took?.length) {
     compared = true;
     const matched = new Set<WireField>();
+    const tookMatched = new Set<WireField>();
     for (const t of took) {
       const w = matchOf(t, sent);
       if (w) {
         matched.add(w);
-        fieldPair(ctx, "message", w, t, S, R);
-      } else if (R.role !== "code" && t.required === true)
+        tookMatched.add(t);
+      }
+    }
+    for (const t of took) {
+      const w = matchOf(t, sent);
+      const u = w ? undefined : strayUntraced(sent, matched, took, t);
+      if (w) fieldPair(ctx, "message", w, t, S, R);
+      else if (R.role !== "code" && t.required === true)
         push(
           ctx,
           "field-not-sent",
           "message",
           t.name,
           { face: S, value: sent.map((x) => x.name).join(", ") },
-          { face: R, w: t },
+          { face: R, w: marked(t, u) },
           CONTRACT_WORDS.notSent("message", t.name, R.what, t.at, S.what),
         );
       else if (R.role === "code" || S.role !== "code")
@@ -668,7 +706,7 @@ function compare(S: Face, R: Face, ctx: Ctx): boolean {
           "message",
           t.name,
           { face: S, value: sent.map((x) => x.name).join(", ") },
-          { face: R, w: t },
+          { face: R, w: marked(t, u) },
           CONTRACT_WORDS.messageMissing(t.name, R.what, t.at, S.what),
         );
     }
@@ -680,7 +718,7 @@ function compare(S: Face, R: Face, ctx: Ctx): boolean {
             "field-extra",
             "message",
             w.name,
-            { face: S, w },
+            { face: S, w: marked(w, strayUntraced(took, tookMatched, sent, w)) },
             { face: R },
             CONTRACT_WORDS.messageExtra(w.name, S.what, w.at, R.what),
           );
@@ -690,22 +728,29 @@ function compare(S: Face, R: Face, ctx: Ctx): boolean {
   if (read?.length && back?.length) {
     compared = true;
     const matched = new Set<WireField>();
+    const readMatched = new Set<WireField>();
+    for (const w of read) {
+      const t = matchOf(w, back);
+      if (t) {
+        matched.add(t);
+        readMatched.add(w);
+      }
+    }
     for (const w of read) {
       const t = matchOf(w, back);
       if (!t) {
-        const u = hopUntraced(ctx.hop, "response", w.key);
+        const u = hopUntraced(ctx.hop, "response", w.key) ?? strayUntraced(back, matched, read, w);
         push(
           ctx,
           "field-missing",
           "response",
           w.name,
-          { face: S, w: u && !w.untraced ? { ...w, untraced: u } : w },
+          { face: S, w: marked(w, u) },
           { face: R },
           CONTRACT_WORDS.missing(w.name, S.what, w.at, R.what),
         );
         continue;
       }
-      matched.add(t);
       fieldPair(ctx, "response", w, t, S, R);
     }
     // A published spec documents all it returns; a caller reading less is normal.
@@ -718,7 +763,7 @@ function compare(S: Face, R: Face, ctx: Ctx): boolean {
             "response",
             t.name,
             { face: S },
-            { face: R, w: t },
+            { face: R, w: marked(t, strayUntraced(read, readMatched, back, t)) },
             CONTRACT_WORDS.undocumented(t.name, R.what, t.at, S.what),
           );
   }
