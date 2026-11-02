@@ -34,6 +34,7 @@ import {
   type QuestionProblem,
 } from "./facts-files.js";
 import { NoRoomError, roomGuard, streamFacts } from "./memory-room.js";
+import { notesAt } from "./org-notes.js";
 import { recordReadProgress } from "./map-parts.js";
 
 /**
@@ -159,8 +160,10 @@ export async function verifyAllCommand(
  * exclusions. Shared by `atticus verify` and the app's preview of it (ADR 0149), so both check
  * the same way.
  */
-export async function verifyInputsOf(root: string, repo: string) {
+export async function verifyInputsOf(root: string, repo: string, dir?: string) {
   return {
+    // ADR 0163: the org notes the read was handed, so a term's note is one of them.
+    notes: (await notesAt(root, repo, dir)).notes,
     corrections: await readCorrections(root, repo),
     reviewed: await readReviewed(root, repo),
     estate: await estateComponentsOf(root),
@@ -225,7 +228,7 @@ export async function verifyCommand(
   // where every file they cite is unchanged since, and read again where one changed.
   const { carry, missing } = await carryOf(dir, parsed.facts, commit, o.git);
   // ADR 0124 addendum D-app: a person's corrections from the Map, applied on every run.
-  const inputs = await verifyInputsOf(root, repo);
+  const inputs = await verifyInputsOf(root, repo, dir);
   const { corrections, reviewed, estate, conventions } = inputs;
   for (const b of corrections.bad.slice(0, SHOWN))
     io.err(`${rel}/${repo}.corrections.jsonl line ${b.line} isn't a correction: ${b.message}`);
@@ -250,6 +253,7 @@ export async function verifyCommand(
       // J1 (ADR 0143): an exposure read here names a component the manifest lists.
       ...(estate ? { estate } : {}),
       conventions,
+      notes: inputs.notes,
     });
   } catch (e) {
     if (!(e instanceof NoRoomError)) throw e;

@@ -1,0 +1,11 @@
+# Three Apigee proxies behind the gateway host api.forge.example, each told apart by its base
+# path, and three Spring services. The repo types come from each repo's fingerprint.
+schemaVersion: 3
+platform: forge
+repos:
+  - { id: forge-accounts-proxy, url: https://git.forge.example/apigee/forge-accounts-proxy.git, type: gateway, owner: team-platform, component: forge-accounts-proxy, system: accounts, hosts: [api.forge.example] }
+  - { id: forge-cards-proxy, url: https://git.forge.example/apigee/forge-cards-proxy.git, type: gateway, owner: team-platform, component: forge-cards-proxy, system: cards, hosts: [api.forge.example] }
+  - { id: forge-limits-proxy, url: https://git.forge.example/apigee/forge-limits-proxy.git, type: gateway, owner: team-platform, component: forge-limits-proxy, system: limits, hosts: [api.forge.example] }
+  - { id: forge-payments, url: https://git.forge.example/forge/forge-payments.git, type: spring-boot, owner: team-payments, component: forge-payments, system: payments }
+  - { id: forge-statements, url: https://git.forge.example/forge/forge-statements.git, type: spring-boot, owner: team-statements, component: forge-statements, system: statements }
+  - { id: forge-ledger, url: https://git.forge.example/forge/forge-ledger.git, type: spring-boot, owner: team-ledger, component: forge-ledger, system: ledger }

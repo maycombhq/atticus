@@ -173,7 +173,7 @@ describe("lean batch prompts: the core and the topic rules a batch needs (ADR 01
     // in-cluster address and `<repo>/<module>` in `exposes` (J1 gaps, ADR 0143), and when term
     // facts and a call's cited auth and tls were added (ADR 0163).
     expect(createHash("sha256").update(FACT_RULES).digest("hex")).toBe(
-      "cd80ffad3065426883c698b07cab0cbbd05504422d6034e52c177c231f293b2b",
+      "fd31568f96451a434551e27cbf0ebb9a896d40d3ae169e702947bdbb34ab73a3",
     );
     expect(FACT_RULES).toBe(factRulesFor());
     expect(mapCommand().body).toContain(FACT_RULES);

@@ -25,6 +25,7 @@ import {
   conventionsOf,
   loadOrgPack,
   normalizeFactPaths,
+  notesText,
   type Conventions,
   orgPackDirOf,
   parseFacts,
@@ -98,6 +99,7 @@ import {
   writeVerifyFiles,
   type VerifySummary,
 } from "./facts-files.js";
+import { notesAt } from "./org-notes.js";
 import {
   loadReadPlan,
   saveReadPlan,
@@ -350,6 +352,8 @@ function claimOf(f: Fact): string {
       return `${f.name}${f.version ? ` ${f.version}` : ""}`;
     case "flow":
       return f.name;
+    case "term":
+      return `${f.term} ${f.value} (${f.role})`;
   }
 }
 
@@ -608,6 +612,8 @@ async function packFor(
   source: FileSource,
   op: OrgPack,
   now: Date,
+  /** ADR 0163: the org notes for this repo (its type's and the org-wide ones), numbered. */
+  notes: string,
 ) {
   const agent = repoReaderAgent(op);
   const budget = op.runtime.budgets.perAgent[agent.id] ?? agent.tokenBudget;
@@ -654,6 +660,8 @@ async function packFor(
         ...(about ? {} : { askAbout: true }),
         // A-taught: how to read the wrapper calls and annotations of the frameworks it is built on.
         ...taughtOption(taughtIn(source, op)),
+        // ADR 0163: what the organisation's terms mean here and what must hold, as data.
+        ...(notes ? { notes } : {}),
       }),
       classification: "public",
       trusted: true,
@@ -824,6 +832,9 @@ export async function mapCommand(
   const source = dirSource(dir);
   const exclude = await excludesOf(root, repo);
   const factsFile = `${factsRelOf(root)}/${repo}.jsonl`;
+  // ADR 0163: the notes of the repo's type and the org-wide ones, the same for every batch.
+  const repoNotes = await notesAt(root, repo, dir, op);
+  const notesPrompt = notesText(repoNotes.notes, repoNotes.type);
 
   if (o.gaps) {
     const { mapGaps } = await import("./map-gaps.js");
@@ -1028,7 +1039,7 @@ export async function mapCommand(
     const fixRound = s.next >= s.batches.length;
     if (fixRound && (s.fixRound || !s.rejected.length)) break;
     if (fixRound) s.fixRound = true;
-    const { agent, pack } = await packFor(root, s, s.next, source, op, now());
+    const { agent, pack } = await packFor(root, s, s.next, source, op, now(), notesPrompt);
     const prepared = await runtime.prepare({
       change: changeOf(repo),
       agent,
@@ -1130,6 +1141,8 @@ async function takeAnswer(
     // J1 (ADR 0143): an exposure names a component the manifest lists.
     ...(estate ? { estate } : {}),
     conventions: await conventionsAt(root),
+    // ADR 0163: a term's note is one of those the batch was handed.
+    notes: (await notesAt(root, s.repo, at.dir)).notes,
   });
   const q = await raiseReadQuestions(root, s.repo, answer.questions, source, {
     command: `atticus map ${s.repo}`,
@@ -1375,6 +1388,7 @@ async function estimate(
   const questions = (await listQuestions(root, { repo })).questions.filter(
     (q) => q.state !== "retired",
   );
+  const notes = await notesAt(root, repo, c.dir, c.op);
   // R3 (ADR 0147): house packages it imports that no taught framework covers, to teach first.
   const house = await houseUntaughtOf(root, repo, {
     dir: c.dir,
@@ -1430,6 +1444,8 @@ async function estimate(
           taughtFrameworks: taughtIn(c.source, c.op).map((m) => m.name),
           // R3: the house packages to teach before the first read.
           houseUntaught: house,
+          // ADR 0163: the org notes the reader is handed, numbered, and the repo type they are of.
+          notes: { ...(notes.type ? { repoType: notes.type } : {}), notes: notes.notes },
           questions: questions.map((q) => ({
             id: q.id,
             question: q.question,
@@ -1466,6 +1482,9 @@ async function estimate(
   // A-taught: the frameworks of the organisation it is built on, as /atticus-map's reader needs them.
   const taught = taughtFrameworksText(taughtIn(c.source, c.op));
   if (taught) for (const l of taught.split("\n")) io.out(l);
+  // ADR 0163: the org notes, as /atticus-map's reader needs them; nothing when there are none.
+  const notesLines = notesText(notes.notes, notes.type);
+  if (notesLines) for (const l of notesLines.split("\n")) io.out(l);
   for (const l of houseUntaughtLines(repo, house)) io.out(l);
   if (reread) for (const l of rereadLines(repo, reread)) io.out(l);
   for (const m of re.missing)

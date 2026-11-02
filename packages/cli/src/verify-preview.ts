@@ -148,7 +148,7 @@ export async function verifyWritePreview(
   const commit = [...new Set(before.map((f) => f.commit))].sort()[0];
   const head = await headFromFiles(dir);
   const off = stackHelpersOff();
-  const inputs = await verifyInputsOf(root, repo);
+  const inputs = await verifyInputsOf(root, repo, dir);
   const report = await verifyFacts({
     facts: before,
     source: dirSource(dir),
@@ -159,6 +159,7 @@ export async function verifyWritePreview(
     reviewed: inputs.reviewed.entries,
     ...(inputs.estate ? { estate: inputs.estate } : {}),
     conventions: inputs.conventions,
+    notes: inputs.notes,
   });
 
   const kept = new Map(report.accepted.map((f) => [f.id, f] as const));

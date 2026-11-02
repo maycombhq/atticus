@@ -70,6 +70,8 @@ import {
 import { baseClonePath, loadRepos } from "@maycombhq/workspace";
 import type { Output } from "./commands.js";
 import { askHosts } from "./host-questions.js";
+import { termsWrite } from "./term-lines.js";
+import { checkoutOf } from "./facts-files.js";
 import {
   linkEvidenceAbout,
   linkEvidenceLines,
@@ -655,6 +657,21 @@ export async function writeFactsIntoCatalog(
       });
       lines.push(`Retired ${s.id}: ${s.why}.`);
     }
+
+    // ADR 0163: the organisation's terms: access against calls, possible links, a question per
+    // unknown term, and what the accepted call-security rules find.
+    const termed = await termsWrite(root, repo, {
+      op,
+      terms: result.terms,
+      repos: [{ repo, facts }, ...estate.repos],
+      join: result.join,
+      command: o.command,
+      rerun,
+      at,
+      dirOf: (r) => (r === repo ? Promise.resolve(o.dir) : checkoutOf(root, r)),
+    });
+    raised.push(...termed.raised);
+    lines.push(...termed.lines);
 
     // A few lines: counts by kind and the flows folder; every record and flow with --verbose
     // (or --json), so a first write of hundreds of records stays readable.

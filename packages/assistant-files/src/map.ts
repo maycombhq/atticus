@@ -236,13 +236,13 @@ export const FACT_RULE_PARTS: readonly (readonly RulePart[])[] = [
     },
     {
       when: ["backend", "frontend", "config", "gateway"],
-      text: "A call's `auth` (the token, key or client certificate it presents) goes with `authCite`, and its `tls` (`mtls` when it presents a client certificate, `tls` for https or a TLS setting without one, `none` for plain http) with `tlsCite`: each the line that sets it and what it writes there, as `{file, line, value}`. One without its line is rejected.",
+      text: "A call's `auth` (the token, key or client certificate it presents) goes with `authCite`, its `tls` (`mtls` with a client certificate, `tls` for https, `none` for http) with `tlsCite`: the line that sets it, as `{file, line, value}`.",
     },
   ],
   [
     {
       when: ["config", "deploy", "gateway", "data"],
-      text: "A `term` fact is an identifier of the organisation's own as a file writes it (an application or CMDB id, a cost centre): `term` its key as written, `value` the value, cited on the value's line, and `meaning` the line of the same file, at or above it, that gives it its role (the list's or block's key). Its `role` comes from the notes given with this read, the note's number in `note`: `owner` (it names this repo's own system), `consumer` (a system this repo lets in or serves), `none` (it names no system). Where no note says, record the identifiers you meet that look like the organisation's own (keys with id-like values, entries of a list of apps or teams) with `role: unknown`; never guess a role, and never record a secret.",
+      text: "A `term` fact is an identifier of the organisation's own as a file writes it (an app or CMDB id, a cost centre): `term` its key, `value` cited on its line, `meaning` the line at or above it in the file that gives its role (the list's or block's key). `role` from the notes given, the note's number in `note`: `owner` (names this repo's own system), `consumer` (a system it lets in), `none`. No note says: record ids that look like the organisation's own (id-like values, entries of a list of apps or teams) as `role: unknown`; never guess.",
     },
   ],
   [

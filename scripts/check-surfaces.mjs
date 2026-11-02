@@ -17,7 +17,7 @@ import { helpText, REPO } from "./help-text.mjs";
  */
 const CENSUS = {
   /** Distinct `atticus <group> [<sub>]` commands in the help text, which is the catalogue's source (ADR 0096). */
-  commands: 241, // ADR 0161: map --all (counted with map, as its own line in the help); ADR 0160 (O3): join shared and estate shared; ADR 0153: questions sheet; ADR 0151 (J4): intake traffic; ADR 0148 (P3): verify audit; ADR 0146: spec seed and spec accept; ADR 0144: change impact, questions proposed; ADR 0130: intake impact; ADR 0132: sources estimate, standards propose and standards accept; F5: repo rename; R5: join measure and estate measure; P5 (ADR 0141): estate fresh
+  commands: 243, // ADR 0163: repo-type note and repo-type rules; ADR 0161: map --all (counted with map, as its own line in the help); ADR 0160 (O3): join shared and estate shared; ADR 0153: questions sheet; ADR 0151 (J4): intake traffic; ADR 0148 (P3): verify audit; ADR 0146: spec seed and spec accept; ADR 0144: change impact, questions proposed; ADR 0130: intake impact; ADR 0132: sources estimate, standards propose and standards accept; F5: repo rename; R5: join measure and estate measure; P5 (ADR 0141): estate fresh
   /** The twelve a person meets first (ADR 0124 addendum D-cli). */
   topCommands: 12,
   /** Pages in the app (`packages/ui/src/app/screens.ts`). */
