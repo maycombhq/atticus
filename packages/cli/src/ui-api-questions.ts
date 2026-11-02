@@ -99,27 +99,25 @@ export function uiQuestionRoutes(r: Router, ctx: ServerContext, deps: { now?: ()
           // ADR 0144 (Q5): the person accepts the assistant's proposal; it becomes their answer.
           const { acceptProposal, target, addSystem, name, ...given } = b.data;
           // ADR 0162 (F8): a target from the picker, a new system written for review if asked.
-          let system:
-            Awaited<ReturnType<typeof import("./target-answer.js").targetAnswerOf>> | undefined;
+          let writeSystem: (() => Promise<import("./target-answer.js").TargetSystem>) | undefined;
+          let system: import("./target-answer.js").TargetSystem | undefined;
           if (target) {
             if (acceptProposal || given.option !== undefined || given.text !== undefined)
               throw badRequest("Give target alone, not with option, text or acceptProposal.");
             const q0 = await readQuestion(ctx.root, params.id!).catch(() => undefined);
             if (!q0) throw notFound(`There is no question ${params.id}.`);
             const { targetAnswerOf, offerLine } = await import("./target-answer.js");
-            system = await targetAnswerOf(ctx.root, q0, target, {
+            const t = await targetAnswerOf(ctx.root, q0, target, {
               ...(addSystem ? { addSystem } : {}),
               ...(name ? { name } : {}),
             });
-            if ("problem" in system)
+            if ("problem" in t)
               throw badRequest(
-                [
-                  system.problem,
-                  ...(system.offer ? [offerLine(q0.id, target, system.offer)] : []),
-                ].join(" "),
-                system.offer ? { offer: system.offer } : undefined,
+                [t.problem, ...(t.offer ? [offerLine(q0.id, target, t.offer)] : [])].join(" "),
+                t.offer ? { offer: t.offer } : undefined,
               );
-            given.text = system.text;
+            given.text = t.text;
+            writeSystem = t.write;
           }
           const r = acceptProposal
             ? await acceptProposalOf(ctx.root, params.id!, {
@@ -131,6 +129,14 @@ export function uiQuestionRoutes(r: Router, ctx: ServerContext, deps: { now?: ()
               })
             : await answerQuestion(ctx.root, params.id!, {
                 ...given,
+                // Review item 14: the profile is written only once the answer is accepted.
+                ...(writeSystem
+                  ? {
+                      beforeWrite: async () => {
+                        system = await writeSystem!();
+                      },
+                    }
+                  : {}),
                 by: ctx.user,
                 at: now().toISOString(),
               });
@@ -140,7 +146,7 @@ export function uiQuestionRoutes(r: Router, ctx: ServerContext, deps: { now?: ()
               question: r.question,
               rerun: r.question.rerun,
               ...(r.skill ? { skill: r.skill } : {}),
-              ...(system && "system" in system && system.system ? { system: system.system } : {}),
+              ...(system ? { system } : {}),
             },
           };
         } catch (e) {

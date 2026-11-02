@@ -5,6 +5,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  utimesSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -24,6 +25,7 @@ import {
 import { estateRepos, mergeEstate, readCatalog, writeCatalog } from "@maycombhq/scanner";
 import { main } from "../src/main.js";
 import { joinLines, linkChanges, linkLines, mapRenderCommand } from "../src/map-render-commands.js";
+import { writeReadPlan } from "../src/map-parts.js";
 import { verifyCommand } from "../src/verify-commands.js";
 
 /**
@@ -573,7 +575,9 @@ describe("atticus verify <repo> --write (ADR 0124, A3b)", () => {
 });
 
 describe("an answer the code disagrees with opens again (ADR 0162, F8)", () => {
-  it("reopens the targets question once the repo it names is read and no route serves the call", async () => {
+  const NOTIFY_HEAD = `0456def${"0".repeat(33)}`;
+  /** forge-ledger's POST /notify asked and answered notify-api (option 1). */
+  async function answered() {
     const facts = readFileSync(join(VERIFY, "forge-ledger.facts.jsonl"), "utf8").replace(
       '"host":"notify.internal",',
       "",
@@ -584,7 +588,13 @@ describe("an answer the code disagrees with opens again (ADR 0162, F8)", () => {
       (x) => x.askedBy.step === "facts-targets",
     )!;
     await answerQuestion(root, q.id, { option: 1, by: "dana.okafor", at: "2026-10-24T10:00:00Z" });
-    // forge-notify is read since, and serves only GET /status: nothing of it takes POST /notify.
+    return { root, q };
+  }
+  /**
+   * forge-notify read, serving only GET /status: nothing of it takes POST /notify. With a clone at
+   * the facts' commit unless `clone` is false (then estate fresh says no-checkout).
+   */
+  function notifyRead(root: string, o: { clone?: boolean } = {}) {
     writeFileSync(
       join(root, "facts", "forge-notify.jsonl"),
       `${JSON.stringify({
@@ -606,11 +616,20 @@ describe("an answer the code disagrees with opens again (ADR 0162, F8)", () => {
         conf: "declared",
       })}\n`,
     );
+    if (o.clone === false) return;
+    const git = join(root, "workspace", "forge-notify", ".git");
+    mkdirSync(git, { recursive: true });
+    writeFileSync(join(git, "HEAD"), `${NOTIFY_HEAD}\n`);
+  }
+  const stateOf = async (root: string, id: string) =>
+    (await listQuestions(root, { repo: "forge-ledger" })).questions.find((x) => x.id === id)!;
+
+  it("reopens the targets question once the repo it names is read and no route serves the call", async () => {
+    const { root, q } = await answered();
+    notifyRead(root);
     const o = io();
     expect(await write(root, o)).toBe(0);
-    const again = (await listQuestions(root, { repo: "forge-ledger" })).questions.find(
-      (x) => x.id === q.id,
-    )!;
+    const again = await stateOf(root, q.id);
     expect(again.state).toBe("open");
     expect(again.answer).toBeUndefined();
     expect(again.reopened?.answer.option).toBe(1);
@@ -620,6 +639,86 @@ describe("an answer the code disagrees with opens again (ADR 0162, F8)", () => {
     expect(o.out.some((l) => l.startsWith(`Asked again ${q.id}: notify-api is read now`))).toBe(
       true,
     );
+  });
+
+  it("keeps the answer a person gave again after it reopened (review item 2)", async () => {
+    const { root, q } = await answered();
+    notifyRead(root);
+    expect(await write(root)).toBe(0);
+    expect((await stateOf(root, q.id)).state).toBe("open");
+    // The person looks and says the same again: it is their word, and it holds.
+    await answerQuestion(root, q.id, { option: 1, by: "dana.okafor", at: "2026-10-25T10:00:00Z" });
+    const o = io();
+    expect(await write(root, o)).toBe(0);
+    const kept = await stateOf(root, q.id);
+    expect(kept.state).toBe("answered");
+    expect(kept.answer?.option).toBe(1);
+    expect(kept.reopened?.answer.option).toBe(1);
+    expect(o.out.some((l) => l.startsWith(`Asked again ${q.id}`))).toBe(false);
+    // Another write leaves it too.
+    expect(await write(root)).toBe(0);
+    expect((await stateOf(root, q.id)).state).toBe("answered");
+  });
+
+  it("takes the same target in the person's own words as the same answer", async () => {
+    const { root, q } = await answered();
+    notifyRead(root);
+    expect(await write(root)).toBe(0);
+    await answerQuestion(root, q.id, {
+      text: "notify-api",
+      by: "dana.okafor",
+      at: "2026-10-25T10:00:00Z",
+    });
+    expect(await write(root)).toBe(0);
+    expect((await stateOf(root, q.id)).state).toBe("answered");
+  });
+
+  describe("only when the repo named is read whole and fresh (review item 9)", () => {
+    it("holds the answer while the repo named has no clone to say its facts are fresh", async () => {
+      const { root, q } = await answered();
+      notifyRead(root, { clone: false });
+      const o = io();
+      expect(await write(root, o)).toBe(0);
+      expect((await stateOf(root, q.id)).state).toBe("answered");
+      expect(o.out.some((l) => l.startsWith(`Asked again ${q.id}`))).toBe(false);
+    });
+
+    it("holds the answer while the clone has moved past the facts' commit", async () => {
+      const { root, q } = await answered();
+      notifyRead(root);
+      writeFileSync(
+        join(root, "workspace", "forge-notify", ".git", "HEAD"),
+        `0999fed${"0".repeat(33)}\n`,
+      );
+      expect(await write(root)).toBe(0);
+      expect((await stateOf(root, q.id)).state).toBe("answered");
+    });
+
+    it("holds the answer while parts of the read plan are not read yet", async () => {
+      const { root, q } = await answered();
+      notifyRead(root);
+      await writeReadPlan(root, "forge-notify", {
+        commit: NOTIFY_HEAD,
+        session: 100_000,
+        parts: [
+          { paths: ["src/**"], files: 1, tokens: 100 },
+          { paths: ["routes/**"], files: 1, tokens: 100 },
+        ],
+      });
+      expect(await write(root)).toBe(0);
+      expect((await stateOf(root, q.id)).state).toBe("answered");
+    });
+
+    it("holds the answer while a second pass is planned and not read yet", async () => {
+      const { root, q } = await answered();
+      notifyRead(root);
+      const gaps = join(root, "facts", "forge-notify.gaps.md");
+      writeFileSync(gaps, "# the gaps pass\n");
+      const later = new Date(Date.now() + 60_000);
+      utimesSync(gaps, later, later);
+      expect(await write(root)).toBe(0);
+      expect((await stateOf(root, q.id)).state).toBe("answered");
+    });
   });
 });
 

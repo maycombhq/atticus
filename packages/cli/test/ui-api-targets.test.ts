@@ -75,6 +75,19 @@ describe("GET /api/questions/{id}/targets and a target answer (ADR 0162)", () =>
     expect((await call("GET", "/api/questions/q-000000000000/targets")).status).toBe(404);
   });
 
+  it("writes nothing into the profile when the answer is refused (review item 14)", async () => {
+    const file = join(root, "org-pack", "profiles", "forge", "profile.yaml");
+    const before = await readFile(file, "utf8");
+    const r = await call("POST", `/api/questions/${id}/answer`, {
+      target: "Tidewater",
+      addSystem: "vendor",
+      scope: "repo-type",
+    });
+    expect(r.status).toBe(400);
+    expect(JSON.stringify(r.body)).toContain("Say which repo type");
+    expect(await readFile(file, "utf8")).toBe(before);
+  });
+
   it("refuses a team with no system until addSystem says to add it, then writes it for review", async () => {
     const no = await call("POST", `/api/questions/${id}/answer`, { target: "team-ledger-ops" });
     expect(no.status).toBe(400);

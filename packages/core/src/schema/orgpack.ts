@@ -1409,9 +1409,17 @@ export const DeclaredCall = z
   });
 export type DeclaredCall = z.infer<typeof DeclaredCall>;
 
+/**
+ * profile.yaml's version. 2 (ADR 0162 amendment, review item 15) adds a system's `topics`. A
+ * version-1 profile reads as it is and stays valid, so `atticus upgrade` moves nothing; a profile
+ * that names topics is at 2 (`migrateProfileText`, the number only), as `addProfileSystem` writes
+ * it when an answer puts a topic there.
+ */
+export const PROFILE_SCHEMA_VERSION = 2 as const;
+
 export const Profile = z
   .strictObject({
-    schemaVersion: V,
+    schemaVersion: z.union([V, z.literal(PROFILE_SCHEMA_VERSION)]),
     platform: RecordId,
     name: z.string().min(1),
     systems: z
@@ -1423,6 +1431,13 @@ export const Profile = z
           owner: z.string().optional(),
           /** Other names people and diagrams use for this system. */
           aliases: z.array(z.string().min(1)).default([]),
+          /**
+           * ADR 0162 amendment (version 2): the topics and queues this system owns, as the code
+           * names them (`harbor.audit.events`). A publish to one, or a listener on one, that no
+           * repo of the estate serves the other side of lands on this system, marked declared.
+           * Kept apart from `aliases`: a topic is never a host or a name the system is known by.
+           */
+          topics: z.array(z.string().min(1)).optional(),
           /** Free labels copied to the System record; `saas` marks a SaaS vendor (ADR 0040). */
           tags: z.array(z.string().min(1)).default([]),
           /**
@@ -1451,6 +1466,26 @@ export const Profile = z
   })
   .superRefine((p, ctx) => {
     unique(p.systems, (s) => s.id, ctx, "systems");
+    const owned = new Map<string, string>();
+    p.systems.forEach((s, i) => {
+      if (s.topics?.length && p.schemaVersion < PROFILE_SCHEMA_VERSION)
+        ctx.addIssue({
+          code: "custom",
+          path: ["systems", i, "topics"],
+          message:
+            "topics needs schemaVersion 2 (ADR 0162): set schemaVersion: 2, nothing else changes",
+        });
+      for (const t of s.topics ?? []) {
+        const other = owned.get(t);
+        if (other && other !== s.id)
+          ctx.addIssue({
+            code: "custom",
+            path: ["systems", i, "topics"],
+            message: `"${t}" is already owned by ${other}`,
+          });
+        owned.set(t, s.id);
+      }
+    });
     const alias = new Map<string, string>();
     p.systems.forEach((s, i) => {
       for (const a of [s.name, ...s.aliases]) {

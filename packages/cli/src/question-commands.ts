@@ -381,6 +381,7 @@ export async function questionsFiles(
       return 2;
     }
     let added: string | undefined;
+    let beforeWrite: (() => Promise<void>) | undefined;
     if (target) {
       if (opt !== undefined || text !== undefined || accept) {
         io.err(
@@ -410,12 +411,18 @@ export async function questionsFiles(
         return 2;
       }
       text = r.text;
-      if (r.system)
-        added = r.system.added
-          ? `Wrote the system ${r.system.id} (boundary ${r.system.boundary}${r.system.owner ? `, owner ${r.system.owner}` : ""}${r.system.aliased?.length || q0.askedBy.step !== TARGETS_STEP_ID ? `, alias ${topicOfQuestion(q0) ?? ""}` : ""}) into ${r.system.profile}; review it in the same pull request.`
-          : r.system.aliased?.length
-            ? `Wrote ${r.system.aliased.join(", ")} under aliases of ${r.system.id} in ${r.system.profile}, so the next write lands it there; review it in the same pull request.`
-            : `${r.system.profile} already has ${r.system.id}${q0.askedBy.step !== TARGETS_STEP_ID ? `, with ${topicOfQuestion(q0) ?? "the topic"} among its aliases` : ""}.`;
+      // Review item 14: the profile is written only once the answer is accepted.
+      if (r.write) {
+        const writeSystem = r.write;
+        beforeWrite = async () => {
+          const sys = await writeSystem();
+          added = sys.added
+            ? `Wrote the system ${sys.id} (boundary ${sys.boundary}${sys.owner ? `, owner ${sys.owner}` : ""}${q0.askedBy.step !== TARGETS_STEP_ID ? `, topic ${topicOfQuestion(q0) ?? ""}` : ""}) into ${sys.profile}; review it in the same pull request.`
+            : sys.topics?.length
+              ? `Wrote ${sys.topics.join(", ")} under topics of ${sys.id} in ${sys.profile}, so the next write lands it there; review it in the same pull request.`
+              : `${sys.profile} already has ${sys.id}${q0.askedBy.step !== TARGETS_STEP_ID ? `, with ${topicOfQuestion(q0) ?? "the topic"} among its topics` : ""}.`;
+        };
+      }
     }
     if (accept && (opt !== undefined || text !== undefined)) {
       io.err(
@@ -456,6 +463,7 @@ export async function questionsFiles(
             ...(option !== undefined ? { option } : {}),
             ...(text !== undefined ? { text } : {}),
             ...scoped,
+            ...(beforeWrite ? { beforeWrite } : {}),
             by,
             at,
           });

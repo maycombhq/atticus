@@ -1,9 +1,10 @@
-import { cp, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import {
+  loadOrgPack,
   raiseQuestions,
   readQuestion,
   TARGETS_ANOTHER_LABEL,
@@ -13,6 +14,7 @@ import {
   TOPICS_STEP_ID,
 } from "@maycombhq/core";
 import { questionsFiles } from "../src/question-commands.js";
+import { pickerOf } from "../src/target-answer.js";
 
 /**
  * ADR 0162 (F8): `atticus questions answer <id> --target <id>` names any repo of the manifest, any
@@ -75,7 +77,14 @@ const run = async (root: string, args: string[]) => {
 const systems = async (root: string) =>
   (
     parse(await readFile(join(root, ...PROFILE), "utf8")) as {
-      systems: { id: string; name: string; boundary: string; owner?: string; aliases?: string[] }[];
+      systems: {
+        id: string;
+        name: string;
+        boundary: string;
+        owner?: string;
+        aliases?: string[];
+        topics?: string[];
+      }[];
     }
   ).systems;
 
@@ -141,6 +150,46 @@ describe("atticus questions answer --target (ADR 0162)", () => {
     });
   });
 
+  it("writes nothing into the profile when the answer is refused (review item 14)", async () => {
+    const { root, id } = await metarepo();
+    const before = await readFile(join(root, ...PROFILE), "utf8");
+    // A repo-type scope with no type: the answer can't be taken, so no vendor is added either.
+    const r = await run(root, [
+      "answer",
+      id,
+      "--target",
+      "Tidewater",
+      "--add-system",
+      "vendor",
+      "--scope",
+      "repo-type",
+    ]);
+    expect(r.code).not.toBe(0);
+    expect(r.err.join(" ")).toContain("Say which repo type");
+    expect(await readFile(join(root, ...PROFILE), "utf8")).toBe(before);
+    expect((await readQuestion(root, id))!.state).toBe("open");
+  });
+
+  it("counts a dotted repo id as read by its facts file, and a companion file as nothing (review item 16)", async () => {
+    const { root } = await metarepo();
+    const manifest = join(root, "org-pack", "profiles", "forge", "repos.manifest.yaml");
+    await writeFile(
+      manifest,
+      `${await readFile(manifest, "utf8")}  - id: forge-ledger.v2
+    url: https://git.forge.example/forge/forge-ledger.v2.git
+    type: spring-boot
+    owner: team-ledger
+    component: ledger-api-v2
+`,
+    );
+    await mkdir(join(root, "facts"), { recursive: true });
+    await writeFile(join(root, "facts", "forge-ledger.v2.jsonl"), "");
+    await writeFile(join(root, "facts", "forge-cards.reviewed.jsonl"), "");
+    const picks = await pickerOf(root);
+    expect(picks.find((p) => p.id === "forge-ledger.v2")?.read).toBe(true);
+    expect(picks.find((p) => p.id === "forge-cards")?.read).toBe(false);
+  });
+
   it("prints the picker when Another repo… is picked as an option", async () => {
     const { root, id } = await metarepo();
     const r = await run(root, ["answer", id, "--option", "2", "--by", "pat"]);
@@ -180,22 +229,28 @@ describe("atticus questions answer --target on a topics question (ADR 0162)", ()
     return { root, id: raised[0]!.id };
   }
 
-  it("adds the topic to another team's system's aliases", async () => {
+  it("adds the topic under another team's system's topics, not its aliases", async () => {
     const { root, id } = await topicQuestion();
     const r = await run(root, ["answer", id, "--target", "harbor-audit", "--by", "pat"]);
     expect(r.code).toBe(0);
     expect(r.out[0]).toBe(
-      "Wrote harbor.audit.events under aliases of harbor-audit in org-pack/profiles/forge/profile.yaml, so the next write lands it there; review it in the same pull request.",
+      "Wrote harbor.audit.events under topics of harbor-audit in org-pack/profiles/forge/profile.yaml, so the next write lands it there; review it in the same pull request.",
     );
     const text = await readFile(join(root, ...PROFILE), "utf8");
     expect(text).toContain("# Invented vendors, each named by the host the code calls it on.");
     expect((await systems(root)).find((s) => s.id === "harbor-audit")).toMatchObject({
-      aliases: ["harbor.audit.events"],
+      aliases: [],
+      topics: ["harbor.audit.events"],
     });
+    // The org pack still loads, at profile version 2, with the topic apart from the aliases.
+    const op = await loadOrgPack(join(root, "org-pack"));
+    const p = op.profiles.find((x) => x.platform === "forge")!.profile!;
+    expect(p.schemaVersion).toBe(2);
+    expect(p.systems.find((s) => s.id === "harbor-audit")?.topics).toEqual(["harbor.audit.events"]);
     expect((await readQuestion(root, id))!.answer?.text).toBe("harbor-audit");
   });
 
-  it("creates a team's system with the topic as its alias, and refuses a repo of the estate", async () => {
+  it("creates a team's system with the topic under its topics, and refuses a repo of the estate", async () => {
     const { root, id } = await topicQuestion();
     const repo = await run(root, ["answer", id, "--target", "forge-payments"]);
     expect(repo.code).toBe(2);
@@ -211,8 +266,10 @@ describe("atticus questions answer --target on a topics question (ADR 0162)", ()
     expect(w.code).toBe(0);
     expect((await systems(root)).find((s) => s.id === "team-ledger-ops-system")).toMatchObject({
       owner: "team-ledger-ops",
-      aliases: ["harbor.audit.events"],
+      aliases: [],
+      topics: ["harbor.audit.events"],
     });
+    expect(w.out[0]).toContain("topic harbor.audit.events");
   });
 
   it("prints the picker when the topic option is picked as an option", async () => {

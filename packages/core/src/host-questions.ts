@@ -4,6 +4,7 @@ import { isMap, isSeq, parseDocument, YAMLSeq } from "yaml";
 import { writeFileAtomic } from "./fs.js";
 import { slugify } from "./identity.js";
 import { isAdopted, orgPackDirOf } from "./metarepo.js";
+import { migrateProfileText } from "./profile-migrate.js";
 import { Profile } from "./schema/orgpack.js";
 import { RepoManifest } from "./schema/workspace.js";
 
@@ -173,29 +174,43 @@ export async function addProfileSystem(
     name: string;
     boundary: "internal" | "vendor";
     owner?: string;
-    /** Names it is known by: a topic or queue it owns (ADR 0162). */
-    aliases?: string[];
+    /**
+     * The topics and queues it owns (ADR 0162 amendment): written under `topics`, never
+     * `aliases`, with the profile at schema version 2.
+     */
+    topics?: string[];
   },
-): Promise<{ id: string; profile: string; added: boolean; aliased?: string[] }> {
+): Promise<{ id: string; profile: string; added: boolean; topics?: string[] }> {
   const platforms = await platformsOf(root);
   const relOf = (platform: string) =>
     `${isAdopted(root) ? ".atticus/" : ""}org-pack/profiles/${platform}/profile.yaml`;
+  const topics = s.topics ?? [];
+  /** A profile that names topics is at version 2 (the number only, as `atticus upgrade` writes it). */
+  const atV2 = (text: string) => (topics.length ? migrateProfileText(text).text : text);
+  const valid = (doc: ReturnType<typeof parseDocument>, platform: string) => {
+    const checked = Profile.safeParse(doc.toJS());
+    if (!checked.success)
+      throw new Error(
+        `${relOf(platform)} would not be valid: ${checked.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`,
+      );
+  };
   for (const { dir, platform } of platforms) {
     const file = join(dir, "profile.yaml");
     const text = await readFile(file, "utf8").catch(() => undefined);
     const p = text === undefined ? undefined : Profile.safeParse(parseDocument(text).toJS());
     const had = p?.success ? p.data.systems.find((x) => x.id === s.id) : undefined;
     if (!had) continue;
-    // A system the profile has already: the aliases it lacks go on it.
-    const missing = (s.aliases ?? []).filter((a) => !had.aliases.includes(a));
+    // A system the profile has already: the topics it lacks go under its topics.
+    const missing = topics.filter((t) => !(had.topics ?? []).includes(t));
     if (missing.length) {
-      const doc = parseDocument(text!);
+      const doc = parseDocument(atV2(text!));
       const seq = doc.get("systems") as YAMLSeq;
       const node = seq.items.find((x) => isMap(x) && x.get("id") === s.id);
       if (isMap(node)) {
-        const aliases = node.get("aliases");
-        if (isSeq(aliases)) for (const a of missing) aliases.add(doc.createNode(a));
-        else node.set("aliases", doc.createNode([...had.aliases, ...missing]));
+        const list = node.get("topics");
+        if (isSeq(list)) for (const t of missing) list.add(doc.createNode(t));
+        else node.set("topics", doc.createNode([...(had.topics ?? []), ...missing]));
+        valid(doc, platform);
         await writeFileAtomic(file, doc.toString());
       }
     }
@@ -203,7 +218,7 @@ export async function addProfileSystem(
       id: s.id,
       profile: relOf(platform),
       added: false,
-      ...(missing.length ? { aliased: missing } : {}),
+      ...(missing.length ? { topics: missing } : {}),
     };
   }
   for (const { dir, platform } of platforms) {
@@ -214,7 +229,7 @@ export async function addProfileSystem(
     const file = join(dir, "profile.yaml");
     const before = await readFile(file, "utf8").catch(() => undefined);
     const doc = parseDocument(
-      before ?? `schemaVersion: 1\nplatform: ${platform}\nname: ${platform}\n`,
+      atV2(before ?? `schemaVersion: 1\nplatform: ${platform}\nname: ${platform}\n`),
     );
     let systems = doc.get("systems");
     if (!isSeq(systems)) {
@@ -227,14 +242,11 @@ export async function addProfileSystem(
         name: s.name,
         boundary: s.boundary,
         ...(s.owner ? { owner: s.owner } : {}),
-        aliases: [...(s.aliases ?? [])],
+        aliases: [],
+        ...(topics.length ? { topics: [...topics] } : {}),
       }),
     );
-    const checked = Profile.safeParse(doc.toJS());
-    if (!checked.success)
-      throw new Error(
-        `${relOf(platform)} would not be valid: ${checked.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`,
-      );
+    valid(doc, platform);
     await writeFileAtomic(file, doc.toString());
     return { id: s.id, profile: relOf(platform), added: true };
   }
