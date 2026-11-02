@@ -45,6 +45,8 @@ The reading rules (`FACT_RULES`) say this in three parts (backend, frontend, pro
 
 `atticus join contracts [--json]` (and `estate contracts`); `GET /api/contracts` and the page Map › Mismatches (aside, with empty, loading and error states); a link whose calls have findings gets the gaps `contract-mismatch` or `contract-unconfirmed` on the canvas and its findings under each call in Why is this linked?; the Trust tab counts them (`TrustView.contracts`); an outside system's page lists the calls against its newest spec, marking what the spec brought.
 
+The check costs little per ask: `checkContracts` indexes each repo's facts once (by id, field facts by owner, flows by entry and by the call a step names, each entry's or call's payload worked out once), so 40 repos of 2,520 facts and 2,400 links check in a fraction of a second. `contractCheckOf` (CLI) keeps each metarepo's result, with a stamp of the path, size and modification time of every file under facts/, the inputs, the org pack, the questions and the curated catalog; `/api/contracts`, `/api/trust` and `/api/outside` share it, asks at once share one run, and any change to one of those files works it out again. A run that fails isn't kept.
+
 ## Contract notes
 
 - **The facts file:** unchanged. Every reading above uses `side`, `name`, `type`, `required`, `mappedTo` and `transform`, which it already has.

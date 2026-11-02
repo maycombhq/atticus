@@ -1,7 +1,8 @@
-import { readdir, readFile, rm } from "node:fs/promises";
-import { join } from "node:path";
+import { readdir, readFile, rm, stat } from "node:fs/promises";
+import { join, resolve } from "node:path";
 import { parse, stringify } from "yaml";
 import {
+  catalogDirOf,
   checkContracts,
   factsDirOf,
   factsRelOf,
@@ -9,6 +10,8 @@ import {
   joinConventions,
   joinVendorOperations,
   newFindings,
+  orgPackDirOf,
+  questionsDirOf,
   SpecsFile,
   writeFileAtomic,
   type ContractCheckResult,
@@ -149,8 +152,60 @@ export interface ContractCheckOnFile {
   newBySystem: Map<string, ContractMismatch[]>;
 }
 
-/** The contract check over the whole estate, from the files on disk. */
+/**
+ * What the check reads, as a stamp (review item 4): every file under facts/, the inputs, the org
+ * pack, the questions and the curated catalog, by path, size and modification time. The
+ * generated catalog is left out: only a write of the facts changes it, and that changes facts/.
+ */
+async function stampOf(root: string): Promise<string> {
+  const out: string[] = [];
+  const walk = async (dir: string, rel: string): Promise<void> => {
+    const entries = await readdir(dir, { withFileTypes: true }).catch(() => undefined);
+    if (!entries) return;
+    await Promise.all(
+      entries.map(async (e) => {
+        const p = join(dir, e.name);
+        if (e.isDirectory()) return walk(p, `${rel}/${e.name}`);
+        const s = await stat(p).catch(() => undefined);
+        if (s) out.push(`${rel}/${e.name}\u0000${s.size}\u0000${s.mtimeMs}`);
+      }),
+    );
+  };
+  const dirs = [
+    factsDirOf(root),
+    inputsDirOf(root),
+    orgPackDirOf(root),
+    questionsDirOf(root),
+    join(catalogDirOf(root), "curated"),
+  ];
+  await Promise.all(dirs.map((d, i) => walk(d, String(i))));
+  return out.sort().join("\n");
+}
+
+/** Each metarepo's check, kept with the stamp it was worked out at. */
+const kept = new Map<string, { stamp: string; value: Promise<ContractCheckOnFile> }>();
+
+/**
+ * The contract check over the whole estate, from the files on disk (ADR 0164). Worked out once
+ * per metarepo and kept while nothing it reads changes, so Map › Mismatches, the canvas's
+ * marks, the Trust tab and the Outside systems page share one check; asks that come at once
+ * share one run. The result is shared: callers read it, never change it.
+ */
 export async function contractCheckOf(root: string): Promise<ContractCheckOnFile> {
+  const key = resolve(root);
+  const stamp = await stampOf(root);
+  const hit = kept.get(key);
+  if (hit && hit.stamp === stamp) return hit.value;
+  const value = workOutContractCheck(root);
+  kept.set(key, { stamp, value });
+  // A run that failed isn't kept: the next ask tries again.
+  value.catch(() => {
+    if (kept.get(key)?.value === value) kept.delete(key);
+  });
+  return value;
+}
+
+async function workOutContractCheck(root: string): Promise<ContractCheckOnFile> {
   const quiet = { out: () => undefined, err: () => undefined };
   const { op, inputs } = await intakeContext(root, quiet);
   const estate = await estateFacts(root, op, "");

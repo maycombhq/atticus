@@ -284,8 +284,21 @@ const seg = (s: string) =>
     .toLowerCase()
     .replace(/\[\]/g, "")
     .replace(/[^a-z0-9]/g, "");
-const keyOf = (name: string) => name.split(".").map(seg).filter(Boolean).join(".");
-const tailOf = (name: string) => seg(name.split(".").pop() ?? name);
+/** A name's normalised forms, kept: the same few names come on every link of an estate. */
+const memo = (fn: (s: string) => string) => {
+  const kept = new Map<string, string>();
+  return (s: string) => {
+    let v = kept.get(s);
+    if (v === undefined) {
+      if (kept.size > 50_000) kept.clear();
+      v = fn(s);
+      kept.set(s, v);
+    }
+    return v;
+  };
+};
+const keyOf = memo((name: string) => name.split(".").map(seg).filter(Boolean).join("."));
+const tailOf = memo((name: string) => seg(name.split(".").pop() ?? name));
 const atOf = (f: Fact) => `${f.cite.file}:${f.cite.line}`;
 const where = (repo: string | undefined, at: string) => (repo ? `${repo} ${at}` : at);
 
@@ -311,20 +324,14 @@ const isOutbound = (owner: "entry" | "call", side: Side) =>
  * target dropped (inbound), and a field with an untraced `transform` marked.
  */
 function wireOf(
-  facts: readonly Fact[],
+  ix: RepoIndex,
   repo: string,
   owner: string,
   ownerKind: "entry" | "call",
   side: Side,
 ): WireField[] | undefined {
-  const crossing = mappingFields(facts);
-  const own = facts.filter(
-    (f): f is Field =>
-      f.kind === "field" &&
-      f.owner === owner &&
-      (f.side ?? "request") === side &&
-      !isMessageType(f) &&
-      !crossing.has(f.id),
+  const own = (ix.fields.get(owner) ?? []).filter(
+    (f) => (f.side ?? "request") === side && !isMessageType(f) && !ix.crossing.has(f.id),
   );
   if (!own.length) return undefined;
   const byId = new Map(own.map((f) => [f.id, f] as const));
@@ -369,6 +376,50 @@ function wireOf(
 }
 
 /**
+ * A repo's facts, indexed once per check (review item 4): by id (the first of an id), its field
+ * facts by owner in the order they come, the mapping fields, and its flows by entry and by the
+ * call a step names. Every lookup of the check is a map read, never a scan of the repo.
+ */
+interface RepoIndex {
+  byId: Map<string, Fact>;
+  fields: Map<string, Field[]>;
+  crossing: Set<string>;
+  flowsByEntry: Map<string, FactOf<"flow">[]>;
+  flowsByCall: Map<string, FactOf<"flow">[]>;
+  /** The payload sides and errors of each entry or call, worked out once. */
+  faces: Map<string, Pick<Face, "sides" | "errors">>;
+}
+
+function indexOf(facts: readonly Fact[]): RepoIndex {
+  const byId = new Map<string, Fact>();
+  const fields = new Map<string, Field[]>();
+  const flowsByEntry = new Map<string, FactOf<"flow">[]>();
+  const flowsByCall = new Map<string, FactOf<"flow">[]>();
+  const add = <T>(m: Map<string, T[]>, k: string, v: T) => {
+    const list = m.get(k);
+    if (list) list.push(v);
+    else m.set(k, [v]);
+  };
+  for (const f of facts) {
+    if (!byId.has(f.id)) byId.set(f.id, f);
+    if (f.kind === "field") add(fields, f.owner, f);
+    else if (f.kind === "flow") {
+      if (f.entry) add(flowsByEntry, f.entry, f);
+      for (const ref of new Set(f.steps.flatMap((x) => (x.ref ? [x.ref] : []))))
+        add(flowsByCall, ref, f);
+    }
+  }
+  return {
+    byId,
+    fields,
+    crossing: mappingFields(facts),
+    flowsByEntry,
+    flowsByCall,
+    faces: new Map(),
+  };
+}
+
+/**
  * The field facts that are a mapping between two payloads, not a payload: a field of an entry or
  * a call `mappedTo` a field of another entry or call (a gateway policy's), and the field it maps
  * to. A field mapped to a column stays its payload's.
@@ -392,15 +443,14 @@ function mappingFields(facts: readonly Fact[]): Set<string> {
 
 /** The error statuses the flows give an entry or a call (ADR 0142's reading), each with its first line. */
 const STATUS = /\b([45]\d\d)\b/g;
-function flowErrors(facts: readonly Fact[], entry?: string, call?: string): Map<string, string> {
+function flowErrors(ix: RepoIndex, entry?: string, call?: string): Map<string, string> {
   const out = new Map<string, string>();
-  const flows = facts
-    .filter(
-      (f): f is FactOf<"flow"> =>
-        f.kind === "flow" &&
-        ((!!entry && f.entry === entry) || (!!call && f.steps.some((s) => s.ref === call))),
-    )
-    .sort((a, b) => cmp(a.id, b.id));
+  const flows = [
+    ...new Set([
+      ...(entry ? (ix.flowsByEntry.get(entry) ?? []) : []),
+      ...(call ? (ix.flowsByCall.get(call) ?? []) : []),
+    ]),
+  ].sort((a, b) => cmp(a.id, b.id));
   for (const f of flows)
     for (const e of f.errors)
       for (const m of `${e.when} ${e.then}`.matchAll(STATUS))
@@ -408,16 +458,22 @@ function flowErrors(facts: readonly Fact[], entry?: string, call?: string): Map<
   return out;
 }
 
-function codeFace(facts: readonly Fact[], repo: string, fact: Entry | Call, what: string): Face {
-  const ownerKind = fact.kind === "entry" ? "entry" : "call";
-  const sides: Face["sides"] = {};
-  for (const side of ["request", "response", "message"] as const) {
-    const w = wireOf(facts, repo, fact.id, ownerKind, side);
-    if (w) sides[side] = w;
+function codeFace(ix: RepoIndex, repo: string, fact: Entry | Call, what: string): Face {
+  const k = `${fact.kind}|${fact.id}`;
+  let got = ix.faces.get(k);
+  if (!got) {
+    const ownerKind = fact.kind === "entry" ? "entry" : "call";
+    const sides: Face["sides"] = {};
+    for (const side of ["request", "response", "message"] as const) {
+      const w = wireOf(ix, repo, fact.id, ownerKind, side);
+      if (w) sides[side] = w;
+    }
+    const errors =
+      fact.kind === "entry" ? flowErrors(ix, fact.id) : flowErrors(ix, undefined, fact.id);
+    got = { sides, ...(errors.size ? { errors } : {}) };
+    ix.faces.set(k, got);
   }
-  const errors =
-    fact.kind === "entry" ? flowErrors(facts, fact.id) : flowErrors(facts, undefined, fact.id);
-  return { what, repo, role: "code", sides, ...(errors.size ? { errors } : {}) };
+  return { what, repo, role: "code", ...got };
 }
 
 function specFace(
@@ -468,10 +524,11 @@ interface Hop {
   untraced: Map<string, string>;
 }
 
-function hopOf(facts: readonly Fact[], repo: string, route: string, forward: string): Hop {
-  const fields = facts.filter(
-    (f): f is Field => f.kind === "field" && (f.owner === route || f.owner === forward),
-  );
+function hopOf(ix: RepoIndex, repo: string, route: string, forward: string): Hop {
+  const fields = [
+    ...(ix.fields.get(route) ?? []),
+    ...(route === forward ? [] : (ix.fields.get(forward) ?? [])),
+  ];
   const byId = new Map(fields.map((f) => [f.id, f] as const));
   const pairs: Hop["pairs"] = [];
   const untraced = new Map<string, string>();
@@ -897,9 +954,9 @@ function typeNames(t: string): string[] {
 }
 
 /** The message type a publish or listener names, from its `$message` field fact. */
-function messageTypeOf(facts: readonly Fact[], owner: string): Field | undefined {
-  return facts
-    .filter((f): f is Field => f.kind === "field" && f.owner === owner && isMessageType(f))
+function messageTypeOf(ix: RepoIndex, owner: string): Field | undefined {
+  return (ix.fields.get(owner) ?? [])
+    .filter((f) => isMessageType(f))
     .sort((a, b) => cmp(a.id, b.id))[0];
 }
 
@@ -913,8 +970,15 @@ interface Held {
 
 /** Compare the payload on both sides of every link the join made, and of every call to an outside system with a spec. */
 export function checkContracts(input: ContractCheckInput): ContractCheckResult {
-  const factsOf = new Map(input.repos.map((r) => [r.repo, r.facts] as const));
-  const factOf = (repo: string, id: string) => factsOf.get(repo)?.find((f) => f.id === id);
+  // Each repo's facts indexed once (the last repo of a name, as a lookup by name gave it).
+  const indexes = new Map(
+    [...new Map(input.repos.map((r) => [r.repo, r.facts] as const))].map(
+      ([repo, f]) => [repo, indexOf(f)] as const,
+    ),
+  );
+  const EMPTY = indexOf([]);
+  const ixOf = (repo: string) => indexes.get(repo) ?? EMPTY;
+  const factOf = (repo: string, id: string) => indexes.get(repo)?.byId.get(id);
   const specsOf = new Map<string, ContractSpecT[]>();
   for (const f of input.specs ?? [])
     specsOf.set(f.repo, [...(specsOf.get(f.repo) ?? []), ...f.specs]);
@@ -1010,8 +1074,8 @@ export function checkContracts(input: ContractCheckInput): ContractCheckResult {
   }
 
   function restLink(j: FactJoin, call: Call, entry: Entry) {
-    const cFacts = factsOf.get(j.call.repo) ?? [];
-    const eFacts = factsOf.get(j.entry.repo) ?? [];
+    const cFacts = ixOf(j.call.repo);
+    const eFacts = ixOf(j.entry.repo);
     const specs: string[] = [];
     let caller = codeFace(cFacts, j.call.repo, call, what.call(j.call));
     // J3: a consumer's copy of the API it calls stands in for a call with no fields of its own.
@@ -1061,7 +1125,7 @@ export function checkContracts(input: ContractCheckInput): ContractCheckResult {
         let current: Face = caller;
         let lastHop: Hop | undefined;
         for (const h of hops) {
-          const hFacts = factsOf.get(h.entry.repo) ?? [];
+          const hFacts = ixOf(h.entry.repo);
           const published = (specsOf.get(h.entry.repo) ?? []).find(
             (s) => s.kind === "operation" && s.role === "own" && s.entry === h.entry.fact,
           );
@@ -1107,8 +1171,8 @@ export function checkContracts(input: ContractCheckInput): ContractCheckResult {
     const call = factOf(j.call.repo, j.call.fact);
     const entry = factOf(j.entry.repo, j.entry.fact);
     if (call?.kind !== "call" || entry?.kind !== "entry") continue;
-    const cFacts = factsOf.get(j.call.repo) ?? [];
-    const eFacts = factsOf.get(j.entry.repo) ?? [];
+    const cFacts = ixOf(j.call.repo);
+    const eFacts = ixOf(j.entry.repo);
     const pub = codeFace(cFacts, j.call.repo, call, what.publish(j.call));
     const lis = codeFace(eFacts, j.entry.repo, entry, what.listener(j.entry));
     const typeOf = (f: Field | undefined) => f?.type ?? f?.name;
@@ -1163,7 +1227,7 @@ export function checkContracts(input: ContractCheckInput): ContractCheckResult {
     for (const f of r.facts) {
       if (f.kind !== "entry" || f.entryType !== "event-topic" || heard.has(`${r.repo}|${f.id}`))
         continue;
-      const mt = messageTypeOf(r.facts, f.id);
+      const mt = messageTypeOf(ixOf(r.repo), f.id);
       const type = mt?.type ?? mt?.name;
       const h = messageSpec(r.repo, type, f.path);
       if (!h?.system) continue;
@@ -1173,7 +1237,7 @@ export function checkContracts(input: ContractCheckInput): ContractCheckResult {
         component: factIdPart(f.component ?? r.repo),
         at: atOf(f),
       };
-      const lis = codeFace(r.facts, r.repo, f, `${r.repo}'s listener`);
+      const lis = codeFace(ixOf(r.repo), r.repo, f, `${r.repo}'s listener`);
       run(
         {
           key: `${h.system}|${r.repo}|${f.id}`,
@@ -1199,7 +1263,7 @@ export function checkContracts(input: ContractCheckInput): ContractCheckResult {
     const op = o?.specs.find((s) => s.kind === "operation" && s.id === m.operation);
     const call = factOf(m.call.repo, m.call.fact);
     if (!o || !op || call?.kind !== "call") continue;
-    const cFacts = factsOf.get(m.call.repo) ?? [];
+    const cFacts = ixOf(m.call.repo);
     let sender = codeFace(cFacts, m.call.repo, call, what.call(m.call));
     // A gateway's forwarding call with no fields of its own forwards its route's published payload.
     if (!sender.sides.request && !sender.sides.response && m.route) {
