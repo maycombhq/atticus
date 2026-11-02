@@ -342,7 +342,7 @@ describe("a key-pattern store adds no column to a story (problem 4)", () => {
     const cache = [
       {
         kind: "DataStore",
-        schemaVersion: 3,
+        schemaVersion: 4,
         id: "forge-orders-cache",
         status: "current",
         confidence: "verified",
@@ -352,7 +352,7 @@ describe("a key-pattern store adds no column to a story (problem 4)", () => {
       },
       {
         kind: "Table",
-        schemaVersion: 3,
+        schemaVersion: 4,
         id: "forge-orders-cache.cart",
         status: "current",
         confidence: "verified",

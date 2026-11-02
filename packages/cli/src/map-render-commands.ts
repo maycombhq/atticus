@@ -77,6 +77,7 @@ import {
   writeRepoContracts,
 } from "./link-evidence-files.js";
 import { diffLines } from "./scan-commands.js";
+import { writeRepoSpecs } from "./contract-check-files.js";
 
 /**
  * The map (ADR 0124, A3b): a repo's verified facts written into the catalog everything
@@ -539,6 +540,8 @@ export async function writeFactsIntoCatalog(
     const rerun = `atticus verify ${repo} --write`;
     // ADR 0151: this repo's contract files, read at the facts' commit and kept beside its facts.
     await writeRepoContracts(root, repo, o.dir, facts, (n) => io.err(n));
+    // ADR 0164: this repo's specs (OpenAPI, .proto, Avro, JSON Schema, AsyncAPI), kept the same way.
+    await writeRepoSpecs(root, repo, o.dir, facts, (n) => io.err(n));
     const { answered, targets, ruled, estate, result, diff, links, evidenceProblems, sharedMaps } =
       await projectFactsIntoCatalog(root, repo, facts, { op, existing: existing.records });
     for (const p of evidenceProblems) io.err(p);

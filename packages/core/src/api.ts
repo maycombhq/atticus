@@ -128,8 +128,14 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   And (J1) a link joined by a Kubernetes Service's bare name with no
  *   cited namespace of the caller's the same is a guess: `LINK_HOWS` gains `service-name`, and
  *   `JOIN_GUESS_FLAGS` `joined-by-service-name`. Additive only.
+ * 2.47.0 (ADR 0164, plan item F7): the contract check on every link. GET /api/contracts (the
+ *   Mismatches page: every link checked, each mismatch and unconfirmed difference with both
+ *   ends' lines and the mappings it went through); `TrustView.contracts` (the counts, for the
+ *   Trust tab); and an outside system's view gains `contracts` (the calls to it against its
+ *   newest intaken spec, and which findings that spec brings that the one before didn't).
+ *   Additive only.
  */
-export const API_VERSION = "2.44.0";
+export const API_VERSION = "2.47.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -860,10 +866,19 @@ export const TrustRepo = z.object({
     })
     .optional(),
 });
+/** 2.47.0 (ADR 0164): the contract check's counts. */
+export const ContractCounts = z.object({
+  links: z.number().int(),
+  compared: z.number().int(),
+  mismatches: z.number().int(),
+  unconfirmed: z.number().int(),
+});
 export const TrustView = z.object({
   /** Where the facts files are, relative to the metarepo. */
   factsDir: z.string(),
   repos: z.array(TrustRepo),
+  /** 2.47.0 (ADR 0164): the contract check's counts over the estate (the Mismatches page). */
+  contracts: ContractCounts.optional(),
   /** Files that couldn't be read: a manifest, a facts file, a report or a catalog file. */
   problems: z.array(z.object({ file: z.string(), message: z.string() })),
 });
@@ -1264,6 +1279,79 @@ export type AuditSampleViewT = z.infer<typeof AuditSampleView>;
 export type AuditAnswerResultT = z.infer<typeof AuditAnswerResult>;
 
 /**
+ * 2.47.0 (ADR 0164, F7): one difference the contract check found between the two sides of a
+ * link: what each side says and its line, the mappings it went through, and whether it is a
+ * mismatch or unconfirmed (a mapping on the way nobody traced).
+ */
+export const ContractEndView = z.object({
+  repo: z.string().optional(),
+  system: z.string().optional(),
+  what: z.string(),
+  value: z.string().optional(),
+  at: z.string().optional(),
+});
+export const ContractFactEnd = z.object({
+  repo: z.string(),
+  fact: z.string(),
+  component: z.string(),
+  at: z.string(),
+});
+export const ContractMismatchView = z.object({
+  id: z.string(),
+  interface: z.string().optional(),
+  interfaces: z.array(z.string()).optional(),
+  call: ContractFactEnd,
+  entry: ContractFactEnd.optional(),
+  system: z.string().optional(),
+  status: z.enum(["mismatch", "unconfirmed"]),
+  kind: z.enum([
+    "field-missing",
+    "field-extra",
+    "field-not-sent",
+    "field-required",
+    "field-type",
+    "field-number",
+    "error-unlisted",
+    "error-unanswered",
+  ]),
+  side: z.enum(["request", "response", "message"]).optional(),
+  field: z.string().optional(),
+  error: z.string().optional(),
+  sender: ContractEndView,
+  receiver: ContractEndView,
+  via: z.array(z.string()).optional(),
+  untraced: z.string().optional(),
+  message: z.string(),
+});
+export const ContractLinkView = z.object({
+  key: z.string(),
+  interface: z.string().optional(),
+  interfaces: z.array(z.string()).optional(),
+  call: ContractFactEnd,
+  entry: ContractFactEnd.optional(),
+  system: z.string().optional(),
+  kind: z.enum(["rest", "topic", "outside"]),
+  method: z.string().optional(),
+  path: z.string(),
+  through: z.array(z.string()),
+  specs: z.array(z.string()),
+  compared: z.number().int(),
+  mismatches: z.number().int(),
+  unconfirmed: z.number().int(),
+});
+/** GET /api/contracts (2.47.0, ADR 0164): the estate's contract check. */
+export const ContractsView = z.object({
+  links: z.array(ContractLinkView),
+  findings: z.array(ContractMismatchView),
+  counts: ContractCounts,
+  /** What the facts or the specs on file left out, said once. */
+  notes: z.array(z.string()),
+});
+export type ContractMismatchViewT = z.infer<typeof ContractMismatchView>;
+export type ContractLinkViewT = z.infer<typeof ContractLinkView>;
+export type ContractsViewT = z.infer<typeof ContractsView>;
+
+/**
  * 2.42.0 (ADR 0149, O4): the systems outside the estate (every profile system no estate repo
  * belongs to: vendors and other teams), each with who calls it, the operations its intaken spec
  * publishes, the calls that match nothing in that spec, and its open questions.
@@ -1350,6 +1438,13 @@ export const OutsideSystemView = z.object({
       ),
       unmatched: z.array(OutsideCallView.extend({ message: z.string() })),
     })
+    .optional(),
+  /**
+   * 2.47.0 (ADR 0164): the calls to it checked against its newest intaken spec, and the ids of
+   * the findings that spec brings that the one it replaced didn't (`new`, when there was one).
+   */
+  contracts: z
+    .object({ findings: z.array(ContractMismatchView), new: z.array(z.string()).optional() })
     .optional(),
 });
 export const OutsideView = z.object({
@@ -3570,6 +3665,15 @@ const OPS: Record<string, Record<string, Op>> = {
       errors: [400, 404, 422],
     },
   },
+  "/api/contracts": {
+    get: {
+      id: "getContracts",
+      summary:
+        "The contract check on every link: the payload on both sides of each REST call, gateway hop, topic and call to an outside system, compared from the field facts and the specs on file; each mismatch and unconfirmed difference with both lines (ADR 0164)",
+      tag: "views",
+      ok: { status: 200, schema: "ContractsView", description: "OK" },
+    },
+  },
   "/api/outside": {
     get: {
       id: "getOutsideSystems",
@@ -4601,6 +4705,7 @@ export function openApiDocument(): Record<string, unknown> {
     AuditSampleView,
     AuditAnswerResult,
     OutsideView,
+    ContractsView,
     StageReviewView,
     StageCommentResult,
     OrgPackDraftView,

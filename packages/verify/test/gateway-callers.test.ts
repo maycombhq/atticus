@@ -160,7 +160,7 @@ describe("the map says who calls each gateway route", () => {
       ...callerRecords(joinCallers({ repos, join, declared }), repos, join, { existing: joined }),
       {
         kind: "System",
-        schemaVersion: 3,
+        schemaVersion: 4,
         id: "harbor-desk",
         status: "current",
         confidence: "asserted",

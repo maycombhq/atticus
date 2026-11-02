@@ -159,7 +159,8 @@ export const GatewayRoute = record("GatewayRoute", {
 export const Classification = z.string().min(1);
 
 export const Schema = record("Schema", {
-  format: z.enum(["openapi", "json-schema", "avro", "xsd", "other"]),
+  /** `protobuf` since schema version 4 (ADR 0164): a `.proto` message, as intake reads it. */
+  format: z.enum(["openapi", "json-schema", "avro", "protobuf", "xsd", "other"]),
   ref: str(),
   version: z.string().optional(),
   fields: list(

@@ -11,4 +11,5 @@ export * from "./vendor-ops.js";
 export * from "./vendor-diff.js";
 export * from "./vendor-impact.js";
 export * from "./contract-files.js";
+export * from "./contract-specs.js";
 export * from "./traffic.js";

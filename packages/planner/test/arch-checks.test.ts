@@ -405,7 +405,7 @@ describe("a key-value store, and a lookup before the write (B-fixes, problem 4)"
     const more = [
       {
         kind: "DataStore",
-        schemaVersion: 3,
+        schemaVersion: 4,
         id: "forge-orders-cache",
         status: "current",
         confidence: "verified",
@@ -416,7 +416,7 @@ describe("a key-value store, and a lookup before the write (B-fixes, problem 4)"
       },
       {
         kind: "Table",
-        schemaVersion: 3,
+        schemaVersion: 4,
         id: "forge-orders-cache.cart",
         status: "current",
         confidence: "verified",

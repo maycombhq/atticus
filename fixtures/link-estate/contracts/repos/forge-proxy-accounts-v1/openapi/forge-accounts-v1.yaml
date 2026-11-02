@@ -1,0 +1,43 @@
+openapi: 3.0.3
+info:
+  title: Forge Accounts API
+  version: 1.4.0
+servers:
+  - url: https://api.forge.example/forge/accounts/v1
+paths:
+  /accounts/{id}:
+    get:
+      operationId: getAccount
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The account
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required: [id, availableBalance, currency]
+                    properties:
+                      id:
+                        type: string
+                      status:
+                        type: string
+                      availableBalance:
+                        type: number
+                      currency:
+                        type: string
+                      overdraftLimit:
+                        type: number
+        "401":
+          description: No valid token
+        "404":
+          description: No such account

@@ -170,7 +170,7 @@ describe("lean batch prompts: the core and the topic rules a batch needs (ADR 01
     // and when the deploy rule was told an Ingress regex path's plain prefix, a Service's
     // in-cluster address and `<repo>/<module>` in `exposes` (J1 gaps, ADR 0143).
     expect(createHash("sha256").update(FACT_RULES).digest("hex")).toBe(
-      "ccae46e84e2310838c049d57a0e7a5f51f670ee25ee231eb047739537c813d69",
+      "dddcba77c9936918af95d8372ece8934f0065a0581561f702d4e9b39ba7659e4",
     );
     expect(FACT_RULES).toBe(factRulesFor());
     expect(mapCommand().body).toContain(FACT_RULES);

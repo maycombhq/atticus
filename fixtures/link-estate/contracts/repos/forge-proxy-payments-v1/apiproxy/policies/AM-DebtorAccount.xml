@@ -1,0 +1,10 @@
+<AssignMessage name="AM-DebtorAccount">
+  <AssignTo createNew="false" type="request"/>
+  <AssignVariable>
+    <Name>forge.account</Name>
+    <JSONPath>$.accountId</JSONPath>
+  </AssignVariable>
+  <Set>
+    <Payload contentType="application/json">{"debtorAccount":"{forge.account}","amount":{forge.amount},"currency":"{forge.currency}"}</Payload>
+  </Set>
+</AssignMessage>
