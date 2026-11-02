@@ -599,3 +599,139 @@ describe("a call to an outside system, against its intaken spec", () => {
     expect(newFindings(run(v1).findings, run(v2).findings)).toEqual([]);
   });
 });
+
+describe("a converter nobody traced, on the other side of a difference (review item 1)", () => {
+  // forge-portal-bff reads `balance`; forge-accounts writes `acctBal` through a serializer the
+  // reader saw but didn't follow: the rename may be the serializer's, so it is never a mismatch.
+  const UI = "forge-portal-bff";
+  const ACC = "forge-accounts";
+  const callFact = {
+    kind: "call",
+    id: "call.get.accounts-id",
+    repo: UI,
+    commit: "abc1234",
+    callType: "rest",
+    method: "GET",
+    path: "/accounts/{id}",
+    cite: cite("src/accounts.ts", 4, "/accounts/{id}"),
+    ...C,
+  } as Fact;
+  const entryFact = {
+    kind: "entry",
+    id: "entry.get.accounts-id",
+    repo: ACC,
+    commit: "abc1234",
+    entryType: "rest",
+    method: "GET",
+    path: "/accounts/{id}",
+    cite: cite("src/main/java/forge/accounts/AccountsController.java", 19, "/accounts/{id}"),
+    ...C,
+  } as Fact;
+  const joined = result([
+    join({
+      call: end(UI, "call.get.accounts-id"),
+      entry: end(ACC, "entry.get.accounts-id"),
+      method: "GET",
+      path: "/accounts/{id}",
+      interface: "if-accounts",
+    }),
+  ]);
+  const check = (ui: Fact[], acc: Fact[]) =>
+    checkContracts({
+      repos: [
+        { repo: UI, facts: [callFact, ...ui] },
+        { repo: ACC, facts: [entryFact, ...acc] },
+      ],
+      join: joined,
+    }).findings.map((f) => [f.status, f.kind, f.side, f.field, f.untraced]);
+  const C_ = "call.get.accounts-id";
+  const E_ = "entry.get.accounts-id";
+
+  it("says a field read that a renamed, untraced serializer may write is unconfirmed", () => {
+    const got = check(
+      [
+        field(UI, C_, "response", "id", { type: "string" }),
+        field(UI, C_, "response", "balance", { type: "number" }),
+      ],
+      [
+        field(ACC, E_, "response", "id", { type: "string" }),
+        field(ACC, E_, "response", "acctBal", {
+          type: "BigDecimal",
+          transform: "BalanceSerializer",
+          file: "src/main/java/forge/accounts/AccountView.java",
+          line: 31,
+        }),
+      ],
+    );
+    expect(got).toEqual([
+      [
+        "unconfirmed",
+        "field-missing",
+        "response",
+        "balance",
+        `${ACC} src/main/java/forge/accounts/AccountView.java:31`,
+      ],
+    ]);
+  });
+
+  it("says a required field not sent, where the caller's untraced mapper may send it, is unconfirmed", () => {
+    const got = check(
+      [
+        field(UI, C_, "request", "acctNo", {
+          type: "string",
+          transform: "AccountNumberMapper",
+          file: "src/accounts.ts",
+          line: 9,
+        }),
+      ],
+      [field(ACC, E_, "request", "accountNumber", { type: "string", required: true })],
+    );
+    expect(got).toContainEqual([
+      "unconfirmed",
+      "field-not-sent",
+      "request",
+      "accountNumber",
+      `${UI} src/accounts.ts:9`,
+    ]);
+    expect(got.filter(([s]) => s === "mismatch")).toEqual([]);
+  });
+
+  it("says a field sent that the service's untraced binder may take is unconfirmed", () => {
+    const got = check(
+      [field(UI, C_, "request", "acctNo", { type: "string" })],
+      [
+        field(ACC, E_, "request", "accountNumber", {
+          type: "string",
+          transform: "AccountNumberBinder",
+          file: "src/main/java/forge/accounts/Binder.java",
+          line: 12,
+        }),
+      ],
+    );
+    expect(got).toEqual([
+      [
+        "unconfirmed",
+        "field-extra",
+        "request",
+        "acctNo",
+        `${ACC} src/main/java/forge/accounts/Binder.java:12`,
+      ],
+    ]);
+  });
+
+  it("stays a mismatch when the untraced field matched a field of its own", () => {
+    const got = check(
+      [
+        field(UI, C_, "response", "balance", { type: "number" }),
+        field(UI, C_, "response", "region", { type: "string" }),
+      ],
+      [
+        field(ACC, E_, "response", "balance", {
+          type: "BigDecimal",
+          transform: "BalanceSerializer",
+        }),
+      ],
+    );
+    expect(got).toEqual([["mismatch", "field-missing", "response", "region", undefined]]);
+  });
+});
