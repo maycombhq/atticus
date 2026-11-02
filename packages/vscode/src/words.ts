@@ -197,6 +197,23 @@ export const WORDS = {
   specAcceptConfirm: (repo: string) =>
     `Accept ${repo}'s starting spec? atticus spec accept runs openspec validate --strict, then archives openspec/changes/seed-${repo}/ into openspec/specs/. Read the seed first.`,
   confirmRun: "Run it",
+  // ADR 0166 (beta.11): notes, rule drafts, counts safe to paste, and the Another repo… picker.
+  orgWideNotes: "Org-wide (every repo is read with them)",
+  whichRepoType: "Which repo type's notes?",
+  notePrompt:
+    "The note, in your own words, on one line: what a term means or what must hold (each read of the type's repos is handed it).",
+  notePlaceholder: "Every call to the ledger goes through the gateway with mTLS",
+  noteProblem: "One line of plain text, up to 1,000 characters.",
+  noteAddConfirm: (type: string) =>
+    `Add the note to ${type ? `org-pack/repo-types/${type}/type.yaml` : "org-pack/conventions.yaml"}? The next read of ${type ? `each ${type} repo` : "every repo"} is handed it; review it in a pull request. Nothing is committed or pushed.`,
+  rulesSaveConfirm:
+    "Save the new rule drafts to org-pack/checklists/org-notes.yaml? Each is a draft (status draft) for a person to review and make active; nothing is committed or pushed.",
+  copyOutput: "Copy it",
+  copied: "Copied: counts and flags only, nothing named.",
+  pickTarget: "Pick the repo, system or team the call goes to",
+  pickOwner: "Pick the system or team that owns the topic",
+  typeTarget: "Its name, as the profile should have it",
+  picksFailed: (why: string) => `Couldn't list the repos, systems and teams: ${why}`,
   openInApp: "Open in the app",
   openInChat: "Open in Copilot Chat",
   applySheet: "Apply the sheet",
@@ -506,6 +523,8 @@ export function statusText(
   titles?: ChangeTitles,
   /** WP7.5: how many changes the person watches. */
   watching?: number,
+  /** ADR 0166 (F7): the contract check's mismatches, in words, when it found any. */
+  mismatches?: string,
 ): string {
   const parts: string[] = [];
   if (questions !== undefined) parts.push(`${questions} question${questions === 1 ? "" : "s"}`);
@@ -513,6 +532,7 @@ export function statusText(
     const t = next.person ? "a person's step" : stepTitle(next, titles);
     parts.push(`next: ${t.length > 70 ? `${t.slice(0, 67).trimEnd()}…` : t}`);
   }
+  if (mismatches) parts.push(mismatches);
   if (watching) parts.push(`watching ${watching}`);
   return `$(shield) Atticus${parts.length ? `: ${parts.join(" · ")}` : ""}`;
 }

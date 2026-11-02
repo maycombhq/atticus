@@ -232,13 +232,15 @@ object Peer {
     fun watchLines(json: String): List<String> = runCatching { Json.objectIn(json) }.getOrNull().obj()?.strs("lines").orEmpty()
 
     /** The status bar, in the Next step's words (VS Code's statusText). */
-    fun statusText(questions: Int?, next: NextStep?, watching: Int): String {
+    fun statusText(questions: Int?, next: NextStep?, watching: Int, mismatches: String? = null): String {
         val parts = mutableListOf<String>()
         if (questions != null) parts += plural(questions, "question")
         if (next != null) {
             val t = if (next.person) "a person's step" else Words.stepTitle(next)
             parts += "next: ${if (t.length > 70) "${t.take(67).trimEnd()}…" else t}"
         }
+        // ADR 0166 (F7): the contract check's mismatches, when it found any.
+        if (mismatches != null) parts += mismatches
         if (watching > 0) parts += "watching $watching"
         return "Atticus${if (parts.isNotEmpty()) ": ${parts.joinToString(" · ")}" else ""}"
     }

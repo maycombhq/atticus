@@ -198,6 +198,41 @@ describe("atticus questions answer --target (ADR 0162)", () => {
     expect(r.err[1]).toMatch(/^ {2}Repos \(10\): forge-accounts \(not read yet\), /);
     expect(r.err[3]).toBe("  Teams (2): team-cards, team-ledger-ops (no system yet)");
   });
+
+  it("gives the picker with questions show --json, for the editors' own pickers", async () => {
+    const { root, id } = await metarepo();
+    const r = await run(root, ["show", id, "--json"]);
+    expect(r.code).toBe(0);
+    const shown = JSON.parse(r.out.join("\n")) as {
+      id: string;
+      picks?: { id: string; kind: string; read?: boolean; adds?: { id: string } }[];
+    };
+    expect(shown.id).toBe(id);
+    expect(shown.picks).toEqual(await pickerOf(root));
+    expect(shown.picks?.find((p) => p.id === "team-ledger-ops")?.adds?.id).toBe(
+      "team-ledger-ops-system",
+    );
+  });
+
+  it("gives no picker for a question that asks something else", async () => {
+    const root = await mkdtemp(join(tmpdir(), "atticus-target-show-"));
+    await cp(join(FIX, "org-pack"), join(root, "org-pack"), { recursive: true });
+    const { raised } = await raiseQuestions(
+      root,
+      [
+        {
+          question: "What does forge-payments call its ledger?",
+          options: [{ label: "forge-ledger", means: "it", changes: "names it" }],
+          evidence: ["src/main/java/forge/payments/PaymentsService.java:24"],
+          scope: "repo",
+        },
+      ],
+      { step: "scan-survey", repo: "forge-payments", command: "x", rerun: "x", at: AT },
+    );
+    const r = await run(root, ["show", raised[0]!.id, "--json"]);
+    expect(r.code).toBe(0);
+    expect(JSON.parse(r.out.join("\n")).picks).toBeUndefined();
+  });
 });
 
 describe("atticus questions answer --target on a topics question (ADR 0162)", () => {

@@ -65,6 +65,7 @@ Every command under the twelve, with its options.
   atticus questions list [--state open] [--mine] [--json]   The questions in questions/ a step raised for a person,
           in the order to ask them, each with its owner team; --mine, your teams' only
   atticus questions show <id> [--json]  One question on file, with its options, evidence and answer
+          (--json on an open target or topics question adds its picks: every repo, system and team --target takes, for the editors' pickers; ADR 0166)
   atticus questions answer <id> --option <n> | --text "..." | --accept-proposal   Write the answer to the file; prints the rerun
           [--scope repo|repo-type] [--type <repo type>] [--by who]  (--accept-proposal: the assistant's proposed answer, checked again, as yours)
           [--match <host pattern or /path/**>]  (a target or hosts answer by rule: it covers every call that matches, the calls found later too)

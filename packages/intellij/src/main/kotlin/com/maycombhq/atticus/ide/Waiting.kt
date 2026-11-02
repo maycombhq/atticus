@@ -29,6 +29,8 @@ class PeerFlows(private val project: Project) {
     fun answer(q: OpenQuestion) {
         val d = AnswerDialog(project, q)
         if (!d.showAndGet()) return
+        // ADR 0162, 0166 (F8): Another repo… names nothing; its picker names the target.
+        if (!d.accepted() && com.maycombhq.atticus.core.Beta11.opensPicker(q, d.option())) return TargetFlow(project).answer(q, d.match())
         val argv = (if (d.accepted()) Peer.acceptArgv(q.id, d.match()) else Peer.answerArgv(q.id, d.option(), d.text(), d.match())) ?: return
         EstateFlows(project).answered(argv)
     }

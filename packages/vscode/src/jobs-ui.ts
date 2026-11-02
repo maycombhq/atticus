@@ -1,7 +1,20 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import * as vscode from "vscode";
 import { answerQuestion } from "./atticus";
+import type { Answer } from "./atticus";
+import {
+  noteOf,
+  OFFER_INTERNAL,
+  OFFER_VENDOR,
+  offerWords,
+  ORG_WIDE,
+  pickRows,
+  readPicks,
+  repoTypesIn,
+  targetArgs,
+  targetPlan,
+} from "./beta11";
 import { showReadOnly, type CommandUi } from "./command-ui";
 import { commandText } from "./cli";
 import { agentFilePath, agentForStep, openForStep, promptFilePath } from "./copilot-agent";
@@ -60,6 +73,88 @@ export async function openChatStep(root: string, step: string, target?: string):
   } catch (e) {
     void vscode.window.showErrorMessage(WORDS.copilotAgentFallbackFailed((e as Error).message));
   }
+}
+
+/**
+ * ADR 0162, 0166 (F8): "Another repo…" (or a topics question's "A topic owned by another team or
+ * vendor") opens the picker of every manifest repo, profile system and roles.yaml team, as the
+ * app's Questions page does. A team with no system, or a name the picker doesn't have, is a new
+ * system for the profile: asked first, with the command that writes it, and written only on a yes.
+ */
+export async function askTarget(
+  svc: Service,
+  root: string,
+  q: OpenQuestion,
+): Promise<Answer | undefined> {
+  const topics = q.askedBy?.step === "facts-topics";
+  const r = await vscode.window.withProgress(
+    {
+      location: vscode.ProgressLocation.Window,
+      title: "Atticus: reading the repos, systems and teams…",
+    },
+    () => readPicks(svc.cli(root), root, q.id),
+  );
+  if (!r.ok) return void vscode.window.showErrorMessage(WORDS.picksFailed(r.message));
+  type Row = vscode.QuickPickItem & { target?: string };
+  // A topic's owner is a system or a team: a repo's own facts say what it publishes.
+  const rows: Row[] = pickRows(topics ? r.picks.filter((p) => p.kind !== "repo") : r.picks).map(
+    (x) =>
+      "separator" in x
+        ? { label: x.separator, kind: vscode.QuickPickItemKind.Separator }
+        : { label: x.label, description: x.description, target: x.target },
+  );
+  const pick = await vscode.window.showQuickPick(rows, {
+    title: q.question,
+    placeHolder: topics ? WORDS.pickOwner : WORDS.pickTarget,
+    matchOnDescription: true,
+    ignoreFocusOut: true,
+  });
+  if (!pick) return undefined;
+  let typed = pick.target ?? "";
+  if (!typed) {
+    const v = await vscode.window.showInputBox({
+      title: q.question,
+      prompt: WORDS.typeTarget,
+      ignoreFocusOut: true,
+    });
+    if (!v?.trim()) return undefined;
+    typed = v.trim();
+  }
+  const plan = targetPlan(r.picks, typed);
+  if (!plan) return undefined;
+  if (!("offer" in plan)) return { target: plan.target };
+  const buttons =
+    plan.offer.boundary === "vendor" ? [OFFER_VENDOR, OFFER_INTERNAL] : [OFFER_INTERNAL];
+  const yes = await vscode.window.showWarningMessage(
+    offerWords(plan.offer),
+    {
+      modal: true,
+      detail: commandText([
+        "questions",
+        "answer",
+        q.id,
+        ...targetArgs({ target: plan.target, addSystem: plan.offer.boundary }),
+      ]),
+    },
+    ...buttons,
+  );
+  if (!yes) return undefined;
+  return { target: plan.target, addSystem: yes === OFFER_VENDOR ? "vendor" : "internal" };
+}
+
+/** The org pack's repo types (org-pack/repo-types/<id>/type.yaml, or under .atticus/). */
+export function repoTypesOf(root: string): string[] {
+  for (const pack of ["org-pack", join(".atticus", "org-pack")]) {
+    const dir = join(root, pack, "repo-types");
+    let names: string[];
+    try {
+      names = readdirSync(dir);
+    } catch {
+      continue;
+    }
+    return repoTypesIn(names, (n) => existsSync(join(dir, n, "type.yaml")));
+  }
+  return [];
 }
 
 export function registerJobs(d: JobsDeps) {
@@ -155,6 +250,35 @@ export function registerJobs(d: JobsDeps) {
         }
         return a;
       }
+      // ADR 0166 (beta.11, ADR 0163): a repo type of the org pack, or the org-wide notes.
+      case "repo-type":
+      case "note": {
+        if (a.repoType === undefined) {
+          const types = repoTypesOf(root);
+          const pick = await vscode.window.showQuickPick(
+            [
+              { label: WORDS.orgWideNotes, description: "conventions.yaml", type: ORG_WIDE },
+              ...types.map((t) => ({ label: t, description: "repo type", type: t })),
+            ],
+            { title, placeHolder: WORDS.whichRepoType },
+          );
+          if (!pick) return undefined;
+          a.repoType = pick.type;
+        }
+        if (j.needs === "note" && a.note === undefined) {
+          const v = await vscode.window.showInputBox({
+            title,
+            prompt: WORDS.notePrompt,
+            placeHolder: WORDS.notePlaceholder,
+            ignoreFocusOut: true,
+            validateInput: (x) => (noteOf(x) ? undefined : WORDS.noteProblem),
+          });
+          const n = v === undefined ? undefined : noteOf(v);
+          if (!n) return undefined;
+          a.note = n;
+        }
+        return a;
+      }
       case "limit": {
         if (a.maxTokens) return a;
         const read = (rel: string) => {
@@ -185,8 +309,10 @@ export function registerJobs(d: JobsDeps) {
   };
 
   /** Afterwards: the app page and the chat step that go with it, a click away. */
-  const after = (root: string, j: Job, a: JobArgs, first: string, code: number) => {
+  const after = (root: string, j: Job, a: JobArgs, first: string, code: number, printed = "") => {
     const buttons = [
+      ...(j.copy && code === 0 ? [WORDS.copyOutput] : []),
+      ...(j.then && code === 0 ? [j.then.label] : []),
       ...(j.app ? [WORDS.openInApp] : []),
       ...(j.chat ? [WORDS.openInChat] : []),
       ...(j.command === "atticus.questionsSheet" && code === 0 ? [WORDS.applySheet] : []),
@@ -195,7 +321,13 @@ export function registerJobs(d: JobsDeps) {
     const show =
       code === 0 ? vscode.window.showInformationMessage : vscode.window.showWarningMessage;
     void show(`Atticus: ${first}`, ...buttons).then((pick) => {
-      if (pick === WORDS.openInApp && j.app)
+      if (pick === WORDS.copyOutput)
+        void vscode.env.clipboard
+          .writeText(printed)
+          .then(() => vscode.window.showInformationMessage(WORDS.copied));
+      // A next job only on the person's click; it asks its own yes when it writes.
+      else if (j.then && pick === j.then.label) void vscode.commands.executeCommand(j.then.command);
+      else if (pick === WORDS.openInApp && j.app)
         void vscode.commands.executeCommand("atticus.showApp", j.app(a));
       else if (pick === WORDS.openInChat && j.chat) {
         const c = j.chat(a);
@@ -222,7 +354,11 @@ export function registerJobs(d: JobsDeps) {
       const yes = await vscode.window.showWarningMessage(
         j.command === "atticus.repoRename"
           ? WORDS.renameConfirm(a.old!, a.new!)
-          : WORDS.specAcceptConfirm(a.repo!),
+          : j.command === "atticus.repoTypeAddNote"
+            ? WORDS.noteAddConfirm(a.repoType ?? ORG_WIDE)
+            : j.command === "atticus.repoTypeRulesSave"
+              ? WORDS.rulesSaveConfirm
+              : WORDS.specAcceptConfirm(a.repo!),
         { modal: true, detail: commandText(argv) },
         WORDS.confirmRun,
       );
@@ -240,7 +376,7 @@ export function registerJobs(d: JobsDeps) {
       if (existsSync(sheet))
         await vscode.window.showTextDocument(vscode.Uri.file(sheet), { preview: false });
     }
-    after(root, j, a, p.lines[0] ?? WORDS.endedWith(p.code), p.code);
+    after(root, j, a, p.lines[0] ?? WORDS.endedWith(p.code), p.code, `${p.lines.join("\n")}\n`);
     d.refreshAll();
   };
 

@@ -1,3 +1,4 @@
+import { targetArgs } from "./beta11";
 import { parseJson } from "./cli";
 import type {
   Cancel,
@@ -99,6 +100,17 @@ export async function readQueue(
 }
 
 /**
+ * An answer: an option, the person's own words, the assistant's proposal, or (ADR 0162, 0166) a
+ * target named from the "Another repo…" picker, with the new system it adds when the person said
+ * yes to adding one.
+ */
+export type Answer =
+  | { option: number }
+  | { text: string }
+  | { acceptProposal: true }
+  | { target: string; addSystem?: "vendor" | "internal"; name?: string };
+
+/**
  * Answer a question: an option (counting from 1), the person's own words, or the assistant's
  * checked proposal taken as theirs (ADR 0144). A target or hosts answer may carry a rule.
  */
@@ -106,7 +118,7 @@ export async function answerQuestion(
   cli: Cli,
   root: string,
   id: string,
-  answer: { option: number } | { text: string } | { acceptProposal: true },
+  answer: Answer,
   o: { match?: string } = {},
 ): Promise<{ ok: boolean; lines: string[] }> {
   const how =
@@ -114,7 +126,9 @@ export async function answerQuestion(
       ? ["--option", String(answer.option)]
       : "text" in answer
         ? ["--text", answer.text]
-        : ["--accept-proposal"];
+        : "target" in answer
+          ? targetArgs(answer)
+          : ["--accept-proposal"];
   const r = await cli([
     "questions",
     "answer",

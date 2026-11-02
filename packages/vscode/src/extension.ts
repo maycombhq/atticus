@@ -12,8 +12,16 @@ import {
   readOpenQuestions,
   STEP_COMMANDS,
   takesRule,
+  type Answer,
   type StepCommand,
 } from "./atticus";
+import {
+  contractsStatus,
+  contractsWords,
+  opensPicker,
+  readContractCounts,
+  type ContractCounts,
+} from "./beta11";
 import { answerApp, bundledHtml } from "./app-bundle";
 import { evidenceRows } from "./question-evidence";
 import { diagramHash, panelHtml, type RunningApp } from "./app-panel";
@@ -49,7 +57,7 @@ import {
 } from "./copilot-agent";
 import { APP_HOME, FULL_UI } from "./surface";
 import { AtticusView, QuestionsView, WaitingView } from "./view";
-import { registerJobs } from "./jobs-ui";
+import { askTarget, registerJobs } from "./jobs-ui";
 import { proposalWhat } from "./waiting-data";
 import type { WaitingGroup } from "./waiting-data";
 
@@ -157,6 +165,7 @@ export function activate(context: vscode.ExtensionContext): AtticusHandles {
     void vscode.commands.executeCommand("setContext", "atticus.hasMetarepo", !!svc.root);
     void view.refresh().then(updateStatus);
     void readWatched();
+    void readContracts();
     waiting.refresh();
     for (const t of sections) t.refresh();
     lenses.refresh();
@@ -179,17 +188,33 @@ export function activate(context: vscode.ExtensionContext): AtticusHandles {
     }
     updateStatus();
   };
+  // ADR 0166 (F7): the contract check's count, beside the questions (atticus join contracts --json).
+  let contracts: ContractCounts | undefined;
+  const readContracts = async () => {
+    const root = svc.root;
+    if (!root || !svc.cliOk) return;
+    contracts = await readContractCounts(svc.cli(root), root);
+    updateStatus();
+  };
   const updateStatus = () => {
     if (!svc.root) return status.hide();
     // Without the command line nothing was read: say so, not "0 questions".
     status.text = svc.cliOk
-      ? statusText(view.openQuestions, view.next, view.changeTitle, watched.length)
+      ? statusText(
+          view.openQuestions,
+          view.next,
+          view.changeTitle,
+          watched.length,
+          contractsStatus(contracts),
+        )
       : "$(warning) Atticus: no command line";
     const tip = view.next
       ? `Next: ${view.next.command}
 ${view.next.why}`
       : "Open the Atticus sidebar";
-    status.tooltip = [tip, watchTooltip(watched)].filter(Boolean).join("\n\n");
+    status.tooltip = [tip, contractsWords(contracts), watchTooltip(watched)]
+      .filter(Boolean)
+      .join("\n\n");
     status.show();
   };
 
@@ -1250,8 +1275,8 @@ ${view.next.why}`
       if (!pick) return;
       q = pick.q;
     }
-    let answer: { option: number } | { text: string } | { acceptProposal: true } | undefined =
-      option !== undefined ? { option } : undefined;
+    let answer: Answer | undefined =
+      option !== undefined && !opensPicker(q, option) ? { option } : undefined;
     if (!answer) {
       const own = { label: "In my own words...", n: 0 };
       // WP7.2: what the question read, each line's text; picking one opens the code there.
@@ -1308,7 +1333,11 @@ ${view.next.why}`
       }
       if (pick?.n === -2) answer = { acceptProposal: true };
       else if (!pick || pick.n < 0) return;
-      else if (pick.n) answer = { option: pick.n };
+      else if (pick.n && opensPicker(q, pick.n)) {
+        // ADR 0162, 0166 (F8): Another repo… names nothing; its picker names the target.
+        answer = await askTarget(svc, root, q);
+        if (!answer) return;
+      } else if (pick.n) answer = { option: pick.n };
       else {
         const text = await vscode.window.showInputBox({
           title: q.question,

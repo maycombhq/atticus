@@ -5,6 +5,7 @@ import com.intellij.openapi.wm.StatusBar
 import com.intellij.openapi.wm.StatusBarWidget
 import com.intellij.openapi.wm.StatusBarWidgetFactory
 import com.intellij.util.Consumer
+import com.maycombhq.atticus.core.Beta11
 import com.maycombhq.atticus.core.Copy
 import com.maycombhq.atticus.core.Peer
 import java.awt.Component
@@ -37,11 +38,12 @@ class AtticusStatusWidget(private val project: Project) :
                 if (!s.cliOk) {
                     Copy.STATUS_NO_CLI
                 } else {
-                    Peer.statusText(s.waiting?.questions?.size, s.next?.next, s.watched.size)
+                    Peer.statusText(s.waiting?.questions?.size, s.next?.next, s.watched.size, Beta11.contractsStatus(s.contracts))
                 }
             tip =
                 listOfNotNull(
                     s.next?.next?.let { "Next: ${it.command}\n${it.why}" } ?: Copy.STATUS_TIP,
+                    Beta11.contractsWords(s.contracts),
                     s.watched.takeIf { it.isNotEmpty() }?.let { (listOf(Copy.CHANGES_YOU_WATCH) + it).joinToString("\n") },
                 ).joinToString("\n\n")
             bar?.updateWidget(ID)

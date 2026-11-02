@@ -9,7 +9,7 @@ plugins {
 }
 
 group = "com.maycombhq"
-version = "0.3.0"
+version = "0.4.0"
 
 // The IntelliJ IDEA on this machine, so nothing big is downloaded (ADR 0099). Its JetBrains
 // Runtime (Java 25 for 2026.x) compiles the plugin and runs the tests.
@@ -97,6 +97,18 @@ intellijPlatform {
         id = "com.maycombhq.atticus"
         name = "Atticus"
         version = project.version.toString()
+        // What changed in this version, shown on the plugin's page in the IDE and the Marketplace.
+        changeNotes =
+            """
+            <h3>0.4.0 (with Atticus 2.0.0-beta.11)</h3>
+            <ul>
+              <li><b>Another repo… names any repo, system or team.</b> On a target question, Another repo… (and a topic question's A topic owned by another team or vendor) opens a picker of every repo of the manifest, read or not, every system of the profiles and every team in roles.yaml, and answers with <code>atticus questions answer &lt;id&gt; --target &lt;id&gt;</code>. A team with no system, or a name the list doesn't have, is offered as a new system, the command shown, and added to the profile (<code>--add-system vendor</code> or <code>internal</code>) only after your yes.</li>
+              <li><b>Contract Mismatches</b> (<code>atticus join contracts</code>): the counts said, the whole check a click away, and Map › Mismatches in the App tab. The status bar counts the mismatches beside the questions.</li>
+              <li><b>A Repo Type's Notes</b>, <b>Add a Note to a Repo Type</b>, <b>Draft Checklist Rules from the Notes</b> and <b>Save the Notes' Rule Drafts</b> (<code>atticus repo-type note</code> and <code>rules --save</code>): each write runs only after your yes, with the command shown. Nothing is committed or pushed.</li>
+              <li><b>How Far the Map Has Got</b> (<code>atticus doctor --counts</code>) in a panel with Copy: counts and flags only, safe to paste.</li>
+              <li>Esc in the App tab goes to the app (it leaves the diagram viewer's full screen, or clears Find a box) instead of moving focus to the editor; Shift+Esc still hides the tool window. F and / reach the app as they are.</li>
+            </ul>
+            """.trimIndent()
         ideaVersion {
             sinceBuild = "253.29346"
             untilBuild = provider { null }

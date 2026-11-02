@@ -109,6 +109,13 @@ object Parity {
             put("atticus.showFlow", app("#/flows"))
             // ADR 0161: atticus map --all, in a console here and a terminal there.
             put("atticus.mapEstate", action("Atticus.MapEstate"))
+            // ADR 0166: what beta.11 added (the contract check, a repo type's notes, counts to paste).
+            put("atticus.contractMismatches", action("Atticus.ContractMismatches"))
+            put("atticus.repoTypeNotes", action("Atticus.RepoTypeNotes"))
+            put("atticus.repoTypeAddNote", action("Atticus.AddNote"))
+            put("atticus.repoTypeRules", action("Atticus.DraftRules"))
+            put("atticus.repoTypeRulesSave", action("Atticus.SaveRules"))
+            put("atticus.doctorCounts", action("Atticus.DoctorCounts"))
             put("atticus.createMetarepo", action("Atticus.CreateMetarepo"))
             put("atticus.adoptRepo", action("Atticus.Adopt"))
             put("atticus.practiceSandbox", action("Atticus.Sandbox"))
