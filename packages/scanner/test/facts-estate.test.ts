@@ -226,6 +226,7 @@ describe("catalogWithFacts with the estate: calls joined to the entries of the r
       "customers-api",
       "ledger-api",
       "northwind-risk",
+      "Another repo…",
       "None of these",
     ]);
   });

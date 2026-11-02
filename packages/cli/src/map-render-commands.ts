@@ -483,6 +483,7 @@ export async function projectFactsIntoCatalog(
     op,
     existing,
     answered,
+    everyTarget,
     targets,
     ruled,
     estate,
@@ -539,8 +540,18 @@ export async function writeFactsIntoCatalog(
     const rerun = `atticus verify ${repo} --write`;
     // ADR 0151: this repo's contract files, read at the facts' commit and kept beside its facts.
     await writeRepoContracts(root, repo, o.dir, facts, (n) => io.err(n));
-    const { answered, targets, ruled, estate, result, diff, links, evidenceProblems, sharedMaps } =
-      await projectFactsIntoCatalog(root, repo, facts, { op, existing: existing.records });
+    const {
+      answered,
+      everyTarget,
+      targets,
+      ruled,
+      estate,
+      result,
+      diff,
+      links,
+      evidenceProblems,
+      sharedMaps,
+    } = await projectFactsIntoCatalog(root, repo, facts, { op, existing: existing.records });
     for (const p of evidenceProblems) io.err(p);
     for (const i of result.invalid)
       io.err(
@@ -616,6 +627,9 @@ export async function writeFactsIntoCatalog(
     const drafted = groupedTargetDrafts(facts, result.records, op, result.join?.asks, {
       ask: asked,
       split: splitTargetGroups(answered),
+      // ADR 0162 (F8): the suggestions read the estate's facts and the earlier answers.
+      estate: estate.repos,
+      questions: everyTarget,
     });
     for (const t of drafted) {
       const r = await raiseQuestions(root, [t.draft], {

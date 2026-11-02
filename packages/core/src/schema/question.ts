@@ -20,11 +20,17 @@ import { BasePath, HostPattern } from "./workspace.js";
  * answer covers (a host pattern or a path prefix, Q2), and `proposal`, the assistant's proposal a
  * person accepted as their answer (Q5). Version-1 and version-2 files read as before.
  */
-export const QUESTION_SCHEMA_VERSION = 3 as const;
+/**
+ * Version 4 (ADR 0162) adds `reopened`: a targets answer the code later disagreed with (the repo
+ * it named was read, and no route of it serves the call), so the question is open again, with
+ * why and the answer it had. Optional; version-1 to version-3 files read as before and come back
+ * as version 4 in memory.
+ */
+export const QUESTION_SCHEMA_VERSION = 4 as const;
 
 const QuestionSchemaVersion = z
-  .union([z.literal(1), z.literal(2), z.literal(QUESTION_SCHEMA_VERSION)])
-  .overwrite((): 1 | 2 | 3 => QUESTION_SCHEMA_VERSION);
+  .union([z.literal(1), z.literal(2), z.literal(3), z.literal(QUESTION_SCHEMA_VERSION)])
+  .overwrite((): 1 | 2 | 3 | 4 => QUESTION_SCHEMA_VERSION);
 
 /** A question's id: q- and 12 hex characters of the fingerprint of what it asks about. */
 export const QuestionId = z.string().regex(/^q-[0-9a-f]{12}$/, "a question id is q- and 12 hex");
@@ -172,6 +178,18 @@ export const Question = z
         at: IsoDateTime,
         why: z.string().trim().min(1),
         replacedBy: z.array(QuestionId).optional(),
+      })
+      .optional(),
+    /**
+     * ADR 0162 (F8): the question was answered, and the code read since disagrees with the answer
+     * (the repo it named has no route that serves the call), so it is open again: when, why, and
+     * the answer it had. Kept when it is answered again, as the last time it reopened.
+     */
+    reopened: z
+      .strictObject({
+        at: IsoDateTime,
+        why: z.string().trim().min(1),
+        answer: QuestionAnswer,
       })
       .optional(),
     /**

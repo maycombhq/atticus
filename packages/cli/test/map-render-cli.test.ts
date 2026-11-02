@@ -553,7 +553,12 @@ describe("atticus verify <repo> --write (ADR 0124, A3b)", () => {
     const qs = (await listQuestions(root, { state: "open", repo: "forge-ledger" })).questions;
     const q = qs.find((x) => x.askedBy.step === "facts-targets")!;
     expect(q.question).toBe("Which repo or system answers POST /notify, which ledger-api calls?");
-    expect(q.options.map((x) => x.label)).toEqual(["notify-api", "northwind-fx", "None of these"]);
+    expect(q.options.map((x) => x.label)).toEqual([
+      "notify-api",
+      "northwind-fx",
+      "Another repo…",
+      "None of these",
+    ]);
     const md = readFileSync(join(root, "map", "forge-ledger", "map.md"), "utf8");
     expect(md).toContain(`(../../questions/${q.id}.yaml)`);
     await answerQuestion(root, q.id, { option: 1, by: "dana.okafor", at: "2026-10-24T10:00:00Z" });

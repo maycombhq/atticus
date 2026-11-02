@@ -23,6 +23,11 @@ export const HOSTS_STEP = "scan-hosts";
  */
 export const TARGETS_STEP_ID = "facts-targets";
 export const TARGETS_SPLIT_LABEL = "Not all to one place";
+/**
+ * ADR 0162 (F8): the option of a targets question that opens the picker of the whole estate (the
+ * manifest's repos, the profiles' systems, the teams). It names nothing: it is never an answer.
+ */
+export const TARGETS_ANOTHER_LABEL = "Another repo…";
 
 /** The last option of a hosts question: no repo of the estate answers on it. */
 export const HOSTS_NONE = "None of these";
@@ -124,6 +129,63 @@ export async function addOutsideSystem(
       );
     await writeFileAtomic(file, doc.toString());
     return { id: sys.id, profile: rel, added: true };
+  }
+  throw new Error(`${repo} isn't in any repos.manifest.yaml`);
+}
+
+/**
+ * ADR 0162 (F8): put a system a person named in a targets answer into the profile whose
+ * repos.manifest.yaml lists the repo that asked: a vendor (boundary vendor), or another team's
+ * system (boundary internal, owner the team's id from roles.yaml). Written as a file change in the
+ * metarepo, for review in the pull request, never to a shared system. `added` is false when a
+ * system of the profiles already has the id. Throws when no manifest lists the repo, or the
+ * profile would not be valid.
+ */
+export async function addProfileSystem(
+  root: string,
+  repo: string,
+  s: { id: string; name: string; boundary: "internal" | "vendor"; owner?: string },
+): Promise<{ id: string; profile: string; added: boolean }> {
+  const platforms = await platformsOf(root);
+  const relOf = (platform: string) =>
+    `${isAdopted(root) ? ".atticus/" : ""}org-pack/profiles/${platform}/profile.yaml`;
+  for (const { dir, platform } of platforms) {
+    const text = await readFile(join(dir, "profile.yaml"), "utf8").catch(() => undefined);
+    const p = text === undefined ? undefined : Profile.safeParse(parseDocument(text).toJS());
+    if (p?.success && p.data.systems.some((x) => x.id === s.id))
+      return { id: s.id, profile: relOf(platform), added: false };
+  }
+  for (const { dir, platform } of platforms) {
+    const text = await readFile(join(dir, "repos.manifest.yaml"), "utf8").catch(() => undefined);
+    if (text === undefined) continue;
+    const repos = parseDocument(text).get("repos");
+    if (!isSeq(repos) || !repos.items.some((r) => isMap(r) && r.get("id") === repo)) continue;
+    const file = join(dir, "profile.yaml");
+    const before = await readFile(file, "utf8").catch(() => undefined);
+    const doc = parseDocument(
+      before ?? `schemaVersion: 1\nplatform: ${platform}\nname: ${platform}\n`,
+    );
+    let systems = doc.get("systems");
+    if (!isSeq(systems)) {
+      doc.set("systems", doc.createNode([]));
+      systems = doc.get("systems");
+    }
+    (systems as YAMLSeq).add(
+      doc.createNode({
+        id: s.id,
+        name: s.name,
+        boundary: s.boundary,
+        ...(s.owner ? { owner: s.owner } : {}),
+        aliases: [],
+      }),
+    );
+    const checked = Profile.safeParse(doc.toJS());
+    if (!checked.success)
+      throw new Error(
+        `${relOf(platform)} would not be valid: ${checked.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`,
+      );
+    await writeFileAtomic(file, doc.toString());
+    return { id: s.id, profile: relOf(platform), added: true };
   }
   throw new Error(`${repo} isn't in any repos.manifest.yaml`);
 }
