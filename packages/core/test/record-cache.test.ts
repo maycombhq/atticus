@@ -55,7 +55,8 @@ describe("parses kept between runs", () => {
     await writeFile(join(dir, "b.yaml"), "no b\n");
     const first = counting();
     const one = await read(dir, ["a.yaml", "b.yaml"], first.parse, root);
-    expect(first.parsed).toEqual(["a.yaml", "b.yaml"]);
+    // Both parsed, in whatever order the reads finish (they run at once; Windows CI saw b first).
+    expect([...first.parsed].sort()).toEqual(["a.yaml", "b.yaml"]);
     expect(one).toEqual([
       { rel: "a.yaml", value: "ok a" },
       { rel: "b.yaml", problem: "not ok: no b" },
