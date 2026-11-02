@@ -45,6 +45,19 @@ export interface DoctorCounts {
     open: number;
     /** By the Atticus step that asked (`map-targets`, `hosts`...). */
     byKind: Record<string, number>;
+    /**
+     * The open target questions (`facts-targets`) by how many calls each covers (one evidence
+     * line per call): asked alone, or as a group (Q1), and how many by size.
+     */
+    targets: {
+      open: number;
+      calls: number;
+      alone: number;
+      groups: number;
+      inGroups: number;
+      /** `1`, `2-4`, `5-9`, `10+`: questions covering that many calls. */
+      bySize: Record<string, number>;
+    };
   };
   links: {
     /** Calls joined to their entry with both ends declared and nothing guessed. */
@@ -55,10 +68,17 @@ export interface DoctorCounts {
     inferredBy: Record<string, number>;
     /** Calls the join asked a person about (more than one callee, a host nobody lists). */
     asked: number;
+    /** The asked ones by the join's reason (`ambiguous`, `unknown-host`, `cycle`). */
+    askedBy: Record<string, number>;
     /** Calls left to a system outside the estate. */
     outside: number;
     /** Calls nothing answers: no join, no question, no outside system. */
     unresolved: number;
+    /**
+     * The unresolved ones by why the join left them (`JOIN_LEFT_REASONS`: `no-host`,
+     * `unresolved-placeholder`, `host-no-route`...); `other` for one it gave no reason for.
+     */
+    unresolvedBy: Record<string, number>;
   };
   repos: {
     total: number;
@@ -132,6 +152,28 @@ export async function doctorCounts(
   const byKind: Record<string, number> = {};
   for (const q of qs.questions)
     bump(byKind, QUESTION_STEPS.has(q.askedBy.step) ? q.askedBy.step : OTHER_STEP);
+  // The target questions by the calls each covers: a call's own cites its line, a group's
+  // every member's (Q1), so its evidence lines are its calls.
+  const targets = {
+    open: 0,
+    calls: 0,
+    alone: 0,
+    groups: 0,
+    inGroups: 0,
+    bySize: {} as Record<string, number>,
+  };
+  for (const q of qs.questions) {
+    if (q.askedBy.step !== TARGETS_STEP_ID) continue;
+    const n = Math.max(1, new Set(q.evidence).size);
+    targets.open++;
+    targets.calls += n;
+    if (n === 1) targets.alone++;
+    else {
+      targets.groups++;
+      targets.inGroups += n;
+    }
+    bump(targets.bySize, n === 1 ? "1" : n <= 4 ? "2-4" : n <= 9 ? "5-9" : "10+");
+  }
 
   // Repos: each one's freshness, as `atticus estate fresh` reads it.
   const fresh = await estateFreshness(root, o.git ? { git: o.git } : {}).catch(() => {
@@ -195,7 +237,16 @@ export async function doctorCounts(
   }
 
   // Links: the estate join over the verified facts on file, as `atticus verify --write` makes it.
-  const links = { verified: 0, inferred: 0, inferredBy: {}, asked: 0, outside: 0, unresolved: 0 };
+  const links = {
+    verified: 0,
+    inferred: 0,
+    inferredBy: {},
+    asked: 0,
+    askedBy: {},
+    outside: 0,
+    unresolved: 0,
+    unresolvedBy: {},
+  };
   let op: OrgPack | undefined;
   try {
     op = await loadOrgPack(orgPackDirOf(root));
@@ -210,7 +261,11 @@ export async function doctorCounts(
     }
 
   return {
-    questions: { open: qs.questions.length, byKind: sorted(byKind) },
+    questions: {
+      open: qs.questions.length,
+      byKind: sorted(byKind),
+      targets: { ...targets, bySize: bySizeOrder(targets.bySize) },
+    },
     links,
     repos: {
       total,
@@ -234,6 +289,8 @@ async function linkCounts(root: string, op: OrgPack): Promise<DoctorCounts["link
     outside: outsideSystems(op),
     ...joinConventions(op),
     walkGateways: helperOn("gateway-walk"),
+    // Why each call was left, in the join's own words, for unresolvedBy.
+    explain: true,
   });
   const factOf = new Map<string, Fact>();
   for (const r of repos) for (const f of r.facts) factOf.set(`${r.repo}\u0000${f.id}`, f);
@@ -245,10 +302,13 @@ async function linkCounts(root: string, op: OrgPack): Promise<DoctorCounts["link
     inferred: 0,
     inferredBy: {},
     asked: 0,
+    askedBy: {},
     outside: 0,
     unresolved: 0,
+    unresolvedBy: {},
   };
   const answered = new Set<string>();
+  const why = new Map((join.left ?? []).map((l) => [key(l.call), l.reason as string]));
   for (const j of join.joins) {
     answered.add(key(j.call));
     if (!isGuessedJoin(j) && declared(j.call) && declared(j.entry)) out.verified++;
@@ -263,6 +323,7 @@ async function linkCounts(root: string, op: OrgPack): Promise<DoctorCounts["link
     if (answered.has(key(a.call))) continue;
     answered.add(key(a.call));
     out.asked++;
+    bump(out.askedBy, a.reason);
   }
   for (const x of join.outside ?? []) {
     if (answered.has(key(x.call))) continue;
@@ -272,9 +333,14 @@ async function linkCounts(root: string, op: OrgPack): Promise<DoctorCounts["link
   for (const r of repos)
     for (const f of r.facts) {
       if (f.kind !== "call" || LISTENS.test(f.method ?? "")) continue;
-      if (!answered.has(`${r.repo}\u0000${f.id}`)) out.unresolved++;
+      const k = `${r.repo}\u0000${f.id}`;
+      if (answered.has(k)) continue;
+      out.unresolved++;
+      bump(out.unresolvedBy, why.get(k) ?? "other");
     }
   out.inferredBy = sorted(out.inferredBy);
+  out.askedBy = sorted(out.askedBy);
+  out.unresolvedBy = sorted(out.unresolvedBy);
   return out;
 }
 
@@ -284,14 +350,33 @@ const kv = (m: Record<string, number>) =>
     .map(([k, n]) => `${k} ${n}`)
     .join(", ");
 
+/** The question sizes in order: 1, 2-4, 5-9, 10+. */
+const SIZES = ["1", "2-4", "5-9", "10+"];
+const bySizeOrder = (m: Record<string, number>) =>
+  Object.fromEntries(SIZES.filter((k) => m[k]).map((k) => [k, m[k]!]));
+
 /** The counts as lines: numbers and Atticus's own words only. */
 export function countsLines(c: DoctorCounts): string[] {
   const by = kv(c.questions.byKind);
   const inferred = kv(c.links.inferredBy);
   const states = kv(c.repos.byState);
+  const askedBy = kv(c.links.askedBy);
+  const unresolvedBy = kv(c.links.unresolvedBy);
+  const t = c.questions.targets;
+  const sizes = kv(t.bySize);
   return [
     `Questions: ${c.questions.open} open${by ? ` (${by})` : ""}`,
+    ...(t.open
+      ? [
+          `Target questions: ${t.open} open, covering ${t.calls} calls: ${t.alone} asked alone, ${t.groups} groups holding ${t.inGroups}${sizes ? ` (by calls each: ${sizes})` : ""}`,
+        ]
+      : []),
     `Links: ${c.links.verified} verified, ${c.links.inferred} inferred${inferred ? ` (${inferred})` : ""}, ${c.links.asked} asked, ${c.links.outside} to outside systems, ${c.links.unresolved} unresolved calls`,
+    ...(askedBy || unresolvedBy
+      ? [
+          `Calls ${[askedBy ? `asked by why: ${askedBy}` : "", unresolvedBy ? `unresolved by why: ${unresolvedBy}` : ""].filter(Boolean).join("; ")}`,
+        ]
+      : []),
     `Repos: ${c.repos.total} in all, ${c.repos.read} read, ${c.repos.unread} unread, ${c.repos.stale} stale${states ? ` (${states})` : ""}`,
     `Facts: ${c.facts.accepted} accepted, ${c.facts.rejected} rejected, ${c.facts.notVerified} not verified; ${c.facts.filesNotRead} source files not read`,
     `Tokens reported: ${c.tokens.reported} tokens over ${c.tokens.reports} reports for ${c.tokens.repos} repos`,

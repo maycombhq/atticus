@@ -519,7 +519,7 @@ Usage:
   atticus setup [--json]               The setup checklist until the catalog is accepted, with a fix for each step
   atticus baseline                     Accept the as-is catalog as the baseline [--note text] [--site dir]
   atticus doctor [--json]              Check this machine: Node, Git, OpenSpec, proxy, TLS, disk, port, assistant, and the tier your assistant reads a repo at
-  atticus doctor --counts [--json]     How far the map has got, in counts and flags only (questions, links by how joined, repos read and stale, facts, tokens reported): nothing named, safe to paste
+  atticus doctor --counts [--json]     How far the map has got, in counts and flags only (questions, target questions by the calls each covers, links by how joined, asked and unresolved calls by why the join left them, repos read and stale, facts, tokens reported): nothing named, safe to paste
   atticus probe                        Measure what your assistant can do here (open a file, write one, run a command), so the tier it reads a repo at is measured, not read off runtime.yaml; then /atticus-probe in the assistant (ADR 0124) [--assistant id] [--max-tokens n] [--json]
   atticus probe answer <code>          Check the assistant's answer (none when it couldn't open the file) and keep what it measured in .atticus/probe/<assistant>.yaml, on this machine only [--pasted] [--max-tokens n] [--json]
   atticus secret set|check|forget <name>  Keep a model provider's key in this machine's credential store under the name runtime.yaml gives as keyEnv; read from stdin, never printed
