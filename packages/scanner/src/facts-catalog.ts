@@ -32,12 +32,14 @@ import {
   type FactOf,
   type FactJoin,
   type FactJoinAsk,
+  type FactJoinMiss,
   type FactsJoinResult,
   type FlowRecord,
   type JoinRepo,
   type OrgPack,
   type Question,
   type QuestionDraft,
+  type QuestionOption,
   type RecordIssue,
   applyCurated,
   applyLinkEvidence,
@@ -54,6 +56,13 @@ import {
   type TrafficOnFile,
 } from "@maycombhq/core";
 import { estateRepos, isPrototypeRepo, mergeEstate } from "./merge-input.js";
+import {
+  offeredSuggestions,
+  targetSuggestions,
+  TARGETS_ANOTHER,
+  type SuggestContext,
+  type TargetSuggestion,
+} from "./target-suggest.js";
 
 /**
  * A repo's verified facts written into the catalog (ADR 0124, A3b). The facts are projected into
@@ -142,6 +151,12 @@ export interface FactsCatalogResult {
    * one repo).
    */
   terms?: TermsResult;
+  /**
+   * ADR 0162 (F8): with the estate, the calls a person's answer sends to a repo that is read, where
+   * no route of it serves the call: this repo's calls, and the other repos' calls answered to this
+   * repo. Their questions open again with the reason.
+   */
+  answerMisses?: FactJoinMiss[];
 }
 
 type Rec = CatalogRecord & Record<string, unknown>;
@@ -265,11 +280,6 @@ function targetAsks(
   return { list, repoOf };
 }
 
-/**
- * The outside systems a target question offers (O2): every vendor, and every other system the
- * profiles declare that no estate repo belongs to (another team's), by id.
- */
-const vendorsOf = (op: OrgPack) => outsideProfileSystems(op);
 /** What an outside system is, in a target question's words (O2). */
 const outsideAs = (s: { boundary: string }) =>
   s.boundary === "vendor" ? "an outside system" : "another team's system";
@@ -287,10 +297,107 @@ export interface TargetQuestionDraft {
   draft: QuestionDraft;
 }
 
+/** What the suggestions are read from beside the catalog (ADR 0162, F8). */
+export interface TargetDraftContext {
+  /** The other repos' verified facts: which repos are read, their entries, Routes and proxies. */
+  estate?: SuggestContext["estate"];
+  /** Every targets question on file: the caller repo's earlier answers. */
+  questions?: SuggestContext["questions"];
+}
+
+/** A suggestion as an option of a targets question: what it is, why, and what picking it does. */
+function suggestionOption(
+  s: TargetSuggestion,
+  callerRepo: string,
+  what: string,
+  n?: number,
+): QuestionOption {
+  const calls = n ? `all ${n} calls: ${what}` : what;
+  const why = s.why.length ? `. Suggested: ${s.why.slice(0, 3).join("; ")}` : "";
+  if (s.kind === "outside")
+    return {
+      label: s.label,
+      means: `${s.name}, ${outsideAs({ boundary: s.boundary ?? "vendor" })}, answers ${calls}${why}`,
+      changes: n
+        ? `The ${n} calls go to ${s.name} when the facts are next written`
+        : `The call goes to ${s.name} when the facts are next written`,
+    };
+  const who =
+    s.label === s.repo
+      ? `${s.repo}${s.read ? "" : ", not read yet,"}`
+      : `${s.label}, built in ${s.repo}${s.read ? "" : ", not read yet"},`;
+  const them = n ? `The ${n} calls` : "The call";
+  return {
+    label: s.label,
+    means: `${who} answers ${calls}${why}`,
+    changes: s.read
+      ? `${them} ${n ? "join" : "joins"} ${s.label} when the facts are next written (atticus verify ${callerRepo} --write)`
+      : `${them} ${n ? "go" : "goes"} to ${s.repo} when the facts are next written (atticus verify ${callerRepo} --write), and ${n ? "join" : "joins"} its route once ${s.repo} is read and verified (/atticus-map ${s.repo}); if no route of it serves ${n ? "them" : "it"}, the question opens again`,
+  };
+}
+
+/** The "Another repo…" option: the picker of the whole estate (ADR 0162, F8). */
+const anotherOption = (op: OrgPack): QuestionOption => {
+  const repos = estateRepos(op).length;
+  const systems = new Set(op.profiles.flatMap((p) => (p.profile?.systems ?? []).map((s) => s.id)))
+    .size;
+  const teams = op.roles?.teams?.length ?? 0;
+  return {
+    label: TARGETS_ANOTHER,
+    means: `A repo, system or team not listed here: the manifest's ${repos} repos (read or not), the profiles' ${systems} systems and the ${teams} teams in roles.yaml`,
+    changes:
+      "Nothing until you name one: atticus questions answer <id> --target <repo, system or team id> lists them and takes the one you name (the app's Questions page lists them too); naming a vendor or a team with no system adds that system to the profile for review",
+  };
+};
+
+/** The suggestions offered for calls (one, or a group's), merged by label and bounded. */
+function offered(
+  members: readonly TargetAsk[],
+  facts: readonly Fact[],
+  records: readonly CatalogRecord[],
+  op: OrgPack,
+  asks: readonly FactJoinAsk[] | undefined,
+  ctx: TargetDraftContext,
+): TargetSuggestion[] {
+  const merged = new Map<string, TargetSuggestion>();
+  for (const m of members) {
+    const ambiguous = asks?.some(
+      (a) => a.reason === "ambiguous" && a.call.repo === m.f.repo && a.call.fact === m.f.id,
+    );
+    for (const s of targetSuggestions(m.f, {
+      op,
+      records,
+      facts,
+      ...(ctx.estate ? { estate: ctx.estate } : {}),
+      ...(ctx.questions ? { questions: ctx.questions } : {}),
+      ...(ambiguous ? { only: m.servers } : {}),
+    })) {
+      const x = merged.get(s.label);
+      if (!x) merged.set(s.label, { ...s, why: [...s.why] });
+      else {
+        x.score += s.score;
+        for (const w of s.why) if (!x.why.includes(w)) x.why.push(w);
+      }
+    }
+  }
+  const ranked = [...merged.values()].sort(
+    (a, b) =>
+      b.score - a.score ||
+      Number(b.read) - Number(a.read) ||
+      (a.kind === b.kind ? 0 : a.kind === "repo" ? -1 : 1) ||
+      a.label.localeCompare(b.label),
+  );
+  const serving = new Set(members.flatMap((m) => m.servers));
+  const types = new Set(members.flatMap((m) => SERVES[m.f.callType] ?? []));
+  // A read repo that serves the call's type was always offered: it fills the list, unranked.
+  return offeredSuggestions(ranked, { types, serving });
+}
+
 /**
  * One question (ADR 0078) per call that has no target and no host: which repo or system answers
- * it. The options are the components of other repos that serve that kind of call, then the
- * outside systems of the profiles (a vendor, another team's: O2), then "None of these".
+ * it. ADR 0162 (F8): the options are the repos of the manifest, read or not, and the outside
+ * systems, ranked by the evidence and bounded, each saying why and whether the repo is read; then
+ * "Another repo…" (the whole estate's picker) and "None of these".
  */
 export function targetQuestionDrafts(
   facts: readonly Fact[],
@@ -298,24 +405,19 @@ export function targetQuestionDrafts(
   op: OrgPack,
   /** The estate join's questions: a call two or more entries could answer offers only those. */
   asks?: readonly FactJoinAsk[],
+  ctx: TargetDraftContext = {},
 ): { factId: string; id: string; repo: string; draft: QuestionDraft }[] {
-  const { list, repoOf } = targetAsks(facts, records, asks);
-  const vendors = vendorsOf(op);
-  return list.map(({ f, q, servers }) => {
+  const { list } = targetAsks(facts, records, asks);
+  return list.map((m) => {
+    const { f, q } = m;
     const what = callWhat(f);
     const draft: QuestionDraft = {
       question: q.question,
       options: [
-        ...servers.map((c) => ({
-          label: c,
-          means: `${c}${repoOf.get(c) ? `, built in ${repoOf.get(c)},` : ""} answers ${what}`,
-          changes: `The call joins ${c} when the facts are next written (atticus verify ${f.repo} --write)`,
-        })),
-        ...vendors.map((s) => ({
-          label: s.id,
-          means: `${s.name}, ${outsideAs(s)}, answers ${what}`,
-          changes: `The call goes to ${s.name} when the facts are next written`,
-        })),
+        ...offered([m], facts, records, op, asks, ctx).map((s) =>
+          suggestionOption(s, f.repo, what),
+        ),
+        anotherOption(op),
         {
           label: TARGETS_NONE,
           means: "Nothing in the estate or the org pack's systems answers it",
@@ -411,17 +513,22 @@ export function groupedTargetDrafts(
   records: readonly CatalogRecord[],
   op: OrgPack,
   asks: readonly FactJoinAsk[] | undefined,
-  o: { ask: ReadonlySet<string>; split?: ReadonlySet<string> },
+  o: { ask: ReadonlySet<string>; split?: ReadonlySet<string> } & TargetDraftContext,
 ): TargetQuestionDraft[] {
-  const { list, repoOf } = targetAsks(facts, records, asks);
-  const own = new Map(targetQuestionDrafts(facts, records, op, asks).map((d) => [d.factId, d]));
+  const { list } = targetAsks(facts, records, asks);
+  const ctx: TargetDraftContext = {
+    ...(o.estate ? { estate: o.estate } : {}),
+    ...(o.questions ? { questions: o.questions } : {}),
+  };
+  const own = new Map(
+    targetQuestionDrafts(facts, records, op, asks, ctx).map((d) => [d.factId, d]),
+  );
   const groups = new Map<string, TargetAsk[]>();
   for (const a of list) {
     if (!o.ask.has(a.f.id)) continue;
     const k = targetGroupQuestion(a.f.repo, a.f);
     groups.set(k, [...(groups.get(k) ?? []), a]);
   }
-  const vendors = vendorsOf(op);
   const out: TargetQuestionDraft[] = [];
   for (const [question, members] of groups) {
     if (members.length === 1 || o.split?.has(question)) {
@@ -435,21 +542,14 @@ export function groupedTargetDrafts(
         ? `${whats.slice(0, 5).join(", ")} and ${whats.length - 5} more`
         : whats.join(", ");
     const n = members.length;
-    const servers = [...new Set(members.flatMap((m) => m.servers))].sort();
     const evidence = [...new Set(members.flatMap((m) => m.q.evidence))].sort(byLine);
     const draft: QuestionDraft = {
       question,
       options: [
-        ...servers.map((c) => ({
-          label: c,
-          means: `${c}${repoOf.get(c) ? `, built in ${repoOf.get(c)},` : ""} answers all ${n} calls: ${listed}`,
-          changes: `The ${n} calls join ${c} when the facts are next written (atticus verify ${repo} --write)`,
-        })),
-        ...vendors.map((s) => ({
-          label: s.id,
-          means: `${s.name}, ${outsideAs(s)}, answers all ${n} calls: ${listed}`,
-          changes: `The ${n} calls go to ${s.name} when the facts are next written`,
-        })),
+        ...offered(members, facts, records, op, asks, ctx).map((s) =>
+          suggestionOption(s, repo, listed, n),
+        ),
+        anotherOption(op),
         {
           label: TARGETS_SPLIT,
           means: `The ${n} calls (${listed}) don't all go to one place`,
@@ -593,8 +693,9 @@ export function targetsFromAnswers(
     }
     let label =
       asked && asked.state === "answered" && asked.answer ? answerLabel(asked) : undefined;
-    if (!label || label === TARGETS_SPLIT) label = ruled.get(f.id)?.label;
-    if (!label || label === TARGETS_SPLIT) continue;
+    if (!label || label === TARGETS_SPLIT || label === TARGETS_ANOTHER)
+      label = ruled.get(f.id)?.label;
+    if (!label || label === TARGETS_SPLIT || label === TARGETS_ANOTHER) continue;
     // F3: "None of these" binds: the call is kept out of the join, not guessed by path.
     if (label === TARGETS_NONE) {
       out[f.id] = NO_TARGET;
@@ -604,6 +705,33 @@ export function targetsFromAnswers(
     if (to) out[f.id] = to;
   }
   return out;
+}
+
+/**
+ * ADR 0162 (F8): the answered targets question whose answer names a call's target: the call's own,
+ * else its group's (Q1) when the call is one the group asked. A target only a rule gives (Q2) has
+ * none here: one call that disagrees doesn't reopen a rule that covers many.
+ */
+export function answeredQuestionOfCall(
+  repo: string,
+  facts: readonly Fact[],
+  questions: readonly Question[],
+  factId: string,
+): Question | undefined {
+  const f = facts.find((x) => x.id === factId);
+  if (!f || f.kind !== "call") return undefined;
+  const own = targetQuestionFor(f)!;
+  const ownId = questionId({ step: TARGETS_STEP, repo, ...own });
+  const answered = questions.filter(
+    (q) => q.askedBy?.step === TARGETS_STEP && q.state === "answered" && q.repo === repo,
+  );
+  return (
+    answered.find((q) => q.id === ownId) ??
+    answered.find(
+      (q) =>
+        q.question.trim() === targetGroupQuestion(repo, f) && q.evidence.includes(own.evidence[0]!),
+    )
+  );
 }
 
 /** How a join found its callee, in the words a retired question says. */
@@ -1089,6 +1217,7 @@ export function catalogWithFacts(given: FactsCatalogInput): FactsCatalogResult {
   /** A joined call's projected record id → the callee and the entry a call-out step reaches. */
   const stepTo = new Map<string, { component: string; entry: string }>();
   let join: FactsJoinResult | undefined;
+  let answerMisses: FactJoinMiss[] | undefined;
   let estateJoin: { whole: FactsJoinResult; repos: JoinRepo[] } | undefined;
   let terms: TermsResult | undefined;
   let records0 = [...kept, ...newRecords];
@@ -1104,6 +1233,21 @@ export function catalogWithFacts(given: FactsCatalogInput): FactsCatalogResult {
     });
     join = joinAbout(whole, repo);
     estateJoin = { whole, repos };
+    // F8: an answer the code now disagrees with, about a call of this repo or into it.
+    const named = { ...input.estateTargets, [repo]: input.targets ?? {} };
+    const mine = new Set([
+      factIdPart(repo),
+      ...repos
+        .filter((r) => r.repo === repo)
+        .flatMap((r) => [r.component, ...(r.modules ?? []).map((m) => m.component)])
+        .filter((x): x is string => !!x)
+        .map(factIdPart),
+      ...facts.flatMap((f) => (f.component ? [factIdPart(f.component)] : [])),
+    ]);
+    answerMisses = whole.misses.filter((m) => {
+      const t = named[m.call.repo]?.[m.call.fact];
+      return !!t && t !== NO_TARGET && (m.call.repo === repo || mine.has(factIdPart(m.target)));
+    });
     // A-callers: who this repo's gateway routes let in, read from the whole estate's join (a
     // route's scanned callers may be anywhere) and the systems people declared.
     records0 = applyFactJoins(records0, join, repos, {
@@ -1287,6 +1431,7 @@ export function catalogWithFacts(given: FactsCatalogInput): FactsCatalogResult {
     ...(linkEvidence ? { linkEvidence } : {}),
     ...(sharedWhole ? { shared: sharedJoinAbout(sharedWhole, repo) } : {}),
     ...(terms ? { terms } : {}),
+    ...(answerMisses?.length ? { answerMisses } : {}),
   };
 }
 
@@ -1363,4 +1508,127 @@ export function estateFromFacts(input: {
     walkGateways: helperOn("gateway-walk"),
   });
   return { records, specs, join, invalid };
+}
+
+/**
+ * ADR 0162 (F8): an answer given the same way in several repos: the calls on one host (or through
+ * one config key) that people answered with the same target in two or more repos. One answer can
+ * say it for all of them: as a rule (Q2, an answer's `match` with a repo-type scope) when the repos
+ * share a type, or as a note on that repo type (repo-types/<type>/type.yaml `notes:`, ADR 0163).
+ * Only the offer's words and its command are made here; nothing is written.
+ */
+export interface AnswerRuleOffer {
+  /** `on <host>` or `through <config key>`. */
+  via: string;
+  /** The target every answer names. */
+  label: string;
+  repos: string[];
+  /** The answered questions, sorted. */
+  questions: string[];
+  /** The rule the answer would carry: the host, or the calls' shared path prefix. */
+  match?: string;
+  /** The repos' one type, when they share it. */
+  type?: string;
+  /** The command that makes it a rule, when it can be one. */
+  command?: string;
+  /** The note it would be on the repo type, and the file it goes in. */
+  note?: { file: string; text: string };
+  /** The offer in a person's words. */
+  line: string;
+}
+
+export function answerRuleOffers(input: {
+  repos: readonly { repo: string; facts: readonly Fact[]; type?: string }[];
+  questions: readonly Question[];
+  /** The org pack's folder as a message names it (org-pack, or .atticus/org-pack). */
+  orgPack?: string;
+}): AnswerRuleOffer[] {
+  const pack = input.orgPack ?? "org-pack";
+  const ruled = input.questions.filter(
+    (q) => q.askedBy?.step === TARGETS_STEP && q.state === "answered" && !!q.answer?.match,
+  );
+  const groups = new Map<
+    string,
+    {
+      repo: string;
+      q: Question;
+      label: string;
+      f: FactOf<"call">;
+      facts: readonly Fact[];
+      type?: string;
+    }[]
+  >();
+  for (const r of input.repos)
+    for (const f of r.facts) {
+      if (f.kind !== "call") continue;
+      const q = answeredQuestionOfCall(r.repo, r.facts, input.questions, f.id);
+      const label = q ? answerLabel(q) : undefined;
+      if (
+        !q ||
+        !label ||
+        label === TARGETS_NONE ||
+        label === TARGETS_SPLIT ||
+        label === TARGETS_ANOTHER
+      )
+        continue;
+      if (q.answer?.match) continue;
+      const url = urlOf(f, r.facts);
+      const host = url ? urlHostPort(url)?.host : undefined;
+      const via = host ? `on ${host.toLowerCase()}` : f.base ? `through ${f.base}` : undefined;
+      if (!via) continue;
+      groups.set(via, [
+        ...(groups.get(via) ?? []),
+        { repo: r.repo, q, label, f, facts: r.facts, ...(r.type ? { type: r.type } : {}) },
+      ]);
+    }
+  const out: AnswerRuleOffer[] = [];
+  for (const [via, xs] of [...groups].sort(([a], [b]) => a.localeCompare(b))) {
+    const repos = [...new Set(xs.map((x) => x.repo))].sort();
+    const labels = new Set(xs.map((x) => slugify(x.label)));
+    if (repos.length < 2 || labels.size !== 1) continue;
+    // Already said once by a rule that covers every call.
+    if (xs.every((x) => ruled.some((q) => ruleCoversCall(q.answer!.match!, x.f, x.facts))))
+      continue;
+    const label = xs[0]!.label;
+    const prefixes = new Set(xs.map((x) => targetPathPrefix(x.f.path)));
+    const prefix = prefixes.size === 1 ? [...prefixes][0]! : undefined;
+    const match = via.startsWith("on ")
+      ? via.slice(3)
+      : prefix && prefix !== "/"
+        ? `${prefix}/**`
+        : undefined;
+    const types = new Set(xs.map((x) => x.type));
+    const type = types.size === 1 ? xs[0]!.type : undefined;
+    const questions = [...new Set(xs.map((x) => x.q.id))].sort();
+    const first = xs.find((x) => x.q.id === questions[0])!.q;
+    const n = first.options.findIndex((o) => o.label === label);
+    const pick = n >= 0 ? `--option ${n + 1}` : `--text "${label}"`;
+    const command =
+      match && type
+        ? `atticus questions answer ${first.id} ${pick} --match ${match} --scope repo-type --type ${type}`
+        : undefined;
+    const note = type
+      ? { file: `${pack}/repo-types/${type}/type.yaml`, text: `Calls ${via} go to ${label}.` }
+      : undefined;
+    out.push({
+      via,
+      label,
+      repos,
+      questions,
+      ...(match ? { match } : {}),
+      ...(type ? { type } : {}),
+      ...(command ? { command } : {}),
+      ...(note ? { note } : {}),
+      line: [
+        `${repos.length} repos (${repos.join(", ")}) answer the calls ${via} the same way, ${label} (${questions.join(", ")}): one answer can say it for every ${type ?? "such"} repo.`,
+        command ? `As a rule: ${command}.` : undefined,
+        note
+          ? `Or as a note on the repo type: add "${note.text}" under notes: in ${note.file}.`
+          : undefined,
+      ]
+        .filter(Boolean)
+        .join(" "),
+    });
+  }
+  return out;
 }

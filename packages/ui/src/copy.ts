@@ -226,6 +226,32 @@ export const COPY = {
       hint: "A host pattern (*.payments.forge.internal) or a path prefix (/forge/limits/**): your answer then covers every call that matches, the calls found later too, in the repos the scope above allows.",
       answered: (match: string) => `By rule: every call matching ${match}`,
     },
+    // ADR 0162 (F8): "Another repo…", the picker of the whole estate, and a reopened answer.
+    another: {
+      label: "Which repo, system or team",
+      loading: "Loading the repos, systems and teams…",
+      failed: (why: string) => `The list didn't load: ${why}`,
+      empty: "The org pack lists no repos, systems or teams yet. Answer in your own words instead.",
+      choose: "Choose one",
+      repos: "Repos of the manifest",
+      systems: "Systems of the profile",
+      teams: "Teams in roles.yaml",
+      notRead: "not read yet",
+      noSystem: "no system yet",
+      newVendor: "Not listed: a vendor's name",
+      newVendorHint:
+        "Leave the list on “Choose one” and type a vendor's name to add it to the profile.",
+      pickOne: "Choose a repo, system or team, or type a vendor's name.",
+      addTeam: (team: string, system: string) =>
+        `${team} has no system yet: add ${system} (another team's, owner ${team}) to the profile, as a file change for review in the pull request`,
+      addVendor: (name: string) =>
+        `Add ${name} to the profile as a vendor, as a file change for review in the pull request`,
+      needAdd: "Tick the box to add the system to the profile, or choose one that is listed.",
+      added: (id: string, profile: string) =>
+        `Wrote the system ${id} into ${profile}; review it in the same pull request.`,
+    },
+    reopened: (why: string, answer: string, day: string) =>
+      `Asked again on ${day}: you answered ${answer}, and ${why}`,
     // ADR 0153 (Q5): an answer accepted from the assistant's proposal says so.
     fromProposal: (by: string, day: string) =>
       `It was ${by}'s proposal (${day}), confirmed by the person who answered. It cited:`,
@@ -3290,6 +3316,47 @@ export const COPY = {
   },
   graph: {
     map: "Map",
+  },
+  /** The diagram viewer every picture shares (F10): fit, zoom, search, focus and full screen. */
+  viewer: {
+    toolbar: "Picture controls",
+    zoomIn: "Zoom in",
+    zoomOut: "Zoom out",
+    reset: "Actual size",
+    fit: "Fit to screen",
+    fitSelection: "Zoom to the picked box",
+    focus: "Focus on the picked box",
+    focusOff: "Show everything",
+    fullScreen: "Full screen",
+    leaveFullScreen: "Leave full screen",
+    zoomLevel: (pct: number) => `Zoom ${pct}%`,
+    search: "Find a box",
+    searchPlaceholder: "Find a repo, system or topic",
+    found: (label: string) => `${label}: centred and picked.`,
+    notFound: (q: string) => `Nothing here is called ${q}.`,
+    minimap: "Map of the whole picture",
+    /** What each key does, said once beside the picture. */
+    keys: "Keys: + and − zoom, 0 fits, 1 is actual size, arrows pan, S zooms to the picked box, M focuses on it, F is full screen, / finds a box, Esc leaves full screen.",
+    region: (title: string) => `${title}: picture`,
+    fullScreenOn: "Full screen. Press Esc to leave.",
+    focusOn: (label: string) =>
+      `Focus on ${label} and what it links to; everything else is dimmed.`,
+    details: "Details",
+    hideDetails: "Hide details",
+    showDetails: "Show details",
+  },
+  /** Topics and queues on the picture (F10): who owns each, and what the estate lacks on it. */
+  topics: {
+    owner: (who: string) => `Owner: ${who}`,
+    ownerOutside: (who: string) => `Owner: ${who} (outside the estate)`,
+    ownerUnknown: "Owner not known",
+    noListener: "No listener in the estate",
+    noPublisher: "No publisher in the estate",
+    noListenerFix:
+      "Read the repo that listens on it, or, if a system outside the estate does, name that system so its listener is known.",
+    noPublisherFix:
+      "Read the repo that publishes to it, or, if a system outside the estate does, name that system so its publisher is known.",
+    listens: "listens",
   },
   me: {
     aiIsOffHere: "AI is off here, so write it yourself: the critic's rule checks still review it.",

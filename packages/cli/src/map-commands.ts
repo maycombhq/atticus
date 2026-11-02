@@ -485,7 +485,52 @@ function rejectedText(r: MapState["rejected"][number], source: FileSource): stri
   ].join("\n");
 }
 
-function questionsText(qs: Question[]): string {
+/**
+ * ADR 0162 (F8): the answers by rule (Q2) from other repos' questions whose scope covers this repo
+ * (its type, or the repo itself), so /atticus-map is given them beside the repo's own answers and
+ * doesn't ask what one settles.
+ */
+export async function rulesCovering(
+  root: string,
+  repo: string,
+  op: OrgPack,
+): Promise<{ id: string; from: string; match: string; answer: string; scope: string }[]> {
+  const type = op.profiles.flatMap((p) => p.repos?.repos ?? []).find((r) => r.id === repo)?.type;
+  const all = (await listQuestions(root, { state: "answered" }).catch(() => ({ questions: [] })))
+    .questions;
+  return all
+    .filter(
+      (q) =>
+        q.repo !== repo &&
+        !!q.answer?.match &&
+        (q.answer.scope.level === "repo"
+          ? q.answer.scope.id === repo
+          : !!type && q.answer.scope.id === type),
+    )
+    .map((q) => ({
+      id: q.id,
+      from: q.repo,
+      match: q.answer!.match!,
+      answer: q.answer!.text ?? q.options[(q.answer!.option ?? 1) - 1]?.label ?? "",
+      scope: q.answer!.scope.level === "repo" ? repo : `every ${q.answer!.scope.id} repo`,
+    }))
+    .sort((a, b) => a.id.localeCompare(b.id));
+}
+
+/** A rule covering the repo, as a line the reader and the person read. */
+export const ruleLineOf = (r: {
+  id: string;
+  from: string;
+  match: string;
+  answer: string;
+  scope: string;
+}) =>
+  `Rule ${r.id} (answered for ${r.from}, covers ${r.scope}): the calls matching ${r.match} go to ${r.answer}.`;
+
+function questionsText(
+  qs: Question[],
+  rules: Awaited<ReturnType<typeof rulesCovering>> = [],
+): string {
   return [
     "Questions already on file for this repo. Don't ask them again; follow each answer a person gave.",
     ...qs.map(
@@ -496,6 +541,12 @@ function questionsText(qs: Question[]): string {
             : "waiting for a person"
         }`,
     ),
+    ...(rules.length
+      ? [
+          "Answers by rule that cover this repo, from other repos' questions. A call one matches goes where it says: don't ask about it.",
+          ...rules.map((r) => `- ${ruleLineOf(r)}`),
+        ]
+      : []),
   ].join("\n");
 }
 
@@ -626,6 +677,7 @@ async function packFor(
   const onFile = (await listQuestions(root, { repo: s.repo })).questions.filter(
     (q) => q.state !== "retired",
   );
+  const rules = await rulesCovering(root, s.repo, op);
   const slices = fix ? [] : s.batches[batch]!;
   const rejected = s.rejected.map((r) => rejectedText(r, source));
   // The topic rules of the batch's files (planned to fit), and of the files its rejected facts
@@ -710,13 +762,13 @@ async function packFor(
           },
         ]
       : []),
-    ...(onFile.length
+    ...(onFile.length || rules.length
       ? [
           {
             id: "4-questions",
             kind: "document" as const,
             origin: "questions/",
-            text: questionsText(onFile),
+            text: questionsText(onFile, rules),
             classification: "internal",
             priority: 4,
           },
@@ -1389,6 +1441,8 @@ async function estimate(
     (q) => q.state !== "retired",
   );
   const notes = await notesAt(root, repo, c.dir, c.op);
+  // ADR 0162 (F8): the answers by rule from other repos' questions that cover this repo.
+  const rules = await rulesCovering(root, repo, c.op);
   // R3 (ADR 0147): house packages it imports that no taught framework covers, to teach first.
   const house = await houseUntaughtOf(root, repo, {
     dir: c.dir,
@@ -1452,6 +1506,7 @@ async function estimate(
             state: q.state,
             ...(q.answer ? { answer: q.answer } : {}),
           })),
+          rules,
           // A re-read: what the files and batches above are, and the facts to revisit.
           reread: reread
             ? {
@@ -1575,6 +1630,8 @@ async function estimate(
     io.out(
       `Question ${q.id}: ${q.question} (${q.state === "answered" ? `answered: ${q.answer?.text ?? q.options[(q.answer?.option ?? 1) - 1]?.label ?? ""}` : "open"})`,
     );
-  if (questions.length) io.out("Follow each answer; don't ask these again.");
+  for (const r of rules) io.out(ruleLineOf(r));
+  if (questions.length || rules.length)
+    io.out("Follow each answer and each rule; don't ask what they settle again.");
   return 0;
 }

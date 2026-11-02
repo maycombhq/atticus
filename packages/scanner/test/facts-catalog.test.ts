@@ -259,6 +259,7 @@ describe("a call with no target and no host becomes a question (ADR 0078)", () =
     expect(d.draft.options.map((o) => o.label)).toEqual([
       "notify-api",
       "northwind-fx",
+      "Another repo…",
       "None of these",
     ]);
     expect(targetQuestionFor(noHost().find((f) => f.id === "c-notify")!)?.question).toBe(
@@ -289,9 +290,16 @@ describe("a call with no target and no host becomes a question (ADR 0078)", () =
     });
     const d = targetQuestionDrafts(noHost(), out.records, withTeam)[0]!;
     expect(d.draft.options.map((o) => [o.label, o.means])).toEqual([
-      ["notify-api", "notify-api, built in forge-notify, answers POST /notify"],
+      [
+        "notify-api",
+        "notify-api, built in forge-notify, answers POST /notify. Suggested: it serves POST /notify (notify-api.post-notify); its path /notify names forge-notify",
+      ],
       ["northwind-fx", "Northwind FX, an outside system, answers POST /notify"],
       ["risk-team", "Risk Team, another team's system, answers POST /notify"],
+      [
+        "Another repo…",
+        "A repo, system or team not listed here: the manifest's 2 repos (read or not), the profiles' 4 systems and the 0 teams in roles.yaml",
+      ],
       ["None of these", "Nothing in the estate or the org pack's systems answers it"],
     ]);
   });

@@ -1,3 +1,5 @@
+import { COPY } from "../../copy.js";
+
 /** Every word the Architecture workspace shows a person (the screen's copy file). */
 export const WORDS = {
   title: "Architecture",
@@ -93,6 +95,9 @@ export const WORDS = {
     corrected: "A correction waits for atticus verify",
     // ADR 0160 (O3): a call to another team's system their shared map has no entry for.
     "not-in-shared-map": "Their shared map has no entry for it",
+    // F10: a topic or queue the estate publishes to but never listens on, or the other way.
+    "no-listener": COPY.topics.noListener,
+    "no-publisher": COPY.topics.noPublisher,
   } as Record<string, string>,
   /** ADR 0135, C3: what closes each gap, beside it in the details panel. */
   gapFix: {
@@ -121,6 +126,8 @@ export const WORDS = {
     corrected: "Run atticus verify on the repo with --write to apply the correction.",
     "not-in-shared-map":
       "Ask the team that owns the system (their map is theirs to change), refresh it with atticus join shared refresh, or correct the call if it goes elsewhere.",
+    "no-listener": COPY.topics.noListenerFix,
+    "no-publisher": COPY.topics.noPublisherFix,
   } as Record<string, string>,
   repoCounts: "See what each count holds on Map › Trust",
   edges: (n: number, hidden: number) =>

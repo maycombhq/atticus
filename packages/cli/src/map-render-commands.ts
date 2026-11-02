@@ -21,6 +21,9 @@ import {
   questionsRelOf,
   raiseQuestions,
   readRepoSpec,
+  orgPackRelOf,
+  reopenQuestion,
+  TOPICS_STEP_ID,
   retireQuestion,
   removeFlow,
   SPEC_HEADER_SCHEMA_VERSION,
@@ -41,6 +44,8 @@ import {
   type SharedJoinResult,
 } from "@maycombhq/core";
 import {
+  answeredQuestionOfCall,
+  answerRuleOffers,
   catalogWithFacts,
   diffCatalogs,
   diffIsEmpty,
@@ -56,6 +61,7 @@ import {
   targetQuestionFor,
   targetsFromAnswers,
   TARGETS_STEP,
+  topicQuestionDrafts,
   writeCatalog,
   type CatalogDiff,
 } from "@maycombhq/scanner";
@@ -485,6 +491,7 @@ export async function projectFactsIntoCatalog(
     op,
     existing,
     answered,
+    everyTarget,
     targets,
     ruled,
     estate,
@@ -541,8 +548,18 @@ export async function writeFactsIntoCatalog(
     const rerun = `atticus verify ${repo} --write`;
     // ADR 0151: this repo's contract files, read at the facts' commit and kept beside its facts.
     await writeRepoContracts(root, repo, o.dir, facts, (n) => io.err(n));
-    const { answered, targets, ruled, estate, result, diff, links, evidenceProblems, sharedMaps } =
-      await projectFactsIntoCatalog(root, repo, facts, { op, existing: existing.records });
+    const {
+      answered,
+      everyTarget,
+      targets,
+      ruled,
+      estate,
+      result,
+      diff,
+      links,
+      evidenceProblems,
+      sharedMaps,
+    } = await projectFactsIntoCatalog(root, repo, facts, { op, existing: existing.records });
     for (const p of evidenceProblems) io.err(p);
     for (const i of result.invalid)
       io.err(
@@ -618,6 +635,9 @@ export async function writeFactsIntoCatalog(
     const drafted = groupedTargetDrafts(facts, result.records, op, result.join?.asks, {
       ask: asked,
       split: splitTargetGroups(answered),
+      // ADR 0162 (F8): the suggestions read the estate's facts and the earlier answers.
+      estate: estate.repos,
+      questions: everyTarget,
     });
     for (const t of drafted) {
       const r = await raiseQuestions(root, [t.draft], {
@@ -635,6 +655,23 @@ export async function writeFactsIntoCatalog(
             : named.has(t.factId)
               ? `A call names a target the estate doesn't have, and more than one entry serves it: asked ${q.id}: ${q.question} Answer it: atticus questions answer ${q.id} --option <n>, then ${rerun}.`
               : `A call names no target: asked ${q.id}: ${q.question} Answer it: atticus questions answer ${q.id} --option <n>, then ${rerun}.`,
+        );
+      }
+    }
+    // ADR 0162 (F8): a topic or queue no estate repo serves the other side of, that no system
+    // of the profile names: who owns it (a system or a team, from the picker).
+    for (const t of topicQuestionDrafts(repo, result.records)) {
+      const r = await raiseQuestions(root, [t.draft], {
+        step: TOPICS_STEP_ID,
+        repo,
+        command: o.command,
+        rerun,
+        at,
+      });
+      for (const q of r.raised) {
+        raised.push(q);
+        lines.push(
+          `No repo of the estate serves the other side of ${t.topic}: asked ${q.id}: ${q.question} If another team or a vendor owns it, name them: atticus questions answer ${q.id} --target <system or team id> (it goes under the system's aliases in the profile, for review), then ${rerun}.`,
         );
       }
     }
@@ -657,6 +694,34 @@ export async function writeFactsIntoCatalog(
       });
       lines.push(`Retired ${s.id}: ${s.why}.`);
     }
+    // ADR 0162 (F8): an answer the code read since disagrees with (the repo it names is read,
+    // and no route of it serves the call) opens its question again, saying why.
+    const reopened = new Set<string>();
+    for (const m of result.answerMisses ?? []) {
+      const callerFacts =
+        m.call.repo === repo ? facts : estate.repos.find((x) => x.repo === m.call.repo)?.facts;
+      const q = callerFacts
+        ? answeredQuestionOfCall(m.call.repo, callerFacts, everyTarget, m.call.fact)
+        : undefined;
+      if (!q || reopened.has(q.id)) continue;
+      reopened.add(q.id);
+      const why = `${m.target} is read now, and no route of it serves the call: ${m.message} (${m.call.at})`;
+      await reopenQuestion(root, q.id, { why, at });
+      lines.push(
+        `Asked again ${q.id}: ${why}. Answer it again: atticus questions answer ${q.id} --option <n> | --target <id>, then atticus verify ${m.call.repo} --write.`,
+      );
+    }
+    // ADR 0162 (F8): the same answer in several repos offers to become one rule or a type's note.
+    const typeOf = new Map(estateRepos(op).map((r) => [r.id, r.type] as const));
+    for (const offer of answerRuleOffers({
+      repos: [{ repo, facts }, ...estate.repos].map((r) => ({
+        ...r,
+        ...(typeOf.get(r.repo) ? { type: typeOf.get(r.repo)! } : {}),
+      })),
+      questions: everyTarget.filter((q) => !reopened.has(q.id)),
+      orgPack: orgPackRelOf(root),
+    }))
+      if (offer.repos.includes(repo)) lines.push(offer.line);
 
     // ADR 0163: the organisation's terms: access against calls, possible links, a question per
     // unknown term, and what the accepted call-security rules find.

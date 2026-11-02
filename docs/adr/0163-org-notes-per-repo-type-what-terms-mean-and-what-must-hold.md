@@ -64,14 +64,14 @@ A term with role `unknown` becomes a question, one per term, file name and repo 
 
 ### 7. Shown
 
-map.md gains a Terms section when the facts hold any: each value, its role, its line and its meaning line, a consumer's owner component, an owner's listing gateways, an unknown's possible link. The Map's Trust tab lists each repo's terms (`terms` on a repo of GET /api/trust, local API 2.45.0, additive), words from `copy.ts`.
+map.md gains a Terms section when the facts hold any: each value, its role, its line and its meaning line, a consumer's owner component, an owner's listing gateways, an unknown's possible link. The Map's Trust tab lists each repo's terms (`terms` on a repo of GET /api/trust, local API 2.46.0, additive), words from `copy.ts`.
 
 ### 8. The contracts and the migration
 
 - Facts file: `FACTS_SCHEMA_VERSION` 3 (the `term` kind and the call fields). No line carries a number; a file written before reads unchanged, every addition being a new kind or an optional field.
 - Repo type (C6): `REPO_TYPE_SCHEMA_VERSION` 2. A version-1 file reads as it is and comes back as version 2 in memory (as Question version 3 does); writers write 2.
 - Conventions (C6): `CONVENTIONS_SCHEMA_VERSION` 2, the same way.
-- C1, C3, C4's plugin SDK: unchanged. The local API (C4) is 2.45.0, additive.
+- C1, C3, C4's plugin SDK: unchanged. The local API (C4) is 2.46.0, additive (2.45.0 is ADR 0162's).
 - No `atticus upgrade` step: nothing on disk must change. The JSON Schemas (`factsJsonSchemas`, `orgPackJsonSchemas`) are generated from zod; `docs/spec` and `docs/api/openapi.json` were regenerated.
 
 ## Consequences

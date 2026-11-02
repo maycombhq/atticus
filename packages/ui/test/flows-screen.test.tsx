@@ -79,6 +79,11 @@ const view: Api.FlowViewT = {
 describe("the flow's sequence diagram (ADR 0092)", () => {
   const out = renderToStaticMarkup(<SequenceDiagram seq={sequence(view)} />);
 
+  it("has a full-screen button, off to start (F10)", () => {
+    expect(out).toContain(`aria-pressed="false">${esc(COPY.viewer.fullScreen)}</button>`);
+    expect(out).not.toContain("viewer-full");
+  });
+
   it("draws a lane for each part and the steps in order, as a list", () => {
     for (const l of ["A person", "forge-web", "forge-customers"]) expect(out).toContain(l);
     expect(out).toContain("<ol");

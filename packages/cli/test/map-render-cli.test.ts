@@ -553,7 +553,12 @@ describe("atticus verify <repo> --write (ADR 0124, A3b)", () => {
     const qs = (await listQuestions(root, { state: "open", repo: "forge-ledger" })).questions;
     const q = qs.find((x) => x.askedBy.step === "facts-targets")!;
     expect(q.question).toBe("Which repo or system answers POST /notify, which ledger-api calls?");
-    expect(q.options.map((x) => x.label)).toEqual(["notify-api", "northwind-fx", "None of these"]);
+    expect(q.options.map((x) => x.label)).toEqual([
+      "notify-api",
+      "northwind-fx",
+      "Another repo…",
+      "None of these",
+    ]);
     const md = readFileSync(join(root, "map", "forge-ledger", "map.md"), "utf8");
     expect(md).toContain(`(../../questions/${q.id}.yaml)`);
     await answerQuestion(root, q.id, { option: 1, by: "dana.okafor", at: "2026-10-24T10:00:00Z" });
@@ -564,6 +569,57 @@ describe("atticus verify <repo> --write (ADR 0124, A3b)", () => {
         (r) => r.kind === "Interface" && r.from === "ledger-api" && r.to === "notify-api",
       ),
     ).toBe(true);
+  });
+});
+
+describe("an answer the code disagrees with opens again (ADR 0162, F8)", () => {
+  it("reopens the targets question once the repo it names is read and no route serves the call", async () => {
+    const facts = readFileSync(join(VERIFY, "forge-ledger.facts.jsonl"), "utf8").replace(
+      '"host":"notify.internal",',
+      "",
+    );
+    const root = await metarepo(facts);
+    expect(await write(root)).toBe(0);
+    const q = (await listQuestions(root, { state: "open", repo: "forge-ledger" })).questions.find(
+      (x) => x.askedBy.step === "facts-targets",
+    )!;
+    await answerQuestion(root, q.id, { option: 1, by: "dana.okafor", at: "2026-10-24T10:00:00Z" });
+    // forge-notify is read since, and serves only GET /status: nothing of it takes POST /notify.
+    writeFileSync(
+      join(root, "facts", "forge-notify.jsonl"),
+      `${JSON.stringify({
+        kind: "entry",
+        id: "entry.get.status",
+        repo: "forge-notify",
+        commit: "0456def",
+        entryType: "rest",
+        method: "GET",
+        path: "/status",
+        cite: {
+          file: "src/Status.java",
+          line: 3,
+          value: "/status",
+          quote: '@GetMapping("/status")',
+        },
+        verified: "line",
+        by: "assistant",
+        conf: "declared",
+      })}\n`,
+    );
+    const o = io();
+    expect(await write(root, o)).toBe(0);
+    const again = (await listQuestions(root, { repo: "forge-ledger" })).questions.find(
+      (x) => x.id === q.id,
+    )!;
+    expect(again.state).toBe("open");
+    expect(again.answer).toBeUndefined();
+    expect(again.reopened?.answer.option).toBe(1);
+    expect(again.reopened?.why).toMatch(
+      /^notify-api is read now, and no route of it serves the call: ledger-api calls POST \/notify on notify-api, and no entry of notify-api the facts name serves it \(/,
+    );
+    expect(o.out.some((l) => l.startsWith(`Asked again ${q.id}: notify-api is read now`))).toBe(
+      true,
+    );
   });
 });
 

@@ -403,7 +403,7 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
         <>
           <Panel
             title={WORDS.canvas}
-            span="1 / span 8"
+            span="1 / -1"
             meta={WORDS.edges(graph.links.length, focus ? 0 : view.hiddenEdges)}
           >
             {notice && (
@@ -495,34 +495,41 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
                   )
                 }
                 onLaid={setLaid}
+                aside={
+                  <div className="stack">
+                    <h2 className="h">{WORDS.inspector}</h2>
+                    {sel ? (
+                      <Inspector
+                        node={sel}
+                        isCurrent={sel.id === current}
+                        onOpen={open}
+                        onFocus={showFocus}
+                        lens={lens}
+                        links={(focus?.edges ?? view.edges).filter(
+                          (e) => e.from === sel.id || e.to === sel.id,
+                        )}
+                        labelOf={(id) => find(id)?.label ?? id}
+                        under={under}
+                        {...(!focus && graph.boxes.some((b) => b.id === sel.id)
+                          ? {
+                              here: {
+                                open: inPlace.has(sel.id),
+                                toggle: () => void toggleHere(sel.id),
+                              },
+                            }
+                          : {})}
+                      />
+                    ) : (
+                      <p>{WORDS.pick}</p>
+                    )}
+                    {watched && <WhatMoved moved={moved} />}
+                  </div>
+                }
               />
             )}
             <p className="hud" style={{ marginTop: 8 }}>
               {WORDS.canvasHelp}
             </p>
-          </Panel>
-
-          <Panel title={WORDS.inspector} span="span 4">
-            {sel ? (
-              <Inspector
-                node={sel}
-                isCurrent={sel.id === current}
-                onOpen={open}
-                onFocus={showFocus}
-                lens={lens}
-                links={(focus?.edges ?? view.edges).filter(
-                  (e) => e.from === sel.id || e.to === sel.id,
-                )}
-                labelOf={(id) => find(id)?.label ?? id}
-                under={under}
-                {...(!focus && graph.boxes.some((b) => b.id === sel.id)
-                  ? { here: { open: inPlace.has(sel.id), toggle: () => void toggleHere(sel.id) } }
-                  : {})}
-              />
-            ) : (
-              <p>{WORDS.pick}</p>
-            )}
-            {watched && <WhatMoved moved={moved} />}
           </Panel>
 
           <Panel title={WORDS.outline} span="1 / -1">

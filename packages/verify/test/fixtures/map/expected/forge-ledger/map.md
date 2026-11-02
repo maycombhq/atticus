@@ -57,3 +57,4 @@ Events (listed here; no AsyncAPI file is written):
 ## Open questions
 
 - [Which repo answers on notify.internal?](../../questions/q-53bbda8a5c5f.yaml): cites `src/main/java/forge/ledger/Notifier.java:9`
+- [Who owns the topic forge.payments.settled, which ledger-api listens on?](../../questions/q-073e3b615030.yaml): cites `src/main/java/forge/ledger/SettlementListener.java:14`

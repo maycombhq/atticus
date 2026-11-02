@@ -67,6 +67,7 @@ Every command under the twelve, with its options.
   atticus questions answer <id> --option <n> | --text "..." | --accept-proposal   Write the answer to the file; prints the rerun
           [--scope repo|repo-type] [--type <repo type>] [--by who]  (--accept-proposal: the assistant's proposed answer, checked again, as yours)
           [--match <host pattern or /path/**>]  (a target or hosts answer by rule: it covers every call that matches, the calls found later too)
+          [--target <id> [--add-system vendor|internal] [--name "..."]]  (where a call goes: any repo of the manifest, read or not, any system of the profile or a team in roles.yaml; a vendor or a team with no system yet is added to the profile with --add-system, a file change for review; ADR 0162)
   atticus questions proposed [--json]  The answers /atticus-propose proposed for open questions, each citation checked (the file, the line, the quote on it); exits 1 while one doesn't check
   atticus questions sheet [--out <file>]   Every open question in one YAML answer sheet, each with an empty answer:, to answer in one sitting
   atticus questions sheet --apply <file> [--by who] [--json]   Answer each filled entry as you; skips blanks, refuses one whose question changed since
@@ -162,6 +163,7 @@ Every other command. `atticus legacy` lists them by area; each runs by its own n
   atticus setup [--json]               The setup checklist until the catalog is accepted, with a fix for each step
   atticus baseline                     Accept the as-is catalog as the baseline [--note text] [--site dir]
   atticus doctor [--json]              Check this machine: Node, Git, OpenSpec, proxy, TLS, disk, port, assistant, and the tier your assistant reads a repo at
+  atticus doctor --counts [--json]     How far the map has got, in counts and flags only (questions, links by how joined, repos read and stale, facts, tokens reported): nothing named, safe to paste
   atticus probe                        Measure what your assistant can do here (open a file, write one, run a command), so the tier it reads a repo at is measured, not read off runtime.yaml; then /atticus-probe in the assistant (ADR 0124) [--assistant id] [--max-tokens n] [--json]
   atticus probe answer <code>          Check the assistant's answer (none when it couldn't open the file) and keep what it measured in .atticus/probe/<assistant>.yaml, on this machine only [--pasted] [--max-tokens n] [--json]
   atticus secret set|check|forget <name>  Keep a model provider's key in this machine's credential store under the name runtime.yaml gives as keyEnv; read from stdin, never printed

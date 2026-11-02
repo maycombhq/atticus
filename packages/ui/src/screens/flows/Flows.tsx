@@ -6,6 +6,7 @@ import { COPY } from "../../copy.js";
 import { queryParam } from "../know/common.js";
 import { CopyButton } from "../run/shared.js";
 import { Citation, EvidenceProvider } from "../../app/evidence.js";
+import { useFullScreen } from "../../app/viewer.js";
 import { sequence, targetSequence, type Lane, type Row, type Sequence } from "./model.js";
 import "./flows.css";
 
@@ -166,8 +167,32 @@ export function SequenceDiagram({
 }) {
   const depth = seq.frames.reduce((m, f) => Math.max(m, f.depth + 1), 0);
   const cols = { "--lanes": seq.lanes.length, "--frames": depth } as CSSProperties;
+  // F10: the flow can fill the window (or the IDE panel); F or the button, Esc to leave.
+  const [full, setFull] = useFullScreen();
   return (
-    <div className="seq-wrap">
+    <div
+      className={`seq-wrap ${full ? "viewer-full" : ""}`}
+      onKeyDown={(e) => {
+        if ((e.key === "f" || e.key === "F") && !e.ctrlKey && !e.metaKey && !e.altKey) {
+          if ((e.target as HTMLElement).tagName === "INPUT") return;
+          e.preventDefault();
+          setFull();
+        }
+      }}
+      {...(full
+        ? { role: "dialog", "aria-modal": true, "aria-label": C.diagram(name ?? T.thisFlow) }
+        : {})}
+    >
+      <div className="seq-bar">
+        <button type="button" className="btn" aria-pressed={full} onClick={() => setFull()}>
+          {full ? COPY.viewer.leaveFullScreen : COPY.viewer.fullScreen}
+        </button>
+        {full && (
+          <span className="hud" role="status">
+            {COPY.viewer.fullScreenOn}
+          </span>
+        )}
+      </div>
       {/* A wide flow scrolls sideways: a keyboard reaches and scrolls it too (WCAG 2.1.1). */}
       <div
         className="seq"

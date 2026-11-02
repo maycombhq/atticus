@@ -70,6 +70,9 @@ describe("the estate as a hierarchy: estate, system, repo, component, element", 
       "system:northwind-pay",
       "system:portal",
       "system:reports",
+      // Each topic is drawn as itself (F10): publishers → topic → listeners.
+      "topic:topic.payments-initiated",
+      "topic:topic.transfers-completed",
     ]);
     const portal = v.children.find((n) => n.id === "system:portal")!;
     expect(portal).toMatchObject({
@@ -93,11 +96,13 @@ describe("the estate as a hierarchy: estate, system, repo, component, element", 
     const v = nodeView(buildEstate(forge()), "estate", { lens: "architecture" });
     expect(edge(v)).toEqual([
       "system:ledger calls system:northwind-pay",
-      "system:ledger subscribes system:portal",
+      "system:ledger publishes topic:topic.transfers-completed",
+      "system:ledger subscribes topic:topic.payments-initiated",
       "system:portal calls system:audit",
       "system:portal calls system:ledger x2",
+      "system:portal publishes topic:topic.payments-initiated",
       "system:reports reads system:ledger",
-      "system:reports subscribes system:ledger",
+      "system:reports subscribes topic:topic.transfers-completed",
     ]);
     const calls = v.edges.find((e) => e.from === "system:portal" && e.to === "system:ledger")!;
     expect(calls).toMatchObject({ type: "calls", sync: "sync", via: "gateway", state: "current" });
@@ -112,19 +117,24 @@ describe("the estate as a hierarchy: estate, system, repo, component, element", 
     const est = buildEstate(forge());
     const sys = nodeView(est, "system:portal", { lens: "architecture" });
     expect(ids(sys.path)).toEqual(["estate"]);
-    expect(ids(sys.children)).toEqual(["repo:forge-portal-bff", "repo:forge-portal-ui"]);
+    expect(ids(sys.children)).toEqual([
+      "repo:forge-portal-bff",
+      "repo:forge-portal-ui",
+      "topic:topic.payments-initiated",
+    ]);
     // Inside the system, the UI's repo calls the BFF's repo; outside, the BFF calls three systems.
     expect(edge(sys)).toEqual([
       "repo:forge-portal-bff calls system:audit",
       "repo:forge-portal-bff calls system:ledger x2",
+      "repo:forge-portal-bff publishes topic:topic.payments-initiated",
       "repo:forge-portal-ui calls repo:forge-portal-bff",
-      "system:ledger subscribes repo:forge-portal-bff",
+      "system:ledger subscribes topic:topic.payments-initiated",
     ]);
     expect(ids(sys.outside)).toEqual(["system:audit", "system:ledger"]);
 
     const repo = nodeView(est, "repo:forge-portal-bff", { lens: "architecture" });
     expect(ids(repo.path)).toEqual(["estate", "system:portal"]);
-    expect(ids(repo.children)).toEqual(["component:portal-bff"]);
+    expect(ids(repo.children)).toEqual(["component:portal-bff", "topic:topic.payments-initiated"]);
 
     const comp = nodeView(est, "component:portal-bff", { lens: "architecture" });
     expect(ids(comp.children)).toEqual([
@@ -148,7 +158,11 @@ describe("the estate as a hierarchy: estate, system, repo, component, element", 
 
   it("loads more than one level when asked, each child naming its parent", () => {
     const v = nodeView(buildEstate(forge()), "system:ledger", { lens: "architecture", depth: 2 });
-    expect(ids(v.children)).toEqual(["repo:forge-ledger", "component:ledger-api"]);
+    expect(ids(v.children)).toEqual([
+      "repo:forge-ledger",
+      "component:ledger-api",
+      "topic:topic.transfers-completed",
+    ]);
     expect(v.children[1]!.parent).toBe("repo:forge-ledger");
   });
 
@@ -234,6 +248,80 @@ describe("an estate read from facts, with no System record (a real metarepo, 202
     expect(repo.node.gaps).toEqual([]);
     expect(repo.node.next?.command).toBe("atticus map forge-studio");
     expect(JSON.stringify([...est.nodes.values()])).not.toMatch(/atticus scan/);
+  });
+});
+
+describe("topics and queues as nodes of their own (F10)", () => {
+  const at = (repo: string, path: string, line: number) => [
+    { source: "code", repo, path, line, side: "caller" },
+  ];
+  const loose = [
+    {
+      kind: "Unresolved",
+      id: "unresolved.portal-refunds",
+      confidence: "verified",
+      unresolvedKind: "event-publish",
+      raw: "refunds.requested",
+      owner: "portal-bff",
+      evidence: at("forge-portal-bff", "src/main/java/forge/portal/RefundEvents.java", 9),
+    },
+    {
+      kind: "Unresolved",
+      id: "unresolved.ledger-fx",
+      confidence: "verified",
+      unresolvedKind: "event-subscribe",
+      raw: "fx.rates",
+      owner: "ledger-api",
+      evidence: at("forge-ledger", "src/main/java/forge/ledger/FxListener.java", 4),
+    },
+    {
+      kind: "Interface",
+      id: interfaceId("ledger-api", "tidewater", undefined, "statements.out"),
+      confidence: "verified",
+      from: "ledger-api",
+      to: "tidewater",
+      via: "mq",
+      normalizedPath: "statements.out",
+      sync: "async",
+      direction: "outbound",
+      conflicts: [],
+      evidence: at("forge-ledger", "src/main/java/forge/ledger/StatementQueue.java", 12),
+    },
+  ];
+
+  it("draws publishers → topic → listeners, the topic owned by the system it sits in", () => {
+    const est = buildEstate(forge());
+    const t = est.nodes.get("topic:topic.payments-initiated")!;
+    expect(t.properties).toMatchObject({ owner: "Portal" });
+    expect(t.properties.ownerOutside).toBeUndefined();
+    expect(t.gaps).toEqual([]);
+  });
+
+  it("marks a topic published to with no listener, and one listened to with no publisher", () => {
+    const est = buildEstate(forge(loose));
+    const v = nodeView(est, "estate", { lens: "architecture" });
+    const refunds = [...v.children, ...v.outside].find((n) => n.label === "refunds.requested")!;
+    expect(refunds).toMatchObject({ kind: "topic", gaps: ["no-listener"] });
+    const fx = [...v.children, ...v.outside].find((n) => n.label === "fx.rates")!;
+    expect(fx).toMatchObject({ kind: "topic", gaps: ["no-publisher"] });
+    expect(fx.properties).toMatchObject({ owner: "Ledger" });
+    expect(edge(v)).toEqual(
+      expect.arrayContaining([
+        `system:portal publishes ${refunds.id}`,
+        `system:ledger subscribes ${fx.id}`,
+      ]),
+    );
+  });
+
+  it("names an outside system as the owner of a queue it claims, with no listener in the estate", () => {
+    const est = buildEstate(forge(loose));
+    const q = [...est.nodes.values()].find((n) => n.label === "statements.out")!;
+    expect(q).toMatchObject({ kind: "topic", parent: "system:tidewater" });
+    expect(q.properties).toMatchObject({ owner: "tidewater", ownerOutside: true });
+    expect(q.gaps).toEqual(["no-listener"]);
+    const v = nodeView(est, "system:ledger", { lens: "architecture" });
+    expect(edge(v)).toContain(`repo:forge-ledger publishes ${q.id}`);
+    expect(ids(v.outside)).toContain(q.id);
   });
 });
 

@@ -199,7 +199,8 @@
       "deploy": 1,
       "config": 4,
       "framework": 0,
-      "flow": 1
+      "flow": 1,
+      "term": 0
     },
     "left": {
       "screens": 1,

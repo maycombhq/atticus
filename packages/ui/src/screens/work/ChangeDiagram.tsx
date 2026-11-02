@@ -106,7 +106,6 @@ export function ChangeDiagramView({ map }: { map: Api.ChangeMapT }) {
           onToggle={() => undefined}
           onMoved={() => undefined}
           onLaid={() => undefined}
-          height={460}
         />
       </div>
       {map.problems.length > 0 && (
