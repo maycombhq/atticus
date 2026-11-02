@@ -382,12 +382,14 @@ const [bin, root] = process.argv.slice(2);
 const { NO_PROXY: _n, no_proxy: _m, ...env } = process.env;
 const ui = spawn(bin, ["ui", "--port", "0", "--show-token", "--root", root], { env, shell: ${win} });
 let text = "";
+let asked = false;
 const t = setTimeout(() => { console.log("atticus ui didn't start: " + text); ui.kill(); process.exit(1); }, 60000);
 ui.stdout.on("data", (b) => {
   text += b;
   const m = /running at (http:\\/\\/127\\.0\\.0\\.1:(\\d+))/.exec(text);
   const k = /session token is (\\S+)/.exec(text);
-  if (!m || !k) return;
+  if (!m || !k || asked) return;
+  asked = true;
   clearTimeout(t);
   const req = request({ host: "127.0.0.1", port: Number(m[2]), path: "/api/health", headers: { "X-Atticus-Token": k[1] } }, (res) => {
     let body = "";
