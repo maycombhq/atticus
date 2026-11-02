@@ -1,6 +1,7 @@
 import type { Api } from "@maycombhq/core";
 import { gapsOfEvidence, type FactsView } from "../../app/evidence-model.js";
 import { contractGaps } from "../../app/contracts.js";
+import { COPY } from "../../copy.js";
 import { WORDS } from "./words.js";
 
 /**
@@ -95,6 +96,9 @@ export interface CanvasBox {
   inside: number;
   /** A change's picture (ADR 0108): + new, ◇ modify or ✕ retire; the sign is in the label too. */
   mark?: "new" | "modify" | "retire";
+  /** A topic or queue (F10): who owns it, and whether that is outside the estate. */
+  owner?: string;
+  ownerOutside?: boolean;
 }
 
 export interface CanvasLink {
@@ -125,6 +129,12 @@ const box = (n: Api.HierNodeT, o: Partial<CanvasBox> = {}): CanvasBox => ({
   outside: false,
   group: false,
   inside: 0,
+  ...(n.kind === "topic" && typeof n.properties.owner === "string"
+    ? {
+        owner: n.properties.owner,
+        ...(n.properties.ownerOutside === true ? { ownerOutside: true } : {}),
+      }
+    : {}),
   ...o,
 });
 
@@ -250,13 +260,15 @@ export function canvasGraph(
       continue;
     }
     if (sharper(e)) continue;
+    // F10: a listener's link is drawn from the topic to it (publishers → topic → listeners).
+    const listens = e.type === "subscribes" && boxes.get(e.to)!.kind === "topic";
     links.push({
       id: e.id,
-      from: e.from,
-      to: e.to,
+      from: listens ? e.to : e.from,
+      to: listens ? e.from : e.to,
       type: e.type,
       count: e.count,
-      label: linkLabel(e.count, e.type),
+      label: linkLabel(e.count, listens ? COPY.topics.listens : e.type),
       async: e.sync === "async" || e.type === "publishes" || e.type === "subscribes",
       gaps: e.gaps,
     });
@@ -277,8 +289,15 @@ export function directionFor(lens: string): "RIGHT" | "DOWN" {
 }
 
 /** A box's size on the canvas, from its label. */
-export function boxSize(b: Pick<CanvasBox, "label">): { width: number; height: number } {
-  return { width: Math.min(280, Math.max(150, Math.ceil(b.label.length * 7.5) + 56)), height: 64 };
+export function boxSize(b: Pick<CanvasBox, "label"> & { kind?: string }): {
+  width: number;
+  height: number;
+} {
+  return {
+    width: Math.min(280, Math.max(150, Math.ceil(b.label.length * 7.5) + 56)),
+    // A topic's box has a line more: who owns it (F10).
+    height: b.kind === "topic" ? 82 : 64,
+  };
 }
 
 /** What to offer when a view is too much to read at once (the spike's limits, ADR 0081). */

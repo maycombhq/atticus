@@ -128,6 +128,12 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   And (J1) a link joined by a Kubernetes Service's bare name with no
  *   cited namespace of the caller's the same is a guess: `LINK_HOWS` gains `service-name`, and
  *   `JOIN_GUESS_FLAGS` `joined-by-service-name`. Additive only.
+ * 2.45.0 (ADR 0162, plan item F8): GET /api/questions/{id}/targets, the "Another repo…" picker of a
+ *   targets question (every repo of the manifest, read or not, every system of the profiles, every
+ *   team in roles.yaml, a team with no system saying the one naming it adds); POST
+ *   /api/questions/{id}/answer takes `target` (any of them) with `addSystem` and `name` (a vendor
+ *   or a team's system written into the profile, for review) and returns `system`; a question's
+ *   `reopened` (question schema 4). Additive only.
  * 2.47.0 (ADR 0164, plan item F7): the contract check on every link. GET /api/contracts (the
  *   Mismatches page: every link checked, each mismatch and unconfirmed difference with both
  *   ends' lines and the mappings it went through); `TrustView.contracts` (the counts, for the
@@ -2491,6 +2497,15 @@ export const AnswerQuestionRequest = z.strictObject({
    * pattern (`*.payments.forge.internal`) or a path prefix (`/forge/limits/**`).
    */
   match: AnswerMatch.optional(),
+  /**
+   * 2.45.0 (ADR 0162, F8): for a targets question, the repo, system or team the call goes to, from
+   * the picker (in place of option or text). A vendor not in the profile, or a team with no
+   * system, needs `addSystem`: the system is written into the profile, for review.
+   */
+  target: z.string().trim().min(1).optional(),
+  addSystem: z.enum(["vendor", "internal"]).optional(),
+  /** The new system's name, with `addSystem`; the target's words when left out. */
+  name: z.string().trim().min(1).optional(),
 });
 
 /** ADR 0078: the answered question, the command to run next and, for a repo type, its skill file. */
@@ -2498,7 +2513,40 @@ export const AnsweredQuestion = z.object({
   question: Question,
   rerun: z.string(),
   skill: z.object({ path: z.string(), written: z.boolean() }).optional(),
+  /** 2.45.0 (ADR 0162): the system a `target` answer wrote into the profile. */
+  system: z
+    .object({
+      id: z.string(),
+      profile: z.string(),
+      added: z.boolean(),
+      boundary: z.enum(["vendor", "internal"]),
+      owner: z.string().optional(),
+    })
+    .optional(),
 });
+
+/** 2.45.0 (ADR 0162, F8): the "Another repo…" picker of a targets question. */
+export const TargetPickList = z.object({
+  picks: z.array(
+    z.object({
+      id: z.string(),
+      kind: z.enum(["repo", "system", "team"]),
+      name: z.string(),
+      read: z.boolean().optional(),
+      boundary: z.string().optional(),
+      /** A team with no system yet: the system naming it adds to the profile (with addSystem). */
+      adds: z
+        .object({
+          id: z.string(),
+          name: z.string(),
+          boundary: z.literal("internal"),
+          owner: z.string(),
+        })
+        .optional(),
+    }),
+  ),
+});
+export type TargetPickListT = z.infer<typeof TargetPickList>;
 
 // ------------------------------------------------------------------ knowledge (ADR 0101, 0102)
 
@@ -3452,6 +3500,17 @@ const OPS: Record<string, Record<string, Op>> = {
       params: [p("changeId")],
       ok: { status: 200, schema: "ChangePrototypeList", description: "OK" },
       errors: [400, 404],
+    },
+  },
+  "/api/questions/{id}/targets": {
+    get: {
+      id: "getQuestionTargets",
+      summary:
+        "The Another repo… picker of a targets question: every repo of the manifest (read or not), every system of the profiles and every team in roles.yaml",
+      tag: "questions",
+      params: [p("id")],
+      ok: { status: 200, schema: "TargetPickList", description: "OK" },
+      errors: [404, 422],
     },
   },
   "/api/questions/{id}/evidence": {
@@ -4673,6 +4732,7 @@ export function openApiDocument(): Record<string, unknown> {
     SimilarChanges,
     AttachPastChangeResult,
     QuestionEvidenceList,
+    TargetPickList,
     PromoteResult,
     ChangeConformance,
     OrgPackView,

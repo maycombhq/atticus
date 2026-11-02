@@ -1,7 +1,6 @@
 import {
   Background,
   BaseEdge,
-  Controls,
   EdgeLabelRenderer,
   getSmoothStepPath,
   Handle,
@@ -19,7 +18,7 @@ import {
   applyNodeChanges,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   absolute,
   layoutGraph,
@@ -27,8 +26,23 @@ import {
   type LayoutEngine,
   type Point,
 } from "../../app/layout/index.js";
+import { COPY } from "../../copy.js";
+import {
+  DiagramFrame,
+  LABELS_FROM,
+  MINIMAP_FROM,
+  panBy,
+  ViewerToolbar,
+  ZOOM,
+  neighbourhood,
+  useAvailableHeight,
+  useFullScreen,
+  type ViewerAction,
+} from "../../app/viewer.js";
 import { boxSize, type CanvasBox, type CanvasGraph, type CanvasLink } from "./model.js";
 import { WORDS } from "./words.js";
+
+const TOPIC = COPY.topics;
 
 type Dir = "RIGHT" | "DOWN";
 
@@ -67,6 +81,7 @@ function BoxView({ data }: NodeProps<BoxNode>) {
     "arch-box",
     box.group ? "group" : "",
     box.outside ? "outside" : "",
+    box.kind === "topic" ? "topic" : "",
     box.gaps.length ? "gappy" : "",
     data.selected ? "picked" : "",
     box.mark ? `m-${box.mark}` : "",
@@ -84,6 +99,7 @@ function BoxView({ data }: NodeProps<BoxNode>) {
         {box.label}
         {box.outside && ` (${WORDS.outsideMark})`}
       </div>
+      {box.kind === "topic" && <div className="hud arch-box-owner">{ownerText(box)}</div>}
       {(box.gaps.length > 0 || box.inside > 0) && (
         <div className="arch-box-foot">
           {box.gaps.length > 0 && <GapMark n={box.gaps.length} />}
@@ -94,6 +110,14 @@ function BoxView({ data }: NodeProps<BoxNode>) {
     </div>
   );
 }
+
+/** Who owns a topic or queue, as its box says it (F10). */
+export const ownerText = (b: Pick<CanvasBox, "owner" | "ownerOutside">) =>
+  b.owner
+    ? b.ownerOutside
+      ? TOPIC.ownerOutside(b.owner)
+      : TOPIC.owner(b.owner)
+    : TOPIC.ownerUnknown;
 
 const near = (a: Point | undefined, b: Point | undefined) =>
   !!a && !!b && Math.abs(a.x - b.x) < 0.5 && Math.abs(a.y - b.y) < 0.5;
@@ -201,7 +225,7 @@ export function flowElements(
         data: { box: b, dir, selected: b.id === selected },
         width: p.width,
         height: p.height,
-        ariaLabel: `${b.kind} ${b.label}${b.gaps.length ? `, ${WORDS.gapsOn(b.gaps.length)}` : ""}`,
+        ariaLabel: `${b.kind} ${b.label}${b.kind === "topic" ? `, ${ownerText(b)}` : ""}${b.gaps.length ? `, ${b.gaps.map((g) => WORDS.gap[g] ?? g).join(", ")}` : ""}`,
         ...(b.parent ? { parentId: b.parent, expandParent: true } : {}),
         ...(b.group ? { zIndex: -1 } : {}),
       };
@@ -251,7 +275,13 @@ export function ArchitectureCanvas(p: {
   /** Tests: a layout to start from, and an engine to use instead of ELK's worker. */
   initial?: Laid;
   engine?: LayoutEngine;
+  /** A fixed height; by default the picture takes the height left on the page (F10). */
   height?: number;
+  /** Details laid over the picture's right edge (the inspector), never beside it. */
+  aside?: ReactNode;
+  /** Tests: open in full screen, or in focus mode. */
+  initialFull?: boolean;
+  initialFocus?: boolean;
 }) {
   const [state, setState] = useState<LayoutState>(
     p.initial ? { state: "ready" } : { state: "running" },
@@ -266,6 +296,12 @@ export function ArchitectureCanvas(p: {
   pinned.current = p.pinned;
   const latest = useRef(p);
   latest.current = p;
+  const frame = useRef<HTMLDivElement | null>(null);
+  const search = useRef<HTMLInputElement | null>(null);
+  const [full, setFull] = useFullScreen(p.initialFull);
+  const [focusMode, setFocusMode] = useState(!!p.initialFocus);
+  const [zoom, setZoom] = useState(1);
+  const height = useAvailableHeight(frame, p.height !== undefined ? { fixed: p.height } : {});
 
   // Lay out again when the boxes or links change, or on Tidy up; not when a box is dragged.
   const shape = useMemo(
@@ -332,6 +368,64 @@ export function ArchitectureCanvas(p: {
     [],
   );
 
+  // Focus mode (F10): everything but the picked box and its neighbours is dimmed.
+  const lit = useMemo(
+    () => (focusMode && p.selected ? neighbourhood(p.graph.links, p.selected) : undefined),
+    [focusMode, p.selected, p.graph.links],
+  );
+  const shownNodes = useMemo(() => (lit ? nodes.map((n) => dimNode(n, lit)) : nodes), [nodes, lit]);
+  const shownEdges = useMemo(
+    () => (lit && p.selected ? edges.map((e) => dimEdge(e, p.selected!)) : edges),
+    [edges, lit, p.selected],
+  );
+
+  const act = (a: ViewerAction) => {
+    const i = rf.current;
+    const d = { duration: 200 };
+    switch (a) {
+      case "zoom-in":
+        void i?.zoomIn(d);
+        return;
+      case "zoom-out":
+        void i?.zoomOut(d);
+        return;
+      case "reset":
+        void i?.zoomTo(1, d);
+        return;
+      case "fit":
+        void i?.fitView({ padding: 0.08, minZoom: FIT_MIN_ZOOM, ...d });
+        return;
+      case "fit-selection":
+        if (p.selected) void i?.fitView({ nodes: [{ id: p.selected }], maxZoom: 1.2, ...d });
+        return;
+      case "focus":
+        setFocusMode((f) => !f);
+        return;
+      case "full-screen":
+        setFull();
+        requestAnimationFrame(() => frame.current?.focus());
+        return;
+      case "leave":
+        setFull(false);
+        return;
+      case "search":
+        search.current?.focus();
+        return;
+      default: {
+        const v = i?.getViewport();
+        if (!v) return;
+        const to = panBy({ x: v.x, y: v.y, k: v.zoom }, a);
+        void i?.setViewport({ x: to.x, y: to.y, zoom: v.zoom }, { duration: 120 });
+      }
+    }
+  };
+  const find = (id: string) => {
+    p.onSelect(id);
+    requestAnimationFrame(
+      () => void rf.current?.fitView({ nodes: [{ id }], maxZoom: 1, duration: 250 }),
+    );
+  };
+
   if (state.state === "failed")
     return (
       <div className="state error" role="alert">
@@ -339,51 +433,99 @@ export function ArchitectureCanvas(p: {
       </div>
     );
   return (
-    <div
-      className="arch-canvas"
-      style={{ height: p.height ?? 560 }}
-      aria-busy={state.state === "running"}
+    <DiagramFrame
+      title={WORDS.canvasLabel}
+      full={full}
+      height={height}
+      frameRef={frame}
+      onKeyAction={act}
+      {...(p.aside ? { aside: p.aside } : {})}
+      toolbar={
+        <ViewerToolbar
+          zoom={zoom}
+          full={full}
+          focus={focusMode}
+          picked={!!p.selected}
+          nodes={p.graph.boxes}
+          onAction={act}
+          onFind={find}
+          searchRef={search}
+        />
+      }
     >
-      {state.state === "running" && !nodes.length ? (
-        <div className="stack" aria-live="polite">
-          <span className="sr">{WORDS.layingOut}</span>
-          <div className="skeleton" style={{ width: "70%" }} />
-          <div className="skeleton" style={{ width: "50%" }} />
-        </div>
-      ) : (
-        <ReactFlow<BoxNode, LinkEdge>
-          nodes={nodes}
-          edges={edges}
-          nodeTypes={nodeTypes}
-          edgeTypes={edgeTypes}
-          onNodesChange={onNodesChange}
-          onInit={(i) => {
-            rf.current = i;
-          }}
-          onNodeClick={(_, n) => p.onSelect(n.id)}
-          onSelectionChange={({ nodes: picked }) => {
-            if (picked.length === 1 && picked[0]!.id !== p.selected) p.onSelect(picked[0]!.id);
-          }}
-          onNodeDoubleClick={(_, n) => {
-            if (n.data.box.childCount > 0) p.onToggle(n.id);
-          }}
-          onNodeDragStop={(_, n, dragged) => {
-            for (const d of dragged.length ? dragged : [n]) p.onMoved(d.id, d.position);
-          }}
-          nodesConnectable={false}
-          edgesFocusable={false}
-          zoomOnDoubleClick={false}
-          minZoom={0.1}
-          fitView
-          fitViewOptions={{ padding: 0.08, minZoom: FIT_MIN_ZOOM }}
-          colorMode="dark"
-          aria-label={WORDS.canvasLabel}
-        >
-          <Background gap={24} />
-          <Controls showInteractive={false} />
-          <MiniMap pannable zoomable ariaLabel={WORDS.minimap} />
-        </ReactFlow>
-      )}
-    </div>
+      <div
+        className={`arch-canvas ${zoom < LABELS_FROM ? "far" : ""} ${lit ? "focusing" : ""}`}
+        style={{ height: "100%", ...labelScale(zoom) }}
+        aria-busy={state.state === "running"}
+      >
+        {state.state === "running" && !nodes.length ? (
+          <div className="stack" aria-live="polite">
+            <span className="sr">{WORDS.layingOut}</span>
+            <div className="skeleton" style={{ width: "70%" }} />
+            <div className="skeleton" style={{ width: "50%" }} />
+          </div>
+        ) : (
+          <ReactFlow<BoxNode, LinkEdge>
+            nodes={shownNodes}
+            edges={shownEdges}
+            nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
+            onNodesChange={onNodesChange}
+            onInit={(i) => {
+              rf.current = i;
+              setZoom(i.getZoom());
+            }}
+            onMove={(_, v) => setZoom(v.zoom)}
+            onNodeClick={(_, n) => p.onSelect(n.id)}
+            onSelectionChange={({ nodes: picked }) => {
+              if (picked.length === 1 && picked[0]!.id !== p.selected) p.onSelect(picked[0]!.id);
+            }}
+            onNodeDoubleClick={(_, n) => {
+              if (n.data.box.childCount > 0) p.onToggle(n.id);
+            }}
+            onNodeDragStop={(_, n, dragged) => {
+              for (const d of dragged.length ? dragged : [n]) p.onMoved(d.id, d.position);
+            }}
+            nodesConnectable={false}
+            edgesFocusable={false}
+            zoomOnDoubleClick={false}
+            zoomOnPinch
+            zoomOnScroll
+            panOnDrag
+            minZoom={ZOOM.min}
+            maxZoom={ZOOM.max}
+            fitView
+            fitViewOptions={{ padding: 0.08, minZoom: FIT_MIN_ZOOM }}
+            colorMode="dark"
+            aria-label={WORDS.canvasLabel}
+          >
+            <Background gap={24} />
+            {nodes.length > MINIMAP_FROM && (
+              <MiniMap pannable zoomable ariaLabel={COPY.viewer.minimap} />
+            )}
+          </ReactFlow>
+        )}
+      </div>
+    </DiagramFrame>
   );
 }
+
+/** A node dimmed unless focus mode keeps it lit (a group stays: it holds lit boxes). */
+export function dimNode(n: BoxNode, lit: ReadonlySet<string>): BoxNode {
+  const on = lit.has(n.id) || n.data.box.group;
+  const dim = n.className === "dim";
+  return on === !dim ? n : { ...n, className: on ? "" : "dim" };
+}
+
+/** A link dimmed unless it touches the focused box. */
+export function dimEdge(e: LinkEdge, focus: string): LinkEdge {
+  return e.source === focus || e.target === focus ? e : { ...e, className: "dim" };
+}
+
+/**
+ * Words stay readable as the picture shrinks (F10): a box's label grows against the zoom, up to
+ * 1.8 times, and below LABELS_FROM the link labels are hidden (the `far` class).
+ */
+export const labelScale = (zoom: number) => ({
+  "--label-scale": String(Math.round(Math.min(1.8, Math.max(1, 0.7 / zoom)) * 100) / 100),
+});

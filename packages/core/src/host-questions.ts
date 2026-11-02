@@ -23,6 +23,35 @@ export const HOSTS_STEP = "scan-hosts";
  */
 export const TARGETS_STEP_ID = "facts-targets";
 export const TARGETS_SPLIT_LABEL = "Not all to one place";
+/**
+ * ADR 0162 (F8): the option of a targets question that opens the picker of the whole estate (the
+ * manifest's repos, the profiles' systems, the teams). It names nothing: it is never an answer.
+ */
+export const TARGETS_ANOTHER_LABEL = "Another repo…";
+
+/**
+ * ADR 0162 (F8): the step that asks who owns a topic or queue the repo publishes to or listens on
+ * that no estate repo serves the other side of, and its option that opens the picker (a system of
+ * the profile, or a team): the answer adds the topic to that system's aliases, so the merge lands
+ * the publish or the listener on it, as a file change for review.
+ */
+export const TOPICS_STEP_ID = "facts-topics";
+export const TOPICS_OUTSIDE_LABEL = "A topic owned by another team or vendor";
+
+/** A topics question's words: what the repo does with the topic, and the topic. */
+export const topicQuestionText = (topic: string, component: string, side: "publish" | "listen") =>
+  `Who owns the topic ${topic}, which ${component} ${side === "publish" ? "publishes to" : "listens on"}?`;
+
+/** The topic a topics question asks about, read back from its words. */
+export function topicOfQuestion(q: { question: string }): string | undefined {
+  return /^Who owns the topic (\S+), which /.exec(q.question.trim())?.[1];
+}
+
+/** The options that open the picker: they name nothing, so they are never an answer. */
+export const PICKER_LABELS: ReadonlySet<string> = new Set([
+  TARGETS_ANOTHER_LABEL,
+  TOPICS_OUTSIDE_LABEL,
+]);
 
 /** The last option of a hosts question: no repo of the estate answers on it. */
 export const HOSTS_NONE = "None of these";
@@ -124,6 +153,90 @@ export async function addOutsideSystem(
       );
     await writeFileAtomic(file, doc.toString());
     return { id: sys.id, profile: rel, added: true };
+  }
+  throw new Error(`${repo} isn't in any repos.manifest.yaml`);
+}
+
+/**
+ * ADR 0162 (F8): put a system a person named in a targets answer into the profile whose
+ * repos.manifest.yaml lists the repo that asked: a vendor (boundary vendor), or another team's
+ * system (boundary internal, owner the team's id from roles.yaml). Written as a file change in the
+ * metarepo, for review in the pull request, never to a shared system. `added` is false when a
+ * system of the profiles already has the id. Throws when no manifest lists the repo, or the
+ * profile would not be valid.
+ */
+export async function addProfileSystem(
+  root: string,
+  repo: string,
+  s: {
+    id: string;
+    name: string;
+    boundary: "internal" | "vendor";
+    owner?: string;
+    /** Names it is known by: a topic or queue it owns (ADR 0162). */
+    aliases?: string[];
+  },
+): Promise<{ id: string; profile: string; added: boolean; aliased?: string[] }> {
+  const platforms = await platformsOf(root);
+  const relOf = (platform: string) =>
+    `${isAdopted(root) ? ".atticus/" : ""}org-pack/profiles/${platform}/profile.yaml`;
+  for (const { dir, platform } of platforms) {
+    const file = join(dir, "profile.yaml");
+    const text = await readFile(file, "utf8").catch(() => undefined);
+    const p = text === undefined ? undefined : Profile.safeParse(parseDocument(text).toJS());
+    const had = p?.success ? p.data.systems.find((x) => x.id === s.id) : undefined;
+    if (!had) continue;
+    // A system the profile has already: the aliases it lacks go on it.
+    const missing = (s.aliases ?? []).filter((a) => !had.aliases.includes(a));
+    if (missing.length) {
+      const doc = parseDocument(text!);
+      const seq = doc.get("systems") as YAMLSeq;
+      const node = seq.items.find((x) => isMap(x) && x.get("id") === s.id);
+      if (isMap(node)) {
+        const aliases = node.get("aliases");
+        if (isSeq(aliases)) for (const a of missing) aliases.add(doc.createNode(a));
+        else node.set("aliases", doc.createNode([...had.aliases, ...missing]));
+        await writeFileAtomic(file, doc.toString());
+      }
+    }
+    return {
+      id: s.id,
+      profile: relOf(platform),
+      added: false,
+      ...(missing.length ? { aliased: missing } : {}),
+    };
+  }
+  for (const { dir, platform } of platforms) {
+    const text = await readFile(join(dir, "repos.manifest.yaml"), "utf8").catch(() => undefined);
+    if (text === undefined) continue;
+    const repos = parseDocument(text).get("repos");
+    if (!isSeq(repos) || !repos.items.some((r) => isMap(r) && r.get("id") === repo)) continue;
+    const file = join(dir, "profile.yaml");
+    const before = await readFile(file, "utf8").catch(() => undefined);
+    const doc = parseDocument(
+      before ?? `schemaVersion: 1\nplatform: ${platform}\nname: ${platform}\n`,
+    );
+    let systems = doc.get("systems");
+    if (!isSeq(systems)) {
+      doc.set("systems", doc.createNode([]));
+      systems = doc.get("systems");
+    }
+    (systems as YAMLSeq).add(
+      doc.createNode({
+        id: s.id,
+        name: s.name,
+        boundary: s.boundary,
+        ...(s.owner ? { owner: s.owner } : {}),
+        aliases: [...(s.aliases ?? [])],
+      }),
+    );
+    const checked = Profile.safeParse(doc.toJS());
+    if (!checked.success)
+      throw new Error(
+        `${relOf(platform)} would not be valid: ${checked.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`,
+      );
+    await writeFileAtomic(file, doc.toString());
+    return { id: s.id, profile: relOf(platform), added: true };
   }
   throw new Error(`${repo} isn't in any repos.manifest.yaml`);
 }

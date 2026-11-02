@@ -409,3 +409,15 @@
 .seq-kind.d-remove {
   color: var(--text-2);
 }
+
+/* F10: the flow in full screen scrolls inside the window; the bar holds the way back. */
+.seq-bar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.seq-wrap.viewer-full {
+  overflow: auto;
+}

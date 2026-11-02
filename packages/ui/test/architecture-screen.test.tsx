@@ -163,7 +163,8 @@ describe("the Architecture screen's states", () => {
     expect(out).toContain("gappy");
     expect(out).toContain(esc(WORDS.insideLinks(2)));
     expect(out).toContain(`Portal (${WORDS.outsideMark})`);
-    expect(out).toContain(esc(WORDS.minimap));
+    // F10: a minimap only on a large picture; three boxes need none.
+    expect(out).not.toContain(esc(WORDS.minimap));
   });
 
   it("has Keep, Tidy up and Reset, off until the arrangement is read", () => {

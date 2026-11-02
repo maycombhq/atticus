@@ -210,7 +210,7 @@ describe("atticus upgrade", () => {
       },
     ]);
     expect(await readFile(join(root, "questions/q-0f1e2d3c4b5a.yaml"), "utf8")).toMatch(
-      /^schemaVersion: 3$/m,
+      /^schemaVersion: 4$/m,
     );
     expect(
       await readFile(join(root, "specs/forge-web/forge-web.save-customer.yaml"), "utf8"),

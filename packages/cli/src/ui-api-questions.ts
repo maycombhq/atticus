@@ -6,6 +6,8 @@ import {
   QuestionError,
   QuestionState,
   readQuestion,
+  TARGETS_STEP_ID,
+  TOPICS_STEP_ID,
 } from "@maycombhq/core";
 import {
   badRequest,
@@ -62,6 +64,19 @@ export function uiQuestionRoutes(r: Router, ctx: ServerContext, deps: { now?: ()
         if (!q) throw notFound(`There is no question ${params.id}.`);
         return { status: 200, body: q };
       })
+      // ADR 0162 (F8): the "Another repo…" picker of a targets question.
+      .add("GET", "/api/questions/{id}/targets", async ({ params }) => {
+        const q = await readQuestion(ctx.root, params.id!).catch(() => undefined);
+        if (!q) throw notFound(`There is no question ${params.id}.`);
+        if (q.askedBy.step !== TARGETS_STEP_ID && q.askedBy.step !== TOPICS_STEP_ID)
+          throw new HttpError(
+            422,
+            "That question doesn't ask where a call goes or who owns a topic",
+            `${q.id} isn't a targets or topics question, so it has no picker.`,
+          );
+        const { pickerOf } = await import("./target-answer.js");
+        return { status: 200, body: { picks: await pickerOf(ctx.root) } };
+      })
       // WP7.2: the lines each cited line sits in, so the answer is given looking at the code.
       .add("GET", "/api/questions/{id}/evidence", async ({ params }) => {
         const q = await readQuestion(ctx.root, params.id!).catch(() => undefined);
@@ -82,7 +97,30 @@ export function uiQuestionRoutes(r: Router, ctx: ServerContext, deps: { now?: ()
           });
         try {
           // ADR 0144 (Q5): the person accepts the assistant's proposal; it becomes their answer.
-          const { acceptProposal, ...given } = b.data;
+          const { acceptProposal, target, addSystem, name, ...given } = b.data;
+          // ADR 0162 (F8): a target from the picker, a new system written for review if asked.
+          let system:
+            Awaited<ReturnType<typeof import("./target-answer.js").targetAnswerOf>> | undefined;
+          if (target) {
+            if (acceptProposal || given.option !== undefined || given.text !== undefined)
+              throw badRequest("Give target alone, not with option, text or acceptProposal.");
+            const q0 = await readQuestion(ctx.root, params.id!).catch(() => undefined);
+            if (!q0) throw notFound(`There is no question ${params.id}.`);
+            const { targetAnswerOf, offerLine } = await import("./target-answer.js");
+            system = await targetAnswerOf(ctx.root, q0, target, {
+              ...(addSystem ? { addSystem } : {}),
+              ...(name ? { name } : {}),
+            });
+            if ("problem" in system)
+              throw badRequest(
+                [
+                  system.problem,
+                  ...(system.offer ? [offerLine(q0.id, target, system.offer)] : []),
+                ].join(" "),
+                system.offer ? { offer: system.offer } : undefined,
+              );
+            given.text = system.text;
+          }
           const r = acceptProposal
             ? await acceptProposalOf(ctx.root, params.id!, {
                 ...(given.scope ? { scope: given.scope } : {}),
@@ -102,6 +140,7 @@ export function uiQuestionRoutes(r: Router, ctx: ServerContext, deps: { now?: ()
               question: r.question,
               rerun: r.question.rerun,
               ...(r.skill ? { skill: r.skill } : {}),
+              ...(system && "system" in system && system.system ? { system: system.system } : {}),
             },
           };
         } catch (e) {

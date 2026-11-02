@@ -846,8 +846,7 @@ export function CommandCenter() {
         <Panel
           title={T.systemMap}
           kind="hero"
-          span="span 8"
-          rows="span 2"
+          span="1 / -1"
           meta={<a href="#/explore">{T.explore}</a>}
         >
           <View of={graph} empty={(g) => g.nodes.length === 0} emptyText={T.theCatalogIsEmpty}>
