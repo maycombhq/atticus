@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { parse } from "yaml";
-import { assistantTier, readProbes } from "@maycombhq/assistant-files";
+import { assistantTier, readProbes, rulesLacking } from "@maycombhq/assistant-files";
 import { currentPromptLimit, type AiRequest, type AiRuntime } from "@maycombhq/ai";
 import {
   ensureLocalIgnore,
@@ -17,13 +17,14 @@ import {
   type OrgPack,
 } from "@maycombhq/core";
 import { estateRepos, productionRepos } from "@maycombhq/scanner";
-import { sameCommit } from "@maycombhq/verify";
+import { dirSource, sameCommit, sessionTokensFor } from "@maycombhq/verify";
 import type { GitRunner } from "@maycombhq/workspace";
 import type { Output } from "./commands.js";
 import { estateFreshness, type FreshRepo } from "./estate-fresh.js";
-import { checkoutOf, headOf } from "./facts-files.js";
+import { checkoutOf, conventionsAt, excludesOf, headOf } from "./facts-files.js";
 import { mapCommand, mapStateOf } from "./map-commands.js";
-import { readPlanProgress } from "./map-parts.js";
+import { loadReadPlan, readPlanProgress } from "./map-parts.js";
+import { plannedTopUp, recordRulesNow, ruleSetsOfFiles } from "./map-rules.js";
 import { isMetarepo, notMetarepo } from "./metarepo-guard.js";
 import { onboardingQueue } from "./onboarding-queue.js";
 import { factsRepos, verifyCommand } from "./verify-commands.js";
@@ -93,7 +94,7 @@ export interface MapAllDeps {
   backoffMs?: number;
 }
 
-export type ItemKind = "read" | "reread" | "carry" | "gaps";
+export type ItemKind = "read" | "reread" | "carry" | "gaps" | "rules";
 
 export interface PlanPart {
   part: number;
@@ -118,6 +119,8 @@ export interface PlanItem {
   tokens: number;
   /** Model mode: the prompts the read takes at the limit. */
   batches?: number;
+  /** ADR 0167: a top-up's rule sets, those the read lacked that some file of it is read for. */
+  sets?: string[];
 }
 
 export interface MapAllPlan {
@@ -286,6 +289,44 @@ async function partsOf(
 }
 
 /**
+ * ADR 0167: a top-up's parts at the limit, as `atticus map <repo> --rules` plans its sessions:
+ * the sessions not done yet, and the sets some file of it is read for. Planned without writing,
+ * unless `save` (the run, before it gives the first line).
+ */
+async function rulesPartsOf(
+  root: string,
+  repo: string,
+  commit: string,
+  limit: number,
+  o: { save?: boolean } = {},
+): Promise<{ parts: PlanPart[]; total: number; sets: string[] } | string> {
+  const dir = await checkoutOf(root, repo).catch(() => undefined);
+  if (!dir) return "no clone to read: atticus workspace sync clones it";
+  const p = await plannedTopUp(root, repo, {
+    commit,
+    source: dirSource(dir),
+    exclude: await excludesOf(root, repo),
+    conventions: await conventionsAt(root),
+    session: sessionTokensFor(limit),
+    ...(o.save ? {} : { dryRun: true }),
+  });
+  if ("error" in p) return p.error;
+  const sessions = p.topUp?.sessions ?? [];
+  const parts = sessions
+    .map((x, i) => ({
+      part: i + 1,
+      total: sessions.length,
+      paths: x.paths,
+      files: x.files,
+      tokens: x.tokens,
+      done: !!x.done,
+    }))
+    .filter((x) => !x.done)
+    .map(({ done: _d, ...x }) => x);
+  return { parts, total: sessions.length, sets: ruleSetsOfFiles(sessions) };
+}
+
+/**
  * The plan: every repo of the estate (or of --repos), what it needs (a read, a re-read of what
  * changed, a carry, a gaps pass) or why it is skipped, in the onboarding queue's order; the
  * prototypes after the estate, read but never joined (ADR 0133).
@@ -349,6 +390,23 @@ export async function planEstate(
       });
       continue;
     }
+    if (state === "rules-changed") {
+      // ADR 0167: fresh by commit, read before reading rules added since: a top-up, unless a
+      // read is still under way (it is read under these rules already).
+      const progress = await readPlanProgress(root, repo, { commit });
+      todo.push(
+        progress && !progress.stale && progress.next
+          ? {
+              repo,
+              kind: "read",
+              commit,
+              why: `its read is under way: ${progress.done} of ${progress.total} parts read`,
+              started: true,
+            }
+          : { repo, kind: "rules", commit, why: "", started: true },
+      );
+      continue;
+    }
     if (state === "moved") {
       todo.push({
         repo,
@@ -406,6 +464,24 @@ export async function planEstate(
       items.push({ ...base, parts: [], total: 0, tokens: 0 });
       continue;
     }
+    if (t.kind === "rules") {
+      const p = await rulesPartsOf(root, t.repo, t.commit, c.limit);
+      if (typeof p === "string") {
+        skipped.push({ repo: t.repo, why: p });
+        continue;
+      }
+      items.push({
+        ...base,
+        why: p.sets.length
+          ? `read before these reading rules: ${p.sets.join(", ")}`
+          : "read before the reading rules there are now, but no file of it is one they apply to: recorded as read under them",
+        sets: p.sets,
+        parts: p.parts,
+        total: p.total,
+        tokens: p.parts.reduce((n, x) => n + x.tokens, 0),
+      });
+      continue;
+    }
     if (t.kind === "gaps") {
       items.push({
         ...base,
@@ -451,7 +527,20 @@ function planLines(plan: MapAllPlan): string[] {
   );
   plan.items.forEach((i, n) => {
     const head = `  ${n + 1}. ${i.repo}${i.prototype ? " (prototype: read, never joined)" : ""}`;
-    if (i.kind === "carry") return out.push(`${head}: ${i.why}.`);
+    if (i.kind === "carry" || (i.kind === "rules" && !i.parts.length))
+      return out.push(`${head}: ${i.why}.`);
+    if (i.kind === "rules")
+      out.push(
+        `${head}: top-up for the reading rules added since it was read (${(i.sets ?? []).join(", ")}); ${plural(i.parts.length, "part")}${i.parts.length < i.total ? ` of ${i.total}` : ""}, about ${tokensText(i.tokens)} tokens.`,
+      );
+    if (i.kind === "rules") {
+      if (i.total > 1)
+        for (const p of i.parts)
+          out.push(
+            `     part ${p.part} of ${p.total} (about ${tokensText(p.tokens)} tokens, ${plural(p.files, "file")}): ${p.paths.join(", ")}`,
+          );
+      return;
+    }
     if (i.kind === "gaps") return out.push(`${head}: ${i.why}, planned when it starts.`);
     out.push(
       `${head}: ${i.kind === "reread" ? "re-read" : "read"}, ${i.why}; ${plural(i.parts.length, "part")}${i.parts.length < i.total ? ` of ${i.total}` : ""}, about ${tokensText(i.tokens)} tokens${plan.mode === "model" && i.batches !== undefined ? `, ${plural(i.batches, "prompt")}` : ""}.`,
@@ -527,6 +616,12 @@ async function settled(root: string, repo: string, commit: string, s: Snap, sinc
 
 /** Whether what the part reads is accounted for in the facts on disk. */
 async function covered(root: string, item: PlanItem, part: PlanPart, first: Snap, now: Snap) {
+  if (item.kind === "rules") {
+    // ADR 0167: the session is done once a verify passed after it was given (or none is left).
+    const plan = await loadReadPlan(root, item.repo);
+    if (!plan?.topUp) return rulesLacking(plan?.rules).length === 0;
+    return !!plan.topUp.sessions[part.part - 1]?.done;
+  }
   if (item.total > 1) {
     const p = await readPlanProgress(root, item.repo);
     return p?.parts.find((x) => x.part === part.part)?.state === "done";
@@ -700,6 +795,16 @@ export async function mapAllCommand(
   for (const [n, item] of items.entries()) {
     if (quit || stopped()) break;
     const where = `repo ${n + 1} of ${items.length}`;
+    if (item.kind === "rules" && !item.parts.length) {
+      // ADR 0167: nothing of the repo is one the new rules apply to: recorded as read under them.
+      io.out("");
+      io.out(`===== ${item.repo} (${where}): ${item.why} =====`);
+      await recordRulesNow(root, item.repo, item.commit);
+      repoState(item).done = true;
+      totals.repos.add(item.repo);
+      await save();
+      continue;
+    }
     if (item.kind === "carry") {
       io.out("");
       io.out(`===== ${item.repo} (${where}): ${item.why} =====`);
@@ -782,11 +887,13 @@ export async function mapAllCommand(
     // A part after one not read yet (or given again): the estimate would name another part, so
     // the part's own files are planned as its rest (none of it read yet: all of it).
     const first0 =
-      item.kind === "gaps"
-        ? await gapsLine(item)
-        : ps.retries > 0 || (progress?.next && progress.next.part !== part.part)
-          ? ((await restLine(item, part)) ?? `/atticus-map ${item.repo}`)
-          : `/atticus-map ${item.repo}`;
+      item.kind === "rules"
+        ? await rulesLine(item)
+        : item.kind === "gaps"
+          ? await gapsLine(item)
+          : ps.retries > 0 || (progress?.next && progress.next.part !== part.part)
+            ? ((await restLine(item, part)) ?? `/atticus-map ${item.repo}`)
+            : `/atticus-map ${item.repo}`;
     if (first0 === undefined) {
       io.out(`${item.repo}: no gaps left; nothing to read.`);
       return finishPart(item, part, ps);
@@ -878,7 +985,12 @@ export async function mapAllCommand(
     ): Promise<"done" | "again"> {
       ps.retries++;
       await save();
-      const rest = item.kind === "gaps" ? await gapsLine(item) : await restLine(item, part);
+      const rest =
+        item.kind === "rules"
+          ? await rulesLine(item)
+          : item.kind === "gaps"
+            ? await gapsLine(item)
+            : await restLine(item, part);
       if (rest === "done" || (rest === undefined && item.kind === "gaps")) return "done";
       line = rest ?? `/atticus-map ${item.repo}`;
       await block(item, part, label, where, line, ps.retries);
@@ -933,6 +1045,16 @@ export async function mapAllCommand(
     return `/atticus-map ${item.repo}${parted ? ` --part ${part.part}` : ""} --gaps`;
   }
 
+  /**
+   * ADR 0167: the top-up's line. Its plan is saved first, at this run's limit, so the session
+   * `atticus map <repo> --rules` gives is the part this run waits for; "done" when nothing is left.
+   */
+  async function rulesLine(item: PlanItem): Promise<string | "done"> {
+    const p = await rulesPartsOf(root, item.repo, item.commit, limit, { save: true });
+    if (typeof p === "string" || !p.parts.length) return "done";
+    return `/atticus-map ${item.repo} --rules`;
+  }
+
   /** The gaps pass's line, its prompt planned first; undefined when there are no gaps left. */
   async function gapsLine(item: PlanItem): Promise<string | undefined> {
     const plain = captured();
@@ -964,10 +1086,14 @@ export async function mapAllCommand(
   ) {
     io.out("");
     io.out(
-      `===== ${item.repo}, ${item.kind === "gaps" ? "the gaps pass" : label} (${where})${retries ? `, given again (${retries})` : ""} =====`,
+      `===== ${item.repo}, ${item.kind === "gaps" ? "the gaps pass" : item.kind === "rules" ? `the rules top-up${item.total > 1 ? `, ${label}` : ""}` : label} (${where})${retries ? `, given again (${retries})` : ""} =====`,
     );
     io.out(`In a NEW Copilot Chat (agent mode), run: ${line}`);
-    if (item.total > 1 && !line.includes("--gaps"))
+    if (item.kind === "rules")
+      io.out(
+        `That chat reads ${plural(part.files, "file")} again for the reading rules added since (${(item.sets ?? []).join(", ")}): ${part.paths.join(", ")} (about ${tokensText(part.tokens)} tokens).`,
+      );
+    else if (item.total > 1 && !line.includes("--gaps"))
       io.out(
         `That chat reads part ${part.part}: ${part.paths.join(", ")} (about ${tokensText(part.tokens)} tokens); the estimate it runs names it.`,
       );
@@ -993,7 +1119,9 @@ export async function mapAllCommand(
   ): Promise<"done" | "failed" | "cap"> {
     io.out("");
     io.out(
-      `===== ${item.repo} (${where}): ${item.kind === "reread" ? "re-reading what changed" : "reading"} on the model, ${plural(item.batches ?? 0, "prompt")} =====`,
+      item.kind === "rules"
+        ? `===== ${item.repo} (${where}): topping up on the model for the reading rules added since it was read (${(item.sets ?? []).join(", ")}) =====`
+        : `===== ${item.repo} (${where}): ${item.kind === "reread" ? "re-reading what changed" : "reading"} on the model, ${plural(item.batches ?? 0, "prompt")} =====`,
     );
     for (let attempt = 1; attempt <= RETRIES; attempt++) {
       if (stopped()) return "failed";
@@ -1007,6 +1135,7 @@ export async function mapAllCommand(
           {
             commit: item.commit,
             maxTokens: limit,
+            ...(item.kind === "rules" ? { rules: true } : {}),
             ...(resume ? { next: true } : before && !before.done ? { force: true } : {}),
           },
           io,

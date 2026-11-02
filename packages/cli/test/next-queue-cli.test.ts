@@ -3,6 +3,8 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { stringify } from "yaml";
+import { rulesNow } from "@maycombhq/assistant-files";
 import {
   parseRecord,
   recordPath,
@@ -177,6 +179,23 @@ describe("atticus next: the onboarding queue (P6, ADR 0141)", () => {
       files: {},
       questions: [],
     });
+    // Read under the reading rules there are now (ADR 0167): else a top-up is its next step.
+    const before = await steps(root);
+    expect(before.filter((x) => x.repo === "forge-portal-bff").map((x) => x.step)).toEqual([
+      "rules",
+    ]);
+    await writeFile(
+      join(root, "facts", "forge-portal-bff.read-plan.yaml"),
+      stringify({
+        schemaVersion: 2,
+        repo: "forge-portal-bff",
+        commit: SHA("a"),
+        session: 45000,
+        plannedAt: "2026-10-30T09:00:00Z",
+        parts: [],
+        rules: rulesNow(),
+      }),
+    );
     const s = await steps(root);
     expect(s.filter((x) => x.repo === "forge-portal-bff")).toEqual([]);
   });

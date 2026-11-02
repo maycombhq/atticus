@@ -64,6 +64,42 @@ const Reported = z.strictObject({
   by: z.string().min(1).optional(),
 });
 
+/**
+ * ADR 0167: the reading rules a read was given: the FACT_RULES hash and the rule sets
+ * (`RULE_SETS` in @maycombhq/assistant-files) it carried. A plan with none was read under the
+ * rules before 2.0.0-beta.12, which recorded nothing.
+ */
+const RulesRecord = z.strictObject({
+  hash: z.string().min(1),
+  sets: z.array(z.string().min(1)),
+});
+
+/** ADR 0167: one session of a top-up: its files (or line ranges) and the sets it carries. */
+const TopUpSession = z.strictObject({
+  paths: z.array(z.string().min(1)).min(1),
+  sets: z.array(z.string().min(1)).min(1),
+  files: z.number().int().nonnegative(),
+  tokens: z.number().int().nonnegative(),
+  /** When `atticus map <repo> --rules` last gave it to a reader. */
+  given: z.string().min(1).optional(),
+  /** When a verify that passed after it was given found it done. */
+  done: ReadStamp.optional(),
+});
+
+/**
+ * ADR 0167: a top-up under way: the sets the read lacked, planned in sessions at `commit` for the
+ * rules of `hash`. Gone once every session is done and `rules` records the rules now.
+ */
+const TopUp = z.strictObject({
+  commit: z.string().min(1),
+  hash: z.string().min(1),
+  sets: z.array(z.string().min(1)),
+  session: z.number().int().positive(),
+  plannedAt: z.string().min(1),
+  sessions: z.array(TopUpSession),
+});
+export type TopUpT = z.infer<typeof TopUp>;
+
 export const ReadPlanFile = z.strictObject({
   /** 2 since ADR 0141 (a v1 file reads as v2: `migrateReadPlan`). */
   schemaVersion: z.literal(2),
@@ -92,6 +128,10 @@ export const ReadPlanFile = z.strictObject({
   read: ReadStamp.extend({ sessions: z.number().int().positive() }).optional(),
   /** ADR 0141: what the reader reported the read took (`atticus map <repo> --spent`). */
   reported: z.array(Reported).optional(),
+  /** ADR 0167: the reading rules the read was given; none when read before they were recorded. */
+  rules: RulesRecord.optional(),
+  /** ADR 0167: a top-up for the rule sets the read lacked, under way. */
+  topUp: TopUp.optional(),
 });
 export type ReadPlanFileT = z.infer<typeof ReadPlanFile>;
 export type ReadPlanReport = z.infer<typeof Reported>;
@@ -208,6 +248,8 @@ export async function writeReadPlan(
     parts: readonly { paths: string[]; files: number; tokens: number }[];
     estimate?: ReadPlanFileT["estimate"];
     reported?: ReadPlanFileT["reported"];
+    /** ADR 0167: the rules the read is (or was) given. */
+    rules?: ReadPlanFileT["rules"];
   },
 ): Promise<ReadPlanFileT> {
   const plan: ReadPlanFileT = {
@@ -224,6 +266,7 @@ export async function writeReadPlan(
       tokens: p.tokens,
     })),
     ...(o.reported?.length ? { reported: [...o.reported] } : {}),
+    ...(o.rules ? { rules: { hash: o.rules.hash, sets: [...o.rules.sets] } } : {}),
   };
   await saveReadPlan(root, plan);
   return plan;

@@ -11,6 +11,8 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { stringify } from "yaml";
+import { rulesNow } from "@maycombhq/assistant-files";
 import { Api } from "@maycombhq/core";
 import { Router, type ServerContext } from "@maycombhq/server";
 import { estateFresh, estateFreshness, freshOrder, type FreshRepo } from "../src/estate-fresh.js";
@@ -193,7 +195,20 @@ describe("atticus estate fresh: every repo's freshness at once (P5)", () => {
     "says a repo is fresh when its facts are of the clone's commit, and one not read yet",
     async () => {
       const root = metarepo();
-      clone(root, "forge-ledger");
+      const { one } = clone(root, "forge-ledger");
+      // Read under the reading rules there are now (ADR 0167); else it is rules-changed.
+      writeFileSync(
+        join(root, "facts", "forge-ledger.read-plan.yaml"),
+        stringify({
+          schemaVersion: 2,
+          repo: "forge-ledger",
+          commit: one,
+          session: 45000,
+          plannedAt: "2026-10-30T10:00:00Z",
+          parts: [],
+          rules: rulesNow(),
+        }),
+      );
       const v = await estateFreshness(root);
       expect(v.repos.map((r) => [r.repo, r.state])).toEqual([
         ["forge-ledger", "fresh"],

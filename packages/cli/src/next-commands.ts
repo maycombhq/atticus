@@ -22,6 +22,7 @@ import {
   stepModelsOf,
 } from "@maycombhq/core";
 import { stepClassOfNextStep } from "@maycombhq/ai";
+import { rulesLacking } from "@maycombhq/assistant-files";
 import { changeStore, loadChangePolicy, stageCompletion } from "@maycombhq/changes";
 import { readKnowledge, snapshotDates, workingDays } from "@maycombhq/knowledge";
 import {
@@ -126,6 +127,11 @@ export interface RepoState {
    * against the clone's HEAD, read from its .git files): it is read again.
    */
   stale?: { facts: string; head: string };
+  /**
+   * ADR 0167: a read repo whose facts are of its clone's commit, read before reading rules added
+   * since: the rule sets it lacks, which a top-up reads for.
+   */
+  rules?: string[];
   /**
    * What it is, in a person's words (ADR 0128): `none` when nothing says, `draft` when the
    * assistant wrote one and nobody has confirmed it, `said` when a person did.
@@ -285,6 +291,9 @@ export async function readNextState(root: string): Promise<NextState> {
     const mapped =
       !!spec.header?.template.startsWith("facts@") || (fromFacts.get(r.id)?.facts ?? 0) > 0;
     const stale = mapped && hasFacts ? await staleOf(root, r.id) : undefined;
+    // ADR 0167: fresh by commit, read before the reading rules there are now.
+    const rules =
+      hasFacts && r.cloned && !(await staleOf(root, r.id)) ? rulesLacking(planFile?.rules) : [];
     repos.push({
       id: r.id,
       cloned: r.cloned,
@@ -297,6 +306,7 @@ export async function readNextState(root: string): Promise<NextState> {
       described: !r.description ? "none" : r.description.trust === "suggested" ? "draft" : "said",
       ...(mapped ? { facts: true } : {}),
       ...(stale ? { stale } : {}),
+      ...(rules.length ? { rules } : {}),
       ...(planFile ? { cost: readCostOf(planFile) } : {}),
       ...(hasFacts ? { read: true } : {}),
       ...(near.length ? { nearFacts: near } : {}),
@@ -848,6 +858,16 @@ export function nextSteps(s: NextState): NextStep[] {
       slash: `/atticus-map ${r.id}`,
       where: METAREPO,
       why: `${r.id}'s clone moved past its facts' commit (facts ${r.stale!.facts.slice(0, 12)}, clone ${r.stale!.head.slice(0, 12)}): atticus estate fresh says how many facts to read again; your assistant reads only the files that changed.`,
+      repo: r.id,
+    });
+  // ADR 0167: a repo read before reading rules added since is topped up for them alone.
+  for (const r of s.repos.filter((x) => x.cloned && x.read && x.rules?.length))
+    out.push({
+      step: "rules",
+      command: `atticus map ${r.id} --rules`,
+      slash: `/atticus-map ${r.id} --rules`,
+      where: METAREPO,
+      why: `${r.id} was read before reading rules added since (${r.rules!.join(", ")}): your assistant reads only the files they apply to, for what they ask, and atticus verify ${r.id} records the rules. atticus map --all --stale tops up every such repo.`,
       repo: r.id,
     });
   const cloned = s.repos.filter((r) => r.cloned && !r.facts && r.scanned);

@@ -129,7 +129,8 @@ describe("what a read cost, recorded in the read plan (P6, ADR 0141)", () => {
     await mapCommand(root, REPO, { estimate: true, commit: COMMIT }, io().io);
     // The same plan, as an older Atticus wrote it.
     const now = parse(await readFile(join(root, PLAN), "utf8"));
-    const { estimate: _e, ...rest } = now;
+    // An older Atticus wrote no estimate (ADR 0141) and no rules (ADR 0167).
+    const { estimate: _e, rules: _r, ...rest } = now;
     write(
       root,
       PLAN,

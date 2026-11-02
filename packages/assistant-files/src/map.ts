@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { factsJsonSchemas, type FrameworkModel } from "@maycombhq/core";
 
 /**
@@ -123,8 +124,39 @@ export type FrameworkTopic = (typeof FRAMEWORK_TOPICS)[number];
 export interface RulePart {
   when?: readonly RuleTopic[];
   on?: readonly FrameworkTopic[];
+  /**
+   * ADR 0167: the rule set the part belongs to, when it is one a read can be topped up with. A
+   * repo read before the set was added is read again for it alone, its files only.
+   */
+  set?: RuleSet;
+  /**
+   * ADR 0167: a part a top-up of these sets carries beside them, though it is no part of them
+   * (what a field fact belongs to, for the sets that write fields).
+   */
+  topUp?: readonly RuleSet[];
   text: string;
 }
+
+/**
+ * The rule sets a read records it was given (ADR 0167), coarse on purpose: the parts added since
+ * reads began to be recorded, each a top-up a read made without it can be given on its own. A
+ * new rule part a read made without should be read again for gets a set of its own here.
+ *
+ * - `field-types`: a body's fields with their type and whether they are required, and a wrapper
+ *   every answer shares read as a mapping (ADR 0164).
+ * - `mappings`: a gateway policy that reshapes a payload, read as field mappings (ADR 0164).
+ * - `message-types`: the message type a publish or listener names (ADR 0164).
+ * - `terms`: the organisation's identifiers a file writes, with the repo type's notes (ADR 0163).
+ * - `call-auth`: the token, key or certificate a call presents and its TLS, cited (ADR 0163).
+ */
+export const RULE_SETS = [
+  "field-types",
+  "mappings",
+  "message-types",
+  "terms",
+  "call-auth",
+] as const;
+export type RuleSet = (typeof RULE_SETS)[number];
 
 /**
  * The rules every fact follows, each cut into parts by the topic they serve. The core is the
@@ -236,12 +268,14 @@ export const FACT_RULE_PARTS: readonly (readonly RulePart[])[] = [
     },
     {
       when: ["backend", "frontend", "config", "gateway"],
+      set: "call-auth",
       text: "A call's `auth` (the token, key or client certificate it presents) goes with `authCite`, its `tls` (`mtls` with a client certificate, `tls` for https, `none` for http) with `tlsCite`: the line that sets it, as `{file, line, value}`, with the line that builds what it passes (the client certificate's context, the key store) in `with`. Claim only what those lines write: `mtls` needs a client certificate, key store or SSL bundle there, an https URL alone is `tls`.",
     },
   ],
   [
     {
       when: ["config", "deploy", "gateway", "data"],
+      set: "terms",
       text: "A `term` fact is an identifier of the organisation's own as a file writes it (an app or CMDB id, a cost centre): `term` its key, `value` cited on its line, `meaning` the line at or above it in the file that gives its role (the list's or block's key). `role` from the notes given, the note's key in `note` (the 8 characters after \"note\", never its number): `owner` (names this repo's own system), `consumer` (a system it lets in), `none`. No note says: record ids that look like the organisation's own (id-like values, entries of a list of apps or teams) as `role: unknown`; never guess.",
     },
   ],
@@ -320,6 +354,7 @@ export const FACT_RULE_PARTS: readonly (readonly RulePart[])[] = [
   [
     {
       when: ["backend", "frontend", "data", "protocols"],
+      topUp: ["field-types", "message-types", "mappings"],
       text: "A field fact belongs to the fact it crosses (`owner`): an entry's or call's `request` or `response`, a message, a store's column (`side: column`). A header is a `request` or `response` field named as sent (`Idempotency-Key`); an enum's `type` lists its values (`\"A\" | \"B\"`).",
     },
     {
@@ -331,14 +366,17 @@ export const FACT_RULE_PARTS: readonly (readonly RulePart[])[] = [
   [
     {
       when: ["backend", "frontend", "protocols"],
+      set: "field-types",
       text: "A request or response body's fields are field facts with `type` as declared and `required` where the code says (`@NotNull`, `[Required]`, a property that isn't optional), each cited on its declaration. A wrapper every answer or message shares (`Response<T>` with a `data` field) is a mapping: its field (`data`) is a field fact of that side, and each field inside it has `mappedTo` that field and `transform: envelope <wrapper>`. A mapper that renames a field (a MapStruct `@Mapping`, an AutoMapper profile, a converter): the source field has `mappedTo` the field it becomes and `transform` naming the mapper, cited on the mapping's line.",
     },
     {
       when: ["backend", "frontend", "protocols"],
+      set: "message-types",
       text: "A publish and a listener name their message type: a `message` field fact whose `name` is the type as the code writes it (the generated proto class, the Avro record), `type` its full name when the code gives it (`forge.payments.v1.PaymentSettled`) and `transform: message type`, cited where the publish or listener names it, beside the message's fields.",
     },
     {
       when: ["gateway"],
+      set: "mappings",
       text: "A policy that reshapes a payload (`AssignMessage`, a JavaScript or XSL policy) is read as field mappings: the route's field, as the caller sees it, with `mappedTo` its forwarding call's field, as the service sees it, or the other way, `transform` naming the policy, cited on the policy's line. A field a policy writes from nothing you can trace has `transform` naming the policy and no `mappedTo`.",
     },
   ],
@@ -441,8 +479,21 @@ export const FACT_RULE_PARTS: readonly (readonly RulePart[])[] = [
 export function factRulesFor(
   kinds?: readonly RuleTopic[],
   frameworks?: readonly FrameworkTopic[],
+  /**
+   * ADR 0167: a top-up's sets. Given, only the core (a part with no topic, framework or set) and
+   * the parts of these sets (and those they carry) go in, each still by its kinds.
+   */
+  sets?: readonly RuleSet[],
 ): string {
+  const inSets = (p: RulePart) =>
+    !sets ||
+    (p.set
+      ? sets.includes(p.set)
+      : p.topUp
+        ? p.topUp.some((x) => sets.includes(x))
+        : !p.when && !p.on);
   const has = (p: RulePart) =>
+    inSets(p) &&
     (!p.when || !kinds || p.when.some((k) => kinds.includes(k))) &&
     (!p.on || !frameworks || p.on.some((f) => frameworks.includes(f)));
   return FACT_RULE_PARTS.map((r) => r.filter(has))
@@ -453,6 +504,65 @@ export function factRulesFor(
 
 /** The rules every fact follows, at every tier: all of them, as `/atticus-map` gives them. */
 export const FACT_RULES = factRulesFor();
+
+/**
+ * ADR 0167: the sha256 of FACT_RULES, which a read records beside the rule sets it was given. The
+ * same hash `packages/assistant-files/test/map.test.ts` pins, so a change to any rule's words is
+ * seen; only a set the read lacked is read again for.
+ */
+export const FACT_RULES_HASH = createHash("sha256").update(FACT_RULES).digest("hex");
+
+/** ADR 0167: the rule sets the rules have now, in RULE_SETS order. */
+export function ruleSetsNow(): RuleSet[] {
+  const tagged = new Set(FACT_RULE_PARTS.flat().flatMap((p) => (p.set ? [p.set] : [])));
+  return RULE_SETS.filter((x) => tagged.has(x));
+}
+
+/**
+ * ADR 0167: what a read recorded nothing for lacked: it was made before reads recorded their
+ * rules (2.0.0-beta.12), so it lacks every set added in 2.0.0-beta.11 (the field types and
+ * required, the mappings and envelopes, the message types, the terms, a call's auth and TLS),
+ * which are all the sets there are so far.
+ */
+export const UNRECORDED_LACKS: readonly RuleSet[] = [
+  "field-types",
+  "mappings",
+  "message-types",
+  "terms",
+  "call-auth",
+];
+
+/** The rules a read was given, as its read plan records them (ADR 0167). */
+export interface RulesRecord {
+  hash: string;
+  sets: readonly string[];
+}
+
+/**
+ * ADR 0167: the rule sets a read lacks: none when it was given these very rules; else the sets
+ * there are now that its record doesn't list; with no record, what reads before 2.0.0-beta.12
+ * lacked. A change of words alone (the hash differs, every set listed) lacks nothing.
+ */
+export function rulesLacking(rec: RulesRecord | undefined): RuleSet[] {
+  const now = ruleSetsNow();
+  if (!rec) return now.filter((x) => UNRECORDED_LACKS.includes(x));
+  if (rec.hash === FACT_RULES_HASH) return [];
+  return now.filter((x) => !rec.sets.includes(x));
+}
+
+/** The rules as they are now, to record with a read (ADR 0167). */
+export const rulesNow = (): { hash: string; sets: string[] } => ({
+  hash: FACT_RULES_HASH,
+  sets: ruleSetsNow(),
+});
+
+/** ADR 0167: the kinds of file a set's parts are for: the files a top-up of it reads. */
+export function ruleSetKinds(set: RuleSet): RuleTopic[] {
+  const k = new Set(
+    FACT_RULE_PARTS.flat().flatMap((p) => (p.set === set ? (p.when ?? RULE_TOPICS) : [])),
+  );
+  return RULE_TOPICS.filter((x) => k.has(x));
+}
 
 /**
  * The instructions of one batch prompt (tiers 2 and 3): the model has no tools, so it reads only
@@ -537,6 +647,14 @@ export function taughtFrameworksText(models: readonly FrameworkModel[]): string 
   return lines.join("\n");
 }
 
+/**
+ * ADR 0167: what a top-up is, in a sentence or two, for a batch prompt and the Copilot prompt
+ * file alike: the read was made before these rules, so only what they ask is read for.
+ */
+export function topUpWords(sets: readonly RuleSet[]): string {
+  return `This is a top-up (ADR 0167): the repo was read before these reading rules were added (${sets.join(", ")}), so read these files only for what the rules below ask, and nothing else. The facts already kept are listed by id: don't write them again, unless you add what these rules ask of one (a field's \`type\` and \`required\`, a call's \`auth\` or \`tls\` with its cite), and then under the same \`id\`, the whole fact.`;
+}
+
 export function mapBatchInstructions(o: {
   repo: string;
   commit: string;
@@ -571,9 +689,15 @@ export function mapBatchInstructions(o: {
    * type's and the org-wide ones, numbered, as data. Left out when there are none.
    */
   notes?: string;
+  /**
+   * ADR 0167: a top-up. The repo was read before these rule sets were added: only the core and
+   * these sets' parts go in, and the facts already kept are read for what these rules add to them.
+   */
+  sets?: readonly RuleSet[];
 }): string {
   return [
     `Read the repo ${o.repo} at commit ${o.commit} into facts: what it answers to and calls, the data it reads and writes, the fields crossing those boundaries, its deployment and the config it depends on.`,
+    ...(o.sets ? [topUpWords(o.sets)] : []),
     o.fix
       ? `This is the last round: no new files. Fix each rejected fact below from the lines shown with it, or leave it out.`
       : `This is batch ${o.batch} of ${o.of}: the files below, each line numbered as in its file. Atticus checks each fact against the line it cites and gives back, in the next batch, what it rejected and why.`,
@@ -582,7 +706,7 @@ export function mapBatchInstructions(o: {
     "",
     factsReference(),
     "",
-    factRulesFor(o.kinds, o.frameworks),
+    factRulesFor(o.kinds, o.frameworks, o.sets),
     "- Cite only the numbered lines in this prompt. A reference may name a fact already kept (listed below) or one in your answer. Don't write a kept fact again, unless you correct it under the same `id`.",
     "- When these files hold no fact, answer with nothing.",
     ...(o.askAbout ? [ABOUT_RULE] : []),
