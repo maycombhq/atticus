@@ -302,6 +302,7 @@ describe("bench: an assistant's facts file, projected and scored", () => {
         config: 3,
         framework: 0,
         flow: 1,
+        term: 0,
       },
       left: { screens: 1, screenFields: 1, batchJobs: 0, keyPatterns: 0, frameworks: 0, flows: 1 },
     });

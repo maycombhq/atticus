@@ -208,6 +208,7 @@ export async function trustView(root: string): Promise<View> {
       unverified: 0,
     };
     let frameworks: Repo["frameworks"];
+    let terms: Repo["terms"];
     let kept: Fact[] = [];
     const lists: Lists = { rejected: [], excluded: [], asked: [], unverified: [] };
     if (raw !== undefined && raw.trim()) {
@@ -236,6 +237,22 @@ export async function trustView(root: string): Promise<View> {
           ...(gaps.has(f.id) ? { gap: gaps.get(f.id)! } : {}),
         }));
         if (built.length) frameworks = built;
+        // ADR 0163: the organisation's terms it writes, each with its role and lines.
+        const t = parsed.facts.flatMap((f) =>
+          f.kind === "term"
+            ? [
+                {
+                  term: f.term,
+                  value: f.value,
+                  role: f.role,
+                  cite: `${f.cite.file}:${f.cite.line}`,
+                  ...(f.meaning ? { meaning: `${f.meaning.file}:${f.meaning.line}` } : {}),
+                  ...(f.note !== undefined ? { note: f.note } : {}),
+                },
+              ]
+            : [],
+        );
+        if (t.length) terms = t;
       } else
         problems.push({
           file: rel(factsPath),
@@ -320,6 +337,7 @@ export async function trustView(root: string): Promise<View> {
       state,
       ...(next ? { next } : {}),
       ...(frameworks ? { frameworks } : {}),
+      ...(terms ? { terms } : {}),
       lists,
       ...(audit ? { audit } : {}),
     });

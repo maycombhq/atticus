@@ -234,6 +234,16 @@ export const FACT_RULE_PARTS: readonly (readonly RulePart[])[] = [
       when: ["backend", "frontend"],
       text: "A call through a client generated at build time and not committed (NSwag, an OpenAPI generator) is cited at its call site, with the server's route line in `cite.with`, `conf: inferred`. Requests a load generator or smoke test makes are not calls, nor are a page script's requests to the app that serves it; a front end's requests that reach another service (through its own origin's proxy or a gateway) are.",
     },
+    {
+      when: ["backend", "frontend", "config", "gateway"],
+      text: "A call's `auth` (the token, key or client certificate it presents) goes with `authCite`, its `tls` (`mtls` with a client certificate, `tls` for https, `none` for http) with `tlsCite`: the line that sets it, as `{file, line, value}`.",
+    },
+  ],
+  [
+    {
+      when: ["config", "deploy", "gateway", "data"],
+      text: "A `term` fact is an identifier of the organisation's own as a file writes it (an app or CMDB id, a cost centre): `term` its key, `value` cited on its line, `meaning` the line at or above it in the file that gives its role (the list's or block's key). `role` from the notes given, the note's number in `note`: `owner` (names this repo's own system), `consumer` (a system it lets in), `none`. No note says: record ids that look like the organisation's own (id-like values, entries of a list of apps or teams) as `role: unknown`; never guess.",
+    },
   ],
   [
     {
@@ -556,6 +566,11 @@ export function mapBatchInstructions(o: {
    * (`taughtFrameworksText`, ADR 0124 addendum A-taught). Left out when it is built on none.
    */
   taught?: string;
+  /**
+   * The organisation's notes for this repo (ADR 0163, `notesText` in @maycombhq/core): its repo
+   * type's and the org-wide ones, numbered, as data. Left out when there are none.
+   */
+  notes?: string;
 }): string {
   return [
     `Read the repo ${o.repo} at commit ${o.commit} into facts: what it answers to and calls, the data it reads and writes, the fields crossing those boundaries, its deployment and the config it depends on.`,
@@ -572,5 +587,6 @@ export function mapBatchInstructions(o: {
     "- When these files hold no fact, answer with nothing.",
     ...(o.askAbout ? [ABOUT_RULE] : []),
     ...(o.taught ? ["", o.taught] : []),
+    ...(o.notes ? ["", o.notes] : []),
   ].join("\n");
 }

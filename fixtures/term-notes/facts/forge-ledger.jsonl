@@ -1,0 +1,1 @@
+{"kind":"term","id":"term.appid.app000456","repo":"forge-ledger","commit":"ccc3333","verified":"line","by":"assistant","conf":"declared","term":"appId","value":"APP000456","role":"owner","note":1,"cite":{"file":"forge-app.yaml","line":2,"value":"APP000456","quote":"appId: APP000456"},"meaning":{"file":"forge-app.yaml","line":1,"value":"app"}}

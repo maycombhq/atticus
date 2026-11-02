@@ -10,7 +10,24 @@ import { RecordId } from "./common.js";
  * profiles in profiles/<platform>/.
  */
 
-export const REPO_TYPE_SCHEMA_VERSION = 1 as const;
+/**
+ * Version 2 (ADR 0163) adds `notes`: what the organisation's own terms mean in repos of the type,
+ * and what must hold in them, in its own words. Optional, so a version-1 file reads as it is and
+ * comes back as version 2 in memory; writers write version 2.
+ */
+export const REPO_TYPE_SCHEMA_VERSION = 2 as const;
+const RepoTypeSchemaVersion = z
+  .union([z.literal(1), z.literal(REPO_TYPE_SCHEMA_VERSION)])
+  .overwrite((): 2 => REPO_TYPE_SCHEMA_VERSION);
+
+/**
+ * A note in the organisation's own words (ADR 0163): plain text, read by the assistant as data
+ * when it reads a repo of the type, never parsed by Atticus. One may say what a term means
+ * ("`cmdb` in userAccess.json lists the apps let in to the API") or what must hold ("every call to
+ * a vendor uses mTLS"); a note that reads as a rule is offered as a checklist rule draft.
+ */
+export const OrgNote = z.string().trim().min(1).max(1000);
+export const OrgNotes = z.array(OrgNote).max(50);
 
 /** A repo-relative glob with forward slashes; never absolute, never leaving the repo. */
 const RepoGlob = z
@@ -103,7 +120,7 @@ export const SettingsTemplate = z.strictObject({
 export type SettingsTemplate = z.infer<typeof SettingsTemplate>;
 
 export const RepoType = z.strictObject({
-  schemaVersion: z.literal(REPO_TYPE_SCHEMA_VERSION),
+  schemaVersion: RepoTypeSchemaVersion,
   /** The folder name under repo-types/. */
   id: RecordId,
   name: z.string().min(1),
@@ -122,5 +139,7 @@ export const RepoType = z.strictObject({
         ),
     )
     .default([]),
+  /** What the organisation's terms mean in repos of this type, and what must hold (ADR 0163). */
+  notes: OrgNotes.optional(),
 });
 export type RepoType = z.infer<typeof RepoType>;

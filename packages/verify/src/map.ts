@@ -38,6 +38,16 @@ export interface MapTrust {
   commit?: string;
 }
 
+/** A term of the organisation's as the repo writes it (ADR 0163). */
+export interface MapTerm {
+  term: string;
+  value: string;
+  role: "owner" | "consumer" | "none" | "unknown";
+  cite: Ev;
+  /** The line that gives the value its role. */
+  meaning?: Ev;
+}
+
 /** An open question about the repo (ADR 0078). */
 export interface MapQuestion {
   id: string;
@@ -75,6 +85,12 @@ export interface RenderMapInput {
     built: readonly { name: string; version?: string; component?: string; cite: Ev }[];
     gaps?: readonly { framework: string; question: string }[];
   };
+  /**
+   * The organisation's terms the repo writes (ADR 0163), from its term facts: each value with the
+   * role a note gave it, cited on its line. Read from the facts, as the frameworks are. Left out
+   * (no section at all) when the facts hold none.
+   */
+  terms?: readonly MapTerm[];
   /** The open questions about the repo. */
   questions?: readonly MapQuestion[];
   /** Folders relative to the metarepo root: the map's (`map/<repo>`), questions/ and the repo's specs. */
@@ -428,6 +444,41 @@ function config(c: Ctx): string[] {
     });
 }
 
+/**
+ * The organisation's terms (ADR 0163): each value, its role and its line, and for a consumer the
+ * component whose own value it is (a Component flagged `term:<term>=<value>` in the catalog), for
+ * an owner the components that list it. A value nothing says the meaning of is an open question.
+ */
+function terms(c: Ctx): string[] {
+  const ts = c.i.terms ?? [];
+  const owners = new Map<string, string[]>();
+  for (const r of records(c, "Component"))
+    for (const f of r.flags ?? []) {
+      const m = /^term:[^=]+=(.+)$/.exec(f);
+      if (m && !c.comps.has(r.id)) owners.set(m[1]!, [...(owners.get(m[1]!) ?? []), r.id]);
+    }
+  const listing = new Map<string, string[]>();
+  for (const g of records(c, "AccessGrant"))
+    if (g.flags?.some((f) => f.startsWith("term:"))) {
+      const route = c.byId.get(g.resource);
+      const by = route?.kind === "GatewayRoute" ? route.proxy : g.resource;
+      listing.set(g.subject, [...new Set([...(listing.get(g.subject) ?? []), by])]);
+    }
+  return [...ts]
+    .sort((a, b) => cmp(a.term, b.term) || cmp(a.value, b.value))
+    .map((t) => {
+      const means =
+        t.role === "owner"
+          ? `this repo's own id${listing.get(t.value)?.length ? `; let in by ${list(listing.get(t.value)!.sort())}` : ""}`
+          : t.role === "consumer"
+            ? `a consumer it lets in${owners.get(t.value)?.length ? `: ${list(owners.get(t.value)!.sort())}` : ", whose own repo no fact names yet"}`
+            : t.role === "none"
+              ? "names no system"
+              : `**open:** nothing says what it means${owners.get(t.value)?.length ? `; the same value is ${list(owners.get(t.value)!.sort())}'s own id (a possible link)` : ""}`;
+      return `- ${code(t.term)} ${code(t.value)}: ${means} ${cite(c, t.cite)}${t.meaning ? ` (its role from ${cite(c, t.meaning)})` : ""}`;
+    });
+}
+
 const flowFile = (f: FlowRecord) => `flows/${f.id}.md`;
 
 function flowsList(c: Ctx): string[] {
@@ -724,6 +775,7 @@ export function renderMap(i: RenderMapInput): Record<string, string> {
     ...section("What it stores", stores(base)),
     ...section("Where it runs", deploys(base)),
     ...section("Config that names other systems", config(base)),
+    ...(i.terms?.length ? section("Terms", terms(base)) : []),
     ...section("Flows", flowsList(base)),
     ...section("Contracts", contracts(base, files)),
     ...section("Open questions", openQuestions(base)),

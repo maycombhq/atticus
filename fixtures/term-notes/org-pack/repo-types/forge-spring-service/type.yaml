@@ -1,0 +1,8 @@
+schemaVersion: 1
+id: forge-spring-service
+name: Forge Spring service
+description: A Spring Boot service of the Forge estate.
+fingerprint:
+  - kind: layout
+    globs: ["src/main/java/**"]
+    weight: 5

@@ -815,6 +815,19 @@ export const COPY = {
       `${name}${version ? ` ${version}` : ""} (${where})`,
     builtOnModule: (name: string, module: string) => `${name}, in ${module}`,
     builtOnGap: (name: string) => `${name}: none of its patterns are in the facts`,
+    /** ADR 0163: the organisation's terms each repo writes, with the role a note gave each. */
+    terms: "Terms",
+    termsNone: "None in the facts",
+    termRole: {
+      owner: "its own id",
+      consumer: "a consumer it lets in",
+      none: "names no system",
+      unknown: "open: nothing says what it means yet",
+    } as Record<string, string>,
+    termOne: (term: string, value: string, role: string, where: string) =>
+      `${term} ${value}: ${role} (${where})`,
+    termNote: (note: number | string) =>
+      typeof note === "number" ? `note ${note}` : `the note "${note}"`,
     builtOnIntro:
       "What each repo's build files declare it is built on, each read from the line that declares it. Where a repo declares a framework and its facts show none of that framework's patterns — a Spring Boot service with no route, a React app with no screen — the entry points were probably missed, and that is a question for a person rather than something to be decided here.",
     kept: "Facts kept",

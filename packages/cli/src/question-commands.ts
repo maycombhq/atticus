@@ -27,6 +27,7 @@ import { gitUser } from "@maycombhq/workspace";
 import type { Output } from "./commands.js";
 import { routeQuestions, type RoutedQuestions } from "./question-routing.js";
 import { answerSheet, applySheet } from "./question-sheet.js";
+import { termNoteOffer } from "./repo-type-commands.js";
 
 /**
  * atticus questions list | show | answer (ADR 0078): the questions a step raised, as files in
@@ -468,6 +469,9 @@ export async function questionsFiles(
           `It was the assistant's proposal; you accepted it, so it is recorded as answered by ${q.answer!.by}, with the proposal it came from.`,
         );
       if (q.answer!.match) io.out(ruleLine(q, await isChange(root, q.repo)));
+      // ADR 0163: a term question's answer is meant to become a note on the repo type.
+      const offer = termNoteOffer(q);
+      if (offer) io.out(offer);
       if (r.skill)
         io.out(
           r.skill.written

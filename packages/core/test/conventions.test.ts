@@ -27,7 +27,8 @@ import {
 describe("conventions.yaml (ADR 0147)", () => {
   it("defaults to the lists Atticus had in code", () => {
     expect(DEFAULT_CONVENTIONS).toEqual({
-      schemaVersion: 1,
+      // ADR 0163: version 2 adds org-wide notes; a version-1 file reads as version 2.
+      schemaVersion: 2,
       apiSpecFolders: [
         "oas",
         "openapi",
@@ -112,7 +113,7 @@ describe("conventions.yaml (ADR 0147)", () => {
       false,
     );
     expect(Conventions.safeParse({ schemaVersion: 1, readEverything: true }).success).toBe(false);
-    expect(Conventions.safeParse({ schemaVersion: 2 }).success).toBe(false);
+    expect(Conventions.safeParse({ schemaVersion: 3 }).success).toBe(false);
     expect(
       Conventions.safeParse({ schemaVersion: 1, frameworks: [{ declares: "a b", name: "x" }] })
         .success,

@@ -283,7 +283,15 @@ export function projectFacts(input: readonly Fact[], opts: ProjectOptions = {}):
     if (!cur) components.set(c, { f, screen });
     else if (screen) cur.screen = true;
   }
+  // ADR 0163: an owner term is the identifier the organisation knows the component's system by,
+  // kept as a flag (`term:<term>=<value>`, C1's existing optional field), cited on its line.
+  const owned = new Map<string, FactOf<"term">[]>();
+  for (const f of facts)
+    if (f.kind === "term" && f.role === "owner")
+      owned.set(componentOf(f), [...(owned.get(componentOf(f)) ?? []), f]);
   for (const [id, { f, screen }] of components) {
+    const terms = owned.get(id) ?? [];
+    const flags = [...new Set(terms.map((t) => `term:${t.term}=${t.value}`))].sort();
     out.push({
       kind: "Component",
       ...common(f),
@@ -291,7 +299,11 @@ export function projectFacts(input: readonly Fact[], opts: ProjectOptions = {}):
       system: systemOf(f),
       repo: repoOf(f),
       type: screen ? "spa" : "service",
-      evidence: [evidenceOf(f, "code")],
+      ...(flags.length ? { flags } : {}),
+      evidence: [
+        evidenceOf(f, "code"),
+        ...terms.filter((t) => t !== f).map((t) => evidenceOf(t, "code")),
+      ],
     } as CatalogRecord);
   }
 

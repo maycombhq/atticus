@@ -374,13 +374,14 @@ describe("atticus map --handoff on a moved checkout (addendum A-incremental)", (
       const runtime = new HandoffRuntime({ root, validate: async () => [], now: NOW });
       const first = io();
       expect(
-        await mapCommand(root, REPO, { dir: repo, maxTokens: 7500 }, first.io, {
+        await mapCommand(root, REPO, { dir: repo, maxTokens: 8500 }, first.io, {
           runtime,
           now: NOW,
         }),
       ).toBe(0);
-      // 7500, not 7000: C-join's relative-call sentence and A-read's authCite add about 70 tokens
-      // a prompt, which left this three-file re-read one batch over at 7000.
+      // 8500, not 7000: C-join's relative-call sentence and A-read's authCite add about 70 tokens
+      // a prompt, and the term kind and its rule (ADR 0163) and the contract rules (ADR 0164) about 500 more, which left this
+      // three-file re-read one batch over.
       expect(first.out[0]).toMatch(
         new RegExp(
           `^Re-reading forge-ledger at ${two.slice(0, 12)}: 3 source files changed since [0-9a-f]{12}, in 1 batch .*; 3 facts to rewrite, 14 carried as they are`,
@@ -409,7 +410,7 @@ describe("atticus map --handoff on a moved checkout (addendum A-incremental)", (
       writeFileSync(join(runDir, "facts.jsonl"), reread(factsOf(root), two).join("\n"));
       const o = io();
       expect(
-        await mapCommand(root, REPO, { dir: repo, maxTokens: 7500, next: true }, o.io, {
+        await mapCommand(root, REPO, { dir: repo, maxTokens: 8500, next: true }, o.io, {
           runtime,
           now: NOW,
         }),
@@ -426,7 +427,7 @@ describe("atticus map --handoff on a moved checkout (addendum A-incremental)", (
       writeFileSync(join(root, ".runs", `map-${REPO}`, o.reported[0]!, "facts.jsonl"), "");
       const f = io();
       expect(
-        await mapCommand(root, REPO, { dir: repo, maxTokens: 7500, next: true }, f.io, {
+        await mapCommand(root, REPO, { dir: repo, maxTokens: 8500, next: true }, f.io, {
           runtime,
           now: NOW,
         }),

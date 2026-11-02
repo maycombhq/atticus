@@ -1,7 +1,25 @@
-import { mkdir, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { Document, isScalar, visit } from "yaml";
-import { loadOrgPack, orgPackDirOf, RecordId } from "@maycombhq/core";
+import { Document, isScalar, parse, parseDocument, visit } from "yaml";
+import {
+  ChecklistPack,
+  Conventions,
+  CONVENTIONS_SCHEMA_VERSION,
+  loadOrgPack,
+  noteRuleDrafts,
+  notesFor,
+  OrgNote,
+  orgPackDirOf,
+  RecordId,
+  REPO_TYPE_SCHEMA_VERSION,
+  RepoType,
+  REVIEW_SCHEMA_VERSION,
+  RULE_WORDS,
+  TERM_STEP,
+  termAnswerNote,
+  termOfQuestion,
+  type Question,
+} from "@maycombhq/core";
 import { draftRepoType, matchRepoType, type RepoTypeMatches } from "@maycombhq/scanner";
 import { fsRepo } from "@maycombhq/sdk";
 import type { Output } from "./commands.js";
@@ -132,5 +150,184 @@ export async function repoTypeNew(
   io.out(
     `Next: edit it, check it with atticus repo-type detect ${repo.id} and atticus orgpack validate, then review it in a pull request.`,
   );
+  return 0;
+}
+
+// ---------------------------------------------------------------- notes (ADR 0163)
+
+const noteFileOf = (root: string, type: string | undefined) =>
+  type
+    ? join(orgPackDirOf(root), "repo-types", type, "type.yaml")
+    : join(orgPackDirOf(root), "conventions.yaml");
+const noteRel = (type: string | undefined) =>
+  type ? `org-pack/repo-types/${type}/type.yaml` : "org-pack/conventions.yaml";
+
+/**
+ * atticus repo-type note <type> [--add "..."] | --org-wide [--add "..."]: list a repo type's notes
+ * (or the org-wide ones), or add one, in the organisation's own words. The file is a version-2
+ * file after an add; the rest of it is kept as written. Plain text: Atticus never parses a note.
+ */
+export async function repoTypeNote(
+  root: string,
+  type: string | undefined,
+  o: { add?: string; org?: boolean },
+  io: Output,
+): Promise<number> {
+  if ((!type && !o.org) || (type && o.org)) {
+    io.err(
+      'Usage: atticus repo-type note <type> [--add "..."], or atticus repo-type note --org-wide [--add "..."] for the notes every repo is read with.',
+    );
+    return 2;
+  }
+  const file = noteFileOf(root, type);
+  const exists = await stat(file).catch(() => undefined);
+  if (type && !exists) {
+    io.err(
+      `No repo type ${type} (${noteRel(type)}). Draft one: atticus repo-type new ${type} --from <repo>`,
+    );
+    return 2;
+  }
+  const doc = exists
+    ? parseDocument(await readFile(file, "utf8"))
+    : new Document({ schemaVersion: CONVENTIONS_SCHEMA_VERSION });
+  const notes = ((doc.toJS() as { notes?: unknown } | null)?.notes ?? []) as unknown[];
+  if (o.add === undefined) {
+    if (!notes.length)
+      io.out(
+        `${noteRel(type)} has no notes yet. Add one: atticus repo-type note ${type ?? "--org-wide"} --add "..."`,
+      );
+    notes.forEach((n, i) => io.out(`${i + 1}. ${String(n)}`));
+    return 0;
+  }
+  const note = OrgNote.safeParse(o.add);
+  if (!note.success) {
+    io.err("A note is plain text, from 1 to 1000 characters.");
+    return 2;
+  }
+  if (notes.some((n) => String(n).trim() === note.data)) {
+    io.out(`${noteRel(type)} already has that note.`);
+    return 0;
+  }
+  doc.set("schemaVersion", type ? REPO_TYPE_SCHEMA_VERSION : CONVENTIONS_SCHEMA_VERSION);
+  doc.set("notes", [...notes.map(String), note.data]);
+  const check = (type ? RepoType : Conventions).safeParse(doc.toJS());
+  if (!check.success) {
+    io.err(
+      `${noteRel(type)} doesn't read as it should with the note added: ${check.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`,
+    );
+    return 1;
+  }
+  await mkdir(join(file, ".."), { recursive: true });
+  await writeFile(file, doc.toString({ lineWidth: 0 }), "utf8");
+  io.out(
+    `Added note ${notes.length + 1} to ${noteRel(type)}. The next read of ${type ? `each ${type} repo` : "every repo"} is handed it; review it in a pull request.`,
+  );
+  if (RULE_WORDS.test(note.data))
+    io.out(
+      `It reads as a rule: atticus repo-type rules drafts a checklist rule from it for a person to review.`,
+    );
+  return 0;
+}
+
+/**
+ * The note an answered term question offers to save (ADR 0163), as the command that saves it;
+ * undefined for any other question.
+ */
+export function termNoteOffer(q: Question): string | undefined {
+  if (q.askedBy.step !== TERM_STEP || !q.answer) return undefined;
+  const about = termOfQuestion(q.question);
+  if (!about) return undefined;
+  const label = q.answer.option ? q.options[q.answer.option - 1]?.label : undefined;
+  const text = termAnswerNote({
+    ...about,
+    ...(q.answer.text ? { text: q.answer.text } : {}),
+    ...(label === "owner" || label === "consumer" || label === "none" ? { option: label } : {}),
+  });
+  const type = q.scope.level === "repo-type" ? q.scope.id : undefined;
+  return type
+    ? `Save it as a note on ${type}, so every ${type} repo is read with it: atticus repo-type note ${type} --add ${JSON.stringify(text)}`
+    : `Save it as a note every repo is read with: atticus repo-type note --org-wide --add ${JSON.stringify(text)}`;
+}
+
+/** The checklist file the rule drafts from notes go in. */
+export const NOTE_RULES_FILE = "checklists/org-notes.yaml";
+
+/**
+ * atticus repo-type rules [--save]: a checklist rule draft (C3, status draft) for each note that
+ * reads as a rule (all, every, must), on every repo type and org-wide. --save adds the drafts
+ * not yet there to org-pack/checklists/org-notes.yaml, keeping every rule already in it as a
+ * person left it. An accepted rule (status active) is checked at each atticus verify <repo> --write.
+ */
+export async function repoTypeRules(
+  root: string,
+  o: { write?: boolean; json?: boolean },
+  io: Output,
+): Promise<number> {
+  const op = await loadOrgPack(orgPackDirOf(root));
+  const notes = [
+    ...op.repoTypes.flatMap((t) => notesFor(t, undefined)),
+    ...notesFor(undefined, op.conventions),
+  ];
+  const drafts = noteRuleDrafts(notes);
+  const file = join(orgPackDirOf(root), ...NOTE_RULES_FILE.split("/"));
+  const onFile = (await stat(file).catch(() => undefined))
+    ? ChecklistPack.safeParse(parse(await readFile(file, "utf8")))
+    : undefined;
+  if (onFile && !onFile.success) {
+    io.err(
+      `org-pack/${NOTE_RULES_FILE} doesn't read as a checklist; fix it first (atticus orgpack validate).`,
+    );
+    return 1;
+  }
+  const kept = onFile?.data.rules ?? [];
+  const fresh = drafts.filter((d) => !kept.some((k) => k.id === d.id));
+  if (o.json) {
+    io.out(
+      JSON.stringify(
+        { file: `org-pack/${NOTE_RULES_FILE}`, drafts, fresh: fresh.map((d) => d.id) },
+        null,
+        2,
+      ),
+    );
+  } else if (!drafts.length) {
+    io.out(
+      'No note reads as a rule (all, every or must). Notes are added with atticus repo-type note <type> --add "...".',
+    );
+    return 0;
+  } else
+    for (const d of drafts)
+      io.out(
+        `${d.id}${kept.some((k) => k.id === d.id) ? ` (in org-pack/${NOTE_RULES_FILE}, ${kept.find((k) => k.id === d.id)!.status})` : " (new draft)"}: ${d.title}\n  check: ${d.check.type === "deterministic" ? `${d.check.check} ${JSON.stringify(d.check.params)}` : "ai"}; from ${d.source}`,
+      );
+  if (!o.write) {
+    if (!o.json && fresh.length)
+      io.out(
+        `Write the new drafts with atticus repo-type rules --save, then review them in a pull request.`,
+      );
+    return 0;
+  }
+  if (!fresh.length) {
+    if (!o.json) io.out(`org-pack/${NOTE_RULES_FILE} already has every draft.`);
+    return 0;
+  }
+  const pack = ChecklistPack.parse({
+    schemaVersion: REVIEW_SCHEMA_VERSION,
+    name: onFile?.data.name ?? "org-notes",
+    version: onFile?.data.version ?? "0.1.0",
+    description:
+      onFile?.data.description ??
+      "Rules drafted from the organisation's notes (ADR 0163). A person sets what each checks and makes it active; Atticus never reads the note to check it.",
+    rules: [...kept, ...fresh],
+  });
+  await mkdir(join(file, ".."), { recursive: true });
+  await writeFile(
+    file,
+    `# Drafted by atticus repo-type rules from the org pack's notes (ADR 0163). Review each rule:\n# set its check, then change status from draft to active. Accepted call-security rules are\n# checked at each atticus verify <repo> --write.\n${typeYaml(pack)}`,
+    "utf8",
+  );
+  if (!o.json)
+    io.out(
+      `Wrote ${fresh.length} ${fresh.length === 1 ? "draft" : "drafts"} to org-pack/${NOTE_RULES_FILE}; review them in a pull request.`,
+    );
   return 0;
 }

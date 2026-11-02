@@ -1,0 +1,3 @@
+<APIProxy name="forge-cards">
+  <BasePath>/forge/cards</BasePath>
+</APIProxy>

@@ -496,6 +496,8 @@ Usage:
   atticus estate fresh [--all] [--json]  Which repos' clones have moved past their facts' commit, most stale first: per repo the facts' commit, the clone's, the files changed that the facts cite, the facts to read again and the command to run; local git only, nothing fetched or written (--all lists the fresh ones too)
   atticus repo-type detect <repo> [--json]   Match a repo against the org pack's repo types by fingerprint, with the evidence for each signal
   atticus repo-type new <id> --from <repo> [--force]   Draft a repo type from a repo (its build files, dependencies, markers, folders) for you to edit
+  atticus repo-type note <type> | --org-wide [--add "..."]   List a repo type's notes (or the org-wide ones), or add one: what the organisation's terms mean and what must hold, in its own words; each read of a repo is handed them
+  atticus repo-type rules [--save] [--json]   Draft a checklist rule (status draft) from each note that reads as a rule (all, every, must); --save adds the new drafts to org-pack/checklists/org-notes.yaml for review
   atticus scan review <repo>           What the last scan couldn't read: your assistant gives a verdict on each gap and a rule for code it can read; checked [--gaps] [--attempts 3]
   atticus query "<query>"              Find records, e.g. "kind:interface via:gateway -has:pattern"
   atticus query "<words>" --search     Search everything the index holds (records, knowledge items, flows, changes, answered questions, wiki sections, documents), names and ids first [--by words|meaning|both] [--kind k,k] [--limit n] [--json]
@@ -1091,6 +1093,9 @@ const OPTIONS = {
   next: { type: "boolean" },
   copy: { type: "boolean" },
   facts: { type: "string" },
+  // ADR 0163: atticus repo-type note.
+  add: { type: "string" },
+  "org-wide": { type: "boolean" },
 } satisfies ParseArgsOptionsConfig;
 
 async function dispatchCommand(argv: string[], io: Output): Promise<number> {
@@ -1351,6 +1356,22 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
       },
       io,
     );
+  }
+  if (group === "repo-type" && command === "note") {
+    const m = await loadRepoTypeCommands();
+    return m.repoTypeNote(
+      root,
+      arg,
+      {
+        ...(typeof values.add === "string" ? { add: values.add } : {}),
+        org: values["org-wide"] === true,
+      },
+      io,
+    );
+  }
+  if (group === "repo-type" && command === "rules") {
+    const m = await loadRepoTypeCommands();
+    return m.repoTypeRules(root, { write: values.save === true, json: values.json === true }, io);
   }
   if (group === "repo-type" && (command === "detect" || command === "new")) {
     const m = await loadRepoTypeCommands();

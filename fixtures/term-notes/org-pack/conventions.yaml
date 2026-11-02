@@ -1,0 +1,3 @@
+schemaVersion: 2
+notes:
+  - "A service's own CMDB id is the `appId` in its forge-app.yaml: it names the system the repo is."

@@ -1,0 +1,14 @@
+schemaVersion: 1
+platform: forge
+name: Forge, invented, for org notes and the terms they explain (ADR 0163)
+systems:
+  - { id: accounts, name: Accounts, boundary: product, owner: team-accounts, aliases: [] }
+  - { id: cards, name: Cards, boundary: product, owner: team-cards, aliases: [] }
+  - { id: limits, name: Limits, boundary: product, owner: team-limits, aliases: [] }
+  - { id: payments, name: Payments, boundary: product, owner: team-payments, aliases: [] }
+  - { id: statements, name: Statements, boundary: product, owner: team-statements, aliases: [] }
+  - { id: ledger, name: Ledger, boundary: product, owner: team-ledger, aliases: [] }
+  # Invented vendors.
+  - { id: northwind-pay, name: Northwind Pay, boundary: vendor, owner: team-payments, aliases: [api.northwindpay.example] }
+  - { id: tidewater, name: Tidewater, boundary: vendor, owner: team-statements, aliases: [files.tidewater.example] }
+environments: [prod]

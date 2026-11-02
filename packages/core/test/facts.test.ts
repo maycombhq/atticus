@@ -26,7 +26,7 @@ function facts(): Fact[] {
 }
 
 describe("facts: the assistant's input format (ADR 0124)", () => {
-  it("has the eight kinds", () => {
+  it("has the nine kinds", () => {
     expect([...FACT_KINDS]).toEqual([
       "entry",
       "call",
@@ -37,6 +37,8 @@ describe("facts: the assistant's input format (ADR 0124)", () => {
       // ADR 0124 addendum A-framework: what the repo or a module is built on.
       "framework",
       "flow",
+      // ADR 0163: a term of the organisation's, as the repo writes it.
+      "term",
     ]);
     expect(Object.keys(factsJsonSchemas()).sort()).toEqual(["Fact", "FactsFile"]);
   });

@@ -127,6 +127,35 @@ describe("a change to a route's contract lists everyone the route lets in", () =
     expect(f[0]!.finding.summary).not.toContain("app branch-desk-web,");
   });
 
+  // ADR 0163: the consumers a route repo's access list names, as term facts, are AccessGrants
+  // flagged `caller:<term>` (`termGrantRecords`), so a change to the route names each of them.
+  it("names every consumer an access list names, by its term and value", async () => {
+    const root = await forgeChangeRoot();
+    for (const value of ["APP000123", "APP000456"])
+      await record(root, {
+        kind: "AccessGrant",
+        id: `ag-ledger-v1-cmdb-${value.toLowerCase()}`,
+        subjectKind: "oauth-client",
+        subject: value,
+        resource: "gw-ledger-v1",
+        scopesOrPermissions: [],
+        flags: ["caller:cmdb", "term:cmdb"],
+        evidence: [
+          {
+            source: "gateway",
+            repo: "forge-gateway",
+            path: "userAccess.json",
+            line: 4,
+            side: "gateway",
+          },
+        ],
+      });
+    const f = of(await runCritic(root, CHANGE, { now: NOW }), BREAKING);
+    expect(f[0]!.finding.question?.text).toBe(
+      "Must cmdb APP000123 and cmdb APP000456 change their code to keep working once POST /transfers changes as interfaces.md says?",
+    );
+  });
+
   it("blocks when a caller must change, naming them all", async () => {
     const root = await forgeChangeRoot();
     for (const r of GRANTS) await record(root, r);

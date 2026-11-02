@@ -341,6 +341,21 @@ export function TrustRow({ r }: { r: Repo }) {
                 .join(", ")
             : T.builtOnNone}
         </dd>
+        <dt>{T.terms}</dt>
+        <dd>
+          {r.terms?.length ? (
+            <ul className="mono trust-items" aria-label={`${T.terms}: ${r.repo}`}>
+              {r.terms.map((t) => (
+                <li key={`${t.cite}-${t.term}-${t.value}`}>
+                  {T.termOne(t.term, t.value, T.termRole[t.role] ?? t.role, t.cite)}
+                  {t.note !== undefined ? `; ${T.termNote(t.note)}` : ""}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            T.termsNone
+          )}
+        </dd>
         <dt>{T.commit}</dt>
         <dd className="mono">{commitWords(r)}</dd>
         <dt>{T.catalogFrom}</dt>

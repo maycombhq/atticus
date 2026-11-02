@@ -20,6 +20,7 @@ export const FACT_KINDS = [
   "config",
   "framework",
   "flow",
+  "term",
 ] as const;
 export type FactKind = (typeof FACT_KINDS)[number];
 
@@ -163,6 +164,10 @@ export const CALL_TYPES = [
   "webhook",
 ] as const;
 
+/** A call's transport security (ADR 0163). */
+export const CALL_TLS = ["mtls", "tls", "none"] as const;
+export type CallTls = (typeof CALL_TLS)[number];
+
 export const CallFact = z.strictObject({
   kind: z.literal("call"),
   ...common,
@@ -178,6 +183,20 @@ export const CallFact = z.strictObject({
   /** The entry this call is made from. */
   from: FactId.optional(),
   sync: z.enum(["sync", "async"]).optional(),
+  /**
+   * The auth the call presents (ADR 0163): a token it fetches or attaches, a key header, a
+   * client certificate it signs in with. Goes with `authCite`, the line that sets it and what it
+   * writes there; the verifier checks it there, and rejects an `auth` with no line.
+   */
+  auth: Auth.optional(),
+  authCite: CitePart.optional(),
+  /**
+   * The transport security the call uses (ADR 0163): `mtls` (it presents a client
+   * certificate), `tls` (an https URL, a TLS setting, no client certificate), `none` (plain).
+   * Goes with `tlsCite`, as `auth` goes with `authCite`.
+   */
+  tls: z.enum(CALL_TLS).optional(),
+  tlsCite: CitePart.optional(),
 });
 
 export const StoreFact = z.strictObject({
@@ -256,8 +275,9 @@ export const DeployFact = z.strictObject({
  * The facts file's shape version (ADR 0143). No line carries it: a file written before has no
  * number, reads as version 1 and parses unchanged, every field added since being optional.
  * 1: the shapes of ADR 0124 and its addenda. 2: a deploy fact's `host`, `basePath` and `exposes`.
+ * 3 (ADR 0163): the `term` kind, and a call's `auth`, `authCite`, `tls` and `tlsCite`.
  */
-export const FACTS_SCHEMA_VERSION = 2 as const;
+export const FACTS_SCHEMA_VERSION = 3 as const;
 
 export const SETTING_KINDS = [
   "timeout",
@@ -279,6 +299,24 @@ const SECRET_SOURCE = /^(env:|vault:|secret:|ref:|\$\{|\{\{)/;
 /** A flag or a mode (`withCredentials: true`, `credentials: "include"`) is not a secret. */
 const NOT_A_SECRET = /^(true|false|yes|no|on|off|include|omit|same-origin|none|null|\d+)$/i;
 
+/**
+ * Whether a key and its value look like a secret: the key's last part ends in a secret word,
+ * and the value is neither a reference to where the secret lives nor a flag or a mode.
+ */
+export function looksLikeSecret(key: string, value: string | undefined): boolean {
+  const last =
+    key
+      .trim()
+      .split(/[.:]|__|\s+/)
+      .pop() ?? key;
+  return (
+    value !== undefined &&
+    SECRET_KEY.test(last) &&
+    !SECRET_SOURCE.test(value) &&
+    !NOT_A_SECRET.test(value.trim())
+  );
+}
+
 export const ConfigFact = z
   .strictObject({
     kind: z.literal("config"),
@@ -295,17 +333,7 @@ export const ConfigFact = z
     env: z.string().optional(),
   })
   .superRefine((c, ctx) => {
-    const last =
-      c.key
-        .trim()
-        .split(/[.:]|__|\s+/)
-        .pop() ?? c.key;
-    if (
-      c.value !== undefined &&
-      SECRET_KEY.test(last) &&
-      !SECRET_SOURCE.test(c.value) &&
-      !NOT_A_SECRET.test(c.value.trim())
-    ) {
+    if (looksLikeSecret(c.key, c.value)) {
       ctx.addIssue({
         code: "custom",
         path: ["value"],
@@ -350,6 +378,59 @@ export const FrameworkFact = z.strictObject({
   version: z.string().optional(),
 });
 
+/**
+ * What a term the organisation uses says about the repo that writes it (ADR 0163): `owner`, the
+ * value names this repo's own system (an owner block, an `appId` of its own); `consumer`, it names
+ * a system let in or served (an entry of a `consumers` list); `none`, it names neither (a
+ * cost centre, a support group); `unknown`, nothing says yet, which becomes a question.
+ */
+export const TERM_ROLES = ["owner", "consumer", "none", "unknown"] as const;
+export type TermRole = (typeof TERM_ROLES)[number];
+
+/**
+ * A term of the organisation's, as a repo writes it (ADR 0163): an identifier such as an
+ * application id in an access list, a CMDB id, a cost centre. Atticus knows no term itself: what
+ * one means comes from the notes the organisation writes on a repo type (or org-wide), in its own
+ * words, which the reader is handed; with no note, the reader records the identifiers it meets
+ * with `role: unknown`, and they are asked about once per term and repo type.
+ *
+ * `cite` is the value's line (the verifier looks for `value` there). `meaning` is the line that
+ * gives it its role (the `"consumers": [` line, an owner block's key), in the same file, at or
+ * above the value's line; an owner or consumer needs one. A kind of its own: its subject is an
+ * identifier no other kind holds, and the joins read it across repos.
+ */
+export const TermFact = z
+  .strictObject({
+    kind: z.literal("term"),
+    ...common,
+    /** The term as the organisation names it (`cmdb`, `cost-centre`, `appId`): any word. */
+    term: z.string().min(1).max(80),
+    /** The value as written on the cited line (`APP000123`). */
+    value: z.string().min(1).max(200),
+    role: z.enum(TERM_ROLES),
+    /**
+     * The note the role rests on: its number as the prompt lists the notes (from 1), or its
+     * words quoted. Left out when no note says (a role read from the file's own words, or unknown).
+     */
+    note: z.union([z.number().int().positive(), z.string().min(1).max(300)]).optional(),
+    /** The line that gives the value its role, and what it writes there. */
+    meaning: CitePart.optional(),
+  })
+  .superRefine((t, ctx) => {
+    if (looksLikeSecret(t.term, t.value))
+      ctx.addIssue({
+        code: "custom",
+        path: ["value"],
+        message: `"${t.term}" looks like a secret: a secret is never a term`,
+      });
+    if ((t.role === "owner" || t.role === "consumer") && !t.meaning)
+      ctx.addIssue({
+        code: "custom",
+        path: ["meaning"],
+        message: `a term with role ${t.role} cites the line that gives it that meaning in meaning`,
+      });
+  });
+
 export const FlowFactStep = z.strictObject({
   kind: z.enum(FLOW_STEP_KINDS),
   what: str(),
@@ -384,6 +465,7 @@ export const Fact = z.discriminatedUnion("kind", [
   ConfigFact,
   FrameworkFact,
   FlowFact,
+  TermFact,
 ]);
 export type Fact = z.infer<typeof Fact>;
 export type FactOf<K extends FactKind> = Extract<Fact, { kind: K }>;

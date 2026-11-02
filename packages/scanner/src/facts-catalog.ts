@@ -9,6 +9,9 @@ import {
   factIdPart,
   joinCallers,
   joinFacts,
+  joinTerms,
+  termGrantRecords,
+  type TermsResult,
   joinRecords,
   normalizePath,
   parseRecord,
@@ -142,6 +145,12 @@ export interface FactsCatalogResult {
   linkEvidence?: LinkEvidenceResult;
   /** With the estate and shared maps: this repo's calls joined to another team's map (ADR 0160). */
   shared?: SharedJoinResult;
+  /**
+   * With the estate: the organisation's terms across it (ADR 0163), whole: owners, consumers,
+   * possible links and what the consumer lists say against the calls (`termsAbout` cuts it to
+   * one repo).
+   */
+  terms?: TermsResult;
   /**
    * ADR 0162 (F8): with the estate, the calls a person's answer sends to a repo that is read, where
    * no route of it serves the call: this repo's calls, and the other repos' calls answered to this
@@ -1210,6 +1219,7 @@ export function catalogWithFacts(given: FactsCatalogInput): FactsCatalogResult {
   let join: FactsJoinResult | undefined;
   let answerMisses: FactJoinMiss[] | undefined;
   let estateJoin: { whole: FactsJoinResult; repos: JoinRepo[] } | undefined;
+  let terms: TermsResult | undefined;
   let records0 = [...kept, ...newRecords];
   if (input.estate) {
     const repos = joinReposOf(op, [{ repo, facts }, ...others], renames);
@@ -1250,6 +1260,9 @@ export function catalogWithFacts(given: FactsCatalogInput): FactsCatalogResult {
       join: whole,
       only: [repo],
     });
+    // ADR 0163: the consumers this repo's term facts list, as access grants on its routes.
+    terms = joinTerms({ repos, join: whole, bundleFolders: joinConventions(op).bundleFolders });
+    records0 = [...records0, ...termGrantRecords(terms, repos, { only: [repo] })];
     // A publish names its first listener's Interface (sorted), whether or not the listener's
     // repo is written yet, so its schema's id doesn't depend on which repo was written first.
     for (const j of join.joins) {
@@ -1417,6 +1430,7 @@ export function catalogWithFacts(given: FactsCatalogInput): FactsCatalogResult {
     ...(join ? { join } : {}),
     ...(linkEvidence ? { linkEvidence } : {}),
     ...(sharedWhole ? { shared: sharedJoinAbout(sharedWhole, repo) } : {}),
+    ...(terms ? { terms } : {}),
     ...(answerMisses?.length ? { answerMisses } : {}),
   };
 }

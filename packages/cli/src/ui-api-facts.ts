@@ -58,6 +58,9 @@ export function factLabel(f: Fact): string {
       return `${f.name}${f.version ? ` ${f.version}` : ""}`;
     case "flow":
       return f.name;
+    // ADR 0163: a term of the organisation's, with the role a note gave it.
+    case "term":
+      return `${f.term} ${f.value} (${f.role})`;
   }
 }
 

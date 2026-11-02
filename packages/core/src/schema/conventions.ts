@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { OrgNotes } from "./repo-type.js";
 
 /**
  * Contract C6: the house conventions a read leans on (ADR 0147), `org-pack/conventions.yaml`.
@@ -7,7 +8,14 @@ import { z } from "zod";
  * Every key is optional; a key given replaces its default list whole (it doesn't add to it), so
  * an organisation can take a word out as well as put one in.
  */
-export const CONVENTIONS_SCHEMA_VERSION = 1 as const;
+/**
+ * Version 2 (ADR 0163) adds `notes`, the organisation-wide notes every read is handed beside its
+ * repo type's. A version-1 file reads as it is and comes back as version 2 in memory.
+ */
+export const CONVENTIONS_SCHEMA_VERSION = 2 as const;
+const ConventionsSchemaVersion = z
+  .union([z.literal(1), z.literal(CONVENTIONS_SCHEMA_VERSION)])
+  .overwrite((): 2 => CONVENTIONS_SCHEMA_VERSION);
 
 /** A folder name or a short folder path (`src/test`), matched as whole path segments anywhere. */
 const Folder = z
@@ -116,7 +124,7 @@ const HousePrefix = z
   .regex(/^@?[\w.-]+(\/[\w.-]*)*$/, "a package or module prefix, such as com.forge. or @forge/");
 
 export const Conventions = z.strictObject({
-  schemaVersion: z.literal(CONVENTIONS_SCHEMA_VERSION),
+  schemaVersion: ConventionsSchemaVersion,
   /** Folders whose YAML and JSON are API specs: code whatever their size, and read for routes. */
   apiSpecFolders: z.array(Folder).default([...DEFAULT_API_SPEC_FOLDERS]),
   /** Folders of a gateway's proxy bundles: an entry cited in one is a gateway route. */
@@ -142,6 +150,11 @@ export const Conventions = z.strictObject({
    * (org-pack/frameworks/) covers is warned of before its first read (R3). None by default.
    */
   housePrefixes: z.array(HousePrefix).default([]),
+  /**
+   * Notes for every repo (ADR 0163), in the organisation's own words: what its terms mean and
+   * what must hold, as a repo type's `notes` say for its repos. Plain text, never parsed.
+   */
+  notes: OrgNotes.optional(),
 });
 export type Conventions = z.infer<typeof Conventions>;
 
