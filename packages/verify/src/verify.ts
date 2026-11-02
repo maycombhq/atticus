@@ -26,6 +26,7 @@ import {
 } from "@maycombhq/core";
 import { globToRegExp } from "@maycombhq/sdk";
 import { authChecks, authPolicyMismatch } from "./apigee-policy.js";
+import { lineOfValue, securityLineKind } from "./call-security-lines.js";
 import { applyCorrections, type AppliedCorrection, type StaleCorrection } from "./corrections.js";
 import { derivedHolds, derivedNamesAt, type DeriveEnv, type DerivedName } from "./derived.js";
 import { frameworkGaps, frameworkNameProblem, type FrameworkGap } from "./frameworks.js";
@@ -110,10 +111,21 @@ export type RejectCode =
    */
   | "security-uncited"
   /**
+   * A call's `auth` or `tls` cited on a line that writes no such thing (review 5): `mtls` on a
+   * line with no client certificate, key store or SSL bundle, `tls` with no https, SSL or TLS,
+   * an OAuth token with no token (`call-security-lines.ts`).
+   */
+  | "security-line-kind"
+  /**
    * A term fact whose meaning line is in another file or below the value's line, or whose
    * `note` is none of the notes the read was given (ADR 0163).
    */
-  | "term-meaning";
+  | "term-meaning"
+  /**
+   * A term fact whose `note` is a key none of the notes given has now (review 10): the note was
+   * changed or removed since the read, so the term is read again by the notes as they are.
+   */
+  | "term-note-stale";
 
 /** One thing wrong with a fact. */
 export interface Problem {
@@ -866,15 +878,26 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
             "security-uncited",
             `${label} claims ${what} ${claim} and cites no line for it: give ${what}Cite, the line that sets it (a client certificate, a token, an https URL) and what it writes there, or leave ${what} out`,
           );
-        if (at)
-          add(
+        if (!at) continue;
+        const bad = checkCite(
+          { ...at },
+          [{ kind: "word", value: at.value }],
+          `${label} ${what}Cite${claim ? ` (${what} ${claim})` : ""}`,
+          false,
+        );
+        add(f, bad);
+        // Review 5: and the line, or a line in its `with`, writes the kind of thing claimed.
+        if (bad || claim === undefined) continue;
+        const lines = [at, ...(at.with ?? [])].flatMap((p) => {
+          const l = lineOfValue(linesOf(p.file), p.line, p.value);
+          return l === undefined ? [] : [l];
+        });
+        const needs = securityLineKind(what, claim, lines);
+        if (needs)
+          problem(
             f,
-            checkCite(
-              { ...at },
-              [{ kind: "word", value: at.value }],
-              `${label} ${what}Cite${claim ? ` (${what} ${claim})` : ""}`,
-              false,
-            ),
+            "security-line-kind",
+            `${label} claims ${what} ${claim} at ${at.file}:${at.line}${at.with?.length ? " and its parts" : ""}, which write${at.with?.length ? "" : "s"} no ${needs}: cite the line that sets it (with the line that builds it in ${what}Cite.with), or write the ${what} the line sets`,
           );
       }
     }
@@ -897,7 +920,7 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
       else if (m)
         add(f, checkCite({ ...m }, [{ kind: "word", value: m.value }], `${label} meaning`, false));
       const bad = f.note !== undefined && o.notes ? noteProblem(f.note, o.notes) : undefined;
-      if (bad) problem(f, "term-meaning", `${label} ${bad}`);
+      if (bad) problem(f, bad.code, `${label} ${bad.message}`);
     }
     // A-framework: the name follows from the declaration on the cited line, and a version, where
     // one is claimed, is written on that line or on one of its `cite.with` parts (a property, a

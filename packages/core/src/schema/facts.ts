@@ -43,6 +43,13 @@ export const CitePart = z.strictObject({
 });
 
 /**
+ * The line a call's `auth` or `tls` rests on (ADR 0163), with the other lines it is set from
+ * (`with`, as a claim's): the line that builds the client certificate's context the cited line
+ * passes. Each part names its own value, as a `cite.with` part does.
+ */
+export const SecurityCite = CitePart.extend({ with: z.array(CitePart).max(6).optional() });
+
+/**
  * Where a fact rests. `value` is what the verifier looks for on the line (the route, the topic,
  * the table, the field, the host or the key); `quote` is the line's text, or enough of it, as a
  * second anchor. The verifier normalises the quote and never requires it from a binary,
@@ -186,17 +193,22 @@ export const CallFact = z.strictObject({
   /**
    * The auth the call presents (ADR 0163): a token it fetches or attaches, a key header, a
    * client certificate it signs in with. Goes with `authCite`, the line that sets it and what it
-   * writes there; the verifier checks it there, and rejects an `auth` with no line.
+   * writes there; the verifier checks it there, and rejects an `auth` with no line. The line, or
+   * a line in its `with`, must also write the kind of thing claimed (review 5): a token, a key, a
+   * password or a client certificate.
    */
   auth: Auth.optional(),
-  authCite: CitePart.optional(),
+  authCite: SecurityCite.optional(),
   /**
    * The transport security the call uses (ADR 0163): `mtls` (it presents a client
    * certificate), `tls` (an https URL, a TLS setting, no client certificate), `none` (plain).
-   * Goes with `tlsCite`, as `auth` goes with `authCite`.
+   * Goes with `tlsCite`, as `auth` goes with `authCite`: `mtls` needs a client certificate, a key
+   * store or an SSL bundle written on the line or a line in its `with` (the line that builds the
+   * context the cited line passes), `tls` https, SSL or TLS, `none` a plain http URL or a switch
+   * set off.
    */
   tls: z.enum(CALL_TLS).optional(),
-  tlsCite: CitePart.optional(),
+  tlsCite: SecurityCite.optional(),
 });
 
 export const StoreFact = z.strictObject({
@@ -409,10 +421,13 @@ export const TermFact = z
     value: z.string().min(1).max(200),
     role: z.enum(TERM_ROLES),
     /**
-     * The note the role rests on: its number as the prompt lists the notes (from 1), or its
-     * words quoted. Left out when no note says (a role read from the file's own words, or unknown).
+     * The note the role rests on: its key as the prompt lists it (`note 3f9a2c1b`, a short hash
+     * of the note's words, so a reorder of the notes changes nothing), or at least four of its
+     * words quoted. Left out when no note says (a role read from the file's own words, or
+     * unknown). A key no note given has now (the note was changed or removed) is flagged at
+     * verify and the term read again.
      */
-    note: z.union([z.number().int().positive(), z.string().min(1).max(300)]).optional(),
+    note: z.string().min(1).max(300).optional(),
     /** The line that gives the value its role, and what it writes there. */
     meaning: CitePart.optional(),
   })

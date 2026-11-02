@@ -45,12 +45,14 @@ export async function termsWrite(
   if (t) {
     for (const a of t.access) {
       const mine =
-        a.repo === repo || (a.reason === "caller-not-listed" ? a.call.repo : a.owner.repo) === repo;
+        a.repo === repo || (a.reason === "listed-no-call" ? a.owner.repo : a.call.repo) === repo;
       if (!mine) continue;
       lines.push(
         a.reason === "caller-not-listed"
           ? `Access: ${a.message}. Add it to the list, or say why it calls (a finding for ${ownerOf(o.op, a.call.repo)}).`
-          : `Access (a note): ${a.message}.`,
+          : a.reason === "caller-no-id"
+            ? `Access (a note): ${a.message}; whether it is listed is unknown until a fact of ${a.call.repo} names its own id.`
+            : `Access (a note): ${a.message}.`,
       );
     }
     for (const p of t.possible) {
@@ -117,8 +119,12 @@ export async function termsWrite(
           lines.push(`Rule ${rule.id} (${pack.name}) can't be checked: ${params.problem}.`);
           continue;
         }
-        for (const r of checkCallSecurity(params, { repos: o.repos, join: o.join }))
-          if (r.call.repo === repo || r.chain.some((c) => c.repo === repo))
+        for (const r of checkCallSecurity(params, {
+          repos: o.repos,
+          join: o.join,
+          systems: o.op.profiles.flatMap((p) => p.profile?.systems ?? []),
+        }))
+          if (r.call.repo === repo || r.callers.some((c) => c.repo === repo))
             lines.push(ruleLine(rule.id, r, o.op));
       }
   return { lines, raised };
