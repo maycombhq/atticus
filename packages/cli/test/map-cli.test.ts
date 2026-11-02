@@ -296,8 +296,8 @@ describe("atticus map <repo>: hand-off batches (tier 2)", () => {
   const handoff = (root: string) =>
     new HandoffRuntime({ root, validate: async () => [], now: NOW });
   // 7500, not 7000 (ADR 0163): the term kind in the facts reference and its reading rule add
-// about 250 tokens a prompt.
-const opts: MapOptions = { commit: COMMIT, maxTokens: 7500 };
+  // about 250 tokens a prompt.
+  const opts: MapOptions = { commit: COMMIT, maxTokens: 7500 };
 
   it("hands one batch at a time, verifies each answer at once, feeds back what was rejected", async () => {
     const root = adoptedRepo();
