@@ -22,6 +22,7 @@ import {
   type MapAllDeps,
   type MapAllPlan,
 } from "../src/map-all.js";
+import { mapCommand } from "../src/map-commands.js";
 import { readPlanProgress } from "../src/map-parts.js";
 import { main } from "../src/main.js";
 import { verifyCommand } from "../src/verify-commands.js";
@@ -38,6 +39,7 @@ const FIXTURES = join(__dirname, "..", "..", "..", "fixtures");
 const LINK = join(FIXTURES, "link-estate");
 const VERIFY = join(__dirname, "..", "..", "verify", "test", "fixtures");
 const SHA = (c: string) => c.repeat(40).slice(0, 40);
+const LJ = "src/main/java/forge/ledger";
 const LIMIT = 100_000;
 
 const temps: string[] = [];
@@ -291,11 +293,42 @@ function gitIn(dir: string) {
 }
 
 /** The Forge ledger and notifier metarepo, the ledger cloned with git and read at its first commit. */
-function ledgerEstate(o: { move?: boolean; big?: boolean } = {}) {
+function ledgerEstate(o: { move?: boolean; big?: boolean; units?: boolean } = {}) {
   const root = temp("ledger");
   cpSync(join(VERIFY, "metarepo", "org-pack"), join(root, "org-pack"), { recursive: true });
   const dir = join(root, "workspace", "forge-ledger");
   cpSync(join(VERIFY, "repo"), dir, { recursive: true });
+  if (o.units) {
+    // ADR 0170: read in 4 parts at 60,000 tokens, the last with a service, a validation and an
+    // sql folder beside three files named alone, as a big service's last part is.
+    const body = (pkg: string, n: string, k: number) =>
+      `package ${pkg};\n\npublic class ${n} {\n${Array.from({ length: k }, (_, i) => `  private final int value${i} = ${i};`).join("\n")}\n}\n`;
+    for (let c = 0; c < 4; c++)
+      write(
+        dir,
+        `${LJ}/service/LedgerService${c}.java`,
+        body("forge.ledger.service", `LedgerService${c}`, 300),
+      );
+    for (let c = 0; c < 3; c++)
+      write(
+        dir,
+        `${LJ}/validation/AmountCheck${c}.java`,
+        body("forge.ledger.validation", `AmountCheck${c}`, 200),
+      );
+    for (let c = 0; c < 3; c++)
+      write(
+        dir,
+        `src/main/resources/sql/q${c}.sql`,
+        `${Array.from({ length: 200 }, (_, i) => `select ${i} from t${i};`).join("\n")}\n`,
+      );
+    for (const m of ["accounts", "payments", "reports"])
+      for (let c = 0; c < 6; c++)
+        write(
+          dir,
+          `${m}/src/main/java/forge/${m}/Part${c}.java`,
+          body(`forge.${m}`, `Part${c}`, 400),
+        );
+  }
   if (o.big)
     for (const m of ["accounts", "payments", "reports", "statements"])
       for (let c = 0; c < 10; c++)
@@ -472,7 +505,7 @@ describe("atticus map --all under Copilot: one line per part, waited for (ADR 01
     );
   });
 
-  it("a read that stops halfway: says Copilot seems to have stopped, and r verifies what it wrote and gives only what is left", async () => {
+  it("a read that stops halfway: r verifies what it wrote and gives only what is left", async () => {
     const { root, dir, head } = ledgerEstate({ big: true });
     const plan = await dryRun(root, { maxTokens: 300_000 });
     const part1 = plan.items[0]!.parts[0]!;
@@ -493,13 +526,8 @@ describe("atticus map --all under Copilot: one line per part, waited for (ADR 01
       ]),
     });
     const o = io();
-    await mapAllCommand(root, { maxTokens: 300_000, mode: "copilot", idleMinutes: 15 }, o.io, d);
+    await mapAllCommand(root, { maxTokens: 300_000, mode: "copilot", idleMinutes: 30 }, o.io, d);
     const text = o.text();
-    expect(text).toContain(
-      "Copilot seems to have stopped on forge-ledger part 1. r + Enter: verify what it wrote and give the prompt again for what's left, in a NEW chat; s: skip; q: stop.",
-    );
-    // Said once per still stretch, at 15 minutes idle (minute 17), not before.
-    expect(text.match(/Copilot seems to have stopped/g)).toHaveLength(1);
     // r: what it wrote is verified (kept), and the line is the rest of the part only.
     expect(text).toMatch(/forge-ledger: \d+ facts kept, 0 rejected/);
     expect(text).toContain("given again (1)");
@@ -544,6 +572,329 @@ describe("atticus map --all under Copilot: one line per part, waited for (ADR 01
     expect(readFileSync(join(root, "facts", "forge-ledger.read-plan.yaml"), "utf8")).toContain(
       "session: 22500",
     );
+  });
+});
+
+// ---------------------------------------------------------------- ADR 0170: done as verify counts it
+
+describe("atticus map --all: a part is done when verify's coverage leaves nothing under it (ADR 0170)", () => {
+  const L = 60_000;
+  /** The units estate with parts 1 to 3 read already, so part 4 is the one the run waits on. */
+  async function lastPartLeft() {
+    const e = ledgerEstate({ units: true });
+    const whole = (await dryRun(e.root, { maxTokens: L })).items[0]!;
+    expect(whole.total).toBe(4);
+    const last = whole.parts.at(-1)!;
+    expect(last.paths).toEqual(
+      expect.arrayContaining([
+        `${LJ}/service/**`,
+        `${LJ}/validation/**`,
+        "src/main/resources/sql/**",
+      ]),
+    );
+    ledgerFacts(e.root, e.head);
+    review(
+      e.root,
+      e.dir,
+      whole.parts.slice(0, -1).flatMap((p) => p.paths),
+    );
+    const plan = await dryRun(e.root, { maxTokens: L });
+    expect(plan.items[0]!.parts.map((p) => p.part)).toEqual([4]);
+    return { ...e, last };
+  }
+  /** What Copilot does at the end of part 4: reviewed lines, a broad glob, then verify --write itself. */
+  const copilotReadsPart4 = async (root: string, head: string, last: { paths: string[] }) => {
+    const alone = last.paths.filter((p) => !p.includes("*"));
+    const lines = [
+      {
+        path: "src/main/resources/**",
+        why: "migrations and queries; their tables are store facts already",
+      },
+      { path: `${LJ}/service/*.java`, why: "wiring only; nothing served, called or stored" },
+      ...alone.map((path) => ({ path, why: "read; nothing to record" })),
+    ];
+    appendFileSync(
+      join(root, "facts", "forge-ledger.reviewed.jsonl"),
+      `${lines.map((l) => JSON.stringify(l)).join("\n")}\n`,
+    );
+    const c: string[] = [];
+    await verifyCommand(
+      root,
+      "forge-ledger",
+      { commit: head, write: true },
+      { out: (l) => c.push(l), err: (l) => c.push(l) },
+    );
+    return c.join("\n");
+  };
+
+  it("the user's case: verify says nothing is left (validation's model classes not reached), so the part is done without a keypress", async () => {
+    const { root, head, last } = await lastPartLeft();
+    const clock = fakeClock(async (m) => {
+      if (m === 2) {
+        // A gaps pass or a re-estimate recorded the validation classes as not reached after the
+        // parts were planned: verify counts them apart, and no fact cites one.
+        const p = join(root, "facts", "forge-ledger.read-plan.yaml");
+        const files = [0, 1, 2].map((c) => `${LJ}/validation/AmountCheck${c}.java`);
+        appendFileSync(
+          p,
+          `notReached:\n  why: model classes no entry point, call or field fact reaches\n  files:\n${files.map((f) => `    - ${f}`).join("\n")}\n  tokens: 3000\n`,
+        );
+      }
+      if (m === 3) {
+        const said = await copilotReadsPart4(root, head, last);
+        expect(said).toMatch(
+          /0 rejected; coverage \d+% \(\d+ read, \d+ reviewed with nothing to record, 0 unknown/,
+        );
+      }
+    });
+    const d = deps(clock);
+    const o = io();
+    expect(await mapAllCommand(root, { maxTokens: L, mode: "copilot" }, o.io, d)).toBe(0);
+    const text = o.text();
+    expect(text).toContain(
+      "===== forge-ledger, part 4 of 4, 1 of the 1 to read (repo 1 of 1) =====",
+    );
+    expect(text).not.toContain("Still waiting");
+    expect(text).not.toContain("given again");
+    expect(text).toMatch(
+      /forge-ledger: \d+ facts kept, 0 rejected; coverage \d+% \(0 files no fact cites yet\)/,
+    );
+    expect(text).toContain("Joining the estate: atticus verify --all --write.");
+    expect(text).toMatch(/Done: 1 repo read, 1 part;/);
+    expect(d.copied).toEqual(["/atticus-map forge-ledger"]);
+    expect(clock.minutes()).toBeLessThan(10);
+    expect((await readPlanProgress(root, "forge-ledger"))!.parts[3]!.state).toBe("done");
+  });
+
+  it("says exactly what is still not covered under the part, and r gives only those files", async () => {
+    const { root, head, last } = await lastPartLeft();
+    const clock = fakeClock(async (m) => {
+      if (m === 3) await copilotReadsPart4(root, head, last);
+    });
+    const d = deps(clock, {
+      input: typed(clock, [
+        { at: 5, line: "r" },
+        { at: 6, line: "q" },
+      ]),
+    });
+    const o = io();
+    await mapAllCommand(root, { maxTokens: L, mode: "copilot" }, o.io, d);
+    const text = o.text();
+    expect(text).toContain(
+      `Still not covered in forge-ledger part 4 of 4: ${LJ}/validation/** (3 files: AmountCheck0.java, AmountCheck1.java, AmountCheck2.java). r + Enter gives a NEW chat only what is left of the part: these files, and any line verify lists as skipped under it (/atticus-map forge-ledger --part 4 --gaps); s + Enter skips the part; q + Enter stops.`,
+    );
+    expect(text).not.toContain("Still waiting");
+    expect(d.copied.at(-1)).toBe("/atticus-map forge-ledger --part 4 --gaps");
+    const prompt = readFileSync(join(root, "facts", "forge-ledger.gaps.md"), "utf8");
+    const listed = [...prompt.matchAll(/^- `([^`#]+)(?:#L\d+-L\d+)?` \(about/gm)].map((x) => x[1]!);
+    expect(listed.sort()).toEqual([0, 1, 2].map((c) => `${LJ}/validation/AmountCheck${c}.java`));
+  });
+
+  it("stops waiting at the idle limit, says so once and how to carry on, instead of waiting forever", async () => {
+    const { root } = ledgerEstate();
+    const clock = fakeClock();
+    const o = io();
+    expect(
+      await mapAllCommand(
+        root,
+        { maxTokens: LIMIT, mode: "copilot", idleMinutes: 25 },
+        o.io,
+        deps(clock),
+      ),
+    ).toBe(0);
+    const text = o.text();
+    expect(text.match(/Still waiting on forge-ledger one session/g)).toHaveLength(2);
+    expect(text.match(/Stopped waiting/g)).toHaveLength(1);
+    expect(text).toContain(
+      "Stopped waiting on forge-ledger one session: nothing was written for 25 minutes (--idle 25). Where the estate stands is saved: atticus map --all --max-tokens 100000 --idle 25 carries on from here (it verifies what was written and gives the line again for what's left).",
+    );
+    expect(clock.minutes()).toBe(25);
+    expect(text).toMatch(/forge-ledger: incomplete; atticus map --all --repos forge-ledger/);
+    expect((await readMapAllState(root))?.repos["forge-ledger"]?.parts["1"]?.state).toBe(
+      "incomplete",
+    );
+    // Thirty minutes when --idle isn't given.
+    const c2 = fakeClock();
+    const o2 = io();
+    await mapAllCommand(root, { maxTokens: LIMIT, mode: "copilot" }, o2.io, deps(c2));
+    expect(c2.minutes()).toBe(30);
+  });
+});
+
+describe("atticus map --all --force: the named repos read whole again (ADR 0170)", () => {
+  const fresh = (root: string, head: string) => {
+    ledgerFacts(root, head);
+    write(
+      root,
+      "facts/forge-ledger.read-plan.yaml",
+      stringify({
+        schemaVersion: 2,
+        repo: "forge-ledger",
+        commit: head,
+        session: 45000,
+        plannedAt: "2026-10-30T10:00:00Z",
+        parts: [],
+        rules: rulesNow(),
+      }),
+    );
+  };
+
+  it("plans a read and fresh repo whole again, keeps its facts as already kept, and waits on it", async () => {
+    const { root, dir, head } = ledgerEstate();
+    fresh(root, head);
+    expect((await dryRun(root)).skipped).toContainEqual({
+      repo: "forge-ledger",
+      why: "read and fresh",
+    });
+    const plan = await dryRun(root, { force: true, repos: ["forge-ledger"] });
+    expect(plan.items.map((i) => [i.repo, i.kind, i.force])).toEqual([
+      ["forge-ledger", "read", true],
+    ]);
+    expect(plan.items[0]!.why).toBe(
+      "--force: read whole again, the facts on file kept as already kept",
+    );
+    const clock = fakeClock(async (m) => {
+      // Only verify ran at minute 2 (nothing new written): not done. A reviewed line and verify at 4: done.
+      if (m === 2) await readerVerifies(root, head);
+      if (m === 4) {
+        review(root, dir, ["README.md"]);
+        await readerVerifies(root, head);
+      }
+    });
+    const d = deps(clock);
+    const o = io();
+    await mapAllCommand(
+      root,
+      { maxTokens: LIMIT, mode: "copilot", force: true, repos: ["forge-ledger"] },
+      o.io,
+      d,
+    );
+    const text = o.text();
+    expect(d.copied).toEqual(["/atticus-map forge-ledger"]);
+    expect(text).toContain(
+      "The facts on file stay, as already kept: the chat names one by its id and doesn't write it again (one whose line changed it rewrites under the same id).",
+    );
+    expect(text).toMatch(/Done: 1 repo read, 1 part;/);
+    expect(clock.minutes()).toBe(4);
+  });
+
+  it("gives each part by number in a repo read in parts, and a second run carries on from the part it stopped in", async () => {
+    const { root, dir, head } = ledgerEstate({ big: true });
+    const whole = (await dryRun(root)).items[0]!;
+    ledgerFacts(root, head);
+    review(
+      root,
+      dir,
+      whole.parts.flatMap((p) => p.paths),
+    );
+    await readerVerifies(root, head);
+    const plan = await dryRun(root, { force: true });
+    expect(plan.items[0]!.parts.map((p) => p.part)).toEqual(whole.parts.map((p) => p.part));
+    const clock = fakeClock(async (m) => {
+      if (m === 3) {
+        review(root, dir, whole.parts[0]!.paths);
+        await readerVerifies(root, head);
+      }
+    });
+    const d = deps(clock, { input: typed(clock, [{ at: 5, line: "q" }]) });
+    const o = io();
+    await mapAllCommand(root, { maxTokens: LIMIT, mode: "copilot", force: true }, o.io, d);
+    expect(d.copied).toEqual([
+      "/atticus-map forge-ledger --part 1",
+      "/atticus-map forge-ledger --part 2",
+    ]);
+    // The estimate a forced part's chat runs names that part, whatever the facts say of it.
+    const e = io();
+    expect(
+      await mapCommand(
+        root,
+        "forge-ledger",
+        { estimate: true, commit: head, maxTokens: LIMIT, part: 2 },
+        e.io,
+      ),
+    ).toBe(0);
+    expect(e.text()).toContain(
+      `This session reads part 2 of ${whole.total} (--part 2): ${whole.parts[1]!.paths.join(", ")}. The facts on file stay, as already kept: name one by its id and don't write it again.`,
+    );
+    const again = await dryRun(root, { force: true });
+    expect(again.items[0]!.parts[0]!.part).toBe(2);
+  });
+
+  it("doesn't go with --stale or --gaps", async () => {
+    const { root } = ledgerEstate();
+    const o = io();
+    expect(await mapAllCommand(root, { maxTokens: LIMIT, force: true, gaps: true }, o.io)).toBe(2);
+    expect(o.out[0]).toBe(
+      "ERR --force reads the repos whole again; it doesn't go with --stale or --gaps.",
+    );
+  });
+});
+
+describe("atticus map <repo> under Copilot runs the same waiting loop (ADR 0170)", () => {
+  const cli = async (args: string[]) => {
+    const out: string[] = [];
+    const code = await main(
+      args,
+      { out: (l) => out.push(l), err: (l) => out.push(`ERR ${l}`) },
+      { quiet: true },
+    );
+    return { code, text: out.join("\n"), out };
+  };
+
+  it("plans and waits on the one repo when runtime.yaml's assistant is Copilot (the default)", async () => {
+    const { root } = ledgerEstate();
+    const r = await cli([
+      "map",
+      "forge-ledger",
+      "--dry-run",
+      "--max-tokens",
+      "100000",
+      "--root",
+      root,
+    ]);
+    expect(r.code, r.text).toBe(0);
+    expect(r.out[0]).toBe(
+      "The estate at 100,000 tokens a prompt (--max-tokens), read by Copilot Chat in agent mode: you paste one line per part:",
+    );
+    expect(r.text).toMatch(/ {2}1\. forge-ledger: read, not read yet; 1 part/);
+    expect(r.text).not.toContain("forge-notify");
+    // --force too: the repo read whole again, in the same loop.
+    ledgerFacts(root, SHA("a"));
+    const f = await cli([
+      "map",
+      "forge-ledger",
+      "--force",
+      "--dry-run",
+      "--max-tokens",
+      "100000",
+      "--root",
+      root,
+    ]);
+    expect(f.text).toMatch(/1\. forge-ledger: read, --force: read whole/);
+  });
+
+  it("says plainly, when the batch hand-off is taken, what to run if the person uses Copilot", async () => {
+    const { root, head } = ledgerEstate();
+    write(
+      root,
+      "org-pack/runtime.yaml",
+      "schemaVersion: 2\nassistants: { allowed: [claude-code], default: claude-code }\n",
+    );
+    const r = await cli([
+      "map",
+      "forge-ledger",
+      "--commit",
+      head,
+      "--max-tokens",
+      "100000",
+      "--root",
+      root,
+    ]);
+    expect(r.code, r.text).toBe(0);
+    expect(r.out[0]).toBe(
+      "runtime.yaml says Claude Code; if you use Copilot, run atticus map --all --repos forge-ledger (it waits and copies each line).",
+    );
+    expect(r.text).toMatch(/Handed batch 1 of \d+ to your assistant/);
   });
 });
 

@@ -208,6 +208,63 @@ describe("reachableModels from the source text (ADR 0169)", () => {
   });
 });
 
+describe("reachableModels from the entry points only (ADR 0170, --models entries)", () => {
+  const GATE = "src/main/java/forge/gate";
+  const source = dirSource(join(fixtures, "forge-gate"));
+  const of = (from?: "entries", facts?: Fact[]) =>
+    reachableModels({
+      paths: source.list(),
+      read: (p) => source.read(p),
+      ...(from ? { from } : {}),
+      ...(facts ? { facts } : {}),
+    });
+
+  it("reaches the controller's two classes, not the six only the outbound client names", () => {
+    const all = of();
+    expect(all.roots).toEqual([
+      `${GATE}/api/TransferController.java`,
+      `${GATE}/client/TidewaterClient.java`,
+    ]);
+    expect(all.reached).toHaveLength(8);
+    const r = of("entries");
+    expect(r.roots).toEqual([`${GATE}/api/TransferController.java`]);
+    expect(r.reached.map((x) => x.path)).toEqual(
+      ["TransferRequest", "TransferResponse"].map((n) => `${GATE}/model/${n}.java`),
+    );
+    expect(r.notReached).toHaveLength(6);
+  });
+
+  it("doesn't follow a field a call owns, nor start from a file only a call cites", () => {
+    const call = {
+      kind: "call",
+      id: "call.post.tidewater-postings",
+      repo: "forge-gate",
+      commit: "0123abc",
+      callType: "rest",
+      method: "POST",
+      path: "/v2/postings",
+      cite: { file: `${GATE}/client/TidewaterClient.java`, line: 22, value: "/v2/postings" },
+    } as unknown as Fact;
+    const field = {
+      kind: "field",
+      id: "field.tidewater-postings.debtor",
+      repo: "forge-gate",
+      commit: "0123abc",
+      owner: "call.post.tidewater-postings",
+      name: "debtor",
+      type: "LedgerParty",
+      side: "request",
+      cite: { file: `${GATE}/client/TidewaterClient.java`, line: 22, value: "body" },
+    } as unknown as Fact;
+    const r = of("entries", [call, field]);
+    expect(r.roots).toEqual([`${GATE}/api/TransferController.java`]);
+    expect(r.reached.map((x) => x.path)).not.toContain(`${GATE}/model/LedgerParty.java`);
+    expect(of(undefined, [call, field]).reached.map((x) => x.path)).toContain(
+      `${GATE}/model/LedgerParty.java`,
+    );
+  });
+});
+
 describe("reachableModels from the facts when the repo is read (ADR 0169)", () => {
   const cite = (file: string, line = 1) => ({ file, line, value: "x" });
   const base = {
