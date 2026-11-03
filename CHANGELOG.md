@@ -9,6 +9,20 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - A read records which reading rules it was given (the rules' hash and rule sets, in its read plan). A repo whose facts are fresh but whose read lacked rules added since — every repo read before beta.12 lacks beta.11's field types and required, mappings and envelopes, message types, terms and a call's auth and TLS — is `rules-changed` in `atticus estate fresh`, `atticus next` and `doctor --counts`. `atticus map --all --stale` (and `map --all`) now tops it up instead of saying "nothing to read": a new chat per part, given only the rule parts it lacked, the files they apply to and the facts it has by id; `atticus map <repo> --rules` does one repo (Copilot, or batches with a mode), and a passing verify records the rules (ADR 0167).
 - `atticus doctor --counts` breaks unresolved calls down by why the join left them (`no-host`, `unresolved-placeholder`, `host-no-route`, `target-no-route`, ...) and asked calls by the join's reason, and counts the open target questions by how many calls each covers (alone, or in groups of 2-4, 5-9, 10+). Counts only, nothing named.
 
+### Questions asked before, put right (ADR 0168)
+
+- `atticus verify <repo> --write` refreshes an open target question asked before in place (same id, its history kept) with today's ranked options, the repos read since among them; one whose calls a group asks now, or an answer's `--match` rule covers, retires saying which; an answered one is never touched. A gateway proxy's routes are asked once per TargetServer and path prefix ("Which repo serves the routes under /accounts/** that forge-core-v1 forwards to core-backend?"), and a host whose calls reach a proxy's routes, that no proxy repo lists, says the one-time fix (list it under `hosts:` on each proxy repo).
+- An option says why it is suggested ("serves PUT /accounts/{id}/status and 6 more under /accounts", "its basePath /accounts matches", "named like the host label", "no evidence; listed so you can pick it"), never that a repo answers the call; and open questions sharing a path prefix or host offer "Answer once for all N: --match '/accounts/**'" in `questions show`/`list`/`--json` and on the Questions page, which fills in the rule (local API 2.49.0).
+
+### The Architecture canvas, intake and quieter notes
+
+- The picture no longer waits on the contract check: the canvas asks for it once the picture is drawn, says what it is waiting for in words ("Reading the estate's catalog…", "Laying out N boxes…", "Joining the estate…"), and the check and the estate join are kept in `.atticus/cache/` under the stamp of the files they read, so a restart or another page reuses them.
+- A YAML spec the strict parser refuses is read leniently where it is safe (a key written twice keeps the last, more aliases than the strict limit), and the multi-line `servers[].variables` layout of gateway and Swagger UI exports is read when the file is then a spec; what was read so is noted. A file still unread is `unreadable` in `atticus intake list` and its JSON, with the parser's reason and where.
+- `atticus map --all`'s summary and each part's header count parts the same way when some are read already ("4 parts to read (of 5 planned; 1 is read already)", "part 1 of 5, 1 of the 4 to read").
+- The lines no fact cites no longer list a build file's artifact repositories, registries, distribution and SCM URLs, CI settings pointing at the git host, or HTTP header names as topics.
+- A framework fact citing `@SpringBootApplication` (bare, qualified or with arguments), `@EnableAutoConfiguration` or `@QuarkusMain` is Spring Boot or Quarkus, never a house framework to learn; one an earlier read named after the annotation is kept.
+- `verify --write` says a shared link is "verified by another call; this one by path" instead of pairing verified with a path guess.
+
 ## 2.0.0-beta.11 (2026-11-02)
 
 ### Fixed before release: from the review
