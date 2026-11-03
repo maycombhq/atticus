@@ -73,7 +73,6 @@ export const reachHeadOf = (paths: readonly string[], r: ReachPlan): string[] =>
   return paths.filter((p) => readingRank(p) <= 1 || roots.has(p));
 };
 
-
 /** The summary line: how many model classes, how many reached, how many left out. */
 export function modelsLine(repo: string, r: ReachPlan): string | undefined {
   const { reach } = r;

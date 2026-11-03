@@ -1462,7 +1462,7 @@ async function finish(root: string, s: MapState, io: Output, o: MapOptions): Pro
     return 0;
   }
   io.out(
-    `Read ${s.repo} in ${batches(s.batches.length)}: ${plural(last.accepted, "fact")} kept in ${rel}/${s.repo}.jsonl, ${last.rejected} still rejected; coverage ${Math.round(last.coverage.ratio * 100)}% (${last.coverage.read} read, ${last.coverage.reviewed ? `${last.coverage.reviewed} reviewed with nothing to record, ` : ""}${last.coverage.unknown.length} unknown).`,
+    `Read ${s.repo} in ${batches(s.batches.length)}: ${plural(last.accepted, "fact")} kept in ${rel}/${s.repo}.jsonl, ${last.rejected} still rejected; coverage ${Math.round(last.coverage.ratio * 100)}% (${last.coverage.read} read, ${last.coverage.reviewed ? `${last.coverage.reviewed} reviewed with nothing to record, ` : ""}${last.coverage.unknown.length} unknown${last.coverage.notReached?.length ? `, ${last.coverage.notReached.length} model files no entry or call reaches` : ""}).`,
   );
   if (last.rejected)
     io.out(
