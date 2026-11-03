@@ -197,9 +197,9 @@ export const ALLOW = [
   },
   {
     file: "packages/scanner/src/facts-catalog.ts",
-    names: ["teams"],
+    names: ["teams", "apigee"],
     reason:
-      "the English word: roles.yaml's teams the target picker lists (ADR 0162), not the chat product",
+      "teams is the English word: roles.yaml's teams the target picker lists (ADR 0162), not the chat product; apigee is the deploy fact's platform value the gateway reading rules write (ADR 0124 addendum A-gateway), used to word a proxy's routes as one question (ADR 0168)",
   },
   {
     file: "packages/core/src/shared-maps.ts",
