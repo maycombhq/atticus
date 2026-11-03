@@ -4,6 +4,11 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## 2.0.0-beta.12.2 (2026-11-03)
 
+### Answers and the Questions page
+
+- `--match "/**"` is a rule for every path of the repo, so one answer covers a proxy that forwards everything to one place (this repo only, unless `--scope repo-type`).
+- Each question card on the Questions page shows its id, with a button to copy it.
+
 ### The waiting loop agrees with verify (ADR 0170)
 
 - `atticus map --all` counts a part done when verify's coverage leaves no file under it unaccounted (cited, reviewed, excluded or not reached), as verify records it in the read plan, and moves on without a keypress; when verify passes but something is left it says exactly what and that `r` gives only those files. After `--idle` minutes (30) with nothing written it stops waiting once, saying how to carry on, instead of reminding forever.

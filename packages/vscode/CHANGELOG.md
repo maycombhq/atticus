@@ -4,7 +4,7 @@ The Atticus extension for VS Code. The command line's own changes are in the rep
 
 ## 0.7.12 (pre-release, with Atticus 2.0.0-beta.12.2)
 
-- **Ships with Atticus 2.0.0-beta.12.2.** No change to the extension itself: Map the estate moves on by itself when verify leaves nothing under a part, says what is left when something is, and stops waiting after a set time; `--force` re-reads repos whole in the same loop, and `--models entries` reads the classes a repo's own endpoints use first.
+- **Ships with Atticus 2.0.0-beta.12.2.** No change to the extension itself: one `--match "/**"` answer covers every path of a repo, each question card shows its id, and Map the estate moves on by itself when verify leaves nothing under a part, says what is left when something is, and stops waiting after a set time; `--force` re-reads repos whole in the same loop, and `--models entries` reads the classes a repo's own endpoints use first.
 
 ## 0.7.11 (pre-release, with Atticus 2.0.0-beta.12.1)
 
