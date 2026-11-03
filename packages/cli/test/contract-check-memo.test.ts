@@ -1,9 +1,16 @@
+import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { stringify } from "yaml";
-import { contractCheckOf } from "../src/contract-check-files.js";
+import { loadOrgPack, orgPackDirOf } from "@maycombhq/core";
+import { estateFacts, estateJoinOf } from "@maycombhq/scanner";
+import {
+  contractCheckOf,
+  estateJoinOnFile,
+  forgetKeptChecks,
+} from "../src/contract-check-files.js";
 import { contractsView } from "../src/ui-api-contracts.js";
 
 /**
@@ -151,6 +158,37 @@ describe("the contract check, kept per metarepo", () => {
       const b = await contractCheckOf(y);
       expect(a).not.toBe(b);
       expect(await contractCheckOf(x)).toBe(a);
+    },
+    ROOM,
+  );
+
+  it(
+    "keeps the check and the estate join on disk, so a restart or another page reuses them",
+    async () => {
+      const root = await estate();
+      const first = await contractCheckOf(root);
+      expect(existsSync(join(root, ".atticus", "cache", "contract-check.json"))).toBe(true);
+      expect(existsSync(join(root, ".atticus", "cache", "estate-join.json"))).toBe(true);
+      // A restart: nothing kept in memory, the files on disk unchanged.
+      forgetKeptChecks();
+      const [again, ms] = await cpu(() => contractCheckOf(root));
+      expect(again).not.toBe(first);
+      expect(again.result).toEqual(first.result);
+      expect([...again.newBySystem]).toEqual([...first.newBySystem]);
+      expect(ms).toBeLessThan(1500);
+      // Another page's estate join is the same one, read back from disk.
+      const op = await loadOrgPack(orgPackDirOf(root));
+      const est = await estateFacts(root, op, "");
+      expect(await estateJoinOnFile(root, op, est)).toEqual(
+        estateJoinOf(op, est.repos, est.targets),
+      );
+      // A changed file of facts: worked out again, not read back.
+      forgetKeptChecks();
+      const later = new Date(Date.now() + 60_000);
+      await utimes(join(root, "facts", "forge-gen-3.jsonl"), later, later);
+      await writeFile(join(root, "facts", "forge-gen-3.jsonl"), "");
+      const changed = await contractCheckOf(root);
+      expect(changed.result.counts.links).toBeLessThan(first.result.counts.links);
     },
     ROOM,
   );

@@ -465,7 +465,7 @@ export function ArchitectureCanvas(p: {
       >
         {state.state === "running" && !nodes.length ? (
           <div className="stack" aria-live="polite">
-            <span className="sr">{WORDS.layingOut}</span>
+            <p className="hud">{WORDS.layingOutBoxes(p.graph.boxes.length)}</p>
             <div className="skeleton" style={{ width: "70%" }} />
             <div className="skeleton" style={{ width: "50%" }} />
           </div>

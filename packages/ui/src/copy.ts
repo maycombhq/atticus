@@ -3367,6 +3367,15 @@ export const COPY = {
   graph: {
     map: "Map",
   },
+  /** The Architecture canvas (ADR 0081): what it is waiting for, said in words. */
+  architecture: {
+    readingEstate: "Reading the estate's catalog…",
+    layingOutBoxes: (n: number) => `Laying out ${n} box${n === 1 ? "" : "es"}…`,
+    joiningEstate:
+      "Joining the estate to check each link's two sides… the marks of links whose sides disagree come next.",
+    contractsFailed: (why: string) =>
+      `Couldn't check the links' contracts, so no link is marked: ${why}`,
+  },
   /** The diagram viewer every picture shares (F10): fit, zoom, search, focus and full screen. */
   viewer: {
     toolbar: "Picture controls",

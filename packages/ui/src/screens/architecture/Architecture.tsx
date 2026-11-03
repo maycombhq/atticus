@@ -85,6 +85,14 @@ export function Architecture(p: {
 
 const NO_FINDINGS: readonly Api.ContractMismatchViewT[] = [];
 
+/**
+ * When the canvas asks for the contract check (ADR 0164): once the picture is drawn, never with
+ * it. A first check joins the whole estate, and the app's server answers one thing at a time, so
+ * asked at once it would hold the picture back; its marks come after.
+ */
+export const contractsPathWhen = (o: { ready: boolean; drawn: boolean }): string | undefined =>
+  o.ready && o.drawn ? "/api/contracts" : undefined;
+
 function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: string }) {
   const lensParam = queryParam(hash, "lens");
   const lens: Lens = (LENSES as readonly string[]).includes(lensParam ?? "")
@@ -99,8 +107,17 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
   useEffect(() => {
     for (const r of repos.split(" ").filter(Boolean)) ev?.need(r);
   }, [repos, ev]);
-  // ADR 0164: the contract check's findings, each link whose two sides disagree marked.
-  const contracts = useApi<Api.ContractsViewT>("/api/contracts");
+  const [status, setStatus] = useState<Status>({ state: "loading" });
+  const [laid, setLaid] = useState<Laid | undefined>();
+  // ADR 0164: the contract check's findings, each link whose two sides disagree marked; asked
+  // for once the picture is first drawn (and kept after), so the picture never waits on it.
+  const [drawn, setDrawn] = useState(false);
+  useEffect(() => {
+    if (status.state === "ready" && laid) setDrawn(true);
+  }, [status.state, laid]);
+  const contracts = useApi<Api.ContractsViewT>(
+    contractsPathWhen({ ready: status.state === "ready", drawn }),
+  );
   const findings = contracts.state === "ready" ? contracts.data.findings : NO_FINDINGS;
   const views = useMemo(
     () =>
@@ -113,13 +130,11 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
       ),
     [loaded, ev, findings],
   );
-  const [status, setStatus] = useState<Status>({ state: "loading" });
   const [current, setCurrent] = useState("estate");
   const [expanded, setExpanded] = useState<Set<string>>(new Set(["estate"]));
   const [selected, setSelected] = useState<string | undefined>();
   const [focus, setFocus] = useState<Api.GraphFocusViewT | undefined>();
   const [inPlace, setInPlace] = useState<Set<string>>(new Set());
-  const [laid, setLaid] = useState<Laid | undefined>();
   const [arrangement, setArrangement] = useState<Arrangement>({ state: "loading", key: "" });
   const [tidy, setTidy] = useState(0);
   const [keeping, setKeeping] = useState<Keeping>({ state: "idle" });
@@ -390,7 +405,7 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
       {status.state === "loading" && (
         <Panel span="1 / -1">
           <div className="stack" aria-busy="true" aria-live="polite">
-            <span className="sr">{WORDS.loading}</span>
+            <p className="hud">{WORDS.readingEstate}</p>
             <div className="skeleton" style={{ width: "80%" }} />
             <div className="skeleton" style={{ width: "60%" }} />
           </div>
@@ -440,6 +455,17 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
                 )}
               </div>
             )}
+            {/* The contract check after the picture: what it is doing, or why it couldn't. */}
+            {drawn && contracts.state === "loading" && (
+              <p className="hud" role="status" aria-live="polite">
+                {WORDS.joiningEstate}
+              </p>
+            )}
+            {contracts.state === "error" && (
+              <p className="hud" role="status">
+                {WORDS.contractsFailed(contracts.error)}
+              </p>
+            )}
             {graph.shared && graph.shared.length > 0 && (
               <p className="arch-shared">
                 <span aria-hidden="true">⚠ </span>
@@ -479,7 +505,7 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
               </div>
             ) : arrangement.state === "loading" || arrangement.key !== key ? (
               <div className="stack" aria-busy="true" aria-live="polite">
-                <span className="sr">{WORDS.layingOut}</span>
+                <p className="hud">{WORDS.layingOutBoxes(graph.boxes.length)}</p>
                 <div className="skeleton" style={{ width: "70%" }} />
               </div>
             ) : (
