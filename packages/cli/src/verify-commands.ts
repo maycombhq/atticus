@@ -371,10 +371,20 @@ export async function verifyCommand(
     `${repo}: ${report.accepted.length} facts kept, ${report.rejected.length} rejected; coverage ${pct}% (${cov.read.length} read, ${cov.reviewed.length ? `${cov.reviewed.length} reviewed with nothing to record, ` : ""}${cov.unknown.length} unknown${cov.excluded.length ? `, ${cov.excluded.length} excluded` : ""}${cov.notReached.length ? `, ${cov.notReached.length} model files no entry or call reaches` : ""}).`,
   );
   // ADR 0169: the model files left out, said, never silent, with the command that reads them.
-  if (cov.notReached.length)
-    io.out(
-      `${cov.notReached.length} model files no entry or call reaches; atticus map ${repo} --models all reads them.`,
-    );
+  if (cov.notReached.length) {
+    // ADR 0170: under --models entries, those only an outbound client reaches are said apart.
+    const client = new Set((await loadReadPlan(root, repo))?.notReached?.clientOnly?.files ?? []);
+    const byClient = cov.notReached.filter((p) => client.has(p)).length;
+    const rest = cov.notReached.length - byClient;
+    if (byClient)
+      io.out(
+        `${byClient} model files only an outbound client reaches; atticus map ${repo} --models reachable reads them.`,
+      );
+    if (rest)
+      io.out(
+        `${rest} model files no entry or call reaches; atticus map ${repo} --models all reads them.`,
+      );
+  }
   // A-big2: every list is said as a count, its first few, and where the whole list is.
   const verifyYaml = `${rel}/${repo}.verify.yaml`;
   const rejectedFile = `${rel}/${repo}.rejected.jsonl`;

@@ -187,9 +187,14 @@ export async function mapGaps(
   io.out(
     `Wrote ${promptRel}: session 1${n > 1 ? ` of ${n}` : ""}, ${s1.reads.length} ${s1.reads.length === 1 ? "read" : "reads"}, about ${s1.tokens.toLocaleString("en-US")} tokens.`,
   );
-  if (rp.leaveOut.length)
+  if (rp.clientOnly.length)
     io.out(
-      `${rp.leaveOut.length} model ${rp.leaveOut.length === 1 ? "class" : "classes"} no entry or call reaches ${rp.leaveOut.length === 1 ? "is" : "are"} left out (ADR 0169): atticus map ${repo} --gaps --models all reads them.`,
+      `${rp.clientOnly.length} model ${rp.clientOnly.length === 1 ? "class" : "classes"} only an outbound client reaches ${rp.clientOnly.length === 1 ? "is" : "are"} left out (ADR 0170): atticus map ${repo} --gaps --models reachable reads them.`,
+    );
+  const rest = rp.leaveOut.length - rp.clientOnly.length;
+  if (rest)
+    io.out(
+      `${rest} model ${rest === 1 ? "class" : "classes"} no entry or call reaches ${rest === 1 ? "is" : "are"} left out (ADR 0169): atticus map ${repo} --gaps --models all reads them.`,
     );
   if (plan.unlisted)
     io.out(

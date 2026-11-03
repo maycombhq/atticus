@@ -157,6 +157,11 @@ export function reachableModels(o: {
   paths: readonly string[];
   read: (path: string) => string | undefined;
   facts?: readonly Fact[];
+  /**
+   * ADR 0170: reach from the repo's own entry points only (controllers, routes, handlers,
+   * listeners, and what its entry facts cite), not from its outbound clients and calls.
+   */
+  from?: "entries";
 }): Reachability {
   const texts = new Map<string, string>();
   const textOf = (p: string) => {
@@ -180,9 +185,12 @@ export function reachableModels(o: {
     if (known.has(p) && !isModel.has(p) && !roots.includes(p)) roots.push(p);
   };
   const facts = o.facts ?? [];
+  const entries = o.from === "entries";
+  const calls = new Set(facts.filter((f) => f.kind === "call").map((f) => f.id));
   for (const f of facts)
-    if (f.kind === "entry" || f.kind === "call") for (const p of citedFiles(f)) addRoot(p);
-  for (const p of ordered) if (isRootFile(p)) addRoot(p);
+    if (f.kind === "entry" || (f.kind === "call" && !entries))
+      for (const p of citedFiles(f)) addRoot(p);
+  for (const p of ordered) if (entries ? isEntryPointFile(p) : isRootFile(p)) addRoot(p);
 
   const reached = new Map<string, ReachedModel>();
   const queue: string[] = [];
@@ -208,7 +216,8 @@ export function reachableModels(o: {
         reached.set(p, { path: p, types: [...(declared.get(p) ?? []).slice(0, 1)], from: f.id });
         queue.push(p);
       }
-    if (f.kind === "field")
+    // ADR 0170: from the entry points only, a field a call owns (an outbound payload) is not followed.
+    if (f.kind === "field" && !(entries && calls.has(f.owner)))
       reach(
         identifiers([f.type ?? "", f.transform === "message type" ? f.name : ""].join(" ")),
         f.id,

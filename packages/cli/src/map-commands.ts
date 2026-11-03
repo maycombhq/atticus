@@ -1262,9 +1262,13 @@ export async function mapCommand(
           models: mode,
           ...(rp.notReached ? { notReached: rp.notReached } : {}),
         });
-      if (rp?.leaveOut.length)
+      if (rp?.clientOnly.length)
         io.out(
-          `${rp.leaveOut.length} model ${rp.leaveOut.length === 1 ? "class" : "classes"} no entry or call reaches are left out (ADR 0169; recorded in ${readPlanRelOf(root, repo)}): atticus map ${repo} --models all reads them.`,
+          `${rp.clientOnly.length} model ${rp.clientOnly.length === 1 ? "class" : "classes"} only an outbound client reaches are left out (ADR 0170, --models entries; recorded in ${readPlanRelOf(root, repo)}): atticus map ${repo} --models reachable reads them.`,
+        );
+      if (rp && rp.leaveOut.length > rp.clientOnly.length)
+        io.out(
+          `${rp.leaveOut.length - rp.clientOnly.length} model ${rp.leaveOut.length - rp.clientOnly.length === 1 ? "class" : "classes"} no entry or call reaches are left out (ADR 0169; recorded in ${readPlanRelOf(root, repo)}): atticus map ${repo} --models all reads them.`,
         );
       io.out(
         reread
