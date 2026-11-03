@@ -1,0 +1,31 @@
+# Four invented Forge repos (see fixtures/link-estate/gateway-questions/README.md): an Apigee proxy
+# that is its own repo, forwarding every route through one TargetServer; the two services that
+# serve those routes; and a teller app that calls the proxy through a house remote config and the
+# shared gateway host. No repo lists the gateway host api.forge.example.
+schemaVersion: 3
+platform: forge
+repos:
+  - id: forge-proxy-core-v1
+    url: https://git.forge.example/apigee/forge-proxy-core-v1.git
+    type: gateway
+    owner: team-platform
+    component: proxy-core-v1
+    system: platform
+  - id: forge-ledger-core
+    url: https://git.forge.example/forge/forge-ledger-core.git
+    type: spring-boot
+    owner: team-ledger
+    component: ledger-core
+    system: ledger
+  - id: forge-card-vault
+    url: https://git.forge.example/forge/forge-card-vault.git
+    type: spring-boot
+    owner: team-cards
+    component: card-vault
+    system: cards
+  - id: forge-teller-app
+    url: https://git.forge.example/forge/forge-teller-app.git
+    type: spring-boot
+    owner: team-branch
+    component: teller-app
+    system: branch

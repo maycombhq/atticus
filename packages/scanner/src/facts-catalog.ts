@@ -61,6 +61,7 @@ import {
   targetSuggestions,
   TARGETS_ANOTHER,
   type SuggestContext,
+  TARGETS_NO_EVIDENCE,
   type TargetSuggestion,
 } from "./target-suggest.js";
 
@@ -305,31 +306,48 @@ export interface TargetDraftContext {
   questions?: SuggestContext["questions"];
 }
 
+/**
+ * Why a suggestion is offered, in a few words (beta.12): what the evidence says, never that it
+ * answers the call unless an entry of it serves it. A group's question says how many of the
+ * entries it serves under the group's prefix, not one line per call.
+ */
+export function suggestionWhy(s: TargetSuggestion, prefix?: string): string {
+  const served = s.serves ?? [];
+  let why = s.why;
+  if (prefix !== undefined && served.length > 1) {
+    const under = prefix === "/" ? "" : ` under ${prefix}`;
+    why = [
+      `serves ${served[0]} and ${served.length - 1} more${under}`,
+      ...why.filter((w) => !w.startsWith("serves ")),
+    ];
+  }
+  return (why.length ? why : [TARGETS_NO_EVIDENCE]).slice(0, 3).join("; ");
+}
+
 /** A suggestion as an option of a targets question: what it is, why, and what picking it does. */
 function suggestionOption(
   s: TargetSuggestion,
   callerRepo: string,
-  what: string,
   n?: number,
+  prefix?: string,
 ): QuestionOption {
-  const calls = n ? `all ${n} calls: ${what}` : what;
-  const why = s.why.length ? `. Suggested: ${s.why.slice(0, 3).join("; ")}` : "";
+  const why = suggestionWhy(s, prefix);
   if (s.kind === "outside")
     return {
       label: s.label,
-      means: `${s.name}, ${outsideAs({ boundary: s.boundary ?? "vendor" })}, answers ${calls}${why}`,
+      means: `${s.name}, ${outsideAs({ boundary: s.boundary ?? "vendor" })}: ${why}`,
       changes: n
         ? `The ${n} calls go to ${s.name} when the facts are next written`
         : `The call goes to ${s.name} when the facts are next written`,
     };
   const who =
     s.label === s.repo
-      ? `${s.repo}${s.read ? "" : ", not read yet,"}`
-      : `${s.label}, built in ${s.repo}${s.read ? "" : ", not read yet"},`;
+      ? `${s.repo}${s.read ? "" : " (not read yet)"}`
+      : `${s.label}, built in ${s.repo}${s.read ? "" : " (not read yet)"}`;
   const them = n ? `The ${n} calls` : "The call";
   return {
     label: s.label,
-    means: `${who} answers ${calls}${why}`,
+    means: `${who}: ${why}`,
     changes: s.read
       ? `${them} ${n ? "join" : "joins"} ${s.label} when the facts are next written (atticus verify ${callerRepo} --write)`
       : `${them} ${n ? "go" : "goes"} to ${s.repo} when the facts are next written (atticus verify ${callerRepo} --write), and ${n ? "join" : "joins"} its route once ${s.repo} is read and verified (/atticus-map ${s.repo}); if no route of it serves ${n ? "them" : "it"}, the question opens again`,
@@ -373,10 +391,13 @@ function offered(
       ...(ambiguous ? { only: m.servers } : {}),
     })) {
       const x = merged.get(s.label);
-      if (!x) merged.set(s.label, { ...s, why: [...s.why] });
+      if (!x) merged.set(s.label, { ...s, why: [...s.why], serves: [...(s.serves ?? [])] });
       else {
         x.score += s.score;
         for (const w of s.why) if (!x.why.includes(w)) x.why.push(w);
+        for (const w of s.serves ?? []) if (!x.serves!.includes(w)) x.serves!.push(w);
+        // Evidence for one call outweighs "no evidence" for another.
+        if (x.why.length > 1) x.why = x.why.filter((w) => w !== TARGETS_NO_EVIDENCE);
       }
     }
   }
@@ -410,13 +431,10 @@ export function targetQuestionDrafts(
   const { list } = targetAsks(facts, records, asks);
   return list.map((m) => {
     const { f, q } = m;
-    const what = callWhat(f);
     const draft: QuestionDraft = {
       question: q.question,
       options: [
-        ...offered([m], facts, records, op, asks, ctx).map((s) =>
-          suggestionOption(s, f.repo, what),
-        ),
+        ...offered([m], facts, records, op, asks, ctx).map((s) => suggestionOption(s, f.repo)),
         anotherOption(op),
         {
           label: TARGETS_NONE,
@@ -478,9 +496,48 @@ function groupVia(f: FactOf<"call">): string {
  * named, or host, or base, and the same path prefix. Its words name only what the group shares,
  * so they stay the same as calls join or leave it.
  */
-export function targetGroupQuestion(repo: string, f: FactOf<"call">): string {
+export function targetGroupQuestion(
+  repo: string,
+  f: FactOf<"call">,
+  facts?: readonly Fact[],
+): string {
+  const proxy = facts ? proxyOf(f, facts) : undefined;
+  const through = f.base ?? f.host ?? f.to;
+  if (proxy && through) {
+    const p = targetPathPrefix(f.path);
+    return `Which repo serves the routes under ${p === "/" ? "" : p}/** that ${proxy} forwards to ${through}?`;
+  }
   return `Which repo or system answers the calls ${repo} makes under ${targetPathPrefix(f.path)}${groupVia(f)}?`;
 }
+
+/**
+ * Beta.12: a gateway proxy's forwarding call (a call made from one of its routes, in a repo
+ * with an Apigee proxy's deploy fact): the proxy's name, for the group's words.
+ */
+function proxyOf(f: FactOf<"call">, facts: readonly Fact[]): string | undefined {
+  if (!f.from) return undefined;
+  const from = facts.find((x) => x.id === f.from);
+  if (!from || from.kind !== "entry") return undefined;
+  const proxy = facts.find(
+    (x): x is FactOf<"deploy"> =>
+      x.kind === "deploy" && x.repo === f.repo && x.platform === "apigee" && !!x.basePath,
+  );
+  return proxy ? (proxy.resourceName ?? f.repo) : undefined;
+}
+
+/**
+ * The words a call's group question has had (Q1): today's first, then the words asked before
+ * beta.12 when they differ, so an answer to a group asked in the older words still reads.
+ */
+export function targetGroupWordings(
+  repo: string,
+  f: FactOf<"call">,
+  facts: readonly Fact[],
+): string[] {
+  return [...new Set([targetGroupQuestion(repo, f, facts), targetGroupQuestion(repo, f)])];
+}
+
+const repo0 = (members: readonly TargetAsk[]) => members[0]!.f.repo;
 
 const byLine = (a: string, b: string) => a.localeCompare(b, "en", { numeric: true });
 
@@ -526,12 +583,15 @@ export function groupedTargetDrafts(
   const groups = new Map<string, TargetAsk[]>();
   for (const a of list) {
     if (!o.ask.has(a.f.id)) continue;
-    const k = targetGroupQuestion(a.f.repo, a.f);
+    const k = targetGroupQuestion(a.f.repo, a.f, facts);
     groups.set(k, [...(groups.get(k) ?? []), a]);
   }
   const out: TargetQuestionDraft[] = [];
   for (const [question, members] of groups) {
-    if (members.length === 1 || o.split?.has(question)) {
+    const split = targetGroupWordings(repo0(members), members[0]!.f, facts).some((w) =>
+      o.split?.has(w),
+    );
+    if (members.length === 1 || split) {
       for (const m of members) out.push({ ...own.get(m.f.id)!, factIds: [m.f.id] });
       continue;
     }
@@ -547,7 +607,7 @@ export function groupedTargetDrafts(
       question,
       options: [
         ...offered(members, facts, records, op, asks, ctx).map((s) =>
-          suggestionOption(s, repo, listed, n),
+          suggestionOption(s, repo, n, targetPathPrefix(members[0]!.f.path)),
         ),
         anotherOption(op),
         {
@@ -574,6 +634,64 @@ export function groupedTargetDrafts(
     });
   }
   return out.sort((a, b) => a.factId.localeCompare(b.factId));
+}
+
+/** A rule several open target questions share (beta.12): one answer with it covers them all. */
+export interface TargetRuleOffer {
+  /** The rule: a path prefix (`/accounts/**`), or the host the calls go to. */
+  match: string;
+  /** The open questions of the repo it covers, this one among them, sorted. */
+  ids: string[];
+  /** How many calls they ask about. */
+  calls: number;
+}
+
+/**
+ * Beta.12: for each open targets question whose calls share a path prefix (Q1's, `/accounts`), or
+ * a host, with another open targets question of the same repo, the rule one answer could take to
+ * cover them all (ADR 0153, Q2): `--match '/accounts/**'`. A question's calls are the call facts
+ * its evidence cites. Pure: the questions on file and each repo's facts.
+ */
+export function targetRuleOffers(
+  questions: readonly Question[],
+  factsOf: (repo: string) => readonly Fact[] | undefined,
+): Map<string, TargetRuleOffer> {
+  const byKey = new Map<string, { match: string; ids: string[]; calls: number }>();
+  for (const q of questions) {
+    if (q.state !== "open" || q.askedBy?.step !== TARGETS_STEP) continue;
+    const facts = factsOf(q.repo) ?? [];
+    const at = new Set(q.evidence);
+    const calls = facts.filter(
+      (f): f is FactOf<"call"> =>
+        f.kind === "call" && f.repo === q.repo && at.has(`${f.cite.file}:${f.cite.line}`),
+    );
+    if (!calls.length) continue;
+    const prefixes = new Set(calls.map((c) => targetPathPrefix(c.path)));
+    const hosts = new Set(
+      calls.map((c) => c.host?.replace(/^[a-z][a-z0-9+.-]*:\/\//i, "").split(/[/:]/)[0]),
+    );
+    const [prefix] = prefixes;
+    const [host] = hosts;
+    const match =
+      prefixes.size === 1 && prefix !== "/"
+        ? `${prefix}/**`
+        : hosts.size === 1 && host
+          ? host
+          : undefined;
+    if (!match) continue;
+    const key = `${q.repo}\n${match}`;
+    const x = byKey.get(key) ?? { match, ids: [], calls: 0 };
+    x.ids.push(q.id);
+    x.calls += calls.length;
+    byKey.set(key, x);
+  }
+  const out = new Map<string, TargetRuleOffer>();
+  for (const x of byKey.values()) {
+    if (x.ids.length < 2) continue;
+    const ids = [...x.ids].sort();
+    for (const id of ids) out.set(id, { match: x.match, ids, calls: x.calls });
+  }
+  return out;
 }
 
 /** A path's segments, a placeholder on either side being any one. */
@@ -688,7 +806,9 @@ export function targetsFromAnswers(
     if (!q) continue;
     let asked = byId.get(questionId({ step: TARGETS_STEP, repo, ...q }));
     if (!asked || asked.state !== "answered" || !asked.answer) {
-      const g = groups.get(targetGroupQuestion(repo, f));
+      const g = targetGroupWordings(repo, f, facts)
+        .map((w) => groups.get(w))
+        .find((x) => !!x);
       asked = g && (needsTarget(f, facts) || g.evidence.includes(q.evidence[0]!)) ? g : undefined;
     }
     let label =
@@ -729,7 +849,8 @@ export function answeredQuestionOfCall(
     answered.find((x) => x.id === ownId) ??
     answered.find(
       (x) =>
-        x.question.trim() === targetGroupQuestion(repo, f) && x.evidence.includes(own.evidence[0]!),
+        targetGroupWordings(repo, f, facts).includes(x.question.trim()) &&
+        x.evidence.includes(own.evidence[0]!),
     );
   // An answer given as a rule (Q2, `match`) covers many calls: one call that disagrees doesn't
   // name it, so it is never reopened from here.
@@ -767,7 +888,8 @@ function callsOfTargetQuestion(
     const own = targetQuestionFor(f)!;
     if (questionId({ step: TARGETS_STEP, repo, ...own }) === q.id) return true;
     return (
-      targetGroupQuestion(repo, f) === q.question.trim() && q.evidence.includes(own.evidence[0]!)
+      targetGroupWordings(repo, f, facts).includes(q.question.trim()) &&
+      q.evidence.includes(own.evidence[0]!)
     );
   });
 }

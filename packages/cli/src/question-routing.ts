@@ -4,6 +4,10 @@ import { parse } from "yaml";
 import {
   changesDirOf,
   checkedProposals,
+  factsDirOf,
+  listQuestions,
+  parseFactsLines,
+  TARGETS_STEP_ID,
   isPersonsQuestion,
   orderQuestions,
   peopleOfChange,
@@ -12,6 +16,7 @@ import {
   routeOfQuestion,
   teamsOfPerson,
   type Api,
+  type Fact,
   type Question,
 } from "@maycombhq/core";
 import { loadRepos } from "@maycombhq/workspace";
@@ -57,6 +62,30 @@ export interface RoutedQuestions {
   problems: { file: string; message: string }[];
 }
 
+/**
+ * Beta.12: the rule each open targets question could be answered with to cover the other open
+ * targets questions of its repo whose calls share its path prefix or host (`--match
+ * '/accounts/**'`), read from the questions on file and the repos' facts.
+ */
+export async function ruleOffers(
+  root: string,
+): Promise<Map<string, { match: string; ids: string[]; calls: number }>> {
+  const open = (
+    await listQuestions(root, { state: "open" }).catch(() => ({ questions: [] }))
+  ).questions.filter((q) => q.askedBy.step === TARGETS_STEP_ID);
+  if (open.length < 2) return new Map();
+  const facts = new Map<string, Fact[]>();
+  for (const repo of new Set(open.map((q) => q.repo))) {
+    const text = await readFile(join(factsDirOf(root), `${repo}.jsonl`), "utf8").catch(
+      () => undefined,
+    );
+    if (text !== undefined) facts.set(repo, parseFactsLines(text).facts);
+  }
+  // The scanner is loaded only when there is something to offer: listing stays light.
+  const { targetRuleOffers } = await import("@maycombhq/scanner");
+  return targetRuleOffers(open, (r) => facts.get(r));
+}
+
 export async function routeQuestions(
   root: string,
   questions: readonly Question[],
@@ -90,9 +119,13 @@ export async function routeQuestions(
       .filter((p) => p.ok && p.proposal)
       .map((p) => [p.id, { ...p.proposal!, file: p.file }] as const),
   );
+  const rules = questions.some((q) => q.state === "open" && q.askedBy.step === TARGETS_STEP_ID)
+    ? await ruleOffers(root)
+    : new Map<string, never>();
   const about: Record<string, About> = {};
   for (const q of questions) {
     const p = q.state === "open" ? proposals.get(q.id) : undefined;
+    const rule = q.state === "open" ? rules.get(q.id) : undefined;
     about[q.id] = {
       ...(weights.get(q.id) ?? { restsOn: [], joins: 0 }),
       owner: routeOfQuestion(q, { owners, teams, changes, changePeople }),
@@ -108,6 +141,7 @@ export async function routeQuestions(
             },
           }
         : {}),
+      ...(rule ? { rule } : {}),
     };
   }
   let list = orderQuestions(questions, weights);

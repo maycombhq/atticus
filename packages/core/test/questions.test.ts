@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { parse } from "yaml";
+import { parse, stringify as stringifyYaml } from "yaml";
 import {
   answerQuestion,
   listQuestions,
@@ -287,5 +287,83 @@ describe("a question retired, with why and what replaced it (ADR 0117 addendum, 
     await expect(retireQuestion(root, a.id, { why: "x", at: AT })).rejects.toBeInstanceOf(
       QuestionError,
     );
+  });
+});
+
+describe("an open question asked again takes the draft's options in place (beta.12, ADR 0168)", () => {
+  const later = { ...asked, at: "2026-11-02T10:00:00.000Z", command: "atticus scan survey again" };
+  const newer = {
+    ...draft,
+    options: [
+      { label: "Yes", means: "Why it is suggested: the config says so", changes: "All of them" },
+      ...draft.options.slice(1),
+    ],
+  };
+
+  /** A question file as an older version wrote it: schema 3, other steps and related on it. */
+  async function oldFile(root: string, extra: Record<string, unknown> = {}) {
+    const q = questionFromDraft(draft, asked);
+    const old = {
+      ...q,
+      schemaVersion: 3,
+      alsoAskedBy: [
+        { step: "spec-draft", command: "atticus spec draft", at: AT, rerun: "atticus spec draft" },
+      ],
+      related: [{ id: "q-0123456789ab", verdict: "unsure" }],
+      ...extra,
+    };
+    await mkdir(questionsDirOf(root), { recursive: true });
+    await writeFile(join(questionsDirOf(root), `${q.id}.yaml`), `# old\n${stringifyYaml(old)}`);
+    return q.id;
+  }
+
+  it("keeps the id, who asked and when, the steps waiting on it and its related questions", async () => {
+    const root = await metarepo();
+    const id = await oldFile(root);
+    const r = await raiseQuestions(root, [newer], later, { refresh: true });
+    expect(r.raised).toEqual([]);
+    expect(r.refreshed.map((q) => q.id)).toEqual([id]);
+    const q = (await readQuestion(root, id))!;
+    expect(q.options).toEqual(newer.options);
+    expect(q.askedBy.at).toBe(AT);
+    expect(q.alsoAskedBy).toHaveLength(1);
+    expect(q.related).toEqual([{ id: "q-0123456789ab", verdict: "unsure" }]);
+    expect(q.state).toBe("open");
+  });
+
+  it("leaves it as it is without refresh, or when nothing changed", async () => {
+    const root = await metarepo();
+    const id = await oldFile(root);
+    const before = await readFile(join(questionsDirOf(root), `${id}.yaml`), "utf8");
+    expect((await raiseQuestions(root, [newer], later)).refreshed).toEqual([]);
+    expect(await readFile(join(questionsDirOf(root), `${id}.yaml`), "utf8")).toBe(before);
+    expect((await raiseQuestions(root, [draft], later, { refresh: true })).refreshed).toEqual([]);
+  });
+
+  it("never touches an answered or retired question, or one another step asked", async () => {
+    for (const extra of [
+      {
+        state: "answered",
+        answer: { option: 1, by: "pat", at: AT, scope: { level: "repo", id: "forge-notes" } },
+      },
+      { state: "retired", retired: { at: AT, why: "asked another way" } },
+    ]) {
+      const root = await metarepo();
+      const id = await oldFile(root, extra);
+      const before = await readFile(join(questionsDirOf(root), `${id}.yaml`), "utf8");
+      expect((await raiseQuestions(root, [newer], later, { refresh: true })).refreshed).toEqual([]);
+      expect(await readFile(join(questionsDirOf(root), `${id}.yaml`), "utf8")).toBe(before);
+    }
+    const root = await metarepo();
+    const id = await oldFile(root);
+    // The same words and lines from another step have another id: nothing on file is touched.
+    const r = await raiseQuestions(
+      root,
+      [newer],
+      { ...later, step: "scan-other" },
+      { refresh: true },
+    );
+    expect(r.refreshed).toEqual([]);
+    expect((await readQuestion(root, id))!.options).toEqual(draft.options);
   });
 });

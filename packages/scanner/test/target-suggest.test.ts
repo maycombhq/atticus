@@ -81,9 +81,11 @@ describe("targetSuggestions on the link estate", () => {
     });
     expect(s[0]).toMatchObject({ label: "forge-proxy-accounts-v1", kind: "repo", read: true });
     expect(s[0]!.why.join("; ")).toContain(
-      "/forge/accounts/v1/accounts/{id} is under /forge/accounts/v1, its proxy's BasePath (forge-proxy-accounts-v1 apiproxy/forge-accounts-v1.xml:1)",
+      "its basePath /forge/accounts/v1 matches: its proxy's BasePath (forge-proxy-accounts-v1 apiproxy/forge-accounts-v1.xml:1)",
     );
-    expect(s[0]!.why.join("; ")).toContain("it serves GET /forge/accounts/v1/accounts/{id}");
+    expect(s[0]!.why.join("; ")).toContain(
+      "serves GET /forge/accounts/v1/accounts/{id} (apiproxy/proxies/default.xml:4)",
+    );
   });
 
   it("suggests a repo not read yet by a Route's base path and its path's words", () => {
@@ -98,8 +100,8 @@ describe("targetSuggestions on the link estate", () => {
     });
     expect(s[0]).toMatchObject({ label: "forge-cards", read: false });
     expect(s[0]!.why).toEqual([
-      "/forge-svc/cards/limits/{id} is under /forge-svc/cards, the route cards-api (forge-deploy-config apps/cards/route.yaml:4)",
-      "its path /forge-svc/cards/limits/{id} names forge-cards",
+      "its basePath /forge-svc/cards matches: the route cards-api (forge-deploy-config apps/cards/route.yaml:4)",
+      "named like the path /forge-svc/cards/limits/{id}",
     ]);
   });
 
@@ -154,9 +156,9 @@ describe("targetSuggestions on the link estate", () => {
     });
     const cards = s.find((x) => x.label === "forge-cards")!;
     expect(cards.why).toEqual([
-      "its config key forge.cards.base-url names forge-cards",
+      "named like the config key forge.cards.base-url",
       "its description mentions card",
-      "forge-payments's answers name it for 1 other call",
+      "picked for 1 other call of forge-payments",
     ]);
     expect(s[0]!.label).toBe("forge-cards");
     // forge-accounts, read, serves GET /limits/{id} too: suggested, second.
@@ -172,7 +174,7 @@ describe("targetSuggestions on the link estate", () => {
       estate: estateBut("forge-payments"),
     });
     expect(s[0]).toMatchObject({ label: "lantern-mail", kind: "outside" });
-    expect(s[0]!.why[0]).toBe("it answers on api.lanternmail.example");
+    expect(s[0]!.why[0]).toBe("it lists api.lanternmail.example under hosts");
   });
 });
 
@@ -200,7 +202,7 @@ describe("the targets question with the suggestions (F8)", () => {
     expect(labels[0]).toBe("forge-cards");
     expect(labels.slice(-2)).toEqual([TARGETS_ANOTHER, "None of these"]);
     expect(d.draft.options[0]!.means).toMatch(
-      /^forge-cards, not read yet, answers GET \/forge-svc\/cards\/limits\/\{id\}\. Suggested: /,
+      /^forge-cards \(not read yet\): its basePath \/forge-svc\/cards matches: /,
     );
     expect(d.draft.options[0]!.changes).toContain(
       "once forge-cards is read and verified (/atticus-map forge-cards)",

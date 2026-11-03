@@ -119,6 +119,18 @@ export function ruleLine(q: Question, change = false): string {
   return `It answers by rule: every call ${what}, in ${where}, reads this answer, the calls found later too.`;
 }
 
+/**
+ * Beta.12 (ADR 0168): the rule an open targets question offers when other open targets questions
+ * of its repo share its calls' path prefix or host: one answer covers them all.
+ */
+export function ruleOfferLine(
+  id: string,
+  r: NonNullable<RoutedQuestions["about"][string]["rule"]>,
+): string {
+  const others = r.ids.length - 1;
+  return `  Answer once for all ${r.ids.length}: atticus questions answer ${id} --option <n> --match '${r.match}' covers the ${plural(r.calls, "call")} of these ${r.ids.length} questions, and the other ${others === 1 ? "one retires" : `${others} retire`} on the next verify --write (${r.ids.filter((x) => x !== id).join(", ")}).`;
+}
+
 /** The lines `atticus questions list` prints for one question; `change`: it is a change's. */
 export function questionLines(
   q: Question,
@@ -133,6 +145,7 @@ export function questionLines(
         `  ${i + 1}. ${o.label}: ${sentence(o.means)} It would change: ${sentence(o.changes)}`,
     ),
     `  Evidence: ${q.evidence.join(", ")}`,
+    ...(q.state === "open" && o.about?.rule ? [ruleOfferLine(q.id, o.about.rule)] : []),
   ];
   if (q.answer)
     lines.push(
@@ -267,9 +280,19 @@ export async function questionsFiles(
         (q.askedBy.step === TARGETS_STEP_ID || q.askedBy.step === TOPICS_STEP_ID)
           ? await (await import("./target-answer.js")).pickerOf(root)
           : undefined;
+      // ADR 0168: the rule one answer could take to cover the other open questions like it.
+      const rule =
+        q.state === "open" && q.askedBy.step === TARGETS_STEP_ID
+          ? (await routeQuestions(root, [q])).about[q.id]?.rule
+          : undefined;
       io.out(
         JSON.stringify(
-          { ...q, ...(proposal ? { proposal } : {}), ...(picks ? { picks } : {}) },
+          {
+            ...q,
+            ...(proposal ? { proposal } : {}),
+            ...(picks ? { picks } : {}),
+            ...(rule ? { rule } : {}),
+          },
           null,
           2,
         ),
