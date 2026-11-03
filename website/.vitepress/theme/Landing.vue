@@ -55,8 +55,12 @@ const does = [
 ];
 
 // What the current release added, in plain words; the CHANGELOG has every item.
-const release = "2.0.0-beta.12";
+const release = "2.0.0-beta.12.1";
 const news = [
+  {
+    body: "A read takes the entry points and clients first, then the request, response and message classes they use and the ones those use, so their fields are read for the contract check; classes nothing uses are listed and left out unless you ask for `--models all`.",
+    link: "/guide/install.html",
+  },
   {
     body: "Repos read before a release that added reading rules get a short top-up with only the new rules (field types, mappings, message types, terms, a call's auth and TLS): `atticus map --all --stale`, or `atticus map <repo> --rules` for one.",
     link: "/guide/install.html",

@@ -2,6 +2,13 @@
 
 All notable changes to Atticus. Versions follow [Semantic Versioning](https://semver.org); contracts C1 to C6 change only with an ADR, a schema version and a migration (`atticus upgrade`).
 
+## 2.0.0-beta.12.1 (2026-11-03)
+
+### Model classes read where they are used (ADR 0169)
+
+- `atticus map <repo>` (the estimate and its parts, a read in batches, `--gaps`, the rules top-up and `map --all`) reads the entry points and clients first, then the request, response and message classes they name and the classes those name in turn, found by text alone for Java, Kotlin, C#, TypeScript, Python and Go; the reader writes their fields. Classes nothing reaches are left out, recorded in the read plan as `notReached` and listed by `--estimate`; `--models all` reads every one (ADR 0169).
+- `atticus verify` counts the left-out model classes apart from the files reviewed with nothing to record, so the coverage percentage isn't misleading, and refuses a reviewed glob that covers a controller, route, handler or listener no fact cites: read it.
+
 ## 2.0.0-beta.12 (2026-11-02)
 
 ### A top-up for reading rules added since a read (ADR 0167), and why calls are left

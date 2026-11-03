@@ -2,6 +2,10 @@
 
 The Atticus extension for VS Code. The command line's own changes are in the repository's [CHANGELOG](https://github.com/maycombhq/atticus/blob/main/CHANGELOG.md).
 
+## 0.7.11 (pre-release, with Atticus 2.0.0-beta.12.1)
+
+- **Ships with Atticus 2.0.0-beta.12.1.** No change to the extension itself: a read takes the entry points and clients first, then the request and response classes they use, so their fields are read for the contract check; classes nothing uses are listed, not read, unless asked.
+
 ## 0.7.10 (pre-release, with Atticus 2.0.0-beta.12)
 
 - **Ships with Atticus 2.0.0-beta.12.** No change to the extension itself: Map the estate now tops up repos read before the reading rules they lack (field types, mappings, message types, terms, a call's auth and TLS) instead of finding nothing to read, and How far the map has got says why calls are left unlinked.
