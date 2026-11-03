@@ -8,7 +8,8 @@ import { readOpenApiDocument } from "@maycombhq/extractors";
  * (`/api/v1/accounts/{id}`), a URL (`https://host/x`) or a topic (`forge.accounts.created`, or a
  * name with a separator where the line says topic, queue, channel, destination or exchange).
  * Comments, import lines, asset and file-system paths, XML namespaces and placeholders are not
- * candidates. Verify lists those no kept fact cites (its line, or the line either side) and no
+ * candidates, nor are a build's artifact repository, registry, distribution and SCM URLs, or an
+ * HTTP header's name (`isBuildUrl`, `isHeaderName`). Verify lists those no kept fact cites (its line, or the line either side) and no
  * fact names elsewhere, for the reader to check. It decides; nothing here becomes a fact, and
  * nothing here rejects one.
  */
@@ -131,6 +132,44 @@ const topicContext = (line: string) => {
   return w.some((x) => TOPIC_WORDS.has(x)) || w.join(" ").includes("routing key");
 };
 
+/**
+ * The words of a build file's keys that say a URL is where artifacts are fetched or published, or
+ * where the source lives: an artifact repository, a registry or mirror, a distribution or SCM
+ * block, and the CI settings that point at the git host. Read off the keys on the URL's line (an
+ * element's name, a `key:` or `key=`, a `name {` block) and the build blocks it sits in, in any
+ * build tool's words: the URL is the build's, never a call the code makes.
+ */
+const BUILD_KEY_WORDS = new Set(
+  "scm git gitlab github bitbucket repository repositories repo registry mirror mirrors nexus artifactory snapshot snapshots distribution maven npm nuget pypi sonar sonarqube jenkins ci".split(
+    " ",
+  ),
+);
+/** XML elements whose insides are a build's repositories, distribution or SCM. */
+const BUILD_BLOCK_TAG =
+  /<(\/?)(repositories|repository|pluginRepositories|pluginRepository|snapshotRepository|distributionManagement|scm|mirrors|mirror|site)\b[^>]*?(\/?)>/gi;
+/** A brace block of a build script that holds its repositories or its publishing. */
+const BUILD_BLOCK_OPEN =
+  /\b(repositories|publishing|pluginManagement|dependencyResolutionManagement)\s*\{/;
+/** The keys written before a position on a line: elements, `key:`/`key=`, and `name {`. */
+const keysBefore = (prefix: string) => [
+  ...[...prefix.matchAll(/<([A-Za-z][\w:.-]*)/g)].map((m) => m[1]!),
+  ...[...prefix.matchAll(/["']?([A-Za-z][\w.-]*)["']?\s*[:=]/g)].map((m) => m[1]!),
+  ...[...prefix.matchAll(/\b([A-Za-z]\w*)\s*\{/g)].map((m) => m[1]!),
+];
+const isBuildUrl = (u: string, prefix: string) =>
+  /\.git\/?$/i.test(u) ||
+  /\bscm:\w+:$/i.test(prefix) ||
+  keysBefore(prefix).some((k) => wordsOf(k).some((w) => BUILD_KEY_WORDS.has(w)));
+
+/**
+ * A string written as an HTTP header's name, not a topic: `X-` first, or the argument of a call
+ * or annotation about headers (`headers.set("…")`, `setHeader("…")`, `@RequestHeader("…")`,
+ * `@RequestHeader(value = "…")`, `Headers.Add("…")`).
+ */
+const HEADER_ARG = /header\w*\s*(?:\.\s*\w+\s*)?\(\s*(?:(?:value|name)\s*=\s*)?$/i;
+const isHeaderName = (s: string, prefix: string) =>
+  /^x-/i.test(s) || HEADER_ARG.test(prefix.replace(/["'`]$/, ""));
+
 /** A URL as listed: trailing punctuation off, and any password in it redacted. */
 const cleanUrl = (u: string) =>
   u.replace(/[.:]+$/, "").replace(/^([a-z0-9+.-]+:\/\/)[^/@\s]+@/i, "$1<redacted>@");
@@ -183,9 +222,22 @@ function codeOf(raw: string, state: { block?: "c" | "xml" }): string {
 export function candidatesIn(path: string, lines: readonly string[]): Candidate[] {
   const out: Candidate[] = [];
   const state: { block?: "c" | "xml" } = {};
+  // How deep the line is in a build's repositories, distribution or SCM: XML elements and braces.
+  let xmlDepth = 0;
+  let braceDepth = 0;
   lines.forEach((raw, i) => {
     const wasBlock = state.block !== undefined;
     let code = codeOf(raw, state);
+    const inBuild = xmlDepth > 0 || braceDepth > 0;
+    for (const m of code.matchAll(BUILD_BLOCK_TAG))
+      if (!m[3]) xmlDepth = Math.max(0, xmlDepth + (m[1] ? -1 : 1));
+    if (braceDepth > 0 || BUILD_BLOCK_OPEN.test(code)) {
+      const from = braceDepth > 0 ? code : code.slice(BUILD_BLOCK_OPEN.exec(code)!.index);
+      braceDepth = Math.max(
+        0,
+        braceDepth + (from.match(/\{/g)?.length ?? 0) - (from.match(/\}/g)?.length ?? 0),
+      );
+    }
     if (!code.trim()) return;
     if (!wasBlock && isCommentLine(raw)) return;
     if (IMPORT_LINE.test(code) || IMPORT_CALL.test(code) || NAMESPACE_LINE.test(code)) return;
@@ -201,16 +253,22 @@ export function candidatesIn(path: string, lines: readonly string[]): Candidate[
     };
     const context = topicContext(code);
     const urls: string[] = [];
+    const opened = inBuild || xmlDepth > 0 || braceDepth > 0;
     for (const m of code.matchAll(URL_RE)) {
       const u = cleanUrl(m[0]);
-      if (!STANDARD_HOST.test(hostOf(u))) add("url", u);
+      const build = opened || isBuildUrl(u, code.slice(0, m.index));
+      if (!build && !STANDARD_HOST.test(hostOf(u))) add("url", u);
       urls.push(m[0]);
     }
-    const strings = [...code.matchAll(QUOTED)].map((m) => m[2]!);
+    // Each string with what the line writes before it, for telling a header's name.
+    const strings = [...code.matchAll(QUOTED)].map((m) => ({
+      s: m[2]!,
+      before: code.slice(0, m.index + 1),
+    }));
     const kv = KEY_VALUE.exec(code);
-    if (kv) strings.push(kv[2]!);
-    for (const m of code.matchAll(ELEMENT_TEXT)) strings.push(m[2]!);
-    for (const s of strings) {
+    if (kv) strings.push({ s: kv[2]!, before: "" });
+    for (const m of code.matchAll(ELEMENT_TEXT)) strings.push({ s: m[2]!, before: "" });
+    for (const { s, before } of strings) {
       if (urls.some((u) => s.includes(u) || u.includes(s))) continue;
       const p = pathOf(s);
       if (p) {
@@ -218,7 +276,7 @@ export function candidatesIn(path: string, lines: readonly string[]): Candidate[
         continue;
       }
       const t = topicOf(s, context);
-      if (t) add("topic", t);
+      if (t && !isHeaderName(t, before)) add("topic", t);
     }
   });
   return out;

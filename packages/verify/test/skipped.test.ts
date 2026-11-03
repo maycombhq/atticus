@@ -115,6 +115,82 @@ describe("candidatesIn: path, URL and topic strings, in any language", () => {
     ]);
   });
 
+  it("leaves out a build file's artifact repositories, distribution and SCM, keeping real calls", () => {
+    const pom = [
+      "<project>",
+      "  <properties>",
+      "    <ci.git.url>https://git.forge.example/forge/ledger.git</ci.git.url>",
+      "    <ledger.base-url>https://ledger.forge.internal/v1</ledger.base-url>",
+      "  </properties>",
+      "  <repositories>",
+      "    <repository>",
+      "      <id>forge-releases</id>",
+      "      <url>https://nexus.forge.example/repository/maven-releases/</url>",
+      "    </repository>",
+      "  </repositories>",
+      "  <distributionManagement>",
+      "    <snapshotRepository>",
+      "      <url>https://nexus.forge.example/repository/maven-snapshots/</url>",
+      "    </snapshotRepository>",
+      "  </distributionManagement>",
+      "  <scm>",
+      "    <connection>scm:git:https://git.forge.example/forge/ledger.git</connection>",
+      "    <url>https://git.forge.example/forge/ledger</url>",
+      "  </scm>",
+      "</project>",
+    ].join("\n");
+    expect(values("pom.xml", pom)).toEqual(["url https://ledger.forge.internal/v1"]);
+    const gradle = [
+      "repositories {",
+      "    maven { url 'https://nexus.forge.example/repository/maven-public/' }",
+      "}",
+      "def rates = 'https://rates.forge.internal/v2'",
+    ].join("\n");
+    expect(values("build.gradle", gradle)).toEqual(["url https://rates.forge.internal/v2"]);
+    // A second stack: an npm package and a .NET project say the same in their own words.
+    const pkg = [
+      "{",
+      '  "repository": { "type": "git", "url": "https://git.forge.example/forge/portal.git" },',
+      '  "publishConfig": { "registry": "https://npm.forge.example/" },',
+      '  "config": { "apiBase": "https://portal-bff.forge.internal/api" }',
+      "}",
+    ].join("\n");
+    expect(values("package.json", pkg)).toEqual(["url https://portal-bff.forge.internal/api"]);
+    expect(values(".npmrc", "registry=https://npm.forge.example/")).toEqual([]);
+    expect(
+      values(
+        "Forge.Cards.csproj",
+        "    <RepositoryUrl>https://git.forge.example/forge/cards</RepositoryUrl>",
+      ),
+    ).toEqual([]);
+    // CI settings that point at the git host, by their key.
+    expect(
+      values("gradle.properties", "ci.scm.url=https://git.forge.example/forge/ledger"),
+    ).toEqual([]);
+  });
+
+  it("leaves out an HTTP header's name, which a dotted or separated name can look like a topic", () => {
+    const java = [
+      'headers.set("X-Forge.requestingChannel", channel);',
+      'public Account get(@RequestHeader("Forge.sourceChannel") String channel) {',
+      '@RequestHeader(value = "forge-channel-id") String id',
+      'publisher.send("forge.accounts.created", e);',
+    ].join("\n");
+    expect(values("A.java", java)).toEqual(["topic forge.accounts.created"]);
+    // A second stack: TypeScript and C#.
+    expect(
+      values(
+        "a.ts",
+        [
+          "const h = { 'X-Forge.channel': 'web' };",
+          "req.setHeader('forge.request.channel', c);",
+          "await bus.publish('forge.notes.archived', n);",
+        ].join("\n"),
+      ),
+    ).toEqual(["topic forge.notes.archived"]);
+    expect(values("A.cs", 'request.Headers.Add("X-Forge.Channel-Id", channel);')).toEqual([]);
+  });
+
   it("gives each candidate its line number and the line as written", () => {
     expect(candidatesIn("A.java", ["", '  x("/one");', "", 'y("/two");'])).toEqual([
       { line: 2, kind: "path", value: "/one", text: 'x("/one");' },
