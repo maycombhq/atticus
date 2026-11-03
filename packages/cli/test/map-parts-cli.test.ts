@@ -90,7 +90,10 @@ describe("the read ledger of a repo read in parts (A-ledger)", () => {
         `part 1 of ${plan.parts.length} is next \\(none of ${plan.parts.length} read yet\\)`,
       ),
     );
-    expect(text).toMatch(/ {2}part 1 \(to read, about \d+ tokens, \d+ files\): accounts\/\*\*/);
+    // ADR 0169: the entry points and clients first, then the model classes they reach.
+    expect(text).toMatch(
+      / {2}part 1 \(to read, about \d+ tokens, \d+ files\): generated\/\*\*, k8s\/\*\*, src\/main\/java\/forge\/ledger\/AccountController\.java, /,
+    );
   });
 
   it("counts a part done once the facts account for every folder it reads", async () => {

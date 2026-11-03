@@ -320,33 +320,140 @@ function unitsOf(dir: string, fs: readonly FileTokens[], room: number): Unit[] {
 }
 
 /**
+ * ADR 0169: what reads first. `head` (build and config files, the entry points and clients) is
+ * planned first, as folders where a folder holds nothing else; `models` (the model files they
+ * reach) next, one by one in that order; then the rest, as folders where they can be. No folder
+ * glob covers a file of `leftOut` (the model files nothing reaches), which no part reads.
+ */
+export interface PartOrder {
+  head: readonly string[];
+  models: readonly string[];
+  leftOut: readonly string[];
+}
+
+/**
+ * Units over a group of files: a folder whole when every file under it (of `all`) is in the
+ * group and it fits the room; its own files as `dir/*` when they all are; else each file.
+ */
+function groupUnits(
+  dir: string,
+  fs: readonly FileTokens[],
+  room: number,
+  holds: (dir: string, deep: boolean, n: number) => boolean,
+): Unit[] {
+  const prefix = dir ? `${dir}/` : "";
+  const direct: FileTokens[] = [];
+  const children = new Map<string, FileTokens[]>();
+  for (const f of fs) {
+    const rest = f.path.slice(prefix.length);
+    const slash = rest.indexOf("/");
+    if (slash < 0) direct.push(f);
+    else {
+      const child = prefix + rest.slice(0, slash);
+      children.set(child, [...(children.get(child) ?? []), f]);
+    }
+  }
+  if (dir && holds(dir, true, fs.length) && (sum(fs) <= room || !children.size))
+    return [{ glob: `${dir}/**`, files: fs.length, tokens: sum(fs) }];
+  const out: Unit[] = [];
+  if (direct.length) {
+    if (holds(dir, false, direct.length))
+      out.push({ glob: `${prefix}*`, files: direct.length, tokens: sum(direct) });
+    else
+      for (const f of [...direct].sort((a, b) => byPath(a.path, b.path)))
+        out.push({ glob: f.path, files: 1, tokens: f.tokens });
+  }
+  for (const child of [...children.keys()].sort(byPath))
+    out.push(...groupUnits(child, children.get(child)!, room, holds));
+  return out;
+}
+
+/** A file bigger than the room in line ranges, each a unit; its first range counts the file. */
+function rangeUnits(f: FileTokens, room: number): Unit[] {
+  return lineRanges({ ...f, lines: f.lines! }, room).map((r, i) => ({
+    glob: `${f.path}#L${r.from}-L${r.to}`,
+    files: i === 0 ? 1 : 0,
+    tokens: r.tokens,
+  }));
+}
+
+/** ADR 0169: the units in reading order: the head, the reached models, the rest. */
+function orderedUnits(files: readonly FileTokens[], room: number, o: PartOrder): Unit[] {
+  const isBig = (f: FileTokens) => f.tokens > room && (f.lines ?? 0) > 1;
+  const byFile = new Map(files.map((f) => [f.path, f]));
+  const head = new Set(o.head.filter((p) => byFile.has(p)));
+  const models = [...new Set(o.models)].filter((p) => byFile.has(p) && !head.has(p));
+  const inModels = new Set(models);
+  const rest = files.filter((f) => !head.has(f.path) && !inModels.has(f.path));
+  // Every file a glob could stand for, by folder: what is planned and what is left out.
+  const all = [...files.map((f) => f.path), ...o.leftOut];
+  const counts = () => {
+    const deep = new Map<string, number>();
+    const own = new Map<string, number>();
+    const count = (m: Map<string, number>, k: string) => m.set(k, (m.get(k) ?? 0) + 1);
+    for (const p of all) {
+      const parts = p.split("/");
+      count(own, parts.slice(0, -1).join("/"));
+      for (let d = 1; d < parts.length; d++) count(deep, parts.slice(0, d).join("/"));
+    }
+    // A folder (or its own files) whole only when it holds as many files as the group has there.
+    return (dir: string, isDeep: boolean, n: number) =>
+      (isDeep ? deep.get(dir) : own.get(dir)) === n;
+  };
+  const holds = counts();
+  const unitsOfGroup = (group: FileTokens[]) => {
+    const small = group.filter((f) => !isBig(f)).sort((a, b) => byPath(a.path, b.path));
+    // A big file's ranges are in no folder glob: its folder isn't whole.
+    const out = groupUnits("", small, room, holds);
+    for (const f of group.filter(isBig)) out.push(...rangeUnits(f, room));
+    return out;
+  };
+  return [
+    ...unitsOfGroup(files.filter((f) => head.has(f.path))),
+    ...models.flatMap((p) => {
+      const f = byFile.get(p)!;
+      return isBig(f) ? rangeUnits(f, room) : [{ glob: p, files: 1, tokens: f.tokens }];
+    }),
+    ...unitsOfGroup(rest),
+  ];
+}
+
+/**
  * The parts to read a repo in when its source is more than `room` tokens (none when it fits):
  * folders whole where they fit, in path order, so a module's files stay together; each part
  * closes when the next folder would pass the room or the part has its even share. A single
- * folder of files bigger than the room is a part of its own.
+ * folder of files bigger than the room is a part of its own. With `order` (ADR 0169), the head
+ * first, the reached models next, then the rest, and no glob over a file left out.
  */
-export function planParts(files: readonly FileTokens[], room = SESSION_TOKENS): ReadPart[] {
+export function planParts(
+  files: readonly FileTokens[],
+  room = SESSION_TOKENS,
+  order?: PartOrder,
+): ReadPart[] {
   const total = sum(files);
   if (total <= room) return [];
-  // A file bigger than the room, whatever its size, is read in line ranges, each a unit that fits
-  // with room to spare (lines aren't all the same length); its first range counts the file.
-  const big = files.filter((f) => f.tokens > room && (f.lines ?? 0) > 1);
-  const rest = files.filter((f) => !big.includes(f));
-  const ranges: (Unit & { key: string })[] = [];
-  for (const f of big)
-    for (const [i, r] of lineRanges({ ...f, lines: f.lines! }, room).entries())
-      ranges.push({
-        glob: `${f.path}#L${r.from}-L${r.to}`,
-        files: i === 0 ? 1 : 0,
-        tokens: r.tokens,
-        key: `${f.path}\u0000${String(r.start).padStart(12, "0")}`,
-      });
-  const sorted = [...rest].sort((a, b) => byPath(a.path, b.path));
-  const keyOf = (g: string) => g.replace(/\/?\*\*?$/, "");
-  const units = [
-    ...unitsOf("", sorted, room).map((u) => ({ ...u, key: keyOf(u.glob) })),
-    ...ranges,
-  ].sort((a, b) => byPath(a.key, b.key));
+  let units: Unit[];
+  if (order) units = orderedUnits(files, room, order);
+  else {
+    // A file bigger than the room, whatever its size, is read in line ranges, each a unit that
+    // fits with room to spare (lines aren't all the same length); its first range counts the file.
+    const big = files.filter((f) => f.tokens > room && (f.lines ?? 0) > 1);
+    const rest = files.filter((f) => !big.includes(f));
+    const ranges: (Unit & { key: string })[] = [];
+    for (const f of big)
+      for (const [i, r] of lineRanges({ ...f, lines: f.lines! }, room).entries())
+        ranges.push({
+          glob: `${f.path}#L${r.from}-L${r.to}`,
+          files: i === 0 ? 1 : 0,
+          tokens: r.tokens,
+          key: `${f.path}\u0000${String(r.start).padStart(12, "0")}`,
+        });
+    const sorted = [...rest].sort((a, b) => byPath(a.path, b.path));
+    const keyOf = (g: string) => g.replace(/\/?\*\*?$/, "");
+    units = [...unitsOf("", sorted, room).map((u) => ({ ...u, key: keyOf(u.glob) })), ...ranges]
+      .sort((a, b) => byPath(a.key, b.key))
+      .map(({ key: _k, ...u }) => u);
+  }
   const target = total / Math.ceil(total / room);
   const parts: ReadPart[] = [];
   let current: ReadPart | undefined;

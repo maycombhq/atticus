@@ -1,7 +1,14 @@
 import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { parse } from "yaml";
-import { factsDirOf, factsRelOf, writeFileAtomic } from "@maycombhq/core";
+import {
+  factsDirOf,
+  factsRelOf,
+  parseFacts,
+  writeFileAtomic,
+  type Conventions,
+  type Fact,
+} from "@maycombhq/core";
 import { DATA_RULE, estimateTokens, neutralise, wrapData } from "@maycombhq/ai";
 import {
   lineRangeOf,
@@ -12,7 +19,8 @@ import {
   type GapsFrom,
 } from "@maycombhq/verify";
 import type { Output } from "./commands.js";
-import { globHolds } from "./map-parts.js";
+import { globHolds, modelsModeOf, recordNotReached, type ModelsMode } from "./map-parts.js";
+import { MODELS_RULE, modelsData, reachPlanOf, readPathsOf, type ReachPlan } from "./map-reach.js";
 
 /**
  * R2 (ADR 0157): `atticus map <repo> --gaps`, a second pass on the gaps only, in a fresh session.
@@ -37,6 +45,11 @@ export interface GapsOptions {
    * is the part's units nothing in the facts accounts for yet (`readPlanProgress`).
    */
   part?: { n: number; left: readonly string[] };
+  /** ADR 0169: the model classes to read; left out, the read plan's choice, else reachable. */
+  models?: ModelsMode;
+  /** The accepted exclusions and the org pack's conventions, for the files the reach is over. */
+  exclude?: readonly string[];
+  conventions?: Conventions;
 }
 
 /** The prompt file's path, relative to the root with forward slashes. */
@@ -99,9 +112,31 @@ export async function mapGaps(
       : {}),
     ...(v.entriesNoFlowFollows ? { entriesNoFlowFollows: v.entriesNoFlowFollows } : {}),
   };
+  // ADR 0169: reachable first. The unknown model classes no entry point, call or field fact
+  // reaches are left out (and recorded in the read plan); the entry points, clients and the
+  // classes they reach are read first.
+  const mode = await modelsModeOf(root, repo, o.models);
+  const factsText = await readFile(join(dir, `${repo}.jsonl`), "utf8").catch(() => "");
+  const parsed = parseFacts(factsText);
+  const facts: Fact[] = parsed.ok ? parsed.facts : [];
+  const rp = reachPlanOf({
+    paths: readPathsOf(o.source, o.exclude ?? [], o.conventions),
+    source: o.source,
+    facts,
+    mode,
+  });
+  const leave = new Set(rp.leaveOut);
+  if (from.unknown) from.unknown = from.unknown.filter((p) => !leave.has(p));
+  const first = rp.reach.rooted && rp.reach.models ? { first: rp.first } : {};
   const plan = o.part
-    ? partRest(from, o.part.left, size, o.session)
-    : planGaps(from, size, o.session);
+    ? partRest(from, o.part.left, size, o.session, first)
+    : planGaps(from, size, o.session, first);
+  await recordNotReached(root, repo, {
+    commit: o.commit,
+    session: o.session,
+    models: mode,
+    ...(rp.notReached ? { notReached: rp.notReached } : {}),
+  });
   const promptRel = gapsRelOf(root, repo);
   if (plan.sessions.length)
     await writeFileAtomic(
@@ -110,6 +145,7 @@ export async function mapGaps(
         rel,
         session: o.session,
         ...(o.part ? { part: o.part.n } : {}),
+        reach: rp,
       }),
     );
   if (o.json) {
@@ -122,6 +158,7 @@ export async function mapGaps(
           ...plan,
           ...(o.part ? { part: o.part.n } : {}),
           ...(plan.sessions.length ? { prompt: promptRel } : {}),
+          notReached: rp.leaveOut,
         },
         null,
         2,
@@ -143,13 +180,17 @@ export async function mapGaps(
     return 0;
   }
   const n = plan.sessions.length;
-  const first = plan.sessions[0]!;
+  const s1 = plan.sessions[0]!;
   io.out(
     `${o.part ? `The rest of part ${o.part.n} of ${repo}` : `Second pass on the gaps of ${repo}`}: ${plan.files} ${plan.files === 1 ? "file" : "files"}, about ${plan.tokens.toLocaleString("en-US")} tokens, in ${n} ${n === 1 ? "session" : "sessions"} of ${o.session.toLocaleString("en-US")} at most.`,
   );
   io.out(
-    `Wrote ${promptRel}: session 1${n > 1 ? ` of ${n}` : ""}, ${first.reads.length} ${first.reads.length === 1 ? "read" : "reads"}, about ${first.tokens.toLocaleString("en-US")} tokens.`,
+    `Wrote ${promptRel}: session 1${n > 1 ? ` of ${n}` : ""}, ${s1.reads.length} ${s1.reads.length === 1 ? "read" : "reads"}, about ${s1.tokens.toLocaleString("en-US")} tokens.`,
   );
+  if (rp.leaveOut.length)
+    io.out(
+      `${rp.leaveOut.length} model ${rp.leaveOut.length === 1 ? "class" : "classes"} no entry or call reaches ${rp.leaveOut.length === 1 ? "is" : "are"} left out (ADR 0169): atticus map ${repo} --gaps --models all reads them.`,
+    );
   if (plan.unlisted)
     io.out(
       `${plan.unlisted} more skipped lines or spec operations are counted in ${verifyYaml} but not listed: verify after this pass and --gaps again plans them.`,
@@ -165,7 +206,7 @@ export function gapsPrompt(
   repo: string,
   commit: string,
   plan: GapPlan,
-  c: { rel: string; session: number; part?: number },
+  c: { rel: string; session: number; part?: number; reach?: ReachPlan },
 ): string {
   const n = plan.sessions.length;
   const s = plan.sessions[0]!;
@@ -205,7 +246,14 @@ export function gapsPrompt(
     "",
     data,
     "",
+    ...modelsSection(repo, c.reach, new Set(s.reads.map((r) => r.file))),
   ].join("\n");
+}
+
+/** ADR 0169: the reached model classes among a session's files, and the rule for them. */
+function modelsSection(repo: string, r: ReachPlan | undefined, files: ReadonlySet<string>) {
+  const data = r ? modelsData(repo, r, { only: files }) : undefined;
+  return data ? ["## Model classes", "", MODELS_RULE, "", data, ""] : [];
 }
 
 /**
@@ -219,6 +267,7 @@ export function partRest(
   left: readonly string[],
   size: (file: string) => { tokens: number; lines: number } | undefined,
   room: number,
+  o: { first?: readonly string[] } = {},
 ): GapPlan {
   const ranges = left.filter((g) => lineRangeOf(g));
   const folders = left.filter((g) => !lineRangeOf(g));
@@ -237,6 +286,7 @@ export function partRest(
     },
     size,
     room,
+    o,
   );
   const sessions = plan.sessions.map((x) => ({ reads: [...x.reads], tokens: x.tokens }));
   const gone = [...plan.gone];

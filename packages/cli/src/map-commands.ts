@@ -108,8 +108,19 @@ import {
   partOfWords,
   readPlanProgress,
   readPlanRelOf,
+  recordNotReached,
+  modelsModeOf,
   writeReadPlan,
+  type ModelsMode,
 } from "./map-parts.js";
+import {
+  MODELS_RULE,
+  modelsData,
+  modelsLine,
+  reachHeadOf,
+  reachPlanOf,
+  readPathsOf,
+} from "./map-reach.js";
 
 /**
  * atticus map <repo> (ADR 0124 §4, tiers 2 and 3): an assistant that can't open files reads the
@@ -161,6 +172,11 @@ export interface MapOptions {
    * the prompt of its next session for a new chat (`<repo>.rules.md`); with one, its batches.
    */
   rules?: boolean;
+  /**
+   * ADR 0169: which model classes a read takes: those the entry points and calls reach
+   * (`reachable`, the default) or every one (`all`). Left out, the read plan's choice.
+   */
+  models?: ModelsMode;
 }
 
 export interface MapDeps {
@@ -228,6 +244,11 @@ interface MapState {
   reread?: { from: string[]; carried: number; facts: number };
   /** ADR 0167: a top-up: only these rule sets go in each prompt. */
   sets?: RuleSet[];
+  /**
+   * ADR 0169: the model classes the read reaches, by path, with the names they declare and where
+   * they are reached from: each batch's prompt lists those it holds.
+   */
+  reached?: { path: string; types: string[]; from: string }[];
 }
 
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
@@ -688,6 +709,15 @@ async function packFor(
   );
   const rules = await rulesCovering(root, s.repo, op);
   const slices = fix ? [] : s.batches[batch]!;
+  // ADR 0169: the reached model classes among this batch's files, with where each is reached from.
+  const inBatch = new Set(slices.map((x) => x.path));
+  const reachedHere = (s.reached ?? []).filter((r) => inBatch.has(r.path));
+  const models = reachedHere.length
+    ? [
+        "Model classes in this batch the entry points and calls reach (read these, and write their fields):",
+        ...reachedHere.map((r) => `- ${r.path} (${r.types.join(", ")}), from ${r.from}`),
+      ].join("\n")
+    : undefined;
   const rejected = s.rejected.map((r) => rejectedText(r, source));
   // The topic rules of the batch's files (planned to fit), and of the files its rejected facts
   // cite when those rules fit the reserve beside the rejected facts themselves (A-lean). The fix
@@ -725,10 +755,24 @@ async function packFor(
         ...taughtOption(taughtIn(source, op)),
         // ADR 0163: what the organisation's terms mean here and what must hold, as data.
         ...(notes ? { notes } : {}),
+        // ADR 0169: the model classes of this batch the read reaches, listed beside it.
+        ...(models ? { models: true } : {}),
       }),
       classification: "public",
       trusted: true,
     },
+    ...(models
+      ? [
+          {
+            id: "1-models",
+            kind: "document" as const,
+            origin: "atticus/reachable",
+            text: models,
+            classification: "internal",
+            priority: 9,
+          },
+        ]
+      : []),
     ...(s.reread
       ? [
           {
@@ -928,6 +972,9 @@ export async function mapCommand(
         session: sessionTokensFor(limitOf(o, op, tier).limit),
         ...(o.json ? { json: true } : {}),
         ...(part ? { part } : {}),
+        ...(o.models ? { models: o.models } : {}),
+        exclude,
+        conventions,
       },
       io,
     );
@@ -947,6 +994,7 @@ export async function mapCommand(
         session: sessionTokensFor(limitOf(o, op, tier).limit),
         notes: notesPrompt,
         ...(o.json ? { json: true } : {}),
+        ...(o.models ? { models: o.models } : {}),
       },
       io,
     );
@@ -1067,6 +1115,7 @@ export async function mapCommand(
         source,
         exclude,
         conventions,
+        ...(o.models ? { models: o.models } : {}),
       });
       if ("error" in t) {
         io.err(t.error);
@@ -1103,7 +1152,24 @@ export async function mapCommand(
         rejected: [],
         problems: [],
         sets,
+        // ADR 0169: the reached model classes, listed in the prompts of the batches holding them.
+        ...(t.reach?.reach.rooted && t.reach.reach.reached.length
+          ? {
+              reached: t.reach.reach.reached.map((r) => ({
+                path: r.path,
+                types: r.types,
+                from: r.from,
+              })),
+            }
+          : {}),
       };
+      if (t.reach)
+        await recordNotReached(root, repo, {
+          commit,
+          session: sessionTokensFor(limit),
+          models: t.reach.mode,
+          ...(t.reach.notReached ? { notReached: t.reach.notReached } : {}),
+        });
       await saveState(root, s);
       io.out(
         `Topping up ${repo} at ${commit.slice(0, 12)} for the reading rules added since it was read (${sets.join(", ")}): ${plural(plan.files, "source file")} in ${batches(plan.batches.length)}; facts go to ${factsFile}.`,
@@ -1118,6 +1184,17 @@ export async function mapCommand(
         );
         return 0;
       }
+      // ADR 0169: a first read (or --force) takes the entry points and clients first, then the
+      // model classes they reach; those nothing reaches are left out and recorded in the plan.
+      const mode = await modelsModeOf(root, repo, o.models);
+      const rp = reread
+        ? undefined
+        : reachPlanOf({
+            paths: readPathsOf(source, exclude, conventions),
+            source,
+            facts: existing,
+            mode,
+          });
       const plan = planBatches(
         reread
           ? onlyFiles(
@@ -1125,7 +1202,15 @@ export async function mapCommand(
               reread.files.map((f) => f.path),
             )
           : source,
-        { room, exclude, overhead: overheadOf(repo, commit, frameworks), conventions },
+        {
+          room,
+          exclude,
+          overhead: overheadOf(repo, commit, frameworks),
+          conventions,
+          ...(rp?.reach.rooted && rp.reach.models
+            ? { reach: { first: rp.first, leaveOut: rp.leaveOut } }
+            : {}),
+        },
       );
       // A file whose topic rules leave too little room beside them (A-lean).
       if (plan.leastRoom < MIN_ROOM) return tooSmall(room - plan.leastRoom);
@@ -1149,6 +1234,15 @@ export async function mapCommand(
           return { id: r.id, code: "cite-changed", message: staleMessage(fact, r, commit), fact };
         }),
         problems: [],
+        ...(rp?.reach.rooted && rp.reach.reached.length
+          ? {
+              reached: rp.reach.reached.map((r) => ({
+                path: r.path,
+                types: r.types,
+                from: r.from,
+              })),
+            }
+          : {}),
         ...(reread
           ? {
               reread: {
@@ -1160,6 +1254,17 @@ export async function mapCommand(
           : {}),
       };
       await saveState(root, s);
+      if (rp)
+        await recordNotReached(root, repo, {
+          commit,
+          session: sessionTokensFor(limit),
+          models: mode,
+          ...(rp.notReached ? { notReached: rp.notReached } : {}),
+        });
+      if (rp?.leaveOut.length)
+        io.out(
+          `${rp.leaveOut.length} model ${rp.leaveOut.length === 1 ? "class" : "classes"} no entry or call reaches are left out (ADR 0169; recorded in ${readPlanRelOf(root, repo)}): atticus map ${repo} --models all reads them.`,
+        );
       io.out(
         reread
           ? `Re-reading ${repo} at ${commit.slice(0, 12)}: ${plural(plan.files, "source file")} changed since ${since}, in ${batches(plan.batches.length)}${plan.batches.length ? ` (about ${plan.tokens} tokens${limit ? `, each prompt within ${limit} tokens` : ""})` : ""}; ${plural(reread.reread.length, "fact")} to rewrite, ${reread.carried} carried as they are; facts go to ${factsFile}.`
@@ -1278,6 +1383,8 @@ async function takeAnswer(
     conventions: await conventionsAt(root),
     // ADR 0163: a term's note is one of those the batch was handed.
     notes: (await notesAt(root, s.repo, at.dir)).notes,
+    // ADR 0169: the model files the read leaves out, counted apart.
+    notReached: (await loadReadPlan(root, s.repo))?.notReached?.files ?? [],
   });
   const q = await raiseReadQuestions(root, s.repo, answer.questions, source, {
     command: `atticus map ${s.repo}`,
@@ -1355,7 +1462,7 @@ async function finish(root: string, s: MapState, io: Output, o: MapOptions): Pro
     return 0;
   }
   io.out(
-    `Read ${s.repo} in ${batches(s.batches.length)}: ${plural(last.accepted, "fact")} kept in ${rel}/${s.repo}.jsonl, ${last.rejected} still rejected; coverage ${Math.round(last.coverage.ratio * 100)}% (${last.coverage.read} read, ${last.coverage.reviewed ? `${last.coverage.reviewed} reviewed with nothing to record, ` : ""}${last.coverage.unknown.length} unknown).`,
+    `Read ${s.repo} in ${batches(s.batches.length)}: ${plural(last.accepted, "fact")} kept in ${rel}/${s.repo}.jsonl, ${last.rejected} still rejected; coverage ${Math.round(last.coverage.ratio * 100)}% (${last.coverage.read} read, ${last.coverage.reviewed ? `${last.coverage.reviewed} reviewed with nothing to record, ` : ""}${last.coverage.unknown.length} unknown${last.coverage.notReached?.length ? `, ${last.coverage.notReached.length} model files no entry or call reaches` : ""}).`,
   );
   if (last.rejected)
     io.out(
@@ -1449,20 +1556,6 @@ async function estimate(
     exclude: c.exclude,
     conventions,
   });
-  const planned =
-    room >= MIN_ROOM
-      ? planBatches(readSource, {
-          room,
-          exclude: c.exclude,
-          conventions,
-          overhead: overheadOf(
-            repo,
-            c.commit,
-            await frameworksFor(root, repo, typeof existing === "string" ? [] : existing),
-          ),
-        })
-      : undefined;
-  const plan = planned && planned.leastRoom >= MIN_ROOM ? planned : undefined;
   // A big repo (ADR 0124 addendum A-big): folders of data to leave out, never written, and the
   // parts to read it in when, with them left out, it is more than one session holds.
   const files = whole.batches.flat().map((s) => ({ path: s.path, tokens: s.tokens }));
@@ -1484,7 +1577,41 @@ async function estimate(
       const text = c.source.read(f.path);
       return text === undefined ? f : { ...f, lines: text.split(/\r?\n/).length };
     });
-  const parts = planParts(product, session);
+  // ADR 0169: reachable first. The model classes no entry point, call or field fact reaches are
+  // left out of a first read (and recorded); a re-read reads what changed, as it always did.
+  const mode = await modelsModeOf(root, repo, c.o.models);
+  const facts0 = typeof existing === "string" ? [] : existing;
+  const rp = reread
+    ? undefined
+    : reachPlanOf({ paths: product.map((f) => f.path), source: c.source, facts: facts0, mode });
+  const leave = new Set(rp?.leaveOut ?? []);
+  const kept = product.filter((f) => !leave.has(f.path));
+  const ordered = rp && rp.reach.rooted && rp.reach.models > 0;
+  const parts = planParts(
+    kept,
+    session,
+    ordered
+      ? {
+          head: reachHeadOf(
+            kept.map((f) => f.path),
+            rp,
+          ),
+          models: rp.reach.reached.map((r) => r.path),
+          leftOut: rp.leaveOut,
+        }
+      : undefined,
+  );
+  const planned =
+    room >= MIN_ROOM
+      ? planBatches(readSource, {
+          room,
+          exclude: c.exclude,
+          conventions,
+          overhead: overheadOf(repo, c.commit, await frameworksFor(root, repo, facts0)),
+          ...(rp && ordered ? { reach: { first: rp.first, leaveOut: rp.leaveOut } } : {}),
+        })
+      : undefined;
+  const plan = planned && planned.leastRoom >= MIN_ROOM ? planned : undefined;
   // A-ledger: the plan is kept beside the facts, so the parts are the same in every session and
   // which part is next is read back from the facts. An unchanged plan is left as it was planned.
   const plan0 = await loadReadPlan(root, repo);
@@ -1502,8 +1629,8 @@ async function estimate(
   // as for one read in parts (which then has no parts and no ledger). Tokens are estimated from
   // the source (estimateTokens), never metered; the sessions are the ones planned.
   const estimate = {
-    files: product.length,
-    tokens: product.reduce((n, f) => n + f.tokens, 0),
+    files: kept.length,
+    tokens: kept.reduce((n, f) => n + f.tokens, 0),
     sessions: parts.length || 1,
     ...(reread ? { reread: true as const } : {}),
   };
@@ -1518,6 +1645,12 @@ async function estimate(
   // either keeps what the read on file was given (nothing, for a read before they were recorded).
   const firstRead = typeof existing !== "string" && existing.length === 0 && !reread;
   const readRules = firstRead ? rulesNow() : plan0?.rules;
+  // ADR 0169: the model files left out, recorded with why; a re-read keeps what the plan says.
+  const notReached = rp ? rp.notReached : plan0?.notReached;
+  const sameModels =
+    plan0 !== undefined &&
+    (plan0.models ?? "reachable") === mode &&
+    JSON.stringify(plan0.notReached ?? null) === JSON.stringify(notReached ?? null);
   if (!same)
     await writeReadPlan(root, repo, {
       commit: c.commit,
@@ -1527,9 +1660,19 @@ async function estimate(
       // What the reader reported of an earlier plan stays, under the commit it was of.
       ...(plan0?.reported ? { reported: plan0.reported } : {}),
       ...(readRules ? { rules: readRules } : {}),
+      models: mode,
+      ...(notReached ? { notReached } : {}),
     });
-  else if (!sameEstimate || (firstRead && plan0.rules?.hash !== readRules?.hash))
-    await saveReadPlan(root, { ...plan0, estimate, ...(readRules ? { rules: readRules } : {}) });
+  else if (!sameEstimate || !sameModels || (firstRead && plan0.rules?.hash !== readRules?.hash)) {
+    const { notReached: _n, models: _m, ...rest0 } = plan0;
+    await saveReadPlan(root, {
+      ...rest0,
+      estimate,
+      ...(readRules ? { rules: readRules } : {}),
+      ...(mode === "all" ? { models: "all" as const } : {}),
+      ...(notReached ? { notReached } : {}),
+    });
+  }
   const progress = parts.length
     ? await readPlanProgress(root, repo, { commit: c.commit })
     : undefined;
@@ -1562,6 +1705,8 @@ async function estimate(
           maxTokensGiven: given !== undefined,
           maxTokensFrom: from ?? "example",
           batches: plan?.batches.length ?? null,
+          // ADR 0169: what the read plans to read (the model classes it leaves out, out).
+          read: { files: estimate.files, tokens: estimate.tokens },
           order: whole.batches.flat().map((x) => x.path),
           // ADR 0128: what a person says the repo is, and whether that eased the proposals.
           about: about
@@ -1589,6 +1734,15 @@ async function estimate(
                 }
               : {}),
           },
+          // ADR 0169: the model classes reached from the entry points and calls, and those left out.
+          models: rp
+            ? {
+                mode,
+                roots: rp.reach.roots,
+                reached: rp.reach.reached,
+                notReached: rp.leaveOut,
+              }
+            : null,
           tier,
           // A-taught: the frameworks of the organisation it is built on, as taught to Atticus.
           taughtFrameworks: taughtIn(c.source, c.op).map((m) => m.name),
@@ -1704,6 +1858,16 @@ async function estimate(
           io.out(
             `  part ${p.part} is part-read: nothing in the facts yet for ${p.left.join(", ")}.`,
           );
+    }
+  }
+  // ADR 0169: which model classes are read, from where, and which are left out (never silently).
+  const line = rp ? modelsLine(repo, rp) : undefined;
+  if (rp && line) {
+    io.out(line);
+    const data = modelsData(repo, rp);
+    if (data) {
+      io.out(MODELS_RULE);
+      io.out(data);
     }
   }
   io.out(`Your assistant: ${tierWords(tier)}, ${tierSource(tier)}. ${tier.how}`);

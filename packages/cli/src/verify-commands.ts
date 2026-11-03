@@ -35,7 +35,7 @@ import {
 } from "./facts-files.js";
 import { NoRoomError, roomGuard, streamFacts } from "./memory-room.js";
 import { notesAt } from "./org-notes.js";
-import { recordReadProgress } from "./map-parts.js";
+import { loadReadPlan, recordReadProgress } from "./map-parts.js";
 import { recordTopUpVerified } from "./map-rules.js";
 
 /**
@@ -170,6 +170,8 @@ export async function verifyInputsOf(root: string, repo: string, dir?: string) {
     estate: await estateComponentsOf(root),
     conventions: await conventionsAt(root),
     exclude: await excludesOf(root, repo),
+    // ADR 0169: the model files the read plan leaves out, counted apart in coverage.
+    notReached: (await loadReadPlan(root, repo))?.notReached?.files ?? [],
   };
 }
 
@@ -255,6 +257,7 @@ export async function verifyCommand(
       ...(estate ? { estate } : {}),
       conventions,
       notes: inputs.notes,
+      notReached: inputs.notReached,
     });
   } catch (e) {
     if (!(e instanceof NoRoomError)) throw e;
@@ -363,8 +366,13 @@ export async function verifyCommand(
   const pct = Math.round(report.coverage.ratio * 100);
   const cov = report.coverage;
   io.out(
-    `${repo}: ${report.accepted.length} facts kept, ${report.rejected.length} rejected; coverage ${pct}% (${cov.read.length} read, ${cov.reviewed.length ? `${cov.reviewed.length} reviewed with nothing to record, ` : ""}${cov.unknown.length} unknown${cov.excluded.length ? `, ${cov.excluded.length} excluded` : ""}).`,
+    `${repo}: ${report.accepted.length} facts kept, ${report.rejected.length} rejected; coverage ${pct}% (${cov.read.length} read, ${cov.reviewed.length ? `${cov.reviewed.length} reviewed with nothing to record, ` : ""}${cov.unknown.length} unknown${cov.excluded.length ? `, ${cov.excluded.length} excluded` : ""}${cov.notReached.length ? `, ${cov.notReached.length} model files no entry or call reaches` : ""}).`,
   );
+  // ADR 0169: the model files left out, said, never silent, with the command that reads them.
+  if (cov.notReached.length)
+    io.out(
+      `${cov.notReached.length} model files no entry or call reaches; atticus map ${repo} --models all reads them.`,
+    );
   // A-big2: every list is said as a count, its first few, and where the whole list is.
   const verifyYaml = `${rel}/${repo}.verify.yaml`;
   const rejectedFile = `${rel}/${repo}.rejected.jsonl`;

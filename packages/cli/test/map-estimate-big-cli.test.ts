@@ -101,7 +101,10 @@ describe("atticus map <repo> --estimate on a big repo (A-big)", () => {
       /more than one session reads \(150000 tokens\): read it in [2-9] parts, one per session or sub-agent/,
     );
     // A-ledger: each part says whether it is read; none is, on a first estimate.
-    expect(text).toMatch(/ {2}part 1 \(to read, about \d+ tokens, \d+ files\): accounts\/\*\*, /);
+    // ADR 0169: the entry points and clients first, then the model classes they reach.
+    expect(text).toMatch(
+      / {2}part 1 \(to read, about \d+ tokens, \d+ files\): generated\/\*\*, k8s\/\*\*, src\/main\/java\/forge\/ledger\/AccountController\.java, /,
+    );
     // the parts are of the read with the exclusions accepted: no part reads the research tables
     expect(text).not.toMatch(/part \d+ .*research/);
   });

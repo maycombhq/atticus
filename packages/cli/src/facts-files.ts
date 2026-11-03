@@ -177,6 +177,8 @@ export interface VerifySummary {
     reviewed?: number;
     unknown: string[];
     excluded: string[];
+    /** ADR 0169: model files the read plan leaves out, nothing reaching them; left out when none. */
+    notReached?: string[];
   };
   rejections: { id: string; code: string; message: string }[];
   /**
@@ -353,6 +355,7 @@ export async function writeVerifyFiles(
       ...(report.coverage.reviewed.length ? { reviewed: report.coverage.reviewed.length } : {}),
       unknown: report.coverage.unknown,
       excluded: report.coverage.excluded,
+      ...(report.coverage.notReached.length ? { notReached: report.coverage.notReached } : {}),
     },
     rejections: report.rejected.map((r) => ({ id: r.fact.id, code: r.code, message: r.message })),
     // ADR 0124 addendum D-app: a person's corrections, said only when there are some.

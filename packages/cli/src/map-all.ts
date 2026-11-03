@@ -23,7 +23,7 @@ import type { Output } from "./commands.js";
 import { estateFreshness, type FreshRepo } from "./estate-fresh.js";
 import { checkoutOf, conventionsAt, excludesOf, headOf } from "./facts-files.js";
 import { mapCommand, mapStateOf } from "./map-commands.js";
-import { loadReadPlan, readPlanProgress } from "./map-parts.js";
+import { loadReadPlan, readPlanProgress, type ModelsMode } from "./map-parts.js";
 import { plannedTopUp, recordRulesNow, ruleSetsOfFiles } from "./map-rules.js";
 import { isMetarepo, notMetarepo } from "./metarepo-guard.js";
 import { onboardingQueue } from "./onboarding-queue.js";
@@ -67,6 +67,11 @@ export interface MapAllOptions {
   budgetTokens?: number;
   /** Copilot: minutes the facts may stand still before Atticus says the read seems to have stopped. */
   idleMinutes?: number;
+  /**
+   * ADR 0169: the model classes each read takes: those its entry points and calls reach (the
+   * default), or all. Recorded in each repo's read plan, so the sessions it gives keep it.
+   */
+  models?: ModelsMode;
 }
 
 /** A clock the wait loop runs on; tests pass a fake one, so nothing really waits. */
@@ -242,6 +247,8 @@ async function commitOf(root: string, repo: string, f?: FreshRepo): Promise<stri
 interface EstimateJson {
   tokens: number;
   files: number;
+  /** ADR 0169: what the read plans to read, with the model classes it leaves out out. */
+  read?: { files: number; tokens: number };
   batches: number | null;
   parts: {
     parts: { paths: string[]; files: number; tokens: number }[];
@@ -256,12 +263,13 @@ async function partsOf(
   commit: string,
   limit: number,
   git: GitRunner | undefined,
+  models?: ModelsMode,
 ): Promise<{ parts: PlanPart[]; total: number; tokens: number; batches?: number } | string> {
   const io = captured();
   const code = await mapCommand(
     root,
     repo,
-    { estimate: true, json: true, commit, maxTokens: limit },
+    { estimate: true, json: true, commit, maxTokens: limit, ...(models ? { models } : {}) },
     io,
     git ? { git } : {},
   );
@@ -271,9 +279,17 @@ async function partsOf(
   const batches = r.batches ?? undefined;
   if (!planned.length)
     return {
-      parts: [{ part: 1, total: 1, paths: [], files: r.files, tokens: r.tokens }],
+      parts: [
+        {
+          part: 1,
+          total: 1,
+          paths: [],
+          files: r.read?.files ?? r.files,
+          tokens: r.read?.tokens ?? r.tokens,
+        },
+      ],
       total: 1,
-      tokens: r.tokens,
+      tokens: r.read?.tokens ?? r.tokens,
       ...(batches !== undefined ? { batches } : {}),
     };
   const states = r.parts.plan?.parts ?? [];
@@ -298,7 +314,7 @@ async function rulesPartsOf(
   repo: string,
   commit: string,
   limit: number,
-  o: { save?: boolean } = {},
+  o: { save?: boolean; models?: ModelsMode } = {},
 ): Promise<{ parts: PlanPart[]; total: number; sets: string[] } | string> {
   const dir = await checkoutOf(root, repo).catch(() => undefined);
   if (!dir) return "no clone to read: atticus workspace sync clones it";
@@ -309,6 +325,7 @@ async function rulesPartsOf(
     conventions: await conventionsAt(root),
     session: sessionTokensFor(limit),
     ...(o.save ? {} : { dryRun: true }),
+    ...(o.models ? { models: o.models } : {}),
   });
   if ("error" in p) return p.error;
   const sessions = p.topUp?.sessions ?? [];
@@ -465,7 +482,9 @@ export async function planEstate(
       continue;
     }
     if (t.kind === "rules") {
-      const p = await rulesPartsOf(root, t.repo, t.commit, c.limit);
+      const p = await rulesPartsOf(root, t.repo, t.commit, c.limit, {
+        ...(o.models ? { models: o.models } : {}),
+      });
       if (typeof p === "string") {
         skipped.push({ repo: t.repo, why: p });
         continue;
@@ -491,7 +510,7 @@ export async function planEstate(
       });
       continue;
     }
-    const p = await partsOf(root, t.repo, t.commit, c.limit, c.git);
+    const p = await partsOf(root, t.repo, t.commit, c.limit, c.git, o.models);
     if (typeof p === "string") {
       skipped.push({ repo: t.repo, why: p });
       continue;
@@ -1043,6 +1062,7 @@ export async function mapAllCommand(
         commit: item.commit,
         maxTokens: limit,
         ...(parted ? { part: part.part } : {}),
+        ...(o.models ? { models: o.models } : {}),
       },
       c,
       deps.git ? { git: deps.git } : {},
@@ -1058,7 +1078,10 @@ export async function mapAllCommand(
    * `atticus map <repo> --rules` gives is the part this run waits for; "done" when nothing is left.
    */
   async function rulesLine(item: PlanItem): Promise<string | "done"> {
-    const p = await rulesPartsOf(root, item.repo, item.commit, limit, { save: true });
+    const p = await rulesPartsOf(root, item.repo, item.commit, limit, {
+      save: true,
+      ...(o.models ? { models: o.models } : {}),
+    });
     if (typeof p === "string" || !p.parts.length) return "done";
     return `/atticus-map ${item.repo} --rules`;
   }
@@ -1072,7 +1095,13 @@ export async function mapAllCommand(
     const code = await mapCommand(
       root,
       item.repo,
-      { gaps: true, json: true, commit: item.commit, maxTokens: limit },
+      {
+        gaps: true,
+        json: true,
+        commit: item.commit,
+        maxTokens: limit,
+        ...(o.models ? { models: o.models } : {}),
+      },
       c,
       deps.git ? { git: deps.git } : {},
     );
@@ -1143,6 +1172,7 @@ export async function mapAllCommand(
           {
             commit: item.commit,
             maxTokens: limit,
+            ...(o.models ? { models: o.models } : {}),
             ...(item.kind === "rules" ? { rules: true } : {}),
             ...(resume ? { next: true } : before && !before.done ? { force: true } : {}),
           },

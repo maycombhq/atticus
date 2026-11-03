@@ -16,3 +16,4 @@ export * from "./method.js";
 export * from "./skipped.js";
 export * from "./conventions.js";
 export * from "./house-imports.js";
+export * from "./reachable.js";

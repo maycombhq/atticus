@@ -31,7 +31,16 @@ import {
   type FileSource,
 } from "@maycombhq/verify";
 import type { Output } from "./commands.js";
-import { loadReadPlan, saveReadPlan, type ReadPlanFileT, type TopUpT } from "./map-parts.js";
+import {
+  loadReadPlan,
+  modelsModeOf,
+  recordNotReached,
+  saveReadPlan,
+  type ModelsMode,
+  type ReadPlanFileT,
+  type TopUpT,
+} from "./map-parts.js";
+import { MODELS_RULE, modelsData, reachPlanOf, type ReachPlan } from "./map-reach.js";
 
 /**
  * ADR 0167: a top-up for the reading rules added since a repo was read. A read records the rules
@@ -96,11 +105,19 @@ export function topUpFiles(o: {
   exclude: readonly string[];
   sets: readonly RuleSet[];
   conventions?: Conventions;
+  /**
+   * ADR 0169: the reach over the repo's files: the model classes it leaves out aren't read, and
+   * the entry points, clients and the classes they reach come first.
+   */
+  reach?: ReachPlan;
 }): TopUpFile[] {
   const whole = planBatches(o.source, {
     room: Number.MAX_SAFE_INTEGER,
     exclude: o.exclude,
     ...(o.conventions ? { conventions: o.conventions } : {}),
+    ...(o.reach?.reach.rooted && o.reach.reach.models
+      ? { reach: { first: o.reach.first, leaveOut: o.reach.leaveOut } }
+      : {}),
   });
   const cites = new Map<string, Set<string>>();
   for (const f of o.facts)
@@ -199,8 +216,13 @@ export async function topUpOf(
     source: FileSource;
     exclude: readonly string[];
     conventions?: Conventions;
+    /** ADR 0169: the model classes to read; left out, the read plan's choice, else reachable. */
+    models?: ModelsMode;
   },
-): Promise<{ lacking: RuleSet[]; files: TopUpFile[]; plan?: ReadPlanFileT } | { error: string }> {
+): Promise<
+  | { lacking: RuleSet[]; files: TopUpFile[]; plan?: ReadPlanFileT; reach?: ReachPlan }
+  | { error: string }
+> {
   const plan = await loadReadPlan(root, repo);
   const lacking = rulesLacking(plan?.rules);
   if (!lacking.length) return { lacking, files: [], ...(plan ? { plan } : {}) };
@@ -211,14 +233,26 @@ export async function topUpOf(
     return {
       error: `${repo}'s clone moved past its facts' commit: read what changed first (atticus map ${repo}), then top it up.`,
     };
+  const all = planBatches(o.source, {
+    room: Number.MAX_SAFE_INTEGER,
+    exclude: o.exclude,
+    ...(o.conventions ? { conventions: o.conventions } : {}),
+  });
+  const reach = reachPlanOf({
+    paths: all.batches.flat().map((x) => x.path),
+    source: o.source,
+    facts,
+    mode: await modelsModeOf(root, repo, o.models),
+  });
   const files = topUpFiles({
     facts,
     source: o.source,
     exclude: o.exclude,
     sets: lacking,
     ...(o.conventions ? { conventions: o.conventions } : {}),
+    reach,
   });
-  return { lacking, files, ...(plan ? { plan } : {}) };
+  return { lacking, files, reach, ...(plan ? { plan } : {}) };
 }
 
 /** A read plan to record in, the one on file or a new one with no parts (a one-session read). */
@@ -290,21 +324,34 @@ export async function plannedTopUp(
     session: number;
     /** Plan only: write nothing (map --all --dry-run). */
     dryRun?: boolean;
+    /** ADR 0169: the model classes to read. */
+    models?: ModelsMode;
   },
-): Promise<{ lacking: RuleSet[]; topUp?: TopUpT; facts: Fact[] } | { error: string }> {
+): Promise<
+  { lacking: RuleSet[]; topUp?: TopUpT; facts: Fact[]; reach?: ReachPlan } | { error: string }
+> {
   const t = await topUpOf(root, repo, o);
   if ("error" in t) return t;
   if (!t.lacking.length) return { lacking: [], facts: [] };
   const facts = await factsOf(root, repo);
   if (typeof facts === "string") return { error: facts };
-  const on = t.plan?.topUp;
+  // ADR 0169: the model classes the top-up leaves out, recorded in the plan, never silent.
+  if (!o.dryRun && t.reach)
+    await recordNotReached(root, repo, {
+      commit: o.commit,
+      session: o.session,
+      models: t.reach.mode,
+      ...(t.reach.notReached ? { notReached: t.reach.notReached } : {}),
+    });
+  const reach = t.reach ? { reach: t.reach } : {};
+  const on = (await loadReadPlan(root, repo))?.topUp;
   if (
     on &&
     sameCommit(on.commit, o.commit) &&
     on.hash === FACT_RULES_HASH &&
     sameSets(on.sets, t.lacking)
   )
-    return { lacking: t.lacking, topUp: on, facts };
+    return { lacking: t.lacking, topUp: on, facts, ...reach };
   const topUp: TopUpT = {
     commit: o.commit,
     hash: FACT_RULES_HASH,
@@ -314,8 +361,11 @@ export async function plannedTopUp(
     sessions: topUpSessions(t.files, o.session),
   };
   if (!o.dryRun && topUp.sessions.length)
-    await saveReadPlan(root, { ...planOr(t.plan, repo, o.commit, o.session), topUp });
-  return { lacking: t.lacking, topUp, facts };
+    await saveReadPlan(root, {
+      ...planOr(await loadReadPlan(root, repo), repo, o.commit, o.session),
+      topUp,
+    });
+  return { lacking: t.lacking, topUp, facts, ...reach };
 }
 
 /**
@@ -335,6 +385,8 @@ export async function mapRules(
     /** The org notes for the repo (`notesText`), for the terms; empty when there are none. */
     notes: string;
     json?: boolean;
+    /** ADR 0169: the model classes to read. */
+    models?: ModelsMode;
   },
   io: Output,
 ): Promise<number> {
@@ -374,6 +426,7 @@ export async function mapRules(
       of: t.sessions.length,
       facts: p.facts,
       notes: o.notes,
+      ...(p.reach ? { reach: p.reach } : {}),
     }),
   );
   if (o.json) {
@@ -423,6 +476,8 @@ export function rulesPrompt(
     of: number;
     facts: readonly Fact[];
     notes: string;
+    /** ADR 0169: the reach, for the reached model classes among the session's files. */
+    reach?: ReachPlan;
   },
 ): string {
   const s = c.session;
@@ -470,5 +525,12 @@ export function rulesPrompt(
         ]
       : []),
     "",
+    ...modelsPart(repo, c.reach, new Set(files)),
   ].join("\n");
+}
+
+/** ADR 0169: the reached model classes among a session's files, and the rule for them. */
+function modelsPart(repo: string, r: ReachPlan | undefined, files: ReadonlySet<string>) {
+  const data = r ? modelsData(repo, r, { only: files }) : undefined;
+  return data ? ["## Model classes", "", MODELS_RULE, "", data, ""] : [];
 }

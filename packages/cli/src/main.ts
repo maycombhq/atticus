@@ -471,8 +471,9 @@ Usage:
           [--answer <file>]            With --copy: read the pasted answer back from a file (- for stdin)
           [--gaps --part n]            With --gaps: only what is left of part n of the read plan, for a read that stopped in it (ADR 0161); /atticus-map <repo> --part n --gaps in a new chat reads it
           [--rules]                    Top up a repo read before reading rules added since (estate fresh says rules-changed): only the rule parts its read lacked, over the files they apply to, the facts kept listed by id; writes facts/<repo>.rules.md for a new chat (/atticus-map <repo> --rules), or reads it in batches with --mode or --handoff; once verify passes the read records the rules (ADR 0167)
+          [--models reachable|all]     Which model classes (DTOs, requests, responses, schemas) the read, its parts, --gaps and --rules take: those the entry points and calls reach, read right after them (the default), or all; those nothing reaches are left out, recorded in the read plan as notReached and said by --estimate and verify (ADR 0169)
           [--spent <tokens>] [--sessions n] [--part n]  Record what the read took as your assistant reports it, in facts/<repo>.read-plan.yaml beside --estimate's estimate (Atticus can't meter an assistant's tokens; ADR 0141)
-  atticus map --all                    Map or re-map the whole estate in one command (ADR 0161): every repo's read planned at the model's limit, in the onboarding queue's order, fresh repos skipped, and repos read before the reading rules there are now topped up for the new rules only (ADR 0167). Under Copilot you paste one line per part into a new chat and Atticus waits for the facts, verifies them and moves on (s skip, r retry what's left, q stop; it resumes); where runtime.yaml allows model mode it runs unattended. Then the estate is joined once [--max-tokens n] [--stale | --gaps] [--repos a,b] [--dry-run] [--mode model|hand-off] [--max-parts n] [--budget-tokens n] [--idle minutes]
+  atticus map --all                    Map or re-map the whole estate in one command (ADR 0161): every repo's read planned at the model's limit, in the onboarding queue's order, fresh repos skipped, and repos read before the reading rules there are now topped up for the new rules only (ADR 0167). Under Copilot you paste one line per part into a new chat and Atticus waits for the facts, verifies them and moves on (s skip, r retry what's left, q stop; it resumes); where runtime.yaml allows model mode it runs unattended. Then the estate is joined once [--max-tokens n] [--stale | --gaps] [--models reachable|all] [--repos a,b] [--dry-run] [--mode model|hand-off] [--max-parts n] [--budget-tokens n] [--idle minutes]
   atticus verify <repo>                Check the facts your assistant wrote for a repo (/atticus-map) against its code: the claim on each cited line, the quote, references, secrets, coverage; raises the questions it wrote for a person; rejected facts go back to the assistant (ADR 0124) [--dir path] [--commit sha] [--routed a,b] [--skipped] [--json]
           [--write]                    When nothing is rejected: put the facts in the catalog, the flows in specs/<repo>/, ask about calls nothing joins, and render the map
           [--verbose]                  With --write: list every record changed and flow written, not only the counts
@@ -931,6 +932,8 @@ const OPTIONS = {
   gaps: { type: "boolean" },
   // ADR 0167: atticus map <repo> --rules, a top-up for reading rules added since a read.
   rules: { type: "boolean" },
+  // ADR 0169: atticus map <repo> --models reachable|all.
+  models: { type: "string" },
   // ADR 0161: atticus map --all.
   stale: { type: "boolean" },
   "max-parts": { type: "string" },
@@ -1555,6 +1558,13 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
     const { mapRenderCommand } = await import("./map-render-commands.js");
     return mapRenderCommand(root, repo, { json: values.json === true }, io);
   }
+  // ADR 0169: which model classes a read takes: those its entry points and calls reach, or all.
+  const models: "reachable" | "all" | undefined =
+    values.models === "reachable" || values.models === "all" ? values.models : undefined;
+  if (group === "map" && values.models !== undefined && !models) {
+    io.err(`--models is reachable or all (got ${String(values.models)}).`);
+    return 2;
+  }
   if (group === "map" && !command && values.all === true) {
     // ADR 0161: atticus map --all, the whole estate in one command.
     const text = (v: unknown) => (typeof v === "string" ? v : undefined);
@@ -1619,6 +1629,7 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
           ...(numbers.maxParts ? { maxParts: numbers.maxParts } : {}),
           ...(numbers.budgetTokens ? { budgetTokens: numbers.budgetTokens } : {}),
           ...(numbers.idle ? { idleMinutes: numbers.idle } : {}),
+          ...(models ? { models } : {}),
         },
         io,
         {
@@ -1644,7 +1655,7 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
     const repo = command;
     if (!repo) {
       io.err(
-        "Usage: atticus map <repo> [--estimate | --gaps [--part n] | --rules] [--handoff | --copy [--answer <file>] | --mode m] [--next] [--max-tokens n] [--force], or atticus map --all [--stale | --gaps] [--repos a,b] [--dry-run] [--max-tokens n]",
+        "Usage: atticus map <repo> [--estimate | --gaps [--part n] | --rules] [--models reachable|all] [--handoff | --copy [--answer <file>] | --mode m] [--next] [--max-tokens n] [--force], or atticus map --all [--stale | --gaps] [--models reachable|all] [--repos a,b] [--dry-run] [--max-tokens n]",
       );
       return 2;
     }
@@ -1683,6 +1694,7 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
       force: values.force === true,
       copy: values.copy === true,
       json: values.json === true,
+      ...(models ? { models } : {}),
     };
     // ADR 0167: --rules alone writes the top-up's prompt for a new chat; with a mode, its batches.
     if (o.estimate || o.gaps || (o.rules && !o.copy && !text(values.mode)))

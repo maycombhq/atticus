@@ -512,7 +512,10 @@ describe("atticus map --all under Copilot: one line per part, waited for (ADR 01
     const dirOf = (g: string) => g.replace(/\/?\*\*?$/, "");
     for (const f of listed) {
       expect(f.startsWith(`${dirOf(done!)}/`)).toBe(false);
-      expect(left.some((g) => dirOf(g) === "" || f.startsWith(`${dirOf(g)}/`))).toBe(true);
+      // ADR 0169: a part names an entry point or a reached model class by its own path too.
+      expect(left.some((g) => g === f || dirOf(g) === "" || f.startsWith(`${dirOf(g)}/`))).toBe(
+        true,
+      );
     }
     // The part isn't done: only what the facts account for is.
     expect((await readPlanProgress(root, "forge-ledger"))!.parts[0]!.state).not.toBe("done");
