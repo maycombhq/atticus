@@ -55,8 +55,12 @@ const does = [
 ];
 
 // What the current release added, in plain words; the CHANGELOG has every item.
-const release = "2.0.0-beta.12.1";
+const release = "2.0.0-beta.12.2";
 const news = [
+  {
+    body: "`atticus map --all` moves on by itself once verify leaves nothing under a part, says exactly what is left when something is, and stops waiting after a set time; `--force` re-reads a repo whole in the same loop, and `--models entries` reads the classes a repo's own endpoints use first.",
+    link: "/guide/install.html",
+  },
   {
     body: "A read takes the entry points and clients first, then the request, response and message classes they use and the ones those use, so their fields are read for the contract check; classes nothing uses are listed and left out unless you ask for `--models all`.",
     link: "/guide/install.html",

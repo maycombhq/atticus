@@ -2,6 +2,13 @@
 
 All notable changes to Atticus. Versions follow [Semantic Versioning](https://semver.org); contracts C1 to C6 change only with an ADR, a schema version and a migration (`atticus upgrade`).
 
+## 2.0.0-beta.12.2 (2026-11-03)
+
+### The waiting loop agrees with verify (ADR 0170)
+
+- `atticus map --all` counts a part done when verify's coverage leaves no file under it unaccounted (cited, reviewed, excluded or not reached), as verify records it in the read plan, and moves on without a keypress; when verify passes but something is left it says exactly what and that `r` gives only those files. After `--idle` minutes (30) with nothing written it stops waiting once, saying how to carry on, instead of reminding forever.
+- `atticus map --all --force [--repos a,b]` reads repos whole again in the same loop, each part by its number (`/atticus-map <repo> --part n`), the facts on file kept as already kept; `atticus map <repo>` (and `--force`) runs that loop for one repo when the reader is Copilot, and the batch hand-off says what to run if you use Copilot. `--models entries` reads the model classes the repo's own entry points reach and leaves those only an outbound client reaches as `notReached` (`--models reachable` reads them).
+
 ## 2.0.0-beta.12.1 (2026-11-03)
 
 ### Model classes read where they are used (ADR 0169)

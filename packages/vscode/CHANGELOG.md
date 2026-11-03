@@ -2,6 +2,10 @@
 
 The Atticus extension for VS Code. The command line's own changes are in the repository's [CHANGELOG](https://github.com/maycombhq/atticus/blob/main/CHANGELOG.md).
 
+## 0.7.12 (pre-release, with Atticus 2.0.0-beta.12.2)
+
+- **Ships with Atticus 2.0.0-beta.12.2.** No change to the extension itself: Map the estate moves on by itself when verify leaves nothing under a part, says what is left when something is, and stops waiting after a set time; `--force` re-reads repos whole in the same loop, and `--models entries` reads the classes a repo's own endpoints use first.
+
 ## 0.7.11 (pre-release, with Atticus 2.0.0-beta.12.1)
 
 - **Ships with Atticus 2.0.0-beta.12.1.** No change to the extension itself: a read takes the entry points and clients first, then the request and response classes they use, so their fields are read for the contract check; classes nothing uses are listed, not read, unless asked.
