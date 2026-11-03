@@ -233,6 +233,20 @@ describe("the Questions page asks in order and routes to the owner (ADR 0140)", 
     expect(empty).toContain(C.emptyMine);
   });
 
+  it("pre-fills the rule several open target questions share, and says so (ADR 0168)", () => {
+    const targets: QuestionView = {
+      ...question,
+      askedBy: { ...question.askedBy, step: "facts-targets" },
+    };
+    const rule = { match: "/accounts/**", ids: [targets.id, "q-0123456789ab"], calls: 4 };
+    const out = html(<QuestionDetail question={targets} onAnswered={() => {}} rule={rule} />);
+    expect(out).toContain('value="/accounts/**"');
+    expect(out).toContain(C.rule.offer(2, 4, "/accounts/**"));
+    expect(aboutWords({ restsOn: [], joins: 0, owner: { none: "x" }, rule })).toContain(
+      C.rule.offerListed(2, "/accounts/**"),
+    );
+  });
+
   it("a target or hosts question takes a rule in the form, labelled, and sends it (ADR 0153)", () => {
     const hosts: QuestionView = {
       ...question,

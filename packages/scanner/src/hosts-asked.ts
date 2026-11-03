@@ -43,7 +43,31 @@ export interface HostAsk {
    * two opaque ids reads what they are. A draft nobody has confirmed is marked.
    */
   about?: Record<string, { text: string; trust: "suggested" | "verified" }>;
+  /**
+   * Beta.12: the repos with an entry that serves a path the calls to the host make (a gateway's
+   * proxies, each its own repo), with one such path each: the host is likely a shared gateway's,
+   * and listing it on each of them lets the path pick the repo.
+   */
+  byPath?: { repo: string; serves: string }[];
 }
+
+/** A path's segments, a placeholder being any one. */
+const segs = (p: string) =>
+  p
+    .split(/[?#]/)[0]!
+    .split("/")
+    .filter(Boolean)
+    .map((x) => (/^[{:<$]/.test(x) ? "{}" : x));
+const underPath = (path: string, base: string) => {
+  const b = segs(base);
+  const c = segs(path);
+  return b.length > 0 && b.length <= c.length && b.every((x, i) => x === c[i]);
+};
+const servesPath = (entry: string, path: string) => {
+  const e = segs(entry);
+  const c = segs(path);
+  return e.length === c.length && e.every((x, i) => x === "{}" || c[i] === "{}" || x === c[i]);
+};
 
 /** Entry point types a call over HTTP reaches. */
 const HTTP_TYPES = new Set(["rest", "graphql", "soap", "websocket", "sse", "webhook"]);
@@ -102,7 +126,10 @@ export async function unknownHosts(o: {
     ...r.hosts,
     ...(r.modules ?? []).flatMap((m) => m.hosts),
   ]);
-  const byHost = new Map<string, { port?: number; explicit: boolean; calls: HostAsk["calls"] }>();
+  const byHost = new Map<
+    string,
+    { port?: number; explicit: boolean; calls: HostAsk["calls"]; paths: Set<string> }
+  >();
   for (const r of o.records) {
     if (r.kind !== "Unresolved" || r.unresolvedKind !== "http-call") continue;
     const url = r.raw.slice(r.raw.indexOf(" ") + 1);
@@ -116,7 +143,10 @@ export async function unknownHosts(o: {
       ...(h.port !== undefined ? { port: h.port } : {}),
       explicit: h.label !== h.host,
       calls: [],
+      paths: new Set<string>(),
     };
+    const path = /^[a-z][a-z0-9+.-]*:\/\/[^/?#]*(\/[^?#]*)?/i.exec(url)?.[1];
+    if (path) entry.paths.add(path);
     const at = `${e.path}:${e.line}`;
     if (!entry.calls.some((c) => c.repo === repo && c.at === at)) entry.calls.push({ repo, at });
     byHost.set(h.label, entry);
@@ -169,6 +199,33 @@ export async function unknownHosts(o: {
     const calls = entry.calls.sort(
       (a, b) => a.repo.localeCompare(b.repo) || a.at.localeCompare(b.at, "en", { numeric: true }),
     );
+    // Beta.12: the gateway repos (their GatewayRoutes) whose base path the calls' paths are
+    // under: a gateway's proxies, each its own repo, on a host none of them lists.
+    const byPath: NonNullable<HostAsk["byPath"]> = [];
+    for (const g of o.records) {
+      if (g.kind !== "GatewayRoute") continue;
+      const repo = g.evidence.find((e) => e.repo)?.repo;
+      if (!repo || byPath.some((b) => b.repo === repo)) continue;
+      const under = [...entry.paths].filter((p) => underPath(p, g.basepath));
+      if (!under.length) continue;
+      const comps = new Set([...compRepo].filter(([, r]) => r === repo).map(([c]) => c));
+      const hit = o.records.find(
+        (r) =>
+          r.kind === "Endpoint" &&
+          comps.has(r.component) &&
+          under.some((p) => servesPath(r.pathOrTopic, p)),
+      ) as Extract<CatalogRecord, { kind: "Endpoint" }> | undefined;
+      byPath.push({
+        repo,
+        serves: hit
+          ? [hit.method?.toUpperCase(), hit.pathOrTopic].filter(Boolean).join(" ")
+          : `the routes under ${g.basepath}`,
+      });
+    }
+    byPath.sort((a, b) => a.repo.localeCompare(b.repo));
+    const first = suggest
+      ? [suggest.repo]
+      : byPath.map((b) => b.repo).filter((x) => servers.includes(x));
     const about = Object.fromEntries(
       servers.flatMap((s) => {
         const d = o.repos.find((r) => r.id === s)?.description;
@@ -178,9 +235,10 @@ export async function unknownHosts(o: {
     asks.push({
       host,
       calls,
-      servers: suggest ? [suggest.repo, ...servers.filter((s) => s !== suggest.repo)] : servers,
+      servers: [...first, ...servers.filter((s) => !first.includes(s))],
       ...(suggest ? { suggest } : {}),
       ...(Object.keys(about).length ? { about } : {}),
+      ...(byPath.length ? { byPath } : {}),
     });
   }
   return asks;
@@ -202,13 +260,24 @@ function aboutOf(a: HostAsk, repo: string): string {
  * The question for each host (ADR 0078 question drafts), raised in the repo that makes the
  * first call; its evidence is up to three of that repo's calls.
  */
+/**
+ * Beta.12: what a host the calls reach a gateway's routes on says to do, once: list it under
+ * hosts on each repo whose routes serve the paths, so the path picks the repo.
+ */
+export function gatewayHostFix(host: string, byPath: readonly { repo: string }[]): string {
+  const repos = byPath.map((b) => b.repo);
+  return `${repos.length === 1 ? `${repos[0]}'s routes serve` : `The routes of ${repos.join(", ")} serve`} the paths the calls to ${host} make, and no repo lists ${host}: it looks like a shared gateway's host. Once, not per call: list ${host} under hosts: on each proxy repo in repos.manifest.yaml (${repos.join(", ")}, and any other proxy on it); the path then picks the proxy, and this question retires itself`;
+}
+
 export function hostQuestionDrafts(
   asks: readonly HostAsk[],
-): { repo: string; draft: QuestionDraft }[] {
+): { repo: string; draft: QuestionDraft; byPath?: HostAsk["byPath"] }[] {
   return asks.map((a) => {
     const repo = a.calls[0]!.repo;
+    const byPath = new Map((a.byPath ?? []).map((b) => [b.repo, b.serves] as const));
     return {
       repo,
+      ...(a.byPath?.length ? { byPath: a.byPath } : {}),
       draft: {
         question: hostQuestionText(a.host),
         options: [
@@ -217,8 +286,12 @@ export function hostQuestionDrafts(
             means:
               (a.suggest?.repo === s
                 ? `${s} serves HTTP, and its ${a.suggest.at} sets the port ${a.host.split(":").pop()} (${a.suggest.line})`
-                : `${s} serves HTTP`) + aboutOf(a, s),
-            changes: `${a.host} goes under hosts for ${s} in repos.manifest.yaml, and the calls to it join ${s} on the next scan`,
+                : byPath.has(s)
+                  ? `${s} serves ${byPath.get(s)}, a path the calls to ${a.host} make`
+                  : `${s} serves HTTP`) + aboutOf(a, s),
+            changes: byPath.has(s)
+              ? `${a.host} goes under hosts for ${s} in repos.manifest.yaml, and the calls to it join ${s} on the next scan; on a shared gateway host, list it on each proxy repo instead (${[...byPath.keys()].join(", ")}, and any other proxy on it), and the path picks the proxy`
+              : `${a.host} goes under hosts for ${s} in repos.manifest.yaml, and the calls to it join ${s} on the next scan`,
           })),
           // O1: a system outside the estate, declared in the profile with the host as its alias.
           ...(

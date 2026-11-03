@@ -111,3 +111,34 @@ describe("the questions API (ADR 0078)", () => {
     expect(file.answer?.by).toBe("priya.nair");
   });
 });
+
+describe("the rule several open target questions share (2.49.0, ADR 0168)", () => {
+  it("is on each question's about, so the app pre-fills the rule field", async () => {
+    const { cp } = await import("node:fs/promises");
+    const fix = join(__dirname, "..", "..", "..", "fixtures", "link-estate", "gateway-questions");
+    const gw = await mkdtemp(join(tmpdir(), "atticus-ui-questions-rule-"));
+    await cp(join(fix, "org-pack"), join(gw, "org-pack"), { recursive: true });
+    await cp(join(fix, "questions"), join(gw, "questions"), { recursive: true });
+    await cp(join(fix, "facts"), join(gw, "facts"), { recursive: true });
+    const s = await startServer({
+      root: gw,
+      port: 0,
+      user: "priya.nair",
+      extend: (r, ctx) => uiQuestionRoutes(r, ctx),
+    });
+    try {
+      const r = await fetch(`${s.url}/api/questions?state=open`, {
+        headers: { "X-Atticus-Token": s.token },
+      });
+      const list = Api.QuestionList.parse(await r.json());
+      expect(list.about?.["q-848df3a174aa"]?.rule).toEqual({
+        match: "/accounts/**",
+        ids: ["q-65f2e458d42d", "q-848df3a174aa", "q-977303dcd756"],
+        calls: 3,
+      });
+      expect(list.about?.["q-c62198228388"]?.rule).toBeUndefined();
+    } finally {
+      s.close();
+    }
+  });
+});

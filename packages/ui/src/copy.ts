@@ -225,6 +225,10 @@ export const COPY = {
       label: "Answer by rule (optional)",
       hint: "A host pattern (*.payments.forge.internal) or a path prefix (/forge/limits/**): your answer then covers every call that matches, the calls found later too, in the repos the scope above allows.",
       answered: (match: string) => `By rule: every call matching ${match}`,
+      // ADR 0168: several open questions share a path prefix or host: one answer covers them.
+      offer: (n: number, calls: number, match: string) =>
+        `Answer once for all ${n}: ${match} is filled in, so this answer covers the ${calls} calls of the ${n} open questions like this one, and the others retire on the next verify --write. Clear it to answer this one only.`,
+      offerListed: (n: number, match: string) => `One answer covers all ${n}: ${match}`,
     },
     // ADR 0162 (F8): "Another repo…", the picker of the whole estate, and a reopened answer.
     another: {

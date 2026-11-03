@@ -39,10 +39,13 @@ export function aboutWords(a: About | undefined): string[] {
         : C.noOwner(a.owner.none),
     ...(a.joins ? [C.joins(a.joins)] : []),
     ...(a.proposal ? [C.proposal.listed] : []),
+    ...(a.rule ? [C.rule.offerListed(a.rule.ids.length, a.rule.match)] : []),
   ];
 }
 
 type Proposal = NonNullable<About["proposal"]>;
+/** ADR 0168: the rule one answer could take to cover the open questions like this one. */
+type RuleOffer = NonNullable<About["rule"]>;
 
 /**
  * The answer the assistant proposed (ADR 0144, Q5), shown only once every line it cites was
@@ -474,14 +477,17 @@ export function QuestionDetail(p: {
   onAnswered: (r: AnsweredResult) => void;
   /** ADR 0144: the checked proposal for it, from the list's about. */
   proposal?: Proposal;
+  /** ADR 0168: the rule that answers it and the open questions like it at once, pre-filled. */
+  rule?: RuleOffer;
 }) {
   const q = p.question;
+  const offer = q.state === "open" ? p.rule : undefined;
   const [form, setForm] = useState<AnswerForm>({
     pick: q.answer?.option ?? (q.answer?.text ? "words" : undefined),
     text: q.answer?.text ?? "",
     scope: q.answer?.scope.level ?? q.scope.level,
     repoType: q.scope.level === "repo-type" ? q.scope.id : "",
-    match: q.answer?.match ?? "",
+    match: q.answer?.match ?? offer?.match ?? "",
   });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>();
@@ -708,6 +714,7 @@ export function QuestionDetail(p: {
                 onChange={(e) => set({ match: e.target.value })}
               />
               <span id={`${name}-match-d`} className="muted" style={{ fontSize: 12 }}>
+                {offer ? `${C.rule.offer(offer.ids.length, offer.calls, offer.match)} ` : ""}
                 {C.rule.hint}
               </span>
             </div>
@@ -733,10 +740,12 @@ function Detail({
   id,
   onAnswered,
   proposal,
+  rule,
 }: {
   id: string;
   onAnswered: () => void;
   proposal?: Proposal;
+  rule?: RuleOffer;
 }) {
   const q = useApi<QuestionView>(`/api/questions/${id}`);
   useReloadOnFiles(q);
@@ -754,6 +763,7 @@ function Detail({
             question={d}
             onAnswered={onAnswered}
             {...(proposal ? { proposal } : {})}
+            {...(rule ? { rule } : {})}
           />
         )}
       </View>
@@ -846,6 +856,9 @@ export function Questions({ hash }: { hash: string }) {
               onAnswered={list.reload}
               {...(list.state === "ready" && list.data.about?.[current]?.proposal
                 ? { proposal: list.data.about[current].proposal }
+                : {})}
+              {...(list.state === "ready" && list.data.about?.[current]?.rule
+                ? { rule: list.data.about[current].rule }
                 : {})}
             />
           ) : (

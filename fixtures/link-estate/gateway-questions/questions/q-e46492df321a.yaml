@@ -1,0 +1,36 @@
+# A question from atticus verify forge-proxy-core-v1 --write (ADR 0078). Answer it with atticus questions answer q-e46492df321a, or in the app.
+schemaVersion: 3
+id: q-e46492df321a
+askedBy:
+  step: facts-targets
+  command: atticus verify forge-proxy-core-v1 --write
+  at: 2026-10-28T15:04:00.000Z
+repo: forge-proxy-core-v1
+question: Which repo or system answers GET /cards/{id}/pin, which
+  forge-proxy-core-v1 calls through core-backend?
+options:
+  - label: card-vault
+    means: card-vault, built in forge-card-vault, answers GET /cards/{id}/pin
+    changes: The call joins card-vault when the facts are next written (atticus
+      verify forge-proxy-core-v1 --write)
+  - label: teller-app
+    means: teller-app, built in forge-teller-app, answers GET /cards/{id}/pin
+    changes: The call joins teller-app when the facts are next written (atticus
+      verify forge-proxy-core-v1 --write)
+  - label: None of these
+    means: Nothing in the estate answers it
+    changes: The call stays a loose end, and this isn't asked again
+evidence:
+  - apiproxy/proxies/default.xml:13
+scope:
+  level: repo
+  id: forge-proxy-core-v1
+state: answered
+rerun: atticus verify forge-proxy-core-v1 --write
+answer:
+  option: 1
+  by: pat
+  at: 2026-10-29T09:12:00.000Z
+  scope:
+    level: repo
+    id: forge-proxy-core-v1

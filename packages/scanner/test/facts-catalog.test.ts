@@ -292,10 +292,10 @@ describe("a call with no target and no host becomes a question (ADR 0078)", () =
     expect(d.draft.options.map((o) => [o.label, o.means])).toEqual([
       [
         "notify-api",
-        "notify-api, built in forge-notify, answers POST /notify. Suggested: it serves POST /notify (notify-api.post-notify); its path /notify names forge-notify",
+        "notify-api, built in forge-notify: serves POST /notify (notify-api.post-notify); named like the path /notify",
       ],
-      ["northwind-fx", "Northwind FX, an outside system, answers POST /notify"],
-      ["risk-team", "Risk Team, another team's system, answers POST /notify"],
+      ["northwind-fx", "Northwind FX, an outside system: no evidence; listed so you can pick it"],
+      ["risk-team", "Risk Team, another team's system: no evidence; listed so you can pick it"],
       [
         "Another repo…",
         "A repo, system or team not listed here: the manifest's 2 repos (read or not), the profiles' 4 systems and the 0 teams in roles.yaml",
