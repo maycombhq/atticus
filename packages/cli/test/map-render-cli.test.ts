@@ -363,6 +363,59 @@ describe("linkChanges: the links a write added or removed (J2)", () => {
     ]);
   });
 
+  it("says a link is verified by another call when this repo's own call to it was found by path", () => {
+    // forge-archive's call names forge-notes (cited, verified); forge-notes-web's own call to the
+    // same Interface was only found by its path: the link is verified, this call's join a guess.
+    const shared = interfaceId("forge-notes-web", "forge-notes", "GET", "/api/tags");
+    const j = {
+      ...join,
+      joins: [
+        {
+          call: end("forge-notes", "c-tags2", "forge-notes-web", "web/b.ts:4"),
+          entry: end("forge-notes", "e-tags", "forge-notes", "api/Tags.java:9"),
+          how: "path",
+          inferred: { within: "repo" },
+          callType: "rest",
+          method: "GET",
+          path: "/api/tags",
+          interface: shared,
+        },
+        {
+          call: end("forge-notes", "c-tags", "forge-notes-web", "web/a.ts:9"),
+          entry: end("forge-notes", "e-tags", "forge-notes", "api/Tags.java:9"),
+          how: "named",
+          callType: "rest",
+          method: "GET",
+          path: "/api/tags",
+          interface: shared,
+        },
+      ],
+      asks: [],
+      outside: [],
+    } satisfies FactsJoinResult;
+    const linked = iface("forge-notes-web", "forge-notes", {
+      flags: ["joined-by-name", "joined-by-path"],
+    });
+    const l = linkChanges("forge-notes", j, [], [linked]);
+    expect(l.added[0]).toMatchObject({ confidence: "verified", how: "named" });
+    expect(linkLines(l, "r.yaml")[1]).toBe(
+      "    + forge-notes-web → forge-notes GET /api/tags (verified; found by name: joined-by-name, joined-by-path)",
+    );
+    // Only the guessed call is this repo's: the link is verified by the other repo's call.
+    const theirs = {
+      ...j,
+      joins: [
+        j.joins[0]!,
+        { ...j.joins[1]!, call: end("forge-archive", "c-tags", "forge-archive", "src/T.java:2") },
+      ],
+    } satisfies FactsJoinResult;
+    const l2 = linkChanges("forge-notes", theirs, [], [linked]);
+    expect(l2.added[0]).toMatchObject({ how: "path", byOther: true });
+    expect(linkLines(l2, "r.yaml")[1]).toBe(
+      "    + forge-notes-web → forge-notes GET /api/tags (verified by another call; this one by path: joined-by-path)",
+    );
+  });
+
   it("says no link changed when none did", () => {
     const l = linkChanges(
       "forge-notes",
