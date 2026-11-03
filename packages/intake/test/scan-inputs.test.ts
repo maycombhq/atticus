@@ -303,3 +303,47 @@ describe("pluggable ingestors", () => {
     ]);
   });
 });
+
+describe("a YAML spec a strict parser refuses", () => {
+  const FIX = join(dirname(fileURLToPath(import.meta.url)), "fixtures/yaml-lenient");
+  const rootWith = async (files: Record<string, string>) => {
+    const root = await mkdtemp(join(tmpdir(), "atticus-intake-lenient-"));
+    await cp(join(MIXED, "metarepo/org-pack"), join(root, "org-pack"), { recursive: true });
+    for (const [to, from] of Object.entries(files))
+      await cp(join(FIX, from), join(root, "inputs", to));
+    return root;
+  };
+
+  it("reads a spec it could read leniently, its notes on the document, its lines cited as written", async () => {
+    const root = await rootWith({
+      "partner-specs/northwind-pay-delivery.yaml": "server-variables.yaml",
+      "partner-specs/northwind-pay-rates.yaml": "duplicate-keys.yaml",
+    });
+    const res = await scanInputs({ root, scannedAt: "2026-10-18T09:00:00Z" });
+    const doc = (p: string) => res.documents.find((d) => d.path === `inputs/partner-specs/${p}`)!;
+    expect(doc("northwind-pay-delivery.yaml")).toMatchObject({
+      classification: "openapi",
+      status: "read",
+      notes: [expect.stringMatching(/^servers\[\]\.variables at lines 8 and 12/)],
+    });
+    const send = res.records.find(
+      (r) => r.kind === "Endpoint" && doc("northwind-pay-delivery.yaml").records.includes(r.id),
+    ) as { evidence: { line?: number }[] } | undefined;
+    // The operation's path, on its line in the file as written (line 16).
+    expect(send?.evidence[0]?.line).toBe(16);
+    expect(doc("northwind-pay-rates.yaml")).toMatchObject({
+      status: "read",
+      notes: ['duplicate key "description" at 6:3: the last one is kept'],
+    });
+  });
+
+  it("marks one it can't read unreadable, with the parser's reason and where", async () => {
+    const root = await rootWith({ "partner-specs/northwind-pay-limits.yaml": "broken.yaml" });
+    const res = await scanInputs({ root, scannedAt: "2026-10-18T09:00:00Z" });
+    expect(res.documents[0]).toMatchObject({
+      classification: "unknown",
+      status: "unreadable",
+      reason: "All mapping items must start at the same column at 11:1",
+    });
+  });
+});

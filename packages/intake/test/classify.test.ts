@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { deflateRawSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 import { classify, payloadFields } from "../src/index.js";
@@ -96,5 +99,73 @@ describe("payloadFields", () => {
       { name: "e", type: "array" },
     ]);
     expect(JSON.stringify(fields)).not.toMatch(/"x"|1/);
+  });
+});
+
+describe("classify: a YAML spec a strict parser refuses", () => {
+  const FIX = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "yaml-lenient");
+  const read = (name: string) => classify(name, new Uint8Array(readFileSync(join(FIX, name))));
+
+  it("reads a duplicate key leniently, keeping the last, and says so", () => {
+    const c = read("duplicate-keys.yaml");
+    expect(c.classification).toBe("openapi");
+    expect(c.title).toBe("Tidewater Rates");
+    expect((c.data as { info: { description: string } }).info.description).toBe(
+      "Rates for a currency pair.",
+    );
+    expect(c.notes).toEqual(['duplicate key "description" at 6:3: the last one is kept']);
+    expect(c.unreadable).toBeUndefined();
+  });
+
+  it("reads a spec with more aliases than the strict limit, and says so", () => {
+    const c = read("many-aliases.yaml");
+    expect(c.classification).toBe("openapi");
+    expect(c.notes).toEqual([
+      "more aliases than the strict parser allows (100): read with a higher limit (10000)",
+    ]);
+  });
+
+  it("joins a multi-line flow mapping under servers[].variables, keeping every line where it was", () => {
+    const c = read("server-variables.yaml");
+    expect(c.classification).toBe("openapi");
+    expect(c.title).toBe("Lantern Mail Delivery");
+    const servers = (c.data as { servers: { variables: Record<string, unknown> }[] }).servers;
+    expect(servers[0]!.variables).toEqual({
+      scheme: { default: "https", enum: ["https"] },
+      basePath: { default: "v1" },
+    });
+    expect(c.notes).toEqual([
+      "servers[].variables at lines 8 and 12 are flow mappings written over several lines, not indented past their key: read as if each were on one line",
+    ]);
+    // The text the readers get: the same lines, so every cite still points at the file.
+    expect(c.text!.split("\n")).toHaveLength(
+      readFileSync(join(FIX, "server-variables.yaml"), "utf8").split("\n").length,
+    );
+    expect(c.text!.split("\n")[16]).toBe("    post:");
+  });
+
+  it("doesn't guess: a file the same fix would read is unreadable unless it is then a spec", () => {
+    const c = read("settings-like.yaml");
+    expect(c.classification).toBe("unknown");
+    expect(c.unreadable).toMatchObject({ line: 5, column: 7 });
+    expect(c.notes).toBeUndefined();
+  });
+
+  it("says why a file it can't read is unreadable, with the line and column", () => {
+    const c = read("broken.yaml");
+    expect(c.classification).toBe("unknown");
+    expect(c.unreadable).toEqual({
+      reason: expect.stringMatching(/^[A-Z][^\n]+[^:]$/),
+      line: 11,
+      column: 1,
+    });
+    expect(c.unreadable!.reason).not.toMatch(/at line/);
+    // JSON too, and only for a file named as YAML or JSON.
+    expect(classify("x.json", text('{"openapi": "3.0.0",\n  "paths": {')).unreadable).toMatchObject(
+      {
+        line: 2,
+      },
+    );
+    expect(classify("notes.md", text("[a link](x) and {braces")).unreadable).toBeUndefined();
   });
 });

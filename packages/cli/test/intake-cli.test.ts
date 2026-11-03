@@ -142,6 +142,40 @@ describe("atticus intake list", () => {
     expect(res.problems).toEqual([]);
   });
 
+  it("says why a YAML file it can't read is unreadable, and what it read leniently, in text and JSON", async () => {
+    const root = await forgeRoot();
+    const FIX = join(
+      dirname(fileURLToPath(import.meta.url)),
+      "../../intake/test/fixtures/yaml-lenient",
+    );
+    await cp(join(FIX, "broken.yaml"), join(root, "inputs/inbox/northwind-limits.yaml"));
+    await cp(join(FIX, "duplicate-keys.yaml"), join(root, "inputs/inbox/northwind-pay-rates.yaml"));
+    const c = capture();
+    expect(await intakeList(root, c.io, {})).toBe(0);
+    const text = c.out.join("\n");
+    expect(text).toMatch(
+      /inputs\/inbox\/northwind-limits\.yaml +unknown +unreadable: All mapping items must start at the same column at 11:1/,
+    );
+    expect(text).toContain("1 unreadable");
+    expect(text).toContain(
+      '  ~ inputs/inbox/northwind-pay-rates.yaml: duplicate key "description" at 6:3: the last one is kept',
+    );
+    const j = capture();
+    await intakeList(root, j.io, { json: true });
+    const docs = (
+      JSON.parse(j.out.join("\n")) as {
+        documents: { path: string; status: string; reason?: string; notes?: string[] }[];
+      }
+    ).documents;
+    expect(docs.find((d) => d.path === "inputs/inbox/northwind-limits.yaml")).toMatchObject({
+      status: "unreadable",
+      reason: "All mapping items must start at the same column at 11:1",
+    });
+    expect(
+      docs.find((d) => d.path === "inputs/inbox/northwind-pay-rates.yaml")?.notes,
+    ).toHaveLength(1);
+  });
+
   it("says how to start when inputs/ is empty", async () => {
     const root = await mkdtemp(join(tmpdir(), "atticus-cli-intake-empty-"));
     const c = capture();

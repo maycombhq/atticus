@@ -1,0 +1,14 @@
+openapi: 3.0.3
+info:
+  title: Tidewater Limits
+  version: "1.0"
+paths:
+  /limits:
+    get:
+      responses:
+        "200":
+          description: The limits.
+   post:
+      responses:
+        "201":
+          description: Created.

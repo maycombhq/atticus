@@ -181,6 +181,7 @@ const STATUS_WORDS: [IntakeDocument["status"], (n: number) => string][] = [
   ["duplicate", (n) => `${n} duplicate${n === 1 ? "" : "s"}`],
   ["superseded", (n) => `${n} older version${n === 1 ? "" : "s"}`],
   ["failed", (n) => `${n} failed`],
+  ["unreadable", (n) => `${n} unreadable`],
 ];
 
 /** Version chains, oldest first: each file's supersededBy followed to the newest. */
@@ -224,7 +225,11 @@ export async function intakeList(root: string, io: Output, o: { json?: boolean }
     documents.map((d) => [
       d.path,
       d.classification,
-      d.duplicateOf ? `duplicate of ${d.duplicateOf}` : d.status,
+      d.duplicateOf
+        ? `duplicate of ${d.duplicateOf}`
+        : d.status === "unreadable" && d.reason
+          ? `unreadable: ${d.reason}`
+          : d.status,
       d.systems.join(", "),
     ]),
   ))
@@ -239,6 +244,8 @@ export async function intakeList(root: string, io: Output, o: { json?: boolean }
     return n > 0 ? words(n) : "";
   }).filter(Boolean);
   io.out(`${documents.length} file${documents.length === 1 ? "" : "s"}: ${counts.join(", ")}.`);
+  // What was read leniently (a duplicate key, the aliases, a spec's layout): a note, not a problem.
+  for (const d of documents) for (const n of d.notes ?? []) io.out(`  ~ ${d.path}: ${n}`);
   for (const p of problems) io.out(`  ! ${p.path}: ${p.message}`);
   return problems.length > 0 ? 1 : 0;
 }
