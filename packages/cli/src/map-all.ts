@@ -2,7 +2,12 @@ import { existsSync } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { parse } from "yaml";
-import { assistantTier, readProbes, rulesLacking } from "@maycombhq/assistant-files";
+import {
+  ASSISTANT_FORMATS,
+  assistantTier,
+  readProbes,
+  rulesLacking,
+} from "@maycombhq/assistant-files";
 import { currentPromptLimit, type AiRequest, type AiRuntime } from "@maycombhq/ai";
 import {
   ensureLocalIgnore,
@@ -217,6 +222,19 @@ export function modelModeAllowed(op: Pick<OrgPack, "runtime">): boolean {
     !!rt.adapters.model &&
     rt.adapters.model.type !== "mock"
   );
+}
+
+/**
+ * ADR 0170: who reads a repo here, as runtime.yaml (and atticus probe) say: its name, and whether
+ * `atticus map <repo>` runs the waiting loop of map --all for it: Copilot, or any reader that
+ * takes a line pasted per part, in a metarepo (the loop's state is the metarepo's).
+ */
+export async function mapReader(root: string): Promise<{ name: string; loop: boolean }> {
+  const op = await loadOrgPack(orgPackDirOf(root));
+  const tier = assistantTier(op.runtime, { probes: (await readProbes(root)).results });
+  const name = tier.assistant ? ASSISTANT_FORMATS[tier.assistant].name : "no assistant";
+  const paste = tier.tier !== "off" && (tier.assistant === "copilot" || tier.tier !== 1);
+  return { name, loop: paste && isMetarepo(root) };
 }
 
 /** The model's limit: --max-tokens, else runtime.yaml's maxInput, else the probe's; never a guess. */

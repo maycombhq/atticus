@@ -830,6 +830,74 @@ describe("atticus map --all --force: the named repos read whole again (ADR 0170)
   });
 });
 
+describe("atticus map <repo> under Copilot runs the same waiting loop (ADR 0170)", () => {
+  const cli = async (args: string[]) => {
+    const out: string[] = [];
+    const code = await main(
+      args,
+      { out: (l) => out.push(l), err: (l) => out.push(`ERR ${l}`) },
+      { quiet: true },
+    );
+    return { code, text: out.join("\n"), out };
+  };
+
+  it("plans and waits on the one repo when runtime.yaml's assistant is Copilot (the default)", async () => {
+    const { root } = ledgerEstate();
+    const r = await cli([
+      "map",
+      "forge-ledger",
+      "--dry-run",
+      "--max-tokens",
+      "100000",
+      "--root",
+      root,
+    ]);
+    expect(r.code, r.text).toBe(0);
+    expect(r.out[0]).toBe(
+      "The estate at 100,000 tokens a prompt (--max-tokens), read by Copilot Chat in agent mode: you paste one line per part:",
+    );
+    expect(r.text).toMatch(/ {2}1\. forge-ledger: read, not read yet; 1 part/);
+    expect(r.text).not.toContain("forge-notify");
+    // --force too: the repo read whole again, in the same loop.
+    ledgerFacts(root, SHA("a"));
+    const f = await cli([
+      "map",
+      "forge-ledger",
+      "--force",
+      "--dry-run",
+      "--max-tokens",
+      "100000",
+      "--root",
+      root,
+    ]);
+    expect(f.text).toMatch(/1\. forge-ledger: read, --force: read whole/);
+  });
+
+  it("says plainly, when the batch hand-off is taken, what to run if the person uses Copilot", async () => {
+    const { root, head } = ledgerEstate();
+    write(
+      root,
+      "org-pack/runtime.yaml",
+      "schemaVersion: 2\nassistants: { allowed: [claude-code], default: claude-code }\n",
+    );
+    const r = await cli([
+      "map",
+      "forge-ledger",
+      "--commit",
+      head,
+      "--max-tokens",
+      "100000",
+      "--root",
+      root,
+    ]);
+    expect(r.code, r.text).toBe(0);
+    expect(r.out[0]).toBe(
+      "runtime.yaml says Claude Code; if you use Copilot, run atticus map --all --repos forge-ledger (it waits and copies each line).",
+    );
+    expect(r.text).toMatch(/Handed batch 1 of \d+ to your assistant/);
+  });
+});
+
 describe("atticus map --all --gaps (ADR 0161, R2)", () => {
   it("plans each read repo's gaps, gives /atticus-map <repo> --gaps, and moves on once its facts are verified", async () => {
     const { root, dir, head } = ledgerEstate();
