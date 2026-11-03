@@ -655,6 +655,13 @@ export function topUpWords(sets: readonly RuleSet[]): string {
   return `This is a top-up (ADR 0167): the repo was read before these reading rules were added (${sets.join(", ")}), so read these files only for what the rules below ask, and nothing else. The facts already kept are listed by id: don't write them again, unless you add what these rules ask of one (a field's \`type\` and \`required\`, a call's \`auth\` or \`tls\` with its cite), and then under the same \`id\`, the whole fact.`;
 }
 
+/**
+ * ADR 0169: what to do with the model classes a read is told are reached (a list in a data
+ * block beside it): write their fields; and never sweep an entry point away as reviewed.
+ */
+export const MODELS_RULE =
+  "The model classes listed as reached are the request, response and message classes the entry points and calls named in the list take, return, send or receive: read each and write a field fact for each of their fields (name, type, required, side), owned by that entry or call, cited on the field's declaration. Never mark an entry point (a controller, route, handler or listener) or a folder holding one reviewed with nothing to record: read it.";
+
 export function mapBatchInstructions(o: {
   repo: string;
   commit: string;
@@ -694,6 +701,8 @@ export function mapBatchInstructions(o: {
    * these sets' parts go in, and the facts already kept are read for what these rules add to them.
    */
   sets?: readonly RuleSet[];
+  /** ADR 0169: the batch holds model classes the read reaches, listed beside it. */
+  models?: boolean;
 }): string {
   return [
     `Read the repo ${o.repo} at commit ${o.commit} into facts: what it answers to and calls, the data it reads and writes, the fields crossing those boundaries, its deployment and the config it depends on.`,
@@ -709,6 +718,7 @@ export function mapBatchInstructions(o: {
     factRulesFor(o.kinds, o.frameworks, o.sets),
     "- Cite only the numbered lines in this prompt. A reference may name a fact already kept (listed below) or one in your answer. Don't write a kept fact again, unless you correct it under the same `id`.",
     "- When these files hold no fact, answer with nothing.",
+    ...(o.models ? [`- ${MODELS_RULE}`] : []),
     ...(o.askAbout ? [ABOUT_RULE] : []),
     ...(o.taught ? ["", o.taught] : []),
     ...(o.notes ? ["", o.notes] : []),

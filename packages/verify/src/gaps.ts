@@ -1,3 +1,4 @@
+import { reachOrder } from "./batches.js";
 import { lineRanges } from "./read-plan.js";
 
 /**
@@ -94,6 +95,11 @@ export function planGaps(
   from: GapsFrom,
   size: (file: string) => { tokens: number; lines: number } | undefined,
   room: number,
+  /**
+   * ADR 0169: read these first (after the build and config files), in this order: the entry
+   * points and clients, then the model classes they reach. Without it, in path order.
+   */
+  o: { first?: readonly string[] } = {},
 ): GapPlan {
   const whole = new Set(from.unknown ?? []);
   const lines = new Map<string, Map<number, string[]>>();
@@ -128,7 +134,8 @@ export function planGaps(
 
   const gone: string[] = [];
   const reads: GapRead[] = [];
-  const files = [...new Set([...whole, ...lines.keys()])].sort(byPath);
+  const named = [...new Set([...whole, ...lines.keys()])].sort(byPath);
+  const files = o.first?.length ? reachOrder(named, o.first) : named;
   for (const file of files) {
     const sz = size(file);
     if (!sz) {

@@ -39,6 +39,8 @@ export interface BatchPlan {
    * model is too small for this repo's batches.
    */
   leastRoom: number;
+  /** ADR 0169: the model files `reach.leaveOut` left out (no entry point or call reaches them). */
+  notReached: string[];
 }
 
 export interface PlanOptions {
@@ -54,6 +56,13 @@ export interface PlanOptions {
   overhead?: (kinds: readonly FileKind[]) => number;
   /** The org pack's conventions (ADR 0147): what counts as source, and the API spec folders. */
   conventions?: Conventions;
+  /**
+   * ADR 0169: reachable first. `first` (the entry points and clients, then the model files they
+   * reach, in that order) is read right after the build and config files, before the rest in
+   * reading order; `leaveOut` (the model files nothing reaches) isn't read, and is returned as
+   * `notReached`.
+   */
+  reach?: { first: readonly string[]; leaveOut: readonly string[] };
 }
 
 // A build file a framework is declared in (ADR 0124 addendum A-framework): Gemfile, a gemspec,
@@ -269,6 +278,8 @@ export function planBatches(source: FileSource, o: PlanOptions): BatchPlan {
   const rules = readRulesOf(o.conventions);
   const excludeRes = (o.exclude ?? []).map(globToRegExp);
   const excluded: string[] = [];
+  const leaveOut = new Set(o.reach?.leaveOut ?? []);
+  const notReached: string[] = [];
   const paths: string[] = [];
   const texts = new Map<string, string>();
   for (const p of source.list()) {
@@ -281,6 +292,10 @@ export function planBatches(source: FileSource, o: PlanOptions): BatchPlan {
       continue;
     }
     if (!text.trim()) continue;
+    if (leaveOut.has(p)) {
+      notReached.push(p);
+      continue;
+    }
     paths.push(p);
     texts.set(p, text);
   }
@@ -297,7 +312,7 @@ export function planBatches(source: FileSource, o: PlanOptions): BatchPlan {
   const slices: (FileSlice & { kinds: FileKind[] })[] = [];
   let lines = 0;
   let leastRoom = room;
-  for (const path of readingOrder(paths)) {
+  for (const path of reachOrder(paths, o.reach?.first)) {
     const kinds = fileKinds(path, rules);
     const left = room - overhead(kinds);
     leastRoom = Math.min(leastRoom, left);
@@ -351,5 +366,20 @@ export function planBatches(source: FileSource, o: PlanOptions): BatchPlan {
     batches,
     excluded: excluded.sort(),
     leastRoom,
+    notReached: notReached.sort(),
   };
+}
+
+/**
+ * ADR 0169: the reading order with `first` read right after the build and config files (rank 0
+ * and 1), in its own order; the rest in reading order. Without `first`, the reading order.
+ */
+export function reachOrder(paths: readonly string[], first?: readonly string[]): string[] {
+  const order = readingOrder(paths);
+  if (!first?.length) return order;
+  const has = new Set(paths);
+  const head = order.filter((p) => readingRank(p) <= 1);
+  const lead = [...new Set(first)].filter((p) => has.has(p) && readingRank(p) > 1);
+  const taken = new Set([...head, ...lead]);
+  return [...head, ...lead, ...order.filter((p) => !taken.has(p))];
 }

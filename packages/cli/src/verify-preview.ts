@@ -160,6 +160,7 @@ export async function verifyWritePreview(
     ...(inputs.estate ? { estate: inputs.estate } : {}),
     conventions: inputs.conventions,
     notes: inputs.notes,
+    notReached: inputs.notReached,
   });
 
   const kept = new Map(report.accepted.map((f) => [f.id, f] as const));

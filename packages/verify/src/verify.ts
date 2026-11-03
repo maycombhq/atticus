@@ -34,6 +34,7 @@ import { isDataFile, isLocaleBundle } from "./not-product.js";
 import { DEFAULT_READ_RULES, readRulesOf, type ReadRules } from "./conventions.js";
 import { pageRouteMatches } from "./pages.js";
 import { isGlob, lineRangeOf, type ReviewedEntry } from "./reviewed.js";
+import { isEntryPointFile } from "./reachable.js";
 import { methodUnseenOf, type MethodUnseen } from "./method.js";
 import { insideRepo, type FileSource } from "./source.js";
 import {
@@ -161,6 +162,13 @@ export interface Coverage {
   unknown: string[];
   /** Source files left out by an accepted exclusion rule (generated code, vendored copies). */
   excluded: string[];
+  /**
+   * ADR 0169: model files the read plan left out because no entry point, call or field fact
+   * reaches them (`notReached` in the read plan), that no fact cites and no reviewed line names:
+   * counted apart, neither unknown nor reviewed, and out of the ratio. `atticus map <repo>
+   * --models all` reads them.
+   */
+  notReached: string[];
   /**
    * read / (read + reviewed + unknown), three decimals; 1 when the repo has no source files.
    * What facts show, so a reviewed file never raises it.
@@ -335,6 +343,12 @@ export interface VerifyOptions {
    * path must be a file of the repo, or a glob matching one; coverage counts them apart.
    */
   reviewed?: readonly ReviewedEntry[];
+  /**
+   * ADR 0169: the model files the read plan left out (no entry point or call reaches them).
+   * Coverage counts them apart (`coverage.notReached`) unless a fact cites one or a reviewed line
+   * names it.
+   */
+  notReached?: readonly string[];
   /**
    * Called once per fact and once per file of the repo (ADR 0124 addendum A-room): the caller's
    * chance to stop the run with words of its own while it still can. `atticus verify` passes a
@@ -1150,6 +1164,18 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
       else refuse("is not in the repo at this commit; name a file you read");
       continue;
     }
+    // ADR 0169: a glob never stands for an entry point no fact cites. A read short of room marked
+    // whole folders reviewed and swept the controllers away with the DTOs beside them; one file
+    // reviewed by its own path is the reader's word about that file, and still holds.
+    const entryPoints = re
+      ? matched.filter((p) => isSource.has(p) && !touched.has(p) && isEntryPointFile(p))
+      : [];
+    if (entryPoints.length) {
+      refuse(
+        `covers ${entryPoints[0]}, an entry point (a controller, route, handler or listener)${entryPoints.length > 1 ? ` and ${entryPoints.length - 1} more` : ""} no fact cites: read it, and write its entries and the fields of the classes it takes and returns; never mark an entry point reviewed with a glob (name it alone if it truly holds nothing)`,
+      );
+      continue;
+    }
     const files = matched.filter((p) => isSource.has(p) && !touched.has(p)).sort();
     for (const p of files) reviewedSet.add(p);
     reviewed.push({ path: r.path, why: r.why, files });
@@ -1157,7 +1183,13 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
   }
   const read = sources.filter((p) => touched.has(p)).sort();
   const reviewedFiles = sources.filter((p) => reviewedSet.has(p)).sort();
-  const unknown = sources.filter((p) => !touched.has(p) && !reviewedSet.has(p)).sort();
+  const leftOut = new Set(o.notReached ?? []);
+  const notReached = sources
+    .filter((p) => leftOut.has(p) && !touched.has(p) && !reviewedSet.has(p))
+    .sort();
+  const unknown = sources
+    .filter((p) => !touched.has(p) && !reviewedSet.has(p) && !leftOut.has(p))
+    .sort();
   const total = read.length + reviewedFiles.length + unknown.length;
   const ratio = total === 0 ? 1 : Math.round((read.length / total) * 1000) / 1000;
 
@@ -1200,7 +1232,14 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
           : r,
       )
       .sort((a, b) => (a.fact.id < b.fact.id ? -1 : a.fact.id > b.fact.id ? 1 : 0)),
-    coverage: { read, reviewed: reviewedFiles, unknown, excluded: excluded.sort(), ratio },
+    coverage: {
+      read,
+      reviewed: reviewedFiles,
+      unknown,
+      excluded: excluded.sort(),
+      notReached,
+      ratio,
+    },
     redacted,
     quotesDropped,
     carried: accepted.flatMap((f) =>

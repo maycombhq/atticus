@@ -10,6 +10,7 @@ import {
   writeFileAtomic,
   type Fact,
 } from "@maycombhq/core";
+import { globToRegExp } from "@maycombhq/sdk";
 import { lineRangeOf } from "@maycombhq/verify";
 import { readReviewed } from "./facts-files.js";
 
@@ -100,6 +101,21 @@ const TopUp = z.strictObject({
 });
 export type TopUpT = z.infer<typeof TopUp>;
 
+/** ADR 0169: how a read takes model classes: those its entry points and calls reach, or all. */
+export const MODELS_MODES = ["reachable", "all"] as const;
+export type ModelsMode = (typeof MODELS_MODES)[number];
+
+/**
+ * ADR 0169: the model files a read leaves out because no entry point, call or field fact
+ * reaches them, said, never silent: why, the files and their tokens (an estimate).
+ */
+const NotReached = z.strictObject({
+  why: z.string().min(1),
+  files: z.array(z.string().min(1)),
+  tokens: z.number().int().nonnegative(),
+});
+export type NotReachedT = z.infer<typeof NotReached>;
+
 export const ReadPlanFile = z.strictObject({
   /** 2 since ADR 0141 (a v1 file reads as v2: `migrateReadPlan`). */
   schemaVersion: z.literal(2),
@@ -132,6 +148,13 @@ export const ReadPlanFile = z.strictObject({
   rules: RulesRecord.optional(),
   /** ADR 0167: a top-up for the rule sets the read lacked, under way. */
   topUp: TopUp.optional(),
+  /**
+   * ADR 0169: `all` when a person asked for every model class (`--models all`); left out, the
+   * read takes those its entry points and calls reach.
+   */
+  models: z.enum(MODELS_MODES).optional(),
+  /** ADR 0169: the model files the read leaves out, nothing reaching them. */
+  notReached: NotReached.optional(),
 });
 export type ReadPlanFileT = z.infer<typeof ReadPlanFile>;
 export type ReadPlanReport = z.infer<typeof Reported>;
@@ -162,6 +185,8 @@ interface Unit {
   deep: boolean;
   /** A range of one file too big for a session: done by a cited line of its own, past the overlap (R4), or by its own path. */
   range?: { file: string; from: number; to: number };
+  /** ADR 0169: one file named by its path (a reached model class, an entry point): done by itself. */
+  file?: string;
 }
 
 /**
@@ -176,7 +201,7 @@ function unitOf(glob: string): Unit {
   if (glob.endsWith("/**")) return { glob, dir: glob.slice(0, -3), deep: true };
   if (glob === "*") return { glob, dir: "", deep: false };
   if (glob.endsWith("/*")) return { glob, dir: glob.slice(0, -2), deep: false };
-  return { glob, dir: glob.replace(/\/?[^/]*$/, ""), deep: false };
+  return { glob, dir: glob.replace(/\/?[^/]*$/, ""), deep: false, file: glob };
 }
 
 /** The folder a covered path sits in; a reviewed glob stands for its own folder, and below. */
@@ -186,6 +211,7 @@ function folderOf(path: string): { dir: string; deep: boolean } {
   return { dir: path.slice(0, star).replace(/\/$/, ""), deep: true };
 }
 
+const isGlobPath = (p: string) => /[*?]/.test(p);
 const under = (dir: string, of: string) => of === "" || dir === of || dir.startsWith(`${of}/`);
 
 /**
@@ -250,6 +276,9 @@ export async function writeReadPlan(
     reported?: ReadPlanFileT["reported"];
     /** ADR 0167: the rules the read is (or was) given. */
     rules?: ReadPlanFileT["rules"];
+    /** ADR 0169: the models asked for, and the model files left out. */
+    models?: ModelsMode;
+    notReached?: NotReachedT;
   },
 ): Promise<ReadPlanFileT> {
   const plan: ReadPlanFileT = {
@@ -267,12 +296,56 @@ export async function writeReadPlan(
     })),
     ...(o.reported?.length ? { reported: [...o.reported] } : {}),
     ...(o.rules ? { rules: { hash: o.rules.hash, sets: [...o.rules.sets] } } : {}),
+    ...(o.models === "all" ? { models: "all" as const } : {}),
+    ...(o.notReached?.files.length ? { notReached: o.notReached } : {}),
   };
   await saveReadPlan(root, plan);
   return plan;
 }
 
 const stamp = () => new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+
+/**
+ * ADR 0169: record in a repo's read plan which model files the read leaves out (none: the
+ * record goes) and the models asked for, making a plan with no parts when there is none yet.
+ * Nothing is written when the plan already says so.
+ */
+export async function recordNotReached(
+  root: string,
+  repo: string,
+  o: { commit: string; session: number; models: ModelsMode; notReached?: NotReachedT },
+): Promise<void> {
+  const plan = await loadReadPlan(root, repo);
+  const {
+    notReached: _n,
+    models: _m,
+    ...rest
+  } = plan ?? {
+    schemaVersion: 2 as const,
+    repo,
+    commit: o.commit,
+    session: o.session,
+    plannedAt: stamp(),
+    parts: [],
+  };
+  const next: ReadPlanFileT = {
+    ...rest,
+    ...(o.models === "all" ? { models: "all" as const } : {}),
+    ...(o.notReached?.files.length ? { notReached: o.notReached } : {}),
+  };
+  if (plan && JSON.stringify(plan) === JSON.stringify(next)) return;
+  if (!plan && !next.notReached && !next.models) return;
+  await saveReadPlan(root, next);
+}
+
+/** ADR 0169: the models mode a command uses: the one asked for, else the plan's, else reachable. */
+export async function modelsModeOf(
+  root: string,
+  repo: string,
+  asked: ModelsMode | undefined,
+): Promise<ModelsMode> {
+  return asked ?? (await loadReadPlan(root, repo))?.models ?? "reachable";
+}
 
 /** A repo's read plan as it is on file (a v1 plan as v2), or undefined when there is none or it doesn't read. */
 export async function loadReadPlan(root: string, repo: string): Promise<ReadPlanFileT | undefined> {
@@ -398,6 +471,13 @@ function progressOf(
           [...of.reviewed].some((c) => folderOf(c).deep && under(u.dir, folderOf(c).dir))
         );
       }
+      // ADR 0169: a file named alone is done when a fact cites it or a reviewed line names it,
+      // not when another file of its folder is.
+      if (u.file)
+        return (
+          of.paths.includes(u.file) ||
+          [...of.reviewed].some((c) => isGlobPath(c) && globToRegExp(c).test(u.file!))
+        );
       return covered.some((c) =>
         u.deep ? under(c.dir, u.dir) : c.dir === u.dir || (c.deep && under(u.dir, c.dir)),
       );
