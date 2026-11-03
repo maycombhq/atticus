@@ -405,6 +405,31 @@ describe("atticus map --all under Copilot: one line per part, waited for (ADR 01
     expect((await dryRun(root)).items[0]!.parts[0]!.part).toBe(2);
   });
 
+  it("counts the parts the same in the summary and in each part's header when a later part is read already", async () => {
+    const { root, dir } = ledgerEstate({ big: true });
+    const whole = (await dryRun(root)).items[0]!;
+    expect(whole.total).toBeGreaterThan(2);
+    // The last part is accounted for already (an earlier session read it): one fewer to read.
+    mkdirSync(join(root, "facts"), { recursive: true });
+    review(root, dir, whole.parts.at(-1)!.paths);
+    const plan = await dryRun(root);
+    const item = plan.items[0]!;
+    const left = item.parts.length;
+    expect(left).toBe(whole.total - 1);
+    const clock = fakeClock();
+    const d = deps(clock, { input: typed(clock, [{ at: 1, line: "q" }]) });
+    const o = io();
+    expect(await mapAllCommand(root, { maxTokens: LIMIT, mode: "copilot" }, o.io, d)).toBe(0);
+    const text = o.text();
+    // The summary says how many are left and of how many, and the header counts the same way.
+    expect(text).toContain(
+      `In all: 1 repo, ${left} parts to read (of ${whole.total} planned; 1 is read already)`,
+    );
+    expect(text).toContain(
+      `===== forge-ledger, part 1 of ${whole.total}, 1 of the ${left} to read (repo 1 of 1) =====`,
+    );
+  });
+
   it("Ctrl+C stops cleanly after the step under way, saving where it stands", async () => {
     const { root } = ledgerEstate();
     const ac = new AbortController();
