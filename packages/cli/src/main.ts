@@ -1684,8 +1684,9 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
       estimate: values.estimate === true,
       gaps: values.gaps === true,
       rules: values.rules === true,
-      // ADR 0161: with --gaps, the rest of one part of the read plan.
-      ...(values.gaps === true &&
+      // ADR 0161: with --gaps, the rest of one part of the read plan; ADR 0170: with --estimate
+      // (as /atticus-map <repo> --part n runs it), that part whole.
+      ...((values.gaps === true || values.estimate === true) &&
       Number.isInteger(Number(text(values.part))) &&
       Number(text(values.part)) > 0
         ? { part: Number(text(values.part)) }

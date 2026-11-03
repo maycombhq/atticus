@@ -23,7 +23,13 @@ import type { Output } from "./commands.js";
 import { estateFreshness, type FreshRepo } from "./estate-fresh.js";
 import { checkoutOf, conventionsAt, excludesOf, headOf } from "./facts-files.js";
 import { mapCommand, mapStateOf } from "./map-commands.js";
-import { loadReadPlan, readPlanProgress, type ModelsMode } from "./map-parts.js";
+import {
+  loadReadPlan,
+  partUnaccounted,
+  readPlanProgress,
+  type ModelsMode,
+  type Unaccounted,
+} from "./map-parts.js";
 import { plannedTopUp, recordRulesNow, ruleSetsOfFiles } from "./map-rules.js";
 import { isMetarepo, notMetarepo } from "./metarepo-guard.js";
 import { onboardingQueue } from "./onboarding-queue.js";
@@ -65,8 +71,18 @@ export interface MapAllOptions {
   maxParts?: number;
   /** Model mode: stop once this many tokens are spent (the runtime's count, else the prompts'). */
   budgetTokens?: number;
-  /** Copilot: minutes the facts may stand still before Atticus says the read seems to have stopped. */
+  /**
+   * Copilot: minutes the facts may stand still before Atticus stops waiting (ADR 0170), saying so
+   * once and how to carry on; 30 when not given.
+   */
   idleMinutes?: number;
+  /**
+   * ADR 0170: read the repos (all, or --repos) whole again, at a fresh read plan at the limit;
+   * the facts on file stay, as already kept, as `atticus map <repo> --force` keeps them.
+   */
+  force?: boolean;
+  /** The command that carries on, as said when the run stops; `atticus map --all` and its flags by default. */
+  resumeAs?: string;
   /**
    * ADR 0169: the model classes each read takes: those its entry points and calls reach (the
    * default), or all. Recorded in each repo's read plan, so the sessions it gives keep it.
@@ -126,6 +142,8 @@ export interface PlanItem {
   batches?: number;
   /** ADR 0167: a top-up's rule sets, those the read lacked that some file of it is read for. */
   sets?: string[];
+  /** ADR 0170: read whole again (--force), the facts on file kept as already kept. */
+  force?: true;
 }
 
 export interface MapAllPlan {
@@ -145,6 +163,11 @@ interface RepoState {
   parts: Record<string, { retries: number; state?: PartEnd }>;
   /** The gaps pass (which the facts can't show was done) or the carry, done at `commit`. */
   done?: true;
+  /**
+   * ADR 0170: a --force read, whose parts the facts can't show are read again (they were read
+   * before): the parts done are these, at `commit`.
+   */
+  force?: true;
 }
 
 export interface MapAllState {
@@ -159,7 +182,7 @@ export const MAP_ALL_STATE_REL = ".atticus/map-all/state.json";
 const statePath = (root: string) => join(root, ".atticus", "map-all", "state.json");
 
 const REMIND_MS = 10 * 60_000;
-const IDLE_MINUTES = 15;
+const IDLE_MINUTES = 30;
 const POLL_MS = 3000;
 const RETRIES = 3;
 
@@ -264,6 +287,8 @@ async function partsOf(
   limit: number,
   git: GitRunner | undefined,
   models?: ModelsMode,
+  /** ADR 0170 (--force): every part is read again, but those this run's state has done. */
+  force?: { done: ReadonlySet<number> },
 ): Promise<{ parts: PlanPart[]; total: number; tokens: number; batches?: number } | string> {
   const io = captured();
   const code = await mapCommand(
@@ -295,7 +320,9 @@ async function partsOf(
   const states = r.parts.plan?.parts ?? [];
   const parts = planned
     .map((p, i) => ({ part: i + 1, total: planned.length, ...p }))
-    .filter((p) => states.find((s) => s.part === p.part)?.state !== "done");
+    .filter((p) =>
+      force ? !force.done.has(p.part) : states.find((s) => s.part === p.part)?.state !== "done",
+    );
   return {
     parts,
     total: planned.length,
@@ -371,8 +398,14 @@ export async function planEstate(
   const fresh = await estateFreshness(root, { repos: ids, ...(c.git ? { git: c.git } : {}) });
   const byId = new Map(fresh.repos.map((r) => [r.repo, r]));
   const skipped: MapAllPlan["skipped"] = [];
-  const todo: { repo: string; kind: ItemKind; commit: string; why: string; started?: boolean }[] =
-    [];
+  const todo: {
+    repo: string;
+    kind: ItemKind;
+    commit: string;
+    why: string;
+    started?: boolean;
+    force?: true;
+  }[] = [];
   for (const repo of ids) {
     const f = byId.get(repo);
     const commit = await commitOf(root, repo, f);
@@ -381,6 +414,21 @@ export async function planEstate(
       continue;
     }
     const state = f?.state ?? "not-read";
+    if (o.force) {
+      // ADR 0170: read whole again, whatever its state; the facts on file stay, as already kept.
+      todo.push({
+        repo,
+        kind: "read",
+        commit,
+        why:
+          state === "not-read"
+            ? "--force: read whole"
+            : "--force: read whole again, the facts on file kept as already kept",
+        ...(state === "not-read" ? {} : { started: true }),
+        force: true,
+      });
+      continue;
+    }
     if (o.gaps) {
       if (state === "not-read")
         skipped.push({ repo, why: "not read yet: the gaps pass follows a read" });
@@ -476,6 +524,7 @@ export async function planEstate(
       commit: t.commit,
       why: t.why,
       ...(production.has(t.repo) ? {} : { prototype: true as const }),
+      ...(t.force ? { force: true as const } : {}),
     };
     if (t.kind === "carry") {
       items.push({ ...base, parts: [], total: 0, tokens: 0 });
@@ -510,7 +559,15 @@ export async function planEstate(
       });
       continue;
     }
-    const p = await partsOf(root, t.repo, t.commit, c.limit, c.git, o.models);
+    const p = await partsOf(
+      root,
+      t.repo,
+      t.commit,
+      c.limit,
+      c.git,
+      o.models,
+      t.force ? { done: forcedDone(t.repo, t.commit) } : undefined,
+    );
     if (typeof p === "string") {
       skipped.push({ repo: t.repo, why: p });
       continue;
@@ -529,6 +586,17 @@ export async function planEstate(
     items.push({ ...base, ...p });
   }
   return { limit: c.limit, limitFrom: c.limitFrom, mode: c.mode, items, skipped };
+
+  /** ADR 0170: the parts of a --force read this run's state has done at `commit`. */
+  function forcedDone(repo: string, commit: string): Set<number> {
+    const r = state?.repos[repo];
+    if (!r?.force || !sameCommit(r.commit, commit)) return new Set();
+    return new Set(
+      Object.entries(r.parts)
+        .filter(([, p]) => p.state === "done")
+        .map(([n]) => Number(n)),
+    );
+  }
 
   function isDone(repo: string, commit: string) {
     const r = state?.repos[repo];
@@ -608,6 +676,27 @@ async function snapOf(root: string, repo: string): Promise<Snap> {
 const sameSnap = (a: Snap, b: Snap) =>
   a.facts === b.facts && a.reviewed === b.reviewed && a.verify === b.verify;
 
+/**
+ * ADR 0170: what the reader has written, in a form a verify run leaves as it is (verify rewrites
+ * the facts file, so its time says nothing): each fact's id and the line it cites, and each
+ * reviewed line. A --force part is written for once this moves.
+ */
+async function writtenOf(root: string, repo: string): Promise<string> {
+  const dir = factsDirOf(root);
+  const facts = await readFile(join(dir, `${repo}.jsonl`), "utf8").catch(() => "");
+  const p = facts.trim() ? parseFacts(facts) : undefined;
+  const ids = (p?.ok ? p.facts : []).map((f) => {
+    const c = (f as { cite?: { file?: string; line?: number } }).cite;
+    return `${f.id}|${c?.file ?? ""}:${c?.line ?? ""}`;
+  });
+  const reviewed = (await readFile(join(dir, `${repo}.reviewed.jsonl`), "utf8").catch(() => ""))
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+  // Reviewed lines as written: a line written again is the reader's word again.
+  return JSON.stringify([[...new Set(ids)].sort(), reviewed]);
+}
+
 /** Facts of `commit` in the facts file. */
 async function factsAt(root: string, repo: string, commit: string): Promise<number> {
   const text = await readFile(join(factsDirOf(root), `${repo}.jsonl`), "utf8").catch(() => "");
@@ -635,8 +724,28 @@ async function settled(root: string, repo: string, commit: string, s: Snap, sinc
   }
 }
 
-/** Whether what the part reads is accounted for in the facts on disk. */
-async function covered(root: string, item: PlanItem, part: PlanPart, first: Snap, now: Snap) {
+/**
+ * Whether what the part reads is accounted for in the facts on disk. ADR 0170: a part of a read
+ * plan is, once verify's coverage leaves no file under it unaccounted (`unknown`, the coverage of
+ * the verify that just ran, or the stamp it put in the read plan): the same count verify says.
+ */
+async function covered(
+  root: string,
+  item: PlanItem,
+  part: PlanPart,
+  first: Snap,
+  now: Snap,
+  unknown?: readonly string[],
+  /** ADR 0170: whether the reader wrote anything since the line was given (`writtenOf`). */
+  wrote?: boolean,
+) {
+  const moved = now.facts !== first.facts || now.reviewed !== first.reviewed;
+  if (item.force) {
+    // Read before: done once something was written for it since it was given, and (in parts)
+    // verify leaves nothing under it.
+    if (!(wrote ?? moved)) return false;
+    return item.total <= 1 || (!!unknown && !leftOf(part, unknown).length);
+  }
   if (item.kind === "rules") {
     // ADR 0167: the session is done once a verify passed after it was given (or none is left).
     const plan = await loadReadPlan(root, item.repo);
@@ -645,12 +754,32 @@ async function covered(root: string, item: PlanItem, part: PlanPart, first: Snap
   }
   if (item.total > 1) {
     const p = await readPlanProgress(root, item.repo);
-    return p?.parts.find((x) => x.part === part.part)?.state === "done";
+    const s = p?.parts.find((x) => x.part === part.part);
+    if (s?.state === "done") return true;
+    return !!s && !!unknown && !partUnaccounted(s, unknown).length;
   }
-  const moved = now.facts !== first.facts || now.reviewed !== first.reviewed;
   if (item.kind === "read")
     return moved || now.reviewed !== undefined || (await factsAt(root, item.repo, item.commit)) > 0;
   return moved;
+}
+
+/** What of a part verify's coverage leaves unaccounted, its line ranges counted by file. */
+const leftOf = (part: PlanPart, unknown: readonly string[]): Unaccounted[] =>
+  partUnaccounted({ paths: part.paths, left: [] }, unknown);
+
+/** `validation/** (3 files: A.java, B.java, C.java)`: each unit left, and its files under it. */
+export function unaccountedWords(left: readonly Unaccounted[], shown = 5): string {
+  return left
+    .map((u) => {
+      if (!u.files.length) return `${u.glob} (no fact cites a line of it yet)`;
+      const dir = u.glob.replace(/\/?\*\*?$/, "");
+      const rel = u.files.map((f) =>
+        u.glob.includes("*") && dir && f.startsWith(`${dir}/`) ? f.slice(dir.length + 1) : f,
+      );
+      const more = rel.length > shown ? `, and ${rel.length - shown} more` : "";
+      return `${u.glob} (${plural(u.files.length, "file")}: ${rel.slice(0, shown).join(", ")}${more})`;
+    })
+    .join("; ");
 }
 
 // ---------------------------------------------------------------- the run
@@ -735,6 +864,10 @@ export async function mapAllCommand(
     );
     return 2;
   }
+  if (o.force && (o.gaps || o.stale)) {
+    io.err("--force reads the repos whole again; it doesn't go with --stale or --gaps.");
+    return 2;
+  }
   if (mode === "model" && o.gaps) {
     io.err(
       "The gaps pass is a session for an assistant that opens files: run atticus map --all --gaps --mode hand-off and paste each line into Copilot Chat.",
@@ -782,9 +915,25 @@ export async function mapAllCommand(
   const stopped = () => deps.signal?.aborted === true;
   const repoState = (item: PlanItem): RepoState => {
     const r = st.repos[item.repo];
-    if (r && sameCommit(r.commit, item.commit) && r.kind === item.kind) return r;
-    return (st.repos[item.repo] = { commit: item.commit, kind: item.kind, parts: {} });
+    if (
+      r &&
+      sameCommit(r.commit, item.commit) &&
+      r.kind === item.kind &&
+      !!r.force === !!item.force
+    )
+      return r;
+    return (st.repos[item.repo] = {
+      commit: item.commit,
+      kind: item.kind,
+      parts: {},
+      ...(item.force ? { force: true as const } : {}),
+    });
   };
+  // ADR 0170: the command that carries on, said when the run stops waiting.
+  const resumeAs =
+    o.resumeAs ??
+    `atticus map --all${o.repos ? ` --repos ${o.repos.join(",")}` : ""}${o.stale ? " --stale" : ""}${o.gaps ? " --gaps" : ""}${o.force ? " --force" : ""}${o.models ? ` --models ${o.models}` : ""}${lim.from === "flag" ? ` --max-tokens ${limit}` : ""}${o.idleMinutes ? ` --idle ${o.idleMinutes}` : ""}`;
+  let idleStop = false;
   const partState = (item: PlanItem, part: number) =>
     (repoState(item).parts[String(part)] ??= { retries: 0 });
 
@@ -862,12 +1011,15 @@ export async function mapAllCommand(
 
   const interrupted = quit || stopped() || capHit;
   if (interrupted) {
-    io.out("");
-    io.out(
-      capHit
-        ? `Stopped at the cap (${o.maxParts !== undefined ? `--max-parts ${o.maxParts}` : ""}${o.maxParts !== undefined && o.budgetTokens !== undefined ? ", " : ""}${o.budgetTokens !== undefined ? `--budget-tokens ${o.budgetTokens}` : ""}): ${plural(totals.spent.prompts, "prompt")} run. atticus map --all carries on from here.`
-        : "Stopped. Where the estate stands is saved: atticus map --all carries on from here.",
-    );
+    // Stopped waiting at the idle limit: said once already, with how to carry on.
+    if (!idleStop) {
+      io.out("");
+      io.out(
+        capHit
+          ? `Stopped at the cap (${o.maxParts !== undefined ? `--max-parts ${o.maxParts}` : ""}${o.maxParts !== undefined && o.budgetTokens !== undefined ? ", " : ""}${o.budgetTokens !== undefined ? `--budget-tokens ${o.budgetTokens}` : ""}): ${plural(totals.spent.prompts, "prompt")} run. atticus map --all carries on from here.`
+          : "Stopped. Where the estate stands is saved: atticus map --all carries on from here.",
+      );
+    }
   } else if (totals.parts || totals.repos.size) {
     // The estate join, once, so every link is re-joined with every repo read (verify --all --write).
     io.out("");
@@ -908,19 +1060,21 @@ export async function mapAllCommand(
       item.total > 1
         ? `part ${part.part} of ${item.total}${item.parts.length < item.total && nth > 0 ? `, ${nth} of the ${item.parts.length} to read` : ""}`
         : "one session";
+    const named = item.total > 1 ? `part ${part.part} of ${item.total}` : "one session";
     const progress = item.total > 1 ? await readPlanProgress(root, item.repo) : undefined;
-    // A part after one not read yet: the estimate would name the earlier one, so the part's own
-    // files are planned as its rest (none of it read yet: all of it).
     // A part after one not read yet (or given again): the estimate would name another part, so
-    // the part's own files are planned as its rest (none of it read yet: all of it).
+    // the part's own files are planned as its rest (none of it read yet: all of it). ADR 0170: a
+    // --force read names each part by its number, as the facts say every one is read already.
     const first0 =
       item.kind === "rules"
         ? await rulesLine(item)
         : item.kind === "gaps"
           ? await gapsLine(item)
-          : ps.retries > 0 || (progress?.next && progress.next.part !== part.part)
-            ? ((await restLine(item, part)) ?? `/atticus-map ${item.repo}`)
-            : `/atticus-map ${item.repo}`;
+          : item.force
+            ? forceLine(item, part)
+            : ps.retries > 0 || (progress?.next && progress.next.part !== part.part)
+              ? ((await restLine(item, part)) ?? `/atticus-map ${item.repo}`)
+              : `/atticus-map ${item.repo}`;
     if (first0 === undefined) {
       io.out(`${item.repo}: no gaps left; nothing to read.`);
       return finishPart(item, part, ps);
@@ -928,14 +1082,14 @@ export async function mapAllCommand(
     if (first0 === "done") return finishPart(item, part, ps);
     let line: string = first0;
     await block(item, part, label, where, line, ps.retries);
+    let base = item.force ? await writtenOf(root, item.repo) : "";
     let first = await snapOf(root, item.repo);
     let since = first;
     let prev = first;
     let lastChange = clock.now();
     let lastRemind = clock.now();
     const started = clock.now();
-    let stuckSaid = false;
-    const idleMs = (o.idleMinutes ?? IDLE_MINUTES) * 60_000;
+    const idleMinutes = o.idleMinutes ?? IDLE_MINUTES;
     for (;;) {
       if (stopped()) {
         ps.state = "incomplete";
@@ -958,41 +1112,64 @@ export async function mapAllCommand(
       if (typed === "r") {
         const again = await retry(item, part, label, where);
         if (again === "done") return finishPart(item, part, ps);
+        if (item.force) base = await writtenOf(root, item.repo);
         first = await snapOf(root, item.repo);
         since = first;
         prev = first;
         lastChange = clock.now();
-        stuckSaid = false;
         continue;
       }
       const now = await snapOf(root, item.repo);
       if (!sameSnap(now, prev)) {
         lastChange = clock.now();
-        stuckSaid = false;
         prev = now;
       }
-      if (
-        (await settled(root, item.repo, item.commit, now, since)) &&
-        (await covered(root, item, part, first, now))
-      ) {
+      // The reader ran verify after its last write and it passed (it may have run verify --write
+      // itself): verify it as `atticus verify <repo> --write` does, and ask the same coverage
+      // whether the part is accounted for (ADR 0170).
+      if (await settled(root, item.repo, item.commit, now, since)) {
+        const wrote = item.force ? (await writtenOf(root, item.repo)) !== base : undefined;
         const v = await verifyStep(item);
+        const after = await snapOf(root, item.repo);
         if (
           v &&
           !v.rejected &&
-          (await covered(root, item, part, first, await snapOf(root, item.repo)))
+          (await covered(root, item, part, first, after, v.coverage.unknown, wrote))
         )
           return finishPart(item, part, ps);
-        io.out(
-          `Not done yet: ${v?.rejected ? `${plural(v.rejected, "fact")} rejected for the reader to fix` : "the part isn't accounted for in the facts yet"}. Still waiting (s + Enter skips, r + Enter gives the prompt again for what's left).`,
-        );
-        since = await snapOf(root, item.repo);
-        prev = since;
+        if (v?.rejected)
+          io.out(
+            `Not done yet: ${plural(v.rejected, "fact")} rejected for the reader to fix. Still waiting (s + Enter skips, r + Enter gives the prompt again for what's left).`,
+          );
+        else if (v && item.total > 1 && item.kind !== "rules") {
+          const left = await leftNow(item, part, v.coverage.unknown);
+          io.out(
+            left.length
+              ? `Still not covered in ${item.repo} ${named}: ${unaccountedWords(left)}. ${
+                  item.force
+                    ? `r + Enter gives the line again (${line}); `
+                    : `r + Enter gives a NEW chat only what is left of the part: these files, and any line verify lists as skipped under it (/atticus-map ${item.repo} --part ${part.part} --gaps); `
+                }s + Enter skips the part; q + Enter stops.`
+              : `Not done yet: nothing was written for ${item.repo} ${named} since its line was given. r + Enter gives the line again; s + Enter skips the part; q + Enter stops.`,
+          );
+        } else
+          io.out(
+            "Not done yet: the part isn't accounted for in the facts yet. Still waiting (s + Enter skips, r + Enter gives the prompt again for what's left).",
+          );
+        since = after;
+        prev = after;
+        lastRemind = clock.now();
       }
-      if (!stuckSaid && clock.now() - lastChange >= idleMs) {
+      // ADR 0170: never wait forever. After the idle limit with nothing written, say once that
+      // the run stopped waiting and how to carry on; the state is saved, so it resumes.
+      if (clock.now() - lastChange >= idleMinutes * 60_000) {
         io.out(
-          `Copilot seems to have stopped on ${item.repo} ${item.total > 1 ? `part ${part.part}` : "(its one session)"}. r + Enter: verify what it wrote and give the prompt again for what's left, in a NEW chat; s: skip; q: stop.`,
+          `Stopped waiting on ${item.repo} ${label}: nothing was written for ${plural(idleMinutes, "minute")} (--idle ${idleMinutes}). Where the estate stands is saved: ${resumeAs} carries on from here (it verifies what was written and gives the line again for what's left).`,
         );
-        stuckSaid = true;
+        ps.state = "incomplete";
+        idleStop = true;
+        await save();
+        return "quit";
       }
       if (clock.now() - lastRemind >= (deps.remindMs ?? REMIND_MS)) {
         io.out(
@@ -1012,12 +1189,36 @@ export async function mapAllCommand(
     ): Promise<"done" | "again"> {
       ps.retries++;
       await save();
+      if (item.force) {
+        // A forced part is read whole again: done once written for and accounted for, else the
+        // same line again.
+        const wrote = (await writtenOf(root, item.repo)) !== base;
+        const v = existsSync(join(factsDirOf(root), `${item.repo}.jsonl`))
+          ? await verifyStep(item)
+          : undefined;
+        if (
+          v &&
+          !v.rejected &&
+          (await covered(
+            root,
+            item,
+            part,
+            first,
+            await snapOf(root, item.repo),
+            v.coverage.unknown,
+            wrote,
+          ))
+        )
+          return "done";
+      }
       const rest =
         item.kind === "rules"
           ? await rulesLine(item)
           : item.kind === "gaps"
             ? await gapsLine(item)
-            : await restLine(item, part);
+            : item.force
+              ? forceLine(item, part)
+              : await restLine(item, part);
       if (rest === "done" || (rest === undefined && item.kind === "gaps")) return "done";
       line = rest ?? `/atticus-map ${item.repo}`;
       await block(item, part, label, where, line, ps.retries);
@@ -1031,10 +1232,29 @@ export async function mapAllCommand(
     }
   }
 
+  /** ADR 0170: what of the part verify's coverage leaves, its line ranges by the facts. */
+  async function leftNow(item: PlanItem, part: PlanPart, unknown: readonly string[]) {
+    if (item.force) return leftOf(part, unknown);
+    const s = (await readPlanProgress(root, item.repo))?.parts.find((x) => x.part === part.part);
+    return s ? partUnaccounted(s, unknown) : leftOf(part, unknown);
+  }
+
+  /** ADR 0170: a --force part's line: the repo, and the part by its number when read in parts. */
+  function forceLine(item: PlanItem, part: PlanPart): string {
+    return `/atticus-map ${item.repo}${item.total > 1 ? ` --part ${part.part}` : ""}`;
+  }
+
   /** The part is accounted for: say so and save. */
   async function finishPart(item: PlanItem, part: PlanPart, ps: { state?: PartEnd }) {
     ps.state = "done";
     if (item.kind === "gaps" || part.part === item.total) repoState(item).done = true;
+    // ADR 0170: a repo read whole again was read under the reading rules there are now.
+    if (
+      item.force &&
+      Object.keys(repoState(item).parts).length >= item.total &&
+      Object.values(repoState(item).parts).every((p) => p.state === "done")
+    )
+      await recordRulesNow(root, item.repo, item.commit);
     totals.parts++;
     totals.repos.add(item.repo);
     await save();
@@ -1126,7 +1346,11 @@ export async function mapAllCommand(
       `===== ${item.repo}, ${item.kind === "gaps" ? "the gaps pass" : item.kind === "rules" ? `the rules top-up${item.total > 1 ? `, ${label}` : ""}` : label} (${where})${retries ? `, given again (${retries})` : ""} =====`,
     );
     io.out(`In a NEW Copilot Chat (agent mode), run: ${line}`);
-    if (item.kind === "rules")
+    if (item.force)
+      io.out(
+        `${item.total > 1 ? `That chat reads part ${part.part} whole again: ${part.paths.join(", ")} (about ${tokensText(part.tokens)} tokens). ` : ""}The facts on file stay, as already kept: the chat names one by its id and doesn't write it again (one whose line changed it rewrites under the same id).`,
+      );
+    else if (item.kind === "rules")
       io.out(
         `That chat reads ${plural(part.files, "file")} again for the reading rules added since (${(item.sets ?? []).join(", ")}): ${part.paths.join(", ")} (about ${tokensText(part.tokens)} tokens).`,
       );
@@ -1174,7 +1398,11 @@ export async function mapAllCommand(
             maxTokens: limit,
             ...(o.models ? { models: o.models } : {}),
             ...(item.kind === "rules" ? { rules: true } : {}),
-            ...(resume ? { next: true } : before && !before.done ? { force: true } : {}),
+            ...(resume && !(item.force && attempt === 1)
+              ? { next: true }
+              : (item.force && attempt === 1) || (before && !before.done)
+                ? { force: true }
+                : {}),
           },
           io,
           { runtime: rt, ...(deps.git ? { git: deps.git } : {}) },
@@ -1224,7 +1452,7 @@ export async function mapAllCommand(
       repo: item.repo,
       ...(item.total > 1 ? { part: part.part, total: item.total } : {}),
       end,
-      command: `atticus map --all --repos ${item.repo}${o.gaps ? " --gaps" : ""} (or /atticus-map ${item.repo}${o.gaps ? " --gaps" : ""} in a new chat)`,
+      command: `atticus map --all --repos ${item.repo}${o.gaps ? " --gaps" : ""}${item.force ? " --force" : ""} (or /atticus-map ${item.repo}${o.gaps ? " --gaps" : item.force && item.total > 1 ? ` --part ${part.part}` : ""} in a new chat)`,
     };
   }
 

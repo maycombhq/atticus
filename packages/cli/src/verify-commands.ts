@@ -313,6 +313,8 @@ export async function verifyCommand(
   await recordReadProgress(root, repo, {
     commit,
     kept: report.accepted.length,
+    // ADR 0170: a part is read when this coverage leaves nothing under it unaccounted.
+    unknown: report.coverage.unknown,
     ...(o.now
       ? {
           now: o

@@ -101,8 +101,12 @@ const TopUp = z.strictObject({
 });
 export type TopUpT = z.infer<typeof TopUp>;
 
-/** ADR 0169: how a read takes model classes: those its entry points and calls reach, or all. */
-export const MODELS_MODES = ["reachable", "all"] as const;
+/**
+ * ADR 0169: how a read takes model classes: those its entry points and calls reach, or all.
+ * ADR 0170: or `entries`, those its own entry points reach, leaving the ones only an outbound
+ * client reaches for later.
+ */
+export const MODELS_MODES = ["entries", "reachable", "all"] as const;
 export type ModelsMode = (typeof MODELS_MODES)[number];
 
 /**
@@ -113,6 +117,13 @@ const NotReached = z.strictObject({
   why: z.string().min(1),
   files: z.array(z.string().min(1)),
   tokens: z.number().int().nonnegative(),
+  /**
+   * ADR 0170 (`--models entries`): those of `files` an outbound client reaches but no entry point
+   * does, with why; `--models reachable` reads them.
+   */
+  clientOnly: z
+    .strictObject({ why: z.string().min(1), files: z.array(z.string().min(1)) })
+    .optional(),
 });
 export type NotReachedT = z.infer<typeof NotReached>;
 
@@ -149,8 +160,9 @@ export const ReadPlanFile = z.strictObject({
   /** ADR 0167: a top-up for the rule sets the read lacked, under way. */
   topUp: TopUp.optional(),
   /**
-   * ADR 0169: `all` when a person asked for every model class (`--models all`); left out, the
-   * read takes those its entry points and calls reach.
+   * ADR 0169: `all` when a person asked for every model class (`--models all`), ADR 0170:
+   * `entries` for those the entry points reach; left out, the read takes those its entry points
+   * and calls reach.
    */
   models: z.enum(MODELS_MODES).optional(),
   /** ADR 0169: the model files the read leaves out, nothing reaching them. */
@@ -296,7 +308,7 @@ export async function writeReadPlan(
     })),
     ...(o.reported?.length ? { reported: [...o.reported] } : {}),
     ...(o.rules ? { rules: { hash: o.rules.hash, sets: [...o.rules.sets] } } : {}),
-    ...(o.models === "all" ? { models: "all" as const } : {}),
+    ...(o.models && o.models !== "reachable" ? { models: o.models } : {}),
     ...(o.notReached?.files.length ? { notReached: o.notReached } : {}),
   };
   await saveReadPlan(root, plan);
@@ -330,7 +342,7 @@ export async function recordNotReached(
   };
   const next: ReadPlanFileT = {
     ...rest,
-    ...(o.models === "all" ? { models: "all" as const } : {}),
+    ...(o.models !== "reachable" ? { models: o.models } : {}),
     ...(o.notReached?.files.length ? { notReached: o.notReached } : {}),
   };
   if (plan && JSON.stringify(plan) === JSON.stringify(next)) return;
@@ -482,6 +494,9 @@ function progressOf(
         u.deep ? under(c.dir, u.dir) : c.dir === u.dir || (c.deep && under(u.dir, c.dir)),
       );
     };
+    // ADR 0170: a part verify found accounted for (every file under it cited, reviewed, excluded
+    // or left out as not reached) is stamped read, and stays done: the same count verify says.
+    if (p.read) return { ...p, state: "done", covered: p.paths, left: [] };
     const yes = units.filter(hit).map((u) => u.glob);
     const no = units.filter((u) => !hit(u)).map((u) => u.glob);
     return {
@@ -506,6 +521,36 @@ function progressOf(
   };
 }
 
+/** ADR 0170: a unit of a part verify's coverage leaves unaccounted, with the files under it. */
+export interface Unaccounted {
+  glob: string;
+  /** The source files under it verify lists as unknown; none for a line range no fact cites. */
+  files: string[];
+}
+
+/**
+ * ADR 0170: what of a part is left unaccounted, by verify's own count: under each folder glob
+ * (or file named alone), the files `coverage.unknown` lists, which no fact cites, no reviewed
+ * line names, and which are neither excluded nor left out as not reached. A line range, which
+ * verify counts by its file, is left while no fact cites a line in it (`left`, from the facts).
+ * None: the part is accounted for.
+ */
+export function partUnaccounted(
+  part: Pick<PartState, "paths" | "left">,
+  unknown: readonly string[],
+): Unaccounted[] {
+  const out: Unaccounted[] = [];
+  for (const glob of part.paths) {
+    if (lineRangeOf(glob)) {
+      if (part.left.includes(glob)) out.push({ glob, files: [] });
+      continue;
+    }
+    const files = unknown.filter((f) => globHolds(glob, f));
+    if (files.length) out.push({ glob, files });
+  }
+  return out;
+}
+
 /** "part 4 of 13" — how a command names where a part read stands. */
 export const partOfWords = (p: Pick<ReadPlanProgress, "total"> & { part: number }) =>
   `part ${p.part} of ${p.total}`;
@@ -522,7 +567,17 @@ const sameCommit = (a: string, b: string) => a.startsWith(b) || b.startsWith(a);
 export async function recordReadProgress(
   root: string,
   repo: string,
-  o: { commit: string | undefined; kept: number; now?: string },
+  o: {
+    commit: string | undefined;
+    kept: number;
+    now?: string;
+    /**
+     * ADR 0170: verify's `coverage.unknown`, the source files no fact cites, no reviewed line
+     * names and neither excluded nor left out as not reached. A part none of them is under is
+     * accounted for as verify counts it, and stamped read.
+     */
+    unknown?: readonly string[];
+  },
 ): Promise<ReadPlanFileT | undefined> {
   const plan = await loadReadPlan(root, repo);
   if (!plan || !o.commit || !sameCommit(plan.commit, o.commit)) return undefined;
@@ -534,7 +589,10 @@ export async function recordReadProgress(
   if (plan.parts.length) {
     const progress = progressOf(plan, await coveredOf(root, repo), {});
     parts = plan.parts.map((p, i) => {
-      if (p.read || progress.parts[i]!.state !== "done") return p;
+      const state = progress.parts[i]!;
+      if (p.read) return p;
+      if (state.state !== "done" && !(o.unknown && !partUnaccounted(state, o.unknown).length))
+        return p;
       changed = true;
       return { ...p, read };
     });

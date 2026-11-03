@@ -165,6 +165,7 @@ export interface MapOptions {
   /**
    * With gaps (ADR 0161): only what is left of this part of the read plan, for a read that
    * stopped partway through it: the part's files no kept fact or reviewed line accounts for yet.
+   * With estimate (ADR 0170): this part whole, named for the session to read.
    */
   part?: number;
   /**
@@ -1669,7 +1670,7 @@ async function estimate(
       ...rest0,
       estimate,
       ...(readRules ? { rules: readRules } : {}),
-      ...(mode === "all" ? { models: "all" as const } : {}),
+      ...(mode !== "reachable" ? { models: mode } : {}),
       ...(notReached ? { notReached } : {}),
     });
   }
@@ -1689,6 +1690,12 @@ async function estimate(
     op: c.op,
     exclude: c.exclude,
   });
+  if (c.o.part !== undefined && !parts[c.o.part - 1]) {
+    io.err(
+      `${repo} is read in ${parts.length ? `parts 1 to ${parts.length}` : "one session (no parts)"} at this limit: there is no part ${c.o.part}.`,
+    );
+    return 2;
+  }
   if (c.o.json) {
     io.out(
       JSON.stringify(
@@ -1845,7 +1852,14 @@ async function estimate(
         `  part ${i + 1} (${words(stateOf(i))}, about ${p.tokens} tokens, ${plural(p.files, "file")}): ${p.paths.join(", ")}`,
       ),
     );
-    if (progress) {
+    // ADR 0170: a part asked for by its number (`--part n`, as map --all --force gives each
+    // part of a read made again whole), whatever the facts say of it.
+    const asked = c.o.part !== undefined ? parts[c.o.part - 1] : undefined;
+    if (asked)
+      io.out(
+        `This session reads part ${c.o.part} of ${parts.length} (--part ${c.o.part}): ${asked.paths.join(", ")}. The facts on file stay, as already kept: name one by its id and don't write it again.`,
+      );
+    if (progress && !asked) {
       io.out(
         `Read plan: ${readPlanRelOf(root, repo)}. ${
           progress.next
