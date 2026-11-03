@@ -188,7 +188,11 @@ export function frameworkNameProblem(
   const known = frameworkOf(f.cite.value, extra);
   const name = f.name.trim().toLowerCase();
   if (known) {
-    return name === known.name.toLowerCase()
+    // A read before beta.12 named the framework after the annotation it cited
+    // (`springbootapplication` for `@SpringBootApplication`): the line says the same framework, so
+    // that name is kept rather than rejected, and the framework is still known by its own name.
+    const legacy = annotationKey(f.cite.value) === `@${name}`;
+    return name === known.name.toLowerCase() || legacy
       ? undefined
       : `names the framework "${f.name}", but ${f.cite.file}:${f.cite.line} declares ${f.cite.value}, which is ${known.name}`;
   }

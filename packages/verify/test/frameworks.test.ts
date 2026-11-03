@@ -221,10 +221,13 @@ describe("a house framework nothing can read is learned, not guessed at", () => 
       expect(frameworksToLearn([sba(value)]), value).toEqual([]);
       expect(frameworkTopics([sba(value)]), value).toEqual(["spring"]);
     }
-    // The name it gives is the framework's, as for any declaration Atticus knows.
-    expect(frameworkNameProblem(sba("SpringBootApplication") as FrameworkFact)).toMatch(
-      /declares SpringBootApplication, which is spring-boot$/,
-    );
+    // A read before beta.12 named it after the annotation: kept, not rejected, and never a
+    // framework to learn. Any other name is wrong, as for any declaration Atticus knows.
+    expect(frameworkNameProblem(sba("SpringBootApplication") as FrameworkFact)).toBeUndefined();
+    expect(frameworksToLearn([sba("@SpringBootApplication")])).toEqual([]);
+    expect(
+      frameworkNameProblem(sba("@SpringBootApplication", "micronaut") as FrameworkFact),
+    ).toMatch(/declares @SpringBootApplication, which is spring-boot$/);
     expect(
       frameworkNameProblem(sba("@SpringBootApplication", "spring-boot") as FrameworkFact),
     ).toBeUndefined();
