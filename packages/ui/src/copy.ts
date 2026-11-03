@@ -174,6 +174,8 @@ export const COPY = {
     unreadable: (file: string) => `${file} isn't a valid question file.`,
     pickFromList: "Pick a question from the list to answer it.",
     askedBy: (command: string, day: string) => `Asked by ${command} on ${day}`,
+    /** The copy button beside a question's id on its card. */
+    copyId: "Copy the id",
     evidence: "What it read",
     notShown: "Not shown: the file isn't here, or the line is past its end.",
     options: "Your answer",

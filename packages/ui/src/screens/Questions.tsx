@@ -545,7 +545,8 @@ export function QuestionDetail(p: {
         {q.question}
       </h2>
       <p className="hud" style={{ margin: 0, fontSize: 10 }}>
-        {C.askedBy(q.askedBy.command, day(q.askedBy.at))} · {q.repo}
+        {C.askedBy(q.askedBy.command, day(q.askedBy.at))} · {q.repo} ·{" "}
+        <code className="mono">{q.id}</code> <CopyButton text={q.id} label={C.copyId} />
       </p>
       <div>
         <h3 className="hud" style={{ margin: "0 0 4px", fontSize: 10 }}>

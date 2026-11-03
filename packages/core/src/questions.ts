@@ -889,7 +889,7 @@ export function hostRuleCovers(pattern: string, asked: string): boolean {
 /** Why a rule can't ride on this answer, or undefined when it can. */
 function ruleProblem(q: Question, match: string, label: string | undefined): string | undefined {
   if (!AnswerMatch.safeParse(match).success)
-    return `${match} isn't a rule Atticus reads: give a host pattern (*.payments.forge.internal) or a path prefix (/forge/limits/**).`;
+    return `${match} isn't a rule Atticus reads: give a host pattern (*.payments.forge.internal), a path prefix (/forge/limits/**), or /** for every path of the repo.`;
   if (q.askedBy.step === TARGETS_STEP_ID) {
     if (label === TARGETS_SPLIT_LABEL)
       return `"${TARGETS_SPLIT_LABEL}" says the calls go to more than one place, so no rule rides on it: pick where the calls go.`;
@@ -1018,7 +1018,9 @@ export async function answerQuestion(
     // ADR 0153 (Q2): a host pattern goes under hosts in place of the host; a path prefix is the
     // repo's basePath on the host. Either way the manifest's own matching answers every call.
     const listed = match && !isPathMatch(match) ? match : host;
-    const basePath = match && isPathMatch(match) ? match.replace(/\/\*\*$/, "") : undefined;
+    // `/**` is every path: no basePath to record, only the host.
+    const basePath =
+      match && isPathMatch(match) && match !== "/**" ? match.replace(/\/\*\*$/, "") : undefined;
     try {
       hosts = {
         repo: label,

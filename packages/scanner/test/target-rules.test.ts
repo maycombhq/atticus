@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  AnswerMatch,
   NO_TARGET,
   parseFacts,
   questionId,
@@ -104,6 +105,11 @@ describe("ruleCoversCall", () => {
     expect(ruleCoversCall("/forge/limits/**", call(fs, "c-limits"), fs)).toBe(true);
     expect(ruleCoversCall("/forge/limits", call(fs, "c-limits-daily"), fs)).toBe(true);
     expect(ruleCoversCall("/forge/limits/**", call(fs, "c-limit-other"), fs)).toBe(false);
+    // `/**` is every path of the repo: one answer for a proxy that forwards everything to one place.
+    expect(AnswerMatch.safeParse("/**").success).toBe(true);
+    expect(AnswerMatch.safeParse("/").success).toBe(false);
+    for (const id of ["c-limits", "c-limits-daily", "c-limit-other"])
+      expect(ruleCoversCall("/**", call(fs, id), fs)).toBe(true);
     expect(ruleCoversCall("/forge/limits/**", call(fs, "c-notify"), fs)).toBe(false);
   });
 

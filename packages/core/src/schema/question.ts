@@ -73,10 +73,11 @@ export const AnswerMatch = z
   .min(1)
   .refine(
     (m) =>
-      m.startsWith("/")
+      m === "/**" ||
+      (m.startsWith("/")
         ? BasePath.safeParse(m.replace(/\/\*\*$/, "")).success
-        : HostPattern.safeParse(m).success,
-    "a match is a host pattern (*.payments.forge.internal) or a path prefix (/forge/limits/**)",
+        : HostPattern.safeParse(m).success),
+    "a match is a host pattern (*.payments.forge.internal), a path prefix (/forge/limits/**), or /** for every path",
   );
 
 /** Whether a match is a path prefix (else it is a host pattern). */
