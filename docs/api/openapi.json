@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Atticus local API",
-    "version": "2.48.0",
+    "version": "2.49.0",
     "description": "Served by `atticus ui` on 127.0.0.1. The UI only calls this API, and the API only reads and writes files in the metarepo.",
     "license": {
       "name": "Apache-2.0",
@@ -26251,6 +26251,31 @@
                     "by",
                     "at",
                     "file"
+                  ],
+                  "additionalProperties": false
+                },
+                "rule": {
+                  "type": "object",
+                  "properties": {
+                    "match": {
+                      "type": "string"
+                    },
+                    "ids": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "calls": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "match",
+                    "ids",
+                    "calls"
                   ],
                   "additionalProperties": false
                 }

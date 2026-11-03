@@ -143,8 +143,12 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  * 2.48.0 (ADR 0163): the organisation's terms a repo writes. `terms` on a repo in GET
  *   /api/trust: each term fact's term, value, role and line, with the line giving it its role
  *   and the note it rests on. Additive only.
+ * 2.49.0 (ADR 0168): GET /api/questions' `about[id].rule`, for an open targets question whose
+ *   calls share a path prefix or host with other open targets questions of its repo: the rule
+ *   (`/accounts/**`) one answer could take to cover them all, the questions it covers and their
+ *   calls. Additive only.
  */
-export const API_VERSION = "2.48.0";
+export const API_VERSION = "2.49.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -2484,6 +2488,17 @@ export const QuestionList = z.object({
             by: z.string(),
             at: z.string(),
             file: z.string(),
+          })
+          .optional(),
+        /**
+         * 2.49.0 (ADR 0168): the rule one answer could take to cover this open targets question
+         * and the other open ones of its repo whose calls share its path prefix or host.
+         */
+        rule: z
+          .object({
+            match: z.string(),
+            ids: z.array(z.string()),
+            calls: z.number().int(),
           })
           .optional(),
       }),

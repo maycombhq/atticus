@@ -352,6 +352,25 @@ export interface RaiseOptions {
   hold?: (q: Question, answered: Question[]) => boolean;
   /** Where judgments are kept; default the metarepo's judgments/. */
   judgments?: JudgmentStore;
+  /**
+   * Beta.12: an open, unanswered question on file by the draft's id, that this step asked, gets
+   * the draft's options and words in place (the same id, its history kept), so what a step
+   * offers now (ranked suggestions, their reasons, a repo read since) reaches a question asked
+   * before. Returned in `refreshed` (and `known`). An answered or retired question is never
+   * touched.
+   */
+  refresh?: boolean;
+}
+
+/** Whether a question on file would change if it took a draft's options and words (beta.12). */
+function refreshedFrom(existing: Question, d: QuestionDraft, step: string): Question | undefined {
+  if (existing.state !== "open" || existing.answer || existing.askedBy.step !== step)
+    return undefined;
+  const same =
+    existing.question === d.question &&
+    JSON.stringify(existing.options) === JSON.stringify(d.options);
+  if (same) return undefined;
+  return Question.parse({ ...existing, question: d.question, options: d.options });
 }
 
 /** A question held back: the one it would have been, and the answered ones that may decide it. */
@@ -452,7 +471,8 @@ function candidatesFor(repo: string, d: QuestionDraft, step: string, others: Que
 
 /**
  * Write the questions a step raised (ADR 0078, 0089, 0117). One already on file by its id is
- * left as it is and returned in `known`. Otherwise it is weighed against the questions on file
+ * left as it is and returned in `known` (with `refresh`, an open one this step asked takes the
+ * draft's options and words first). Otherwise it is weighed against the questions on file
  * for the same repo:
  * 1. the veto: the two name different ids, fields or numbers, so they differ;
  * 2. the step's own reading (`sameAs`), when the id is a candidate and its words are in it;
@@ -477,10 +497,13 @@ export async function raiseQuestions(
   held: HeldQuestion[];
   /** The answered questions whose answer decides a draft, by the draft's index (ADR 0117 addendum). */
   decidedBy: Map<number, Question>;
+  /** With `refresh`: open questions on file that took the draft's options and words. */
+  refreshed: Question[];
 }> {
   const store = o.judgments ?? fileJudgments(root);
   const raised: Question[] = [];
   const known: Question[] = [];
+  const refreshed: Question[] = [];
   const reused: Question[] = [];
   const held: HeldQuestion[] = [];
   const decidedBy = new Map<number, Question>();
@@ -495,8 +518,14 @@ export async function raiseQuestions(
   }[] = [];
   for (const [i, d] of drafts.entries()) {
     const q = questionFromDraft(d, by);
-    const existing = await readQuestion(root, q.id).catch(() => undefined);
-    if (existing) {
+    const onFile = await readQuestion(root, q.id).catch(() => undefined);
+    if (onFile) {
+      const next = o.refresh ? refreshedFrom(onFile, d, by.step) : undefined;
+      if (next) {
+        await write(root, next);
+        refreshed.push(next);
+      }
+      const existing = next ?? onFile;
       if (!known.some((k) => k.id === existing.id)) known.push(existing);
       of[i] = existing;
       continue;
@@ -667,7 +696,7 @@ export async function raiseQuestions(
     raised.push(q);
     of[p.i] = q;
   }
-  return { raised, known, reused, of, held, decidedBy };
+  return { raised, known, reused, of, held, decidedBy, refreshed };
 }
 
 /**

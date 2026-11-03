@@ -1,0 +1,29 @@
+# A question from atticus verify forge-teller-app --write (ADR 0078). Answer it with atticus questions answer q-c62198228388, or in the app.
+schemaVersion: 3
+id: q-c62198228388
+askedBy:
+  step: facts-targets
+  command: atticus verify forge-teller-app --write
+  at: 2026-10-28T15:04:00.000Z
+repo: forge-teller-app
+question: Which repo or system answers POST /postings, which forge-teller-app
+  calls through financial-posting?
+options:
+  - label: card-vault
+    means: card-vault, built in forge-card-vault, answers POST /postings
+    changes: The call joins card-vault when the facts are next written (atticus
+      verify forge-teller-app --write)
+  - label: proxy-core-v1
+    means: proxy-core-v1, built in forge-proxy-core-v1, answers POST /postings
+    changes: The call joins proxy-core-v1 when the facts are next written (atticus
+      verify forge-teller-app --write)
+  - label: None of these
+    means: Nothing in the estate answers it
+    changes: The call stays a loose end, and this isn't asked again
+evidence:
+  - src/main/java/forge/teller/TellerClient.java:12
+scope:
+  level: repo
+  id: forge-teller-app
+state: open
+rerun: atticus verify forge-teller-app --write

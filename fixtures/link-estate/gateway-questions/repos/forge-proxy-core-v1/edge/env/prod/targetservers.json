@@ -1,0 +1,8 @@
+[
+  {
+    "name": "core-backend",
+    "host": "core.apps.forge.internal",
+    "port": 443,
+    "isEnabled": true
+  }
+]

@@ -1,0 +1,10 @@
+schemaVersion: 1
+platform: forge
+name: Forge's gateway questions (invented, for the questions a proxy and its callers raise)
+systems:
+  - { id: platform, name: Platform, boundary: product, owner: team-platform, aliases: [] }
+  - { id: ledger, name: Ledger, boundary: product, owner: team-ledger, aliases: [] }
+  - { id: cards, name: Cards, boundary: product, owner: team-cards, aliases: [] }
+  - { id: branch, name: Branch, boundary: product, owner: team-branch, aliases: [] }
+  - { id: northwind-pay, name: Northwind Pay, boundary: vendor, owner: team-ledger, aliases: [api.northwindpay.example] }
+environments: [prod]

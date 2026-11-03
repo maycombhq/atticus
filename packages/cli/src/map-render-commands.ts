@@ -673,14 +673,17 @@ export async function writeFactsIntoCatalog(
       estate: estate.repos,
       questions: everyTarget,
     });
+    const refreshed: Question[] = [];
     for (const t of drafted) {
-      const r = await raiseQuestions(root, [t.draft], {
-        step: TARGETS_STEP,
-        repo,
-        command: o.command,
-        rerun,
-        at,
-      });
+      // Beta.12: a question asked before, still open, takes today's options (the ranked
+      // suggestions, why each is suggested, the repos read since) in place: the same id.
+      const r = await raiseQuestions(
+        root,
+        [t.draft],
+        { step: TARGETS_STEP, repo, command: o.command, rerun, at },
+        { refresh: true },
+      );
+      refreshed.push(...r.refreshed);
       for (const q of r.raised) {
         raised.push(q);
         lines.push(
@@ -692,6 +695,10 @@ export async function writeFactsIntoCatalog(
         );
       }
     }
+    if (refreshed.length)
+      lines.push(
+        `Refreshed ${refreshed.length === 1 ? "1 open question" : `${refreshed.length} open questions`} asked before (${refreshed.map((q) => q.id).join(", ")}): the same id, with today's options, ranked by the estate as read now, each saying why it is suggested.`,
+      );
     // ADR 0162 (F8): a topic or queue no estate repo serves the other side of, that no system
     // of the profile names: who owns it (a system or a team, from the picker).
     for (const t of topicQuestionDrafts(repo, result.records)) {

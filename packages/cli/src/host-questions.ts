@@ -13,7 +13,7 @@ import {
   type CatalogRecord,
   type Question,
 } from "@maycombhq/core";
-import { hostQuestionDrafts, unknownHosts } from "@maycombhq/scanner";
+import { gatewayHostFix, hostQuestionDrafts, unknownHosts } from "@maycombhq/scanner";
 import { fsRepo } from "@maycombhq/sdk";
 import { baseClonePath, loadRepos } from "@maycombhq/workspace";
 
@@ -71,7 +71,11 @@ export async function askHosts(
   const at = (o.now ?? new Date()).toISOString();
   const reasked: Question[] = [];
   const OUTSIDE = new Set([HOSTS_OUTSIDE_INTERNAL, HOSTS_OUTSIDE_VENDOR]);
-  for (const { repo, draft } of hostQuestionDrafts(asks)) {
+  // Beta.12: a host whose calls reach a gateway's routes, by path: said once, with the fix.
+  const gateway = new Map<string, string>();
+  for (const { repo, draft, byPath } of hostQuestionDrafts(asks)) {
+    const host = hostOfQuestion(draft);
+    if (byPath?.length && host) gateway.set(host, gatewayHostFix(host, byPath));
     if (asked.has(hostOfQuestion(draft))) {
       // O1: a question asked before the outside-system options were offered gains them, while
       // it is open: the same id, evidence and options it had, the new ones before "None of
@@ -123,7 +127,9 @@ export async function askHosts(
   }
   for (const q of raised)
     lines.push(
-      `Calls to ${hostOfQuestion(q)} join no repo: no repo lists it under hosts. Asked ${q.id}: ${q.question} Answer it: atticus questions answer ${q.id} --option <n> (1 is ${q.options[0]!.label}). If several repos answer on it (a shared gateway or platform host), don't pick one: list it under hosts on each of them in repos.manifest.yaml (with each one's basePath where the path tells them apart), and the question retires itself. If a system outside the estate answers on it, pick an outside system (another team's or a vendor's): it goes into the profile with the host as its alias.`,
+      gateway.has(hostOfQuestion(q)!)
+        ? `Calls to ${hostOfQuestion(q)} join no repo: no repo lists it under hosts. Asked ${q.id}: ${q.question} ${gateway.get(hostOfQuestion(q)!)}. If one repo alone answers on it, answer: atticus questions answer ${q.id} --option <n> (1 is ${q.options[0]!.label}).`
+        : `Calls to ${hostOfQuestion(q)} join no repo: no repo lists it under hosts. Asked ${q.id}: ${q.question} Answer it: atticus questions answer ${q.id} --option <n> (1 is ${q.options[0]!.label}). If several repos answer on it (a shared gateway or platform host), don't pick one: list it under hosts on each of them in repos.manifest.yaml (with each one's basePath where the path tells them apart), and the question retires itself. If a system outside the estate answers on it, pick an outside system (another team's or a vendor's): it goes into the profile with the host as its alias.`,
     );
   for (const q of reasked)
     lines.push(
@@ -131,7 +137,7 @@ export async function askHosts(
     );
   for (const q of open)
     lines.push(
-      `Still open: ${q.question} Answer it: atticus questions answer ${q.id} --option <n>, then ${o.rerun ?? HOSTS_RERUN}.`,
+      `Still open: ${q.question}${gateway.has(hostOfQuestion(q)!) ? ` ${gateway.get(hostOfQuestion(q)!)}.` : ""} Answer it: atticus questions answer ${q.id} --option <n>, then ${o.rerun ?? HOSTS_RERUN}.`,
     );
   return { raised, reasked, open, lines };
 }

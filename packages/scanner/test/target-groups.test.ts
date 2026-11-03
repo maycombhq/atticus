@@ -154,7 +154,10 @@ describe("groupedTargetDrafts: one question for the calls that go the same way (
       TARGETS_SPLIT,
       TARGETS_NONE,
     ]);
-    expect(d.draft.options[0]!.means).toContain("POST /notify/batch");
+    // Why it is suggested, never that it answers the calls (beta.12).
+    expect(d.draft.options[0]!.means).toBe(
+      "notify-api, built in forge-notify: serves POST /notify (notify-api.post-notify); named like the path /notify; named like the path /notify/batch",
+    );
   });
 
   it("keeps the per-call question, word for word, for a call alone in its group", () => {

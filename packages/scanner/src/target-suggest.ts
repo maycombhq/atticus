@@ -48,7 +48,15 @@ export interface TargetSuggestion {
   score: number;
   /** Why it is suggested, strongest first. */
   why: string[];
+  /**
+   * Beta.12: the entries of it that serve the call (`PUT /accounts/{id}`), so a group's question
+   * says how many of its calls it serves rather than one line per call.
+   */
+  serves?: string[];
 }
+
+/** Why an option with no evidence is listed (beta.12): never that it answers the call. */
+export const TARGETS_NO_EVIDENCE = "no evidence; listed so you can pick it";
 
 export interface SuggestContext {
   op: OrgPack;
@@ -131,7 +139,12 @@ function hostOf(f: FactOf<"call">, facts: readonly Fact[]): string | undefined {
     const cfg = facts.find(
       (x): x is FactOf<"config"> => x.kind === "config" && x.key === f.base && !!x.value,
     );
-    return cfg?.value ? fromUrl(cfg.value) : undefined;
+    if (!cfg?.value) return undefined;
+    // A TargetServer's or a remote config's value is often the bare host (core.apps.forge.internal).
+    return (
+      fromUrl(cfg.value) ??
+      (/^[a-z0-9-]+(\.[a-z0-9-]+)+(:\d+)?$/i.test(cfg.value) ? cfg.value.split(":")[0] : undefined)
+    );
   }
   return undefined;
 }
@@ -149,21 +162,9 @@ interface Candidate {
   bases: { path: string; from: string }[];
   /** The entries it serves (method, path, where), a read repo's. */
   entries: { method?: string; path: string; at: string }[];
-  /** Endpoint types it serves. */
-  types: Set<string>;
   description?: string;
   hosts: string[];
 }
-
-/** Endpoint types a call of each type reaches. */
-const SERVES: Record<string, string[]> = {
-  rest: ["rest"],
-  soap: ["soap"],
-  graphql: ["graphql"],
-  grpc: ["grpc"],
-  webhook: ["webhook"],
-  sftp: ["file-drop"],
-};
 
 /** Every repo of the manifest but the caller's, and every outside system, as a candidate. */
 function candidates(callerRepo: string, ctx: SuggestContext): Candidate[] {
@@ -250,7 +251,6 @@ function candidates(callerRepo: string, ctx: SuggestContext): Candidate[] {
         names,
         bases,
         entries,
-        types: new Set(mine.map((e) => e.endpointType)),
         ...(m.description?.text ? { description: m.description.text } : {}),
         hosts: m.hosts.map((h) => h.toLowerCase()),
       });
@@ -271,7 +271,6 @@ function candidates(callerRepo: string, ctx: SuggestContext): Candidate[] {
         names: new Map(),
         bases: [],
         entries: [],
-        types: new Set(),
         hosts: [],
       });
   const own = new Set(estateRepos(ctx.op).flatMap((r) => (r.system ? [r.system] : [])));
@@ -295,7 +294,6 @@ function candidates(callerRepo: string, ctx: SuggestContext): Candidate[] {
       names,
       bases: [],
       entries: [],
-      types: new Set(),
       hosts: s.aliases.map((a) => a.toLowerCase()),
     });
   }
@@ -316,15 +314,15 @@ export function targetSuggestions(f: FactOf<"call">, ctx: SuggestContext): Targe
   const host = hostOf(f, ctx.facts)?.toLowerCase();
   const client = clientOf(f);
   const said: { from: string; words: string[]; weight: number }[] = [
-    { from: f.base ? `its config key ${f.base}` : "", words: nameWords(f.base), weight: 4 },
-    { from: client ? `its client ${client}` : "", words: nameWords(client), weight: 4 },
+    { from: f.base ? `the config key ${f.base}` : "", words: nameWords(f.base), weight: 4 },
+    { from: client ? `the client ${client}` : "", words: nameWords(client), weight: 4 },
     {
-      from: host ? `its host ${host}` : "",
+      from: host ? `the host label ${host.split(".")[0]} (${host})` : "",
       words: host ? nameWords(host.split(".")[0]) : [],
       weight: 4,
     },
     {
-      from: `its path ${f.path}`,
+      from: `the path ${f.path}`,
       words: nameWords(
         segs(f.path)
           .filter((x) => x !== "{}")
@@ -334,7 +332,6 @@ export function targetSuggestions(f: FactOf<"call">, ctx: SuggestContext): Targe
     },
   ].filter((x) => x.from && x.words.length);
   const method = f.method?.toUpperCase();
-  const types = new Set(SERVES[f.callType] ?? []);
   const earlier = (ctx.questions ?? []).filter(
     (q) =>
       q.askedBy?.step === TARGETS_STEP_ID &&
@@ -354,21 +351,24 @@ export function targetSuggestions(f: FactOf<"call">, ctx: SuggestContext): Targe
     if (only?.has(c.s.label)) add(6, "the join found an entry of it that serves the call");
     const hit = c.entries.find(
       (e) =>
-        (!method || !e.method || e.method === method) &&
+        (!method || !e.method || e.method === method || e.method === "ANY") &&
         serves(
           e.path,
           f.path,
           c.bases.map((b) => b.path),
         ),
     );
-    if (hit && !only)
-      add(6, `it serves ${[hit.method, hit.path].filter(Boolean).join(" ")} (${hit.at})`);
+    if (hit && !only) {
+      const what = [hit.method, hit.path].filter(Boolean).join(" ");
+      add(6, `serves ${what} (${hit.at})`);
+      s.serves = [what];
+    }
     const base = c.bases.find((b) => under(f.path, b.path));
-    if (base) add(5, `${f.path} is under ${base.path}, ${base.from}`);
-    if (host && c.hosts.includes(host)) add(8, `it answers on ${host}`);
+    if (base) add(5, `its basePath ${base.path} matches: ${base.from}`);
+    if (host && c.hosts.includes(host)) add(8, `it lists ${host} under hosts`);
     for (const x of said) {
       const w = x.words.find((y) => c.names.has(y) && telling(y));
-      if (w) add(x.weight, `${x.from} names ${c.names.get(w)}`);
+      if (w) add(x.weight, `named like ${x.from}`);
     }
     if (c.description) {
       const d = new Set(nameWords(c.description));
@@ -381,10 +381,8 @@ export function targetSuggestions(f: FactOf<"call">, ctx: SuggestContext): Targe
       const t = slugify(l);
       return t === slugify(c.s.label) || (!!c.s.repo && t === slugify(c.s.repo));
     }).length;
-    if (named)
-      add(3, `${f.repo}'s answers name it for ${named} other ${named === 1 ? "call" : "calls"}`);
-    if (c.s.kind === "repo" && c.s.read && [...c.types].some((t) => types.has(t)) && !s.score)
-      s.why.push(`it serves ${[...types].join(" and ")} calls`);
+    if (named) add(3, `picked for ${named} other ${named === 1 ? "call" : "calls"} of ${f.repo}`);
+    if (!s.score) s.why.push(TARGETS_NO_EVIDENCE);
     s.why = [...new Set(s.why)];
     out.push(s);
   }

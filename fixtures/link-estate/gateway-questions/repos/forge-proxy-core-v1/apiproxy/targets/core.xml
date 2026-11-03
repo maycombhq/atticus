@@ -1,0 +1,7 @@
+<TargetEndpoint name="core">
+  <HTTPTargetConnection>
+    <LoadBalancer>
+      <Server name="core-backend"/>
+    </LoadBalancer>
+  </HTTPTargetConnection>
+</TargetEndpoint>
