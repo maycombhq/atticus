@@ -19,7 +19,6 @@ import { readVendorSpec, type VendorSpec } from "@maycombhq/intake";
 import {
   componentRenames,
   estateFacts,
-  estateJoinOf,
   hostAliases,
   joinReposOf,
   outsideProfileSystems,
@@ -27,7 +26,7 @@ import {
 } from "@maycombhq/scanner";
 import type { Router, ServerContext } from "@maycombhq/server";
 import { intakeContext } from "./intake-commands.js";
-import { contractCheckOf } from "./contract-check-files.js";
+import { contractCheckOf, estateJoinOnFile } from "./contract-check-files.js";
 
 /**
  * The outside systems (plan item O4, ADR 0149): one view per system no estate repo belongs to
@@ -62,7 +61,8 @@ export async function outsideView(root: string): Promise<View> {
   const estate = await estateFacts(root, op, "");
   const facts = new Map<string, Fact>();
   for (const r of estate.repos) for (const f of r.facts) facts.set(`${r.repo}\u0000${f.id}`, f);
-  const joined = estateJoinOf(op, estate.repos, estate.targets);
+  // The join the contract check keeps on disk, under the same stamp (one join for both pages).
+  const joined = await estateJoinOnFile(root, op, estate);
   const repos = joinReposOf(op, estate.repos, componentRenames(estate.repos, op));
   // ADR 0160 (O3): the maps other teams share, and the calls left to their systems joined to them.
   const { maps: sharedMaps } = await readSharedMaps(root);

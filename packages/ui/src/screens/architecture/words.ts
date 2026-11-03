@@ -17,6 +17,10 @@ export const WORDS = {
   canvasHelp:
     "Drag a box to move it; its links follow. Double-click a box to open it here. Scroll or use the buttons to zoom. The outline below has the same boxes for keyboards.",
   layingOut: "Laying out the picture",
+  layingOutBoxes: COPY.architecture.layingOutBoxes,
+  readingEstate: COPY.architecture.readingEstate,
+  joiningEstate: COPY.architecture.joiningEstate,
+  contractsFailed: COPY.architecture.contractsFailed,
   layoutFailed: (why: string) => `Couldn't lay out the picture: ${why}`,
   minimap: "Map of the whole picture",
   keep: "Keep this arrangement",

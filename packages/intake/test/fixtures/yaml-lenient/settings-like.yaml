@@ -1,0 +1,7 @@
+gateway:
+  servers:
+  - name: edge
+    variables:
+      region:{
+      "default": "east"
+      }

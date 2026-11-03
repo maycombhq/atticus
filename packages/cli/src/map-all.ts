@@ -521,6 +521,8 @@ function planLines(plan: MapAllPlan): string[] {
   const out: string[] = [];
   const reading = plan.items.filter((i) => i.kind !== "carry");
   const parts = reading.reduce((n, i) => n + i.parts.length, 0);
+  // The parts planned in all, so the summary counts as each part's header does ("part 1 of 5").
+  const planned = reading.reduce((n, i) => n + Math.max(i.total, i.parts.length), 0);
   const tokens = reading.reduce((n, i) => n + i.tokens, 0);
   out.push(
     `The estate at ${tokensText(plan.limit)} tokens a prompt (${plan.limitFrom === "flag" ? "--max-tokens" : plan.limitFrom === "probe" ? "the limit atticus probe measured" : "runtime.yaml's maxInput"}), ${plan.mode === "model" ? "read by runtime.yaml's model, unattended" : "read by Copilot Chat in agent mode: you paste one line per part"}:`,
@@ -554,7 +556,7 @@ function planLines(plan: MapAllPlan): string[] {
   for (const s of plan.skipped) out.push(`  - ${s.repo}: skipped, ${s.why}.`);
   out.push(
     plan.items.length
-      ? `In all: ${plural(plan.items.length, "repo")}, ${plural(parts, "part")} to read, about ${tokensText(tokens)} tokens (estimated from the source, not metered). Then atticus verify --all --write joins the estate once.`
+      ? `In all: ${plural(plan.items.length, "repo")}, ${plural(parts, "part")} to read${planned > parts ? ` (of ${planned} planned; ${planned - parts} ${planned - parts === 1 ? "is" : "are"} read already)` : ""}, about ${tokensText(tokens)} tokens (estimated from the source, not metered). Then atticus verify --all --write joins the estate once.`
       : "Nothing to read: every repo is read and fresh, or skipped as said.",
   );
   return out;
@@ -880,7 +882,13 @@ export async function mapAllCommand(
     where: string,
   ): Promise<PartEnd | "quit"> {
     const ps = partState(item, part.part);
-    const label = item.total > 1 ? `part ${part.part} of ${item.total}` : "one session";
+    // The header counts as the plan's summary does: the part's number in the read plan, and,
+    // when some parts are read already, where it stands among the ones left to read.
+    const nth = item.parts.indexOf(part) + 1;
+    const label =
+      item.total > 1
+        ? `part ${part.part} of ${item.total}${item.parts.length < item.total && nth > 0 ? `, ${nth} of the ${item.parts.length} to read` : ""}`
+        : "one session";
     const progress = item.total > 1 ? await readPlanProgress(root, item.repo) : undefined;
     // A part after one not read yet: the estimate would name the earlier one, so the part's own
     // files are planned as its rest (none of it read yet: all of it).

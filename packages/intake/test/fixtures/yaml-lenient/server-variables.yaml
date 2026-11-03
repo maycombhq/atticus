@@ -1,0 +1,21 @@
+openapi: 3.0.1
+info:
+  title: Lantern Mail Delivery
+  version: "1.0"
+servers:
+- url: "{scheme}://mail.lantern.example/{basePath}"
+  variables:
+    scheme:{
+    "default": "https",
+    "enum": ["https"]
+    }
+    basePath: {
+    "default": "v1"
+    }
+paths:
+  /messages:
+    post:
+      operationId: sendMessage
+      responses:
+        "202":
+          description: Accepted.

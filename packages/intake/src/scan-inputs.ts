@@ -80,6 +80,8 @@ interface File {
   inbox: boolean;
   doc: IntakeDocument;
   data?: unknown;
+  /** The text a spec is read from when it isn't the file's own (classify's `text`). */
+  text?: string;
   family?: string;
 }
 
@@ -202,10 +204,17 @@ export async function scanInputs(o: ScanInputsOptions): Promise<ScanInputsResult
       stem: name.includes(".") ? name.slice(0, name.lastIndexOf(".")) : name,
       inbox: path.startsWith("inputs/inbox/"),
       ...(c.data !== undefined ? { data: c.data } : {}),
+      ...(c.text !== undefined ? { text: c.text } : {}),
       doc: {
         path,
         classification: c.classification,
-        status: "no-reader",
+        status: c.unreadable ? "unreadable" : "no-reader",
+        ...(c.unreadable
+          ? {
+              reason: `${c.unreadable.reason}${c.unreadable.line !== undefined ? ` at ${c.unreadable.line}:${c.unreadable.column}` : ""}`,
+            }
+          : {}),
+        ...(c.notes?.length ? { notes: c.notes } : {}),
         hash: "",
         ...(c.title ? { title: c.title } : {}),
         ...(c.version ? { version: c.version } : {}),
@@ -351,7 +360,8 @@ export async function scanInputs(o: ScanInputsOptions): Promise<ScanInputsResult
   for (const f of kept) {
     const cls = f.doc.classification;
     const current = !f.doc.supersededBy;
-    const text = () => new TextDecoder().decode(f.bytes);
+    // A spec read with its layout fixed (classify's `text`) is read from that text, line for line.
+    const text = () => f.text ?? new TextDecoder().decode(f.bytes);
     const linked = new Set<string>();
     const unknown = new Set<string>();
 

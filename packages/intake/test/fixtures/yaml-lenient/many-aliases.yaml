@@ -1,0 +1,489 @@
+openapi: 3.0.3
+info:
+  title: Tidewater Statements
+  version: "2.0"
+components:
+  responses:
+    Problem: &problem
+      description: A problem.
+paths:
+  /statements/0:
+    get:
+      responses:
+        "400": *problem
+  /statements/1:
+    get:
+      responses:
+        "400": *problem
+  /statements/2:
+    get:
+      responses:
+        "400": *problem
+  /statements/3:
+    get:
+      responses:
+        "400": *problem
+  /statements/4:
+    get:
+      responses:
+        "400": *problem
+  /statements/5:
+    get:
+      responses:
+        "400": *problem
+  /statements/6:
+    get:
+      responses:
+        "400": *problem
+  /statements/7:
+    get:
+      responses:
+        "400": *problem
+  /statements/8:
+    get:
+      responses:
+        "400": *problem
+  /statements/9:
+    get:
+      responses:
+        "400": *problem
+  /statements/10:
+    get:
+      responses:
+        "400": *problem
+  /statements/11:
+    get:
+      responses:
+        "400": *problem
+  /statements/12:
+    get:
+      responses:
+        "400": *problem
+  /statements/13:
+    get:
+      responses:
+        "400": *problem
+  /statements/14:
+    get:
+      responses:
+        "400": *problem
+  /statements/15:
+    get:
+      responses:
+        "400": *problem
+  /statements/16:
+    get:
+      responses:
+        "400": *problem
+  /statements/17:
+    get:
+      responses:
+        "400": *problem
+  /statements/18:
+    get:
+      responses:
+        "400": *problem
+  /statements/19:
+    get:
+      responses:
+        "400": *problem
+  /statements/20:
+    get:
+      responses:
+        "400": *problem
+  /statements/21:
+    get:
+      responses:
+        "400": *problem
+  /statements/22:
+    get:
+      responses:
+        "400": *problem
+  /statements/23:
+    get:
+      responses:
+        "400": *problem
+  /statements/24:
+    get:
+      responses:
+        "400": *problem
+  /statements/25:
+    get:
+      responses:
+        "400": *problem
+  /statements/26:
+    get:
+      responses:
+        "400": *problem
+  /statements/27:
+    get:
+      responses:
+        "400": *problem
+  /statements/28:
+    get:
+      responses:
+        "400": *problem
+  /statements/29:
+    get:
+      responses:
+        "400": *problem
+  /statements/30:
+    get:
+      responses:
+        "400": *problem
+  /statements/31:
+    get:
+      responses:
+        "400": *problem
+  /statements/32:
+    get:
+      responses:
+        "400": *problem
+  /statements/33:
+    get:
+      responses:
+        "400": *problem
+  /statements/34:
+    get:
+      responses:
+        "400": *problem
+  /statements/35:
+    get:
+      responses:
+        "400": *problem
+  /statements/36:
+    get:
+      responses:
+        "400": *problem
+  /statements/37:
+    get:
+      responses:
+        "400": *problem
+  /statements/38:
+    get:
+      responses:
+        "400": *problem
+  /statements/39:
+    get:
+      responses:
+        "400": *problem
+  /statements/40:
+    get:
+      responses:
+        "400": *problem
+  /statements/41:
+    get:
+      responses:
+        "400": *problem
+  /statements/42:
+    get:
+      responses:
+        "400": *problem
+  /statements/43:
+    get:
+      responses:
+        "400": *problem
+  /statements/44:
+    get:
+      responses:
+        "400": *problem
+  /statements/45:
+    get:
+      responses:
+        "400": *problem
+  /statements/46:
+    get:
+      responses:
+        "400": *problem
+  /statements/47:
+    get:
+      responses:
+        "400": *problem
+  /statements/48:
+    get:
+      responses:
+        "400": *problem
+  /statements/49:
+    get:
+      responses:
+        "400": *problem
+  /statements/50:
+    get:
+      responses:
+        "400": *problem
+  /statements/51:
+    get:
+      responses:
+        "400": *problem
+  /statements/52:
+    get:
+      responses:
+        "400": *problem
+  /statements/53:
+    get:
+      responses:
+        "400": *problem
+  /statements/54:
+    get:
+      responses:
+        "400": *problem
+  /statements/55:
+    get:
+      responses:
+        "400": *problem
+  /statements/56:
+    get:
+      responses:
+        "400": *problem
+  /statements/57:
+    get:
+      responses:
+        "400": *problem
+  /statements/58:
+    get:
+      responses:
+        "400": *problem
+  /statements/59:
+    get:
+      responses:
+        "400": *problem
+  /statements/60:
+    get:
+      responses:
+        "400": *problem
+  /statements/61:
+    get:
+      responses:
+        "400": *problem
+  /statements/62:
+    get:
+      responses:
+        "400": *problem
+  /statements/63:
+    get:
+      responses:
+        "400": *problem
+  /statements/64:
+    get:
+      responses:
+        "400": *problem
+  /statements/65:
+    get:
+      responses:
+        "400": *problem
+  /statements/66:
+    get:
+      responses:
+        "400": *problem
+  /statements/67:
+    get:
+      responses:
+        "400": *problem
+  /statements/68:
+    get:
+      responses:
+        "400": *problem
+  /statements/69:
+    get:
+      responses:
+        "400": *problem
+  /statements/70:
+    get:
+      responses:
+        "400": *problem
+  /statements/71:
+    get:
+      responses:
+        "400": *problem
+  /statements/72:
+    get:
+      responses:
+        "400": *problem
+  /statements/73:
+    get:
+      responses:
+        "400": *problem
+  /statements/74:
+    get:
+      responses:
+        "400": *problem
+  /statements/75:
+    get:
+      responses:
+        "400": *problem
+  /statements/76:
+    get:
+      responses:
+        "400": *problem
+  /statements/77:
+    get:
+      responses:
+        "400": *problem
+  /statements/78:
+    get:
+      responses:
+        "400": *problem
+  /statements/79:
+    get:
+      responses:
+        "400": *problem
+  /statements/80:
+    get:
+      responses:
+        "400": *problem
+  /statements/81:
+    get:
+      responses:
+        "400": *problem
+  /statements/82:
+    get:
+      responses:
+        "400": *problem
+  /statements/83:
+    get:
+      responses:
+        "400": *problem
+  /statements/84:
+    get:
+      responses:
+        "400": *problem
+  /statements/85:
+    get:
+      responses:
+        "400": *problem
+  /statements/86:
+    get:
+      responses:
+        "400": *problem
+  /statements/87:
+    get:
+      responses:
+        "400": *problem
+  /statements/88:
+    get:
+      responses:
+        "400": *problem
+  /statements/89:
+    get:
+      responses:
+        "400": *problem
+  /statements/90:
+    get:
+      responses:
+        "400": *problem
+  /statements/91:
+    get:
+      responses:
+        "400": *problem
+  /statements/92:
+    get:
+      responses:
+        "400": *problem
+  /statements/93:
+    get:
+      responses:
+        "400": *problem
+  /statements/94:
+    get:
+      responses:
+        "400": *problem
+  /statements/95:
+    get:
+      responses:
+        "400": *problem
+  /statements/96:
+    get:
+      responses:
+        "400": *problem
+  /statements/97:
+    get:
+      responses:
+        "400": *problem
+  /statements/98:
+    get:
+      responses:
+        "400": *problem
+  /statements/99:
+    get:
+      responses:
+        "400": *problem
+  /statements/100:
+    get:
+      responses:
+        "400": *problem
+  /statements/101:
+    get:
+      responses:
+        "400": *problem
+  /statements/102:
+    get:
+      responses:
+        "400": *problem
+  /statements/103:
+    get:
+      responses:
+        "400": *problem
+  /statements/104:
+    get:
+      responses:
+        "400": *problem
+  /statements/105:
+    get:
+      responses:
+        "400": *problem
+  /statements/106:
+    get:
+      responses:
+        "400": *problem
+  /statements/107:
+    get:
+      responses:
+        "400": *problem
+  /statements/108:
+    get:
+      responses:
+        "400": *problem
+  /statements/109:
+    get:
+      responses:
+        "400": *problem
+  /statements/110:
+    get:
+      responses:
+        "400": *problem
+  /statements/111:
+    get:
+      responses:
+        "400": *problem
+  /statements/112:
+    get:
+      responses:
+        "400": *problem
+  /statements/113:
+    get:
+      responses:
+        "400": *problem
+  /statements/114:
+    get:
+      responses:
+        "400": *problem
+  /statements/115:
+    get:
+      responses:
+        "400": *problem
+  /statements/116:
+    get:
+      responses:
+        "400": *problem
+  /statements/117:
+    get:
+      responses:
+        "400": *problem
+  /statements/118:
+    get:
+      responses:
+        "400": *problem
+  /statements/119:
+    get:
+      responses:
+        "400": *problem

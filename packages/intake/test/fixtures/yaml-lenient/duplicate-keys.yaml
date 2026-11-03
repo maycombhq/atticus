@@ -1,0 +1,13 @@
+openapi: 3.0.3
+info:
+  title: Tidewater Rates
+  description: Rates for a currency pair (draft).
+  version: "1.2"
+  description: Rates for a currency pair.
+paths:
+  /rates/{pair}:
+    get:
+      operationId: getRate
+      responses:
+        "200":
+          description: The rate.

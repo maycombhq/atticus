@@ -3,7 +3,11 @@ import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { Laid } from "../src/app/layout/index.js";
-import { Architecture, ArrangementBar } from "../src/screens/architecture/Architecture.js";
+import {
+  Architecture,
+  ArrangementBar,
+  contractsPathWhen,
+} from "../src/screens/architecture/Architecture.js";
 import {
   ArchitectureCanvas,
   flowElements,
@@ -11,6 +15,7 @@ import {
 } from "../src/screens/architecture/Canvas.js";
 import type { CanvasGraph } from "../src/screens/architecture/model.js";
 import { WORDS } from "../src/screens/architecture/words.js";
+import { COPY } from "../src/copy.js";
 
 const html = (el: ReactElement) => renderToStaticMarkup(el);
 const esc = (s: string) =>
@@ -138,18 +143,28 @@ const canvas = (o: Partial<Parameters<typeof ArchitectureCanvas>[0]> = {}) => (
 );
 
 describe("the Architecture screen's states", () => {
-  it("is loading before the estate arrives", () => {
+  it("is loading before the estate arrives, saying what in words", () => {
     const out = html(<Architecture hash="#/architecture" />);
     expect(out).toContain('aria-busy="true"');
-    expect(out).toContain(WORDS.loading);
+    // Words a person sees, not only two empty bars.
+    expect(out).toContain(`<p class="hud">${esc(WORDS.readingEstate)}</p>`);
     // The lens switcher is there from the start.
     expect(out).toContain('role="tablist"');
   });
 
-  it("shows the canvas laying out before the first layout returns", () => {
+  it("shows the canvas laying out before the first layout returns, with how many boxes", () => {
     const out = html(canvas());
-    expect(out).toContain(WORDS.layingOut);
+    expect(out).toContain(`<p class="hud">${esc(WORDS.layingOutBoxes(3))}</p>`);
     expect(out).toContain('aria-busy="true"');
+  });
+
+  it("asks for the contract check only once the picture is drawn, so the picture never waits on it", () => {
+    expect(contractsPathWhen({ ready: false, drawn: false })).toBeUndefined();
+    expect(contractsPathWhen({ ready: true, drawn: false })).toBeUndefined();
+    expect(contractsPathWhen({ ready: true, drawn: true })).toBe("/api/contracts");
+    // The estate's words come from the copy file.
+    expect(WORDS.joiningEstate).toBe(COPY.architecture.joiningEstate);
+    expect(WORDS.layingOutBoxes(1)).toBe("Laying out 1 box…");
   });
 
   it("draws boxes in their groups, gap flags with an icon and words, and edge counts", () => {

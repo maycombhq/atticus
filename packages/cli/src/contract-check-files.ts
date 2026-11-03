@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { readdir, readFile, rm, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
@@ -19,6 +20,8 @@ import {
   type ContractMismatch,
   type ContractSpecT,
   type Fact,
+  type FactsJoinResult,
+  type OrgPack,
   type JoinVendor,
   type OutsideSpecs,
   type SpecsFileT,
@@ -42,6 +45,7 @@ import { sameCommit } from "@maycombhq/verify";
 import { createGit, type GitRunner } from "@maycombhq/workspace";
 import { intakeContext } from "./intake-commands.js";
 import { headCommitOf } from "./shared-commands.js";
+import { VERSION } from "./version.js";
 import { denyHashesAt } from "./link-evidence-files.js";
 
 /**
@@ -288,18 +292,94 @@ async function stampOf(root: string): Promise<string> {
 /** Each metarepo's check, kept with the stamp it was worked out at. */
 const kept = new Map<string, { stamp: string; value: Promise<ContractCheckOnFile> }>();
 
+/** What a restart does to the checks kept in memory (tests): the copies on disk stay. */
+export function forgetKeptChecks(): void {
+  kept.clear();
+}
+
+/**
+ * The copies kept on disk (`.atticus/cache/<name>.json`), keyed by the same stamp, so a restart of
+ * `atticus ui` or another page reuses a check or a join nothing has changed since. Stamped with
+ * the version that wrote it too: another version works it out again. A copy that doesn't read
+ * is no copy; one that can't be written is said nowhere (the check stands without it).
+ */
+const cacheFileOf = (root: string, name: string) =>
+  join(resolve(root), ".atticus", "cache", `${name}.json`);
+const stampKey = (stamp: string) =>
+  createHash("sha256").update(VERSION).update("\u0000").update(stamp).digest("hex");
+
+async function readCached<T>(root: string, name: string, stamp: string): Promise<T | undefined> {
+  try {
+    const c = JSON.parse(await readFile(cacheFileOf(root, name), "utf8")) as {
+      key?: string;
+      value?: T;
+    };
+    return c.key === stampKey(stamp) ? c.value : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function writeCached(root: string, name: string, stamp: string, value: unknown) {
+  await writeFileAtomic(
+    cacheFileOf(root, name),
+    JSON.stringify({ key: stampKey(stamp), value }),
+  ).catch(() => undefined);
+}
+
+/** Lets a request that came in meanwhile (the canvas's graph) run between the check's steps. */
+const breathe = () => new Promise<void>((r) => setImmediate(r));
+
+/**
+ * The estate join of these facts (`estateJoinOf`), kept on disk under the stamp of what it
+ * reads, so the contract check, Map › Outside systems and a restart share one join.
+ */
+export async function estateJoinOnFile(
+  root: string,
+  op: OrgPack,
+  estate: {
+    repos: { repo: string; facts: readonly Fact[] }[];
+    targets?: Parameters<typeof estateJoinOf>[2];
+  },
+  stamp?: string,
+): Promise<FactsJoinResult> {
+  const at = stamp ?? (await stampOf(root));
+  const hit = await readCached<FactsJoinResult>(root, "estate-join", at);
+  if (hit) return hit;
+  await breathe();
+  const join = estateJoinOf(op, estate.repos, estate.targets);
+  await writeCached(root, "estate-join", at, join);
+  return join;
+}
+
+/** The check as it is kept on disk: its per-system findings as entries. */
+type CheckOnDisk = Omit<ContractCheckOnFile, "newBySystem"> & {
+  newBySystem: [string, ContractMismatch[]][];
+};
+
 /**
  * The contract check over the whole estate, from the files on disk (ADR 0164). Worked out once
- * per metarepo and kept while nothing it reads changes, so Map › Mismatches, the canvas's
- * marks, the Trust tab and the Outside systems page share one check; asks that come at once
- * share one run. The result is shared: callers read it, never change it.
+ * per metarepo and kept while nothing it reads changes, in memory and on disk, so Map ›
+ * Mismatches, the canvas's marks, the Trust tab and the Outside systems page share one check,
+ * and a restart reuses it; asks that come at once share one run. Its steps give way to other
+ * requests between them, so the canvas's picture never waits on it. The result is shared:
+ * callers read it, never change it.
  */
 export async function contractCheckOf(root: string): Promise<ContractCheckOnFile> {
   const key = resolve(root);
   const stamp = await stampOf(root);
   const hit = kept.get(key);
   if (hit && hit.stamp === stamp) return hit.value;
-  const value = workOutContractCheck(root);
+  const value = (async () => {
+    const disk = await readCached<CheckOnDisk>(root, "contract-check", stamp);
+    if (disk) return { ...disk, newBySystem: new Map(disk.newBySystem) };
+    const v = await workOutContractCheck(root, stamp);
+    await writeCached(root, "contract-check", stamp, {
+      ...v,
+      newBySystem: [...v.newBySystem],
+    } satisfies CheckOnDisk);
+    return v;
+  })();
   kept.set(key, { stamp, value });
   // A run that failed isn't kept: the next ask tries again.
   value.catch(() => {
@@ -308,11 +388,11 @@ export async function contractCheckOf(root: string): Promise<ContractCheckOnFile
   return value;
 }
 
-async function workOutContractCheck(root: string): Promise<ContractCheckOnFile> {
+async function workOutContractCheck(root: string, stamp: string): Promise<ContractCheckOnFile> {
   const quiet = { out: () => undefined, err: () => undefined };
   const { op, inputs } = await intakeContext(root, quiet);
   const estate = await estateFacts(root, op, "");
-  const join = estateJoinOf(op, estate.repos, estate.targets);
+  const join = await estateJoinOnFile(root, op, estate, stamp);
   const { files, problems } = await loadRepoSpecs(root);
   const systems = outsideProfileSystems(op);
 
@@ -361,9 +441,11 @@ async function workOutContractCheck(root: string): Promise<ContractCheckOnFile> 
       vendorMatches: matched.matches,
     });
   };
+  await breathe();
   const result = run((o) => o.newest);
   const newBySystem = new Map<string, ContractMismatch[]>();
   if (outside.some((o) => o.previous)) {
+    await breathe();
     const before = run((o) => o.previous ?? o.newest);
     for (const o of outside)
       if (o.previous)

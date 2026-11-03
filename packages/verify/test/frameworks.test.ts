@@ -8,6 +8,7 @@ import {
   fileKinds,
   frameworkFacts,
   frameworkGaps,
+  frameworkNameProblem,
   frameworkOf,
   frameworkTopics,
   frameworkTopicsOfType,
@@ -15,6 +16,7 @@ import {
   readingRank,
   verifyFacts,
   FRAMEWORKS,
+  type FrameworkFact,
 } from "../src/index.js";
 
 /**
@@ -196,6 +198,45 @@ describe("a house framework nothing can read is learned, not guessed at", () => 
       },
     } as Fact;
     expect(frameworksToLearn([f])).toEqual([]);
+  });
+
+  it("knows @SpringBootApplication however the line writes it: bare, qualified or with arguments", () => {
+    const sba = (value: string, name = "springbootapplication") =>
+      ({
+        kind: "framework",
+        id: "fw.sba",
+        repo: "forge-ledger-api",
+        commit: COMMIT,
+        name,
+        cite: { file: "src/main/java/forge/ledger/App.java", line: 5, value, quote: value },
+      }) as Fact;
+    for (const value of [
+      "SpringBootApplication",
+      "@SpringBootApplication",
+      '@SpringBootApplication(scanBasePackages = "forge.ledger")',
+      "@org.springframework.boot.autoconfigure.SpringBootApplication",
+      "@EnableAutoConfiguration",
+    ]) {
+      expect(frameworkOf(value)?.name, value).toBe("spring-boot");
+      expect(frameworksToLearn([sba(value)]), value).toEqual([]);
+      expect(frameworkTopics([sba(value)]), value).toEqual(["spring"]);
+    }
+    // A read before beta.12 named it after the annotation: kept, not rejected, and never a
+    // framework to learn. Any other name is wrong, as for any declaration Atticus knows.
+    expect(frameworkNameProblem(sba("SpringBootApplication") as FrameworkFact)).toBeUndefined();
+    expect(frameworksToLearn([sba("@SpringBootApplication")])).toEqual([]);
+    expect(
+      frameworkNameProblem(sba("@SpringBootApplication", "micronaut") as FrameworkFact),
+    ).toMatch(/declares @SpringBootApplication, which is spring-boot$/);
+    expect(
+      frameworkNameProblem(sba("@SpringBootApplication", "spring-boot") as FrameworkFact),
+    ).toBeUndefined();
+    expect(frameworkOf("@QuarkusMain")?.name).toBe("quarkus");
+    // Only the annotations it knows: a house annotation is still one to learn.
+    expect(frameworkOf("@ForgeService")).toBeUndefined();
+    expect(frameworksToLearn([sba("@ForgeService", "forgeservice")]).length).toBe(1);
+    // An npm scope is not an annotation.
+    expect(frameworkOf("@angular/core")?.name).toBe("angular");
   });
 
   it("offers nothing for an Apigee proxy or shared flow, which map reads as a gateway", () => {

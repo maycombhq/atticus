@@ -9,6 +9,7 @@ import {
   factsRelOf,
   isAdopted,
   isGuessedJoin,
+  joinFlagsOf,
   listQuestions,
   loadOrgPack,
   LockHeldError,
@@ -35,6 +36,7 @@ import {
   type CatalogRecord,
   type ContractsFileT,
   type Fact,
+  type FactJoin,
   type FactsJoinResult,
   type ExposureFinding,
   type JoinHow,
@@ -124,6 +126,14 @@ export interface LinkLine {
   flags?: string[];
   /** Under changed: the confidence and flags it had before. */
   was?: { confidence: string; flags?: string[] };
+  /**
+   * The link is verified by another call to it (ADR 0135, section 5), while this repo's own
+   * call was found by a guess (`how`, with `guesses` its flags): said as such, never as a
+   * verified link found by path.
+   */
+  byOther?: true;
+  /** With `byOther`: the guesses this repo's own call rests on. */
+  guesses?: string[];
 }
 
 /**
@@ -157,7 +167,20 @@ export function linkChanges(
   const mine = <T extends { call: { repo: string } }>(xs: readonly T[] | undefined) =>
     (xs ?? []).filter((x) => x.call.repo === repo);
   const joined = mine(join?.joins);
-  const how = new Map((join?.joins ?? []).map((j) => [j.interface, j.how] as const));
+  // The joins of each Interface: this repo's calls first, and of them one nobody guessed first,
+  // so a shared link says how its cited join was made (ADR 0135, section 5).
+  const joinsOf = new Map<string, FactJoin[]>();
+  for (const j of [...joined, ...(join?.joins ?? []).filter((x) => !joined.includes(x))])
+    joinsOf.set(j.interface, [...(joinsOf.get(j.interface) ?? []), j]);
+  const howOf = (r: { id: string; confidence: string }) => {
+    const all = joinsOf.get(r.id) ?? [];
+    const own = all.filter((j) => joined.includes(j));
+    const best = own.find((j) => !isGuessedJoin(j)) ?? own[0] ?? all[0];
+    if (!best) return undefined;
+    // Verified, yet every call of this repo to it was a guess: another call verified it.
+    const byOther = r.confidence === "verified" && own.length > 0 && isGuessedJoin(best);
+    return { how: best.how, ...(byOther ? { byOther, guesses: joinFlagsOf(best) } : {}) };
+  };
   const ifaces = (rs: readonly CatalogRecord[]) =>
     new Map(
       rs
@@ -174,7 +197,7 @@ export function linkChanges(
     ),
   );
   const line = (r: Extract<CatalogRecord, { kind: "Interface" }>, found: boolean): LinkLine => {
-    const h = found ? how.get(r.id) : undefined;
+    const h = found ? howOf(r) : undefined;
     return {
       id: r.id,
       from: r.from,
@@ -182,8 +205,9 @@ export function linkChanges(
       ...(r.method ? { method: r.method } : {}),
       path: r.normalizedPath,
       confidence: r.confidence,
-      ...(h ? { how: h } : {}),
+      ...(h ? { how: h.how } : {}),
       ...(r.flags?.length ? { flags: [...r.flags] } : {}),
+      ...(h?.byOther ? { byOther: true as const, guesses: h.guesses } : {}),
     };
   };
   const byId = (a: LinkLine, b: LinkLine) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
@@ -237,6 +261,12 @@ export function linkLines(l: LinkChanges, report: string, o: { verbose?: boolean
   const text = (sign: string, x: LinkLine) => {
     const what = [x.method, x.path].filter(Boolean).join(" ");
     const conf = x.was ? `${x.confidence}, was ${x.was.confidence}` : x.confidence;
+    if (x.byOther && x.how) {
+      // ADR 0135, section 5: verified by another call; this repo's own one is a guess.
+      const g = x.guesses?.join(", ");
+      const was = x.was ? `, was ${x.was.confidence}` : "";
+      return `    ${sign} ${x.from} → ${x.to} ${what} (${x.confidence} by another call${was}; this one by ${HOW_WORDS[x.how]}${g ? `: ${g}` : ""})`;
+    }
     const flags = x.flags?.join(", ");
     const found = x.how
       ? `found by ${HOW_WORDS[x.how]}${flags ? `: ${flags}` : ""}`

@@ -14,6 +14,8 @@ atticus intake add northwind-pay-openapi-v2.yaml   # the version the vendor just
 atticus intake list
 ```
 
+A spec the YAML parser refuses is read leniently where that is safe: a key written twice keeps the last one, and a spec with many aliases is read with a higher (still bounded) limit. One layout common in gateway and Swagger UI exports, a `servers[].variables` entry written as a `{ ... }` mapping over several lines that aren't indented past its key, is read as if it were on one line, but only if the file then reads as an OpenAPI, Swagger or AsyncAPI spec. `atticus intake list` prints what it read leniently under the table (`~ <file>: duplicate key "description" at 6:3: the last one is kept`). A file it still can't read is listed as `unreadable`, with the parser's reason and where (`unreadable: All mapping items must start at the same column at 11:1`), and `--json` gives the same as `status` and `reason`: fix the file and run it again.
+
 **Never write a new version over the old file.** Intake keeps both versions, reads the newer one into the catalog and marks the older one as superseded. `atticus intake list` shows the chain under **Versions**, for example `doc.northwind-pay-openapi-v1 → doc.northwind-pay-openapi-v2`. If the new version replaces the old file, there is nothing left to compare.
 
 Two files count as versions of one spec when either:

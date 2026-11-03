@@ -58,8 +58,11 @@ interface Known {
 const KNOWN: readonly (readonly [string, Known])[] = [
   // Java and Kotlin
   ["spring-boot*", { name: "spring-boot", topic: "spring", shape: "rest" }],
-  // the annotation a Spring Boot app's main class carries, which a reader may cite instead
+  // the annotations a Spring Boot app's main class carries, which a reader may cite instead
+  // (matched by `annotationKey`, so bare, qualified or with arguments)
   ["@springbootapplication", { name: "spring-boot", topic: "spring", shape: "rest" }],
+  ["@enableautoconfiguration", { name: "spring-boot", topic: "spring", shape: "rest" }],
+  ["@quarkusmain", { name: "quarkus", topic: "quarkus" }],
   ["spring-webmvc", { name: "spring", topic: "spring", shape: "rest" }],
   ["spring-webflux", { name: "spring", topic: "spring", shape: "rest" }],
   ["spring-web", { name: "spring", topic: "spring", shape: "rest" }],
@@ -117,6 +120,17 @@ export function declarationKey(declared: string): string {
 }
 
 /**
+ * A line that writes an annotation, as the table's `@name` keys are: `@SpringBootApplication`,
+ * `SpringBootApplication`, `@org.springframework.boot.autoconfigure.SpringBootApplication` or
+ * `@SpringBootApplication(scanBasePackages = "...")` are all `@springbootapplication`. Undefined
+ * for anything that isn't shaped like one (an artifact, an npm package with its scope).
+ */
+export function annotationKey(declared: string): string | undefined {
+  const m = /^@?(?:[a-z_$][\w$]*\.)*([A-Z][\w$]*)\s*(?:\(.*)?$/s.exec(declared.trim());
+  return m ? `@${m[1]!.toLowerCase()}` : undefined;
+}
+
+/**
  * The org pack's own entries (ADR 0147, `conventions.yaml`'s `frameworks`) as the table's: a
  * topic the reading protocol has no part for is dropped, so the entry still names and shapes.
  */
@@ -144,12 +158,16 @@ export function frameworkOf(
 ): Known | undefined {
   const key = declarationKey(declared);
   if (!key) return undefined;
+  const table = extra.length ? [...houseKnown(extra), ...KNOWN] : KNOWN;
   // an npm scope is part of the name (`@angular/core`), so try the whole thing first
-  for (const [pattern, known] of extra.length ? [...houseKnown(extra), ...KNOWN] : KNOWN) {
+  for (const [pattern, known] of table) {
     const star = pattern.endsWith("*");
     const p = star ? pattern.slice(0, -1) : pattern;
     if (star ? key.startsWith(p) : key === p) return known;
   }
+  // then an annotation, however the line writes it, against the table's `@name` keys
+  const ann = annotationKey(declared);
+  if (ann) for (const [pattern, known] of table) if (pattern === ann) return known;
   return undefined;
 }
 
@@ -170,7 +188,11 @@ export function frameworkNameProblem(
   const known = frameworkOf(f.cite.value, extra);
   const name = f.name.trim().toLowerCase();
   if (known) {
-    return name === known.name.toLowerCase()
+    // A read before beta.12 named the framework after the annotation it cited
+    // (`springbootapplication` for `@SpringBootApplication`): the line says the same framework, so
+    // that name is kept rather than rejected, and the framework is still known by its own name.
+    const legacy = annotationKey(f.cite.value) === `@${name}`;
+    return name === known.name.toLowerCase() || legacy
       ? undefined
       : `names the framework "${f.name}", but ${f.cite.file}:${f.cite.line} declares ${f.cite.value}, which is ${known.name}`;
   }

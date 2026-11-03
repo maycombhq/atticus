@@ -17,7 +17,9 @@ export type DocumentStatus =
   /** An older version of another file; its facts are left out. */
   | "superseded"
   /** The reader threw; see problems. */
-  | "failed";
+  | "failed"
+  /** A YAML or JSON file no parser here can read, even leniently: `reason` says why and where. */
+  | "unreadable";
 
 export interface IntakeDocument {
   /** Relative to the metarepo root, always starting with inputs/. */
@@ -41,6 +43,10 @@ export interface IntakeDocument {
   unknownNames: string[];
   /** Ids of the records read from it. */
   records: string[];
+  /** Why an `unreadable` file is: the parser's reason and where ("... at 167:5"). */
+  reason?: string;
+  /** What was read leniently (a duplicate key, the aliases, a spec's layout), when anything was. */
+  notes?: string[];
   /** What the ingested-content defences found, when the risk is medium or high (or a person cleared it). */
   defences?: { risk: "medium" | "high" | "cleared"; reason: string; rules: string[] };
 }

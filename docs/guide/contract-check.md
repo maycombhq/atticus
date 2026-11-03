@@ -7,7 +7,7 @@ atticus join contracts          # every link's mismatches, then the unconfirmed
 atticus join contracts --json   # the same, for a script
 ```
 
-In the app it is **Map › Mismatches** (linked from the Trust tab's count). A link with a finding shows a warning on the estate canvas, and **Why is this linked?** lists the findings under each call. It reads files only.
+In the app it is **Map › Mismatches** (linked from the Trust tab's count). A link with a finding shows a warning on the estate canvas, and **Why is this linked?** lists the findings under each call. The canvas draws its picture first and asks for the check after, saying "Joining the estate…" while it runs, so a first check on a big estate never holds the picture back. The check and the estate join it rests on are kept in `.atticus/cache/` (never committed) under a stamp of the files they read, so a restart of `atticus ui` or another page reuses them until a file of `facts/`, the inputs, the org pack, the questions or the curated catalog changes. It reads files only.
 
 ## What it compares
 
