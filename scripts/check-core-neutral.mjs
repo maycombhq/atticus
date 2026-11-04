@@ -184,6 +184,18 @@ export const ALLOW = [
       "the same bundle test as facts-join.ts (its exported APIGEE_BUNDLE), so a route's callers are read for exactly the entries the join treats as gateway routes (ADR 0124 addendum A-callers)",
   },
   {
+    file: "packages/core/src/schema/ai.ts",
+    names: ["copilot"],
+    reason:
+      "copilot-acp is the C5 runtime kind's own name (ADR 0171): the runtime enum names the mode, as runtime.yaml writes it",
+  },
+  {
+    file: "packages/core/src/runtime-migrate.ts",
+    names: ["copilot"],
+    reason:
+      "the runtime-v3 migration reads and moves the copilot-acp mode and its copilotAcp settings by name (ADR 0171)",
+  },
+  {
     file: "packages/core/src/api.ts",
     names: ["confluence", "ado", "sharepoint", "claude", "teams"],
     reason:
