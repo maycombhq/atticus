@@ -1244,9 +1244,37 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
     return scored.filter((s) => s.score === best).map((s) => s.e);
   };
 
+  /**
+   * J0 for a call's path: a path written as a setting (`${forge-remote.uris.download-report}`,
+   * `config.getUri("download-report")` read as its key) is the value the repo's settings give it,
+   * when they give one. A whole URL gives the call its host too, in place of its base. Several
+   * values, or none, leave the path as written, and the call is asked about as before.
+   */
+  const withPathResolved = (call: Node & { fact: Call }): Call => {
+    const f = call.fact;
+    if (!placeholderIn(f.path)) return f;
+    const values = [...new Set(resolve(f.path, call, new Set()).map((r) => r.value.trim()))];
+    if (values.length !== 1 || placeholderIn(values[0])) return f;
+    const v = values[0]!;
+    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(v)) {
+      const h = hostIn(v);
+      if (!h) return f;
+      const { base: _base, ...rest } = f;
+      return {
+        ...rest,
+        host: v.replace(/^([a-z][a-z0-9+.-]*:\/\/[^/?#]+).*$/i, "$1"),
+        path: urlPathOf(v) ?? "/",
+      };
+    }
+    return v.startsWith("/") ? { ...f, path: v } : f;
+  };
+
   for (const c of nodes) {
     if (c.fact.kind !== "call") continue;
-    const call = c as Node & { fact: Call };
+    const raw = c as Node & { fact: Call };
+    // The call as the join reads it: its path resolved when written as a setting (J0).
+    const resolved = EVENTS.has(raw.fact.callType) ? raw.fact : withPathResolved(raw);
+    const call = resolved === raw.fact ? raw : { ...raw, fact: resolved };
     const f = call.fact;
     if (EVENTS.has(f.callType)) {
       if (/^(subscribe|consume|listen)$/i.test(f.method ?? "")) continue;

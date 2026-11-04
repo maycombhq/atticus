@@ -198,6 +198,76 @@ describe("targetsFromAnswers with a rule (ADR 0153)", () => {
     const got = ruledTargets(REPO, fs, [ruleQ({ match: "/v1/**" })]);
     expect(got.has("c-fx-rate")).toBe(false);
   });
+
+  it("a gateway's forwarding calls whose URL can't say where they go are read from a /** rule", () => {
+    // A proxy's target URL as a build token (`@targetCoreUrl@`), a host left a placeholder, a
+    // target named by the token, and a base with one host per environment: each is asked, so a
+    // rule answers it; a call with a whole URL, or a target a person set, is not.
+    const fs = facts();
+    const notify = call(fs, "c-notify");
+    const at = (id: string, line: number, extra: Partial<FactOf<"call">>) =>
+      ({
+        ...notify,
+        host: undefined,
+        ...extra,
+        id,
+        cite: { ...notify.cite, line },
+      }) as Fact;
+    const cfg = (id: string, key: string, value: string, line: number) =>
+      ({
+        kind: "config",
+        id,
+        repo: REPO,
+        commit: notify.commit,
+        settingKind: "config",
+        key,
+        value,
+        cite: { file: "edge/env/targets.json", line, value, quote: `"${key}": "${value}"` },
+        verified: "line",
+        by: "assistant",
+        conf: "declared",
+      }) as Fact;
+    const proxy = [
+      ...fs,
+      cfg("k-core", "targetCoreUrl", "https://@targetCoreUrl@/core", 1),
+      cfg("k-env-dev", "core-env", "https://core.dev.forge.internal", 2),
+      cfg("k-env-prod", "core-env", "https://core.prod.forge.internal", 3),
+      at("c-fwd-token", 40, { path: "/cards/update", base: "targetCoreUrl" }),
+      at("c-fwd-host", 41, { path: "/accounts/balances", host: "${coreHost}" }),
+      at("c-fwd-to", 42, { path: "/accounts/shared", to: "@targetCoreUrl@" }),
+      at("c-fwd-envs", 43, { path: "/accounts/close", base: "core-env" }),
+      at("c-fwd-person", 44, { path: "/accounts/open", to: "ledger-core", by: "person" }),
+    ];
+    const got = ruledTargets(REPO, proxy, [ruleQ({ match: "/**", label: "core-api" })]);
+    for (const id of ["c-fwd-token", "c-fwd-host", "c-fwd-to", "c-fwd-envs"])
+      expect(got.get(id)?.label, id).toBe("core-api");
+    expect(got.has("c-fwd-person")).toBe(false);
+    expect(got.has("c-fx-rate")).toBe(false);
+
+    // Their open questions retire on the write, naming the rule.
+    const rule = ruleQ({ match: "/**", label: "core-api" });
+    const own = targetQuestionFor(call(proxy, "c-fwd-token"))!;
+    expect(own.question).toBe(
+      "Which repo or system answers POST /cards/update, which ledger-api calls through targetCoreUrl?",
+    );
+    const openQ = {
+      ...rule,
+      id: questionId({ step: TARGETS_STEP, repo: REPO, ...own }),
+      question: own.question,
+      evidence: own.evidence,
+      state: "open",
+      answer: undefined,
+    } as unknown as Question;
+    const stale = staleTargetQuestions({
+      repo: REPO,
+      facts: proxy,
+      open: [openQ],
+      drafted: [],
+      asked: new Set(),
+      ruled: ruledTargets(REPO, proxy, [rule]),
+    });
+    expect(stale.map((s) => s.replacedBy)).toEqual([[rule.id]]);
+  });
 });
 
 describe("staleTargetQuestions with a rule (ADR 0153)", () => {

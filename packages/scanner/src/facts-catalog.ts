@@ -195,6 +195,35 @@ function needsTarget(f: Fact, facts: readonly Fact[]): f is FactOf<"call"> {
   );
 }
 
+/** A host still holding a placeholder (`@targetUrl@`, `${host}`, `{host}`): no host yet. */
+const UNRESOLVED_HOST = /@[A-Za-z_][A-Za-z0-9_.-]*@|\$\{|\{[^}]*\}/;
+
+/**
+ * Whether an answer's rule (ADR 0153, Q2) may name a call's target: every call a target question
+ * could be asked about. That is a call with no target and no URL, as for its own question, and
+ * also one whose URL can't say where it goes: its host is still a placeholder (a gateway's
+ * `@targetUrl@` token, `${host}`), or its base has several values with different hosts (one per
+ * environment), which the join asks about rather than picking one.
+ */
+function ruleMayName(f: Fact, facts: readonly Fact[]): f is FactOf<"call"> {
+  if (needsTarget(f, facts)) return true;
+  if (f.kind !== "call" || EVENT_CALLS.has(f.callType)) return false;
+  // A target the code names stays, unless it is a placeholder itself (`to: @targetUrl@`).
+  if (f.to) return f.by !== "person" && UNRESOLVED_HOST.test(f.to);
+  if (!HTTP_CALLS.has(f.callType)) return false;
+  const url = urlOf(f, facts);
+  const host = url ? (/^[a-z][a-z0-9+.-]*:\/\/([^/?#]*)/i.exec(url)?.[1] ?? "") : "";
+  if (!host || UNRESOLVED_HOST.test(host) || UNRESOLVED_HOST.test(f.host ?? "")) return true;
+  if (f.host || !f.base) return false;
+  const hosts = new Set(
+    facts
+      .filter((x): x is FactOf<"config"> => x.kind === "config" && x.key === f.base && !!x.value)
+      .map((x) => (URL_RE.test(x.value!) ? urlHostPort(x.value!)?.host : x.value!.trim()))
+      .filter((h): h is string => !!h),
+  );
+  return hosts.size > 1;
+}
+
 const MAX_ID = 120;
 
 /**
@@ -760,7 +789,7 @@ export function ruledTargets(
   const out = new Map<string, RuledCall>();
   if (!rules.length) return out;
   for (const f of facts) {
-    if (!needsTarget(f, facts)) continue;
+    if (!ruleMayName(f, facts)) continue;
     const q = rules.find((r) => ruleCoversCall(r.answer!.match!, f, facts));
     const label = q ? answerLabel(q) : undefined;
     if (q && label && label !== TARGETS_SPLIT)

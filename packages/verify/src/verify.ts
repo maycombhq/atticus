@@ -97,6 +97,11 @@ export type RejectCode =
   /** A deploy fact's host written as a template (`{{ .Values.host }}`, `${HOST}`) (ADR 0143). */
   | "exposure-template"
   /**
+   * A REST or SOAP call whose `path` is a bare name (`requestRefundPath`, `downloadUri`), the
+   * variable or field that holds the path rather than the path (ADR 0172).
+   */
+  | "call-path-is-a-name"
+  /**
    * A deploy fact's base path written as a regular expression (an Ingress `ImplementationSpecific`
    * path, `/forge/limits(/|$)(.*)`): its plain prefix is the base path (ADR 0143, beta.10).
    */
@@ -443,6 +448,16 @@ export function isSourceFile(
 const lastPart = (s: string) => s.split(".").pop() ?? s;
 /** A value written as a template: Helm's or Go's `{{ }}`, a `${}` placeholder (ADR 0143). */
 const TEMPLATED = /\{\{|\}\}|\$\{/;
+
+/**
+ * ADR 0172: a path that is only an identifier, in camelCase or with an underscore
+ * (`requestRefundPath`, `download_uri`, `refundUri()`): the name of what holds a path. A word in
+ * lower case with no capital (`ping`, `health`) is left alone, as a path written without its `/`.
+ */
+export function pathIsAName(path: string | undefined): boolean {
+  const p = (path ?? "").trim().replace(/\(\s*[^)]*\)$/, "");
+  return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(p) && /[a-z][A-Z]|_|\$/.test(p);
+}
 
 /** A Service exposure's in-cluster address (J1, beta.10): only a Service's host is read so. */
 const serviceAddress = (f: { resourceType?: string; host?: string }) =>
@@ -815,6 +830,17 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
             `${label} caller ${i + 1} (${c.as} "${c.value}")`,
           ),
         ),
+      );
+    // ADR 0172: a REST or SOAP call's path is a path, never the name of what holds it.
+    if (
+      f.kind === "call" &&
+      (f.callType === "rest" || f.callType === "soap") &&
+      pathIsAName(f.path)
+    )
+      problem(
+        f,
+        "call-path-is-a-name",
+        `${label} path "${f.path}" is the name of what holds the path, not the path: follow it to where it is set and write the literal path, or the setting's placeholder with its whole key (\`\${forge.uris.refund}\`) with the line that sets it in cite.with, and record the setting as a config fact`,
       );
     // J1 (ADR 0143): where a component is reached. The host and the base path are on the cited
     // line or a part (a templated host's values-file line); the component it reaches resolves.

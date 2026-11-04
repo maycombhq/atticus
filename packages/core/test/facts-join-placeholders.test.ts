@@ -266,6 +266,64 @@ describe("J0: which settings count for a component, and the forms a placeholder 
     ]);
   });
 
+  it("reads a call's path written as a setting, from the repo's application.properties", () => {
+    // `@Value("${forge-remote.uris.download-limit}")` as the path, the base a config key: the
+    // path the settings give it joins, as if written in the code. A whole URL gives the host too.
+    const cfg = (id: string, key: string, value: string, line: number) =>
+      fact("forge-web", id, "config", {
+        key,
+        value,
+        cite: { file: "src/main/resources/application.properties", line, value: key },
+      });
+    const pathOnly = joinFacts({
+      repos: [
+        {
+          repo: "forge-web",
+          facts: [
+            getLimit({ base: "limits", path: "${forge-remote.uris.download-limit}" }),
+            cfg("cfg-base", "limits", "https://limits.apps.forge.internal", 3),
+            cfg("cfg-path", "forge-remote.uris.download-limit", "/limits/{id}", 4),
+          ],
+        },
+        limits,
+      ],
+    });
+    expect(pathOnly.joins).toMatchObject([
+      { call: { fact: "c-get-limit" }, entry: { fact: "e-get-limit" }, how: "host" },
+    ]);
+    const wholeUrl = joinFacts({
+      repos: [
+        {
+          repo: "forge-web",
+          facts: [
+            getLimit({ base: "gateway", path: "${forge-remote.uris.download-limit}" }),
+            cfg(
+              "cfg-path",
+              "forge-remote.uris.download-limit",
+              "https://limits.apps.forge.internal/limits/{id}",
+              4,
+            ),
+          ],
+        },
+        limits,
+      ],
+    });
+    expect(wholeUrl.joins).toMatchObject([
+      { call: { fact: "c-get-limit" }, entry: { fact: "e-get-limit" }, how: "host" },
+    ]);
+    // Nothing sets it: the call is left as before, not guessed.
+    const unset = joinFacts({
+      repos: [
+        {
+          repo: "forge-web",
+          facts: [getLimit({ base: "limits", path: "${forge-remote.uris.download-limit}" })],
+        },
+        limits,
+      ],
+    });
+    expect(unset.joins).toEqual([]);
+  });
+
   it("reads a placeholder in a config fact's `source`, with Spring's relaxed names, through a deployment the config file names", () => {
     const out = joinFacts({
       repos: [

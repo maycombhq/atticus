@@ -259,6 +259,10 @@ export const FACT_RULE_PARTS: readonly (readonly RulePart[])[] = [
       text: 'Don\'t leave a call relative because its base is elsewhere. A call with no host (`fetch("/api/notes")`) leaves `to` out, or names the component that serves it when you know its id; never a guessed name.',
     },
     {
+      when: ["backend", "frontend"],
+      text: 'A call\'s `path` is a path, never the name of the variable, field or method that holds it (`refundPath`, `downloadUri(...)`). Follow it to where it is set: a literal is the path; one set from a setting (`@Value("${forge.uris.refund}")`, a `@ConfigurationProperties` field, a helper that looks a key up, `config.getUri("refund")`) is the placeholder with the setting\'s whole key, `${forge.uris.refund}`, with the line that sets it in `cite.with`; and the setting itself, in `application.properties` or `.yml`, is a `config` fact with that key and its value.',
+    },
+    {
       when: ["backend", "frontend", "config"],
       text: "A call through a cloud SDK or auth middleware with no path in the code (a storage client, a secret manager, OpenID Connect) is not a call fact: record its config.",
     },

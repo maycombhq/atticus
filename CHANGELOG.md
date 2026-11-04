@@ -2,6 +2,14 @@
 
 All notable changes to Atticus. Versions follow [Semantic Versioning](https://semver.org); contracts C1 to C6 change only with an ADR, a schema version and a migration (`atticus upgrade`).
 
+## Unreleased
+
+### Fewer target questions on gateways and client helpers (ADR 0172)
+
+- A `--match` rule (`/**` included) now answers a gateway's forwarding calls whose URL can't say where they go: a host still a deploy token (`@targetUrl@`) or a placeholder, a target written as the token, or a base with a different host per environment. Their open questions retire on the next `verify --write`, naming the rule.
+- A call's path written as a setting (`${forge-remote.uris.download-report}`) is resolved through the repo's `application.properties`/`.yml` config facts, as a host is; a whole URL there gives the host too.
+- A call's path that is only the name of the field or variable holding it (`requestRefundPath`) is rejected at verify (`call-path-is-a-name`), and the reading rules tell the assistant to follow it to the literal or the setting's `${key}`. Run `atticus map --all --stale`, then `atticus verify --all --write`.
+
 ## 2.0.0-beta.13 (2026-11-04)
 
 ### Copilot driven unattended (copilot-acp, ADR 0171)
