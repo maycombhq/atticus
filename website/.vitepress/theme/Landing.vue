@@ -55,8 +55,12 @@ const does = [
 ];
 
 // What the current release added, in plain words; the CHANGELOG has every item.
-const release = "2.0.0-beta.15";
+const release = "2.0.0-beta.16";
 const news = [
+  {
+    body: "Unattended Copilot keeps going: a session that stops over a refused shell command is told why and carries on with its own file tools, and each top-up names the repo's checkout.",
+    link: "/guide/copilot-unattended.html",
+  },
   {
     body: "Copilot sessions need no terminal: `atticus map --all` writes each top-up's prompt itself, so the chat (pasted or unattended) only reads and writes files, and `--models entries` shrinks a top-up already under way.",
     link: "/guide/copilot-unattended.html",

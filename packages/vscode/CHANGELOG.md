@@ -2,6 +2,10 @@
 
 The Atticus extension for VS Code. The command line's own changes are in the repository's [CHANGELOG](https://github.com/maycombhq/atticus/blob/main/CHANGELOG.md).
 
+## 0.7.16 (pre-release, with Atticus 2.0.0-beta.16)
+
+- **Ships with Atticus 2.0.0-beta.16.** No change to the extension itself: an unattended Copilot session that ends over a refused shell command is told why and carries on with its own file tools, and a rules top-up's prompt names the repo's checkout.
+
 ## 0.7.15 (pre-release, with Atticus 2.0.0-beta.15)
 
 - **Ships with Atticus 2.0.0-beta.15.** No change to the extension itself: Map the estate now writes each rules top-up's prompt before handing a session to Copilot, so the chat only reads and writes files and runs no setup command, and `--models entries` shrinks a top-up already under way.
