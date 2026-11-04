@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import {
   changesDirOf,
   changesRelOf,
+  copilotAcpOf,
   loadOrgPack,
   runsDirOf,
   runsRelOf,
@@ -20,6 +21,7 @@ import {
 import { modelsByClass, stepClassOf } from "./step-class.js";
 import { DATA_RULE, estimateTokens } from "./context.js";
 import { HandoffRuntime, type HandoffOptions } from "./handoff.js";
+import { CopilotAcpRuntime, type CopilotAcpOptions } from "./copilot-acp.js";
 import {
   OneShotRuntime,
   RuntimeError,
@@ -50,6 +52,9 @@ import {
  *   factory says so plainly. `mock` is the test provider.
  * - `headless-claude-code`: `claude -p` in a worktree with a prompt file, behind a runner
  *   interface so tests use a fake and never start the real CLI.
+ * - `copilot-acp` (ADR 0171): GitHub Copilot driven unattended through the Copilot language
+ *   server's Agent Client Protocol mode, one new session per step, its rules fixed in code.
+ *   Inside such a session (ATTICUS_ACP_SESSION set), a step the session runs hands off instead.
  * - `replay` and `mock`: for tests and CI. They send nothing anywhere, so runtime.yaml doesn't
  *   have to allow them.
  */
@@ -57,7 +62,12 @@ import {
 export type RuntimeMode = RuntimeKind;
 export const RUNTIME_MODES = RuntimeKind.options;
 /** The modes runtime.yaml decides; replay and mock never leave the machine. */
-const CONFIGURED: readonly RuntimeMode[] = ["hand-off", "model", "headless-claude-code"];
+const CONFIGURED: readonly RuntimeMode[] = [
+  "hand-off",
+  "model",
+  "headless-claude-code",
+  "copilot-acp",
+];
 
 export class RuntimeConfigError extends RuntimeError {
   constructor(message: string) {
@@ -526,6 +536,8 @@ export interface CreateRuntimeOptions {
   replayDir?: string;
   recordings?: Recording[];
   headless?: Omit<HeadlessOptions, "root" | "now" | "validate">;
+  /** copilot-acp's runner: how atticus commands run for the session, progress lines, tests' spawner. */
+  copilotAcp?: Pick<CopilotAcpOptions, "exec" | "spawn" | "env" | "onProgress" | "clientVersion">;
   /**
    * The person's model per kind of step (ADR 0121 addendum), as the editors pass it:
    * ATTICUS_MODEL_READ, _DRAFT, _CRITIC, _KNOWLEDGE, _QUICK. Model and headless mode only.
@@ -577,13 +589,21 @@ export async function createRuntime(
   o: CreateRuntimeOptions,
 ): Promise<AiRuntime> {
   const rt = orgPack.runtime;
-  const mode = o.mode ?? rt.modes.default;
+  const asked = o.mode ?? rt.modes.default;
+  // ADR 0171: a step a Copilot session runs (atticus ... --handoff in its terminal) is the
+  // session's own work, so it hands off to it rather than opening a session of its own.
+  const inSession = !!(o.env ?? process.env).ATTICUS_ACP_SESSION;
+  const mode = asked === "copilot-acp" && inSession ? "hand-off" : asked;
   if (!(RUNTIME_MODES as readonly string[]).includes(mode))
     throw new RuntimeConfigError(
       `There is no AI mode called ${String(mode)}. Use one of: ${RUNTIME_MODES.join(", ")}.`,
     );
   if (rt.ai === "off" && CONFIGURED.includes(mode)) throw new AiOffError();
-  if (CONFIGURED.includes(mode) && !rt.modes.allowed.includes(mode as never))
+  if (
+    CONFIGURED.includes(mode) &&
+    !rt.modes.allowed.includes(mode as never) &&
+    !(inSession && asked === "copilot-acp")
+  )
     throw new RuntimeConfigError(
       `runtime.yaml doesn't allow ${mode} mode (allowed: ${rt.modes.allowed.join(", ")}). Change modes.allowed in a pull request, or pick an allowed mode.`,
     );
@@ -650,6 +670,23 @@ export async function createRuntime(
         ...(o.validate ? { validate: o.validate } : {}),
       });
     }
+    case "copilot-acp": {
+      if (!rt.assistants.allowed.includes("copilot"))
+        throw new RuntimeConfigError(
+          "copilot-acp drives GitHub Copilot, which runtime.yaml doesn't list under assistants.allowed.",
+        );
+      const c = copilotAcpOf(rt);
+      return new CopilotAcpRuntime({
+        root: o.root,
+        command: c.command,
+        ...(c.model ? { model: c.model } : {}),
+        maxTurns: c.maxTurns,
+        timeoutMs: c.timeoutMs,
+        ...o.copilotAcp,
+        ...(o.now ? { now: o.now } : {}),
+        ...(o.validate ? { validate: o.validate } : {}),
+      });
+    }
     case "replay":
       if (o.recordings) return new ReplayRuntime(o.recordings, one);
       if (!o.replayDir)
@@ -686,6 +723,7 @@ export async function runtimeForCli(
     env?: Record<string, string | undefined>;
     providers?: CreateRuntimeOptions["providers"];
     headless?: CreateRuntimeOptions["headless"];
+    copilotAcp?: CreateRuntimeOptions["copilotAcp"];
     handoffValidate?: CreateRuntimeOptions["handoffValidate"];
     /** Where a model passed over is told; default the command line's standard error, once. */
     onNote?: (line: string) => void;
@@ -701,7 +739,7 @@ export async function runtimeForCli(
   const asked = o.mode ?? env.ATTICUS_RUNTIME ?? op.runtime.modes.default;
   if (asked === "mock")
     throw new RuntimeConfigError(
-      "Mock mode is for tests; use hand-off, model, headless-claude-code or replay.",
+      "Mock mode is for tests; use hand-off, model, headless-claude-code, copilot-acp or replay.",
     );
   const mode = asked as RuntimeMode;
   const runtime = await createRuntime(op, {
@@ -710,18 +748,21 @@ export async function runtimeForCli(
     ...(env.ATTICUS_REPLAY_DIR ? { replayDir: env.ATTICUS_REPLAY_DIR } : {}),
     ...(o.providers ? { providers: o.providers } : {}),
     ...(o.headless ? { headless: o.headless } : {}),
+    ...(o.copilotAcp ? { copilotAcp: o.copilotAcp } : {}),
     ...(o.handoffValidate ? { handoffValidate: o.handoffValidate } : {}),
     // ADR 0121 addendum: the person's model per kind of step, and a model passed over said once.
     env,
     onNote: o.onNote ?? sayOnce,
   });
   const describe =
-    mode === "hand-off"
+    runtime.kind === "hand-off"
       ? "AI steps are handed to your assistant: Atticus writes the prompt and waits for atticus handoff done."
       : mode === "model"
         ? `AI steps call the ${op.runtime.adapters.model?.type ?? "configured"} model directly.`
         : mode === "headless-claude-code"
           ? "AI steps run in headless Claude Code."
-          : "AI steps replay recorded answers.";
-  return { runtime, mode, describe };
+          : mode === "copilot-acp"
+            ? "AI steps run in GitHub Copilot, unattended, one new session each (copilot-acp)."
+            : "AI steps replay recorded answers.";
+  return { runtime, mode: runtime.kind === "hand-off" ? "hand-off" : mode, describe };
 }
