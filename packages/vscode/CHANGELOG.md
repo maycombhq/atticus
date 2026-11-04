@@ -2,6 +2,10 @@
 
 The Atticus extension for VS Code. The command line's own changes are in the repository's [CHANGELOG](https://github.com/maycombhq/atticus/blob/main/CHANGELOG.md).
 
+## 0.7.17 (pre-release, with Atticus 2.0.0-beta.17)
+
+- **Ships with Atticus 2.0.0-beta.17.** No change to the extension itself: unattended Copilot runs no longer start a session within a session, hand gaps passes over prepared, and count a part done only once something was written for it.
+
 ## 0.7.16 (pre-release, with Atticus 2.0.0-beta.16)
 
 - **Ships with Atticus 2.0.0-beta.16.** No change to the extension itself: an unattended Copilot session that ends over a refused shell command is told why and carries on with its own file tools, and a rules top-up's prompt names the repo's checkout.

@@ -55,8 +55,12 @@ const does = [
 ];
 
 // What the current release added, in plain words; the CHANGELOG has every item.
-const release = "2.0.0-beta.16";
+const release = "2.0.0-beta.17";
 const news = [
+  {
+    body: "Unattended Copilot, steadier: no session within a session, gaps passes prepared like top-ups, and a part is done only once something was written for it.",
+    link: "/guide/copilot-unattended.html",
+  },
   {
     body: "Unattended Copilot keeps going: a session that stops over a refused shell command is told why and carries on with its own file tools, and each top-up names the repo's checkout.",
     link: "/guide/copilot-unattended.html",
