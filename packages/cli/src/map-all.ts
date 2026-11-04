@@ -1350,10 +1350,13 @@ export async function mapAllCommand(
       c,
       deps.git ? { git: deps.git } : {},
     );
-    const g = code === 0 ? jsonOf<{ sessions: unknown[] }>(c.lines) : undefined;
+    const g = code === 0 ? jsonOf<{ sessions: unknown[]; prompt?: string }>(c.lines) : undefined;
     if (!g) return undefined;
     if (!g.sessions.length && !v.rejected) return "done";
-    return `/atticus-map ${item.repo}${parted ? ` --part ${part.part}` : ""} --gaps`;
+    // beta.17: the prompt is written; the chat reads it and runs no atticus map itself.
+    return g.prompt
+      ? preparedLine(item.repo, g.prompt)
+      : `/atticus-map ${item.repo}${parted ? ` --part ${part.part}` : ""} --gaps`;
   }
 
   /**
@@ -1406,12 +1409,13 @@ export async function mapAllCommand(
       c,
       deps.git ? { git: deps.git } : {},
     );
-    const g = code === 0 ? jsonOf<{ sessions: unknown[] }>(c.lines) : undefined;
+    const g = code === 0 ? jsonOf<{ sessions: unknown[]; prompt?: string }>(c.lines) : undefined;
     if (!g) {
       io.out(`${item.repo}: the gaps pass couldn't be planned: ${c.errs[0] ?? "no plan"}`);
       return undefined;
     }
-    return g.sessions.length ? `/atticus-map ${item.repo} --gaps` : undefined;
+    if (!g.sessions.length) return undefined;
+    return g.prompt ? preparedLine(item.repo, g.prompt) : `/atticus-map ${item.repo} --gaps`;
   }
 
   async function block(

@@ -971,6 +971,7 @@ export async function mapCommand(
         commit,
         source,
         session: sessionTokensFor(limitOf(o, op, tier).limit),
+        checkout: relative(root, dir).split(sep).join("/") || ".",
         ...(o.json ? { json: true } : {}),
         ...(part ? { part } : {}),
         ...(o.models ? { models: o.models } : {}),

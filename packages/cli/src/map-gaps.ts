@@ -39,6 +39,8 @@ export interface GapsOptions {
   source: FileSource;
   /** The source one session reads (`sessionTokensFor`). */
   session: number;
+  /** beta.17: the repo's checkout, relative to the metarepo, where the paths are. */
+  checkout?: string;
   json?: boolean;
   /**
    * ADR 0161: only the rest of one part of the read plan, for a read that stopped partway: `left`
@@ -145,6 +147,7 @@ export async function mapGaps(
         rel,
         session: o.session,
         ...(o.part ? { part: o.part.n } : {}),
+        ...(o.checkout ? { checkout: o.checkout } : {}),
         reach: rp,
       }),
     );
@@ -211,7 +214,14 @@ export function gapsPrompt(
   repo: string,
   commit: string,
   plan: GapPlan,
-  c: { rel: string; session: number; part?: number; reach?: ReachPlan },
+  c: {
+    rel: string;
+    session: number;
+    /** beta.17: the repo's checkout, relative to the metarepo, where the paths are. */
+    checkout?: string;
+    part?: number;
+    reach?: ReachPlan;
+  },
 ): string {
   const n = plan.sessions.length;
   const s = plan.sessions[0]!;
@@ -234,7 +244,7 @@ export function gapsPrompt(
       ? `# The rest of part ${c.part} of ${repo} at ${commit}`
       : `# Second pass on the gaps of ${repo} at ${commit}`,
     "",
-    `Session 1${n > 1 ? ` of ${n}` : ""}, about ${s.tokens.toLocaleString("en-US")} tokens of source. ${c.part ? `The read of part ${c.part} stopped before it was done; what it wrote is verified and kept, so this session reads only the files of the part it left (ADR 0161).` : "The first read is done and verified; this session reads only what it left (ADR 0157)."} Open each path below and nothing else: a path ending \`#L<from>-L<to>\` by those lines only, never the whole file.`,
+    `Session 1${n > 1 ? ` of ${n}` : ""}, about ${s.tokens.toLocaleString("en-US")} tokens of source. ${c.part ? `The read of part ${c.part} stopped before it was done; what it wrote is verified and kept, so this session reads only the files of the part it left (ADR 0161).` : "The first read is done and verified; this session reads only what it left (ADR 0157)."} Open each path below and nothing else: a path ending \`#L<from>-L<to>\` by those lines only, never the whole file.${c.checkout ? ` The paths are in the repo's checkout, \`${c.checkout}\` in this metarepo: open \`${c.checkout}/<path>\` with your file tools; there is no need to look for it or to run a command.` : ""}`,
     "",
     `- Write each fact to \`${c.rel}/${repo}.jsonl\`, appended, under the same rules and id rules as the first read, with \`commit\` ${commit}. A fact already in the file keeps its id: look for it before you write it.`,
     `- A path or line that holds nothing to record: a line in \`${c.rel}/${repo}.reviewed.jsonl\`, \`{"path": "<the path below>", "why": "..."}\`.`,

@@ -146,7 +146,7 @@ rl.on("line", async (line) => {
   }
   const { id, method, params } = m;
   if (method === "initialize") {
-    log({ event: "initialize", params });
+    log({ event: "initialize", params, acpSession: process.env.ATTICUS_ACP_SESSION ?? null });
     send({
       id,
       result: {

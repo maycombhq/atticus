@@ -492,7 +492,10 @@ export async function runAcpSession(o: AcpSessionOptions): Promise<AcpSessionRes
     command,
     args,
     cwd: o.cwd,
-    env: { ...process.env, ...(o.env ?? {}) },
+    // beta.17: set on the server too, so an atticus command Copilot runs in its own shell (not
+    // through Atticus's terminal) knows it is inside a session and hands off instead of starting
+    // a Copilot session of its own (a session within a session, waiting on itself).
+    env: { ...process.env, ...(o.env ?? {}), ATTICUS_ACP_SESSION: "1" },
   });
   const transcript: string[] = [];
   const paths = new Paths(o.policy);

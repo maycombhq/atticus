@@ -2,6 +2,11 @@
 
 All notable changes to Atticus. Versions follow [Semantic Versioning](https://semver.org); contracts C1 to C6 change only with an ADR, a schema version and a migration (`atticus upgrade`).
 
+## Unreleased
+
+- An `atticus` command a Copilot session runs in Copilot's own shell no longer starts a Copilot session of its own (a session waiting on itself until it timed out): the Copilot language server is started marked as inside a session, and every atticus it starts hands off.
+- `atticus map --all` writes a gaps pass's prompt (`--gaps`, and the rest of a part, `--part n --gaps`) before handing the session over, as it does a top-up's, and the gaps prompt names the repo's checkout: the session reads and writes files and runs only `atticus verify`.
+
 ## 2.0.0-beta.16 (2026-11-04)
 
 - A Copilot session that ends right after Atticus refused something (Copilot reads a refusal as "Operation cancelled by user") is told, in the same session, what was refused and why, and to carry on with its own file tools instead of a shell; up to three times.

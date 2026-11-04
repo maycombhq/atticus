@@ -17,6 +17,7 @@ import { MockRuntime, type AiRuntime } from "@maycombhq/ai";
 import { rulesNow } from "@maycombhq/assistant-files";
 import {
   mapAllCommand,
+  preparedLine,
   readMapAllState,
   type Clock,
   type MapAllDeps,
@@ -531,7 +532,7 @@ describe("atticus map --all under Copilot: one line per part, waited for (ADR 01
     // r: what it wrote is verified (kept), and the line is the rest of the part only.
     expect(text).toMatch(/forge-ledger: \d+ facts kept, 0 rejected/);
     expect(text).toContain("given again (1)");
-    expect(d.copied.at(-1)).toBe("/atticus-map forge-ledger --part 1 --gaps");
+    expect(d.copied.at(-1)).toBe(preparedLine("forge-ledger", "facts/forge-ledger.gaps.md"));
     const prompt = readFileSync(join(root, "facts", "forge-ledger.gaps.md"), "utf8");
     expect(prompt).toContain("# The rest of part 1 of forge-ledger");
     // Only files of the part, none of the folder it finished; what the facts cite is left out too.
@@ -684,7 +685,7 @@ describe("atticus map --all: a part is done when verify's coverage leaves nothin
       `Still not covered in forge-ledger part 4 of 4: ${LJ}/validation/** (3 files: AmountCheck0.java, AmountCheck1.java, AmountCheck2.java). r + Enter gives a NEW chat only what is left of the part: these files, and any line verify lists as skipped under it (/atticus-map forge-ledger --part 4 --gaps); s + Enter skips the part; q + Enter stops.`,
     );
     expect(text).not.toContain("Still waiting");
-    expect(d.copied.at(-1)).toBe("/atticus-map forge-ledger --part 4 --gaps");
+    expect(d.copied.at(-1)).toBe(preparedLine("forge-ledger", "facts/forge-ledger.gaps.md"));
     const prompt = readFileSync(join(root, "facts", "forge-ledger.gaps.md"), "utf8");
     const listed = [...prompt.matchAll(/^- `([^`#]+)(?:#L\d+-L\d+)?` \(about/gm)].map((x) => x[1]!);
     expect(listed.sort()).toEqual([0, 1, 2].map((c) => `${LJ}/validation/AmountCheck${c}.java`));
@@ -916,7 +917,7 @@ describe("atticus map --all --gaps (ADR 0161, R2)", () => {
     const o = io();
     await mapAllCommand(root, { maxTokens: LIMIT, mode: "copilot", gaps: true }, o.io, d);
     const text = o.text();
-    expect(d.copied).toEqual(["/atticus-map forge-ledger --gaps"]);
+    expect(d.copied).toEqual([preparedLine("forge-ledger", "facts/forge-ledger.gaps.md")]);
     expect(text).toContain("===== forge-ledger, the gaps pass (repo 1 of 1) =====");
     expect(text).toContain("Joining the estate: atticus verify --all --write.");
     expect(text).toMatch(

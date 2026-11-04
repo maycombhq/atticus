@@ -382,6 +382,19 @@ describe("the Copilot ACP session (ADR 0171)", () => {
     expect(m.log().filter((e) => e.event === "prompt")).toHaveLength(1);
   });
 
+  it("runs the server marked as inside a session, so an atticus it starts never opens another (beta.17)", async () => {
+    const m = metarepo({ sessions: [{ steps: [{ say: "ok" }] }] });
+    await runAcpSession({
+      command: COMMAND,
+      cwd: m.root,
+      prompt: "x",
+      policy: policyOf(m.root),
+      exec: fakeAtticus().exec,
+      env: m.env,
+    });
+    expect(m.log().find((e) => e.event === "initialize")!.acpSession).toBe("1");
+  });
+
   it("says plainly when the server can't be started", async () => {
     const m = metarepo({ sessions: [] });
     await expect(
