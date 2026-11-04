@@ -2,6 +2,10 @@
 
 The Atticus extension for VS Code. The command line's own changes are in the repository's [CHANGELOG](https://github.com/maycombhq/atticus/blob/main/CHANGELOG.md).
 
+## 0.7.13 (pre-release, with Atticus 2.0.0-beta.13)
+
+- **Ships with Atticus 2.0.0-beta.13.** No change to the extension's own buttons: runtime.yaml can now let Atticus drive Copilot itself through the Copilot language server (`copilot-acp`), so `atticus map --all` runs every part unattended; the extension's buttons still hand off to Copilot Chat.
+
 ## 0.7.12 (pre-release, with Atticus 2.0.0-beta.12.2)
 
 - **Ships with Atticus 2.0.0-beta.12.2.** No change to the extension itself: one `--match "/**"` answer covers every path of a repo, each question card shows its id, and Map the estate moves on by itself when verify leaves nothing under a part, says what is left when something is, and stops waiting after a set time; `--force` re-reads repos whole in the same loop, and `--models entries` reads the classes a repo's own endpoints use first.

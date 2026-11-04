@@ -55,8 +55,12 @@ const does = [
 ];
 
 // What the current release added, in plain words; the CHANGELOG has every item.
-const release = "2.0.0-beta.12.2";
+const release = "2.0.0-beta.13";
 const news = [
+  {
+    body: "Copilot, unattended: with `copilot-acp` allowed in runtime.yaml, Atticus drives the GitHub Copilot language server itself, so `atticus map --all` reads every part in a fresh session with no pasting; a session may only read, write its own facts and run `atticus` commands.",
+    link: "/guide/copilot-unattended.html",
+  },
   {
     body: "`atticus map --all` moves on by itself once verify leaves nothing under a part, says exactly what is left when something is, and stops waiting after a set time; `--force` re-reads a repo whole in the same loop, and `--models entries` reads the classes a repo's own endpoints use first.",
     link: "/guide/install.html",
