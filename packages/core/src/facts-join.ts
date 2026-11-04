@@ -695,7 +695,8 @@ interface Node {
 
 /**
  * J0: a config placeholder: `${X}` or Spring's `${X:default}` anywhere in a value (a URL may be
- * written around it, `https://${HOST}/v2`), or `env:X` as the whole value. With two in one value
+ * written around it, `https://${HOST}/v2`), `env:X` as the whole value, or a build or deploy
+ * token `@X@` (Maven filtering, a gateway bundle's token replace from CI properties). With two in one value
  * (`${SCHEME}://${HOST}/v1`) this is the first, the rest left in `after`.
  */
 export function placeholderIn(
@@ -705,7 +706,13 @@ export function placeholderIn(
   const env = /^env:([A-Za-z_][A-Za-z0-9_.-]*)$/i.exec(t);
   if (env) return { name: env[1]!, before: "", after: "" };
   const i = t.indexOf("${");
-  if (i < 0) return undefined;
+  if (i < 0) {
+    // A build or deploy token, `@name@` (Maven resource filtering, an Apigee bundle's replace
+    // step from CI properties): set by the same config facts, by its name.
+    const at = /@([A-Za-z_][A-Za-z0-9_.-]*)@/.exec(t);
+    if (!at) return undefined;
+    return { name: at[1]!, before: t.slice(0, at.index), after: t.slice(at.index + at[0].length) };
+  }
   let depth = 0;
   let j = i + 2;
   for (; j < t.length; j++) {

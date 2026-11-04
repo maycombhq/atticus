@@ -244,6 +244,28 @@ describe("J0: which settings count for a component, and the forms a placeholder 
     expect(out.joins[0]!.tie).toBeUndefined();
   });
 
+  it("reads a build or deploy token `@X@` on the call's base, set in the repo's CI properties", () => {
+    const out = joinFacts({
+      repos: [
+        {
+          repo: "forge-web",
+          facts: [
+            getLimit({ base: "https://@targetLimitsUrl@" }),
+            fact("forge-web", "cfg-limits", "config", {
+              key: "targetLimitsUrl",
+              value: "limits.apps.forge.internal",
+              cite: { file: "CICD/properties.yaml", line: 7, value: "targetLimitsUrl" },
+            }),
+          ],
+        },
+        limits,
+      ],
+    });
+    expect(out.joins).toMatchObject([
+      { call: { fact: "c-get-limit" }, how: "host", through: [{ fact: "cfg-limits" }] },
+    ]);
+  });
+
   it("reads a placeholder in a config fact's `source`, with Spring's relaxed names, through a deployment the config file names", () => {
     const out = joinFacts({
       repos: [
