@@ -480,6 +480,78 @@ describe("atticus doctor", () => {
     }
   });
 
+  it("checks Copilot ACP where runtime.yaml allows it: the server, its version and its sign-in, without a run (ADR 0171)", async () => {
+    // Not allowed (the Forge pack): no check, and nothing is started.
+    let asked = 0;
+    const probe: DoctorDeps["copilotAcp"] = async () => {
+      asked++;
+      return { found: true, version: "1.390.0", signedIn: true };
+    };
+    expect(byId(await doctorChecks(root, healthy({ copilotAcp: probe })), "copilot-acp")).toBe(
+      undefined,
+    );
+    expect(asked).toBe(0);
+    const acp = await mkdtemp(join(tmpdir(), "atticus-doctor-acp-"));
+    await cp(root, acp, { recursive: true });
+    await writeFile(
+      join(acp, "org-pack/runtime.yaml"),
+      [
+        "schemaVersion: 3",
+        "assistants: { allowed: [copilot], default: copilot }",
+        "modes: { allowed: [hand-off, copilot-acp], default: hand-off }",
+        "copilotAcp: { command: copilot-language-server }",
+        "",
+      ].join("\n"),
+    );
+    const seen: { command: string; cwd: string }[] = [];
+    const ok = byId(
+      await doctorChecks(
+        acp,
+        healthy({
+          copilotAcp: async (o) => {
+            seen.push(o);
+            return { found: true, version: "1.390.0", signedIn: true };
+          },
+        }),
+      ),
+      "copilot-acp",
+    );
+    expect(seen).toEqual([{ command: "copilot-language-server", cwd: acp }]);
+    expect(ok).toMatchObject({ status: "ok", label: "Copilot ACP (copilot-acp)" });
+    expect(ok.detail).toBe(
+      "copilot-language-server 1.390.0 answers in Agent Client Protocol mode and is signed in. No session was run.",
+    );
+    const out = byId(
+      await doctorChecks(
+        acp,
+        healthy({
+          copilotAcp: async () => ({
+            found: true,
+            version: "1.390.0",
+            signedIn: false,
+            said: "Not signed in. Open https://github.com/login/device and enter WXYZ-0000",
+          }),
+        }),
+      ),
+      "copilot-acp",
+    );
+    expect(out.status).toBe("warn");
+    expect(out.detail).toContain(
+      "isn't signed in; it said: Not signed in. Open https://github.com/login/device",
+    );
+    expect(out.fix).toMatch(/Sign in to GitHub Copilot yourself/);
+    const none = byId(
+      await doctorChecks(
+        acp,
+        healthy({ copilotAcp: async () => ({ found: false, said: "not found" }) }),
+      ),
+      "copilot-acp",
+    );
+    expect(none.status).toBe("warn");
+    expect(none.detail).toBe("copilot-language-server can't be run here (not found)");
+    expect(none.fix).toMatch(/copilotAcp.command/);
+  });
+
   it("puts the machine first on the setup checklist", async () => {
     const ok = await setupSteps(root, { doctor: await doctorChecks(root, healthy()) });
     expect(ok.steps[0]).toMatchObject({ id: "machine", done: true });

@@ -54,6 +54,13 @@ export async function setUpAi(): Promise<void> {
   );
   // W1: the critic checks a name a lens's finding says is missing against the repos' code.
   naysayer.registerCodeSearch(codeTools.criticCodeSearch);
+  // ADR 0171: a copilot-acp session runs atticus commands with this Atticus, its progress on
+  // standard error so a step's own output stays data.
+  ai.registerCopilotAcp({
+    ...(process.argv[1] ? { exec: ai.atticusExec(process.argv[1]) } : {}),
+    onProgress: (l) => process.stderr.write(`${l}\n`),
+    clientVersion: VERSION,
+  });
 }
 
 /**
@@ -473,7 +480,7 @@ Usage:
           [--rules]                    Top up a repo read before reading rules added since (estate fresh says rules-changed): only the rule parts its read lacked, over the files they apply to, the facts kept listed by id; writes facts/<repo>.rules.md for a new chat (/atticus-map <repo> --rules), or reads it in batches with --mode or --handoff; once verify passes the read records the rules (ADR 0167)
           [--models entries|reachable|all]  Which model classes (DTOs, requests, responses, schemas) the read, its parts, --gaps and --rules take: those the entry points and calls reach, read right after them (the default), those the repo's own entry points reach (entries: the ones only an outbound client reaches are left for later, ADR 0170), or all; those left out are recorded in the read plan as notReached and said by --estimate and verify (ADR 0169)
           [--spent <tokens>] [--sessions n] [--part n]  Record what the read took as your assistant reports it, in facts/<repo>.read-plan.yaml beside --estimate's estimate (Atticus can't meter an assistant's tokens; ADR 0141)
-  atticus map --all                    Map or re-map the whole estate in one command (ADR 0161): every repo's read planned at the model's limit, in the onboarding queue's order, fresh repos skipped, and repos read before the reading rules there are now topped up for the new rules only (ADR 0167). Under Copilot you paste one line per part into a new chat and Atticus waits for the facts, verifies them and moves on (s skip, r retry what's left, q stop; it resumes); where runtime.yaml allows model mode it runs unattended. Then the estate is joined once. A part is done when verify's coverage leaves no file under it unaccounted; after --idle minutes (30) with nothing written it stops waiting, saying how to carry on; --force reads the repos (all, or --repos) whole again, the facts on file kept as already kept (ADR 0170) [--max-tokens n] [--stale | --gaps | --force] [--models entries|reachable|all] [--repos a,b] [--dry-run] [--mode model|hand-off] [--max-parts n] [--budget-tokens n] [--idle minutes]
+  atticus map --all                    Map or re-map the whole estate in one command (ADR 0161): every repo's read planned at the model's limit, in the onboarding queue's order, fresh repos skipped, and repos read before the reading rules there are now topped up for the new rules only (ADR 0167). Under Copilot you paste one line per part into a new chat and Atticus waits for the facts, verifies them and moves on (s skip, r retry what's left, q stop; it resumes); where runtime.yaml allows model mode it runs unattended; with --mode copilot-acp (runtime.yaml version 3, ADR 0171) Atticus drives Copilot itself through its Agent Client Protocol, one new session per part, unattended. Then the estate is joined once. A part is done when verify's coverage leaves no file under it unaccounted; after --idle minutes (30) with nothing written it stops waiting, saying how to carry on; --force reads the repos (all, or --repos) whole again, the facts on file kept as already kept (ADR 0170) [--max-tokens n] [--stale | --gaps | --force] [--models entries|reachable|all] [--repos a,b] [--dry-run] [--mode model|hand-off|copilot-acp] [--max-parts n] [--budget-tokens n] [--idle minutes]
   atticus verify <repo>                Check the facts your assistant wrote for a repo (/atticus-map) against its code: the claim on each cited line, the quote, references, secrets, coverage; raises the questions it wrote for a person; rejected facts go back to the assistant (ADR 0124) [--dir path] [--commit sha] [--routed a,b] [--skipped] [--json]
           [--write]                    When nothing is rejected: put the facts in the catalog, the flows in specs/<repo>/, ask about calls nothing joins, and render the map
           [--verbose]                  With --write: list every record changed and flow written, not only the counts
@@ -519,7 +526,7 @@ Usage:
   atticus ask "<question>"             Answer a plain question from the catalog, showing the query it ran
   atticus setup [--json]               The setup checklist until the catalog is accepted, with a fix for each step
   atticus baseline                     Accept the as-is catalog as the baseline [--note text] [--site dir]
-  atticus doctor [--json]              Check this machine: Node, Git, OpenSpec, proxy, TLS, disk, port, assistant, and the tier your assistant reads a repo at
+  atticus doctor [--json]              Check this machine: Node, Git, OpenSpec, proxy, TLS, disk, port, assistant, the tier your assistant reads a repo at, and (where runtime.yaml allows copilot-acp) the Copilot language server, its version and its sign-in, without running a session (ADR 0171)
   atticus doctor --counts [--json]     How far the map has got, in counts and flags only (questions, target questions by the calls each covers, links by how joined, asked and unresolved calls by why the join left them, repos read and stale, facts, tokens reported): nothing named, safe to paste
   atticus probe                        Measure what your assistant can do here (open a file, write one, run a command), so the tier it reads a repo at is measured, not read off runtime.yaml; then /atticus-probe in the assistant (ADR 0124) [--assistant id] [--max-tokens n] [--json]
   atticus probe answer <code>          Check the assistant's answer (none when it couldn't open the file) and keep what it measured in .atticus/probe/<assistant>.yaml, on this machine only [--pasted] [--max-tokens n] [--json]
@@ -564,6 +571,7 @@ Usage:
           [--scope repo|repo-type] [--type <repo type>] [--by who]  (--accept-proposal: the assistant's proposed answer, checked again, as yours)
           [--match <host pattern or /path/**>]  (a target or hosts answer by rule: it covers every call that matches, the calls found later too)
           [--target <id> [--add-system vendor|internal] [--name "..."]]  (where a call goes: any repo of the manifest, read or not, any system of the profile or a team in roles.yaml; a vendor or a team with no system yet is added to the profile with --add-system, a file change for review; ADR 0162)
+  atticus questions propose [<id>]     /atticus-propose as a command (ADR 0171): under --mode copilot-acp (or runtime.yaml's default) Copilot proposes in a new session, unattended, writing only proposals/questions/, then the proposals are checked; otherwise it prints the line to paste. A person still accepts each one [--mode copilot-acp|hand-off]
   atticus questions proposed [--json]  The answers /atticus-propose proposed for open questions, each citation checked (the file, the line, the quote on it); exits 1 while one doesn't check
   atticus questions sheet [--out <file>]   Every open question in one YAML answer sheet, each with an empty answer:, to answer in one sitting
   atticus questions sheet --apply <file> [--by who] [--json]   Answer each filled entry as you; skips blanks, refuses one whose question changed since
@@ -1596,6 +1604,8 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
         signal: ac.signal,
         makeRuntime: async () =>
           (await runtimeForCli(root, { mode: "model", handoffValidate: async () => [] })).runtime,
+        // ADR 0171: Copilot driven through its Agent Client Protocol, one new session a part.
+        makeAcp: async () => (await import("./copilot-acp-steps.js")).acpStepRunner(root),
       });
     } catch (e) {
       if (e instanceof (await loadAi()).RuntimeConfigError) {
@@ -1630,9 +1640,9 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
         return 2;
       }
     const asked = text(values.mode);
-    if (asked && !["model", "hand-off", "copilot"].includes(asked)) {
+    if (asked && !["model", "hand-off", "copilot", "copilot-acp"].includes(asked)) {
       io.err(
-        "atticus map --all takes --mode model or --mode hand-off (Copilot Chat, a line pasted per part).",
+        "atticus map --all takes --mode model, --mode hand-off (Copilot Chat, a line pasted per part) or --mode copilot-acp (Copilot driven unattended, ADR 0171).",
       );
       return 2;
     }
@@ -1650,7 +1660,16 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
       force: values.force === true,
       dryRun: values["dry-run"] === true,
       json: values.json === true,
-      ...(asked ? { mode: asked === "model" ? ("model" as const) : ("copilot" as const) } : {}),
+      ...(asked
+        ? {
+            mode:
+              asked === "model"
+                ? ("model" as const)
+                : asked === "copilot-acp"
+                  ? ("copilot-acp" as const)
+                  : ("copilot" as const),
+          }
+        : {}),
       ...(numbers.maxParts ? { maxParts: numbers.maxParts } : {}),
       ...(numbers.budgetTokens ? { budgetTokens: numbers.budgetTokens } : {}),
       ...(numbers.idle ? { idleMinutes: numbers.idle } : {}),
@@ -1703,6 +1722,29 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
       json: values.json === true,
       ...(models ? { models } : {}),
     };
+    // ADR 0171: under copilot-acp (asked for, or runtime.yaml's default outside a session), a
+    // read, its gaps pass or its rules top-up runs as map --all does for this one repo: each part
+    // in a new Copilot session. --estimate stays the plan it prints.
+    const acpAsked = text(values.mode) === "copilot-acp";
+    if (!o.estimate && !o.copy && o.answer === undefined && !o.next && o.resume === undefined) {
+      const { copilotAcpByDefault } = await import("./copilot-acp-steps.js");
+      const core = await import("@maycombhq/core");
+      const op = await core.loadOrgPack(core.orgPackDirOf(root)).catch(() => undefined);
+      if (acpAsked || (!text(values.mode) && op && copilotAcpByDefault(op) && !o.json)) {
+        // --rules: map --all plans this repo's top-up for the rules added since it was read.
+        const idle = Number(text(values.idle));
+        return runMapAll({
+          repos: [repo],
+          mode: "copilot-acp",
+          force: o.force,
+          gaps: o.gaps,
+          dryRun: values["dry-run"] === true,
+          ...(Number.isInteger(idle) && idle > 0 ? { idleMinutes: idle } : {}),
+          ...(models ? { models } : {}),
+          resumeAs: `atticus map ${repo}${o.gaps ? " --gaps" : ""}${o.force ? " --force" : ""} --mode copilot-acp`,
+        });
+      }
+    }
     // ADR 0167: --rules alone writes the top-up's prompt for a new chat; with a mode, its batches.
     if (o.estimate || o.gaps || (o.rules && !o.copy && !text(values.mode)))
       return mapCommand(root, repo, o, io);
@@ -3538,6 +3580,27 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
   if (group === "domain" && command === "profile")
     return domainProfileCommand(root, arg, str(values.out) ? { out: str(values.out)! } : {}, io);
   // Any subcommand goes to the questions on file (list, show, answer), which refuses one it hasn't.
+  // ADR 0171: /atticus-propose as a command; under copilot-acp, run in a new Copilot session.
+  if (group === "questions" && command === "propose") {
+    const { questionsProposeCommand } = await import("./copilot-acp-steps.js");
+    const ac = new AbortController();
+    const onInt = () => ac.abort();
+    process.on("SIGINT", onInt);
+    try {
+      return await questionsProposeCommand(
+        root,
+        {
+          ...(arg ? { id: arg } : {}),
+          ...(typeof values.mode === "string" ? { mode: values.mode } : {}),
+          signal: ac.signal,
+        },
+        io,
+        () => questionsFiles(root, ["questions", "proposed", "--root", root], io),
+      );
+    } finally {
+      process.off("SIGINT", onInt);
+    }
+  }
   if (group === "questions" && command) return questionsFiles(root, argv, io);
   if (group === "questions") return questionsCommand(root, io, { json: values.json === true });
   if (group === "reconcile")

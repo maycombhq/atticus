@@ -512,6 +512,17 @@ export function registerToolSource(source: ((root: string) => ToolSource | undef
   toolSource = source;
 }
 
+let acpRunner: CreateRuntimeOptions["copilotAcp"] | undefined;
+
+/**
+ * Register how a copilot-acp session runs atticus commands and where its progress goes (ADR
+ * 0171): the command line registers its own entry, so a session runs this Atticus. Without one a
+ * session's commands are refused, saying to run the step with the command line. Undefined forgets.
+ */
+export function registerCopilotAcp(o: CreateRuntimeOptions["copilotAcp"] | undefined): void {
+  acpRunner = o;
+}
+
 export interface CreateRuntimeOptions {
   /** The metarepo root (hand-off runs and headless prompt files go under .runs/). */
   root: string;
@@ -682,6 +693,7 @@ export async function createRuntime(
         ...(c.model ? { model: c.model } : {}),
         maxTurns: c.maxTurns,
         timeoutMs: c.timeoutMs,
+        ...acpRunner,
         ...o.copilotAcp,
         ...(o.now ? { now: o.now } : {}),
         ...(o.validate ? { validate: o.validate } : {}),

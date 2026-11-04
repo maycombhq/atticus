@@ -9,8 +9,10 @@ The `@atticus` chat participant still works and is unchanged. It carries prompts
 command line and the model and answers in the chat. Agent mode is the other way to take the same
 step, and it is the one to use where the step writes files.
 
-See also: [Choosing models at an organisation on Copilot](models.md), and
-[Installing Atticus](install.md) for the command line itself.
+See also: [Choosing models at an organisation on Copilot](models.md),
+[Installing Atticus](install.md) for the command line itself, and
+[Running Copilot unattended](copilot-unattended.md), where Atticus sends each step to a new
+Copilot session itself instead of you pasting it (copilot-acp, ADR 0171).
 
 ## Setup
 

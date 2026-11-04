@@ -56,6 +56,11 @@ export function whatRunsWhere(rt: Runtime, o: { probes?: readonly ProbeResult[] 
       first: "Headless Claude Code",
       also: "headless Claude Code allowed",
     },
+    // ADR 0171: Copilot driven through its Agent Client Protocol, one new session per step.
+    "copilot-acp": {
+      first: "GitHub Copilot, unattended (copilot-acp)",
+      also: "Copilot unattended allowed (copilot-acp)",
+    },
   } as const;
   const parts: string[] = [say[rt.modes.default].first];
   for (const m of rt.modes.allowed) {

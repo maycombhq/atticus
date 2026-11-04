@@ -8,7 +8,7 @@ import {
   readProbes,
   rulesLacking,
 } from "@maycombhq/assistant-files";
-import { currentPromptLimit, type AiRequest, type AiRuntime } from "@maycombhq/ai";
+import { AcpSignInError, currentPromptLimit, type AiRequest, type AiRuntime } from "@maycombhq/ai";
 import {
   ensureLocalIgnore,
   factsDirOf,
@@ -25,6 +25,12 @@ import { estateRepos, productionRepos } from "@maycombhq/scanner";
 import { dirSource, sameCommit, sessionTokensFor } from "@maycombhq/verify";
 import type { GitRunner } from "@maycombhq/workspace";
 import type { Output } from "./commands.js";
+import {
+  copilotAcpAllowed,
+  copilotAcpByDefault,
+  readWrites,
+  type AcpStepRunner,
+} from "./copilot-acp-steps.js";
 import { estateFreshness, type FreshRepo } from "./estate-fresh.js";
 import { checkoutOf, conventionsAt, excludesOf, headOf } from "./facts-files.js";
 import { mapCommand, mapStateOf } from "./map-commands.js";
@@ -52,6 +58,11 @@ import { factsRepos, verifyCommand } from "./verify-commands.js";
  *   as it is (good facts kept) and given again for only what is left.
  * - **Model mode** (runtime.yaml allows it and names a provider): every part runs on the model,
  *   unattended, with a cap on prompts or tokens; a failed part is retried with backoff.
+ * - **copilot-acp** (ADR 0171, runtime.yaml version 3 allows it): Copilot driven unattended through
+ *   the Copilot language server's Agent Client Protocol mode. Each part's line is sent, as the text
+ *   Copilot would read for it, in one NEW session; when the session ends the part is verified as
+ *   the waiting loop verifies it, and a part not accounted for is given once more, in a new
+ *   session, with only what is left. The caps count sessions and the tokens the server reports.
  *
  * At the end the estate is joined once (`verify --all --write`). Where it is in the estate is
  * kept in `.atticus/map-all/state.json` (this machine's, never committed), but what is done is
@@ -70,9 +81,12 @@ export interface MapAllOptions {
   /** Print the plan and stop. */
   dryRun?: boolean;
   json?: boolean;
-  /** Who reads: a person pasting into Copilot, or runtime.yaml's model. Default from runtime.yaml. */
-  mode?: "copilot" | "model";
-  /** Model mode: stop after this many prompts. */
+  /**
+   * Who reads: a person pasting into Copilot, runtime.yaml's model, or Copilot driven through its
+   * Agent Client Protocol (ADR 0171). Default from runtime.yaml.
+   */
+  mode?: "copilot" | "model" | "copilot-acp";
+  /** Model mode: stop after this many prompts; copilot-acp: this many sessions. */
   maxParts?: number;
   /** Model mode: stop once this many tokens are spent (the runtime's count, else the prompts'). */
   budgetTokens?: number;
@@ -118,6 +132,9 @@ export interface MapAllDeps {
   remindMs?: number;
   /** Model mode: the first wait before a retry (doubled each time). */
   backoffMs?: number;
+  /** copilot-acp (ADR 0171): runs one step's line in a new Copilot session. */
+  acp?: AcpStepRunner;
+  makeAcp?: () => Promise<AcpStepRunner>;
 }
 
 export type ItemKind = "read" | "reread" | "carry" | "gaps" | "rules";
@@ -154,7 +171,7 @@ export interface PlanItem {
 export interface MapAllPlan {
   limit: number;
   limitFrom: "flag" | "runtime.yaml" | "probe";
-  mode: "copilot" | "model";
+  mode: "copilot" | "model" | "copilot-acp";
   items: PlanItem[];
   skipped: { repo: string; why: string }[];
 }
@@ -630,7 +647,7 @@ function planLines(plan: MapAllPlan): string[] {
   const planned = reading.reduce((n, i) => n + Math.max(i.total, i.parts.length), 0);
   const tokens = reading.reduce((n, i) => n + i.tokens, 0);
   out.push(
-    `The estate at ${tokensText(plan.limit)} tokens a prompt (${plan.limitFrom === "flag" ? "--max-tokens" : plan.limitFrom === "probe" ? "the limit atticus probe measured" : "runtime.yaml's maxInput"}), ${plan.mode === "model" ? "read by runtime.yaml's model, unattended" : "read by Copilot Chat in agent mode: you paste one line per part"}:`,
+    `The estate at ${tokensText(plan.limit)} tokens a prompt (${plan.limitFrom === "flag" ? "--max-tokens" : plan.limitFrom === "probe" ? "the limit atticus probe measured" : "runtime.yaml's maxInput"}), ${plan.mode === "model" ? "read by runtime.yaml's model, unattended" : plan.mode === "copilot-acp" ? "read by GitHub Copilot through its Agent Client Protocol, unattended: one new session per part" : "read by Copilot Chat in agent mode: you paste one line per part"}:`,
   );
   plan.items.forEach((i, n) => {
     const head = `  ${n + 1}. ${i.repo}${i.prototype ? " (prototype: read, never joined)" : ""}`;
@@ -875,7 +892,16 @@ export async function mapAllCommand(
   }
   const limit = lim.limit;
   const allowed = modelModeAllowed(op);
-  const mode = o.mode ?? (allowed ? "model" : "copilot");
+  const mode = o.mode ?? (copilotAcpByDefault(op) ? "copilot-acp" : allowed ? "model" : "copilot");
+  if (mode === "copilot-acp" && !copilotAcpAllowed(op) && !deps.acp) {
+    io.err(
+      "runtime.yaml doesn't allow copilot-acp here (schemaVersion 3, copilot-acp in modes.allowed and copilot in assistants.allowed): map the estate through Copilot Chat (atticus map --all without --mode copilot-acp), or ask for it in a pull request (ADR 0171).",
+    );
+    return 2;
+  }
+  // The state file's reader: a session per part reads as the person's chat does, so a run under
+  // either carries on from the other.
+  const stateMode = mode === "model" ? "model" : "copilot";
   if (mode === "model" && !allowed && !deps.runtime) {
     io.err(
       "runtime.yaml doesn't allow model mode with a provider here: map the estate through Copilot (atticus map --all without --mode model).",
@@ -893,7 +919,7 @@ export async function mapAllCommand(
     return 2;
   }
   let state = await readMapAllState(root);
-  if (state && (state.gaps !== !!o.gaps || state.mode !== mode)) state = undefined;
+  if (state && (state.gaps !== !!o.gaps || state.mode !== stateMode)) state = undefined;
   const plan = await planEstate(
     root,
     op,
@@ -914,7 +940,7 @@ export async function mapAllCommand(
   const st: MapAllState = state ?? {
     schemaVersion: 1,
     updatedAt: "",
-    mode,
+    mode: stateMode,
     gaps: !!o.gaps,
     repos: {},
   };
@@ -978,6 +1004,7 @@ export async function mapAllCommand(
 
   let quit = false;
   let capHit = false;
+  let signIn = false;
   let runtime: AiRuntime | undefined;
   const items = plan.items;
   for (const [n, item] of items.entries()) {
@@ -1017,6 +1044,15 @@ export async function mapAllCommand(
       }
       continue;
     }
+    if (mode === "copilot-acp") {
+      for (const part of item.parts) {
+        if (quit || stopped() || capHit) break;
+        const end = await acpPart(item, part, where);
+        if (end === "quit") quit = true;
+        if (end === "cap") capHit = true;
+      }
+      continue;
+    }
     for (const part of item.parts) {
       if (quit || stopped()) break;
       const end = await copilotPart(item, part, where);
@@ -1034,7 +1070,7 @@ export async function mapAllCommand(
       io.out("");
       io.out(
         capHit
-          ? `Stopped at the cap (${o.maxParts !== undefined ? `--max-parts ${o.maxParts}` : ""}${o.maxParts !== undefined && o.budgetTokens !== undefined ? ", " : ""}${o.budgetTokens !== undefined ? `--budget-tokens ${o.budgetTokens}` : ""}): ${plural(totals.spent.prompts, "prompt")} run. atticus map --all carries on from here.`
+          ? `Stopped at the cap (${o.maxParts !== undefined ? `--max-parts ${o.maxParts}` : ""}${o.maxParts !== undefined && o.budgetTokens !== undefined ? ", " : ""}${o.budgetTokens !== undefined ? `--budget-tokens ${o.budgetTokens}` : ""}): ${plural(totals.spent.prompts, mode === "copilot-acp" ? "session" : "prompt")} run. atticus map --all carries on from here.`
           : "Stopped. Where the estate stands is saved: atticus map --all carries on from here.",
       );
     }
@@ -1061,7 +1097,7 @@ export async function mapAllCommand(
   }
   await save();
   await summary(interrupted);
-  return 0;
+  return signIn ? 1 : 0;
 
   // ------------------------------------------------------------ one part, read by Copilot
 
@@ -1389,6 +1425,118 @@ export async function mapAllCommand(
     );
   }
 
+  // ------------------------------------------------------------ one part, in a Copilot session (ADR 0171)
+
+  /** The cap is reached (--max-parts sessions, --budget-tokens). */
+  function overCap() {
+    return (
+      (o.maxParts !== undefined && totals.spent.prompts >= o.maxParts) ||
+      (o.budgetTokens !== undefined && totals.spent.tokens >= o.budgetTokens)
+    );
+  }
+
+  async function acpPart(
+    item: PlanItem,
+    part: PlanPart,
+    where: string,
+  ): Promise<PartEnd | "quit" | "cap"> {
+    const ps = partState(item, part.part);
+    const label = item.total > 1 ? `part ${part.part} of ${item.total}` : "one session";
+    const progress = item.total > 1 ? await readPlanProgress(root, item.repo) : undefined;
+    const first0 =
+      item.kind === "rules"
+        ? await rulesLine(item)
+        : item.kind === "gaps"
+          ? await gapsLine(item)
+          : item.force
+            ? forceLine(item, part)
+            : ps.retries > 0 || (progress?.next && progress.next.part !== part.part)
+              ? ((await restLine(item, part)) ?? `/atticus-map ${item.repo}`)
+              : `/atticus-map ${item.repo}`;
+    if (first0 === undefined) {
+      io.out(`${item.repo}: no gaps left; nothing to read.`);
+      return finishPart(item, part, ps);
+    }
+    if (first0 === "done") return finishPart(item, part, ps);
+    let line: string = first0;
+    const runner = deps.acp ?? (await deps.makeAcp?.());
+    if (!runner) {
+      io.err("No Copilot session runner: copilot-acp needs runtime.yaml's copilotAcp.");
+      return "quit";
+    }
+    for (let attempt = 0; attempt < 2; attempt++) {
+      if (stopped()) break;
+      if (overCap()) return "cap";
+      io.out("");
+      io.out(
+        `===== ${item.repo}, ${item.kind === "gaps" ? "the gaps pass" : item.kind === "rules" ? "the rules top-up" : label} (${where})${attempt ? ", given again in a new session" : ""} =====`,
+      );
+      io.out(`In a NEW Copilot session (copilot-acp): ${line}`);
+      const base = item.force ? await writtenOf(root, item.repo) : "";
+      const first = await snapOf(root, item.repo);
+      totals.spent.prompts++;
+      try {
+        const r = await runner({
+          line,
+          change: `map-${item.repo}`,
+          writeRoots: readWrites(root),
+          ...(deps.signal ? { signal: deps.signal } : {}),
+          onProgress: io.out,
+        });
+        totals.spent.tokens += r.usage ? r.usage.inputTokens + r.usage.outputTokens : part.tokens;
+        io.out(`The session ended (${r.stopped ?? r.stopReason}).`);
+      } catch (e) {
+        if (e instanceof AcpSignInError) {
+          io.err(e.message);
+          signIn = true;
+          ps.state = "incomplete";
+          await save();
+          return "quit";
+        }
+        totals.spent.tokens += part.tokens;
+        io.out(`${item.repo} ${label}: the Copilot session failed: ${firstLine(e)}`);
+      }
+      if (stopped()) break;
+      // Verified as `atticus verify <repo> --write` runs, and asked the same coverage (ADR 0170).
+      const wrote = item.force ? (await writtenOf(root, item.repo)) !== base : undefined;
+      const v = existsSync(join(factsDirOf(root), `${item.repo}.jsonl`))
+        ? await verifyStep(item)
+        : undefined;
+      const after = await snapOf(root, item.repo);
+      if (
+        v &&
+        !v.rejected &&
+        (await covered(root, item, part, first, after, v.coverage.unknown, wrote))
+      )
+        return finishPart(item, part, ps);
+      if (attempt > 0) break;
+      ps.retries++;
+      await save();
+      const rest =
+        item.kind === "rules"
+          ? await rulesLine(item)
+          : item.kind === "gaps"
+            ? await gapsLine(item)
+            : item.force
+              ? forceLine(item, part)
+              : await restLine(item, part);
+      if (rest === "done" || (rest === undefined && item.kind === "gaps"))
+        return finishPart(item, part, ps);
+      line = rest ?? `/atticus-map ${item.repo}`;
+      io.out(
+        `${item.repo} ${label} isn't accounted for yet${v?.rejected ? ` (${plural(v.rejected, "fact")} rejected)` : ""}: one more try in a NEW session with only what is left (${line}).`,
+      );
+    }
+    ps.state = "incomplete";
+    await save();
+    if (stopped()) return "quit";
+    io.out(
+      `${item.repo} ${label}: still not accounted for after a second session; moving on. atticus map --all carries on from here.`,
+    );
+    totals.ends.push(endOf(item, part, "incomplete"));
+    return "incomplete";
+  }
+
   // ------------------------------------------------------------ one repo, read by the model
 
   async function modelRead(
@@ -1492,7 +1640,7 @@ export async function mapAllCommand(
     const rejected = [...totals.rejected.values()].reduce((n, x) => n + x, 0);
     io.out("");
     io.out(
-      `${interrupted ? "So far" : "Done"}: ${plural(totals.repos.size, "repo")} read, ${plural(totals.parts, "part")}${mode === "model" ? ` (${plural(totals.spent.prompts, "prompt")})` : ""}; ${plural(rejected, "fact")} rejected; links +${totals.added} -${totals.removed}; ${plural(open, "question")} open.`,
+      `${interrupted ? "So far" : "Done"}: ${plural(totals.repos.size, "repo")} read, ${plural(totals.parts, "part")}${mode === "model" ? ` (${plural(totals.spent.prompts, "prompt")})` : mode === "copilot-acp" ? ` (${plural(totals.spent.prompts, "session")})` : ""}; ${plural(rejected, "fact")} rejected; links +${totals.added} -${totals.removed}; ${plural(open, "question")} open.`,
     );
     const left = totals.ends.filter((e) => e.end !== "done");
     if (left.length) {
