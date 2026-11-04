@@ -55,8 +55,12 @@ const does = [
 ];
 
 // What the current release added, in plain words; the CHANGELOG has every item.
-const release = "2.0.0-beta.14";
+const release = "2.0.0-beta.15";
 const news = [
+  {
+    body: "Copilot sessions need no terminal: `atticus map --all` writes each top-up's prompt itself, so the chat (pasted or unattended) only reads and writes files, and `--models entries` shrinks a top-up already under way.",
+    link: "/guide/copilot-unattended.html",
+  },
   {
     body: "Fewer questions: one `--match \"/**\"` answer covers a gateway's forwarding calls through a deploy token, a call's path written as a setting is read from application.properties, and the Questions page counts what is open, lists by repo and answers several at once.",
     link: "/guide/install.html",

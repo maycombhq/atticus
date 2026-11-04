@@ -2,6 +2,10 @@
 
 The Atticus extension for VS Code. The command line's own changes are in the repository's [CHANGELOG](https://github.com/maycombhq/atticus/blob/main/CHANGELOG.md).
 
+## 0.7.15 (pre-release, with Atticus 2.0.0-beta.15)
+
+- **Ships with Atticus 2.0.0-beta.15.** No change to the extension itself: Map the estate now writes each rules top-up's prompt before handing a session to Copilot, so the chat only reads and writes files and runs no setup command, and `--models entries` shrinks a top-up already under way.
+
 ## 0.7.14 (pre-release, with Atticus 2.0.0-beta.14)
 
 - **Ships with Atticus 2.0.0-beta.14.** No change to the extension's own buttons: the app's Questions page (in the extension's panel) now counts open, answered and retired questions at the top, lists them by repo, and answers several picked questions the same way; a `--match` rule covers a gateway's forwarding calls through a deploy token; and a call's path written as a setting or a field's name is resolved or read again.
