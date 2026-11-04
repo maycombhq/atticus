@@ -147,8 +147,10 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   calls share a path prefix or host with other open targets questions of its repo: the rule
  *   (`/accounts/**`) one answer could take to cover them all, the questions it covers and their
  *   calls. Additive only.
+ * 2.50.0 (ADR 0172): the contract check's counts give `unlinked`, the calls no link starts at.
+ *   Additive only.
  */
-export const API_VERSION = "2.49.0";
+export const API_VERSION = "2.50.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -902,6 +904,8 @@ export const ContractCounts = z.object({
   compared: z.number().int(),
   mismatches: z.number().int(),
   unconfirmed: z.number().int(),
+  /** 2.50.0 (ADR 0172): the calls no link starts at, whose payload can't be checked yet. */
+  unlinked: z.number().int().optional(),
 });
 export const TrustView = z.object({
   /** Where the facts files are, relative to the metarepo. */

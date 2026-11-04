@@ -265,6 +265,20 @@ describe("a direct REST call on a second stack (G3)", () => {
     expect(quiet.findings).toEqual([]);
     expect(quiet.counts.compared).toBe(0);
   });
+
+  it("counts the calls no link starts at, whose payload can't be checked yet (ADR 0172)", () => {
+    expect(r.counts.unlinked).toBe(0);
+    const left = checkContracts({
+      repos: [
+        { repo: BFF, facts: bff },
+        { repo: SVC, facts: svc },
+      ],
+      join: { ...joined, joins: [] },
+    });
+    const calls = bff.filter((f) => f.kind === "call").length;
+    expect(calls).toBeGreaterThan(0);
+    expect(left.counts.unlinked).toBe(calls);
+  });
 });
 
 // ---- an Avro topic between a Node publisher and a Python listener

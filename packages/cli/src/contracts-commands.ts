@@ -17,6 +17,8 @@ export const CONTRACTS_WORDS = {
       ? "No mismatches."
       : `${m} mismatch${m === 1 ? "" : "es"}, ${u} unconfirmed (a mapping on the way isn't traced).`,
   none: "No link has a payload on both sides yet: the field facts say what a call sends and an entry takes (atticus map <repo>), and a spec on file says what an API publishes (verify --write reads a repo's specs; atticus intake add takes a vendor's or a team's).",
+  unlinked: (n: number) =>
+    `${n} call${n === 1 ? " joins" : "s join"} nothing yet, so ${n === 1 ? "its" : "their"} payload isn't checked against the other side: answer their target questions or re-read them (atticus doctor --counts says why each is left).`,
   mismatches: "Mismatches:",
   unconfirmed: "Unconfirmed:",
   link: (l: ContractLink) =>
@@ -51,6 +53,7 @@ export async function joinContracts(
   }
   const W = CONTRACTS_WORDS;
   if (!result.counts.compared) io.out(W.none);
+  if (result.counts.unlinked) io.out(W.unlinked(result.counts.unlinked));
   else {
     io.out(W.head(result.counts.links, result.counts.compared));
     io.out(W.counts(result.counts.mismatches, result.counts.unconfirmed));

@@ -123,6 +123,11 @@ export function Mismatches() {
     <div className="bento">
       <Panel title={M.title} span="1 / -1">
         <p className="work-say">{M.intro}</p>
+        {view.state === "ready" && !!view.data.counts.unlinked && (
+          <p className="state" style={{ margin: "0 0 8px" }}>
+            {M.unlinked(view.data.counts.unlinked)}
+          </p>
+        )}
         <View of={view} empty={(d) => d.counts.compared === 0} emptyText={M.empty}>
           {(d) => <MismatchesPanels view={d} />}
         </View>

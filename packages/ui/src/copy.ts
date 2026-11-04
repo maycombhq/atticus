@@ -176,6 +176,33 @@ export const COPY = {
     askedBy: (command: string, day: string) => `Asked by ${command} on ${day}`,
     /** The copy button beside a question's id on its card. */
     copyId: "Copy the id",
+    counts: {
+      label: (repo?: string) => (repo ? `Questions in ${repo}` : "Questions in the estate"),
+      open: "Open",
+      answered: "Answered",
+      retired: "Retired",
+      total: "All",
+      progress: (pct: number) => `${pct}% settled`,
+      repos: (n: number) => `${n} repo${n === 1 ? "" : "s"}`,
+    },
+    bulk: {
+      pick: (id: string) => `Pick ${id} to answer with others`,
+      pickRepo: (repo: string) => `Pick every open question in ${repo}`,
+      title: (n: number) => `Answer ${n} question${n === 1 ? "" : "s"} the same way`,
+      more: (n: number) => `and ${n} more`,
+      how: "Answer with",
+      byTarget: "Where the calls go",
+      byWords: "Your own words",
+      targetLabel: "Repo, system or team",
+      hint: "Each picked question gets this answer for its own repo, as if answered one by one. A question it doesn't fit says why; the rest are still answered.",
+      needTarget: "Name the repo, system or team the calls go to.",
+      submit: (n: number) => `Answer ${n}`,
+      busy: "Answering…",
+      clear: "Clear the picks",
+      done: (n: number) => `Answered ${n}.`,
+      next: "atticus verify --all --write",
+    },
+    groupOf: (repo: string, n: number) => `${repo}: ${n} question${n === 1 ? "" : "s"}`,
     evidence: "What it read",
     notShown: "Not shown: the file isn't here, or the line is past its end.",
     options: "Your answer",
@@ -2903,6 +2930,8 @@ export const COPY = {
       "No link has a payload on both sides yet. Your assistant records what each call sends and each entry takes when it reads a repo (/atticus-map); atticus verify <repo> --write reads the repo's specs; atticus intake add takes a vendor's or another team's.",
     counts: (m: number, u: number, links: number, compared: number) =>
       `${m} mismatch${m === 1 ? "" : "es"}, ${u} unconfirmed; ${compared} of ${links} link${links === 1 ? "" : "s"} had a payload on both sides.`,
+    unlinked: (n: number) =>
+      `${n} call${n === 1 ? " joins" : "s join"} nothing yet, so ${n === 1 ? "its" : "their"} payload isn't checked: answer their questions on the Questions page, or re-read the repo (atticus map --all --stale).`,
     filter: "Show",
     filters: { all: "Everything", mismatch: "Mismatches", unconfirmed: "Unconfirmed" } as Record<
       string,

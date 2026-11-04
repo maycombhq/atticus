@@ -9,6 +9,13 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - A `--match` rule (`/**` included) now answers a gateway's forwarding calls whose URL can't say where they go: a host still a deploy token (`@targetUrl@`) or a placeholder, a target written as the token, or a base with a different host per environment. Their open questions retire on the next `verify --write`, naming the rule.
 - A call's path written as a setting (`${forge-remote.uris.download-report}`) is resolved through the repo's `application.properties`/`.yml` config facts, as a host is; a whole URL there gives the host too.
 - A call's path that is only the name of the field or variable holding it (`requestRefundPath`) is rejected at verify (`call-path-is-a-name`), and the reading rules tell the assistant to follow it to the literal or the setting's `${key}`. Run `atticus map --all --stale`, then `atticus verify --all --write`.
+- `atticus join contracts` and Map › Mismatches say how many calls join nothing yet, so their payload isn't checked against the other side (`counts.unlinked`, local API 2.50.0): every link is checked once its call joins, so these are what to answer or re-read next.
+
+### The Questions page
+
+- Counts at the top: open, answered, retired and all (in the picked repo), and how much is settled; Open and All pick the list.
+- The list is grouped by repo, each question a quiet row (two lines, its state and id) instead of a run of links, the one open marked.
+- Pick several open questions (or a repo's at once) and answer them the same way: where their calls go (a repo, system or team, with the picker's names offered) or the same words. Each is answered on its own; one it doesn't fit says why and the rest stand.
 
 ## 2.0.0-beta.13 (2026-11-04)
 

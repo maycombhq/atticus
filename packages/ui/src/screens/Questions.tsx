@@ -361,6 +361,14 @@ export const shownQuestions = (qs: QuestionView[], f: { text: string; repo: stri
 
 const FILTER_ID = "questions-filter";
 
+/** The questions by repo, in the repos' order, each repo's in the order given. */
+export function byRepo(qs: QuestionView[]): [string, QuestionView[]][] {
+  const out = new Map<string, QuestionView[]>();
+  for (const r of questionRepos(qs)) out.set(r, []);
+  for (const q of qs) out.get(q.repo)!.push(q);
+  return [...out];
+}
+
 /** The list's address: open or all, everyone's or the person's teams' (ADR 0140). */
 export function questionsUrl(filter: "open" | "all", whose: "all" | "mine"): string {
   const q = [
@@ -378,8 +386,12 @@ export function QuestionList(p: {
   text?: string;
   repo?: string;
   onClear?: () => void;
+  /** The questions picked to answer together, and how one is picked or let go. */
+  selected?: ReadonlySet<string>;
+  onSelect?: (ids: string[], on: boolean) => void;
 }) {
   const text = p.text ?? "";
+  const pickable = (q: QuestionView) => !!p.onSelect && q.state === "open";
   const repo = p.repo ?? "";
   return (
     <View
@@ -417,30 +429,72 @@ export function QuestionList(p: {
                 focus={FILTER_ID}
               />
             )}
-            {shown.length > 0 && (
-              <ul className="stack" style={{ listStyle: "none", margin: 0, padding: 0, gap: 6 }}>
-                {shown.map((q) => (
-                  <li key={q.id}>
-                    <a
-                      href={`#/questions/${q.id}`}
-                      aria-current={q.id === p.current ? "true" : undefined}
-                      className="stack"
-                      style={{ gap: 2 }}
-                    >
-                      <span>{q.question}</span>
-                      <span className="hud" style={{ fontSize: 10 }}>
-                        {q.repo} · {q.state} · {q.id}
-                      </span>
-                      {aboutWords(d.about?.[q.id]).map((w) => (
-                        <span key={w} className="muted" style={{ fontSize: 12 }}>
-                          {w}
-                        </span>
-                      ))}
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            )}
+            {shown.length > 0 &&
+              byRepo(shown).map(([r, qs]) => (
+                <section key={r} className="q-group" aria-label={C.groupOf(r, qs.length)}>
+                  {(!repo || p.onSelect) && (
+                    <h3 className="q-group-head">
+                      {p.onSelect && qs.some(pickable) ? (
+                        <label className="q-pick">
+                          <input
+                            type="checkbox"
+                            checked={qs.filter(pickable).every((q) => p.selected?.has(q.id))}
+                            onChange={(e) =>
+                              p.onSelect!(
+                                qs.filter(pickable).map((q) => q.id),
+                                e.target.checked,
+                              )
+                            }
+                            aria-label={C.bulk.pickRepo(r)}
+                          />
+                          <span>{r}</span>
+                        </label>
+                      ) : (
+                        <span>{r}</span>
+                      )}
+                      <span className="q-count">{qs.length}</span>
+                    </h3>
+                  )}
+                  <ul className="q-list">
+                    {qs.map((q) => (
+                      <li key={q.id} className="q-row">
+                        {pickable(q) ? (
+                          <input
+                            type="checkbox"
+                            className="q-check"
+                            checked={!!p.selected?.has(q.id)}
+                            onChange={(e) => p.onSelect!([q.id], e.target.checked)}
+                            aria-label={C.bulk.pick(q.id)}
+                          />
+                        ) : (
+                          p.onSelect && <span className="q-check-gap" aria-hidden="true" />
+                        )}
+                        <a
+                          href={`#/questions/${q.id}`}
+                          aria-current={q.id === p.current ? "true" : undefined}
+                          className="q-item"
+                          title={q.question}
+                        >
+                          <span className="q-title">{q.question}</span>
+                          <span className="q-meta">
+                            <span
+                              className={`chip${q.state === "open" ? " warn" : q.state === "answered" ? " done" : ""}`}
+                            >
+                              {q.state}
+                            </span>
+                            <span className="mono">{q.id}</span>
+                          </span>
+                          {aboutWords(d.about?.[q.id]).map((w) => (
+                            <span key={w} className="q-about">
+                              {w}
+                            </span>
+                          ))}
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              ))}
           </div>
         );
       }}
@@ -772,14 +826,209 @@ function Detail({
   );
 }
 
+/** The body that answers each of several questions the same way: a target, or the same words. */
+export function bulkBody(f: {
+  how: "target" | "words";
+  value: string;
+}): { body: Record<string, unknown> } | { error: string } {
+  const v = f.value.trim();
+  if (!v) return { error: f.how === "target" ? C.bulk.needTarget : C.needWords };
+  return { body: f.how === "target" ? { target: v, scope: "repo" } : { text: v, scope: "repo" } };
+}
+
+/**
+ * Several open questions answered the same way (beta.14): where their calls go (a repo, system or
+ * team, the first question's picks offered), or the same words. Each is answered on its own, as
+ * one answer would be; what failed says why, and the rest stand.
+ */
+export function BulkAnswer(p: {
+  ids: string[];
+  questions: QuestionView[];
+  onDone: (answered: string[]) => void;
+  onClear: () => void;
+}) {
+  const targetsOnly = p.questions.every((q) => q.askedBy.step === "facts-targets");
+  const [how, setHow] = useState<"target" | "words">(targetsOnly ? "target" : "words");
+  const [value, setValue] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | undefined>();
+  const [result, setResult] = useState<{ ok: string[]; failed: { id: string; why: string }[] }>();
+  const picks = useApi<Api.TargetPickListT>(`/api/questions/${p.ids[0]}/targets`);
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    const b = bulkBody({ how, value });
+    if ("error" in b) {
+      setError(b.error);
+      return;
+    }
+    setBusy(true);
+    setError(undefined);
+    const ok: string[] = [];
+    const failed: { id: string; why: string }[] = [];
+    for (const id of p.ids) {
+      try {
+        await api<AnsweredResult>(`/api/questions/${id}/answer`, { method: "POST", body: b.body });
+        ok.push(id);
+      } catch (x) {
+        failed.push({ id, why: message(x) });
+      }
+    }
+    setBusy(false);
+    setResult({ ok, failed });
+    p.onDone(ok);
+  };
+  return (
+    <form className="stack" style={{ gap: 10 }} onSubmit={(e) => void submit(e)} noValidate>
+      <h2 className="h" style={{ margin: 0 }}>
+        {C.bulk.title(p.ids.length)}
+      </h2>
+      <ul className="q-bulk-list">
+        {p.questions.slice(0, 8).map((q) => (
+          <li key={q.id}>
+            <span className="mono">{q.id}</span> {q.question}
+          </li>
+        ))}
+        {p.questions.length > 8 && <li className="muted">{C.bulk.more(p.questions.length - 8)}</li>}
+      </ul>
+      {targetsOnly && (
+        <Choice
+          label={C.bulk.how}
+          value={how}
+          options={[
+            { value: "target", label: C.bulk.byTarget },
+            { value: "words", label: C.bulk.byWords },
+          ]}
+          onChange={setHow}
+        />
+      )}
+      <label htmlFor="bulk-value" className="hud" style={{ fontSize: 10 }}>
+        {how === "target" ? C.bulk.targetLabel : C.ownWords}
+      </label>
+      <input
+        id="bulk-value"
+        className="field"
+        list={how === "target" ? "bulk-picks" : undefined}
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        aria-describedby="bulk-hint"
+      />
+      {how === "target" && picks.state === "ready" && (
+        <datalist id="bulk-picks">
+          {picks.data.picks.map((x) => (
+            <option key={`${x.kind}:${x.id}`} value={x.id}>
+              {x.name} ({x.kind})
+            </option>
+          ))}
+        </datalist>
+      )}
+      <span id="bulk-hint" className="muted" style={{ fontSize: 12 }}>
+        {C.bulk.hint}
+      </span>
+      {error && (
+        <p role="alert" className="state error" style={{ margin: 0 }}>
+          {error}
+        </p>
+      )}
+      {result && (
+        <div role="status" className="stack" style={{ gap: 4 }}>
+          <p className="state" style={{ margin: 0 }}>
+            {C.bulk.done(result.ok.length)}
+          </p>
+          {result.failed.map((f) => (
+            <p key={f.id} className="state error" style={{ margin: 0 }}>
+              {f.id}: {f.why}
+            </p>
+          ))}
+          {result.ok.length > 0 && <code className="mono">{C.bulk.next}</code>}
+        </div>
+      )}
+      <div className="row" style={{ gap: 8 }}>
+        <button type="submit" className="btn primary" disabled={busy}>
+          {busy ? C.bulk.busy : C.bulk.submit(p.ids.length)}
+        </button>
+        <button type="button" className="btn" onClick={p.onClear} disabled={busy}>
+          {C.bulk.clear}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+/** How many questions are open, answered and retired, in one repo when one is picked. */
+export function questionCounts(qs: QuestionView[], repo = "") {
+  const mine = repo ? qs.filter((q) => q.repo === repo) : qs;
+  const n = (state: string) => mine.filter((q) => q.state === state).length;
+  return {
+    open: n("open"),
+    answered: n("answered"),
+    retired: n("retired"),
+    total: mine.length,
+    repos: questionRepos(mine).length,
+  };
+}
+
+/** The counts at the top of the page; Open and All pick the list's filter. */
+export function QuestionCounts(p: {
+  counts: ReturnType<typeof questionCounts>;
+  repo?: string;
+  filter: "open" | "all";
+  onFilter: (f: "open" | "all") => void;
+}) {
+  const c = p.counts;
+  const done = c.total ? Math.round(((c.answered + c.retired) / c.total) * 100) : 0;
+  const tile = (label: string, n: number, tone: string, pick?: "open" | "all") => (
+    <button
+      type="button"
+      className={`q-stat ${tone}`}
+      aria-pressed={pick ? p.filter === pick : undefined}
+      disabled={!pick}
+      onClick={() => pick && p.onFilter(pick)}
+    >
+      <span className="q-stat-n">{n}</span>
+      <span className="q-stat-label">{label}</span>
+    </button>
+  );
+  return (
+    <div className="q-stats" role="group" aria-label={C.counts.label(p.repo)}>
+      {tile(C.counts.open, c.open, "warn", "open")}
+      {tile(C.counts.answered, c.answered, "done")}
+      {tile(C.counts.retired, c.retired, "")}
+      {tile(C.counts.total, c.total, "", "all")}
+      <div className="q-progress" aria-label={C.counts.progress(done)}>
+        <div className="q-progress-bar">
+          <span style={{ width: `${done}%` }} />
+        </div>
+        <span className="muted">
+          {C.counts.progress(done)}
+          {p.repo ? "" : ` · ${C.counts.repos(c.repos)}`}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 export function Questions({ hash }: { hash: string }) {
   const [filter, setFilter] = useState<"open" | "all">("open");
   const [whose, setWhose] = useState<"all" | "mine">("all");
   const list = useApi<QuestionListView>(questionsUrl(filter, whose));
   useReloadOnFiles(list);
+  // Every question, for the counts at the top, whichever the list shows.
+  const every = useApi<QuestionListView>(questionsUrl("all", whose));
+  useReloadOnFiles(every);
   const current = questionRoute(hash);
   const [text, setText] = useState("");
   const [repo, setRepo] = useState("");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const select = (ids: string[], on: boolean) =>
+    setSelected((x) => {
+      const n = new Set(x);
+      for (const id of ids)
+        if (on) n.add(id);
+        else n.delete(id);
+      return n;
+    });
+  const picked =
+    list.state === "ready" ? list.data.questions.filter((q) => selected.has(q.id)) : [];
   const repos = [
     ...new Set([
       ...(list.state === "ready" ? questionRepos(list.data.questions) : []),
@@ -835,6 +1084,14 @@ export function Questions({ hash }: { hash: string }) {
       <p className="muted" style={{ margin: "4px 0 12px", fontSize: 12.5, lineHeight: 1.55 }}>
         {C.intro}
       </p>
+      {every.state === "ready" && (
+        <QuestionCounts
+          counts={questionCounts(every.data.questions, repo)}
+          {...(repo ? { repo } : {})}
+          filter={filter}
+          onFilter={setFilter}
+        />
+      )}
       <div className="bento">
         <Panel title={C.listTitle} span="span 5">
           <QuestionList
@@ -848,10 +1105,23 @@ export function Questions({ hash }: { hash: string }) {
               setText("");
               setRepo("");
             }}
+            selected={selected}
+            onSelect={select}
           />
         </Panel>
         <section className="panel" style={{ gridColumn: "span 7" }}>
-          {current ? (
+          {picked.length > 0 ? (
+            <BulkAnswer
+              key={picked.map((q) => q.id).join(",")}
+              ids={picked.map((q) => q.id)}
+              questions={picked}
+              onDone={() => {
+                list.reload();
+                every.reload();
+              }}
+              onClear={() => setSelected(new Set())}
+            />
+          ) : current ? (
             <Detail
               id={current}
               onAnswered={list.reload}

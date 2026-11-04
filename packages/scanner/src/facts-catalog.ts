@@ -206,8 +206,9 @@ const UNRESOLVED_HOST = /@[A-Za-z_][A-Za-z0-9_.-]*@|\$\{|\{[^}]*\}/;
  * environment), which the join asks about rather than picking one.
  */
 function ruleMayName(f: Fact, facts: readonly Fact[]): f is FactOf<"call"> {
-  if (needsTarget(f, facts)) return true;
   if (f.kind !== "call" || EVENT_CALLS.has(f.callType)) return false;
+  // Asked as its own question already (no target, no URL): a rule names it too.
+  if (!f.to && !(HTTP_CALLS.has(f.callType) && urlOf(f, facts))) return true;
   // A target the code names stays, unless it is a placeholder itself (`to: @targetUrl@`).
   if (f.to) return f.by !== "person" && UNRESOLVED_HOST.test(f.to);
   if (!HTTP_CALLS.has(f.callType)) return false;

@@ -190,7 +190,17 @@ export interface ContractLink {
 export interface ContractCheckResult {
   links: ContractLink[];
   findings: ContractMismatch[];
-  counts: { links: number; compared: number; mismatches: number; unconfirmed: number };
+  counts: {
+    links: number;
+    compared: number;
+    mismatches: number;
+    unconfirmed: number;
+    /**
+     * ADR 0172: the calls no link starts at (not joined, not to an outside system), so nothing on
+     * their other side can be compared until they join.
+     */
+    unlinked: number;
+  };
 }
 
 export interface ContractCheckInput {
@@ -1308,8 +1318,33 @@ export function checkContracts(input: ContractCheckInput): ContractCheckResult {
       compared: links.filter((l) => l.compared > 0).length,
       mismatches: findings.filter((f) => f.status === "mismatch").length,
       unconfirmed: findings.filter((f) => f.status === "unconfirmed").length,
+      unlinked: unlinkedCalls(input).length,
     },
   };
+}
+
+/**
+ * ADR 0172: the calls of the estate no link starts at: a REST, SOAP or gRPC call, or a publish,
+ * the join neither joined nor left to an outside system. Their payload is checked once they join.
+ */
+export function unlinkedCalls(input: Pick<ContractCheckInput, "repos" | "join">): FactEnd[] {
+  const linked = new Set<string>();
+  for (const j of input.join.joins) linked.add(`${j.call.repo}\u0000${j.call.fact}`);
+  for (const o of input.join.outside ?? []) linked.add(`${o.call.repo}\u0000${o.call.fact}`);
+  const out: FactEnd[] = [];
+  for (const r of input.repos)
+    for (const f of r.facts) {
+      if (f.kind !== "call") continue;
+      if (/^(subscribe|consume|listen)$/i.test(f.method ?? "")) continue;
+      if (linked.has(`${r.repo}\u0000${f.id}`)) continue;
+      out.push({
+        repo: r.repo,
+        fact: f.id,
+        component: f.component ?? r.repo,
+        at: `${f.cite.file}:${f.cite.line}`,
+      });
+    }
+  return out;
 }
 
 /**
