@@ -2,6 +2,10 @@
 
 The Atticus extension for VS Code. The command line's own changes are in the repository's [CHANGELOG](https://github.com/maycombhq/atticus/blob/main/CHANGELOG.md).
 
+## 0.7.14 (pre-release, with Atticus 2.0.0-beta.14)
+
+- **Ships with Atticus 2.0.0-beta.14.** No change to the extension's own buttons: the app's Questions page (in the extension's panel) now counts open, answered and retired questions at the top, lists them by repo, and answers several picked questions the same way; a `--match` rule covers a gateway's forwarding calls through a deploy token; and a call's path written as a setting or a field's name is resolved or read again.
+
 ## 0.7.13 (pre-release, with Atticus 2.0.0-beta.13)
 
 - **Ships with Atticus 2.0.0-beta.13.** No change to the extension's own buttons: runtime.yaml can now let Atticus drive Copilot itself through the Copilot language server (`copilot-acp`), so `atticus map --all` runs every part unattended; the extension's buttons still hand off to Copilot Chat.
