@@ -7,6 +7,14 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - An `atticus` command a Copilot session runs in Copilot's own shell no longer starts a Copilot session of its own (a session waiting on itself until it timed out): the Copilot language server is started marked as inside a session, and every atticus it starts hands off.
 - `atticus map --all` writes a gaps pass's prompt (`--gaps`, and the rest of a part, `--part n --gaps`) before handing the session over, as it does a top-up's, and the gaps prompt names the repo's checkout: the session reads and writes files and runs only `atticus verify`.
 
+- An unattended session gets Atticus's own step text without the workspace check and the closing `atticus next` (a metarepo whose prompt files were behind stopped every session at the check).
+- A top-up session is done only once something was written for it (a fact, or a reviewed line for a file with nothing to add, which its prompt now asks for): a passing verify after a session that read nothing gives it again.
+- A gaps pass planned in several sessions goes on to the next while the last closed some, instead of counting the repo done after the first; gaps no session closes aren't given again and again.
+- A one-session read Atticus stopped (its time or its tool calls ran out) is done only once its coverage leaves nothing.
+- Inside a session, `atticus map` starts no read loop of its own, and any atticus finds the session's metarepo wherever Copilot's shell has moved; an atticus command the session runs always runs in the metarepo.
+- The Copilot language server not starting, not opening a session or not offering the model stops the run once, instead of trying every part twice; a part retried with nothing to plan from is given itself again, never part 1.
+- A session that ends over a refusal is nudged also when Copilot reports it as cancelled or says it couldn't, and the nudge fits any step.
+
 ## 2.0.0-beta.16 (2026-11-04)
 
 - A Copilot session that ends right after Atticus refused something (Copilot reads a refusal as "Operation cancelled by user") is told, in the same session, what was refused and why, and to carry on with its own file tools instead of a shell; up to three times.

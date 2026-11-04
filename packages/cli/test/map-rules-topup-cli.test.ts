@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import {
+  appendFileSync,
   cpSync,
   existsSync,
   mkdirSync,
@@ -375,6 +376,32 @@ describe("the ledger's rules state and its top-up (ADR 0167)", () => {
       const again = (await loadReadPlan(root, "forge-ledger"))!.topUp!;
       expect(again.models).toBe("all");
       expect(again.sessions.length).toBeGreaterThan(0);
+    },
+    T,
+  );
+
+  it(
+    "counts a top-up session done only once something was written for it (beta.17)",
+    async () => {
+      const { root, head } = ledgerEstate();
+      // As map --all has it: verified before the session is given.
+      await verifyCommand(root, "forge-ledger", { commit: head, json: true }, quiet);
+      await mapCommand(root, "forge-ledger", { rules: true, maxTokens: LIMIT, json: true }, quiet);
+      // The session stopped over a refusal: nothing written since it was given.
+      await verifyCommand(root, "forge-ledger", { commit: head, json: true }, quiet);
+      let plan = await loadReadPlan(root, "forge-ledger");
+      expect(plan?.topUp?.sessions[0]?.done).toBeUndefined();
+      expect(plan?.rules).toBeUndefined();
+      // Given again, and this time it says a file has nothing to add: done.
+      await mapCommand(root, "forge-ledger", { rules: true, maxTokens: LIMIT, json: true }, quiet);
+      const path = plan!.topUp!.sessions[0]!.paths[0]!.replace(/#L.*$/, "");
+      appendFileSync(
+        join(root, "facts", "forge-ledger.reviewed.jsonl"),
+        `${JSON.stringify({ path, why: "nothing to add under these rules" })}\n`,
+      );
+      await verifyCommand(root, "forge-ledger", { commit: head, json: true }, quiet);
+      plan = await loadReadPlan(root, "forge-ledger");
+      expect(plan?.rules?.hash).toBe(FACT_RULES_HASH);
     },
     T,
   );

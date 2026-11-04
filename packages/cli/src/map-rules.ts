@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { DATA_RULE, neutralise, wrapData } from "@maycombhq/ai";
@@ -272,6 +273,14 @@ export async function recordRulesNow(root: string, repo: string, commit: string)
   await saveReadPlan(root, { ...rest, rules: rulesNow() });
 }
 
+/** A hash of the repo's facts and reviewed lines as they are on disk. */
+async function writtenHash(root: string, repo: string): Promise<string> {
+  const h = createHash("sha256");
+  for (const f of [`${repo}.jsonl`, `${repo}.reviewed.jsonl`])
+    h.update(await readFile(join(factsDirOf(root), f), "utf8").catch(() => "")).update("\u0000");
+  return h.digest("hex").slice(0, 16);
+}
+
 /**
  * ADR 0167, from `atticus verify`: a verify that passed at the top-up's commit after a session
  * was given finds that session done; once every session is, the read records the rules there are
@@ -285,11 +294,16 @@ export async function recordTopUpVerified(
   const plan = await loadReadPlan(root, repo);
   const t = plan?.topUp;
   if (!plan || !t || !o.commit || !sameCommit(t.commit, o.commit)) return;
-  const given = t.sessions.filter((s) => s.given && !s.done);
-  if (!given.length) return;
+  // beta.17: a session is done only once something was written for it (a fact or a reviewed
+  // line) after it was given: a passing verify of a session that read nothing (it stopped over a
+  // refusal) leaves it to be given again.
+  const now = await writtenHash(root, repo);
+  const doneNow = (s: (typeof t.sessions)[number]) =>
+    !!s.given && !s.done && (s.before === undefined || s.before !== now);
+  if (!t.sessions.some(doneNow)) return;
   const at = o.now ?? stamp();
   const sessions = t.sessions.map((s) =>
-    s.given && !s.done ? { ...s, done: { at, commit: o.commit! } } : s,
+    doneNow(s) ? { ...s, done: { at, commit: o.commit! } } : s,
   );
   if (sessions.every((s) => s.done)) {
     const { topUp: _t, ...rest } = plan;
@@ -426,7 +440,10 @@ export async function mapRules(
   }
   const n = t.sessions.findIndex((s) => !s.done);
   const next = t.sessions[n]!;
-  const sessions = t.sessions.map((s, i) => (i === n ? { ...s, given: stamp() } : s));
+  const before = await writtenHash(root, repo);
+  const sessions = t.sessions.map((s, i) =>
+    i === n ? { ...s, given: stamp(), ...(s.given && s.before ? {} : { before }) } : s,
+  );
   const plan = (await loadReadPlan(root, repo))!;
   await saveReadPlan(root, { ...plan, topUp: { ...t, sessions } });
   const rel = rulesRelOf(root, repo);
@@ -511,6 +528,7 @@ export function rulesPrompt(
     `Session ${c.n} of ${c.of}, about ${s.tokens.toLocaleString("en-US")} tokens of source. ${topUpWords(sets)} Open each path below and nothing else: a path ending \`#L<from>-L<to>\` by those lines only, never the whole file.${c.checkout ? ` The paths are in the repo's checkout, \`${c.checkout}\` in this metarepo: open \`${c.checkout}/<path>\` with your file tools; there is no need to look for it or to run a command.` : ""}`,
     "",
     `- Write each fact to \`${c.rel}/${repo}.jsonl\`, appended, with \`commit\` ${commit}. A kept fact you add to is written again whole, under its id.`,
+    `- A path that has nothing to add under these rules: a line in \`${c.rel}/${repo}.reviewed.jsonl\`, \`{"path": "<the path>", "why": "..."}\`. Every path below ends with a fact written or a line there.`,
     `- Then run \`atticus verify ${repo}\` and fix what it rejects until it exits 0: that records this session done${c.of > c.n ? `. The next session is for a new chat: \`/atticus-map ${repo} --rules\` there` : ", and the read as under the rules there are now"}.`,
     "",
     "## The rules",

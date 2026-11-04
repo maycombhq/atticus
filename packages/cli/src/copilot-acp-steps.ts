@@ -11,7 +11,7 @@ import {
   type AcpSessionResult,
   type AcpSpawner,
 } from "@maycombhq/ai";
-import { ASSISTANT_FORMATS, metarepoCommands } from "@maycombhq/assistant-files";
+import { ASSISTANT_FORMATS, FINISH, GUARD, metarepoCommands } from "@maycombhq/assistant-files";
 import {
   copilotAcpOf,
   factsDirOf,
@@ -59,10 +59,26 @@ const stripFrontMatter = (t: string) => t.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\
  * The text Copilot reads for `/<name> <args>`: the metarepo's prompt file with the arguments put
  * in, as Copilot Chat puts them, else Atticus's built-in command of that name.
  */
-export async function expandSlashLine(root: string, line: string): Promise<string> {
+export async function expandSlashLine(
+  root: string,
+  line: string,
+  o: { unattended?: boolean } = {},
+): Promise<string> {
   const m = /^\/([a-z][a-z0-9.-]*)\s*(.*)$/s.exec(line.trim());
   if (!m) return line;
   const [, name, args] = m as unknown as [string, string, string];
+  // beta.17: unattended, Atticus's own text without the workspace check (Atticus that runs the
+  // session is the check, and a metarepo whose prompt files are behind would stop every session
+  // at it) and without the closing `atticus next` (Atticus says what comes next).
+  if (o.unattended) {
+    const built = metarepoCommands().find((c) => c.name === name)?.body;
+    if (built !== undefined)
+      return built
+        .replace(`${GUARD}\n\n`, "")
+        .replace(`${FINISH}\n\n`, "")
+        .replaceAll("{{ARGS}}", args.trim())
+        .trim();
+  }
   const own = await readFile(
     join(root, ...ASSISTANT_FORMATS.copilot.commandPath(name).split("/")),
     "utf8",
@@ -121,7 +137,7 @@ export async function acpStepRunner(
   return async (s) => {
     const started = o.now?.() ?? new Date();
     const runId = makeRunId(started);
-    const prompt = UNATTENDED + (await expandSlashLine(root, s.line));
+    const prompt = UNATTENDED + (await expandSlashLine(root, s.line, { unattended: true }));
     let result: AcpSessionResult | undefined;
     let error: unknown;
     try {

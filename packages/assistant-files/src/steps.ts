@@ -19,7 +19,7 @@ const DATA =
 const STOP =
   "If a command says it raised a question for a person, or that questions are still waiting for an answer, stop there. Show each question and its options, and say the person answers it with `/atticus-answer` or `atticus questions answer <id> --option <n>`. Never answer a question yourself.";
 
-const FINISH = "Finish by running `atticus next` and telling the person what it says to do next.";
+export const FINISH = "Finish by running `atticus next` and telling the person what it says to do next.";
 
 /**
  * WP3.4: before a step, the one check that the workspace is ready, and the one message when it

@@ -14,7 +14,7 @@
 //   { "read": "<path>" }                               fs/read_text_file
 //   { "write": "<path>", "content": "..." }            fs/write_text_file
 //   { "append": "<path>", "content": "..." }           fs/read_text_file, then the old text + content
-//   { "run": "<command>", "args"?: [...] }             terminal/create, wait_for_exit, output, release
+//   { "run": "<command>", "args"?: [...], "cwd"?: path } terminal/create, wait_for_exit, output, release
 //   { "permission": { "kind", "title", "locations"?: [paths], "rawInput"? } }
 //                                                      session/request_permission
 //   { "sleep": <ms> }
@@ -99,7 +99,7 @@ async function play(steps) {
       log({ event: "write", path: s.append, ok: !r.error, error: r.error?.message });
     } else if (s.run !== undefined) {
       update({ sessionUpdate: "tool_call", toolCallId: `t${++tool}`, title: `Run ${s.run} ${(s.args ?? []).join(" ")}`, kind: "execute", status: "in_progress" });
-      const c = await ask("terminal/create", { sessionId: session, command: s.run, args: s.args ?? [], cwd });
+      const c = await ask("terminal/create", { sessionId: session, command: s.run, args: s.args ?? [], cwd: s.cwd ? pathOf(s.cwd) : cwd });
       if (c.error) {
         log({ event: "run", command: s.run, args: s.args ?? [], ok: false, error: c.error.message });
         continue;

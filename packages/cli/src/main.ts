@@ -1179,7 +1179,15 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
     }
     return catalogDiff(resolve(arg), resolve(b), values.json === true, io);
   }
-  const root = resolve(typeof values.root === "string" ? values.root : process.cwd());
+  // beta.17: inside a Copilot session Atticus runs, the metarepo is the session's own, wherever
+  // Copilot's shell has moved to (a repo's checkout under it, say).
+  const root = resolve(
+    typeof values.root === "string"
+      ? values.root
+      : process.env.ATTICUS_ACP_SESSION && process.env.ATTICUS_ROOT
+        ? process.env.ATTICUS_ROOT
+        : process.cwd(),
+  );
   if (!runsNoAi(group, command)) await setUpAi();
   // ADR 0086: atticus next, and --handoff on the AI steps (the prompt, result file and finish).
   if (group === "next")
@@ -1580,6 +1588,14 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
    * stops cleanly on Ctrl+C. ADR 0170: `atticus map <repo>` runs it too when the reader is Copilot.
    */
   const runMapAll = async (o: import("./map-all.js").MapAllOptions): Promise<number> => {
+    // beta.17: inside a Copilot session Atticus runs, a read never starts a loop or a session of
+    // its own (it would wait on the clipboard, or on itself): the Atticus outside does the reading.
+    if (process.env.ATTICUS_ACP_SESSION && !o.dryRun) {
+      io.err(
+        "This runs inside a Copilot session that Atticus started, so atticus map starts no read of its own: Atticus outside this session gives each part and verifies it. Do the step you were given: read the files it names, write the facts, then run atticus verify <repo> on its own.",
+      );
+      return 2;
+    }
     const { mapAllCommand } = await import("./map-all.js");
     const { copyToClipboard } = await import("./clipboard.js");
     const typed: string[] = [];

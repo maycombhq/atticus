@@ -380,6 +380,17 @@ export class AcpSignInError extends RuntimeError {
   }
 }
 
+/**
+ * beta.17: the server didn't start, open a session or offer the model asked for: the same for
+ * every part, so a run stops on it instead of trying each part twice.
+ */
+export class AcpSetupError extends RuntimeError {
+  constructor(message: string) {
+    super(message);
+    this.name = "AcpSetupError";
+  }
+}
+
 export interface AcpSessionOptions {
   /** runtime.yaml's copilotAcp.command. */
   command: string;
@@ -431,7 +442,7 @@ export function carryOnPrompt(refusals: readonly string[]): string {
     "Atticus refused this, and you are not finished yet:",
     ...refusals.slice(-3).map((r) => `- ${oneLine(r, 300)}`),
     "",
-    "Carry on with the step. Use your own file tools to find, view and search files: they are allowed and need no shell. Don't run shell commands (cd, dir, Get-ChildItem, Select-String, Get-Content, grep, find); the only command Atticus runs is one `atticus ...` command at a time, with nothing piped or chained. The paths in the step's prompt file are relative to the repo's checkout, which `atticus verify` reads. Write the facts the step asks for, then stop.",
+    "Carry on with the step. Use your own file tools to find, view and search files: they are allowed and need no shell. Don't run shell commands (cd, dir, Get-ChildItem, Select-String, Get-Content, grep, find); the only command Atticus runs is one `atticus ...` command at a time, with nothing piped or chained. The step says where its files are. Finish what the step asks for (the facts, or the result file it names), then stop.",
   ].join("\n");
 }
 
@@ -495,7 +506,7 @@ export async function runAcpSession(o: AcpSessionOptions): Promise<AcpSessionRes
     // beta.17: set on the server too, so an atticus command Copilot runs in its own shell (not
     // through Atticus's terminal) knows it is inside a session and hands off instead of starting
     // a Copilot session of its own (a session within a session, waiting on itself).
-    env: { ...process.env, ...(o.env ?? {}), ATTICUS_ACP_SESSION: "1" },
+    env: { ...process.env, ...(o.env ?? {}), ATTICUS_ACP_SESSION: "1", ATTICUS_ROOT: o.cwd },
   });
   const transcript: string[] = [];
   const paths = new Paths(o.policy);
@@ -620,9 +631,9 @@ export async function runAcpSession(o: AcpSessionOptions): Promise<AcpSessionRes
       const a = atticusArgvOf(p.command, p.args ?? []);
       const input = { command: p.command, args: p.args ?? [] };
       if (a.refused !== undefined) return refuse("terminal/create", input, a.refused);
-      const cwd = p.cwd ?? o.cwd;
-      const out = paths.readable(cwd);
-      if (out) return refuse("terminal/create", input, `the command runs in the metarepo: ${out}`);
+      // beta.17: an atticus command runs in the metarepo whatever folder the session names (run
+      // from a repo's checkout, it would find no metarepo there).
+      const cwd = o.cwd;
       const id = `atticus-${++tn}`;
       const kill = new AbortController();
       flush();
@@ -719,7 +730,7 @@ export async function runAcpSession(o: AcpSessionOptions): Promise<AcpSessionRes
         "The Copilot language server's initialize",
       );
     } catch (e) {
-      throw new RuntimeError(
+      throw new AcpSetupError(
         `Atticus couldn't start the Copilot language server (${o.command}): ${firstLine(e)}${tail(server.stderr())}. Check copilotAcp.command in runtime.yaml, and that ${command} --help lists --acp.`,
       );
     }
@@ -738,14 +749,14 @@ export async function runAcpSession(o: AcpSessionOptions): Promise<AcpSessionRes
         await new Promise((r) => setTimeout(r, 150));
         throw signInError(e, init, server.stderr());
       }
-      throw new RuntimeError(`The Copilot language server didn't open a session: ${firstLine(e)}`);
+      throw new AcpSetupError(`The Copilot language server didn't open a session: ${firstLine(e)}`);
     }
     sessionId = ns.sessionId;
     let model = ns.models?.currentModelId;
     if (o.model && o.model !== model) {
       const offered = (ns.models?.availableModels ?? []).map((m) => m.modelId);
       if (!offered.includes(o.model))
-        throw new RuntimeError(
+        throw new AcpSetupError(
           `The Copilot language server doesn't offer the model ${o.model} (it offers ${offered.join(", ") || "no list"}): change copilotAcp.model in runtime.yaml, or leave it out for Copilot's own.`,
         );
       await client.setModel(sessionId, o.model);
@@ -791,8 +802,18 @@ export async function runAcpSession(o: AcpSessionOptions): Promise<AcpSessionRes
       // it was cancelled (or nothing).
       const after = text.slice(textAtRefusal);
       const overIt =
-        fresh.length > 0 && !!calls.at(-1)?.error && (!after.trim() || /cancel/i.test(after));
-      if (cancelWhy || !overIt || nudge >= MAX_NUDGES || answer.stopReason !== "end_turn") break;
+        fresh.length > 0 &&
+        !!calls.at(-1)?.error &&
+        (!after.trim() || /cancel|refused|not allowed|can'?t|cannot|couldn'?t|unable/i.test(after));
+      // Ended by the agent (a refused permission can come back as its own "cancelled"), never by
+      // Atticus (cancelWhy: Ctrl+C, the time or the tool calls ran out).
+      if (
+        cancelWhy ||
+        !overIt ||
+        nudge >= MAX_NUDGES ||
+        !["end_turn", "cancelled"].includes(answer.stopReason)
+      )
+        break;
       say(
         `  Atticus: told Copilot why that was refused and to carry on (${nudge + 1} of ${MAX_NUDGES}).`,
       );

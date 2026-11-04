@@ -8,7 +8,13 @@ import {
   readProbes,
   rulesLacking,
 } from "@maycombhq/assistant-files";
-import { AcpSignInError, currentPromptLimit, type AiRequest, type AiRuntime } from "@maycombhq/ai";
+import {
+  AcpSetupError,
+  AcpSignInError,
+  currentPromptLimit,
+  type AiRequest,
+  type AiRuntime,
+} from "@maycombhq/ai";
 import {
   ensureLocalIgnore,
   factsDirOf,
@@ -269,6 +275,14 @@ export async function limitFor(
     return { limit: tier.maxTokens, from: "probe" };
   return undefined;
 }
+
+/** beta.17: the gaps prompt on file (what the last plan gave), to tell whether a session closed any. */
+async function gapsTextAt(root: string, repo: string): Promise<string> {
+  return readFile(join(factsDirOf(root), `${repo}.gaps.md`), "utf8").catch(() => "");
+}
+
+/** beta.17: the most sessions one gaps pass goes on to, unattended. */
+const MAX_GAPS_SESSIONS = 40;
 
 /**
  * beta.15: the line for a session whose prompt file Atticus has written already: read it and do
@@ -1136,7 +1150,8 @@ export async function mapAllCommand(
           : item.force
             ? forceLine(item, part)
             : ps.retries > 0 || (progress?.next && progress.next.part !== part.part)
-              ? ((await restLine(item, part)) ?? `/atticus-map ${item.repo}`)
+              ? ((await restLine(item, part)) ??
+                `/atticus-map ${item.repo}${item.total > 1 ? ` --part ${part.part}` : ""}`)
               : `/atticus-map ${item.repo}`;
     if (first0 === undefined) {
       io.out(`${item.repo}: no gaps left; nothing to read.`);
@@ -1198,8 +1213,28 @@ export async function mapAllCommand(
           v &&
           !v.rejected &&
           (await covered(root, item, part, first, after, v.coverage.unknown, wrote))
-        )
+        ) {
+          // beta.17: a gaps pass in several sessions is done once none is left, not after the
+          // first: the next one goes to a new chat.
+          const was = item.kind === "gaps" ? await gapsTextAt(root, item.repo) : undefined;
+          if (
+            item.kind === "gaps" &&
+            (await gapsLine(item)) !== undefined &&
+            (await gapsTextAt(root, item.repo)) !== was
+          ) {
+            io.out(
+              `${item.repo}: that gaps session is verified; more gaps are left, for a NEW chat.`,
+            );
+            const again = await retry(item, part, label, where);
+            if (again === "done") return finishPart(item, part, ps);
+            first = await snapOf(root, item.repo);
+            since = first;
+            prev = first;
+            lastChange = clock.now();
+            continue;
+          }
           return finishPart(item, part, ps);
+        }
         if (v?.rejected)
           io.out(
             `Not done yet: ${plural(v.rejected, "fact")} rejected for the reader to fix. Still waiting (s + Enter skips, r + Enter gives the prompt again for what's left).`,
@@ -1482,7 +1517,8 @@ export async function mapAllCommand(
           : item.force
             ? forceLine(item, part)
             : ps.retries > 0 || (progress?.next && progress.next.part !== part.part)
-              ? ((await restLine(item, part)) ?? `/atticus-map ${item.repo}`)
+              ? ((await restLine(item, part)) ??
+                `/atticus-map ${item.repo}${item.total > 1 ? ` --part ${part.part}` : ""}`)
               : `/atticus-map ${item.repo}`;
     if (first0 === undefined) {
       io.out(`${item.repo}: no gaps left; nothing to read.`);
@@ -1495,6 +1531,7 @@ export async function mapAllCommand(
       io.err("No Copilot session runner: copilot-acp needs runtime.yaml's copilotAcp.");
       return "quit";
     }
+    let more = 0;
     for (let attempt = 0; attempt < 2; attempt++) {
       if (stopped()) break;
       if (overCap()) return "cap";
@@ -1506,6 +1543,7 @@ export async function mapAllCommand(
       const base = item.force ? await writtenOf(root, item.repo) : "";
       const first = await snapOf(root, item.repo);
       totals.spent.prompts++;
+      let cut = false;
       try {
         const r = await runner({
           line,
@@ -1516,7 +1554,17 @@ export async function mapAllCommand(
         });
         totals.spent.tokens += r.usage ? r.usage.inputTokens + r.usage.outputTokens : part.tokens;
         io.out(`The session ended (${r.stopped ?? r.stopReason}).`);
+        // beta.17: stopped by Atticus (its time or its tool calls ran out): what it wrote may be
+        // only the start of the part.
+        cut = !!r.stopped;
       } catch (e) {
+        if (e instanceof AcpSetupError) {
+          // beta.17: the same for every part: stop here rather than try each part twice.
+          io.err(`${e.message} The run stops here; ${resumeAs} carries on once it is put right.`);
+          ps.state = "incomplete";
+          await save();
+          return "quit";
+        }
         if (e instanceof AcpSignInError) {
           io.err(e.message);
           signIn = true;
@@ -1537,9 +1585,33 @@ export async function mapAllCommand(
       if (
         v &&
         !v.rejected &&
+        // beta.17: a one-session read stopped by Atticus is done only once its coverage leaves
+        // nothing (what it wrote may be only the start).
+        !(
+          cut &&
+          item.total <= 1 &&
+          item.kind !== "rules" &&
+          (v.coverage.unknown?.length ?? 0) > 0
+        ) &&
         (await covered(root, item, part, first, after, v.coverage.unknown, wrote))
-      )
+      ) {
+        // beta.17: a gaps pass in several sessions goes on to its next session (a new one, and
+        // not counted as a try) until none is left.
+        const was = item.kind === "gaps" ? await gapsTextAt(root, item.repo) : undefined;
+        const next = item.kind === "gaps" ? await gapsLine(item) : undefined;
+        // Only while the session closed some: gaps it couldn't close aren't given again and again.
+        if (
+          next !== undefined &&
+          more < MAX_GAPS_SESSIONS &&
+          (await gapsTextAt(root, item.repo)) !== was
+        ) {
+          more++;
+          line = next;
+          attempt = -1;
+          continue;
+        }
         return finishPart(item, part, ps);
+      }
       if (attempt > 0) break;
       ps.retries++;
       await save();
@@ -1553,7 +1625,8 @@ export async function mapAllCommand(
               : await restLine(item, part);
       if (rest === "done" || (rest === undefined && item.kind === "gaps"))
         return finishPart(item, part, ps);
-      line = rest ?? `/atticus-map ${item.repo}`;
+      // beta.17: with nothing left to plan from, the part itself again, never part 1.
+      line = rest ?? `/atticus-map ${item.repo}${item.total > 1 ? ` --part ${part.part}` : ""}`;
       io.out(
         `${item.repo} ${label} isn't accounted for yet${v?.rejected ? ` (${plural(v.rejected, "fact")} rejected)` : ""}: one more try in a NEW session with only what is left (${line}).`,
       );

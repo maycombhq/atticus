@@ -905,11 +905,12 @@ describe("atticus map --all --gaps (ADR 0161, R2)", () => {
     ledgerFacts(root, head);
     await readerVerifies(root, head);
     const clock = fakeClock(async (m) => {
-      if (m === 2) {
-        // The second pass: the files the first read left, reviewed, then verified.
-        const v = readFileSync(join(root, "facts", "forge-ledger.verify.yaml"), "utf8");
-        const unknown = [...v.matchAll(/^ {4}- (\S+)$/gm)].map((x) => x[1]!);
-        review(root, dir, unknown.length ? unknown : ["**"]);
+      if (m === 2 || m === 4) {
+        // Each session of the second pass: every path its prompt lists (files the first read left, and the lines
+        // it skipped), reviewed, then verified.
+        const g = readFileSync(join(root, "facts", "forge-ledger.gaps.md"), "utf8");
+        const listed = [...g.matchAll(/^- `([^`]+)`/gm)].map((x) => x[1]!);
+        review(root, dir, listed.length ? listed : ["**"]);
         await readerVerifies(root, head);
       }
     });
@@ -917,7 +918,13 @@ describe("atticus map --all --gaps (ADR 0161, R2)", () => {
     const o = io();
     await mapAllCommand(root, { maxTokens: LIMIT, mode: "copilot", gaps: true }, o.io, d);
     const text = o.text();
-    expect(d.copied).toEqual([preparedLine("forge-ledger", "facts/forge-ledger.gaps.md")]);
+    // beta.17: the pass goes on to a second session while the first closed some gaps; the
+    // flows nobody writes are left, not given again and again.
+    const line = preparedLine("forge-ledger", "facts/forge-ledger.gaps.md");
+    expect(d.copied).toEqual([line, line]);
+    expect(text).toContain(
+      "forge-ledger: that gaps session is verified; more gaps are left, for a NEW chat.",
+    );
     expect(text).toContain("===== forge-ledger, the gaps pass (repo 1 of 1) =====");
     expect(text).toContain("Joining the estate: atticus verify --all --write.");
     expect(text).toMatch(

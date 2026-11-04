@@ -228,6 +228,9 @@ describe("atticus map --all under copilot-acp: Copilot driven unattended (ADR 01
     // The prompt is the /atticus-map steps a person would paste, said to be unattended first.
     expect(prompts[0]!.startsWith(UNATTENDED)).toBe(true);
     expect(prompts[0]).toContain("atticus map forge-ledger --estimate");
+    // beta.17: no workspace check and no closing atticus next: Atticus outside does both.
+    expect(prompts[0]).not.toContain("atticus assistant-files --check");
+    expect(prompts[0]).not.toContain("Finish by running `atticus next`");
     // beta.17: the retry reads the prompt Atticus wrote; it runs no atticus map itself.
     expect(prompts[2]).toContain(preparedLine("forge-ledger", "facts/forge-ledger.gaps.md"));
     // The atticus commands ran; nothing else could.

@@ -382,6 +382,31 @@ describe("the Copilot ACP session (ADR 0171)", () => {
     expect(m.log().filter((e) => e.event === "prompt")).toHaveLength(1);
   });
 
+  it("runs an atticus command in the metarepo whatever folder the session names (beta.17)", async () => {
+    const m = metarepo({
+      sessions: [
+        {
+          steps: [
+            { run: "atticus", args: ["verify", "forge-ledger"], cwd: "workspace/forge-ledger" },
+          ],
+        },
+      ],
+    });
+    const cwds: string[] = [];
+    await runAcpSession({
+      command: COMMAND,
+      cwd: m.root,
+      prompt: "x",
+      policy: policyOf(m.root),
+      exec: async (_argv, x) => {
+        cwds.push(x.cwd);
+        return { exitCode: 0, output: "ok\n" };
+      },
+      env: m.env,
+    });
+    expect(cwds).toEqual([m.root]);
+  });
+
   it("runs the server marked as inside a session, so an atticus it starts never opens another (beta.17)", async () => {
     const m = metarepo({ sessions: [{ steps: [{ say: "ok" }] }] });
     await runAcpSession({

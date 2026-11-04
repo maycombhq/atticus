@@ -83,6 +83,11 @@ const TopUpSession = z.strictObject({
   tokens: z.number().int().nonnegative(),
   /** When `atticus map <repo> --rules` last gave it to a reader. */
   given: z.string().min(1).optional(),
+  /**
+   * beta.17: a hash of the repo's facts and reviewed lines when it was given; a verify finds it
+   * done only once they differ (something was written for it).
+   */
+  before: z.string().min(1).optional(),
   /** When a verify that passed after it was given found it done. */
   done: ReadStamp.optional(),
 });
