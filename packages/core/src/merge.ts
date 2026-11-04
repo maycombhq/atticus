@@ -93,6 +93,15 @@ type Evidence = Record<string, unknown> & {
 };
 
 const short = (s: string, n = 6) => createHash("sha256").update(s).digest("hex").slice(0, n);
+
+/** C1's longest record id. */
+const MAX_RECORD_ID = 120;
+/** A record id cut to fit: its start, then a hash of the whole id, the same for the same id. */
+export const fitRecordId = (id: string): string => {
+  if (id.length <= MAX_RECORD_ID) return id;
+  const hash = createHash("sha256").update(id, "utf8").digest("hex").slice(0, 16);
+  return `${id.slice(0, MAX_RECORD_ID - hash.length - 1).replace(/[-._]+$/, "")}.${hash}`;
+};
 const evKey = (e: Evidence) =>
   `${e.repo ?? ""}|${e.path ?? ""}|${e.line ?? ""}|${e.side ?? ""}|${e.source}`;
 
@@ -827,6 +836,28 @@ export function mergeCatalog(input: MergeInput): MergeResult {
       out.push(l);
       inOut.add(l);
     }
+  // An id past C1's 120 characters (a long service name and a long path, joined) is shortened
+  // to a stable one, its start and a hash of the whole, and every reference to it in the merged
+  // records follows, so nothing is dropped as invalid and the same input gives the same id.
+  const long = new Map<string, string>();
+  for (const r of out) if (r.id.length > MAX_RECORD_ID) long.set(r.id, fitRecordId(r.id));
+  if (long.size) {
+    const swap = (v: unknown): unknown => {
+      if (typeof v === "string") {
+        const exact = long.get(v);
+        if (exact) return exact;
+        if (v.length > MAX_RECORD_ID)
+          for (const [from, to] of long)
+            if (v.startsWith(`${from}.`)) return fitRecordId(to + v.slice(from.length));
+        return v;
+      }
+      if (Array.isArray(v)) return v.map(swap);
+      if (v && typeof v === "object")
+        return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, swap(x)]));
+      return v;
+    };
+    for (let i = 0; i < out.length; i++) out[i] = swap(out[i]) as Rec;
+  }
   const invalid: MergeResult["invalid"] = [];
   const records: CatalogRecord[] = [];
   const seen = new Set<string>();

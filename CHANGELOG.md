@@ -7,6 +7,7 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 ### Copilot driven unattended (copilot-acp, ADR 0171)
 
 - runtime.yaml version 3 can allow `copilot-acp`: Atticus starts the GitHub Copilot language server in its Agent Client Protocol mode and runs each step, and each part of `atticus map --all` (also `map <repo>`, `--gaps`, `--force`, `--rules`, and the new `atticus questions propose`), in a new Copilot session on the person's own sign-in, verifying each part and giving it once more with only what is left. A session may read the metarepo, write only its step's result and run only `atticus` commands; these rules aren't settings, and Atticus never handles a sign-in. `atticus doctor` checks the server and its sign-in; `atticus upgrade` moves a runtime.yaml that names the mode to version 3.
+- `atticus verify --write` no longer drops a merged record as "isn't valid C1 (a bug): id … Too big": any record id past 120 characters (a long service name and path, joined) is shortened to a stable one, its start and a hash, and every reference to it follows.
 - The run record is at version 5: a copilot-acp run keeps the server's name and version beside its model, prompt and full transcript; older records read as before.
 
 ## 2.0.0-beta.12.2 (2026-11-03)

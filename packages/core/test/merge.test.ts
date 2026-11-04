@@ -521,3 +521,39 @@ describe("mergeCatalog at estate scale", () => {
     expect(ms).toBeLessThan(10_000);
   });
 });
+
+describe("mergeCatalog: ids past C1's 120 characters", () => {
+  it("shortens a long record id to a stable one and every reference follows, so nothing is invalid", () => {
+    const longComp = `${"connected-deposits-makerchecker-".repeat(3)}svc`;
+    const schema = `${longComp}.post-${"approval-request-".repeat(3)}request`;
+    const records = [
+      component(longComp, "ledger"),
+      {
+        ...base,
+        kind: "Schema",
+        id: schema,
+        format: "json-schema",
+        ref: "a.java#Request",
+        fields: [],
+      } as unknown as CatalogRecord,
+      {
+        ...base,
+        kind: "Endpoint",
+        id: `${schema}.endpoint`,
+        component: longComp,
+        endpointType: "rest",
+        method: "POST",
+        pathOrTopic: "/x",
+        schemaRefs: [schema],
+      } as unknown as CatalogRecord,
+    ];
+    const r = merged(records);
+    expect(r.invalid).toEqual([]);
+    for (const x of r.records) expect(x.id.length).toBeLessThanOrEqual(120);
+    const s = r.records.find((x) => x.kind === "Schema")!;
+    const e = r.records.find((x) => x.kind === "Endpoint") as unknown as { schemaRefs: string[] };
+    expect(e.schemaRefs).toEqual([s.id]);
+    // The same input gives the same ids.
+    expect(merged(records).records.map((x) => x.id)).toEqual(r.records.map((x) => x.id));
+  });
+});
