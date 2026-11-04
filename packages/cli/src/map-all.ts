@@ -270,6 +270,15 @@ export async function limitFor(
   return undefined;
 }
 
+/**
+ * beta.15: the line for a session whose prompt file Atticus has written already: read it and do
+ * what it says, running nothing but `atticus verify <repo>`, and nothing at all where the chat
+ * can't run commands (Atticus verifies when the chat is done).
+ */
+export function preparedLine(repo: string, prompt: string): string {
+  return `Read ${prompt} and do exactly what it says. Atticus has prepared it: run no other atticus command (not assistant-files, not map). When the facts are written, run \`atticus verify ${repo}\` by itself, with no pipe or redirection; if you can't run commands here, just stop when the facts are written: Atticus verifies them.`;
+}
+
 /** What one call of a command printed, kept instead of shown. */
 function captured(): Output & { lines: string[]; errs: string[] } {
   const lines: string[] = [];
@@ -1357,7 +1366,25 @@ export async function mapAllCommand(
       ...(o.models ? { models: o.models } : {}),
     });
     if (typeof p === "string" || !p.parts.length) return "done";
-    return `/atticus-map ${item.repo} --rules`;
+    // beta.15: the session's prompt is written here, so the chat runs no `atticus map` (nor the
+    // workspace check) itself: a chat whose terminal won't open, or whose shell Atticus refuses,
+    // has only files to read and write.
+    const c = captured();
+    const code = await mapCommand(
+      root,
+      item.repo,
+      {
+        rules: true,
+        json: true,
+        commit: item.commit,
+        maxTokens: limit,
+        ...(o.models ? { models: o.models } : {}),
+      },
+      c,
+      deps.git ? { git: deps.git } : {},
+    );
+    const j = code === 0 ? jsonOf<{ prompt?: string }>(c.lines) : undefined;
+    return j?.prompt ? preparedLine(item.repo, j.prompt) : `/atticus-map ${item.repo} --rules`;
   }
 
   /** The gaps pass's line, its prompt planned first; undefined when there are no gaps left. */

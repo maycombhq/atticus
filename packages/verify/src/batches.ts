@@ -84,8 +84,9 @@ const BOUNDARY_FILE =
   /\.(sql|proto|graphql|gql|avsc|wsdl|xsd)$|(^|\/)(openapi|swagger)[^/]*\.(ya?ml|json)$/i;
 const BOUNDARY_DIR =
   /(^|\/)(clients?|gateways?|repositories|dao|models?|entities|dto|migrations?)\//i;
+// beta.15: a test source set with a suffix (`src/test-qa/`, `src/tests_integration/`) too.
 const TEST =
-  /(^|\/)(test|tests|__tests__|spec|specs|e2e|it)\/|[._-](test|spec)\.[^/.]+$|(Test|Tests|IT|Spec)\.[^/.]+$|(^|\/)test_[^/]+$|_test\.go$/;
+  /(^|\/)(test|tests|__tests__|spec|specs|e2e|it)\/|(^|\/)(test|tests)[-_][a-z0-9_-]+\/|[._-](test|spec)\.[^/.]+$|(Test|Tests|IT|Spec)\.[^/.]+$|(^|\/)test_[^/]+$|_test\.go$/;
 
 const stem = (path: string) => {
   const base = path.slice(path.lastIndexOf("/") + 1);

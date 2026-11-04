@@ -59,6 +59,10 @@ describe("readingOrder: build and deploy files, config, then entry points (ADR 0
     expect(readingRank("src/test/java/forge/AccountControllerTest.java")).toBe(5);
     expect(readingRank("web/src/orders.test.ts")).toBe(5);
     expect(readingRank("tests/test_orders.py")).toBe(5);
+    // beta.15: a test source set with a suffix is tests too; a word that only starts so is not.
+    expect(readingRank("src/test-qa/resources/createCompany.json")).toBe(5);
+    expect(readingRank("src/tests_integration/java/forge/LedgerIT.java")).toBe(5);
+    expect(readingRank("src/main/java/forge/testing/Clock.java")).not.toBe(5);
   });
 });
 

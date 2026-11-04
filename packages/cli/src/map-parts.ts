@@ -97,6 +97,8 @@ const TopUp = z.strictObject({
   sets: z.array(z.string().min(1)),
   session: z.number().int().positive(),
   plannedAt: z.string().min(1),
+  /** beta.15: the model classes it was planned to read (`--models`), when one was asked for. */
+  models: z.enum(["entries", "reachable", "all"]).optional(),
   sessions: z.array(TopUpSession),
 });
 export type TopUpT = z.infer<typeof TopUp>;

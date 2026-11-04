@@ -2,6 +2,15 @@
 
 All notable changes to Atticus. Versions follow [Semantic Versioning](https://semver.org); contracts C1 to C6 change only with an ADR, a schema version and a migration (`atticus upgrade`).
 
+## Unreleased
+
+### Copilot sessions that need no terminal
+
+- `atticus map --all` writes a rules top-up's prompt itself before handing a session over, and the line it gives (pasted or sent through copilot-acp) says to read that file and run nothing but `atticus verify <repo>`, or nothing at all where the chat can't run commands. A Copilot chat whose terminal won't open (IntelliJ's "Could not create classic terminal window") now finishes the session; Atticus verifies it either way.
+- An unattended session is told never to pipe, redirect or chain a command, and to carry on when one is refused instead of ending.
+- A top-up planned before is planned again for what is left when another `--models` is asked for (`--models entries` now shrinks one under way); the sessions done stay done.
+- A test source set with a suffix (`src/test-qa/`, `src/tests_integration/`) is tests: never read for facts, nor in a top-up.
+
 ## 2.0.0-beta.14 (2026-11-04)
 
 ### Fewer target questions on gateways and client helpers (ADR 0172)

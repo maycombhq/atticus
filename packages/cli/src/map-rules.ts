@@ -345,20 +345,31 @@ export async function plannedTopUp(
     });
   const reach = t.reach ? { reach: t.reach } : {};
   const on = (await loadReadPlan(root, repo))?.topUp;
-  if (
+  const same =
     on &&
     sameCommit(on.commit, o.commit) &&
     on.hash === FACT_RULES_HASH &&
-    sameSets(on.sets, t.lacking)
-  )
+    sameSets(on.sets, t.lacking);
+  // The top-up under way, unless another --models is asked for now (beta.15): then what is left
+  // is planned again under it, the sessions done kept as they are.
+  if (same && (!o.models || on.models === o.models))
     return { lacking: t.lacking, topUp: on, facts, ...reach };
+  const doneSessions = same ? on.sessions.filter((s) => s.done) : [];
+  const read = new Set(doneSessions.flatMap((s) => s.paths));
   const topUp: TopUpT = {
     commit: o.commit,
     hash: FACT_RULES_HASH,
     sets: t.lacking,
     session: o.session,
     plannedAt: stamp(),
-    sessions: topUpSessions(t.files, o.session),
+    ...(o.models ? { models: o.models } : {}),
+    sessions: [
+      ...doneSessions,
+      ...topUpSessions(
+        t.files.filter((f) => !read.has(f.path)),
+        o.session,
+      ),
+    ],
   };
   if (!o.dryRun && topUp.sessions.length)
     await saveReadPlan(root, {

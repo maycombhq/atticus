@@ -16,7 +16,7 @@ import { MockRuntime } from "@maycombhq/ai";
 import { FACT_RULES_HASH, RULE_SETS, rulesNow } from "@maycombhq/assistant-files";
 import { doctorCounts } from "../src/doctor-counts.js";
 import { estateFresh, estateFreshness } from "../src/estate-fresh.js";
-import { mapAllCommand, type Clock, type MapAllPlan } from "../src/map-all.js";
+import { mapAllCommand, preparedLine, type Clock, type MapAllPlan } from "../src/map-all.js";
 import { mapCommand } from "../src/map-commands.js";
 import { loadReadPlan } from "../src/map-parts.js";
 import { main } from "../src/main.js";
@@ -352,6 +352,30 @@ describe("the ledger's rules state and its top-up (ADR 0167)", () => {
   );
 
   it(
+    "plans what is left again when another --models is asked for, keeping the sessions done (beta.15)",
+    async () => {
+      const { root } = ledgerEstate();
+      await mapCommand(root, "forge-ledger", { rules: true, maxTokens: LIMIT, json: true }, quiet);
+      const first = (await loadReadPlan(root, "forge-ledger"))!.topUp!;
+      expect(first.models).toBeUndefined();
+      // The same --models (or none) keeps the top-up under way.
+      await mapCommand(root, "forge-ledger", { rules: true, maxTokens: LIMIT, json: true }, quiet);
+      expect((await loadReadPlan(root, "forge-ledger"))!.topUp!.plannedAt).toBe(first.plannedAt);
+      // Another plans it again under that one.
+      await mapCommand(
+        root,
+        "forge-ledger",
+        { rules: true, maxTokens: LIMIT, json: true, models: "all" },
+        quiet,
+      );
+      const again = (await loadReadPlan(root, "forge-ledger"))!.topUp!;
+      expect(again.models).toBe("all");
+      expect(again.sessions.length).toBeGreaterThan(0);
+    },
+    T,
+  );
+
+  it(
     "runs from the command line: atticus map <repo> --rules",
     async () => {
       const { root } = ledgerEstate();
@@ -373,8 +397,9 @@ describe("the ledger's rules state and its top-up (ADR 0167)", () => {
       const { root, head } = ledgerEstate();
       const clock = fakeClock(async (m) => {
         if (m === 2) {
-          // Copilot runs the line: the prompt, then (nothing to add) its own verify.
-          await mapCommand(root, "forge-ledger", { rules: true, maxTokens: LIMIT }, quiet);
+          // Copilot reads the prompt Atticus wrote (beta.15: it runs no atticus map), then (nothing
+          // to add) its own verify.
+          expect(existsSync(join(root, "facts", "forge-ledger.rules.md"))).toBe(true);
           await verifyCommand(root, "forge-ledger", { commit: head, json: true }, quiet);
         }
       });
@@ -390,7 +415,8 @@ describe("the ledger's rules state and its top-up (ADR 0167)", () => {
         remindMs: 10 * 60_000,
       });
       const text = o.text();
-      expect(copied).toEqual(["/atticus-map forge-ledger --rules"]);
+      expect(copied).toEqual([preparedLine("forge-ledger", "facts/forge-ledger.rules.md")]);
+      expect(copied[0]).toContain("run no other atticus command (not assistant-files, not map)");
       expect(text).toContain("===== forge-ledger, the rules top-up (repo 1 of 1) =====");
       expect(text).toMatch(/Done: 1 repo read, 1 part/);
       expect((await loadReadPlan(root, "forge-ledger"))?.rules?.hash).toBe(FACT_RULES_HASH);
