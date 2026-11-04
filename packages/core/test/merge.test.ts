@@ -524,7 +524,7 @@ describe("mergeCatalog at estate scale", () => {
 
 describe("mergeCatalog: ids past C1's 120 characters", () => {
   it("shortens a long record id to a stable one and every reference follows, so nothing is invalid", () => {
-    const longComp = `${"connected-deposits-makerchecker-".repeat(3)}svc`;
+    const longComp = `${"forge-ledger-approvals-service-".repeat(3)}svc`;
     const schema = `${longComp}.post-${"approval-request-".repeat(3)}request`;
     const records = [
       component(longComp, "ledger"),

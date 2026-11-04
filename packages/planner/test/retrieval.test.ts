@@ -6,7 +6,13 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { HandoffRuntime, MockRuntime, type AiRequest } from "@maycombhq/ai";
-import { fileJudgments, parseRecord, recordPath, serializeRecord } from "@maycombhq/core";
+import {
+  fileJudgments,
+  parseRecord,
+  recordPath,
+  RUN_SCHEMA_VERSION,
+  serializeRecord,
+} from "@maycombhq/core";
 import { openIndex } from "@maycombhq/index";
 import {
   checkExpansion,
@@ -185,7 +191,7 @@ describe("expansion and rerank in a step", () => {
     });
     expect(calls.filter((c) => c === EXPAND_AGENT)).toHaveLength(1);
     const main = r.runs.find((x) => x.agent === "feature-placer")!;
-    expect(main.schemaVersion).toBe(4);
+    expect(main.schemaVersion).toBe(RUN_SCHEMA_VERSION);
     expect(main.retrieval?.expansion).toMatchObject({
       cached: false,
       terms: ["fraud screen", "order risk score"],

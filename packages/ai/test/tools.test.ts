@@ -2,7 +2,12 @@ import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { AgentDefinition, RunSummary, type ToolDefinition } from "@maycombhq/core";
+import {
+  AgentDefinition,
+  RUN_SCHEMA_VERSION,
+  RunSummary,
+  type ToolDefinition,
+} from "@maycombhq/core";
 import {
   buildContextPack,
   guardToolText,
@@ -112,7 +117,7 @@ describe("the model runtime with tools", () => {
     expect(provider.chats[0]!.system).toMatch(/tools offered/);
     // The run record (version 2 on; 4 now, ADR 0121 addendum) has the calls.
     const s = RunSummary.parse(toRunSummary(run));
-    expect(s.schemaVersion).toBe(4);
+    expect(s.schemaVersion).toBe(RUN_SCHEMA_VERSION);
     expect(s.tools?.calls[0]?.name).toBe("show");
   });
 
