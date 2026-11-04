@@ -1,13 +1,13 @@
-# A question from atticus verify forge-teller-app --write (ADR 0078). Answer it with atticus questions answer q-c62198228388, or in the app.
+# A question from atticus verify forge-teller-app --write (ADR 0078). Answer it with atticus questions answer q-95d4b60a5cd0, or in the app.
 schemaVersion: 3
-id: q-c62198228388
+id: q-95d4b60a5cd0
 askedBy:
   step: facts-targets
   command: atticus verify forge-teller-app --write
   at: 2026-10-28T15:04:00.000Z
 repo: forge-teller-app
 question: Which repo or system answers POST /postings, which forge-teller-app
-  calls through financial-posting?
+  calls through money-posting?
 options:
   - label: card-vault
     means: card-vault, built in forge-card-vault, answers POST /postings

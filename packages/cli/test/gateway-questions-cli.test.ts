@@ -35,7 +35,7 @@ const OLD = {
   putStatus: "q-977303dcd756",
   getPin: "q-e46492df321a", // answered
   putPin: "q-c1a79cc23ea0",
-  postings: "q-c62198228388",
+  postings: "q-95d4b60a5cd0",
   tellerStatus: "q-5658d5bfa1b2",
   tellerRename: "q-61959a7015a0",
 };

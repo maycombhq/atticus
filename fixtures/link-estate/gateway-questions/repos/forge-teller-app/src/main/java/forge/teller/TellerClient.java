@@ -9,7 +9,7 @@ public class TellerClient {
   public TellerClient(RemoteConfig config, Http http) { this.config = config; this.http = http; }
 
   public void post(String posting) {
-    http.post(config.getUri("financial-posting") + "/postings", posting);
+    http.post(config.getUri("money-posting") + "/postings", posting);
   }
 
   public void close(String id) {

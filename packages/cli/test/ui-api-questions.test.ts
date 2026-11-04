@@ -136,7 +136,7 @@ describe("the rule several open target questions share (2.49.0, ADR 0168)", () =
         ids: ["q-65f2e458d42d", "q-848df3a174aa", "q-977303dcd756"],
         calls: 3,
       });
-      expect(list.about?.["q-c62198228388"]?.rule).toBeUndefined();
+      expect(list.about?.["q-95d4b60a5cd0"]?.rule).toBeUndefined();
     } finally {
       s.close();
     }

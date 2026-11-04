@@ -171,7 +171,7 @@ describe("candidatesIn: path, URL and topic strings, in any language", () => {
 
   it("leaves out an HTTP header's name, which a dotted or separated name can look like a topic", () => {
     const java = [
-      'headers.set("X-Forge.requestingChannel", channel);',
+      'headers.set("X-Forge.callerChannel", channel);',
       'public Account get(@RequestHeader("Forge.sourceChannel") String channel) {',
       '@RequestHeader(value = "forge-channel-id") String id',
       'publisher.send("forge.accounts.created", e);',

@@ -180,7 +180,7 @@ describe("targetRuleOffers (beta.12)", () => {
     expect(offers.get("q-5658d5bfa1b2")!.match).toBe("/forge/**");
     // /cards: the other pin question is answered. /postings: alone.
     expect(offers.has("q-c1a79cc23ea0")).toBe(false);
-    expect(offers.has("q-c62198228388")).toBe(false);
+    expect(offers.has("q-95d4b60a5cd0")).toBe(false);
     expect(offers.has("q-e46492df321a")).toBe(false);
   });
 });

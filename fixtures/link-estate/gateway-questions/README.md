@@ -8,7 +8,7 @@ vendor. Four repos, read by hand into facts the way `/atticus-map` asks:
 | `forge-proxy-core-v1` | An Apigee proxy that is its own repo (`type: gateway`), BasePath `/forge/core/v1`, with five flows under two prefixes (`/accounts/*`, `/accounts/*/status`, `/cards/*/pin`), every route forwarding through one TargetServer, `core-backend` (its host in `edge/env/prod/targetservers.json`, no scheme) |
 | `forge-ledger-core` | A Spring service serving the `/accounts/**` routes and `POST /postings` |
 | `forge-card-vault` | A Spring service serving `/cards/{id}/pin` |
-| `forge-teller-app` | A client: `config.getUri("financial-posting")` and `config.getUri("core-gateway")` through a house remote config (no value in the repo), and one literal URL on the shared gateway host `api.forge.example`, which no repo lists |
+| `forge-teller-app` | A client: `config.getUri("money-posting")` and `config.getUri("core-gateway")` through a house remote config (no value in the repo), and one literal URL on the shared gateway host `api.forge.example`, which no repo lists |
 
 `questions/` holds the target questions as they were written on 2026-10-28, before beta.11: one
 per call, each option listing a repo read then (the ledger wasn't), worded "<repo>, built in
