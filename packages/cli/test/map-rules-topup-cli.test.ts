@@ -316,6 +316,10 @@ describe("the ledger's rules state and its top-up (ADR 0167)", () => {
       const prompt = readFileSync(join(root, "facts", "forge-ledger.rules.md"), "utf8");
       expect(prompt).toContain(`# Top-up of forge-ledger at ${head}`);
       expect(prompt).toContain("This is a top-up (ADR 0167)");
+      // beta.16: where the paths are, so the reader needn't look for the checkout.
+      expect(prompt).toMatch(
+        /The paths are in the repo's checkout, `[^`]*forge-ledger` in this metarepo/,
+      );
       // Only the sets it lacked: the term rule is there, an older rule isn't.
       expect(prompt).toContain("A `term` fact is an identifier");
       expect(prompt).not.toContain("A config fact is a setting the running code depends on");

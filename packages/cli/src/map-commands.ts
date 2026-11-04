@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, join, relative } from "node:path";
+import { dirname, join, relative, sep } from "node:path";
 import {
   assistantTier,
   ABOUT_RULE,
@@ -994,6 +994,7 @@ export async function mapCommand(
         conventions,
         session: sessionTokensFor(limitOf(o, op, tier).limit),
         notes: notesPrompt,
+        checkout: relative(root, dir).split(sep).join("/") || ".",
         ...(o.json ? { json: true } : {}),
         ...(o.models ? { models: o.models } : {}),
       },

@@ -419,6 +419,32 @@ export interface AcpSessionResult {
   agentToolCalls: number;
 }
 
+/** beta.16: how many times a session that ended right after a refusal is told to carry on. */
+export const MAX_NUDGES = 3;
+
+/**
+ * beta.16: what a session that ended right after a refusal is told: what was refused and why,
+ * and how to carry on without a shell.
+ */
+export function carryOnPrompt(refusals: readonly string[]): string {
+  return [
+    "Atticus refused this, and you are not finished yet:",
+    ...refusals.slice(-3).map((r) => `- ${oneLine(r, 300)}`),
+    "",
+    "Carry on with the step. Use your own file tools to find, view and search files: they are allowed and need no shell. Don't run shell commands (cd, dir, Get-ChildItem, Select-String, Get-Content, grep, find); the only command Atticus runs is one `atticus ...` command at a time, with nothing piped or chained. The paths in the step's prompt file are relative to the repo's checkout, which `atticus verify` reads. Write the facts the step asks for, then stop.",
+  ].join("\n");
+}
+
+/** The usage of several prompts of one session, summed field by field where numeric. */
+function sumUsage(us: readonly Record<string, unknown>[]): Record<string, unknown> | undefined {
+  if (!us.length) return undefined;
+  const out: Record<string, unknown> = {};
+  for (const u of us)
+    for (const [k, v] of Object.entries(u))
+      out[k] = typeof v === "number" ? ((out[k] as number | undefined) ?? 0) + v : (out[k] ?? v);
+  return out;
+}
+
 /** What the client offers, as kept in a run record's tools. */
 export const ACP_OFFERED = [
   "fs/read_text_file",
@@ -476,6 +502,8 @@ export async function runAcpSession(o: AcpSessionOptions): Promise<AcpSessionRes
   let text = "";
   let pendingText = "";
   let agentCalls = 0;
+  /** beta.16: how much the agent had said when the last refusal came. */
+  let textAtRefusal = 0;
   let cancelWhy: string | undefined;
   let sessionId: string | undefined;
   const abort = new AbortController();
@@ -498,6 +526,7 @@ export async function runAcpSession(o: AcpSessionOptions): Promise<AcpSessionRes
       ...(error ? { error: true } : {}),
     });
     if (error) {
+      textAtRefusal = text.length;
       refused.push(output);
       flush();
       say(`  Refused: ${oneLine(output, 140)}`);
@@ -723,26 +752,50 @@ export async function runAcpSession(o: AcpSessionOptions): Promise<AcpSessionRes
       `  Copilot session open (${assistant.name}${assistant.version ? ` ${assistant.version}` : ""}${model ? `, ${model}` : ""}).`,
     );
     if (o.signal?.aborted) cancel("stopped (Ctrl+C)");
-    const asked = client.prompt(sessionId, o.prompt);
     timer = setTimeout(() => cancel("timeout"), o.timeoutMs ?? 30 * 60_000);
-    let answer: { stopReason: string; usage?: Record<string, unknown> };
-    try {
-      answer = await new Promise((res, rej) => {
-        asked.then(res, rej);
-        // Once cancelled, the agent has ten seconds to say so before the server is ended.
-        const watch = setInterval(() => {
-          if (!cancelWhy) return;
-          clearInterval(watch);
-          setTimeout(() => res({ stopReason: "cancelled" }), 10_000);
-        }, 50);
-        asked.finally(() => clearInterval(watch)).catch(() => undefined);
-      });
-    } catch (e) {
-      if (isAuthRequired(e)) throw signInError(e, init, server.stderr());
-      throw new RuntimeError(`The Copilot session failed: ${firstLine(e)}${tail(server.stderr())}`);
+    // beta.16: Copilot ends its turn when a permission is refused ("Operation cancelled by
+    // user"), often with the step half done. While it ended right after a refusal, it is told why
+    // and how to go on (its own file tools, no shell), in the same session, a few times at most.
+    let prompt = o.prompt;
+    let answer: { stopReason: string; usage?: Record<string, unknown> } = {
+      stopReason: "end_turn",
+    };
+    const usages: Record<string, unknown>[] = [];
+    for (let nudge = 0; ; nudge++) {
+      const before = refused.length;
+      const asked = client.prompt(sessionId, prompt);
+      try {
+        answer = await new Promise((res, rej) => {
+          asked.then(res, rej);
+          // Once cancelled, the agent has ten seconds to say so before the server is ended.
+          const watch = setInterval(() => {
+            if (!cancelWhy) return;
+            clearInterval(watch);
+            setTimeout(() => res({ stopReason: "cancelled" }), 10_000);
+          }, 50);
+          asked.finally(() => clearInterval(watch)).catch(() => undefined);
+        });
+      } catch (e) {
+        if (isAuthRequired(e)) throw signInError(e, init, server.stderr());
+        throw new RuntimeError(
+          `The Copilot session failed: ${firstLine(e)}${tail(server.stderr())}`,
+        );
+      }
+      flush();
+      if (answer.usage) usages.push(answer.usage);
+      const fresh = refused.slice(before);
+      // Ended over the refusal: it was the session's last call, and all it said after was that
+      // it was cancelled (or nothing).
+      const after = text.slice(textAtRefusal);
+      const overIt =
+        fresh.length > 0 && !!calls.at(-1)?.error && (!after.trim() || /cancel/i.test(after));
+      if (cancelWhy || !overIt || nudge >= MAX_NUDGES || answer.stopReason !== "end_turn") break;
+      say(
+        `  Atticus: told Copilot why that was refused and to carry on (${nudge + 1} of ${MAX_NUDGES}).`,
+      );
+      prompt = carryOnPrompt(fresh);
     }
-    flush();
-    const usage = usageOf(answer.usage);
+    const usage = usageOf(sumUsage(usages));
     return {
       stopReason: cancelWhy ? "cancelled" : answer.stopReason,
       ...(cancelWhy ? { stopped: cancelWhy } : {}),

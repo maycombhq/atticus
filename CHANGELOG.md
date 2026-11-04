@@ -2,6 +2,11 @@
 
 All notable changes to Atticus. Versions follow [Semantic Versioning](https://semver.org); contracts C1 to C6 change only with an ADR, a schema version and a migration (`atticus upgrade`).
 
+## Unreleased
+
+- A Copilot session that ends right after Atticus refused something (Copilot reads a refusal as "Operation cancelled by user") is told, in the same session, what was refused and why, and to carry on with its own file tools instead of a shell; up to three times.
+- A rules top-up's prompt names the repo's checkout in the metarepo, so the session opens its files there instead of searching for it with shell commands.
+
 ## 2.0.0-beta.15 (2026-11-04)
 
 ### Copilot sessions that need no terminal

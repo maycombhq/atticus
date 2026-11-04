@@ -6,6 +6,7 @@ import { AgentDefinition, Runtime } from "@maycombhq/core";
 import {
   AcpSignInError,
   atticusArgvOf,
+  carryOnPrompt,
   buildContextPack,
   commandLineOf,
   CopilotAcpRuntime,
@@ -307,6 +308,78 @@ describe("the Copilot ACP session (ADR 0171)", () => {
     });
     expect(c.stopReason).toBe("cancelled");
     expect(m.log().filter((e) => e.event === "cancel").length).toBe(2);
+  });
+
+  it("tells a session that ended over a refusal why, and lets it carry on (beta.16)", async () => {
+    const m = metarepo({
+      sessions: [
+        {
+          steps: [
+            { tool: "Viewing the prompt" },
+            {
+              permission: {
+                kind: "execute",
+                title: "Find the repo",
+                rawInput: {
+                  command: 'Get-ChildItem -Path . -Filter "forge-ledger" | Select-Object',
+                },
+              },
+            },
+            { say: "Info: Operation cancelled by user" },
+          ],
+          then: [
+            [
+              { read: "workspace/forge-ledger/src/Ledger.java" },
+              { write: "facts/forge-ledger.jsonl", content: FACT },
+              { say: "Done." },
+            ],
+          ],
+        },
+      ],
+    });
+    const progress: string[] = [];
+    const r = await runAcpSession({
+      command: COMMAND,
+      cwd: m.root,
+      prompt: "Read forge-ledger into facts.",
+      policy: policyOf(m.root),
+      exec: fakeAtticus().exec,
+      env: m.env,
+      onProgress: (l) => progress.push(l),
+    });
+    expect(r.stopReason).toBe("end_turn");
+    expect(readFileSync(join(m.root, "facts", "forge-ledger.jsonl"), "utf8")).toBe(FACT);
+    const prompts = m.log().filter((e) => e.event === "prompt");
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1]!.text).toBe(carryOnPrompt(r.refused.slice(0, 1)));
+    expect(String(prompts[1]!.text)).toContain("Use your own file tools");
+    expect(progress.some((l) => l.includes("told Copilot why that was refused"))).toBe(true);
+    // Both prompts' usage, summed.
+    expect(r.usage).toEqual({ inputTokens: 2400, outputTokens: 600 });
+  });
+
+  it("doesn't nudge a session that went on after a refusal and finished", async () => {
+    const m = metarepo({
+      sessions: [
+        {
+          steps: [
+            { permission: { kind: "fetch", title: "Fetch a page" } },
+            { write: "facts/forge-ledger.jsonl", content: FACT },
+            { say: "Done." },
+          ],
+          then: [[{ say: "nudged" }]],
+        },
+      ],
+    });
+    await runAcpSession({
+      command: COMMAND,
+      cwd: m.root,
+      prompt: "Read forge-ledger into facts.",
+      policy: policyOf(m.root),
+      exec: fakeAtticus().exec,
+      env: m.env,
+    });
+    expect(m.log().filter((e) => e.event === "prompt")).toHaveLength(1);
   });
 
   it("says plainly when the server can't be started", async () => {

@@ -395,6 +395,8 @@ export async function mapRules(
     session: number;
     /** The org notes for the repo (`notesText`), for the terms; empty when there are none. */
     notes: string;
+    /** beta.16: the repo's checkout, relative to the metarepo, where the paths are. */
+    checkout?: string;
     json?: boolean;
     /** ADR 0169: the model classes to read. */
     models?: ModelsMode;
@@ -437,6 +439,7 @@ export async function mapRules(
       of: t.sessions.length,
       facts: p.facts,
       notes: o.notes,
+      ...(o.checkout ? { checkout: o.checkout } : {}),
       ...(p.reach ? { reach: p.reach } : {}),
     }),
   );
@@ -487,6 +490,8 @@ export function rulesPrompt(
     of: number;
     facts: readonly Fact[];
     notes: string;
+    /** beta.16: the repo's checkout, relative to the metarepo, where the paths are. */
+    checkout?: string;
     /** ADR 0169: the reach, for the reached model classes among the session's files. */
     reach?: ReachPlan;
   },
@@ -503,7 +508,7 @@ export function rulesPrompt(
   return [
     `# Top-up of ${repo} at ${commit}`,
     "",
-    `Session ${c.n} of ${c.of}, about ${s.tokens.toLocaleString("en-US")} tokens of source. ${topUpWords(sets)} Open each path below and nothing else: a path ending \`#L<from>-L<to>\` by those lines only, never the whole file.`,
+    `Session ${c.n} of ${c.of}, about ${s.tokens.toLocaleString("en-US")} tokens of source. ${topUpWords(sets)} Open each path below and nothing else: a path ending \`#L<from>-L<to>\` by those lines only, never the whole file.${c.checkout ? ` The paths are in the repo's checkout, \`${c.checkout}\` in this metarepo: open \`${c.checkout}/<path>\` with your file tools; there is no need to look for it or to run a command.` : ""}`,
     "",
     `- Write each fact to \`${c.rel}/${repo}.jsonl\`, appended, with \`commit\` ${commit}. A kept fact you add to is written again whole, under its id.`,
     `- Then run \`atticus verify ${repo}\` and fix what it rejects until it exits 0: that records this session done${c.of > c.n ? `. The next session is for a new chat: \`/atticus-map ${repo} --rules\` there` : ", and the read as under the rules there are now"}.`,

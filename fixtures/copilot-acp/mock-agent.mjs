@@ -19,6 +19,8 @@
 //                                                      session/request_permission
 //   { "sleep": <ms> }
 //   { "stop": "<stopReason>" }                         ends the turn with that reason
+// A session may have "then": [[steps], ...]: the steps of its second prompt, third, and so on, in
+// the same session (a prompt past them plays none).
 // A path may start with ${cwd} (the session's folder); a relative path is taken under it.
 import { appendFileSync, readFileSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
@@ -62,6 +64,7 @@ let session;
 let cwd = process.cwd();
 let cancelled = false;
 let model = "gpt-mock";
+let promptsBefore = 0;
 
 const pathOf = (p) => {
   const s = p.replaceAll("${cwd}", cwd);
@@ -162,6 +165,7 @@ rl.on("line", async (line) => {
     const n = logged().filter((e) => e.event === "session").length;
     cwd = params.cwd;
     session = `s-${n + 1}`;
+    promptsBefore = logged().filter((e) => e.event === "prompt").length;
     log({ event: "session", n: n + 1, cwd: params.cwd, mcpServers: params.mcpServers });
     send({
       id,
@@ -184,7 +188,9 @@ rl.on("line", async (line) => {
     const n = logged().filter((e) => e.event === "session").length;
     const text = params.prompt.map((b) => b.text ?? "").join("");
     log({ event: "prompt", session: params.sessionId, text });
-    const steps = script.sessions[n - 1]?.steps ?? [];
+    const k = logged().filter((e) => e.event === "prompt").length - 1 - promptsBefore;
+    const sess = script.sessions[n - 1];
+    const steps = (k === 0 ? sess?.steps : sess?.then?.[k - 1]) ?? [];
     const stopReason = await play(steps);
     log({ event: "stop", stopReason });
     send({ id, result: { stopReason, usage: { inputTokens: 1200, outputTokens: 300 } } });
