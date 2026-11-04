@@ -1008,7 +1008,61 @@ export type StepClass = z.infer<typeof StepClass>;
  * step on the one model; `atticus upgrade` moves it to version 2 (`runtime-v2`), changing nothing
  * else.
  */
-export const RUNTIME_SCHEMA_VERSION = 2 as const;
+export const RUNTIME_SCHEMA_VERSION = 3 as const;
+
+/** The modes runtime.yaml decides; copilot-acp needs version 3 (ADR 0171). */
+const ConfiguredMode = z.enum(["hand-off", "model", "headless-claude-code", "copilot-acp"]);
+
+/**
+ * runtime.yaml version 3 (ADR 0171): how Atticus starts the GitHub Copilot language server in its
+ * Agent Client Protocol mode, for `copilot-acp`. Only how to start it, which model to ask for and
+ * the caps: what the session may read, write and run is fixed in code (rule 6), never here.
+ * - command: the server's program and any words before `--acp` (no shell), as one line; a path
+ *   with spaces in double quotes. Default `npx --yes @github/copilot-language-server`.
+ * - model: the model id to ask the server for, when it offers a choice.
+ * - maxTurns: the most tool calls one session may make before Atticus cancels it (default 200).
+ * - timeoutMs: the longest one session may take (default 30 minutes).
+ */
+export const CopilotAcpSettings = z.strictObject({
+  command: z.string().trim().min(1).optional(),
+  model: StepModelId().optional(),
+  maxTurns: z.number().int().positive().max(5000).optional(),
+  timeoutMs: z
+    .number()
+    .int()
+    .min(10_000)
+    .max(24 * 60 * 60_000)
+    .optional(),
+});
+export type CopilotAcpSettings = z.infer<typeof CopilotAcpSettings>;
+
+function StepModelId() {
+  return z.string().min(1).regex(/^\S+$/, "a model id, without spaces");
+}
+
+export const COPILOT_ACP_DEFAULTS = {
+  command: "npx --yes @github/copilot-language-server",
+  maxTurns: 200,
+  timeoutMs: 30 * 60_000,
+} as const;
+
+/** runtime.yaml's copilotAcp section with its defaults (ADR 0171). */
+export function copilotAcpOf(
+  runtime: { copilotAcp?: CopilotAcpSettings | undefined } | undefined,
+): {
+  command: string;
+  model?: string;
+  maxTurns: number;
+  timeoutMs: number;
+} {
+  const c = runtime?.copilotAcp ?? {};
+  return {
+    command: c.command ?? COPILOT_ACP_DEFAULTS.command,
+    ...(c.model ? { model: c.model } : {}),
+    maxTurns: c.maxTurns ?? COPILOT_ACP_DEFAULTS.maxTurns,
+    timeoutMs: c.timeoutMs ?? COPILOT_ACP_DEFAULTS.timeoutMs,
+  };
+}
 
 /**
  * The model for one kind of step: a model of runtime.yaml's provider (model mode, headless
@@ -1018,7 +1072,7 @@ export const RUNTIME_SCHEMA_VERSION = 2 as const;
 const StepModel = z.string().min(1).regex(/^\S+$/, "a model name or vendor/family, without spaces");
 
 const RuntimeFields = z.strictObject({
-  schemaVersion: z.union([V, z.literal(RUNTIME_SCHEMA_VERSION)]),
+  schemaVersion: z.union([V, z.literal(2), z.literal(RUNTIME_SCHEMA_VERSION)]),
   assistants: z
     .strictObject({
       allowed: z.array(AssistantId).min(1),
@@ -1035,11 +1089,14 @@ const RuntimeFields = z.strictObject({
    * don't hold a gate, AI buttons become guidance, and people write what agents would draft.
    */
   ai: z.enum(["on", "text-only", "off"]).default("on"),
-  /** How AI steps run: hand-off to the assistant, a direct model call, or headless Claude Code. */
+  /**
+   * How AI steps run: hand-off to the assistant, a direct model call, headless Claude Code, or
+   * (version 3, ADR 0171) Copilot driven unattended through its Agent Client Protocol.
+   */
   modes: z
     .strictObject({
-      allowed: z.array(z.enum(["hand-off", "model", "headless-claude-code"])).min(1),
-      default: z.enum(["hand-off", "model", "headless-claude-code"]),
+      allowed: z.array(ConfiguredMode).min(1),
+      default: ConfiguredMode,
     })
     .refine((m) => m.allowed.includes(m.default), "the default mode must be allowed")
     .default({ allowed: ["hand-off"], default: "hand-off" }),
@@ -1089,6 +1146,8 @@ const RuntimeFields = z.strictObject({
    * the section and one with an empty section get the same defaults.
    */
   retrieval: RetrievalSettings.optional(),
+  /** Version 3 (ADR 0171): how copilot-acp starts the Copilot language server. */
+  copilotAcp: CopilotAcpSettings.optional(),
   /** Atticus sends no telemetry unless an organisation turns it on here. */
   telemetry: z.strictObject({ enabled: z.boolean().default(false) }).default({ enabled: false }),
   adapters: z
@@ -1133,6 +1192,21 @@ const RuntimeFields = z.strictObject({
 });
 
 export const Runtime = RuntimeFields.superRefine((r, ctx) => {
+  if (r.schemaVersion < 3) {
+    // ADR 0171: copilot-acp and its section are version 3's.
+    if ([...r.modes.allowed, r.modes.default].includes("copilot-acp"))
+      ctx.addIssue({
+        code: "custom",
+        path: ["modes"],
+        message: "copilot-acp needs schemaVersion 3 (ADR 0171): run atticus upgrade",
+      });
+    if (r.copilotAcp !== undefined)
+      ctx.addIssue({
+        code: "custom",
+        path: ["copilotAcp"],
+        message: "copilotAcp needs schemaVersion 3 (ADR 0171): run atticus upgrade",
+      });
+  }
   if (r.schemaVersion !== 1) return;
   for (const c of STEP_CLASSES)
     if (r.models[c] !== undefined)

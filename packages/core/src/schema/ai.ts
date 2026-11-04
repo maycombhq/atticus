@@ -8,7 +8,15 @@ import { BUILT_IN_ROLES, ChangeArtifact, StepClass } from "./orgpack.js";
  */
 export const AI_SCHEMA_VERSION = 1 as const;
 
-export const RuntimeKind = z.enum(["hand-off", "model", "headless-claude-code", "mock", "replay"]);
+/** ADR 0171 adds copilot-acp: GitHub Copilot driven unattended through its Agent Client Protocol. */
+export const RuntimeKind = z.enum([
+  "hand-off",
+  "model",
+  "headless-claude-code",
+  "copilot-acp",
+  "mock",
+  "replay",
+]);
 export type RuntimeKind = z.infer<typeof RuntimeKind>;
 
 /** What an agent may be given as input. */
@@ -110,10 +118,24 @@ export type RunState = z.infer<typeof RunState>;
 /**
  * The run record's own version: 2 adds the tools a run's model called (ADR 0107 addendum); 3 how
  * its context was retrieved (ADR 0116): the model's expansion of the input and its order of the
- * candidates; 4 the step's class and the model that ran it (ADR 0121 addendum, per-step models).
- * A version 1, 2 or 3 record is read through `migrateRunSummary`, without what came later.
+ * candidates; 4 the step's class and the model that ran it (ADR 0121 addendum, per-step models);
+ * 5 the assistant program that ran it and its version (ADR 0171: the Copilot language server a
+ * copilot-acp run talked to). A version 1 to 4 record is read through `migrateRunSummary`,
+ * without what came later.
  */
-export const RUN_SCHEMA_VERSION = 4 as const;
+export const RUN_SCHEMA_VERSION = 5 as const;
+
+/**
+ * The assistant program a run talked to (version 5, ADR 0171), as it named itself: the agent's
+ * name and version from the Agent Client Protocol's initialize answer, the protocol version both
+ * sides agreed, and the version `<command> --version` printed. Data, never instructions.
+ */
+export const RunAssistant = z.strictObject({
+  name: z.string().min(1),
+  version: z.string().min(1).optional(),
+  protocolVersion: z.number().int().min(0).optional(),
+});
+export type RunAssistant = z.infer<typeof RunAssistant>;
 
 /**
  * How a run's context was retrieved (ADR 0116), when a model helped: what it read the input as
@@ -221,18 +243,23 @@ export const RunSummary = z.strictObject({
    * done --model`). Left out when nothing said which.
    */
   model: z.string().min(1).optional(),
+  /** The assistant program it talked to (version 5, ADR 0171), when the runtime drives one. */
+  assistant: RunAssistant.optional(),
 });
 export type RunSummary = z.infer<typeof RunSummary>;
 
 /**
- * A stored run record at the current version: version 1 (before tools), 2 (before retrieval) and
- * 3 (before the step's class and model) read as version 4 without them; anything else is
- * returned as it is, for the schema to judge.
+ * A stored run record at the current version: version 1 (before tools), 2 (before retrieval), 3
+ * (before the step's class and model) and 4 (before the assistant program, ADR 0171) read as
+ * version 5 without them; anything else is returned as it is, for the schema to judge.
  */
 export function migrateRunSummary(raw: unknown): unknown {
   if (typeof raw !== "object" || raw === null) return raw;
   const r = raw as Record<string, unknown>;
-  return r.schemaVersion === 1 || r.schemaVersion === 2 || r.schemaVersion === 3
+  return r.schemaVersion === 1 ||
+    r.schemaVersion === 2 ||
+    r.schemaVersion === 3 ||
+    r.schemaVersion === 4
     ? { ...r, schemaVersion: RUN_SCHEMA_VERSION }
     : raw;
 }

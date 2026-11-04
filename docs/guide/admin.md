@@ -103,6 +103,10 @@ The app shows the mode in the top bar and on Settings. See ADR 0046.
 
 `runtime.yaml` (version 2) can name a model for each of the five kinds of AI step (`models.read`, `draft`, `critic`, `knowledge`, `quick`), so the critic's lenses and the small checks don't spend the strongest model's requests. [Choosing models at an organisation on Copilot](models.md) has a default table and the reasoning; `atticus doctor` lists what each kind runs on here.
 
+### Driving Copilot unattended (copilot-acp)
+
+Where Copilot is the assistant, `runtime.yaml` version 3 can let Atticus drive it through the GitHub Copilot language server's Agent Client Protocol mode (ADR 0171): `modes: { allowed: [hand-off, copilot-acp] }`, with an optional `copilotAcp:` section naming the server's command. Each step, and each part of `atticus map --all`, then runs in a new Copilot session on the person's own Copilot sign-in, which may read the metarepo, write only its step's result and run only `atticus` commands; those rules are not settings. [Running Copilot unattended](copilot-unattended.md) has the details; `atticus doctor` checks the server and its sign-in.
+
 ### Calling a model directly (model mode)
 
 Hand-off mode, the default, needs no model access: the person's own assistant does the step. To let Atticus call a model itself, allow model mode and name the provider in `runtime.yaml`. Three providers ship with Atticus (ADR 0065): `anthropic`, `openai-compatible` (also as `azure-openai`) and `bedrock`. `vertex` has none yet.

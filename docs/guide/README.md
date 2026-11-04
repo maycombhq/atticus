@@ -4,6 +4,7 @@
 - [Running Atticus for a team](admin.md): the setup checklist, the org pack, what AI may do, who you are and how approving works, logs and support.
 - [Choosing models at an organisation on Copilot](models.md): the five kinds of AI step, a default model for each and the cost reasoning, and how a person overrides one.
 - [Running Atticus's steps through Copilot agent mode](copilot-agent-mode.md): the agent files Copilot reads, the setup, the checklist a person runs in a real Copilot session, and the limits.
+- [Running Copilot unattended (copilot-acp)](copilot-unattended.md): Atticus drives Copilot itself through the Copilot language server's Agent Client Protocol, one new session per step or part: how to turn it on, what a session may and may not do, sign-in, and how to stop.
 - [Teaching Atticus your house frameworks](frameworks.md): framework models from source, JARs, documents or an assistant's draft, and the tests that gate them.
 - [Org knowledge](knowledge.md): add a wiki, a document or an API guide, scan it, ask it, and see, confirm or exclude what applies to a change.
 - [A vendor's API changes](vendor-specs.md): feed each version of a vendor's spec beside the last, see what changed and what in the estate it reaches, and start a change from it.

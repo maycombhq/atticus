@@ -35,6 +35,7 @@ import {
   migrateQuestions,
   migrateRolesText,
   migrateRuntimeText,
+  migrateRuntimeV3Text,
   migrateSourcesText,
   orgPackDirOf,
   specsDirOf,
@@ -232,6 +233,27 @@ export const MIGRATIONS: Migration[] = [
       const text = await readFile(join(root, rel), "utf8").catch(() => undefined);
       if (text === undefined) return [];
       const r = migrateRuntimeText(text);
+      if (!r.changed) return [];
+      await writeFileAtomic(join(root, rel), r.text);
+      return [rel];
+    },
+  },
+  {
+    // ADR 0171: a runtime.yaml that names copilot-acp (a mode or its copilotAcp section) needs
+    // version 3; any other file means the same at 1 or 2 and is left as it is.
+    id: "runtime-v3",
+    summary:
+      "runtime.yaml at version 3 where it names copilot-acp: GitHub Copilot driven unattended through its Agent Client Protocol (ADR 0171); the number only",
+    async pending(root) {
+      const rel = packRel(root, "runtime.yaml");
+      const text = await readFile(join(root, rel), "utf8").catch(() => undefined);
+      return text !== undefined && migrateRuntimeV3Text(text).changed ? [rel] : [];
+    },
+    async apply(root) {
+      const rel = packRel(root, "runtime.yaml");
+      const text = await readFile(join(root, rel), "utf8").catch(() => undefined);
+      if (text === undefined) return [];
+      const r = migrateRuntimeV3Text(text);
       if (!r.changed) return [];
       await writeFileAtomic(join(root, rel), r.text);
       return [rel];

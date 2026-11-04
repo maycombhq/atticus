@@ -180,6 +180,8 @@ describe("atticus upgrade", () => {
       "sources-v3",
       "stamp-committed",
       "runtime-v2",
+      // ADR 0171: nothing here names copilot-acp, so nothing to do, but recorded as done.
+      "runtime-v3",
       "roles-v2",
       // ADR 0006 addendum: no OpenSpec here, so nothing to do, but recorded as done.
       "org-flow-v2",
@@ -254,6 +256,24 @@ describe("atticus upgrade", () => {
     expect(text).toMatch(/^# The Forge pack's change types/);
     expect(parse(text)).toMatchObject({ schemaVersion: 2, types: [{ id: "config-change" }] });
     expect(parse(text).types[0].size).toBeUndefined();
+    expect((await upgradeCheck(root, "1.0.0")).pending).toEqual([]);
+  });
+
+  it("moves a runtime.yaml that names copilot-acp to version 3, the number only (ADR 0171)", async () => {
+    const root = await oldMetarepo();
+    const v2 = [
+      "schemaVersion: 2",
+      "assistants: { allowed: [copilot], default: copilot }",
+      "modes: { allowed: [hand-off, copilot-acp], default: hand-off }",
+      "",
+    ].join("\n");
+    await writeFile(join(root, "org-pack/runtime.yaml"), v2);
+    const c = await upgradeCheck(root, "1.0.0");
+    expect(c.pending.find((p) => p.id === "runtime-v3")?.files).toEqual(["org-pack/runtime.yaml"]);
+    expect(await upgradeCommand(root, { by: "pat" }, io().io, "1.0.0")).toBe(0);
+    expect(await readFile(join(root, "org-pack/runtime.yaml"), "utf8")).toBe(
+      v2.replace("schemaVersion: 2", "schemaVersion: 3"),
+    );
     expect((await upgradeCheck(root, "1.0.0")).pending).toEqual([]);
   });
 

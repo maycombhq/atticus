@@ -3,6 +3,7 @@ import {
   RUN_SCHEMA_VERSION,
   type AgentDefinition,
   type RunState,
+  type RunAssistant,
   type RunRetrieval,
   type RunSummary,
   type RunTools,
@@ -68,6 +69,8 @@ export interface Run {
   stepClass?: StepClass;
   /** The model that ran it, when the runtime knows (model, headless) or was told (hand-off). */
   model?: string;
+  /** The assistant program it talked to (copilot-acp, ADR 0171): its name and version. */
+  assistant?: RunAssistant;
 }
 
 export interface AiRuntime {
@@ -143,6 +146,7 @@ export function toRunSummary(run: Run): RunSummary {
     ...(run.request.retrieval ? { retrieval: run.request.retrieval } : {}),
     stepClass: run.stepClass ?? stepClassOf(run.request),
     ...(run.model ? { model: run.model } : {}),
+    ...(run.assistant ? { assistant: run.assistant } : {}),
   };
 }
 
@@ -175,13 +179,25 @@ export abstract class OneShotRuntime implements AiRuntime {
   protected abstract produce(
     run: Run,
     signal?: AbortSignal,
-  ): Promise<{ output: string; usage: Usage; tools?: RunTools }>;
+  ): Promise<{
+    output: string;
+    usage: Usage;
+    tools?: RunTools;
+    /** The model the run used, when it learnt it running (copilot-acp, ADR 0171). */
+    model?: string;
+    assistant?: RunAssistant;
+  }>;
+
+  /** The kind an agent's allowedRuntimes must name for this runtime (copilot-acp: hand-off too). */
+  protected allowedAs(_agent: AgentDefinition): RuntimeKind {
+    return this.kind;
+  }
 
   /** Keep a finished run where Model runs reads it (the model runtime, given a root). */
   protected async keep(_run: Run): Promise<void> {}
 
   async prepare(request: AiRequest): Promise<Run> {
-    checkAllowed(this.kind, request.agent);
+    checkAllowed(this.allowedAs(request.agent), request.agent);
     if (request.pack.manifest.totalTokens > request.agent.tokenBudget) {
       throw new RuntimeError(
         `context pack (${request.pack.manifest.totalTokens} tokens) is over agent ${request.agent.id}'s budget of ${request.agent.tokenBudget}`,
@@ -213,8 +229,14 @@ export abstract class OneShotRuntime implements AiRuntime {
       return run;
     }
     try {
-      const { output, usage, tools } = await this.produce(run, signal);
-      run = transition(run, "produced", this.now(), { output, usage, ...(tools ? { tools } : {}) });
+      const { output, usage, tools, model, assistant } = await this.produce(run, signal);
+      run = transition(run, "produced", this.now(), {
+        output,
+        usage,
+        ...(tools ? { tools } : {}),
+        ...(model ? { model } : {}),
+        ...(assistant ? { assistant } : {}),
+      });
       const problems = (await this.opts.validate?.(output, run.request)) ?? [];
       run =
         problems.length === 0

@@ -30,7 +30,7 @@ const esc = (s: string) =>
 
 type Item = Api.RunListItem;
 const run = (n: number, over: Partial<Item> = {}): Item => ({
-  schemaVersion: 4,
+  schemaVersion: 5,
   runId: `run-2026102303400${n}-0001`,
   change: "knowledge-scan",
   agent: "knowledge-reader",

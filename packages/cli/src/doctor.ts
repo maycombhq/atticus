@@ -10,6 +10,7 @@ import {
   tierLine,
 } from "@maycombhq/assistant-files";
 import {
+  copilotAcpOf,
   DEFAULT_PORT,
   factsDirOf,
   loadOpenSpecSettings,
@@ -22,7 +23,13 @@ import {
   type Runtime,
   type StepClass,
 } from "@maycombhq/core";
-import { modelEnvOf, modelsByClass, modelSourceWords, type ClassModel } from "@maycombhq/ai";
+import {
+  modelEnvOf,
+  modelsByClass,
+  modelSourceWords,
+  type ClassModel,
+  type CopilotAcpProbe,
+} from "@maycombhq/ai";
 import { parse } from "yaml";
 import {
   BETA_FEATURES,
@@ -118,6 +125,11 @@ export interface DoctorDeps {
   assistantFiles?: (root: string) => Promise<AssistantFilesState>;
   /** Load the optional embedding plugin (ADR 0124 addendum D-bundle); fails where it isn't installed. */
   embed?: () => Promise<typeof import("@maycombhq/embed")>;
+  /**
+   * ADR 0171: the Copilot language server's --version and its ACP handshake (initialize and a
+   * new session, no prompt), where runtime.yaml allows copilot-acp. Tests pass a fake.
+   */
+  copilotAcp?: (o: { command: string; cwd: string }) => Promise<CopilotAcpProbe>;
 }
 
 export interface AssistantFilesState {
@@ -623,6 +635,35 @@ export async function doctorChecks(root: string, deps: DoctorDeps = {}): Promise
       ? "Name the provider under adapters.model in runtime.yaml (docs/guide/admin.md, Calling a model directly), or leave model mode out of modes.allowed."
       : `Set the environment variable ${keyEnv ?? "the provider's key variable"} to the key on this machine (never in runtime.yaml), then open a new terminal.`,
   });
+  // ---- ADR 0171: Copilot driven through its Agent Client Protocol, where runtime.yaml allows it.
+  // The server is started for its version and the handshake only: no prompt, so no run.
+  if (rt.ai !== "off" && rt.modes.allowed.includes("copilot-acp")) {
+    const command = copilotAcpOf(rt).command;
+    const probe =
+      deps.copilotAcp ?? (async (o) => (await import("@maycombhq/ai")).copilotAcpProbe(o));
+    const p = await probe({ command, cwd: root }).catch((e: Error): CopilotAcpProbe => ({
+      found: false,
+      said: e.message,
+    }));
+    const name = p.version
+      ? `${command.split(/\s+/).at(-1)} ${p.version.replace(/^\S*copilot\S*\s+/i, "")}`
+      : command;
+    out.push({
+      id: "copilot-acp",
+      label: "Copilot ACP (copilot-acp)",
+      status: p.found && p.signedIn === true ? "ok" : "warn",
+      detail: !p.found
+        ? `${command} can't be run here${p.said ? ` (${p.said})` : ""}`
+        : p.signedIn === false
+          ? `${name} answers in Agent Client Protocol mode but isn't signed in; it said: ${p.said ?? "nothing"}`
+          : p.signedIn === true
+            ? `${name} answers in Agent Client Protocol mode and is signed in. No session was run.`
+            : `${name} was found, but its Agent Client Protocol handshake didn't say whether it is signed in${p.said ? `: ${p.said}` : ""}`,
+      fix: !p.found
+        ? "Set copilotAcp.command in runtime.yaml to the Copilot language server (npx --yes @github/copilot-language-server, or its full path), check that it lists --acp in its --help, or leave copilot-acp out of modes.allowed. docs/guide/copilot-unattended.md says how."
+        : "Sign in to GitHub Copilot yourself (your editor's Copilot sign-in, or the link and code the server printed); Atticus never handles your sign-in. Then run atticus doctor again.",
+    });
+  }
   // ---- The model for each kind of step (ADR 0121 addendum), and where each choice came from.
   if (rt.ai !== "off") {
     const choices = stepModelChoices(rt, env);

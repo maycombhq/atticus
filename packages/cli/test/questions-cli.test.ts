@@ -183,7 +183,7 @@ describe("atticus questions show, and a change's question (WP2.4)", () => {
     const { root } = await metarepo();
     const r = await run(root, ["shwo", "q-1"]);
     expect(r.code).toBe(2);
-    expect(r.err.join("\n")).toMatch(/questions list, show, proposed, answer or sheet/);
+    expect(r.err.join("\n")).toMatch(/questions list, show, proposed, propose, answer or sheet/);
   });
 
   it("says a change's question was answered for this change, not this repo", async () => {

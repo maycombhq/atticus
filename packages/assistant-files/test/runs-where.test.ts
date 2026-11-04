@@ -58,6 +58,25 @@ describe("what runs a step here (ADR 0121)", () => {
     );
   });
 
+  it("says Copilot driven unattended through its Agent Client Protocol (ADR 0171)", () => {
+    expect(
+      whatRunsWhere(
+        rt({
+          schemaVersion: 3,
+          modes: { allowed: ["hand-off", "copilot-acp"], default: "copilot-acp" },
+        }),
+      ),
+    ).toBe("GitHub Copilot, unattended (copilot-acp) · hand-off to GitHub Copilot allowed");
+    expect(
+      whatRunsWhere(
+        rt({
+          schemaVersion: 3,
+          modes: { allowed: ["hand-off", "copilot-acp"], default: "hand-off" },
+        }),
+      ),
+    ).toBe("Hand-off to GitHub Copilot · Copilot unattended allowed (copilot-acp)");
+  });
+
   it("names the assistant atticus probe measured here, with its tier (a real metarepo, 2026-10-25)", () => {
     const probe = (assistant: ProbeResult["assistant"], measured: string, tier: 1 | 2 | 3) =>
       ({

@@ -552,7 +552,7 @@ export async function questionsFiles(
     }
   }
   io.err(
-    `atticus questions ${command ?? ""} isn't a command: it is questions list, show, proposed, answer or sheet (atticus questions alone lists the knowledge gaps).`,
+    `atticus questions ${command ?? ""} isn't a command: it is questions list, show, proposed, propose, answer or sheet (atticus questions alone lists the knowledge gaps).`,
   );
   io.err(
     'Usage: atticus questions list [--state open|answered|retired] [--mine] [--json], atticus questions show <id> [--json], atticus questions proposed [--json], or atticus questions answer <id> --option <n> | --text "..." | --target <id> [--add-system vendor|internal] [--name "..."] | --accept-proposal [--scope repo|repo-type] [--type <repo type>] [--match <host pattern or /path/**>], or atticus questions sheet [--out <file>] | --apply <file>',

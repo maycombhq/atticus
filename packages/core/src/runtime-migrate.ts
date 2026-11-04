@@ -1,5 +1,4 @@
 import { isMap, parseDocument } from "yaml";
-import { RUNTIME_SCHEMA_VERSION } from "./schema/orgpack.js";
 
 /**
  * runtime.yaml version 1 → 2 (ADR 0121 addendum, per-step models). Version 2 adds a model per
@@ -16,12 +15,43 @@ export function migrateRuntimeText(text: string): { text: string; changed: boole
   const line = /^schemaVersion:[ \t]*1[ \t]*(#.*)?$/m;
   if (line.test(text))
     return {
-      text: text.replace(
-        line,
-        (_m, c?: string) => `schemaVersion: ${RUNTIME_SCHEMA_VERSION}${c ? ` ${c}` : ""}`,
-      ),
+      text: text.replace(line, (_m, c?: string) => `schemaVersion: 2${c ? ` ${c}` : ""}`),
       changed: true,
     };
-  doc.set("schemaVersion", RUNTIME_SCHEMA_VERSION);
+  doc.set("schemaVersion", 2);
+  return { text: doc.toString(), changed: true };
+}
+
+/** Whether a runtime.yaml names copilot-acp, as a mode or with its section (ADR 0171). */
+function namesCopilotAcp(doc: ReturnType<typeof parseDocument>): boolean {
+  const js = (doc.toJS() ?? {}) as {
+    modes?: { allowed?: unknown; default?: unknown };
+    copilotAcp?: unknown;
+  };
+  const allowed = Array.isArray(js.modes?.allowed) ? js.modes.allowed : [];
+  return (
+    js.copilotAcp !== undefined ||
+    allowed.includes("copilot-acp") ||
+    js.modes?.default === "copilot-acp"
+  );
+}
+
+/**
+ * runtime.yaml to version 3 (ADR 0171), for a file that names copilot-acp (a mode, or the
+ * copilotAcp section): the number only, every other line as the person wrote it. A file that
+ * doesn't name it means the same at version 1 or 2, so it is left as it is.
+ */
+export function migrateRuntimeV3Text(text: string): { text: string; changed: boolean } {
+  const doc = parseDocument(text);
+  if (doc.errors.length || !isMap(doc.contents)) return { text, changed: false };
+  const v = doc.get("schemaVersion");
+  if ((v !== 1 && v !== 2) || !namesCopilotAcp(doc)) return { text, changed: false };
+  const line = /^schemaVersion:[ \t]*[12][ \t]*(#.*)?$/m;
+  if (line.test(text))
+    return {
+      text: text.replace(line, (_m, c?: string) => `schemaVersion: 3${c ? ` ${c}` : ""}`),
+      changed: true,
+    };
+  doc.set("schemaVersion", 3);
   return { text: doc.toString(), changed: true };
 }
