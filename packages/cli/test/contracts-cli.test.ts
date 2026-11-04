@@ -132,7 +132,13 @@ describe("atticus join contracts", () => {
       ["forge-notifications", "field-number", "3"],
       ["forge-notifications", "field-number", "4"],
     ]);
-    expect(result.counts).toEqual({ links: 11, compared: 4, mismatches: 10, unconfirmed: 1 });
+    expect(result.counts).toEqual({
+      links: 11,
+      compared: 4,
+      mismatches: 10,
+      unconfirmed: 1,
+      unlinked: 2,
+    });
   });
 
   it("prints each link's mismatches, then the unconfirmed, and writes nothing", async () => {

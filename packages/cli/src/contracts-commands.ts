@@ -53,7 +53,6 @@ export async function joinContracts(
   }
   const W = CONTRACTS_WORDS;
   if (!result.counts.compared) io.out(W.none);
-  if (result.counts.unlinked) io.out(W.unlinked(result.counts.unlinked));
   else {
     io.out(W.head(result.counts.links, result.counts.compared));
     io.out(W.counts(result.counts.mismatches, result.counts.unconfirmed));
@@ -75,6 +74,7 @@ export async function joinContracts(
       }
     }
   }
+  if (result.counts.unlinked) io.out(W.unlinked(result.counts.unlinked));
   if (notes.length) {
     io.out(W.notes);
     for (const n of notes) io.out(`  ${n}`);
