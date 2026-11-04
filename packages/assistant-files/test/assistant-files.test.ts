@@ -288,6 +288,8 @@ describe("step slash commands (ADR 0086)", () => {
     [".claude/commands/atticus-propose.md", "atticus-propose.claude.md"],
   ] as const)
     it(`${rel} matches its golden file`, async () => {
+      if (process.env.UPDATE_GOLDEN === "1")
+        await writeFile(join(STEP_GOLDEN, golden), await generated(rel));
       const want = (await readFile(join(STEP_GOLDEN, golden), "utf8")).replace(/\r\n/g, "\n");
       expect(await generated(rel)).toBe(want);
     });

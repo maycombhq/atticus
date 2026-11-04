@@ -288,8 +288,14 @@ describe("the Copilot ACP session (ADR 0171)", () => {
     });
     expect(r.stopReason).toBe("cancelled");
     expect(r.stopped).toBe("maxTurns 2");
+    // Ctrl+C once the second session has its prompt (a fixed delay raced a slow start under load).
     const ac = new AbortController();
-    setTimeout(() => ac.abort(), 300);
+    const wait = setInterval(() => {
+      if (m.log().filter((e) => e.event === "prompt").length >= 2) {
+        clearInterval(wait);
+        setTimeout(() => ac.abort(), 50);
+      }
+    }, 20);
     const c = await runAcpSession({
       command: COMMAND,
       cwd: m.root,
