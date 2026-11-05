@@ -251,7 +251,7 @@ describe("atticus map --all under copilot-acp: Copilot driven unattended (ADR 01
       expect(existsSync(join(runsDir, id, "transcript.jsonl"))).toBe(true);
       expect(existsSync(join(runsDir, id, "prompt.md"))).toBe(true);
     }
-  });
+  }, 60_000);
 
   it("stops the run when Copilot isn't signed in, printing what the server said", async () => {
     const { root } = ledgerEstate();

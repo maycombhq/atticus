@@ -79,6 +79,14 @@ describe("questions as files (ADR 0078)", () => {
       QuestionDraft.safeParse({ ...draft, evidence: ["application.properties"] }).success,
     ).toBe(false);
     expect(QuestionDraft.safeParse({ ...draft, evidence: [] }).success).toBe(false);
+    // beta.18: a path with a space (a spec named with a date after a space) is a path; a colon
+    // in it, or a space at either end, is not.
+    expect(
+      QuestionDraft.safeParse({ ...draft, evidence: ["docs/Forge_Accounts_1.0 20250731.yaml:88"] })
+        .success,
+    ).toBe(true);
+    for (const bad of ["C:/x.yaml:1", " docs/a.yaml:1", "docs/a.yaml :1"])
+      expect(QuestionDraft.safeParse({ ...draft, evidence: [bad] }).success, bad).toBe(false);
     expect(QuestionDraft.safeParse({ ...draft, scope: "repo-type" }).success).toBe(false);
     expect(
       QuestionDraft.safeParse({ ...draft, scope: "repo-type", repoType: "spring-service" }).success,

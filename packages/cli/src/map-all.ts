@@ -1007,7 +1007,16 @@ export async function mapAllCommand(
   /** What `atticus verify <repo> --write` runs, said in one paragraph. */
   const verifyStep = async (item: PlanItem): Promise<VerifyJson | undefined> => {
     const c = captured();
-    await verifyCommand(root, item.repo, { commit: item.commit, write: true, json: true }, c);
+    try {
+      await verifyCommand(root, item.repo, { commit: item.commit, write: true, json: true }, c);
+    } catch (e) {
+      // beta.18: one repo's verify failing never ends the run: said, and the part is left to
+      // carry on later.
+      io.out(
+        `${item.repo}: verify stopped: ${firstLine(e)}. Moving on; ${resumeAs} tries it again.`,
+      );
+      return undefined;
+    }
     const v = jsonOf<VerifyJson>(c.lines);
     if (!v) {
       io.out(`${item.repo}: verify didn't run: ${c.errs[0] ?? "no report"}`);

@@ -25,7 +25,8 @@ const RepoGlob = z
   );
 
 /** Where the fact is in the repo: path:line. */
-const At = z.string().regex(/^[^\s:]+:\d+$/, "at must be path:line");
+// beta.18: a path may hold spaces, never a colon.
+const At = z.string().regex(/^[^\s:](?:[^:\n]*[^\s:])?:\d+$/, "at must be path:line");
 
 export const ScanSettings = z.strictObject({
   schemaVersion: z.literal(SCAN_SETTINGS_SCHEMA_VERSION),

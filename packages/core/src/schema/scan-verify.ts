@@ -19,7 +19,8 @@ export const VerifyFactKind = z.enum(["entry-point", "call", "table", "deploymen
 export type VerifyFactKind = z.infer<typeof VerifyFactKind>;
 
 /** Where the assistant read it: path:line. */
-const At = z.string().regex(/^[^\s:]+:\d+$/, "at must be path:line");
+// beta.18: a path may hold spaces, never a colon.
+const At = z.string().regex(/^[^\s:](?:[^:\n]*[^\s:])?:\d+$/, "at must be path:line");
 
 /** Scan settings entries (ADR 0075, 0076), without the file's header. */
 export const VerifySettings = ScanSettings.pick({ exclude: true, prefixes: true, clients: true });

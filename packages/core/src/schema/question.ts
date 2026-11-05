@@ -36,7 +36,10 @@ const QuestionSchemaVersion = z
 export const QuestionId = z.string().regex(/^q-[0-9a-f]{12}$/, "a question id is q- and 12 hex");
 
 /** Where the question comes from in the repo: path:line. */
-export const QuestionEvidence = z.string().regex(/^[^\s:]+:\d+$/, "evidence is path:line");
+// beta.18: a path may hold spaces (a spec file named with a date after a space), never a colon.
+export const QuestionEvidence = z
+  .string()
+  .regex(/^[^\s:](?:[^:\n]*[^\s:])?:\d+$/, "evidence is path:line");
 
 export const QuestionState = z.enum(["open", "answered", "retired"]);
 export type QuestionState = z.infer<typeof QuestionState>;

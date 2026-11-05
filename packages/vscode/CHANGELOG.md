@@ -2,6 +2,10 @@
 
 The Atticus extension for VS Code. The command line's own changes are in the repository's [CHANGELOG](https://github.com/maycombhq/atticus/blob/main/CHANGELOG.md).
 
+## 0.7.18 (pre-release, with Atticus 2.0.0-beta.18)
+
+- **Ships with Atticus 2.0.0-beta.18.** No change to the extension itself: a file with a space in its name no longer stops verify and Map the estate.
+
 ## 0.7.17 (pre-release, with Atticus 2.0.0-beta.17)
 
 - **Ships with Atticus 2.0.0-beta.17.** No change to the extension itself: unattended Copilot runs no longer start a session within a session, hand gaps passes over prepared, and count a part done only once something was written for it.

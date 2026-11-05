@@ -2,6 +2,11 @@
 
 All notable changes to Atticus. Versions follow [Semantic Versioning](https://semver.org); contracts C1 to C6 change only with an ADR, a schema version and a migration (`atticus upgrade`).
 
+## 2.0.0-beta.18 (2026-11-05)
+
+- A question's evidence (and a scan's `at`) may name a file with a space in its path (`Documents/Forge_Accounts_1.0 20250731.yaml:88`): such a question made `atticus verify --write`, and with it `atticus map --all`, stop with "evidence is path:line". The format is otherwise unchanged (no colon in the path, no space at either end).
+- One repo's verify failing no longer ends `atticus map --all`: it says why, moves on, and the next run tries that repo again.
+
 ## 2.0.0-beta.17 (2026-11-04)
 
 - An `atticus` command a Copilot session runs in Copilot's own shell no longer starts a Copilot session of its own (a session waiting on itself until it timed out): the Copilot language server is started marked as inside a session, and every atticus it starts hands off.

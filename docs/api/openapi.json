@@ -25808,7 +25808,7 @@
             "type": "array",
             "items": {
               "type": "string",
-              "pattern": "^[^\\s:]+:\\d+$"
+              "pattern": "^[^\\s:](?:[^:\\n]*[^\\s:])?:\\d+$"
             }
           },
           "scope": {
