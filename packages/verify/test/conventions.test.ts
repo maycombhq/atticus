@@ -98,12 +98,35 @@ describe("gatewayBundleFolders", () => {
       cite: { file, line: 3, value: "/rates" },
     }) as Fact;
 
-  it("asks for no flow from a route in a bundle folder the organisation names", () => {
+  const forward = (from: string): Fact =>
+    ({
+      kind: "call",
+      id: "call.get.rates.forward",
+      repo: "forge-gateway",
+      commit: "0123abc",
+      verified: "none",
+      by: "assistant",
+      conf: "declared",
+      callType: "rest",
+      method: "GET",
+      path: "/rates",
+      from,
+      cite: { file: "proxies/rates/apiproxy/targets/default.xml", line: 4, value: "/rates" },
+    }) as Fact;
+
+  it("asks a route in a bundle folder the organisation names for its forwarding call, not a flow", () => {
     const bundled = entry("proxies/rates/proxy-bundles/proxies/default.xml");
-    expect(entriesNoFlowFollows([bundled]).map((u) => u.id)).toEqual(["entry.get.rates"]);
+    expect(entriesNoFlowFollows([bundled])).toMatchObject([{ id: "entry.get.rates" }]);
+    expect(entriesNoFlowFollows([bundled])[0]!.route).toBeUndefined();
     const rules = readRulesOf(conv({ gatewayBundleFolders: ["proxy-bundles"] }));
-    expect(entriesNoFlowFollows([bundled], rules)).toEqual([]);
-    expect(entriesNoFlowFollows([entry("proxies/rates/apiproxy/proxies/default.xml")])).toEqual([]);
+    // beta.19: a route with no forwarding call is asked for one; with it, nothing is asked.
+    expect(entriesNoFlowFollows([bundled], rules)).toMatchObject([
+      { id: "entry.get.rates", route: true },
+    ]);
+    expect(entriesNoFlowFollows([bundled, forward("entry.get.rates")], rules)).toEqual([]);
+    const apigee = entry("proxies/rates/apiproxy/proxies/default.xml");
+    expect(entriesNoFlowFollows([apigee])).toMatchObject([{ id: "entry.get.rates", route: true }]);
+    expect(entriesNoFlowFollows([apigee, forward("entry.get.rates")])).toEqual([]);
   });
 });
 

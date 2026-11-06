@@ -39,6 +39,7 @@ export interface GapsFrom {
     entryType: string;
     method?: string;
     path: string;
+    route?: true;
   })[];
 }
 
@@ -126,7 +127,9 @@ export function planGaps(
   for (const e of from.entriesNoFlowFollows ?? [])
     note(
       e.cite,
-      `is ${e.id} (${[e.entryType, e.method, quoted(e.path)].filter(Boolean).join(" ")}), which no flow follows: write its flow`,
+      e.route
+        ? `is ${e.id} (${[e.method, quoted(e.path)].filter(Boolean).join(" ")}), a gateway route with no forwarding call: write the call it forwards to its RouteRule's target, \`from\` it, as the gateway rules say`
+        : `is ${e.id} (${[e.entryType, e.method, quoted(e.path)].filter(Boolean).join(" ")}), which no flow follows: write its flow`,
     );
   const unlisted =
     Math.max(0, (from.skippedCount ?? 0) - (from.skipped?.length ?? 0)) +

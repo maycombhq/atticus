@@ -282,6 +282,8 @@ export interface UnfollowedEntry {
   method?: string;
   path: string;
   cite: string;
+  /** beta.19: a gateway route: what it lacks is its forwarding call, not a flow. */
+  route?: true;
 }
 
 /** The entry types a flow is asked for when none starts there: listeners, and rest and gRPC routes. */
@@ -296,24 +298,26 @@ export function entriesNoFlowFollows(
   rules: ReadRules = DEFAULT_READ_RULES,
 ): UnfollowedEntry[] {
   const started = new Set(facts.flatMap((f) => (f.kind === "flow" ? [f.entry] : [])));
+  // An Apigee route forwards; its forwarding call is its flow (ADR 0124 addendum A-gateway).
+  // beta.19: a route with no forwarding call (`from` it) is asked for one, as an entry with no
+  // flow is: a proxy read with routes and no calls drew nothing past the gateway.
+  const forwarded = new Set(facts.flatMap((f) => (f.kind === "call" && f.from ? [f.from] : [])));
   return facts
-    .flatMap((f) =>
-      f.kind === "entry" &&
-      FOLLOWED_TYPES.includes(f.entryType) &&
-      !started.has(f.id) &&
-      // An Apigee route forwards; its forwarding call is its flow (ADR 0124 addendum A-gateway).
-      !rules.gatewayBundle.test(f.cite.file)
-        ? [
-            {
-              id: f.id,
-              entryType: f.entryType,
-              ...(f.method ? { method: f.method } : {}),
-              path: f.path,
-              cite: `${f.cite.file}:${f.cite.line}`,
-            },
-          ]
-        : [],
-    )
+    .flatMap((f) => {
+      if (f.kind !== "entry" || !FOLLOWED_TYPES.includes(f.entryType)) return [];
+      const route = rules.gatewayBundle.test(f.cite.file);
+      if (route ? forwarded.has(f.id) : started.has(f.id)) return [];
+      return [
+        {
+          id: f.id,
+          entryType: f.entryType,
+          ...(f.method ? { method: f.method } : {}),
+          path: f.path,
+          cite: `${f.cite.file}:${f.cite.line}`,
+          ...(route ? { route: true as const } : {}),
+        },
+      ];
+    })
     .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }
 

@@ -2,6 +2,10 @@
 
 The Atticus extension for VS Code. The command line's own changes are in the repository's [CHANGELOG](https://github.com/maycombhq/atticus/blob/main/CHANGELOG.md).
 
+## 0.7.20 (pre-release, with Atticus 2.0.0-beta.20)
+
+- **Ships with Atticus 2.0.0-beta.20.** No change to the extension itself: a gateway route with no forwarding call is now a gap the next gaps pass fills.
+
 ## 0.7.19 (pre-release, with Atticus 2.0.0-beta.19)
 
 - **Ships with Atticus 2.0.0-beta.19.** No change to the extension itself: a host one read repo lists no longer draws every call to it onto that repo.
