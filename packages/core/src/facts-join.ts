@@ -399,8 +399,6 @@ export type ExposureFinding =
 export interface FactJoinOutside {
   call: FactEnd;
   target: string;
-  /** G1 (ADR 0174): a person paired the call with this system on the canvas. */
-  paired?: { by: string };
 }
 
 /**
@@ -1398,7 +1396,8 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
     const pair = input.pairs?.[call.repo]?.[f.id];
     if (pair) {
       if (pair.system) {
-        outsideCalls.push({ call: end(call), target: pair.system, paired: { by: pair.by } });
+        // The call's fact carries the person's word (by: person, ADR 0174), from its corrections.
+        outsideCalls.push({ call: end(call), target: pair.system });
         continue;
       }
       const m = (x?: string) => (x ?? "").toUpperCase();

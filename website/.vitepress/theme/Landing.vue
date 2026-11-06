@@ -63,7 +63,7 @@ const news = [
   },
   {
     body: "Run Copilot from the app: a yes, a progress strip with Stop, and a Console with a tab per session. Reading rules your organisation owns, and other teams' skills and agents for Claude and Copilot.",
-    link: "/guide/reading-rules.html",
+    link: "/guide/copilot-unattended.html",
   },
   {
     body: "Unattended Copilot, steadier: no session within a session, gaps passes prepared like top-ups, and a part is done only once something was written for it.",

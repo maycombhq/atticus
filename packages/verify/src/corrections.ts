@@ -29,16 +29,9 @@ export interface CorrectionsResult {
 
 /** The correction a fact meets, by its id and cite first, else by what it cites. Newest wins. */
 export function correctionFor(f: Fact, all: readonly FactCorrection[]): FactCorrection | undefined {
-  // G1 (ADR 0174): a link to a repo leaves the fact as read; the join reads it
-  // (pairsFromCorrections). A link to an outside system sets the call's target, as a person's
-  // fact (C2), so the picture draws it to that system marked as their word.
-  const corrections = all.flatMap((c): FactCorrection[] =>
-    c.action !== "link"
-      ? [c]
-      : c.link?.system
-        ? [{ ...c, action: "edit", set: { to: c.link.system }, link: undefined } as FactCorrection]
-        : [],
-  );
+  // G1 (ADR 0174): a pairing leaves the fact's claim as read; one to a repo the join reads
+  // (pairsFromCorrections), one to an outside system is applied on top (outsidePairingFor).
+  const corrections = all.filter((c) => c.action !== "link");
   const at = (c: FactCorrection) =>
     c.target.kind === f.kind && c.target.file === f.cite.file && c.target.line === f.cite.line;
   const byId = corrections.filter((c) => c.fact === f.id && at(c));
@@ -47,6 +40,29 @@ export function correctionFor(f: Fact, all: readonly FactCorrection[]): FactCorr
   // An edit that moved the line or the value is met again by its id on the line it moved to.
   const moved = edited.filter((c) => (c.line ?? c.target.line) === f.cite.line);
   return [...byId, ...byCite, ...moved].sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0))[0];
+}
+
+/**
+ * G1: the newest pairing of a call with an outside system, met as any correction meets its fact.
+ * It is applied on top of the fact's own correction (never instead of it), so an edit stays and a
+ * call marked wrong stays left out.
+ */
+export function outsidePairingFor(
+  f: Fact,
+  all: readonly FactCorrection[],
+): FactCorrection | undefined {
+  if (f.kind !== "call") return undefined;
+  return all
+    .filter(
+      (c) =>
+        c.action === "link" &&
+        !!c.link?.system &&
+        c.target.kind === "call" &&
+        c.target.file === f.cite.file &&
+        c.target.line === f.cite.line &&
+        (c.fact === f.id || c.target.value === f.cite.value),
+    )
+    .sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0))[0];
 }
 
 /** The fact as the person corrected it, or why it isn't one. */
@@ -81,17 +97,27 @@ export function applyCorrections(
   const applied: AppliedCorrection[] = [];
   const used = new Set<FactCorrection>();
   const stale: StaleCorrection[] = [];
-  for (const f of facts) {
-    const c = correctionFor(f, corrections);
+  // A pairing with an outside system, on top of whatever else the person said of the call.
+  const withPairing = (f: Fact, as: Fact = f): Fact => {
+    const p = outsidePairingFor(as, corrections);
+    if (!p) return f;
+    used.add(p);
+    const fixed = correctedFact(f, { ...p, action: "edit", set: { to: p.link!.system! } });
+    return typeof fixed === "string" ? f : fixed;
+  };
+  for (const f0 of facts) {
+    const c = correctionFor(f0, corrections);
+    if (c?.action === "wrong") {
+      used.add(c);
+      applied.push({ fact: f0.id, action: "wrong", by: c.by });
+      continue;
+    }
+    const f = c ? f0 : withPairing(f0);
     if (!c) {
       out.push(f);
       continue;
     }
     used.add(c);
-    if (c.action === "wrong") {
-      applied.push({ fact: f.id, action: "wrong", by: c.by });
-      continue;
-    }
     const fixed = correctedFact(f, c);
     if (typeof fixed === "string") {
       stale.push({
@@ -99,11 +125,11 @@ export function applyCorrections(
         why: "invalid",
         message: `${c.by}'s correction of ${f.kind} ${f.id} doesn't make a fact (${fixed}); the fact is kept as it was`,
       });
-      out.push(f);
+      out.push(withPairing(f));
       continue;
     }
     applied.push({ fact: f.id, action: "edit", by: c.by });
-    out.push(fixed);
+    out.push(withPairing(fixed, f0));
   }
   // Only the newest correction of a fact counts; an older one it replaced isn't stale.
   for (const c of corrections) {

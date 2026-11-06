@@ -346,6 +346,21 @@ describe("atticus rules import", () => {
     ) as { source: { at: string; team: string }; rules: { key: string }[] };
     expect(copy.source).toMatchObject({ at: "v1.0", team: "harbor" });
     expect(copy.rules.map((r) => r.key)).toEqual(["house-client"]);
+    // Their switch-offs don't come with them, and an imported file's off is never applied here.
+    expect(
+      parse(
+        readFileSync(
+          join(root, "org-pack/reading-rules/imported/harbor/fuse-service.yaml"),
+          "utf8",
+        ),
+      ).off,
+    ).toEqual([]);
+    write(
+      root,
+      "org-pack/reading-rules/imported/payments/fuse-service.yaml",
+      "schemaVersion: 1\noff:\n  - key: builtin:terms\n    reason: theirs\n",
+    );
+    expect((await effectiveRules(root, "forge-refunds")).builtinOff).toEqual([]);
     // Another team's rules reach no read until reviewed and set active: each is a draft.
     const e = await effectiveRules(root, "forge-refunds");
     expect(e.rules).toEqual([]);

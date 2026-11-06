@@ -121,3 +121,27 @@ describe("the preview's line diff", () => {
     expect(changedLines("x\n", "x\n")).toEqual([]);
   });
 });
+
+describe("setting a repo's owner in a Windows checkout", () => {
+  it("keeps the file's CRLF line endings, and previews only the line set", async () => {
+    const { setManifestField } = await import("../src/index.js");
+    const root = await mkdtemp(join(tmpdir(), "atticus-crlf-"));
+    await mkdir(join(root, "org-pack/profiles/forge"), { recursive: true });
+    const text = [
+      "# The Forge repos (invented).",
+      "schemaVersion: 2",
+      "platform: forge",
+      "repos:",
+      "  - id: forge-ledger",
+      "    url: https://git.example.com/forge/forge-ledger.git",
+      "    type: spring-boot",
+      "    owner: team-ledger",
+      "",
+    ].join("\r\n");
+    const file = join(root, "org-pack/profiles/forge/repos.manifest.yaml");
+    await writeFile(file, text);
+    const r = await setManifestField(root, "forge-ledger", "owner", "team-platform");
+    expect(r.changes).toEqual([{ was: "    owner: team-ledger", now: "    owner: team-platform" }]);
+    expect(await readFile(file, "utf8")).toBe(text.replace("team-ledger\r\n", "team-platform\r\n"));
+  });
+});

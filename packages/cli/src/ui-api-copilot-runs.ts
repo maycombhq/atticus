@@ -123,6 +123,9 @@ export function uiCopilotRunRoutes(
         starting = false;
       }
       if (!a.allowed) throw conflict(NOT_ALLOWED);
+      // Checked again: a step may have started while the runtime was being read.
+      if (ctx.jobs.runningOf("step")?.state === "running")
+        throw conflict("An AI step started on this server meanwhile: wait for it to finish.");
       const runId = `copilot-run-${++seq}`;
       const me = new CopilotRun({
         runId,

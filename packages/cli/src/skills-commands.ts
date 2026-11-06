@@ -1,9 +1,9 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { lstatSync } from "node:fs";
+import { lstatSync, realpathSync } from "node:fs";
 import { mkdir, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, sep } from "node:path";
 import { promisify } from "node:util";
 import { parse, stringify } from "yaml";
 import { isAdopted, orgPackDirOf, writeFileAtomic } from "@maycombhq/core";
@@ -70,7 +70,7 @@ async function filesUnder(dir: string, rel = "", links?: string[]): Promise<stri
 }
 
 /** A tag or branch name, never an option git would read. */
-export const REF = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$/;
+export const REF = /^(?!.*(?:\.\.|\/\/|\.lock(?:\/|$)|\/$|\.$))[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$/;
 
 /** Every skill, agent and instructions file the org pack keeps: the organisation's and imported. */
 export async function sourcesOf(root: string): Promise<SourceItem[]> {
@@ -298,6 +298,17 @@ export function factsWithoutSource(text: string): boolean {
 }
 
 /** The kinds of file a team repo keeps its skills, agents and instructions in. */
+/** Whether a path, every link on the way resolved, is inside their repo. */
+export function inside(dir: string, rel: string): boolean {
+  try {
+    const top = realpathSync(dir);
+    const p = realpathSync(join(dir, ...rel.split("/")));
+    return p === top || p.startsWith(top + sep);
+  } catch {
+    return false;
+  }
+}
+
 async function theirs(
   dir: string,
 ): Promise<{ kind: Kind; name: string; path: string; folder?: string }[]> {
@@ -351,7 +362,13 @@ async function theirs(
         });
   // The same name kept twice (for Claude and for Copilot) is one: the first found.
   const seen = new Set<string>();
-  return out.filter((x) => !seen.has(`${x.kind}:${x.name}`) && !!seen.add(`${x.kind}:${x.name}`));
+  // A folder linked to somewhere else on this machine is never read: only what is in their repo.
+  return out.filter(
+    (x) =>
+      inside(dir, x.folder ?? x.path) &&
+      !seen.has(`${x.kind}:${x.name}`) &&
+      !!seen.add(`${x.kind}:${x.name}`),
+  );
 }
 
 /**
@@ -423,6 +440,10 @@ export async function skillsImportCommand(
           : join(pack, f.kind === "agent" ? "agents" : "instructions", "imported", o.team);
       const files: Record<string, string> = {};
       const copy = async (src: string, to: string, key: string) => {
+        if (!inside(dir, src)) {
+          notes.push(`left out ${src}: it isn't in their repo (a link to somewhere else)`);
+          return;
+        }
         const text = await readFile(join(dir, ...src.split("/")), "utf8");
         const on = await readFile(to, "utf8").catch(() => undefined);
         const before = was.get(`${f.kind}:${f.name}`)?.[key];

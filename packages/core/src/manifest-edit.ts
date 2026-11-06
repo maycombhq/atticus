@@ -256,6 +256,12 @@ export function changedLines(before: string, after: string): LineChange[] {
   const y = b.slice(s0, eb);
   const n = x.length;
   const m = y.length;
+  // Past a million cells the table costs too much: the changed block, line against line.
+  if (n * m > 1_000_000)
+    return Array.from({ length: Math.max(n, m) }, (_, k) => ({
+      ...(k < n ? { was: x[k]! } : {}),
+      ...(k < m ? { now: y[k]! } : {}),
+    }));
   const lcs: number[][] = Array.from({ length: n + 1 }, () => new Array<number>(m + 1).fill(0));
   for (let i = n - 1; i >= 0; i--)
     for (let j = m - 1; j >= 0; j--)
@@ -303,7 +309,10 @@ export async function setManifestField(
   if (!found) throw new ManifestEditError("not-found", `There is no repo ${repo} in any manifest.`);
   const { file, doc, item } = found;
   // The preview is of the file as it is on disk, so a write that reformats it shows that too.
-  const before = await readFile(file.path, "utf8");
+  const raw = await readFile(file.path, "utf8");
+  // Compared and written with the file's own line endings (a Windows checkout's CRLF).
+  const eol = raw.includes("\r\n") ? "\r\n" : "\n";
+  const before = raw.replace(/\r\n/g, "\n");
   item.set(field, value);
   // Written in the file's own style (`[a]` or `[ a ]`), so only the line set changes.
   const after = doc.toString({ lineWidth: 0, flowCollectionPadding: /\[ \S/.test(before) });
@@ -315,7 +324,7 @@ export async function setManifestField(
       check.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "),
     );
   if (o.preview || !changes.length) return { file, changes, written: false };
-  await writeFileAtomic(file.path, after);
+  await writeFileAtomic(file.path, eol === "\n" ? after : after.replace(/\n/g, eol));
   return { file, changes, written: true };
 }
 

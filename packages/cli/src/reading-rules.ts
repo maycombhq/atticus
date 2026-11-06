@@ -116,7 +116,8 @@ export async function effectiveRules(
     if (problem) problems.push(problem);
     if (!file) continue;
     const at = `${relDir(root)}/${rel}`;
-    for (const x of file.off) {
+    // An imported copy switches nothing off here: only this organisation's own layers do.
+    for (const x of layer === "imported" ? [] : file.off) {
       off.push({ ...x, layer, file: at });
       if (x.key.startsWith("builtin:")) builtinOff.add(x.key.slice("builtin:".length));
       else byKey.delete(x.key);

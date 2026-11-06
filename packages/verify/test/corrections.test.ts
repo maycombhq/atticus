@@ -162,6 +162,37 @@ describe("G1 (ADR 0174): a pairing", () => {
     expect(r.facts[0]).toMatchObject({ to: "northwind-pay", by: "person", path: "chargePath" });
   });
 
+  it("to an outside system goes on top of an earlier edit, never instead of it", () => {
+    const edit = {
+      ...link({ repo: "x", path: "/x" }),
+      action: "edit",
+      set: { path: "/v1/charges" },
+      link: undefined,
+      at: "2026-11-06T10:00:00.000Z",
+    } as unknown as Parameters<typeof applyCorrections>[1][number];
+    const r = applyCorrections(
+      [call],
+      [edit, link({ system: "northwind-pay", path: "/v1/charges" })],
+    );
+    expect(r.facts[0]).toMatchObject({ path: "/v1/charges", to: "northwind-pay", by: "person" });
+    expect(r.stale).toEqual([]);
+  });
+
+  it("leaves a call marked wrong out, paired or not", () => {
+    const wrong = {
+      ...link({ repo: "x", path: "/x" }),
+      action: "wrong",
+      reason: "a test double",
+      link: undefined,
+      at: "2026-11-06T10:00:00.000Z",
+    } as unknown as Parameters<typeof applyCorrections>[1][number];
+    const r = applyCorrections(
+      [call],
+      [wrong, link({ system: "northwind-pay", path: "/v1/charges" })],
+    );
+    expect(r.facts).toEqual([]);
+  });
+
   it("is stale when no call is the one it names", () => {
     const r = applyCorrections([], [link({ repo: "forge-gw", path: "/v1/charges" })]);
     expect(r.stale[0]?.message).toContain("pat's pairing of call c-charge");

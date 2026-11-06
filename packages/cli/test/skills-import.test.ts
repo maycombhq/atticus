@@ -274,4 +274,25 @@ describe("atticus skills import, write and list", () => {
     );
     expect(existsSync(join(root, "org-pack/agents/imported/harbor/linked.md"))).toBe(false);
   });
+
+  it("never reads a folder of theirs that is a link to somewhere else", async () => {
+    const root = metarepo();
+    const theirs = harborRepo();
+    const elsewhere = temp("elsewhere");
+    write(elsewhere, "secret-skill/SKILL.md", "---\ndescription: x\n---\nSECRET\n");
+    write(elsewhere, "ins/secret.instructions.md", "SECRET\n");
+    rmSync(join(theirs, ".github/instructions"), { recursive: true, force: true });
+    symlinkSync(join(elsewhere, "ins"), join(theirs, ".github/instructions"));
+    symlinkSync(join(elsewhere, "secret-skill"), join(theirs, ".claude/skills/secret-skill"));
+    expect(await skillsImportCommand(root, theirs, { team: "harbor" }, io().io)).toBe(0);
+    expect(existsSync(join(root, "org-pack/skills/imported/harbor/secret-skill"))).toBe(false);
+    expect(existsSync(join(root, "org-pack/instructions/imported/harbor/secret.md"))).toBe(false);
+  });
+
+  it("refuses refs git would read otherwise", async () => {
+    const { REF } = await import("../src/skills-commands.js");
+    for (const bad of ["v1..v2", "a/", "a//b", "x.lock", "-x", "HEAD:../x", "a."])
+      expect(REF.test(bad), bad).toBe(false);
+    for (const ok of ["v2.1", "release/2026-11", "main"]) expect(REF.test(ok), ok).toBe(true);
+  });
 });

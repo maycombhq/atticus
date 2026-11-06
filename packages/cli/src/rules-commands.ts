@@ -28,6 +28,7 @@ import {
   type AcpStepRunner,
 } from "./copilot-acp-steps.js";
 import { checkoutOf } from "./facts-files.js";
+import { REF } from "./skills-commands.js";
 import { effectiveRules, ruleMatches, rulesDirOf, type Layer } from "./reading-rules.js";
 
 /**
@@ -582,7 +583,7 @@ export async function rulesImportCommand(
     );
     return 2;
   }
-  if (!/^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$/.test(o.at)) {
+  if (!REF.test(o.at)) {
     io.err(`${o.at} isn't a tag or branch name.`);
     return 2;
   }
@@ -613,6 +614,8 @@ export async function rulesImportCommand(
   // Another team's rules reach no read here until a person reviews them and sets each active.
   const rules = doc.get("rules");
   if (isSeq(rules)) for (const x of rules.items) if (isMap(x)) x.set("status", "draft");
+  // Their switch-offs are about their repos: none of them applies here.
+  doc.set("off", doc.createNode([]));
   const rel = `imported/${o.team}/${o.type}.yaml`;
   const path = join(rulesDirOf(root), ...rel.split("/"));
   const bad = await saveDoc(path, doc);
