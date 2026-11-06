@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from "react";
+import { RunWithCopilot } from "../../app/copilot-runs.js";
 import type { Api } from "@maycombhq/core";
 import { useApi, useReloadOnFiles, type Loaded } from "../../api/client.js";
 import { Citation, EvidenceProvider } from "../../app/evidence.js";
@@ -147,7 +148,13 @@ export function TrustRow({ r }: { r: Repo }) {
         <h3 id={head} className="h" style={{ fontSize: 14, margin: 0 }}>
           {r.repo}
         </h3>
-        <span className={`chip ${trustChip(r.state)}`}>{T.states[r.state]}</span>
+        <span className="row" style={{ gap: 8 }}>
+          <RunWithCopilot
+            ask={{ kind: "repos", repos: [r.repo], force: true }}
+            label={COPY.copilotRuns.start.again(r.repo)}
+          />
+          <span className={`chip ${trustChip(r.state)}`}>{T.states[r.state]}</span>
+        </span>
       </div>
       <p className="work-why" style={{ margin: "6px 0" }}>
         {trustWhy(r)}
@@ -438,6 +445,9 @@ export function FreshPanel({ of }: { of: Loaded<Api.FreshViewT> & { reload?: () 
               <p className="work-say">{F.allFresh(read.length)}</p>
             ) : (
               <>
+                <p className="row" style={{ gap: 8 }}>
+                  <RunWithCopilot ask={{ kind: "stale" }} label={COPY.copilotRuns.start.stale} />
+                </p>
                 <table className="run-table">
                   <caption className="sr">{F.caption}</caption>
                   <thead>
@@ -472,6 +482,10 @@ export function FreshPanel({ of }: { of: Loaded<Api.FreshViewT> & { reload?: () 
                         <td>{r.reread}</td>
                         <td>{r.carried}</td>
                         <td>
+                          <RunWithCopilot
+                            ask={{ kind: "stale", repos: [r.repo] }}
+                            label={COPY.copilotRuns.start.repos(r.repo)}
+                          />
                           {r.slash && <Command text={r.slash} label={R.copySlash} />}
                           {r.command && <Command text={r.command} label={R.copy} />}
                         </td>
@@ -516,6 +530,10 @@ export function TrustPage({
       >
         <p className="work-why" style={{ marginTop: 0 }}>
           {T.intro}
+        </p>
+        <p className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+          <RunWithCopilot ask={{ kind: "all" }} label={COPY.copilotRuns.start.all} />
+          <RunWithCopilot ask={{ kind: "gaps" }} label={COPY.copilotRuns.start.gaps} />
         </p>
         <View of={of} empty={(v) => v.repos.length === 0 && !v.problems.length} emptyText={T.empty}>
           {(v) => (

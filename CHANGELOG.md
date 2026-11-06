@@ -4,6 +4,10 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### Copilot runs from the app
+
+- Map › Trust can start an unattended Copilot run (copilot-acp) after your yes: read the stale repos, fill the gaps, read the repos not read yet, or read one repo again. A dialog names what it reads, the model and what a session may do; a strip under the top bar shows the repo of how many, the session, facts kept and rejected and tokens, with Stop; and a collapsible Console at the foot of the app shows the lines, one tab per session (follow the end, search, copy). A reload, or the app in VS Code or IntelliJ, picks the run up. ADR 0173; local API 2.52.0 (`/api/copilot-runs`).
+
 ### Faster pages, and a bar for anything loading
 
 - A thin loading bar runs across the top of the app whenever any request is in flight, however short, and every panel still waiting shows its own; both are said to screen readers and move only when motion is allowed.

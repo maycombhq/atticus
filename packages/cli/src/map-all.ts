@@ -140,8 +140,31 @@ export interface MapAllDeps {
   backoffMs?: number;
   /** copilot-acp (ADR 0171): runs one step's line in a new Copilot session. */
   acp?: AcpStepRunner;
+  /** ADR 0173: what the run does, as it does it, for the app's progress and Console. */
+  onEvent?: (e: MapAllEvent) => void;
   makeAcp?: () => Promise<AcpStepRunner>;
 }
+
+/** ADR 0173: the run's progress, structured (the lines say the same to a person). */
+export type MapAllEvent =
+  | { type: "plan"; repos: { repo: string; kind: ItemKind; parts: number }[] }
+  | { type: "repo"; repo: string; index: number; total: number; why: string }
+  | { type: "session"; repo: string; label: string; line: string; attempt: number }
+  | {
+      type: "session.end";
+      repo: string;
+      ended: string;
+      tokens?: number;
+      failed?: string;
+    }
+  | {
+      type: "verify";
+      repo: string;
+      kept: number;
+      rejected: number;
+      coverage: number;
+      open: number;
+    };
 
 export type ItemKind = "read" | "reread" | "carry" | "gaps" | "rules";
 
@@ -960,6 +983,17 @@ export async function mapAllCommand(
     return 0;
   }
   for (const l of planLines(plan)) io.out(l);
+  const emit = (e: MapAllEvent) => {
+    try {
+      deps.onEvent?.(e);
+    } catch {
+      // A listener's trouble never stops the reading.
+    }
+  };
+  emit({
+    type: "plan",
+    repos: plan.items.map((i) => ({ repo: i.repo, kind: i.kind, parts: i.parts.length })),
+  });
   const st: MapAllState = state ?? {
     schemaVersion: 1,
     updatedAt: "",
@@ -1028,6 +1062,14 @@ export async function mapAllCommand(
       totals.added += links.added.length;
       totals.removed += links.removed.length;
     }
+    emit({
+      type: "verify",
+      repo: item.repo,
+      kept: v.accepted,
+      rejected: v.rejected,
+      coverage: v.coverage.ratio,
+      open: v.questions?.open ?? 0,
+    });
     io.out(
       `${item.repo}: ${plural(v.accepted, "fact")} kept, ${v.rejected} rejected; coverage ${Math.round(v.coverage.ratio * 100)}% (${v.coverage.unknown.length} files no fact cites yet)${links ? `; links +${links.added.length} -${links.removed.length}` : ""}; ${plural(v.questions?.open ?? 0, "question")} open. ${v.rejected ? `Nothing written to the catalog until the rejected facts are fixed (${factsRelOf(root)}/${item.repo}.rejected.jsonl).` : v.written ? "Written to the catalog." : ""}`.trimEnd(),
     );
@@ -1042,6 +1084,7 @@ export async function mapAllCommand(
   for (const [n, item] of items.entries()) {
     if (quit || stopped()) break;
     const where = `repo ${n + 1} of ${items.length}`;
+    emit({ type: "repo", repo: item.repo, index: n + 1, total: items.length, why: item.why });
     if (item.kind === "rules" && !item.parts.length) {
       // ADR 0167: nothing of the repo is one the new rules apply to: recorded as read under them.
       io.out("");
@@ -1549,6 +1592,18 @@ export async function mapAllCommand(
         `===== ${item.repo}, ${item.kind === "gaps" ? "the gaps pass" : item.kind === "rules" ? "the rules top-up" : label} (${where})${attempt ? ", given again in a new session" : ""} =====`,
       );
       io.out(`In a NEW Copilot session (copilot-acp): ${line}`);
+      emit({
+        type: "session",
+        repo: item.repo,
+        label:
+          item.kind === "gaps"
+            ? "the gaps pass"
+            : item.kind === "rules"
+              ? "the rules top-up"
+              : label,
+        line,
+        attempt,
+      });
       const base = item.force ? await writtenOf(root, item.repo) : "";
       const first = await snapOf(root, item.repo);
       totals.spent.prompts++;
@@ -1563,6 +1618,12 @@ export async function mapAllCommand(
         });
         totals.spent.tokens += r.usage ? r.usage.inputTokens + r.usage.outputTokens : part.tokens;
         io.out(`The session ended (${r.stopped ?? r.stopReason}).`);
+        emit({
+          type: "session.end",
+          repo: item.repo,
+          ended: r.stopped ?? r.stopReason,
+          ...(r.usage ? { tokens: r.usage.inputTokens + r.usage.outputTokens } : {}),
+        });
         // beta.17: stopped by Atticus (its time or its tool calls ran out): what it wrote may be
         // only the start of the part.
         cut = !!r.stopped;
@@ -1570,12 +1631,14 @@ export async function mapAllCommand(
         if (e instanceof AcpSetupError) {
           // beta.17: the same for every part: stop here rather than try each part twice.
           io.err(`${e.message} The run stops here; ${resumeAs} carries on once it is put right.`);
+          emit({ type: "session.end", repo: item.repo, ended: "failed", failed: e.message });
           ps.state = "incomplete";
           await save();
           return "quit";
         }
         if (e instanceof AcpSignInError) {
           io.err(e.message);
+          emit({ type: "session.end", repo: item.repo, ended: "failed", failed: e.message });
           signIn = true;
           ps.state = "incomplete";
           await save();
@@ -1583,6 +1646,7 @@ export async function mapAllCommand(
         }
         totals.spent.tokens += part.tokens;
         io.out(`${item.repo} ${label}: the Copilot session failed: ${firstLine(e)}`);
+        emit({ type: "session.end", repo: item.repo, ended: "failed", failed: firstLine(e) });
       }
       if (stopped()) break;
       // Verified as `atticus verify <repo> --write` runs, and asked the same coverage (ADR 0170).

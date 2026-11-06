@@ -1,0 +1,173 @@
+import { renderToStaticMarkup } from "react-dom/server";
+import { describe, expect, it } from "vitest";
+import type { Api } from "@maycombhq/core";
+import { COPY } from "../src/copy.js";
+import {
+  ConfirmRun,
+  matching,
+  RunConsole,
+  RunsContext,
+  RunStrip,
+  RunWithCopilot,
+  withLines,
+  type Ctx,
+} from "../src/app/copilot-runs.js";
+
+/**
+ * ADR 0173: an unattended Copilot run started from the app: the yes it asks for, the strip that
+ * says how far it is, and the Console with a tab per session. Rendered as markup at given runs.
+ */
+
+const T = COPY.copilotRuns;
+
+const run = (o: Partial<Api.CopilotRunViewT> = {}): Api.CopilotRunViewT => ({
+  runId: "copilot-run-1",
+  jobId: "job-1",
+  kind: "stale",
+  state: "running",
+  startedAt: "2026-11-06T18:00:00.000Z",
+  progress: {
+    repos: 4,
+    repoIndex: 2,
+    repo: "forge-ledger",
+    session: "forge-ledger, part 1 of 3",
+    sessions: 2,
+  },
+  totals: { kept: 120, rejected: 2, tokens: 45000 },
+  tabs: [
+    { id: "run", title: "Run", state: "running", from: 0, lines: ["The estate at 100,000 tokens"] },
+    {
+      id: "s1",
+      title: "forge-teller, one session",
+      repo: "forge-teller",
+      state: "ended",
+      ended: "end_turn",
+      from: 0,
+      lines: ["  · Read TellerController.java", "forge-teller: 80 facts kept, 0 rejected"],
+    },
+    {
+      id: "s2",
+      title: "forge-ledger, part 1 of 3",
+      repo: "forge-ledger",
+      state: "running",
+      from: 0,
+      lines: ["  · Read AccountController.java"],
+    },
+  ],
+  ...o,
+});
+
+const ctx = (o: Partial<Ctx> = {}): Ctx => ({
+  run: run(),
+  allowed: true,
+  model: "claude-sonnet-5",
+  ask: () => undefined,
+  stop: async () => undefined,
+  stopping: false,
+  consoleOpen: true,
+  setConsoleOpen: () => undefined,
+  ...o,
+});
+
+const unescape = (h: string) =>
+  h
+    .replace(/&#x27;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, "&");
+const html = (c: Ctx, node: React.ReactNode) =>
+  unescape(renderToStaticMarkup(<RunsContext.Provider value={c}>{node}</RunsContext.Provider>));
+
+describe("the Console's lines", () => {
+  it("adds only the lines a tab doesn't have, and opens a tab it hears of first", () => {
+    const r = run();
+    const a = withLines(r, "s2", "forge-ledger, part 1 of 3", 0, [
+      "  · Read AccountController.java",
+      "  · Wrote facts/forge-ledger.jsonl",
+    ]);
+    expect(a.tabs[2]!.lines).toEqual([
+      "  · Read AccountController.java",
+      "  · Wrote facts/forge-ledger.jsonl",
+    ]);
+    const b = withLines(a, "s3", "forge-ledger, part 2 of 3", 0, ["  · Read Batch.java"]);
+    expect(b.tabs.map((t) => t.id)).toEqual(["run", "s1", "s2", "s3"]);
+    // Lines past a gap wait for the next poll rather than leave a hole.
+    expect(withLines(b, "s3", "x", 5, ["late"])).toBe(b);
+  });
+
+  it("searches by every word, in any case", () => {
+    const lines = ["forge-ledger: 12 facts kept", "  · Read Ledger.java", "forge-teller: 3 kept"];
+    expect(matching(lines, "LEDGER kept")).toEqual(["forge-ledger: 12 facts kept"]);
+    expect(matching(lines, "")).toEqual(lines);
+  });
+});
+
+describe("asking for a run", () => {
+  it("shows the button only where the app can start Copilot", () => {
+    const b = <RunWithCopilot ask={{ kind: "gaps" }} label={T.start.gaps} />;
+    expect(renderToStaticMarkup(b)).toBe("");
+    expect(html(ctx({ allowed: false }), b)).toBe("");
+    expect(html(ctx({ run: null }), b)).toContain(T.start.gaps);
+    // One run at a time: the button waits while one is under way.
+    expect(html(ctx(), b)).toContain("disabled");
+  });
+
+  it("names what it reads, the model and what a session may do, in a labelled dialog", () => {
+    const out = unescape(
+      renderToStaticMarkup(
+        <ConfirmRun
+          ask={{ kind: "repos", repos: ["forge-ledger"], force: true }}
+          model="claude-sonnet-5"
+          onClose={() => undefined}
+          onStarted={() => undefined}
+        />,
+      ),
+    );
+    expect(out).toContain('role="dialog"');
+    expect(out).toContain('aria-modal="true"');
+    expect(out).toContain('aria-labelledby="run-dialog-title"');
+    expect(out).toContain(T.confirm.what.repos("forge-ledger", true));
+    expect(out).toContain(T.confirm.model("claude-sonnet-5"));
+    expect(out).toContain(T.confirm.may);
+    expect(out).toContain(T.confirm.yes);
+  });
+});
+
+describe("the strip and the Console", () => {
+  it("says how far the run is, with the session and Stop", () => {
+    const out = html(ctx({ consoleOpen: false }), <RunStrip />);
+    expect(out).toContain(T.strip.repo(2, 4, "forge-ledger"));
+    expect(out).toContain(T.strip.session("forge-ledger, part 1 of 3"));
+    expect(out).toContain(T.strip.totals(120, 2, 45000));
+    expect(out).toContain('role="progressbar"');
+    expect(out).toContain(T.strip.stop);
+    expect(out).toContain(T.strip.showConsole);
+  });
+
+  it("says how it ended, and says nothing of a run that ended before the page opened", () => {
+    const done = run({ state: "done", finishedAt: "2026-11-06T19:00:00.000Z" });
+    expect(html(ctx({ run: done }), <RunStrip />)).toContain(T.strip.done);
+    const failed = run({ state: "failed", finishedAt: "t", message: "sign in to Copilot" });
+    expect(html(ctx({ run: failed }), <RunStrip />)).toContain(
+      T.strip.failed("sign in to Copilot"),
+    );
+    expect(html(ctx({ run: null }), <RunStrip />)).toBe("");
+  });
+
+  it("shows a tab per session, the newest while following, as a labelled tab list and log", () => {
+    const out = html(ctx(), <RunConsole />);
+    expect(out).toContain('role="tablist"');
+    expect((out.match(/role="tab"/g) ?? []).length).toBe(3);
+    expect(out).toContain("forge-teller, one session");
+    expect(out).toContain('aria-expanded="true"');
+    expect(out).toContain('role="log"');
+    expect(out).toContain(T.console.follow);
+    expect(out).toContain(T.console.copy);
+  });
+
+  it("collapses to its button, and says what to do when no run has been started", () => {
+    expect(html(ctx({ consoleOpen: false }), <RunConsole />)).toContain(T.console.open);
+    expect(html(ctx({ consoleOpen: false }), <RunConsole />)).not.toContain('role="log"');
+    expect(html(ctx({ run: null }), <RunConsole />)).toContain(T.console.empty);
+    expect(html(ctx({ run: null, consoleOpen: false }), <RunConsole />)).toBe("");
+  });
+});

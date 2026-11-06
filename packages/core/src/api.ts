@@ -150,8 +150,11 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  * 2.50.0 (ADR 0172): the contract check's counts give `unlinked`, the calls no link starts at.
  *   Additive only.
  * 2.51.0: the questions list gives `counts` by state. Additive only.
+ * 2.52.0 (ADR 0173): an unattended Copilot run started from the app: POST /api/copilot-runs,
+ *   GET /api/copilot-runs/current, POST /api/copilot-runs/{runId}/stop, and the live events
+ *   `copilot-run.state` and `copilot-run.lines`. Additive only.
  */
-export const API_VERSION = "2.51.0";
+export const API_VERSION = "2.52.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -2948,6 +2951,73 @@ export type MarkedNeedT = z.infer<typeof MarkedNeed>;
 export type ReviewedItemT = z.infer<typeof ReviewedItem>;
 export type KeptCandidateT = z.infer<typeof KeptCandidate>;
 
+// ------------------------------------------------------------------ copilot runs (ADR 0173)
+
+/** What an unattended Copilot run started from the app reads. */
+export const CopilotRunKind = z.enum(["stale", "gaps", "all", "repos"]);
+export const StartCopilotRunRequest = z.object({
+  /** stale: the repos whose clone moved past their facts; gaps: the second pass; all: every repo not read yet; repos: the repos named, read whole. */
+  kind: CopilotRunKind,
+  repos: z.array(z.string().min(1)).max(500).optional(),
+  /** Read the repos whole again (`--force`). */
+  force: z.boolean().optional(),
+});
+export const CopilotRunState = z.enum(["running", "done", "stopped", "failed"]);
+export const CopilotRunTab = z.object({
+  /** "run" for the run's own tab; s1, s2, ... for each session. */
+  id: z.string(),
+  title: z.string(),
+  repo: z.string().optional(),
+  state: z.enum(["running", "ended", "failed"]),
+  /** Why the session ended, as Copilot or Atticus said. */
+  ended: z.string().optional(),
+  /** The number of the first line kept (older lines are dropped past the cap). */
+  from: z.number().int().min(0),
+  lines: z.array(z.string()),
+});
+export const CopilotRunView = z.object({
+  runId: z.string(),
+  jobId: z.string(),
+  kind: CopilotRunKind,
+  repos: z.array(z.string()).optional(),
+  force: z.boolean().optional(),
+  state: CopilotRunState,
+  by: z.string().optional(),
+  startedAt: z.string(),
+  finishedAt: z.string().optional(),
+  model: z.string().optional(),
+  /** The repos the plan reads, and how far along it is. */
+  progress: z.object({
+    repos: z.number().int().min(0),
+    repoIndex: z.number().int().min(0),
+    repo: z.string().optional(),
+    session: z.string().optional(),
+    sessions: z.number().int().min(0),
+  }),
+  totals: z.object({
+    kept: z.number().int().min(0),
+    rejected: z.number().int().min(0),
+    tokens: z.number().int().min(0),
+  }),
+  /** The last thing said: the error a failed run ended on, or how it ended. */
+  message: z.string().optional(),
+  tabs: z.array(CopilotRunTab),
+});
+export const CopilotRunCurrent = z.object({
+  /** The run under way, else the last one this server ran; null when none yet. */
+  run: CopilotRunView.nullable(),
+  /** Whether runtime.yaml allows copilot-acp here, and if not, why. */
+  allowed: z.boolean(),
+  why: z.string().optional(),
+  model: z.string().optional(),
+});
+export type CopilotRunKindT = z.infer<typeof CopilotRunKind>;
+export type StartCopilotRunRequestT = z.infer<typeof StartCopilotRunRequest>;
+export type CopilotRunStateT = z.infer<typeof CopilotRunState>;
+export type CopilotRunTabT = z.infer<typeof CopilotRunTab>;
+export type CopilotRunViewT = z.infer<typeof CopilotRunView>;
+export type CopilotRunCurrentT = z.infer<typeof CopilotRunCurrent>;
+
 // ------------------------------------------------------------------ live events
 
 /** Messages on the WebSocket at /api/events. */
@@ -2963,6 +3033,17 @@ export const LiveEvent = z.discriminatedUnion("type", [
   z.object({ type: z.literal("job.done"), jobId: z.string(), state: JobState }),
   z.object({ type: z.literal("index.rebuilt"), records: z.number().int() }),
   z.object({ type: z.literal("run.changed"), runId: z.string(), state: RunState }),
+  // ADR 0173: an unattended Copilot run's state, and new lines for one of its tabs.
+  z.object({ type: z.literal("copilot-run.state"), run: CopilotRunView.omit({ tabs: true }) }),
+  z.object({
+    type: z.literal("copilot-run.lines"),
+    runId: z.string(),
+    tab: z.string(),
+    title: z.string(),
+    /** The number of the first of these lines in the tab. */
+    at: z.number().int().min(0),
+    lines: z.array(z.string()),
+  }),
 ]);
 
 // ------------------------------------------------------------------ the document
@@ -4032,6 +4113,37 @@ const OPS: Record<string, Record<string, Op>> = {
       errors: [400, 409],
     },
   },
+  "/api/copilot-runs": {
+    post: {
+      id: "startCopilotRun",
+      summary:
+        "Start an unattended Copilot run (atticus map --all through copilot-acp) after the person's yes (ADR 0173); 409 when copilot-acp isn't allowed or a run is under way",
+      tag: "ai",
+      body: StartCopilotRunRequest,
+      ok: { status: 202, schema: "CopilotRunView", description: "Started" },
+      errors: [400, 409],
+    },
+  },
+  "/api/copilot-runs/current": {
+    get: {
+      id: "getCurrentCopilotRun",
+      summary:
+        "The Copilot run under way (or the last one), its progress and its Console tabs, and whether copilot-acp is allowed (ADR 0173)",
+      tag: "ai",
+      ok: { status: 200, schema: "CopilotRunCurrent", description: "OK" },
+    },
+  },
+  "/api/copilot-runs/{runId}/stop": {
+    post: {
+      id: "stopCopilotRun",
+      summary:
+        "Stop a Copilot run: the session under way is cancelled; the next run carries on (ADR 0173)",
+      tag: "ai",
+      params: [p("runId")],
+      ok: { status: 200, schema: "CopilotRunView", description: "Stopping" },
+      errors: [404, 409],
+    },
+  },
   "/api/runs/{runId}/transcript": {
     get: {
       id: "getRunTranscript",
@@ -4804,6 +4916,8 @@ export function openApiDocument(): Record<string, unknown> {
     Finding,
     ChangeRepos,
     LiveEvent,
+    CopilotRunView,
+    CopilotRunCurrent,
     Question,
     QuestionList,
     AnsweredQuestion,

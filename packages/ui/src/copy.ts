@@ -3609,6 +3609,67 @@ export const COPY = {
     turns: (n: number) => (n === 1 ? "1 turn" : `${n} turns`),
   },
   /** ADR 0106: an AI step run from the app, with Copilot in a VS Code panel or the server's model. */
+  /** ADR 0173: an unattended Copilot run started from the app, and its Console. */
+  copilotRuns: {
+    start: {
+      stale: "Read the stale repos with Copilot",
+      gaps: "Fill the gaps with Copilot",
+      all: "Read the repos not read yet with Copilot",
+      repos: (repo: string) => `Read ${repo} with Copilot`,
+      again: (repo: string) => `Read ${repo} again with Copilot`,
+    },
+    hint: "Copilot reads unattended, one new session per part, and Atticus verifies each part. You see each step in the Console.",
+    confirm: {
+      title: "Start a Copilot run?",
+      what: {
+        stale: "Re-read every repo whose clone moved past its facts.",
+        gaps: "A second pass on the gaps of every read repo: calls with no target, entries no flow follows.",
+        all: "Read every repo of the manifest not read yet.",
+        repos: (repos: string, force: boolean) =>
+          `${force ? "Read again, whole: " : "Read: "}${repos}.`,
+      },
+      model: (model?: string) =>
+        model ? `Model: ${model} (runtime.yaml's copilotAcp).` : "Model: Copilot's default.",
+      may: "Each session may only read the code, write that repo's facts and run atticus verify. It never pushes, deploys or writes anywhere else.",
+      long: "A large repo takes several sessions. Stop at any time: the next run carries on from there.",
+      yes: "Start the run",
+      no: "Not now",
+    },
+    notAllowed: "Copilot can't be started from here",
+    starting: "Starting…",
+    failedToStart: (why: string) => `The run didn't start: ${why}`,
+    strip: {
+      running: "Copilot is reading",
+      planning: "Planning the run…",
+      repo: (n: number, total: number, repo: string) => `Repo ${n} of ${total}: ${repo}`,
+      session: (title: string) => `Session: ${title}`,
+      totals: (kept: number, rejected: number, tokens: number) =>
+        `${kept} facts kept, ${rejected} rejected${tokens ? `, ${tokens.toLocaleString()} tokens` : ""}`,
+      done: "The Copilot run finished.",
+      stopped: "The Copilot run stopped. The next run carries on from there.",
+      failed: (why: string) => `The Copilot run stopped: ${why}`,
+      stop: "Stop",
+      stopping: "Stopping…",
+      showConsole: "Show the Console",
+      dismiss: "Dismiss",
+    },
+    console: {
+      title: "Console",
+      open: "Open the Console",
+      close: "Close the Console",
+      tabs: "Console tabs",
+      follow: "Follow the end",
+      search: "Search the log",
+      copy: "Copy",
+      copied: "Copied",
+      empty:
+        "No Copilot run yet. Start one from Map › Trust: read the stale repos, fill the gaps, or read one repo.",
+      noLines: "Nothing printed yet.",
+      noMatch: (q: string) => `No line has “${q}”.`,
+      earlier: (n: number) => `${n.toLocaleString()} earlier lines not kept.`,
+      states: { running: "running", ended: "ended", failed: "failed" } as Record<string, string>,
+    },
+  },
   runStep: {
     withCopilot: "Run with Copilot",
     withModel: (model: string) => `Run with ${model}`,

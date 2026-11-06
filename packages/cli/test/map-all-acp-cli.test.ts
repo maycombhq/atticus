@@ -15,7 +15,14 @@ import { afterAll, describe, expect, it } from "vitest";
 import { stringify } from "yaml";
 import type { AcpExec } from "@maycombhq/ai";
 import { acpStepRunner, expandSlashLine, UNATTENDED } from "../src/copilot-acp-steps.js";
-import { mapAllCommand, preparedLine, readMapAllState, type MapAllPlan } from "../src/map-all.js";
+import {
+  mapAllCommand,
+  preparedLine,
+  readMapAllState,
+  type MapAllEvent,
+  type MapAllPlan,
+} from "../src/map-all.js";
+import { CopilotRun } from "../src/copilot-run.js";
 import { readPlanProgress } from "../src/map-parts.js";
 import { main } from "../src/main.js";
 
@@ -192,14 +199,38 @@ describe("atticus map --all under copilot-acp: Copilot driven unattended (ADR 01
     });
     const runner = await acpStepRunner(root, { exec: inProcess, env: m.env });
     const o = io();
+    // ADR 0173: the same run as the app's Console sees it, from its events and lines.
+    const events: MapAllEvent[] = [];
+    const app = new CopilotRun({ runId: "r1", jobId: "j1", kind: "all", startedAt: "t" });
     const code = await mapAllCommand(
       root,
       { maxTokens: LIMIT, mode: "copilot-acp", maxParts: 3 },
-      o.io,
-      { acp: runner },
+      {
+        out: (l) => (o.io.out(l), app.line(l)),
+        err: (l) => (o.io.err(l), app.line(l)),
+      },
+      { acp: runner, onEvent: (e) => (events.push(e), app.event(e)) },
     );
     const text = o.text();
     expect(code, text).toBe(0);
+    expect(events[0]).toMatchObject({ type: "plan", repos: [{ repo: "forge-ledger" }] });
+    expect(events.filter((e) => e.type === "session")).toHaveLength(3);
+    expect(events.filter((e) => e.type === "session.end")).toHaveLength(3);
+    expect(events.find((e) => e.type === "verify")).toMatchObject({ repo: "forge-ledger" });
+    expect(app.view.tabs.map((t) => t.title)).toEqual([
+      "Run",
+      `forge-ledger, part 1 of ${ledger.total}`,
+      `forge-ledger, part 2 of ${ledger.total}`,
+      `forge-ledger, part 2 of ${ledger.total} (again)`,
+    ]);
+    const s1 = app.view.tabs[1]!;
+    expect(s1.state).toBe("ended");
+    expect(s1.lines.join("\n")).toContain("  Copilot: Part 1 read; verify passed.");
+    // The verify after the session is in the session's tab, and its counts in the run's.
+    expect(s1.lines.join("\n")).toMatch(/forge-ledger: \d+ facts kept, 0 rejected/);
+    expect(app.view.tabs[0]!.lines.join("\n")).toMatch(/forge-ledger: \d+ kept, 0 rejected/);
+    expect(app.view.progress).toMatchObject({ repos: 1, repoIndex: 1, sessions: 3 });
+    expect(app.view.totals.kept).toBeGreaterThan(0);
     expect(text).toContain(
       "The estate at 100,000 tokens a prompt (--max-tokens), read by GitHub Copilot through its Agent Client Protocol, unattended: one new session per part:",
     );

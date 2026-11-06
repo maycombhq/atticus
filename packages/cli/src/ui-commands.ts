@@ -17,6 +17,7 @@ import { uiSpecRoutes } from "./ui-api-specs.js";
 import { uiCiteRoutes } from "./ui-api-cites.js";
 import { uiKnowledgeRoutes } from "./ui-api-knowledge.js";
 import { uiModelRunRoutes } from "./ui-api-runs.js";
+import { uiCopilotRunRoutes } from "./ui-api-copilot-runs.js";
 import { uiHistoryRoutes } from "./ui-api-history.js";
 import { uiAiRoutes } from "./ui-api-ai.js";
 import { uiDocumentRoutes } from "./ui-api-documents.js";
@@ -100,18 +101,25 @@ export async function startUi(
       // on one (B10).
       // ADR 0149: a sample audit answered in the app, and the outside systems.
       // ADR 0164: the contract check on every link (Map › Mismatches).
-      return uiStageRoutes(
-        uiContractsRoutes(
-          uiOutsideRoutes(
-            uiAuditRoutes(
-              uiFactsRoutes(
-                uiTrustRoutes(
-                  uiCockpitRoutes(
-                    uiRepoRoutes(
-                      uiDocumentRoutes(
-                        uiAiRoutes(
-                          uiHistoryRoutes(
-                            uiModelRunRoutes(uiKnowledgeRoutes(uiCiteRoutes(specs, ctx), ctx), ctx),
+      // ADR 0173: an unattended Copilot run started from the app, shown live.
+      return uiCopilotRunRoutes(
+        uiStageRoutes(
+          uiContractsRoutes(
+            uiOutsideRoutes(
+              uiAuditRoutes(
+                uiFactsRoutes(
+                  uiTrustRoutes(
+                    uiCockpitRoutes(
+                      uiRepoRoutes(
+                        uiDocumentRoutes(
+                          uiAiRoutes(
+                            uiHistoryRoutes(
+                              uiModelRunRoutes(
+                                uiKnowledgeRoutes(uiCiteRoutes(specs, ctx), ctx),
+                                ctx,
+                              ),
+                              ctx,
+                            ),
                             ctx,
                           ),
                           ctx,

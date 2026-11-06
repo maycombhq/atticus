@@ -56,6 +56,22 @@ the session reads, the atticus commands it runs, anything refused, and what it s
 `--max-parts` counts sessions; `--budget-tokens` counts the tokens the server reports (or the
 part's estimate when it reports none).
 
+## From the app
+
+With copilot-acp allowed, Map › Trust has buttons that start the same run from the app (ADR 0173):
+**Read the stale repos with Copilot**, **Fill the gaps with Copilot**, **Read the repos not read yet
+with Copilot**, and on each repo **Read it again with Copilot** (whole, as `--force`). Each asks first:
+a dialog names what the run reads, the model from runtime.yaml and what a session may do, and nothing
+starts until you say yes. The app's server runs `atticus map --all`'s own code (no shell), one run at a
+time.
+
+While it runs, a strip under the top bar says which repo of how many, the session under way, the
+facts kept and rejected and the tokens so far, with **Stop**. The **Console** at the foot of the app
+(open and close it with its button) shows what the run prints: a tab for the run, then one per session
+with its steps as Copilot takes them and the verify after it. It follows the end unless you pick an
+older tab; search and copy work on the tab shown. A reload, or the app in VS Code or IntelliJ, picks
+the run up where it is. Stop cancels the session under way, as Ctrl+C does; the next run carries on.
+
 ## What a session may and may not do
 
 These rules are fixed in Atticus. No setting widens them.
@@ -96,6 +112,9 @@ lists them.
 
 ## Limits
 
-- The editors' buttons still hand steps to Copilot Chat; this is the command line's.
+- The editors' own buttons still hand steps to Copilot Chat; the app's Map › Trust buttons (also in
+  the editors' app tab) start an unattended run.
+- A run started in a terminal isn't shown in the app while it runs, nor the other way round; both
+  carry on from the same saved state.
 - Atticus can refuse only what the server asks it. It relies on the server asking permission before
   its own tools edit or run anything, as the protocol describes.

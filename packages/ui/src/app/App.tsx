@@ -7,6 +7,7 @@ import { SCREEN_COMPONENTS } from "../screens/registry.js";
 import { NotBuilt } from "../screens/NotBuilt.js";
 import { ScreenBoundary } from "./boundary.js";
 import { MeProvider, useMe } from "./me.js";
+import { CopilotRunsProvider, RunConsole, RunStrip } from "./copilot-runs.js";
 import { CommandPalette } from "./palette.js";
 import { replayTour, Tour } from "./tour.js";
 import { Nav } from "./nav.js";
@@ -233,39 +234,43 @@ export function App() {
   }, [current.id]);
   return (
     <MeProvider>
-      <div className="shell">
-        <LoadingBar />
-        <a className="skip" href="#main">
-          {T.skipToContent}
-        </a>
-        <Nav current={current} hash={hash} full={full} />
-        <CommandPalette />
-        <Tour
-          metarepo={
-            health.state === "ready"
-              ? health.data.root
-              : health.state === "error"
-                ? null
-                : undefined
-          }
-        />
-        <main id="main" className="main" tabIndex={-1}>
-          <TopBar health={health.state === "ready" ? health.data : undefined} />
-          <h1 className="sr">{current.label}</h1>
-          <SectionTabs current={current} hash={hash} full={full} />
-          {server.down && <ServerDown inPanel={!!hostBridge()} />}
-          {(() => {
-            const S = SCREEN_COMPONENTS[current.id];
-            return S ? (
-              <ScreenBoundary key={`${current.id}:${server.epoch}`} name={current.label}>
-                <S hash={hash} />
-              </ScreenBoundary>
-            ) : (
-              <NotBuilt screen={current} />
-            );
-          })()}
-        </main>
-      </div>
+      <CopilotRunsProvider>
+        <div className="shell">
+          <LoadingBar />
+          <a className="skip" href="#main">
+            {T.skipToContent}
+          </a>
+          <Nav current={current} hash={hash} full={full} />
+          <CommandPalette />
+          <Tour
+            metarepo={
+              health.state === "ready"
+                ? health.data.root
+                : health.state === "error"
+                  ? null
+                  : undefined
+            }
+          />
+          <main id="main" className="main" tabIndex={-1}>
+            <TopBar health={health.state === "ready" ? health.data : undefined} />
+            <RunStrip />
+            <h1 className="sr">{current.label}</h1>
+            <SectionTabs current={current} hash={hash} full={full} />
+            {server.down && <ServerDown inPanel={!!hostBridge()} />}
+            {(() => {
+              const S = SCREEN_COMPONENTS[current.id];
+              return S ? (
+                <ScreenBoundary key={`${current.id}:${server.epoch}`} name={current.label}>
+                  <S hash={hash} />
+                </ScreenBoundary>
+              ) : (
+                <NotBuilt screen={current} />
+              );
+            })()}
+          </main>
+          <RunConsole />
+        </div>
+      </CopilotRunsProvider>
     </MeProvider>
   );
 }

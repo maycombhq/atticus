@@ -85,8 +85,11 @@ const busy = (by: 1 | -1) => {
 /** A call to the local API; every one counts toward the loading bar while it is in flight. */
 export async function api<T>(
   path: string,
-  o: { method?: string; body?: unknown; signal?: AbortSignal } = {},
+  o: { method?: string; body?: unknown; signal?: AbortSignal; quiet?: boolean } = {},
 ): Promise<T> {
+  // ADR 0173: a check the page makes on its own every few seconds (a run's progress) doesn't
+  // flash the loading bar; everything a person waits on does.
+  if (o.quiet) return call<T>(path, o);
   busy(1);
   try {
     return await call<T>(path, o);

@@ -1453,3 +1453,109 @@ a.q-item[aria-current="true"] {
     transform: translateX(250%);
   }
 }
+
+/* ADR 0173: an unattended Copilot run started from the app: its dialog, strip and Console. */
+.run-dialog-back {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--backdrop);
+  padding: 16px;
+}
+.run-dialog {
+  max-width: 520px;
+  width: 100%;
+  padding: 18px 20px;
+  border: 1px solid var(--line-2);
+  background: var(--panel);
+  color: var(--text);
+}
+.run-strip {
+  border: 1px solid var(--line-2);
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin: 8px 0 12px;
+  background: var(--panel-2);
+}
+.run-strip.ended {
+  border-color: var(--green-line);
+}
+.run-strip.failed {
+  border-color: var(--magenta-line);
+}
+.run-strip-bar {
+  height: 4px;
+  background: var(--line);
+  border-radius: 2px;
+  margin-bottom: 8px;
+  overflow: hidden;
+}
+.run-strip-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+.run-console {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 800;
+  border-top: 1px solid var(--line-2);
+  background: var(--panel-dark);
+  color: var(--text);
+  padding: 6px 12px;
+}
+.run-console-body {
+  max-height: 38vh;
+  display: flex;
+  flex-direction: column;
+}
+.run-console-tabs {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  margin-top: 6px;
+}
+.run-console-tab {
+  border: 1px solid var(--line-2);
+  background: transparent;
+  color: var(--text-2);
+  border-radius: 4px 4px 0 0;
+  padding: 4px 8px;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.run-console-tab[aria-selected="true"] {
+  color: var(--text);
+  border-color: var(--accent);
+}
+.run-console-tab.failed {
+  border-color: var(--magenta-line);
+}
+.run-console-tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.run-console-log {
+  margin: 0;
+  max-height: 26vh;
+  overflow: auto;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--input);
+  border: 1px solid var(--line);
+  padding: 6px 8px;
+}
+.shell:has(.run-console) .main {
+  padding-bottom: 64px;
+}
+.shell:has(.run-console.open) .main {
+  padding-bottom: 42vh;
+}
