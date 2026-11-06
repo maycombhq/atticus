@@ -296,6 +296,34 @@ describe("mergeCatalog: hosts and gateways (ADR 0053)", () => {
         return `${i.from}->${i.to} ${i.via} ${i.method ?? ""} ${i.normalizedPath} ${i.confidence}`;
       });
 
+  it("joins a call to a read repo's listed host only where its endpoints serve it (beta.18)", () => {
+    const calls = [
+      call("bff", "POST https://pay-api-1.apps.bank.internal/transfers"),
+      call("bff", "GET https://pay-api-1.apps.bank.internal/statements/{id}"),
+    ];
+    // Not read: as before, the host the manifest lists joins every call to it.
+    expect(
+      ifs(run(calls))
+        .filter((i) => i.startsWith("bff->api"))
+        .sort(),
+    ).toEqual([
+      "bff->api direct GET /statements/{} inferred",
+      "bff->api direct POST /transfers verified",
+    ]);
+    // Read: only the call one of its endpoints serves; the other stays a loose end.
+    const read = repos.map((r) => (r.id === "forge-api" ? { ...r, read: true } : r));
+    const m = run(calls, read);
+    expect(ifs(m).filter((i) => i.startsWith("bff->api"))).toEqual([
+      "bff->api direct POST /transfers verified",
+    ]);
+    expect(
+      m.records.some(
+        (r) =>
+          r.kind === "Unresolved" && (r as unknown as { raw: string }).raw.includes("/statements/"),
+      ),
+    ).toBe(true);
+  });
+
   it("reaches an outside system through a host label that is its name or alias, and only then", () => {
     const vendors = [
       ...systems,

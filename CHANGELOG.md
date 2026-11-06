@@ -2,6 +2,10 @@
 
 All notable changes to Atticus. Versions follow [Semantic Versioning](https://semver.org); contracts C1 to C6 change only with an ADR, a schema version and a migration (`atticus upgrade`).
 
+## Unreleased
+
+- A call to a host a read repo lists joins that repo only where one of its endpoints serves the call, as the facts join already required: a host many repos call, listed on one repo (say by answering "which repo is this host"), drew every call to it there as an inferred link with nothing cited at that end. A repo not read yet joins by its hosts as before.
+
 ## 2.0.0-beta.18 (2026-11-05)
 
 - A question's evidence (and a scan's `at`) may name a file with a space in its path (`Documents/Forge_Accounts_1.0 20250731.yaml:88`): such a question made `atticus verify --write`, and with it `atticus map --all`, stop with "evidence is path:line". The format is otherwise unchanged (no colon in the path, no space at either end).

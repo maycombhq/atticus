@@ -73,6 +73,8 @@ export function estateMergeInput(
   records: CatalogRecord[],
   modulesOf: (repo: string) => readonly EstateModule[] = (id) =>
     repos.find((r) => r.id === id)?.modules ?? [],
+  /** beta.18: the repos whose facts are read (their endpoints known). */
+  read?: ReadonlySet<string>,
 ): MergeInput {
   return {
     records,
@@ -83,6 +85,7 @@ export function estateMergeInput(
         ...(r.component ? { component: r.component } : {}),
         ...(r.system ? { system: r.system } : {}),
         hosts: r.hosts,
+        ...(read?.has(r.id) ? { read: true } : {}),
       },
       // A module's hosts join calls to its own component (ADR 0057).
       ...modulesOf(r.id)
@@ -109,8 +112,9 @@ export function mergeEstate(
   repos: readonly EstateRepo[],
   records: CatalogRecord[],
   modulesOf?: (repo: string) => readonly EstateModule[],
+  read?: ReadonlySet<string>,
 ): MergeResult {
-  return mergeCatalog(estateMergeInput(op, repos, records, modulesOf));
+  return mergeCatalog(estateMergeInput(op, repos, records, modulesOf, read));
 }
 
 /** The folder of curated decisions: `<layout.catalog>/curated` under the root. */

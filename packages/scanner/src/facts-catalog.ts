@@ -1440,7 +1440,17 @@ export function catalogWithFacts(given: FactsCatalogInput): FactsCatalogResult {
   }
 
   // ---- the scan's passes: merge (identity, hosts, systems, loose ends), then curated decisions
-  const merged0 = mergeEstate(op, estateRepos(op), records0.sort(byKindId));
+  // beta.18: a repo read from its facts joins a call by its host only where its endpoints serve it.
+  const merged0 = mergeEstate(
+    op,
+    estateRepos(op),
+    records0.sort(byKindId),
+    undefined,
+    new Set([
+      repo,
+      ...(input.estate ? others.filter((r) => r.facts.length > 0).map((r) => r.repo) : []),
+    ]),
+  );
   // A listener the joins pair with a publish needs no loose end of its own.
   const heard = new Set(
     (join?.joins ?? [])

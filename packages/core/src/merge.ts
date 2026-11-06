@@ -27,6 +27,12 @@ export interface MergeRepo {
   type: string;
   /** Hosts the repo's component (or, for a gateway repo, the gateway) answers on (ADR 0053). */
   hosts?: string[];
+  /**
+   * beta.18: the repo's facts are read, so its endpoints are known: a call to one of its hosts
+   * joins it only where one of them serves the call (the facts join's own rule). Unset, as
+   * before: a host the manifest lists joins every call to it.
+   */
+  read?: boolean;
 }
 
 export interface MergeSystem {
@@ -462,6 +468,12 @@ export function mergeCatalog(input: MergeInput): MergeResult {
         : undefined;
     } else if (declared && !declared.gateway) {
       to = declared.repo.component ?? declared.repo.id;
+      // beta.18: a read repo whose endpoints don't serve the call isn't where it goes, whatever
+      // host it lists (a shared host listed on one repo drew every call to it there).
+      if (declared.repo.read && !findEndpoint(to, method, normalizePath(path))) {
+        unresolved.push(l);
+        continue;
+      }
     } else if (host && !declared && vendorFor(host, urlHostPort(url)?.port)) {
       // A vendor's name in the host says more than a first label such as api.
       to = vendorFor(host, urlHostPort(url)?.port);
