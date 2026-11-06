@@ -27,3 +27,18 @@ On a system's box, **Declare a link…** says what the code can't show: the syst
 ## Corrections, and Undo
 
 Every box lists its corrections (a repo's) or declarations (a system's) under **Corrections and declarations**, each with who and when. **Undo** removes exactly the line it wrote. Each change ends with the command to redraw the map and the `git` command to commit the file.
+
+## Working on the canvas
+
+**Layers, filters and tools** above the canvas (ADR 0175) choose what is drawn and help you find your way; none of them changes the map.
+
+- **Layers**: read and cited, guesses and gaps, declared, paired by a person, outside systems, topics, or only the links whose two sides disagree.
+- **Filter**: `team:team-ledger`, `system:ledger`, `type:spring-boot`, `path:/accounts/**`, or words; the boxes that match and what they link to.
+- **Colour boxes by** gaps or open questions.
+- **Blast radius** of the selected box: what calls it, what it calls, or both, to a depth; the rest is dimmed.
+- **Trace** from the selected box, hop by hop.
+- **Open on this picture**: every box and link with a gap, most first.
+- **Compare**: keep a snapshot, change something (pair calls, run verify), then mark what changed since.
+- **Saved views**: keep the filter, layers and colouring by name in `diagrams/views/`; commit the file to share it.
+- **Export** the picture as Mermaid, draw.io, SVG, PNG, or print it to PDF.
+- A box's citations have **Open in your editor**: the file at its line in VS Code or IntelliJ.

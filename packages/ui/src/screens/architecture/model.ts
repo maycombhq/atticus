@@ -104,6 +104,8 @@ export interface CanvasBox {
   ownerOutside?: boolean;
   /** ADR 0162 §6 (F8): the profile names it as an outside system's: a person's word. */
   declared?: boolean;
+  /** G6 (ADR 0175): the health overlay's count on the box (gaps, or open questions). */
+  badge?: { n: number; what: string };
 }
 
 export interface CanvasLink {

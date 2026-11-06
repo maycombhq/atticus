@@ -4,6 +4,10 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### A canvas you work in (G6)
+
+- Above the canvas, **Layers, filters and tools**: layers (read and cited, guesses and gaps, declared, paired, outside systems, topics, only mismatches); a filter (`team:`, `system:`, `type:`, `path:/accounts/**`, words); colour boxes by gaps or open questions; the blast radius of the selected box (upstream, downstream or both, depth 1–5); a trace hop by hop; the picture's open problems; compare with a snapshot (added links marked new, those gone listed); saved views kept as `diagrams/views/<name>.yaml`; export as Mermaid, draw.io, SVG, PNG or PDF. A citation opens its file at the line in VS Code or IntelliJ. ADR 0175.
+
 ### Add a box, declare a link, and Undo (G3)
 
 - **Add to the picture…** lists the manifest's repos not read yet (each with Read with Copilot and its command) and adds a new vendor or another team's system to the profile, for review. On a system's box, **Declare a link…** writes a topic it publishes to or listens on, or a gateway route it calls, under the system in the profile with who and when as the line's comment; declared and person-paired links are drawn dashed. Every box lists its corrections or declarations with **Undo**, which removes exactly that line. The guide: docs/guide/correcting-the-map.md.

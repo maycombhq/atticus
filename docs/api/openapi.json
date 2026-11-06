@@ -6701,6 +6701,212 @@
         }
       }
     },
+    "/api/graph/views": {
+      "get": {
+        "operationId": "listCanvasViews",
+        "summary": "The canvas views kept in the metarepo: named filters and layers (ADR 0175)",
+        "tags": [
+          "views"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedCanvasViews"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/graph/views/{name}": {
+      "put": {
+        "operationId": "putCanvasView",
+        "summary": "Keep a canvas view by name in diagrams/views/<name>.yaml, for review (ADR 0175)",
+        "tags": [
+          "views"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9-]{0,62}$"
+                  },
+                  "lens": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "node": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "filter": {
+                    "default": "",
+                    "type": "string",
+                    "maxLength": 500
+                  },
+                  "layers": {
+                    "default": {},
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {
+                      "type": "boolean"
+                    }
+                  },
+                  "overlay": {
+                    "default": "none",
+                    "type": "string",
+                    "enum": [
+                      "none",
+                      "gaps",
+                      "questions"
+                    ]
+                  },
+                  "mismatches": {
+                    "default": false,
+                    "type": "boolean"
+                  },
+                  "by": {
+                    "type": "string"
+                  },
+                  "at": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name",
+                  "lens",
+                  "node"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Kept",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedCanvasView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/code-link": {
+      "get": {
+        "operationId": "getCodeLink",
+        "summary": "A cited line's file in the repo's checkout, with links that open it in VS Code or IntelliJ (ADR 0175)",
+        "tags": [
+          "views"
+        ],
+        "parameters": [
+          {
+            "name": "repo",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "The repo",
+            "required": false
+          },
+          {
+            "name": "at",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "file:line as the fact cites it",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeLink"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/copilot-runs": {
       "post": {
         "operationId": "startCopilotRun",
@@ -27661,6 +27867,112 @@
         },
         "required": [
           "items"
+        ],
+        "additionalProperties": false
+      },
+      "SavedCanvasView": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]{0,62}$"
+          },
+          "lens": {
+            "type": "string",
+            "minLength": 1
+          },
+          "node": {
+            "type": "string",
+            "minLength": 1
+          },
+          "filter": {
+            "default": "",
+            "type": "string",
+            "maxLength": 500
+          },
+          "layers": {
+            "default": {},
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "boolean"
+            }
+          },
+          "overlay": {
+            "default": "none",
+            "type": "string",
+            "enum": [
+              "none",
+              "gaps",
+              "questions"
+            ]
+          },
+          "mismatches": {
+            "default": false,
+            "type": "boolean"
+          },
+          "by": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "lens",
+          "node",
+          "filter",
+          "layers",
+          "overlay",
+          "mismatches"
+        ],
+        "additionalProperties": false
+      },
+      "SavedCanvasViews": {
+        "type": "object",
+        "properties": {
+          "views": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SavedCanvasView"
+            }
+          },
+          "dir": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "views",
+          "dir"
+        ],
+        "additionalProperties": false
+      },
+      "CodeLink": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "line": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "vscode": {
+            "type": "string"
+          },
+          "idea": {
+            "type": "string"
+          },
+          "missing": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "line"
         ],
         "additionalProperties": false
       },

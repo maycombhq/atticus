@@ -85,6 +85,9 @@ function BoxView({ data }: NodeProps<BoxNode>) {
     box.gaps.length ? "gappy" : "",
     data.selected ? "picked" : "",
     box.mark ? `m-${box.mark}` : "",
+    box.badge
+      ? `heat-${Math.min(3, box.badge.n === 0 ? 0 : box.badge.n < 3 ? 1 : box.badge.n < 10 ? 2 : 3)}`
+      : "",
   ].join(" ");
   return (
     <div className={cls} title={box.gaps.map((g) => WORDS.gap[g] ?? g).join(", ") || undefined}>
@@ -103,6 +106,11 @@ function BoxView({ data }: NodeProps<BoxNode>) {
         <div className="hud arch-box-owner">
           {ownerText(box)}
           {box.declared && ` · ${TOPIC.declared}`}
+        </div>
+      )}
+      {box.badge && (
+        <div className="arch-box-badge">
+          <span className="chip">{`${box.badge.n} ${box.badge.what}`}</span>
         </div>
       )}
       {(box.gaps.length > 0 || box.inside > 0) && (
@@ -290,6 +298,8 @@ export function ArchitectureCanvas(p: {
   initialFocus?: boolean;
   /** G1 (ADR 0174): a line drawn from one box to another: connect them call by call. */
   onConnect?: (from: string, to: string) => void;
+  /** G6 (ADR 0175): the boxes to keep lit (a blast radius); the rest are dimmed. */
+  lit?: ReadonlySet<string>;
 }) {
   const [state, setState] = useState<LayoutState>(
     p.initial ? { state: "ready" } : { state: "running" },
@@ -378,13 +388,22 @@ export function ArchitectureCanvas(p: {
 
   // Focus mode (F10): everything but the picked box and its neighbours is dimmed.
   const lit = useMemo(
-    () => (focusMode && p.selected ? neighbourhood(p.graph.links, p.selected) : undefined),
-    [focusMode, p.selected, p.graph.links],
+    () => p.lit ?? (focusMode && p.selected ? neighbourhood(p.graph.links, p.selected) : undefined),
+    [p.lit, focusMode, p.selected, p.graph.links],
   );
   const shownNodes = useMemo(() => (lit ? nodes.map((n) => dimNode(n, lit)) : nodes), [nodes, lit]);
   const shownEdges = useMemo(
-    () => (lit && p.selected ? edges.map((e) => dimEdge(e, p.selected!)) : edges),
-    [edges, lit, p.selected],
+    () =>
+      p.lit
+        ? edges.map((e) =>
+            p.lit!.has(e.source) && p.lit!.has(e.target)
+              ? e
+              : { ...e, style: { ...e.style, opacity: 0.15 } },
+          )
+        : lit && p.selected
+          ? edges.map((e) => dimEdge(e, p.selected!))
+          : edges,
+    [edges, lit, p.lit, p.selected],
   );
 
   const act = (a: ViewerAction) => {

@@ -159,7 +159,10 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   PUT /api/repos/{repo}/owner (G2, a repo's owner and system in its manifest, a team added to
  *   roles.yaml for review); G3: POST /api/declared-links and its undo, GET /api/boxes/addable,
  *   POST /api/boxes (a new outside system, for review), GET /api/boxes/corrections (a box's
- *   corrections and declarations, each with its undo). Additive only.
+ *   corrections and declarations, each with its undo). G6 (ADR 0175): GET /api/graph/views and
+ *   PUT /api/graph/views/{name}, a canvas's named filters and layers kept in the metarepo
+ *   (diagrams/views/<name>.yaml); GET /api/code-link, a cited line's file to open in an editor.
+ *   Additive only.
  */
 export const API_VERSION = "2.53.0";
 export const DEFAULT_PORT = 4321;
@@ -3116,6 +3119,32 @@ export const BoxCorrections = z.object({
     }),
   ),
 });
+/** G6 (ADR 0175): a canvas's named filters and layers, kept in the metarepo for review. */
+export const SavedCanvasView = z.object({
+  name: z.string().regex(/^[a-z0-9][a-z0-9-]{0,62}$/),
+  lens: z.string().min(1),
+  node: z.string().min(1),
+  filter: z.string().max(500).default(""),
+  layers: z.record(z.string(), z.boolean()).default({}),
+  overlay: z.enum(["none", "gaps", "questions"]).default("none"),
+  mismatches: z.boolean().default(false),
+  by: z.string().optional(),
+  at: z.string().optional(),
+});
+export const SavedCanvasViews = z.object({ views: z.array(SavedCanvasView), dir: z.string() });
+/** G6: a cited line, as a file to open in an editor. */
+export const CodeLink = z.object({
+  /** The file on this machine, when the repo's checkout is here. */
+  path: z.string().optional(),
+  line: z.number().int().positive(),
+  vscode: z.string().optional(),
+  idea: z.string().optional(),
+  /** Why there is no file: no checkout of the repo. */
+  missing: z.string().optional(),
+});
+export type SavedCanvasViewT = z.infer<typeof SavedCanvasView>;
+export type SavedCanvasViewsT = z.infer<typeof SavedCanvasViews>;
+export type CodeLinkT = z.infer<typeof CodeLink>;
 export type DeclareLinkRequestT = z.infer<typeof DeclareLinkRequest>;
 export type FileChangeResultT = z.infer<typeof FileChangeResult>;
 export type AddableViewT = z.infer<typeof AddableView>;
@@ -4410,6 +4439,36 @@ const OPS: Record<string, Record<string, Op>> = {
       errors: [400],
     },
   },
+  "/api/graph/views": {
+    get: {
+      id: "listCanvasViews",
+      summary: "The canvas views kept in the metarepo: named filters and layers (ADR 0175)",
+      tag: "views",
+      ok: { status: 200, schema: "SavedCanvasViews", description: "OK" },
+    },
+  },
+  "/api/graph/views/{name}": {
+    put: {
+      id: "putCanvasView",
+      summary: "Keep a canvas view by name in diagrams/views/<name>.yaml, for review (ADR 0175)",
+      tag: "views",
+      params: [p("name")],
+      body: SavedCanvasView,
+      ok: { status: 200, schema: "SavedCanvasView", description: "Kept" },
+      errors: [400],
+    },
+  },
+  "/api/code-link": {
+    get: {
+      id: "getCodeLink",
+      summary:
+        "A cited line's file in the repo's checkout, with links that open it in VS Code or IntelliJ (ADR 0175)",
+      tag: "views",
+      params: [q("repo", str, "The repo"), q("at", str, "file:line as the fact cites it")],
+      ok: { status: 200, schema: "CodeLink", description: "OK" },
+      errors: [400],
+    },
+  },
   "/api/copilot-runs": {
     post: {
       id: "startCopilotRun",
@@ -5222,6 +5281,9 @@ export function openApiDocument(): Record<string, unknown> {
     FileChangeResult,
     AddableView,
     BoxCorrections,
+    SavedCanvasView,
+    SavedCanvasViews,
+    CodeLink,
     Question,
     QuestionList,
     AnsweredQuestion,

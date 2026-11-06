@@ -198,3 +198,36 @@ describe("the estate is built once per catalog state (beta.21, G7)", () => {
     expect(ids(after.body)).toBe(true);
   });
 });
+
+describe("canvas views kept in the metarepo, and a cited line to open (ADR 0175, G6)", () => {
+  it("keeps a named view, lists it, and refuses a name that isn't one", async () => {
+    const body = JSON.stringify({
+      lens: "architecture",
+      node: "estate",
+      filter: "team:team-ledger",
+      layers: { guessed: false },
+      overlay: "gaps",
+    });
+    const put = await call(srv, "/api/graph/views/ledger-only", { method: "PUT", body });
+    expect(put.status).toBe(200);
+    expect(put.body).toMatchObject({ name: "ledger-only", by: "pat", filter: "team:team-ledger" });
+    const list = Api.SavedCanvasViews.parse((await get("/api/graph/views")).body);
+    expect(list.views.map((v) => v.name)).toEqual(["ledger-only"]);
+    expect((await call(srv, "/api/graph/views/Not%20One", { method: "PUT", body })).status).toBe(
+      400,
+    );
+  });
+
+  it("says when a repo has no checkout here, and refuses a path that climbs out", async () => {
+    const r = Api.CodeLink.parse(
+      (
+        await get(
+          "/api/code-link?repo=forge-ledger&at=src/main/java/forge/ledger/LedgerEndpoints.java:8",
+        )
+      ).body,
+    );
+    expect(r.line).toBe(8);
+    expect(r.path ?? r.missing).toBeTruthy();
+    expect((await get("/api/code-link?repo=forge-ledger&at=../../etc/passwd:1")).status).toBe(400);
+  });
+});

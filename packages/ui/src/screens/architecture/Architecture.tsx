@@ -18,6 +18,17 @@ import { CopyButton, Facts } from "../run/shared.js";
 import { ConnectPanel, type BoxChoice } from "./Connect.js";
 import { OwnerPanel } from "./Owner.js";
 import { AddBoxPanel, BoxCorrections, DeclarePanel } from "./Declare.js";
+import { CanvasTools, type ToolsState } from "./Tools.js";
+import { OpenCode } from "./OpenCode.js";
+import {
+  ALL_LAYERS,
+  blastRadius,
+  compare,
+  snapshotOf,
+  withFilter,
+  withLayers,
+  type Snapshot,
+} from "./tools.js";
 import { RunStep } from "../../app/runstep.js";
 import { ArchitectureCanvas } from "./Canvas.js";
 import { LinkWrong, WhatMoved, WhyLinked } from "./WhyLinked.js";
@@ -296,9 +307,76 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
 
   const rows = useMemo(() => outlineRows(views, "estate", expanded), [views, expanded]);
   const view = views.get(current);
-  const graph = useMemo(
+  const whole = useMemo(
     () => canvasGraph(views, current, inPlace, focus),
     [views, current, inPlace, focus],
+  );
+  // G6 (ADR 0175): layers, filter, overlay and compare, on the picture already loaded.
+  const [tools, setTools] = useState<ToolsState>({
+    layers: ALL_LAYERS,
+    mismatches: false,
+    filter: "",
+    overlay: "none",
+  });
+  const [snapshot, setSnapshot] = useState<Snapshot | undefined>();
+  const openQuestions = useApi<Api.QuestionListT>(
+    tools.overlay === "questions" ? "/api/questions?state=open" : undefined,
+  );
+  const propsOf = useCallback((id: string) => find(id)?.properties, [views, focus]);
+  const graph = useMemo(() => {
+    let g = withFilter(
+      withLayers(whole, tools.layers, {
+        ...(tools.mismatches
+          ? {
+              mismatches: new Set(
+                whole.links
+                  .filter((l) => l.gaps.some((x) => x === "contract-mismatch"))
+                  .map((l) => l.id),
+              ),
+            }
+          : {}),
+      }),
+      tools.filter,
+      propsOf,
+    );
+    if (tools.compareWith) {
+      const c = compare(tools.compareWith, g);
+      const added = new Set(c.added.map((l) => l.id));
+      g = {
+        ...g,
+        links: g.links.map((l) => (added.has(l.id) ? { ...l, mark: "new" as const } : l)),
+      };
+    }
+    if (tools.overlay !== "none") {
+      const byRepo =
+        openQuestions.state === "ready" ? (openQuestions.data.counts?.byRepo ?? {}) : {};
+      g = {
+        ...g,
+        boxes: g.boxes.map((b) =>
+          b.group
+            ? b
+            : tools.overlay === "gaps"
+              ? { ...b, badge: { n: b.gaps.length, what: WORDS.gaps } }
+              : b.kind === "repo"
+                ? {
+                    ...b,
+                    badge: {
+                      n: byRepo[b.label]?.open ?? 0,
+                      what: COPY.canvasTools.overlays.questions!.toLowerCase(),
+                    },
+                  }
+                : b,
+        ),
+      };
+    }
+    return g;
+  }, [whole, tools, propsOf, openQuestions]);
+  const radius = useMemo(
+    () =>
+      tools.radius && selected
+        ? new Set(blastRadius(graph.links, selected, tools.radius.depth, tools.radius.dir).keys())
+        : undefined,
+    [tools.radius, selected, graph.links],
   );
   const shown = focus ? focus.node.id : current;
   const key = viewKey(lens, shown, focus ? "focus" : "node");
@@ -494,6 +572,27 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
                 {COPY.addBox.open}
               </button>
             </div>
+            <CanvasTools
+              graph={graph}
+              allBoxes={whole.boxes.length}
+              state={tools}
+              onChange={setTools}
+              {...(selected ? { selected } : {})}
+              onSelect={setSelected}
+              labelOf={(id) => find(id)?.label ?? id}
+              placed={(id) => laid?.boxes[id]}
+              lens={lens}
+              node={shown}
+              {...(tools.compareWith
+                ? (() => {
+                    const c = compare(tools.compareWith, graph);
+                    return { compared: { added: c.added.length, removed: c.removed } };
+                  })()
+                : {})}
+              {...(snapshot ? { snapshot } : {})}
+              onSnapshot={() => setSnapshot(snapshotOf(whole, new Date().toLocaleTimeString()))}
+              name={key}
+            />
             <ArrangementBar
               ready={arrangement.state === "ready"}
               saving={keeping.state === "saving"}
@@ -552,6 +651,7 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
                   )
                 }
                 onLaid={setLaid}
+                {...(radius ? { lit: radius } : {})}
                 onConnect={(a, b) => {
                   const from = boxOf(find(a))?.repo;
                   const to = boxOf(find(b));
@@ -816,6 +916,7 @@ export function Inspector({
             <li key={`${e.repo ?? ""}:${e.at}`}>
               {e.repo && <span className="mono">{e.repo}: </span>}
               <Citation repo={e.repo} at={e.at} />
+              {e.repo && <OpenCode repo={e.repo} at={e.at} />}
             </li>
           ))}
         </ul>

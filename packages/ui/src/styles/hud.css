@@ -1565,3 +1565,34 @@ a.q-item[aria-current="true"] {
 .arch-link.word {
   stroke-dasharray: 6 4;
 }
+
+/* ADR 0175 (G6): the canvas's tools, and the health overlay's counts. */
+.canvas-tools {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 10px;
+  margin: 6px 0;
+}
+.canvas-tools-body {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+  margin-top: 8px;
+}
+.canvas-tools fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+.arch-box-badge {
+  margin-top: 2px;
+}
+.arch-box.heat-1 {
+  box-shadow: 0 0 0 2px var(--amber-line);
+}
+.arch-box.heat-2 {
+  box-shadow: 0 0 0 3px var(--amber);
+}
+.arch-box.heat-3 {
+  box-shadow: 0 0 0 3px var(--magenta);
+}
