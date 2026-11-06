@@ -55,8 +55,16 @@ const does = [
 ];
 
 // What the current release added, in plain words; the CHANGELOG has every item.
-const release = "2.0.0-beta.20";
+const release = "2.0.0-beta.21";
 const news = [
+  {
+    body: "Correct the map on the canvas: connect two boxes call by call, set a repo's owner, declare a link the code can't show, each previewed and undoable; layers, filters, blast radius, trace and export.",
+    link: "/guide/correcting-the-map.html",
+  },
+  {
+    body: "Run Copilot from the app: a yes, a progress strip with Stop, and a Console with a tab per session. Reading rules your organisation owns, and other teams' skills and agents for Claude and Copilot.",
+    link: "/guide/reading-rules.html",
+  },
   {
     body: "Unattended Copilot, steadier: no session within a session, gaps passes prepared like top-ups, and a part is done only once something was written for it.",
     link: "/guide/copilot-unattended.html",

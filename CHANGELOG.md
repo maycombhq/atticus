@@ -2,7 +2,7 @@
 
 All notable changes to Atticus. Versions follow [Semantic Versioning](https://semver.org); contracts C1 to C6 change only with an ADR, a schema version and a migration (`atticus upgrade`).
 
-## Unreleased
+## 2.0.0-beta.21 (2026-11-06)
 
 ### Skills and agents from other teams, for Claude and Copilot (G5)
 

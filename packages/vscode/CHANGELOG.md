@@ -2,6 +2,10 @@
 
 The Atticus extension for VS Code. The command line's own changes are in the repository's [CHANGELOG](https://github.com/maycombhq/atticus/blob/main/CHANGELOG.md).
 
+## 0.7.21 (pre-release, with Atticus 2.0.0-beta.21)
+
+- **Ships with Atticus 2.0.0-beta.21.** The app in its tab gains the canvas corrections (connect two boxes, owner, declared links, Undo), the canvas tools, faster pages with a loading bar, and Copilot runs started from the app with their Console. No change to the extension itself.
+
 ## 0.7.20 (pre-release, with Atticus 2.0.0-beta.20)
 
 - **Ships with Atticus 2.0.0-beta.20.** No change to the extension itself: a gateway route with no forwarding call is now a gap the next gaps pass fills.
