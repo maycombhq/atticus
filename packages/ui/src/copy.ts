@@ -3810,6 +3810,10 @@ export const COPY = {
     undone: "Undone: the line is removed.",
     nothingPicked: "Pick at least one pair, or the rule for all.",
     pairedMark: "paired by a person",
+    makeRule: "Make this a rule for every repo of this type?",
+    makingRule: "Drafting the rule…",
+    ruleMade: (file: string) =>
+      `Drafted in ${file}, for review: a reader is given it once a person sets it active.`,
     close: "Close",
     copy: "Copy the command",
   },

@@ -149,6 +149,14 @@ Every other command. `atticus legacy` lists them by area; each runs by its own n
   atticus repo-type new <id> --from <repo> [--force]   Draft a repo type from a repo (its build files, dependencies, markers, folders) for you to edit
   atticus repo-type note <type> | --org-wide [--add "..."]   List a repo type's notes (or the org-wide ones), or add one: what the organisation's terms mean and what must hold, in its own words; each read of a repo is handed them
   atticus repo-type rules [--save] [--json]   Draft a checklist rule (status draft) from each note that reads as a rule (all, every, must); --save adds the new drafts to org-pack/checklists/org-notes.yaml for review
+  atticus rules list [<repo>] [--json]   The organisation's reading rules (ADR 0176): every layer's file, or the rules a repo's reads are given, with their layer, drafts and what is switched off
+  atticus rules add --org-wide | --type <t> | --repo <r> --key <k> --rule "..." [--files <glob,glob>] [--example <path:line>] [--draft]   Write a reading rule to a layer's file, for review
+  atticus rules activate <key> --org-wide | --type <t> | --repo <r>   Give a draft rule to reads
+  atticus rules off <key> --reason "..." --org-wide | --type <t> | --repo <r>   Switch an earlier layer's rule (or builtin:<set>) off for this scope, saying why
+  atticus rules draft --type <t> [--repos a,b] | --repo <r> --about "..." [--mode copilot-acp|hand-off]   Copilot drafts rules from what the reads keep missing (rejections, corrections, open questions); each is a draft a person sets active
+  atticus rules try <repo> --rule <key> [--files <n>] [--compare]   One small Copilot session on a few files the rule names: the facts it would add or change; writes nothing
+  atticus rules import <their metarepo> --type <t> --team <team> [--at <tag>]   A pinned copy of another product team's type rules, in reading-rules/imported/<team>/, for review
+  atticus rules notes --type <t> [--save]   The repo type's notes that read as an instruction to a reader, offered (with --save written) as draft reading rules
   atticus scan review <repo>           What the last scan couldn't read: your assistant gives a verdict on each gap and a rule for code it can read; checked [--gaps] [--attempts 3]
   atticus query "<query>"              Find records, e.g. "kind:interface via:gateway -has:pattern"
   atticus query "<words>" --search     Search everything the index holds (records, knowledge items, flows, changes, answered questions, wiki sections, documents), names and ids first [--by words|meaning|both] [--kind k,k] [--limit n] [--json]

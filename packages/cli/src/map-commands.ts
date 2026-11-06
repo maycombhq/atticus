@@ -7,6 +7,7 @@ import {
   mapBatchInstructions,
   rulesNow,
   taughtFrameworksText,
+  RULE_SETS,
   type RuleSet,
   readProbes,
   tierSource,
@@ -102,6 +103,7 @@ import {
   type VerifySummary,
 } from "./facts-files.js";
 import { notesAt } from "./org-notes.js";
+import { effectiveRules, readingRulesText, ruleIds } from "./reading-rules.js";
 import {
   loadReadPlan,
   saveReadPlan,
@@ -243,8 +245,8 @@ interface MapState {
    * batches hold only the files changed since; the facts citing them were handed back to rewrite.
    */
   reread?: { from: string[]; carried: number; facts: number };
-  /** ADR 0167: a top-up: only these rule sets go in each prompt. */
-  sets?: RuleSet[];
+  /** ADR 0167: a top-up: only these rule sets go in each prompt (and ADR 0176's org rule ids). */
+  sets?: string[];
   /**
    * ADR 0169: the model classes the read reaches, by path, with the names they declare and where
    * they are reached from: each batch's prompt lists those it holds.
@@ -751,7 +753,13 @@ async function packFor(
         // Nothing says what this repo is: ask for one line, cited, for a person to confirm.
         ...(about || s.sets ? {} : { askAbout: true }),
         // ADR 0167: a top-up carries only the rule sets the read lacked.
-        ...(s.sets ? { sets: s.sets } : {}),
+        ...(s.sets
+          ? {
+              sets: s.sets.filter((x): x is RuleSet =>
+                (RULE_SETS as readonly string[]).includes(x),
+              ),
+            }
+          : {}),
         // A-taught: how to read the wrapper calls and annotations of the frameworks it is built on.
         ...taughtOption(taughtIn(source, op)),
         // ADR 0163: what the organisation's terms mean here and what must hold, as data.
@@ -942,7 +950,11 @@ export async function mapCommand(
   const factsFile = `${factsRelOf(root)}/${repo}.jsonl`;
   // ADR 0163: the notes of the repo's type and the org-wide ones, the same for every batch.
   const repoNotes = await notesAt(root, repo, dir, op);
-  const notesPrompt = notesText(repoNotes.notes, repoNotes.type);
+  // G4 (ADR 0176): the organisation's reading rules for this repo, after its notes.
+  const orgRules = await effectiveRules(root, repo, { dir, op });
+  const notesPrompt = [notesText(repoNotes.notes, repoNotes.type), readingRulesText(orgRules)]
+    .filter(Boolean)
+    .join("\n\n");
 
   if (o.gaps) {
     const { mapGaps } = await import("./map-gaps.js");
@@ -1651,7 +1663,11 @@ async function estimate(
   // reads only what changed, and a plan made again over facts already read reads nothing anew, so
   // either keeps what the read on file was given (nothing, for a read before they were recorded).
   const firstRead = typeof existing !== "string" && existing.length === 0 && !reread;
-  const readRules = firstRead ? rulesNow() : plan0?.rules;
+  // G4 (ADR 0176): the organisation's reading rules are recorded beside the built-in sets.
+  const orgRuleIds = ruleIds(await effectiveRules(root, repo, { dir: c.dir, op: c.op }));
+  const readRules = firstRead
+    ? { hash: rulesNow().hash, sets: [...rulesNow().sets, ...orgRuleIds] }
+    : plan0?.rules;
   // ADR 0169: the model files left out, recorded with why; a re-read keeps what the plan says.
   const notReached = rp ? rp.notReached : plan0?.notReached;
   const sameModels =
@@ -1763,6 +1779,10 @@ async function estimate(
           houseUntaught: house,
           // ADR 0163: the org notes the reader is handed, numbered, and the repo type they are of.
           notes: { ...(notes.type ? { repoType: notes.type } : {}), notes: notes.notes },
+          // G4 (ADR 0176): the organisation's reading rules for this repo, as the reader follows them.
+          readingRules: readingRulesText(
+            await effectiveRules(root, repo, { dir: c.dir, op: c.op }),
+          ),
           questions: questions.map((q) => ({
             id: q.id,
             question: q.question,
@@ -1803,6 +1823,11 @@ async function estimate(
   // ADR 0163: the org notes, as /atticus-map's reader needs them; nothing when there are none.
   const notesLines = notesText(notes.notes, notes.type);
   if (notesLines) for (const l of notesLines.split("\n")) io.out(l);
+  // G4 (ADR 0176): the organisation's reading rules for this repo, as the reader follows them.
+  const orgRulesLines = readingRulesText(
+    await effectiveRules(root, repo, { dir: c.dir, op: c.op }),
+  );
+  if (orgRulesLines) for (const l of orgRulesLines.split("\n")) io.out(l);
   for (const l of houseUntaughtLines(repo, house)) io.out(l);
   if (reread) for (const l of rereadLines(repo, reread)) io.out(l);
   for (const m of re.missing)

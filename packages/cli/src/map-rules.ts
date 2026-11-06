@@ -1,3 +1,11 @@
+import {
+  effectiveRules,
+  orgRulesLacking,
+  readingRulesText,
+  ruleIds,
+  ruleMatches,
+  type EffectiveRules,
+} from "./reading-rules.js";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -58,7 +66,8 @@ export interface TopUpFile {
   path: string;
   tokens: number;
   lines: number;
-  sets: RuleSet[];
+  /** Built-in rule sets, and the organisation's rules by id (`org:<key>@<hash>`, ADR 0176). */
+  sets: string[];
 }
 
 const has = (a: readonly string[], b: readonly string[]) => a.some((x) => b.includes(x));
@@ -147,10 +156,13 @@ export function topUpFiles(o: {
   return out;
 }
 
-/** The sets a top-up's files are read for, in RULE_SETS order. */
-export function ruleSetsOfFiles(files: readonly { sets: readonly string[] }[]): RuleSet[] {
+/** The sets a top-up's files are read for, in RULE_SETS order, then the organisation's rules. */
+export function ruleSetsOfFiles(files: readonly { sets: readonly string[] }[]): string[] {
   const all = new Set(files.flatMap((f) => f.sets));
-  return RULE_SETS.filter((x) => all.has(x));
+  return [
+    ...RULE_SETS.filter((x) => all.has(x)),
+    ...[...all].filter((x) => x.startsWith("org:")).sort(),
+  ];
 }
 
 /**
@@ -158,7 +170,7 @@ export function ruleSetsOfFiles(files: readonly { sets: readonly string[] }[]): 
  * than a session in line ranges (`#L<from>-L<to>`), as the read plan cuts them.
  */
 export function topUpSessions(files: readonly TopUpFile[], room: number): TopUpT["sessions"] {
-  const reads: { path: string; file: string; tokens: number; sets: RuleSet[] }[] = [];
+  const reads: { path: string; file: string; tokens: number; sets: string[] }[] = [];
   for (const f of files) {
     if (f.tokens <= room || f.lines <= 1) {
       reads.push({ path: f.path, file: f.path, tokens: f.tokens, sets: f.sets });
@@ -221,11 +233,17 @@ export async function topUpOf(
     models?: ModelsMode;
   },
 ): Promise<
-  | { lacking: RuleSet[]; files: TopUpFile[]; plan?: ReadPlanFileT; reach?: ReachPlan }
+  | { lacking: string[]; files: TopUpFile[]; plan?: ReadPlanFileT; reach?: ReachPlan }
   | { error: string }
 > {
   const plan = await loadReadPlan(root, repo);
-  const lacking = rulesLacking(plan?.rules);
+  const builtin = rulesLacking(plan?.rules);
+  // G4 (ADR 0176): the organisation's rules the read wasn't given (new, or changed since).
+  // A rule that names no files is given to the next whole read, never topped up alone.
+  const org = orgRulesLacking(plan?.rules, await effectiveRules(root, repo)).filter(
+    (r) => r.files?.length,
+  );
+  const lacking = [...builtin, ...org.map((r) => r.id)];
   if (!lacking.length) return { lacking, files: [], ...(plan ? { plan } : {}) };
   const facts = o.facts?.length ? [...o.facts] : await factsOf(root, repo);
   if (typeof facts === "string") return { error: facts };
@@ -249,10 +267,27 @@ export async function topUpOf(
     facts,
     source: o.source,
     exclude: o.exclude,
-    sets: lacking,
+    sets: builtin,
     ...(o.conventions ? { conventions: o.conventions } : {}),
     reach,
   });
+  // G4: each organisation rule tops up only the files it names (its globs), in reading order;
+  // a rule that names none is given to the next whole read, not a top-up.
+  if (org.length) {
+    const byPath = new Map(files.map((f) => [f.path, f] as const));
+    for (const slice of all.batches.flat()) {
+      if (readingRank(slice.path) === 5) continue;
+      const ids = org.filter((r) => r.files?.length && ruleMatches(r, slice.path)).map((r) => r.id);
+      if (!ids.length) continue;
+      const f = byPath.get(slice.path);
+      if (f) f.sets.push(...ids);
+      else {
+        const add = { path: slice.path, tokens: slice.tokens, lines: slice.of, sets: ids };
+        byPath.set(slice.path, add);
+        files.push(add);
+      }
+    }
+  }
   return { lacking, files, reach, ...(plan ? { plan } : {}) };
 }
 
@@ -269,8 +304,15 @@ const planOr = (
 export async function recordRulesNow(root: string, repo: string, commit: string): Promise<void> {
   const plan = await loadReadPlan(root, repo);
   const { topUp: _t, ...rest } = planOr(plan, repo, commit, 150_000);
-  if (plan?.rules?.hash === FACT_RULES_HASH && !plan.topUp) return;
-  await saveReadPlan(root, { ...rest, rules: rulesNow() });
+  // G4 (ADR 0176): and under the organisation's rules there are now for it.
+  const rules = withOrgIds(rulesNow(), ruleIds(await effectiveRules(root, repo)));
+  if (
+    plan?.rules?.hash === FACT_RULES_HASH &&
+    !plan.topUp &&
+    rules.sets.every((x) => plan.rules!.sets.includes(x))
+  )
+    return;
+  await saveReadPlan(root, { ...rest, rules });
 }
 
 /** A hash of the repo's facts and reviewed lines as they are on disk. */
@@ -310,12 +352,18 @@ export async function recordTopUpVerified(
     const sets = [...new Set([...(plan.rules?.sets ?? []), ...t.sets])];
     await saveReadPlan(root, {
       ...rest,
-      rules: t.hash === FACT_RULES_HASH ? rulesNow() : { hash: t.hash, sets },
+      rules: t.hash === FACT_RULES_HASH ? withOrgIds(rulesNow(), sets) : { hash: t.hash, sets },
     });
     return;
   }
   await saveReadPlan(root, { ...plan, topUp: { ...t, sessions } });
 }
+
+/** G4 (ADR 0176): the rules record with the organisation's rule ids it was given kept. */
+const withOrgIds = (r: { hash: string; sets: string[] }, had: readonly string[]) => ({
+  hash: r.hash,
+  sets: [...r.sets, ...[...new Set(had.filter((x) => x.startsWith("org:")))].sort()],
+});
 
 /** The prompt file's path, relative to the root with forward slashes. */
 export const rulesRelOf = (root: string, repo: string) => `${factsRelOf(root)}/${repo}.rules.md`;
@@ -342,7 +390,7 @@ export async function plannedTopUp(
     models?: ModelsMode;
   },
 ): Promise<
-  { lacking: RuleSet[]; topUp?: TopUpT; facts: Fact[]; reach?: ReachPlan } | { error: string }
+  { lacking: string[]; topUp?: TopUpT; facts: Fact[]; reach?: ReachPlan } | { error: string }
 > {
   const t = await topUpOf(root, repo, o);
   if ("error" in t) return t;
@@ -450,6 +498,7 @@ export async function mapRules(
   await writeFileAtomic(
     join(factsDirOf(root), `${repo}.rules.md`),
     rulesPrompt(repo, o.commit, {
+      orgRules: await effectiveRules(root, repo),
       rel: factsRelOf(root),
       session: next,
       n: n + 1,
@@ -511,10 +560,13 @@ export function rulesPrompt(
     checkout?: string;
     /** ADR 0169: the reach, for the reached model classes among the session's files. */
     reach?: ReachPlan;
+    /** G4 (ADR 0176): the organisation's rules, for the ones this session tops up. */
+    orgRules?: EffectiveRules;
   },
 ): string {
   const s = c.session;
-  const sets = s.sets as RuleSet[];
+  const sets = s.sets.filter((x): x is RuleSet => (RULE_SETS as readonly string[]).includes(x));
+  const orgIds = new Set(s.sets.filter((x) => x.startsWith("org:")));
   const files = s.paths.map((x) => lineRangeOf(x)?.file ?? x);
   // Rule 6: the paths, the facts' ids and the notes hold text from the repo or the organisation:
   // each goes in a data block, neutralised, as the gaps prompt does.
@@ -525,7 +577,7 @@ export function rulesPrompt(
   return [
     `# Top-up of ${repo} at ${commit}`,
     "",
-    `Session ${c.n} of ${c.of}, about ${s.tokens.toLocaleString("en-US")} tokens of source. ${topUpWords(sets)} Open each path below and nothing else: a path ending \`#L<from>-L<to>\` by those lines only, never the whole file.${c.checkout ? ` The paths are in the repo's checkout, \`${c.checkout}\` in this metarepo: open \`${c.checkout}/<path>\` with your file tools; there is no need to look for it or to run a command.` : ""}`,
+    `Session ${c.n} of ${c.of}, about ${s.tokens.toLocaleString("en-US")} tokens of source. ${topUpWords(s.sets.map((x) => (x.startsWith("org:") ? x.slice(4).split("@")[0]! : x)) as RuleSet[])} Open each path below and nothing else: a path ending \`#L<from>-L<to>\` by those lines only, never the whole file.${c.checkout ? ` The paths are in the repo's checkout, \`${c.checkout}\` in this metarepo: open \`${c.checkout}/<path>\` with your file tools; there is no need to look for it or to run a command.` : ""}`,
     "",
     `- Write each fact to \`${c.rel}/${repo}.jsonl\`, appended, with \`commit\` ${commit}. A kept fact you add to is written again whole, under its id.`,
     `- A path that has nothing to add under these rules: a line in \`${c.rel}/${repo}.reviewed.jsonl\`, \`{"path": "<the path>", "why": "..."}\`. Every path below ends with a fact written or a line there.`,
@@ -539,6 +591,9 @@ export function rulesPrompt(
     "",
     factRulesFor(kindsOf(files), undefined, sets),
     "",
+    ...(orgIds.size && c.orgRules
+      ? [readingRulesText({ rules: c.orgRules.rules, builtinOff: [] }, orgIds), ""]
+      : []),
     "## Read",
     "",
     `The paths to open are in the data block below. ${DATA_RULE}`,

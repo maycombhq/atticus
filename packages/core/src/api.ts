@@ -162,7 +162,8 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   corrections and declarations, each with its undo). G6 (ADR 0175): GET /api/graph/views and
  *   PUT /api/graph/views/{name}, a canvas's named filters and layers kept in the metarepo
  *   (diagrams/views/<name>.yaml); GET /api/code-link, a cited line's file to open in an editor.
- *   Additive only.
+ *   G4 (ADR 0176): POST /api/reading-rules/from-pairing, a draft reading rule for the repo's type
+ *   from a call a person paired. Additive only.
  */
 export const API_VERSION = "2.53.0";
 export const DEFAULT_PORT = 4321;
@@ -3145,6 +3146,18 @@ export const CodeLink = z.object({
 export type SavedCanvasViewT = z.infer<typeof SavedCanvasView>;
 export type SavedCanvasViewsT = z.infer<typeof SavedCanvasViews>;
 export type CodeLinkT = z.infer<typeof CodeLink>;
+/** G4 from the canvas (ADR 0176): a draft reading rule for a repo's type, from a pairing. */
+export const RuleFromPairingRequest = z.object({
+  repo: z.string().min(1),
+  line: z.string().min(2),
+});
+export const RuleFromPairingResult = z.object({
+  file: z.string(),
+  key: z.string(),
+  rule: z.string(),
+  activate: z.string(),
+});
+export type RuleFromPairingResultT = z.infer<typeof RuleFromPairingResult>;
 export type DeclareLinkRequestT = z.infer<typeof DeclareLinkRequest>;
 export type FileChangeResultT = z.infer<typeof FileChangeResult>;
 export type AddableViewT = z.infer<typeof AddableView>;
@@ -4469,6 +4482,17 @@ const OPS: Record<string, Record<string, Op>> = {
       errors: [400],
     },
   },
+  "/api/reading-rules/from-pairing": {
+    post: {
+      id: "ruleFromPairing",
+      summary:
+        "Make a pairing a draft reading rule for every repo of the caller's type, in org-pack/reading-rules/types/<type>.yaml, for review (ADR 0176)",
+      tag: "views",
+      body: RuleFromPairingRequest,
+      ok: { status: 200, schema: "RuleFromPairingResult", description: "Drafted" },
+      errors: [400, 404, 409],
+    },
+  },
   "/api/copilot-runs": {
     post: {
       id: "startCopilotRun",
@@ -5284,6 +5308,7 @@ export function openApiDocument(): Record<string, unknown> {
     SavedCanvasView,
     SavedCanvasViews,
     CodeLink,
+    RuleFromPairingResult,
     Question,
     QuestionList,
     AnsweredQuestion,

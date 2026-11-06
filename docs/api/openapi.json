@@ -6907,6 +6907,91 @@
         }
       }
     },
+    "/api/reading-rules/from-pairing": {
+      "post": {
+        "operationId": "ruleFromPairing",
+        "summary": "Make a pairing a draft reading rule for every repo of the caller's type, in org-pack/reading-rules/types/<type>.yaml, for review (ADR 0176)",
+        "tags": [
+          "views"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "repo": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "line": {
+                    "type": "string",
+                    "minLength": 2
+                  }
+                },
+                "required": [
+                  "repo",
+                  "line"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Drafted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuleFromPairingResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict: the file changed since you read it, or the state doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/copilot-runs": {
       "post": {
         "operationId": "startCopilotRun",
@@ -27973,6 +28058,30 @@
         },
         "required": [
           "line"
+        ],
+        "additionalProperties": false
+      },
+      "RuleFromPairingResult": {
+        "type": "object",
+        "properties": {
+          "file": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "rule": {
+            "type": "string"
+          },
+          "activate": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "file",
+          "key",
+          "rule",
+          "activate"
         ],
         "additionalProperties": false
       },

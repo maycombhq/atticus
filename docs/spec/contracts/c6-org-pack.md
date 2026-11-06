@@ -494,3 +494,16 @@ Where: `org-pack/conventions.yaml` (optional; the house conventions a read leans
 | `notReadFolders`        | string[]                      | no       | default `["generated","generated-sources","__generated__","gen","dist","build","out","target","bin","obj","node_modules","vendor","vendored","third_party","third-party",".next",".nuxt","coverage"]` | Folders verify doesn't look in for skipped paths, URLs and topics (R1).                                                                                                            |
 | `housePrefixes`         | string[]                      | no       |                                                                                                                                                                                                       | Import prefixes of the house's own packages. A repo importing one that no taught framework (org-pack/frameworks/) covers is warned of before its first read (R3). None by default. |
 | `notes`                 | string (OrgNote)[] (OrgNotes) | no       |                                                                                                                                                                                                       | Notes for every repo (ADR 0163), in the organisation's own words: what its terms mean and what must hold, as a repo type's `notes` say for its repos. Plain text, never parsed.    |
+
+## ReadingRules
+
+`org-pack/reading-rules/` (ADR 0176): reading rules the organisation owns, in layers read in this order, a later one adding to the earlier and able to switch an earlier rule off for its scope.
+
+| File                          | Applies to                                                                                               |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `imported/<team>/<type>.yaml` | every repo of the type: a pinned copy of another product team's rules, with `source: { from, at, team }` |
+| `org.yaml`                    | every repo                                                                                               |
+| `types/<type>.yaml`           | every repo of the type (the pack's repo type, else the manifest's `type` as written)                     |
+| `repos/<repo>.yaml`           | one repo                                                                                                 |
+
+Each file: `schemaVersion: 1`, `rules` and `off`. A rule: `key` (lower case, dashes; unique in its file), `status` (`active`, default, or `draft`: not given to reads), `rule` (the words a reader follows, 10 to 2000 characters), `files` (globs in the repo; none means every file a whole read reads), `example` (`path:line`), `by`. An `off` entry: `key` (an earlier rule's, or `builtin:<set>` for one of Atticus's rule sets) and `reason`. A rule's id, `org:<key>@<8 hex>` of its words and files, is recorded with each read beside the built-in rule sets (ADR 0167), so a new or changed rule tops up only the files it names. Rules never change the facts file's shape or the verifier.

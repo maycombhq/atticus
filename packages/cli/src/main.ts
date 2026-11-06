@@ -507,6 +507,14 @@ Usage:
   atticus repo-type new <id> --from <repo> [--force]   Draft a repo type from a repo (its build files, dependencies, markers, folders) for you to edit
   atticus repo-type note <type> | --org-wide [--add "..."]   List a repo type's notes (or the org-wide ones), or add one: what the organisation's terms mean and what must hold, in its own words; each read of a repo is handed them
   atticus repo-type rules [--save] [--json]   Draft a checklist rule (status draft) from each note that reads as a rule (all, every, must); --save adds the new drafts to org-pack/checklists/org-notes.yaml for review
+  atticus rules list [<repo>] [--json]   The organisation's reading rules (ADR 0176): every layer's file, or the rules a repo's reads are given, with their layer, drafts and what is switched off
+  atticus rules add --org-wide | --type <t> | --repo <r> --key <k> --rule "..." [--files <glob,glob>] [--example <path:line>] [--draft]   Write a reading rule to a layer's file, for review
+  atticus rules activate <key> --org-wide | --type <t> | --repo <r>   Give a draft rule to reads
+  atticus rules off <key> --reason "..." --org-wide | --type <t> | --repo <r>   Switch an earlier layer's rule (or builtin:<set>) off for this scope, saying why
+  atticus rules draft --type <t> [--repos a,b] | --repo <r> --about "..." [--mode copilot-acp|hand-off]   Copilot drafts rules from what the reads keep missing (rejections, corrections, open questions); each is a draft a person sets active
+  atticus rules try <repo> --rule <key> [--files <n>] [--compare]   One small Copilot session on a few files the rule names: the facts it would add or change; writes nothing
+  atticus rules import <their metarepo> --type <t> --team <team> [--at <tag>]   A pinned copy of another product team's type rules, in reading-rules/imported/<team>/, for review
+  atticus rules notes --type <t> [--save]   The repo type's notes that read as an instruction to a reader, offered (with --save written) as draft reading rules
   atticus scan review <repo>           What the last scan couldn't read: your assistant gives a verdict on each gap and a rule for code it can read; checked [--gaps] [--attempts 3]
   atticus query "<query>"              Find records, e.g. "kind:interface via:gateway -has:pattern"
   atticus query "<words>" --search     Search everything the index holds (records, knowledge items, flows, changes, answered questions, wiki sections, documents), names and ids first [--by words|meaning|both] [--kind k,k] [--limit n] [--json]
@@ -1111,6 +1119,15 @@ const OPTIONS = {
   // ADR 0163: atticus repo-type note.
   add: { type: "string" },
   "org-wide": { type: "boolean" },
+  // G4 (ADR 0176): atticus rules.
+  key: { type: "string" },
+  rule: { type: "string" },
+  files: { type: "string" },
+  example: { type: "string" },
+  about: { type: "string" },
+  at: { type: "string" },
+  team: { type: "string" },
+  compare: { type: "boolean" },
 } satisfies ParseArgsOptionsConfig;
 
 async function dispatchCommand(argv: string[], io: Output): Promise<number> {
@@ -1391,6 +1408,91 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
       },
       io,
     );
+  }
+  // G4 (ADR 0176): the organisation's reading rules.
+  if (group === "rules") {
+    const r = await import("./rules-commands.js");
+    const text = (v: unknown) => (typeof v === "string" ? v : undefined);
+    const scope = {
+      ...(values["org-wide"] === true ? { org: true } : {}),
+      ...(text(values.type) ? { type: text(values.type)! } : {}),
+      ...(text(values.repo) ? { repo: text(values.repo)! } : {}),
+    };
+    if (!command || command === "list")
+      return r.rulesListCommand(root, positionals[2], { json: values.json === true }, io);
+    if (command === "add")
+      return r.rulesAddCommand(
+        root,
+        scope,
+        {
+          ...(text(values.key) ? { key: text(values.key)! } : {}),
+          ...(text(values.rule) ? { rule: text(values.rule)! } : {}),
+          ...(text(values.files) ? { files: text(values.files)! } : {}),
+          ...(text(values.example) ? { example: text(values.example)! } : {}),
+          ...(values.draft === true ? { draft: true } : {}),
+          ...(text(values.by) ? { by: text(values.by)! } : {}),
+        },
+        io,
+      );
+    if (command === "activate" || command === "off")
+      return r.rulesSetCommand(
+        root,
+        command,
+        positionals[2],
+        scope,
+        { ...(text(values.reason) ? { reason: text(values.reason)! } : {}) },
+        io,
+      );
+    if (command === "draft")
+      return r.rulesDraftCommand(
+        root,
+        {
+          ...(text(values.type) ? { type: text(values.type)! } : {}),
+          ...(text(values.repos) ? { repos: text(values.repos)! } : {}),
+          ...(text(values.repo) ? { repo: text(values.repo)! } : {}),
+          ...(text(values.about) ? { about: text(values.about)! } : {}),
+          ...(text(values.mode) ? { mode: text(values.mode)! } : {}),
+        },
+        io,
+      );
+    if (command === "try")
+      return r.rulesTryCommand(
+        root,
+        positionals[2],
+        {
+          ...(text(values.rule) ? { rule: text(values.rule)! } : {}),
+          ...(text(values.files) && /^\d+$/.test(text(values.files)!)
+            ? { files: Number(text(values.files)) }
+            : {}),
+          ...(values.compare === true ? { compare: true } : {}),
+          ...(text(values.mode) ? { mode: text(values.mode)! } : {}),
+        },
+        io,
+      );
+    if (command === "import")
+      return r.rulesImportCommand(
+        root,
+        positionals[2],
+        {
+          ...(text(values.type) ? { type: text(values.type)! } : {}),
+          ...(text(values.team) ? { team: text(values.team)! } : {}),
+          ...(text(values.at) ? { at: text(values.at)! } : {}),
+        },
+        io,
+      );
+    if (command === "notes")
+      return r.rulesNotesCommand(
+        root,
+        {
+          ...(text(values.type) ? { type: text(values.type)! } : {}),
+          ...(values.save === true ? { save: true } : {}),
+        },
+        io,
+      );
+    io.err(
+      "atticus rules list | add | activate | off | draft | try | import | notes (atticus help rules)",
+    );
+    return 2;
   }
   if (group === "repo-type" && command === "rules") {
     const m = await loadRepoTypeCommands();

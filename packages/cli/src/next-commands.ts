@@ -22,7 +22,6 @@ import {
   stepModelsOf,
 } from "@maycombhq/core";
 import { stepClassOfNextStep } from "@maycombhq/ai";
-import { rulesLacking } from "@maycombhq/assistant-files";
 import { changeStore, loadChangePolicy, stageCompletion } from "@maycombhq/changes";
 import { readKnowledge, snapshotDates, workingDays } from "@maycombhq/knowledge";
 import {
@@ -36,6 +35,7 @@ import { readChangeFiles } from "@maycombhq/naysayer";
 import { readChangeTasks } from "@maycombhq/speckit";
 import { readCatalog } from "@maycombhq/scanner";
 import { baseClonePath } from "@maycombhq/workspace";
+import { rulesLackingAll } from "./reading-rules.js";
 import type { Output } from "./commands.js";
 import { onboardingView } from "./ui-api-onboarding.js";
 import {
@@ -293,7 +293,9 @@ export async function readNextState(root: string): Promise<NextState> {
     const stale = mapped && hasFacts ? await staleOf(root, r.id) : undefined;
     // ADR 0167: fresh by commit, read before the reading rules there are now.
     const rules =
-      hasFacts && r.cloned && !(await staleOf(root, r.id)) ? rulesLacking(planFile?.rules) : [];
+      hasFacts && r.cloned && !(await staleOf(root, r.id))
+        ? await rulesLackingAll(root, r.id, planFile?.rules)
+        : [];
     repos.push({
       id: r.id,
       cloned: r.cloned,

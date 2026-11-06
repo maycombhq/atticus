@@ -4,6 +4,10 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### Reading rules your organisation owns (G4)
+
+- `org-pack/reading-rules/`: rules for how your repos are read, in layers (another team's imported and pinned, the organisation's, a repo type's, one repo's), each with its key, words, files, an example line and who wrote it; a later layer can switch an earlier rule (or one of Atticus's sets, `builtin:<set>`) off, saying why. Reads are given them after Atticus's own; a read records each rule's id, so `atticus map --all --stale` tops up only the files a new or changed rule names. `atticus rules list | add | activate | off | draft | try | import | notes`: Copilot drafts rules for a type from what the reads keep missing, `try` shows what a rule would change and writes nothing, `import` takes another team's rules at a tag. On the canvas, a pairing can become a draft rule for every repo of its type. ADR 0176; guide: docs/guide/reading-rules.md.
+
 ### A canvas you work in (G6)
 
 - Above the canvas, **Layers, filters and tools**: layers (read and cited, guesses and gaps, declared, paired, outside systems, topics, only mismatches); a filter (`team:`, `system:`, `type:`, `path:/accounts/**`, words); colour boxes by gaps or open questions; the blast radius of the selected box (upstream, downstream or both, depth 1–5); a trace hop by hop; the picture's open problems; compare with a snapshot (added links marked new, those gone listed); saved views kept as `diagrams/views/<name>.yaml`; export as Mermaid, draw.io, SVG, PNG or PDF. A citation opens its file at the line in VS Code or IntelliJ. ADR 0175.

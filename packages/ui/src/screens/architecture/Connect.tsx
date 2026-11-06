@@ -321,6 +321,7 @@ export function Pairing(p: {
               {C.undo}
             </button>
           )}
+          {written.lines.length > 0 && <MakeRule repo={p.from} line={written.lines[0]!} />}
         </div>
       )}
       {undone && (
@@ -329,6 +330,47 @@ export function Pairing(p: {
         </p>
       )}
     </div>
+  );
+}
+
+/** G4 (ADR 0176): the pairing as a draft reading rule for every repo of this repo's type. */
+function MakeRule({ repo, line }: { repo: string; line: string }) {
+  const [busy, setBusy] = useState(false);
+  const [made, setMade] = useState<Api.RuleFromPairingResultT | undefined>();
+  const [error, setError] = useState<string | undefined>();
+  if (made)
+    return (
+      <div className="stack" role="status">
+        <p className="ev-say">{C.ruleMade(made.file)}</p>
+        <Cmd text={made.activate} />
+      </div>
+    );
+  return (
+    <>
+      <button
+        type="button"
+        className="btn"
+        disabled={busy}
+        aria-busy={busy}
+        onClick={() => {
+          setBusy(true);
+          setError(undefined);
+          api<Api.RuleFromPairingResultT>("/api/reading-rules/from-pairing", {
+            method: "POST",
+            body: { repo, line },
+          })
+            .then(setMade, (e: unknown) => setError(errorOf(e)))
+            .finally(() => setBusy(false));
+        }}
+      >
+        {busy ? C.makingRule : C.makeRule}
+      </button>
+      {error && (
+        <p role="alert" className="state error">
+          {error}
+        </p>
+      )}
+    </>
   );
 }
 

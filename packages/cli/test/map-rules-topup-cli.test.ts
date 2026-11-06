@@ -211,6 +211,40 @@ describe("map --all --stale tops up repos read under older rules (ADR 0167)", ()
   });
 });
 
+describe("an organisation's reading rule tops up only the files it names (ADR 0176)", () => {
+  it("plans a top-up of the rule's files for a repo read before it, and none once recorded", async () => {
+    const root = linkEstate();
+    recordRules(root, "forge-cards", rulesNow());
+    recordRules(root, "forge-accounts", rulesNow());
+    write(
+      root,
+      "org-pack/reading-rules/types/spring-boot.yaml",
+      [
+        "schemaVersion: 1",
+        "rules:",
+        "  - key: controller-paths",
+        "    rule: \"A controller's class-level @RequestMapping is part of every route's path.\"",
+        '    files: ["src/main/java/**/*Controller.java"]',
+        "",
+      ].join("\n"),
+    );
+    const plan = await dryRun(root, { stale: true });
+    const cards = plan.items.find((i) => i.repo === "forge-cards");
+    expect(cards).toMatchObject({ kind: "rules" });
+    expect(cards!.sets![0]).toMatch(/^org:controller-paths@[0-9a-f]{8}$/);
+    expect(cards!.parts.flatMap((p) => p.paths)).toEqual([
+      "src/main/java/forge/cards/CardsController.java",
+    ]);
+    // Once a read records the rule's id, nothing is lacking.
+    recordRules(root, "forge-cards", {
+      ...rulesNow(),
+      sets: [...rulesNow().sets, cards!.sets![0]!],
+    });
+    const again = await dryRun(root, { stale: true });
+    expect(again.items.find((i) => i.repo === "forge-cards")).toBeUndefined();
+  });
+});
+
 // ---------------------------------------------------------------- the ledger (real git, local)
 
 function gitIn(dir: string) {

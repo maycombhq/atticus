@@ -2,12 +2,7 @@ import { existsSync } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { parse } from "yaml";
-import {
-  ASSISTANT_FORMATS,
-  assistantTier,
-  readProbes,
-  rulesLacking,
-} from "@maycombhq/assistant-files";
+import { ASSISTANT_FORMATS, assistantTier, readProbes } from "@maycombhq/assistant-files";
 import {
   AcpSetupError,
   AcpSignInError,
@@ -30,6 +25,7 @@ import {
 import { estateRepos, productionRepos } from "@maycombhq/scanner";
 import { dirSource, sameCommit, sessionTokensFor } from "@maycombhq/verify";
 import type { GitRunner } from "@maycombhq/workspace";
+import { rulesLackingAll } from "./reading-rules.js";
 import type { Output } from "./commands.js";
 import {
   copilotAcpAllowed,
@@ -830,7 +826,7 @@ async function covered(
   if (item.kind === "rules") {
     // ADR 0167: the session is done once a verify passed after it was given (or none is left).
     const plan = await loadReadPlan(root, item.repo);
-    if (!plan?.topUp) return rulesLacking(plan?.rules).length === 0;
+    if (!plan?.topUp) return (await rulesLackingAll(root, item.repo, plan?.rules)).length === 0;
     return !!plan.topUp.sessions[part.part - 1]?.done;
   }
   if (item.total > 1) {

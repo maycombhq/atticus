@@ -163,6 +163,28 @@ describe("connect two boxes (ADR 0174, G1)", () => {
       paired: "entry.post.partners-northwind-charges-chargeid-capture",
     });
 
+    // G4 (ADR 0176): the pairing as a draft rule for every repo of forge-billing's type.
+    const fr = await call("POST", "/api/reading-rules/from-pairing", {
+      repo: "forge-billing",
+      line: w.lines[0],
+    });
+    expect(fr.status).toBe(200);
+    const made = Api.RuleFromPairingResult.parse(fr.body);
+    expect(made).toMatchObject({
+      file: "org-pack/reading-rules/types/spring-boot.yaml",
+      key: "paths-to-forge-partner-gateway",
+      activate: "atticus rules activate paths-to-forge-partner-gateway --type spring-boot",
+    });
+    expect(made.rule).toContain("`captureChargePath`");
+    expect(await readFile(join(root, made.file), "utf8")).toContain("status: draft");
+    expect(
+      (
+        await call("POST", "/api/reading-rules/from-pairing", {
+          repo: "forge-billing",
+          line: w.lines[0],
+        })
+      ).status,
+    ).toBe(409);
     const u = await call("POST", "/api/facts/forge-billing/corrections/undo", { line: w.lines[0] });
     expect(u.status).toBe(200);
     expect((await readFile(file, "utf8")).trim()).toBe("");

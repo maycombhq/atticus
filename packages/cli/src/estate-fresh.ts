@@ -1,9 +1,9 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { rulesLacking } from "@maycombhq/assistant-files";
 import { citedFiles, factsDirOf, factsFileOf, factsRelOf, parseFacts } from "@maycombhq/core";
 import { dirSource, rereadPlan, sameCommit } from "@maycombhq/verify";
 import { loadRepos, type GitRunner } from "@maycombhq/workspace";
+import { rulesLackingAll } from "./reading-rules.js";
 import type { Output } from "./commands.js";
 import { carryOf, checkoutOf, excludesOf } from "./facts-files.js";
 import { loadReadPlan } from "./map-parts.js";
@@ -153,7 +153,11 @@ async function freshOf(
   const at = { ...counted, head };
   if (facts.every((f) => sameCommit(f.commit, head))) {
     // ADR 0167: fresh by commit; read under the rules there are now, or topped up for them.
-    const lacking = rulesLacking((await loadReadPlan(root, repo).catch(() => undefined))?.rules);
+    const lacking = await rulesLackingAll(
+      root,
+      repo,
+      (await loadReadPlan(root, repo).catch(() => undefined))?.rules,
+    );
     return lacking.length
       ? {
           ...at,
