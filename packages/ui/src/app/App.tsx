@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import { LoadingBar } from "./loading-bar.js";
 import { api, SERVER_EVENT, useApi } from "../api/client.js";
 import { hostBridge } from "../api/bridge.js";
 import { COPY } from "../copy.js";
@@ -233,6 +234,7 @@ export function App() {
   return (
     <MeProvider>
       <div className="shell">
+        <LoadingBar />
         <a className="skip" href="#main">
           {T.skipToContent}
         </a>

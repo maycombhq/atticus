@@ -2,6 +2,14 @@
 
 All notable changes to Atticus. Versions follow [Semantic Versioning](https://semver.org); contracts C1 to C6 change only with an ADR, a schema version and a migration (`atticus upgrade`).
 
+## Unreleased
+
+### Faster pages, and a bar for anything loading
+
+- A thin loading bar runs across the top of the app whenever any request is in flight, however short, and every panel still waiting shows its own; both are said to screen readers and move only when motion is allowed.
+- The Questions page is one request: the list carries the counts by state (and per repo) for the top of the page (`counts`, local API 2.51.0), every question is read once, and the repos' facts the rule offers need are parsed once per version of each file, not on every load.
+- A repo's facts view (the evidence on the canvas and Know) is worked out once per version of the files it reads (its facts, corrections, audit and the questions) and kept, so 40 repos' evidence comes back at once on a second look and after unrelated changes.
+
 ## 2.0.0-beta.20 (2026-11-06)
 
 - A gateway route with no forwarding call (no call `from` it) is a gap, as an entry no flow follows is: verify lists it under `entriesNoFlowFollows` (marked `route`) and `atticus map <repo> --gaps` asks for the call it forwards to its RouteRule's target. A proxy read with its routes and none of its forwarding calls drew nothing past the gateway, and a `--match` answer for its calls had nothing to apply to.

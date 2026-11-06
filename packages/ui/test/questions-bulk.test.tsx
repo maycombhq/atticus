@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { COPY } from "../src/copy.js";
 import {
   bulkBody,
+  countsOf,
   byRepo,
   QuestionCounts,
   questionCounts,
@@ -45,6 +46,27 @@ describe("the counts at the top", () => {
   it("counts each state, in one repo when one is picked", () => {
     expect(questionCounts(qs)).toEqual({ open: 2, answered: 1, retired: 1, total: 4, repos: 2 });
     expect(questionCounts(qs, "forge-proxy")).toMatchObject({ open: 1, answered: 1, total: 3 });
+  });
+
+  it("takes them from the one list request when the server gives them (beta.21)", () => {
+    const byRepo = {
+      "forge-proxy": { open: 1, answered: 1, retired: 1, total: 3 },
+      "forge-teller": { open: 1, answered: 0, retired: 0, total: 1 },
+    };
+    // The list shows only the open ones; the counts are every question's.
+    const d = {
+      questions: qs.filter((x) => x.state === "open"),
+      problems: [],
+      counts: { open: 2, answered: 1, retired: 1, total: 4, byRepo },
+    };
+    expect(countsOf(d)).toEqual({ open: 2, answered: 1, retired: 1, total: 4, repos: 2 });
+    expect(countsOf(d, "forge-proxy")).toEqual({
+      open: 1,
+      answered: 1,
+      retired: 1,
+      total: 3,
+      repos: 1,
+    });
   });
 
   it("shows them, Open and All picking the list's filter, and how much is settled", () => {

@@ -1,4 +1,5 @@
 import { appendFile, mkdir, readFile } from "node:fs/promises";
+import { filesIn, memoByFiles } from "./file-memo.js";
 import { join } from "node:path";
 import {
   Api,
@@ -6,6 +7,7 @@ import {
   FACT_FIXED_FIELDS,
   FactCorrection,
   factsDirOf,
+  questionsDirOf,
   factsRelOf,
   listQuestions,
   parseAuditFile,
@@ -106,7 +108,23 @@ async function readFacts(root: string, repo: string) {
   };
 }
 
+/** beta.21: a repo's facts view, worked out again only when one of the files it reads changes. */
 export async function repoFactsView(root: string, repo: string): Promise<View> {
+  const dir = factsDirOf(root);
+  return memoByFiles(
+    `facts-view\u0000${root}\u0000${repo}`,
+    [
+      ...[`${repo}.jsonl`, `${repo}.corrections.jsonl`, `${repo}.audit.yaml`].map((f) =>
+        join(dir, f),
+      ),
+      // Its open questions are part of the view.
+      ...(await filesIn(questionsDirOf(root))),
+    ],
+    () => repoFactsViewNow(root, repo),
+  );
+}
+
+async function repoFactsViewNow(root: string, repo: string): Promise<View> {
   const f = await readFacts(root, repo);
   const cFile = `${factsRelOf(root)}/${repo}.corrections.jsonl`;
   const c = await readCorrections(root, repo);

@@ -34,10 +34,12 @@ export function uiQuestionRoutes(r: Router, ctx: ServerContext, deps: { now?: ()
           throw badRequest("state is open, answered or retired.");
         const mine = strParam(query, "mine");
         if (mine !== undefined && mine !== "true") throw badRequest("mine is true, or left out.");
-        const listed = await listQuestions(
-          ctx.root,
-          state ? { state: state as QuestionState } : {},
-        );
+        // beta.21: every question read once; the list is the asked state, the counts all of them.
+        const every = await listQuestions(ctx.root);
+        const listed = {
+          ...every,
+          questions: state ? every.questions.filter((q) => q.state === state) : every.questions,
+        };
         // ADR 0140: in the order to ask them, each with its owner; mine, the person's teams' only.
         const { routeQuestions } = await import("./question-routing.js");
         const routed = await routeQuestions(
@@ -45,7 +47,29 @@ export function uiQuestionRoutes(r: Router, ctx: ServerContext, deps: { now?: ()
           listed.questions,
           mine ? { mine: ctx.user } : {},
         );
+        const n = (s: string) => every.questions.filter((q) => q.state === s).length;
         const body = {
+          counts: {
+            open: n("open"),
+            answered: n("answered"),
+            retired: n("retired"),
+            total: every.questions.length,
+            byRepo: Object.fromEntries(
+              [...new Set(every.questions.map((q) => q.repo))].sort().map((r) => {
+                const of = every.questions.filter((q) => q.repo === r);
+                const k = (s: string) => of.filter((q) => q.state === s).length;
+                return [
+                  r,
+                  {
+                    open: k("open"),
+                    answered: k("answered"),
+                    retired: k("retired"),
+                    total: of.length,
+                  },
+                ];
+              }),
+            ),
+          },
           questions: routed.questions,
           problems: [...listed.problems, ...routed.problems],
           about: routed.about,

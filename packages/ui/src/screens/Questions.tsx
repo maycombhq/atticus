@@ -23,6 +23,8 @@ export interface QuestionListView {
   about?: Api.QuestionListT["about"];
   /** ADR 0140: with mine=true, the person and their teams. */
   me?: Api.QuestionListT["me"];
+  /** beta.21: every question on file by state, and per repo. */
+  counts?: Api.QuestionListT["counts"];
 }
 
 type About = NonNullable<Api.QuestionListT["about"]>[string];
@@ -967,6 +969,21 @@ export function questionCounts(qs: QuestionView[], repo = "") {
   };
 }
 
+/**
+ * beta.21: the counts for the top of the page from the one list request: the server's, by state,
+ * for the whole estate; a picked repo's from the questions listed.
+ */
+export function countsOf(d: QuestionListView, repo = "") {
+  if (!d.counts) return questionCounts(d.questions, repo);
+  const by = d.counts.byRepo ?? {};
+  if (repo) {
+    const c = by[repo] ?? { open: 0, answered: 0, retired: 0, total: 0 };
+    return { ...c, repos: 1 };
+  }
+  const { byRepo: _by, ...all } = d.counts;
+  return { ...all, repos: Object.keys(by).length };
+}
+
 /** The counts at the top of the page; Open and All pick the list's filter. */
 export function QuestionCounts(p: {
   counts: ReturnType<typeof questionCounts>;
@@ -1012,9 +1029,7 @@ export function Questions({ hash }: { hash: string }) {
   const [whose, setWhose] = useState<"all" | "mine">("all");
   const list = useApi<QuestionListView>(questionsUrl(filter, whose));
   useReloadOnFiles(list);
-  // Every question, for the counts at the top, whichever the list shows.
-  const every = useApi<QuestionListView>(questionsUrl("all", whose));
-  useReloadOnFiles(every);
+
   const current = questionRoute(hash);
   const [text, setText] = useState("");
   const [repo, setRepo] = useState("");
@@ -1084,9 +1099,9 @@ export function Questions({ hash }: { hash: string }) {
       <p className="muted" style={{ margin: "4px 0 12px", fontSize: 12.5, lineHeight: 1.55 }}>
         {C.intro}
       </p>
-      {every.state === "ready" && (
+      {list.state === "ready" && (
         <QuestionCounts
-          counts={questionCounts(every.data.questions, repo)}
+          counts={countsOf(list.data, repo)}
           {...(repo ? { repo } : {})}
           filter={filter}
           onFilter={setFilter}
@@ -1115,10 +1130,7 @@ export function Questions({ hash }: { hash: string }) {
               key={picked.map((q) => q.id).join(",")}
               ids={picked.map((q) => q.id)}
               questions={picked}
-              onDone={() => {
-                list.reload();
-                every.reload();
-              }}
+              onDone={() => list.reload()}
               onClear={() => setSelected(new Set())}
             />
           ) : current ? (

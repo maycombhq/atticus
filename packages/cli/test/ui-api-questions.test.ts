@@ -64,6 +64,12 @@ describe("the questions API (ADR 0078)", () => {
     const open = await call("GET", "/api/questions?state=open");
     expect((open.body.questions as unknown[]).length).toBe(1);
     expect((await call("GET", "/api/questions?state=maybe")).status).toBe(400);
+    // beta.21: the counts are every question's, whichever state was listed, and per repo.
+    const counts = Api.QuestionList.parse(open.body).counts!;
+    const everyQ = Api.QuestionList.parse(all.body).questions;
+    expect(counts.total).toBe(everyQ.length);
+    expect(counts.open).toBe(everyQ.filter((q) => q.state === "open").length);
+    expect(Object.values(counts.byRepo!).reduce((n, c) => n + c.total, 0)).toBe(everyQ.length);
   });
 
   it("says who each question goes to, and with mine=true keeps the person's teams' (ADR 0140)", async () => {

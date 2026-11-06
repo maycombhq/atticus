@@ -1409,3 +1409,47 @@ a.q-item[aria-current="true"] {
   width: 13px;
   flex: none;
 }
+
+/* beta.21: anything loading shows a bar, however short. */
+.loading-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  z-index: 1000;
+  overflow: hidden;
+  pointer-events: none;
+}
+.loading-bar.panel {
+  position: relative;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--chip-line);
+  margin-bottom: 4px;
+}
+.loading-bar-run {
+  height: 100%;
+  width: 40%;
+  background: var(--accent);
+  border-radius: 2px;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .loading-bar-run {
+    animation: loading-run 1.1s ease-in-out infinite;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .loading-bar-run {
+    width: 100%;
+    opacity: 0.6;
+  }
+}
+@keyframes loading-run {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(250%);
+  }
+}

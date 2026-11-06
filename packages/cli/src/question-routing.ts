@@ -1,4 +1,4 @@
-import { readdir, readFile } from "node:fs/promises";
+import { readdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { parse } from "yaml";
 import {
@@ -63,6 +63,23 @@ export interface RoutedQuestions {
 }
 
 /**
+ * beta.21: a facts file parsed once per version of it (its size and time), not on every
+ * request: the Questions page asked for every repo's facts each time it loaded.
+ */
+const parsed = new Map<string, { size: number; mtimeMs: number; facts: Fact[] }>();
+async function factsOnFile(path: string): Promise<Fact[] | undefined> {
+  const st = await stat(path).catch(() => undefined);
+  if (!st) return undefined;
+  const hit = parsed.get(path);
+  if (hit && hit.size === st.size && hit.mtimeMs === st.mtimeMs) return hit.facts;
+  const text = await readFile(path, "utf8").catch(() => undefined);
+  if (text === undefined) return undefined;
+  const facts = parseFactsLines(text).facts;
+  parsed.set(path, { size: st.size, mtimeMs: st.mtimeMs, facts });
+  return facts;
+}
+
+/**
  * Beta.12: the rule each open targets question could be answered with to cover the other open
  * targets questions of its repo whose calls share its path prefix or host (`--match
  * '/accounts/**'`), read from the questions on file and the repos' facts.
@@ -76,10 +93,8 @@ export async function ruleOffers(
   if (open.length < 2) return new Map();
   const facts = new Map<string, Fact[]>();
   for (const repo of new Set(open.map((q) => q.repo))) {
-    const text = await readFile(join(factsDirOf(root), `${repo}.jsonl`), "utf8").catch(
-      () => undefined,
-    );
-    if (text !== undefined) facts.set(repo, parseFactsLines(text).facts);
+    const f = await factsOnFile(join(factsDirOf(root), `${repo}.jsonl`));
+    if (f) facts.set(repo, f);
   }
   // The scanner is loaded only when there is something to offer: listing stays light.
   const { targetRuleOffers } = await import("@maycombhq/scanner");

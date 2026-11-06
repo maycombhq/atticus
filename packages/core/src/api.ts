@@ -149,8 +149,9 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   calls. Additive only.
  * 2.50.0 (ADR 0172): the contract check's counts give `unlinked`, the calls no link starts at.
  *   Additive only.
+ * 2.51.0: the questions list gives `counts` by state. Additive only.
  */
-export const API_VERSION = "2.50.0";
+export const API_VERSION = "2.51.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -2453,6 +2454,30 @@ export const ReconcileRequest = z.strictObject({ diagram: z.string().min(1) });
 export const QuestionList = z.object({
   questions: z.array(Question),
   problems: z.array(z.object({ file: z.string(), message: z.string() })),
+  /**
+   * 2.51.0: every question on file by state, whatever `state` or `mine` the list asked for, so a
+   * page shows its counts from the one request.
+   */
+  counts: z
+    .object({
+      open: z.number().int(),
+      answered: z.number().int(),
+      retired: z.number().int(),
+      total: z.number().int(),
+      /** The same, per repo, for a page that shows one repo's. */
+      byRepo: z
+        .record(
+          z.string(),
+          z.object({
+            open: z.number().int(),
+            answered: z.number().int(),
+            retired: z.number().int(),
+            total: z.number().int(),
+          }),
+        )
+        .optional(),
+    })
+    .optional(),
   /**
    * 2.33.0 (ADR 0140), by question id: the changes in flight that rest on it, how many calls its
    * answer joins, and the team it goes to (the repo manifest's owner, named by roles.yaml) or why

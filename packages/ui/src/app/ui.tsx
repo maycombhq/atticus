@@ -1,6 +1,7 @@
 import { useState, type KeyboardEvent, type ReactNode } from "react";
 import { isOffline, type Loaded } from "../api/client.js";
 import { COPY } from "../copy.js";
+import { PanelBar } from "./loading-bar.js";
 
 const TX = COPY.common;
 
@@ -63,6 +64,7 @@ export function View<T>(p: {
   if (p.of.state === "loading")
     return (
       <div className="stack" aria-busy="true" aria-live="polite">
+        <PanelBar />
         <span className="sr">{COPY.app.loading}</span>
         <div className="skeleton" style={{ width: "80%" }} />
         <div className="skeleton" style={{ width: "60%" }} />

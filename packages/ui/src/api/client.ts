@@ -71,9 +71,33 @@ export function parseBody(text: string, status: number): unknown {
 /** The title the VS Code extension gives a call the local API didn't answer. */
 const PANEL_DOWN = "The Atticus app isn't answering";
 
+/** beta.21: the event the loading bar listens to: how many requests are in flight now. */
+export const BUSY_EVENT = "atticus:busy";
+let inFlight = 0;
+/** How many requests are in flight now (the loading bar's first look). */
+export const requestsInFlight = (): number => inFlight;
+const busy = (by: 1 | -1) => {
+  inFlight = Math.max(0, inFlight + by);
+  if (typeof window !== "undefined")
+    window.dispatchEvent(new CustomEvent(BUSY_EVENT, { detail: inFlight }));
+};
+
+/** A call to the local API; every one counts toward the loading bar while it is in flight. */
 export async function api<T>(
   path: string,
   o: { method?: string; body?: unknown; signal?: AbortSignal } = {},
+): Promise<T> {
+  busy(1);
+  try {
+    return await call<T>(path, o);
+  } finally {
+    busy(-1);
+  }
+}
+
+async function call<T>(
+  path: string,
+  o: { method?: string; body?: unknown; signal?: AbortSignal },
 ): Promise<T> {
   const bridge = hostBridge();
   if (bridge) {
