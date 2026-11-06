@@ -55,7 +55,7 @@ const does = [
 ];
 
 // What the current release added, in plain words; the CHANGELOG has every item.
-const release = "2.0.0-beta.18";
+const release = "2.0.0-beta.19";
 const news = [
   {
     body: "Unattended Copilot, steadier: no session within a session, gaps passes prepared like top-ups, and a part is done only once something was written for it.",

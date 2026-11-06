@@ -2,7 +2,7 @@
 
 All notable changes to Atticus. Versions follow [Semantic Versioning](https://semver.org); contracts C1 to C6 change only with an ADR, a schema version and a migration (`atticus upgrade`).
 
-## Unreleased
+## 2.0.0-beta.19 (2026-11-06)
 
 - A call to a host a read repo lists joins that repo only where one of its endpoints serves the call, as the facts join already required: a host many repos call, listed on one repo (say by answering "which repo is this host"), drew every call to it there as an inferred link with nothing cited at that end. A repo not read yet joins by its hosts as before.
 
