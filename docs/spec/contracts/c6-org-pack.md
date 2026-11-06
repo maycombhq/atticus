@@ -495,19 +495,24 @@ Where: `org-pack/conventions.yaml` (optional; the house conventions a read leans
 | `housePrefixes`         | string[]                      | no       |                                                                                                                                                                                                       | Import prefixes of the house's own packages. A repo importing one that no taught framework (org-pack/frameworks/) covers is warned of before its first read (R3). None by default. |
 | `notes`                 | string (OrgNote)[] (OrgNotes) | no       |                                                                                                                                                                                                       | Notes for every repo (ADR 0163), in the organisation's own words: what its terms mean and what must hold, as a repo type's `notes` say for its repos. Plain text, never parsed.    |
 
-## ReadingRules
+## ReadingRulesFile
 
-`org-pack/reading-rules/` (ADR 0176): reading rules the organisation owns, in layers read in this order, a later one adding to the earlier and able to switch an earlier rule off for its scope.
+Where: `org-pack/reading-rules/org.yaml, types/<type>.yaml, repos/<repo>.yaml and imported/<team>/<type>.yaml` (optional; the organisation's reading rules in layers, ADR 0176; skills, agents and instructions beside them are Markdown, ADR 0177).
 
-| File                          | Applies to                                                                                               |
-| ----------------------------- | -------------------------------------------------------------------------------------------------------- |
-| `imported/<team>/<type>.yaml` | every repo of the type: a pinned copy of another product team's rules, with `source: { from, at, team }` |
-| `org.yaml`                    | every repo                                                                                               |
-| `types/<type>.yaml`           | every repo of the type (the pack's repo type, else the manifest's `type` as written)                     |
-| `repos/<repo>.yaml`           | one repo                                                                                                 |
-
-Each file: `schemaVersion: 1`, `rules` and `off`. A rule: `key` (lower case, dashes; unique in its file), `status` (`active`, default, or `draft`: not given to reads), `rule` (the words a reader follows, 10 to 2000 characters), `files` (globs in the repo; none means every file a whole read reads), `example` (`path:line`), `by`. An `off` entry: `key` (an earlier rule's, or `builtin:<set>` for one of Atticus's rule sets) and `reason`. A rule's id, `org:<key>@<8 hex>` of its words and files, is recorded with each read beside the built-in rule sets (ADR 0167), so a new or changed rule tops up only the files it names. Rules never change the facts file's shape or the verifier.
-
-## Skills, agents and instructions
-
-`org-pack/skills/<name>/SKILL.md` (with the skill's other files), `org-pack/agents/<name>.md` and `org-pack/instructions/<name>.md` (ADR 0177): the organisation's own, and under `imported/<team>/` another team's, copied by `atticus skills import`, with `org-pack/imported/<team>.yaml` saying where from (`team`, `from`, `at`, and each item's files with a short hash). Markdown with optional front matter (`name`, `description`; instructions may give `applyTo`). `atticus skills write` writes them for each assistant and keeps `org-pack/skills/.written.yaml` (each written file's hash), so a file edited after it was written is kept.
+| Field             | Type     | Required | Values                              | Description                                                                                                    |
+| ----------------- | -------- | -------- | ----------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `schemaVersion`   | 1        | yes      |                                     |                                                                                                                |
+| `source`          | object   | no       |                                     | For an imported copy: where it came from and at which version.                                                 |
+| `source.from`     | string   | yes      |                                     |                                                                                                                |
+| `source.at`       | string   | yes      |                                     |                                                                                                                |
+| `source.team`     | string   | yes      |                                     |                                                                                                                |
+| `rules`           | object[] | no       |                                     |                                                                                                                |
+| `rules[].key`     | string   | yes      |                                     | Names the rule in its layer and the ones after it: a change re-reads only what it matches.                     |
+| `rules[].status`  | enum     | no       | `active`, `draft`; default `active` | draft: proposed (by Copilot or a person), not given to readers until a person sets it active.                  |
+| `rules[].rule`    | string   | yes      |                                     | The rule, in words a person and Copilot both read.                                                             |
+| `rules[].files`   | string[] | no       |                                     | The files it is about, as globs in the repo (`src/main/java/**\/*Client.java`); none: every file a read reads. |
+| `rules[].example` | string   | no       |                                     | A cited line the rule is about (`path:line`), so a reviewer can check it.                                      |
+| `rules[].by`      | string   | no       |                                     | Where it came from: a person, or drafted by Copilot and kept by a person.                                      |
+| `off`             | object[] | no       |                                     |                                                                                                                |
+| `off[].key`       | string   | yes      |                                     | A rule's key from an earlier layer, or `builtin:<set>` for a built-in rule set.                                |
+| `off[].reason`    | string   | yes      |                                     |                                                                                                                |

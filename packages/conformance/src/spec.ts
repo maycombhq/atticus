@@ -260,6 +260,11 @@ const CONTRACTS: Contract[] = [
         where:
           "org-pack/conventions.yaml (optional; the house conventions a read leans on, ADR 0147)",
       },
+      {
+        name: "ReadingRulesFile",
+        where:
+          "org-pack/reading-rules/org.yaml, types/<type>.yaml, repos/<repo>.yaml and imported/<team>/<type>.yaml (optional; the organisation's reading rules in layers, ADR 0176; skills, agents and instructions beside them are Markdown, ADR 0177)",
+      },
     ],
   },
 ];

@@ -105,6 +105,9 @@ const AREA_BY_WORD: Record<string, string> = {
   spec: "repos",
   estate: "repos",
   "repo-type": "repos",
+  // ADR 0176, 0177: reading rules, and skills and agents, set up for the organisation.
+  rules: "repos",
+  skills: "start",
   repo: "repos",
   repos: "repos",
   workspace: "repos",
