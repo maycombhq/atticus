@@ -157,7 +157,9 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   /api/links/connect (G1, a call paired with an API, a `link` line in the caller's
  *   corrections); POST /api/facts/{repo}/corrections/undo (a correction's line removed); GET and
  *   PUT /api/repos/{repo}/owner (G2, a repo's owner and system in its manifest, a team added to
- *   roles.yaml for review). Additive only.
+ *   roles.yaml for review); G3: POST /api/declared-links and its undo, GET /api/boxes/addable,
+ *   POST /api/boxes (a new outside system, for review), GET /api/boxes/corrections (a box's
+ *   corrections and declarations, each with its undo). Additive only.
  */
 export const API_VERSION = "2.53.0";
 export const DEFAULT_PORT = 4321;
@@ -294,6 +296,8 @@ export const HIER_EDGE_TYPES = [
  * short name (`service-name`) the caller's own cited namespace doesn't resolve.
  */
 export const LINK_HOWS = [
+  // 2.53.0 (ADR 0174, G1): a person paired the call with the entry on the canvas.
+  "person",
   "answer",
   "named",
   "repo",
@@ -3051,6 +3055,72 @@ export const SetRepoOwnerResult = z.object({
   verify: z.string(),
   commit: z.string(),
 });
+/** G3: a link the code can't show, declared on the canvas. */
+export const DeclareLinkRequest = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("topic"),
+    system: z.string().min(1),
+    topic: z.string().min(1).max(300),
+    side: z.enum(["publishes", "listens"]),
+    preview: z.boolean().optional(),
+  }),
+  z.object({
+    kind: z.literal("call"),
+    system: z.string().min(1),
+    /** `METHOD /path` as the gateway serves it, or the route's handler `proxy/flow`. */
+    route: z.string().min(1).max(300),
+    preview: z.boolean().optional(),
+  }),
+]);
+export const FileChangeResult = z.object({
+  written: z.boolean(),
+  files: z.array(z.object({ file: z.string(), changes: z.array(LineChangeView) })),
+  verify: z.string(),
+  commit: z.string(),
+});
+export const UndeclareLinkRequest = z.object({
+  kind: z.enum(["topic", "call"]),
+  system: z.string().min(1),
+  value: z.string().min(1),
+});
+/** G3: what can be added to the picture: repos (read or not), systems and teams. */
+export const AddableView = z.object({
+  repos: z.array(z.object({ id: z.string(), name: z.string(), read: z.boolean() })),
+  systems: z.array(z.object({ id: z.string(), name: z.string(), boundary: z.string().optional() })),
+  teams: z.array(z.object({ id: z.string(), name: z.string() })),
+});
+export const AddSystemRequest = z.object({
+  id: z.string().regex(/^[a-z0-9][a-z0-9-]{0,62}$/),
+  name: z.string().min(1).max(120),
+  boundary: z.enum(["vendor", "internal"]),
+  owner: z.string().min(1).optional(),
+  preview: z.boolean().optional(),
+});
+/** G3: a box's corrections and declarations, each with what undoes it. */
+export const BoxCorrections = z.object({
+  items: z.array(
+    z.object({
+      kind: z.enum(["edit", "wrong", "link", "topic", "call"]),
+      /** In words: what it says. */
+      says: z.string(),
+      by: z.string().optional(),
+      at: z.string().optional(),
+      file: z.string(),
+      /** What undoes exactly it: the line to remove, or the declaration. */
+      undo: z.union([
+        z.object({ repo: z.string(), line: z.string() }),
+        z.object({ kind: z.enum(["topic", "call"]), system: z.string(), value: z.string() }),
+      ]),
+      /** A correction the latest read didn't meet: kept, said. */
+      stale: z.boolean().optional(),
+    }),
+  ),
+});
+export type DeclareLinkRequestT = z.infer<typeof DeclareLinkRequest>;
+export type FileChangeResultT = z.infer<typeof FileChangeResult>;
+export type AddableViewT = z.infer<typeof AddableView>;
+export type AddSystemRequestT = z.infer<typeof AddSystemRequest>;
+export type BoxCorrectionsT = z.infer<typeof BoxCorrections>;
 export type RepoOwnerViewT = z.infer<typeof RepoOwnerView>;
 export type SetRepoOwnerRequestT = z.infer<typeof SetRepoOwnerRequest>;
 export type SetRepoOwnerResultT = z.infer<typeof SetRepoOwnerResult>;
@@ -4286,6 +4356,60 @@ const OPS: Record<string, Record<string, Op>> = {
       errors: [400, 404, 422],
     },
   },
+  "/api/declared-links": {
+    post: {
+      id: "declareLink",
+      summary:
+        "Declare a link the code can't show (ADR 0174, G3): a topic a system publishes or listens on, or a route it calls, written to the profile with who and when; with preview, the lines it would change",
+      tag: "workspace",
+      body: DeclareLinkRequest,
+      ok: { status: 200, schema: "FileChangeResult", description: "OK" },
+      errors: [400, 404, 409, 422],
+    },
+  },
+  "/api/declared-links/undo": {
+    post: {
+      id: "undeclareLink",
+      summary: "Remove exactly one declared topic or call from a system in the profile (ADR 0174)",
+      tag: "workspace",
+      body: UndeclareLinkRequest,
+      ok: { status: 200, schema: "FileChangeResult", description: "OK" },
+      errors: [400, 404],
+    },
+  },
+  "/api/boxes/addable": {
+    get: {
+      id: "getAddableBoxes",
+      summary:
+        "What can be added to the picture: the manifest's repos (read or not), the profiles' systems, the teams (ADR 0174, G3)",
+      tag: "workspace",
+      ok: { status: 200, schema: "AddableView", description: "OK" },
+    },
+  },
+  "/api/boxes": {
+    post: {
+      id: "addBox",
+      summary: "Add a new vendor or team system to the profile, for review (ADR 0174, G3)",
+      tag: "workspace",
+      body: AddSystemRequest,
+      ok: { status: 200, schema: "FileChangeResult", description: "OK" },
+      errors: [400, 409, 422],
+    },
+  },
+  "/api/boxes/corrections": {
+    get: {
+      id: "getBoxCorrections",
+      summary:
+        "A repo's corrections, or a system's declarations, each with what undoes it (ADR 0174)",
+      tag: "workspace",
+      params: [
+        q("repo", str, "A repo of the manifest"),
+        q("system", str, "A system of the profiles"),
+      ],
+      ok: { status: 200, schema: "BoxCorrections", description: "OK" },
+      errors: [400],
+    },
+  },
   "/api/copilot-runs": {
     post: {
       id: "startCopilotRun",
@@ -5095,6 +5219,9 @@ export function openApiDocument(): Record<string, unknown> {
     ConnectLinksResult,
     RepoOwnerView,
     SetRepoOwnerResult,
+    FileChangeResult,
+    AddableView,
+    BoxCorrections,
     Question,
     QuestionList,
     AnsweredQuestion,

@@ -55,7 +55,7 @@ export type TargetAnswer =
  * The repos whose facts are on file (facts/<repo>.jsonl). By `factsFileOf`, so a dotted repo id
  * (`forge-ledger.v2`) counts and a companion file (`<repo>.reviewed.jsonl`) doesn't.
  */
-async function readRepos(root: string): Promise<Set<string>> {
+export async function readRepos(root: string): Promise<Set<string>> {
   const names = await readdir(factsDirOf(root)).catch(() => [] as string[]);
   const out = new Set<string>();
   for (const n of names) {

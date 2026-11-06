@@ -20,6 +20,7 @@ import { uiModelRunRoutes } from "./ui-api-runs.js";
 import { uiCopilotRunRoutes } from "./ui-api-copilot-runs.js";
 import { uiLinkRoutes } from "./ui-api-links.js";
 import { uiOwnerRoutes } from "./ui-api-owner.js";
+import { uiDeclaredRoutes } from "./ui-api-declared.js";
 import { uiHistoryRoutes } from "./ui-api-history.js";
 import { uiAiRoutes } from "./ui-api-ai.js";
 import { uiDocumentRoutes } from "./ui-api-documents.js";
@@ -105,22 +106,25 @@ export async function startUi(
       // ADR 0164: the contract check on every link (Map › Mismatches).
       // ADR 0173: an unattended Copilot run started from the app, shown live.
       // ADR 0174: correcting the map on the canvas.
-      return uiOwnerRoutes(
-        uiLinkRoutes(
-          uiCopilotRunRoutes(
-            uiStageRoutes(
-              uiContractsRoutes(
-                uiOutsideRoutes(
-                  uiAuditRoutes(
-                    uiFactsRoutes(
-                      uiTrustRoutes(
-                        uiCockpitRoutes(
-                          uiRepoRoutes(
-                            uiDocumentRoutes(
-                              uiAiRoutes(
-                                uiHistoryRoutes(
-                                  uiModelRunRoutes(
-                                    uiKnowledgeRoutes(uiCiteRoutes(specs, ctx), ctx),
+      return uiDeclaredRoutes(
+        uiOwnerRoutes(
+          uiLinkRoutes(
+            uiCopilotRunRoutes(
+              uiStageRoutes(
+                uiContractsRoutes(
+                  uiOutsideRoutes(
+                    uiAuditRoutes(
+                      uiFactsRoutes(
+                        uiTrustRoutes(
+                          uiCockpitRoutes(
+                            uiRepoRoutes(
+                              uiDocumentRoutes(
+                                uiAiRoutes(
+                                  uiHistoryRoutes(
+                                    uiModelRunRoutes(
+                                      uiKnowledgeRoutes(uiCiteRoutes(specs, ctx), ctx),
+                                      ctx,
+                                    ),
                                     ctx,
                                   ),
                                   ctx,

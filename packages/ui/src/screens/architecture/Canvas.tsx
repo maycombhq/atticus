@@ -158,7 +158,8 @@ function LinkView(p: EdgeProps<LinkEdge>) {
         sourcePosition: p.sourcePosition,
         targetPosition: p.targetPosition,
       });
-  const cls = `arch-link ${d.link.async ? "async" : ""} ${d.link.gaps.length ? "gappy" : ""} ${d.link.mark ? `m-${d.link.mark}` : ""}`;
+  // ADR 0174: a person's word (declared, or paired on the canvas) is drawn dashed.
+  const cls = `arch-link ${d.link.async ? "async" : ""} ${d.link.gaps.length ? "gappy" : ""} ${d.link.mark ? `m-${d.link.mark}` : ""} ${d.link.declared || d.link.paired ? "word" : ""}`;
   return (
     <>
       <BaseEdge

@@ -1,0 +1,29 @@
+# Correcting the map on the canvas
+
+The map is read from code, and sometimes the code can't say where a call goes, who owns a repo, or who publishes to a topic. You can say it on the canvas (Map › Estate). Everything you say is your word: written to a file in the metarepo for review, shown before it is written, drawn dashed and never passed off as read from code. Every change can be undone (ADR 0174).
+
+## Connect two boxes, call by call
+
+Select a repo's box and choose **Connect to…**, or draw a line from one box to another on the canvas. Pick the other box: a repo of the manifest or an outside system.
+
+The panel lists this repo's calls that join nothing (asked, no route, left or not joined), with the other box's APIs: a service's entries, a gateway's routes, or an outside system's operations from its intaken spec. For each call the likeliest API is picked already, and the panel says why: the same path, the same but for a prefix, the same but for a parameter or a setting, or names alike (`captureChargePath` and `/partners/northwind/charges/{chargeId}/capture`). Tick the pairs you agree with and change any pick.
+
+**Preview** shows the lines that will be written and what the next `atticus verify <repo> --write` adds, moves and removes. **Write** appends one `link` line per pair to `facts/<repo>.corrections.jsonl`. The call's own fact stays exactly as read. The join reads the link and draws the line, flagged as paired by a person; when a later read renames the API, it is found again by its method and path, and when it is gone, the box says so.
+
+When the repo has an open target question, **All loose calls go there** answers it with `/**`, so calls read later follow it too.
+
+When one side has nothing on record, the panel says so and gives the command: `atticus map --all --gaps --repos <repo>` to read the calls, `atticus map --all --repos <repo>` to read the other repo, or `atticus intake add` for an outside system's spec.
+
+## A repo's owner and system
+
+On a repo's box, **Owner and system…** picks a team from roles.yaml and a system of the profiles. **Preview** shows the lines that change; **Write it** edits the repo's manifest in place, its comments kept. **Add a team…** adds a team roles.yaml doesn't have yet, for review, with nobody on it. The map shows the change after `atticus verify --all --write`.
+
+## Add a box, and declare a link
+
+**Add to the picture…** (above the canvas) lists the manifest's repos not read yet, each with a button to read it with Copilot (when the app can start Copilot) and the command, and adds a new vendor or another team's system to the profile, for review.
+
+On a system's box, **Declare a link…** says what the code can't show: the system publishes to a topic or queue, listens on one, or calls a gateway route (`METHOD /path`). It is written to the profile under the system's `topics` or `calls`, with your name and the date as the line's comment. A declared topic is drawn where a repo of the estate publishes or listens on it with nobody on the other side, dashed and marked declared. A system whose repos are in the manifest needs no declaration: read its code.
+
+## Corrections, and Undo
+
+Every box lists its corrections (a repo's) or declarations (a system's) under **Corrections and declarations**, each with who and when. **Undo** removes exactly the line it wrote. Each change ends with the command to redraw the map and the `git` command to commit the file.

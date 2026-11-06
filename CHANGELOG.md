@@ -4,6 +4,10 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### Add a box, declare a link, and Undo (G3)
+
+- **Add to the picture…** lists the manifest's repos not read yet (each with Read with Copilot and its command) and adds a new vendor or another team's system to the profile, for review. On a system's box, **Declare a link…** writes a topic it publishes to or listens on, or a gateway route it calls, under the system in the profile with who and when as the line's comment; declared and person-paired links are drawn dashed. Every box lists its corrections or declarations with **Undo**, which removes exactly that line. The guide: docs/guide/correcting-the-map.md.
+
 ### A repo's owner and system from its box (G2)
 
 - A repo's box on the canvas has **Owner and system…**: pick a team from roles.yaml (or **Add a team…**, written to roles.yaml for review) and a system of the profiles; Preview shows the lines that change in each file, and Write it edits the manifest in place, its comments kept. The map shows it after `atticus verify --all --write`. Local API 2.53.0 (`GET`/`PUT /api/repos/{repo}/owner`).

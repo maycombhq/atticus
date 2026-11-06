@@ -202,6 +202,8 @@ const HOW_OF_FLAG: Record<string, Join["how"]> = {
   "joined-by-folder-name": "folder-name",
   "joined-despite-conflict": "conflict",
   "joined-by-service-name": "service-name",
+  // G1 (ADR 0174): a person paired the call with the entry on the canvas.
+  "joined-by-person": "person",
   "joined-by-answer": "answer",
   "joined-by-name": "named",
   "joined-by-repo": "repo",

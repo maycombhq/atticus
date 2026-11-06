@@ -1559,3 +1559,9 @@ a.q-item[aria-current="true"] {
 .shell:has(.run-console.open) .main {
   padding-bottom: 42vh;
 }
+
+/* ADR 0174: a person's word on the picture (declared, or paired on the canvas): dashed. */
+.react-flow__edge-path.arch-link.word,
+.arch-link.word {
+  stroke-dasharray: 6 4;
+}

@@ -118,6 +118,8 @@ export interface CanvasLink {
   mark?: "new" | "modify" | "retire";
   /** ADR 0162 §6 (F8): a link to or from a topic the profile declared. */
   declared?: boolean;
+  /** G1 (ADR 0174): every call on it a person paired on the canvas: drawn dashed, their word. */
+  paired?: boolean;
 }
 
 export interface CanvasGraph {
@@ -270,7 +272,10 @@ export function canvasGraph(
     if (sharper(e)) continue;
     // F10: a listener's link is drawn from the topic to it (publishers → topic → listeners).
     const listens = e.type === "subscribes" && boxes.get(e.to)!.kind === "topic";
-    const declared = e.gaps.includes(DECLARED_TOPIC);
+    const declared =
+      e.gaps.includes(DECLARED_TOPIC) ||
+      (!!e.joins?.length && e.joins.every((j) => j.how === "declared"));
+    const paired = !!e.joins?.length && e.joins.every((j) => j.how === "person");
     const label = linkLabel(e.count, listens ? COPY.topics.listens : e.type);
     links.push({
       id: e.id,
@@ -278,10 +283,15 @@ export function canvasGraph(
       to: listens ? e.from : e.to,
       type: e.type,
       count: e.count,
-      label: declared ? `${label} · ${COPY.topics.declaredMark}` : label,
+      label: declared
+        ? `${label} · ${COPY.topics.declaredMark}`
+        : paired
+          ? `${label} · ${COPY.connect.pairedMark}`
+          : label,
       async: e.sync === "async" || e.type === "publishes" || e.type === "subscribes",
       gaps: e.gaps,
       ...(declared ? { declared: true } : {}),
+      ...(paired ? { paired: true } : {}),
     });
   }
   // A gap every part inside has (two or more parts) is said once, not on every box.

@@ -17,6 +17,7 @@ import { systemHash } from "../know/Systems.js";
 import { CopyButton, Facts } from "../run/shared.js";
 import { ConnectPanel, type BoxChoice } from "./Connect.js";
 import { OwnerPanel } from "./Owner.js";
+import { AddBoxPanel, BoxCorrections, DeclarePanel } from "./Declare.js";
 import { RunStep } from "../../app/runstep.js";
 import { ArchitectureCanvas } from "./Canvas.js";
 import { LinkWrong, WhatMoved, WhyLinked } from "./WhyLinked.js";
@@ -141,6 +142,9 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
   >();
   // G2 (ADR 0174): setting a repo's owner and system.
   const [owning, setOwning] = useState<string | undefined>();
+  // G3 (ADR 0174): declaring a system's link, and adding to the picture.
+  const [declaring, setDeclaring] = useState<{ system: string; label: string } | undefined>();
+  const [adding, setAdding] = useState(false);
   const [focus, setFocus] = useState<Api.GraphFocusViewT | undefined>();
   const [inPlace, setInPlace] = useState<Set<string>>(new Set());
   const [arrangement, setArrangement] = useState<Arrangement>({ state: "loading", key: "" });
@@ -485,6 +489,11 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
                 {WORDS.sharedGaps(graph.shared.map((g) => WORDS.gap[g] ?? g).join("; "))}
               </p>
             )}
+            <div className="row" style={{ gap: 8 }}>
+              <button type="button" className="btn" onClick={() => setAdding(true)}>
+                {COPY.addBox.open}
+              </button>
+            </div>
             <ArrangementBar
               ready={arrangement.state === "ready"}
               saving={keeping.state === "saving"}
@@ -569,7 +578,12 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
                               onConnect: () => setConnecting({ from: boxOf(sel)!.repo! }),
                               onOwner: () => setOwning(boxOf(sel)!.repo!),
                             }
-                          : {})}
+                          : boxOf(sel)?.system
+                            ? {
+                                onDeclare: () =>
+                                  setDeclaring({ system: boxOf(sel)!.system!, label: sel.label }),
+                              }
+                            : {})}
                         {...(!focus && graph.boxes.some((b) => b.id === sel.id)
                           ? {
                               here: {
@@ -591,6 +605,15 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
                         onClose={() => setConnecting(undefined)}
                       />
                     )}
+                    {declaring && (
+                      <DeclarePanel
+                        key={declaring.system}
+                        system={declaring.system}
+                        label={declaring.label}
+                        onClose={() => setDeclaring(undefined)}
+                      />
+                    )}
+                    {adding && <AddBoxPanel onClose={() => setAdding(false)} />}
                     {owning && (
                       <OwnerPanel key={owning} repo={owning} onClose={() => setOwning(undefined)} />
                     )}
@@ -687,7 +710,10 @@ export function Inspector({
   contracts,
   onConnect,
   onOwner,
+  onDeclare,
 }: {
+  /** G3 (ADR 0174): declare a link of this system the code can't show. */
+  onDeclare?: () => void;
   /** G1 (ADR 0174): connect this box to another, call by call. */
   onConnect?: () => void;
   /** G2 (ADR 0174): set the repo's owner and system. */
@@ -751,6 +777,11 @@ export function Inspector({
             {COPY.owner.open}
           </button>
         )}
+        {onDeclare && (
+          <button type="button" className="btn" onClick={onDeclare}>
+            {COPY.declare.open}
+          </button>
+        )}
         {/* WP7.7: a system's page, its guide, questions and changes. */}
         {/* Only a System record has a page: a system the manifest or a call names has none yet. */}
         {node.kind === "system" && node.id.startsWith("system:") && node.record && (
@@ -777,6 +808,7 @@ export function Inspector({
       ) : (
         <p>{WORDS.noGaps}</p>
       )}
+      {boxOf(node) && <BoxCorrections key={node.id} box={boxOf(node)!} />}
       <h4 className="hud">{WORDS.evidence}</h4>
       {node.evidence.length ? (
         <ul>
