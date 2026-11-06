@@ -15,6 +15,7 @@ import { COPY } from "../../copy.js";
 import { queryParam, setQueryParam } from "../know/common.js";
 import { systemHash } from "../know/Systems.js";
 import { CopyButton, Facts } from "../run/shared.js";
+import { ConnectPanel, type BoxChoice } from "./Connect.js";
 import { RunStep } from "../../app/runstep.js";
 import { ArchitectureCanvas } from "./Canvas.js";
 import { LinkWrong, WhatMoved, WhyLinked } from "./WhyLinked.js";
@@ -133,6 +134,10 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
   const [current, setCurrent] = useState("estate");
   const [expanded, setExpanded] = useState<Set<string>>(new Set(["estate"]));
   const [selected, setSelected] = useState<string | undefined>();
+  // G1 (ADR 0174): connecting a repo's box to another, call by call.
+  const [connecting, setConnecting] = useState<
+    { from: string; initial?: Api.LinkBoxT } | undefined
+  >();
   const [focus, setFocus] = useState<Api.GraphFocusViewT | undefined>();
   const [inPlace, setInPlace] = useState<Set<string>>(new Set());
   const [arrangement, setArrangement] = useState<Arrangement>({ state: "loading", key: "" });
@@ -341,6 +346,7 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
   };
 
   const sel = selected ? find(selected) : undefined;
+  const boxes = connectChoices(views);
   const known = knownTargets(loaded);
   const moved = watched ? whatMoved(watched.before, loaded, watched.calls) : [];
   const under = (j: Api.HierJoinT) => (
@@ -534,6 +540,11 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
                   )
                 }
                 onLaid={setLaid}
+                onConnect={(a, b) => {
+                  const from = boxOf(find(a))?.repo;
+                  const to = boxOf(find(b));
+                  if (from && to) setConnecting({ from, initial: to });
+                }}
                 aside={
                   <div className="stack">
                     <h2 className="h">{WORDS.inspector}</h2>
@@ -550,6 +561,9 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
                         labelOf={(id) => find(id)?.label ?? id}
                         under={under}
                         contracts={findings}
+                        {...(boxOf(sel)?.repo
+                          ? { onConnect: () => setConnecting({ from: boxOf(sel)!.repo! }) }
+                          : {})}
                         {...(!focus && graph.boxes.some((b) => b.id === sel.id)
                           ? {
                               here: {
@@ -561,6 +575,15 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
                       />
                     ) : (
                       <p>{WORDS.pick}</p>
+                    )}
+                    {connecting && (
+                      <ConnectPanel
+                        key={`${connecting.from}:${connecting.initial?.repo ?? connecting.initial?.system ?? ""}`}
+                        from={connecting.from}
+                        boxes={boxes.filter((b) => b.box.repo !== connecting.from)}
+                        {...(connecting.initial ? { initial: connecting.initial } : {})}
+                        onClose={() => setConnecting(undefined)}
+                      />
                     )}
                     {watched && <WhatMoved moved={moved} />}
                   </div>
@@ -618,6 +641,30 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
   );
 }
 
+/** G1 (ADR 0174): the repo or outside system a box stands for, when it stands for one. */
+export function boxOf(n: Api.HierNodeT | undefined): Api.LinkBoxT | undefined {
+  if (!n) return undefined;
+  if (n.kind === "repo") return { repo: n.label };
+  if (n.kind === "component" && typeof n.properties.repo === "string")
+    return { repo: n.properties.repo };
+  if (n.kind === "system" && n.id.startsWith("system:")) return { system: n.id.slice(7) };
+  return undefined;
+}
+
+/** Every repo and system box of the views loaded, once each, for the Connect to… list. */
+export function connectChoices(views: Views): BoxChoice[] {
+  const seen = new Map<string, BoxChoice>();
+  for (const v of views.values())
+    for (const n of [v.node, ...v.children]) {
+      if (n.kind !== "repo" && n.kind !== "system") continue;
+      const b = boxOf(n);
+      if (!b) continue;
+      const k = b.repo ? `r:${b.repo}` : `s:${b.system}`;
+      if (!seen.has(k)) seen.set(k, { label: `${n.kind}: ${n.label}`, box: b });
+    }
+  return [...seen.values()].sort((x, y) => (x.label < y.label ? -1 : 1));
+}
+
 export function Inspector({
   node,
   isCurrent,
@@ -629,7 +676,10 @@ export function Inspector({
   labelOf = (id) => id,
   under,
   contracts,
+  onConnect,
 }: {
+  /** G1 (ADR 0174): connect this box to another, call by call. */
+  onConnect?: () => void;
   /** What to show under each call of a link (This link is wrong, C2). */
   under?: (join: Api.HierJoinT) => ReactNode;
   /** ADR 0164: the contract check's findings, each call's shown under it. */
@@ -678,6 +728,11 @@ export function Inspector({
           <a className="btn" href="#/trust">
             {WORDS.repoCounts}
           </a>
+        )}
+        {onConnect && (
+          <button type="button" className="btn" onClick={onConnect}>
+            {COPY.connect.open}
+          </button>
         )}
         {/* WP7.7: a system's page, its guide, questions and changes. */}
         {/* Only a System record has a page: a system the manifest or a call names has none yet. */}

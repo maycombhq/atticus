@@ -153,7 +153,7 @@ async function linksOf(root: string, repo: string): Promise<AuditItemT[]> {
   const { estateFacts, estateJoinOf, auditLinkCandidates } = await import("@maycombhq/scanner");
   const op = await loadOrgPack(orgPackDirOf(root));
   const estate = await estateFacts(root, op, "");
-  const join = estateJoinOf(op, estate.repos, estate.targets);
+  const join = estateJoinOf(op, estate.repos, estate.targets, estate.pairs);
   return auditLinkCandidates(join, estate.repos, repo);
 }
 

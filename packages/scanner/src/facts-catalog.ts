@@ -37,6 +37,7 @@ import {
   type FlowRecord,
   type JoinRepo,
   type OrgPack,
+  type PersonPair,
   type Question,
   type QuestionDraft,
   type QuestionOption,
@@ -101,6 +102,9 @@ export interface FactsCatalogInput {
   estate?: readonly { repo: string; facts: readonly Fact[] }[];
   /** The targets people named for the other repos' calls, by repo and call fact id. */
   estateTargets?: Readonly<Record<string, Readonly<Record<string, string>>>>;
+  /** G1 (ADR 0174): the pairings people made on the canvas, this repo's and the others'. */
+  pairs?: Readonly<Record<string, PersonPair>>;
+  estatePairs?: Readonly<Record<string, Readonly<Record<string, PersonPair>>>>;
   /**
    * ADR 0151: the consumers' contract files (each repo's `<repo>.contracts.yaml`) and the traffic
    * aggregates people imported (`evidence/traffic/`), read against the estate's join.
@@ -1392,6 +1396,7 @@ export function catalogWithFacts(given: FactsCatalogInput): FactsCatalogResult {
     const whole = joinFacts({
       repos,
       targets: { ...input.estateTargets, [repo]: input.targets ?? {} },
+      pairs: { ...input.estatePairs, [repo]: input.pairs ?? {} },
       outside: outsideSystems(op),
       ...joinConventions(op),
       // G4: the walk through gateways is a stack helper (ATTICUS_HELPERS_OFF=gateway-walk).

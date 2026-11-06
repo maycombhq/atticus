@@ -6,8 +6,11 @@ import {
   factsRelOf,
   listQuestions,
   normalizePath,
+  pairsFromCorrections,
+  parseCorrections,
   parseFacts,
   type CatalogRecord,
+  type PersonPair,
   type Fact,
   type OrgPack,
   stackHelpersOff,
@@ -148,6 +151,22 @@ export async function factsForScan(
 }
 
 /**
+ * G1 (ADR 0174): a repo's pairings from its corrections file (`<repo>.corrections.jsonl`), met
+ * to its calls as any correction is; none when the file isn't there or has none.
+ */
+export async function pairsOfRepo(
+  root: string,
+  repo: string,
+  facts: readonly Fact[],
+): Promise<Record<string, PersonPair>> {
+  const text = await readFile(join(factsDirOf(root), `${repo}.corrections.jsonl`), "utf8").catch(
+    () => undefined,
+  );
+  if (!text || !text.includes('"link"')) return {};
+  return pairsFromCorrections(facts, parseCorrections(text).corrections);
+}
+
+/**
  * The other repos' facts the estate join reads when a repo is written (ADR 0124, C-join): each
  * repo of the manifests with a facts/<repo>.jsonl that reads and is all verified, and the
  * targets people named for its calls. A facts file that doesn't read, or isn't verified yet, is
@@ -160,10 +179,13 @@ export async function estateFacts(
 ): Promise<{
   repos: { repo: string; facts: Fact[] }[];
   targets: Record<string, Record<string, string>>;
+  /** G1 (ADR 0174): the pairings people made on the canvas, by repo and call fact id. */
+  pairs: Record<string, Record<string, PersonPair>>;
   notes: string[];
 }> {
   const repos: { repo: string; facts: Fact[] }[] = [];
   const targets: Record<string, Record<string, string>> = {};
+  const pairs: Record<string, Record<string, PersonPair>> = {};
   const notes: string[] = [];
   const questions = (
     await listQuestions(root, { step: TARGETS_STEP }).catch(() => ({ questions: [] }))
@@ -189,6 +211,8 @@ export async function estateFacts(
     repos.push({ repo: r.id, facts: parsed.facts });
     const named = targetsFromAnswers(r.id, parsed.facts, questions, { repoType: r.type });
     if (Object.keys(named).length) targets[r.id] = named;
+    const paired = await pairsOfRepo(root, r.id, parsed.facts);
+    if (Object.keys(paired).length) pairs[r.id] = paired;
   }
-  return { repos, targets, notes };
+  return { repos, targets, pairs, notes };
 }

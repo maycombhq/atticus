@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import type { CatalogRecord } from "./catalog.js";
 import { callPath, catalogAuth, entryEndpointId, factIdPart } from "./facts.js";
 import { hostQuestionText } from "./host-questions.js";
-import { interfaceId } from "./identity.js";
+import { interfaceId, normalizePath } from "./identity.js";
 import type { EvidenceT } from "./schema/common.js";
 import type { Fact, FactOf } from "./schema/facts.js";
 import { hostHasPort, hostMatches, urlHostPort } from "./schema/workspace.js";
@@ -247,6 +247,8 @@ export const JOINED_DESPITE_CONFLICT = "joined-despite-conflict";
  * `<name>.<namespace>` and the whole `<name>.<namespace>.svc[.cluster.local]` address are no guess.
  */
 export const JOINED_BY_SERVICE_NAME = "joined-by-service-name";
+/** G1 (ADR 0174): a person paired the call with this entry on the canvas. */
+export const JOINED_BY_PERSON = "joined-by-person";
 /** The guesses of J0 and J1 a join by host can carry (`FactJoin.guesses`). */
 export type JoinHostGuess =
   | typeof JOINED_BY_PLATFORM_SETTING
@@ -273,6 +275,7 @@ const guessList = (gs: Iterable<JoinHostGuess>): JoinHostGuess[] =>
 
 /** Flags that say how a link was made and nothing more: never a gap (C1, ADR 0135). */
 export const JOIN_HOW_FLAGS: ReadonlySet<string> = new Set([
+  JOINED_BY_PERSON,
   JOINED_BY_ANSWER,
   JOINED_BY_NAME,
   JOINED_BY_REPO,
@@ -352,6 +355,8 @@ export interface FactJoin {
   path: string;
   /** The catalog Interface of the join. */
   interface: string;
+  /** G1 (ADR 0174): a person paired the call with this entry; who did. */
+  paired?: { by: string };
 }
 
 export interface FactJoinAsk {
@@ -476,10 +481,28 @@ export interface FactsJoinResult {
   left?: FactJoinLeft[];
 }
 
+/**
+ * G1 (ADR 0174): a person paired a call with an API of another box on the canvas: the entry of a
+ * repo it reaches (by id, else by method and path when a read gave it another id), or an outside
+ * system's operation. Written as a `link` line in the caller's corrections file.
+ */
+export interface PersonPair {
+  /** The repo whose entry the call reaches; or `system` for an outside system. */
+  repo?: string;
+  system?: string;
+  /** The entry's fact id when it was paired. */
+  entry?: string;
+  method?: string;
+  path: string;
+  by: string;
+}
+
 export interface JoinFactsInput {
   repos: readonly JoinRepo[];
   /** A person's answer naming the repo or component a call goes to: repo → call fact id → name. */
   targets?: Readonly<Record<string, Readonly<Record<string, string>>>>;
+  /** G1: a person's pairings, caller repo → call fact id → what it reaches. They outrank answers. */
+  pairs?: Readonly<Record<string, Readonly<Record<string, PersonPair>>>>;
   /**
    * Outside systems (the org pack's vendors), by id: a call whose `to` names one keeps it and
    * is never joined by path to an entry of the estate.
@@ -1368,6 +1391,48 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
       f.path,
     );
 
+    // G1 (ADR 0174): a person's pairing outranks every other way: the entry it names, found by
+    // id, else by method and path (a read that gave it another id); none is a miss, said.
+    const pair = input.pairs?.[call.repo]?.[f.id];
+    if (pair) {
+      if (pair.system) {
+        outsideCalls.push({ call: end(call), target: pair.system });
+        continue;
+      }
+      const m = (x?: string) => (x ?? "").toUpperCase();
+      const hit =
+        entries.find((e) => e.repo === pair.repo && e.fact.id === pair.entry) ??
+        entries.find(
+          (e) =>
+            e.repo === pair.repo &&
+            (!pair.method || !e.fact.method || m(e.fact.method) === m(pair.method)) &&
+            normalizePath(e.fact.path) === normalizePath(pair.path),
+        );
+      if (hit) {
+        joins.push({
+          call: end(call),
+          entry: end(hit),
+          ...tie,
+          how: "answer",
+          paired: { by: pair.by },
+          callType: f.callType,
+          ...(f.method || hit.fact.method
+            ? { method: (f.method ?? hit.fact.method)!.toUpperCase() }
+            : {}),
+          path: hit.fact.path,
+          interface: interfaceOf(call, hit),
+        });
+      } else {
+        const what = [pair.method?.toUpperCase(), pair.path].filter(Boolean).join(" ");
+        misses.push({
+          call: end(call),
+          target: pair.repo ?? "",
+          message: `${pair.by} paired ${call.component}'s call with ${what} on ${pair.repo}, and no entry of ${pair.repo} the facts name serves it now`,
+        });
+        leave(call, "target-no-route");
+      }
+      continue;
+    }
     const answer = input.targets?.[call.repo]?.[f.id];
     const named = (name: string) => {
       const slug = factIdPart(name);
@@ -1861,8 +1926,9 @@ export const isGuessedJoin = (j: Pick<FactJoin, "inferred" | "byLabel" | "guesse
  * (`joined-by-answer`, `-name`, `-repo`, `-host`); a publish joined to its listener has none.
  */
 export function joinFlagsOf(
-  j: Pick<FactJoin, "how" | "inferred" | "byLabel" | "guesses">,
+  j: Pick<FactJoin, "how" | "inferred" | "byLabel" | "guesses" | "paired">,
 ): string[] {
+  if (j.paired) return [JOINED_BY_PERSON];
   const guessed = joinGuessesOf(j);
   if (guessed.length) return guessed;
   const HOW: Partial<Record<JoinHow, string>> = {
@@ -1883,6 +1949,7 @@ type SharedLink = CatalogRecord & {
 
 /** How a join nobody guessed found its callee, in the order a shared link lists them. */
 const HOW_FLAG_ORDER: readonly string[] = [
+  JOINED_BY_PERSON,
   JOINED_BY_ANSWER,
   JOINED_BY_NAME,
   JOINED_BY_REPO,

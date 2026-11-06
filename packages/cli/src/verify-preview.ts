@@ -16,7 +16,9 @@ import {
   specRelOf,
   stackHelpersOff,
   type Api,
+  pairsFromCorrections,
   type Fact,
+  type FactCorrection,
 } from "@maycombhq/core";
 import { dirSource, repairFormSlips, verifyFacts } from "@maycombhq/verify";
 import { stringify } from "yaml";
@@ -117,7 +119,7 @@ const linkView = (l: LinkView): LinkView => ({
 export async function verifyWritePreview(
   root: string,
   repo: string,
-  o: { fact?: string } = {},
+  o: { fact?: string; extra?: readonly FactCorrection[] } = {},
 ): Promise<View | undefined> {
   const rel = factsRelOf(root);
   const wrote = `${rel}/${repo}.corrections.jsonl`;
@@ -131,7 +133,11 @@ export async function verifyWritePreview(
   const plain = (files: string[], unavailable?: View["unavailable"]): View => ({
     repo,
     wrote,
-    ...stepsOf(root, repo, { ...o, ...(host ? { host } : {}), files }),
+    ...stepsOf(root, repo, {
+      ...(o.fact ? { fact: o.fact } : {}),
+      ...(host ? { host } : {}),
+      files,
+    }),
     ...(unavailable ? { unavailable } : {}),
   });
 
@@ -155,7 +161,7 @@ export async function verifyWritePreview(
     ...(off.has("derived-names") ? { derivedNames: false } : {}),
     ...(off.has("readers") ? { readers: false } : {}),
     exclude: inputs.exclude,
-    corrections: inputs.corrections.corrections,
+    corrections: [...inputs.corrections.corrections, ...(o.extra ?? [])],
     reviewed: inputs.reviewed.entries,
     ...(inputs.estate ? { estate: inputs.estate } : {}),
     conventions: inputs.conventions,
@@ -225,6 +231,7 @@ export async function verifyWritePreview(
     ...(op ? { op } : {}),
     contracts,
     cache: false,
+    ...(o.extra?.length ? { extraPairs: pairsFromCorrections(report.accepted, o.extra) } : {}),
   });
   const catalogRel = layoutOf(root).catalog.replace(/\/+$/, "");
   const recordFiles = [

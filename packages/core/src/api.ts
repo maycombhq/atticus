@@ -153,8 +153,12 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  * 2.52.0 (ADR 0173): an unattended Copilot run started from the app: POST /api/copilot-runs,
  *   GET /api/copilot-runs/current, POST /api/copilot-runs/{runId}/stop, and the live events
  *   `copilot-run.state` and `copilot-run.lines`. Additive only.
+ * 2.53.0 (ADR 0174): correcting the map on the canvas. GET /api/links/candidates and POST
+ *   /api/links/connect (G1, a call paired with an API, a `link` line in the caller's
+ *   corrections); POST /api/facts/{repo}/corrections/undo (a correction's line removed). Additive
+ *   only.
  */
-export const API_VERSION = "2.52.0";
+export const API_VERSION = "2.53.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -2951,6 +2955,82 @@ export type MarkedNeedT = z.infer<typeof MarkedNeed>;
 export type ReviewedItemT = z.infer<typeof ReviewedItem>;
 export type KeptCandidateT = z.infer<typeof KeptCandidate>;
 
+// ------------------------------------------------------------------ correcting the map (ADR 0174)
+
+/** The other box of a connection: a repo of the manifest, or an outside system of the profile. */
+export const LinkBox = z
+  .strictObject({ repo: z.string().min(1).optional(), system: z.string().min(1).optional() })
+  .refine((b) => !!b.repo !== !!b.system, { message: "name a repo or a system" });
+export const CandidateCallView = z.object({
+  fact: z.string(),
+  callType: z.string(),
+  method: z.string().optional(),
+  path: z.string(),
+  at: z.string(),
+  status: z.enum(["asked", "missed", "left", "outside", "unresolved", "paired"]),
+  why: z.string().optional(),
+  paired: z.string().optional(),
+  suggestion: z
+    .object({
+      api: z.string(),
+      score: z.number(),
+      why: z.enum(["same-path", "prefix", "parameter", "names-alike"]),
+    })
+    .optional(),
+});
+export const CandidateApiView = z.object({
+  id: z.string(),
+  kind: z.enum(["entry", "route", "operation"]),
+  method: z.string().optional(),
+  path: z.string(),
+  at: z.string().optional(),
+});
+export const LinkCandidatesView = z.object({
+  from: z.string(),
+  to: LinkBox,
+  /** The other box's name as the picture shows it. */
+  toName: z.string(),
+  calls: z.array(CandidateCallView),
+  apis: z.array(CandidateApiView),
+  /** No calls of A on record: the command that reads them first. */
+  noCalls: z.object({ command: z.string() }).optional(),
+  /** No APIs of B on record: why, and how to get them (read the repo, or intake the spec). */
+  noApis: z.object({ why: z.enum(["not-read", "no-spec"]), command: z.string() }).optional(),
+  /** An open target question of A that one /** answer to B would close, with the calls it covers. */
+  rule: z.object({ question: z.string(), calls: z.number().int().min(0) }).optional(),
+});
+export const ConnectLinksRequest = z.object({
+  from: z.string().min(1),
+  to: LinkBox,
+  pairs: z
+    .array(z.object({ call: z.string().min(1), api: z.string().min(1) }))
+    .max(500)
+    .default([]),
+  /** Answer A's open target question with /** to B, so calls read later follow it too. */
+  rule: z.boolean().optional(),
+  /** Say what it would write and what the next verify --write changes; write nothing. */
+  preview: z.boolean().optional(),
+});
+export const ConnectLinksResult = z.object({
+  written: z.boolean(),
+  /** The corrections file the pairs go in, and its lines (to be) appended. */
+  file: z.string(),
+  lines: z.array(z.string()),
+  /** The answer the rule writes, when asked. */
+  rule: z.object({ question: z.string(), match: z.string(), target: z.string() }).optional(),
+  /** What the next `atticus verify <from> --write` adds, moves and removes (ADR 0149). */
+  preview: z.unknown().optional(),
+  verify: z.string(),
+  commit: z.string(),
+});
+export const UndoCorrectionRequest = z.object({ line: z.string().min(2) });
+export type LinkBoxT = z.infer<typeof LinkBox>;
+export type CandidateCallViewT = z.infer<typeof CandidateCallView>;
+export type CandidateApiViewT = z.infer<typeof CandidateApiView>;
+export type LinkCandidatesViewT = z.infer<typeof LinkCandidatesView>;
+export type ConnectLinksRequestT = z.infer<typeof ConnectLinksRequest>;
+export type ConnectLinksResultT = z.infer<typeof ConnectLinksResult>;
+
 // ------------------------------------------------------------------ copilot runs (ADR 0173)
 
 /** What an unattended Copilot run started from the app reads. */
@@ -4113,6 +4193,48 @@ const OPS: Record<string, Record<string, Op>> = {
       errors: [400, 409],
     },
   },
+  "/api/links/candidates": {
+    get: {
+      id: "getLinkCandidates",
+      summary:
+        "Connect two boxes (ADR 0174, G1): box A's calls that join nothing, box B's APIs, and the API each call most likely is",
+      tag: "views",
+      params: [
+        q("from", str, "Box A: the caller's repo"),
+        q("to", str, "Box B: a repo of the manifest"),
+        q("system", str, "Box B: an outside system of the profile (instead of to)"),
+      ],
+      ok: { status: 200, schema: "LinkCandidatesView", description: "OK" },
+      errors: [400, 404],
+    },
+  },
+  "/api/links/connect": {
+    post: {
+      id: "connectLinks",
+      summary:
+        "Pair box A's calls with box B's APIs (ADR 0174, G1): a link line per pair in A's corrections, and with rule a /** answer; with preview, what it would write and the next verify --write changes",
+      tag: "views",
+      body: ConnectLinksRequest,
+      ok: { status: 200, schema: "ConnectLinksResult", description: "OK" },
+      errors: [400, 404, 409],
+    },
+  },
+  "/api/facts/{repo}/corrections/undo": {
+    post: {
+      id: "undoCorrection",
+      summary:
+        "Remove exactly one line a person wrote to a repo's corrections file (ADR 0174, Undo)",
+      tag: "views",
+      params: [p("repo")],
+      body: UndoCorrectionRequest,
+      ok: {
+        status: 200,
+        schema: { type: "object", required: ["removed", "file"] },
+        description: "OK",
+      },
+      errors: [400, 404],
+    },
+  },
   "/api/copilot-runs": {
     post: {
       id: "startCopilotRun",
@@ -4918,6 +5040,8 @@ export function openApiDocument(): Record<string, unknown> {
     LiveEvent,
     CopilotRunView,
     CopilotRunCurrent,
+    LinkCandidatesView,
+    ConnectLinksResult,
     Question,
     QuestionList,
     AnsweredQuestion,

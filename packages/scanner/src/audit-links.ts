@@ -8,6 +8,7 @@ import {
   type FactEnd,
   type FactsJoinResult,
   type OrgPack,
+  type PersonPair,
 } from "@maycombhq/core";
 import { componentRenames, joinReposOf, outsideSystems } from "./facts-catalog.js";
 import { isPrototypeRepo } from "./merge-input.js";
@@ -24,12 +25,14 @@ export function estateJoinOf(
   op: OrgPack,
   list: readonly { repo: string; facts: readonly Fact[] }[],
   targets?: Readonly<Record<string, Readonly<Record<string, string>>>>,
+  pairs?: Readonly<Record<string, Readonly<Record<string, PersonPair>>>>,
 ): FactsJoinResult {
   const repos = list.filter((x) => !isPrototypeRepo(op, x.repo));
   const renames = componentRenames(repos, op);
   return joinFacts({
     repos: joinReposOf(op, repos, renames),
     ...(targets ? { targets } : {}),
+    ...(pairs && Object.keys(pairs).length ? { pairs } : {}),
     outside: outsideSystems(op),
     // The org pack's facing words and gateway bundle folders (ADR 0147), as the catalog joins.
     ...joinConventions(op),

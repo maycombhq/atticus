@@ -4,6 +4,10 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### Connect two boxes on the canvas (G1)
+
+- On the canvas, a repo's box has **Connect to…** (or draw a line from one box to another): a panel lists this repo's calls that join nothing, the other box's APIs (a service's entries, a gateway's routes, an outside system's operations from its spec), and the API each call most likely is, picked already (the same path, the same but for a prefix, a parameter or a setting, or names alike: `captureChargePath` and `/partners/northwind/charges/{chargeId}/capture`). Preview says what the next `atticus verify <repo> --write` changes; each pair you confirm is one `link` line in the repo's corrections file, the call's fact left as read; the link is drawn flagged `joined-by-person`, found again by method and path when a read renames the entry, and Undo removes exactly the line. "All" answers the repo's open target question with `/**`. When a side has nothing on record, the panel gives the command that reads it or adds the spec. ADR 0174; local API 2.53.0.
+
 ### Copilot runs from the app
 
 - Map › Trust can start an unattended Copilot run (copilot-acp) after your yes: read the stale repos, fill the gaps, read the repos not read yet, or read one repo again. A dialog names what it reads, the model and what a session may do; a strip under the top bar shows the repo of how many, the session, facts kept and rejected and tokens, with Stop; and a collapsible Console at the foot of the app shows the lines, one tab per session (follow the end, search, copy). A reload, or the app in VS Code or IntelliJ, picks the run up. ADR 0173; local API 2.52.0 (`/api/copilot-runs`).

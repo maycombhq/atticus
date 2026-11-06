@@ -287,6 +287,8 @@ export function ArchitectureCanvas(p: {
   /** Tests: open in full screen, or in focus mode. */
   initialFull?: boolean;
   initialFocus?: boolean;
+  /** G1 (ADR 0174): a line drawn from one box to another: connect them call by call. */
+  onConnect?: (from: string, to: string) => void;
 }) {
   const [state, setState] = useState<LayoutState>(
     p.initial ? { state: "ready" } : { state: "running" },
@@ -491,7 +493,10 @@ export function ArchitectureCanvas(p: {
             onNodeDragStop={(_, n, dragged) => {
               for (const d of dragged.length ? dragged : [n]) p.onMoved(d.id, d.position);
             }}
-            nodesConnectable={false}
+            nodesConnectable={!!p.onConnect}
+            onConnect={(c) => {
+              if (c.source && c.target && c.source !== c.target) p.onConnect?.(c.source, c.target);
+            }}
             edgesFocusable={false}
             zoomOnDoubleClick={false}
             zoomOnPinch

@@ -29,6 +29,24 @@ export const FACT_FIXED_FIELDS = [
   "conf",
 ] as const;
 
+/**
+ * G1 (ADR 0174): what a person paired a call with on the canvas: an entry of a repo (its id when
+ * paired, and its method and path, to find it again after a read gives it another id), or an
+ * outside system's operation. The call's own fact is left as read; the join reads the pairing.
+ */
+export const CorrectionLink = z
+  .strictObject({
+    repo: z.string().min(1).optional(),
+    system: z.string().min(1).optional(),
+    entry: FactId.optional(),
+    method: z.string().min(1).optional(),
+    path: z.string().min(1),
+  })
+  .refine((l) => !!l.repo !== !!l.system, {
+    message: "a link names a repo or an outside system, one of them",
+  });
+export type CorrectionLink = z.infer<typeof CorrectionLink>;
+
 export const FactCorrection = z
   .strictObject({
     schemaVersion: z.literal(FACT_CORRECTIONS_SCHEMA_VERSION),
@@ -41,8 +59,13 @@ export const FactCorrection = z
       line: z.number().int().positive(),
       value: z.string().min(1),
     }),
-    /** wrong: the fact isn't so, and is left out; edit: its claim is what `set` says. */
-    action: z.enum(["wrong", "edit"]),
+    /**
+     * wrong: the fact isn't so, and is left out; edit: its claim is what `set` says; link (G1,
+     * ADR 0174): a call the person paired with the API in `link`, the fact itself unchanged.
+     */
+    action: z.enum(["wrong", "edit", "link"]),
+    /** For link: what the call reaches. */
+    link: CorrectionLink.optional(),
     /** For edit: the fact's own fields with their new values (`value` sets the cite's value). */
     set: z.record(z.string().min(1), z.string()).optional(),
     /** For edit: the line the claim is on, when the assistant cited the wrong one. */
@@ -54,6 +77,25 @@ export const FactCorrection = z
     at: z.iso.datetime({ offset: true }),
   })
   .superRefine((c, ctx) => {
+    if (c.action === "link") {
+      if (!c.link)
+        ctx.addIssue({
+          code: "custom",
+          path: ["link"],
+          message: "a link says what the call reaches",
+        });
+      if (c.target.kind !== "call")
+        ctx.addIssue({
+          code: "custom",
+          path: ["target", "kind"],
+          message: "only a call is linked",
+        });
+      if (c.set || c.line !== undefined)
+        ctx.addIssue({ code: "custom", path: ["set"], message: "a link sets nothing on the fact" });
+      return;
+    }
+    if (c.link)
+      ctx.addIssue({ code: "custom", path: ["link"], message: "only a link action has a link" });
     if (c.action === "wrong" && !c.reason)
       ctx.addIssue({ code: "custom", path: ["reason"], message: "say why the fact is wrong" });
     if (c.action === "edit") {
@@ -112,9 +154,58 @@ export function parseCorrections(text: string): {
 /** One correction as its line in the file, keys in a fixed order. */
 export function correctionLine(c: FactCorrection): string {
   const p = FactCorrection.parse(c);
-  const order = ["schemaVersion", "fact", "target", "action", "set", "line", "reason", "by", "at"];
+  const order = [
+    "schemaVersion",
+    "fact",
+    "target",
+    "action",
+    "set",
+    "line",
+    "link",
+    "reason",
+    "by",
+    "at",
+  ];
   const out: Record<string, unknown> = {};
   for (const k of order)
     if ((p as Record<string, unknown>)[k] !== undefined) out[k] = (p as Record<string, unknown>)[k];
   return JSON.stringify(out);
+}
+
+/**
+ * G1 (ADR 0174): a repo's pairings, call fact id → what the person paired it with, from its
+ * corrections file: the newest link per call, met as any correction meets its fact (by id on its
+ * cited line, else by what it cites). A link that meets no call is left out (the verifier says so).
+ */
+export function pairsFromCorrections(
+  facts: readonly {
+    kind: string;
+    id: string;
+    cite: { file: string; line: number; value: string };
+  }[],
+  corrections: readonly FactCorrection[],
+): Record<string, CorrectionLink & { by: string }> {
+  const links = corrections
+    .filter((c) => c.action === "link" && c.link)
+    .sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
+  const out: Record<string, CorrectionLink & { by: string }> = {};
+  for (const c of links) {
+    const f =
+      facts.find(
+        (x) =>
+          x.kind === "call" &&
+          x.id === c.fact &&
+          x.cite.file === c.target.file &&
+          x.cite.line === c.target.line,
+      ) ??
+      facts.find(
+        (x) =>
+          x.kind === "call" &&
+          x.cite.file === c.target.file &&
+          x.cite.line === c.target.line &&
+          x.cite.value === c.target.value,
+      );
+    if (f) out[f.id] = { ...c.link!, by: c.by };
+  }
+  return out;
 }

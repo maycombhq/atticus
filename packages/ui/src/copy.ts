@@ -3609,6 +3609,57 @@ export const COPY = {
     turns: (n: number) => (n === 1 ? "1 turn" : `${n} turns`),
   },
   /** ADR 0106: an AI step run from the app, with Copilot in a VS Code panel or the server's model. */
+  /** ADR 0174 (G1): connect two boxes call by call. */
+  connect: {
+    open: "Connect to…",
+    title: (from: string) => `Connect ${from} to another box`,
+    intro:
+      "Pair this repo's calls that join nothing with the other box's APIs. Each pair you confirm is one line in this repo's corrections, your word: the call's fact stays as read.",
+    pickBox: "The other box",
+    pickBoxNone: "Pick a repo or a system",
+    loading: "Reading the calls and APIs…",
+    failed: (why: string) => `The calls and APIs couldn't be read: ${why}`,
+    noCalls: (from: string) =>
+      `${from} has no calls on record yet, so there is nothing to pair. Read its calls first:`,
+    noApis: {
+      "not-read": (name: string) => `${name} has no APIs on record yet. Read it first:`,
+      "no-spec": (name: string) => `${name} has no spec on file. Add its OpenAPI file:`,
+    } as Record<string, (name: string) => string>,
+    noLoose: "Every call of this repo joins something already: nothing loose to pair.",
+    calls: "Calls that join nothing",
+    caption: (from: string, to: string) => `${from}'s loose calls, each with an API of ${to}`,
+    col: { pick: "Pair", call: "Call", line: "Line", status: "Now", api: "API" },
+    pickApi: "Pick an API",
+    status: {
+      asked: "asked",
+      missed: "no route",
+      left: "left",
+      outside: "outside",
+      unresolved: "not joined",
+      paired: "paired by a person",
+    } as Record<string, string>,
+    why: {
+      "same-path": "same path",
+      prefix: "same but for a prefix",
+      parameter: "same but for a parameter or setting",
+      "names-alike": "names alike",
+    } as Record<string, string>,
+    suggested: (why: string) => `Suggested: ${why}`,
+    rule: (n: number) =>
+      `All ${n} loose calls go there, and calls read later too: answer the open target question with /** (a rule)`,
+    preview: "Preview",
+    previewing: "Working out what changes…",
+    confirm: (n: number) => (n === 1 ? "Write the pair" : `Write ${n} pairs`),
+    writing: "Writing…",
+    written: (n: number, file: string) =>
+      `${n === 1 ? "One pair" : `${n} pairs`} written to ${file}.`,
+    ruleWritten: (q: string) => `The open target question ${q} is answered with /**.`,
+    undo: "Undo",
+    undone: "Undone: the line is removed.",
+    nothingPicked: "Pick at least one pair, or the rule for all.",
+    close: "Close",
+    copy: "Copy the command",
+  },
   /** ADR 0173: an unattended Copilot run started from the app, and its Console. */
   copilotRuns: {
     start: {

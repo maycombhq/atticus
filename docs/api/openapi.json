@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Atticus local API",
-    "version": "2.52.0",
+    "version": "2.53.0",
     "description": "Served by `atticus ui` on 127.0.0.1. The UI only calls this API, and the API only reads and writes files in the metarepo.",
     "license": {
       "name": "Apache-2.0",
@@ -5825,6 +5825,293 @@
           },
           "409": {
             "description": "Conflict: the file changed since you read it, or the state doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/links/candidates": {
+      "get": {
+        "operationId": "getLinkCandidates",
+        "summary": "Connect two boxes (ADR 0174, G1): box A's calls that join nothing, box B's APIs, and the API each call most likely is",
+        "tags": [
+          "views"
+        ],
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Box A: the caller's repo",
+            "required": false
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Box B: a repo of the manifest",
+            "required": false
+          },
+          {
+            "name": "system",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Box B: an outside system of the profile (instead of to)",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LinkCandidatesView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/links/connect": {
+      "post": {
+        "operationId": "connectLinks",
+        "summary": "Pair box A's calls with box B's APIs (ADR 0174, G1): a link line per pair in A's corrections, and with rule a /** answer; with preview, what it would write and the next verify --write changes",
+        "tags": [
+          "views"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "from": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "to": {
+                    "type": "object",
+                    "properties": {
+                      "repo": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "system": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "pairs": {
+                    "default": [],
+                    "maxItems": 500,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "call": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "api": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "required": [
+                        "call",
+                        "api"
+                      ]
+                    }
+                  },
+                  "rule": {
+                    "type": "boolean"
+                  },
+                  "preview": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "from",
+                  "to"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectLinksResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict: the file changed since you read it, or the state doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/facts/{repo}/corrections/undo": {
+      "post": {
+        "operationId": "undoCorrection",
+        "summary": "Remove exactly one line a person wrote to a repo's corrections file (ADR 0174, Undo)",
+        "tags": [
+          "views"
+        ],
+        "parameters": [
+          {
+            "name": "repo",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "line": {
+                    "type": "string",
+                    "minLength": 2
+                  }
+                },
+                "required": [
+                  "line"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "removed",
+                    "file"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -26220,6 +26507,249 @@
         ],
         "additionalProperties": false
       },
+      "LinkCandidatesView": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "object",
+            "properties": {
+              "repo": {
+                "type": "string",
+                "minLength": 1
+              },
+              "system": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "additionalProperties": false
+          },
+          "toName": {
+            "type": "string"
+          },
+          "calls": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "fact": {
+                  "type": "string"
+                },
+                "callType": {
+                  "type": "string"
+                },
+                "method": {
+                  "type": "string"
+                },
+                "path": {
+                  "type": "string"
+                },
+                "at": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "asked",
+                    "missed",
+                    "left",
+                    "outside",
+                    "unresolved",
+                    "paired"
+                  ]
+                },
+                "why": {
+                  "type": "string"
+                },
+                "paired": {
+                  "type": "string"
+                },
+                "suggestion": {
+                  "type": "object",
+                  "properties": {
+                    "api": {
+                      "type": "string"
+                    },
+                    "score": {
+                      "type": "number"
+                    },
+                    "why": {
+                      "type": "string",
+                      "enum": [
+                        "same-path",
+                        "prefix",
+                        "parameter",
+                        "names-alike"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "api",
+                    "score",
+                    "why"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "fact",
+                "callType",
+                "path",
+                "at",
+                "status"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "apis": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "entry",
+                    "route",
+                    "operation"
+                  ]
+                },
+                "method": {
+                  "type": "string"
+                },
+                "path": {
+                  "type": "string"
+                },
+                "at": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "kind",
+                "path"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "noCalls": {
+            "type": "object",
+            "properties": {
+              "command": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "command"
+            ],
+            "additionalProperties": false
+          },
+          "noApis": {
+            "type": "object",
+            "properties": {
+              "why": {
+                "type": "string",
+                "enum": [
+                  "not-read",
+                  "no-spec"
+                ]
+              },
+              "command": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "why",
+              "command"
+            ],
+            "additionalProperties": false
+          },
+          "rule": {
+            "type": "object",
+            "properties": {
+              "question": {
+                "type": "string"
+              },
+              "calls": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "question",
+              "calls"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "from",
+          "to",
+          "toName",
+          "calls",
+          "apis"
+        ],
+        "additionalProperties": false
+      },
+      "ConnectLinksResult": {
+        "type": "object",
+        "properties": {
+          "written": {
+            "type": "boolean"
+          },
+          "file": {
+            "type": "string"
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "rule": {
+            "type": "object",
+            "properties": {
+              "question": {
+                "type": "string"
+              },
+              "match": {
+                "type": "string"
+              },
+              "target": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "question",
+              "match",
+              "target"
+            ],
+            "additionalProperties": false
+          },
+          "preview": {},
+          "verify": {
+            "type": "string"
+          },
+          "commit": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "written",
+          "file",
+          "lines",
+          "verify",
+          "commit"
+        ],
+        "additionalProperties": false
+      },
       "Question": {
         "type": "object",
         "properties": {
@@ -29926,8 +30456,40 @@
                       "type": "string",
                       "enum": [
                         "wrong",
-                        "edit"
+                        "edit",
+                        "link"
                       ]
+                    },
+                    "link": {
+                      "type": "object",
+                      "properties": {
+                        "repo": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "system": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "entry": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 120,
+                          "pattern": "^[a-z0-9][a-z0-9._-]*$"
+                        },
+                        "method": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "path": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "required": [
+                        "path"
+                      ],
+                      "additionalProperties": false
                     },
                     "set": {
                       "type": "object",
@@ -30127,8 +30689,40 @@
                 "type": "string",
                 "enum": [
                   "wrong",
-                  "edit"
+                  "edit",
+                  "link"
                 ]
+              },
+              "link": {
+                "type": "object",
+                "properties": {
+                  "repo": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "system": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "entry": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120,
+                    "pattern": "^[a-z0-9][a-z0-9._-]*$"
+                  },
+                  "method": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "path": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "path"
+                ],
+                "additionalProperties": false
               },
               "set": {
                 "type": "object",

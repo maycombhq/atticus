@@ -286,6 +286,7 @@ async function linkCounts(root: string, op: OrgPack): Promise<DoctorCounts["link
   const join = joinFacts({
     repos: joinReposOf(op, repos, componentRenames(repos, op)),
     ...(Object.keys(estate.targets).length ? { targets: estate.targets } : {}),
+    ...(Object.keys(estate.pairs).length ? { pairs: estate.pairs } : {}),
     outside: outsideSystems(op),
     ...joinConventions(op),
     walkGateways: helperOn("gateway-walk"),

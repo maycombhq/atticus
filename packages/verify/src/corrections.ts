@@ -28,10 +28,9 @@ export interface CorrectionsResult {
 }
 
 /** The correction a fact meets, by its id and cite first, else by what it cites. Newest wins. */
-export function correctionFor(
-  f: Fact,
-  corrections: readonly FactCorrection[],
-): FactCorrection | undefined {
+export function correctionFor(f: Fact, all: readonly FactCorrection[]): FactCorrection | undefined {
+  // G1 (ADR 0174): a link leaves the fact as read; the join reads it (pairsFromCorrections).
+  const corrections = all.filter((c) => c.action !== "link");
   const at = (c: FactCorrection) =>
     c.target.kind === f.kind && c.target.file === f.cite.file && c.target.line === f.cite.line;
   const byId = corrections.filter((c) => c.fact === f.id && at(c));
@@ -101,6 +100,23 @@ export function applyCorrections(
   // Only the newest correction of a fact counts; an older one it replaced isn't stale.
   for (const c of corrections) {
     if (used.has(c)) continue;
+    if (c.action === "link") {
+      // G1: a pairing is stale only when no call is the one it names.
+      const met = out.some(
+        (f) =>
+          f.kind === "call" &&
+          f.cite.file === c.target.file &&
+          f.cite.line === c.target.line &&
+          (f.id === c.fact || f.cite.value === c.target.value),
+      );
+      if (!met)
+        stale.push({
+          correction: c,
+          why: "none",
+          message: `${c.by}'s pairing of call ${c.fact} (${c.target.file}:${c.target.line}) with ${[c.link?.method, c.link?.path].filter(Boolean).join(" ")} on ${c.link?.repo ?? c.link?.system} meets no call in this read; it is kept in the file and applied when the call is read again`,
+        });
+      continue;
+    }
     const replaced = [...used].some(
       (u) =>
         (u.fact === c.fact || u.target.value === c.target.value) &&

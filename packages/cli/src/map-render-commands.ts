@@ -36,6 +36,7 @@ import {
   type CatalogRecord,
   type ContractsFileT,
   type Fact,
+  type PersonPair,
   type FactJoin,
   type FactsJoinResult,
   type ExposureFinding,
@@ -52,6 +53,7 @@ import {
   diffCatalogs,
   diffIsEmpty,
   estateFacts,
+  pairsOfRepo,
   estateRepos,
   isPrototypeRepo,
   prototypeLeftOut,
@@ -468,6 +470,8 @@ export async function projectFactsIntoCatalog(
     contracts?: ContractsFileT;
     /** False for a preview: no read cache is kept, so nothing at all is written. */
     cache?: boolean;
+    /** G1 (ADR 0174): pairings not written yet, a preview's, added to those on file. */
+    extraPairs?: Readonly<Record<string, PersonPair>>;
   } = {},
 ) {
   const op = given.op ?? (await loadOrgPack(orgPackDirOf(root)));
@@ -514,6 +518,9 @@ export async function projectFactsIntoCatalog(
     targets,
     estate: estate.repos,
     estateTargets: estate.targets,
+    // G1 (ADR 0174): the pairings people made on the canvas, this repo's and the others'.
+    pairs: { ...(await pairsOfRepo(root, repo, facts)), ...given.extraPairs },
+    estatePairs: estate.pairs,
     linkEvidence: { contracts: evidence.contracts, traffic: evidence.traffic },
     ...(shared.maps.length ? { shared: shared.maps } : {}),
   });
