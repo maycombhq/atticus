@@ -149,6 +149,9 @@ Every other command. `atticus legacy` lists them by area; each runs by its own n
   atticus repo-type new <id> --from <repo> [--force]   Draft a repo type from a repo (its build files, dependencies, markers, folders) for you to edit
   atticus repo-type note <type> | --org-wide [--add "..."]   List a repo type's notes (or the org-wide ones), or add one: what the organisation's terms mean and what must hold, in its own words; each read of a repo is handed them
   atticus repo-type rules [--save] [--json]   Draft a checklist rule (status draft) from each note that reads as a rule (all, every, must); --save adds the new drafts to org-pack/checklists/org-notes.yaml for review
+  atticus skills list [--json]         The skills, agents and team instructions the org pack keeps (yours and other teams' imported), and where each is written for Claude and Copilot (ADR 0177)
+  atticus skills import <their repo> --team <team> [--at <tag>] [--only <names>] [--replace]   A pinned copy of another team's skills, agents and instructions in the org pack, then written for both assistants; a file edited here is kept
+  atticus skills write [--check]       Write .claude/ and .github/ files (and CLAUDE.md's team instructions) from the org pack's sources; --check exits 1 when they are behind
   atticus rules list [<repo>] [--json]   The organisation's reading rules (ADR 0176): every layer's file, or the rules a repo's reads are given, with their layer, drafts and what is switched off
   atticus rules add --org-wide | --type <t> | --repo <r> --key <k> --rule "..." [--files <glob,glob>] [--example <path:line>] [--draft]   Write a reading rule to a layer's file, for review
   atticus rules activate <key> --org-wide | --type <t> | --repo <r>   Give a draft rule to reads

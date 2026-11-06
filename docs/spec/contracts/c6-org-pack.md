@@ -507,3 +507,7 @@ Where: `org-pack/conventions.yaml` (optional; the house conventions a read leans
 | `repos/<repo>.yaml`           | one repo                                                                                                 |
 
 Each file: `schemaVersion: 1`, `rules` and `off`. A rule: `key` (lower case, dashes; unique in its file), `status` (`active`, default, or `draft`: not given to reads), `rule` (the words a reader follows, 10 to 2000 characters), `files` (globs in the repo; none means every file a whole read reads), `example` (`path:line`), `by`. An `off` entry: `key` (an earlier rule's, or `builtin:<set>` for one of Atticus's rule sets) and `reason`. A rule's id, `org:<key>@<8 hex>` of its words and files, is recorded with each read beside the built-in rule sets (ADR 0167), so a new or changed rule tops up only the files it names. Rules never change the facts file's shape or the verifier.
+
+## Skills, agents and instructions
+
+`org-pack/skills/<name>/SKILL.md` (with the skill's other files), `org-pack/agents/<name>.md` and `org-pack/instructions/<name>.md` (ADR 0177): the organisation's own, and under `imported/<team>/` another team's, copied by `atticus skills import`, with `org-pack/imported/<team>.yaml` saying where from (`team`, `from`, `at`, and each item's files with a short hash). Markdown with optional front matter (`name`, `description`; instructions may give `applyTo`). `atticus skills write` writes them for each assistant and keeps `org-pack/skills/.written.yaml` (each written file's hash), so a file edited after it was written is kept.

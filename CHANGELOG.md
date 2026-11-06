@@ -4,6 +4,10 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### Skills and agents from other teams, for Claude and Copilot (G5)
+
+- `atticus skills import <their repo> --team <team> --at <tag>` takes another team's skills, agents and instructions as a pinned copy into `org-pack/{skills,agents,instructions}/imported/<team>/`, with where they came from, and writes them for both assistants: `.claude/skills/` and `.github/prompts/`, `.claude/agents/` and `.github/agents/`, `.github/instructions/` and an `@` import in CLAUDE.md. Your own go in the same folders. A file edited here is kept; a skill with scripts, or one that states estate facts with no atticus command to check them, is flagged for review; imported text never reaches Atticus's own prompts. `atticus skills list | write [--check]`. ADR 0177; guide: docs/guide/skills-and-agents.md.
+
 ### Reading rules your organisation owns (G4)
 
 - `org-pack/reading-rules/`: rules for how your repos are read, in layers (another team's imported and pinned, the organisation's, a repo type's, one repo's), each with its key, words, files, an example line and who wrote it; a later layer can switch an earlier rule (or one of Atticus's sets, `builtin:<set>`) off, saying why. Reads are given them after Atticus's own; a read records each rule's id, so `atticus map --all --stale` tops up only the files a new or changed rule names. `atticus rules list | add | activate | off | draft | try | import | notes`: Copilot drafts rules for a type from what the reads keep missing, `try` shows what a rule would change and writes nothing, `import` takes another team's rules at a tag. On the canvas, a pairing can become a draft rule for every repo of its type. ADR 0176; guide: docs/guide/reading-rules.md.

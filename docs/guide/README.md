@@ -7,6 +7,7 @@
 - [Running Copilot unattended (copilot-acp)](copilot-unattended.md): Atticus drives Copilot itself through the Copilot language server's Agent Client Protocol, one new session per step or part: how to turn it on, what a session may and may not do, sign-in, and how to stop.
 - [Correcting the map on the canvas](correcting-the-map.md): connect two boxes call by call, set a repo's owner and system, add a box and declare a link the code can't show, each previewed, written for review and undone in one click.
 - [Reading rules your organisation owns](reading-rules.md): rules for how your repos are read, by repo, by type or for every repo, written by hand or drafted by Copilot, tried before they are kept, and taken from another team pinned at a version.
+- [Skills and agents from other teams](skills-and-agents.md): take another team's skills, agents and instructions as a pinned, reviewed copy, written for Claude Code and Copilot from one source, your edits kept.
 - [Teaching Atticus your house frameworks](frameworks.md): framework models from source, JARs, documents or an assistant's draft, and the tests that gate them.
 - [Org knowledge](knowledge.md): add a wiki, a document or an API guide, scan it, ask it, and see, confirm or exclude what applies to a change.
 - [A vendor's API changes](vendor-specs.md): feed each version of a vendor's spec beside the last, see what changed and what in the estate it reaches, and start a change from it.
