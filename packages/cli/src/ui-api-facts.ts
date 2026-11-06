@@ -16,7 +16,13 @@ import {
   sampleConfirmed,
   type Fact,
 } from "@maycombhq/core";
-import { applyCorrections, correctedFact, correctionFor, repairFormSlips } from "@maycombhq/verify";
+import {
+  applyCorrections,
+  correctedFact,
+  correctionFor,
+  outsidePairingFor,
+  repairFormSlips,
+} from "@maycombhq/verify";
 import {
   badRequest,
   HttpError,
@@ -149,7 +155,8 @@ async function repoFactsViewNow(root: string, repo: string): Promise<View> {
       message: `isn't an audit file: ${audit.issues[0] ?? "invalid"}`,
     });
   const facts: CiteView[] = f.facts.map((x) => {
-    const corr = correctionFor(x, c.corrections);
+    // A pairing with an outside system is the call's correction too (G1, ADR 0174).
+    const corr = correctionFor(x, c.corrections) ?? outsidePairingFor(x, c.corrections);
     return {
       id: x.id,
       kind: x.kind,

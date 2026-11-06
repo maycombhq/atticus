@@ -2,7 +2,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { isMap, isScalar, isSeq, parseDocument, type Document, type YAMLMap } from "yaml";
 import { writeFileAtomic } from "./fs.js";
-import { changedLines, type LineChange } from "./manifest-edit.js";
+import { changedLines, eolOf, inEol, lfOnly, type LineChange } from "./manifest-edit.js";
 import { isAdopted, orgPackDirOf } from "./metarepo.js";
 import { DeclaredCall, Profile } from "./schema/orgpack.js";
 import { migrateProfileText } from "./profile-migrate.js";
@@ -57,15 +57,21 @@ async function profilesOf(root: string): Promise<{ path: string; rel: string }[]
 async function systemNode(
   root: string,
   system: string,
-): Promise<{ path: string; rel: string; text: string; doc: Document; node: YAMLMap } | undefined> {
+): Promise<
+  | { path: string; rel: string; text: string; eol: "\r\n" | "\n"; doc: Document; node: YAMLMap }
+  | undefined
+> {
   for (const f of await profilesOf(root)) {
-    const text = await readFile(f.path, "utf8").catch(() => undefined);
-    if (text === undefined) continue;
+    const raw = await readFile(f.path, "utf8").catch(() => undefined);
+    if (raw === undefined) continue;
+    // Compared as LF; written back in the file's own line endings (a Windows checkout's CRLF).
+    const eol = eolOf(raw);
+    const text = lfOnly(raw);
     const doc = parseDocument(text);
     const seq = doc.get("systems");
     if (!isSeq(seq)) continue;
     const node = seq.items.find((x) => isMap(x) && x.get("id") === system);
-    if (isMap(node)) return { ...f, text, doc, node };
+    if (isMap(node)) return { ...f, text, eol, doc, node };
   }
   return undefined;
 }
@@ -87,7 +93,7 @@ export async function declareLink(
 ): Promise<{ rel: string; changes: LineChange[]; written: boolean }> {
   const found = await systemNode(root, d.system);
   if (!found) throw new DeclareError("not-found", `No system of the profiles is ${d.system}.`);
-  const { path, rel, text } = found;
+  const { path, rel, text, eol } = found;
   const doc = parseDocument(d.kind === "topic" ? migrateProfileText(text).text : text);
   const node = (doc.get("systems") as { items: unknown[] }).items.find(
     (x) => isMap(x) && x.get("id") === d.system,
@@ -122,7 +128,7 @@ export async function declareLink(
     );
   const changes = changedLines(text, after);
   if (o.preview) return { rel, changes, written: false };
-  await writeFileAtomic(path, after);
+  await writeFileAtomic(path, inEol(after, eol));
   return { rel, changes, written: true };
 }
 
@@ -133,7 +139,7 @@ export async function undeclareLink(
 ): Promise<{ rel: string; changes: LineChange[] }> {
   const found = await systemNode(root, d.system);
   if (!found) throw new DeclareError("not-found", `No system of the profiles is ${d.system}.`);
-  const { path, rel, text, doc, node } = found;
+  const { path, rel, text, eol, doc, node } = found;
   const list = node.get(d.kind === "topic" ? "topics" : "calls");
   // Only what a person declared from the canvas (its comment says who and when): a line written
   // by hand in the profile is changed there, never by Undo.
@@ -153,7 +159,7 @@ export async function undeclareLink(
     );
   list.items.splice(i, 1);
   const after = doc.toString({ lineWidth: 0, flowCollectionPadding: true });
-  await writeFileAtomic(path, after);
+  await writeFileAtomic(path, inEol(after, eol));
   return { rel, changes: changedLines(text, after) };
 }
 

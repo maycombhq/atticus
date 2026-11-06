@@ -145,3 +145,21 @@ describe("setting a repo's owner in a Windows checkout", () => {
     expect(await readFile(file, "utf8")).toBe(text.replace("team-ledger\r\n", "team-platform\r\n"));
   });
 });
+
+describe("declaring in a Windows checkout", () => {
+  it("previews only the lines it adds, and keeps CRLF", async () => {
+    const root = await metarepo();
+    const file = join(root, "org-pack/profiles/forge/profile.yaml");
+    const crlf = PROFILE.replace(/\n/g, "\r\n");
+    await writeFile(file, crlf);
+    const r = await declareLink(
+      root,
+      { kind: "call", system: "northwind-pay", route: "POST /webhooks" },
+      { by: "pat", at },
+    );
+    expect(r.changes.every((c) => c.was === undefined)).toBe(true);
+    const after = await readFile(file, "utf8");
+    expect(after.replace(/\r\n/g, "")).not.toContain("\n");
+    expect(after.startsWith(crlf.split("    boundary: vendor")[0]!)).toBe(true);
+  });
+});

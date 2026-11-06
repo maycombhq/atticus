@@ -230,6 +230,12 @@ export async function migrateManifests(
   return out;
 }
 
+/** A file's line ending, its text with LF only, and the text back in its own endings. */
+export const eolOf = (raw: string): "\r\n" | "\n" => (raw.includes("\r\n") ? "\r\n" : "\n");
+export const lfOnly = (raw: string) => raw.replace(/\r\n/g, "\n");
+export const inEol = (text: string, eol: "\r\n" | "\n") =>
+  eol === "\n" ? text : text.replace(/\r?\n/g, eol);
+
 /** A line the edit changes: what it was (none when added) and what it is now. */
 export interface LineChange {
   was?: string;
@@ -257,11 +263,17 @@ export function changedLines(before: string, after: string): LineChange[] {
   const n = x.length;
   const m = y.length;
   // Past a million cells the table costs too much: the changed block, line against line.
-  if (n * m > 1_000_000)
-    return Array.from({ length: Math.max(n, m) }, (_, k) => ({
-      ...(k < n ? { was: x[k]! } : {}),
-      ...(k < m ? { now: y[k]! } : {}),
-    }));
+  if (n * m > 1_000_000) {
+    const rows = Math.max(n, m);
+    const shown = Math.min(rows, 200);
+    return [
+      ...Array.from({ length: shown }, (_, k) => ({
+        ...(k < n ? { was: x[k]! } : {}),
+        ...(k < m ? { now: y[k]! } : {}),
+      })),
+      ...(rows > shown ? [{ now: `(${rows - shown} more changed lines not shown)` }] : []),
+    ];
+  }
   const lcs: number[][] = Array.from({ length: n + 1 }, () => new Array<number>(m + 1).fill(0));
   for (let i = n - 1; i >= 0; i--)
     for (let j = m - 1; j >= 0; j--)
@@ -311,8 +323,8 @@ export async function setManifestField(
   // The preview is of the file as it is on disk, so a write that reformats it shows that too.
   const raw = await readFile(file.path, "utf8");
   // Compared and written with the file's own line endings (a Windows checkout's CRLF).
-  const eol = raw.includes("\r\n") ? "\r\n" : "\n";
-  const before = raw.replace(/\r\n/g, "\n");
+  const eol = eolOf(raw);
+  const before = lfOnly(raw);
   item.set(field, value);
   // Written in the file's own style (`[a]` or `[ a ]`), so only the line set changes.
   const after = doc.toString({ lineWidth: 0, flowCollectionPadding: /\[ \S/.test(before) });
@@ -324,7 +336,7 @@ export async function setManifestField(
       check.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "),
     );
   if (o.preview || !changes.length) return { file, changes, written: false };
-  await writeFileAtomic(file.path, eol === "\n" ? after : after.replace(/\n/g, eol));
+  await writeFileAtomic(file.path, inEol(after, eol));
   return { file, changes, written: true };
 }
 
@@ -339,8 +351,10 @@ export async function addRolesTeam(
 ): Promise<{ rel: string; changes: LineChange[]; written: boolean }> {
   const path = join(orgPackDirOf(root), "roles.yaml");
   const rel = `${isAdopted(root) ? ".atticus/org-pack" : "org-pack"}/roles.yaml`;
-  const text =
+  const raw =
     (await readFile(path, "utf8").catch(() => undefined)) ?? "schemaVersion: 2\nteams: []\n";
+  const eol = eolOf(raw);
+  const text = lfOnly(raw);
   const migrated = migrateRolesText(text).text;
   const doc = parseDocument(migrated);
   let teams = doc.get("teams");
@@ -361,6 +375,6 @@ export async function addRolesTeam(
     );
   const changes = changedLines(text, after);
   if (o.preview) return { rel, changes, written: false };
-  await writeFileAtomic(path, after);
+  await writeFileAtomic(path, inEol(after, eol));
   return { rel, changes, written: true };
 }

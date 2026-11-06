@@ -1,4 +1,4 @@
-import { Fact, type FactCorrection } from "@maycombhq/core";
+import { Fact, linksFor, type FactCorrection } from "@maycombhq/core";
 
 /**
  * A person's corrections of a repo's facts (ADR 0124 addendum D-app, F3), applied before the
@@ -43,26 +43,16 @@ export function correctionFor(f: Fact, all: readonly FactCorrection[]): FactCorr
 }
 
 /**
- * G1: the newest pairing of a call with an outside system, met as any correction meets its fact.
- * It is applied on top of the fact's own correction (never instead of it), so an edit stays and a
- * call marked wrong stays left out.
+ * G1: the call's newest pairing, when it is with an outside system (a newer pairing with a repo
+ * withdraws it: the join reads that one). Met as `linksFor` meets it, so a call an edit moved
+ * keeps its pairing.
  */
 export function outsidePairingFor(
   f: Fact,
   all: readonly FactCorrection[],
 ): FactCorrection | undefined {
-  if (f.kind !== "call") return undefined;
-  return all
-    .filter(
-      (c) =>
-        c.action === "link" &&
-        !!c.link?.system &&
-        c.target.kind === "call" &&
-        c.target.file === f.cite.file &&
-        c.target.line === f.cite.line &&
-        (c.fact === f.id || c.target.value === f.cite.value),
-    )
-    .sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0))[0];
+  const newest = linksFor(f, all)[0];
+  return newest?.link?.system ? newest : undefined;
 }
 
 /** The fact as the person corrected it, or why it isn't one. */
@@ -97,53 +87,57 @@ export function applyCorrections(
   const applied: AppliedCorrection[] = [];
   const used = new Set<FactCorrection>();
   const stale: StaleCorrection[] = [];
-  // A pairing with an outside system, on top of whatever else the person said of the call.
-  const withPairing = (f: Fact, as: Fact = f): Fact => {
+  // Every pairing a read call meets is accounted for (applied, replaced or withdrawn), never stale.
+  const met = new Set<FactCorrection>();
+  // A pairing with an outside system, on top of what else the person said of the call: unless a
+  // newer correction of theirs set the call's target itself.
+  const withPairing = (f: Fact, as: Fact, over?: FactCorrection): Fact => {
     const p = outsidePairingFor(as, corrections);
     if (!p) return f;
-    used.add(p);
+    if (over && over.at > p.at && over.set?.to !== undefined) return f;
     const fixed = correctedFact(f, { ...p, action: "edit", set: { to: p.link!.system! } });
-    return typeof fixed === "string" ? f : fixed;
+    if (typeof fixed === "string") {
+      stale.push({
+        correction: p,
+        why: "invalid",
+        message: `${p.by}'s pairing of ${f.kind} ${f.id} with ${p.link!.system} doesn't make a fact (${fixed}); the call is kept as it was`,
+      });
+      return f;
+    }
+    return fixed;
   };
   for (const f0 of facts) {
+    for (const l of linksFor(f0, corrections)) met.add(l);
     const c = correctionFor(f0, corrections);
     if (c?.action === "wrong") {
       used.add(c);
       applied.push({ fact: f0.id, action: "wrong", by: c.by });
       continue;
     }
-    const f = c ? f0 : withPairing(f0);
     if (!c) {
-      out.push(f);
+      out.push(withPairing(f0, f0));
       continue;
     }
     used.add(c);
-    const fixed = correctedFact(f, c);
+    const fixed = correctedFact(f0, c);
     if (typeof fixed === "string") {
       stale.push({
         correction: c,
         why: "invalid",
-        message: `${c.by}'s correction of ${f.kind} ${f.id} doesn't make a fact (${fixed}); the fact is kept as it was`,
+        message: `${c.by}'s correction of ${f0.kind} ${f0.id} doesn't make a fact (${fixed}); the fact is kept as it was`,
       });
-      out.push(withPairing(f));
+      out.push(withPairing(f0, f0));
       continue;
     }
-    applied.push({ fact: f.id, action: "edit", by: c.by });
-    out.push(withPairing(fixed, f0));
+    applied.push({ fact: f0.id, action: "edit", by: c.by });
+    out.push(withPairing(fixed, f0, c));
   }
   // Only the newest correction of a fact counts; an older one it replaced isn't stale.
   for (const c of corrections) {
     if (used.has(c)) continue;
     if (c.action === "link") {
-      // G1: a pairing is stale only when no call is the one it names.
-      const met = out.some(
-        (f) =>
-          f.kind === "call" &&
-          f.cite.file === c.target.file &&
-          f.cite.line === c.target.line &&
-          (f.id === c.fact || f.cite.value === c.target.value),
-      );
-      if (!met)
+      // G1: a pairing is stale only when no call of this read is the one it names.
+      if (!met.has(c))
         stale.push({
           correction: c,
           why: "none",

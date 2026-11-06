@@ -193,6 +193,56 @@ describe("G1 (ADR 0174): a pairing", () => {
     expect(r.facts).toEqual([]);
   });
 
+  it("is withdrawn by a newer pairing with a repo", () => {
+    const later = {
+      ...link({ repo: "forge-gw", path: "/v1/charges" }),
+      at: "2026-11-06T13:00:00.000Z",
+    };
+    const r = applyCorrections(
+      [call],
+      [link({ system: "northwind-pay", path: "/v1/charges" }), later],
+    );
+    expect(r.facts).toEqual([call]);
+    expect(r.stale).toEqual([]);
+  });
+
+  it("gives way to a newer edit that sets the call's target", () => {
+    const edit = {
+      ...link({ repo: "x", path: "/x" }),
+      action: "edit",
+      set: { to: "forge-ledger" },
+      link: undefined,
+      at: "2026-11-06T13:00:00.000Z",
+    } as unknown as Parameters<typeof applyCorrections>[1][number];
+    const r = applyCorrections(
+      [call],
+      [link({ system: "northwind-pay", path: "/v1/charges" }), edit],
+    );
+    expect(r.facts[0]).toMatchObject({ to: "forge-ledger" });
+  });
+
+  it("follows a call an edit moved to another line", () => {
+    const move = {
+      ...link({ repo: "x", path: "/x" }),
+      action: "edit",
+      set: { path: "/v2" },
+      line: 12,
+      link: undefined,
+      at: "2026-11-06T10:00:00.000Z",
+    } as unknown as Parameters<typeof applyCorrections>[1][number];
+    // Read again: the call is now on line 12.
+    const reread = {
+      ...call,
+      cite: { ...(call as { cite: object }).cite, line: 12 },
+    } as typeof call;
+    const r = applyCorrections(
+      [reread],
+      [move, link({ system: "northwind-pay", path: "/v1/charges" })],
+    );
+    expect(r.facts[0]).toMatchObject({ path: "/v2", to: "northwind-pay" });
+    expect(r.stale).toEqual([]);
+  });
+
   it("is stale when no call is the one it names", () => {
     const r = applyCorrections([], [link({ repo: "forge-gw", path: "/v1/charges" })]);
     expect(r.stale[0]?.message).toContain("pat's pairing of call c-charge");

@@ -172,40 +172,44 @@ export function correctionLine(c: FactCorrection): string {
   return JSON.stringify(out);
 }
 
+type CallLike = { kind: string; id: string; cite: { file: string; line: number; value: string } };
+
+/**
+ * G1 (ADR 0174): every pairing (`link`) that meets a call, newest first: on its cited line by its
+ * id or by what it cites, or by its id where an edit of the same fact moved it to the line it is
+ * on now. One matcher for the verifier and the join.
+ */
+export function linksFor(f: CallLike, corrections: readonly FactCorrection[]): FactCorrection[] {
+  if (f.kind !== "call") return [];
+  const moved = corrections.some(
+    (c) => c.action === "edit" && c.fact === f.id && c.line === f.cite.line,
+  );
+  return corrections
+    .filter(
+      (c) =>
+        c.action === "link" &&
+        !!c.link &&
+        c.target.kind === "call" &&
+        c.target.file === f.cite.file &&
+        ((c.target.line === f.cite.line && (c.fact === f.id || c.target.value === f.cite.value)) ||
+          (moved && c.fact === f.id)),
+    )
+    .sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
+}
+
 /**
  * G1 (ADR 0174): a repo's pairings, call fact id → what the person paired it with, from its
- * corrections file: the newest link per call, met as any correction meets its fact (by id on its
- * cited line, else by what it cites). A link that meets no call is left out (the verifier says so).
+ * corrections file: the newest link per call (a repo's or an outside system's), met as linksFor
+ * meets it. A link that meets no call is left out (the verifier says so).
  */
 export function pairsFromCorrections(
-  facts: readonly {
-    kind: string;
-    id: string;
-    cite: { file: string; line: number; value: string };
-  }[],
+  facts: readonly CallLike[],
   corrections: readonly FactCorrection[],
 ): Record<string, CorrectionLink & { by: string }> {
-  const links = corrections
-    .filter((c) => c.action === "link" && c.link)
-    .sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
   const out: Record<string, CorrectionLink & { by: string }> = {};
-  for (const c of links) {
-    const f =
-      facts.find(
-        (x) =>
-          x.kind === "call" &&
-          x.id === c.fact &&
-          x.cite.file === c.target.file &&
-          x.cite.line === c.target.line,
-      ) ??
-      facts.find(
-        (x) =>
-          x.kind === "call" &&
-          x.cite.file === c.target.file &&
-          x.cite.line === c.target.line &&
-          x.cite.value === c.target.value,
-      );
-    if (f) out[f.id] = { ...c.link!, by: c.by };
+  for (const f of facts) {
+    const c = linksFor(f, corrections)[0];
+    if (c?.link) out[f.id] = { ...c.link, by: c.by };
   }
   return out;
 }
