@@ -236,27 +236,54 @@ export interface LineChange {
   now?: string;
 }
 
-/** The lines two texts differ in, in order (a small line diff for a preview). */
+/**
+ * The lines two texts differ in, in order: a line diff (longest common subsequence), each run of
+ * removed and added lines paired up as was and now. For a preview of a file's change.
+ */
 export function changedLines(before: string, after: string): LineChange[] {
   const a = before.split("\n");
   const b = after.split("\n");
-  let i = 0;
-  while (i < a.length && i < b.length && a[i] === b[i]) i++;
+  // Trim what is the same at both ends, then diff what is left.
+  let s0 = 0;
+  while (s0 < a.length && s0 < b.length && a[s0] === b[s0]) s0++;
   let ea = a.length;
   let eb = b.length;
-  while (ea > i && eb > i && a[ea - 1] === b[eb - 1]) {
+  while (ea > s0 && eb > s0 && a[ea - 1] === b[eb - 1]) {
     ea--;
     eb--;
   }
+  const x = a.slice(s0, ea);
+  const y = b.slice(s0, eb);
+  const n = x.length;
+  const m = y.length;
+  const lcs: number[][] = Array.from({ length: n + 1 }, () => new Array<number>(m + 1).fill(0));
+  for (let i = n - 1; i >= 0; i--)
+    for (let j = m - 1; j >= 0; j--)
+      lcs[i]![j] =
+        x[i] === y[j] ? lcs[i + 1]![j + 1]! + 1 : Math.max(lcs[i + 1]![j]!, lcs[i]![j + 1]!);
   const out: LineChange[] = [];
-  for (let k = 0; k < Math.max(ea - i, eb - i); k++) {
-    const was = a[i + k];
-    const now = b[i + k];
-    out.push({
-      ...(i + k < ea && was !== undefined ? { was } : {}),
-      ...(i + k < eb && now !== undefined ? { now } : {}),
-    });
+  let was: string[] = [];
+  let now: string[] = [];
+  const flush = () => {
+    for (let k = 0; k < Math.max(was.length, now.length); k++)
+      out.push({
+        ...(was[k] !== undefined ? { was: was[k] } : {}),
+        ...(now[k] !== undefined ? { now: now[k] } : {}),
+      });
+    was = [];
+    now = [];
+  };
+  let i = 0;
+  let j = 0;
+  while (i < n || j < m) {
+    if (i < n && j < m && x[i] === y[j]) {
+      flush();
+      i++;
+      j++;
+    } else if (j < m && (i >= n || lcs[i]![j + 1]! >= lcs[i + 1]![j]!)) now.push(y[j++]!);
+    else was.push(x[i++]!);
   }
+  flush();
   return out;
 }
 
@@ -275,9 +302,11 @@ export async function setManifestField(
   const found = await entryOf(root, repo);
   if (!found) throw new ManifestEditError("not-found", `There is no repo ${repo} in any manifest.`);
   const { file, doc, item } = found;
-  const before = doc.toString({ lineWidth: 0, flowCollectionPadding: true });
+  // The preview is of the file as it is on disk, so a write that reformats it shows that too.
+  const before = await readFile(file.path, "utf8");
   item.set(field, value);
-  const after = doc.toString({ lineWidth: 0, flowCollectionPadding: true });
+  // Written in the file's own style (`[a]` or `[ a ]`), so only the line set changes.
+  const after = doc.toString({ lineWidth: 0, flowCollectionPadding: /\[ \S/.test(before) });
   const changes = changedLines(before, after);
   const check = RepoManifest.safeParse(doc.toJS());
   if (!check.success)
@@ -286,7 +315,7 @@ export async function setManifestField(
       check.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "),
     );
   if (o.preview || !changes.length) return { file, changes, written: false };
-  await save(file.path, doc);
+  await writeFileAtomic(file.path, after);
   return { file, changes, written: true };
 }
 

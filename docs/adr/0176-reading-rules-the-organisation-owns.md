@@ -3,7 +3,7 @@
 - Status: accepted (pending review by the product owner)
 - Date: 2026-11-06
 - Builds on: ADR 0124 (facts and the verifier), 0163 (org notes), 0167 (rule sets recorded with each read, top-ups), 0171 (Copilot unattended), 0174 (corrections on the canvas)
-- Contracts: C6 gains `org-pack/reading-rules/` (`ReadingRulesFile`, schema version 1; no migration, the folder is new); C4 gains `POST /api/reading-rules/from-pairing` (local API 2.53.0); the read plan's `rules.sets` also lists the organisation's rule ids
+- Contracts: C6 gains `org-pack/reading-rules/` (`ReadingRulesFile`, schema version 1; no migration, the folder is new); C4 gains `POST /api/reading-rules/from-pairing` (local API 2.55.0); the read plan's `rules.sets` also lists the organisation's rule ids
 
 ## Context
 
@@ -14,7 +14,7 @@ How Copilot reads a bank's repos was changed only by an Atticus release: each fi
 1. **Rules are files in the org pack, in layers**: imported (another team's, pinned), the organisation's, the repo type's, the repo's. A later layer adds to the earlier ones and may switch one off for its scope, saying why (`off`, with `builtin:<set>` for one of Atticus's own sets). Each rule has a key, its words, the files it is about (globs), an example line, and who wrote it; a draft isn't given to reads until a person sets it active. Every change is a file reviewed in a pull request.
 2. **Reads are given them** after Atticus's own rules: the `/atticus-map` reader (in `atticus map <repo> --estimate`'s text and JSON), the model-mode batches and the top-up sessions. They never change the facts file's shape or the verifier: every fact still cites its line.
 3. **A changed rule re-reads only what it names.** A read records each rule's id (`org:<key>@<hash of its words and files>`) beside the built-in sets; `atticus map --all --stale` sees a rule a read lacks and plans a top-up of the files its globs match (ADR 0167's mechanism). A rule with no files goes to the next whole read.
-4. **Commands**: `atticus rules list [<repo>]`, `add`, `activate`, `off`, `draft` (Copilot drafts rules for a type from several repos, or for one repo `--about` what was missed, from the rejections, corrections and open questions on file; each a draft), `try` (one small Copilot session on a few files a rule names; shows the facts it would add or change, writes nothing), `import` (another team's type file, pinned at a tag of their metarepo, read from its files), and `notes` (a repo type's notes that read as instructions, offered as drafts).
+4. **Commands**: `atticus rules list [<repo>]`, `add`, `activate`, `off`, `draft` (Copilot drafts rules for a type from several repos, or for one repo `--about` what was missed, from the rejections, corrections and open questions on file; each a draft), `try` (one small Copilot session on a few files a rule names; shows the facts it would add or change, writes nothing), `import` (another team's type file, pinned at a tag of their metarepo, read from its history; every rule comes in as a draft, given to no read until a person sets it active), and `notes` (a repo type's notes that read as instructions, offered as drafts).
 5. **From the canvas**: after a pairing (ADR 0174), "Make this a rule for every repo of this type?" drafts a rule from it in `types/<type>.yaml`.
 
 ## Consequences

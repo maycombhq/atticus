@@ -516,7 +516,7 @@ Usage:
   atticus rules off <key> --reason "..." --org-wide | --type <t> | --repo <r>   Switch an earlier layer's rule (or builtin:<set>) off for this scope, saying why
   atticus rules draft --type <t> [--repos a,b] | --repo <r> --about "..." [--mode copilot-acp|hand-off]   Copilot drafts rules from what the reads keep missing (rejections, corrections, open questions); each is a draft a person sets active
   atticus rules try <repo> --rule <key> [--files <n>] [--compare]   One small Copilot session on a few files the rule names: the facts it would add or change; writes nothing
-  atticus rules import <their metarepo> --type <t> --team <team> [--at <tag>]   A pinned copy of another product team's type rules, in reading-rules/imported/<team>/, for review
+  atticus rules import <their metarepo> --type <t> --team <team> --at <tag>   A copy of another product team's type rules pinned at their tag, in reading-rules/imported/<team>/, each a draft until reviewed and set active
   atticus rules notes --type <t> [--save]   The repo type's notes that read as an instruction to a reader, offered (with --save written) as draft reading rules
   atticus scan review <repo>           What the last scan couldn't read: your assistant gives a verdict on each gap and a rule for code it can read; checked [--gaps] [--attempts 3]
   atticus query "<query>"              Find records, e.g. "kind:interface via:gateway -has:pattern"

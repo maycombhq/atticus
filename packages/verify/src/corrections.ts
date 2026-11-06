@@ -29,8 +29,16 @@ export interface CorrectionsResult {
 
 /** The correction a fact meets, by its id and cite first, else by what it cites. Newest wins. */
 export function correctionFor(f: Fact, all: readonly FactCorrection[]): FactCorrection | undefined {
-  // G1 (ADR 0174): a link leaves the fact as read; the join reads it (pairsFromCorrections).
-  const corrections = all.filter((c) => c.action !== "link");
+  // G1 (ADR 0174): a link to a repo leaves the fact as read; the join reads it
+  // (pairsFromCorrections). A link to an outside system sets the call's target, as a person's
+  // fact (C2), so the picture draws it to that system marked as their word.
+  const corrections = all.flatMap((c): FactCorrection[] =>
+    c.action !== "link"
+      ? [c]
+      : c.link?.system
+        ? [{ ...c, action: "edit", set: { to: c.link.system }, link: undefined } as FactCorrection]
+        : [],
+  );
   const at = (c: FactCorrection) =>
     c.target.kind === f.kind && c.target.file === f.cite.file && c.target.line === f.cite.line;
   const byId = corrections.filter((c) => c.fact === f.id && at(c));

@@ -135,17 +135,21 @@ export async function undeclareLink(
   if (!found) throw new DeclareError("not-found", `No system of the profiles is ${d.system}.`);
   const { path, rel, text, doc, node } = found;
   const list = node.get(d.kind === "topic" ? "topics" : "calls");
+  // Only what a person declared from the canvas (its comment says who and when): a line written
+  // by hand in the profile is changed there, never by Undo.
   const i = isSeq(list)
-    ? list.items.findIndex((x) =>
-        d.kind === "topic"
-          ? isScalar(x) && String(x.value) === d.value
-          : isMap(x) && x.get("route") === d.value,
+    ? list.items.findIndex(
+        (x) =>
+          COMMENT.test((x as { comment?: string | null }).comment ?? "") &&
+          (d.kind === "topic"
+            ? isScalar(x) && String(x.value) === d.value
+            : isMap(x) && x.get("route") === d.value),
       )
     : -1;
   if (!isSeq(list) || i < 0)
     throw new DeclareError(
       "not-found",
-      `${rel} has no ${d.value} under ${d.system} (removed already?).`,
+      `${rel} has no ${d.value} declared from the canvas under ${d.system} (removed already, or written by hand there).`,
     );
   list.items.splice(i, 1);
   const after = doc.toString({ lineWidth: 0, flowCollectionPadding: true });

@@ -8,6 +8,7 @@ import {
   setManifestField,
 } from "@maycombhq/core";
 import { estateRepos } from "@maycombhq/scanner";
+import { safeMessage } from "./file-lock.js";
 import {
   badRequest,
   HttpError,
@@ -78,7 +79,11 @@ export function uiOwnerRoutes(r: Router, ctx: ServerContext): Router {
         if (o.teams.some((t) => t.id === addTeam.id))
           throw badRequest(`${addTeam.id} is a team already: pick it as the owner.`);
         owner = addTeam.id;
-      } else if (owner && !o.teams.some((t) => t.id === owner) && o.teams.length)
+      } else if (
+        owner &&
+        !o.teams.some((t) => t.id === owner) &&
+        (o.teams.length || !TEAM.test(owner))
+      )
         throw badRequest(`No team in roles.yaml is ${owner}: pick one, or add it as a new team.`);
       if (system && !o.systems.some((s) => s.id === system))
         throw badRequest(`No system of the profiles is ${system}.`);
@@ -118,7 +123,7 @@ export function uiOwnerRoutes(r: Router, ctx: ServerContext): Router {
           written: !preview,
           files,
           verify: "atticus verify --all --write",
-          commit: `git add ${files.map((f) => f.file).join(" ")} && git commit -m "${repo}: ${[owner ? `owner ${owner}` : "", system ? `system ${system}` : ""].filter(Boolean).join(", ")}"`,
+          commit: `git add ${files.map((f) => f.file).join(" ")} && git commit -m "${safeMessage(`${repo}: ${[owner ? `owner ${owner}` : "", system ? `system ${system}` : ""].filter(Boolean).join(", ")}`)}"`,
         } satisfies Api.SetRepoOwnerResultT,
       };
     });

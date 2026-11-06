@@ -3,11 +3,11 @@
 - Status: accepted (pending review by the product owner)
 - Date: 2026-11-06
 - Builds on: ADR 0124 (facts), its addendum D-app (Correct this), 0135 (C2: a person's target outranks the join's rules), 0149 (the correction preview), 0153 (answers by rule), 0162 (systems and topics in the profile)
-- Contracts: the corrections file gains an action (`link`), additive; C4 (local API 2.53.0) gains the candidates, connect and undo calls, the owner and system call and declared links; C6's profile system topics gain `publishes` and `listens` and a declaration's author, with a migration
+- Contracts: the corrections file gains an action (`link`), additive; C4 (local API 2.53.0) gains the candidates, connect and undo calls, the owner and system call and declared links, and `person` among a link's hows; C6 is unchanged: a declaration uses the profile's existing system `topics` (ADR 0162) and `calls` (A-callers), with who and when as the line's comment
 
 ## Context
 
-The first full run on a real estate of about 40 repos showed wrong pictures a person could see and fix only from the terminal: calls whose paths were field names or settings, so nothing matched the gateway's routes, and hundreds of questions answered one by one still drew no line; a proxy with 119 routes and no forwarding calls; ownership and topic links no code shows.
+Reading a real estate of several dozen repos showed wrong pictures a person could see and fix only from the terminal: calls whose paths were field names or settings, so nothing matched the gateway's routes, and hundreds of questions answered one by one still drew no line; a gateway proxy with its routes read and none of its forwarding calls; ownership and topic links no code shows.
 
 ## Decision
 
@@ -25,7 +25,9 @@ A repo's box has **Owner** and **System** pickers: the teams in roles.yaml and t
 
 ### G3: add a box, declare a link
 
-**Add to the picture…** offers what isn't drawn: a repo of the manifest, a system of the profiles, a team, or a new vendor or team system (written to the profile with `--add-system`, as ADR 0162 does). **Declare a link** from a team, vendor or system box to a topic (or back) writes the topic under that system's `topics:` with `publishes` or `listens`, who declared it and when. It is drawn dashed, Why is this linked? names who declared it and where it is written, a declaration the code later shows too is marked confirmed by code, and one the code contradicts is flagged, never dropped silently. Nothing here writes a fact.
+**Add to the picture…** offers what isn't drawn: a repo of the manifest, a system of the profiles, a team, or a new vendor or team system (written to the profile with `--add-system`, as ADR 0162 does). **Declare a link** on a team, vendor or system box says what the code can't show: a topic or queue it publishes to or listens on goes under that system's `topics` in the profile (ADR 0162), a gateway route it calls under its `calls` (A-callers), each with who declared it and when as the line's comment. A declared topic is drawn where a repo of the estate publishes or listens on it with nobody on the other side, dashed and marked declared, and Why is this linked? names the profile; once the code shows a counterpart on the topic, the code's link is drawn and the declaration isn't used. A system whose repos are in the manifest is read, not declared. Flagging a declaration the code contradicts is left for later.
+
+Nothing here writes a fact.
 
 ### Undo, and who may correct
 

@@ -46,4 +46,4 @@ Drafts aren't given to reads until a person runs `atticus rules activate <key> -
 
 ## Take another team's rules
 
-`atticus rules import ../payments-metarepo --type fuse-service --team payments --at v1.4` copies their `types/fuse-service.yaml` as it is at that tag into `imported/payments/`. Reads use the copy, never their repo. An update is a new import, reviewed in a PR; switch one of theirs off here with `atticus rules off <key> --type fuse-service --reason "..."`.
+`atticus rules import ../payments-metarepo --type fuse-service --team payments --at v1.4` copies their `types/fuse-service.yaml` as it is at that tag into `imported/payments/`, every rule a draft: none is given to a read until you review it and set it `status: active` in the copy. Reads use the copy, never their repo; `--at` is required, so a copy is always pinned. An update is a new import, reviewed in a PR; switch one of theirs off here with `atticus rules off <key> --type fuse-service --reason "..."`.

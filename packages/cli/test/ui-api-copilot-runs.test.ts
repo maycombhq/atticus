@@ -176,4 +176,18 @@ describe("an unattended Copilot run started from the app (ADR 0173)", () => {
     expect(end.tabs[0]!.lines.at(-1)).toBe("Stopped. The next run carries on from here.");
     expect((await call(srv, "POST", `/api/copilot-runs/${id}/stop`)).status).toBe(409);
   });
+
+  it("starts only one of two asks that come at once (a double click, or two windows)", async () => {
+    const [x, y] = await Promise.all([
+      call(srv, "POST", "/api/copilot-runs", { kind: "gaps" }),
+      call(srv, "POST", "/api/copilot-runs", { kind: "gaps" }),
+    ]);
+    expect([x.status, y.status].sort()).toEqual([202, 409]);
+    const started = x.status === 202 ? x : y;
+    await until(async () => (await current()).run?.tabs.length === 2);
+    expect(
+      (await call(srv, "POST", `/api/copilot-runs/${String(started.body.runId)}/stop`)).status,
+    ).toBe(200);
+    await until(async () => (await current()).run?.state === "stopped");
+  });
 });

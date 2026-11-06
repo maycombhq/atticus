@@ -1,5 +1,13 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
@@ -50,10 +58,10 @@ function harborRepo() {
   git("config", "user.name", "Harbor team");
   write(
     dir,
-    ".claude/skills/eeh-publish/SKILL.md",
-    "---\nname: eeh-publish\ndescription: Publish an event to the Harbor event hub the house way.\n---\n# EEH publish\n\nUse the HarborPublisher; name the topic as `harbor.<domain>.<event>`.\n",
+    ".claude/skills/harbor-publish/SKILL.md",
+    "---\nname: harbor-publish\ndescription: Publish an event to the Harbor event hub the house way.\n---\n# Harbor publish\n\nUse the HarborPublisher; name the topic as `harbor.<domain>.<event>`.\n",
   );
-  write(dir, ".claude/skills/eeh-publish/check.sh", "#!/bin/sh\necho checking\n");
+  write(dir, ".claude/skills/harbor-publish/check.sh", "#!/bin/sh\necho checking\n");
   write(
     dir,
     ".claude/agents/harbor-architect.md",
@@ -88,23 +96,23 @@ describe("one source, two outputs", () => {
   it("writes a skill for Claude and as a Copilot prompt file, an agent for both, instructions for both", () => {
     const skill = outputsOf({
       kind: "skill",
-      name: "eeh-publish",
-      source: "org-pack/skills/imported/harbor/eeh-publish",
+      name: "harbor-publish",
+      source: "org-pack/skills/imported/harbor/harbor-publish",
       team: "harbor",
-      text: "---\ndescription: Publish an event.\n---\n# EEH publish\n\nBody.\n",
+      text: "---\ndescription: Publish an event.\n---\n# Harbor publish\n\nBody.\n",
       files: [{ path: "check.sh", text: "echo\n" }],
     });
     expect(skill.map((x) => x.path)).toEqual([
-      ".claude/skills/eeh-publish/SKILL.md",
-      ".claude/skills/eeh-publish/check.sh",
-      ".github/prompts/eeh-publish.prompt.md",
+      ".claude/skills/harbor-publish/SKILL.md",
+      ".claude/skills/harbor-publish/check.sh",
+      ".github/prompts/harbor-publish.prompt.md",
     ]);
     expect(splitFm(skill[2]!.text).fm).toEqual({
       description: "Publish an event.",
       agent: "agent",
     });
     expect(skill[0]!.text).toContain(
-      "<!-- atticus: written from org-pack/skills/imported/harbor/eeh-publish (harbor)",
+      "<!-- atticus: written from org-pack/skills/imported/harbor/harbor-publish (harbor)",
     );
     const ins = outputsOf({
       kind: "instructions",
@@ -125,7 +133,18 @@ describe("one source, two outputs", () => {
           files: [],
         },
       ]),
-    ).toContain("- @org-pack/instructions/imported/harbor/harbor-java.md (from harbor)");
+    ).toContain("- `org-pack/instructions/imported/harbor/harbor-java.md` (from harbor)");
+    expect(
+      claudeBlock([
+        {
+          kind: "instructions",
+          name: "ours",
+          source: "org-pack/instructions/ours.md",
+          text: "",
+          files: [],
+        },
+      ]),
+    ).toContain("- @org-pack/instructions/ours.md");
   });
 
   it("flags a skill that states estate facts with no atticus command to get them", () => {
@@ -144,8 +163,8 @@ describe("atticus skills import, write and list", () => {
     expect(code, a.err.join("\n")).toBe(0);
     const said = a.out.join("\n");
     expect(said).toContain("Imported 3 from harbor at v2.1");
-    expect(said).toContain("eeh-publish carries files that may run (check.sh)");
-    expect(said).toContain("eeh-publish states things about the estate");
+    expect(said).toContain("harbor-publish carries files that may run (check.sh)");
+    expect(said).toContain("harbor-publish states things about the estate");
     // The pinned copy, as the tag had it.
     expect(read(root, "org-pack/agents/imported/harbor/harbor-architect.md")).toContain(
       "Reviews a design",
@@ -156,15 +175,19 @@ describe("atticus skills import, write and list", () => {
     };
     expect(prov.at).toBe("v2.1");
     expect(prov.items.map((i) => i.name).sort()).toEqual([
-      "eeh-publish",
       "harbor-architect",
       "harbor-java",
+      "harbor-publish",
     ]);
+    // Nothing is written for the assistants until a person runs write, after review.
+    expect(existsSync(join(root, ".claude/skills/harbor-publish/SKILL.md"))).toBe(false);
+    expect(said).toContain("then atticus skills write puts it where Claude and Copilot read it");
+    expect(await skillsWriteCommand(root, {}, io().io)).toBe(0);
     // Written for Claude and Copilot.
     for (const p of [
-      ".claude/skills/eeh-publish/SKILL.md",
-      ".claude/skills/eeh-publish/check.sh",
-      ".github/prompts/eeh-publish.prompt.md",
+      ".claude/skills/harbor-publish/SKILL.md",
+      ".claude/skills/harbor-publish/check.sh",
+      ".github/prompts/harbor-publish.prompt.md",
       ".claude/agents/harbor-architect.md",
       ".github/agents/harbor-architect.agent.md",
       ".github/instructions/harbor-java.instructions.md",
@@ -172,7 +195,11 @@ describe("atticus skills import, write and list", () => {
       expect(existsSync(join(root, p)), p).toBe(true);
     const claude = read(root, "CLAUDE.md");
     expect(claude).toContain("Our own notes.");
-    expect(claude).toContain("@org-pack/instructions/imported/harbor/harbor-java.md");
+    // Another team's instructions are listed, not loaded into every session.
+    expect(claude).toContain(
+      "`org-pack/instructions/imported/harbor/harbor-java.md` (from harbor)",
+    );
+    expect(claude).not.toContain("@org-pack/instructions/imported");
     // Nothing behind now; the worktree used for the tag is gone.
     expect(await skillsWriteCommand(root, { check: true }, io().io)).toBe(0);
     expect(existsSync(join(root, ".atticus-tmp"))).toBe(false);
@@ -186,6 +213,7 @@ describe("atticus skills import, write and list", () => {
     const root = metarepo();
     const theirs = harborRepo();
     await skillsImportCommand(root, theirs, { team: "harbor", at: "v2.1" }, io().io);
+    await skillsWriteCommand(root, {}, io().io);
     write(root, ".github/agents/harbor-architect.agent.md", "My own version.\n");
     write(
       root,
@@ -202,7 +230,9 @@ describe("atticus skills import, write and list", () => {
     expect(read(root, "org-pack/agents/imported/harbor/harbor-architect.md")).toContain(
       "Ours now.",
     );
-    expect(again.out.join("\n")).toContain("kept .github/agents/harbor-architect.agent.md");
+    const w = io();
+    expect(await skillsWriteCommand(root, {}, w.io)).toBe(0);
+    expect(w.out.join("\n")).toContain("kept .github/agents/harbor-architect.agent.md");
     expect(read(root, ".github/agents/harbor-architect.agent.md")).toBe("My own version.\n");
     // A source changed here makes the written files behind.
     write(
@@ -221,5 +251,27 @@ describe("atticus skills import, write and list", () => {
     expect(await skillsImportCommand(root, theirs, { team: "harbor", at: "v9" }, io().io)).toBe(2);
     expect(await skillsImportCommand(root, temp("empty"), { team: "harbor" }, io().io)).toBe(2);
     expect(await skillsImportCommand(root, theirs, { team: "Harbor Team" }, io().io)).toBe(2);
+    // A ref that would be read as an option is refused before git sees it.
+    expect(
+      await skillsImportCommand(root, theirs, { team: "harbor", at: "--output=/tmp/x" }, io().io),
+    ).toBe(2);
+  });
+
+  it("never follows a link out of their repo", async () => {
+    const root = metarepo();
+    const theirs = harborRepo();
+    const secret = join(temp("secret"), "secret.txt");
+    writeFileSync(secret, "SECRET\n");
+    symlinkSync(secret, join(theirs, ".claude/skills/harbor-publish/notes.md"));
+    symlinkSync(secret, join(theirs, ".claude/agents/linked.md"));
+    const a = io();
+    expect(await skillsImportCommand(root, theirs, { team: "harbor" }, a.io)).toBe(0);
+    expect(a.out.join("\n")).toContain(
+      "left out notes.md: a link to a file elsewhere is never copied",
+    );
+    expect(existsSync(join(root, "org-pack/skills/imported/harbor/harbor-publish/notes.md"))).toBe(
+      false,
+    );
+    expect(existsSync(join(root, "org-pack/agents/imported/harbor/linked.md"))).toBe(false);
   });
 });

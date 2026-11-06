@@ -61,6 +61,8 @@ export function uiCopilotRunRoutes(
   const flushMs = deps.flushMs ?? 100;
   let run: CopilotRun | undefined;
   let seq = 0;
+  // A start under way (between its checks and the run being set): a second waits its turn.
+  let starting = false;
 
   // Lines go out in small batches per tab, so a chatty session doesn't flood the socket.
   const pending = new Map<string, NewLines>();
@@ -108,7 +110,18 @@ export function uiCopilotRunRoutes(
         throw conflict(
           `A Copilot run is under way (${run.view.runId}, started ${run.view.startedAt}): stop it, or wait for it to finish.`,
         );
-      const a = await allowedHere(ctx.root);
+      if (starting)
+        throw conflict("A Copilot run is starting: wait for it, then stop it if need be.");
+      const busy = ctx.jobs.runningOf("step");
+      if (busy?.state === "running")
+        throw conflict(`An AI step is running on this server (${busy.id}): wait for it to finish.`);
+      starting = true;
+      let a: Awaited<ReturnType<typeof allowedHere>>;
+      try {
+        a = await allowedHere(ctx.root);
+      } finally {
+        starting = false;
+      }
       if (!a.allowed) throw conflict(NOT_ALLOWED);
       const runId = `copilot-run-${++seq}`;
       const me = new CopilotRun({
@@ -122,10 +135,14 @@ export function uiCopilotRunRoutes(
         startedAt: now().toISOString(),
       });
       run = me;
+      let lastErr: string | undefined;
       const job = ctx.jobs.start("step", async (c) => {
         const io: Output = {
           out: (l) => queue(me.line(l)),
-          err: (l) => queue(me.line(l)),
+          err: (l) => {
+            lastErr = l;
+            queue(me.line(l));
+          },
         };
         const onEvent = (e: MapAllEvent) => {
           for (const n of me.event(e)) queue(n);
@@ -148,7 +165,6 @@ export function uiCopilotRunRoutes(
           return { errors: [msg] };
         }
         const stopped = signal?.aborted === true;
-        const lastErr = me.view.tabs[0]!.lines.at(-1);
         queue(
           me.finish(
             stopped ? "stopped" : code === 0 ? "done" : "failed",

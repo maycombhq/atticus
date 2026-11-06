@@ -3,7 +3,7 @@
 - Status: accepted (pending review by the product owner)
 - Date: 2026-11-06
 - Builds on: ADR 0081 (the hierarchical canvas and kept arrangements), 0135 (how a link was joined), 0164 (contract marks), 0174 (corrections on the canvas)
-- Contracts: C4 (local API 2.53.0) gains `GET /api/graph/views`, `PUT /api/graph/views/{name}` and `GET /api/code-link`, and the join's `how` gains `person`; all additive
+- Contracts: C4 (local API 2.54.0) gains `GET /api/graph/views`, `PUT /api/graph/views/{name}` and `GET /api/code-link`, all additive
 
 ## Context
 

@@ -125,3 +125,45 @@ describe("a person's corrections, applied by the verifier", () => {
     ]);
   });
 });
+
+describe("G1 (ADR 0174): a pairing", () => {
+  const call = {
+    kind: "call",
+    id: "c-charge",
+    repo: "forge-billing",
+    commit: "aaa1111",
+    callType: "rest",
+    method: "POST",
+    path: "chargePath",
+    cite: { file: "src/Charges.java", line: 9, value: "chargePath" },
+    verified: "line",
+    by: "assistant",
+    conf: "declared",
+  } as unknown as Parameters<typeof applyCorrections>[0][number];
+  const link = (l: Record<string, string>) =>
+    ({
+      schemaVersion: 1,
+      fact: "c-charge",
+      target: { kind: "call", file: "src/Charges.java", line: 9, value: "chargePath" },
+      action: "link",
+      link: l,
+      by: "pat",
+      at: "2026-11-06T12:00:00.000Z",
+    }) as unknown as Parameters<typeof applyCorrections>[1][number];
+
+  it("to a repo leaves the call's fact as read", () => {
+    const r = applyCorrections([call], [link({ repo: "forge-gw", path: "/v1/charges" })]);
+    expect(r.facts).toEqual([call]);
+    expect(r.stale).toEqual([]);
+  });
+
+  it("to an outside system makes the call's target that system, a person's fact", () => {
+    const r = applyCorrections([call], [link({ system: "northwind-pay", path: "/v1/charges" })]);
+    expect(r.facts[0]).toMatchObject({ to: "northwind-pay", by: "person", path: "chargePath" });
+  });
+
+  it("is stale when no call is the one it names", () => {
+    const r = applyCorrections([], [link({ repo: "forge-gw", path: "/v1/charges" })]);
+    expect(r.stale[0]?.message).toContain("pat's pairing of call c-charge");
+  });
+});

@@ -155,17 +155,16 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   `copilot-run.state` and `copilot-run.lines`. Additive only.
  * 2.53.0 (ADR 0174): correcting the map on the canvas. GET /api/links/candidates and POST
  *   /api/links/connect (G1, a call paired with an API, a `link` line in the caller's
- *   corrections); POST /api/facts/{repo}/corrections/undo (a correction's line removed); GET and
- *   PUT /api/repos/{repo}/owner (G2, a repo's owner and system in its manifest, a team added to
- *   roles.yaml for review); G3: POST /api/declared-links and its undo, GET /api/boxes/addable,
- *   POST /api/boxes (a new outside system, for review), GET /api/boxes/corrections (a box's
- *   corrections and declarations, each with its undo). G6 (ADR 0175): GET /api/graph/views and
- *   PUT /api/graph/views/{name}, a canvas's named filters and layers kept in the metarepo
- *   (diagrams/views/<name>.yaml); GET /api/code-link, a cited line's file to open in an editor.
- *   G4 (ADR 0176): POST /api/reading-rules/from-pairing, a draft reading rule for the repo's type
- *   from a call a person paired. Additive only.
+ *   corrections, and `person` among a link's hows); POST /api/facts/{repo}/corrections/undo;
+ *   GET and PUT /api/repos/{repo}/owner (G2); POST /api/declared-links and its undo, GET
+ *   /api/boxes/addable, POST /api/boxes, GET /api/boxes/corrections (G3). Additive only.
+ * 2.54.0 (ADR 0175): GET /api/graph/views and PUT /api/graph/views/{name}, a canvas's named
+ *   filters and layers kept in the metarepo; GET /api/code-link, a cited line's file to open in
+ *   an editor. Additive only.
+ * 2.55.0 (ADR 0176): POST /api/reading-rules/from-pairing, a draft reading rule for the repo's
+ *   type from a call a person paired. Additive only.
  */
-export const API_VERSION = "2.53.0";
+export const API_VERSION = "2.55.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes

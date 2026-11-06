@@ -346,20 +346,16 @@ describe("atticus rules import", () => {
     ) as { source: { at: string; team: string }; rules: { key: string }[] };
     expect(copy.source).toMatchObject({ at: "v1.0", team: "harbor" });
     expect(copy.rules.map((r) => r.key)).toEqual(["house-client"]);
-    expect(
-      (await effectiveRules(root, "forge-refunds")).rules.map((r) => [r.key, r.layer]),
-    ).toEqual([["house-client", "imported"]]);
-    expect(
-      await rulesImportCommand(
-        root,
-        theirs,
-        { type: "fuse-service", team: "Harbor Team" },
-        io().io,
-      ),
-    ).toBe(2);
-    expect(await rulesImportCommand(root, theirs, { type: "nope", team: "harbor" }, io().io)).toBe(
-      2,
-    );
+    // Another team's rules reach no read until reviewed and set active: each is a draft.
+    const e = await effectiveRules(root, "forge-refunds");
+    expect(e.rules).toEqual([]);
+    expect(e.drafts.map((r) => [r.key, r.layer])).toEqual([["house-client", "imported"]]);
+    const no = (o: Record<string, string>) => rulesImportCommand(root, theirs, o, io().io);
+    expect(await no({ type: "fuse-service", team: "Harbor Team", at: "v1.0" })).toBe(2);
+    expect(await no({ type: "nope", team: "harbor", at: "v1.0" })).toBe(2);
+    // Pinned, always; and a ref that would be read as an option is refused before git sees it.
+    expect(await no({ type: "fuse-service", team: "harbor" })).toBe(2);
+    expect(await no({ type: "fuse-service", team: "harbor", at: "--output=/tmp/x" })).toBe(2);
   });
 });
 

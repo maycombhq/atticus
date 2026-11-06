@@ -197,9 +197,14 @@ export const ALLOW = [
   },
   {
     file: "packages/core/src/api.ts",
-    names: ["confluence", "ado", "sharepoint", "claude", "teams"],
+    names: ["confluence", "ado", "sharepoint", "claude", "teams", "copilot"],
     reason:
-      "the wiki types sources.yaml takes are the C6 contract's enum (ADR 0101), named in the API for the app's source form; claude-code is a surface the prompt history records from, as runtime.yaml's assistants enum names it (ADR 0110); teams is the English word, roles.yaml's teams a question is routed to (ADR 0140)",
+      "the wiki types sources.yaml takes are the C6 contract's enum (ADR 0101), named in the API for the app's source form; claude-code is a surface the prompt history records from, as runtime.yaml's assistants enum names it (ADR 0110); teams is the English word, roles.yaml's teams a question is routed to (ADR 0140); copilot is runtime.yaml's copilot-acp mode (ADR 0171), whose unattended runs the app starts (ADR 0173: /api/copilot-runs)",
+  },
+  {
+    file: "packages/core/src/manifest-edit.ts",
+    names: ["teams"],
+    reason: "the English word: roles.yaml's teams a repo's owner names (ADR 0174, G2)",
   },
   {
     file: "packages/scanner/src/target-suggest.ts",

@@ -177,6 +177,15 @@ describe("connect two boxes (ADR 0174, G1)", () => {
     });
     expect(made.rule).toContain("`captureChargePath`");
     expect(await readFile(join(root, made.file), "utf8")).toContain("status: draft");
+    // A line that isn't on file in the repo's corrections is refused.
+    expect(
+      (
+        await call("POST", "/api/reading-rules/from-pairing", {
+          repo: "forge-billing",
+          line: w.lines[0]!.replace('"by":"pat"', '"by":"someone-else"'),
+        })
+      ).status,
+    ).toBe(404);
     expect(
       (
         await call("POST", "/api/reading-rules/from-pairing", {

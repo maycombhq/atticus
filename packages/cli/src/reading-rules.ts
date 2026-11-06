@@ -226,6 +226,8 @@ export function ruleFromPairing(o: {
   method?: string;
   path: string;
   by: string;
+  /** Who asked for the draft (the app's user); `by` is who paired the call. */
+  drafter?: string;
 }): ReadingRule {
   const key = `paths-to-${o.to}`
     .toLowerCase()
@@ -237,6 +239,6 @@ export function ruleFromPairing(o: {
     rule: `In ${o.type} repos, a call to ${o.to} can name its path through a field, a setting or a helper (here \`${o.value}\`), not the path itself: follow it to the literal path the code or its settings give, and write that as the call's path, with the line that sets it in cite.with. The routes it reaches start like ${[o.method, o.path].filter(Boolean).join(" ")}.`,
     files: [kindGlob(o.file)],
     example: `${o.file}:${o.line}`,
-    by: `drafted from ${o.by}'s pairing on the canvas`,
+    by: `drafted${o.drafter ? ` by ${o.drafter}` : ""} from ${o.by}'s pairing on the canvas`,
   };
 }

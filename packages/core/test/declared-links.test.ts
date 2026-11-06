@@ -110,3 +110,14 @@ describe("declared links (ADR 0174, G3)", () => {
     ).rejects.toBeInstanceOf(DeclareError);
   });
 });
+
+describe("the preview's line diff", () => {
+  it("pairs what changed, and leaves out what didn't", async () => {
+    const { changedLines } = await import("../src/index.js");
+    expect(changedLines("a\nb\nc\nd\n", "a\nB\nc\nd\ne\n")).toEqual([
+      { was: "b", now: "B" },
+      { now: "e" },
+    ]);
+    expect(changedLines("x\n", "x\n")).toEqual([]);
+  });
+});

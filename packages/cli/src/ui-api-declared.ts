@@ -8,6 +8,7 @@ import {
   DeclareError,
   factsDirOf,
   factsRelOf,
+  isAdopted,
   loadOrgPack,
   orgPackDirOf,
   parseCorrections,
@@ -23,6 +24,7 @@ import {
   type Router,
   type ServerContext,
 } from "@maycombhq/server";
+import { safeMessage } from "./file-lock.js";
 import { readRepos } from "./target-answer.js";
 
 /**
@@ -103,7 +105,7 @@ export function uiDeclaredRoutes(
             written: false,
             files: [
               {
-                file: `org-pack/profiles/${anyRepo.platform}/profile.yaml`,
+                file: `${isAdopted(ctx.root) ? ".atticus/" : ""}org-pack/profiles/${anyRepo.platform}/profile.yaml`,
                 changes: [
                   { now: `  - id: ${b.data.id}` },
                   { now: `    name: ${b.data.name}` },
@@ -130,7 +132,7 @@ export function uiDeclaredRoutes(
             written: true,
             files: [{ file: res.profile, changes: [{ now: `  - id: ${b.data.id}` }] }],
             verify: "atticus verify --all --write",
-            commit: `git add ${res.profile} && git commit -m "profile: ${b.data.id} added from the canvas"`,
+            commit: `git add ${res.profile} && git commit -m "${safeMessage(`profile: ${b.data.id} added from the canvas`)}"`,
           } satisfies Api.FileChangeResultT,
         };
       } catch (e) {
@@ -170,7 +172,7 @@ export function uiDeclaredRoutes(
             written: res.written,
             files: [{ file: res.rel, changes: res.changes }],
             verify: "atticus verify --all --write",
-            commit: `git add ${res.rel} && git commit -m "profile: ${d.system} ${what}, declared on the canvas"`,
+            commit: `git add ${res.rel} && git commit -m "${safeMessage(`profile: ${d.system} ${what}, declared on the canvas`)}"`,
           } satisfies Api.FileChangeResultT,
         };
       } catch (e) {
@@ -189,7 +191,7 @@ export function uiDeclaredRoutes(
             written: true,
             files: [{ file: res.rel, changes: res.changes }],
             verify: "atticus verify --all --write",
-            commit: `git add ${res.rel} && git commit -m "profile: ${b.data.system}: a declaration undone"`,
+            commit: `git add ${res.rel} && git commit -m "${safeMessage(`profile: ${b.data.system}: a declaration undone`)}"`,
           } satisfies Api.FileChangeResultT,
         };
       } catch (e) {
@@ -223,7 +225,8 @@ export function uiDeclaredRoutes(
         }
       } else {
         const d = await declaredOf(ctx.root, system!);
-        for (const x of d.list)
+        // Only what was declared from the canvas (who and when on its line) has Undo here.
+        for (const x of d.list.filter((y) => y.by))
           items.push({
             kind: x.kind,
             says:

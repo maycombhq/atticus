@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync } from "node:fs";
+import { lstatSync } from "node:fs";
 import { mkdir, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -57,15 +57,20 @@ export function splitFm(text: string): { fm: Record<string, unknown>; body: stri
 const fmText = (o: Record<string, unknown>) =>
   `---\n${stringify(o, { lineWidth: 0 }).trimEnd()}\n---\n`;
 
-async function filesUnder(dir: string, rel = ""): Promise<string[]> {
+/** Plain files only: a link (to a file anywhere on this machine) is never followed or copied. */
+async function filesUnder(dir: string, rel = "", links?: string[]): Promise<string[]> {
   const out: string[] = [];
   for (const e of await readdir(dir, { withFileTypes: true }).catch(() => [])) {
     const r = rel ? `${rel}/${e.name}` : e.name;
-    if (e.isDirectory()) out.push(...(await filesUnder(join(dir, e.name), r)));
-    else out.push(r);
+    if (e.isSymbolicLink()) links?.push(r);
+    else if (e.isDirectory()) out.push(...(await filesUnder(join(dir, e.name), r, links)));
+    else if (e.isFile()) out.push(r);
   }
   return out.sort();
 }
+
+/** A tag or branch name, never an option git would read. */
+export const REF = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$/;
 
 /** Every skill, agent and instructions file the org pack keeps: the organisation's and imported. */
 export async function sourcesOf(root: string): Promise<SourceItem[]> {
@@ -161,7 +166,10 @@ export function outputsOf(i: SourceItem): { path: string; text: string }[] {
       return [
         {
           path: `.github/instructions/${i.name}.instructions.md`,
-          text: `${fmText({ description, applyTo: typeof fm.applyTo === "string" ? fm.applyTo : "**" })}${mark}\n${body}`,
+          // Applied by itself only where its source says (`applyTo`): with none, a person attaches
+          // it, so another team's words never reach a session (Atticus's own reads among them)
+          // that didn't ask for them.
+          text: `${fmText({ description, ...(typeof fm.applyTo === "string" ? { applyTo: fm.applyTo } : {}) })}${mark}\n${body}`,
         },
       ];
   }
@@ -171,11 +179,23 @@ export function outputsOf(i: SourceItem): { path: string; text: string }[] {
 export function claudeBlock(items: readonly SourceItem[]): string {
   const ins = items.filter((i) => i.kind === "instructions");
   if (!ins.length) return "";
+  // The organisation's own are imported (Claude reads `@path`); another team's are listed for a
+  // person to bring in when they want them, never loaded into every session by default.
+  const own = ins.filter((i) => !i.team);
+  const others = ins.filter((i) => i.team);
   return [
     "<!-- atticus:team-instructions:begin (written by atticus skills write; edit the sources in the org pack) -->",
     "## Team instructions",
     "",
-    ...ins.map((i) => `- @${i.source}${i.team ? ` (from ${i.team})` : ""}`),
+    ...own.map((i) => `- @${i.source}`),
+    ...(others.length
+      ? [
+          ...(own.length ? [""] : []),
+          "Other teams' instructions, reviewed in the org pack; mention one to use it:",
+          "",
+          ...others.map((i) => `- \`${i.source}\` (from ${i.team})`),
+        ]
+      : []),
     "<!-- atticus:team-instructions:end -->",
   ].join("\n");
 }
@@ -282,7 +302,14 @@ async function theirs(
   dir: string,
 ): Promise<{ kind: Kind; name: string; path: string; folder?: string }[]> {
   const out: { kind: Kind; name: string; path: string; folder?: string }[] = [];
-  const has = (p: string) => existsSync(join(dir, ...p.split("/")));
+  // Present and a plain file: a link to a file elsewhere on this machine is never taken.
+  const has = (p: string) => {
+    try {
+      return lstatSync(join(dir, ...p.split("/"))).isFile();
+    } catch {
+      return false;
+    }
+  };
   for (const base of [".claude/skills", "org-pack/skills"])
     for (const e of await readdir(join(dir, ...base.split("/")), { withFileTypes: true }).catch(
       () => [],
@@ -348,6 +375,10 @@ export async function skillsImportCommand(
     io.err("--team is lower case, digits and dashes.");
     return 2;
   }
+  if (o.at !== undefined && !REF.test(o.at)) {
+    io.err(`${o.at} isn't a tag or branch name.`);
+    return 2;
+  }
   // A tag pins it: their files as that tag has them, read from a worktree of their repo's own history.
   let dir = from;
   let tmp: string | undefined;
@@ -355,7 +386,7 @@ export async function skillsImportCommand(
     tmp = join(tmpdir(), `atticus-import-${o.team}-${Date.now()}`);
     try {
       await mkdir(dirname(tmp), { recursive: true });
-      await run("git", ["-C", from, "worktree", "add", "--detach", tmp, o.at]);
+      await run("git", ["-C", from, "worktree", "add", "--detach", "--", tmp, `${o.at}^{commit}`]);
       dir = tmp;
     } catch (e) {
       io.err(`${from} has no ${o.at}: ${(e as Error).message.split("\n")[0]}`);
@@ -414,7 +445,12 @@ export async function skillsImportCommand(
         files[key] = sha(text);
       };
       if (f.kind === "skill") {
-        const all = await filesUnder(join(dir, ...f.folder!.split("/")));
+        const links: string[] = [];
+        const all = await filesUnder(join(dir, ...f.folder!.split("/")), "", links);
+        if (links.length)
+          notes.push(
+            `${f.name}: left out ${links.join(", ")}: a link to a file elsewhere is never copied`,
+          );
         for (const p of all) await copy(`${f.folder}/${p}`, join(dest, ...p.split("/")), p);
         const scripts = all.filter((p) => !/\.(md|txt|ya?ml|json)$/i.test(p));
         if (scripts.length)
@@ -438,7 +474,11 @@ export async function skillsImportCommand(
       `Imported ${items.length} from ${o.team}${o.at ? ` at ${o.at}` : ""} into ${packRel(root)}/{skills,agents,instructions}/imported/${o.team}/, provenance in ${packRel(root)}/imported/${o.team}.yaml.`,
     );
     for (const n of notes) io.out(`  ${n}`);
-    return skillsWriteCommand(root, {}, io);
+    // Written for the assistants only after review: a person runs atticus skills write.
+    io.out(
+      "Review the copy in a pull request; then atticus skills write puts it where Claude and Copilot read it.",
+    );
+    return 0;
   } finally {
     if (tmp) {
       await run("git", ["-C", from, "worktree", "remove", "--force", tmp]).catch(() => undefined);

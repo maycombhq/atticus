@@ -26,7 +26,7 @@ On a system's box, **Declare a link…** says what the code can't show: the syst
 
 ## Corrections, and Undo
 
-Every box lists its corrections (a repo's) or declarations (a system's) under **Corrections and declarations**, each with who and when. **Undo** removes exactly the line it wrote. Each change ends with the command to redraw the map and the `git` command to commit the file.
+Every box lists its corrections (a repo's) or declarations (a system's) under **Corrections and declarations**, each with who and when. **Undo** removes exactly the line it wrote; a topic or route written into the profile by hand is changed there, not by Undo. Undoing a pairing doesn't undo a `/**` answer written with it: change that answer on the Questions page. Each change ends with the command to redraw the map and the `git` command to commit the file.
 
 ## Working on the canvas
 

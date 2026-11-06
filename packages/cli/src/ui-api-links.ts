@@ -31,6 +31,7 @@ import {
   type ServerContext,
 } from "@maycombhq/server";
 import { estateJoinOnFile } from "./contract-check-files.js";
+import { safeMessage, withFileLock } from "./file-lock.js";
 import { intakeContext } from "./intake-commands.js";
 
 /**
@@ -223,7 +224,7 @@ export function uiLinkRoutes(
         const rel = `${factsRelOf(ctx.root)}/${from}.corrections.jsonl`;
         const lines = corrections.map(correctionLine);
         const verify = `atticus verify ${from} --write`;
-        const commit = `git add ${rel}${q ? ` questions/` : ""} && git commit -m "${from}: calls paired with ${target} on the canvas"`;
+        const commit = `git add ${rel}${q ? ` questions/` : ""} && git commit -m "${safeMessage(`${from}: calls paired with ${target} on the canvas`)}"`;
         if (preview) {
           const { verifyWritePreview } = await import("./verify-preview.js");
           const v = await verifyWritePreview(ctx.root, from, { extra: corrections });
@@ -242,10 +243,9 @@ export function uiLinkRoutes(
         }
         if (lines.length) {
           await mkdir(factsDirOf(ctx.root), { recursive: true });
-          await appendFile(
-            join(factsDirOf(ctx.root), `${from}.corrections.jsonl`),
-            lines.map((l) => `${l}\n`).join(""),
-            "utf8",
+          const file = join(factsDirOf(ctx.root), `${from}.corrections.jsonl`);
+          await withFileLock(file, () =>
+            appendFile(file, lines.map((l) => `${l}\n`).join(""), "utf8"),
           );
           ctx.events.publish({ type: "file.changed", path: rel });
         }
@@ -278,6 +278,15 @@ export function uiLinkRoutes(
       .add("POST", "/api/reading-rules/from-pairing", async ({ body }) => {
         const b = Api.RuleFromPairingRequest.safeParse(body ?? {});
         if (!b.success) throw badRequest("Say the repo and the pairing's line: { repo, line }.");
+        if (!REPO.test(b.data.repo))
+          throw badRequest(`${JSON.stringify(b.data.repo)} isn't a repo name.`);
+        // Only a pairing on file in this repo's corrections, as it is written there.
+        const onFile = await readFile(
+          join(factsDirOf(ctx.root), `${b.data.repo}.corrections.jsonl`),
+          "utf8",
+        ).catch(() => "");
+        if (!onFile.split(/\r?\n/).some((l) => l.trim() === b.data.line.trim()))
+          throw notFound(`${b.data.repo}'s corrections have no such pairing.`);
         const c = parseCorrections(b.data.line).corrections[0];
         if (!c || c.action !== "link" || !c.link)
           throw badRequest("That line isn't a pairing (a link correction).");
@@ -295,6 +304,7 @@ export function uiLinkRoutes(
           ...(c.link.method ? { method: c.link.method } : {}),
           path: c.link.path,
           by: c.by,
+          drafter: ctx.user,
         });
         const said: string[] = [];
         const code = await rulesAddCommand(
@@ -330,13 +340,15 @@ export function uiLinkRoutes(
         if (!b.success) throw badRequest("Say which line to remove: { line }.");
         const file = join(factsDirOf(ctx.root), `${repo}.corrections.jsonl`);
         const rel = `${factsRelOf(ctx.root)}/${repo}.corrections.jsonl`;
-        const text = await readFile(file, "utf8").catch(() => undefined);
-        if (text === undefined) throw notFound(`There is no ${rel}.`);
-        const lines = text.split(/\r?\n/);
-        const i = lines.findIndex((l) => l.trim() === b.data.line.trim());
-        if (i < 0) throw notFound(`${rel} has no such line (it may be removed already).`);
-        lines.splice(i, 1);
-        await writeFileAtomic(file, lines.join("\n"));
+        await withFileLock(file, async () => {
+          const text = await readFile(file, "utf8").catch(() => undefined);
+          if (text === undefined) throw notFound(`There is no ${rel}.`);
+          const lines = text.split(/\r?\n/);
+          const i = lines.findIndex((l) => l.trim() === b.data.line.trim());
+          if (i < 0) throw notFound(`${rel} has no such line (it may be removed already).`);
+          lines.splice(i, 1);
+          await writeFileAtomic(file, lines.join("\n"));
+        });
         ctx.events.publish({ type: "file.changed", path: rel });
         return {
           status: 200,
@@ -344,7 +356,7 @@ export function uiLinkRoutes(
             removed: b.data.line,
             file: rel,
             verify: `atticus verify ${repo} --write`,
-            commit: `git add ${rel} && git commit -m "${repo}: a correction undone"`,
+            commit: `git add ${rel} && git commit -m "${safeMessage(`${repo}: a correction undone`)}"`,
           },
         };
       })

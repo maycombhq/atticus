@@ -576,10 +576,14 @@ export async function rulesImportCommand(
   o: { type?: string; team?: string; at?: string },
   io: Output,
 ): Promise<number> {
-  if (!from || !o.type || !o.team) {
+  if (!from || !o.type || !o.team || !o.at) {
     io.err(
-      "Usage: atticus rules import <their metarepo folder> --type <repo type> --team <their team> [--at <tag>]",
+      "Usage: atticus rules import <their metarepo folder> --type <repo type> --team <their team> --at <tag>: a copy is pinned at a tag of theirs.",
     );
+    return 2;
+  }
+  if (!/^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$/.test(o.at)) {
+    io.err(`${o.at} isn't a tag or branch name.`);
     return 2;
   }
   if (!/^[a-z0-9][a-z0-9-]{0,62}$/.test(o.team) || !/^[A-Za-z0-9._-]{1,100}$/.test(o.type)) {
@@ -590,9 +594,9 @@ export async function rulesImportCommand(
   let text: string | undefined;
   try {
     // A tag pins it: read as it is at that tag, from their metarepo's own history. Files only.
-    text = o.at
-      ? (await run("git", ["-C", from, "show", `${o.at}:${inner}`], { maxBuffer: 4 << 20 })).stdout
-      : await readFile(join(from, ...inner.split("/")), "utf8");
+    text = (
+      await run("git", ["-C", from, "show", `${o.at}^{commit}:${inner}`], { maxBuffer: 4 << 20 })
+    ).stdout;
   } catch (e) {
     io.err(
       `${from} has no ${inner}${o.at ? ` at ${o.at}` : ""}: ${(e as Error).message.split("\n")[0]}`,
@@ -605,7 +609,10 @@ export async function rulesImportCommand(
     return 2;
   }
   const doc = parseDocument(text);
-  doc.set("source", doc.createNode({ from, at: o.at ?? "working copy", team: o.team }));
+  doc.set("source", doc.createNode({ from, at: o.at, team: o.team }));
+  // Another team's rules reach no read here until a person reviews them and sets each active.
+  const rules = doc.get("rules");
+  if (isSeq(rules)) for (const x of rules.items) if (isMap(x)) x.set("status", "draft");
   const rel = `imported/${o.team}/${o.type}.yaml`;
   const path = join(rulesDirOf(root), ...rel.split("/"));
   const bad = await saveDoc(path, doc);
@@ -614,7 +621,7 @@ export async function rulesImportCommand(
     return 2;
   }
   io.out(
-    `Imported ${r.data.rules.length} rules of ${o.team}'s ${o.type} repos into ${relOf(root)}/${rel}${o.at ? `, pinned at ${o.at}` : ""}. Review it in a pull request; a later import is a new copy. Switch one off here with atticus rules off <key> --type ${o.type} --reason "...".`,
+    `Imported ${r.data.rules.length} rules of ${o.team}'s ${o.type} repos into ${relOf(root)}/${rel}, pinned at ${o.at}, each a draft. Review them in a pull request and set the ones you keep active there (status: active); a later import is a new copy.`,
   );
   return 0;
 }
