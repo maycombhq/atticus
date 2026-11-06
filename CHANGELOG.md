@@ -4,6 +4,10 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### A repo's owner and system from its box (G2)
+
+- A repo's box on the canvas has **Owner and system…**: pick a team from roles.yaml (or **Add a team…**, written to roles.yaml for review) and a system of the profiles; Preview shows the lines that change in each file, and Write it edits the manifest in place, its comments kept. The map shows it after `atticus verify --all --write`. Local API 2.53.0 (`GET`/`PUT /api/repos/{repo}/owner`).
+
 ### Connect two boxes on the canvas (G1)
 
 - On the canvas, a repo's box has **Connect to…** (or draw a line from one box to another): a panel lists this repo's calls that join nothing, the other box's APIs (a service's entries, a gateway's routes, an outside system's operations from its spec), and the API each call most likely is, picked already (the same path, the same but for a prefix, a parameter or a setting, or names alike: `captureChargePath` and `/partners/northwind/charges/{chargeId}/capture`). Preview says what the next `atticus verify <repo> --write` changes; each pair you confirm is one `link` line in the repo's corrections file, the call's fact left as read; the link is drawn flagged `joined-by-person`, found again by method and path when a read renames the entry, and Undo removes exactly the line. "All" answers the repo's open target question with `/**`. When a side has nothing on record, the panel gives the command that reads it or adds the spec. ADR 0174; local API 2.53.0.

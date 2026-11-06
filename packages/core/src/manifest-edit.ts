@@ -4,6 +4,8 @@ import { isMap, isSeq, parseDocument, type Document, type YAMLMap } from "yaml";
 import { writeFileAtomic } from "./fs.js";
 import { isAdopted, orgPackDirOf } from "./metarepo.js";
 import { RepoDescription, RepoManifest, WORKSPACE_SCHEMA_VERSION } from "./schema/workspace.js";
+import { Roles } from "./schema/orgpack.js";
+import { migrateRolesText } from "./roles-migrate.js";
 
 /**
  * Editing `org-pack/profiles/<platform>/repos.manifest.yaml` in place, keeping the file's
@@ -226,4 +228,101 @@ export async function migrateManifests(
     out.push(file.rel);
   }
   return out;
+}
+
+/** A line the edit changes: what it was (none when added) and what it is now. */
+export interface LineChange {
+  was?: string;
+  now?: string;
+}
+
+/** The lines two texts differ in, in order (a small line diff for a preview). */
+export function changedLines(before: string, after: string): LineChange[] {
+  const a = before.split("\n");
+  const b = after.split("\n");
+  let i = 0;
+  while (i < a.length && i < b.length && a[i] === b[i]) i++;
+  let ea = a.length;
+  let eb = b.length;
+  while (ea > i && eb > i && a[ea - 1] === b[eb - 1]) {
+    ea--;
+    eb--;
+  }
+  const out: LineChange[] = [];
+  for (let k = 0; k < Math.max(ea - i, eb - i); k++) {
+    const was = a[i + k];
+    const now = b[i + k];
+    out.push({
+      ...(i + k < ea && was !== undefined ? { was } : {}),
+      ...(i + k < eb && now !== undefined ? { now } : {}),
+    });
+  }
+  return out;
+}
+
+/**
+ * G2 (ADR 0174): set a repo's `owner` or `system` in the manifest that lists it, keeping the
+ * file's comments and order; checked before it is written. With `preview`, nothing is written:
+ * the lines it would change come back.
+ */
+export async function setManifestField(
+  root: string,
+  repo: string,
+  field: "owner" | "system",
+  value: string,
+  o: { preview?: boolean } = {},
+): Promise<{ file: ManifestFile; changes: LineChange[]; written: boolean }> {
+  const found = await entryOf(root, repo);
+  if (!found) throw new ManifestEditError("not-found", `There is no repo ${repo} in any manifest.`);
+  const { file, doc, item } = found;
+  const before = doc.toString({ lineWidth: 0, flowCollectionPadding: true });
+  item.set(field, value);
+  const after = doc.toString({ lineWidth: 0, flowCollectionPadding: true });
+  const changes = changedLines(before, after);
+  const check = RepoManifest.safeParse(doc.toJS());
+  if (!check.success)
+    throw new ManifestEditError(
+      "invalid",
+      check.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "),
+    );
+  if (o.preview || !changes.length) return { file, changes, written: false };
+  await save(file.path, doc);
+  return { file, changes, written: true };
+}
+
+/**
+ * G2 (ADR 0174): add a team to roles.yaml (moved to version 2 first when it is older), for
+ * review: its id and name, no people. With `preview`, nothing is written.
+ */
+export async function addRolesTeam(
+  root: string,
+  team: { id: string; name: string },
+  o: { preview?: boolean } = {},
+): Promise<{ rel: string; changes: LineChange[]; written: boolean }> {
+  const path = join(orgPackDirOf(root), "roles.yaml");
+  const rel = `${isAdopted(root) ? ".atticus/org-pack" : "org-pack"}/roles.yaml`;
+  const text =
+    (await readFile(path, "utf8").catch(() => undefined)) ?? "schemaVersion: 2\nteams: []\n";
+  const migrated = migrateRolesText(text).text;
+  const doc = parseDocument(migrated);
+  let teams = doc.get("teams");
+  if (!isSeq(teams)) {
+    doc.set("teams", doc.createNode([]));
+    teams = doc.get("teams");
+  }
+  if (!isSeq(teams)) throw new ManifestEditError("invalid", `${rel} has no teams: list.`);
+  if (teams.items.some((x) => isMap(x) && x.get("id") === team.id))
+    throw new ManifestEditError("invalid", `${rel} already has a team ${team.id}.`);
+  teams.add(doc.createNode({ id: team.id, name: team.name }));
+  const after = doc.toString({ lineWidth: 0, flowCollectionPadding: true });
+  const check = Roles.safeParse(doc.toJS());
+  if (!check.success)
+    throw new ManifestEditError(
+      "invalid",
+      check.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "),
+    );
+  const changes = changedLines(text, after);
+  if (o.preview) return { rel, changes, written: false };
+  await writeFileAtomic(path, after);
+  return { rel, changes, written: true };
 }

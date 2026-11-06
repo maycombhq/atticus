@@ -3609,6 +3609,31 @@ export const COPY = {
     turns: (n: number) => (n === 1 ? "1 turn" : `${n} turns`),
   },
   /** ADR 0106: an AI step run from the app, with Copilot in a VS Code panel or the server's model. */
+  /** ADR 0174 (G2): a repo's owner and system, set from its box. */
+  owner: {
+    open: "Owner and system…",
+    title: (repo: string) => `Who owns ${repo}, and its system`,
+    intro: (file: string) =>
+      `Written to ${file} after your yes, the file's comments kept; the map shows it on the next atticus verify --all --write.`,
+    loading: "Reading the manifest…",
+    failed: (why: string) => `The owner couldn't be read: ${why}`,
+    owner: "Owner (a team)",
+    system: "System",
+    noSystem: "None",
+    addTeam: "Add a team…",
+    teamId: "New team's id (e.g. team-loyalty)",
+    teamName: "New team's name",
+    teamNote: "The team is added to roles.yaml for review, with nobody on it yet.",
+    preview: "Preview",
+    previewing: "Working out the change…",
+    nothing: "That is what the manifest says already: nothing to change.",
+    diffOf: (file: string) => `What changes in ${file}`,
+    confirm: "Write it",
+    writing: "Writing…",
+    written: "Written. Run this to redraw the map:",
+    close: "Close",
+    copy: "Copy the command",
+  },
   /** ADR 0174 (G1): connect two boxes call by call. */
   connect: {
     open: "Connect to…",

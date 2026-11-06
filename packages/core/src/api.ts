@@ -155,8 +155,9 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   `copilot-run.state` and `copilot-run.lines`. Additive only.
  * 2.53.0 (ADR 0174): correcting the map on the canvas. GET /api/links/candidates and POST
  *   /api/links/connect (G1, a call paired with an API, a `link` line in the caller's
- *   corrections); POST /api/facts/{repo}/corrections/undo (a correction's line removed). Additive
- *   only.
+ *   corrections); POST /api/facts/{repo}/corrections/undo (a correction's line removed); GET and
+ *   PUT /api/repos/{repo}/owner (G2, a repo's owner and system in its manifest, a team added to
+ *   roles.yaml for review). Additive only.
  */
 export const API_VERSION = "2.53.0";
 export const DEFAULT_PORT = 4321;
@@ -3024,6 +3025,35 @@ export const ConnectLinksResult = z.object({
   commit: z.string(),
 });
 export const UndoCorrectionRequest = z.object({ line: z.string().min(2) });
+export const LineChangeView = z.object({ was: z.string().optional(), now: z.string().optional() });
+/** G2: a repo's owner and system, and what each can be set to. */
+export const RepoOwnerView = z.object({
+  repo: z.string(),
+  owner: z.string(),
+  system: z.string().optional(),
+  /** The manifest that lists the repo. */
+  file: z.string(),
+  teams: z.array(z.object({ id: z.string(), name: z.string() })),
+  systems: z.array(z.object({ id: z.string(), name: z.string() })),
+});
+export const SetRepoOwnerRequest = z
+  .object({
+    owner: z.string().min(1).optional(),
+    system: z.string().min(1).optional(),
+    /** A team no team file names yet: added to roles.yaml for review, and made the owner. */
+    addTeam: z.object({ id: z.string().min(1), name: z.string().min(1) }).optional(),
+    preview: z.boolean().optional(),
+  })
+  .refine((b) => b.owner || b.system || b.addTeam, { message: "set owner, system or addTeam" });
+export const SetRepoOwnerResult = z.object({
+  written: z.boolean(),
+  files: z.array(z.object({ file: z.string(), changes: z.array(LineChangeView) })),
+  verify: z.string(),
+  commit: z.string(),
+});
+export type RepoOwnerViewT = z.infer<typeof RepoOwnerView>;
+export type SetRepoOwnerRequestT = z.infer<typeof SetRepoOwnerRequest>;
+export type SetRepoOwnerResultT = z.infer<typeof SetRepoOwnerResult>;
 export type LinkBoxT = z.infer<typeof LinkBox>;
 export type CandidateCallViewT = z.infer<typeof CandidateCallView>;
 export type CandidateApiViewT = z.infer<typeof CandidateApiView>;
@@ -4235,6 +4265,27 @@ const OPS: Record<string, Record<string, Op>> = {
       errors: [400, 404],
     },
   },
+  "/api/repos/{repo}/owner": {
+    get: {
+      id: "getRepoOwner",
+      summary:
+        "A repo's owner and system from its manifest, with the teams and systems to pick from (ADR 0174, G2)",
+      tag: "workspace",
+      params: [p("repo")],
+      ok: { status: 200, schema: "RepoOwnerView", description: "OK" },
+      errors: [404],
+    },
+    put: {
+      id: "setRepoOwner",
+      summary:
+        "Set a repo's owner or system in its manifest after the person's yes, or add a team to roles.yaml for review; with preview, the lines it would change (ADR 0174, G2)",
+      tag: "workspace",
+      params: [p("repo")],
+      body: SetRepoOwnerRequest,
+      ok: { status: 200, schema: "SetRepoOwnerResult", description: "OK" },
+      errors: [400, 404, 422],
+    },
+  },
   "/api/copilot-runs": {
     post: {
       id: "startCopilotRun",
@@ -5042,6 +5093,8 @@ export function openApiDocument(): Record<string, unknown> {
     CopilotRunCurrent,
     LinkCandidatesView,
     ConnectLinksResult,
+    RepoOwnerView,
+    SetRepoOwnerResult,
     Question,
     QuestionList,
     AnsweredQuestion,

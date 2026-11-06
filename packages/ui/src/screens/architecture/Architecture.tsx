@@ -16,6 +16,7 @@ import { queryParam, setQueryParam } from "../know/common.js";
 import { systemHash } from "../know/Systems.js";
 import { CopyButton, Facts } from "../run/shared.js";
 import { ConnectPanel, type BoxChoice } from "./Connect.js";
+import { OwnerPanel } from "./Owner.js";
 import { RunStep } from "../../app/runstep.js";
 import { ArchitectureCanvas } from "./Canvas.js";
 import { LinkWrong, WhatMoved, WhyLinked } from "./WhyLinked.js";
@@ -138,6 +139,8 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
   const [connecting, setConnecting] = useState<
     { from: string; initial?: Api.LinkBoxT } | undefined
   >();
+  // G2 (ADR 0174): setting a repo's owner and system.
+  const [owning, setOwning] = useState<string | undefined>();
   const [focus, setFocus] = useState<Api.GraphFocusViewT | undefined>();
   const [inPlace, setInPlace] = useState<Set<string>>(new Set());
   const [arrangement, setArrangement] = useState<Arrangement>({ state: "loading", key: "" });
@@ -562,7 +565,10 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
                         under={under}
                         contracts={findings}
                         {...(boxOf(sel)?.repo
-                          ? { onConnect: () => setConnecting({ from: boxOf(sel)!.repo! }) }
+                          ? {
+                              onConnect: () => setConnecting({ from: boxOf(sel)!.repo! }),
+                              onOwner: () => setOwning(boxOf(sel)!.repo!),
+                            }
                           : {})}
                         {...(!focus && graph.boxes.some((b) => b.id === sel.id)
                           ? {
@@ -584,6 +590,9 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
                         {...(connecting.initial ? { initial: connecting.initial } : {})}
                         onClose={() => setConnecting(undefined)}
                       />
+                    )}
+                    {owning && (
+                      <OwnerPanel key={owning} repo={owning} onClose={() => setOwning(undefined)} />
                     )}
                     {watched && <WhatMoved moved={moved} />}
                   </div>
@@ -677,9 +686,12 @@ export function Inspector({
   under,
   contracts,
   onConnect,
+  onOwner,
 }: {
   /** G1 (ADR 0174): connect this box to another, call by call. */
   onConnect?: () => void;
+  /** G2 (ADR 0174): set the repo's owner and system. */
+  onOwner?: () => void;
   /** What to show under each call of a link (This link is wrong, C2). */
   under?: (join: Api.HierJoinT) => ReactNode;
   /** ADR 0164: the contract check's findings, each call's shown under it. */
@@ -732,6 +744,11 @@ export function Inspector({
         {onConnect && (
           <button type="button" className="btn" onClick={onConnect}>
             {COPY.connect.open}
+          </button>
+        )}
+        {onOwner && (
+          <button type="button" className="btn" onClick={onOwner}>
+            {COPY.owner.open}
           </button>
         )}
         {/* WP7.7: a system's page, its guide, questions and changes. */}
