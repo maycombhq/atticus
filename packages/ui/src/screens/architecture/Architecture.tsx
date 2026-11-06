@@ -169,8 +169,12 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
             : undefined;
         if (v && live) {
           const at = openAt(v);
-          for (const id of at.expanded)
-            if (id !== "estate" && id !== v.node.id) await load(id).catch(() => undefined);
+          // The boxes above it load together, not one after another (G7).
+          await Promise.all(
+            at.expanded
+              .filter((id) => id !== "estate" && id !== v.node.id)
+              .map((id) => load(id).catch(() => undefined)),
+          );
           setExpanded(new Set(at.expanded));
           setCurrent(at.current);
           setSelected(at.selected);
