@@ -9,6 +9,7 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - A thin loading bar runs across the top of the app whenever any request is in flight, however short, and every panel still waiting shows its own; both are said to screen readers and move only when motion is allowed.
 - The Questions page is one request: the list carries the counts by state (and per repo) for the top of the page (`counts`, local API 2.51.0), every question is read once, and the repos' facts the rule offers need are parsed once per version of each file, not on every load.
 - A repo's facts view (the evidence on the canvas and Know) is worked out once per version of the files it reads (its facts, corrections, audit and the questions) and kept, so 40 repos' evidence comes back at once on a second look and after unrelated changes.
+- The canvas builds the estate once per state of the catalog, not on every box opened: the app starts building it as it opens, boxes opened together share one check of the catalog files, and a catalog file the app sees change is read on the next open. At 40 systems and about 4,900 records, opening a box after the first went from seconds to well under a second (a test at that size keeps it so).
 
 ## 2.0.0-beta.20 (2026-11-06)
 

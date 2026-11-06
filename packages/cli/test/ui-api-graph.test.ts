@@ -167,3 +167,34 @@ describe("kept arrangements: diagrams/layouts/<view-key>.yaml", () => {
     ).toBe(400);
   });
 });
+
+describe("the estate is built once per catalog state (beta.21, G7)", () => {
+  it("answers again from what it built, and sees a record added to the catalog", async () => {
+    const before = await get("/api/graph/node/estate");
+    const again = await get("/api/graph/node/estate");
+    expect(again.body).toEqual(before.body);
+    const ids = (b: Record<string, unknown>) =>
+      JSON.stringify(b).includes("system:vault-memo-test");
+    expect(ids(before.body)).toBe(false);
+    const p = parseRecord({
+      schemaVersion: 1,
+      status: "current",
+      kind: "System",
+      id: "vault-memo-test",
+      confidence: "verified",
+      name: "Vault",
+      boundary: "product",
+      owner: "team-vault",
+      repos: [],
+      evidence: [{ source: "config", repo: "forge-ledger", path: "forge.yaml" }],
+    });
+    if (!p.ok) throw new Error("bad fixture record");
+    const f = join(root, "catalog/curated", recordPath(p.record));
+    await mkdir(dirname(f), { recursive: true });
+    await writeFile(f, serializeRecord(p.record));
+    // The files are checked at most once a second unless the app sees the change.
+    await new Promise((r) => setTimeout(r, 1100));
+    const after = await get("/api/graph/node/estate");
+    expect(ids(after.body)).toBe(true);
+  });
+});

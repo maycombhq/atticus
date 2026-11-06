@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { stringify, parse } from "yaml";
 import {
   Api,
+  catalogDirOf,
   DiagramLayout,
   LAYOUT_SCHEMA_VERSION,
   layoutPath,
@@ -25,6 +26,7 @@ import {
   type ServerContext,
 } from "@maycombhq/server";
 import { catalogRecords } from "./site-commands.js";
+import { filesUnder, memoByFiles, recheckNow } from "./file-memo.js";
 
 /**
  * The hierarchical graph API (ADR 0081): the estate as one model, opened a node at a time, and
@@ -54,7 +56,18 @@ const keyOf = (k: string) => {
 };
 
 export function uiGraphRoutes(r: Router, ctx: ServerContext): Router {
-  const estate = async (): Promise<Estate> => {
+  // beta.21: the estate is built once per catalog state, not on every box opened. The files are
+  // checked at most once a second, and at once when the app sees a catalog file change.
+  const memoKey = `estate:${ctx.root}`;
+  ctx.events.listen((e) => {
+    if (e.type === "file.changed" && typeof e.path === "string" && /^catalog[\\/]/.test(e.path))
+      recheckNow(memoKey);
+  });
+  const estate = async (): Promise<Estate> =>
+    memoByFiles(memoKey, () => filesUnder(catalogDirOf(ctx.root)), buildFromCatalog, {
+      recheckAfterMs: 1000,
+    });
+  const buildFromCatalog = async (): Promise<Estate> => {
     const records = await catalogRecords(ctx.root);
     if (!records.length)
       throw new HttpError(
@@ -65,6 +78,8 @@ export function uiGraphRoutes(r: Router, ctx: ServerContext): Router {
       );
     return buildEstate(records);
   };
+  // Built while the app opens, so the first canvas doesn't wait on reading every record.
+  setTimeout(() => void estate().catch(() => undefined), 0).unref?.();
   const guard = <T>(f: () => T): T => {
     try {
       return f();
