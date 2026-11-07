@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { api, useApi, useLiveEvents, type Loaded } from "../api/client.js";
+import { api, ApiError, useApi, useLiveEvents, type Loaded } from "../api/client.js";
 import { AI_OFF_TEXT, useAiOn } from "../app/me.js";
 import { escapeCloses, Panel, Ring, View } from "../app/ui.js";
 import { ACROSS, AcrossPanel, type AcrossId } from "./Across.js";
@@ -279,6 +279,9 @@ export function ArtifactEditor({
   const act = useAction();
   // The keyboard goes into the text once it loads, so Escape (or Close) can close it at once.
   const box = useRef<HTMLTextAreaElement>(null);
+  // Someone saved meanwhile (409): the person's text is kept and the file read again, so the
+  // next Save goes against the file as it is now.
+  const [changedMeanwhile, setChangedMeanwhile] = useState(false);
   const ready = a.state === "ready";
   useEffect(() => {
     if (ready) box.current?.focus();
@@ -294,13 +297,23 @@ export function ArtifactEditor({
           <form
             onSubmit={(e: FormEvent) => {
               e.preventDefault();
+              setChangedMeanwhile(false);
               void act.run(
                 () =>
                   api(`/api/changes/${change}/artifacts/${artifact}`, {
                     method: "PUT",
                     body: { content: text ?? d.content, baseSha256: d.sha256 },
-                  }).then(() => a.reload()),
-                `Saved ${d.path}.`,
+                  })
+                    .then(() => {
+                      setText(undefined);
+                      a.reload();
+                    })
+                    .catch((e: unknown) => {
+                      if (e instanceof ApiError && e.problem.status === 409)
+                        setChangedMeanwhile(true);
+                      throw e;
+                    }),
+                T.saved(d.path),
               );
             }}
             onKeyDown={escapeCloses(onClose)}
@@ -338,6 +351,22 @@ export function ArtifactEditor({
               </span>
             </div>
             <Note note={act.note} />
+            {changedMeanwhile && (
+              <p role="alert" className="state error">
+                {T.changedMeanwhile}{" "}
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => {
+                    // The text stays; the file is read again, so Save goes against it.
+                    setChangedMeanwhile(false);
+                    a.reload();
+                  }}
+                >
+                  {T.reloadKeepMine}
+                </button>
+              </p>
+            )}
           </form>
         )}
       </View>
@@ -701,7 +730,7 @@ function Detail({ id }: { id: string }) {
                               autonomy: "draft",
                             },
                           }).then(reloadAll),
-                        `Task ${t.id} handed to your assistant. Open the prompt, then mark it done.`,
+                        T.taskHanded(t.id),
                       )
                     }
                   >

@@ -199,7 +199,8 @@ export function Explore({ hash }: { hash: string }) {
     e.preventDefault();
     setPicked(undefined);
     setQ(text.trim());
-    history.replaceState(null, "", `#/explore?q=${encodeURIComponent(text.trim())}`);
+    // The address changes for real, so the page (and a back button) follows it.
+    location.hash = `#/explore?q=${encodeURIComponent(text.trim())}`;
   };
 
   return (

@@ -3,6 +3,7 @@ import type { Api } from "@maycombhq/core";
 import { api, ApiError, useApi, useReloadOnFiles } from "../../api/client.js";
 import { COPY } from "../../copy.js";
 import { Diff } from "../architecture/Owner.js";
+import { LoadError } from "../../app/ui.js";
 import { CopyButton } from "../run/shared.js";
 import { Command } from "./RunNext.js";
 
@@ -195,6 +196,8 @@ export function SketchPanel({ change, map }: { change: string; map?: Api.ChangeM
       method: "POST",
       body,
     });
+  // The strokes drawn couldn't be read: said with a way to try again, never "none drawn yet".
+  if (state.state === "error") return <LoadError error={state.error} retry={state.reload} />;
   return (
     <SketchForm
       change={change}
@@ -386,7 +389,7 @@ export function SketchForm(p: {
             <div className="stack" style={{ gap: 6, paddingLeft: 12 }}>
               {field("newName", S.newName)}
               {field("newId", S.newId, {
-                placeholder: `${t(f.component) || "component"}.${slug(f.newName) || "flow"}`,
+                placeholder: `${t(f.component) || S.componentWord}.${slug(f.newName) || S.flowWord}`,
               })}
               <label className="stack" style={{ gap: 2 }}>
                 <span className="hud">{S.trigger}</span>

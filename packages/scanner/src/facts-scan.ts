@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   conventionsOf,
+  effectiveComponentTypes,
   factsDirOf,
   factsRelOf,
   listQuestions,
@@ -94,6 +95,8 @@ export async function factsForScan(
       commit: commit!,
       carry: diff.changes,
       conventions: conventionsOf(op),
+      // ADR 0180: a type taken out of the organisation's set after a read is flagged here too.
+      componentTypes: new Set(effectiveComponentTypes(op.componentTypes).map((t) => t.id)),
     });
     const from = [...new Set(older.map((f) => f.commit.slice(0, 7)))].join(", ");
     if (!report.accepted.length)

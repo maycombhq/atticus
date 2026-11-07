@@ -203,7 +203,11 @@ function ArtifactPanel({
         <div className="state">{T.noSuchArtifact(artifact)}</div>
       </Panel>
     );
-  const missing = a.state === "error";
+  // Not written yet is a 404; any other failure is said as one, with a way to try again.
+  const missing =
+    a.state === "error" &&
+    (a.status === 404 ||
+      (a.status === undefined && /not found|no such|isn't there/i.test(a.error)));
   return (
     <Panel
       title={title}
@@ -768,7 +772,7 @@ function TasksByRepo({
         method: "POST",
         body: { agent: "task-runner", task: t.id, runtime: "hand-off" },
       });
-      say(t.id, `Run ${r.runId} prepared: your assistant takes it from here.`);
+      say(t.id, T.runPrepared(r.runId));
     } catch (e) {
       say(t.id, e instanceof ApiError ? (e.problem.detail ?? e.problem.title) : String(e));
     } finally {

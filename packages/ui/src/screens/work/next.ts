@@ -272,7 +272,8 @@ export function readStep(repo: string): Step {
  */
 export function onboardingStep(
   v: OnboardingData,
-  openQuestions: number,
+  /** Open questions; undefined while they haven't loaded (or failed): never read as none. */
+  openQuestions: number | undefined,
   trust?: Api.TrustViewT,
 ): Step {
   const repos = v.repos;
@@ -296,10 +297,10 @@ export function onboardingStep(
     const unread = repos.find((r) => r.lastScan === null);
     if (unread) return { ...readStep(unread.id), link: trustLink };
   }
-  if (openQuestions > 0)
+  if (openQuestions === undefined || openQuestions > 0)
     return {
       command: "atticus questions list --state open",
-      why: W.why.answer(openQuestions),
+      why: openQuestions === undefined ? W.why.answerUnknown : W.why.answer(openQuestions),
       slash: metarepo("/atticus-answer"),
       link: { href: "#/questions", label: W.stepAnswerLink },
     };
@@ -309,7 +310,7 @@ export function onboardingStep(
 /** True when onboarding has nothing left to do. */
 export function onboarded(
   v: OnboardingData,
-  openQuestions: number,
+  openQuestions: number | undefined,
   trust?: Api.TrustViewT,
 ): boolean {
   return onboardingStep(v, openQuestions, trust).done === true;
@@ -318,7 +319,7 @@ export function onboarded(
 /** The dashboard's one step: onboarding first, then the first change in flight, then a new one. */
 export function dashboardStep(
   v: OnboardingData,
-  openQuestions: number,
+  openQuestions: number | undefined,
   changes: ChangeRow[],
   trust?: Api.TrustViewT,
 ): Step {

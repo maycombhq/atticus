@@ -13,7 +13,7 @@
 
 ### 1. A type is a file an architect owns (C6)
 
-`org-pack/component-types/<id>/type.yaml`: `id`, `name`, `description`, `owner`; `signals` the reader cites when it says a component is of the type (a framework, a dependency, an annotation, a file or path, a repo type, words); `runsOn` defaults for a new box; `draws` (a shape, a colour, a badge of one to three characters) for the canvas; `must` and `mustNot` in the organisation's words (org notes, ADR 0163's shape); `off: true` on a built-in's id to take it out; `notes` naming the Markdown write-up beside it (`notes.md` by default). Atticus's thirteen types are the default set in the same shape (`BUILTIN_COMPONENT_TYPES`); the effective set is the built-ins with the pack's own, reworded and switched-off ones applied (`effectiveComponentTypes`). `atticus types list | add | notes` work on them; the app serves the set at `GET /api/component-types`.
+`org-pack/component-types/<id>/type.yaml`: `id`, `name`, `description`, `owner`; `signals` the reader cites when it says a component is of the type (a framework, a dependency, an annotation, a file or path, a repo type, words); `runsOn` defaults for a new box; `draws` (a shape, a colour, a badge of one to three characters) for the canvas; `must` and `mustNot` in the organisation's words (org notes, ADR 0163's shape); `off: true` on a built-in's id to take it out (`name` and `description` may then be left out); `notes` naming the Markdown write-up beside it (`notes.md` by default). Atticus's thirteen types are the default set in the same shape (`BUILTIN_COMPONENT_TYPES`); the effective set is the built-ins with the pack's own, reworded and switched-off ones applied (`effectiveComponentTypes`). `atticus types list | add | notes` work on them; the app serves the set at `GET /api/component-types`.
 
 ### 2. The `component` fact (facts file, version 4)
 
@@ -35,4 +35,4 @@ The canvas draws a component's type as a badge in its colour (the hierarchy's `p
 
 - Architects define the organisation's kinds once; reads classify against them with a citation, and the canvas shows the kinds at a glance.
 - `atticus map --all --stale` re-reads nothing for a new type: a type added later is used by the next read of each repo (the set is handed at read time, not pinned per repo).
-- A type's `mustNot` lines read as rules; offering them as checklist drafts (as repo-type notes are, ADR 0163) is a natural next step and not done here.
+- A type's `mustNot` lines read as rules; offering them as checklist drafts (as repo-type notes are, ADR 0163) is a natural next step and not done here. The merge keeps a cited type over a repo type from the manifest (`MergeInput.componentTypes`), so an organisation's own type is never demoted to `service`.

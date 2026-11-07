@@ -622,6 +622,9 @@ export function KnowledgeItems({ hash }: { hash: string }) {
   const current = queryParam(hash, "item");
   const [text, setText] = useState("");
   const [kind, setKind] = useState(queryParam(hash, "kind") ?? "");
+  // A link to another kind while on the page: the filter follows the address.
+  const kindAsked = queryParam(hash, "kind") ?? "";
+  useEffect(() => setKind(kindAsked), [kindAsked]);
   // The form open, for the item it was opened on: picking another item closes it.
   const [open, setOpen] = useState<{ id: string; mode: "correct" | "reject" } | undefined>();
   const [busy, setBusy] = useState(false);

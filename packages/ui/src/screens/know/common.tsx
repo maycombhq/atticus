@@ -23,8 +23,21 @@ export function queryParam(hash: string, name: string): string | undefined {
   return q ? (new URLSearchParams(q).get(name) ?? undefined) : undefined;
 }
 
-export function setQueryParam(screen: string, name: string, value: string) {
-  location.hash = `#/${screen}?${name}=${encodeURIComponent(value)}`;
+/**
+ * Sets one query parameter of the page's address and keeps the others (a change picked on the
+ * Architecture tab keeps its lens; a lens picked keeps the change), so no tab loses what the
+ * others need. `keep` names the parameters that stay; left out, every other one stays.
+ */
+export function setQueryParam(
+  screen: string,
+  name: string,
+  value: string,
+  o: { drop?: readonly string[] } = {},
+) {
+  const q = new URLSearchParams(location.hash.split("?")[1] ?? "");
+  for (const d of o.drop ?? []) q.delete(d);
+  q.set(name, value);
+  location.hash = `#/${screen}?${q.toString()}`;
 }
 
 interface ChangeSummary {

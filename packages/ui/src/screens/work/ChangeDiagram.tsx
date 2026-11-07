@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import type { Api } from "@maycombhq/core";
-import { useApi, useLiveEvents } from "../../api/client.js";
+import { useApi, isFileChange, useLiveEvents } from "../../api/client.js";
 import { Panel, View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
 import { ArchitectureCanvas } from "../architecture/Canvas.js";
@@ -191,7 +191,9 @@ export function ChangeDiagram({ hash }: { hash: string }) {
   const map = useApi<Api.ChangeMapT>(
     current ? `/api/changes/${encodeURIComponent(current)}/map` : undefined,
   );
-  useLiveEvents(() => map.reload());
+  useLiveEvents((e) => {
+    if (isFileChange(e)) map.reload();
+  });
   return (
     <Panel title={D.title}>
       <p className="muted" style={{ margin: "0 0 12px", fontSize: 12.5, lineHeight: 1.55 }}>

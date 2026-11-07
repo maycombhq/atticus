@@ -85,7 +85,7 @@ function DocumentRow({ d, now }: { d: Doc; now: number }) {
         <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
           {d.items.map((i) => (
             <li key={i.id}>
-              <a href={`#/knowledge?q=${encodeURIComponent(i.id)}`}>{i.title}</a>
+              <a href={`#/knowledge?item=${encodeURIComponent(i.id)}`}>{i.title}</a>
               {i.verified ? ` (${D.verified})` : ""}
             </li>
           ))}
@@ -188,14 +188,21 @@ export function Documents() {
           {D.intro}
         </p>
         <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
-          <label className="btn" htmlFor="documents-add">
+          <button
+            type="button"
+            className="btn"
+            disabled={add.busy}
+            onClick={() => document.getElementById("documents-add")?.click()}
+          >
             {add.busy ? D.adding : D.add}
-          </label>
+          </button>
           <input
             id="documents-add"
             type="file"
             multiple
             className="sr"
+            aria-label={D.add}
+            tabIndex={-1}
             disabled={add.busy}
             onChange={(e) => {
               const files = [...(e.target.files ?? [])];

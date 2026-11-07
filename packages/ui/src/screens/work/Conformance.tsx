@@ -1,5 +1,5 @@
 import type { Api } from "@maycombhq/core";
-import { useApi, useLiveEvents } from "../../api/client.js";
+import { useApi, isFileChange, useLiveEvents } from "../../api/client.js";
 import { Panel, View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
 import { queryParam } from "../know/common.js";
@@ -137,7 +137,9 @@ export function Conformance({ hash }: { hash: string }) {
   const conf = useApi<Api.ChangeConformanceT>(
     current ? `/api/changes/${encodeURIComponent(current)}/conformance` : undefined,
   );
-  useLiveEvents(() => conf.reload());
+  useLiveEvents((e) => {
+    if (isFileChange(e)) conf.reload();
+  });
   return (
     <Panel title={C.title}>
       <p className="muted" style={{ margin: "0 0 12px", fontSize: 12.5, lineHeight: 1.55 }}>

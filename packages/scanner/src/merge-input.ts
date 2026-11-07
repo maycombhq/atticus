@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import {
+  effectiveComponentTypes,
   isPrototypeType,
   mergeCatalog,
   type CatalogRecord,
@@ -78,6 +79,8 @@ export function estateMergeInput(
 ): MergeInput {
   return {
     records,
+    // ADR 0180: the organisation's component types, so a cited type is never demoted in a merge.
+    componentTypes: new Set(effectiveComponentTypes(op.componentTypes).map((t) => t.id)),
     repos: repos.flatMap((r) => [
       {
         id: r.id,

@@ -110,7 +110,7 @@ flows:
     trigger: <new flows only> { kind: endpoint | action | page | listener | job, what: <plain words>, entry: <the HTTP method and the path, such as "GET /orders/{id}", or a topic> }
     why: <one sentence: why this flow changes>
     consumers: [<when the change breaks the flow's entry: every component that calls it today>]
-    runsOn: <a new flow of a component that doesn't exist yet: where it runs> { component: <its id>, system: <the system it belongs to>, platform: <the platform it runs on>, cloud: <the cloud, or on-prem>, framework: <what it is built on> }
+    runsOn: <a new flow of a component that doesn't exist yet: where it runs> { component: <its id>, system: <the system it belongs to>, platform: <the platform it runs on>, cloud: <the cloud, or on-prem>, framework: <what it is built on>, type: <what it is: one of the organisation's component types, by id> }
     steps:
       - op: add | change | remove
         step: <change and remove: the step's number in today's flow, as listed>
@@ -2439,12 +2439,17 @@ export async function architectureStage(
   const sketched = (await readDeltas(dir)).deltas
     .map((d) => ({ ...d, steps: d.steps.filter((s) => drawn.test(s.why ?? "")) }))
     .filter((d) => d.steps.length);
-  const typeRules = componentTypeRulesText(
-    effectiveComponentTypes(
-      (await loadOrgPack(orgPackDirOf(root)).catch(() => undefined))?.componentTypes ?? [],
-    ),
-    orgPackRelOf(root),
+  // The types a new component can be of (their ids, always), and what each must and must not do
+  // (where a type says so).
+  const componentTypes = effectiveComponentTypes(
+    (await loadOrgPack(orgPackDirOf(root)).catch(() => undefined))?.componentTypes ?? [],
   );
+  const typeRules = [
+    `Component types (runsOn.type of a new flow): ${componentTypes.map((t) => t.id).join(", ")}.`,
+    componentTypeRulesText(componentTypes, orgPackRelOf(root)),
+  ]
+    .filter(Boolean)
+    .join("\n");
   const attached = await changeInputSources(dir, rel);
   // ADR 0142: the prototype's calls nothing serves, for this stage to place.
   const newCalls = prototypeNewCallsSource(attached);

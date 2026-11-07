@@ -580,6 +580,8 @@ export function scoreFacts(ref: BenchReference, facts: readonly Fact[]): FactsSc
     flow: 0,
     // ADR 0163: the organisation's terms the repo writes.
     term: 0,
+    // ADR 0180: what a component is.
+    component: 0,
   };
   for (const f of facts) byKind[f.kind]++;
   return {

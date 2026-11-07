@@ -52,6 +52,7 @@ export interface TypeDraw {
   description: string;
   badge?: string;
   colour?: string;
+  shape?: string;
 }
 export type TypeDraws = Record<string, TypeDraw>;
 
@@ -87,8 +88,10 @@ function GapMark({ n }: { n: number }) {
 
 function BoxView({ data }: NodeProps<BoxNode>) {
   const { box, dir } = data;
+  const shape = box.typeId ? data.types?.[box.typeId]?.shape : undefined;
   const cls = [
     "arch-box",
+    shape ? `shape-${shape}` : "",
     box.group ? "group" : "",
     box.outside ? "outside" : "",
     box.kind === "topic" ? "topic" : "",
@@ -108,6 +111,7 @@ function BoxView({ data }: NodeProps<BoxNode>) {
           <span
             className="hud arch-type"
             title={`${data.types[box.typeId]!.name}: ${data.types[box.typeId]!.description}`}
+            aria-label={`${data.types[box.typeId]!.name} (${box.kind})`}
             style={
               data.types[box.typeId]!.colour
                 ? { borderLeft: `3px solid ${data.types[box.typeId]!.colour}`, paddingLeft: 4 }

@@ -47,7 +47,7 @@ type Filter = "to-file" | "waiting" | "filed" | "all";
 const STATE: Record<Request["state"], { label: string; cls: string }> = {
   "to-file": { label: T.toFile2, cls: "warn" },
   waiting: { label: T.waitingForYou, cls: "ai" },
-  filed: { label: "FILED", cls: "done" },
+  filed: { label: T.filedChip, cls: "done" },
 };
 const keyOf = (r: Request) => `${r.change}|${r.heading}`;
 
@@ -244,7 +244,7 @@ export function ServiceDesk({ hash = "" }: { hash?: string }) {
           {q.state !== "ready"
             ? T.serviceDeskQueue
             : n("to-file")
-              ? T.toFile(plural(n("to-file"), "request"))
+              ? T.toFile(plural(n("to-file"), T.requestWord))
               : T.nothingToFile}
         </p>
         <Choice
@@ -295,7 +295,7 @@ export function ServiceDesk({ hash = "" }: { hash?: string }) {
                     d.exports.files.length
                       ? T.from(
                           plural(d.exports.requests, T.pastRequest),
-                          plural(d.exports.files.length, "export"),
+                          plural(d.exports.files.length, T.exportWord),
                         )
                       : T.noDeskExportLoaded,
                     plural(d.templates.length, T.requestTemplate),

@@ -1242,6 +1242,8 @@ export const COPY = {
       job: "A job runs",
     },
     triggerWhat: "In words",
+    componentWord: "component",
+    flowWord: "flow",
     newType: "What the new box is",
     newTypeNone: "A type isn't said yet",
     typeOption: (name: string, badge?: string) => (badge ? `${name} [${badge}]` : name),
@@ -1586,6 +1588,8 @@ export const COPY = {
         `When the read is done, atticus verify ${repo} --write checks the facts and puts them in the catalog.`,
       answer: (n: number) =>
         `${n} question${n === 1 ? " is" : "s are"} waiting. Answer on the Questions page; it shows the command to rerun.`,
+      answerUnknown:
+        "The open questions couldn't be read just now, so this step isn't ticked yet. Open the Questions page to see them.",
       onboarded:
         "Every repo is read and its facts verified. Map › Trust says how far to trust each repo's map; atticus next says what comes next.",
       change: (id: string, stage: string) => `${id} is at the ${stage} stage.`,
@@ -1683,6 +1687,10 @@ export const COPY = {
     anyPage: (keys: string) => `${keys}: any page`,
   },
   palette: {
+    kinds: { screen: "page", change: "change", record: "record", ask: "ask" } as Record<
+      string,
+      string
+    >,
     askItem: (question: string) => `Ask: ${question}`,
     askDetail: "answer from the catalog, with the query shown",
     goToAScreen: "Go to a screen, change or record, or ask a question",
@@ -1929,6 +1937,13 @@ export const COPY = {
     ifSomeoneSavedMeanwhile:
       "If someone saved meanwhile, Atticus refuses the save and asks you to reload.",
     edit: (artifact: string | number) => `Edit ${artifact}`,
+    saved: (path: string) => `Saved ${path}.`,
+    recorded: (action: string) => `Recorded: ${action}.`,
+    changedMeanwhile:
+      "Someone saved this file meanwhile, so yours wasn't written over theirs. Reload it (your text stays) and save again.",
+    reloadKeepMine: "Reload, keep my text",
+    taskHanded: (id: string) =>
+      `Task ${id} handed to your assistant. Open the prompt, then mark it done.`,
     reason: "Reason",
     reasonNeededToWaive: "Reason (needed to waive or dismiss)",
     applyFix: "Apply fix",
@@ -2036,10 +2051,17 @@ export const COPY = {
     bulkWhy: "Why, for all of them",
     bulkDo: (n: number) => `Do it for ${n}`,
     bulkClear: "Clear the selection",
-    bulkDone: (ok: number, failed: number) =>
+    bulkDone: (ok: number, failed: number, why: readonly string[] | string = []) =>
       failed
-        ? `Done for ${ok}; ${failed} couldn't be changed: open each to see why.`
+        ? `Done for ${ok}; ${failed} couldn't be changed${why.length ? `: ${[...new Set(typeof why === "string" ? [why] : why)].join("; ")}` : ": open each to see why"}.`
         : `Done for ${ok}.`,
+    partlyLoaded: (parts: readonly string[] | string) =>
+      `Part of this list didn't load, so it may be short: ${typeof parts === "string" ? parts : parts.join("; ")}`,
+    needsOfFailed: (change: string, error: string) => `${change}'s needs (${error})`,
+    needsFailed: (error: string) => `the changes' needs (${error})`,
+    stepsFailed: (error: string) => `the steps to do (${error})`,
+    questionsFailed: (error: string) => `the open questions (${error})`,
+    triageFailed: (error: string) => `the triage (${error})`,
     howStepsRun: "How AI steps run:",
     howStepsRunChange: "Change in Set up › AI",
     howStepsRunCantRead: "Atticus couldn't read how AI steps run here (org-pack/runtime.yaml).",
@@ -2253,6 +2275,9 @@ export const COPY = {
     drawnFromTheCatalog:
       "Drawn from the catalog; rebuilt whenever it changes. Edits happen in draw.io and come back through the metarepo.",
     generatedViews: "Generated views",
+    noSystemToDraw:
+      "This view is drawn around one system, and the catalog has none yet: read a repo first (atticus map <repo>), then come back.",
+    systemsFailed: (error: string) => `The systems couldn't be listed: ${error}`,
     nothingToDrawThe: (v: string | number) =>
       `Nothing to draw: the catalog has nothing for the ${v} view.`,
     theCatalogIsEmpty:
@@ -2296,6 +2321,8 @@ export const COPY = {
     whoOwesWhat: "Who owes what",
   },
   know: {
+    decided: (label: string) => `Decided: ${label}.`,
+    started: (label: string) => `${label} started.`,
     verifiedFromCode: "verified from code",
     fromDocumentsOnly: "from documents only",
     coverageBySystemAnd2: "Coverage by system and area",
@@ -2471,6 +2498,7 @@ export const COPY = {
     catalog: "Catalog",
   },
   phase: {
+    runPrepared: (runId: string) => `Run ${runId} prepared: your assistant takes it from here.`,
     theRuleChecksRan:
       "The rule checks ran; any AI lens is with your assistant. Finish each with atticus handoff done.",
     theRuleChecksRan2: "The rule checks ran. AI is off here, so no lens waits.",
@@ -2735,6 +2763,13 @@ export const COPY = {
     incidentMode: "Incident mode",
   },
   learning: {
+    lessonWord: "lesson",
+    stepWord: "step",
+    newChip: "NEW",
+    doneChip: "DONE",
+    notYet: (why: string, hint: string) => `Not yet: ${why}\nHint: ${hint}`,
+    notYetNoHint: (why: string) => `Not yet: ${why}`,
+    passed: (why: string) => `Passed: ${why}`,
     sandboxMade: (root: string) =>
       `Made a practice sandbox. Start the app there with: atticus ui --root ${root}`,
     inProgress: "IN PROGRESS",
@@ -2781,6 +2816,17 @@ export const COPY = {
     lessons: "Lessons",
   },
   release: {
+    releasedChipWord: "RELEASED",
+    openFindingsChip: (n: number) => `${n} OPEN`,
+    clearChip: "CLEAR",
+    mergedChip: "MERGED",
+    laterChip: "LATER",
+    openChip: "OPEN",
+    blockersChip: (n: number) => `${n} BLOCKERS`,
+    notFiledChip: (n: number) => `${n} NOT FILED`,
+    filedChip: (n: number) => `${n} FILED`,
+    fileWord: "file",
+    bytes: (n: number) => `${n} B`,
     atGoNoGo: "AT GO / NO-GO",
     postReleaseReview: "POST-RELEASE REVIEW",
     noneNeeded: "NONE NEEDED",
@@ -2833,6 +2879,14 @@ export const COPY = {
     noChangeSelected: "No change selected",
   },
   releaseViews: {
+    migrationChip: "MIGRATION",
+    topicChip: "TOPIC",
+    codeChip: "CODE",
+    stepWord: "step",
+    sensitiveSuffix: ", sensitive",
+    interfaceWord: "interface",
+    valueWord: "value",
+    fileWord: "file",
     filedAs: (n: string | undefined) => `filed${n ? ` as ${n}` : ""}`,
     waitFor: (what: string, record: string | undefined) =>
       `${what}${record ? ` for ${record}` : ""}`,
@@ -2940,6 +2994,9 @@ export const COPY = {
     copyEvidenceMd: (id: string | number) => `Copy evidence-${id}.md`,
   },
   serviceDesk: {
+    requestWord: "request",
+    exportWord: "export",
+    filedChip: "FILED",
     ofChange: (c: string) => `Requests of ${c} only.`,
     showAll: "Show every change's",
     filters: {
@@ -3065,6 +3122,8 @@ export const COPY = {
     commandLabel: "Copy the command that prints this list",
   },
   outside: {
+    noSuchSystem: (id: string) =>
+      `No outside system of the profile is ${id}: pick one above, or add it in Map › Canvas (Add to the picture).`,
     title: "Outside systems",
     // ADR 0164: the calls to the system against its newest spec.
     contracts: "The calls against this spec",
@@ -3230,6 +3289,9 @@ export const COPY = {
       "Saved to the manifest: commit it in a pull request. Run atticus workspace sync if the default branch changed.",
   },
   aiSettings: {
+    changedOnDisk:
+      "runtime.yaml changed on disk while this form was open (another window, or the command line). Your edits are kept here; Save writes them over what is there, or take the file's values.",
+    takeDisk: "Take the file's values",
     title: "How AI runs here",
     intro:
       "Choose whether AI runs, which assistants your people use, and whether Atticus may call a model itself. Saving writes the org pack's runtime.yaml.",
@@ -3281,6 +3343,12 @@ export const COPY = {
     notAnswered: (why: string) => `It didn't answer: ${why}`,
   },
   settings: {
+    connectedChip: "CONNECTED",
+    manualChip: "MANUAL",
+    mockChip: "MOCK",
+    onChip: "ON",
+    offChip: "OFF",
+    defaultOf: (v: string) => `(default ${v})`,
     autonomyLine: (dflt: string, rounds: number, capped: string | undefined) =>
       `${dflt} by default; at most ${rounds} build-fix rounds${capped ? `; capped: ${capped}` : ""}`,
     handOff: "Hand-off",
@@ -3405,6 +3473,11 @@ export const COPY = {
     connected: (v: string | number) => `CONNECTED · ${v}`,
   },
   todo: {
+    stepWord: "step",
+    requestWord: "request",
+    executorDid: (executor: string) => `${executor} did the step.`,
+    recordedStep: (id: string) => `Recorded step ${id}.`,
+    skippedStep: (id: string) => `Skipped step ${id}.`,
     noClipboard: "This browser won't copy from here; use Copy all fields.",
     theseAreTheExact: "These are the exact inputs the tool gets. Approve them to run it.",
     copiedTheFieldsAs: "Copied the fields as CSV, ready to import.",
@@ -3724,7 +3797,7 @@ export const COPY = {
   canvasTools: {
     types: "Types",
     typesHint:
-      "The organisation's component types, as the boxes wear them. Click one to show only its components; again to show all.",
+      "The organisation's component types, as the boxes wear them. Click one to show only its components (the rest of your filter stays); again to show all.",
     title: "Layers, filters and tools",
     show: "Show the tools",
     hide: "Hide the tools",
@@ -3739,7 +3812,7 @@ export const COPY = {
     } as Record<string, string>,
     mismatches: "Only links whose two sides disagree",
     filter: "Filter",
-    filterHint: "team:<id> system:<id> type:<repo type> path:/accounts/** or words",
+    filterHint: "team:<id> system:<id> type:<repo or component type> path:/accounts/** or words",
     filtered: (n: number, all: number) => `${n} of ${all} boxes shown`,
     overlay: "Colour boxes by",
     questionsBadge: (n: number) => (n === 1 ? "open question" : "open questions"),

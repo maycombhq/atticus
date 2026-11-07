@@ -48,9 +48,9 @@ interface CheckResult {
 }
 
 const STATE = {
-  "not-started": { label: "NEW", cls: "dim" },
+  "not-started": { label: T.newChip, cls: "dim" },
   "in-progress": { label: T.inProgress, cls: "warn" },
-  done: { label: "DONE", cls: "done" },
+  done: { label: T.doneChip, cls: "done" },
 } as const;
 
 function Exercise({ cur, reload }: { cur: NonNullable<Learning["current"]>; reload: () => void }) {
@@ -83,10 +83,10 @@ function Exercise({ cur, reload }: { cur: NonNullable<Learning["current"]>; relo
                 reload();
               }
               if (!r.pass)
-                throw new Error(`Not yet: ${r.message}${r.hint ? `\nHint: ${r.hint}` : ""}`);
+                throw new Error(r.hint ? T.notYet(r.message, r.hint) : T.notYetNoHint(r.message));
               return r;
             }),
-          (r) => `Passed: ${(r as CheckResult).message}`,
+          (r) => T.passed((r as CheckResult).message),
         );
       }}
     >
@@ -246,7 +246,7 @@ export function Learning() {
                   label={T.ofLessonsDone(totals.done, totals.all)}
                 />
                 <span style={{ fontSize: 12.5 }}>
-                  {T.ofDone(totals.done, plural(totals.all, "lesson"))}
+                  {T.ofDone(totals.done, plural(totals.all, T.lessonWord))}
                 </span>
               </div>
             )}
@@ -325,7 +325,7 @@ export function Learning() {
                         {x.summary}
                       </span>
                       <span className="hud" style={{ fontSize: 9.5 }}>
-                        {T.min(x.role, x.minutes, plural(x.steps, "step"))}
+                        {T.min(x.role, x.minutes, plural(x.steps, T.stepWord))}
                       </span>
                     </span>
                     <button

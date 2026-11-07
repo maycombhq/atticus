@@ -91,5 +91,18 @@ describe("what a component is", () => {
       componentTypes: TYPES,
     });
     expect(codes(twice)).toEqual([["c2", "component-type"]]);
+    // A bad first fact doesn't take the good second one down with it; the subject is compared as
+    // the projection names it (the repo when component is left out, in id form).
+    const firstBad = await verifyFacts({
+      facts: [
+        entry,
+        typed({ type: "widget" }),
+        { ...typed({ type: "bff", component: "Forge Web XP" }), id: "c2" } as Fact,
+      ],
+      source,
+      commit: "abc1234",
+      componentTypes: TYPES,
+    });
+    expect(codes(firstBad)).toEqual([["c1", "component-type"]]);
   });
 });

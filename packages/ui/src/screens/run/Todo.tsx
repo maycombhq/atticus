@@ -201,7 +201,7 @@ function LocalTool({ step, done }: { step: Step; done: () => void }) {
                     done();
                     return r;
                   }),
-                (r) => (r as { lines: string[] }).lines.join("\n") || `${executor} did the step.`,
+                (r) => (r as { lines: string[] }).lines.join("\n") || T.executorDid(executor),
               )
             }
           >
@@ -229,7 +229,7 @@ function StepDetail({ step, done }: { step: Step; done: () => void }) {
           method: "POST",
           body: { values: filled, ...(step.change ? { change: step.change } : {}) },
         }).then(done),
-      `Recorded step ${step.id}.`,
+      T.recordedStep(step.id),
     );
   };
   return (
@@ -344,7 +344,7 @@ function StepDetail({ step, done }: { step: Step; done: () => void }) {
                       method: "POST",
                       body: { skip: true, note, ...(step.change ? { change: step.change } : {}) },
                     }).then(done),
-                  `Skipped step ${step.id}.`,
+                  T.skippedStep(step.id),
                 )
               }
             >
@@ -414,7 +414,9 @@ export function Todo({ hash = "" }: { hash?: string }) {
   });
   const changes =
     todo.state === "ready" ? [...new Set(todo.data.steps.map((s) => s.change ?? "none"))] : [];
-  const selected = steps.find((s) => s.id === current) ?? open[0];
+  // Selected by change and id: two changes may share a step id.
+  const keyOfStep = (s: { change?: string; id: string }) => `${s.change ?? ""}/${s.id}`;
+  const selected = steps.find((s) => keyOfStep(s) === current) ?? open[0];
   const questions =
     findings.state === "ready"
       ? findings.data.filter((f) => f.question && (f.state === "open" || f.state === "asked"))
@@ -427,7 +429,7 @@ export function Todo({ hash = "" }: { hash?: string }) {
           {todo.state !== "ready"
             ? T.toDoAndManual
             : open.length
-              ? T.waitForAPerson(plural(open.length, "step"))
+              ? T.waitForAPerson(plural(open.length, T.stepWord))
               : T.nothingToDoEvery}
         </p>
         <div className="row" style={{ gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
@@ -504,7 +506,7 @@ export function Todo({ hash = "" }: { hash?: string }) {
                   {d.exports.files.length
                     ? T.exportsInInputs(
                         plural(d.exports.workItems, T.workItem),
-                        plural(d.exports.requests, "request"),
+                        plural(d.exports.requests, T.requestWord),
                       )
                     : T.noExportsInInputs}
                 </p>
@@ -571,8 +573,10 @@ export function Todo({ hash = "" }: { hash?: string }) {
                           key={`${s.change}/${s.id}`}
                           type="button"
                           className="run-pick"
-                          aria-current={s.id === selected?.id ? "true" : undefined}
-                          onClick={() => setCurrent(s.id)}
+                          aria-current={
+                            selected && keyOfStep(s) === keyOfStep(selected) ? "true" : undefined
+                          }
+                          onClick={() => setCurrent(keyOfStep(s))}
                         >
                           <span className="stack" style={{ gap: 2, minWidth: 0 }}>
                             <span style={{ fontSize: 12.5 }}>{s.title}</span>
@@ -675,8 +679,10 @@ export function Todo({ hash = "" }: { hash?: string }) {
                     key={`${s.change}/${s.id}`}
                     type="button"
                     className="run-pick"
-                    aria-current={s.id === selected?.id ? "true" : undefined}
-                    onClick={() => setCurrent(s.id)}
+                    aria-current={
+                      selected && keyOfStep(s) === keyOfStep(selected) ? "true" : undefined
+                    }
+                    onClick={() => setCurrent(keyOfStep(s))}
                   >
                     <span style={{ fontSize: 12.5 }}>{s.title}</span>
                     <span className={`chip ${s.state === "done" ? "done" : "dim"}`}>

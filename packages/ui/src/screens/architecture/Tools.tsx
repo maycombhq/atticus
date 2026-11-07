@@ -555,7 +555,12 @@ export function TypeLegend(p: {
       </p>
       <ul className="type-legend" style={{ paddingLeft: 0, margin: 0, listStyle: "none" }}>
         {shown.map(([id, t]) => {
-          const on = p.filter.trim() === `type:${id}`;
+          // The type token is toggled inside the filter as typed: a team:x stays.
+          const words = p.filter.trim().split(/\s+/).filter(Boolean);
+          const on = words.includes(`type:${id}`);
+          const toggled = on
+            ? words.filter((w) => w !== `type:${id}`)
+            : [...words.filter((w) => !w.startsWith("type:")), `type:${id}`];
           return (
             <li key={id} className="row" style={{ gap: 6, alignItems: "center" }}>
               <button
@@ -563,7 +568,7 @@ export function TypeLegend(p: {
                 className={`link${on ? " on" : ""}`}
                 aria-pressed={on}
                 title={t.description}
-                onClick={() => p.onFilter(on ? "" : `type:${id}`)}
+                onClick={() => p.onFilter(toggled.join(" "))}
               >
                 <span
                   className="hud arch-type"

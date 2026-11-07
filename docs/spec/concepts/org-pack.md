@@ -20,6 +20,9 @@ is configuration, a rule file or a plugin; nothing needs a code change.
 - `agents/`: agent definitions (C5);
 - `test-strategy.yaml`: which tests each type of change needs;
 - `profiles/<profile>/`: an ecosystem profile and its repository manifest.
+- `repo-types/<id>/`: a kind of repo (ADR 0077): its fingerprint, scan settings, skills and notes;
+- `component-types/<id>/`: a kind of component (ADR 0180): what it is, how a read recognises one, how the canvas draws it, what it must and must not do, with the architect's notes beside it;
+- `reading-rules/`: rules for how repos are read, in layers (ADR 0176).
 
 ## Validation
 

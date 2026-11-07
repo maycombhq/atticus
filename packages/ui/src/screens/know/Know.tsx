@@ -1048,8 +1048,8 @@ function TriageOptions(p: {
                   api(`/api/triage/${encodeURIComponent(p.item)}/decide`, {
                     method: "POST",
                     body: { option: i + 1 },
-                  }).then(() => p.done(`Decided: ${o.label}.`)),
-                `Decided: ${o.label}.`,
+                  }).then(() => p.done(T.decided(o.label))),
+                T.decided(o.label),
               )
             }
           >
@@ -1095,7 +1095,7 @@ export function IntakeScreen() {
         </View>
       </Panel>
       <Panel title={T.factsTaken} span="span 2" kind="dark">
-        <span className="big">{facts}</span>
+        <View of={intake}>{() => <span className="big">{facts}</span>}</View>
       </Panel>
       <Panel title={T.whatHappenedToThem} span="span 3">
         <View of={intake} empty={() => docs.length === 0} emptyText={T.nothingYet}>
@@ -1253,7 +1253,7 @@ export function Scans() {
       setStopping(false);
       const r = await api<{ jobId: string }>(path, { method: "POST", body: {} });
       setJob(await api<Job>(`/api/jobs/${r.jobId}`));
-    }, `${label} started.`);
+    }, T.started(label));
   const cancel = (id: string) => {
     setStopping(true);
     // A job that ended meanwhile says so with 409; its end arrives as job.done either way.

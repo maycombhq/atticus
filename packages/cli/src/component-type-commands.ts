@@ -9,6 +9,7 @@ import {
   loadOrgPack,
   orgPackDirOf,
   orgPackRelOf,
+  RecordId,
   TYPE_SHAPES,
   writeFileAtomic,
   type LoadedComponentType,
@@ -22,8 +23,6 @@ import { componentTypesAt } from "./component-types.js";
  * and the app. A type is a file an architect owns (org-pack/component-types/<id>/type.yaml, with
  * notes.md beside it), reviewed in a pull request like the rest of the org pack.
  */
-
-const ID = /^[a-z0-9][a-z0-9-]{0,62}$/;
 
 export function componentTypeView(
   root: string,
@@ -111,8 +110,10 @@ export async function typesAddCommand(
     );
     return 2;
   }
-  if (!ID.test(id)) {
-    io.err(`${id} isn't a type id: lower case letters, digits and - only.`);
+  if (!RecordId.safeParse(id).success) {
+    io.err(
+      `${id} isn't a type id: lower case letters, digits, . _ and - only, starting with a letter or digit.`,
+    );
     return 2;
   }
   if (o.shape && !(TYPE_SHAPES as readonly string[]).includes(o.shape)) {

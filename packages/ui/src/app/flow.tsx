@@ -523,6 +523,14 @@ export function FlowCanvas({
                       setHot(on ? undefined : n.id);
                       onPick?.(n.id);
                     }}
+                    // An SVG group gets no click from the keyboard: Enter and Space do what a click does.
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        setHot(on ? undefined : n.id);
+                        onPick?.(n.id);
+                      }
+                    }}
                   >
                     <rect
                       x={b.x}

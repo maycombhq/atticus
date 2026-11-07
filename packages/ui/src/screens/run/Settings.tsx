@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { api, useApi, useReloadOnFiles, type Loaded } from "../../api/client.js";
 import { useMe } from "../../app/me.js";
-import { CheckAgain, Panel, View } from "../../app/ui.js";
+import { CheckAgain, LoadError, Panel, View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
 import { Facts, Note, useAction } from "./shared.js";
 
@@ -89,26 +89,26 @@ const KIND_LABEL: Record<string, string> = {
 const MODE_CHIP: Record<string, { cls: string; label: string; what: string }> = {
   live: {
     cls: "done",
-    label: "CONNECTED",
+    label: T.connectedChip,
     what: T.liveFallsBackTo,
   },
   manual: {
     cls: "warn",
-    label: "MANUAL",
+    label: T.manualChip,
     what: T.writesBecomeStepsIn,
   },
-  mock: { cls: "dim", label: "MOCK", what: T.inMemoryForTests },
+  mock: { cls: "dim", label: T.mockChip, what: T.inMemoryForTests },
   "not-set": { cls: "dim", label: T.notSet, what: T.notConfigured },
 };
 
 const AI_MODE: Record<string, { label: string; what: string }> = {
-  on: { label: "ON", what: T.everyAiStepMay },
+  on: { label: T.onChip, what: T.everyAiStepMay },
   "text-only": {
     label: T.textOnly,
     what: T.noAiStepIs,
   },
   off: {
-    label: "OFF",
+    label: T.offChip,
     what: T.noAiStepRuns,
   },
 };
@@ -170,7 +170,7 @@ function MachinePanel() {
 
 /** The person's own digest settings: how often, and where it goes. Kept in .atticus/me.yaml. */
 function NotifyPanel() {
-  const { me, saveNotify } = useMe();
+  const { me, saveNotify, error: meError, reload: reloadMe } = useMe();
   const [digest, setDigest] = useState<string | undefined>();
   const [channel, setChannel] = useState<string | undefined>();
   const act = useAction();
@@ -178,7 +178,9 @@ function NotifyPanel() {
   const c = channel ?? me?.notify?.channel ?? "";
   return (
     <Panel title={T.yourNotifications} meta={T.atticusMeYaml} span="span 12">
-      {!me ? (
+      {!me && meError ? (
+        <LoadError error={meError} retry={reloadMe} />
+      ) : !me ? (
         <div className="stack" aria-busy="true">
           <span className="sr">{T.loading}</span>
           <div className="skeleton" style={{ width: "70%" }} />
@@ -296,7 +298,7 @@ export function Settings() {
                   rows={[
                     [
                       T.assistants,
-                      `${d.runtime.assistants.allowed.join(", ")} (default ${d.runtime.assistants.default})`,
+                      `${d.runtime.assistants.allowed.join(", ")} ${T.defaultOf(d.runtime.assistants.default)}`,
                     ],
                     [T.editors, d.runtime.editors.join(", ")],
                     [T.models, d.runtime.models.allowed.join(", ") || T.noneApproved],

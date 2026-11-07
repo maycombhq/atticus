@@ -125,7 +125,15 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
     for (const r of repos.split(" ").filter(Boolean)) ev?.need(r);
   }, [repos, ev]);
   const [status, setStatus] = useState<Status>({ state: "loading" });
+  // One node that couldn't be opened or shown: said beside the picture, which stays drawn.
+  const [stepError, setStepError] = useState<string | undefined>();
   const [laid, setLaid] = useState<Laid | undefined>();
+  const stepFailed = (e: unknown) => {
+    const msg = e instanceof Error ? e.message : String(e);
+    // Nothing drawn yet: the page's state; otherwise a note beside the picture.
+    setStatus((st) => (st.state === "ready" ? st : { state: "error", error: msg }));
+    setStepError(msg);
+  };
   // ADR 0164: the contract check's findings, each link whose two sides disagree marked; asked
   // for once the picture is first drawn (and kept after), so the picture never waits on it.
   const [drawn, setDrawn] = useState(false);
@@ -296,7 +304,7 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
       setInPlace(new Set());
     } catch (e) {
       if (e instanceof StalePicture) return;
-      setStatus({ state: "error", error: e instanceof Error ? e.message : String(e) });
+      stepFailed(e);
     }
   };
 
@@ -324,7 +332,7 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
       setSelected(id);
     } catch (e) {
       if (e instanceof StalePicture) return;
-      setStatus({ state: "error", error: e instanceof Error ? e.message : String(e) });
+      stepFailed(e);
     }
   };
   const closeHere = (id: string) =>
@@ -346,7 +354,7 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
       );
       setSelected(id);
     } catch (e) {
-      setStatus({ state: "error", error: e instanceof Error ? e.message : String(e) });
+      stepFailed(e);
     }
   };
 
@@ -377,6 +385,7 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
                 description: t.description,
                 ...(t.draws?.badge ? { badge: t.draws.badge } : {}),
                 ...(t.draws?.colour ? { colour: t.draws.colour } : {}),
+                ...(t.draws?.shape ? { shape: t.draws.shape } : {}),
               },
             ]),
           )
@@ -537,7 +546,7 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
                 role="tab"
                 aria-selected={l === lens}
                 className={`btn ${l === lens ? "primary" : ""}`}
-                onClick={() => setQueryParam(screen, "lens", l)}
+                onClick={() => setQueryParam(screen, "lens", l, { drop: ["node"] })}
               >
                 {WORDS.lenses[l]}
               </button>
@@ -595,6 +604,14 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
         </Panel>
       )}
 
+      {status.state === "ready" && stepError && (
+        <div className="state error" role="alert" style={{ marginBottom: 8 }}>
+          {WORDS.stepFailed(stepError)}{" "}
+          <button type="button" className="link" onClick={() => setStepError(undefined)}>
+            {WORDS.dismiss}
+          </button>
+        </div>
+      )}
       {status.state === "ready" && view && (
         <>
           <Panel
@@ -671,9 +688,12 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
                 : {})}
               onOpenView={(l, n) => {
                 // Another lens is another picture (the address); in this one, the box is opened.
-                if (l !== lens)
-                  window.location.hash = `#/${screen}?lens=${encodeURIComponent(l)}&node=${encodeURIComponent(n)}`;
-                else void openDeep(n);
+                if (l !== lens) {
+                  const q = new URLSearchParams(window.location.hash.split("?")[1] ?? "");
+                  q.set("lens", l);
+                  q.set("node", n);
+                  window.location.hash = `#/${screen}?${q.toString()}`;
+                } else void openDeep(n);
               }}
               {...(tools.compareWith
                 ? (() => {
@@ -1090,6 +1110,8 @@ export function ArrangementBar(p: {
   onReset: () => void;
   onFocusOff?: () => void;
 }) {
+  // Reset drops the kept arrangement for everyone: a second click says so first.
+  const [confirmReset, setConfirmReset] = useState(false);
   return (
     <div className="row" style={{ gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
       {p.onFocusOff && (
@@ -1108,9 +1130,36 @@ export function ArrangementBar(p: {
       <button type="button" className="btn" disabled={!p.ready} onClick={p.onTidy}>
         {WORDS.tidy}
       </button>
-      <button type="button" className="btn" disabled={!p.ready || p.saving} onClick={p.onReset}>
-        {WORDS.reset}
-      </button>
+      {confirmReset ? (
+        <>
+          <span className="hud" role="status">
+            {WORDS.resetAsk}
+          </span>
+          <button
+            type="button"
+            className="btn danger"
+            disabled={p.saving}
+            onClick={() => {
+              setConfirmReset(false);
+              p.onReset();
+            }}
+          >
+            {WORDS.resetYes}
+          </button>
+          <button type="button" className="btn" onClick={() => setConfirmReset(false)}>
+            {WORDS.resetNo}
+          </button>
+        </>
+      ) : (
+        <button
+          type="button"
+          className="btn"
+          disabled={!p.ready || p.saving}
+          onClick={() => setConfirmReset(true)}
+        >
+          {WORDS.reset}
+        </button>
+      )}
       {p.moved > 0 && <span className="hud">{WORDS.moved(p.moved)}</span>}
     </div>
   );

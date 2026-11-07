@@ -71,10 +71,10 @@ interface Plan {
 }
 
 const KIND: Record<PlanStep["kind"], string> = {
-  migration: "MIGRATION",
-  topic: "TOPIC",
+  migration: TX.migrationChip,
+  topic: TX.topicChip,
   "gateway-route": TX.gatewayRoute,
-  code: "CODE",
+  code: TX.codeChip,
 };
 const SECTION: Record<string, string> = {
   rollout: TX.rollout,
@@ -116,7 +116,7 @@ export function PlanPanels({ id, tick }: { id: string; tick: number }) {
     <>
       <Panel
         title={TX.deploymentPlan}
-        meta={p.state === "ready" ? plural(p.data.steps.length, "step") : TX.computed}
+        meta={p.state === "ready" ? plural(p.data.steps.length, TX.stepWord) : TX.computed}
         span="span 5"
       >
         <View of={p} empty={(x) => x.steps.length === 0} emptyText={TX.nothingToDeployYet}>
@@ -429,7 +429,7 @@ export function SecurityPanel({ id, tick }: { id: string; tick: number }) {
                           ? x.fields
                               .map(
                                 (f) =>
-                                  `${f.field} (${f.classification}${f.sensitive === "yes" ? ", sensitive" : ""})`,
+                                  `${f.field} (${f.classification}${f.sensitive === "yes" ? TX.sensitiveSuffix : ""})`,
                               )
                               .join("; ")
                           : (x.note ?? TX.mappingsMdDoesntSay)}
@@ -446,8 +446,10 @@ export function SecurityPanel({ id, tick }: { id: string; tick: number }) {
                   {r.vendors.map((v) => (
                     <li key={v.name}>
                       {v.name}:{" "}
-                      {v.isNew ? TX.aNewVendor : TX.alreadyCalled(plural(v.existing, "interface"))};{" "}
-                      {v.operations.join(", ")}
+                      {v.isNew
+                        ? TX.aNewVendor
+                        : TX.alreadyCalled(plural(v.existing, TX.interfaceWord))}
+                      ; {v.operations.join(", ")}
                     </li>
                   ))}
                   {r.secrets.map((x) => (
@@ -593,7 +595,9 @@ export function OutcomesPanel({ id, tick }: { id: string; tick: number }) {
                             m.latest.value,
                             m.latest.by,
                             day(m.latest.at),
-                            m.values.length > 1 ? ` (${plural(m.values.length, "value")})` : "",
+                            m.values.length > 1
+                              ? ` (${plural(m.values.length, TX.valueWord)})`
+                              : "",
                           )
                         : TX.notMeasuredYet}
                     </span>
@@ -701,7 +705,7 @@ export function evidenceOutcome(
     };
   return {
     saved: true,
-    text: TX.evidenceSaved(file, plural(pack.files.length, "file")),
+    text: TX.evidenceSaved(file, plural(pack.files.length, TX.fileWord)),
   };
 }
 

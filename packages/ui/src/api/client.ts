@@ -159,7 +159,8 @@ async function call<T>(
 
 export type Loaded<T> =
   | { state: "loading" }
-  | { state: "error"; error: string; notYet?: boolean }
+  /** `status`: the HTTP status when the server answered (404: the thing isn't there). */
+  | { state: "error"; error: string; notYet?: boolean; status?: number }
   | { state: "ready"; data: T };
 
 /**
@@ -189,6 +190,7 @@ export function useApi<T>(
             state: "error",
             error: e instanceof Error ? e.message : String(e),
             ...(e instanceof ApiError && e.problem.notYet ? { notYet: true } : {}),
+            ...(e instanceof ApiError && e.problem.status ? { status: e.problem.status } : {}),
           });
         },
       )

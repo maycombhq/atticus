@@ -987,9 +987,14 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
           "component-type",
           `${label} says the component is a ${f.type}, which isn't one of the organisation's component types: add it (org-pack/component-types/${f.type}/type.yaml) or say one of ${[...o.componentTypes].join(", ")}`,
         );
-      const subject = f.component ?? f.repo;
+      // The subject as the projection names it (idPart), and the first fact that stands for it:
+      // a bad first fact (an unknown type, a claim not on its line) doesn't take the good one down.
+      const subject = factIdPart(f.component ?? f.repo);
       const first = facts.find(
-        (x) => x.kind === "component" && (x.component ?? x.repo) === subject,
+        (x) =>
+          x.kind === "component" &&
+          factIdPart(x.component ?? x.repo) === subject &&
+          (x === f || !found.has(x.id)),
       );
       if (first && first !== f)
         problem(

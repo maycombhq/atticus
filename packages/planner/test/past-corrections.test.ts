@@ -109,8 +109,9 @@ const BEFORE = {
   // code goes into or beside a file the repo has, a new flow's too (the format's one `at` line);
   // and after B-place gave three places (the format's `at` line became at, new and uses, one rule
   // added) and the self-check line; and after ADR 0132 asked where a new component runs (the
-  // format's runsOn line and one rule)
-  arch: "39b015d2f2ddf4f433d3659876e677abe4eeb425d4326b10a244e7c0e0c7184e",
+  // format's runsOn line and one rule); and after ADR 0180 asked what a new component is (the
+  // runsOn line's `type`, and the component-types source listing the organisation's types)
+  arch: "61771c2ed1b004f4a6f10a6f57cce7f317c868773b04683fe2b657d46ea020c8",
   // re-pinned after B-run2-fixes 5 gave the stories rules the rule words (one line added); and
   // after B-once let a criterion accept other tasks (also in the format, one rule reworded, one added);
   // and on 2026-10-25 twice: the format's requests line (a standard is followed, never listed

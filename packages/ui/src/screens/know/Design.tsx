@@ -642,6 +642,11 @@ export function Diagrams({ hash }: { hash: string }) {
     canvas ? undefined : f ? `/api/graph?focus=${encodeURIComponent(f)}&depth=1` : "/api/graph",
   );
   const [copied, setCopied] = useState(false);
+  // A new view or system: the Copy button says Copy again.
+  useEffect(() => setCopied(false), [v.id, f]);
+  // A view drawn around one system, with no system to draw: say so (or why the systems didn't
+  // load), rather than a picture that loads for good.
+  const noFocus = v.focus && !f && cov.state !== "loading";
   return (
     <div className="bento">
       <Panel title={T.generatedViews} span="1 / -1">
@@ -690,7 +695,15 @@ export function Diagrams({ hash }: { hash: string }) {
         </div>
       </Panel>
       <Panel title={T.view2(v.label)} kind="hero" span="1 / -1">
-        {canvas ? (
+        {noFocus ? (
+          cov.state === "error" ? (
+            <p role="alert" className="state error">
+              {T.systemsFailed(cov.error)}
+            </p>
+          ) : (
+            <p className="state">{T.noSystemToDraw}</p>
+          )
+        ) : canvas ? (
           <View
             of={flow}
             empty={(x) => x.view.nodes.length === 0}
@@ -721,26 +734,30 @@ export function Diagrams({ hash }: { hash: string }) {
           ) : undefined
         }
       >
-        <View of={text} empty={(t) => !t.text.trim()} emptyText={T.nothingToDrawFor}>
-          {(t) => (
-            <pre
-              className="mono"
-              tabIndex={0}
-              aria-label={T.mermaidSource}
-              style={{
-                margin: 0,
-                fontSize: 11.5,
-                lineHeight: 1.55,
-                whiteSpace: "pre-wrap",
-                maxHeight: 460,
-                overflowY: "auto",
-                color: "var(--text-2)",
-              }}
-            >
-              {t.text}
-            </pre>
-          )}
-        </View>
+        {noFocus ? (
+          <p className="state">{T.noSystemToDraw}</p>
+        ) : (
+          <View of={text} empty={(t) => !t.text.trim()} emptyText={T.nothingToDrawFor}>
+            {(t) => (
+              <pre
+                className="mono"
+                tabIndex={0}
+                aria-label={T.mermaidSource}
+                style={{
+                  margin: 0,
+                  fontSize: 11.5,
+                  lineHeight: 1.55,
+                  whiteSpace: "pre-wrap",
+                  maxHeight: 460,
+                  overflowY: "auto",
+                  color: "var(--text-2)",
+                }}
+              >
+                {t.text}
+              </pre>
+            )}
+          </View>
+        )}
       </Panel>
       <Panel title={T.diagramsInTheMetarepo} span="span 7">
         <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>

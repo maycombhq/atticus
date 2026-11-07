@@ -69,7 +69,7 @@ interface ReleaseDetail {
 
 const STATE_LABEL: Record<string, string> = {
   "release-ready": T.atGoNoGo,
-  released: "RELEASED",
+  released: T.releasedChipWord,
   "post-release-review": T.postReleaseReview,
 };
 
@@ -181,8 +181,8 @@ function Detail({ id }: { id: string }) {
                       r.requests.total === 0
                         ? T.noneNeeded
                         : r.requests.toFile
-                          ? `${r.requests.toFile} NOT FILED`
-                          : `${r.requests.filed} FILED`
+                          ? T.notFiledChip(r.requests.toFile)
+                          : T.filedChip(r.requests.filed)
                     }
                     ok={r.requests.toFile === 0}
                     detail={
@@ -193,7 +193,7 @@ function Detail({ id }: { id: string }) {
                   />
                   <Gate
                     label={T.findings}
-                    value={blockingFindings ? `${blockingFindings} OPEN` : "CLEAR"}
+                    value={blockingFindings ? T.openFindingsChip(blockingFindings) : T.clearChip}
                     ok={blockingFindings === 0}
                     detail={T.blocking(
                       r.openFindings.blocking,
@@ -205,13 +205,13 @@ function Detail({ id }: { id: string }) {
                     value={
                       r.handoff
                         ? r.handoff.state === "merged"
-                          ? "MERGED"
+                          ? T.mergedChip
                           : approvers.length
                             ? T.approvedNotMerged
                             : r.handoff.state.toUpperCase()
                         : r.change.state === "release-ready"
                           ? T.notRaised
-                          : "LATER"
+                          : T.laterChip
                     }
                     ok={r.handoff?.state === "merged"}
                     warn={!r.handoff}
@@ -226,7 +226,7 @@ function Detail({ id }: { id: string }) {
                   />
                   <Gate
                     label={T.archiveGate}
-                    value={r.archive.pass ? "OPEN" : `${r.archive.blockers.length} BLOCKERS`}
+                    value={r.archive.pass ? T.openChip : T.blockersChip(r.archive.blockers.length)}
                     ok={r.archive.pass}
                     warn={!r.archive.pass && r.change.state !== "released"}
                     detail={T.opensOnceReleasedMerged}
@@ -347,7 +347,7 @@ function Detail({ id }: { id: string }) {
 
       <Panel
         title={T.evidencePack}
-        meta={d.state === "ready" ? plural(d.data.evidence.length, "file") : undefined}
+        meta={d.state === "ready" ? plural(d.data.evidence.length, T.fileWord) : undefined}
         span="span 6"
       >
         <View of={d} empty={(r) => r.evidence.length === 0} emptyText={T.theChangeFolderIs}>
@@ -374,7 +374,7 @@ function Detail({ id }: { id: string }) {
                       {f.path}
                     </span>
                     <span className="hud" style={{ fontSize: 9.5 }}>
-                      {f.bytes < 1024 ? `${f.bytes} B` : T.kb(Math.round(f.bytes / 1024))}
+                      {f.bytes < 1024 ? T.bytes(f.bytes) : T.kb(Math.round(f.bytes / 1024))}
                     </span>
                   </li>
                 ))}

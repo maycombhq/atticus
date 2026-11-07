@@ -24,7 +24,7 @@ export function OnboardingSteps({
   openQuestions,
 }: {
   v: OnboardingData;
-  openQuestions: number;
+  openQuestions: number | undefined;
 }) {
   const p = onboardingProgress(v);
   const first = v.repos[0]?.id ?? "<repo>";
@@ -227,7 +227,8 @@ export function OnboardingPage({
   /** Map › Trust (GET /api/trust): each repo's step, the Atticus 2 way (ADR 0124). */
   trust?: Loaded<Api.TrustViewT>;
 }) {
-  const open = questions.state === "ready" ? questions.data.questions.length : 0;
+  // Unknown while loading or failed: never counted as none (which would tick the step done).
+  const open = questions.state === "ready" ? questions.data.questions.length : undefined;
   return (
     <>
       <p className="muted" style={{ margin: "0 0 12px", fontSize: 12.5, lineHeight: 1.55 }}>

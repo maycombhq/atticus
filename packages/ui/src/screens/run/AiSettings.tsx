@@ -120,6 +120,15 @@ const toggle = (list: string[], id: string, on: boolean) =>
  */
 export function AiSettingsForm(p: { data: AiSettings; onSaved?: () => void }) {
   const [f, setF] = useState<AiForm>(() => formOf(p.data));
+  // The file changed on disk (another window, the CLI) while the form was open: said, with a way
+  // to take the new values; the person's edits aren't thrown away without a word.
+  const [seen, setSeen] = useState(() => JSON.stringify(formOf(p.data)));
+  const onDisk = JSON.stringify(formOf(p.data));
+  const changedOnDisk = onDisk !== seen && onDisk !== JSON.stringify(f);
+  const takeDisk = () => {
+    setF(formOf(p.data));
+    setSeen(onDisk);
+  };
   const save = useAction();
   const test = useAction();
   const keep = useAction();
@@ -131,6 +140,7 @@ export function AiSettingsForm(p: { data: AiSettings; onSaved?: () => void }) {
     <form
       className="stack"
       onSubmit={(e) => {
+        setSeen(JSON.stringify(f));
         e.preventDefault();
         void save.run(async () => {
           await api("/api/settings/ai", { method: "PUT", body: toSave(f) });
@@ -139,6 +149,14 @@ export function AiSettingsForm(p: { data: AiSettings; onSaved?: () => void }) {
       }}
     >
       <h2 className="h">{T.title}</h2>
+      {changedOnDisk && (
+        <p role="alert" className="state error">
+          {T.changedOnDisk}{" "}
+          <button type="button" className="btn" onClick={takeDisk}>
+            {T.takeDisk}
+          </button>
+        </p>
+      )}
       <p className="muted" style={{ margin: 0, maxWidth: "70ch" }}>
         {T.intro}
       </p>
@@ -396,9 +414,7 @@ export function AiSettings() {
   return (
     <div className="bento">
       <Panel title={T.title} span="1 / -1">
-        <View of={s}>
-          {(d) => <AiSettingsForm key={JSON.stringify(d)} data={d} onSaved={s.reload} />}
-        </View>
+        <View of={s}>{(d) => <AiSettingsForm data={d} onSaved={s.reload} />}</View>
       </Panel>
     </div>
   );

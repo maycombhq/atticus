@@ -285,6 +285,11 @@ export function Outside({ hash }: { hash: string }) {
           {(d) => (
             <>
               <OutsidePicker systems={d.systems} current={current} />
+              {asked && !system && (
+                <p role="alert" className="state error">
+                  {O.noSuchSystem(asked)}
+                </p>
+              )}
               {d.notes.length > 0 && (
                 <details>
                   <summary>{O.notes}</summary>

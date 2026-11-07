@@ -62,6 +62,12 @@ export const DECLARED_TOPIC = "declared-topic";
 
 export interface MergeInput {
   records: CatalogRecord[];
+  /**
+   * The component type ids the organisation has (ADR 0180: the built-ins with the org pack's
+   * applied). A Component's type that is one of these is never replaced by a repo type from the
+   * manifest. Left out, Atticus's documented types (ADR 0040).
+   */
+  componentTypes?: ReadonlySet<string>;
   repos: MergeRepo[];
   systems: MergeSystem[];
   patterns?: MergePattern[];
@@ -135,7 +141,7 @@ const BY_ID_ENDPOINTS = new Set([
 ]);
 
 /** Merge two records of the same identity: union evidence, keep the stronger confidence, fill gaps. */
-function combine(a: Rec, b: Rec): Rec {
+function combine(a: Rec, b: Rec, known: ReadonlySet<string> = DOCUMENTED_TYPES): Rec {
   const out: Rec = { ...a };
   for (const [k, v] of Object.entries(b)) {
     if (k === "evidence" || k === "confidence") continue;
@@ -144,12 +150,13 @@ function combine(a: Rec, b: Rec): Rec {
       out[k] = v;
     else if (Array.isArray(cur) && Array.isArray(v) && v.every((x) => typeof x === "string"))
       out[k] = [...new Set([...(cur as string[]), ...(v as string[])])].sort();
-    // A documented component type (ADR 0040) says more than a repo type from the manifest.
+    // A component type the organisation has (ADR 0040, ADR 0180) says more than a repo type
+    // from the manifest; one such type never gives way to another (the first, cited, stands).
     else if (
       a.kind === "Component" &&
       k === "type" &&
-      !DOCUMENTED_TYPES.has(String(cur)) &&
-      DOCUMENTED_TYPES.has(String(v))
+      !known.has(String(cur)) &&
+      known.has(String(v))
     )
       out[k] = v;
   }
@@ -196,8 +203,9 @@ function splitUrl(url: string): { host?: string; path: string } {
 
 export function mergeCatalog(input: MergeInput): MergeResult {
   const byKey = new Map<string, Rec>();
+  const known = input.componentTypes ?? DOCUMENTED_TYPES;
   const put = (key: string, r: Rec) =>
-    byKey.set(key, byKey.has(key) ? combine(byKey.get(key)!, r) : r);
+    byKey.set(key, byKey.has(key) ? combine(byKey.get(key)!, r, known) : r);
   const loose: Rec[] = [];
   const dialectInterfaces: Rec[] = [];
 

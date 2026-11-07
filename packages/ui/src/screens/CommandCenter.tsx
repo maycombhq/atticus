@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { COPY } from "../copy.js";
 import { api, ApiError, useApi, useLiveEvents } from "../api/client.js";
 import { FlowCanvas, type FlowViewData } from "../app/flow.js";
@@ -375,6 +375,11 @@ export function BulkBar(p: {
   const needs = p.selected.filter((x) => x.kind === "need").length;
   const steps = p.selected.filter((x) => x.kind === "step").length;
   const [action, setAction] = useState<BulkAction>(needs ? "need-done" : "step-skip");
+  // The selection changed kind (only steps left, say): an action with nothing to do is swapped.
+  useEffect(() => {
+    if (!needs && action.startsWith("need-")) setAction("step-skip");
+    if (!steps && action.startsWith("step-")) setAction("need-done");
+  }, [needs, steps, action]);
   const [note, setNote] = useState("");
   const applies = bulkCalls(p.selected, action, note || "-").length;
   return (
@@ -431,11 +436,18 @@ export function WaitingList(p: {
   text: string;
   onText: (v: string) => void;
   state: "loading" | "error" | "ready";
+  /** Parts of the list that didn't load (a change's needs, the steps, the questions): said, not hidden. */
+  partial?: string[];
   /** WP7.10: act on several needs or manual steps at once; without it, no checkboxes. */
   onBulk?: (items: InboxItem[], action: BulkAction, note: string) => Promise<void>;
 }) {
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
+  const partial = p.partial?.length ? (
+    <div className="state error" role="alert" style={{ marginBottom: 6 }}>
+      {T.partlyLoaded(p.partial)}
+    </div>
+  ) : null;
   if (p.state === "loading")
     return (
       <div className="state" role="status">
@@ -449,9 +461,16 @@ export function WaitingList(p: {
       </div>
     );
   const w = waitingByChange(p.items, p.changes, p.text);
-  if (w.total === 0) return <div className="state">{T.nothingNeedsAPerson}</div>;
+  if (w.total === 0)
+    return (
+      <>
+        {partial}
+        <div className="state">{T.nothingNeedsAPerson}</div>
+      </>
+    );
   return (
     <div className="stack" style={{ gap: 8 }}>
+      {partial}
       <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
         {T.byChangeIntro}
       </p>
@@ -678,13 +697,13 @@ export function CommandCenter() {
         >
           <WaitingList
             onBulk={async (items, action, note) => {
-              let failed = 0;
+              const failed: string[] = [];
               const calls = bulkCalls(items, action, note);
               for (const c of calls)
-                await api(c.path, { method: "POST", body: c.body }).catch(() => {
-                  failed++;
+                await api(c.path, { method: "POST", body: c.body }).catch((e: unknown) => {
+                  failed.push(e instanceof Error ? e.message : String(e));
                 });
-              setBulkNote(T.bulkDone(calls.length - failed, failed));
+              setBulkNote(T.bulkDone(calls.length - failed.length, failed.length, failed));
               needs.reload();
               todo.reload();
             }}
@@ -692,6 +711,16 @@ export function CommandCenter() {
             changes={changes.state === "ready" ? changes.data : []}
             text={text}
             onText={setText}
+            partial={[
+              ...(needs.state === "ready"
+                ? needs.data.filter((r) => r.error).map((r) => T.needsOfFailed(r.change, r.error!))
+                : needs.state === "error"
+                  ? [T.needsFailed(needs.error)]
+                  : []),
+              ...(todo.state === "error" ? [T.stepsFailed(todo.error)] : []),
+              ...(qs.state === "error" ? [T.questionsFailed(qs.error)] : []),
+              ...(triage.state === "error" ? [T.triageFailed(triage.error)] : []),
+            ]}
             state={
               changes.state === "loading" || findings.state === "loading"
                 ? "loading"

@@ -191,7 +191,7 @@ export function CommandPalette() {
             >
               <span>{i.label}</span>
               <span className="hud" style={{ fontSize: 9.5 }}>
-                {i.kind} · {i.detail}
+                {T.kinds[i.kind]} · {i.detail}
               </span>
             </li>
           ))}

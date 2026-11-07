@@ -23,6 +23,9 @@ export interface Me {
 
 interface MeState {
   me?: Me;
+  /** Why /api/me couldn't be read, when it couldn't; a page says so instead of loading for good. */
+  error?: string;
+  reload?: () => void;
   /** Save digest settings; throws the API's words when refused. */
   saveNotify: (n: { digest: string; channel?: string }) => Promise<void>;
 }
@@ -37,7 +40,18 @@ export function MeProvider({ children }: { children: ReactNode }) {
   const saveNotify = async (n: { digest: string; channel?: string }) => {
     setSaved(await api<Me>("/api/me/notify", { method: "PUT", body: n }));
   };
-  return <Ctx.Provider value={{ ...(me ? { me } : {}), saveNotify }}>{children}</Ctx.Provider>;
+  return (
+    <Ctx.Provider
+      value={{
+        ...(me ? { me } : {}),
+        ...(loaded.state === "error" ? { error: loaded.error } : {}),
+        reload: loaded.reload,
+        saveNotify,
+      }}
+    >
+      {children}
+    </Ctx.Provider>
+  );
 }
 
 export const useMe = () => useContext(Ctx);

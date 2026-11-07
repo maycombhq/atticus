@@ -977,6 +977,37 @@ a.btn {
   outline: 2px solid var(--accent-soft);
   outline-offset: 2px;
 }
+/* ADR 0180: a component type's shape; the badge and colour say the type too (WCAG 1.4.1). */
+.arch-box.shape-rounded {
+  border-radius: 16px;
+}
+.arch-box.shape-circle {
+  border-radius: 50%;
+  text-align: center;
+}
+.arch-box.shape-cylinder {
+  border-radius: 50% / 12px;
+  border-top-width: 3px;
+}
+.arch-box.shape-hexagon {
+  clip-path: polygon(8% 0, 92% 0, 100% 50%, 92% 100%, 8% 100%, 0 50%);
+  padding-left: 16px;
+  padding-right: 16px;
+}
+.arch-box.shape-diamond {
+  border-radius: 2px;
+  border-style: double;
+  border-width: 4px;
+}
+.arch-box.shape-parallelogram {
+  clip-path: polygon(6% 0, 100% 0, 94% 100%, 0 100%);
+  padding-left: 14px;
+  padding-right: 14px;
+}
+.type-legend .link.on {
+  font-weight: 600;
+  text-decoration: underline;
+}
 .arch-box-head {
   display: flex;
   justify-content: space-between;
