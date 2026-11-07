@@ -1,4 +1,4 @@
-import type { RecordKind } from "@maycombhq/core";
+import { JOINED_BY_PERSON, type RecordKind } from "@maycombhq/core";
 import type { CatalogIndex } from "./catalog-index.js";
 
 export interface GraphNode {
@@ -268,7 +268,9 @@ export function impact(
   };
   for (const a of affected) {
     const rec = recordOf(a.kind, a.id)!;
-    if (a.kind === "Interface" && rec.confidence === "inferred")
+    // A link a person paired was answered already (ADR 0174): it isn't asked again.
+    const paired = Array.isArray(rec.flags) && rec.flags.includes(JOINED_BY_PERSON);
+    if (a.kind === "Interface" && rec.confidence === "inferred" && !paired)
       addGap({
         record: a.id,
         field: "confidence",

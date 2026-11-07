@@ -127,6 +127,13 @@ describe("a polled run", () => {
     const filled = withSpan(m.run!, "s1", 1, ["b", "c", "d", "e", "f"]);
     expect(filled.tabs[0]).toMatchObject({ from: 0, lines: ["a", "b", "c", "d", "e", "f"] });
   });
+  it("starts a tab again when the lines it lacks are no longer kept", () => {
+    const r = run({ tabs: [tab(0, ["a"])] });
+    expect(withSpan(r, "s1", 6000, ["x", "y"]).tabs[0]).toMatchObject({
+      from: 6000,
+      lines: ["x", "y"],
+    });
+  });
   it("takes another run whole", () => {
     const next = run({ runId: "copilot-run-2", tabs: [tab(3, ["x"])] });
     expect(mergePolled(run(), next)).toEqual({ run: next, gaps: [] });

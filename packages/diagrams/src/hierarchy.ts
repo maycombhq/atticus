@@ -1,6 +1,7 @@
 import {
   DECLARED_TOPIC,
   JOIN_HOW_FLAGS,
+  JOINED_BY_PERSON,
   JOINED_TO_SHARED_MAP,
   LINK_EVIDENCE_NOT_GAPS,
   SHARED_MAP_EVIDENCE,
@@ -184,7 +185,8 @@ const STATE: Record<string, HierNode["state"]> = {
 
 function recordGaps(r: CatalogRecord): string[] {
   const g: string[] = [];
-  if (r.confidence === "inferred") g.push("inferred");
+  // A link a person paired is theirs, not a guess to check (ADR 0174): its flag says how.
+  if (r.confidence === "inferred" && !r.flags?.includes(JOINED_BY_PERSON)) g.push("inferred");
   // C1 (ADR 0135): a flag that says how a link was made is no gap.
   // ADR 0151: nor one that says a contract or traffic bears the link out.
   for (const f of r.flags ?? [])

@@ -238,6 +238,26 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
     return undefined;
   };
 
+  /** A box anywhere in this lens opened as a link to it opens it, the boxes above it too. */
+  const openDeep = async (id: string) => {
+    try {
+      const v = await load(id);
+      const at = openAt(v);
+      await Promise.all(
+        at.expanded
+          .filter((x) => x !== "estate" && x !== v.node.id)
+          .map((x) => load(x).catch(() => undefined)),
+      );
+      setExpanded(new Set(at.expanded));
+      setCurrent(at.current);
+      setSelected(at.selected);
+      setFocus(undefined);
+      setInPlace(new Set());
+    } catch {
+      // A box the catalog no longer has: the picture stays where it is.
+    }
+  };
+
   const open = async (id: string) => {
     const n = find(id);
     if (!n || n.childCount === 0) {
@@ -584,8 +604,10 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
               lens={lens}
               node={shown}
               onOpenView={(l, n) => {
-                const to = `#/${screen}?lens=${encodeURIComponent(l)}&node=${encodeURIComponent(n)}`;
-                if (window.location.hash !== to) window.location.hash = to;
+                // Another lens is another picture (the address); in this one, the box is opened.
+                if (l !== lens)
+                  window.location.hash = `#/${screen}?lens=${encodeURIComponent(l)}&node=${encodeURIComponent(n)}`;
+                else void openDeep(n);
               }}
               {...(tools.compareWith
                 ? (() => {

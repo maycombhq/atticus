@@ -41,7 +41,7 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ### Fixed before release (review)
 
-- A link a person paired on the canvas is `inferred`, not `verified`, and carries their evidence (`source: manual`, who), so a filter on verified links shows only what the code proves.
+- A link a person paired on the canvas is `inferred`, not `verified`, and carries their evidence (`source: manual`, who), so a filter on verified links shows only what the code proves; it isn't drawn as a gap, asked about again, or called "one end seen" in a feature's flow.
 - A rule that names no files is recorded as given only by a whole read: a top-up no longer marks it given, and `atticus rules activate` says it waits for `atticus map <repo> --force`. A read and a staleness check work out the repo's type the same way (its checkout's fingerprint too).
 - Another team's imported rules: `atticus rules activate <key> --team <team> --type <type>` sets one active; importing again keeps the ones you set active when they haven't changed them (a changed one comes back as a draft, said); `atticus rules list` lists every layer's file; two teams' active rules with one key are said.
 - The Connect panel says to verify a repo whose facts aren't all verified (`why: unverified`, local API 2.56.0), instead of "no calls on record"; a pairing to such a repo says the same rather than reading as broken. The cached estate join can no longer be kept under a newer stamp than the files it read.

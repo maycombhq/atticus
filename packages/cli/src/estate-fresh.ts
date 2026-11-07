@@ -157,6 +157,7 @@ async function freshOf(
       root,
       repo,
       (await loadReadPlan(root, repo).catch(() => undefined))?.rules,
+      { dir },
     );
     return lacking.length
       ? {

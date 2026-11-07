@@ -1,4 +1,4 @@
-import type { CatalogRecord } from "@maycombhq/core";
+import { JOINED_BY_PERSON, type CatalogRecord } from "@maycombhq/core";
 import { Tracer, type EntryPoint, type Flow } from "./detect.js";
 import type { CapabilityRec, FlowGraph } from "./graph.js";
 import { overlaps, splitWords, tokens } from "./words.js";
@@ -91,7 +91,8 @@ export function featureFlows(
         }
       }
       for (const h of flow.hops)
-        if (h.confidence === "inferred")
+        // A link a person paired has both ends cited: inferred, but no end unseen (ADR 0174).
+        if (h.confidence === "inferred" && !h.flags?.includes(JOINED_BY_PERSON))
           add({
             kind: "one-end",
             record: h.id,

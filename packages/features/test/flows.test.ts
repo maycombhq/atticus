@@ -62,5 +62,11 @@ describe("featureFlows", () => {
     expect(f!.looseEnds[1]!.text).toBe(
       "scoring has a loose end Atticus couldn't follow (POST ${bureau.url}/loans/check)",
     );
+    // A link a person paired cites both ends: no "one end seen".
+    const paired = records.map((r, i) =>
+      i === 7 ? ({ ...r, flags: ["joined-by-person"] } as typeof r) : r,
+    );
+    const [g] = featureFlows([...paired, ...detectFeatures(paired)]);
+    expect(g!.looseEnds.map((e) => e.kind)).toEqual(["loose-end"]);
   });
 });

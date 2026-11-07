@@ -12,7 +12,8 @@ import {
 } from "@maycombhq/core";
 import { estateRepos } from "@maycombhq/scanner";
 import { globToRegExp } from "@maycombhq/sdk";
-import { checkoutOf } from "./facts-files.js";
+import { existsSync } from "node:fs";
+import { baseClonePath } from "@maycombhq/workspace";
 import { repoTypeOf } from "./org-notes.js";
 
 /**
@@ -105,7 +106,9 @@ export async function effectiveRules(
   // The repo type the pack defines (by the manifest, else its fingerprint), else the manifest's
   // type as it is written: a team's rules for "fuse-service" need no repo type defined first.
   // Its checkout when none is given, so a read and a staleness check work out the same type.
-  const dir = o.dir ?? (op ? await checkoutOf(root, repo).catch(() => undefined) : undefined);
+  // (the org pack is loaded once: the base clone found from it, not by loading it again).
+  const clone = isAdopted(root) ? root : baseClonePath(root, repo);
+  const dir = o.dir ?? (op && existsSync(clone) ? clone : undefined);
   const type = op
     ? ((await repoTypeOf(op, repo, dir))?.id ?? estateRepos(op).find((r) => r.id === repo)?.type)
     : undefined;
@@ -197,13 +200,14 @@ export async function rulesLackingAll(
   root: string,
   repo: string,
   rec: { hash: string; sets: readonly string[] } | undefined,
+  o: { dir?: string; op?: OrgPack } = {},
 ): Promise<string[]> {
   const { rulesLacking } = await import("@maycombhq/assistant-files");
   return [
     ...rulesLacking(rec),
     ...orgRulesLacking(
       rec,
-      (await effectiveRules(root, repo).catch(() => undefined)) ?? {
+      (await effectiveRules(root, repo, o).catch(() => undefined)) ?? {
         rules: [],
         drafts: [],
         off: [],

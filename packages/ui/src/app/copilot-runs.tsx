@@ -99,7 +99,10 @@ export function withSpan(run: Run, tab: string, from: number, lines: string[]): 
       if (t.id !== tab) return t;
       const have = t.from + t.lines.length;
       const end = from + lines.length;
-      if (from > have || end < t.from) return t;
+      // The server no longer keeps the lines between (it keeps a tab's last ones): the span
+      // starts the tab again, or the page would ask for the same gap on every poll.
+      if (from > have) return { ...t, from, lines };
+      if (end < t.from) return t;
       // The lines before `from` that the tab had, the span, then any it has past the span.
       const before = from > t.from ? t.lines.slice(0, from - t.from) : [];
       const after = have > end ? t.lines.slice(end - t.from) : [];
