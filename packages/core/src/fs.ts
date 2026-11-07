@@ -22,6 +22,44 @@ export async function writeFileAtomic(path: string, data: string | Uint8Array): 
   }
 }
 
+/** A file changed on disk between being read and being written back: nothing was written. */
+export class FileChangedError extends Error {
+  constructor(readonly path: string) {
+    super(
+      `${path} changed since it was read (another edit, or a person's): nothing was written. Read it again and redo the change.`,
+    );
+  }
+}
+
+// One write-back at a time per file in this process, so two edits read from one version
+// can't both pass the check below.
+const writing = new Map<string, Promise<unknown>>();
+
+/**
+ * Write a file back only when it still holds what the change was made from (`before`, the text
+ * as read; undefined when it wasn't there), so an edit made meanwhile (another request, the CLI,
+ * an editor) is never overwritten: that throws FileChangedError instead.
+ */
+export function writeFileIfUnchanged(
+  path: string,
+  before: string | undefined,
+  data: string,
+): Promise<void> {
+  const prev = writing.get(path) ?? Promise.resolve();
+  const work = async () => {
+    const now = await readFile(path, "utf8").catch(() => undefined);
+    if (now !== before) throw new FileChangedError(path);
+    await writeFileAtomic(path, data);
+  };
+  const next = prev.then(work, work);
+  const tail = next.catch(() => undefined);
+  writing.set(path, tail);
+  void tail.then(() => {
+    if (writing.get(path) === tail) writing.delete(path);
+  });
+  return next;
+}
+
 const BUSY = new Set(["EPERM", "EBUSY", "EACCES"]);
 
 // Up to about 5 s in all (20 ms doubling): on Windows an editor indexing a folder it has just

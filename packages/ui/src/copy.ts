@@ -3630,6 +3630,12 @@ export const COPY = {
     filterHint: "team:<id> system:<id> type:<repo type> path:/accounts/** or words",
     filtered: (n: number, all: number) => `${n} of ${all} boxes shown`,
     overlay: "Colour boxes by",
+    questionsBadge: "open questions",
+    overlayLoading: "Getting the open questions…",
+    overlayFailed: (why: string) => `Couldn't get the open questions: ${why}`,
+    viewsLoading: "Getting the kept views…",
+    viewsFailed: (why: string) => `Couldn't get the kept views: ${why}`,
+    saving: "Keeping it…",
     overlays: { none: "Nothing", gaps: "Gaps", questions: "Open questions" } as Record<
       string,
       string
@@ -3779,6 +3785,19 @@ export const COPY = {
     pickBoxNone: "Pick a repo or a system",
     loading: "Reading the calls and APIs…",
     failed: (why: string) => `The calls and APIs couldn't be read: ${why}`,
+    /** Why the join left a call, in words (the join's reason codes). */
+    leftWhy: {
+      "no-host": "no host in its URL",
+      "unresolved-placeholder": "its URL has a setting not resolved",
+      "host-no-route": "its host serves no such route",
+      "label-no-route": "no repo of that name serves it",
+      "target-no-route": "its named target serves no such route",
+      "generic-path": "its path is too generic to match",
+      "answered-none": "answered as calling nothing here",
+      "topic-unheard": "no one listens on its topic",
+      "topic-unresolved": "its topic is a setting not resolved",
+      "type-not-joined": "calls of this kind aren't joined",
+    } as Record<string, string>,
     noCalls: (from: string) =>
       `${from} has no calls on record yet, so there is nothing to pair. Read its calls first:`,
     unverifiedCalls: (from: string) =>
@@ -3873,6 +3892,7 @@ export const COPY = {
       failed: (why: string) => `The Copilot run stopped: ${why}`,
       stop: "Stop",
       stopping: "Stopping…",
+      stopFailed: (why: string) => `Stop didn't go through: ${why}`,
       showConsole: "Show the Console",
       dismiss: "Dismiss",
     },
@@ -3891,8 +3911,17 @@ export const COPY = {
       noMatch: (q: string) => `No line has “${q}”.`,
       earlier: (n: number) => `${n.toLocaleString()} earlier lines not shown.`,
       loadEarlier: "Show earlier lines",
+      notKept: (n: number) =>
+        `${n.toLocaleString()} earlier lines are no longer kept (the app keeps a tab's last 5,000).`,
+      runTab: "Run",
+      copyFailed: "Couldn't copy here",
       states: { running: "running", ended: "ended", failed: "failed" } as Record<string, string>,
     },
+  },
+  bridge: {
+    noAnswer: "No answer from VS Code",
+    noAnswerTo: (path: string, s: number) =>
+      `No answer to ${path} in ${s} s. Close the Atticus panel and open it again.`,
   },
   runStep: {
     withCopilot: "Run with Copilot",

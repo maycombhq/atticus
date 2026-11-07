@@ -285,19 +285,24 @@ export function AddBoxForm(p: {
     p.post ??
     ((b: Api.AddSystemRequestT) =>
       api<Api.FileChangeResultT>("/api/boxes", { method: "POST", body: b }));
+  // What the form says now: Write it writes only what was previewed, nothing changed since.
+  const body = {
+    id: sid.trim(),
+    name: name.trim(),
+    boundary,
+    ...(owner && boundary === "internal" ? { owner } : {}),
+  };
+  const asked = JSON.stringify(body);
+  const [previewed, setPreviewed] = useState<string | undefined>();
   const send = async (mode: "preview" | "write") => {
     setBusy(mode);
     setError(undefined);
     try {
-      const r = await post({
-        id: sid.trim(),
-        name: name.trim(),
-        boundary,
-        ...(owner && boundary === "internal" ? { owner } : {}),
-        ...(mode === "preview" ? { preview: true } : {}),
-      });
-      if (mode === "preview") setPreview(r);
-      else {
+      const r = await post({ ...body, ...(mode === "preview" ? { preview: true } : {}) });
+      if (mode === "preview") {
+        setPreview(r);
+        setPreviewed(asked);
+      } else {
         setWritten(r);
         setPreview(undefined);
       }
@@ -422,13 +427,13 @@ export function AddBoxForm(p: {
             <button
               type="button"
               className="btn primary"
-              disabled={!!busy || !preview}
+              disabled={!!busy || !preview || previewed !== asked}
               onClick={() => void send("write")}
             >
               {busy === "write" ? A.writing : A.confirm}
             </button>
           </div>
-          {preview && <Diff r={preview} />}
+          {preview && previewed === asked && <Diff r={preview} />}
           {written && <Cmds r={written} label={A.written} />}
         </>
       )}

@@ -74,7 +74,11 @@ export function uiGraphRoutes(r: Router, ctx: ServerContext): Router {
   // checked at most once a second, and at once when the app sees a catalog file change.
   const memoKey = `estate:${ctx.root}`;
   ctx.events.listen((e) => {
-    if (e.type === "file.changed" && typeof e.path === "string" && /^catalog[\\/]/.test(e.path))
+    if (
+      e.type === "file.changed" &&
+      typeof e.path === "string" &&
+      /^(\.atticus[\\/])?catalog[\\/]/.test(e.path)
+    )
       recheckNow(memoKey);
   });
   const estate = async (): Promise<Estate> =>
@@ -177,7 +181,8 @@ export function uiGraphRoutes(r: Router, ctx: ServerContext): Router {
         if (!/^[A-Za-z0-9._-]{1,200}$/.test(repo) || !m || m[1]!.includes(".."))
           throw badRequest("Say repo=<repo> and at=<file>:<line>.");
         const line = Number(m[2]);
-        const dir = await checkoutOf(ctx.root, repo);
+        if (line < 1) throw badRequest("A line is 1 or more.");
+        const dir = await checkoutOf(ctx.root, repo).catch(() => undefined);
         if (!dir || !existsSync(dir))
           return {
             status: 200,

@@ -1,5 +1,5 @@
-import { withFileLock } from "./file-lock.js";
-import { appendFile, mkdir, readFile } from "node:fs/promises";
+import { appendLines } from "./file-lock.js";
+import { mkdir, readFile } from "node:fs/promises";
 import { filesIn, memoByFiles } from "./file-memo.js";
 import { join } from "node:path";
 import {
@@ -286,7 +286,7 @@ export function uiFactsRoutes(
         const written = correctionLine(c.data);
         await mkdir(factsDirOf(ctx.root), { recursive: true });
         const cfile = join(factsDirOf(ctx.root), `${repo}.corrections.jsonl`);
-        await withFileLock(cfile, () => appendFile(cfile, `${written}\n`, "utf8"));
+        await appendLines(cfile, [written]);
         ctx.events.publish({ type: "file.changed", path: rel });
         const result: Api.FactCorrectionResultT = {
           correction: c.data,

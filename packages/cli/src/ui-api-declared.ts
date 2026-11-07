@@ -8,6 +8,7 @@ import {
   DeclareError,
   factsDirOf,
   factsRelOf,
+  FileChangedError,
   isAdopted,
   loadOrgPack,
   orgPackDirOf,
@@ -55,6 +56,8 @@ export function uiDeclaredRoutes(
 ): Router {
   const now = deps.now ?? (() => new Date());
   const fail = (e: unknown): never => {
+    // Edited meanwhile (another request, the CLI, an editor): nothing was written.
+    if (e instanceof FileChangedError) throw conflict(e.message);
     if (e instanceof DeclareError) {
       if (e.code === "not-found") throw notFound(e.message);
       if (e.code === "exists") throw conflict(e.message);

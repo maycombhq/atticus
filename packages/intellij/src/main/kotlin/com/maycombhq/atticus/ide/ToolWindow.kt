@@ -163,6 +163,7 @@ class AppPanel(private val project: Project, parent: Disposable) : SimpleToolWin
             browserUrl = url
             escapeToPage(it)
             saveDownloads(it)
+            editorLinks(project, it)
         }
         return b.component
     }
@@ -206,6 +207,64 @@ private fun saveDownloads(b: JBCefBrowser) {
         },
         b.cefBrowser,
     )
+}
+
+/**
+ * G6: the app's "Open in your editor" links. The embedded browser can't hand `idea://` to the
+ * system, so a cited line opens here, in this IDE; a `vscode://` one goes to the system.
+ */
+private fun editorLinks(project: Project, b: JBCefBrowser) {
+    b.jbCefClient.addRequestHandler(
+        object : org.cef.handler.CefRequestHandlerAdapter() {
+            override fun onBeforeBrowse(
+                browser: org.cef.browser.CefBrowser?,
+                frame: org.cef.browser.CefFrame?,
+                request: org.cef.network.CefRequest?,
+                userGesture: Boolean,
+                isRedirect: Boolean,
+            ): Boolean = openEditorLink(project, request?.url)
+
+            override fun onOpenURLFromTab(
+                browser: org.cef.browser.CefBrowser?,
+                frame: org.cef.browser.CefFrame?,
+                targetUrl: String?,
+                userGesture: Boolean,
+            ): Boolean = openEditorLink(project, targetUrl)
+        },
+        b.cefBrowser,
+    )
+}
+
+/** True when the link was an editor's (handled here); false lets the browser go on. */
+private fun openEditorLink(project: Project, url: String?): Boolean {
+    if (url == null) return false
+    if (url.startsWith("vscode://")) {
+        BrowserUtil.browse(url)
+        return true
+    }
+    if (!url.startsWith("idea://")) return false
+    val query = runCatching { java.net.URI(url).rawQuery }.getOrNull() ?: return true
+    val params =
+        query.split("&").mapNotNull { kv ->
+            val p = kv.split("=", limit = 2)
+            if (p.size == 2) {
+                java.net.URLDecoder.decode(p[0], Charsets.UTF_8) to
+                    java.net.URLDecoder.decode(p[1], Charsets.UTF_8)
+            } else {
+                null
+            }
+        }.toMap()
+    val file = params["file"] ?: return true
+    val line = ((params["line"]?.toIntOrNull() ?: 1) - 1).coerceAtLeast(0)
+    ApplicationManager.getApplication().invokeLater {
+        val vf =
+            com.intellij.openapi.vfs.LocalFileSystem.getInstance()
+                .refreshAndFindFileByPath(file.replace('\\', '/'))
+        if (vf != null && !project.isDisposed) {
+            com.intellij.openapi.fileEditor.OpenFileDescriptor(project, vf, line, 0).navigate(true)
+        }
+    }
+    return true
 }
 
 /** Every command run and what it printed. */

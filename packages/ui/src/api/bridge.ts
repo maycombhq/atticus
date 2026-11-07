@@ -5,6 +5,8 @@
  * and "go to this view" come as messages too. The page never holds the session token.
  */
 
+import { COPY } from "../copy.js";
+
 export interface BridgeReply {
   status: number;
   body: unknown;
@@ -45,6 +47,8 @@ const isMsg = (m: unknown): m is Msg => typeof m === "object" && m !== null;
 
 /** How long a call waits for the extension's reply before it is given up (the page says so). */
 export const BRIDGE_TIMEOUT_MS = 60_000;
+/** How long an export waits for the Save dialog's answer. */
+const SAVE_TIMEOUT_MS = 10 * 60_000;
 
 export function makeBridge(
   post: (m: Msg) => void,
@@ -97,9 +101,9 @@ export function makeBridge(
             status: 504,
             body: {
               type: "about:blank",
-              title: "No answer from VS Code",
+              title: COPY.bridge.noAnswer,
               status: 504,
-              detail: `No answer to ${path} in ${Math.round(timeoutMs / 1000)} s.`,
+              detail: COPY.bridge.noAnswerTo(path, Math.round(timeoutMs / 1000)),
             },
           });
         }, timeoutMs);
@@ -126,7 +130,15 @@ export function makeBridge(
     saveFile(name, data, encoding) {
       const id = ++next;
       return new Promise((resolve) => {
-        saves.set(id, resolve);
+        // The Save dialog may stay open a while; an answer that never comes is a failure in the
+        // end, not an export that waits for good.
+        const timer = setTimeout(() => {
+          if (saves.delete(id)) resolve("failed");
+        }, SAVE_TIMEOUT_MS);
+        saves.set(id, (r) => {
+          clearTimeout(timer);
+          resolve(r);
+        });
         post({ type: "save-file", id, name, data, encoding });
       });
     },

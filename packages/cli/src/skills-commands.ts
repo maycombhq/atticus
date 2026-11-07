@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { lstatSync, realpathSync } from "node:fs";
 import { mkdir, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, sep } from "node:path";
+import { dirname, join, relative, sep } from "node:path";
 import { promisify } from "node:util";
 import { parse, stringify } from "yaml";
 import { isAdopted, orgPackDirOf, writeFileAtomic } from "@maycombhq/core";
@@ -168,8 +168,9 @@ export function outputsOf(i: SourceItem): { path: string; text: string }[] {
           path: `.github/instructions/${i.name}.instructions.md`,
           // Applied by itself only where its source says (`applyTo`): with none, a person attaches
           // it, so another team's words never reach a session (Atticus's own reads among them)
-          // that didn't ask for them.
-          text: `${fmText({ description, ...(typeof fm.applyTo === "string" ? { applyTo: fm.applyTo } : {}) })}${mark}\n${body}`,
+          // that didn't ask for them. Another team's never apply by themselves: a person attaches
+          // them (their `applyTo` could reach every file, the reading sessions' too).
+          text: `${fmText({ description, ...(typeof fm.applyTo === "string" && !i.team ? { applyTo: fm.applyTo } : {}) })}${mark}\n${body}`,
         },
       ];
   }
@@ -403,7 +404,19 @@ export async function skillsImportCommand(
     tmp = join(tmpdir(), `atticus-import-${o.team}-${Date.now()}`);
     try {
       await mkdir(dirname(tmp), { recursive: true });
-      await run("git", ["-C", from, "worktree", "add", "--detach", "--", tmp, `${o.at}^{commit}`]);
+      // Their clone's hooks don't run here: a checkout reads files only.
+      await run("git", [
+        "-C",
+        from,
+        "-c",
+        `core.hooksPath=${tmp}.no-hooks`,
+        "worktree",
+        "add",
+        "--detach",
+        "--",
+        tmp,
+        `${o.at}^{commit}`,
+      ]);
       dir = tmp;
     } catch (e) {
       io.err(`${from} has no ${o.at}: ${(e as Error).message.split("\n")[0]}`);
@@ -458,7 +471,8 @@ export async function skillsImportCommand(
           notes.push(
             `kept ${to.slice(root.length + 1)}: edited here since the last import (--replace takes theirs)`,
           );
-          files[key] = sha(on);
+          // Their last import's hash stays the one on record, so the edit is kept next time too.
+          files[key] = before;
           return;
         }
         await mkdir(dirname(to), { recursive: true });
@@ -489,7 +503,20 @@ export async function skillsImportCommand(
     await mkdir(dirname(provPath), { recursive: true });
     await writeFileAtomic(
       provPath,
-      stringify({ schemaVersion: 1, team: o.team, from, at: o.at ?? "working copy", items }),
+      stringify({
+        schemaVersion: 1,
+        team: o.team,
+        // Where it came from, as the metarepo sees it (no one's home folder in a committed file).
+        from: relative(root, from).split(sep).join("/") || ".",
+        at: o.at ?? "working copy",
+        // An import of some (--only) keeps the record of the rest.
+        items: [
+          ...(prov.items ?? []).filter(
+            (x) => !items.some((y) => y.kind === x.kind && y.name === x.name),
+          ),
+          ...items,
+        ].sort((a, b) => `${a.kind}:${a.name}`.localeCompare(`${b.kind}:${b.name}`)),
+      }),
     );
     io.out(
       `Imported ${items.length} from ${o.team}${o.at ? ` at ${o.at}` : ""} into ${packRel(root)}/{skills,agents,instructions}/imported/${o.team}/, provenance in ${packRel(root)}/imported/${o.team}.yaml.`,

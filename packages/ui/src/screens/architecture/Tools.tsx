@@ -68,7 +68,9 @@ function downloadPng(name: string, svg: string): Promise<SaveEnd> {
       g?.drawImage(img, 0, 0);
       const b = hostBridge();
       if (b) {
+        // A canvas too big to draw gives an empty picture: that is a failure, not a save.
         const data = c.toDataURL("image/png").split(",")[1] ?? "";
+        if (!data) return resolve("failed");
         void b.saveFile(name, data, "base64").then(resolve);
         return;
       }
@@ -105,6 +107,8 @@ export function CanvasTools(p: {
   onChange(s: ToolsState): void;
   /** A kept view's lens and box, opened as a link to them would open them. */
   onOpenView?(lens: string, node: string): void;
+  /** The overlay's state while it isn't there yet (loading, or why it failed). */
+  overlayNote?: string;
   selected?: string;
   onSelect(id: string): void;
   labelOf(id: string): string;
@@ -134,7 +138,10 @@ export function CanvasTools(p: {
   const set = (x: Partial<ToolsState>) => p.onChange({ ...s, ...x });
   const out = p.selected ? trace(p.graph.links, p.selected) : [];
   const open0 = inbox(p.graph);
+  const [keeping, setKeeping] = useState(false);
   const keep = async () => {
+    if (keeping) return;
+    setKeeping(true);
     setError(undefined);
     try {
       const v = await api<Api.SavedCanvasViewT>(
@@ -155,6 +162,8 @@ export function CanvasTools(p: {
       views.reload();
     } catch (e) {
       setError(e instanceof ApiError ? (e.problem.detail ?? e.message) : String(e));
+    } finally {
+      setKeeping(false);
     }
   };
   return (
@@ -230,6 +239,11 @@ export function CanvasTools(p: {
               ))}
             </select>
           </div>
+          {p.overlayNote && (
+            <p role="status" className="work-say">
+              {p.overlayNote}
+            </p>
+          )}
 
           <fieldset>
             <legend className="hud">{T.radius}</legend>
@@ -384,8 +398,18 @@ export function CanvasTools(p: {
                   </li>
                 ))}
               </ul>
+            ) : views.state === "ready" ? (
+              <p className="work-say">{T.noViews}</p>
+            ) : views.state === "error" ? (
+              <p role="alert" className="state error">
+                {T.viewsFailed(views.error)}
+              </p>
             ) : (
-              views.state === "ready" && <p className="work-say">{T.noViews}</p>
+              views.state === "loading" && (
+                <p role="status" aria-busy="true" className="work-say">
+                  {T.viewsLoading}
+                </p>
+              )
             )}
             <label htmlFor={`${id}-n`} className="hud">
               {T.viewName}
@@ -395,18 +419,25 @@ export function CanvasTools(p: {
                 id={`${id}-n`}
                 className="field"
                 value={viewName}
-                onChange={(e) => setViewName(e.target.value)}
+                onChange={(e) => {
+                  setViewName(e.target.value);
+                  setSaved(undefined);
+                }}
               />
               <button
                 type="button"
                 className="btn"
-                disabled={!/^[a-z0-9][a-z0-9-]{0,62}$/.test(viewName)}
+                disabled={keeping || !/^[a-z0-9][a-z0-9-]{0,62}$/.test(viewName)}
+                aria-busy={keeping}
                 onClick={() => void keep()}
               >
+                {keeping && T.saving}
                 {/* A name kept already is replaced, and the button says so. */}
-                {views.state === "ready" && views.data.views.some((v) => v.name === viewName)
-                  ? T.replace(viewName)
-                  : T.save}
+                {keeping
+                  ? null
+                  : views.state === "ready" && views.data.views.some((v) => v.name === viewName)
+                    ? T.replace(viewName)
+                    : T.save}
               </button>
             </div>
             {saved && (

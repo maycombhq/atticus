@@ -189,7 +189,7 @@ export function readingRulesText(
     "",
     ...rules.map(
       (r) =>
-        `- ${r.key} (${r.layer}${r.files?.length ? `; for ${r.files.join(", ")}` : ""}): ${r.rule.replace(/\s+/g, " ").trim()}${r.example ? ` For example ${r.example}.` : ""}`,
+        `- ${r.key} (${r.layer}${r.files?.length ? `; for ${r.files.join(", ")}` : ""}): ${r.rule.replace(/\s+/g, " ").trim()}${exampleOf(r.example)}`,
     ),
     ...(e.builtinOff.length
       ? [
@@ -199,6 +199,13 @@ export function readingRulesText(
       : []),
   ].join("\n");
 }
+
+/**
+ * A rule's example as a reader is told it: a `path:line` only (no spaces, short). Anything else
+ * a rule's file holds there (another team's sentence) is never put in a prompt.
+ */
+export const exampleOf = (e: string | undefined): string =>
+  e && e.length <= 300 && /^[^\s`]+:\d+$/.test(e) ? ` For example ${e}.` : "";
 
 /**
  * Everything a read lacks: the built-in rule sets added since it was read (ADR 0167) and the

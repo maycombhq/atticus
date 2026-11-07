@@ -63,6 +63,9 @@ export function OwnerForm(p: {
     if (system && system !== (v.system ?? "")) b.system = system;
     return b.owner || b.system || b.addTeam ? b : undefined;
   };
+  // What the form says now: Write it writes only what was previewed, nothing changed since.
+  const asked = JSON.stringify(body() ?? null);
+  const [previewed, setPreviewed] = useState<string | undefined>();
   const send = async (mode: "preview" | "write") => {
     const b = body();
     if (!b) {
@@ -74,8 +77,10 @@ export function OwnerForm(p: {
     setError(undefined);
     try {
       const r = await put({ ...b, ...(mode === "preview" ? { preview: true } : {}) });
-      if (mode === "preview") setPreview(r);
-      else {
+      if (mode === "preview") {
+        setPreview(r);
+        setPreviewed(asked);
+      } else {
         setWritten(r);
         setPreview(undefined);
         p.view.reload?.();
@@ -192,14 +197,14 @@ export function OwnerForm(p: {
             <button
               type="button"
               className="btn primary"
-              disabled={!!busy || !preview}
+              disabled={!!busy || !preview || previewed !== asked}
               aria-busy={busy === "write"}
               onClick={() => void send("write")}
             >
               {busy === "write" ? O.writing : O.confirm}
             </button>
           </div>
-          {preview && <Diff r={preview} />}
+          {preview && previewed === asked && <Diff r={preview} />}
           {written && (
             <div className="stack" role="status">
               <p className="ev-say">{O.written}</p>

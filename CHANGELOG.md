@@ -49,6 +49,11 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - Copilot runs from the app: a poll gets each tab's last lines (`tail`) and fetches a tab's missed lines (`/api/copilot-runs/{runId}/tabs/{tab}`), with **Show earlier lines**; the strip shows a run's end only to a page that saw it run, and a dismissal lasts the session; a new run opens on its Run tab; the dialog names the repos a stale or gaps run reads; Stop on Windows ends the Copilot language server's whole process tree.
 - The canvas's exports save in a VS Code panel (the Save dialog) and in IntelliJ's; a panel's call that gets no answer gives up after a minute instead of leaving the bar on; a Run button's job polls no longer flash the loading bar; a kept view opens its lens and box, and keeping a name that exists says Replace.
 - Map › Mismatches says when no finding is of the kind picked, or none at all.
+- A write on the canvas is of what was previewed: changing Connect's pairs, a new box or an owner after Preview turns the write off until it is previewed again. Connect's Undo can't run twice, and after a failure tries only the lines left.
+- Two edits of one manifest, roles file, profile or reading-rules file at once can no longer lose one: a file changed since it was read (by another edit, the CLI or an editor) is left as it is and the edit is refused (409), to be done again.
+- A pairing added after a hand edit with no final newline goes on a line of its own; Undo keeps a Windows file's CRLF; Connect's "all calls" answer is checked before anything is written.
+- Imported skills: an edit kept here stays kept through every later import; `--only` keeps the record of the rest; another team's instructions never apply by themselves (a person attaches them); their clone's git hooks never run. An imported reading rule whose example changed comes back as a draft, and a rule's example reaches a reader only as `path:line`.
+- The Console keeps a tab's last 5,000 lines, as the server does, says when earlier lines are no longer kept, says when Stop or Copy didn't go through, and puts focus on the Console once a run starts. The questions overlay and kept views say when they are loading or failed. In IntelliJ, "Open in your editor" opens the line in the IDE.
 
 ## 2.0.0-beta.20 (2026-11-06)
 

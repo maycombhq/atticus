@@ -126,6 +126,10 @@ export function Pairing(p: {
     p.post ??
     ((body: Api.ConnectLinksRequestT) =>
       api<Api.ConnectLinksResultT>("/api/links/connect", { method: "POST", body }));
+  // What the person picked now: Confirm writes only what was previewed, nothing changed since.
+  const asked = JSON.stringify({ pairs, rule: !!rule });
+  const [previewed, setPreviewed] = useState<string | undefined>();
+  const [undoing, setUndoing] = useState(false);
   const send = async (mode: "preview" | "write") => {
     if (!pairs.length && !rule) {
       setError(C.nothingPicked);
@@ -141,8 +145,10 @@ export function Pairing(p: {
         ...(rule ? { rule: true } : {}),
         ...(mode === "preview" ? { preview: true } : {}),
       });
-      if (mode === "preview") setPreview(r);
-      else {
+      if (mode === "preview") {
+        setPreview(r);
+        setPreviewed(asked);
+      } else {
         setWritten(r);
         setPreview(undefined);
         p.cands.reload?.();
@@ -154,18 +160,27 @@ export function Pairing(p: {
     }
   };
   const undo = async () => {
-    if (!written) return;
+    if (!written || undoing) return;
+    setUndoing(true);
+    setError(undefined);
+    let left = written.lines;
     try {
-      for (const line of written.lines)
+      for (const line of written.lines) {
         await api(`/api/facts/${encodeURIComponent(p.from)}/corrections/undo`, {
           method: "POST",
           body: { line },
         });
+        // Each line undone is off the list, so trying again undoes only the rest.
+        left = left.filter((l) => l !== line);
+      }
       setUndone(true);
       setWritten(undefined);
       p.cands.reload?.();
     } catch (e) {
+      setWritten({ ...written, lines: left });
       setError(errorOf(e));
+    } finally {
+      setUndoing(false);
     }
   };
 
@@ -238,7 +253,7 @@ export function Pairing(p: {
                   </th>
                   <td>
                     {C.status[c.status]}
-                    {c.why ? ` (${c.why})` : ""}
+                    {c.why ? ` (${C.leftWhy[c.why] ?? c.why})` : ""}
                   </td>
                   <td>
                     <select
@@ -294,14 +309,14 @@ export function Pairing(p: {
             type="button"
             className="btn primary"
             onClick={() => void send("write")}
-            disabled={!!busy || !preview}
+            disabled={!!busy || !preview || previewed !== asked}
             aria-busy={busy === "write"}
           >
             {busy === "write" ? C.writing : C.confirm(pairs.length)}
           </button>
         </div>
       )}
-      {preview && (
+      {preview && previewed === asked && (
         <CorrectionNextPanel
           file={preview.file}
           line={preview.lines.join("\n+ ")}
@@ -319,7 +334,13 @@ export function Pairing(p: {
           <Cmd text={written.verify} />
           <Cmd text={written.commit} />
           {written.lines.length > 0 && (
-            <button type="button" className="btn" onClick={() => void undo()}>
+            <button
+              type="button"
+              className="btn"
+              onClick={() => void undo()}
+              disabled={undoing}
+              aria-busy={undoing}
+            >
               {C.undo}
             </button>
           )}

@@ -10,6 +10,7 @@ import {
   RunStrip,
   RunWithCopilot,
   mergePolled,
+  TAB_LINES,
   withLines,
   withSpan,
   type Ctx,
@@ -133,6 +134,19 @@ describe("a polled run", () => {
       from: 6000,
       lines: ["x", "y"],
     });
+  });
+  it("keeps a tab's last lines only, as the server does", () => {
+    const many = Array.from({ length: TAB_LINES + 10 }, (_, i) => `l${i}`);
+    const t = withLines(run({ tabs: [tab(0, [])] }), "s1", "forge-teller", 0, many).tabs[0]!;
+    expect(t.lines.length).toBe(TAB_LINES);
+    expect(t.from).toBe(10);
+    expect(t.lines[0]).toBe("l10");
+  });
+  it("says earlier lines are no longer kept, with no button, once the server has none", () => {
+    const r = run({ tabs: [{ ...tab(10, ["x"]), id: "run" }] });
+    const out = html(ctx({ run: r, notKept: new Set([`${r.runId}:run`]) }), <RunConsole />);
+    expect(unescape(out)).toContain(T.console.notKept(10));
+    expect(out).not.toContain(T.console.loadEarlier);
   });
   it("takes another run whole", () => {
     const next = run({ runId: "copilot-run-2", tabs: [tab(3, ["x"])] });

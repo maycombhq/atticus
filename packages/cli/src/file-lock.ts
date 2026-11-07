@@ -1,3 +1,4 @@
+import { appendFile, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 /**
@@ -16,6 +17,20 @@ export function withFileLock<T>(path: string, work: () => Promise<T>): Promise<T
     if (chains.get(key) === tail) chains.delete(key);
   });
   return next;
+}
+
+/**
+ * Append lines to a file a person may also edit by hand (a repo's corrections), one write at a
+ * time: in the file's own line endings, and on a line of their own when its last line has none
+ * (an editor that saves without a final newline), so two lines never run into one.
+ */
+export function appendLines(file: string, lines: readonly string[]): Promise<void> {
+  return withFileLock(file, async () => {
+    const now = await readFile(file, "utf8").catch(() => "");
+    const eol = /\r\n/.test(now) ? "\r\n" : "\n";
+    const lead = now && !now.endsWith("\n") ? eol : "";
+    await appendFile(file, lead + lines.map((l) => `${l}${eol}`).join(""), "utf8");
+  });
 }
 
 /**

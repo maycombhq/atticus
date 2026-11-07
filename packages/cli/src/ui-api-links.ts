@@ -1,4 +1,4 @@
-import { appendFile, mkdir, readFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   Api,
@@ -31,7 +31,7 @@ import {
   type ServerContext,
 } from "@maycombhq/server";
 import { estateJoinOnFile, stampOf } from "./contract-check-files.js";
-import { safeMessage, withFileLock } from "./file-lock.js";
+import { appendLines, safeMessage, withFileLock } from "./file-lock.js";
 import { intakeContext } from "./intake-commands.js";
 
 /**
@@ -250,20 +250,29 @@ export function uiLinkRoutes(
             } satisfies Api.ConnectLinksResultT,
           };
         }
+        // The rule's answer is worked out before anything is written: a problem with it refuses
+        // the whole request, never leaving the pairings written and the person told it failed.
+        let answer: { text: string } | undefined;
+        if (q) {
+          const { targetAnswerOf } = await import("./target-answer.js");
+          const t = await targetAnswerOf(ctx.root, q, target);
+          if ("problem" in t) throw new HttpError(422, "Atticus can't do that yet", t.problem);
+          answer = t;
+        }
         if (lines.length) {
           await mkdir(factsDirOf(ctx.root), { recursive: true });
           const file = join(factsDirOf(ctx.root), `${from}.corrections.jsonl`);
-          await withFileLock(file, () =>
-            appendFile(file, lines.map((l) => `${l}\n`).join(""), "utf8"),
-          );
+          await appendLines(file, lines);
           ctx.events.publish({ type: "file.changed", path: rel });
         }
-        if (q) {
+        if (q && answer) {
           try {
-            const { targetAnswerOf } = await import("./target-answer.js");
-            const t = await targetAnswerOf(ctx.root, q, target);
-            if ("problem" in t) throw badRequest(t.problem);
-            await answerQuestion(ctx.root, q.id, { text: t.text, match: "/**", by: ctx.user, at });
+            await answerQuestion(ctx.root, q.id, {
+              text: answer.text,
+              match: "/**",
+              by: ctx.user,
+              at,
+            });
             ctx.events.publish({ type: "file.changed", path: "questions" });
           } catch (e) {
             if (e instanceof QuestionError)
@@ -356,7 +365,8 @@ export function uiLinkRoutes(
           const i = lines.findIndex((l) => l.trim() === b.data.line.trim());
           if (i < 0) throw notFound(`${rel} has no such line (it may be removed already).`);
           lines.splice(i, 1);
-          await writeFileAtomic(file, lines.join("\n"));
+          // In the file's own line endings (a Windows checkout's CRLF), so only that line changes.
+          await writeFileAtomic(file, lines.join(/\r\n/.test(text) ? "\r\n" : "\n"));
         });
         ctx.events.publish({ type: "file.changed", path: rel });
         return {

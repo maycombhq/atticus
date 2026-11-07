@@ -146,6 +146,45 @@ describe("setting a repo's owner in a Windows checkout", () => {
   });
 });
 
+describe("two edits of one file at once", () => {
+  it("never loses one: the second, made from the same version, is refused", async () => {
+    const { setManifestField, FileChangedError } = await import("../src/index.js");
+    const root = await mkdtemp(join(tmpdir(), "atticus-race-"));
+    await mkdir(join(root, "org-pack/profiles/forge"), { recursive: true });
+    const file = join(root, "org-pack/profiles/forge/repos.manifest.yaml");
+    await writeFile(
+      file,
+      [
+        "schemaVersion: 2",
+        "platform: forge",
+        "repos:",
+        "  - { id: forge-ledger, url: https://git.example.com/forge/forge-ledger.git, type: spring-boot, owner: team-ledger }",
+        "  - { id: forge-cards, url: https://git.example.com/forge/forge-cards.git, type: spring-boot, owner: team-cards }",
+        "",
+      ].join("\n"),
+    );
+    const both = await Promise.allSettled([
+      setManifestField(root, "forge-ledger", "owner", "team-a"),
+      setManifestField(root, "forge-cards", "owner", "team-b"),
+    ]);
+    const text = await readFile(file, "utf8");
+    const done = both.filter((x) => x.status === "fulfilled").length;
+    const refused = both.filter(
+      (x) => x.status === "rejected" && x.reason instanceof FileChangedError,
+    ).length;
+    expect(done + refused).toBe(2);
+    // Whatever was said written is in the file.
+    if (both[0].status === "fulfilled") expect(text).toContain("owner: team-a");
+    if (both[1].status === "fulfilled") expect(text).toContain("owner: team-b");
+    // Done again from the file as it is now, it is written.
+    await setManifestField(root, "forge-cards", "owner", "team-b");
+    await setManifestField(root, "forge-ledger", "owner", "team-a");
+    const after = await readFile(file, "utf8");
+    expect(after).toContain("owner: team-a");
+    expect(after).toContain("owner: team-b");
+  });
+});
+
 describe("declaring in a Windows checkout", () => {
   it("previews only the lines it adds, and keeps CRLF", async () => {
     const root = await metarepo();

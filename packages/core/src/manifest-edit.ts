@@ -1,7 +1,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { isMap, isSeq, parseDocument, type Document, type YAMLMap } from "yaml";
-import { writeFileAtomic } from "./fs.js";
+import { writeFileIfUnchanged } from "./fs.js";
 import { isAdopted, orgPackDirOf } from "./metarepo.js";
 import { RepoDescription, RepoManifest, WORKSPACE_SCHEMA_VERSION } from "./schema/workspace.js";
 import { Roles } from "./schema/orgpack.js";
@@ -50,7 +50,7 @@ export class ManifestEditError extends Error {
 async function entryOf(
   root: string,
   repo: string,
-): Promise<{ file: ManifestFile; doc: Document; item: YAMLMap } | undefined> {
+): Promise<{ file: ManifestFile; doc: Document; item: YAMLMap; text: string } | undefined> {
   for (const file of await manifestFiles(root)) {
     const text = await readFile(file.path, "utf8").catch(() => undefined);
     if (text === undefined) continue;
@@ -58,20 +58,27 @@ async function entryOf(
     const list = doc.get("repos");
     if (!isSeq(list)) continue;
     const item = list.items.find((x) => isMap(x) && x.get("id") === repo);
-    if (isMap(item)) return { file, doc, item };
+    if (isMap(item)) return { file, doc, item, text };
   }
   return undefined;
 }
 
-/** Write a document back as the manifest, after checking Atticus can still read it. */
-async function save(path: string, doc: Document): Promise<void> {
+/**
+ * Write a document back as the manifest, after checking Atticus can still read it, and only
+ * when the file still holds `before` (what the change was made from).
+ */
+async function save(path: string, doc: Document, before: string): Promise<void> {
   const check = RepoManifest.safeParse(doc.toJS());
   if (!check.success)
     throw new ManifestEditError(
       "invalid",
       check.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "),
     );
-  await writeFileAtomic(path, doc.toString({ lineWidth: 0, flowCollectionPadding: true }));
+  await writeFileIfUnchanged(
+    path,
+    before,
+    doc.toString({ lineWidth: 0, flowCollectionPadding: true }),
+  );
 }
 
 /**
@@ -86,7 +93,7 @@ export async function setManifestDescription(
 ): Promise<ManifestFile> {
   const found = await entryOf(root, repo);
   if (!found) throw new ManifestEditError("not-found", `There is no repo ${repo} in any manifest.`);
-  const { file, doc, item } = found;
+  const { file, doc, item, text } = found;
   if (!description) item.delete("description");
   else {
     const d = RepoDescription.parse(description);
@@ -101,7 +108,7 @@ export async function setManifestDescription(
       }),
     );
   }
-  await save(file.path, doc);
+  await save(file.path, doc, text);
   return file;
 }
 
@@ -171,7 +178,7 @@ export async function addManifestRepo(
         : {}),
     }),
   );
-  await save(file.path, doc);
+  await save(file.path, doc, text);
   return file;
 }
 
@@ -198,7 +205,7 @@ export async function renameManifestRepo(
   const found = await entryOf(root, repo);
   if (!found) throw new ManifestEditError("not-found", `There is no repo ${repo} in any manifest.`);
   found.item.set("id", to);
-  await save(found.file.path, found.doc);
+  await save(found.file.path, found.doc, found.text);
   return found.file;
 }
 
@@ -223,7 +230,7 @@ export async function migrateManifests(
     if (!RepoManifest.safeParse(doc.toJS()).success) continue;
     if (!o.dryRun) {
       doc.set("schemaVersion", to);
-      await save(file.path, doc);
+      await save(file.path, doc, text);
     }
     out.push(file.rel);
   }
@@ -319,9 +326,8 @@ export async function setManifestField(
 ): Promise<{ file: ManifestFile; changes: LineChange[]; written: boolean }> {
   const found = await entryOf(root, repo);
   if (!found) throw new ManifestEditError("not-found", `There is no repo ${repo} in any manifest.`);
-  const { file, doc, item } = found;
+  const { file, doc, item, text: raw } = found;
   // The preview is of the file as it is on disk, so a write that reformats it shows that too.
-  const raw = await readFile(file.path, "utf8");
   // Compared and written with the file's own line endings (a Windows checkout's CRLF).
   const eol = eolOf(raw);
   const before = lfOnly(raw);
@@ -336,7 +342,7 @@ export async function setManifestField(
       check.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "),
     );
   if (o.preview || !changes.length) return { file, changes, written: false };
-  await writeFileAtomic(file.path, inEol(after, eol));
+  await writeFileIfUnchanged(file.path, raw, inEol(after, eol));
   return { file, changes, written: true };
 }
 
@@ -351,8 +357,8 @@ export async function addRolesTeam(
 ): Promise<{ rel: string; changes: LineChange[]; written: boolean }> {
   const path = join(orgPackDirOf(root), "roles.yaml");
   const rel = `${isAdopted(root) ? ".atticus/org-pack" : "org-pack"}/roles.yaml`;
-  const raw =
-    (await readFile(path, "utf8").catch(() => undefined)) ?? "schemaVersion: 2\nteams: []\n";
+  const onDisk = await readFile(path, "utf8").catch(() => undefined);
+  const raw = onDisk ?? "schemaVersion: 2\nteams: []\n";
   const eol = eolOf(raw);
   const text = lfOnly(raw);
   const migrated = migrateRolesText(text).text;
@@ -375,6 +381,6 @@ export async function addRolesTeam(
     );
   const changes = changedLines(text, after);
   if (o.preview) return { rel, changes, written: false };
-  await writeFileAtomic(path, inEol(after, eol));
+  await writeFileIfUnchanged(path, onDisk, inEol(after, eol));
   return { rel, changes, written: true };
 }

@@ -19,7 +19,7 @@ Atticus reads their `.claude/skills/<name>/`, `.claude/agents/`, `.github/agents
 | ------------ | ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- |
 | a skill      | `.claude/skills/<name>/`                                                                         | `.github/prompts/<name>.prompt.md`                                                                      |
 | an agent     | `.claude/agents/<name>.md`                                                                       | `.github/agents/<name>.agent.md`                                                                        |
-| instructions | an `@` import in CLAUDE.md for your own; another team's are listed there to bring in when wanted | `.github/instructions/<name>.instructions.md`, applied by itself only where its source's `applyTo` says |
+| instructions | an `@` import in CLAUDE.md for your own; another team's are listed there to bring in when wanted | `.github/instructions/<name>.instructions.md`, applied by itself only where its source's `applyTo` says (your own; another team's never apply by themselves: a person attaches them) |
 
 Your own skills and agents go in `org-pack/skills/<name>/SKILL.md`, `org-pack/agents/<name>.md` and `org-pack/instructions/<name>.md`, and are written the same way. `atticus skills write --check` exits 1 when a written file is behind its source; `atticus skills list` shows each and where it goes.
 

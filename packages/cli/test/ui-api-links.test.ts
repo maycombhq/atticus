@@ -213,6 +213,36 @@ describe("connect two boxes (ADR 0174, G1)", () => {
     expect((await call("POST", "/api/links/connect", { ...base, rule: true })).status).toBe(409);
   });
 
+  it("puts a pairing on a line of its own after a hand edit with no final newline, and Undo keeps CRLF", async () => {
+    const file = join(root, "facts/forge-billing.corrections.jsonl");
+    const before = await readFile(file, "utf8").catch(() => "");
+    const hand = ['{"hand":1}', '{"hand":2}'];
+    // As a Windows editor saves it: CRLF, no newline at the end.
+    await writeFile(file, hand.join("\r\n"));
+    const r = await call("POST", "/api/links/connect", {
+      from: "forge-billing",
+      to: { repo: "forge-partner-gateway" },
+      pairs: [
+        {
+          call: "call.post.capture-charge",
+          api: "entry.post.partners-northwind-charges-chargeid-capture",
+        },
+      ],
+    });
+    expect(r.status).toBe(200);
+    const after = await readFile(file, "utf8");
+    const lines = after.split("\r\n").filter(Boolean);
+    expect(lines.length).toBe(hand.length + 1);
+    for (const l of lines) expect(() => JSON.parse(l)).not.toThrow();
+    const u = await call("POST", "/api/facts/forge-billing/corrections/undo", {
+      line: (r.body.lines as string[])[0],
+    });
+    expect(u.status).toBe(200);
+    // Only that line goes; the rest keep their CRLF.
+    expect(await readFile(file, "utf8")).toBe(hand.join("\r\n") + "\r\n");
+    await writeFile(file, before);
+  });
+
   it("says to verify a repo whose facts aren't all verified, not that it has no calls", async () => {
     const unchecked = { ...JSON.parse(LOOSE), id: "call.get.unchecked", verified: "none" };
     await appendFile(join(root, "facts/forge-billing.jsonl"), `${JSON.stringify(unchecked)}\n`);

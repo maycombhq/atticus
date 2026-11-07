@@ -245,6 +245,41 @@ describe("atticus skills import, write and list", () => {
     expect(c.out).toContain("behind: .github/instructions/harbor-java.instructions.md");
   });
 
+  it("keeps an edit through every later import, and an import of some keeps the record of the rest", async () => {
+    const root = metarepo();
+    const theirs = harborRepo();
+    const imp = (o: { only?: string } = {}) =>
+      skillsImportCommand(root, theirs, { team: "harbor", at: "v2.1", ...o }, io().io);
+    await imp();
+    write(
+      root,
+      "org-pack/agents/imported/harbor/harbor-architect.md",
+      "---\nname: harbor-architect\ndescription: Ours.\n---\nOurs.\n",
+    );
+    await imp();
+    await imp();
+    expect(read(root, "org-pack/agents/imported/harbor/harbor-architect.md")).toContain("Ours.");
+    await imp({ only: "harbor-java" });
+    const prov = parse(read(root, "org-pack/imported/harbor.yaml")) as {
+      from: string;
+      items: { name: string }[];
+    };
+    expect(prov.items.map((i) => i.name).sort()).toEqual([
+      "harbor-architect",
+      "harbor-java",
+      "harbor-publish",
+    ]);
+    // No one's home folder in a committed file: their repo as the metarepo sees it.
+    expect(prov.from.startsWith("/")).toBe(false);
+    await imp();
+    expect(read(root, "org-pack/agents/imported/harbor/harbor-architect.md")).toContain("Ours.");
+    // Another team's instructions never apply by themselves: a person attaches them.
+    await skillsWriteCommand(root, {}, io().io);
+    expect(
+      splitFm(read(root, ".github/instructions/harbor-java.instructions.md")).fm.applyTo,
+    ).toBeUndefined();
+  });
+
   it("refuses a tag their repo doesn't have, and a repo with nothing to import", async () => {
     const root = metarepo();
     const theirs = harborRepo();

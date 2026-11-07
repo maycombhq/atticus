@@ -385,12 +385,12 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
             ? b
             : tools.overlay === "gaps"
               ? { ...b, badge: { n: b.gaps.length, what: WORDS.gaps } }
-              : b.kind === "repo"
+              : b.kind === "repo" && openQuestions.state === "ready"
                 ? {
                     ...b,
                     badge: {
                       n: byRepo[b.label]?.open ?? 0,
-                      what: COPY.canvasTools.overlays.questions!.toLowerCase(),
+                      what: COPY.canvasTools.questionsBadge,
                     },
                   }
                 : b,
@@ -611,6 +611,14 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
               placed={(id) => laid?.boxes[id]}
               lens={lens}
               node={shown}
+              {...(tools.overlay === "questions" && openQuestions.state !== "ready"
+                ? {
+                    overlayNote:
+                      openQuestions.state === "error"
+                        ? COPY.canvasTools.overlayFailed(openQuestions.error)
+                        : COPY.canvasTools.overlayLoading,
+                  }
+                : {})}
               onOpenView={(l, n) => {
                 // Another lens is another picture (the address); in this one, the box is opened.
                 if (l !== lens)

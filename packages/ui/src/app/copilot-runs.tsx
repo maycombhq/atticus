@@ -40,6 +40,10 @@ export interface Ctx {
   setConsoleOpen(open: boolean): void;
   /** Fetches a tab's lines from its first kept line (the poll only brings its last ones). */
   loadEarlier(tab: string): void;
+  /** The tabs (`runId:tab`) whose earlier lines the server no longer keeps. */
+  notKept?: ReadonlySet<string>;
+  /** Why Stop didn't go through, when it didn't. */
+  stopError?: string;
   /** The run this page saw under way: only its end is news on the strip. */
   watched?: string;
 }
@@ -47,6 +51,13 @@ export interface Ctx {
 /** Exported for tests, which render the strip and Console at a given run. */
 export const RunsContext = createContext<Ctx | undefined>(undefined);
 export const useCopilotRuns = () => useContext(RunsContext);
+
+/** As many lines of a tab as the server keeps (its last ones): the page holds no more. */
+export const TAB_LINES = 5000;
+const capped = <T extends { from: number; lines: string[] }>(t: T): T =>
+  t.lines.length > TAB_LINES
+    ? { ...t, from: t.from + t.lines.length - TAB_LINES, lines: t.lines.slice(-TAB_LINES) }
+    : t;
 
 /** The tab after new lines at `at`: only the lines it doesn't have yet. */
 export function withLines(run: Run, tab: string, title: string, at: number, lines: string[]): Run {
@@ -62,7 +73,7 @@ export function withLines(run: Run, tab: string, title: string, at: number, line
     return run;
   }
   const fresh = lines.slice(have - at);
-  if (fresh.length) t.lines = [...t.lines, ...fresh];
+  if (fresh.length) Object.assign(t, capped({ ...t, lines: [...t.lines, ...fresh] }));
   return { ...run, tabs };
 }
 
@@ -86,7 +97,7 @@ export function mergePolled(
       return { ...p, from: t.from, lines: t.lines };
     }
     const fresh = p.lines.slice(have - p.from);
-    return { ...p, from: t.from, lines: fresh.length ? [...t.lines, ...fresh] : t.lines };
+    return capped({ ...p, from: t.from, lines: fresh.length ? [...t.lines, ...fresh] : t.lines });
   });
   return { run: { ...old, ...polled, tabs }, gaps };
 }
@@ -106,7 +117,11 @@ export function withSpan(run: Run, tab: string, from: number, lines: string[]): 
       // The lines before `from` that the tab had, the span, then any it has past the span.
       const before = from > t.from ? t.lines.slice(0, from - t.from) : [];
       const after = have > end ? t.lines.slice(end - t.from) : [];
-      return { ...t, from: Math.min(from, t.from), lines: [...before, ...lines, ...after] };
+      return capped({
+        ...t,
+        from: Math.min(from, t.from),
+        lines: [...before, ...lines, ...after],
+      });
     }),
   };
 }
@@ -128,17 +143,30 @@ export function CopilotRunsProvider({ children }: { children: ReactNode }) {
   }, [runningId]);
 
   /** A tab's lines from a line on, fetched and put in place (catching up, or earlier lines). */
-  const span = useCallback(async (runId: string, tab: string, from: number, quiet = false) => {
-    try {
-      const r = await api<{ from: number; lines: string[] }>(
-        `/api/copilot-runs/${encodeURIComponent(runId)}/tabs/${encodeURIComponent(tab)}?from=${from}`,
-        { quiet },
-      );
-      setRun((old) => (old && old.runId === runId ? withSpan(old, tab, r.from, r.lines) : old));
-    } catch {
-      // The run is gone (the server restarted): the next poll says so.
-    }
-  }, []);
+  const span = useCallback(
+    async (
+      runId: string,
+      tab: string,
+      from: number,
+      quiet = false,
+    ): Promise<number | undefined> => {
+      try {
+        const r = await api<{ from: number; lines: string[] }>(
+          `/api/copilot-runs/${encodeURIComponent(runId)}/tabs/${encodeURIComponent(tab)}?from=${from}`,
+          { quiet },
+        );
+        setRun((old) => (old && old.runId === runId ? withSpan(old, tab, r.from, r.lines) : old));
+        return r.from;
+      } catch {
+        // The run is gone (the server restarted): the next poll says so.
+        return undefined;
+      }
+    },
+    [],
+  );
+  // The tabs whose earlier lines the server no longer keeps (asked for, none came): `run:tab`.
+  const [notKept, setNotKept] = useState<ReadonlySet<string>>(new Set());
+  const [stopError, setStopError] = useState<string | undefined>();
 
   const refresh = useCallback(
     async (quiet = false) => {
@@ -183,7 +211,10 @@ export function CopilotRunsProvider({ children }: { children: ReactNode }) {
       setRun((old) =>
         old && old.runId === s.runId
           ? { ...old, ...s }
-          : { ...s, tabs: [{ id: "run", title: "Run", state: "running", from: 0, lines: [] }] },
+          : {
+              ...s,
+              tabs: [{ id: "run", title: T.console.runTab, state: "running", from: 0, lines: [] }],
+            },
       );
     } else if (e.type === "copilot-run.lines") {
       setRun((old) =>
@@ -203,10 +234,16 @@ export function CopilotRunsProvider({ children }: { children: ReactNode }) {
   const stop = useCallback(async () => {
     if (!run) return;
     setStopping(true);
+    setStopError(undefined);
     try {
       await api(`/api/copilot-runs/${encodeURIComponent(run.runId)}/stop`, { method: "POST" });
-    } catch {
+    } catch (e) {
       setStopping(false);
+      setStopError(
+        T.strip.stopFailed(
+          e instanceof ApiError ? (e.problem.detail ?? e.message) : (e as Error).message,
+        ),
+      );
     }
     void refresh();
   }, [run, refresh]);
@@ -223,11 +260,18 @@ export function CopilotRunsProvider({ children }: { children: ReactNode }) {
       consoleOpen,
       setConsoleOpen,
       loadEarlier: (tab: string) => {
-        if (run) void span(run.runId, tab, 0);
+        if (!run) return;
+        const had = run.tabs.find((t) => t.id === tab)?.from ?? 0;
+        void span(run.runId, tab, 0).then((from) => {
+          if (from !== undefined && from >= had)
+            setNotKept((s) => new Set(s).add(`${run.runId}:${tab}`));
+        });
       },
+      notKept,
+      ...(stopError ? { stopError } : {}),
       ...(watched ? { watched } : {}),
     }),
-    [run, allowed, why, model, stop, stopping, consoleOpen, span, watched],
+    [run, allowed, why, model, stop, stopping, consoleOpen, span, watched, notKept, stopError],
   );
   return (
     <RunsContext.Provider value={value}>
@@ -263,7 +307,14 @@ export function ConfirmRun(p: {
   useEffect(() => {
     const before = document.activeElement as HTMLElement | null;
     yes.current?.focus();
-    return () => before?.focus?.();
+    // Back where it was; that button is off once a run is under way, so then the Console's.
+    return () => {
+      const back =
+        before?.isConnected && !(before as HTMLButtonElement).disabled
+          ? before
+          : document.getElementById("run-console-toggle");
+      back?.focus?.();
+    };
   }, []);
   const named = (p.ask.repos ?? []).join(", ");
   // Stale or gaps narrowed to some repos says which.
@@ -461,6 +512,11 @@ export function RunStrip() {
           </button>
         )}
       </div>
+      {running && c.stopError && (
+        <p role="alert" className="state error">
+          {c.stopError}
+        </p>
+      )}
     </section>
   );
 }
@@ -481,7 +537,14 @@ export function RunConsole() {
   const [tab, setTab] = useState("run");
   const [follow, setFollow] = useState(true);
   const [q, setQ] = useState("");
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<"yes" | "failed" | undefined>();
+  const copiedTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => () => clearTimeout(copiedTimer.current), []);
+  const saidCopied = (v: "yes" | "failed") => {
+    setCopied(v);
+    clearTimeout(copiedTimer.current);
+    copiedTimer.current = setTimeout(() => setCopied(undefined), 2000);
+  };
   const log = useRef<HTMLPreElement>(null);
   const run = c?.run;
   const tabs = run?.tabs ?? [];
@@ -526,6 +589,7 @@ export function RunConsole() {
     <section className={`run-console ${c.consoleOpen ? "open" : ""}`} aria-label={T.console.title}>
       <div className="run-console-head row" style={{ gap: 8, alignItems: "center" }}>
         <button
+          id="run-console-toggle"
           type="button"
           className="btn"
           aria-expanded={c.consoleOpen}
@@ -599,16 +663,18 @@ export function RunConsole() {
                   type="button"
                   className="btn"
                   onClick={() => {
-                    void navigator.clipboard
-                      ?.writeText(lines.join("\n"))
-                      .then(() => {
-                        setCopied(true);
-                        setTimeout(() => setCopied(false), 1500);
-                      })
-                      .catch(() => undefined);
+                    if (!navigator.clipboard) return saidCopied("failed");
+                    void navigator.clipboard.writeText(lines.join("\n")).then(
+                      () => saidCopied("yes"),
+                      () => saidCopied("failed"),
+                    );
                   }}
                 >
-                  {copied ? T.console.copied : T.console.copy}
+                  {copied === "yes"
+                    ? T.console.copied
+                    : copied === "failed"
+                      ? T.console.copyFailed
+                      : T.console.copy}
                 </button>
               </div>
               <div
@@ -618,10 +684,20 @@ export function RunConsole() {
               >
                 {shown && shown.from > 0 && (
                   <p className="work-say row" style={{ gap: 8, alignItems: "center" }}>
-                    {T.console.earlier(shown.from)}
-                    <button type="button" className="btn" onClick={() => c.loadEarlier(shown.id)}>
-                      {T.console.loadEarlier}
-                    </button>
+                    {c.notKept?.has(`${run.runId}:${shown.id}`) ? (
+                      T.console.notKept(shown.from)
+                    ) : (
+                      <>
+                        {T.console.earlier(shown.from)}
+                        <button
+                          type="button"
+                          className="btn"
+                          onClick={() => c.loadEarlier(shown.id)}
+                        >
+                          {T.console.loadEarlier}
+                        </button>
+                      </>
+                    )}
                   </p>
                 )}
                 <pre ref={log} className="run-console-log" role="log" aria-live="off" tabIndex={0}>

@@ -2,6 +2,7 @@ import {
   addRolesTeam,
   Api,
   loadOrgPack,
+  FileChangedError,
   ManifestEditError,
   manifestFiles,
   orgPackDirOf,
@@ -11,6 +12,7 @@ import { estateRepos } from "@maycombhq/scanner";
 import { safeMessage } from "./file-lock.js";
 import {
   badRequest,
+  conflict,
   HttpError,
   notFound,
   type Router,
@@ -111,6 +113,7 @@ export function uiOwnerRoutes(r: Router, ctx: ServerContext): Router {
           for (const f of files) ctx.events.publish({ type: "file.changed", path: f.file });
         }
       } catch (e) {
+        if (e instanceof FileChangedError) throw conflict(e.message);
         if (e instanceof ManifestEditError)
           throw e.code === "not-found"
             ? notFound(e.message)
