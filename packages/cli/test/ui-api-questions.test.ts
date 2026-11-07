@@ -82,6 +82,8 @@ describe("the questions API (ADR 0078)", () => {
     const mine = Api.QuestionList.parse((await call("GET", "/api/questions?mine=true")).body);
     expect(mine.me).toEqual({ handle: "priya.nair", teams: [] });
     expect(mine.questions).toEqual([]);
+    // The counts are of the same questions: none of them is mine.
+    expect(mine.counts).toMatchObject({ open: 0, total: 0 });
     expect((await call("GET", "/api/questions?mine=yes")).status).toBe(400);
   });
 

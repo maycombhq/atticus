@@ -12,6 +12,7 @@ import {
 } from "@maycombhq/core";
 import { estateRepos } from "@maycombhq/scanner";
 import { globToRegExp } from "@maycombhq/sdk";
+import { checkoutOf } from "./facts-files.js";
 import { repoTypeOf } from "./org-notes.js";
 
 /**
@@ -103,8 +104,10 @@ export async function effectiveRules(
   const op = o.op ?? (await loadOrgPack(orgPackDirOf(root)).catch(() => undefined));
   // The repo type the pack defines (by the manifest, else its fingerprint), else the manifest's
   // type as it is written: a team's rules for "fuse-service" need no repo type defined first.
+  // Its checkout when none is given, so a read and a staleness check work out the same type.
+  const dir = o.dir ?? (op ? await checkoutOf(root, repo).catch(() => undefined) : undefined);
   const type = op
-    ? ((await repoTypeOf(op, repo, o.dir))?.id ?? estateRepos(op).find((r) => r.id === repo)?.type)
+    ? ((await repoTypeOf(op, repo, dir))?.id ?? estateRepos(op).find((r) => r.id === repo)?.type)
     : undefined;
   const byKey = new Map<string, EffectiveRule>();
   const drafts: EffectiveRule[] = [];
@@ -125,7 +128,15 @@ export async function effectiveRules(
     for (const r of file.rules) {
       const e: EffectiveRule = { ...r, layer, file: at, id: ruleId(r) };
       if (r.status === "draft") drafts.push(e);
-      else byKey.set(r.key, e);
+      else {
+        const had = byKey.get(r.key);
+        // Two teams' copies with one key: the later team's is used, and that is said.
+        if (had && had.layer === "imported" && layer === "imported")
+          problems.push(
+            `${had.file} and ${at} both have an active rule ${r.key}: ${at}'s is given to reads. Rename one, or set one back to draft.`,
+          );
+        byKey.set(r.key, e);
+      }
     }
   }
   return {

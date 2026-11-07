@@ -300,12 +300,24 @@ const planOr = (
 ): ReadPlanFileT =>
   plan ?? { schemaVersion: 2, repo, commit, session, plannedAt: stamp(), parts: [] };
 
-/** ADR 0167: the read is recorded as under the rules there are now; a top-up under way is done. */
-export async function recordRulesNow(root: string, repo: string, commit: string): Promise<void> {
+/**
+ * ADR 0167: the read is recorded as under the rules there are now; a top-up under way is done.
+ * G4 (ADR 0176): a whole read was given every organisation rule there is now; a top-up only the
+ * ones it names (`given`), on top of what the read had: a rule that names no files is never
+ * topped up, so it stays lacking until a whole read.
+ */
+export async function recordRulesNow(
+  root: string,
+  repo: string,
+  commit: string,
+  given?: readonly string[],
+): Promise<void> {
   const plan = await loadReadPlan(root, repo);
   const { topUp: _t, ...rest } = planOr(plan, repo, commit, 150_000);
-  // G4 (ADR 0176): and under the organisation's rules there are now for it.
-  const rules = withOrgIds(rulesNow(), ruleIds(await effectiveRules(root, repo)));
+  const org = given
+    ? [...(plan?.rules?.sets ?? []), ...given]
+    : ruleIds(await effectiveRules(root, repo));
+  const rules = withOrgIds(rulesNow(), org);
   if (
     plan?.rules?.hash === FACT_RULES_HASH &&
     !plan.topUp &&
@@ -477,7 +489,7 @@ export async function mapRules(
   }
   const t = p.topUp;
   if (!t.sessions.length) {
-    await recordRulesNow(root, repo, o.commit);
+    await recordRulesNow(root, repo, o.commit, t.sets);
     if (o.json)
       io.out(JSON.stringify({ repo, commit: o.commit, sets: t.sets, sessions: 0 }, null, 2));
     else

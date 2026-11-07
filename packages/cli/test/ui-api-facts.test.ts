@@ -307,4 +307,19 @@ describe("a person's correction from the Map", () => {
       by: "person",
     });
   });
+
+  it("says why a correction verify can't apply, so it doesn't wait as pending for good", async () => {
+    const file = join(root, "facts/forge-ledger.corrections.jsonl");
+    const lines = (await readFile(file, "utf8")).trim().split("\n");
+    const last = JSON.parse(lines.at(-1)!) as Record<string, unknown>;
+    const bad = { ...last, set: { sync: "sometimes" }, at: "2026-10-25T10:00:00.000Z" };
+    await writeFile(file, [...lines, JSON.stringify(bad)].join("\n") + "\n");
+    const v = (await call("GET", "/api/facts/forge-ledger")).body as {
+      problems: { file: string; message: string }[];
+    };
+    expect(v.problems).toContainEqual({
+      file: "facts/forge-ledger.corrections.jsonl",
+      message: expect.stringContaining("doesn't make a fact"),
+    });
+  });
 });

@@ -38,7 +38,7 @@ off:
 - **From the canvas**: after pairing calls (Connect to…), **Make this a rule for every repo of this type?** drafts one from the pairing.
 - **From a note**: `atticus rules notes --type fuse-service` offers the type's notes that read as instructions as drafts.
 
-Drafts aren't given to reads until a person runs `atticus rules activate <key> --type <type>` (or sets `status: active`).
+Drafts aren't given to reads until a person runs `atticus rules activate <key> --type <type>` (or sets `status: active`). A rule with `files` is given to the reads it names by the next `atticus map --all --stale` (a top-up of those files); a rule with no `files` can't be topped up, so it is given by the next whole read (`atticus map <repo> --force`). The repo is not marked stale for such a rule, since only a whole read can give it.
 
 ## Try it, then apply it
 
@@ -46,4 +46,4 @@ Drafts aren't given to reads until a person runs `atticus rules activate <key> -
 
 ## Take another team's rules
 
-`atticus rules import ../payments-metarepo --type fuse-service --team payments --at v1.4` copies their `types/fuse-service.yaml` as it is at that tag into `imported/payments/`, every rule a draft: none is given to a read until you review it and set it `status: active` in the copy. Reads use the copy, never their repo; `--at` is required, so a copy is always pinned. An update is a new import, reviewed in a PR; switch one of theirs off here with `atticus rules off <key> --type fuse-service --reason "..."`.
+`atticus rules import ../payments-metarepo --type fuse-service --team payments --at v1.4` copies their `types/fuse-service.yaml` as it is at that tag into `imported/payments/`, every rule a draft: none is given to a read until you review it and set it active (`atticus rules activate <key> --team payments --type fuse-service`). Reads use the copy, never their repo; `--at` is required, so a copy is always pinned. An update is a new import, reviewed in a PR: a rule you set active stays active when they haven't changed it, and one they changed comes back as a draft. If two teams' copies have an active rule with the same key, the later team's (by name) is given and `atticus rules list <repo>` says so; switch one of theirs off here with `atticus rules off <key> --type fuse-service --reason "..."`.

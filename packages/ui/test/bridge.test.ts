@@ -29,6 +29,14 @@ describe("the app's calls through the extension (ADR 0097)", () => {
     expect(await p).toEqual({ status: 200, body: { repos: [] } });
   });
 
+  it("gives a call up when no answer comes (a reply lost to a reload), and ignores a late one", async () => {
+    const h = host();
+    const b = makeBridge(h.post, h.on, 5);
+    const r = await b.call("/api/specs", { method: "GET" });
+    expect(r.status).toBe(504);
+    h.deliver({ type: "api-reply", id: 1, status: 200, body: {} });
+  });
+
   it("carries a body, and keeps answers apart by id", async () => {
     const h = host();
     const b = makeBridge(h.post, h.on);

@@ -31,7 +31,7 @@ export function LoadingBar() {
 /** A bar inside a panel that is still waiting for its answer. */
 export function PanelBar() {
   return (
-    <div className="loading-bar panel on" aria-hidden="true">
+    <div className="loading-bar inline on" aria-hidden="true">
       <div className="loading-bar-run" />
     </div>
   );

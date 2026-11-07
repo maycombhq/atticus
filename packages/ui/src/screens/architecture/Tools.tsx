@@ -1,6 +1,7 @@
 import { useId, useState } from "react";
 import type { Api } from "@maycombhq/core";
 import { api, ApiError, useApi } from "../../api/client.js";
+import { hostBridge } from "../../api/bridge.js";
 import { COPY } from "../../copy.js";
 import type { CanvasGraph } from "./model.js";
 import { WORDS } from "./words.js";
@@ -35,39 +36,56 @@ export interface ToolsState {
   compareWith?: Snapshot;
 }
 
-/** Save text as a file the person downloads. */
-function download(name: string, text: string, type: string) {
+type SaveEnd = "saved" | "cancelled" | "failed" | undefined;
+
+/**
+ * Save text as a file. In the browser it downloads; a VS Code panel can't download (ADR 0097),
+ * so there the extension asks where with its Save dialog and says how it went.
+ */
+async function download(name: string, text: string, type: string): Promise<SaveEnd> {
+  const b = hostBridge();
+  if (b) return b.saveFile(name, text, "utf8");
   const url = URL.createObjectURL(new Blob([text], { type }));
   const a = document.createElement("a");
   a.href = url;
   a.download = name;
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+  return undefined;
 }
 
 /** The SVG drawn onto a canvas and saved as a PNG, at twice its size. */
-function downloadPng(name: string, svg: string) {
-  const img = new Image();
-  const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
-  img.onload = () => {
-    const c = document.createElement("canvas");
-    c.width = img.width * 2;
-    c.height = img.height * 2;
-    const g = c.getContext("2d");
-    g?.scale(2, 2);
-    g?.drawImage(img, 0, 0);
-    URL.revokeObjectURL(url);
-    c.toBlob((b) => {
-      if (!b) return;
-      const u = URL.createObjectURL(b);
-      const a = document.createElement("a");
-      a.href = u;
-      a.download = name;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(u), 1000);
-    });
-  };
-  img.src = url;
+function downloadPng(name: string, svg: string): Promise<SaveEnd> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onerror = () => resolve("failed");
+    img.onload = () => {
+      const c = document.createElement("canvas");
+      c.width = img.width * 2;
+      c.height = img.height * 2;
+      const g = c.getContext("2d");
+      g?.scale(2, 2);
+      g?.drawImage(img, 0, 0);
+      const b = hostBridge();
+      if (b) {
+        const data = c.toDataURL("image/png").split(",")[1] ?? "";
+        void b.saveFile(name, data, "base64").then(resolve);
+        return;
+      }
+      c.toBlob((blob) => {
+        if (!blob) return resolve("failed");
+        const u = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = u;
+        a.download = name;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(u), 1000);
+        resolve(undefined);
+      });
+    };
+    // A data address, which a VS Code panel's page may load (a blob one it may not).
+    img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+  });
 }
 
 function printSvg(svg: string, title: string) {
@@ -85,6 +103,8 @@ export function CanvasTools(p: {
   allBoxes: number;
   state: ToolsState;
   onChange(s: ToolsState): void;
+  /** A kept view's lens and box, opened as a link to them would open them. */
+  onOpenView?(lens: string, node: string): void;
   selected?: string;
   onSelect(id: string): void;
   labelOf(id: string): string;
@@ -102,6 +122,12 @@ export function CanvasTools(p: {
   const [open, setOpen] = useState(false);
   const [viewName, setViewName] = useState("");
   const [saved, setSaved] = useState<string | undefined>();
+  const [exported, setExported] = useState<string | undefined>();
+  // How a save in a VS Code panel went (the browser's download says so itself).
+  const said = async (p0: Promise<SaveEnd>) => {
+    const end = await p0;
+    setExported(end ? T.exportEnd[end] : undefined);
+  };
   const [error, setError] = useState<string | undefined>();
   const views = useApi<Api.SavedCanvasViewsT>(open ? "/api/graph/views" : undefined);
   const s = p.state;
@@ -341,15 +367,16 @@ export function CanvasTools(p: {
                     <button
                       type="button"
                       className="link"
-                      onClick={() =>
+                      onClick={() => {
                         p.onChange({
                           ...s,
                           filter: v.filter,
                           layers: { ...s.layers, ...v.layers },
                           overlay: v.overlay,
                           mismatches: v.mismatches,
-                        })
-                      }
+                        });
+                        if (v.lens !== p.lens || v.node !== p.node) p.onOpenView?.(v.lens, v.node);
+                      }}
                     >
                       {T.open} {v.name}
                     </button>
@@ -376,7 +403,10 @@ export function CanvasTools(p: {
                 disabled={!/^[a-z0-9][a-z0-9-]{0,62}$/.test(viewName)}
                 onClick={() => void keep()}
               >
-                {T.save}
+                {/* A name kept already is replaced, and the button says so. */}
+                {views.state === "ready" && views.data.views.some((v) => v.name === viewName)
+                  ? T.replace(viewName)
+                  : T.save}
               </button>
             </div>
             {saved && (
@@ -397,7 +427,9 @@ export function CanvasTools(p: {
               <button
                 type="button"
                 className="btn"
-                onClick={() => download(`${p.name}.mmd`, toMermaid(p.graph), "text/plain")}
+                onClick={() =>
+                  void said(download(`${p.name}.mmd`, toMermaid(p.graph), "text/plain"))
+                }
               >
                 {T.exports.mermaid}
               </button>
@@ -405,7 +437,9 @@ export function CanvasTools(p: {
                 type="button"
                 className="btn"
                 onClick={() =>
-                  download(`${p.name}.drawio`, toDrawio(p.graph, p.placed), "application/xml")
+                  void said(
+                    download(`${p.name}.drawio`, toDrawio(p.graph, p.placed), "application/xml"),
+                  )
                 }
               >
                 {T.exports.drawio}
@@ -413,25 +447,35 @@ export function CanvasTools(p: {
               <button
                 type="button"
                 className="btn"
-                onClick={() => download(`${p.name}.svg`, toSvg(p.graph, p.placed), "image/svg+xml")}
+                onClick={() =>
+                  void said(download(`${p.name}.svg`, toSvg(p.graph, p.placed), "image/svg+xml"))
+                }
               >
                 {T.exports.svg}
               </button>
               <button
                 type="button"
                 className="btn"
-                onClick={() => downloadPng(`${p.name}.png`, toSvg(p.graph, p.placed))}
+                onClick={() => void said(downloadPng(`${p.name}.png`, toSvg(p.graph, p.placed)))}
               >
                 {T.exports.png}
               </button>
-              <button
-                type="button"
-                className="btn"
-                onClick={() => printSvg(toSvg(p.graph, p.placed), p.name)}
-              >
-                {T.exports.pdf}
-              </button>
+              {/* A panel opens no print window: there, the SVG is saved and printed from a browser. */}
+              {!hostBridge() && (
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => printSvg(toSvg(p.graph, p.placed), p.name)}
+                >
+                  {T.exports.pdf}
+                </button>
+              )}
             </div>
+            {exported && (
+              <p role="status" className="work-say">
+                {exported}
+              </p>
+            )}
           </div>
         </div>
       )}

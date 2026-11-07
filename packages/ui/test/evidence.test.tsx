@@ -123,6 +123,11 @@ describe("the facts on a line, and what evidence lacks", () => {
     expect(evidenceGaps(undefined, [{ file: ACCOUNT, line: 18 }])).toEqual([]);
   });
 
+  it("says a pairing with an outside system as a pairing, not as an edit", () => {
+    expect(E.correction("link", "pat", "Northwind Pay")).toBe("Paired with Northwind Pay by pat");
+    expect(E.correction("edit", "pat")).toBe("Corrected by pat");
+  });
+
   it("weighs a record's evidence across repos, and a box with a record but nothing cited", () => {
     const of = (r: string) => (r === "forge-ledger" ? VIEW : undefined);
     expect(gapsOfEvidence([{ repo: "forge-ledger", at: `${ACCOUNT}:18` }], of)).toEqual([]);

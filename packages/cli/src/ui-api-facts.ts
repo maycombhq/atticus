@@ -176,9 +176,11 @@ async function repoFactsViewNow(root: string, repo: string): Promise<View> {
       ...(corr ? { correction: corr } : {}),
     };
   });
-  const stale = applyCorrections(f.facts, c.corrections)
-    .stale.filter((s) => s.why === "none")
-    .map((s) => s.correction.fact);
+  const staleAll = applyCorrections(f.facts, c.corrections).stale;
+  const stale = staleAll.filter((s) => s.why === "none").map((s) => s.correction.fact);
+  // A correction or pairing verify can't apply says why here, or it would wait for good.
+  for (const s of staleAll)
+    if (s.why === "invalid") problems.push({ file: cFile, message: s.message });
   const questions = await listQuestions(root, { repo, state: "open" }).then(
     (l) => l.questions.map((q) => ({ id: q.id, question: q.question, evidence: q.evidence })),
     () => [],

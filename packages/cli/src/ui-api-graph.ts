@@ -57,6 +57,18 @@ const keyOf = (k: string) => {
   return k;
 };
 
+/**
+ * A file and line as VS Code's link to open it: each path segment encoded (a # or ? in a folder
+ * name would end the path), the slashes and a Windows drive's colon kept.
+ */
+export function vscodeFileLink(path: string, line: number): string {
+  const posix = path.replace(/\\/g, "/");
+  const segs = (posix.startsWith("/") ? posix.slice(1) : posix)
+    .split("/")
+    .map((x) => (/^[A-Za-z]:$/.test(x) ? x : encodeURIComponent(x)));
+  return `vscode://file/${segs.join("/")}:${line}`;
+}
+
 export function uiGraphRoutes(r: Router, ctx: ServerContext): Router {
   // beta.21: the estate is built once per catalog state, not on every box opened. The files are
   // checked at most once a second, and at once when the app sees a catalog file change.
@@ -175,13 +187,12 @@ export function uiGraphRoutes(r: Router, ctx: ServerContext): Router {
             } satisfies Api.CodeLinkT,
           };
         const path = join(dir, ...m[1]!.split("/"));
-        const posix = path.replace(/\\/g, "/");
         return {
           status: 200,
           body: {
             path,
             line,
-            vscode: `vscode://file/${encodeURI(posix.startsWith("/") ? posix.slice(1) : posix)}:${line}`,
+            vscode: vscodeFileLink(path, line),
             idea: `idea://open?file=${encodeURIComponent(path)}&line=${line}`,
           } satisfies Api.CodeLinkT,
         };

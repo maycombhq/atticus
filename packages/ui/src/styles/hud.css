@@ -1421,7 +1421,7 @@ a.q-item[aria-current="true"] {
   overflow: hidden;
   pointer-events: none;
 }
-.loading-bar.panel {
+.loading-bar.inline {
   position: relative;
   height: 3px;
   border-radius: 2px;

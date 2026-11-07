@@ -101,6 +101,9 @@ export function MismatchesPanels({ view }: { view: View_ }) {
         {links.map(({ l, list }) => (
           <LinkFindings key={l.key} link={l} list={list} />
         ))}
+        {links.length === 0 && (
+          <p className="state empty">{show === "all" ? M.noneAtAll : M.noneShown}</p>
+        )}
       </div>
       {view.notes.length > 0 && (
         <details>

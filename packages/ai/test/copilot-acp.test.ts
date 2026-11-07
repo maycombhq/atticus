@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { AgentDefinition, Runtime } from "@maycombhq/core";
+import { killTree } from "../src/copilot-acp.js";
 import {
   AcpSignInError,
   atticusArgvOf,
@@ -603,5 +604,22 @@ describe("the copilot-acp runtime (C5, ADR 0171)", () => {
       { root: temp(), env: { ATTICUS_ACP_SESSION: "1" } },
     );
     expect(rt.kind).toBe("hand-off");
+  });
+});
+
+describe("stopping the language server", () => {
+  it("ends the whole tree on Windows (the .cmd shim's cmd.exe and what it started)", () => {
+    const ran: { cmd: string; args: readonly string[] }[] = [];
+    let killed = 0;
+    const run = ((cmd: string, args: readonly string[]) => {
+      ran.push({ cmd, args });
+      return { on: () => undefined };
+    }) as never;
+    killTree({ pid: 4242, kill: () => !!++killed }, "win32", run);
+    expect(ran).toEqual([{ cmd: "taskkill", args: ["/pid", "4242", "/T", "/F"] }]);
+    expect(killed).toBe(0);
+    killTree({ pid: 4242, kill: () => !!++killed }, "linux", run);
+    expect(killed).toBe(1);
+    expect(ran).toHaveLength(1);
   });
 });

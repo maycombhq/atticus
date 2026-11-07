@@ -38,6 +38,10 @@ export interface Ctx {
   stopping: boolean;
   consoleOpen: boolean;
   setConsoleOpen(open: boolean): void;
+  /** Fetches a tab's lines from its first kept line (the poll only brings its last ones). */
+  loadEarlier(tab: string): void;
+  /** The run this page saw under way: only its end is news on the strip. */
+  watched?: string;
 }
 
 /** Exported for tests, which render the strip and Console at a given run. */
@@ -62,6 +66,48 @@ export function withLines(run: Run, tab: string, title: string, at: number, line
   return { ...run, tabs };
 }
 
+/**
+ * A polled run (each tab's last lines only) into the one the page has. Another run replaces it;
+ * the same run keeps the lines it has and adds the new ones. A tab the poll is ahead of (lines
+ * missed between polls) is named in `gaps`, from the line it has, for the page to fetch.
+ */
+export function mergePolled(
+  old: Run | null,
+  polled: Run | null,
+): { run: Run | null; gaps: { tab: string; from: number }[] } {
+  if (!polled || !old || old.runId !== polled.runId) return { run: polled, gaps: [] };
+  const gaps: { tab: string; from: number }[] = [];
+  const tabs = polled.tabs.map((p) => {
+    const t = old.tabs.find((x) => x.id === p.id);
+    if (!t) return p;
+    const have = t.from + t.lines.length;
+    if (p.from > have) {
+      gaps.push({ tab: p.id, from: have });
+      return { ...p, from: t.from, lines: t.lines };
+    }
+    const fresh = p.lines.slice(have - p.from);
+    return { ...p, from: t.from, lines: fresh.length ? [...t.lines, ...fresh] : t.lines };
+  });
+  return { run: { ...old, ...polled, tabs }, gaps };
+}
+
+/** A tab's lines from `from` on (the tabs route's answer) put in place of the ones it has. */
+export function withSpan(run: Run, tab: string, from: number, lines: string[]): Run {
+  return {
+    ...run,
+    tabs: run.tabs.map((t) => {
+      if (t.id !== tab) return t;
+      const have = t.from + t.lines.length;
+      const end = from + lines.length;
+      if (from > have || end < t.from) return t;
+      // The lines before `from` that the tab had, the span, then any it has past the span.
+      const before = from > t.from ? t.lines.slice(0, from - t.from) : [];
+      const after = have > end ? t.lines.slice(end - t.from) : [];
+      return { ...t, from: Math.min(from, t.from), lines: [...before, ...lines, ...after] };
+    }),
+  };
+}
+
 export function CopilotRunsProvider({ children }: { children: ReactNode }) {
   const [run, setRun] = useState<Run | null>(null);
   const [allowed, setAllowed] = useState(false);
@@ -70,18 +116,44 @@ export function CopilotRunsProvider({ children }: { children: ReactNode }) {
   const [asking, setAsking] = useState<StartAsk | undefined>();
   const [stopping, setStopping] = useState(false);
   const [consoleOpen, setConsoleOpen] = useState(false);
+  const runNow = useRef<Run | null>(null);
+  runNow.current = run;
+  const [watched, setWatched] = useState<string | undefined>();
+  const runningId = run?.state === "running" ? run.runId : undefined;
+  useEffect(() => {
+    if (runningId) setWatched(runningId);
+  }, [runningId]);
 
-  const refresh = useCallback(async (quiet = false) => {
+  /** A tab's lines from a line on, fetched and put in place (catching up, or earlier lines). */
+  const span = useCallback(async (runId: string, tab: string, from: number, quiet = false) => {
     try {
-      const c = await api<Api.CopilotRunCurrentT>("/api/copilot-runs/current", { quiet });
-      setRun(c.run);
-      setAllowed(c.allowed);
-      setWhy(c.why);
-      setModel(c.model);
+      const r = await api<{ from: number; lines: string[] }>(
+        `/api/copilot-runs/${encodeURIComponent(runId)}/tabs/${encodeURIComponent(tab)}?from=${from}`,
+        { quiet },
+      );
+      setRun((old) => (old && old.runId === runId ? withSpan(old, tab, r.from, r.lines) : old));
     } catch {
-      // An older server has no runs: the buttons stay hidden.
+      // The run is gone (the server restarted): the next poll says so.
     }
   }, []);
+
+  const refresh = useCallback(
+    async (quiet = false) => {
+      try {
+        const c = await api<Api.CopilotRunCurrentT>("/api/copilot-runs/current", { quiet });
+        // The gaps from the run as it is now; the state takes the merge at its own turn.
+        const { gaps } = mergePolled(runNow.current, c.run);
+        setRun((old) => mergePolled(old, c.run).run);
+        if (c.run) for (const g of gaps) void span(c.run.runId, g.tab, g.from, true);
+        setAllowed(c.allowed);
+        setWhy(c.why);
+        setModel(c.model);
+      } catch {
+        // An older server has no runs: the buttons stay hidden.
+      }
+    },
+    [span],
+  );
   useEffect(() => {
     void refresh();
   }, [refresh]);
@@ -142,8 +214,12 @@ export function CopilotRunsProvider({ children }: { children: ReactNode }) {
       stopping,
       consoleOpen,
       setConsoleOpen,
+      loadEarlier: (tab: string) => {
+        if (run) void span(run.runId, tab, 0);
+      },
+      ...(watched ? { watched } : {}),
     }),
-    [run, allowed, why, model, stop, stopping, consoleOpen],
+    [run, allowed, why, model, stop, stopping, consoleOpen, span, watched],
   );
   return (
     <RunsContext.Provider value={value}>
@@ -181,10 +257,16 @@ export function ConfirmRun(p: {
     yes.current?.focus();
     return () => before?.focus?.();
   }, []);
+  const named = (p.ask.repos ?? []).join(", ");
+  // Stale or gaps narrowed to some repos says which.
   const what =
     p.ask.kind === "repos"
-      ? T.confirm.what.repos((p.ask.repos ?? []).join(", "), !!p.ask.force)
-      : T.confirm.what[p.ask.kind];
+      ? T.confirm.what.repos(named, !!p.ask.force)
+      : named && p.ask.kind === "stale"
+        ? T.confirm.what.staleRepos(named)
+        : named && p.ask.kind === "gaps"
+          ? T.confirm.what.gapsRepos(named)
+          : T.confirm.what[p.ask.kind];
   const go = async () => {
     setBusy(true);
     setError(undefined);
@@ -286,13 +368,30 @@ export function RunWithCopilot(p: { ask: StartAsk; label: string; className?: st
 }
 
 /** How far the run is: under the top bar while it runs, and its end until dismissed. */
+const DISMISSED = "atticus.copilotRun.dismissed";
+const dismissedNow = (): string | undefined => {
+  try {
+    return sessionStorage.getItem(DISMISSED) ?? undefined;
+  } catch {
+    return undefined;
+  }
+};
+
 export function RunStrip() {
   const c = useCopilotRuns();
-  const [dismissed, setDismissed] = useState<string | undefined>();
+  const [dismissed, setDismissedState] = useState<string | undefined>(dismissedNow);
+  const setDismissed = (k: string) => {
+    setDismissedState(k);
+    try {
+      sessionStorage.setItem(DISMISSED, k);
+    } catch {
+      // Kept for this page only.
+    }
+  };
   const run = c?.run;
   if (!c || !run || dismissed === `${run.runId}:${run.state}`) return null;
-  // An ended run from before this page opened isn't news.
-  if (run.state !== "running" && !run.finishedAt) return null;
+  // An ended run is news only to a page that saw it under way (not after a reload, or a day on).
+  if (run.state !== "running" && c.watched !== run.runId) return null;
   const p = run.progress;
   const t = run.totals;
   const running = run.state === "running";
@@ -381,6 +480,13 @@ export function RunConsole() {
   const shown = tabs.find((t) => t.id === tab) ?? tabs[0];
   // A new session's tab is shown when it starts, while following.
   const last = tabs.at(-1)?.id;
+  // Another run starts on its own Run tab, following, with no search.
+  const runId = run?.runId;
+  useEffect(() => {
+    setTab("run");
+    setFollow(true);
+    setQ("");
+  }, [runId]);
   useEffect(() => {
     if (follow && last) setTab(last);
   }, [last, follow]);
@@ -503,7 +609,12 @@ export function RunConsole() {
                 aria-labelledby={`console-tab-${shown?.id ?? "run"}`}
               >
                 {shown && shown.from > 0 && (
-                  <p className="work-say">{T.console.earlier(shown.from)}</p>
+                  <p className="work-say row" style={{ gap: 8, alignItems: "center" }}>
+                    {T.console.earlier(shown.from)}
+                    <button type="button" className="btn" onClick={() => c.loadEarlier(shown.id)}>
+                      {T.console.loadEarlier}
+                    </button>
+                  </p>
                 )}
                 <pre ref={log} className="run-console-log" role="log" aria-live="off" tabIndex={0}>
                   {lines.length ? lines.join("\n") : q ? T.console.noMatch(q) : T.console.noLines}

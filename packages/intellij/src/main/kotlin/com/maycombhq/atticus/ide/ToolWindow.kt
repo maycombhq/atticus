@@ -162,6 +162,7 @@ class AppPanel(private val project: Project, parent: Disposable) : SimpleToolWin
             browser = it
             browserUrl = url
             escapeToPage(it)
+            saveDownloads(it)
         }
         return b.component
     }
@@ -183,6 +184,27 @@ private fun escapeToPage(b: JBCefBrowser) {
         com.intellij.openapi.actionSystem.CustomShortcutSet(javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_ESCAPE, 0)),
         b.component,
         b,
+    )
+}
+
+/**
+ * The canvas's exports (Mermaid, draw.io, SVG, PNG) are downloads. The embedded browser saves
+ * none by itself, so each asks where with the system's Save dialog, under the name the app gave.
+ */
+private fun saveDownloads(b: JBCefBrowser) {
+    b.jbCefClient.addDownloadHandler(
+        object : org.cef.handler.CefDownloadHandlerAdapter() {
+            override fun onBeforeDownload(
+                browser: org.cef.browser.CefBrowser?,
+                item: org.cef.callback.CefDownloadItem?,
+                suggestedName: String?,
+                callback: org.cef.callback.CefBeforeDownloadCallback?,
+            ): Boolean {
+                callback?.Continue(suggestedName ?: "", true)
+                return true
+            }
+        },
+        b.cefBrowser,
     )
 }
 

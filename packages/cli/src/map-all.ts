@@ -189,6 +189,8 @@ export interface PlanItem {
   batches?: number;
   /** ADR 0167: a top-up's rule sets, those the read lacked that some file of it is read for. */
   sets?: string[];
+  /** G4: the rules a top-up with nothing to read is recorded as given (it lacked them). */
+  given?: string[];
   /** ADR 0170: read whole again (--force), the facts on file kept as already kept. */
   force?: true;
 }
@@ -419,7 +421,7 @@ async function rulesPartsOf(
   commit: string,
   limit: number,
   o: { save?: boolean; models?: ModelsMode } = {},
-): Promise<{ parts: PlanPart[]; total: number; sets: string[] } | string> {
+): Promise<{ parts: PlanPart[]; total: number; sets: string[]; given: string[] } | string> {
   const dir = await checkoutOf(root, repo).catch(() => undefined);
   if (!dir) return "no clone to read: atticus workspace sync clones it";
   const p = await plannedTopUp(root, repo, {
@@ -444,7 +446,7 @@ async function rulesPartsOf(
     }))
     .filter((x) => !x.done)
     .map(({ done: _d, ...x }) => x);
-  return { parts, total: sessions.length, sets: ruleSetsOfFiles(sessions) };
+  return { parts, total: sessions.length, sets: ruleSetsOfFiles(sessions), given: p.lacking };
 }
 
 /**
@@ -621,6 +623,7 @@ export async function planEstate(
           ? `read before these reading rules: ${p.sets.join(", ")}`
           : "read before the reading rules there are now, but no file of it is one they apply to: recorded as read under them",
         sets: p.sets,
+        given: p.given,
         parts: p.parts,
         total: p.total,
         tokens: p.parts.reduce((n, x) => n + x.tokens, 0),
@@ -1085,7 +1088,8 @@ export async function mapAllCommand(
       // ADR 0167: nothing of the repo is one the new rules apply to: recorded as read under them.
       io.out("");
       io.out(`===== ${item.repo} (${where}): ${item.why} =====`);
-      await recordRulesNow(root, item.repo, item.commit);
+      // Only what this top-up was for: a rule that names no files waits for a whole read.
+      await recordRulesNow(root, item.repo, item.commit, item.given ?? []);
       repoState(item).done = true;
       totals.repos.add(item.repo);
       await save();

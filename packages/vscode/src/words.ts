@@ -15,6 +15,7 @@ export const WORDS = {
     `Atticus couldn't read which flows cite this file, so it shows no lenses for now: ${why}`,
   healthFailed: (why: string) => `Atticus couldn't check this machine and the metarepo: ${why}`,
   wholeEstate: "The whole estate",
+  saveExport: (name: string) => `Save ${name}`,
   diagramPick: "Open which repo on the Architecture canvas?",
   changeDiagramPick: "Open the diagram of which change?",
   estimatePick: "Open the estimate of which change?",

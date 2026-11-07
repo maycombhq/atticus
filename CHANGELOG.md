@@ -39,6 +39,17 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - A repo's facts view (the evidence on the canvas and Know) is worked out once per version of the files it reads (its facts, corrections, audit and the questions) and kept, so 40 repos' evidence comes back at once on a second look and after unrelated changes.
 - The canvas builds the estate once per state of the catalog, not on every box opened: the app starts building it as it opens, boxes opened together share one check of the catalog files, and a catalog file the app sees change is read on the next open. At 40 systems and about 4,900 records, opening a box after the first went from seconds to well under a second (a test at that size keeps it so).
 
+### Fixed before release (review)
+
+- A link a person paired on the canvas is `inferred`, not `verified`, and carries their evidence (`source: manual`, who), so a filter on verified links shows only what the code proves.
+- A rule that names no files is recorded as given only by a whole read: a top-up no longer marks it given, and `atticus rules activate` says it waits for `atticus map <repo> --force`. A read and a staleness check work out the repo's type the same way (its checkout's fingerprint too).
+- Another team's imported rules: `atticus rules activate <key> --team <team> --type <type>` sets one active; importing again keeps the ones you set active when they haven't changed them (a changed one comes back as a draft, said); `atticus rules list` lists every layer's file; two teams' active rules with one key are said.
+- The Connect panel says to verify a repo whose facts aren't all verified (`why: unverified`, local API 2.56.0), instead of "no calls on record"; a pairing to such a repo says the same rather than reading as broken. The cached estate join can no longer be kept under a newer stamp than the files it read.
+- The facts view says why a correction or pairing `atticus verify` can't apply, and the evidence says "Paired with <system> by <who>" for a pairing.
+- Copilot runs from the app: a poll gets each tab's last lines (`tail`) and fetches a tab's missed lines (`/api/copilot-runs/{runId}/tabs/{tab}`), with **Show earlier lines**; the strip shows a run's end only to a page that saw it run, and a dismissal lasts the session; a new run opens on its Run tab; the dialog names the repos a stale or gaps run reads; Stop on Windows ends the Copilot language server's whole process tree.
+- The canvas's exports save in a VS Code panel (the Save dialog) and in IntelliJ's; a panel's call that gets no answer gives up after a minute instead of leaving the bar on; a Run button's job polls no longer flash the loading bar; a kept view opens its lens and box, and keeping a name that exists says Replace.
+- Map › Mismatches says when no finding is of the kind picked, or none at all.
+
 ## 2.0.0-beta.20 (2026-11-06)
 
 - A gateway route with no forwarding call (no call `from` it) is a gap, as an entry no flow follows is: verify lists it under `entriesNoFlowFollows` (marked `route`) and `atticus map <repo> --gaps` asks for the call it forwards to its RouteRule's target. A proxy read with its routes and none of its forwarding calls drew nothing past the gateway, and a `--match` answer for its calls had nothing to apply to.

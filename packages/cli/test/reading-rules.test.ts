@@ -371,6 +371,85 @@ describe("atticus rules import", () => {
     // Pinned, always; and a ref that would be read as an option is refused before git sees it.
     expect(await no({ type: "fuse-service", team: "harbor" })).toBe(2);
     expect(await no({ type: "fuse-service", team: "harbor", at: "--output=/tmp/x" })).toBe(2);
+
+    // Set active with the copy's own scope; an imported copy is never added to or switches off.
+    const act = io();
+    expect(
+      await rulesSetCommand(
+        root,
+        "activate",
+        "house-client",
+        { imported: "harbor", type: "fuse-service" },
+        {},
+        act.io,
+      ),
+    ).toBe(0);
+    expect(act.out.join(" ")).toContain("next whole read");
+    expect((await effectiveRules(root, "forge-refunds")).rules.map((r) => r.key)).toEqual([
+      "house-client",
+    ]);
+    expect(
+      await rulesSetCommand(
+        root,
+        "off",
+        "house-client",
+        { imported: "harbor", type: "fuse-service" },
+        { reason: "x" },
+        io().io,
+      ),
+    ).toBe(2);
+    // Every layer file is listed, the imported ones too.
+    const l = io();
+    expect(await rulesListCommand(root, undefined, {}, l.io)).toBe(0);
+    expect(l.out.join("\n")).toContain("imported/harbor/fuse-service.yaml: 1 active");
+
+    // Imported again: a rule set active stays active when they haven't changed it; a changed
+    // one comes back as a draft, said.
+    git("tag", "v1.1");
+    const again = io();
+    expect(
+      await rulesImportCommand(
+        root,
+        theirs,
+        { type: "fuse-service", team: "harbor", at: "v1.0" },
+        again.io,
+      ),
+    ).toBe(0);
+    expect(again.out.join(" ")).toContain("1 still active as before (house-client)");
+    write(
+      theirs,
+      "org-pack/reading-rules/types/fuse-service.yaml",
+      `schemaVersion: 1\nrules:\n  - key: house-client\n    rule: "Calls through HarborClient.send name their path first."\n`,
+    );
+    git("add", ".");
+    git("commit", "-qm", "reworded");
+    git("tag", "v2.0");
+    const changed = io();
+    expect(
+      await rulesImportCommand(
+        root,
+        theirs,
+        { type: "fuse-service", team: "harbor", at: "v2.0" },
+        changed.io,
+      ),
+    ).toBe(0);
+    expect(changed.out.join(" ")).toContain("drafts again until reviewed: house-client");
+    expect((await effectiveRules(root, "forge-refunds")).rules).toEqual([]);
+  });
+
+  it("says when two teams' copies give one key", async () => {
+    const root = metarepo();
+    const rule = (team: string) =>
+      write(
+        root,
+        `org-pack/reading-rules/imported/${team}/fuse-service.yaml`,
+        `schemaVersion: 1\nrules:\n  - key: house-client\n    status: active\n    rule: "${team}'s way."\n`,
+      );
+    rule("harbor");
+    rule("payments");
+    const e = await effectiveRules(root, "forge-refunds");
+    expect(e.rules.map((r) => r.rule)).toEqual(["payments's way."]);
+    expect(e.problems.join(" ")).toContain("both have an active rule house-client");
   });
 });
 

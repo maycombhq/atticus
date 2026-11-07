@@ -168,6 +168,15 @@ export async function runOnServer(
   }
 }
 
+/**
+ * The calls a step on the server makes: its start is counted by the loading bar, the job polls
+ * (every 0.7 s for minutes) are quiet, or the bar would blink for the whole run.
+ */
+export const quietReads =
+  (a: typeof api) =>
+  <T,>(path: string, o?: { method?: string; body?: unknown }): Promise<T> =>
+    a<T>(path, { ...o, quiet: !o?.method || o.method === "GET" });
+
 export type RunState =
   | { phase: "idle"; lines: string[] }
   | { phase: "running"; lines: string[] }
@@ -297,7 +306,7 @@ export function RunStep({ command }: { command: string }) {
     const run = bridge
       ? bridge.runStep(args, onLine)
       : runOnServer(args, {
-          call: (path, o) => api(path, o ?? {}),
+          call: quietReads(api),
           wait: (ms) => new Promise((r) => setTimeout(r, ms)),
           onLine,
           onJob: (j) => {

@@ -1141,7 +1141,7 @@ export async function mapCommand(
         return 0;
       }
       if (!t.files.length) {
-        await recordRulesNow(root, repo, commit);
+        await recordRulesNow(root, repo, commit, t.lacking);
         io.out(
           `No file of ${repo} is one the reading rules added since it was read apply to (${t.lacking.join(", ")}): its read is recorded as under the rules there are now.`,
         );
@@ -1467,7 +1467,8 @@ async function finish(root: string, s: MapState, io: Output, o: MapOptions): Pro
   // re-read reads only what changed, so it keeps what the read on file was given).
   if (last && !last.rejected && !s.reread) {
     const { recordRulesNow } = await import("./map-rules.js");
-    await recordRulesNow(root, s.repo, s.commit);
+    // A top-up was given its sets only; a whole read, every rule there is.
+    await recordRulesNow(root, s.repo, s.commit, s.sets);
   }
   const rel = factsRelOf(root);
   if (o.json) {

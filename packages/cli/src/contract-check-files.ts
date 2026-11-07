@@ -264,7 +264,7 @@ export interface ContractCheckOnFile {
  * pack, the questions and the curated catalog, by path, size and modification time. The
  * generated catalog is left out: only a write of the facts changes it, and that changes facts/.
  */
-async function stampOf(root: string): Promise<string> {
+export async function stampOf(root: string): Promise<string> {
   const out: string[] = [];
   const walk = async (dir: string, rel: string): Promise<void> => {
     const entries = await readdir(dir, { withFileTypes: true }).catch(() => undefined);

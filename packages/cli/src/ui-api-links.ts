@@ -30,7 +30,7 @@ import {
   type Router,
   type ServerContext,
 } from "@maycombhq/server";
-import { estateJoinOnFile } from "./contract-check-files.js";
+import { estateJoinOnFile, stampOf } from "./contract-check-files.js";
 import { safeMessage, withFileLock } from "./file-lock.js";
 import { intakeContext } from "./intake-commands.js";
 
@@ -50,7 +50,7 @@ const quiet = { out: () => undefined, err: () => undefined };
 async function boxApis(
   root: string,
   op: Awaited<ReturnType<typeof loadOrgPack>>,
-  estate: { repos: { repo: string; facts: readonly Fact[] }[] },
+  estate: { repos: { repo: string; facts: readonly Fact[] }[]; unverified?: string[] },
   to: Api.LinkBoxT,
 ): Promise<{ name: string; apis: CandidateApi[]; noApis?: Api.LinkCandidatesViewT["noApis"] }> {
   if (to.repo) {
@@ -76,7 +76,9 @@ async function boxApis(
       ...(apis.length
         ? {}
         : {
-            noApis: { why: "not-read" as const, command: `atticus map --all --repos ${to.repo}` },
+            noApis: estate.unverified?.includes(to.repo)
+              ? { why: "unverified" as const, command: `atticus verify ${to.repo}` }
+              : { why: "not-read" as const, command: `atticus map --all --repos ${to.repo}` },
           }),
     };
   }
@@ -121,8 +123,10 @@ async function context(root: string, from: string, to: Api.LinkBoxT) {
   const op = await loadOrgPack(orgPackDirOf(root));
   if (!estateRepos(op).some((r) => r.id === from))
     throw notFound(`No repo of the manifest is ${from}.`);
+  // The stamp before the files are read: a write landing meanwhile can't save an old join new.
+  const stamp = await stampOf(root);
   const estate = await estateFacts(root, op, "");
-  const join0 = await estateJoinOnFile(root, op, estate);
+  const join0 = await estateJoinOnFile(root, op, estate, stamp);
   const facts = estate.repos.find((r) => r.repo === from)?.facts ?? [];
   const b = await boxApis(root, op, estate, to);
   return { op, estate, join: join0, facts, b, pairs: estate.pairs[from] ?? {} };
@@ -168,7 +172,9 @@ export function uiLinkRoutes(
           apis: cands.apis,
           ...(c.facts.some((f) => f.kind === "call")
             ? {}
-            : { noCalls: { command: `atticus map --all --gaps --repos ${from}` } }),
+            : c.estate.unverified.includes(from)
+              ? { noCalls: { why: "unverified" as const, command: `atticus verify ${from}` } }
+              : { noCalls: { command: `atticus map --all --gaps --repos ${from}` } }),
           ...(c.b.noApis ? { noApis: c.b.noApis } : {}),
           ...(q && loose ? { rule: { question: q.id, calls: loose } } : {}),
         };
@@ -193,7 +199,10 @@ export function uiLinkRoutes(
         const corrections: FactCorrection[] = [];
         for (const p of pairs) {
           const f = calls.get(p.call);
-          if (!f) throw notFound(`${from} has no call ${p.call} on record.`);
+          if (!f)
+            throw c.estate.unverified.includes(from)
+              ? conflict(`${from}'s facts aren't all verified yet: atticus verify ${from} first.`)
+              : notFound(`${from} has no call ${p.call} on record.`);
           const api = apis.get(p.api);
           if (!api) throw notFound(`${c.b.name} has no API ${p.api} on record.`);
           corrections.push(

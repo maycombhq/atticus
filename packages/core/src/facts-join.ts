@@ -1428,7 +1428,11 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
         misses.push({
           call: end(call),
           target: pair.repo ?? "",
-          message: `${pair.by} paired ${call.component}'s call with ${what} on ${pair.repo}, and no entry of ${pair.repo} the facts name serves it now`,
+          // A repo the join doesn't read (its facts aren't all verified, or not read) isn't one
+          // whose entries changed: say what to do, not that the pairing broke.
+          message: input.repos.some((r) => r.repo === pair.repo)
+            ? `${pair.by} paired ${call.component}'s call with ${what} on ${pair.repo}, and no entry of ${pair.repo} the facts name serves it now`
+            : `${pair.by} paired ${call.component}'s call with ${what} on ${pair.repo}, whose facts the join doesn't read yet (not read, or not all verified: atticus verify ${pair.repo}); it joins once they are`,
         });
         leave(call, "target-no-route");
       }
@@ -2029,7 +2033,23 @@ export function joinRecords(result: FactsJoinResult, repos: readonly JoinRepo[])
   const flagsOf = joinFlagsOf;
   // F2, J0, J1: a guess (by path, a host's first label, a platform setting, a folder name, or
   // despite a conflict) is inferred, however declared its ends are.
-  const guessed = isGuessedJoin;
+  // G1 (ADR 0174): a person's pairing is their word, not code: inferred, with their evidence.
+  const guessed = (j: FactJoin) => isGuessedJoin(j) || !!j.paired;
+  const byPerson = (j: FactJoin): EvidenceT[] => {
+    const call = j.paired ? fact(j.call) : undefined;
+    return j.paired && call
+      ? [
+          {
+            source: "manual",
+            repo: j.call.repo,
+            path: call.cite.file,
+            line: call.cite.line,
+            side: "caller",
+            by: j.paired.by,
+          },
+        ]
+      : [];
+  };
   for (const j of result.joins) {
     if (j.how === "topic") {
       // As the merge pairs a publish with a listener: via the bus, async, at the topic.
@@ -2058,6 +2078,7 @@ export function joinRecords(result: FactsJoinResult, repos: readonly JoinRepo[])
           ...ev(j.call, "code", "caller"),
           ...(j.through ?? []).flatMap((t) => ev(t, "config", "caller")),
           ...ev(j.entry, "code", "callee"),
+          ...byPerson(j),
           ...(j.entryThrough ?? []).flatMap((t) => ev(t, "config", "callee")),
         ]),
       } as CatalogRecord);
@@ -2112,6 +2133,7 @@ export function joinRecords(result: FactsJoinResult, repos: readonly JoinRepo[])
             ...(h.exposedBy ?? []).flatMap((t) => ev(t, "infrastructure", "callee")),
           ]),
           ...ev(j.entry, "code", "callee"),
+          ...byPerson(j),
         ]),
       } as CatalogRecord);
       // One GatewayRoute per hop, each with the scopes its own route demands and the component it
@@ -2178,6 +2200,7 @@ export function joinRecords(result: FactsJoinResult, repos: readonly JoinRepo[])
         ...(j.tie ? ev(j.tie, "config", "caller") : []),
         ...(j.through ?? []).flatMap((t) => ev(t, "config", "caller")),
         ...ev(j.entry, "code", "callee"),
+        ...byPerson(j),
         ...(j.exposedBy ?? []).flatMap((t) => ev(t, "infrastructure", "callee")),
       ]),
     } as CatalogRecord);

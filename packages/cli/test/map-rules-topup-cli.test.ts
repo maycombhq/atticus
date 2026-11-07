@@ -19,6 +19,7 @@ import { doctorCounts } from "../src/doctor-counts.js";
 import { estateFresh, estateFreshness } from "../src/estate-fresh.js";
 import { mapAllCommand, preparedLine, type Clock, type MapAllPlan } from "../src/map-all.js";
 import { mapCommand } from "../src/map-commands.js";
+import { recordRulesNow } from "../src/map-rules.js";
 import { loadReadPlan } from "../src/map-parts.js";
 import { main } from "../src/main.js";
 import { nextSteps, readNextState } from "../src/next-commands.js";
@@ -242,6 +243,41 @@ describe("an organisation's reading rule tops up only the files it names (ADR 01
     });
     const again = await dryRun(root, { stale: true });
     expect(again.items.find((i) => i.repo === "forge-cards")).toBeUndefined();
+  });
+
+  it("records a top-up as given only its rules; a whole read, every rule there is", async () => {
+    const root = linkEstate();
+    recordRules(root, "forge-cards", rulesNow());
+    write(
+      root,
+      "org-pack/reading-rules/org.yaml",
+      [
+        "schemaVersion: 1",
+        "rules:",
+        "  - key: no-files",
+        '    rule: "Every read names the bus a topic is on."',
+        "  - key: with-files",
+        "    rule: \"A controller's class-level @RequestMapping is part of every route's path.\"",
+        '    files: ["src/main/java/**/*Controller.java"]',
+        "",
+      ].join("\n"),
+    );
+    const plan = await dryRun(root, { stale: true });
+    const given = plan.items.find((i) => i.repo === "forge-cards")!.sets!;
+    expect(given.map((x) => x.split("@")[0])).toEqual(["org:with-files"]);
+    const commit = (await loadReadPlan(root, "forge-cards"))!.commit;
+    await recordRulesNow(root, "forge-cards", commit, given);
+    const sets = (await loadReadPlan(root, "forge-cards"))!.rules!.sets;
+    expect(sets.filter((x) => x.startsWith("org:")).map((x) => x.split("@")[0])).toEqual([
+      "org:with-files",
+    ]);
+    // A whole read was given the rule with no files too.
+    await recordRulesNow(root, "forge-cards", commit);
+    const all = (await loadReadPlan(root, "forge-cards"))!.rules!.sets;
+    expect(all.filter((x) => x.startsWith("org:")).map((x) => x.split("@")[0])).toEqual([
+      "org:no-files",
+      "org:with-files",
+    ]);
   });
 });
 

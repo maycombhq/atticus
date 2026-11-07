@@ -182,11 +182,14 @@ export async function estateFacts(
   /** G1 (ADR 0174): the pairings people made on the canvas, by repo and call fact id. */
   pairs: Record<string, Record<string, PersonPair>>;
   notes: string[];
+  /** The repos left out as not all verified yet (G1: the Connect panel says verify them first). */
+  unverified: string[];
 }> {
   const repos: { repo: string; facts: Fact[] }[] = [];
   const targets: Record<string, Record<string, string>> = {};
   const pairs: Record<string, Record<string, PersonPair>> = {};
   const notes: string[] = [];
+  const unverified: string[] = [];
   const questions = (
     await listQuestions(root, { step: TARGETS_STEP }).catch(() => ({ questions: [] }))
   ).questions;
@@ -203,6 +206,7 @@ export async function estateFacts(
       continue;
     }
     if (parsed.facts.some((f) => f.verified === "none")) {
+      unverified.push(r.id);
       notes.push(
         `${r.id}: some of its facts aren't verified yet, so the estate join leaves them out (atticus verify ${r.id}).`,
       );
@@ -214,5 +218,5 @@ export async function estateFacts(
     const paired = await pairsOfRepo(root, r.id, parsed.facts);
     if (Object.keys(paired).length) pairs[r.id] = paired;
   }
-  return { repos, targets, pairs, notes };
+  return { repos, targets, pairs, notes, unverified };
 }

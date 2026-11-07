@@ -262,6 +262,30 @@ const needsShell = (command: string) =>
   process.platform === "win32" && !/\.(exe|com)$/i.test(command);
 const quoteForCmd = (a: string) => (/[\s"]/.test(a) ? `"${a.replace(/"/g, '""')}"` : a);
 
+/**
+ * Ends a process and what it started. On Windows the server runs under cmd.exe (a .cmd shim):
+ * killing cmd.exe would leave the language server running, so the whole tree goes, by taskkill.
+ */
+export function killTree(
+  child: Pick<ChildProcess, "pid" | "kill">,
+  platform: NodeJS.Platform = process.platform,
+  run: typeof spawn = spawn,
+): void {
+  if (platform === "win32" && child.pid) {
+    try {
+      const k = run("taskkill", ["/pid", String(child.pid), "/T", "/F"], {
+        windowsHide: true,
+        stdio: "ignore",
+      });
+      k.on("error", () => child.kill());
+      return;
+    } catch {
+      // No taskkill: the process itself, at least.
+    }
+  }
+  child.kill();
+}
+
 /** The real server: the program with its words, stdio piped, no window; a shell only for a .cmd on Windows. */
 export const spawnAcpServer: AcpSpawner = (o) => {
   const shell = needsShell(o.command);
@@ -323,7 +347,7 @@ export const spawnAcpServer: AcpSpawner = (o) => {
       child.stdin?.end();
       await new Promise<void>((res) => {
         const t = setTimeout(() => {
-          child.kill();
+          killTree(child);
           res();
         }, 2000);
         closes.push(() => {
@@ -966,7 +990,7 @@ export async function copilotAcpProbe(o: {
       res({ ok: false, text: (e as Error).message });
       return;
     }
-    const t = setTimeout(() => child.kill(), o.timeoutMs ?? 60_000);
+    const t = setTimeout(() => killTree(child), o.timeoutMs ?? 60_000);
     child.stdout?.on("data", (d: Buffer) => (out += d.toString("utf8")));
     child.stderr?.on("data", (d: Buffer) => (out += d.toString("utf8")));
     child.on("error", (e) => {

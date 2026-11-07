@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { Api, DiagramLayout, parseRecord, recordPath, serializeRecord } from "@maycombhq/core";
 import { startServer, type RunningServer } from "@maycombhq/server";
-import { uiGraphRoutes } from "../src/ui-api-graph.js";
+import { uiGraphRoutes, vscodeFileLink } from "../src/ui-api-graph.js";
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), "../../../fixtures");
 
@@ -229,5 +229,12 @@ describe("canvas views kept in the metarepo, and a cited line to open (ADR 0175,
     expect(r.line).toBe(8);
     expect(r.path ?? r.missing).toBeTruthy();
     expect((await get("/api/code-link?repo=forge-ledger&at=../../etc/passwd:1")).status).toBe(400);
+    // A folder with a # or ? in its name keeps its path; a drive's colon stays as it is.
+    expect(vscodeFileLink("/home/pat/forge #2/A?.java", 8)).toBe(
+      "vscode://file/home/pat/forge%20%232/A%3F.java:8",
+    );
+    expect(vscodeFileLink("C:\\work\\forge\\A.java", 3)).toBe(
+      "vscode://file/C:/work/forge/A.java:3",
+    );
   });
 });

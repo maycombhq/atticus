@@ -583,6 +583,10 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
               placed={(id) => laid?.boxes[id]}
               lens={lens}
               node={shown}
+              onOpenView={(l, n) => {
+                const to = `#/${screen}?lens=${encodeURIComponent(l)}&node=${encodeURIComponent(n)}`;
+                if (window.location.hash !== to) window.location.hash = to;
+              }}
               {...(tools.compareWith
                 ? (() => {
                     const c = compare(tools.compareWith, graph);

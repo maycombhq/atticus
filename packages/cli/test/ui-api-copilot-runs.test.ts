@@ -153,6 +153,16 @@ describe("an unattended Copilot run started from the app (ADR 0173)", () => {
     expect(end.tabs[1]).toMatchObject({ state: "ended", ended: "end_turn" });
     expect(end.tabs[1]!.lines).toContain("forge-ledger: 12 facts kept, 0 rejected; coverage 90%");
     expect(end.tabs[0]!.lines.at(-1)).toBe("The run finished.");
+    // A poll can ask for each tab's last lines only, and a tab's lines from a line on.
+    const tail = Api.CopilotRunCurrent.parse(
+      (await call(srv, "GET", "/api/copilot-runs/current?tail=1")).body,
+    ).run!;
+    const all = end.tabs[1]!.lines;
+    expect(tail.tabs[1]).toMatchObject({ from: all.length - 1, lines: [all.at(-1)] });
+    const from1 = await call(srv, "GET", `/api/copilot-runs/${end.runId}/tabs/s1?from=1`);
+    expect(from1.body).toMatchObject({ id: "s1", from: 1, lines: all.slice(1) });
+    expect((await call(srv, "GET", `/api/copilot-runs/${end.runId}/tabs/s9`)).status).toBe(404);
+    expect((await call(srv, "GET", "/api/copilot-runs/copilot-run-x/tabs/s1")).status).toBe(404);
     // The page heard it live.
     const live = events.map((e) => Api.LiveEvent.parse(e));
     expect(live.some((e) => e.type === "copilot-run.state" && e.run.state === "done")).toBe(true);

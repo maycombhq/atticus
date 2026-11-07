@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   joinFacts,
+  joinRecords,
   linkCandidates,
   pairScore,
   pairsFromCorrections,
@@ -170,6 +171,22 @@ describe("the candidates of two boxes", () => {
       ["c-request-refund", "e-refunds-request", "pat"],
     ]);
     expect(join.misses.find((m) => m.call.fact === "c-status")?.message).toContain("pat paired");
+    // A pairing is the person's word, not code: its Interface is inferred, with their evidence.
+    const recs = joinRecords(join, repos) as unknown as {
+      kind: string;
+      from: string;
+      confidence: string;
+      evidence: { source: string; by?: string }[];
+      flags?: string[];
+    }[];
+    const paired = recs.filter(
+      (r) => r.kind === "Interface" && r.flags?.includes("joined-by-person"),
+    );
+    expect(paired.length).toBeGreaterThan(0);
+    for (const r of paired) {
+      expect(r.confidence).toBe("inferred");
+      expect(r.evidence).toContainEqual(expect.objectContaining({ source: "manual", by: "pat" }));
+    }
     const c = linkCandidates({
       from: "forge-refunds",
       facts: refunds.facts,

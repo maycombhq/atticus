@@ -9,7 +9,9 @@ import {
   RunsContext,
   RunStrip,
   RunWithCopilot,
+  mergePolled,
   withLines,
+  withSpan,
   type Ctx,
 } from "../src/app/copilot-runs.js";
 
@@ -66,6 +68,7 @@ const ctx = (o: Partial<Ctx> = {}): Ctx => ({
   stopping: false,
   consoleOpen: true,
   setConsoleOpen: () => undefined,
+  loadEarlier: () => undefined,
   ...o,
 });
 
@@ -101,6 +104,42 @@ describe("the Console's lines", () => {
   });
 });
 
+describe("a polled run", () => {
+  const tab = (from: number, lines: string[]) => ({
+    id: "s1",
+    title: "forge-teller",
+    state: "running" as const,
+    from,
+    lines,
+  });
+  it("keeps the lines it has and adds the new ones from a tail", () => {
+    const old = run({ tabs: [tab(0, ["a", "b", "c"])] });
+    const m = mergePolled(old, run({ tabs: [tab(1, ["b", "c", "d"])] }));
+    expect(m.gaps).toEqual([]);
+    expect(m.run?.tabs[0]).toMatchObject({ from: 0, lines: ["a", "b", "c", "d"] });
+  });
+  it("names a tab it is behind on, from the line it has, and keeps what it has", () => {
+    const old = run({ tabs: [tab(0, ["a"])] });
+    const m = mergePolled(old, run({ tabs: [tab(5, ["f"])] }));
+    expect(m.gaps).toEqual([{ tab: "s1", from: 1 }]);
+    expect(m.run?.tabs[0]).toMatchObject({ from: 0, lines: ["a"] });
+    // The fetched span fills it in.
+    const filled = withSpan(m.run!, "s1", 1, ["b", "c", "d", "e", "f"]);
+    expect(filled.tabs[0]).toMatchObject({ from: 0, lines: ["a", "b", "c", "d", "e", "f"] });
+  });
+  it("takes another run whole", () => {
+    const next = run({ runId: "copilot-run-2", tabs: [tab(3, ["x"])] });
+    expect(mergePolled(run(), next)).toEqual({ run: next, gaps: [] });
+  });
+  it("puts earlier lines before the ones it has, keeping the newer ones", () => {
+    const r = run({ tabs: [tab(3, ["d", "e"])] });
+    expect(withSpan(r, "s1", 0, ["a", "b", "c", "d"]).tabs[0]).toMatchObject({
+      from: 0,
+      lines: ["a", "b", "c", "d", "e"],
+    });
+  });
+});
+
 describe("asking for a run", () => {
   it("shows the button only where the app can start Copilot", () => {
     const b = <RunWithCopilot ask={{ kind: "gaps" }} label={T.start.gaps} />;
@@ -130,6 +169,19 @@ describe("asking for a run", () => {
     expect(out).toContain(T.confirm.may);
     expect(out).toContain(T.confirm.yes);
   });
+
+  it("says which repos a stale run narrowed to some repos reads", () => {
+    const out = unescape(
+      renderToStaticMarkup(
+        <ConfirmRun
+          ask={{ kind: "stale", repos: ["forge-ledger", "forge-teller"] }}
+          onClose={() => undefined}
+          onStarted={() => undefined}
+        />,
+      ),
+    );
+    expect(out).toContain(T.confirm.what.staleRepos("forge-ledger, forge-teller"));
+  });
 });
 
 describe("the strip and the Console", () => {
@@ -145,11 +197,14 @@ describe("the strip and the Console", () => {
 
   it("says how it ended, and says nothing of a run that ended before the page opened", () => {
     const done = run({ state: "done", finishedAt: "2026-11-06T19:00:00.000Z" });
-    expect(html(ctx({ run: done }), <RunStrip />)).toContain(T.strip.done);
+    const seen = { watched: "copilot-run-1" };
+    expect(html(ctx({ run: done, ...seen }), <RunStrip />)).toContain(T.strip.done);
     const failed = run({ state: "failed", finishedAt: "t", message: "sign in to Copilot" });
-    expect(html(ctx({ run: failed }), <RunStrip />)).toContain(
+    expect(html(ctx({ run: failed, ...seen }), <RunStrip />)).toContain(
       T.strip.failed("sign in to Copilot"),
     );
+    // Not seen under way by this page (opened or reloaded after it ended): nothing to say.
+    expect(html(ctx({ run: done }), <RunStrip />)).toBe("");
     expect(html(ctx({ run: null }), <RunStrip />)).toBe("");
   });
 

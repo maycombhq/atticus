@@ -512,7 +512,7 @@ Usage:
   atticus skills write [--check]       Write .claude/ and .github/ files (and CLAUDE.md's team instructions) from the org pack's sources; --check exits 1 when they are behind
   atticus rules list [<repo>] [--json]   The organisation's reading rules (ADR 0176): every layer's file, or the rules a repo's reads are given, with their layer, drafts and what is switched off
   atticus rules add --org-wide | --type <t> | --repo <r> --key <k> --rule "..." [--files <glob,glob>] [--example <path:line>] [--draft]   Write a reading rule to a layer's file, for review
-  atticus rules activate <key> --org-wide | --type <t> | --repo <r>   Give a draft rule to reads
+  atticus rules activate <key> --org-wide | --type <t> | --repo <r> | --team <team> --type <t>   Give a draft rule to reads (--team: one of another team's imported copy)
   atticus rules off <key> --reason "..." --org-wide | --type <t> | --repo <r>   Switch an earlier layer's rule (or builtin:<set>) off for this scope, saying why
   atticus rules draft --type <t> [--repos a,b] | --repo <r> --about "..." [--mode copilot-acp|hand-off]   Copilot drafts rules from what the reads keep missing (rejections, corrections, open questions); each is a draft a person sets active
   atticus rules try <repo> --rule <key> [--files <n>] [--compare]   One small Copilot session on a few files the rule names: the facts it would add or change; writes nothing
@@ -1443,6 +1443,8 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
       ...(values["org-wide"] === true ? { org: true } : {}),
       ...(text(values.type) ? { type: text(values.type)! } : {}),
       ...(text(values.repo) ? { repo: text(values.repo)! } : {}),
+      // An imported copy for activate: --team <team> --type <type> (import names its own).
+      ...(text(values.team) && command !== "import" ? { imported: text(values.team)! } : {}),
     };
     if (!command || command === "list")
       return r.rulesListCommand(root, positionals[2], { json: values.json === true }, io);

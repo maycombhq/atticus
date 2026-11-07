@@ -118,7 +118,15 @@ function FactLine({ hit }: { hit: Hit }) {
         {E.by[f.by] ?? f.by} · {E.verified[f.verified] ?? f.verified}
       </span>
       {f.correction && (
-        <span className="ev-corr"> · {E.correction(f.correction.action, f.correction.by)}</span>
+        <span className="ev-corr">
+          {" "}
+          ·{" "}
+          {E.correction(
+            f.correction.action,
+            f.correction.by,
+            f.correction.link?.system ?? f.correction.link?.repo,
+          )}
+        </span>
       )}
     </span>
   );

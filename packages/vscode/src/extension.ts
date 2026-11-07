@@ -22,7 +22,7 @@ import {
   readContractCounts,
   type ContractCounts,
 } from "./beta11";
-import { answerApp, bundledHtml } from "./app-bundle";
+import { answerApp, saveFromApp, bundledHtml } from "./app-bundle";
 import { evidenceRows } from "./question-evidence";
 import { diagramHash, panelHtml, type RunningApp } from "./app-panel";
 import { changeDiagramHash, estimateHash } from "./change-map";
@@ -1518,8 +1518,20 @@ ${view.next.why}`
           // ADR 0106: Run with Copilot, asked from the app (run-step.ts has the messages' shapes).
           if ((m as { type?: unknown } | null)?.type === "run-step")
             return void runFromApp(m, (r) => void web.postMessage(r));
-          const api = await svc.api(root);
-          const reply = await answerApp(m, (method, path, body) => api.request(method, path, body));
+          const saved = await saveFromApp(m, async (name, bytes) => {
+            const to = await vscode.window.showSaveDialog({
+              defaultUri: vscode.Uri.joinPath(vscode.Uri.file(root), name),
+              title: WORDS.saveExport(name),
+            });
+            if (!to) return "cancelled";
+            await vscode.workspace.fs.writeFile(to, bytes);
+            return "saved";
+          });
+          if (saved) return void web.postMessage(saved);
+          // Every call gets an answer, even when the app can't be reached: the page doesn't wait.
+          const reply = await answerApp(m, async (method, path, body) =>
+            (await svc.api(root)).request(method, path, body),
+          );
           if (reply) void web.postMessage(reply);
         });
       }

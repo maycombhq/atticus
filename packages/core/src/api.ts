@@ -163,8 +163,12 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   an editor. Additive only.
  * 2.55.0 (ADR 0176): POST /api/reading-rules/from-pairing, a draft reading rule for the repo's
  *   type from a call a person paired. Additive only.
+ * 2.56.0 (ADR 0173, review): GET /api/copilot-runs/current takes `tail` (each tab's last lines,
+ *   200 by default; 0 for all) and GET /api/copilot-runs/{runId}/tabs/{tab}?from=N gives a tab's
+ *   lines from a line on; GET /api/links/candidates says `why: unverified` on noCalls and noApis
+ *   for a repo whose facts aren't all verified. Additive only.
  */
-export const API_VERSION = "2.55.0";
+export const API_VERSION = "2.56.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -3000,10 +3004,15 @@ export const LinkCandidatesView = z.object({
   toName: z.string(),
   calls: z.array(CandidateCallView),
   apis: z.array(CandidateApiView),
-  /** No calls of A on record: the command that reads them first. */
-  noCalls: z.object({ command: z.string() }).optional(),
-  /** No APIs of B on record: why, and how to get them (read the repo, or intake the spec). */
-  noApis: z.object({ why: z.enum(["not-read", "no-spec"]), command: z.string() }).optional(),
+  /**
+   * No calls of A on record: the command that reads them first; `why: unverified` when A's facts
+   * are read but not all verified (the join leaves them out), and the command verifies them.
+   */
+  noCalls: z.object({ command: z.string(), why: z.enum(["unverified"]).optional() }).optional(),
+  /** No APIs of B on record: why, and how to get them (read the repo, verify it, or intake the spec). */
+  noApis: z
+    .object({ why: z.enum(["not-read", "unverified", "no-spec"]), command: z.string() })
+    .optional(),
   /** An open target question of A that one /** answer to B would close, with the calls it covers. */
   rule: z.object({ question: z.string(), calls: z.number().int().min(0) }).optional(),
 });
@@ -4507,9 +4516,24 @@ const OPS: Record<string, Record<string, Op>> = {
     get: {
       id: "getCurrentCopilotRun",
       summary:
-        "The Copilot run under way (or the last one), its progress and its Console tabs, and whether copilot-acp is allowed (ADR 0173)",
+        "The Copilot run under way (or the last one), its progress and its Console tabs' last lines (tail, 200 by default), and whether copilot-acp is allowed (ADR 0173)",
       tag: "ai",
+      params: [q("tail", str, "How many of each tab's last lines; 0 for all")],
       ok: { status: 200, schema: "CopilotRunCurrent", description: "OK" },
+    },
+  },
+  "/api/copilot-runs/{runId}/tabs/{tab}": {
+    get: {
+      id: "getCopilotRunTab",
+      summary: "A Copilot run's Console tab, its lines from a line on (ADR 0173)",
+      tag: "ai",
+      params: [p("runId"), p("tab"), q("from", str, "The number of the first line wanted")],
+      ok: {
+        status: 200,
+        schema: { type: "object", required: ["id", "title", "from", "lines"] },
+        description: "OK",
+      },
+      errors: [404],
     },
   },
   "/api/copilot-runs/{runId}/stop": {

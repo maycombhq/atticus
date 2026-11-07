@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { answerApp, bundledHtml } from "../src/app-bundle";
+import { answerApp, bundledHtml, saveFromApp } from "../src/app-bundle";
 
 /**
  * ADR 0097: the app's own files, shipped in the extension, loaded straight into a VS Code panel:
@@ -113,5 +113,38 @@ describe("answering the app's calls", () => {
     );
     expect(r).toMatchObject({ type: "api-reply", id: 4, status: 503 });
     expect((r as { body: { detail: string } }).body.detail).toContain("ECONNREFUSED");
+  });
+});
+
+describe("a file the app asks to save (a canvas export in a panel)", () => {
+  it("writes what the page sent where the person picks, and says so", async () => {
+    const got: { name: string; text: string }[] = [];
+    const save = async (name: string, bytes: Uint8Array) => {
+      got.push({ name, text: Buffer.from(bytes).toString("utf8") });
+      return "saved" as const;
+    };
+    const png = Buffer.from("png-bytes").toString("base64");
+    expect(
+      await saveFromApp(
+        { type: "save-file", id: 3, name: "estate.png", data: png, encoding: "base64" },
+        save,
+      ),
+    ).toEqual({ type: "save-reply", id: 3, state: "saved" });
+    expect(got).toEqual([{ name: "estate.png", text: "png-bytes" }]);
+    expect(await saveFromApp({ type: "api", id: 1 }, save)).toBeUndefined();
+  });
+
+  it("refuses a name with a folder in it, and answers a cancel", async () => {
+    const save = async () => "cancelled" as const;
+    for (const name of ["../x.svg", "a/b.svg", "C:\\\\x.svg", ".env"])
+      expect(
+        await saveFromApp({ type: "save-file", id: 1, name, data: "x", encoding: "utf8" }, save),
+      ).toMatchObject({ state: "failed" });
+    expect(
+      await saveFromApp(
+        { type: "save-file", id: 2, name: "estate.svg", data: "<svg/>", encoding: "utf8" },
+        save,
+      ),
+    ).toEqual({ type: "save-reply", id: 2, state: "cancelled" });
   });
 });

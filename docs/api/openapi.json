@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Atticus local API",
-    "version": "2.55.0",
+    "version": "2.56.0",
     "description": "Served by `atticus ui` on 127.0.0.1. The UI only calls this API, and the API only reads and writes files in the metarepo.",
     "license": {
       "name": "Apache-2.0",
@@ -7081,9 +7081,20 @@
     "/api/copilot-runs/current": {
       "get": {
         "operationId": "getCurrentCopilotRun",
-        "summary": "The Copilot run under way (or the last one), its progress and its Console tabs, and whether copilot-acp is allowed (ADR 0173)",
+        "summary": "The Copilot run under way (or the last one), its progress and its Console tabs' last lines (tail, 200 by default), and whether copilot-acp is allowed (ADR 0173)",
         "tags": [
           "ai"
+        ],
+        "parameters": [
+          {
+            "name": "tail",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "How many of each tab's last lines; 0 for all",
+            "required": false
+          }
         ],
         "responses": {
           "200": {
@@ -7098,6 +7109,80 @@
           },
           "401": {
             "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/copilot-runs/{runId}/tabs/{tab}": {
+      "get": {
+        "operationId": "getCopilotRunTab",
+        "summary": "A Copilot run's Console tab, its lines from a line on (ADR 0173)",
+        "tags": [
+          "ai"
+        ],
+        "parameters": [
+          {
+            "name": "runId",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "tab",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "The number of the first line wanted",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "title",
+                    "from",
+                    "lines"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -27513,6 +27598,12 @@
             "properties": {
               "command": {
                 "type": "string"
+              },
+              "why": {
+                "type": "string",
+                "enum": [
+                  "unverified"
+                ]
               }
             },
             "required": [
@@ -27527,6 +27618,7 @@
                 "type": "string",
                 "enum": [
                   "not-read",
+                  "unverified",
                   "no-spec"
                 ]
               },

@@ -186,7 +186,9 @@ export function Pairing(p: {
     <div className="stack">
       {d.noCalls && (
         <div className="stack">
-          <p className="ev-say">{C.noCalls(d.from)}</p>
+          <p className="ev-say">
+            {d.noCalls.why === "unverified" ? C.unverifiedCalls(d.from) : C.noCalls(d.from)}
+          </p>
           <Cmd text={d.noCalls.command} />
         </div>
       )}

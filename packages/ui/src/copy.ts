@@ -2928,6 +2928,8 @@ export const COPY = {
       "The payload on both sides of every link compared: each REST call, each hop through a gateway, each topic's publisher and listeners, and each call to an outside system, from the fields your assistant read and the specs on file. A difference that a mapping nobody traced touches is unconfirmed, never a mismatch. Read from the facts and the specs; nothing is written.",
     empty:
       "No link has a payload on both sides yet. Your assistant records what each call sends and each entry takes when it reads a repo (/atticus-map); atticus verify <repo> --write reads the repo's specs; atticus intake add takes a vendor's or another team's.",
+    noneShown: "None of this kind: pick another in the list.",
+    noneAtAll: "No difference on any link compared.",
     counts: (m: number, u: number, links: number, compared: number) =>
       `${m} mismatch${m === 1 ? "" : "es"}, ${u} unconfirmed; ${compared} of ${links} link${links === 1 ? "" : "s"} had a payload on both sides.`,
     unlinked: (n: number) =>
@@ -3657,10 +3659,16 @@ export const COPY = {
     views: "Saved views",
     viewName: "Name (lower case, e.g. ledger-calls)",
     save: "Keep this view",
+    replace: (name: string) => `Replace ${name}`,
     saved: (rel: string) => `Kept in ${rel}: commit it to share it.`,
     open: "Open",
     noViews: "No view kept yet.",
     export: "Export the picture",
+    exportEnd: {
+      saved: "Saved.",
+      cancelled: "Not saved: the Save dialog was closed.",
+      failed: "Couldn't save the file here. Open the app in a browser to download it.",
+    } as Record<"saved" | "cancelled" | "failed", string>,
     exports: {
       mermaid: "Mermaid",
       drawio: "draw.io",
@@ -3773,8 +3781,12 @@ export const COPY = {
     failed: (why: string) => `The calls and APIs couldn't be read: ${why}`,
     noCalls: (from: string) =>
       `${from} has no calls on record yet, so there is nothing to pair. Read its calls first:`,
+    unverifiedCalls: (from: string) =>
+      `${from}'s facts are read but not all verified, so the map leaves them out and there is nothing to pair yet. Verify them first:`,
     noApis: {
       "not-read": (name: string) => `${name} has no APIs on record yet. Read it first:`,
+      unverified: (name: string) =>
+        `${name}'s facts are read but not all verified, so its APIs aren't on the map yet. Verify them first:`,
       "no-spec": (name: string) => `${name} has no spec on file. Add its OpenAPI file:`,
     } as Record<string, (name: string) => string>,
     noLoose: "Every call of this repo joins something already: nothing loose to pair.",
@@ -3835,6 +3847,9 @@ export const COPY = {
         all: "Read every repo of the manifest not read yet.",
         repos: (repos: string, force: boolean) =>
           `${force ? "Read again, whole: " : "Read: "}${repos}.`,
+        staleRepos: (repos: string) =>
+          `Re-read those of ${repos} whose clone moved past its facts.`,
+        gapsRepos: (repos: string) => `A second pass on the gaps of ${repos}.`,
       },
       model: (model?: string) =>
         model ? `Model: ${model} (runtime.yaml's copilotAcp).` : "Model: Copilot's default.",
@@ -3874,7 +3889,8 @@ export const COPY = {
         "No Copilot run yet. Start one from Map › Trust: read the stale repos, fill the gaps, or read one repo.",
       noLines: "Nothing printed yet.",
       noMatch: (q: string) => `No line has “${q}”.`,
-      earlier: (n: number) => `${n.toLocaleString()} earlier lines not kept.`,
+      earlier: (n: number) => `${n.toLocaleString()} earlier lines not shown.`,
+      loadEarlier: "Show earlier lines",
       states: { running: "running", ended: "ended", failed: "failed" } as Record<string, string>,
     },
   },
@@ -3963,8 +3979,12 @@ export const COPY = {
     needReason: "Say why the fact is wrong first.",
     nothingChanged: "Change a field or the line first.",
     saved: (file: string) => `Written to ${file}.`,
-    correction: (action: string, by: string) =>
-      action === "wrong" ? `Marked wrong by ${by}` : `Corrected by ${by}`,
+    correction: (action: string, by: string, pairedWith?: string) =>
+      action === "wrong"
+        ? `Marked wrong by ${by}`
+        : action === "link"
+          ? `Paired with ${pairedWith ?? "another system"} by ${by}`
+          : `Corrected by ${by}`,
     links: "Links",
     noLinks: "No link starts or ends here in this view.",
     linkOf: (from: string, to: string, type: string) => `${from} ${type} ${to}`,

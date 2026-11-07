@@ -79,3 +79,40 @@ export async function answerApp(
     };
   }
 }
+
+/** The largest file the app may ask to save (a PNG of a big canvas is a few MB). */
+const SAVE_MAX = 32 * 1024 * 1024;
+
+/**
+ * A file the app asks to save (an export of the canvas): a panel's page can't download, so the
+ * extension asks where with the Save dialog and writes it. Only a plain file name comes from the
+ * page; the person picks the folder. The reply says whether it was saved.
+ */
+export async function saveFromApp(
+  m: unknown,
+  save: (name: string, bytes: Uint8Array) => Promise<"saved" | "cancelled">,
+): Promise<Msg | undefined> {
+  if (typeof m !== "object" || m === null || (m as Msg).type !== "save-file") return undefined;
+  const { id, name, data, encoding } = m as Msg;
+  const reply = (state: "saved" | "cancelled" | "failed", detail?: string) => ({
+    type: "save-reply",
+    id,
+    state,
+    ...(detail ? { detail } : {}),
+  });
+  if (
+    typeof name !== "string" ||
+    !/^[^\\/:*?"<>|\0]{1,200}$/.test(name) ||
+    name.startsWith(".") ||
+    typeof data !== "string" ||
+    (encoding !== "utf8" && encoding !== "base64") ||
+    data.length > SAVE_MAX
+  )
+    return reply("failed", "Not a file the app saves.");
+  try {
+    const bytes = encoding === "base64" ? Buffer.from(data, "base64") : Buffer.from(data, "utf8");
+    return reply(await save(name, new Uint8Array(bytes)));
+  } catch (e) {
+    return reply("failed", (e as Error).message);
+  }
+}

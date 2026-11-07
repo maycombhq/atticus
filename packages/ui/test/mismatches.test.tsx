@@ -136,6 +136,11 @@ describe("Map › Mismatches", () => {
 });
 
 describe("the warning on a link and in Why is this linked?", () => {
+  it("says so when every link compared matches", () => {
+    const out = html(<MismatchesPanels view={{ ...VIEW, findings: [] }} />);
+    expect(out).toContain(esc(M.noneAtAll));
+  });
+
   it("finds a call's findings by its Interface, or a hop's forwarding call's", () => {
     expect(findingsOfJoin(join("if-2"), VIEW.findings)).toHaveLength(2);
     expect(findingsOfJoin(join("if-9"), VIEW.findings)).toEqual([]);

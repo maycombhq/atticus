@@ -212,4 +212,23 @@ describe("connect two boxes (ADR 0174, G1)", () => {
     expect((await call("POST", "/api/links/connect", { ...base, pairs: [] })).status).toBe(400);
     expect((await call("POST", "/api/links/connect", { ...base, rule: true })).status).toBe(409);
   });
+
+  it("says to verify a repo whose facts aren't all verified, not that it has no calls", async () => {
+    const unchecked = { ...JSON.parse(LOOSE), id: "call.get.unchecked", verified: "none" };
+    await appendFile(join(root, "facts/forge-billing.jsonl"), `${JSON.stringify(unchecked)}\n`);
+    const v = Api.LinkCandidatesView.parse(
+      (await call("GET", "/api/links/candidates?from=forge-billing&to=forge-partner-gateway")).body,
+    );
+    expect(v.noCalls).toEqual({ why: "unverified", command: "atticus verify forge-billing" });
+    const back = Api.LinkCandidatesView.parse(
+      (await call("GET", "/api/links/candidates?from=forge-partner-gateway&to=forge-billing")).body,
+    );
+    expect(back.noApis).toEqual({ why: "unverified", command: "atticus verify forge-billing" });
+    const r = await call("POST", "/api/links/connect", {
+      from: "forge-billing",
+      to: { repo: "forge-partner-gateway" },
+      pairs: [{ call: "call.post.capture-charge", api: "x" }],
+    });
+    expect(r.status).toBe(409);
+  });
 });

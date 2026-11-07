@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, rm } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdir, readdir, readFile, rm } from "node:fs/promises";
+import { join, relative, sep } from "node:path";
 import { promisify } from "node:util";
 import { isMap, isSeq, parseDocument } from "yaml";
 import {
@@ -51,10 +51,17 @@ export interface Scope {
   org?: boolean;
   type?: string;
   repo?: string;
+  /** Another team's imported copy, with `type`: imported/<team>/<type>.yaml. */
+  imported?: string;
 }
 
 /** The layer file a scope writes, relative to the reading-rules folder. */
 export function scopeFile(s: Scope): { rel: string; layer: Layer } | string {
+  if (s.imported !== undefined) {
+    if (!/^[a-z0-9][a-z0-9-]{0,62}$/.test(s.imported) || !s.type || s.org || s.repo)
+      return "An imported copy is named by its team and type: --team <team> --type <repo type>.";
+    return { rel: `imported/${s.imported}/${s.type}.yaml`, layer: "imported" };
+  }
   const n = [s.org, s.type, s.repo].filter(Boolean).length;
   if (n !== 1) return "Say which layer: --org, --type <repo type> or --repo <repo>.";
   if (s.org) return { rel: "org.yaml", layer: "org" };
@@ -118,7 +125,26 @@ export async function rulesListCommand(
   const types = [
     ...new Set(estateRepos(op ?? ({ profiles: [] } as never)).map((r) => r.type)),
   ].sort();
-  const files = ["org.yaml", ...types.map((t) => `types/${t}.yaml`)];
+  // Every layer file there is: the org's, each type's (a type of the estate with none yet is
+  // left out), each repo's and each imported copy.
+  const under = async (sub: string) =>
+    (
+      await readdir(join(rulesDirOf(root), sub), { withFileTypes: true, recursive: true }).catch(
+        () => [],
+      )
+    )
+      .filter((x) => x.isFile() && x.name.endsWith(".yaml"))
+      .map((x) => relative(rulesDirOf(root), join(x.parentPath, x.name)).split(sep).join("/"))
+      .sort();
+  const files = [
+    ...new Set([
+      "org.yaml",
+      ...types.map((t) => `types/${t}.yaml`),
+      ...(await under("types")),
+      ...(await under("repos")),
+      ...(await under("imported")),
+    ]),
+  ];
   const out: { file: string; rules: number; drafts: number; off: number }[] = [];
   for (const f of files) {
     const t = await readFile(join(rulesDirOf(root), ...f.split("/")), "utf8").catch(
@@ -169,6 +195,12 @@ export async function rulesAddCommand(
     io.err(f);
     return 2;
   }
+  if (f.layer === "imported") {
+    io.err(
+      "An imported copy changes only by importing it again: add the rule to your own layer (--org, --type or --repo).",
+    );
+    return 2;
+  }
   const r = ReadingRule.safeParse({
     key: o.key,
     status: o.draft ? "draft" : "active",
@@ -207,7 +239,7 @@ export async function rulesAddCommand(
     return 2;
   }
   io.out(
-    `${r.data.status === "draft" ? "Drafted" : "Added"} ${r.data.key} in ${relOf(root)}/${f.rel}. Review it in a pull request; ${r.data.status === "draft" ? `atticus rules activate ${r.data.key} ${scopeFlag(s)} gives it to reads` : "the next atticus map --all --stale tops up the files it names"}.`,
+    `${r.data.status === "draft" ? "Drafted" : "Added"} ${r.data.key} in ${relOf(root)}/${f.rel}. Review it in a pull request; ${r.data.status === "draft" ? `atticus rules activate ${r.data.key} ${scopeFlag(s)} gives it to reads` : r.data.files?.length ? "the next atticus map --all --stale tops up the files it names" : "it names no files, so no top-up gives it: the next whole read does (atticus map <repo> --force)"}.`,
   );
   return 0;
 }
@@ -225,6 +257,12 @@ export async function rulesSetCommand(
   io: Output,
 ): Promise<number> {
   const f = scopeFile(s);
+  if (typeof f !== "string" && f.layer === "imported" && what === "off") {
+    io.err(
+      "An imported copy switches nothing off here: switch the rule off in your own layer (--org, --type or --repo).",
+    );
+    return 2;
+  }
   if (typeof f === "string" || !key) {
     io.err(
       typeof f === "string" ? f : `Name the rule: atticus rules ${what} <key> ${"--type <t>"}.`,
@@ -232,6 +270,7 @@ export async function rulesSetCommand(
     return 2;
   }
   const { path, doc } = await loadDoc(root, f.rel);
+  let hasFiles = false;
   if (what === "activate") {
     const rules = doc.get("rules");
     const item = isSeq(rules)
@@ -242,6 +281,8 @@ export async function rulesSetCommand(
       return 2;
     }
     item.set("status", "active");
+    const files = item.get("files");
+    hasFiles = isSeq(files) && files.items.length > 0;
   } else {
     if (!o.reason?.trim()) {
       io.err('Say why it is switched off here: --reason "...".');
@@ -261,7 +302,7 @@ export async function rulesSetCommand(
   }
   io.out(
     what === "activate"
-      ? `${key} is active in ${relOf(root)}/${f.rel}: the next atticus map --all --stale tops up the files it names.`
+      ? `${key} is active in ${relOf(root)}/${f.rel}: ${hasFiles ? "the next atticus map --all --stale tops up the files it names" : "it names no files, so no top-up gives it: the next whole read does (atticus map <repo> --force)"}.`
       : `${key} is switched off in ${relOf(root)}/${f.rel}, saying why.`,
   );
   return 0;
@@ -611,21 +652,51 @@ export async function rulesImportCommand(
   }
   const doc = parseDocument(text);
   doc.set("source", doc.createNode({ from, at: o.at, team: o.team }));
-  // Another team's rules reach no read here until a person reviews them and sets each active.
-  const rules = doc.get("rules");
-  if (isSeq(rules)) for (const x of rules.items) if (isMap(x)) x.set("status", "draft");
-  // Their switch-offs are about their repos: none of them applies here.
-  doc.set("off", doc.createNode([]));
   const rel = `imported/${o.team}/${o.type}.yaml`;
   const path = join(rulesDirOf(root), ...rel.split("/"));
+  // A rule set active in the copy before stays active when it is the same rule word for word
+  // (rule and files); one they changed comes in as a draft again, for review.
+  const before = await readFile(path, "utf8")
+    .then((t) => ReadingRulesFile.safeParse(parseDocument(t).toJS()))
+    .catch(() => undefined);
+  const sameAs = (r: { rule: string; files?: string[] | undefined }) =>
+    JSON.stringify([r.rule.trim(), [...(r.files ?? [])].sort()]);
+  const kept = new Map(
+    (before?.success ? before.data.rules : [])
+      .filter((r) => r.status === "active")
+      .map((r) => [r.key, sameAs(r)] as const),
+  );
+  // Another team's rules reach no read here until a person reviews them and sets each active.
+  const rules = doc.get("rules");
+  const stillActive: string[] = [];
+  const backToDraft: string[] = [];
+  if (isSeq(rules))
+    for (const x of rules.items) {
+      if (!isMap(x)) continue;
+      const key = String(x.get("key"));
+      const now = r.data.rules.find((y) => y.key === key);
+      if (now && kept.get(key) === sameAs(now)) {
+        x.set("status", "active");
+        stillActive.push(key);
+      } else {
+        x.set("status", "draft");
+        if (kept.has(key)) backToDraft.push(key);
+      }
+    }
+  // Their switch-offs are about their repos: none of them applies here.
+  doc.set("off", doc.createNode([]));
   const bad = await saveDoc(path, doc);
   if (bad) {
     io.err(`The copy wouldn't be valid: ${bad}`);
     return 2;
   }
   io.out(
-    `Imported ${r.data.rules.length} rules of ${o.team}'s ${o.type} repos into ${relOf(root)}/${rel}, pinned at ${o.at}, each a draft. Review them in a pull request and set the ones you keep active there (status: active); a later import is a new copy.`,
+    `Imported ${r.data.rules.length} rules of ${o.team}'s ${o.type} repos into ${relOf(root)}/${rel}, pinned at ${o.at}, ${stillActive.length ? `${stillActive.length} still active as before (${stillActive.join(", ")}), the rest drafts` : "each a draft"}. Review them in a pull request and set the ones you keep active (atticus rules activate <key> --team ${o.team} --type ${o.type}).`,
   );
+  if (backToDraft.length)
+    io.out(
+      `Changed by ${o.team} since the last import, so drafts again until reviewed: ${backToDraft.join(", ")}.`,
+    );
   return 0;
 }
 

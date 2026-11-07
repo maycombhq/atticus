@@ -24,6 +24,15 @@ export interface Bridge {
    * Each progress line comes to onLine as it comes; the promise ends with the step's end.
    */
   runStep(args: string[], onLine: (line: string) => void): Promise<StepEnd>;
+  /**
+   * A file the page can't download in a panel (a canvas export): the extension asks where with
+   * the Save dialog and writes it. Text as utf8, a PNG as base64.
+   */
+  saveFile(
+    name: string,
+    data: string,
+    encoding: "utf8" | "base64",
+  ): Promise<"saved" | "cancelled" | "failed">;
   onEvent(f: (e: { type: string } & Record<string, unknown>) => void): () => void;
   onNavigate(f: (hash: string) => void): void;
 }
@@ -34,10 +43,18 @@ const SCREEN_HASH = /^#\/[a-z][a-z0-9-]*(\/[^?\s]*)?(\?[^\s]*)?$/;
 type Msg = Record<string, unknown>;
 const isMsg = (m: unknown): m is Msg => typeof m === "object" && m !== null;
 
-export function makeBridge(post: (m: Msg) => void, on: (f: (m: unknown) => void) => void): Bridge {
+/** How long a call waits for the extension's reply before it is given up (the page says so). */
+export const BRIDGE_TIMEOUT_MS = 60_000;
+
+export function makeBridge(
+  post: (m: Msg) => void,
+  on: (f: (m: unknown) => void) => void,
+  timeoutMs = BRIDGE_TIMEOUT_MS,
+): Bridge {
   let next = 0;
   const waiting = new Map<number, (r: BridgeReply) => void>();
   const steps = new Map<number, { onLine: (l: string) => void; done: (e: StepEnd) => void }>();
+  const saves = new Map<number, (s: "saved" | "cancelled" | "failed") => void>();
   const events = new Set<(e: { type: string } & Record<string, unknown>) => void>();
   const navigations: ((hash: string) => void)[] = [];
   on((m) => {
@@ -46,6 +63,10 @@ export function makeBridge(post: (m: Msg) => void, on: (f: (m: unknown) => void)
       const done = waiting.get(m.id);
       waiting.delete(m.id);
       done?.({ status: Number(m.status), body: m.body });
+    } else if (m.type === "save-reply" && typeof m.id === "number") {
+      const done = saves.get(m.id);
+      saves.delete(m.id);
+      done?.(m.state === "saved" || m.state === "cancelled" ? m.state : "failed");
     } else if (m.type === "run-progress" && typeof m.id === "number") {
       if (typeof m.line === "string") steps.get(m.id)?.onLine(m.line);
     } else if (m.type === "run-end" && typeof m.id === "number") {
@@ -68,7 +89,24 @@ export function makeBridge(post: (m: Msg) => void, on: (f: (m: unknown) => void)
     call(path, o) {
       const id = ++next;
       return new Promise((resolve) => {
-        waiting.set(id, resolve);
+        // The extension answers every call (503 when the app doesn't); a reply lost to a reload
+        // of the extension would leave the page waiting, with its loading bar on, for good.
+        const timer = setTimeout(() => {
+          if (!waiting.delete(id)) return;
+          resolve({
+            status: 504,
+            body: {
+              type: "about:blank",
+              title: "No answer from VS Code",
+              status: 504,
+              detail: `No answer to ${path} in ${Math.round(timeoutMs / 1000)} s.`,
+            },
+          });
+        }, timeoutMs);
+        waiting.set(id, (r) => {
+          clearTimeout(timer);
+          resolve(r);
+        });
         post({
           type: "api",
           id,
@@ -83,6 +121,13 @@ export function makeBridge(post: (m: Msg) => void, on: (f: (m: unknown) => void)
       return new Promise((resolve) => {
         steps.set(id, { onLine, done: resolve });
         post({ type: "run-step", id, args });
+      });
+    },
+    saveFile(name, data, encoding) {
+      const id = ++next;
+      return new Promise((resolve) => {
+        saves.set(id, resolve);
+        post({ type: "save-file", id, name, data, encoding });
       });
     },
     onEvent(f) {

@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import type { Api } from "@maycombhq/core";
 import { ApiError } from "../src/api/client.js";
 import { COPY } from "../src/copy.js";
-import { runChoice, runOnServer, RunStepView, stepArgs } from "../src/app/runstep.js";
+import { quietReads, runChoice, runOnServer, RunStepView, stepArgs } from "../src/app/runstep.js";
 import { RunDetail, RunsTable, runsHref, shownRuns } from "../src/screens/runs/Runs.js";
 import { AiStep } from "../src/screens/knowledge/shared.js";
 import { RunNextPanel } from "../src/screens/work/RunNext.js";
@@ -579,5 +579,21 @@ describe("Run with the server's model, in a browser (ADR 0106)", () => {
       }),
     ).rejects.toBe(refused);
     expect(api.calls).toHaveLength(1);
+  });
+});
+
+describe("a step's calls from the browser", () => {
+  it("counts the start on the loading bar and keeps the job polls quiet", async () => {
+    const seen: { path: string; quiet?: boolean }[] = [];
+    const call = quietReads((async (path: string, o: { quiet?: boolean } = {}) => {
+      seen.push({ path, ...(o.quiet !== undefined ? { quiet: o.quiet } : {}) });
+      return {};
+    }) as never);
+    await call("/api/runs", { method: "POST", body: { args: [] } });
+    await call("/api/jobs/job-1");
+    expect(seen).toEqual([
+      { path: "/api/runs", quiet: false },
+      { path: "/api/jobs/job-1", quiet: true },
+    ]);
   });
 });
