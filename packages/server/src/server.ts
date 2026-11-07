@@ -2,7 +2,7 @@ import { randomBytes, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { Duplex } from "node:stream";
-import { DEFAULT_PORT } from "@maycombhq/core";
+import { DEFAULT_PORT, FileChangedError } from "@maycombhq/core";
 import { gitUser, type GitUser } from "@maycombhq/workspace";
 import { HttpError, notFound, conflict, problem, Router } from "./http.js";
 import { JobManager } from "./jobs.js";
@@ -263,10 +263,18 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
       send(res, out.status, out.body);
       done(out.status);
     } catch (e) {
+      // A file changed between its read and its write (another edit, the CLI, an editor): nothing
+      // was written, and doing it again from the file as it is now works.
       const err =
         e instanceof HttpError
           ? e
-          : new HttpError(500, "Something went wrong", e instanceof Error ? e.message : String(e));
+          : e instanceof FileChangedError
+            ? new HttpError(409, "The file changed meanwhile", e.message)
+            : new HttpError(
+                500,
+                "Something went wrong",
+                e instanceof Error ? e.message : String(e),
+              );
       send(res, err.status, problem(err), "application/problem+json");
       done(err.status, err.status >= 500 && e instanceof Error ? e : undefined);
     }

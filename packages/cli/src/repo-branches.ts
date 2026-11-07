@@ -10,7 +10,7 @@ import {
   RepoDescription,
   RepoManifest,
   setManifestDescription,
-  writeFileAtomic,
+  writeFileIfUnchanged,
   type CatalogRecord,
 } from "@maycombhq/core";
 import { diffCatalogs, readCatalog } from "@maycombhq/scanner";
@@ -130,7 +130,8 @@ export async function editRepoBranches(
   if (!repo) throw new RepoEditError("not-found", `There is no repo ${repoId} in any manifest.`);
   const rel = `org-pack/profiles/${repo.platform}/repos.manifest.yaml`;
   const file = join(orgPackDirOf(root), "profiles", repo.platform, "repos.manifest.yaml");
-  const doc = parseDocument(await readFile(file, "utf8"));
+  const was = await readFile(file, "utf8");
+  const doc = parseDocument(was);
   const list = doc.get("repos");
   const item = isSeq(list) ? list.items.find((x) => isMap(x) && x.get("id") === repoId) : undefined;
   if (!isMap(item)) throw new RepoEditError("not-found", `${rel} doesn't list ${repoId}.`);
@@ -152,7 +153,7 @@ export async function editRepoBranches(
       "invalid",
       check.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "),
     );
-  await writeFileAtomic(file, doc.toString({ flowCollectionPadding: true }));
+  await writeFileIfUnchanged(file, was, doc.toString({ flowCollectionPadding: true }));
   return rel;
 }
 

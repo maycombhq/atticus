@@ -67,6 +67,9 @@ export function DeclarePanel(p: {
     p.post ??
     ((body: Api.DeclareLinkRequestT) =>
       api<Api.FileChangeResultT>("/api/declared-links", { method: "POST", body }));
+  // What the form says now: Write it writes only what was previewed, nothing changed since.
+  const asked = JSON.stringify(declareBody(p.system, kind, value) ?? null);
+  const [previewed, setPreviewed] = useState<string | undefined>();
   const send = async (mode: "preview" | "write") => {
     const b = declareBody(p.system, kind, value);
     if (!b) {
@@ -77,8 +80,11 @@ export function DeclarePanel(p: {
     setError(undefined);
     try {
       const r = await post({ ...b, ...(mode === "preview" ? { preview: true } : {}) });
-      if (mode === "preview") setPreview(r);
-      else {
+      if (mode === "preview") {
+        setPreview(r);
+        // The form as it was sent, not as it is when the answer comes.
+        setPreviewed(JSON.stringify(b));
+      } else {
         setWritten(r);
         setPreview(undefined);
       }
@@ -145,13 +151,13 @@ export function DeclarePanel(p: {
         <button
           type="button"
           className="btn primary"
-          disabled={!!busy || !preview}
+          disabled={!!busy || !preview || previewed !== asked}
           onClick={() => void send("write")}
         >
           {busy === "write" ? D.writing : D.confirm}
         </button>
       </div>
-      {preview && <Diff r={preview} />}
+      {preview && previewed === asked && <Diff r={preview} />}
       {written && <Cmds r={written} label={D.written} />}
     </section>
   );
@@ -301,7 +307,7 @@ export function AddBoxForm(p: {
       const r = await post({ ...body, ...(mode === "preview" ? { preview: true } : {}) });
       if (mode === "preview") {
         setPreview(r);
-        setPreviewed(asked);
+        setPreviewed(JSON.stringify(body));
       } else {
         setWritten(r);
         setPreview(undefined);

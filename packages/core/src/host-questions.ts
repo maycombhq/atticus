@@ -1,7 +1,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { isMap, isSeq, parseDocument, YAMLSeq } from "yaml";
-import { writeFileAtomic } from "./fs.js";
+import { writeFileIfUnchanged } from "./fs.js";
 import { slugify } from "./identity.js";
 import { isAdopted, orgPackDirOf } from "./metarepo.js";
 import { migrateProfileText } from "./profile-migrate.js";
@@ -152,7 +152,7 @@ export async function addOutsideSystem(
       throw new Error(
         `${rel} would not be valid: ${checked.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`,
       );
-    await writeFileAtomic(file, doc.toString());
+    await writeFileIfUnchanged(file, before, doc.toString());
     return { id: sys.id, profile: rel, added: true };
   }
   throw new Error(`${repo} isn't in any repos.manifest.yaml`);
@@ -211,7 +211,7 @@ export async function addProfileSystem(
         if (isSeq(list)) for (const t of missing) list.add(doc.createNode(t));
         else node.set("topics", doc.createNode([...(had.topics ?? []), ...missing]));
         valid(doc, platform);
-        await writeFileAtomic(file, doc.toString());
+        await writeFileIfUnchanged(file, text, doc.toString());
       }
     }
     return {
@@ -247,7 +247,7 @@ export async function addProfileSystem(
       }),
     );
     valid(doc, platform);
-    await writeFileAtomic(file, doc.toString());
+    await writeFileIfUnchanged(file, before, doc.toString());
     return { id: s.id, profile: relOf(platform), added: true };
   }
   throw new Error(`${repo} isn't in any repos.manifest.yaml`);
@@ -300,7 +300,7 @@ export async function addManifestHost(
     if (o.basePath && had === undefined) node.set("basePath", o.basePath);
     // The manifest must still be one Atticus reads before it is written.
     RepoManifest.parse(doc.toJS());
-    await writeFileAtomic(file, doc.toString());
+    await writeFileIfUnchanged(file, text, doc.toString());
     return { manifest: rel, added: true };
   }
   throw new Error(`${repo} isn't in any repos.manifest.yaml`);

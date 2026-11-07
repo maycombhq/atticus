@@ -45,6 +45,8 @@ import { effectiveRules, exampleOf, ruleMatches, rulesDirOf, type Layer } from "
  *   atticus rules import <their metarepo> --type <t> --team <team> [--at <tag>]
  */
 
+import { originOf } from "./file-lock.js";
+
 const run = promisify(execFile);
 const relOf = (root: string) =>
   `${isAdopted(root) ? ".atticus/org-pack" : "org-pack"}/reading-rules`;
@@ -675,7 +677,10 @@ export async function rulesImportCommand(
     return 2;
   }
   const doc = parseDocument(text);
-  doc.set("source", doc.createNode({ from, at: o.at, team: o.team }));
+  doc.set(
+    "source",
+    doc.createNode({ from: await originOf(from, (a) => run("git", a)), at: o.at, team: o.team }),
+  );
   const rel = `imported/${o.team}/${o.type}.yaml`;
   const path = join(rulesDirOf(root), ...rel.split("/"));
   // A rule set active in the copy before stays active when it is the same rule word for word

@@ -140,6 +140,8 @@ export function CopilotRunsProvider({ children }: { children: ReactNode }) {
   const runningId = run?.state === "running" ? run.runId : undefined;
   useEffect(() => {
     if (runningId) setWatched(runningId);
+    // A run starting says nothing of an earlier one's Stop.
+    setStopError(undefined);
   }, [runningId]);
 
   /** A tab's lines from a line on, fetched and put in place (catching up, or earlier lines). */

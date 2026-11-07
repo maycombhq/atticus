@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { lstatSync, realpathSync } from "node:fs";
 import { mkdir, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, relative, sep } from "node:path";
+import { dirname, join, sep } from "node:path";
 import { promisify } from "node:util";
 import { parse, stringify } from "yaml";
 import { isAdopted, orgPackDirOf, writeFileAtomic } from "@maycombhq/core";
@@ -21,6 +21,8 @@ import type { Output } from "./commands.js";
  *   org-pack/agents/[imported/<team>/]<name>.md                   →  .claude/agents/<name>.md, .github/agents/<name>.agent.md
  *   org-pack/instructions/[imported/<team>/]<name>.md             →  CLAUDE.md (an @ import), .github/instructions/<name>.instructions.md
  */
+
+import { originOf } from "./file-lock.js";
 
 const run = promisify(execFile);
 const sha = (t: string) => createHash("sha256").update(t).digest("hex").slice(0, 16);
@@ -126,9 +128,17 @@ export async function sourcesOf(root: string): Promise<SourceItem[]> {
   return out.sort((a, b) => (a.kind + a.name < b.kind + b.name ? -1 : 1));
 }
 
+/** The frontmatter keys another team's skill, agent or instructions keep. */
+const TEAM_KEYS = new Set(["name", "description", "applyTo"]);
+
 /** What each assistant reads, written from one source item. */
 export function outputsOf(i: SourceItem): { path: string; text: string }[] {
-  const { fm, body } = splitFm(i.text);
+  const { fm: all, body } = splitFm(i.text);
+  // Another team's file keeps only the keys that describe it: none that gives it tools, hooks,
+  // permissions or a model here (those are this organisation's to set, in its own files).
+  const fm = i.team
+    ? Object.fromEntries(Object.entries(all).filter(([k]) => TEAM_KEYS.has(k)))
+    : all;
   const description =
     typeof fm.description === "string" && fm.description.trim()
       ? fm.description.trim()
@@ -438,7 +448,15 @@ export async function skillsImportCommand(
       items?: { kind: Kind; name: string; files: Record<string, string> }[];
     };
     const was = new Map((prov.items ?? []).map((x) => [`${x.kind}:${x.name}`, x.files] as const));
-    const items: { kind: Kind; name: string; files: Record<string, string> }[] = [];
+    // Each item says where and at what it came from (an import of some keeps the rest's).
+    const items: {
+      kind: Kind;
+      name: string;
+      files: Record<string, string>;
+      from?: string;
+      at?: string;
+    }[] = [];
+    const origin = await originOf(from, (a) => run("git", a));
     const notes: string[] = [];
     for (const f of found) {
       if (!NAME.test(f.name)) {
@@ -498,7 +516,7 @@ export async function skillsImportCommand(
             `${f.name} states things about the estate (topics, fields, routes) with no atticus command to get them: a reviewer checks it against the map`,
           );
       } else await copy(f.path, join(dest, `${f.name}.md`), `${f.name}.md`);
-      items.push({ kind: f.kind, name: f.name, files });
+      items.push({ kind: f.kind, name: f.name, files, from: origin, at: o.at ?? "working copy" });
     }
     await mkdir(dirname(provPath), { recursive: true });
     await writeFileAtomic(
@@ -507,7 +525,7 @@ export async function skillsImportCommand(
         schemaVersion: 1,
         team: o.team,
         // Where it came from, as the metarepo sees it (no one's home folder in a committed file).
-        from: relative(root, from).split(sep).join("/") || ".",
+        from: origin,
         at: o.at ?? "working copy",
         // An import of some (--only) keeps the record of the rest.
         items: [

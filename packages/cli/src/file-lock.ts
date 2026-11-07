@@ -43,3 +43,23 @@ export const safeMessage = (m: string) =>
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 200);
+
+/**
+ * Where another team's copy came from, as a committed file says it: their clone's remote (with
+ * no sign-in in it), else the folder's name. Never a path of this machine (no one's home folder).
+ */
+export async function originOf(
+  dir: string,
+  git: (args: string[]) => Promise<{ stdout: string }>,
+): Promise<string> {
+  const url = await git(["-C", dir, "remote", "get-url", "origin"])
+    .then((r) => r.stdout.trim())
+    .catch(() => "");
+  if (url) return url.replace(/^([a-z][a-z0-9+.-]*:\/\/)[^@/]*@/i, "$1");
+  return (
+    dir
+      .replace(/[\\/]+$/, "")
+      .split(/[\\/]/)
+      .pop() || dir
+  );
+}

@@ -205,7 +205,10 @@ export function readingRulesText(
  * a rule's file holds there (another team's sentence) is never put in a prompt.
  */
 export const exampleOf = (e: string | undefined): string =>
-  e && e.length <= 300 && /^[^\s`]+:\d+$/.test(e) ? ` For example ${e}.` : "";
+  // A path may have spaces (a folder "Forge Accounts"), never a sentence's end (". ").
+  e && e.length <= 300 && /^[\w./@()+\- ]+:\d+$/.test(e) && !/\.\s/.test(e)
+    ? ` For example ${e}.`
+    : "";
 
 /**
  * Everything a read lacks: the built-in rule sets added since it was read (ADR 0167) and the

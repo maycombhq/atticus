@@ -234,6 +234,15 @@ export function uiLinkRoutes(
         const lines = corrections.map(correctionLine);
         const verify = `atticus verify ${from} --write`;
         const commit = `git add ${rel}${q ? ` questions/` : ""} && git commit -m "${safeMessage(`${from}: calls paired with ${target} on the canvas`)}"`;
+        // The rule's answer is worked out before anything is previewed or written: a problem with it refuses
+        // the whole request, never leaving the pairings written and the person told it failed.
+        let answer: { text: string } | undefined;
+        if (q) {
+          const { targetAnswerOf } = await import("./target-answer.js");
+          const t = await targetAnswerOf(ctx.root, q, target);
+          if ("problem" in t) throw new HttpError(422, "Atticus can't do that yet", t.problem);
+          answer = t;
+        }
         if (preview) {
           const { verifyWritePreview } = await import("./verify-preview.js");
           const v = await verifyWritePreview(ctx.root, from, { extra: corrections });
@@ -249,15 +258,6 @@ export function uiLinkRoutes(
               commit,
             } satisfies Api.ConnectLinksResultT,
           };
-        }
-        // The rule's answer is worked out before anything is written: a problem with it refuses
-        // the whole request, never leaving the pairings written and the person told it failed.
-        let answer: { text: string } | undefined;
-        if (q) {
-          const { targetAnswerOf } = await import("./target-answer.js");
-          const t = await targetAnswerOf(ctx.root, q, target);
-          if ("problem" in t) throw new HttpError(422, "Atticus can't do that yet", t.problem);
-          answer = t;
         }
         if (lines.length) {
           await mkdir(factsDirOf(ctx.root), { recursive: true });

@@ -262,8 +262,10 @@ describe("atticus skills import, write and list", () => {
     await imp({ only: "harbor-java" });
     const prov = parse(read(root, "org-pack/imported/harbor.yaml")) as {
       from: string;
-      items: { name: string }[];
+      items: { name: string; at?: string }[];
     };
+    // Each item says what it came at.
+    expect(prov.items.every((i) => i.at === "v2.1")).toBe(true);
     expect(prov.items.map((i) => i.name).sort()).toEqual([
       "harbor-architect",
       "harbor-java",

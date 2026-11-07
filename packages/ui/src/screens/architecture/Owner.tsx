@@ -79,7 +79,8 @@ export function OwnerForm(p: {
       const r = await put({ ...b, ...(mode === "preview" ? { preview: true } : {}) });
       if (mode === "preview") {
         setPreview(r);
-        setPreviewed(asked);
+        // The form as it was sent, not as it is when the answer comes.
+        setPreviewed(JSON.stringify(b));
       } else {
         setWritten(r);
         setPreview(undefined);

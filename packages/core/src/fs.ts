@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { hostname } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 /**
  * Write a file so a crash never leaves it half-written: write a temporary file beside it,
@@ -45,7 +45,8 @@ export function writeFileIfUnchanged(
   before: string | undefined,
   data: string,
 ): Promise<void> {
-  const prev = writing.get(path) ?? Promise.resolve();
+  const key = resolve(path);
+  const prev = writing.get(key) ?? Promise.resolve();
   const work = async () => {
     const now = await readFile(path, "utf8").catch(() => undefined);
     if (now !== before) throw new FileChangedError(path);
@@ -53,9 +54,9 @@ export function writeFileIfUnchanged(
   };
   const next = prev.then(work, work);
   const tail = next.catch(() => undefined);
-  writing.set(path, tail);
+  writing.set(key, tail);
   void tail.then(() => {
-    if (writing.get(path) === tail) writing.delete(path);
+    if (writing.get(key) === tail) writing.delete(key);
   });
   return next;
 }

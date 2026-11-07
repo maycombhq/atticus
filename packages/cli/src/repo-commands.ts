@@ -14,6 +14,7 @@ import {
   RepoDescription,
   setManifestDescription,
   type RepoDescriptionCite,
+  FileChangedError,
 } from "@maycombhq/core";
 import { gitUser, loadRepos } from "@maycombhq/workspace";
 import type { Output } from "./commands.js";
@@ -474,6 +475,12 @@ export async function keepDraftedDescription(
   });
   if (!d.success)
     return { kept: false, why: d.error.issues[0]?.message ?? "the draft wasn't one line" };
-  await setManifestDescription(root, repo, d.data);
+  try {
+    await setManifestDescription(root, repo, d.data);
+  } catch (e) {
+    // The manifest changed meanwhile: the read's facts stand; the description waits for next time.
+    if (e instanceof FileChangedError) return { kept: false, why: e.message };
+    throw e;
+  }
   return { kept: true };
 }

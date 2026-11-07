@@ -137,6 +137,7 @@ export function Pairing(p: {
     }
     setBusy(mode);
     setError(undefined);
+    const sentAsked = asked;
     try {
       const r = await post({
         from: p.from,
@@ -147,7 +148,8 @@ export function Pairing(p: {
       });
       if (mode === "preview") {
         setPreview(r);
-        setPreviewed(asked);
+        // The picks as they were sent, not as they are when the answer comes.
+        setPreviewed(sentAsked);
       } else {
         setWritten(r);
         setPreview(undefined);
