@@ -439,6 +439,8 @@ interface Impact {
 export function ImpactExplorer({ hash }: { hash: string }) {
   const q = queryParam(hash, "q") ?? "";
   const [text, setText] = useState(q);
+  // A link to another id while on this page: the box follows the hash.
+  useEffect(() => setText(q), [q]);
   const incident = queryParam(hash, "incident") === "1";
   const imp = useApi<Impact>(q ? `/api/impact/${encodeURIComponent(q)}?depth=4` : undefined);
   const inc = useApi<Incident>(
@@ -494,9 +496,14 @@ export function ImpactExplorer({ hash }: { hash: string }) {
             type="button"
             className={`btn ${incident ? "danger" : ""}`}
             aria-pressed={incident}
-            onClick={() =>
-              (location.hash = `#/impact?q=${encodeURIComponent(text.trim())}${incident ? "" : "&incident=1"}`)
-            }
+            onClick={() => {
+              // No id yet: the same word as Submit, rather than a toggle that changes nothing.
+              if (!text.trim()) {
+                setBlank(true);
+                return;
+              }
+              location.hash = `#/impact?q=${encodeURIComponent(text.trim())}${incident ? "" : "&incident=1"}`;
+            }}
           >
             {incident ? T.incidentModeOn : T.incidentMode}
           </button>

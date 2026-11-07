@@ -52,15 +52,28 @@ describe("a change drawn on the canvas", () => {
       (await call("POST", "/api/changes/add-fraud-check/sketch", { stroke, preview: true })).body,
     );
     expect(p.written).toBe(false);
+    // The preview is every file the write touches: the flow's delta, and design.md Atticus writes.
     expect(p.files.map((f) => f.file)).toEqual([
       "openspec/changes/add-fraud-check/target-flows/forge-orders.place-order.yaml",
+      "openspec/changes/add-fraud-check/design.md",
     ]);
     expect(p.files[0]!.changes.some((c) => c.now?.includes("POST /v1/screenings"))).toBe(true);
+    expect(p.fingerprint).toBeDefined();
     expect(
       await readdir(join(root, "openspec/changes/add-fraud-check/target-flows")).catch(() => []),
     ).toEqual([]);
+    // A write with a stale fingerprint is refused; the preview's is accepted.
+    expect(
+      (await call("POST", "/api/changes/add-fraud-check/sketch", { stroke, expect: "0000" }))
+        .status,
+    ).toBe(409);
     const w = Api.SketchResult.parse(
-      (await call("POST", "/api/changes/add-fraud-check/sketch", { stroke })).body,
+      (
+        await call("POST", "/api/changes/add-fraud-check/sketch", {
+          stroke,
+          expect: p.fingerprint,
+        })
+      ).body,
     );
     expect(w.written).toBe(true);
     // The write is what the preview showed.
@@ -71,12 +84,18 @@ describe("a change drawn on the canvas", () => {
     );
     expect(text).toContain("Drafted by pat on the canvas");
     expect(text).toContain("why: Drawn on the canvas by pat on the canvas.");
+    expect(text).toMatch(/why: drawn on the canvas by pat on the canvas, stroke [a-z0-9]+/);
+    // design.md was written too, as previewed.
+    expect(
+      await readFile(join(root, "openspec/changes/add-fraud-check/design.md"), "utf8"),
+    ).toContain("POST /v1/screenings");
     expect(w.map?.nodes.find((n) => n.id.includes("northwind"))?.legend).toBe("new");
     expect(w.drawn).toEqual([
       {
         flow: "forge-orders.place-order",
         index: 0,
         what: "call-out → northwind-pay POST /v1/screenings",
+        by: "pat on the canvas",
       },
     ]);
   });

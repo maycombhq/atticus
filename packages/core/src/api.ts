@@ -3156,6 +3156,8 @@ export const SketchStrokeRequest = z.object({
     .passthrough(),
   /** Say what it would write; write nothing. */
   preview: z.boolean().optional(),
+  /** The preview's fingerprint of the target flows: the write is refused (409) when they changed since. */
+  expect: z.string().optional(),
 });
 export const SketchResult = z.object({
   written: z.boolean(),
@@ -3166,9 +3168,18 @@ export const SketchResult = z.object({
   pick: z.object({ flows: z.array(z.object({ id: z.string(), name: z.string() })) }).optional(),
   /** The change's picture after the stroke (as GET /api/changes/{id}/map), when it was written. */
   map: ChangeMap.optional(),
-  /** The strokes drawn here that Undo can take back: flow and the step's index in the delta. */
-  drawn: z.array(z.object({ flow: z.string(), index: z.number().int(), what: z.string() })),
+  /** The strokes drawn here that Undo can take back: flow, the first step's index in the delta, and who drew it. */
+  drawn: z.array(
+    z.object({
+      flow: z.string(),
+      index: z.number().int(),
+      what: z.string(),
+      by: z.string().optional(),
+    }),
+  ),
   commit: z.string(),
+  /** The target flows as they are now, to send back as `expect` on the write. */
+  fingerprint: z.string().optional(),
 });
 export const UndeclareLinkRequest = z.object({
   kind: z.enum(["topic", "call"]),
@@ -4058,7 +4069,7 @@ const OPS: Record<string, Record<string, Op>> = {
       params: [p("changeId")],
       body: SketchStrokeRequest,
       ok: { status: 200, schema: "SketchResult", description: "Drawn, or why not" },
-      errors: [400, 404, 409, 422],
+      errors: [400, 404, 409],
     },
   },
   "/api/changes/{changeId}/impact": {

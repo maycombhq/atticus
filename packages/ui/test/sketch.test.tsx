@@ -202,6 +202,36 @@ describe("the panel", () => {
     });
   });
 
+  it("a failed write turns Draw it off until the stroke is previewed again, and sends the preview's fingerprint", async () => {
+    let fail = false;
+    const sent: { expect?: string; preview?: boolean }[] = [];
+    const m = mount(
+      SketchForm as never,
+      {
+        change: "c",
+        drawn: [],
+        post: async (b: { expect?: string; preview?: boolean }) => {
+          sent.push(b);
+          if (fail && !b.preview) throw new Error("c's target flows changed since the preview");
+          return { written: !b.preview, files: [], drawn: [], commit: "", fingerprint: "abc" };
+        },
+      } as never,
+    );
+    type(m, 0, "forge-orders");
+    type(m, 2, "northwind-pay");
+    type(m, 3, "POST /v1/screenings");
+    await click(m, S.preview);
+    const draw = () => all(m.tree).find((e) => e.props.className === "btn primary")!;
+    expect(draw().props.disabled).toBe(false);
+    fail = true;
+    await click(m, S.draw);
+    expect(sent[1]).toMatchObject({ expect: "abc" });
+    expect(
+      all(m.tree).some((e) => e.props.role === "alert" && text(e).includes("changed since")),
+    ).toBe(true);
+    expect(draw().props.disabled).toBe(true);
+  });
+
   it("a problem from the server is said and keeps Draw it off; the flows to pick from become a select", async () => {
     const m = mount(
       SketchForm as never,
@@ -229,11 +259,16 @@ describe("the panel", () => {
     await click(m, S.preview);
     expect(text(m.tree)).toContain("forge-stock has 2 flows");
     expect(all(m.tree).find((e) => e.props.className === "btn primary")!.props.disabled).toBe(true);
-    const sel = all(m.tree).find((e) => e.type === "select")!;
-    expect(all(sel.props.children).map((o) => o.props.value)).toEqual([
+    const sel = () => all(m.tree).find((e) => e.type === "select")!;
+    expect(all(sel().props.children).map((o) => o.props.value)).toEqual([
       "",
       "forge-stock.reserve",
       "forge-stock.release",
     ]);
+    // Picking a flow keeps the select (the problem is cleared, the choice stays).
+    (sel().props.onChange as (e: unknown) => void)({ target: { value: "forge-stock.reserve" } });
+    m.render();
+    expect(sel().props.value).toBe("forge-stock.reserve");
+    expect(all(m.tree).some((e) => e.props.role === "alert")).toBe(false);
   });
 });

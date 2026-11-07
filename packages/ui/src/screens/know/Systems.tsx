@@ -108,17 +108,16 @@ export function Systems({ hash }: { hash: string }) {
       )}
       {system && (
         <Panel title={Y.questions} span="span 6">
-          {open.length === 0 ? (
-            <p className="muted" style={{ margin: 0 }}>
-              {Y.noQuestions}
-            </p>
-          ) : (
-            <ul style={{ margin: 0, paddingLeft: 18 }}>
-              {open.map((q) => (
-                <li key={q.id}>{q.question}</li>
-              ))}
-            </ul>
-          )}
+          {/* Loading and a failed read show as such, never as "no questions". */}
+          <View of={questions} empty={() => open.length === 0} emptyText={Y.noQuestions}>
+            {() => (
+              <ul style={{ margin: 0, paddingLeft: 18 }}>
+                {open.map((q) => (
+                  <li key={q.id}>{q.question}</li>
+                ))}
+              </ul>
+            )}
+          </View>
         </Panel>
       )}
     </div>

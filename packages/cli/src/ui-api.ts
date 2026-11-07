@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readdir, readFile, writeFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
 import {
@@ -12,6 +12,7 @@ import {
   runsDirOf,
   runsRelOf,
   RUN_SCHEMA_VERSION,
+  writeFileIfUnchanged,
   type ChangeLifecycle,
   type Finding,
 } from "@maycombhq/core";
@@ -341,7 +342,8 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
           throw conflict(
             `${rel} changed since you opened it. Reload it, then make your edit again.`,
           );
-        await writeFile(file, b.content, "utf8");
+        // Atomic, and refused (409) if another save landed between the read and the write.
+        await writeFileIfUnchanged(file, now, b.content);
         ctx.events.publish({
           type: "file.changed",
           path: `${changesRelOf(root)}/${params.changeId}/${rel}`,
@@ -577,11 +579,13 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
         if (v.state !== "failed")
           throw conflict(`Only a failed run can be retried; ${v.runId} is ${v.state}.`);
         const file = join(runsDirOf(root), v.change, v.runId, "run.json");
-        const rec = JSON.parse(await readFile(file, "utf8"));
+        const was = await readFile(file, "utf8");
+        const rec = JSON.parse(was);
         rec.state = "prepared";
         rec.attempt = (rec.attempt ?? 1) + 1;
         rec.errors = [];
-        await writeFile(file, JSON.stringify(rec, null, 2) + "\n");
+        // Atomic (a step reading run.json never sees half a file), 409 if a runner wrote meanwhile.
+        await writeFileIfUnchanged(file, was, JSON.stringify(rec, null, 2) + "\n");
         const after = await findRun(root, params.runId!);
         ctx.events.publish({ type: "run.changed", runId: after.runId, state: after.state });
         return { status: 200, body: after };
@@ -591,10 +595,11 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
         if (["validated", "cancelled"].includes(v.state))
           throw conflict(`Run ${v.runId} is already ${v.state}.`);
         const file = join(runsDirOf(root), v.change, v.runId, "run.json");
-        const rec = JSON.parse(await readFile(file, "utf8"));
+        const was = await readFile(file, "utf8");
+        const rec = JSON.parse(was);
         rec.state = "cancelled";
         rec.finishedAt = new Date().toISOString();
-        await writeFile(file, JSON.stringify(rec, null, 2) + "\n");
+        await writeFileIfUnchanged(file, was, JSON.stringify(rec, null, 2) + "\n");
         const after = await findRun(root, params.runId!);
         ctx.events.publish({ type: "run.changed", runId: after.runId, state: after.state });
         return { status: 200, body: after };

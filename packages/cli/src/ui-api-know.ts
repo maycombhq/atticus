@@ -104,6 +104,18 @@ export function uiKnowRoutes(
       // A command that printed words, not JSON, on a refusal.
       body = undefined;
     }
+    // Nothing printed and a non-zero exit: the command said no in words (a feature that isn't
+    // there, a view that can't be shown yet), never data for a page to read.
+    if (body === null && code !== 0) {
+      const words = err.join("\n").trim() || "The command gave no answer.";
+      if (/^(There is no|No .+ (is|named) )/i.test(words)) throw notFound(words);
+      throw new HttpError(
+        422,
+        "Atticus can't show that yet",
+        words,
+        scanFirst(words) ? { notYet: true } : undefined,
+      );
+    }
     if (body === undefined) {
       const words = [...err, ...out].join("\n") || "No output.";
       // A refusal that names the step to take first (a scan) is an empty state, not a failure.
@@ -135,118 +147,126 @@ export function uiKnowRoutes(
     }
     return { code, text: out.join("\n"), problems: err };
   };
-  return r
-    .add("POST", "/api/triage/{itemId}/decide", async ({ params, body }) => {
-      const b = Api.TriageDecideRequest.safeParse(body ?? {});
-      if (!b.success)
-        throw badRequest("Some fields aren't right.", {
-          errors: b.error.issues.map((i) => ({ path: i.path.join("."), message: i.message })),
-        });
-      const { triageDecide } = await import("./intake-commands.js");
-      const out: string[] = [];
-      const err: string[] = [];
-      const code = await triageDecide(
-        ctx.root,
-        params.itemId!,
-        b.data.option,
-        { by: ctx.user, ...(b.data.reason ? { reason: b.data.reason } : {}) },
-        { out: (l) => out.push(l), err: (l) => err.push(l) },
-      );
-      if (code !== 0) {
-        const detail = [...err, ...out].join("\n") || "Atticus refused.";
-        if (/There is no open triage item/.test(detail)) throw notFound(detail);
-        throw code === 2 ? badRequest(detail) : new HttpError(422, "Atticus refused", detail);
-      }
-      ctx.events.publish({ type: "file.changed", path: "catalog/curated" });
-      return { status: 200, body: { item: params.itemId, option: b.data.option, lines: out } };
-    })
-    .add("GET", "/api/setup", async () => ({
-      status: 200,
-      body: await setupSteps(ctx.root, { doctor: machine() }),
-    }))
-    .add("GET", "/api/doctor", async ({ query }) => {
-      const checks = await machine(query.get("fresh") === "1");
-      return { status: 200, body: { checks, ok: !checks.some((c) => c.status === "fail") } };
-    })
-    .add("POST", "/api/baseline", async ({ body }) => {
-      const b = Api.BaselineRequest.safeParse(body ?? {});
-      if (!b.success) throw badRequest("Some fields aren't right.");
-      // Accepting the catalog writes catalog/baseline.yaml with the person's name; it reaches
-      // main through a pull request like any other metarepo file (ADR 0073). No role is checked.
-      const out: string[] = [];
-      const err: string[] = [];
-      const code = await baselineCommand(
-        ctx.root,
-        { by: ctx.user, ...(b.data.note ? { note: b.data.note } : {}) },
-        { out: (l) => out.push(l), err: (l) => err.push(l) },
-      );
-      if (code !== 0) throw new HttpError(422, "Atticus refused", [...err, ...out].join("\n"));
-      ctx.events.publish({ type: "file.changed", path: "catalog/baseline.yaml" });
-      return {
+  return (
+    r
+      .add("POST", "/api/triage/{itemId}/decide", async ({ params, body }) => {
+        const b = Api.TriageDecideRequest.safeParse(body ?? {});
+        if (!b.success)
+          throw badRequest("Some fields aren't right.", {
+            errors: b.error.issues.map((i) => ({ path: i.path.join("."), message: i.message })),
+          });
+        const { triageDecide } = await import("./intake-commands.js");
+        const out: string[] = [];
+        const err: string[] = [];
+        const code = await triageDecide(
+          ctx.root,
+          params.itemId!,
+          b.data.option,
+          { by: ctx.user, ...(b.data.reason ? { reason: b.data.reason } : {}) },
+          { out: (l) => out.push(l), err: (l) => err.push(l) },
+        );
+        if (code !== 0) {
+          const detail = [...err, ...out].join("\n") || "Atticus refused.";
+          if (/There is no open triage item/.test(detail)) throw notFound(detail);
+          throw code === 2 ? badRequest(detail) : new HttpError(422, "Atticus refused", detail);
+        }
+        ctx.events.publish({ type: "file.changed", path: "catalog/curated" });
+        return { status: 200, body: { item: params.itemId, option: b.data.option, lines: out } };
+      })
+      .add("GET", "/api/setup", async () => ({
         status: 200,
-        body: { lines: out, ...(await setupSteps(ctx.root, { doctor: await machine() })) },
-      };
-    })
-    .add("GET", "/api/guide/{system}", async ({ params }) => {
-      const id = params.system!;
-      if (!ID.test(id)) throw badRequest(`${id} isn't an id.`);
-      try {
+        body: await setupSteps(ctx.root, { doctor: machine() }),
+      }))
+      .add("GET", "/api/doctor", async ({ query }) => {
+        const checks = await machine(query.get("fresh") === "1");
+        return { status: 200, body: { checks, ok: !checks.some((c) => c.status === "fail") } };
+      })
+      .add("POST", "/api/baseline", async ({ body }) => {
+        const b = Api.BaselineRequest.safeParse(body ?? {});
+        if (!b.success) throw badRequest("Some fields aren't right.");
+        // Accepting the catalog writes catalog/baseline.yaml with the person's name; it reaches
+        // main through a pull request like any other metarepo file (ADR 0073). No role is checked.
+        const out: string[] = [];
+        const err: string[] = [];
+        const code = await baselineCommand(
+          ctx.root,
+          { by: ctx.user, ...(b.data.note ? { note: b.data.note } : {}) },
+          { out: (l) => out.push(l), err: (l) => err.push(l) },
+        );
+        if (code !== 0) throw new HttpError(422, "Atticus refused", [...err, ...out].join("\n"));
+        ctx.events.publish({ type: "file.changed", path: "catalog/baseline.yaml" });
         return {
           status: 200,
-          body: systemGuide(await catalogRecords(ctx.root), id, {
-            changes: await openChanges(ctx.root),
-          }),
+          body: { lines: out, ...(await setupSteps(ctx.root, { doctor: await machine() })) },
         };
-      } catch (e) {
-        throw notFound((e as Error).message);
-      }
-    })
-    .add("GET", "/api/initiatives", async () => {
-      const v = await readView(ctx.root);
-      const body = [];
-      for (const i of v.all("Initiative").sort((a, b) => a.id.localeCompare(b.id)))
-        body.push(await initiativeStatus(ctx.root, i.id));
-      return { status: 200, body };
-    })
-    .add("GET", "/api/diagram/{view}", async ({ params, query }) => {
-      const name = params.view!;
-      if (!DIAGRAM_VIEWS.includes(name))
-        throw badRequest(`${name} isn't a view. Views: ${DIAGRAM_VIEWS.join(", ")}.`);
-      const focus = query.get("focus") ?? undefined;
-      if (focus !== undefined && !ID.test(focus)) throw badRequest(`${focus} isn't an id.`);
-      return {
-        status: 200,
-        body: await text(["diagram", "render", name, ...(focus ? ["--focus", focus] : [])]),
-      };
-    })
-    .add("GET", "/api/diagram/{view}/graph", async ({ params, query }) => {
-      const name = params.view!;
-      if (!DIAGRAM_VIEWS.includes(name) || name === "sequence")
-        throw badRequest(
-          `${name} has no canvas. Views: ${DIAGRAM_VIEWS.filter((v) => v !== "sequence").join(", ")}.`,
-        );
-      const focus = query.get("focus") ?? undefined;
-      if (focus !== undefined && !ID.test(focus)) throw badRequest(`${focus} isn't an id.`);
-      const r = await text([
-        "diagram",
-        "render",
-        name,
-        "--format",
-        "json",
-        ...(focus ? ["--focus", focus] : []),
-      ]);
-      const out = r.text.trim();
-      if (!out.startsWith("{")) {
-        const words = r.problems.join("\n") || "Nothing to draw.";
-        throw new HttpError(
-          422,
-          "Atticus can't show that yet",
-          words,
-          scanFirst(words) ? { notYet: true } : undefined,
-        );
-      }
-      return { status: 200, body: { view: JSON.parse(out) as unknown } };
-    })
-    .add("GET", "/api/view/{name}", ({ params }) => view(params.name!))
-    .add("GET", "/api/view/{name}/{id}", ({ params }) => view(params.name!, params.id!));
+      })
+      .add("GET", "/api/guide/{system}", async ({ params }) => {
+        const id = params.system!;
+        if (!ID.test(id)) throw badRequest(`${id} isn't an id.`);
+        try {
+          return {
+            status: 200,
+            body: systemGuide(await catalogRecords(ctx.root), id, {
+              changes: await openChanges(ctx.root),
+            }),
+          };
+        } catch (e) {
+          throw notFound((e as Error).message);
+        }
+      })
+      .add("GET", "/api/initiatives", async () => {
+        const v = await readView(ctx.root);
+        const body = [];
+        for (const i of v.all("Initiative").sort((a, b) => a.id.localeCompare(b.id)))
+          body.push(await initiativeStatus(ctx.root, i.id));
+        return { status: 200, body };
+      })
+      .add("GET", "/api/diagram/{view}", async ({ params, query }) => {
+        const name = params.view!;
+        if (!DIAGRAM_VIEWS.includes(name))
+          throw badRequest(`${name} isn't a view. Views: ${DIAGRAM_VIEWS.join(", ")}.`);
+        const focus = query.get("focus") ?? undefined;
+        if (focus !== undefined && !ID.test(focus)) throw badRequest(`${focus} isn't an id.`);
+        return {
+          status: 200,
+          body: await text(["diagram", "render", name, ...(focus ? ["--focus", focus] : [])]),
+        };
+      })
+      .add("GET", "/api/diagram/{view}/graph", async ({ params, query }) => {
+        const name = params.view!;
+        if (!DIAGRAM_VIEWS.includes(name) || name === "sequence")
+          throw badRequest(
+            `${name} has no canvas. Views: ${DIAGRAM_VIEWS.filter((v) => v !== "sequence").join(", ")}.`,
+          );
+        const focus = query.get("focus") ?? undefined;
+        if (focus !== undefined && !ID.test(focus)) throw badRequest(`${focus} isn't an id.`);
+        const r = await text([
+          "diagram",
+          "render",
+          name,
+          "--format",
+          "json",
+          ...(focus ? ["--focus", focus] : []),
+        ]);
+        const out = r.text.trim();
+        if (!out.startsWith("{")) {
+          const words = r.problems.join("\n") || "Nothing to draw.";
+          throw new HttpError(
+            422,
+            "Atticus can't show that yet",
+            words,
+            scanFirst(words) ? { notYet: true } : undefined,
+          );
+        }
+        return { status: 200, body: { view: JSON.parse(out) as unknown } };
+      })
+      // The API's own coverage (ADR 0021): the view's `api` part, in the Coverage schema.
+      .add("GET", "/api/coverage", async () => {
+        const r = await view("coverage");
+        const data = r.body.data as { api?: unknown } | null;
+        return { status: 200, body: data?.api ?? { areas: [], systems: [] } };
+      })
+      .add("GET", "/api/view/{name}", ({ params }) => view(params.name!))
+      .add("GET", "/api/view/{name}/{id}", ({ params }) => view(params.name!, params.id!))
+  );
 }

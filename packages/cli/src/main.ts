@@ -510,7 +510,7 @@ Usage:
   atticus skills list [--json]         The skills, agents and team instructions the org pack keeps (yours and other teams' imported), and where each is written for Claude and Copilot (ADR 0177)
   atticus skills import <their repo> --team <team> [--at <tag>] [--only <names>] [--replace]   A pinned copy of another team's skills, agents and instructions in the org pack, then written for both assistants; a file edited here is kept
   atticus skills write [--check]       Write .claude/ and .github/ files (and CLAUDE.md's team instructions) from the org pack's sources; --check exits 1 when they are behind
-  atticus connect match <repo> --to <repo> | --system <id> [--mode copilot-acp|hand-off] [--json]   Copilot reads the repo's loose call sites and proposes which of the other box's APIs each reaches, naming the lines; it writes only its answer under proposals/matching/, and nothing is a correction until a person ticks it in the app's Connect panel (ADR 0178)
+  atticus connect match <repo> --to <repo> | --system <id> [--mode copilot-acp|hand-off] [--read] [--json]   Copilot reads the repo's loose call sites and proposes which of the other box's APIs each reaches, naming the lines; it writes only its answer under proposals/matching/, and nothing is a correction until a person ticks it in the app's Connect panel; --read reads the answer back after a hand-off (ADR 0178)
   atticus rules list [<repo>] [--json]   The organisation's reading rules (ADR 0176): every layer's file, or the rules a repo's reads are given, with their layer, drafts and what is switched off
   atticus rules add --org-wide | --type <t> | --repo <r> --key <k> --rule "..." [--files <glob,glob>] [--example <path:line>] [--draft]   Write a reading rule to a layer's file, for review
   atticus rules activate <key> --org-wide | --type <t> | --repo <r> | --team <team> --type <t>   Give a draft rule to reads (--team: one of another team's imported copy)
@@ -1072,6 +1072,7 @@ const OPTIONS = {
   file: { type: "string" },
   submodule: { type: "boolean" },
   save: { type: "boolean" },
+  read: { type: "boolean" },
   only: { type: "string" },
   "verified-only": { type: "boolean" },
   unverified: { type: "boolean" },
@@ -1428,6 +1429,7 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
           ...(text(values.to) ? { to: text(values.to)! } : {}),
           ...(sys ? { system: sys } : {}),
           ...(text(values.mode) ? { mode: text(values.mode)! } : {}),
+          ...(values.read === true ? { read: true } : {}),
           ...(values.json === true ? { json: true } : {}),
           candidates: (from, to) => l.candidatesOf(root, from, to),
         },

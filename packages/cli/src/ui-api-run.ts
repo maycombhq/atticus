@@ -1,4 +1,5 @@
 import { readdir, readFile, stat } from "node:fs/promises";
+import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { parse } from "yaml";
 import { z } from "zod";
@@ -1011,8 +1012,11 @@ export function uiRunRoutes(r: Router, ctx: ServerContext, deps: RunDeps = {}): 
       })
       .add("POST", "/api/learning/sandbox", async ({ body }) => {
         const b = parseBody(Api.SandboxRequest, body);
+        // A folder typed on the page: `~` is the person's home, a relative one is under the metarepo
+        // (never the server's working folder, which is wherever atticus ui was started).
+        const dir = b.dir.replace(/^~(?=$|[\\/])/, homedir());
         const res = await run((io) =>
-          sandboxCreate(resolve(b.dir), { json: true }, io, nowDate ? { now: nowDate() } : {}),
+          sandboxCreate(resolve(root, dir), { json: true }, io, nowDate ? { now: nowDate() } : {}),
         );
         const out = jsonOf<Record<string, unknown>>(res);
         if (res.code !== 0 || !out) throw refused(res);

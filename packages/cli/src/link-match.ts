@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import {
   Api,
@@ -12,6 +12,7 @@ import {
 } from "@maycombhq/core";
 import { parseDocument } from "yaml";
 import { z } from "zod";
+import { badRequest } from "@maycombhq/server";
 import type { Output } from "./commands.js";
 import { copilotAcpAllowed, copilotAcpByDefault, type AcpStepRunner } from "./copilot-acp-steps.js";
 import { dataBlock } from "./rules-commands.js";
@@ -31,7 +32,7 @@ const SAFE = /^[A-Za-z0-9._-]{1,200}$/;
 export function matchFilesOf(root: string, from: string, to: Api.LinkBoxT) {
   const box = to.repo ? `repo-${to.repo}` : `system-${to.system}`;
   if (!SAFE.test(from) || !SAFE.test(box.slice(box.indexOf("-") + 1)))
-    throw new Error("A box's name has letters, digits, . _ - only.");
+    throw badRequest("A box's name has letters, digits, . _ - only.");
   const dir = `${proposalsRelOf(root)}/matching`;
   return {
     dir: join(proposalsDirOf(root), "matching"),
@@ -41,18 +42,11 @@ export function matchFilesOf(root: string, from: string, to: Api.LinkBoxT) {
 }
 
 /** What the session writes back; nothing else of it is read. */
+const Loose = z.object({}).passthrough();
+const str = (v: unknown) => (typeof v === "string" ? v : typeof v === "number" ? String(v) : "");
 export const MatchAnswer = z.object({
-  pairs: z
-    .array(
-      z.object({
-        call: z.string(),
-        api: z.string(),
-        why: z.string().default(""),
-        lines: z.array(z.string()).default([]),
-      }),
-    )
-    .default([]),
-  none: z.array(z.object({ call: z.string(), why: z.string().default("") })).default([]),
+  pairs: z.array(Loose).catch([]).default([]),
+  none: z.array(Loose).catch([]).default([]),
 });
 export type MatchAnswer = z.infer<typeof MatchAnswer>;
 
@@ -120,20 +114,28 @@ export function checkMatchAnswer(
 ): Pick<Api.MatchLinksViewT, "proposals" | "none" | "rejected"> | { error: string } {
   let raw: unknown;
   try {
-    raw = parseDocument(text).toJS();
+    const doc = parseDocument(text);
+    if (doc.errors.length)
+      return { error: `The answer doesn't read as YAML: ${doc.errors[0]!.message.split("\n")[0]}` };
+    raw = doc.toJS();
   } catch (e) {
     return { error: `The answer doesn't read as YAML: ${(e as Error).message}` };
   }
-  const a = MatchAnswer.safeParse(raw ?? {});
-  if (!a.success) return { error: "The answer isn't in the shape the brief asked for." };
+  if (raw === null || raw === undefined || typeof raw !== "object" || Array.isArray(raw))
+    return { error: "The answer isn't in the shape the brief asked for (pairs: and none:)." };
+  const a = MatchAnswer.parse(raw);
   const calls = new Set(view.calls.filter((c) => c.status !== "paired").map((c) => c.fact));
   const apis = new Set(view.apis.map((x) => x.id));
   const proposals: Api.MatchProposalT[] = [];
   const none: Api.MatchLinksViewT["none"] = [];
   const rejected: string[] = [];
   const seen = new Set<string>();
-  for (const p of a.data.pairs) {
-    if (!calls.has(p.call)) rejected.push(`${p.call} isn't one of ${view.from}'s loose calls.`);
+  // One sloppy line never loses the good ones: each is read on its own.
+  for (const raw of a.pairs) {
+    const p = { call: str(raw.call), api: str(raw.api), why: str(raw.why), lines: raw.lines };
+    if (!p.call || !p.api) rejected.push(`A pair without a call and an api was left out.`);
+    else if (!calls.has(p.call))
+      rejected.push(`${p.call} isn't one of ${view.from}'s loose calls.`);
     else if (!apis.has(p.api)) rejected.push(`${p.api} isn't an API of ${view.toName}.`);
     else if (seen.has(p.call)) rejected.push(`${p.call} is paired twice; the first is kept.`);
     else {
@@ -142,13 +144,20 @@ export function checkMatchAnswer(
         call: p.call,
         api: p.api,
         why: p.why.slice(0, 500),
-        lines: p.lines.filter((l) => /^[^\s:]+:\d+$/.test(l)).slice(0, 20),
+        lines: (Array.isArray(p.lines) ? p.lines : [])
+          .map(str)
+          .filter((l) => /^[^\s:]+:\d+$/.test(l))
+          .slice(0, 20),
       });
     }
   }
-  for (const n of a.data.none) {
+  for (const raw of a.none) {
+    const n = { call: str(raw.call), why: str(raw.why) };
+    if (!n.call) continue;
     if (!calls.has(n.call)) rejected.push(`${n.call} isn't one of ${view.from}'s loose calls.`);
-    else if (!seen.has(n.call)) {
+    else if (seen.has(n.call))
+      rejected.push(`${n.call} is both paired and said to match nothing; the pair is kept.`);
+    else {
       seen.add(n.call);
       none.push({ call: n.call, why: n.why.slice(0, 500) });
     }
@@ -177,16 +186,13 @@ export async function runMatch(
   const base = { from: view.from, to: view.to, brief: files.brief, answer: files.answer };
   const brief = matchBrief({ view, quotes: o.quotes, answer: files.answer });
   await mkdir(files.dir, { recursive: true });
+  // An earlier answer is of an earlier brief: it goes, so nothing stale reads as done.
+  await rm(join(root, ...files.answer.split("/")), { force: true });
   await writeFileAtomic(join(root, ...files.brief.split("/")), `${brief}\n`);
   const op = await loadOrgPack(orgPackDirOf(root));
   const acp = o.mode === "copilot-acp" || (o.mode === undefined && copilotAcpByDefault(op));
-  if (!acp || (!copilotAcpAllowed(op) && !o.runner)) {
-    // Copilot Chat does the reading; an answer already on file is read back.
-    const m = await readMatch(root, view);
-    return m.state === "done" || m.state === "failed"
-      ? m
-      : { ...base, state: "handoff", proposals: [], none: [], rejected: [] };
-  }
+  if (!acp || (!copilotAcpAllowed(op) && !o.runner))
+    return { ...base, state: "handoff", proposals: [], none: [], rejected: [] };
   const runner =
     o.runner ?? (await (await import("./copilot-acp-steps.js")).acpStepRunner(root, { op }));
   try {
@@ -207,7 +213,17 @@ export async function runMatch(
       error: (e as Error).message,
     };
   }
-  return readMatch(root, view);
+  const m = await readMatch(root, view);
+  return m.state === "done" || m.state === "failed"
+    ? m
+    : {
+        ...base,
+        state: "failed",
+        proposals: [],
+        none: [],
+        rejected: [],
+        error: "The session ended without writing its answer.",
+      };
 }
 
 /** The answer on file, checked; idle when there is none yet. */
@@ -254,6 +270,8 @@ export async function connectMatchCommand(
     to?: string;
     system?: string;
     mode?: string;
+    /** Read the answer on file (after a hand-off) instead of starting anything. */
+    read?: boolean;
     json?: boolean;
     runner?: AcpStepRunner;
     candidates: (
@@ -265,7 +283,7 @@ export async function connectMatchCommand(
 ): Promise<number> {
   if (!from || !!o.to === !!o.system) {
     io.err(
-      "Usage: atticus connect match <repo> --to <repo> | --system <id> [--mode copilot-acp|hand-off]",
+      "Usage: atticus connect match <repo> --to <repo> | --system <id> [--mode copilot-acp|hand-off] [--read]",
     );
     return 2;
   }
@@ -284,21 +302,29 @@ export async function connectMatchCommand(
     io.err(`${view.toName} has no API on record${view.noApis ? `: ${view.noApis.command}` : ""}.`);
     return 2;
   }
-  const r = await runMatch(root, {
-    view,
-    quotes: quotesOf(facts),
-    ...(o.mode ? { mode: o.mode as "copilot-acp" | "hand-off" } : {}),
-    ...(o.runner ? { runner: o.runner } : {}),
-    onProgress: io.out,
-  });
+  const r = o.read
+    ? await readMatch(root, view)
+    : await runMatch(root, {
+        view,
+        quotes: quotesOf(facts),
+        ...(o.mode ? { mode: o.mode as "copilot-acp" | "hand-off" } : {}),
+        ...(o.runner ? { runner: o.runner } : {}),
+        onProgress: io.out,
+      });
   if (o.json) {
     io.out(JSON.stringify(r, null, 2));
     return r.state === "failed" ? 1 : 0;
   }
+  if (r.state === "idle") {
+    io.out(`No brief yet for ${from} and ${view.toName}: run without --read first.`);
+    return 1;
+  }
   if (r.state === "handoff") {
-    io.out(`In a NEW Copilot Chat (agent mode): read ${r.brief} and do what it says.`);
     io.out(
-      `It writes ${r.answer}; then atticus connect match ${from} ${o.to ? `--to ${o.to}` : `--system ${o.system}`} --mode hand-off reads it back, or the app's Connect panel does.`,
+      `In a NEW Copilot Chat (agent mode) or Claude Code session: read ${r.brief} and do what it says.`,
+    );
+    io.out(
+      `It writes ${r.answer}; then atticus connect match ${from} ${o.to ? `--to ${o.to}` : `--system ${o.system}`} --read reads it back, or the app's Connect panel does (Read the answer).`,
     );
     return 0;
   }

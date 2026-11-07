@@ -1246,6 +1246,9 @@ export const COPY = {
     step: "Step number (1 is the first)",
     toComponent: "To component",
     toEntry: "Its API (METHOD /path, an Endpoint id, or a topic)",
+    toEntryExample: "POST /v1/screenings",
+    flowOption: (name: string, id: string) => `${name} (${id})`,
+    drawnBy: (by: string) => `by ${by}`,
     toNew: "The API doesn't exist yet",
     topic: "Topic or queue",
     listener: "A component that listens (optional)",
@@ -1253,6 +1256,7 @@ export const COPY = {
     op: "Reads or writes",
     ops: { read: "Reads", write: "Writes", lookup: "Looks up" },
     table: "Table (store.table)",
+    tableExample: "orders-db.screenings",
     columns: "Columns, comma-separated (optional)",
     tableNew: "The table doesn't exist yet",
     what: "What the step does (optional)",
@@ -1269,8 +1273,9 @@ export const COPY = {
     previewing: "Previewing…",
     draw: "Draw it",
     drawing: "Drawing…",
-    previewSays: "Draw it writes exactly these lines:",
-    written: "Drawn. The picture shows it. Commit the target flows when you're ready:",
+    previewSays:
+      "Draw it writes exactly these lines (the flow's target file, and design.md where Atticus wrote it):",
+    written: "Drawn. The picture shows it. Commit the change's files when you're ready:",
     copy: "Copy",
     drawnTitle: "Strokes drawn here",
     drawnNone: "None yet.",
@@ -2736,7 +2741,7 @@ export const COPY = {
     lessonsRunOnlyIn:
       "Lessons run only in a practice sandbox: a throwaway copy of the invented Forge estate. No network, no real systems, no real data. This metarepo isn't one, so lessons are read-only here.",
     aNewEmptyFolder: "A new, empty folder for the sandbox",
-    homeYouAtticusSandbox: "/home/you/atticus-sandbox",
+    homeYouAtticusSandbox: "a new empty folder, full path (or ~/atticus-sandbox)",
     makeASandbox: "Make a sandbox",
     learning: "Learning",
     practiceSandboxOfflineForge: "PRACTICE SANDBOX · OFFLINE FORGE",
@@ -3884,7 +3889,7 @@ export const COPY = {
       `Copilot is reading ${from}'s call sites against ${to}'s APIs. This takes a minute or two; the proposals appear here.`,
     readAnswer: "Read the answer",
     handoff: (brief: string) =>
-      `Copilot can't be started from here (runtime.yaml doesn't allow copilot-acp), so the brief is written for your assistant: in a new Copilot Chat (agent mode) or Claude Code session, say "read ${brief} and do what it says", then Read the answer.`,
+      `The brief is written for your assistant (Copilot can't be started from here: runtime.yaml doesn't allow copilot-acp). In a new Copilot Chat (agent mode) or Claude Code session, say "read ${brief} and do what it says", then Read the answer.`,
     answerAt: (file: string) => `It writes its answer to ${file}.`,
     copy: "Copy",
     done: (p: number, n: number, r: number) =>

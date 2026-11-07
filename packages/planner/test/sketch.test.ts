@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { parseRecord, type FlowRecord } from "@maycombhq/core";
-import { applyStroke, FlowDelta, Stroke, mergeDelta } from "../src/index.js";
+import {
+  applyStroke,
+  drawnStrokes,
+  FlowDelta,
+  isDrawnStep,
+  sketchOf,
+  Stroke,
+  mergeDelta,
+} from "../src/index.js";
 
 /**
  * ADR 0179: a change sketched on the canvas. Each stroke becomes a flow delta in the change's
@@ -84,7 +92,7 @@ describe("strokes become flow deltas", () => {
       repo: "forge-orders",
       why: "Drawn on the canvas by pat.",
     });
-    expect(d.steps).toEqual([
+    expect(d.steps).toMatchObject([
       {
         op: "add",
         kind: "call-out",
@@ -92,6 +100,9 @@ describe("strokes become flow deltas", () => {
         to: { component: "forge-fraud", entry: "POST /screen", new: true },
       },
     ]);
+    // Every drawn step carries its mark, so Undo and the stage find exactly it.
+    expect(isDrawnStep(d.steps[0]!)).toBe(true);
+    expect(d.steps[0]!.why).toMatch(/^drawn on the canvas by pat, stroke [a-z0-9]+$/);
     // The change diagram draws it from the merge, marked added.
     const m = mergeDelta(d, orders);
     expect(m.steps.some((s) => s.mark === "added" && s.to?.component === "forge-fraud")).toBe(true);
@@ -125,6 +136,73 @@ describe("strokes become flow deltas", () => {
       "pat",
     );
     expect(none.problem).toContain("no flow on the map yet");
+  });
+
+  it("a stroke lands on the component's own flow, never a sibling's delta in the same repo; a drawn new flow counts as its own", () => {
+    const sibling = FlowDelta.parse({
+      schemaVersion: 2,
+      flow: "forge-stock.reserve",
+      repo: "forge-stock",
+      change: "modify",
+      why: "The stage's reason.",
+      steps: [{ op: "add", kind: "log", what: "Logged." }],
+    });
+    // forge-orders and forge-stock share no repo here, so make the sibling delta of orders' repo.
+    const r = applyStroke(
+      [{ ...sibling, repo: "forge-orders" }],
+      stroke({
+        kind: "call",
+        from: { component: "forge-orders" },
+        to: { component: "forge-fraud", entry: "POST /screen" },
+      }),
+      estate,
+      "pat",
+    );
+    expect(r.changed).toEqual(["forge-orders.place-order"]);
+    const first = applyStroke(
+      [],
+      stroke({
+        kind: "call",
+        from: {
+          component: "forge-fraud",
+          newFlow: {
+            id: "forge-fraud.screen",
+            name: "An order is screened",
+            trigger: { kind: "endpoint", what: "POST /screen is called" },
+          },
+        },
+        to: { component: "northwind-fraud", entry: "POST /v1/score" },
+      }),
+      estate,
+      "pat",
+    );
+    // The second stroke from the new box needs no re-naming of its flow.
+    const second = applyStroke(
+      first.deltas,
+      stroke({
+        kind: "table",
+        from: { component: "forge-fraud" },
+        op: "write",
+        table: "forge-fraud-db.verdicts",
+      }),
+      estate,
+      "pat",
+    );
+    expect(second.problem).toBeUndefined();
+    expect(second.deltas[0]!.steps).toHaveLength(2);
+    // A flow named that isn't the component's is refused.
+    expect(
+      applyStroke(
+        [],
+        stroke({
+          kind: "call",
+          from: { component: "forge-orders", flow: "forge-stock.reserve" },
+          to: { component: "forge-fraud", entry: "POST /screen" },
+        }),
+        estate,
+        "pat",
+      ).problem,
+    ).toContain("isn't a flow of forge-orders");
   });
 
   it("a new box: a new flow of a component the catalog lacks carries where it runs", () => {
@@ -172,9 +250,12 @@ describe("strokes become flow deltas", () => {
       estate,
       "pat",
     );
-    expect(removed.deltas[0]!.steps).toEqual([
-      { op: "remove", step: 2, why: "Stock is no longer reserved here." },
-    ]);
+    expect(removed.deltas[0]!.steps).toHaveLength(1);
+    expect(removed.deltas[0]!.steps[0]).toMatchObject({ op: "remove", step: 2 });
+    // The person's reason is kept, with the mark.
+    expect(removed.deltas[0]!.steps[0]!.why).toMatch(
+      /^Stock is no longer reserved here\. \(drawn on the canvas by pat, stroke [a-z0-9]+\)$/,
+    );
     const moved = applyStroke(
       [],
       stroke({
@@ -200,6 +281,20 @@ describe("strokes become flow deltas", () => {
     const m = mergeDelta(moved.deltas[0]!, orders);
     expect(m.steps.map((s) => s.mark)).toContain("removed");
     expect(m.steps.map((s) => s.mark)).toContain("added");
+    // Undo takes both halves of the retarget back, as one stroke.
+    const list = drawnStrokes(moved.deltas);
+    expect(list).toHaveLength(1);
+    expect(list[0]).toMatchObject({
+      what: "step 2 sent to forge-inventory POST /holds",
+      by: "pat",
+    });
+    const back = applyStroke(
+      moved.deltas,
+      stroke({ kind: "undo", flow: "forge-orders.place-order", index: list[0]!.index }),
+      estate,
+      "pat",
+    );
+    expect(back.deltas).toEqual([]);
     // The same step can't be changed twice.
     const twice = applyStroke(
       moved.deltas,
@@ -225,12 +320,22 @@ describe("strokes become flow deltas", () => {
     expect(t.changed).toEqual(["forge-orders.place-order", "forge-stock.reserve"]);
     expect(t.deltas[0]!.steps[0]).toMatchObject({
       kind: "publish",
-      to: { entry: "forge.orders.placed" },
+      to: { component: "forge-stock", entry: "forge.orders.placed" },
     });
+    // The listener's step goes nowhere: no `to`, so the picture draws one line, publisher → listener.
     expect(t.deltas[1]!.steps[0]).toMatchObject({
       kind: "entry",
       what: "Listens on forge.orders.placed.",
     });
+    expect(t.deltas[1]!.steps[0]!.to).toBeUndefined();
+    // A topic with no listener yet names no component (no line to itself).
+    const alone = applyStroke(
+      [],
+      stroke({ kind: "topic", from: { component: "forge-orders" }, topic: "forge.orders.placed" }),
+      estate,
+      "pat",
+    );
+    expect(alone.deltas[0]!.steps[0]!.to).toBeUndefined();
     const w = applyStroke(
       t.deltas,
       stroke({
@@ -268,7 +373,8 @@ describe("strokes become flow deltas", () => {
       "pat",
     );
     expect(back.deltas).toEqual([]);
-    // A delta the stage wrote keeps its file.
+    // A step the stage wrote can't be taken back here; a drawn step on the stage's delta can,
+    // and the stage's delta keeps its file.
     const staged = [
       FlowDelta.parse({
         schemaVersion: 2,
@@ -279,13 +385,33 @@ describe("strokes become flow deltas", () => {
         steps: [{ op: "add", kind: "log", what: "Logged." }],
       }),
     ];
-    const kept = applyStroke(
+    const refused = applyStroke(
       staged,
       stroke({ kind: "undo", flow: "forge-orders.place-order", index: 0 }),
       estate,
       "pat",
     );
+    expect(refused.problem).toContain("wasn't drawn on the canvas");
+    const onStaged = applyStroke(
+      staged,
+      stroke({
+        kind: "call",
+        from: { component: "forge-orders" },
+        to: { component: "forge-fraud", entry: "POST /screen" },
+      }),
+      estate,
+      "pat",
+    );
+    // Only the drawn step is the stage's frame.
+    expect(sketchOf(onStaged.deltas)[0]!.steps).toHaveLength(1);
+    expect(drawnStrokes(onStaged.deltas)).toMatchObject([{ index: 1 }]);
+    const kept = applyStroke(
+      onStaged.deltas,
+      stroke({ kind: "undo", flow: "forge-orders.place-order", index: 1 }),
+      estate,
+      "pat",
+    );
     expect(kept.deltas).toHaveLength(1);
-    expect(kept.deltas[0]!.steps).toEqual([]);
+    expect(kept.deltas[0]!.steps).toHaveLength(1);
   });
 });

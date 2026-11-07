@@ -134,8 +134,19 @@ describe("the brief and the answer", () => {
         "call.nope isn't one of forge-billing's loose calls.",
       ],
     });
-    expect(checkMatchAnswer("pairs: 3", view)).toEqual({
-      error: "The answer isn't in the shape the brief asked for.",
+    // One sloppy line never loses the good ones; a file that isn't a map at all is refused.
+    expect(checkMatchAnswer("pairs: 3", view)).toEqual({ proposals: [], none: [], rejected: [] });
+    expect(
+      checkMatchAnswer(
+        `pairs:\n  - call: call.post.capture-charge\n    api: ${CAPTURE}\n    why: 7\n    lines: nope\n`,
+        view,
+      ),
+    ).toMatchObject({ proposals: [{ call: "call.post.capture-charge", why: "7", lines: [] }] });
+    expect(checkMatchAnswer("- a list", view)).toMatchObject({
+      error: expect.stringContaining("shape"),
+    });
+    expect(checkMatchAnswer("pairs: [", view)).toMatchObject({
+      error: expect.stringContaining("YAML"),
     });
   });
 });
@@ -183,7 +194,7 @@ describe("Match with Copilot from the panel", () => {
     );
   });
 
-  it("the command says the proposals, and hands the brief to Copilot Chat when asked", async () => {
+  it("the command reads the answer back with --read, and hands the brief to the assistant when asked", async () => {
     const out: string[] = [];
     const io = { out: (l: string) => out.push(l), err: (l: string) => out.push(`! ${l}`) };
     const code = await connectMatchCommand(
@@ -191,7 +202,7 @@ describe("Match with Copilot from the panel", () => {
       "forge-billing",
       {
         to: "forge-partner-gateway",
-        mode: "hand-off",
+        read: true,
         candidates: (from, to) => candidatesOf(root, from, to),
       },
       io,
@@ -200,6 +211,28 @@ describe("Match with Copilot from the panel", () => {
     // The answer on file from the session before is read back.
     expect(out.join("\n")).toContain(`call.post.capture-charge → ${CAPTURE}: the route constant`);
     expect(out.join("\n")).toContain("Nothing is written");
+    // A hand-off writes a fresh brief and drops the old answer, so nothing stale reads as done.
+    const h: string[] = [];
+    expect(
+      await connectMatchCommand(
+        root,
+        "forge-billing",
+        {
+          to: "forge-partner-gateway",
+          mode: "hand-off",
+          candidates: (from, to) => candidatesOf(root, from, to),
+        },
+        { out: (l: string) => h.push(l), err: (l: string) => h.push(`! ${l}`) },
+      ),
+    ).toBe(0);
+    expect(h.join("\n")).toContain(
+      "read proposals/matching/forge-billing--repo-forge-partner-gateway.md",
+    );
+    expect(
+      Api.MatchLinksView.parse(
+        (await call("GET", "/api/links/match?from=forge-billing&to=forge-partner-gateway")).body,
+      ).state,
+    ).toBe("handoff");
     expect(
       await connectMatchCommand(
         root,

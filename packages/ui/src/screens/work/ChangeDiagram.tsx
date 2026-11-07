@@ -84,94 +84,101 @@ export function ChangeDiagramView({ map, sketch }: { map: Api.ChangeMapT; sketch
   const graph = useMemo(() => diagramGraph(map), [map]);
   const groupOf = new Map(map.groups.map((g) => [g.id, g.label]));
   const label = new Map(map.nodes.map((n) => [n.id, n.label]));
+  // The sketch panel sits at the same place in both states, so the first stroke (0 → 1 target
+  // flows) and the last Undo don't remount it and lose the form and the "Drawn" message.
+  const panel = sketch ? <SketchPanel key="sketch" change={map.change} map={map} /> : null;
   if (!map.flows)
     return (
       <>
-        <p>{D.noTargets(map.change)}</p>
-        <Command text={`atticus change architecture ${map.change}`} label={COPY.runNext.copy} />
-        {sketch && <SketchPanel change={map.change} map={map} />}
+        <div key="body">
+          <p>{D.noTargets(map.change)}</p>
+          <Command text={`atticus change architecture ${map.change}`} label={COPY.runNext.copy} />
+        </div>
+        {panel}
       </>
     );
   return (
     <>
-      <p className="muted" style={{ margin: "0 0 8px" }}>
-        {D.from(map.flows, map.source)} <a href={targetHref(map.change)}>{D.flows(map.change)}</a>
-      </p>
-      <Legend />
-      <div className="cd-canvas">
-        <ArchitectureCanvas
-          graph={graph}
-          direction="RIGHT"
-          pinned={{}}
-          tidy={0}
-          onSelect={() => undefined}
-          onToggle={() => undefined}
-          onMoved={() => undefined}
-          onLaid={() => undefined}
-        />
-      </div>
-      {map.problems.length > 0 && (
-        <div role="note" className="cd-problems">
-          <h3 className="hud">{D.problems}</h3>
-          <ul>
-            {map.problems.map((p) => (
-              <li key={p}>{p}</li>
-            ))}
-          </ul>
+      <div key="body">
+        <p className="muted" style={{ margin: "0 0 8px" }}>
+          {D.from(map.flows, map.source)} <a href={targetHref(map.change)}>{D.flows(map.change)}</a>
+        </p>
+        <Legend />
+        <div className="cd-canvas">
+          <ArchitectureCanvas
+            graph={graph}
+            direction="RIGHT"
+            pinned={{}}
+            tidy={0}
+            onSelect={() => undefined}
+            onToggle={() => undefined}
+            onMoved={() => undefined}
+            onLaid={() => undefined}
+          />
         </div>
-      )}
-      <h3 className="hud">{D.parts}</h3>
-      <table className="run-table">
-        <caption className="sr">{D.caption(map.change)}</caption>
-        <thead>
-          <tr>
-            <th scope="col">{D.col.part}</th>
-            <th scope="col">{D.col.kind}</th>
-            <th scope="col">{D.col.in}</th>
-            <th scope="col">{D.col.mark}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {map.nodes.map((n) => (
-            <tr key={n.id} className={n.legend ? `m-${n.legend}` : ""}>
-              <td className="mono">{n.id}</td>
-              <td>{n.kind}</td>
-              <td>{n.group ? (groupOf.get(n.group) ?? n.group) : ""}</td>
-              <td>{markOf(n.legend)}</td>
+        {map.problems.length > 0 && (
+          <div role="note" className="cd-problems">
+            <h3 className="hud">{D.problems}</h3>
+            <ul>
+              {map.problems.map((p) => (
+                <li key={p}>{p}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+        <h3 className="hud">{D.parts}</h3>
+        <table className="run-table">
+          <caption className="sr">{D.caption(map.change)}</caption>
+          <thead>
+            <tr>
+              <th scope="col">{D.col.part}</th>
+              <th scope="col">{D.col.kind}</th>
+              <th scope="col">{D.col.in}</th>
+              <th scope="col">{D.col.mark}</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
-      <h3 className="hud">{D.lines}</h3>
-      <table className="run-table">
-        <thead>
-          <tr>
-            <th scope="col">{D.col.from}</th>
-            <th scope="col">{D.col.what}</th>
-            <th scope="col">{D.col.to}</th>
-            <th scope="col">{D.col.mark}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {map.edges.map((e) => (
-            <tr key={e.id} className={e.legend ? `m-${e.legend}` : ""}>
-              <td className="mono">{label.get(e.from) ?? e.from}</td>
-              <td className="mono">{e.label}</td>
-              <td className="mono">{label.get(e.to) ?? e.to}</td>
-              <td>{markOf(e.legend)}</td>
+          </thead>
+          <tbody>
+            {map.nodes.map((n) => (
+              <tr key={n.id} className={n.legend ? `m-${n.legend}` : ""}>
+                <td className="mono">{n.id}</td>
+                <td>{n.kind}</td>
+                <td>{n.group ? (groupOf.get(n.group) ?? n.group) : ""}</td>
+                <td>{markOf(n.legend)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <h3 className="hud">{D.lines}</h3>
+        <table className="run-table">
+          <thead>
+            <tr>
+              <th scope="col">{D.col.from}</th>
+              <th scope="col">{D.col.what}</th>
+              <th scope="col">{D.col.to}</th>
+              <th scope="col">{D.col.mark}</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
-      <h3 className="hud">{D.mermaid}</h3>
-      <p className="muted">{D.mermaidHint}</p>
-      <div className="cd-mermaid">
-        <pre tabIndex={0} aria-label={D.mermaid}>
-          {map.mermaid}
-        </pre>
-        <CopyButton text={map.mermaid} label={D.copyMermaid} />
+          </thead>
+          <tbody>
+            {map.edges.map((e) => (
+              <tr key={e.id} className={e.legend ? `m-${e.legend}` : ""}>
+                <td className="mono">{label.get(e.from) ?? e.from}</td>
+                <td className="mono">{e.label}</td>
+                <td className="mono">{label.get(e.to) ?? e.to}</td>
+                <td>{markOf(e.legend)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <h3 className="hud">{D.mermaid}</h3>
+        <p className="muted">{D.mermaidHint}</p>
+        <div className="cd-mermaid">
+          <pre tabIndex={0} aria-label={D.mermaid}>
+            {map.mermaid}
+          </pre>
+          <CopyButton text={map.mermaid} label={D.copyMermaid} />
+        </div>
       </div>
-      {sketch && <SketchPanel change={map.change} map={map} />}
+      {panel}
     </>
   );
 }

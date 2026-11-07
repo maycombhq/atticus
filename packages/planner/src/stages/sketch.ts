@@ -1,14 +1,31 @@
+import { createHash, randomBytes } from "node:crypto";
+import { readdir, readFile, rm } from "node:fs/promises";
+import { join } from "node:path";
+import { stringify } from "yaml";
 import { z } from "zod";
+import { writeFileAtomic } from "@maycombhq/core";
+import {
+  DEPLOY_FILE,
+  READS_FILE,
+  ReadFlow,
+  renderArchitecture,
+  renderData,
+  TARGET_DIR,
+} from "./architecture.js";
+import { flowBase } from "./merge.js";
 import type { Estate } from "./estate.js";
-import { FLOW_DELTA_SCHEMA_VERSION, FlowDelta, type DeltaStep } from "./schema.js";
+import { DeployStep, FLOW_DELTA_SCHEMA_VERSION, FlowDelta, type DeltaStep } from "./schema.js";
+import { parse } from "yaml";
 
 /**
  * ADR 0179: a change sketched on the canvas. Each stroke a person draws (a new call, a call
  * removed or sent elsewhere, a topic published or listened on, a table read or written, a new
- * box) becomes a flow delta in the change's target-flows/, the files the stages already write
- * and the change diagram draws (ADR 0108). Pure: the caller reads the deltas and writes them
- * back after the person's yes. Nothing here is a fact: a stroke is a plan, reviewed in the
- * change's pull request, and the map changes only when code lands and is read.
+ * box) becomes steps in a flow delta in the change's target-flows/, the files the stages already
+ * write and the change diagram draws (ADR 0108). Every drawn step carries a mark in its `why`
+ * (`drawn on the canvas by <who>, stroke <id>`), so Undo finds exactly it (a retarget's two
+ * steps share one id) and the architecture stage keeps it as drawn. Pure: the caller reads the
+ * deltas and writes them back after the person's yes. Nothing here is a fact: a stroke is a plan,
+ * reviewed in the change's pull request, and the map changes only when code lands and is read.
  */
 
 const Id = z
@@ -87,7 +104,7 @@ export const Stroke = z.discriminatedUnion("kind", [
     to: z.object({ component: Id, entry: text(), new: z.boolean().optional() }),
     why: text(),
   }),
-  /** A stroke taken back: the delta step it made, by flow and the step's index in the delta. */
+  /** A stroke taken back: a drawn step, by flow and the step's index in the delta (its whole stroke goes). */
   z.object({ kind: z.literal("undo"), flow: Id, index: z.number().int().min(0) }),
 ]);
 export type Stroke = z.infer<typeof Stroke>;
@@ -109,6 +126,42 @@ const slug = (s: string) =>
     .replace(/^-+|-+$/g, "")
     .slice(0, 60);
 
+/** The mark every drawn step and drawn delta carries in its `why`. */
+export const DRAWN = "drawn on the canvas";
+const MARK_RE = /drawn on the canvas by (.+?), stroke ([a-z0-9]+)\)?$/i;
+const deltaWhy = (by: string) => `Drawn on the canvas by ${by}.`;
+const stepWhy = (by: string, id: string, reason?: string) =>
+  `${reason ? `${reason} (` : ""}${DRAWN} by ${by}, stroke ${id}${reason ? ")" : ""}`;
+export const isDrawnDelta = (d: Pick<FlowDelta, "why">) => d.why.toLowerCase().startsWith(DRAWN);
+/** The stroke id a step carries, when a person drew it. */
+export const strokeIdOf = (s: Pick<DeltaStep, "why">): string | undefined =>
+  MARK_RE.exec(s.why ?? "")?.[2];
+export const isDrawnStep = (s: Pick<DeltaStep, "why">) => strokeIdOf(s) !== undefined;
+/** The person who drew a step, from its mark. */
+export const drawnBy = (s: Pick<DeltaStep, "why">): string | undefined =>
+  MARK_RE.exec(s.why ?? "")?.[1];
+
+export const newStrokeId = () => randomBytes(4).toString("hex");
+
+/** The flows a component owns: today's of that component, and the change's new or drawn ones of it. */
+function flowsOf(
+  deltas: readonly FlowDelta[],
+  component: string,
+  estate: Pick<Estate, "flows">,
+): { id: string; name: string }[] {
+  const out = new Map<string, string>();
+  for (const f of estate.flows) if (f.flow.component === component) out.set(f.flow.id, f.flow.name);
+  for (const d of deltas)
+    if (
+      !out.has(d.flow) &&
+      d.change !== "remove" &&
+      (d.runsOn?.component === component ||
+        (d.change === "new" && d.flow.startsWith(`${component}.`)))
+    )
+      out.set(d.flow, d.name ?? d.flow);
+  return [...out].map(([id, name]) => ({ id, name }));
+}
+
 /** The delta a stroke lands on: an existing one of the change, or a new modify/new delta. */
 function deltaFor(
   deltas: FlowDelta[],
@@ -116,7 +169,7 @@ function deltaFor(
   estate: Pick<Estate, "flows" | "ids">,
   by: string,
 ): { delta: FlowDelta; deltas: FlowDelta[] } | { problem: string; pick?: SketchResult["pick"] } {
-  const own = estate.flows.filter((f) => f.flow.component === from.component);
+  const own = flowsOf(deltas, from.component, estate);
   if (from.newFlow) {
     const id = from.newFlow.id;
     const had = deltas.find((d) => d.flow === id);
@@ -130,7 +183,7 @@ function deltaFor(
       change: "new",
       name: from.newFlow.name,
       trigger: from.newFlow.trigger,
-      why: `Drawn on the canvas by ${by}.`,
+      why: deltaWhy(by),
       ...(from.newFlow.runsOn || !estate.ids.has(from.component)
         ? { runsOn: { component: from.component, ...(from.newFlow.runsOn ?? {}) } }
         : {}),
@@ -138,14 +191,7 @@ function deltaFor(
     };
     return { delta: d, deltas: [...deltas, d] };
   }
-  const flowId =
-    from.flow ??
-    (deltas.filter((d) => d.repo === repoOf(estate, from.component) && d.change !== "remove")
-      .length === 1 && own.length <= 1
-      ? deltas.find((d) => d.repo === repoOf(estate, from.component))?.flow
-      : own.length === 1
-        ? own[0]!.flow.id
-        : undefined);
+  const flowId = from.flow ?? (own.length === 1 ? own[0]!.id : undefined);
   if (!flowId) {
     if (!own.length)
       return {
@@ -153,9 +199,11 @@ function deltaFor(
       };
     return {
       problem: `${from.component} has ${own.length} flows: say which the stroke is on.`,
-      pick: { flows: own.map((f) => ({ id: f.flow.id, name: f.flow.name })) },
+      pick: { flows: own },
     };
   }
+  if (from.flow && !own.some((f) => f.id === from.flow))
+    return { problem: `${from.flow} isn't a flow of ${from.component}.` };
   const had = deltas.find((d) => d.flow === flowId);
   if (had) return { delta: had, deltas };
   const today = estate.flows.find((f) => f.flow.id === flowId);
@@ -165,7 +213,7 @@ function deltaFor(
     flow: flowId,
     repo: today.repo,
     change: "modify",
-    why: `Drawn on the canvas by ${by}.`,
+    why: deltaWhy(by),
     steps: [],
   };
   return { delta: d, deltas: [...deltas, d] };
@@ -180,11 +228,13 @@ export function applyStroke(
   stroke: Stroke,
   estate: Pick<Estate, "flows" | "ids">,
   by: string,
+  strokeId: string = newStrokeId(),
 ): SketchResult {
   const before = deltas.map((d) => ({ ...d, steps: [...d.steps] }));
   const replace = (all: FlowDelta[], d: FlowDelta, step: DeltaStep): FlowDelta[] =>
     all.map((x) => (x.flow === d.flow ? { ...x, steps: [...x.steps, step] } : x));
   const stepWhat = (what: string | undefined, fallback: string) => what ?? fallback;
+  const why = (reason?: string) => stepWhy(by, strokeId, reason);
   switch (stroke.kind) {
     case "call": {
       const r = deltaFor(before, stroke.from, estate, by);
@@ -195,32 +245,35 @@ export function applyStroke(
         kind: "call-out",
         what: stepWhat(stroke.what, `Calls ${stroke.to.component}'s ${stroke.to.entry}.`),
         to: { component: stroke.to.component, entry: stroke.to.entry, new: !!stroke.to.new },
+        why: why(),
       };
       return { deltas: replace(r.deltas, r.delta, step), changed: [r.delta.flow] };
     }
     case "topic": {
       const r = deltaFor(before, stroke.from, estate, by);
       if ("problem" in r) return { deltas: before, changed: [], ...r };
+      // Where the publish goes: the listener, when one is drawn; a topic with no listener yet
+      // names no component (a line to itself would draw a loop).
       const pub: DeltaStep = {
         op: "add",
         kind: "publish",
         what: stepWhat(stroke.what, `Publishes ${stroke.topic}.`),
-        to: {
-          component: stroke.listener?.component ?? stroke.from.component,
-          entry: stroke.topic,
-          new: false,
-        },
+        ...(stroke.listener && stroke.listener.component !== stroke.from.component
+          ? { to: { component: stroke.listener.component, entry: stroke.topic, new: false } }
+          : {}),
+        why: why(),
       };
       let all = replace(r.deltas, r.delta, pub);
       const changed = [r.delta.flow];
       if (stroke.listener) {
         const l = deltaFor(all, stroke.listener, estate, by);
         if ("problem" in l) return { deltas: before, changed: [], ...l };
+        // The listener's step is an entry (a message arrives); it goes nowhere, so no `to`.
         const listen: DeltaStep = {
           op: "add",
           kind: "entry",
           what: `Listens on ${stroke.topic}.`,
-          to: { component: stroke.from.component, entry: stroke.topic, new: false },
+          why: why(),
         };
         all = replace(l.deltas, l.delta, listen);
         changed.push(l.delta.flow);
@@ -238,6 +291,7 @@ export function applyStroke(
           `${stroke.op === "write" ? "Writes" : "Reads"} ${stroke.table}${stroke.columns.length ? ` (${stroke.columns.join(", ")})` : ""}.`,
         ),
         store: { table: stroke.table, columns: stroke.columns, new: !!stroke.new },
+        why: why(),
       };
       return { deltas: replace(r.deltas, r.delta, step), changed: [r.delta.flow] };
     }
@@ -265,7 +319,7 @@ export function applyStroke(
           flow: stroke.flow,
           repo: today.repo,
           change: "modify",
-          why: `Drawn on the canvas by ${by}.`,
+          why: deltaWhy(by),
           steps: [],
         };
         all = [...all, d];
@@ -276,7 +330,7 @@ export function applyStroke(
           changed: [],
           problem: `Step ${stroke.step} of ${stroke.flow} is changed already in this change.`,
         };
-      all = replace(all, d, { op: "remove", step: stroke.step, why: stroke.why });
+      all = replace(all, d, { op: "remove", step: stroke.step, why: why(stroke.why) });
       if (stroke.kind === "retarget")
         all = replace(all, d, {
           op: "add",
@@ -284,31 +338,152 @@ export function applyStroke(
           kind: was.kind,
           what: was.what,
           to: { component: stroke.to.component, entry: stroke.to.entry, new: !!stroke.to.new },
-          why: stroke.why,
+          why: why(stroke.why),
         });
       return { deltas: all, changed: [stroke.flow] };
     }
     case "undo": {
       const d = before.find((x) => x.flow === stroke.flow);
-      if (!d || !d.steps[stroke.index])
+      const s = d?.steps[stroke.index];
+      const id = s ? strokeIdOf(s) : undefined;
+      if (!d || !s || !id)
         return {
           deltas: before,
           changed: [],
-          problem: `${stroke.flow} has no step ${stroke.index} to take back.`,
+          problem: s
+            ? `Step ${stroke.index} of ${stroke.flow} wasn't drawn on the canvas: the stage wrote it, so edit the file or run the stage again.`
+            : `${stroke.flow} has no step ${stroke.index} to take back.`,
         };
-      const steps = d.steps.filter((_, i) => i !== stroke.index);
-      // A delta drawn here with nothing left goes; one the stage wrote stays, empty or not.
-      const all =
-        steps.length === 0 && d.why.startsWith("Drawn on the canvas")
-          ? before.filter((x) => x.flow !== d.flow)
-          : before.map((x) => (x.flow === d.flow ? { ...x, steps } : x));
-      return { deltas: all, changed: [stroke.flow] };
+      // The whole stroke goes (a retarget is two steps), on every flow it touched.
+      const all = before
+        .map((x) => ({ ...x, steps: x.steps.filter((y) => strokeIdOf(y) !== id) }))
+        // A delta drawn here with nothing left goes; one the stage wrote stays, empty or not.
+        .filter((x) => !(x.steps.length === 0 && isDrawnDelta(x)));
+      const changed = before
+        .filter((x) => x.steps.some((y) => strokeIdOf(y) === id))
+        .map((x) => x.flow);
+      return { deltas: all, changed };
     }
   }
 }
 
-/** The delta files as text, as writeTargetFlows writes them (for a preview's line diff). */
-export const deltaFileName = (flow: string) => `target-flows/${flow}.yaml`;
+/** The strokes drawn so far, for Undo: one entry per stroke, with the first step's place. */
+export function drawnStrokes(
+  deltas: readonly FlowDelta[],
+): { flow: string; index: number; what: string; by?: string }[] {
+  const out: { flow: string; index: number; what: string; by?: string }[] = [];
+  const seen = new Set<string>();
+  for (const d of deltas)
+    d.steps.forEach((s, index) => {
+      const id = strokeIdOf(s);
+      if (!id || seen.has(id)) return;
+      seen.add(id);
+      const pair = d.steps.find((y, j) => j !== index && strokeIdOf(y) === id);
+      const what =
+        s.op === "remove"
+          ? pair?.to
+            ? `step ${s.step} sent to ${pair.to.component} ${pair.to.entry}`
+            : `step ${s.step} removed`
+          : `${s.kind ?? s.op}${s.to ? ` → ${s.to.component} ${s.to.entry}` : ""}${s.store ? ` ${s.store.table}` : ""}`;
+      const by = drawnBy(s);
+      out.push({ flow: d.flow, index, what, ...(by ? { by } : {}) });
+    });
+  return out;
+}
 
-export { FlowDelta as SketchDelta };
+/** The deltas with only their drawn steps: the frame the architecture stage keeps (SKETCH_RULE). */
+export function sketchOf(deltas: readonly FlowDelta[]): FlowDelta[] {
+  return deltas
+    .map((d) => ({ ...d, steps: d.steps.filter(isDrawnStep) }))
+    .filter((d) => d.steps.length || isDrawnDelta(d));
+}
+
+/** A delta file's text as the sketch writes it: the stage's header, by this person. */
+export function renderSketchDelta(d: FlowDelta, estate: Pick<Estate, "flowById">, by: string) {
+  const today = d.change === "new" ? undefined : estate.flowById.get(d.flow)?.flow;
+  const pinned: FlowDelta = {
+    ...d,
+    schemaVersion: FLOW_DELTA_SCHEMA_VERSION,
+    ...(today ? { base: { steps: flowBase(today) } } : {}),
+  };
+  return `# The target of flow ${d.flow} (ADR 0087): the steps this change adds, changes or removes. Drafted by ${by}; base pins the version of today's flow it was written against (ADR 0111).\n${stringify(FlowDelta.parse(pinned), { lineWidth: 0 })}`;
+}
+
+const MARK = "<!-- Generated by atticus change architecture";
+
+export interface SketchFile {
+  /** Relative to the change folder. */
+  file: string;
+  /** The text after; left out when the file goes. */
+  now?: string;
+}
+
+/**
+ * The files a stroke changes, as the write makes them: the changed flows' delta files (others
+ * untouched, their headers kept) and, where Atticus wrote them, design.md and data.md rendered
+ * from every delta. The preview shows exactly these; writeSketch writes exactly these.
+ */
+export async function planSketchWrite(
+  dir: string,
+  deltas: readonly FlowDelta[],
+  changed: readonly string[],
+  estate: Estate,
+  by: string,
+): Promise<SketchFile[]> {
+  const out: SketchFile[] = [];
+  for (const flow of [...new Set(changed)]) {
+    const d = deltas.find((x) => x.flow === flow);
+    out.push({
+      file: `${TARGET_DIR}/${flow}.yaml`,
+      ...(d ? { now: renderSketchDelta(d, estate, by) } : {}),
+    });
+  }
+  const read = async (f: string) => readFile(join(dir, f), "utf8").catch(() => undefined);
+  const design = await read("design.md");
+  if (design === undefined || design.startsWith(MARK)) {
+    const t = await read(READS_FILE);
+    const reads = t === undefined ? undefined : z.array(ReadFlow).safeParse(parse(t)?.reads);
+    const dt = await read(DEPLOY_FILE);
+    const deploy = dt === undefined ? undefined : z.array(DeployStep).safeParse(parse(dt)?.deploy);
+    const all = deltas.filter((d) => d.steps.length || d.change !== "modify");
+    const now = renderArchitecture(
+      all,
+      estate,
+      reads?.success ? reads.data : [],
+      deploy?.success && deploy.data.length ? deploy.data : undefined,
+    );
+    if (now !== design) out.push({ file: "design.md", now });
+  }
+  const data = await read("data.md");
+  if (data === undefined || data.startsWith(MARK)) {
+    const now = renderData([...deltas], estate);
+    if (now && now !== data) out.push({ file: "data.md", now });
+    else if (!now && data?.startsWith(MARK)) out.push({ file: "data.md" });
+  }
+  return out;
+}
+
+/** Writes what planSketchWrite planned, nothing else. */
+export async function writeSketch(dir: string, files: readonly SketchFile[]): Promise<void> {
+  for (const f of files) {
+    const path = join(dir, ...f.file.split("/"));
+    if (f.now === undefined) await rm(path, { force: true });
+    else await writeFileAtomic(path, f.now);
+  }
+}
+
+/** A fingerprint of the delta files as they are, so a write can refuse files that changed since the preview. */
+export async function sketchFingerprint(dir: string): Promise<string> {
+  const h = createHash("sha256");
+  for (const f of (await readdir(join(dir, TARGET_DIR)).catch(() => [] as string[])).sort())
+    if (f.endsWith(".yaml")) {
+      h.update(f);
+      h.update("\0");
+      h.update(await readFile(join(dir, TARGET_DIR, f), "utf8"));
+      h.update("\0");
+    }
+  return h.digest("hex").slice(0, 16);
+}
+
 export const sketchSlug = slug;
+export { FlowDelta as SketchDelta };

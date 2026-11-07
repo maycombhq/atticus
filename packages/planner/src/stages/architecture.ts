@@ -2429,9 +2429,11 @@ export async function architectureStage(
     .join("\n---\n");
   // ADR 0006 addendum: OpenSpec's instructions for the design come first, when set up.
   const osInstructions = await openspecInstructionSource(root, change.id, "architecture");
-  const sketched = (await readDeltas(dir)).deltas.filter((d) =>
-    d.why.startsWith("Drawn on the canvas"),
-  );
+  // The drawn steps only (each marked in its why, see sketch.ts); the stage's own steps aren't a frame.
+  const drawn = /drawn on the canvas by .+?, stroke [a-z0-9]+/i;
+  const sketched = (await readDeltas(dir)).deltas
+    .map((d) => ({ ...d, steps: d.steps.filter((s) => drawn.test(s.why ?? "")) }))
+    .filter((d) => d.steps.length);
   const attached = await changeInputSources(dir, rel);
   // ADR 0142: the prototype's calls nothing serves, for this stage to place.
   const newCalls = prototypeNewCallsSource(attached);

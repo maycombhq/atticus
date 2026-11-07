@@ -44,8 +44,11 @@ export function uiLinkMatchRoutes(
         };
       }
       const m = await readMatch(ctx.root, view);
-      if (run?.error && m.state !== "done") m.error = run.error;
-      if (run?.error && m.state === "handoff") m.state = "failed";
+      // A failed run is said once more until an answer reads, or a new run starts.
+      if (run?.error && m.state === "handoff") {
+        m.state = "failed";
+        m.error = run.error;
+      }
       return { status: 200, body: m };
     })
     .add("POST", "/api/links/match", async ({ body }) => {
@@ -61,13 +64,14 @@ export function uiLinkMatchRoutes(
           `${view.toName} has no API on record${view.noApis ? `: ${view.noApis.command}` : ""}.`,
         );
       const key = keyOf(from, to);
+      // The runtime is read before the busy checks, so check and start happen in one tick.
+      const op = await loadOrgPack(orgPackDirOf(ctx.root));
       const had = running.get(key);
       if (had && ctx.jobs.get(had.jobId)?.state === "running")
         throw conflict(`A match of ${from} with ${view.toName} is under way: wait for it.`);
       const busy = ctx.jobs.runningOf("step");
       if (busy?.state === "running")
         throw conflict(`An AI step is running on this server (${busy.id}): wait for it to finish.`);
-      const op = await loadOrgPack(orgPackDirOf(ctx.root));
       if (!copilotAcpAllowed(op) && !deps.runner) {
         // The brief for Copilot Chat; nothing runs here.
         const m = await runMatch(ctx.root, { view, quotes: quotesOf(facts), mode: "hand-off" });
@@ -92,7 +96,7 @@ export function uiLinkMatchRoutes(
           ? { errors: [done.error ?? "The session ended without an answer."] }
           : { result: { state: done.state } };
       });
-      running.set(key, { jobId: job.id });
+      running.set(key, { jobId: job.id }); // a new run drops the last run's error
       const files = await readMatch(ctx.root, view);
       return {
         status: 202,

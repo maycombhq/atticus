@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { parse } from "yaml";
-import { parseRecord, recordPath, serializeRecord } from "@maycombhq/core";
+import { Api, parseRecord, recordPath, serializeRecord } from "@maycombhq/core";
 import { startServer, type RunningServer } from "@maycombhq/server";
 import { uiKnowRoutes } from "../src/ui-api-know.js";
 
@@ -46,6 +46,15 @@ describe("read-only views run the CLI's --json commands", () => {
     expect((f.body.data as { features: unknown[] }).features.length).toBeGreaterThan(0);
     const t = await get("/api/view/trace/add-transfer-limit");
     expect(t.body.data).toMatchObject({ change: "add-transfer-limit" });
+  });
+
+  it("says 404 for a thing that isn't there, never 200 with nothing, and serves GET /api/coverage", async () => {
+    const r = await get("/api/view/features/feature.nope");
+    expect(r.status).toBe(404);
+    expect(String(r.body.detail)).toMatch(/There is no feature/);
+    const c = await get("/api/coverage");
+    expect(c.status).toBe(200);
+    expect(Api.Coverage.safeParse(c.body).success).toBe(true);
   });
 
   it("refuses an unknown view (404), a view that needs a change (400) and a bad id (400)", async () => {

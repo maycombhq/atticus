@@ -2,7 +2,12 @@ import { spawn } from "node:child_process";
 import { isAbsolute, join, relative, sep } from "node:path";
 import { catalogDirOf, createLog, DEFAULT_PORT, orgPackDirOf } from "@maycombhq/core";
 import { forgetCatalogs, keepCatalogsInMemory, readCatalog } from "@maycombhq/scanner";
-import { startServer, type RunningServer } from "@maycombhq/server";
+import {
+  startServer,
+  type Router,
+  type RunningServer,
+  type ServerContext,
+} from "@maycombhq/server";
 import { uiDistDir } from "@maycombhq/ui";
 import type { Output } from "./commands.js";
 import { uiRoutes, type UiDeps } from "./ui-api.js";
@@ -53,6 +58,88 @@ export function catalogMayHaveChanged(root: string, path: string): boolean {
   return near(catalogDirOf(root)) || near(orgPackDirOf(root));
 }
 
+/** Every route of the app's local API, on the server's base routes (one place, so a test can check the API doc against it). */
+export function extendUiRoutes(
+  r: Router,
+  ctx: ServerContext,
+  deps: UiDeps = {},
+  o: { warm?: boolean } = {},
+): Router {
+  const base = uiKnowRoutes(uiRunRoutes(uiRoutes(r, ctx, deps), ctx, deps), ctx, {
+    warm: o.warm === true,
+  });
+  const views = uiGraphRoutes(uiAcrossRoutes(uiMeRoutes(base, ctx), ctx), ctx);
+  const specs = uiSpecRoutes(uiOnboardingRoutes(uiQuestionRoutes(views, ctx), ctx), ctx);
+  // ADR 0102: knowledge, a change's needs and the org pack from the wikis.
+  // ADR 0106: the model runs, what they were asked and answered.
+  // ADR 0110: the prompts people sent their assistant and the responses they got.
+  // ADR 0121: the AI tab, how AI runs here.
+  // ADR 0122: general knowledge as files, in inputs/. ADR 0123: branches you can see.
+  // WP7.1: one change at a glance. ADR 0124: how far to trust each repo's map; the Map's
+  // evidence and a person's correction of a fact (F3); a stage tab's findings and a comment
+  // on one (B10).
+  // ADR 0149: a sample audit answered in the app, and the outside systems.
+  // ADR 0164: the contract check on every link (Map › Mismatches).
+  // ADR 0173: an unattended Copilot run started from the app, shown live.
+  // ADR 0174: correcting the map on the canvas.
+  // ADR 0179: a change sketched on the canvas.
+  return uiLinkMatchRoutes(
+    uiSketchRoutes(
+      uiDeclaredRoutes(
+        uiOwnerRoutes(
+          uiLinkRoutes(
+            uiCopilotRunRoutes(
+              uiStageRoutes(
+                uiContractsRoutes(
+                  uiOutsideRoutes(
+                    uiAuditRoutes(
+                      uiFactsRoutes(
+                        uiTrustRoutes(
+                          uiCockpitRoutes(
+                            uiRepoRoutes(
+                              uiDocumentRoutes(
+                                uiAiRoutes(
+                                  uiHistoryRoutes(
+                                    uiModelRunRoutes(
+                                      uiKnowledgeRoutes(uiCiteRoutes(specs, ctx), ctx),
+                                      ctx,
+                                    ),
+                                    ctx,
+                                  ),
+                                  ctx,
+                                ),
+                                ctx,
+                              ),
+                              ctx,
+                            ),
+                            ctx,
+                          ),
+                          ctx,
+                        ),
+                        ctx,
+                      ),
+                      ctx,
+                    ),
+                    ctx,
+                  ),
+                  ctx,
+                ),
+                ctx,
+              ),
+              ctx,
+            ),
+            ctx,
+          ),
+          ctx,
+        ),
+        ctx,
+      ),
+      ctx,
+    ),
+    ctx,
+  );
+}
+
 /** Start the local server with the app and the write calls (ADR 0015, 0043). */
 export async function startUi(
   root: string,
@@ -90,81 +177,7 @@ export async function startUi(
         else log.debug("request", fields);
       };
     })(),
-    extend: (r, ctx) => {
-      const base = uiKnowRoutes(uiRunRoutes(uiRoutes(r, ctx, deps), ctx, deps), ctx, {
-        warm: o.warm === true,
-      });
-      const views = uiGraphRoutes(uiAcrossRoutes(uiMeRoutes(base, ctx), ctx), ctx);
-      const specs = uiSpecRoutes(uiOnboardingRoutes(uiQuestionRoutes(views, ctx), ctx), ctx);
-      // ADR 0102: knowledge, a change's needs and the org pack from the wikis.
-      // ADR 0106: the model runs, what they were asked and answered.
-      // ADR 0110: the prompts people sent their assistant and the responses they got.
-      // ADR 0121: the AI tab, how AI runs here.
-      // ADR 0122: general knowledge as files, in inputs/. ADR 0123: branches you can see.
-      // WP7.1: one change at a glance. ADR 0124: how far to trust each repo's map; the Map's
-      // evidence and a person's correction of a fact (F3); a stage tab's findings and a comment
-      // on one (B10).
-      // ADR 0149: a sample audit answered in the app, and the outside systems.
-      // ADR 0164: the contract check on every link (Map › Mismatches).
-      // ADR 0173: an unattended Copilot run started from the app, shown live.
-      // ADR 0174: correcting the map on the canvas.
-      // ADR 0179: a change sketched on the canvas.
-      return uiLinkMatchRoutes(
-        uiSketchRoutes(
-          uiDeclaredRoutes(
-            uiOwnerRoutes(
-              uiLinkRoutes(
-                uiCopilotRunRoutes(
-                  uiStageRoutes(
-                    uiContractsRoutes(
-                      uiOutsideRoutes(
-                        uiAuditRoutes(
-                          uiFactsRoutes(
-                            uiTrustRoutes(
-                              uiCockpitRoutes(
-                                uiRepoRoutes(
-                                  uiDocumentRoutes(
-                                    uiAiRoutes(
-                                      uiHistoryRoutes(
-                                        uiModelRunRoutes(
-                                          uiKnowledgeRoutes(uiCiteRoutes(specs, ctx), ctx),
-                                          ctx,
-                                        ),
-                                        ctx,
-                                      ),
-                                      ctx,
-                                    ),
-                                    ctx,
-                                  ),
-                                  ctx,
-                                ),
-                                ctx,
-                              ),
-                              ctx,
-                            ),
-                            ctx,
-                          ),
-                          ctx,
-                        ),
-                        ctx,
-                      ),
-                      ctx,
-                    ),
-                    ctx,
-                  ),
-                  ctx,
-                ),
-                ctx,
-              ),
-              ctx,
-            ),
-            ctx,
-          ),
-          ctx,
-        ),
-        ctx,
-      );
-    },
+    extend: (r, ctx) => extendUiRoutes(r, ctx, deps, { warm: o.warm === true }),
   });
   // ADR 0119: the catalog is read once and kept while the server runs; any file change it
   // hears (its watcher, its own writes, a scan) means the next read reads the files again.

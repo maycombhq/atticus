@@ -4,10 +4,12 @@ import { changesRelOf } from "@maycombhq/core";
 import { changeFolder } from "@maycombhq/changes";
 import {
   applyStroke,
+  endpointKey,
   loadEstate,
+  planSketchWrite,
   readDeltas,
   TARGET_DIR,
-  writeTargetFlows,
+  writeSketch,
   type Estate,
   type Stroke,
 } from "@maycombhq/planner";
@@ -86,7 +88,7 @@ export function readMermaidSketch(text: string): { lines: SketchLine[]; problems
       return;
     // A -->|text| B  ·  A -- text --> B  ·  A --> B  ·  A ==>|text| B  ·  A -.->|text| B
     const m =
-      /^(.+?)\s*(?:--+|==+|-\.+)\s*(?:\|([^|]*)\||"?([^">=-]*?)"?\s*(?:--+|==+|\.-+))?\s*>\s*(?:\|([^|]*)\|)?\s*(.+)$/.exec(
+      /^(.+?)\s*(?:--+|==+|-\.+-?)\s*(?:\|([^|]*)\||"?([^">=-]*?)"?\s*(?:--+|==+|\.-+))?\s*>\s*(?:\|([^|]*)\|)?\s*(.+)$/.exec(
         row,
       );
     if (!m) {
@@ -95,9 +97,16 @@ export function readMermaidSketch(text: string): { lines: SketchLine[]; problems
       else problems.push(`line ${i + 1}: not a box or a line: ${row}`);
       return;
     }
+    // One line, two boxes: a chain (A --> B --> C) or a fan (A & B --> C) is said, not guessed.
+    if (/-->|==>|\.->|&/.test(m[1]!) || /-->|==>|\.->|&/.test(m[5]!)) {
+      problems.push(`line ${i + 1}: one line between two boxes at a time (no chains or &): ${row}`);
+      return;
+    }
     const from = node(m[1]!);
     const to = node(m[5]!);
-    const { legend, text: label } = legendOf((m[2] ?? m[3] ?? m[4] ?? "").trim());
+    const { legend, text: label } = legendOf(
+      (m[2] ?? m[3] ?? m[4] ?? "").trim().replace(/^"(.*)"$/, "$1"),
+    );
     lines.push({
       from: labels.get(from) ?? from,
       to: labels.get(to) ?? to,
@@ -183,7 +192,7 @@ export function strokesOfLines(lines: readonly SketchLine[], estate: Estate): Sk
       });
       continue;
     }
-    const todayStep = estate.flows
+    const todaySteps = estate.flows
       .filter((f) => f.flow.component === from)
       .flatMap((f) =>
         f.flow.steps
@@ -194,31 +203,34 @@ export function strokesOfLines(lines: readonly SketchLine[], estate: Estate): Sk
               (s.to.entry === entry ||
                 (!!l.path && s.to.entry.replace(/^[A-Z]+\s+/, "") === l.path)),
           ),
-      )[0];
+      );
     if (l.legend === "retire") {
-      if (!todayStep) {
+      if (!todaySteps.length) {
         plan.skipped.push({
           line: l,
           why: `marked retired, but today's map has no step from ${from} to ${to} ${entry}.`,
         });
         continue;
       }
-      plan.strokes.push({
-        line: l,
-        stroke: {
-          kind: "remove",
-          flow: todayStep.flow,
-          step: todayStep.step,
-          why: `Removed in the sketch (${l.at}).`,
-        },
-      });
+      // Every flow of the component that makes the call loses its step.
+      for (const t of todaySteps)
+        plan.strokes.push({
+          line: l,
+          stroke: {
+            kind: "remove",
+            flow: t.flow,
+            step: t.step,
+            why: `Removed in the sketch (${l.at}).`,
+          },
+        });
       continue;
     }
-    if (todayStep && l.legend !== "new") {
+    if (todaySteps.length && l.legend !== "new") {
       plan.skipped.push({ line: l, why: "already on today's map; nothing to draw." });
       continue;
     }
-    const isNew = !componentOf(l.to, estate) || (!!l.method && !estate.endpoints.has(entry));
+    const isNew =
+      !componentOf(l.to, estate) || (!!l.method && !estate.endpoints.has(endpointKey(entry)));
     plan.strokes.push({
       line: l,
       stroke: l.topic
@@ -273,7 +285,13 @@ export async function changeSketchCommand(
   const problems = [...read.problems];
   const drawn: string[] = [];
   await withFileLock(join(dir, TARGET_DIR), async () => {
-    let { deltas } = await readDeltas(dir);
+    const read = await readDeltas(dir);
+    if (read.problems.length) {
+      problems.push(...read.problems.map((x) => `${x} (fix it before drawing over it)`));
+      return;
+    }
+    let deltas = read.deltas;
+    const changed: string[] = [];
     for (const s of plan.strokes) {
       const r = applyStroke(deltas, s.stroke, estate, by);
       if (r.problem) {
@@ -281,10 +299,11 @@ export async function changeSketchCommand(
         continue;
       }
       deltas = r.deltas;
+      changed.push(...r.changed);
       drawn.push(`${s.line.from} → ${s.line.to} ${s.line.label} (${s.line.at})`);
     }
-    if (o.save && drawn.length) await writeTargetFlows(dir, { flows: deltas }, estate, by);
-    return deltas;
+    if (o.save && drawn.length)
+      await writeSketch(dir, await planSketchWrite(dir, deltas, changed, estate, by));
   });
   if (o.json) {
     io.out(

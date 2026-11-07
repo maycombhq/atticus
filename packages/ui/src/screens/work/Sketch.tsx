@@ -201,6 +201,10 @@ export function SketchForm(p: {
   const [preview, setPreview] = useState<Api.SketchResultT | undefined>();
   const [previewed, setPreviewed] = useState<string | undefined>();
   const [written, setWritten] = useState<Api.SketchResultT | undefined>();
+  /** The flows to pick from when the component has several (kept until the component changes). */
+  const [pick, setPick] = useState<{ component: string; flows: { id: string; name: string }[] }>();
+  /** The problem the server said of the stroke as it stood; cleared by any change. */
+  const [problem, setProblem] = useState<string | undefined>();
   const drawn = written?.drawn ?? p.drawn;
   const commit = written?.commit ?? p.commit;
   const said = strokeOf(f);
@@ -208,7 +212,9 @@ export function SketchForm(p: {
   const set = <K extends keyof SketchForm>(k: K, v: SketchForm[K]) => {
     setF((o) => ({ ...o, [k]: v }));
     setPreview(undefined);
+    setProblem(undefined);
     setError(undefined);
+    if (k === "component" || k === "kind") setPick(undefined);
   };
   const send = async (mode: "preview" | "write") => {
     if (!("stroke" in said)) {
@@ -220,11 +226,18 @@ export function SketchForm(p: {
     try {
       const r = await p.post({
         stroke: said.stroke as Api.SketchStrokeRequestT["stroke"],
-        ...(mode === "preview" ? { preview: true } : {}),
+        ...(mode === "preview"
+          ? { preview: true }
+          : // The write is of the files the preview saw: changed meanwhile, it is refused.
+            preview?.fingerprint
+            ? { expect: preview.fingerprint }
+            : {}),
       });
       if (r.problem) {
-        setPreview(r);
+        setPreview(undefined);
         setPreviewed(undefined);
+        setProblem(r.problem);
+        if (r.pick) setPick({ component: t(f.component), flows: r.pick.flows });
       } else if (mode === "preview") {
         setPreview(r);
         setPreviewed(JSON.stringify(said.stroke));
@@ -235,6 +248,8 @@ export function SketchForm(p: {
       }
     } catch (e) {
       setError(errorOf(e));
+      // Draw it is off again until the stroke is previewed afresh (the files may have changed).
+      setPreview(undefined);
     } finally {
       setBusy(undefined);
     }
@@ -258,12 +273,9 @@ export function SketchForm(p: {
     }
   };
   const components = [
-    ...new Set([
-      ...(p.map?.nodes.filter((n) => n.kind === "component").map((n) => n.id) ?? []),
-      ...drawn.map((d) => d.flow.split(".")[0]!),
-    ]),
+    ...new Set([...(p.map?.nodes.filter((n) => n.kind === "component").map((n) => n.id) ?? [])]),
   ].sort();
-  const flowsOf = preview?.pick?.flows ?? [];
+  const flowsOf = pick && pick.component === t(f.component) ? pick.flows : [];
   const needsFrom = f.kind !== "remove" && f.kind !== "retarget";
   const field = (k: keyof SketchForm, label: string, extra: Record<string, unknown> = {}) => (
     <label className="stack" style={{ gap: 2 }}>
@@ -325,7 +337,7 @@ export function SketchForm(p: {
                   <option value="">{S.pickFlow}</option>
                   {flowsOf.map((fl) => (
                     <option key={fl.id} value={fl.id}>
-                      {fl.name} ({fl.id})
+                      {S.flowOption(fl.name, fl.id)}
                     </option>
                   ))}
                 </select>
@@ -367,7 +379,7 @@ export function SketchForm(p: {
       {(f.kind === "call" || f.kind === "retarget") && (
         <div className="stack" style={{ gap: 6 }}>
           {field("toComponent", S.toComponent, { list: `${id}-c` })}
-          {field("toEntry", S.toEntry, { placeholder: "POST /v1/screenings" })}
+          {field("toEntry", S.toEntry, { placeholder: S.toEntryExample })}
           {tick("toNew", S.toNew)}
         </div>
       )}
@@ -394,7 +406,7 @@ export function SketchForm(p: {
               ))}
             </select>
           </label>
-          {field("table", S.table, { placeholder: "forge-orders-db.screenings" })}
+          {field("table", S.table, { placeholder: S.tableExample })}
           {field("columns", S.columns)}
           {tick("tableNew", S.tableNew)}
         </div>
@@ -405,9 +417,9 @@ export function SketchForm(p: {
           {error}
         </p>
       )}
-      {preview?.problem && (
+      {problem && (
         <p role="alert" className="state error">
-          {preview.problem}
+          {problem}
         </p>
       )}
       <div className="row" style={{ gap: 8 }}>
@@ -423,14 +435,14 @@ export function SketchForm(p: {
         <button
           type="button"
           className="btn primary"
-          disabled={!!busy || !preview || !!preview.problem || !asked || previewed !== asked}
+          disabled={!!busy || !preview || !asked || previewed !== asked}
           aria-busy={busy === "write"}
           onClick={() => void send("write")}
         >
           {busy === "write" ? S.drawing : S.draw}
         </button>
       </div>
-      {preview && !preview.problem && previewed === asked && (
+      {preview && previewed === asked && (
         <>
           <p className="ev-say">{S.previewSays}</p>
           <Diff r={{ files: preview.files }} />
@@ -458,6 +470,7 @@ export function SketchForm(p: {
               <li key={key} className="row between" style={{ gap: 8 }}>
                 <span>
                   <code className="mono">{d.flow}</code> · {d.what}
+                  {d.by ? <span className="muted"> · {S.drawnBy(d.by)}</span> : null}
                 </span>
                 <button
                   type="button"

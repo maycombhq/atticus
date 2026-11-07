@@ -57,18 +57,26 @@ export function MatchWithCopilot(p: {
       alive.current = false;
     };
   }, []);
+  // Each look is numbered: a slow earlier answer never overwrites a newer one.
+  const seq = useRef(0);
+  const ioRef = useRef(io);
+  ioRef.current = io;
   const look = async () => {
+    const n = ++seq.current;
     try {
-      const v = await io.get();
-      if (alive.current) setM(v);
+      const v = await ioRef.current.get();
+      if (alive.current && n === seq.current) setM(v);
       return v;
     } catch (e) {
-      if (alive.current) setError(errorOf(e));
+      if (alive.current && n === seq.current) setError(errorOf(e));
       return undefined;
     }
   };
-  // Where it stands when the panel opens: an earlier answer is shown again.
+  // Where it stands when the panel opens, or the other box changes: nothing of the last box stays.
   useEffect(() => {
+    setM(undefined);
+    setError(undefined);
+    setTaken(false);
     void look();
   }, [p.from, p.box.repo, p.box.system]);
   // While a session runs, look every few seconds; the job's done event looks at once.
@@ -85,7 +93,8 @@ export function MatchWithCopilot(p: {
     setError(undefined);
     setTaken(false);
     try {
-      const v = await io.post();
+      const v = await ioRef.current.post();
+      seq.current++;
       if (alive.current) setM(v);
     } catch (e) {
       if (alive.current) setError(errorOf(e));
