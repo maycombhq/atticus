@@ -228,7 +228,11 @@ export function OwnerForm(p: {
 }
 
 /** The lines each file would change: `-` was, `+` now. */
-export function Diff({ r }: { r: Api.SetRepoOwnerResultT }) {
+export function Diff({
+  r,
+}: {
+  r: { files: Api.SetRepoOwnerResultT["files"]; [k: string]: unknown };
+}) {
   return (
     <div className="stack">
       {r.files.map((f) => (

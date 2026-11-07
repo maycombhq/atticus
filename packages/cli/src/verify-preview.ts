@@ -87,8 +87,8 @@ function stepsOf(
   // Safe to paste into a shell: a name a person typed never ends the quotes or runs.
   const message = safeMessage(
     o.fact
-      ? `${repo}: a person's correction of ${o.fact}, applied by atticus verify --write`
-      : `${repo}: a person's corrections, applied by atticus verify --write`,
+      ? `${repo}: a correction by a person of ${o.fact}, applied by atticus verify --write`
+      : `${repo}: corrections by a person, applied by atticus verify --write`,
   );
   const pr = prCommand(o.host, branch);
   return {

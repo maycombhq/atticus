@@ -27,3 +27,4 @@ export * from "./past-corrections.js";
 export * from "./comments.js";
 export * from "./story-notes.js";
 export * from "./impact.js";
+export * from "./sketch.js";

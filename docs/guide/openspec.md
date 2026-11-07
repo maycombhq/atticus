@@ -16,6 +16,12 @@ OpenSpec ships inside the installed Atticus package rather than on your PATH, so
 
 `atticus openspec status` shows the same progress `atticus next` reads. Edit `feature.yaml`, the target flows or the stories' answer and run the stage again; never edit the generated files. An organisation changes what each stage is told through `openspec/config.yaml` (`context`, and `rules` per artifact), which every stage reads first through `openspec instructions`.
 
+## Drawing a change on the canvas
+
+A change's target flows can start as a drawing ([ADR 0179](../adr/0179-drawing-a-change-on-the-canvas.md)). Under the change's diagram (**Design › Change diagram**), **Draw the change** takes a stroke at a time: a call one component makes to another's API (ticking _the API doesn't exist yet_ when it is new), a topic it publishes and a component that listens, a table it reads or writes, a step of today's flow taken out or sent elsewhere, or a new flow of a component the catalog doesn't have yet, with what starts it. **Preview** shows the lines the stroke adds to `target-flows/<flow>.yaml`; **Draw it** writes exactly those lines, the picture redraws with the stroke marked, and **Undo** takes any stroke back. When a component has several flows, the panel asks which one the stroke is on.
+
+The drawn files are ordinary target flows, so review them in the pull request like any other; `atticus change architecture <change>` then drafts the steps around them and never removes or moves a drawn step. A stroke is a plan: the map changes only when the code lands and is read.
+
 ## Starting a change from your own analysis
 
 If you start a change with notes of your own (acceptance criteria, edge cases, field rules, error messages, what it must do under load), attach them to the change before its first stage: `atticus change attach <change> notes/*.md`, or **Attach a file** on the change's page ([ADR 0113](../adr/0113-small-changes-fast-files-into-a-change-and-the-task-context.md)). Markdown and text are read line by line; a PDF or slides page by page.

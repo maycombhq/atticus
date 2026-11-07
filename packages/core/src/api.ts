@@ -172,8 +172,12 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   at most three) and `confident` on a sure one; an API carries `words` (an operationId) and a
  *   gateway route `forwards`; more ways a call is matched (its settings filled in, a version
  *   prefix, the operation's name, what a route forwards to). Additive only.
+ * 2.58.0 (ADR 0179): GET and POST /api/changes/{changeId}/sketch, a change drawn on the canvas
+ *   stroke by stroke into its target flows. Additive only.
+ * 2.59.0 (ADR 0178, part 2): GET and POST /api/links/match, Copilot's proposed pairings of box
+ *   A's calls with box B's APIs, checked and never written by the session. Additive only.
  */
-export const API_VERSION = "2.57.0";
+export const API_VERSION = "2.59.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -3036,6 +3040,38 @@ export const LinkCandidatesView = z.object({
   /** An open target question of A that one /** answer to B would close, with the calls it covers. */
   rule: z.object({ question: z.string(), calls: z.number().int().min(0) }).optional(),
 });
+/** ADR 0178 part 2: Copilot matches A's loose calls with B's APIs; a person ticks the proposals. */
+export const MatchLinksRequest = z.object({ from: z.string().min(1), to: LinkBox });
+export const MatchProposal = z.object({
+  /** The call's fact id. */
+  call: z.string(),
+  /** The API it proposes, one of B's. */
+  api: z.string(),
+  why: z.string(),
+  /** The lines of the call site it names, as it named them. */
+  lines: z.array(z.string()).default([]),
+});
+export const MatchLinksView = z.object({
+  from: z.string(),
+  to: LinkBox,
+  /**
+   * idle: no brief yet; running: a session is under way; handoff: the brief is written for a
+   * person to read in Copilot Chat (copilot-acp isn't allowed here); done: an answer was read
+   * and checked; failed: the session ended without one, or the answer didn't read.
+   */
+  state: z.enum(["idle", "running", "handoff", "done", "failed"]),
+  /** The brief, relative to the metarepo, once written. */
+  brief: z.string().optional(),
+  /** The answer file the session (or the person) writes, relative to the metarepo. */
+  answer: z.string().optional(),
+  jobId: z.string().optional(),
+  proposals: z.array(MatchProposal).default([]),
+  /** Calls the answer says match nothing of B, with its reason. */
+  none: z.array(z.object({ call: z.string(), why: z.string() })).default([]),
+  /** Lines of the answer that named a call or an API that isn't one, left out. */
+  rejected: z.array(z.string()).default([]),
+  error: z.string().optional(),
+});
 export const ConnectLinksRequest = z.object({
   from: z.string().min(1),
   to: LinkBox,
@@ -3108,6 +3144,30 @@ export const FileChangeResult = z.object({
   written: z.boolean(),
   files: z.array(z.object({ file: z.string(), changes: z.array(LineChangeView) })),
   verify: z.string(),
+  commit: z.string(),
+});
+/**
+ * ADR 0179: a stroke drawn on the canvas for a change (a call, a topic, a table, a step removed
+ * or sent elsewhere, one taken back), checked in full by the planner's Stroke schema.
+ */
+export const SketchStrokeRequest = z.object({
+  stroke: z
+    .object({ kind: z.enum(["call", "topic", "table", "remove", "retarget", "undo"]) })
+    .passthrough(),
+  /** Say what it would write; write nothing. */
+  preview: z.boolean().optional(),
+});
+export const SketchResult = z.object({
+  written: z.boolean(),
+  files: z.array(z.object({ file: z.string(), changes: z.array(LineChangeView) })),
+  /** Why the stroke couldn't be drawn; nothing was written. */
+  problem: z.string().optional(),
+  /** The component has several flows: which to pick from. */
+  pick: z.object({ flows: z.array(z.object({ id: z.string(), name: z.string() })) }).optional(),
+  /** The change's picture after the stroke (as GET /api/changes/{id}/map), when it was written. */
+  map: ChangeMap.optional(),
+  /** The strokes drawn here that Undo can take back: flow and the step's index in the delta. */
+  drawn: z.array(z.object({ flow: z.string(), index: z.number().int(), what: z.string() })),
   commit: z.string(),
 });
 export const UndeclareLinkRequest = z.object({
@@ -3188,6 +3248,8 @@ export const RuleFromPairingResult = z.object({
 export type RuleFromPairingResultT = z.infer<typeof RuleFromPairingResult>;
 export type DeclareLinkRequestT = z.infer<typeof DeclareLinkRequest>;
 export type FileChangeResultT = z.infer<typeof FileChangeResult>;
+export type SketchStrokeRequestT = z.infer<typeof SketchStrokeRequest>;
+export type SketchResultT = z.infer<typeof SketchResult>;
 export type AddableViewT = z.infer<typeof AddableView>;
 export type AddSystemRequestT = z.infer<typeof AddSystemRequest>;
 export type BoxCorrectionsT = z.infer<typeof BoxCorrections>;
@@ -3200,6 +3262,9 @@ export type CandidateApiViewT = z.infer<typeof CandidateApiView>;
 export type LinkCandidatesViewT = z.infer<typeof LinkCandidatesView>;
 export type ConnectLinksRequestT = z.infer<typeof ConnectLinksRequest>;
 export type ConnectLinksResultT = z.infer<typeof ConnectLinksResult>;
+export type MatchLinksRequestT = z.infer<typeof MatchLinksRequest>;
+export type MatchLinksViewT = z.infer<typeof MatchLinksView>;
+export type MatchProposalT = z.infer<typeof MatchProposal>;
 
 // ------------------------------------------------------------------ copilot runs (ADR 0173)
 
@@ -3975,6 +4040,27 @@ const OPS: Record<string, Record<string, Op>> = {
       errors: [400, 404],
     },
   },
+  "/api/changes/{changeId}/sketch": {
+    get: {
+      id: "getChangeSketch",
+      summary:
+        "What was drawn on the canvas for the change: the strokes Undo can take back, and the picture (ADR 0179)",
+      tag: "changes",
+      params: [p("changeId")],
+      ok: { status: 200, schema: "SketchResult", description: "OK" },
+      errors: [400, 404],
+    },
+    post: {
+      id: "sketchChange",
+      summary:
+        "Draw one stroke of the change on the canvas: a call, a topic, a table, a step removed or sent elsewhere, or one taken back; written as a flow delta in target-flows/ after the person's yes, preview first (ADR 0179)",
+      tag: "changes",
+      params: [p("changeId")],
+      body: SketchStrokeRequest,
+      ok: { status: 200, schema: "SketchResult", description: "Drawn, or why not" },
+      errors: [400, 404, 409, 422],
+    },
+  },
   "/api/changes/{changeId}/impact": {
     get: {
       id: "getChangeImpact",
@@ -4387,6 +4473,26 @@ const OPS: Record<string, Record<string, Op>> = {
       body: ConnectLinksRequest,
       ok: { status: 200, schema: "ConnectLinksResult", description: "OK" },
       errors: [400, 404, 409, 422],
+    },
+  },
+  "/api/links/match": {
+    get: {
+      id: "getLinkMatch",
+      summary:
+        "Where Copilot's match of box A's calls to box B's APIs stands (ADR 0178, part 2): the brief, the answer read back and checked, as proposals a person ticks",
+      tag: "views",
+      params: [q("from"), q("to"), q("system")],
+      ok: { status: 200, schema: "MatchLinksView", description: "OK" },
+      errors: [400, 404],
+    },
+    post: {
+      id: "matchLinks",
+      summary:
+        "Start a Copilot session that proposes pairings of A's loose calls with B's APIs from a brief of their cited lines (ADR 0178, part 2); it writes only its answer file, and nothing is a correction until a person ticks and confirms it. Where copilot-acp isn't allowed, writes the brief for Copilot Chat and says so",
+      tag: "views",
+      body: MatchLinksRequest,
+      ok: { status: 202, schema: "MatchLinksView", description: "Accepted" },
+      errors: [400, 404, 409],
     },
   },
   "/api/facts/{repo}/corrections/undo": {
@@ -5355,9 +5461,14 @@ export function openApiDocument(): Record<string, unknown> {
     CopilotRunCurrent,
     LinkCandidatesView,
     ConnectLinksResult,
+    MatchLinksRequest,
+    MatchProposal,
+    MatchLinksView,
     RepoOwnerView,
     SetRepoOwnerResult,
     FileChangeResult,
+    SketchStrokeRequest,
+    SketchResult,
     AddableView,
     BoxCorrections,
     SavedCanvasView,

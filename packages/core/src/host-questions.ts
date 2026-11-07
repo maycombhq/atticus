@@ -261,7 +261,8 @@ export async function addProfileSystem(
       }),
     );
     valid(doc, platform);
-    // Written in the file's own style (block lists stay block), so only the new lines change.
+    // Block lists stay block; flow lines take the library's padding, as this writer always has
+    // (yaml pads maps and lists alike, so a file that mixes them can't keep both).
     const after = doc.toString({ lineWidth: 0, flowCollectionPadding: true });
     const changes = changedLines(before ?? "", after);
     if (o.preview) return { id: s.id, profile: relOf(platform), added: true, changes };

@@ -170,7 +170,7 @@ describe(
         "git switch -c correct/forge-payments-call.post.accounts-id-debits",
       );
       expect(v.steps[3]!.command).toBe(
-        `git commit -m "forge-payments: a person's correction of call.post.accounts-id-debits, applied by atticus verify --write"`,
+        `git commit -m "forge-payments: a correction by a person of call.post.accounts-id-debits, applied by atticus verify --write"`,
       );
       expect(v.steps[4]!.command).toBe(
         "git push -u origin correct/forge-payments-call.post.accounts-id-debits",

@@ -4,9 +4,14 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## 2.0.0-beta.21 (2026-11-06)
 
+### Draw a change on the canvas (ADR 0179)
+
+- Under a change's diagram, **Draw the change**: say a stroke (a call one component makes to another's API, a topic it publishes and who listens, a table it reads or writes, a step of today's flow taken out or sent elsewhere, or a new flow of a new component with where it runs), Preview the lines it adds to the change's target flows, and Draw it on your yes; the picture redraws with the stroke marked + new or ✕ retired, and Undo takes any stroke back. The strokes are ordinary target-flow files, reviewed in the pull request; `atticus change architecture <change>` then fills in the rest around them and never removes or moves a drawn step. A stroke is a plan, never a fact. Local API 2.58.0 (`GET`/`POST /api/changes/{changeId}/sketch`), additive.
+
 ### Connect: matching calls to APIs at scale (ADR 0178)
 
 - Connect to… finds more: a call whose path is a setting (`${refunds.base}/request`) is matched with the setting filled in from the repo's config facts; `/v1`, `/v2` prefixes don't count against a match; a spec operation's `operationId` and a call site's constant name are compared as words; a gateway's route is matched by the path it forwards to. Each call gets its three likeliest APIs (the select lists them first), and a **confident** mark when the best is a sure match well ahead of the rest. The panel counts confident, suggested and unsuggested calls, and **Tick the N confident** / **Tick all suggested** pair many at once (one Preview, one write); only confident ones start ticked. With many APIs, a search box narrows the list. Local API 2.57.0 (`suggestions`, `confident`, `words`, `forwards`), additive.
+- **Match with Copilot** in the same panel: when the paths aren't enough, one Copilot session reads the repo's call sites (the constants and settings the paths are built from) against the other box's APIs and proposes which API each call reaches, naming the lines; the answer is checked (every call one of the repo's, every API one of the box's) and shown as proposals you tick, preview and confirm like any pairing. The session writes only its answer, under `proposals/matching/`; where copilot-acp isn't allowed the brief is written for your assistant and **Read the answer** reads it back. `atticus connect match <repo> --to <repo> | --system <id> [--mode copilot-acp|hand-off]` does the same from a terminal. Local API 2.59.0 (`GET`/`POST /api/links/match`), additive.
 
 ### Skills and agents from other teams, for Claude and Copilot (G5)
 

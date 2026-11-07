@@ -89,11 +89,13 @@ describe("addProfileSystem (ADR 0162)", () => {
       boundary: "internal",
       owner: "team-ledger-ops",
     });
-    expect(r).toEqual({
+    expect(r).toMatchObject({
       id: "team-ledger-ops-system",
       profile: "org-pack/profiles/forge/profile.yaml",
       added: true,
     });
+    // The lines the write made, the new system's among them (a preview shows the same).
+    expect(r.changes!.some((c) => c.now?.includes("team-ledger-ops-system"))).toBe(true);
     const text = await readFile(join(root, ...PROFILE), "utf8");
     // The profile keeps its comments.
     expect(text).toContain("# Invented vendors, each named by the host the code calls it on.");

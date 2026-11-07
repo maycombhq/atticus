@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Atticus local API",
-    "version": "2.56.0",
+    "version": "2.59.0",
     "description": "Served by `atticus ui` on 127.0.0.1. The UI only calls this API, and the API only reads and writes files in the metarepo.",
     "license": {
       "name": "Apache-2.0",
@@ -3354,6 +3354,184 @@
         }
       }
     },
+    "/api/changes/{changeId}/sketch": {
+      "get": {
+        "operationId": "getChangeSketch",
+        "summary": "What was drawn on the canvas for the change: the strokes Undo can take back, and the picture (ADR 0179)",
+        "tags": [
+          "changes"
+        ],
+        "parameters": [
+          {
+            "name": "changeId",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SketchResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "sketchChange",
+        "summary": "Draw one stroke of the change on the canvas: a call, a topic, a table, a step removed or sent elsewhere, or one taken back; written as a flow delta in target-flows/ after the person's yes, preview first (ADR 0179)",
+        "tags": [
+          "changes"
+        ],
+        "parameters": [
+          {
+            "name": "changeId",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "stroke": {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "call",
+                          "topic",
+                          "table",
+                          "remove",
+                          "retarget",
+                          "undo"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ],
+                    "additionalProperties": {}
+                  },
+                  "preview": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "stroke"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Drawn, or why not",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SketchResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict: the file changed since you read it, or the state doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Atticus refused: the problem carries the command's own words (ADR 0043)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/changes/{changeId}/impact": {
       "get": {
         "operationId": "getChangeImpact",
@@ -6038,6 +6216,176 @@
           },
           "422": {
             "description": "Atticus refused: the problem carries the command's own words (ADR 0043)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/links/match": {
+      "get": {
+        "operationId": "getLinkMatch",
+        "summary": "Where Copilot's match of box A's calls to box B's APIs stands (ADR 0178, part 2): the brief, the answer read back and checked, as proposals a person ticks",
+        "tags": [
+          "views"
+        ],
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "system",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MatchLinksView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "matchLinks",
+        "summary": "Start a Copilot session that proposes pairings of A's loose calls with B's APIs from a brief of their cited lines (ADR 0178, part 2); it writes only its answer file, and nothing is a correction until a person ticks and confirms it. Where copilot-acp isn't allowed, writes the brief for Copilot Chat and says so",
+        "tags": [
+          "views"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "from": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "to": {
+                    "type": "object",
+                    "properties": {
+                      "repo": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "system": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "from",
+                  "to"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MatchLinksView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict: the file changed since you read it, or the state doesn't allow this",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -27919,6 +28267,149 @@
         ],
         "additionalProperties": false
       },
+      "MatchLinksRequest": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "minLength": 1
+          },
+          "to": {
+            "type": "object",
+            "properties": {
+              "repo": {
+                "type": "string",
+                "minLength": 1
+              },
+              "system": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ],
+        "additionalProperties": false
+      },
+      "MatchProposal": {
+        "type": "object",
+        "properties": {
+          "call": {
+            "type": "string"
+          },
+          "api": {
+            "type": "string"
+          },
+          "why": {
+            "type": "string"
+          },
+          "lines": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "call",
+          "api",
+          "why",
+          "lines"
+        ],
+        "additionalProperties": false
+      },
+      "MatchLinksView": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "object",
+            "properties": {
+              "repo": {
+                "type": "string",
+                "minLength": 1
+              },
+              "system": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "additionalProperties": false
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "idle",
+              "running",
+              "handoff",
+              "done",
+              "failed"
+            ]
+          },
+          "brief": {
+            "type": "string"
+          },
+          "answer": {
+            "type": "string"
+          },
+          "jobId": {
+            "type": "string"
+          },
+          "proposals": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MatchProposal"
+            }
+          },
+          "none": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "call": {
+                  "type": "string"
+                },
+                "why": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "call",
+                "why"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "rejected": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "from",
+          "to",
+          "state",
+          "proposals",
+          "none",
+          "rejected"
+        ],
+        "additionalProperties": false
+      },
       "RepoOwnerView": {
         "type": "object",
         "properties": {
@@ -28082,6 +28573,146 @@
           "written",
           "files",
           "verify",
+          "commit"
+        ],
+        "additionalProperties": false
+      },
+      "SketchStrokeRequest": {
+        "type": "object",
+        "properties": {
+          "stroke": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "call",
+                  "topic",
+                  "table",
+                  "remove",
+                  "retarget",
+                  "undo"
+                ]
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "additionalProperties": {}
+          },
+          "preview": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "stroke"
+        ],
+        "additionalProperties": false
+      },
+      "SketchResult": {
+        "type": "object",
+        "properties": {
+          "written": {
+            "type": "boolean"
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "file": {
+                  "type": "string"
+                },
+                "changes": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "was": {
+                        "type": "string"
+                      },
+                      "now": {
+                        "type": "string"
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "file",
+                "changes"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "problem": {
+            "type": "string"
+          },
+          "pick": {
+            "type": "object",
+            "properties": {
+              "flows": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "flows"
+            ],
+            "additionalProperties": false
+          },
+          "map": {
+            "$ref": "#/components/schemas/ChangeMap"
+          },
+          "drawn": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "flow": {
+                  "type": "string"
+                },
+                "index": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "what": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "flow",
+                "index",
+                "what"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "commit": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "written",
+          "files",
+          "drawn",
           "commit"
         ],
         "additionalProperties": false

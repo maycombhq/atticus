@@ -187,6 +187,10 @@ export function splitAnswer(a: { flows: FlowDelta[]; reads?: ReadFlow[] }): {
   return { deltas: a.flows.filter((d) => !isEmptyDelta(d)), reads };
 }
 
+/** ADR 0179: a sketch is kept as drawn; the stage adds what a stroke can't say. */
+export const SKETCH_RULE =
+  "A person drew some of this change on the canvas: the sketch block holds their steps (their kind, the flow they are on, where each call or publish goes, which table a step reads or writes). Keep every one of those as drawn, on its flow, and fill in what a sketch can't say: its fields, errors, place in the code (at, new, uses), and the steps around it the change needs. Add new flows or steps only where the feature asks for them; never remove or move a drawn step.";
+
 export async function readDeltas(
   dir: string,
 ): Promise<{ deltas: FlowDelta[]; problems: string[] }> {
@@ -2425,6 +2429,9 @@ export async function architectureStage(
     .join("\n---\n");
   // ADR 0006 addendum: OpenSpec's instructions for the design come first, when set up.
   const osInstructions = await openspecInstructionSource(root, change.id, "architecture");
+  const sketched = (await readDeltas(dir)).deltas.filter((d) =>
+    d.why.startsWith("Drawn on the canvas"),
+  );
   const attached = await changeInputSources(dir, rel);
   // ADR 0142: the prototype's calls nothing serves, for this stage to place.
   const newCalls = prototypeNewCallsSource(attached);
@@ -2447,6 +2454,21 @@ export async function architectureStage(
       classification: "internal",
       priority: 95,
     },
+    // ADR 0179: what a person drew on the canvas is the frame the stage fills in, never redrawn.
+    ...(sketched.length
+      ? [
+          {
+            id: "sketch",
+            kind: "artifact" as const,
+            origin: `${rel}/${TARGET_DIR}/ (drawn on the canvas)`,
+            text: sketched
+              .map((d) => `# ${d.flow}\n${stringify(d, { lineWidth: 0 })}`)
+              .join("\n---\n"),
+            classification: "internal" as const,
+            priority: 98,
+          },
+        ]
+      : []),
     // ADR 0111 addendum: how the stores the change may write name their migrations and types.
     ...storeFactsSource(estate, placement),
     // S2: the values the code allows in the columns of the tables the change may store into.
@@ -2523,6 +2545,7 @@ export async function architectureStage(
     formatFor(classificationLevels(ctx)),
     "",
     SELF_CHECK_RULE,
+    ...(sketched.length ? ["", SKETCH_RULE] : []),
     ...(newCalls.length ? ["", PROTOTYPE_NEW_RULE] : []),
     ...(past ? ["", past.rule] : []),
   ].join("\n");

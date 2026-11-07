@@ -1,6 +1,6 @@
 # Plan: drawing a change on the canvas, and matching calls to APIs at scale
 
-- Status: proposal, for discussion (not scheduled)
+- Status: in progress. B1–B2 shipped as ADR 0178 (part 1); A1–A3 as ADR 0179; B3 and A4–A5 follow.
 - Date: 2026-11-07
 - Builds on: ADR 0108 (a change drawn from its target flows), ADR 0174 (correcting the map on the canvas), ADR 0175 (a canvas you work in), ADR 0176 (reading rules)
 

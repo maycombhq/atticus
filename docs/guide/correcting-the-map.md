@@ -10,6 +10,8 @@ The panel lists this repo's calls that join nothing (asked, no route, left or no
 
 A pair is **confident** when the best match is sure and well ahead of every other API. Only those start ticked; **Tick the N confident** and **Tick all suggested** tick many at once, and one Preview and one Write pair them all. Change any pick, and untick what you don't agree with.
 
+When the paths aren't enough (a client builds its paths from constants, a gateway has hundreds of routes), **Match with Copilot** starts one Copilot session that reads the repo's call sites against the other box's APIs and proposes which API each call reaches, naming the lines it read. The proposals come back checked and you tick the ones you agree with; they are previewed and written like any pairing, so Copilot proposes and you decide. The session writes only its answer, under `proposals/matching/`. Where `runtime.yaml` doesn't allow copilot-acp, the brief is written there for a Copilot Chat or Claude Code session and **Read the answer** reads the answer back; `atticus connect match <repo> --to <repo> | --system <id>` does the same from a terminal.
+
 **Preview** shows the lines that will be written and what the next `atticus verify <repo> --write` adds, moves and removes. **Write** appends one `link` line per pair to `facts/<repo>.corrections.jsonl`. The call's own fact stays exactly as read. The join reads the link and draws the line, flagged as paired by a person; when a later read renames the API, it is found again by its method and path, and when it is gone, the box says so.
 
 When the repo has an open target question, **All loose calls go there** answers it with `/**`, so calls read later follow it too.

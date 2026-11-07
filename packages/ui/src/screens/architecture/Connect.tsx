@@ -4,6 +4,7 @@ import { api, ApiError, useApi, type Loaded } from "../../api/client.js";
 import { CorrectionNextPanel } from "../../app/correction-next.js";
 import { CopyButton } from "../run/shared.js";
 import { COPY } from "../../copy.js";
+import { MatchWithCopilot, type MatchIo } from "./Match.js";
 
 /**
  * G1 (ADR 0174): connect two boxes call by call. From a repo's box, pick the other box (by
@@ -105,6 +106,7 @@ export function Pairing(p: {
   cands: Loaded<Api.LinkCandidatesViewT> & { reload?: () => void };
   /** Tests pass their own; the app calls the local API. */
   post?: (body: Api.ConnectLinksRequestT) => Promise<Api.ConnectLinksResultT>;
+  match?: MatchIo;
 }) {
   const v = p.cands.state === "ready" ? p.cands.data : undefined;
   const [picked, setPicked] = useState<Record<string, string>>({});
@@ -368,6 +370,21 @@ export function Pairing(p: {
             })}
           </tbody>
         </table>
+      )}
+      {loose.length > 0 && d.apis.length > 0 && (
+        <MatchWithCopilot
+          from={p.from}
+          box={p.box}
+          toName={d.toName}
+          calls={loose}
+          apis={d.apis}
+          {...(p.match ? { io: p.match } : {})}
+          onTake={(ps) => {
+            setPicked((x) => ({ ...x, ...Object.fromEntries(ps.map((q) => [q.call, q.api])) }));
+            setTicked((t) => new Set([...t, ...ps.map((q) => q.call)]));
+            setPreview(undefined);
+          }}
+        />
       )}
       {d.rule && (
         <label className="row" style={{ gap: 6 }}>

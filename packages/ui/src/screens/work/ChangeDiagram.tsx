@@ -10,6 +10,7 @@ import { targetHref } from "../flows/Flows.js";
 import { CopyButton } from "../run/shared.js";
 import type { ChangeRow } from "./next.js";
 import { Command } from "./RunNext.js";
+import { SketchPanel } from "./Sketch.js";
 import { ChangePicker } from "./Stage.js";
 
 /**
@@ -79,7 +80,7 @@ function Legend() {
 }
 
 /** One change's picture, its parts and lines as tables, and its Mermaid. */
-export function ChangeDiagramView({ map }: { map: Api.ChangeMapT }) {
+export function ChangeDiagramView({ map, sketch }: { map: Api.ChangeMapT; sketch?: boolean }) {
   const graph = useMemo(() => diagramGraph(map), [map]);
   const groupOf = new Map(map.groups.map((g) => [g.id, g.label]));
   const label = new Map(map.nodes.map((n) => [n.id, n.label]));
@@ -88,6 +89,7 @@ export function ChangeDiagramView({ map }: { map: Api.ChangeMapT }) {
       <>
         <p>{D.noTargets(map.change)}</p>
         <Command text={`atticus change architecture ${map.change}`} label={COPY.runNext.copy} />
+        {sketch && <SketchPanel change={map.change} map={map} />}
       </>
     );
   return (
@@ -169,6 +171,7 @@ export function ChangeDiagramView({ map }: { map: Api.ChangeMapT }) {
         </pre>
         <CopyButton text={map.mermaid} label={D.copyMermaid} />
       </div>
+      {sketch && <SketchPanel change={map.change} map={map} />}
     </>
   );
 }
@@ -191,7 +194,7 @@ export function ChangeDiagram({ hash }: { hash: string }) {
         {(l) => (
           <>
             <ChangePicker list={l} current={current} screen="change-diagram" />
-            {current && <View of={map}>{(m) => <ChangeDiagramView map={m} />}</View>}
+            {current && <View of={map}>{(m) => <ChangeDiagramView map={m} sketch />}</View>}
           </>
         )}
       </View>

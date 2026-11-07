@@ -158,6 +158,52 @@ async function openRuleQuestion(root: string, from: string) {
   return qs.find((q) => q.repo === from && q.state === "open");
 }
 
+/** The two boxes a query names, or 400. */
+export function boxesOf(query: URLSearchParams): { from: string; to: Api.LinkBoxT } {
+  const from = query.get("from") ?? "";
+  const to: Api.LinkBoxT = query.get("system")
+    ? { system: query.get("system")! }
+    : { repo: query.get("to") ?? "" };
+  if (!from || (!to.repo && !to.system))
+    throw badRequest("Say both boxes: from=<repo> and to=<repo> (or system=<id>).");
+  return { from, to };
+}
+
+/** A's loose calls and B's APIs with the suggestions (the Connect panel's view), and A's facts. */
+export async function candidatesOf(
+  root: string,
+  from: string,
+  to: Api.LinkBoxT,
+): Promise<{ view: Api.LinkCandidatesViewT; facts: readonly Fact[] }> {
+  const c = await context(root, from, to);
+  const cands = linkCandidates({
+    from,
+    facts: c.facts,
+    join: c.join,
+    apis: c.b.apis,
+    pairs: c.pairs,
+    to,
+    settings: settingsOf(c.facts),
+  });
+  const q = await openRuleQuestion(root, from);
+  const loose = cands.calls.filter((x) => x.status !== "paired").length;
+  const view: Api.LinkCandidatesViewT = {
+    from,
+    to,
+    toName: c.b.name,
+    calls: cands.calls,
+    apis: cands.apis,
+    ...(c.facts.some((f) => f.kind === "call")
+      ? {}
+      : c.estate.unverified.includes(from)
+        ? { noCalls: { why: "unverified" as const, command: `atticus verify ${from}` } }
+        : { noCalls: { command: `atticus map --all --gaps --repos ${from}` } }),
+    ...(c.b.noApis ? { noApis: c.b.noApis } : {}),
+    ...(q && loose ? { rule: { question: q.id, calls: loose } } : {}),
+  };
+  return { view, facts: c.facts };
+}
+
 export function uiLinkRoutes(
   r: Router,
   ctx: ServerContext,
@@ -167,39 +213,8 @@ export function uiLinkRoutes(
   return (
     r
       .add("GET", "/api/links/candidates", async ({ query }) => {
-        const from = query.get("from") ?? "";
-        const to: Api.LinkBoxT = query.get("system")
-          ? { system: query.get("system")! }
-          : { repo: query.get("to") ?? "" };
-        if (!from || (!to.repo && !to.system))
-          throw badRequest("Say both boxes: from=<repo> and to=<repo> (or system=<id>).");
-        const c = await context(ctx.root, from, to);
-        const cands = linkCandidates({
-          from,
-          facts: c.facts,
-          join: c.join,
-          apis: c.b.apis,
-          pairs: c.pairs,
-          to,
-          settings: settingsOf(c.facts),
-        });
-        const q = await openRuleQuestion(ctx.root, from);
-        const loose = cands.calls.filter((x) => x.status !== "paired").length;
-        const view: Api.LinkCandidatesViewT = {
-          from,
-          to,
-          toName: c.b.name,
-          calls: cands.calls,
-          apis: cands.apis,
-          ...(c.facts.some((f) => f.kind === "call")
-            ? {}
-            : c.estate.unverified.includes(from)
-              ? { noCalls: { why: "unverified" as const, command: `atticus verify ${from}` } }
-              : { noCalls: { command: `atticus map --all --gaps --repos ${from}` } }),
-          ...(c.b.noApis ? { noApis: c.b.noApis } : {}),
-          ...(q && loose ? { rule: { question: q.id, calls: loose } } : {}),
-        };
-        return { status: 200, body: view };
+        const { from, to } = boxesOf(query);
+        return { status: 200, body: (await candidatesOf(ctx.root, from, to)).view };
       })
       .add("POST", "/api/links/connect", async ({ body }) => {
         const b = Api.ConnectLinksRequest.safeParse(body ?? {});
