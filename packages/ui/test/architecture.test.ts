@@ -303,4 +303,27 @@ describe("the outline says a gap every part shares once (ADR 0097 follow-up)", (
       ["component:c", [], []],
     ]);
   });
+
+  it("a component box wears its type (ADR 0180), for the badge the organisation draws", () => {
+    const comp: Api.HierNodeT = {
+      ...node("component:orders-api", "component"),
+      properties: { type: "forge-experience-api", repo: "forge-orders" },
+    };
+    const vs2: Views = new Map([
+      ["system:portal", view(node("system:portal", "system", 1), [comp])],
+    ]);
+    const c = canvasGraph(vs2, "system:portal", new Set());
+    expect(c.boxes[0]).toMatchObject({
+      id: "component:orders-api",
+      typeId: "forge-experience-api",
+    });
+    // A box with no type says none (the legend leaves it out).
+    const vs3: Views = new Map([
+      [
+        "system:portal",
+        view(node("system:portal", "system", 1), [node("component:x", "component")]),
+      ],
+    ]);
+    expect(canvasGraph(vs3, "system:portal", new Set()).boxes[0]!.typeId).toBeUndefined();
+  });
 });

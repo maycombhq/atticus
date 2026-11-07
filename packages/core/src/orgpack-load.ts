@@ -4,6 +4,7 @@ import { parse } from "yaml";
 import { FrameworkModel } from "./schema/frameworks.js";
 import { ScanSettings } from "./schema/scan-settings.js";
 import { RepoType } from "./schema/repo-type.js";
+import { ComponentType, type LoadedComponentType } from "./schema/component-type.js";
 import { ModelProviderPlugin, ScannerPlugin } from "./schema/plugin.js";
 import { SpecTemplate } from "./schema/spec.js";
 import type { z } from "zod";
@@ -63,6 +64,8 @@ export interface OrgPack {
   scanSettings: ScanSettings[];
   /** Repo types (ADR 0077), from repo-types/<id>/type.yaml. */
   repoTypes: RepoType[];
+  /** The organisation's component types (ADR 0180), from component-types/<id>/type.yaml, with their notes.md. */
+  componentTypes: LoadedComponentType[];
   /** Scanner plugins (ADR 0080), from plugins/<id>/plugin.yaml, with their folders. */
   plugins: { manifest: ScannerPlugin; dir: string }[];
   /** Model-provider plugins (ADR 0121 item 4): plugins/model-providers/<id>/plugin.yaml. */
@@ -343,6 +346,47 @@ export async function loadOrgPack(dir: string): Promise<OrgPack> {
     specTemplates.push(t);
   }
 
+  // ADR 0180: one folder per component type, named after it; notes.md beside it is read as text.
+  const componentTypes: LoadedComponentType[] = [];
+  let ctDirs: string[] = [];
+  try {
+    ctDirs = (await readdir(join(dir, "component-types"), { withFileTypes: true }))
+      .filter((d) => d.isDirectory())
+      .map((d) => d.name)
+      .sort();
+  } catch {
+    // no component types yet
+  }
+  for (const name of ctDirs) {
+    const f = join(dir, "component-types", name, "type.yaml");
+    if (!(await exists(f))) {
+      problems.push({ file: `component-types/${name}`, path: "", message: "has no type.yaml" });
+      continue;
+    }
+    const v = await load(f, ComponentType);
+    if (!v) continue;
+    if (v.id !== name) {
+      problems.push({
+        file: rel(f),
+        path: "id",
+        message: `is ${v.id}; put it in component-types/${v.id}/type.yaml`,
+      });
+      continue;
+    }
+    const notesFile = join(dir, "component-types", name, v.notes ?? "notes.md");
+    const notesText = (await exists(notesFile))
+      ? await readFile(notesFile, "utf8")
+      : v.notes
+        ? (problems.push({ file: rel(f), path: "notes", message: `no file ${v.notes} beside it` }),
+          undefined)
+        : undefined;
+    componentTypes.push({
+      ...v,
+      source: "org-pack",
+      ...(notesText !== undefined ? { notesText } : {}),
+    });
+  }
+
   // ---------- cross-file checks
   const roleIds = new Set<string>([...BUILT_IN_ROLES, ...roles.custom.map((c) => c.id)]);
   const typeIds = new Set(changeTypes.types.map((t) => t.id));
@@ -515,6 +559,7 @@ export async function loadOrgPack(dir: string): Promise<OrgPack> {
     frameworks,
     scanSettings,
     repoTypes,
+    componentTypes,
     plugins,
     modelProviders,
     specTemplates,

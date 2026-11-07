@@ -1,0 +1,27 @@
+# An invented Forge component type (ADR 0180): the architects' own kind, beside Atticus's.
+schemaVersion: 1
+id: forge-experience-api
+name: Experience API
+description: A Forge channel-facing API that shapes domain services' APIs for one channel (web, mobile, partner) and holds no data of its own.
+owner: platform-architecture
+signals:
+  - kind: dependency
+    value: "@forge/experience-kit"
+    why: every experience API is built on the kit
+  - kind: path
+    value: "src/experience/**"
+  - kind: repo-type
+    value: forge-experience
+runsOn:
+  platform: openshift
+  cloud: on-prem
+draws:
+  shape: rounded
+  colour: "#2bb3a3"
+  badge: xp
+must:
+  - An experience API calls domain services through the Forge gateway, never a service's route directly.
+mustNot:
+  - An experience API never writes a system-of-record table.
+  - An experience API never calls a vendor directly.
+notes: notes.md

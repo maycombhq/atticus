@@ -170,6 +170,7 @@ export async function verifyWritePreview(
     ...(inputs.estate ? { estate: inputs.estate } : {}),
     conventions: inputs.conventions,
     notes: inputs.notes,
+    componentTypes: inputs.componentTypes,
     notReached: inputs.notReached,
   });
 

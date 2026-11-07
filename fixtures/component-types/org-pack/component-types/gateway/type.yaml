@@ -1,0 +1,12 @@
+# Atticus's gateway type, in Forge's words: the built-in's id, the organisation's description.
+schemaVersion: 1
+id: gateway
+name: Forge gateway proxy
+description: An Apigee proxy bundle on the Forge gateway; policy only, never behaviour.
+signals:
+  - kind: path
+    value: apiproxy/**
+draws:
+  badge: gw
+mustNot:
+  - A gateway proxy never transforms a payload beyond headers and paths.

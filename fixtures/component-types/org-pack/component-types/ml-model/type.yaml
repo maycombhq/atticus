@@ -1,0 +1,6 @@
+# Forge has no ML models: the built-in is taken out of the set.
+schemaVersion: 1
+id: ml-model
+name: ML model
+description: Not used at Forge.
+off: true

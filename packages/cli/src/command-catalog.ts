@@ -109,6 +109,8 @@ const AREA_BY_WORD: Record<string, string> = {
   rules: "repos",
   // ADR 0178: Copilot proposes pairings of a repo's calls with another box's APIs.
   connect: "repos",
+  // ADR 0180: the organisation's component types.
+  types: "start",
   skills: "start",
   repo: "repos",
   repos: "repos",

@@ -131,7 +131,12 @@ export type RejectCode =
    * A term fact whose `note` is a key none of the notes given has now (review 10): the note was
    * changed or removed since the read, so the term is read again by the notes as they are.
    */
-  | "term-note-stale";
+  | "term-note-stale"
+  /**
+   * A component fact whose type is none of the organisation's component types (ADR 0180), or a
+   * second component fact for the same component: one says what a component is.
+   */
+  | "component-type";
 
 /** One thing wrong with a fact. */
 export interface Problem {
@@ -396,6 +401,11 @@ export interface VerifyOptions {
    */
   notes?: readonly NumberedNote[];
   /**
+   * The organisation's component types (ADR 0180, `effectiveComponentTypes`), by id. A component
+   * fact's `type` must be one of them. Left out, a type is not checked.
+   */
+  componentTypes?: ReadonlySet<string>;
+  /**
    * G4: the OpenAPI reader behind the uncovered spec operations (R1; the stack helper
    * `readers`). False: no spec is read and none is listed. Default true.
    */
@@ -518,6 +528,9 @@ function claimsOf(f: Fact): Claim[] {
     // ADR 0163: the value as written, on its line.
     case "term":
       return [{ kind: "word", value: f.value }];
+    // ADR 0180: the signal the type rests on, as written on its line.
+    case "component":
+      return [{ kind: "word", value: f.cite.value }];
   }
 }
 
@@ -965,6 +978,25 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
         add(f, checkCite({ ...m }, [{ kind: "word", value: m.value }], `${label} meaning`, false));
       const bad = f.note !== undefined && o.notes ? noteProblem(f.note, o.notes) : undefined;
       if (bad) problem(f, bad.code, `${label} ${bad.message}`);
+    }
+    // ADR 0180: a component's type is one the organisation has, and one fact says it.
+    if (f.kind === "component") {
+      if (o.componentTypes && !o.componentTypes.has(f.type))
+        problem(
+          f,
+          "component-type",
+          `${label} says the component is a ${f.type}, which isn't one of the organisation's component types: add it (org-pack/component-types/${f.type}/type.yaml) or say one of ${[...o.componentTypes].join(", ")}`,
+        );
+      const subject = f.component ?? f.repo;
+      const first = facts.find(
+        (x) => x.kind === "component" && (x.component ?? x.repo) === subject,
+      );
+      if (first && first !== f)
+        problem(
+          f,
+          "component-type",
+          `${label} says what ${subject} is a second time (${first.id} already does): one fact says what a component is`,
+        );
     }
     // A-framework: the name follows from the declaration on the cited line, and a version, where
     // one is claimed, is written on that line or on one of its `cite.with` parts (a property, a

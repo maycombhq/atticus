@@ -64,6 +64,59 @@ describe("the form says a stroke", () => {
     });
   });
 
+  it("a new box of a type carries the type and where one of its kind runs (ADR 0180)", () => {
+    const types = [
+      {
+        id: "forge-experience-api",
+        name: "Experience API",
+        description: "x",
+        source: "org-pack" as const,
+        signals: [],
+        runsOn: { platform: "openshift", cloud: "on-prem" },
+        must: [],
+        mustNot: ["never writes a system-of-record table"],
+      },
+    ];
+    const r = strokeOf(
+      {
+        ...EMPTY_FORM,
+        component: "forge-web-xp",
+        newFlow: true,
+        newName: "Home is loaded",
+        triggerWhat: "GET /v1/home is called",
+        newType: "forge-experience-api",
+        toComponent: "forge-orders",
+        toEntry: "GET /orders",
+      },
+      types,
+    );
+    expect(r).toMatchObject({
+      stroke: {
+        from: {
+          newFlow: {
+            runsOn: { type: "forge-experience-api", platform: "openshift", cloud: "on-prem" },
+          },
+        },
+      },
+    });
+    // No type picked: no runsOn is said.
+    const plain = strokeOf(
+      {
+        ...EMPTY_FORM,
+        component: "c",
+        newFlow: true,
+        newName: "n",
+        triggerWhat: "t",
+        toComponent: "d",
+        toEntry: "GET /x",
+      },
+      types,
+    );
+    expect(
+      "stroke" in plain && (plain.stroke.from as { newFlow: object }).newFlow,
+    ).not.toHaveProperty("runsOn");
+  });
+
   it("a new flow gets an id from its name; a step taken out needs the step and why", () => {
     const r = strokeOf({
       ...EMPTY_FORM,

@@ -21,6 +21,7 @@ export const FACT_KINDS = [
   "framework",
   "flow",
   "term",
+  "component",
 ] as const;
 export type FactKind = (typeof FACT_KINDS)[number];
 
@@ -288,8 +289,9 @@ export const DeployFact = z.strictObject({
  * number, reads as version 1 and parses unchanged, every field added since being optional.
  * 1: the shapes of ADR 0124 and its addenda. 2: a deploy fact's `host`, `basePath` and `exposes`.
  * 3 (ADR 0163): the `term` kind, and a call's `auth`, `authCite`, `tls` and `tlsCite`.
+ * 4 (ADR 0180): the `component` kind, what a component is.
  */
-export const FACTS_SCHEMA_VERSION = 3 as const;
+export const FACTS_SCHEMA_VERSION = 4 as const;
 
 export const SETTING_KINDS = [
   "timeout",
@@ -471,6 +473,23 @@ export const FlowFact = z.strictObject({
   errors: z.array(FlowFactError).default([]),
 });
 
+/**
+ * What a component is (ADR 0180): its type, from the organisation's component types (the set
+ * `atticus map <repo> --estimate` lists, data) or Atticus's own. `cite` is the line that shows the
+ * signal the type rests on (the annotation, the dependency, the file's first line); `value` is
+ * the signal as written there. `type` is the type's id; one the set doesn't have is kept as
+ * written and flagged at verify, so a person adds the type or corrects the fact. One per
+ * component; a second is refused at verify.
+ */
+export const ComponentFact = z.strictObject({
+  kind: z.literal("component"),
+  ...common,
+  /** The type's id (service, bff, gateway, or one of the organisation's). */
+  type: z.string().min(1).max(80),
+  /** Why it is of that type, in a few words (optional). */
+  why: z.string().max(300).optional(),
+});
+
 export const Fact = z.discriminatedUnion("kind", [
   EntryFact,
   CallFact,
@@ -481,6 +500,7 @@ export const Fact = z.discriminatedUnion("kind", [
   FrameworkFact,
   FlowFact,
   TermFact,
+  ComponentFact,
 ]);
 export type Fact = z.infer<typeof Fact>;
 export type FactOf<K extends FactKind> = Extract<Fact, { kind: K }>;

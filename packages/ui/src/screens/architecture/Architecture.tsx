@@ -30,7 +30,7 @@ import {
   type Snapshot,
 } from "./tools.js";
 import { RunStep } from "../../app/runstep.js";
-import { ArchitectureCanvas } from "./Canvas.js";
+import { ArchitectureCanvas, type TypeDraws } from "./Canvas.js";
 import { LinkWrong, WhatMoved, WhyLinked } from "./WhyLinked.js";
 import { knownTargets, whatMoved } from "./links.js";
 import { Citation, EvidenceProvider, useEvidence } from "../../app/evidence.js";
@@ -364,6 +364,25 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
     overlay: "none",
   });
   const [snapshot, setSnapshot] = useState<Snapshot | undefined>();
+  // ADR 0180: how the organisation's component types are drawn (badge, colour), by id.
+  const typeList = useApi<Api.ComponentTypesViewT>("/api/component-types");
+  const types = useMemo<TypeDraws | undefined>(
+    () =>
+      typeList.state === "ready"
+        ? Object.fromEntries(
+            typeList.data.types.map((t) => [
+              t.id,
+              {
+                name: t.name,
+                description: t.description,
+                ...(t.draws?.badge ? { badge: t.draws.badge } : {}),
+                ...(t.draws?.colour ? { colour: t.draws.colour } : {}),
+              },
+            ]),
+          )
+        : undefined,
+    [typeList],
+  );
   const openQuestions = useApi<Api.QuestionListT>(
     tools.overlay === "questions" ? "/api/questions?state=open" : undefined,
   );
@@ -632,6 +651,7 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
             </div>
             <CanvasTools
               graph={graph}
+              {...(types ? { types } : {})}
               allBoxes={whole.boxes.length}
               state={tools}
               onChange={setTools}
@@ -710,6 +730,7 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
               <ArchitectureCanvas
                 key={key}
                 graph={graph}
+                {...(types ? { types } : {})}
                 direction={directionFor(lens)}
                 pinned={pinned}
                 tidy={tidy}

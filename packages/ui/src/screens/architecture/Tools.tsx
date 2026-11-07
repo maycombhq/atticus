@@ -3,6 +3,7 @@ import type { Api } from "@maycombhq/core";
 import { api, ApiError, useApi } from "../../api/client.js";
 import { hostBridge } from "../../api/bridge.js";
 import { COPY } from "../../copy.js";
+import type { TypeDraws } from "./Canvas.js";
 import type { CanvasGraph } from "./model.js";
 import { WORDS } from "./words.js";
 import {
@@ -118,6 +119,8 @@ export function CanvasTools(p: {
   /** What a kept view stands for. */
   lens: string;
   node: string;
+  /** ADR 0180: the organisation's component types, for the legend and the type filter. */
+  types?: TypeDraws;
   /** The links counted from the snapshot. */
   compared?: { added: number; removed: Snapshot["links"] };
   snapshot?: Snapshot;
@@ -380,6 +383,15 @@ export function CanvasTools(p: {
             )}
           </div>
 
+          {p.types && Object.keys(p.types).length > 0 && (
+            <TypeLegend
+              types={p.types}
+              graph={p.graph}
+              filter={p.state.filter}
+              onFilter={(f) => p.onChange({ ...p.state, filter: f })}
+            />
+          )}
+
           <div className="stack">
             <h4 className="hud">{T.views}</h4>
             {views.state === "ready" && views.data.views.length ? (
@@ -521,5 +533,52 @@ export function CanvasTools(p: {
         </div>
       )}
     </section>
+  );
+}
+
+/** ADR 0180: the component types the picture has, each a badge and a filter on its type. */
+export function TypeLegend(p: {
+  types: TypeDraws;
+  graph: CanvasGraph;
+  filter: string;
+  onFilter(filter: string): void;
+}) {
+  const shown = Object.entries(p.types).filter(([id]) =>
+    p.graph.boxes.some((b) => b.typeId === id),
+  );
+  if (!shown.length) return null;
+  return (
+    <div className="stack">
+      <h4 className="hud">{T.types}</h4>
+      <p className="muted" style={{ margin: 0, fontSize: 12 }}>
+        {T.typesHint}
+      </p>
+      <ul className="type-legend" style={{ paddingLeft: 0, margin: 0, listStyle: "none" }}>
+        {shown.map(([id, t]) => {
+          const on = p.filter.trim() === `type:${id}`;
+          return (
+            <li key={id} className="row" style={{ gap: 6, alignItems: "center" }}>
+              <button
+                type="button"
+                className={`link${on ? " on" : ""}`}
+                aria-pressed={on}
+                title={t.description}
+                onClick={() => p.onFilter(on ? "" : `type:${id}`)}
+              >
+                <span
+                  className="hud arch-type"
+                  style={
+                    t.colour ? { borderLeft: `3px solid ${t.colour}`, paddingLeft: 4 } : undefined
+                  }
+                >
+                  {t.badge ?? id}
+                </span>{" "}
+                {t.name}
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
   );
 }

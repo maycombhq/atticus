@@ -28,6 +28,8 @@ export interface SketchForm {
   newName: string;
   triggerKind: "endpoint" | "action" | "page" | "listener" | "job";
   triggerWhat: string;
+  /** ADR 0180: what the new box is, one of the organisation's component types (empty: unsaid). */
+  newType: string;
   toComponent: string;
   toEntry: string;
   toNew: boolean;
@@ -52,6 +54,7 @@ export const EMPTY_FORM: SketchForm = {
   newName: "",
   triggerKind: "endpoint",
   triggerWhat: "",
+  newType: "",
   toComponent: "",
   toEntry: "",
   toNew: false,
@@ -76,16 +79,31 @@ const slug = (s: string) =>
     .slice(0, 60);
 
 /** The stroke the form says, or why it doesn't say one yet. */
-export function strokeOf(f: SketchForm): { stroke: Record<string, unknown> } | { missing: string } {
+export function strokeOf(
+  f: SketchForm,
+  types: readonly Api.ComponentTypeViewT[] = [],
+): { stroke: Record<string, unknown> } | { missing: string } {
   const from = (component: string, flow: string, fresh: boolean) => {
     if (!t(component)) return undefined;
     const base: Record<string, unknown> = { component: t(component) };
     if (fresh) {
       if (!t(f.newName) || !t(f.triggerWhat)) return undefined;
+      const type = types.find((x) => x.id === t(f.newType));
       base.newFlow = {
         id: t(f.newId) || `${t(component)}.${slug(f.newName)}`,
         name: t(f.newName),
         trigger: { kind: f.triggerKind, what: t(f.triggerWhat) },
+        // The type and where one of its kind usually runs (ADR 0180), when a type is picked.
+        ...(type
+          ? {
+              runsOn: {
+                type: type.id,
+                ...(type.runsOn?.platform ? { platform: type.runsOn.platform } : {}),
+                ...(type.runsOn?.cloud ? { cloud: type.runsOn.cloud } : {}),
+                ...(type.runsOn?.framework ? { framework: type.runsOn.framework } : {}),
+              },
+            }
+          : {}),
       };
     } else if (t(flow)) base.flow = t(flow);
     return base;
@@ -169,6 +187,7 @@ type Post = (body: Api.SketchStrokeRequestT) => Promise<Api.SketchResultT>;
 /** The panel under a change's picture: the form, Preview → Draw, the strokes drawn, Undo. */
 export function SketchPanel({ change, map }: { change: string; map?: Api.ChangeMapT }) {
   const state = useApi<Api.SketchResultT>(`/api/changes/${encodeURIComponent(change)}/sketch`);
+  const typeList = useApi<Api.ComponentTypesViewT>("/api/component-types");
   // A stroke from elsewhere (another tab, atticus change sketch --save, the stage) shows here too.
   useReloadOnFiles(state);
   const post: Post = (body) =>
@@ -183,6 +202,7 @@ export function SketchPanel({ change, map }: { change: string; map?: Api.ChangeM
       drawn={state.state === "ready" ? state.data.drawn : []}
       commit={state.state === "ready" ? state.data.commit : undefined}
       fingerprint={state.state === "ready" ? state.data.fingerprint : undefined}
+      types={typeList.state === "ready" ? typeList.data.types : []}
       post={post}
       onWritten={() => state.reload()}
     />
@@ -196,6 +216,8 @@ export function SketchForm(p: {
   commit?: string;
   /** The files as last read: Undo sends it back, so it never takes back a stroke it didn't show. */
   fingerprint?: string;
+  /** ADR 0180: the organisation's component types, for a new box. */
+  types?: readonly Api.ComponentTypeViewT[];
   post: Post;
   onWritten?: (r: Api.SketchResultT) => void;
 }) {
@@ -216,7 +238,7 @@ export function SketchForm(p: {
   const drawn = written?.drawn ?? p.drawn;
   const commit = written?.commit ?? p.commit;
   const fingerprint = written?.fingerprint ?? p.fingerprint;
-  const said = strokeOf(f);
+  const said = strokeOf(f, p.types ?? []);
   const asked = "stroke" in said ? JSON.stringify(said.stroke) : undefined;
   const set = <K extends keyof SketchForm>(k: K, v: SketchForm[K]) => {
     setF((o) => ({ ...o, [k]: v }));
@@ -381,6 +403,28 @@ export function SketchForm(p: {
                 </select>
               </label>
               {field("triggerWhat", S.triggerWhat)}
+              {(p.types?.length ?? 0) > 0 && (
+                <label className="stack" style={{ gap: 2 }}>
+                  <span className="hud">{S.newType}</span>
+                  <select
+                    className="field"
+                    value={f.newType}
+                    onChange={(e) => set("newType", e.target.value)}
+                  >
+                    <option value="">{S.newTypeNone}</option>
+                    {p.types!.map((x) => (
+                      <option key={x.id} value={x.id} title={x.description}>
+                        {S.typeOption(x.name, x.draws?.badge)}
+                      </option>
+                    ))}
+                  </select>
+                  {f.newType && p.types!.find((x) => x.id === f.newType)?.mustNot.length ? (
+                    <span className="muted" style={{ fontSize: 12 }}>
+                      {S.typeMustNot(p.types!.find((x) => x.id === f.newType)!.mustNot)}
+                    </span>
+                  ) : null}
+                </label>
+              )}
             </div>
           )}
         </div>

@@ -102,6 +102,7 @@ import {
   writeVerifyFiles,
   type VerifySummary,
 } from "./facts-files.js";
+import { componentTypeIds, componentTypesAt, componentTypesText } from "./component-types.js";
 import { notesAt } from "./org-notes.js";
 import { effectiveRules, readingRulesText, ruleIds } from "./reading-rules.js";
 import {
@@ -387,6 +388,8 @@ function claimOf(f: Fact): string {
       return f.name;
     case "term":
       return `${f.term} ${f.value} (${f.role})`;
+    case "component":
+      return `${f.component ?? f.repo} is a ${f.type}`;
   }
 }
 
@@ -952,7 +955,12 @@ export async function mapCommand(
   const repoNotes = await notesAt(root, repo, dir, op);
   // G4 (ADR 0176): the organisation's reading rules for this repo, after its notes.
   const orgRules = await effectiveRules(root, repo, { dir, op });
-  const notesPrompt = [notesText(repoNotes.notes, repoNotes.type), readingRulesText(orgRules)]
+  const notesPrompt = [
+    notesText(repoNotes.notes, repoNotes.type),
+    readingRulesText(orgRules),
+    // ADR 0180: the component types, the same for every batch.
+    componentTypesText(await componentTypesAt(root, op)),
+  ]
     .filter(Boolean)
     .join("\n\n");
 
@@ -1402,6 +1410,8 @@ async function takeAnswer(
     conventions: await conventionsAt(root),
     // ADR 0163: a term's note is one of those the batch was handed.
     notes: (await notesAt(root, s.repo, at.dir)).notes,
+    // ADR 0180: a component's type is one of the organisation's.
+    componentTypes: componentTypeIds(await componentTypesAt(root)),
     // ADR 0169: the model files the read leaves out, counted apart.
     notReached: (await loadReadPlan(root, s.repo))?.notReached?.files ?? [],
   });
@@ -1824,6 +1834,9 @@ async function estimate(
   // ADR 0163: the org notes, as /atticus-map's reader needs them; nothing when there are none.
   const notesLines = notesText(notes.notes, notes.type);
   if (notesLines) for (const l of notesLines.split("\n")) io.out(l);
+  // ADR 0180: the organisation's component types, for the reader to say what each component is.
+  for (const l of componentTypesText(await componentTypesAt(root, c.op)).split("\n"))
+    if (l) io.out(l);
   // G4 (ADR 0176): the organisation's reading rules for this repo, as the reader follows them.
   const orgRulesLines = readingRulesText(
     await effectiveRules(root, repo, { dir: c.dir, op: c.op }),

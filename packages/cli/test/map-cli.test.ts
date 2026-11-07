@@ -295,10 +295,10 @@ describe("atticus map <repo> --estimate: what the first read costs", () => {
 describe("atticus map <repo>: hand-off batches (tier 2)", () => {
   const handoff = (root: string) =>
     new HandoffRuntime({ root, validate: async () => [], now: NOW });
-  // 8000, not 7000: the term kind in the facts reference and its reading rule (ADR 0163) and the
-  // contract rules (ADR 0164) add
-  // about 250 tokens a prompt.
-  const opts: MapOptions = { commit: COMMIT, maxTokens: 8000 };
+  // 9000, not 7000: the term kind in the facts reference and its reading rule (ADR 0163), the
+  // contract rules (ADR 0164) and the component kind with the organisation's types (ADR 0180) add
+  // about 650 tokens a prompt.
+  const opts: MapOptions = { commit: COMMIT, maxTokens: 9000 };
 
   it("hands one batch at a time, verifies each answer at once, feeds back what was rejected", async () => {
     const root = adoptedRepo();
@@ -354,7 +354,7 @@ describe("atticus map <repo>: hand-off batches (tier 2)", () => {
         readFileSync(join(runsDir, runId, "context-manifest.json"), "utf8"),
       );
       // Every prompt fits the model's limit, frame and all (ADR 0112).
-      expect(manifest.totalTokens).toBeLessThanOrEqual(promptBudget(8000));
+      expect(manifest.totalTokens).toBeLessThanOrEqual(promptBudget(9000));
       prompts++;
       if (prompts === 2) {
         // What was rejected comes back with the lines it cited, and the kept facts by id.
@@ -464,7 +464,7 @@ describe("atticus map <repo> in model mode: every batch in one call", () => {
       { now: NOW },
     );
     const o = io();
-    const code = await mapCommand(root, REPO, { commit: COMMIT, maxTokens: 8000 }, o.io, {
+    const code = await mapCommand(root, REPO, { commit: COMMIT, maxTokens: 9000 }, o.io, {
       runtime,
       now: NOW,
     });
@@ -472,7 +472,7 @@ describe("atticus map <repo> in model mode: every batch in one call", () => {
     expect(code).toBe(0);
     expect(prompts.length).toBeGreaterThan(1);
     for (const p of prompts)
-      expect(p.pack.manifest.totalTokens).toBeLessThanOrEqual(promptBudget(8000));
+      expect(p.pack.manifest.totalTokens).toBeLessThanOrEqual(promptBudget(9000));
     expect(factsOf(root)).toHaveLength(17);
     expect(o.out.at(-2) ?? o.out.at(-1)).toMatch(/17 facts kept/);
   });
@@ -552,7 +552,7 @@ describe("atticus map <repo> in model mode: every batch in one call", () => {
       { now: NOW },
     );
     expect(
-      await mapCommand(root, REPO, { commit: COMMIT, maxTokens: 8000 }, io().io, {
+      await mapCommand(root, REPO, { commit: COMMIT, maxTokens: 9000 }, io().io, {
         runtime,
         now: NOW,
       }),

@@ -176,8 +176,11 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   stroke by stroke into its target flows. Additive only.
  * 2.59.0 (ADR 0178, part 2): GET and POST /api/links/match, Copilot's proposed pairings of box
  *   A's calls with box B's APIs, checked and never written by the session. Additive only.
+ * 2.60.0 (ADR 0180): GET /api/component-types, the organisation's component types (Atticus's
+ *   built-ins with the org pack's own, reworded and switched-off ones applied), each with how
+ *   the canvas draws it, its signals, what it must and must not do, and its notes. Additive only.
  */
-export const API_VERSION = "2.59.0";
+export const API_VERSION = "2.60.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -3187,6 +3190,40 @@ export const UndeclareLinkRequest = z.object({
   value: z.string().min(1),
 });
 /** G3: what can be added to the picture: repos (read or not), systems and teams. */
+/** ADR 0180: a component type as the app shows it (the org pack's shape, plus its source and notes). */
+export const ComponentTypeView = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string(),
+  owner: z.string().optional(),
+  source: z.enum(["builtin", "org-pack"]),
+  signals: z.array(z.object({ kind: z.string(), value: z.string(), why: z.string().optional() })),
+  runsOn: z
+    .object({
+      platform: z.string().optional(),
+      cloud: z.string().optional(),
+      framework: z.string().optional(),
+    })
+    .optional(),
+  draws: z
+    .object({
+      shape: z.string().optional(),
+      colour: z.string().optional(),
+      badge: z.string().optional(),
+    })
+    .optional(),
+  must: z.array(z.string()),
+  mustNot: z.array(z.string()),
+  /** The architect's write-up (Markdown), when the type has one. */
+  notes: z.string().optional(),
+  /** Where its file is, relative to the metarepo (none for a built-in the pack doesn't reword). */
+  file: z.string().optional(),
+});
+export const ComponentTypesView = z.object({
+  types: z.array(ComponentTypeView),
+  /** Where a new type goes: the org pack's component-types folder, relative to the metarepo. */
+  folder: z.string(),
+});
 export const AddableView = z.object({
   repos: z.array(z.object({ id: z.string(), name: z.string(), read: z.boolean() })),
   systems: z.array(z.object({ id: z.string(), name: z.string(), boundary: z.string().optional() })),
@@ -3262,6 +3299,8 @@ export type FileChangeResultT = z.infer<typeof FileChangeResult>;
 export type SketchStrokeRequestT = z.infer<typeof SketchStrokeRequest>;
 export type SketchResultT = z.infer<typeof SketchResult>;
 export type AddableViewT = z.infer<typeof AddableView>;
+export type ComponentTypeViewT = z.infer<typeof ComponentTypeView>;
+export type ComponentTypesViewT = z.infer<typeof ComponentTypesView>;
 export type AddSystemRequestT = z.infer<typeof AddSystemRequest>;
 export type BoxCorrectionsT = z.infer<typeof BoxCorrections>;
 export type RepoOwnerViewT = z.infer<typeof RepoOwnerView>;
@@ -4995,6 +5034,15 @@ const OPS: Record<string, Record<string, Op>> = {
       errors: [409, 422],
     },
   },
+  "/api/component-types": {
+    get: {
+      id: "listComponentTypes",
+      summary:
+        "The organisation's component types (ADR 0180): Atticus's built-ins with the org pack's own, reworded and switched-off ones applied; how the canvas draws each, its signals, what it must and must not do, its notes",
+      tag: "catalog",
+      ok: { status: 200, schema: "ComponentTypesView", description: "OK" },
+    },
+  },
   "/api/settings/ai/key": {
     post: {
       id: "putAiKey",
@@ -5481,6 +5529,8 @@ export function openApiDocument(): Record<string, unknown> {
     SketchStrokeRequest,
     SketchResult,
     AddableView,
+    ComponentTypeView,
+    ComponentTypesView,
     BoxCorrections,
     SavedCanvasView,
     SavedCanvasViews,

@@ -99,6 +99,8 @@ export interface CanvasBox {
   inside: number;
   /** A change's picture (ADR 0108): + new, ◇ modify or ✕ retire; the sign is in the label too. */
   mark?: "new" | "modify" | "retire";
+  /** A component's type (ADR 0180): the id the organisation's component types know it by. */
+  typeId?: string;
   /** A topic or queue (F10): who owns it, and whether that is outside the estate. */
   owner?: string;
   ownerOutside?: boolean;
@@ -147,6 +149,9 @@ const box = (n: Api.HierNodeT, o: Partial<CanvasBox> = {}): CanvasBox => ({
       }
     : {}),
   ...(n.kind === "topic" && n.properties.declared === true ? { declared: true } : {}),
+  ...(n.kind === "component" && typeof n.properties.type === "string" && n.properties.type
+    ? { typeId: n.properties.type }
+    : {}),
   ...o,
 });
 

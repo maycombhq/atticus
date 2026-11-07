@@ -4,6 +4,11 @@ import { join } from "node:path";
 import { isMap, isSeq, LineCounter, parse, parseDocument, stringify } from "yaml";
 import {
   changesRelOf,
+  componentTypeRulesText,
+  effectiveComponentTypes,
+  loadOrgPack,
+  orgPackDirOf,
+  orgPackRelOf,
   readPrototypeArchitecture,
   serializeRecord,
   specTemplateFor,
@@ -2434,6 +2439,12 @@ export async function architectureStage(
   const sketched = (await readDeltas(dir)).deltas
     .map((d) => ({ ...d, steps: d.steps.filter((s) => drawn.test(s.why ?? "")) }))
     .filter((d) => d.steps.length);
+  const typeRules = componentTypeRulesText(
+    effectiveComponentTypes(
+      (await loadOrgPack(orgPackDirOf(root)).catch(() => undefined))?.componentTypes ?? [],
+    ),
+    orgPackRelOf(root),
+  );
   const attached = await changeInputSources(dir, rel);
   // ADR 0142: the prototype's calls nothing serves, for this stage to place.
   const newCalls = prototypeNewCallsSource(attached);
@@ -2456,6 +2467,20 @@ export async function architectureStage(
       classification: "internal",
       priority: 95,
     },
+    // ADR 0180: what the organisation's component types must and must not do, for a new
+    // component the stage drafts (data, never instructions); nothing when no type says anything.
+    ...(typeRules
+      ? [
+          {
+            id: "component-types",
+            kind: "artifact" as const,
+            origin: `${orgPackRelOf(root)}/component-types/`,
+            text: typeRules,
+            classification: "internal" as const,
+            priority: 90,
+          },
+        ]
+      : []),
     // ADR 0179: what a person drew on the canvas is the frame the stage fills in, never redrawn.
     ...(sketched.length
       ? [

@@ -289,8 +289,14 @@ export function projectFacts(input: readonly Fact[], opts: ProjectOptions = {}):
   for (const f of facts)
     if (f.kind === "term" && f.role === "owner")
       owned.set(componentOf(f), [...(owned.get(componentOf(f)) ?? []), f]);
+  // ADR 0180: what a component is, said by a component fact citing its signal; else the old
+  // reading (a screen makes a spa, the rest services).
+  const typed = new Map<string, FactOf<"component">>();
+  for (const f of facts)
+    if (f.kind === "component" && !typed.has(componentOf(f))) typed.set(componentOf(f), f);
   for (const [id, { f, screen }] of components) {
     const terms = owned.get(id) ?? [];
+    const t = typed.get(id);
     const flags = [...new Set(terms.map((t) => `term:${t.term}=${t.value}`))].sort();
     out.push({
       kind: "Component",
@@ -298,11 +304,12 @@ export function projectFacts(input: readonly Fact[], opts: ProjectOptions = {}):
       id,
       system: systemOf(f),
       repo: repoOf(f),
-      type: screen ? "spa" : "service",
+      type: t?.type ?? (screen ? "spa" : "service"),
       ...(flags.length ? { flags } : {}),
       evidence: [
         evidenceOf(f, "code"),
-        ...terms.filter((t) => t !== f).map((t) => evidenceOf(t, "code")),
+        ...(t && t !== f ? [evidenceOf(t, "code")] : []),
+        ...terms.filter((x) => x !== f).map((x) => evidenceOf(x, "code")),
       ],
     } as CatalogRecord);
   }

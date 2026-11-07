@@ -261,6 +261,11 @@ const CONTRACTS: Contract[] = [
           "org-pack/conventions.yaml (optional; the house conventions a read leans on, ADR 0147)",
       },
       {
+        name: "ComponentType",
+        where:
+          "org-pack/component-types/<id>/type.yaml, with notes.md beside it (optional; what a kind of component is, in the organisation's words, ADR 0180; Atticus's own types are the default set)",
+      },
+      {
         name: "ReadingRulesFile",
         where:
           "org-pack/reading-rules/org.yaml, types/<type>.yaml, repos/<repo>.yaml and imported/<team>/<type>.yaml (optional; the organisation's reading rules in layers, ADR 0176; skills, agents and instructions beside them are Markdown, ADR 0177)",

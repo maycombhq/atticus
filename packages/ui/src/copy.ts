@@ -1242,6 +1242,11 @@ export const COPY = {
       job: "A job runs",
     },
     triggerWhat: "In words",
+    newType: "What the new box is",
+    newTypeNone: "A type isn't said yet",
+    typeOption: (name: string, badge?: string) => (badge ? `${name} [${badge}]` : name),
+    typeMustNot: (rules: readonly string[] | string) =>
+      `Must not: ${typeof rules === "string" ? rules : rules.join(" · ")}`,
     todayFlow: "Today's flow (its id)",
     step: "Step number (1 is the first)",
     toComponent: "To component",
@@ -3717,6 +3722,9 @@ export const COPY = {
   /** ADR 0106: an AI step run from the app, with Copilot in a VS Code panel or the server's model. */
   /** ADR 0175 (G6): the canvas's tools. */
   canvasTools: {
+    types: "Types",
+    typesHint:
+      "The organisation's component types, as the boxes wear them. Click one to show only its components; again to show all.",
     title: "Layers, filters and tools",
     show: "Show the tools",
     hide: "Hide the tools",

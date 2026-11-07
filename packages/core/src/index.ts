@@ -31,6 +31,7 @@ export * from "./schema/frameworks.js";
 export * from "./schema/scan-settings.js";
 export * from "./schema/scan-verify.js";
 export * from "./schema/repo-type.js";
+export * from "./schema/component-type.js";
 export * from "./schema/layout.js";
 export * from "./schema/plugin.js";
 export * from "./schema/review.js";

@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { COPY } from "../src/copy.js";
 import type { CanvasGraph } from "../src/screens/architecture/model.js";
-import { CanvasTools, type ToolsState } from "../src/screens/architecture/Tools.js";
+import { CanvasTools, TypeLegend, type ToolsState } from "../src/screens/architecture/Tools.js";
 import {
   ALL_LAYERS,
   blastRadius,
@@ -192,5 +192,38 @@ describe("the tools panel", () => {
     expect(out).toContain(COPY.canvasTools.title);
     expect(out).toContain('aria-expanded="false"');
     expect(out).toContain(COPY.canvasTools.filtered(6, 10));
+  });
+
+  it("lists the component types the picture has as a legend (ADR 0180), each a filter on its type", () => {
+    const typed: CanvasGraph = {
+      ...g,
+      boxes: g.boxes.map((b) =>
+        b.id === "repo:forge-gw"
+          ? { ...b, typeId: "gateway" }
+          : b.id === "repo:forge-portal"
+            ? { ...b, typeId: "spa" }
+            : b,
+      ),
+    };
+    const types = {
+      gateway: {
+        name: "Forge gateway proxy",
+        description: "Policy only.",
+        badge: "gw",
+        colour: "#e06c75",
+      },
+      spa: { name: "Single-page app", description: "A browser app.", badge: "ui" },
+      worker: { name: "Worker", description: "Takes work from a queue.", badge: "wkr" },
+    };
+    const out = renderToStaticMarkup(
+      <TypeLegend types={types} graph={typed} filter="type:gateway" onFilter={() => undefined} />,
+    );
+    expect(out).toContain(COPY.canvasTools.types);
+    expect(out).toContain("Forge gateway proxy");
+    expect(out).toContain("Single-page app");
+    // A type no box in the picture is of isn't listed.
+    expect(out).not.toContain("Takes work from a queue");
+    expect(out).toContain('aria-pressed="true"');
+    expect(out).toContain("border-left:3px solid #e06c75");
   });
 });

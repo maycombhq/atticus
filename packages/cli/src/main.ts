@@ -510,6 +510,9 @@ Usage:
   atticus skills list [--json]         The skills, agents and team instructions the org pack keeps (yours and other teams' imported), and where each is written for Claude and Copilot (ADR 0177)
   atticus skills import <their repo> --team <team> [--at <tag>] [--only <names>] [--replace]   A pinned copy of another team's skills, agents and instructions in the org pack, then written for both assistants; a file edited here is kept
   atticus skills write [--check]       Write .claude/ and .github/ files (and CLAUDE.md's team instructions) from the org pack's sources; --check exits 1 when they are behind
+  atticus types list [--json]          The organisation's component types (ADR 0180): Atticus's built-ins with the org pack's own, reworded and switched-off ones applied; each with its badge, description and whether it has notes
+  atticus types add <id> --name "..." --description "..." [--badge <1-3 chars>] [--shape <shape>] [--colour <css>] [--owner <team>]   Write a component type to org-pack/component-types/<id>/type.yaml with a notes.md to fill in; the next reads are handed it, the canvas draws it, a new box on the canvas can be of it
+  atticus types notes <id>             A component type's notes (the architect's write-up), or where to write them
   atticus connect match <repo> --to <repo> | --system <id> [--mode copilot-acp|hand-off] [--read] [--json]   Copilot reads the repo's loose call sites and proposes which of the other box's APIs each reaches, naming the lines; it writes only its answer under proposals/matching/, and nothing is a correction until a person ticks it in the app's Connect panel; --read reads the answer back after a hand-off (ADR 0178)
   atticus rules list [<repo>] [--json]   The organisation's reading rules (ADR 0176): every layer's file, or the rules a repo's reads are given, with their layer, drafts and what is switched off
   atticus rules add --org-wide | --type <t> | --repo <r> --key <k> --rule "..." [--files <glob,glob>] [--example <path:line>] [--draft]   Write a reading rule to a layer's file, for review
@@ -1036,6 +1039,9 @@ const OPTIONS = {
   description: { type: "string" },
   title: { type: "string" },
   name: { type: "string" },
+  badge: { type: "string" },
+  shape: { type: "string" },
+  colour: { type: "string" },
   attempts: { type: "string" },
   users: { type: "string" },
   language: { type: "string" },
@@ -1424,6 +1430,32 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
       },
       io,
     );
+  }
+  // ADR 0180: the organisation's component types.
+  if (group === "types") {
+    const t = await import("./component-type-commands.js");
+    const text = (v: unknown) => (typeof v === "string" ? v : undefined);
+    if (!command || command === "list")
+      return t.typesListCommand(root, { json: values.json === true }, io);
+    if (command === "add")
+      return t.typesAddCommand(
+        root,
+        positionals[2],
+        {
+          ...(text(values.name) ? { name: text(values.name)! } : {}),
+          ...(text(values.description) ? { description: text(values.description)! } : {}),
+          ...(text(values.badge) ? { badge: text(values.badge)! } : {}),
+          ...(text(values.shape) ? { shape: text(values.shape)! } : {}),
+          ...(text(values.colour) ? { colour: text(values.colour)! } : {}),
+          ...(Array.isArray(values.owner) && text(values.owner[0])
+            ? { owner: text(values.owner[0])! }
+            : {}),
+        },
+        io,
+      );
+    if (command === "notes") return t.typesNotesCommand(root, positionals[2], io);
+    io.err("atticus types list | add <id> --name --description | notes <id>");
+    return 2;
   }
   // ADR 0178 part 2: Copilot matches a repo's loose calls with another box's APIs; proposals only.
   if (group === "connect") {

@@ -34,6 +34,7 @@ import {
   type QuestionProblem,
 } from "./facts-files.js";
 import { NoRoomError, roomGuard, streamFacts } from "./memory-room.js";
+import { componentTypeIds, componentTypesAt } from "./component-types.js";
 import { notesAt } from "./org-notes.js";
 import { loadReadPlan, recordReadProgress } from "./map-parts.js";
 import { recordTopUpVerified } from "./map-rules.js";
@@ -165,6 +166,8 @@ export async function verifyInputsOf(root: string, repo: string, dir?: string) {
   return {
     // ADR 0163: the org notes the read was handed, so a term's note is one of them.
     notes: (await notesAt(root, repo, dir)).notes,
+    // ADR 0180: a component fact's type is one of the organisation's.
+    componentTypes: componentTypeIds(await componentTypesAt(root)),
     corrections: await readCorrections(root, repo),
     reviewed: await readReviewed(root, repo),
     estate: await estateComponentsOf(root),
@@ -257,6 +260,7 @@ export async function verifyCommand(
       ...(estate ? { estate } : {}),
       conventions,
       notes: inputs.notes,
+      componentTypes: inputs.componentTypes,
       notReached: inputs.notReached,
     });
   } catch (e) {

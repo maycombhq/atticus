@@ -46,10 +46,20 @@ const TOPIC = COPY.topics;
 
 type Dir = "RIGHT" | "DOWN";
 
+/** A component type as the box draws it (ADR 0180). */
+export interface TypeDraw {
+  name: string;
+  description: string;
+  badge?: string;
+  colour?: string;
+}
+export type TypeDraws = Record<string, TypeDraw>;
+
 interface BoxData extends Record<string, unknown> {
   box: CanvasBox;
   dir: Dir;
   selected: boolean;
+  types?: TypeDraws;
 }
 type BoxNode = Node<BoxData, "box">;
 
@@ -93,7 +103,22 @@ function BoxView({ data }: NodeProps<BoxNode>) {
     <div className={cls} title={box.gaps.map((g) => WORDS.gap[g] ?? g).join(", ") || undefined}>
       <Handle type="target" position={dir === "RIGHT" ? Position.Left : Position.Top} />
       <div className="arch-box-head">
-        <span className="hud">{box.kind}</span>
+        {box.typeId && data.types?.[box.typeId] ? (
+          // ADR 0180: the component's type, as the organisation draws it: a badge and its colour.
+          <span
+            className="hud arch-type"
+            title={`${data.types[box.typeId]!.name}: ${data.types[box.typeId]!.description}`}
+            style={
+              data.types[box.typeId]!.colour
+                ? { borderLeft: `3px solid ${data.types[box.typeId]!.colour}`, paddingLeft: 4 }
+                : undefined
+            }
+          >
+            {data.types[box.typeId]!.badge ?? box.typeId}
+          </span>
+        ) : (
+          <span className="hud">{box.kind}</span>
+        )}
         {box.childCount > 0 && !box.group && (
           <span className="hud">{WORDS.children(box.childCount)}</span>
         )}
@@ -223,6 +248,7 @@ export function flowElements(
   laid: Laid,
   dir: Dir,
   selected?: string,
+  types?: TypeDraws,
 ): { nodes: BoxNode[]; edges: LinkEdge[] } {
   const depth = (id: string | undefined): number => {
     const b = id ? laid.boxes[id] : undefined;
@@ -236,7 +262,7 @@ export function flowElements(
         id: b.id,
         type: "box",
         position: { x: p.x, y: p.y },
-        data: { box: b, dir, selected: b.id === selected },
+        data: { box: b, dir, selected: b.id === selected, ...(types ? { types } : {}) },
         width: p.width,
         height: p.height,
         ariaLabel: `${b.kind} ${b.label}${b.kind === "topic" ? `, ${ownerText(b)}` : ""}${b.declared ? `, ${TOPIC.declared}` : ""}${b.gaps.length ? `, ${b.gaps.map((g) => WORDS.gap[g] ?? g).join(", ")}` : ""}`,
@@ -291,6 +317,8 @@ export function ArchitectureCanvas(p: {
   engine?: LayoutEngine;
   /** A fixed height; by default the picture takes the height left on the page (F10). */
   height?: number;
+  /** ADR 0180: how each component type is drawn, by id. */
+  types?: TypeDraws;
   /** Details laid over the picture's right edge (the inspector), never beside it. */
   aside?: ReactNode;
   /** Tests: open in full screen, or in focus mode. */
@@ -305,7 +333,7 @@ export function ArchitectureCanvas(p: {
     p.initial ? { state: "ready" } : { state: "running" },
   );
   const [first] = useState(() =>
-    p.initial ? flowElements(p.graph, p.initial, p.direction, p.selected) : undefined,
+    p.initial ? flowElements(p.graph, p.initial, p.direction, p.selected, p.types) : undefined,
   );
   const [nodes, setNodes] = useState<BoxNode[]>(first?.nodes ?? []);
   const [edges, setEdges] = useState<LinkEdge[]>(first?.edges ?? []);
@@ -349,7 +377,13 @@ export function ArchitectureCanvas(p: {
     ).then(
       (laid) => {
         if (!live) return;
-        const el = flowElements(graph, laid, direction, latest.current.selected);
+        const el = flowElements(
+          graph,
+          laid,
+          direction,
+          latest.current.selected,
+          latest.current.types,
+        );
         setNodes(el.nodes);
         setEdges(el.edges);
         setState({ state: "ready" });
@@ -374,9 +408,9 @@ export function ArchitectureCanvas(p: {
       ns.map((n) => {
         const box = byId.get(n.id) ?? n.data.box;
         const selected = n.id === p.selected;
-        return box === n.data.box && selected === n.data.selected
+        return box === n.data.box && selected === n.data.selected && p.types === n.data.types
           ? n
-          : { ...n, data: { ...n.data, box, selected } };
+          : { ...n, data: { ...n.data, box, selected, ...(p.types ? { types: p.types } : {}) } };
       }),
     );
     // A link's marks and gaps (compare, the contract check) change without a new layout too.
@@ -387,7 +421,7 @@ export function ArchitectureCanvas(p: {
         return link === e.data!.link ? e : { ...e, data: { ...e.data!, link } };
       }),
     );
-  }, [p.graph, p.selected]);
+  }, [p.graph, p.selected, p.types]);
 
   const onNodesChange = useCallback(
     (changes: NodeChange<BoxNode>[]) => setNodes((ns) => applyNodeChanges(changes, ns)),

@@ -23,6 +23,7 @@ import { uiCiteRoutes } from "./ui-api-cites.js";
 import { uiKnowledgeRoutes } from "./ui-api-knowledge.js";
 import { uiModelRunRoutes } from "./ui-api-runs.js";
 import { uiCopilotRunRoutes } from "./ui-api-copilot-runs.js";
+import { uiComponentTypeRoutes } from "./component-type-commands.js";
 import { uiLinkMatchRoutes } from "./ui-api-link-match.js";
 import { uiLinkRoutes } from "./ui-api-links.js";
 import { uiSketchRoutes } from "./ui-api-sketch.js";
@@ -83,25 +84,28 @@ export function extendUiRoutes(
   // ADR 0173: an unattended Copilot run started from the app, shown live.
   // ADR 0174: correcting the map on the canvas.
   // ADR 0179: a change sketched on the canvas.
-  return uiLinkMatchRoutes(
-    uiSketchRoutes(
-      uiDeclaredRoutes(
-        uiOwnerRoutes(
-          uiLinkRoutes(
-            uiCopilotRunRoutes(
-              uiStageRoutes(
-                uiContractsRoutes(
-                  uiOutsideRoutes(
-                    uiAuditRoutes(
-                      uiFactsRoutes(
-                        uiTrustRoutes(
-                          uiCockpitRoutes(
-                            uiRepoRoutes(
-                              uiDocumentRoutes(
-                                uiAiRoutes(
-                                  uiHistoryRoutes(
-                                    uiModelRunRoutes(
-                                      uiKnowledgeRoutes(uiCiteRoutes(specs, ctx), ctx),
+  return uiComponentTypeRoutes(
+    uiLinkMatchRoutes(
+      uiSketchRoutes(
+        uiDeclaredRoutes(
+          uiOwnerRoutes(
+            uiLinkRoutes(
+              uiCopilotRunRoutes(
+                uiStageRoutes(
+                  uiContractsRoutes(
+                    uiOutsideRoutes(
+                      uiAuditRoutes(
+                        uiFactsRoutes(
+                          uiTrustRoutes(
+                            uiCockpitRoutes(
+                              uiRepoRoutes(
+                                uiDocumentRoutes(
+                                  uiAiRoutes(
+                                    uiHistoryRoutes(
+                                      uiModelRunRoutes(
+                                        uiKnowledgeRoutes(uiCiteRoutes(specs, ctx), ctx),
+                                        ctx,
+                                      ),
                                       ctx,
                                     ),
                                     ctx,

@@ -4,6 +4,10 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## 2.0.0-beta.21 (2026-11-06)
 
+### Component types your organisation owns (ADR 0180)
+
+- `org-pack/component-types/<id>/type.yaml` (with `notes.md` beside it): what a kind of component is, how a read recognises one (signals), where it runs, how the canvas draws it (shape, colour, badge), and what it must and must not do, in your words. Atticus's thirteen types are the default set; a file under a built-in's id rewords it, `off: true` takes it out. `atticus types list | add | notes`. Reads write one `component` fact per component (the type, cited on the line that shows a signal; facts file version 4, additive), the verifier checks it and flags a type the set doesn't have, the Component record takes it; the canvas draws each component's badge and the tools panel lists the types as filters; a new box drawn for a change can be of a type; the architecture stage is handed what each type must and must not do. Local API 2.60.0 (`GET /api/component-types`), additive. Guide: docs/guide/component-types.md.
+
 ### Draw a change on the canvas (ADR 0179)
 
 - Under a change's diagram, **Draw the change**: say a stroke (a call one component makes to another's API, a topic it publishes and who listens, a table it reads or writes, a step of today's flow taken out or sent elsewhere, or a new flow of a new component with where it runs), Preview the lines it adds to the change's target flows, and Draw it on your yes; the picture redraws with the stroke marked + new or ✕ retired, and Undo takes any stroke back. The strokes are ordinary target-flow files, reviewed in the pull request; `atticus change architecture <change>` then fills in the rest around them and never removes or moves a drawn step. A stroke is a plan, never a fact. `atticus change sketch <change> --from <file.drawio|.mmd> [--save]` reads a drawing made elsewhere as the same strokes. VS Code's **Open the Change diagram** and IntelliJ's Change diagram action open the page the panel lives on. Local API 2.58.0 (`GET`/`POST /api/changes/{changeId}/sketch`), additive.

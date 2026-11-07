@@ -55,6 +55,8 @@ const From = z.object({
           platform: z.string().trim().min(1).optional(),
           cloud: z.string().trim().min(1).optional(),
           framework: z.string().trim().min(1).optional(),
+          /** What the new box is (ADR 0180): one of the organisation's component types. */
+          type: Id.optional(),
         })
         .optional(),
     })

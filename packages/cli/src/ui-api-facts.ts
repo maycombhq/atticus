@@ -71,6 +71,9 @@ export function factLabel(f: Fact): string {
     // ADR 0163: a term of the organisation's, with the role a note gave it.
     case "term":
       return `${f.term} ${f.value} (${f.role})`;
+    // ADR 0180: what a component is.
+    case "component":
+      return `${f.component ?? f.repo} is a ${f.type}`;
   }
 }
 
