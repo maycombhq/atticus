@@ -119,7 +119,10 @@ export function Evals() {
                 const rep = (r as { report: { runId: string; results?: { pass: boolean }[] } })
                   .report;
                 const failed = rep.results?.filter((x) => !x.pass).length ?? 0;
-                return `Eval run ${rep.runId} finished: ${failed ? `${plural(failed, "case")} failed` : T.everyCasePassed}.`;
+                return T.runFinished(
+                  rep.runId,
+                  failed ? T.casesFailed(plural(failed, "case")) : T.everyCasePassed,
+                );
               },
             );
           }}
@@ -326,28 +329,35 @@ export function Evals() {
 
         <Panel title={T.evalRuns} span="span 5">
           <View of={e} empty={(x) => x.runs.length === 0} emptyText={T.noEvalRunsYet2}>
-            {(x) =>
-              x.runs
-                .slice()
-                .reverse()
-                .slice(0, 8)
-                .map((r) => (
-                  <div key={r.runId} className="list-row">
-                    <span className="stack" style={{ gap: 2 }}>
-                      <span className="mono" style={{ fontSize: 11.5 }}>
-                        {r.runId}
+            {(x) => (
+              <>
+                {x.runs.length > 8 && (
+                  <p className="muted" style={{ margin: 0, fontSize: 12 }}>
+                    {COPY.app.andMore(x.runs.length - 8)}
+                  </p>
+                )}
+                {x.runs
+                  .slice()
+                  .reverse()
+                  .slice(0, 8)
+                  .map((r) => (
+                    <div key={r.runId} className="list-row">
+                      <span className="stack" style={{ gap: 2 }}>
+                        <span className="mono" style={{ fontSize: 11.5 }}>
+                          {r.runId}
+                        </span>
+                        <span className="hud" style={{ fontSize: 9.5 }}>
+                          {day(r.startedAt)} · {plural(r.agents.length, "agent")}
+                          {r.skipped ? T.skipped(r.skipped) : ""}
+                        </span>
                       </span>
-                      <span className="hud" style={{ fontSize: 9.5 }}>
-                        {day(r.startedAt)} · {plural(r.agents.length, "agent")}
-                        {r.skipped ? T.skipped(r.skipped) : ""}
+                      <span className={`chip ${r.failed ? "blocking" : "done"}`}>
+                        {r.failed ? T.failed(r.failed) : T.allPassed}
                       </span>
-                    </span>
-                    <span className={`chip ${r.failed ? "blocking" : "done"}`}>
-                      {r.failed ? T.failed(r.failed) : T.allPassed}
-                    </span>
-                  </div>
-                ))
-            }
+                    </div>
+                  ))}
+              </>
+            )}
           </View>
         </Panel>
 

@@ -86,7 +86,7 @@ function About({ r, onChanged }: { r: Repo; onChanged?: () => void }) {
           {R.about}
         </span>
         {draft && (
-          <span className="chip warn" title={R.aboutDraftWhy(d!.by ?? "Your assistant")}>
+          <span className="chip warn" title={R.aboutDraftWhy(d!.by ?? R.yourAssistant)}>
             {R.aboutDraft}
           </span>
         )}
@@ -97,7 +97,7 @@ function About({ r, onChanged }: { r: Repo; onChanged?: () => void }) {
       </p>
       {d && (
         <p className="muted" style={{ margin: 0, fontSize: 12, maxWidth: "70ch" }}>
-          {draft ? R.aboutDraftWhy(d.by ?? "Your assistant") : R.aboutWhy}
+          {draft ? R.aboutDraftWhy(d.by ?? R.yourAssistant) : R.aboutWhy}
         </p>
       )}
       {draft && !!d?.cites?.length && (

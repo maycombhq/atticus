@@ -96,7 +96,7 @@ const LABEL: Record<string, string> = {
   design: T.design,
   plan: T.plan,
   build: T.build,
-  qa: "QA",
+  qa: T.qa,
   "release-ready": T.release,
 };
 

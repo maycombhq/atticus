@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { api, useApi, useLiveEvents, type Loaded } from "../../api/client.js";
+import { changeOf } from "../../app/screens.js";
 import { Panel, View } from "../../app/ui.js";
 import {
   ExportEvidence,
@@ -391,7 +392,8 @@ function Detail({ id }: { id: string }) {
 }
 
 export function Release({ hash }: { hash: string }) {
-  const id = hash.replace(/^#\/?release\/?/, "").split("?")[0] || undefined;
+  // #/release/<id>, or #/release?change=<id> from a change's tabs.
+  const id = hash.replace(/^#\/?release\/?/, "").split("?")[0] || changeOf(hash) || undefined;
   const list = useApi<ReleaseItem[]>("/api/release");
   const current = id ?? (list.state === "ready" ? list.data[0]?.id : undefined);
   return (

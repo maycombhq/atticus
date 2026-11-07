@@ -63,7 +63,7 @@ export interface FlowLayout {
 export function edgeSummary(labels: string[], max = 5): string {
   return labels.length <= max
     ? labels.join(", ")
-    : `${labels.slice(0, max).join(", ")} and ${labels.length - max} more`;
+    : T.andMore(labels.slice(0, max).join(", "), labels.length - max);
 }
 
 /** A box's text: its label, and how many of its calls stay inside it. */

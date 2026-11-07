@@ -17,6 +17,7 @@ import {
   QuestionError,
   TARGETS_STEP_ID,
   writeFileAtomic,
+  questionsRelOf,
   type CandidateApi,
   type Fact,
 } from "@maycombhq/core";
@@ -233,7 +234,7 @@ export function uiLinkRoutes(
         const rel = `${factsRelOf(ctx.root)}/${from}.corrections.jsonl`;
         const lines = corrections.map(correctionLine);
         const verify = `atticus verify ${from} --write`;
-        const commit = `git add ${rel}${q ? ` questions/` : ""} && git commit -m "${safeMessage(`${from}: calls paired with ${target} on the canvas`)}"`;
+        const commit = `git add ${rel}${q ? ` ${questionsRelOf(ctx.root)}/` : ""} && git commit -m "${safeMessage(`${from}: calls paired with ${target} on the canvas`)}"`;
         // The rule's answer is worked out before anything is previewed or written: a problem with it refuses
         // the whole request, never leaving the pairings written and the person told it failed.
         let answer: { text: string } | undefined;
@@ -362,6 +363,8 @@ export function uiLinkRoutes(
           const text = await readFile(file, "utf8").catch(() => undefined);
           if (text === undefined) throw notFound(`There is no ${rel}.`);
           const lines = text.split(/\r?\n/);
+          // Only a correction's line: never a blank one, or the file's final newline.
+          if (!b.data.line.trim()) throw badRequest("Say which correction line to remove.");
           const i = lines.findIndex((l) => l.trim() === b.data.line.trim());
           if (i < 0) throw notFound(`${rel} has no such line (it may be removed already).`);
           lines.splice(i, 1);

@@ -261,6 +261,8 @@ export async function planWrite(root: string): Promise<{
   write: { path: string; text: string }[];
   kept: string[];
   current: number;
+  /** Two sources with one name: which was written, which not. */
+  clashes: string[];
   claude?: string;
 }> {
   const items = await sourcesOf(root);
@@ -272,8 +274,27 @@ export async function planWrite(root: string): Promise<{
     ).files ?? {};
   const write: { path: string; text: string }[] = [];
   const kept: string[] = [];
+  const clashes: string[] = [];
   let current = 0;
-  for (const i of items)
+  // One source per name: the organisation's own first, then teams by name; the rest are said.
+  const seen = new Map<string, SourceItem>();
+  const ordered = [...items].sort((a, b) =>
+    (a.team ?? "") < (b.team ?? "") ? -1 : (a.team ?? "") > (b.team ?? "") ? 1 : 0,
+  );
+  const used: SourceItem[] = [];
+  for (const i of ordered) {
+    const k = `${i.kind}:${i.name}`;
+    const first = seen.get(k);
+    if (first) {
+      clashes.push(
+        `${i.source} and ${first.source} are both ${i.kind} ${i.name}: ${first.source} is written; rename one`,
+      );
+      continue;
+    }
+    seen.set(k, i);
+    used.push(i);
+  }
+  for (const i of used)
     for (const o of outputsOf(i)) {
       const on = await readFile(join(root, ...o.path.split("/")), "utf8").catch(() => undefined);
       if (on === o.text) {
@@ -285,16 +306,16 @@ export async function planWrite(root: string): Promise<{
       else if (on !== undefined && !written[o.path]) kept.push(o.path);
       else write.push(o);
     }
-  const block = claudeBlock(items);
+  const block = claudeBlock(used);
   const claudePath = join(root, "CLAUDE.md");
   const claude = await readFile(claudePath, "utf8").catch(() => "");
   const re = /<!-- atticus:team-instructions:begin[\s\S]*?atticus:team-instructions:end -->/;
   const next = block
     ? re.test(claude)
-      ? claude.replace(re, block)
+      ? claude.replace(re, () => block)
       : `${claude.trimEnd()}${claude.trim() ? "\n\n" : ""}${block}\n`
     : claude.replace(re, "").trimEnd() + (claude.trim() ? "\n" : "");
-  return { write, kept, current, ...(next !== claude ? { claude: next } : {}) };
+  return { write, kept, current, clashes, ...(next !== claude ? { claude: next } : {}) };
 }
 
 /** atticus skills write [--check]: write what each assistant reads from the org pack's sources. */
@@ -304,6 +325,7 @@ export async function skillsWriteCommand(
   io: Output,
 ): Promise<number> {
   const p = await planWrite(root);
+  for (const c of p.clashes) io.err(c);
   if (o.check) {
     for (const f of p.write) io.out(`behind: ${f.path}`);
     if (p.claude) io.out("behind: CLAUDE.md (team instructions)");
@@ -501,7 +523,20 @@ export async function skillsImportCommand(
     }[] = [];
     const origin = await originOf(from, (a) => run("git", a));
     const notes: string[] = [];
+    // A name is one source's: another team's, or the organisation's own, is never replaced.
+    const taken = new Map(
+      (await sourcesOf(root))
+        .filter((x) => x.team !== o.team)
+        .map((x) => [`${x.kind}:${x.name}`, x.team ?? "this organisation"] as const),
+    );
     for (const f of found) {
+      const owner = taken.get(`${f.kind}:${f.name}`);
+      if (owner) {
+        notes.push(
+          `skipped ${f.kind} ${f.name}: ${owner} has one of that name already (the written files are one set); rename theirs or yours`,
+        );
+        continue;
+      }
       if (!NAME.test(f.name)) {
         notes.push(
           `skipped ${f.path}: ${f.name} isn't a name Atticus writes (lower case, digits, dashes)`,
@@ -551,6 +586,19 @@ export async function skillsImportCommand(
             `${f.name}: left out ${links.join(", ")}: a link to a file elsewhere is never copied`,
           );
         for (const p of all) await copy(`${f.folder}/${p}`, join(dest, ...p.split("/")), p);
+        // A file of the skill they removed since: gone here too, unless edited here (kept).
+        const theirsNow = new Set(all);
+        for (const p of (await filesUnder(dest).catch(() => [])).filter((x) => !theirsNow.has(x))) {
+          const here = await readFile(join(dest, ...p.split("/")), "utf8").catch(() => undefined);
+          const before = was.get(`${f.kind}:${f.name}`)?.[p];
+          if (here !== undefined && before && sha(here) !== before && !o.replace) {
+            notes.push(`kept ${f.name}/${p}: ${o.team} removed it, but it was edited here`);
+            files[p] = before;
+          } else {
+            await rm(join(dest, ...p.split("/")), { force: true });
+            notes.push(`removed ${f.name}/${p}: ${o.team} no longer has it`);
+          }
+        }
         const scripts = all.filter((p) => !/\.(md|txt|ya?ml|json)$/i.test(p));
         if (scripts.length)
           notes.push(

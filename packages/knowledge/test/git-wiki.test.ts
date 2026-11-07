@@ -106,6 +106,18 @@ describe("a wiki kept in git", () => {
     expect(existsSync(join(c.dir, "docs", "how-to", "draft-only.md"))).toBe(true);
   });
 
+  it("refuses a ref git would read as an option, before git sees it", async () => {
+    const { wiki, root } = await wikiRepo();
+    await expect(
+      checkoutGitWiki(
+        root,
+        source(wiki, { ref: "--upload-pack=touch x" }),
+        join(root, "org-pack"),
+        git,
+      ),
+    ).rejects.toThrow(/isn't a branch or tag name/);
+  });
+
   it("can be a submodule of the metarepo, pinned at the commit read", async () => {
     const { wiki, root } = await wikiRepo();
     await git(["init", "-q", "-b", "main"], root);

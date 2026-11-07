@@ -325,6 +325,11 @@ export function Explore({ hash }: { hash: string }) {
                     </button>
                   </li>
                 ))}
+                {r.total > r.rows.length && (
+                  <li className="muted" style={{ fontSize: 11.5, padding: "4px 6px" }}>
+                    {COPY.app.andMore(r.total - r.rows.length)}
+                  </li>
+                )}
               </ul>
             )}
           </View>

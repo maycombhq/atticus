@@ -101,39 +101,41 @@ export function uiDeclaredRoutes(
       const anyRepo = estateRepos(op)[0];
       if (!anyRepo)
         throw conflict("No repo is in a manifest yet, so there is no profile to add it to.");
-      if (b.data.preview)
+      const sys = {
+        id: b.data.id,
+        name: b.data.name,
+        boundary: b.data.boundary,
+        ...(b.data.owner ? { owner: b.data.owner } : {}),
+      };
+      if (b.data.preview) {
+        // The lines the write itself would make, nothing hand-built.
+        const res = await addProfileSystem(ctx.root, anyRepo.id, sys, { preview: true }).catch(
+          (e: unknown) => {
+            throw new HttpError(
+              422,
+              "Atticus can't write that",
+              e instanceof Error ? e.message : String(e),
+            );
+          },
+        );
         return {
           status: 200,
           body: {
             written: false,
-            files: [
-              {
-                file: `${isAdopted(ctx.root) ? ".atticus/" : ""}org-pack/profiles/${anyRepo.platform}/profile.yaml`,
-                changes: [
-                  { now: `  - id: ${b.data.id}` },
-                  { now: `    name: ${b.data.name}` },
-                  { now: `    boundary: ${b.data.boundary}` },
-                  ...(b.data.owner ? [{ now: `    owner: ${b.data.owner}` }] : []),
-                ],
-              },
-            ],
+            files: [{ file: res.profile, changes: res.changes ?? [] }],
             verify: "atticus verify --all --write",
             commit: "",
           } satisfies Api.FileChangeResultT,
         };
+      }
       try {
-        const res = await addProfileSystem(ctx.root, anyRepo.id, {
-          id: b.data.id,
-          name: b.data.name,
-          boundary: b.data.boundary,
-          ...(b.data.owner ? { owner: b.data.owner } : {}),
-        });
+        const res = await addProfileSystem(ctx.root, anyRepo.id, sys);
         ctx.events.publish({ type: "file.changed", path: res.profile });
         return {
           status: 200,
           body: {
             written: true,
-            files: [{ file: res.profile, changes: [{ now: `  - id: ${b.data.id}` }] }],
+            files: [{ file: res.profile, changes: res.changes ?? [] }],
             verify: "atticus verify --all --write",
             commit: `git add ${res.profile} && git commit -m "${safeMessage(`profile: ${b.data.id} added from the canvas`)}"`,
           } satisfies Api.FileChangeResultT,

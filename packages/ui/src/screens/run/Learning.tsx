@@ -165,8 +165,7 @@ function SandboxForm() {
         setBlank(false);
         void act.run(
           () => api<{ root: string }>("/api/learning/sandbox", { method: "POST", body: { dir } }),
-          (r) =>
-            `Made a practice sandbox. Start the app there with: atticus ui --root ${(r as { root: string }).root}`,
+          (r) => T.sandboxMade((r as { root: string }).root),
         );
       }}
     >

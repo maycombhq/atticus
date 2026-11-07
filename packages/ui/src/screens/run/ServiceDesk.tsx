@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { api, useApi, useLiveEvents } from "../../api/client.js";
+import { changeOf } from "../../app/screens.js";
 import { Donut, ExternalLink, Panel, View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
 import {
@@ -214,15 +215,19 @@ function RequestDetail({ r, done }: { r: Request; done: () => void }) {
   );
 }
 
-export function ServiceDesk() {
+export function ServiceDesk({ hash = "" }: { hash?: string }) {
   const q = useApi<Queue>("/api/service-desk");
   const [filter, setFilter] = useState<Filter>("all");
+  // Opened from a change's tabs: that change's requests first.
+  const change = changeOf(hash);
   const [current, setCurrent] = useState<string | undefined>();
   useLiveEvents((e) => {
     if (e.type === "file.changed") q.reload();
   });
   const all = q.state === "ready" ? q.data.requests : [];
-  const shown = all.filter((r) => filter === "all" || r.state === filter);
+  const shown = all.filter(
+    (r) => (filter === "all" || r.state === filter) && (!change || r.change === change),
+  );
   const selected = shown.find((r) => keyOf(r) === current) ?? shown[0];
   const n = (s: Request["state"]) => all.filter((r) => r.state === s).length;
 
@@ -241,10 +246,10 @@ export function ServiceDesk() {
           value={filter}
           onChange={setFilter}
           options={[
-            { value: "all", label: `All ${all.length}` },
-            { value: "to-file", label: `To file ${n("to-file")}` },
-            { value: "waiting", label: `Waiting ${n("waiting")}` },
-            { value: "filed", label: `Filed ${n("filed")}` },
+            { value: "all", label: T.filters.all!(all.length) },
+            { value: "to-file", label: T.filters["to-file"]!(n("to-file")) },
+            { value: "waiting", label: T.filters.waiting!(n("waiting")) },
+            { value: "filed", label: T.filters.filed!(n("filed")) },
           ]}
         />
       </div>

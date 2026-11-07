@@ -104,7 +104,9 @@ export function applyCorrections(
       });
       return f;
     }
-    return fixed;
+    // A person's match, not code: the link is inferred, and the pairing counts as applied.
+    applied.push({ fact: f.id, action: "link", by: p.by });
+    return { ...fixed, conf: "inferred" } as Fact;
   };
   for (const f0 of facts) {
     for (const l of linksFor(f0, corrections)) met.add(l);

@@ -107,9 +107,11 @@ export function uiOwnerRoutes(r: Router, ctx: ServerContext): Router {
           else files.push({ file: m.file.rel, changes: m.changes });
         }
         if (!preview) {
-          if (addTeam) await addRolesTeam(ctx.root, addTeam);
+          // The manifest first: a team is added to roles.yaml only once its repo has it as
+          // owner (a manifest refused, say changed meanwhile, leaves roles.yaml as it was).
           if (owner) await setManifestField(ctx.root, repo, "owner", owner);
           if (system) await setManifestField(ctx.root, repo, "system", system);
+          if (addTeam) await addRolesTeam(ctx.root, addTeam);
           for (const f of files) ctx.events.publish({ type: "file.changed", path: f.file });
         }
       } catch (e) {

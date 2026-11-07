@@ -302,13 +302,15 @@ export function Settings() {
                     [T.models, d.runtime.models.allowed.join(", ") || T.noneApproved],
                     [
                       T.autonomy,
-                      `${d.runtime.autonomy.default} by default; at most ${d.runtime.autonomy.maxFixRounds} build-fix rounds${
+                      T.autonomyLine(
+                        d.runtime.autonomy.default,
+                        d.runtime.autonomy.maxFixRounds,
                         Object.keys(d.runtime.autonomy.capPerRepo).length
-                          ? `; capped: ${Object.entries(d.runtime.autonomy.capPerRepo)
+                          ? Object.entries(d.runtime.autonomy.capPerRepo)
                               .map(([r, a]) => `${r} ${a}`)
-                              .join(", ")}`
-                          : ""
-                      }`,
+                              .join(", ")
+                          : undefined,
+                      ),
                     ],
                     [
                       T.contextBudget,

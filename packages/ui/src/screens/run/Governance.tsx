@@ -256,6 +256,11 @@ export function Governance() {
                     ))}
                   </tbody>
                 </table>
+                {d.overrides.rules.length > 12 && (
+                  <p className="muted" style={{ margin: 0, fontSize: 12 }}>
+                    {COPY.app.andMore(d.overrides.rules.length - 12)}
+                  </p>
+                )}
                 {d.overrides.suggestions.map((s) => (
                   <p key={s.rule} className="muted" style={{ margin: 0, fontSize: 12.5 }}>
                     {s.message}

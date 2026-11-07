@@ -2,6 +2,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { isMap, isSeq, parseDocument, YAMLSeq } from "yaml";
 import { writeFileIfUnchanged } from "./fs.js";
+import { changedLines, eolOf, inEol, lfOnly, type LineChange } from "./manifest-edit.js";
 import { slugify } from "./identity.js";
 import { isAdopted, orgPackDirOf } from "./metarepo.js";
 import { migrateProfileText } from "./profile-migrate.js";
@@ -180,7 +181,15 @@ export async function addProfileSystem(
      */
     topics?: string[];
   },
-): Promise<{ id: string; profile: string; added: boolean; topics?: string[] }> {
+  o: { preview?: boolean } = {},
+): Promise<{
+  id: string;
+  profile: string;
+  added: boolean;
+  topics?: string[];
+  /** The lines a new system changes in the profile (as the write makes them). */
+  changes?: LineChange[];
+}> {
   const platforms = await platformsOf(root);
   const relOf = (platform: string) =>
     `${isAdopted(root) ? ".atticus/" : ""}org-pack/profiles/${platform}/profile.yaml`;
@@ -227,7 +236,10 @@ export async function addProfileSystem(
     const repos = parseDocument(text).get("repos");
     if (!isSeq(repos) || !repos.items.some((r) => isMap(r) && r.get("id") === repo)) continue;
     const file = join(dir, "profile.yaml");
-    const before = await readFile(file, "utf8").catch(() => undefined);
+    const raw = await readFile(file, "utf8").catch(() => undefined);
+    // Compared and written in the file's own line endings (a Windows checkout's CRLF).
+    const eol = eolOf(raw ?? "");
+    const before = raw === undefined ? undefined : lfOnly(raw);
     const doc = parseDocument(
       atV2(before ?? `schemaVersion: 1\nplatform: ${platform}\nname: ${platform}\n`),
     );
@@ -236,6 +248,8 @@ export async function addProfileSystem(
       doc.set("systems", doc.createNode([]));
       systems = doc.get("systems");
     }
+    // An empty `systems: []` opens out into a block list, as a hand-written profile has.
+    if ((systems as YAMLSeq).items.length === 0) (systems as YAMLSeq).flow = false;
     (systems as YAMLSeq).add(
       doc.createNode({
         id: s.id,
@@ -247,8 +261,12 @@ export async function addProfileSystem(
       }),
     );
     valid(doc, platform);
-    await writeFileIfUnchanged(file, before, doc.toString());
-    return { id: s.id, profile: relOf(platform), added: true };
+    // Written in the file's own style (block lists stay block), so only the new lines change.
+    const after = doc.toString({ lineWidth: 0, flowCollectionPadding: true });
+    const changes = changedLines(before ?? "", after);
+    if (o.preview) return { id: s.id, profile: relOf(platform), added: true, changes };
+    await writeFileIfUnchanged(file, raw, inEol(after, eol));
+    return { id: s.id, profile: relOf(platform), added: true, changes };
   }
   throw new Error(`${repo} isn't in any repos.manifest.yaml`);
 }

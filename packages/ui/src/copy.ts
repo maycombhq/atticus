@@ -7,6 +7,8 @@ export const COPY = {
   /** Words every screen shares: loading, failures, links that leave the app, actions under way. */
   app: {
     loading: "Loading",
+    /** A list cut short: how many it doesn't show. */
+    andMore: (n: number) => `and ${n} more`,
     cantLoad: (why: string) => `Couldn't load this: ${why}`,
     tryAgain: "Try again",
     /** A box that scrolls sideways: the keyboard reaches it, and its name says what it holds. */
@@ -1569,6 +1571,7 @@ export const COPY = {
       `Something on this screen failed: ${error}. The other screens still work; reload to try again.`,
   },
   flowView: {
+    andMore: (shown: string, n: number) => `${shown} and ${n} more`,
     nodesInGroupsEdges: (
       title: string | number,
       v: string | number,
@@ -1813,6 +1816,7 @@ export const COPY = {
       `Couldn't read the needs of ${change}: ${error}`,
   },
   changes: {
+    qa: "QA",
     define: "Define",
     design: "Design",
     plan: "Plan",
@@ -2532,6 +2536,9 @@ export const COPY = {
     toFindTheCommand: " to find the command.",
   },
   evals: {
+    runFinished: (runId: string, failed: string | undefined) =>
+      `Eval run ${runId} finished: ${failed ?? ""}.`,
+    casesFailed: (n: string) => `${n} failed`,
     actedOn: (applied: number, resolved: number) => `${applied} of ${resolved} acted on`,
     quarantinedNeverSentTo: "quarantined, never sent to a model",
     everyCasePassed: "every case passed",
@@ -2649,6 +2656,8 @@ export const COPY = {
     incidentMode: "Incident mode",
   },
   learning: {
+    sandboxMade: (root: string) =>
+      `Made a practice sandbox. Start the app there with: atticus ui --root ${root}`,
     inProgress: "IN PROGRESS",
     everyone: "Everyone",
     youHaveFinishedThis: "You have finished this lesson.",
@@ -2745,6 +2754,13 @@ export const COPY = {
     noChangeSelected: "No change selected",
   },
   releaseViews: {
+    filedAs: (n: string | undefined) => `filed${n ? ` as ${n}` : ""}`,
+    waitFor: (what: string, record: string | undefined) =>
+      `${what}${record ? ` for ${record}` : ""}`,
+    readyBy: (day: string, lead: string) => `, ready by ${day} (${lead})`,
+    missing: (what: string) => `. Missing ${what}`,
+    evidenceSaved: (file: string, files: string) =>
+      `Saved ${file}: the summary, ${files} with their sha-256, rounds, waivers, approvals, trace, requests, drift and AI runs.`,
     gatewayRoute: "GATEWAY ROUTE",
     rollout: "Rollout",
     rollback2: "Rollback",
@@ -2754,6 +2770,8 @@ export const COPY = {
     onTrack: "ON TRACK",
     atRisk: "AT RISK",
     noTarget: "NO TARGET",
+    releasedChip: "RELEASED",
+    lateChip: "LATE",
     waitingForAPerson: "waiting for a person to file it",
     notFiled: "not filed",
     workingDay: "working day",
@@ -2843,6 +2861,12 @@ export const COPY = {
     copyEvidenceMd: (id: string | number) => `Copy evidence-${id}.md`,
   },
   serviceDesk: {
+    filters: {
+      all: (n: number) => `All ${n}`,
+      "to-file": (n: number) => `To file ${n}`,
+      waiting: (n: number) => `Waiting ${n}`,
+      filed: (n: number) => `Filed ${n}`,
+    } as Record<string, (n: number) => string>,
     toFile2: "TO FILE",
     waitingForYou: "WAITING FOR YOU",
     drafted: "Drafted.",
@@ -3075,6 +3099,7 @@ export const COPY = {
   },
   /** ADR 0123: Set up › Repos, each repo's branches. */
   repos: {
+    yourAssistant: "Your assistant",
     title: "Repos and their branches",
     intro:
       "The catalog is read from each repo's default branch: that is the baseline, the one the hand-off PRs build on. Other branches people work on can be scanned beside it and compared with it, never merged into it.",
@@ -3175,6 +3200,8 @@ export const COPY = {
     notAnswered: (why: string) => `It didn't answer: ${why}`,
   },
   settings: {
+    autonomyLine: (dflt: string, rounds: number, capped: string | undefined) =>
+      `${dflt} by default; at most ${rounds} build-fix rounds${capped ? `; capped: ${capped}` : ""}`,
     handOff: "Hand-off",
     yourOwnAssistantCopilot:
       "Your own assistant (Copilot or Claude Code) does the work. Atticus builds the context pack, watches the branch, then checks the result.",
@@ -3297,6 +3324,7 @@ export const COPY = {
     connected: (v: string | number) => `CONNECTED · ${v}`,
   },
   todo: {
+    noClipboard: "This browser won't copy from here; use Copy all fields.",
     theseAreTheExact: "These are the exact inputs the tool gets. Approve them to run it.",
     copiedTheFieldsAs: "Copied the fields as CSV, ready to import.",
     allChanges: "All changes",

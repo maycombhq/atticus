@@ -188,6 +188,8 @@ export function uiCopilotRunRoutes(
             queue(me.finish(signal?.aborted ? "stopped" : "failed", now().toISOString(), msg));
             flush();
             state();
+            // Repos read before it failed were written: the pages read the facts again.
+            ctx.events.publish({ type: "file.changed", path: "facts" });
             return { errors: [msg] };
           }
           const stopped = signal?.aborted === true;

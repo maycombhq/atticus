@@ -68,6 +68,10 @@ export function scopeFile(s: Scope): { rel: string; layer: Layer } | string {
   }
   const n = [s.org, s.type, s.repo].filter(Boolean).length;
   if (n !== 1) return "Say which layer: --org, --type <repo type> or --repo <repo>.";
+  // A type's or repo's id names its file: never a path.
+  const ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
+  if ((s.type && !ID.test(s.type)) || (s.repo && !ID.test(s.repo)))
+    return "A repo type or repo is named by its id (letters, digits, dots, dashes).";
   if (s.org) return { rel: "org.yaml", layer: "org" };
   if (s.type) return { rel: `types/${s.type}.yaml`, layer: "type" };
   return { rel: `repos/${s.repo}.yaml`, layer: "repo" };

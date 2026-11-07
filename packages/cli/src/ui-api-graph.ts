@@ -33,8 +33,8 @@ import { filesUnder, memoByFiles, recheckNow } from "./file-memo.js";
 
 /**
  * The hierarchical graph API (ADR 0081): the estate as one model, opened a node at a time, and
- * the arrangements people keep, as files in the metarepo. Reads the catalog; the only file it
- * writes is diagrams/layouts/<view-key>.yaml.
+ * the arrangements people keep, as files in the metarepo. Reads the catalog; the files it
+ * writes are diagrams/layouts/<view-key>.yaml and, for a kept view, diagrams/views/<name>.yaml.
  */
 
 const lensOf = (v: string | null, fallback: Api.GraphLensT): Api.GraphLensT => {

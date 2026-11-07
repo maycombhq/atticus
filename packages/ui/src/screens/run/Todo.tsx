@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { api, useApi, useLiveEvents } from "../../api/client.js";
+import { changeOf } from "../../app/screens.js";
 import { Donut, Panel, Ring, View } from "../../app/ui.js";
 import {
   AdapterChip,
@@ -277,10 +278,7 @@ function StepDetail({ step, done }: { step: Step; done: () => void }) {
                       api<{ text: string }>(
                         `/api/todo/${step.id}/export?format=csv${step.change ? `&change=${encodeURIComponent(step.change)}` : ""}`,
                       ).then((r) => {
-                        if (!navigator.clipboard)
-                          throw new Error(
-                            "This browser won't copy from here; use Copy all fields.",
-                          );
+                        if (!navigator.clipboard) throw new Error(T.noClipboard);
                         return navigator.clipboard.writeText(r.text);
                       }),
                     T.copiedTheFieldsAs,
@@ -382,11 +380,12 @@ export const matchStep = (
 
 const FILTER_ID = "todo-filter";
 
-export function Todo() {
+export function Todo({ hash = "" }: { hash?: string }) {
   const todo = useApi<Todo>("/api/todo?all=1");
   const findings = useApi<Finding[]>("/api/findings");
   const [current, setCurrent] = useState<string | undefined>();
-  const [change, setChange] = useState<string>("all");
+  // Opened from a change's tabs: that change's work first; the filter can still be changed.
+  const [change, setChange] = useState<string>(changeOf(hash) ?? "all");
   const [text, setText] = useState("");
   useLiveEvents((e) => {
     if (e.type === "file.changed") {

@@ -4367,7 +4367,7 @@ const OPS: Record<string, Record<string, Op>> = {
       tag: "views",
       body: ConnectLinksRequest,
       ok: { status: 200, schema: "ConnectLinksResult", description: "OK" },
-      errors: [400, 404, 409],
+      errors: [400, 404, 409, 422],
     },
   },
   "/api/facts/{repo}/corrections/undo": {
@@ -4394,7 +4394,7 @@ const OPS: Record<string, Record<string, Op>> = {
       tag: "workspace",
       params: [p("repo")],
       ok: { status: 200, schema: "RepoOwnerView", description: "OK" },
-      errors: [404],
+      errors: [400, 404],
     },
     put: {
       id: "setRepoOwner",
@@ -4404,7 +4404,7 @@ const OPS: Record<string, Record<string, Op>> = {
       params: [p("repo")],
       body: SetRepoOwnerRequest,
       ok: { status: 200, schema: "SetRepoOwnerResult", description: "OK" },
-      errors: [400, 404, 422],
+      errors: [400, 404, 409, 422],
     },
   },
   "/api/declared-links": {
@@ -4425,7 +4425,7 @@ const OPS: Record<string, Record<string, Op>> = {
       tag: "workspace",
       body: UndeclareLinkRequest,
       ok: { status: 200, schema: "FileChangeResult", description: "OK" },
-      errors: [400, 404],
+      errors: [400, 404, 409],
     },
   },
   "/api/boxes/addable": {

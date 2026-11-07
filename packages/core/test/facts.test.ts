@@ -162,6 +162,20 @@ describe("projectFacts: facts become C1 records, nothing downstream changes", ()
     expect(out.issues.find((i) => i.code === "unresolved-target")?.factId).toBe("c-notify");
   });
 
+  it("a target a person set is their word: inferred, flagged, with their evidence beside the code's", () => {
+    const mine = facts().map((f) =>
+      f.kind === "call" && f.to ? ({ ...f, by: "person", conf: "inferred" } as Fact) : f,
+    );
+    const r = projectFacts(mine, { system: "ledger" });
+    const i = r.records.find((x) => x.kind === "Interface") as Record<string, unknown>;
+    expect(i.confidence).toBe("inferred");
+    expect(i.flags).toEqual(["joined-by-person"]);
+    expect(i.evidence).toEqual([
+      expect.objectContaining({ source: "code" }),
+      expect.objectContaining({ source: "manual", by: "person" }),
+    ]);
+  });
+
   it("stores become a DataStore, Tables with readers and writers, and Columns from column fields", () => {
     const ds = byKind("DataStore") as Record<string, unknown>[];
     expect(ds.map((d) => d.id)).toEqual(["ledger-db"]);

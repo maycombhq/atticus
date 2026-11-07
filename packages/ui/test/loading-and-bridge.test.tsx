@@ -91,3 +91,12 @@ describe("Open in your editor", () => {
     expect(COPY.canvasTools.openingCode).toBeTruthy();
   });
 });
+
+describe("a change's tabs keep the change", () => {
+  it("Release reads the change from ?change= as well as from its path", async () => {
+    const { changeOf } = await import("../src/app/screens.js");
+    expect(changeOf("#/release?change=forge-b")).toBe("forge-b");
+    expect(changeOf("#/changes/forge-a")).toBe("forge-a");
+    expect(changeOf("#/release")).toBeUndefined();
+  });
+});

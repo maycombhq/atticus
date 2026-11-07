@@ -55,8 +55,15 @@ async function datesOf(git: GitRun, dir: string, path?: string): Promise<Map<str
   return out;
 }
 
+/** A ref as the org pack may name one: never a word git would read as an option. */
+const safeRef = (ref: string) => {
+  if (!/^[A-Za-z0-9][A-Za-z0-9._\/-]*$/.test(ref))
+    throw new Error(`${ref} isn't a branch or tag name git takes (sources.yaml ref)`);
+  return ref;
+};
+
 async function update(git: GitRun, dir: string, url: string, ref: string | undefined) {
-  await git([...fileOk(url), "fetch", "--quiet", "origin", ref ?? "HEAD"], dir);
+  await git([...fileOk(url), "fetch", "--quiet", "origin", ref ? safeRef(ref) : "HEAD"], dir);
   await git(["checkout", "--quiet", "--force", "--detach", "FETCH_HEAD"], dir);
 }
 
@@ -90,7 +97,8 @@ export async function checkoutGitWiki(
             "submodule",
             "add",
             "--quiet",
-            ...(w.ref ? ["-b", w.ref] : []),
+            ...(w.ref ? ["-b", safeRef(w.ref)] : []),
+            "--",
             url,
             rel,
           ],
@@ -111,7 +119,7 @@ export async function checkoutGitWiki(
   const dir = join(root, ...(isAdopted(root) ? [".atticus"] : []), "workspace", "knowledge", w.id);
   if (!existsSync(join(dir, ".git"))) {
     await mkdir(dirname(dir), { recursive: true });
-    await git(["clone", "--quiet", "--no-checkout", url, dir], dirname(dir));
+    await git(["clone", "--quiet", "--no-checkout", "--", url, dir], dirname(dir));
   }
   await update(git, dir, url, w.ref);
   const commit = (await git(["rev-parse", "HEAD"], dir)).stdout.trim();

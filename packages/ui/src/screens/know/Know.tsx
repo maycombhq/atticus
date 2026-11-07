@@ -373,6 +373,9 @@ export function EcosystemMap() {
                   </span>
                 </li>
               ))}
+              {q.questions.length > 12 && (
+                <li className="hud">{COPY.app.andMore(q.questions.length - 12)}</li>
+              )}
             </ul>
           )}
         </View>

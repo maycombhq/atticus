@@ -160,6 +160,9 @@ describe("G1 (ADR 0174): a pairing", () => {
   it("to an outside system makes the call's target that system, a person's fact", () => {
     const r = applyCorrections([call], [link({ system: "northwind-pay", path: "/v1/charges" })]);
     expect(r.facts[0]).toMatchObject({ to: "northwind-pay", by: "person", path: "chargePath" });
+    // Their match, not code: inferred, and counted as applied.
+    expect(r.facts[0]).toMatchObject({ conf: "inferred" });
+    expect(r.applied).toEqual([{ fact: call.id, action: "link", by: "pat" }]);
   });
 
   it("to an outside system goes on top of an earlier edit, never instead of it", () => {

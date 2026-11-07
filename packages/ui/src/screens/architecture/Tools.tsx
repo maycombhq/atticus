@@ -327,6 +327,9 @@ export function CanvasTools(p: {
                     </span>
                   </li>
                 ))}
+                {open0.length > 50 && (
+                  <li className="work-say">{COPY.app.andMore(open0.length - 50)}</li>
+                )}
               </ul>
             ) : (
               <p className="work-say">{T.inboxNone}</p>

@@ -335,6 +335,38 @@ describe("atticus skills import, write and list", () => {
     ).toBeUndefined();
   });
 
+  it("never takes a name the organisation (or another team) has, and drops files they removed", async () => {
+    const root = metarepo();
+    const theirs = harborRepo();
+    write(
+      root,
+      "org-pack/agents/harbor-architect.md",
+      "---\nname: harbor-architect\ndescription: Ours.\n---\nOurs.\n",
+    );
+    const i = io();
+    expect(await skillsImportCommand(root, theirs, { team: "harbor", at: "v2.1" }, i.io)).toBe(0);
+    expect(i.out.join("\n")).toContain("skipped agent harbor-architect: this organisation has one");
+    expect(existsSync(join(root, "org-pack/agents/imported/harbor/harbor-architect.md"))).toBe(
+      false,
+    );
+    // Written once, as ours: no clash to say.
+    const w = io();
+    await skillsWriteCommand(root, {}, w.io);
+    expect(w.err).toEqual([]);
+    expect(read(root, ".claude/agents/harbor-architect.md")).toContain("Ours.");
+    // They remove check.sh at a later tag: gone here too, and no longer flagged as a script.
+    const git = (...a: string[]) => execFileSync("git", ["-C", theirs, ...a], { stdio: "pipe" });
+    git("rm", "-q", ".claude/skills/harbor-publish/check.sh");
+    git("commit", "-qm", "no script");
+    git("tag", "v2.2");
+    const again = io();
+    await skillsImportCommand(root, theirs, { team: "harbor", at: "v2.2" }, again.io);
+    expect(again.out.join("\n")).toContain("removed harbor-publish/check.sh");
+    expect(existsSync(join(root, "org-pack/skills/imported/harbor/harbor-publish/check.sh"))).toBe(
+      false,
+    );
+  });
+
   it("refuses a tag their repo doesn't have, and a repo with nothing to import", async () => {
     const root = metarepo();
     const theirs = harborRepo();

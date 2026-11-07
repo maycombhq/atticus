@@ -341,12 +341,16 @@ export function projectFacts(input: readonly Fact[], opts: ProjectOptions = {}):
       const id = interfaceId(from, to, method, f.path);
       catalogIdOf.set(f.id, id);
       const async = f.sync === "async" || f.callType === "event-topic" || f.callType === "mq-queue";
+      // A target a person set (a pairing on the canvas, or "this link is wrong"): their word,
+      // flagged as such and with their evidence beside the code's (ADR 0135, 0174).
+      const byPerson = f.by === "person";
       out.push({
         kind: "Interface",
         ...common(f),
         id,
         from,
         to,
+        ...(byPerson ? { flags: ["joined-by-person"] } : {}),
         via:
           f.callType === "event-topic"
             ? "event-bus"
@@ -362,7 +366,12 @@ export function projectFacts(input: readonly Fact[], opts: ProjectOptions = {}):
         sync: async ? "async" : "sync",
         direction: "outbound",
         conflicts: [],
-        evidence: [evidenceOf(f, "code", "caller")],
+        evidence: byPerson
+          ? [
+              evidenceOf(f, "code", "caller"),
+              { source: "manual", repo: f.repo, path: f.cite.file, line: f.cite.line, by: "person" },
+            ]
+          : [evidenceOf(f, "code", "caller")],
       } as CatalogRecord);
     } else {
       const id = `unresolved.${idPart(f.id)}`;

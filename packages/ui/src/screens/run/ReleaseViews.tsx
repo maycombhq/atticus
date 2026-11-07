@@ -84,10 +84,10 @@ const SECTION: Record<string, string> = {
   hypercare: TX.hypercare,
 };
 const STATUS: Record<Forecast["status"], { label: string; chip: string }> = {
-  released: { label: "RELEASED", chip: "done" },
+  released: { label: TX.releasedChip, chip: "done" },
   "on-track": { label: TX.onTrack, chip: "done" },
   "at-risk": { label: TX.atRisk, chip: "warn" },
-  late: { label: "LATE", chip: "blocking" },
+  late: { label: TX.lateChip, chip: "blocking" },
   "no-target": { label: TX.noTarget, chip: "dim" },
 };
 
@@ -102,11 +102,11 @@ function useReloadOn<T extends { reload: () => void }>(x: T, tick: number): T {
 function waitText(w: RequestWait): string {
   const state =
     w.state === "filed"
-      ? `filed${w.number ? ` as ${w.number}` : ""}`
+      ? TX.filedAs(w.number)
       : w.state === "waiting"
         ? TX.waitingForAPerson
         : TX.notFiled;
-  return `${w.requestType}${w.record ? ` for ${w.record}` : ""}: ${state}${w.readyBy ? `, ready by ${w.readyBy} (${plural(w.waitDays ?? 0, TX.workingDay)})` : TX.noLeadTimeTo}${w.missing.length ? `. Missing ${w.missing.join(", ")}` : ""}.`;
+  return `${TX.waitFor(w.requestType, w.record)}: ${state}${w.readyBy ? TX.readyBy(w.readyBy, plural(w.waitDays ?? 0, TX.workingDay)) : TX.noLeadTimeTo}${w.missing.length ? TX.missing(w.missing.join(", ")) : ""}.`;
 }
 
 /** The deployment plan, its forecast and the release sections: one read, three panels. */
@@ -235,7 +235,8 @@ export function PlanPanels({ id, tick }: { id: string; tick: number }) {
         <View of={p}>
           {(x) => {
             const f = x.forecast;
-            const s = STATUS[f.status];
+            // A status this page doesn't know (a newer server) shows as no target, not a crash.
+            const s = STATUS[f.status] ?? STATUS["no-target"];
             return (
               <div className="stack" style={{ gap: 10 }}>
                 <div className="row" style={{ flexWrap: "wrap", gap: 8, alignItems: "baseline" }}>
@@ -700,7 +701,7 @@ export function evidenceOutcome(
     };
   return {
     saved: true,
-    text: `Saved ${file}: the summary, ${plural(pack.files.length, "file")} with their sha-256, rounds, waivers, approvals, trace, requests, drift and AI runs.`,
+    text: TX.evidenceSaved(file, plural(pack.files.length, "file")),
   };
 }
 

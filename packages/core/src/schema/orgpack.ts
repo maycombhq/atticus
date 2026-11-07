@@ -597,8 +597,13 @@ export const Sources = z
             owner: z.string().optional(),
             /** What the source is about (ADR 0083), to guide the knowledge scan and filter items. */
             tags: SourceTags.optional(),
-            /** A git wiki's branch or tag; default its default branch. */
-            ref: z.string().min(1).optional(),
+            /** A git wiki's branch or tag; default its default branch. A name git takes as a ref, never as an option. */
+            ref: z
+              .string()
+              .min(1)
+              .max(200)
+              .regex(/^[A-Za-z0-9][A-Za-z0-9._\/-]*$/, "a branch or tag name")
+              .optional(),
             /** The folder of a git wiki its pages are in; default the whole repository. */
             path: RelPath.optional(),
             /** A git wiki is cloned into local state (clone), or kept as a submodule of the metarepo under knowledge/repos/. */
