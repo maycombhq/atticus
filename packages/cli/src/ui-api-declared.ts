@@ -139,6 +139,7 @@ export function uiDeclaredRoutes(
           } satisfies Api.FileChangeResultT,
         };
       } catch (e) {
+        if (e instanceof FileChangedError) throw conflict(e.message);
         throw new HttpError(
           422,
           "Atticus can't write that",

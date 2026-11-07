@@ -21,7 +21,9 @@ import {
   skillsWriteCommand,
   sourcesOf,
   splitFm,
+  teamFrontmatter,
 } from "../src/skills-commands.js";
+import { originOf } from "../src/file-lock.js";
 
 /**
  * G5 (ADR 0177): another team's skills, agents and instructions, taken as a pinned copy into the
@@ -151,6 +153,41 @@ describe("one source, two outputs", () => {
     expect(factsWithoutSource("Name the topic as harbor.x.y")).toBe(true);
     expect(factsWithoutSource("Ask atticus guide ledger for the topic")).toBe(false);
     expect(factsWithoutSource("Prefer constructor injection.")).toBe(false);
+  });
+});
+
+describe("another team's frontmatter", () => {
+  it("keeps what describes it and what narrows an agent; an agent with no tools reads only", () => {
+    expect(
+      teamFrontmatter("agent", { name: "a", tools: "Read, Grep", model: "x", hooks: {} }),
+    ).toEqual({
+      fm: { name: "a", tools: "Read, Grep" },
+      dropped: ["model", "hooks"],
+      readOnly: false,
+    });
+    expect(teamFrontmatter("agent", { name: "a" })).toMatchObject({
+      fm: { name: "a", tools: "Read, Grep, Glob" },
+      readOnly: true,
+    });
+    expect(teamFrontmatter("skill", { name: "s", "allowed-tools": "Bash" }).dropped).toEqual([
+      "allowed-tools",
+    ]);
+  });
+});
+
+describe("where a copy came from", () => {
+  const at = (url: string) => originOf("/home/pat/their-repo", async () => ({ stdout: url }));
+  it("says a remote with no sign-in, query or local path", async () => {
+    expect(await at("https://pat:tok@git.example.com/o/r.git?private_token=abc")).toBe(
+      "https://git.example.com/o/r.git",
+    );
+    expect(await at("git@git.example.com:o/r.git")).toBe("git@git.example.com:o/r.git");
+    expect(await at("/home/tom/repos/their")).toBe("their");
+    expect(await at("C:\\Users\\tom\\their")).toBe("their");
+    expect(await at("file:///home/tom/their")).toBe("their");
+    expect(
+      await originOf("/home/pat/their-repo", async () => Promise.reject(new Error("no"))),
+    ).toBe("their-repo");
   });
 });
 

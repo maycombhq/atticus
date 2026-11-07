@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parse, stringify } from "yaml";
-import { writeFileAtomic } from "./fs.js";
+import { FileChangedError, writeFileAtomic } from "./fs.js";
 import {
   addManifestHost,
   addOutsideSystem,
@@ -996,6 +996,7 @@ export async function answerQuestion(
     try {
       await a.beforeWrite();
     } catch (e) {
+      if (e instanceof FileChangedError) throw e;
       throw new QuestionError("bad-answer", (e as Error).message.split("\n")[0]!);
     }
   // A hosts question answered with a repo: the host goes under that repo's hosts first, so a
@@ -1012,6 +1013,7 @@ export async function answerQuestion(
     try {
       system = { host, boundary, ...(await addOutsideSystem(root, q.repo, host, boundary)) };
     } catch (e) {
+      if (e instanceof FileChangedError) throw e;
       throw new QuestionError("bad-answer", (e as Error).message.split("\n")[0]!);
     }
   } else if (host && label && label !== HOSTS_NONE) {
@@ -1029,6 +1031,7 @@ export async function answerQuestion(
         ...(basePath ? { basePath } : {}),
       };
     } catch (e) {
+      if (e instanceof FileChangedError) throw e;
       throw new QuestionError("bad-answer", (e as Error).message.split("\n")[0]!);
     }
   }

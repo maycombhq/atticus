@@ -128,17 +128,37 @@ export async function sourcesOf(root: string): Promise<SourceItem[]> {
   return out.sort((a, b) => (a.kind + a.name < b.kind + b.name ? -1 : 1));
 }
 
-/** The frontmatter keys another team's skill, agent or instructions keep. */
-const TEAM_KEYS = new Set(["name", "description", "applyTo"]);
+/**
+ * The frontmatter keys another team's file keeps: what describes it, and for an agent the keys
+ * that can only narrow what it may do. None that gives it tools, hooks, permissions or a model
+ * here (those are this organisation's to set, in its own files).
+ */
+const TEAM_KEYS: Record<Kind, ReadonlySet<string>> = {
+  skill: new Set(["name", "description"]),
+  agent: new Set(["name", "description", "tools", "disallowedTools"]),
+  instructions: new Set(["name", "description"]),
+};
+/** An agent of another team's that names no tools reads only (Claude gives one with none all). */
+const TEAM_AGENT_TOOLS = "Read, Grep, Glob";
+
+/** Another team's frontmatter as written here, and the keys left out (said to the person). */
+export function teamFrontmatter(
+  kind: Kind,
+  fm: Record<string, unknown>,
+): { fm: Record<string, unknown>; dropped: string[]; readOnly: boolean } {
+  const keep = TEAM_KEYS[kind];
+  const out = Object.fromEntries(Object.entries(fm).filter(([k]) => keep.has(k)));
+  const readOnly = kind === "agent" && out.tools === undefined;
+  if (readOnly) out.tools = TEAM_AGENT_TOOLS;
+  return { fm: out, dropped: Object.keys(fm).filter((k) => !keep.has(k)), readOnly };
+}
 
 /** What each assistant reads, written from one source item. */
 export function outputsOf(i: SourceItem): { path: string; text: string }[] {
   const { fm: all, body } = splitFm(i.text);
   // Another team's file keeps only the keys that describe it: none that gives it tools, hooks,
   // permissions or a model here (those are this organisation's to set, in its own files).
-  const fm = i.team
-    ? Object.fromEntries(Object.entries(all).filter(([k]) => TEAM_KEYS.has(k)))
-    : all;
+  const fm = i.team ? teamFrontmatter(i.kind, all).fm : all;
   const description =
     typeof fm.description === "string" && fm.description.trim()
       ? fm.description.trim()
@@ -516,6 +536,18 @@ export async function skillsImportCommand(
             `${f.name} states things about the estate (topics, fields, routes) with no atticus command to get them: a reviewer checks it against the map`,
           );
       } else await copy(f.path, join(dest, `${f.name}.md`), `${f.name}.md`);
+      // What of their frontmatter is left out when it is written for the assistants here.
+      const mainFile = f.kind === "skill" ? join(dest, "SKILL.md") : join(dest, `${f.name}.md`);
+      const t = teamFrontmatter(
+        f.kind,
+        splitFm(await readFile(mainFile, "utf8").catch(() => "")).fm,
+      );
+      if (t.dropped.length)
+        notes.push(
+          `${f.name}: left out of what the assistants read: ${t.dropped.join(", ")} (another team's file can't give itself these here; set them in your own copy if you want them)`,
+        );
+      if (t.readOnly)
+        notes.push(`${f.name} names no tools, so it is written to read only (${TEAM_AGENT_TOOLS})`);
       items.push({ kind: f.kind, name: f.name, files, from: origin, at: o.at ?? "working copy" });
     }
     await mkdir(dirname(provPath), { recursive: true });

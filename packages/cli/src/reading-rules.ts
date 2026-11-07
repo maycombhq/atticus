@@ -204,11 +204,20 @@ export function readingRulesText(
  * A rule's example as a reader is told it: a `path:line` only (no spaces, short). Anything else
  * a rule's file holds there (another team's sentence) is never put in a prompt.
  */
-export const exampleOf = (e: string | undefined): string =>
-  // A path may have spaces (a folder "Forge Accounts"), never a sentence's end (". ").
-  e && e.length <= 300 && /^[\w./@()+\- ]+:\d+$/.test(e) && !/\.\s/.test(e)
-    ? ` For example ${e}.`
-    : "";
+export const exampleOf = (e: string | undefined): string => {
+  if (!e || e.length > 300) return "";
+  const m = /^(.+):(\d+)$/.exec(e);
+  if (!m) return "";
+  const segs = m[1]!.split("/");
+  const last = segs.at(-1)!;
+  // Folders may have spaces ("Forge Accounts"); the file is name.ext with none; no part is a
+  // sentence (". ", a backtick, a line break).
+  const ok =
+    /^[^\s`/]+\.[^\s`/.]+$/.test(last) &&
+    segs.slice(0, -1).every((x) => x.length > 0 && !/[`\n\r]|\.\s/.test(x)) &&
+    segs.join(" ").split(/\s+/).length <= 8;
+  return ok ? ` For example ${e}.` : "";
+};
 
 /**
  * Everything a read lacks: the built-in rule sets added since it was read (ADR 0167) and the
