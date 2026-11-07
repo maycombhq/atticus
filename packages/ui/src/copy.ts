@@ -1636,6 +1636,10 @@ export const COPY = {
     skipToContent: "Skip to content",
   },
   boundary: {
+    appCouldntBeShown: "Atticus couldn't be shown",
+    somethingInTheApp: (error: string | number) =>
+      `Something in the app failed: ${error}. Go to Home to carry on; if it happens again, reload.`,
+    goHome: "Go to Home",
     couldntBeShown: (name: string | number) => `${name} couldn't be shown`,
     somethingOnThisScreen: (error: string | number) =>
       `Something on this screen failed: ${error}. The other screens still work; reload to try again.`,

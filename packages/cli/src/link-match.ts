@@ -42,11 +42,10 @@ export function matchFilesOf(root: string, from: string, to: Api.LinkBoxT) {
 }
 
 /** What the session writes back; nothing else of it is read. */
-const Loose = z.object({}).passthrough();
 const str = (v: unknown) => (typeof v === "string" ? v : typeof v === "number" ? String(v) : "");
 export const MatchAnswer = z.object({
-  pairs: z.array(Loose).catch([]).default([]),
-  none: z.array(Loose).catch([]).default([]),
+  pairs: z.array(z.unknown()).catch([]).default([]),
+  none: z.array(z.unknown()).catch([]).default([]),
 });
 export type MatchAnswer = z.infer<typeof MatchAnswer>;
 
@@ -131,8 +130,19 @@ export function checkMatchAnswer(
   const rejected: string[] = [];
   const seen = new Set<string>();
   // One sloppy line never loses the good ones: each is read on its own.
+  const isMap = (v: unknown): v is Record<string, unknown> =>
+    typeof v === "object" && v !== null && !Array.isArray(v);
   for (const raw of a.pairs) {
-    const p = { call: str(raw.call), api: str(raw.api), why: str(raw.why), lines: raw.lines };
+    if (!isMap(raw)) {
+      rejected.push("A line of pairs that isn't a pair was left out.");
+      continue;
+    }
+    const p = {
+      call: str(raw.call),
+      api: str(raw.api),
+      why: str(raw.why),
+      lines: typeof raw.lines === "string" ? [raw.lines] : raw.lines,
+    };
     if (!p.call || !p.api) rejected.push(`A pair without a call and an api was left out.`);
     else if (!calls.has(p.call))
       rejected.push(`${p.call} isn't one of ${view.from}'s loose calls.`);
@@ -152,6 +162,7 @@ export function checkMatchAnswer(
     }
   }
   for (const raw of a.none) {
+    if (!isMap(raw)) continue;
     const n = { call: str(raw.call), why: str(raw.why) };
     if (!n.call) continue;
     if (!calls.has(n.call)) rejected.push(`${n.call} isn't one of ${view.from}'s loose calls.`);

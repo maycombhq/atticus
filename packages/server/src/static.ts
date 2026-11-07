@@ -1,5 +1,5 @@
 import { readFile, stat } from "node:fs/promises";
-import { extname, join, normalize, sep } from "node:path";
+import { extname, join, normalize, resolve, sep } from "node:path";
 
 /**
  * The app's files. index.html gets the session token in its <meta name="atticus-token">: only a
@@ -50,7 +50,13 @@ export function appCsp(port: number, embed?: "vscode"): string {
 const escapeAttr = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 
-export async function staticFile(dir: string, path: string, token: string): Promise<StaticFile> {
+export async function staticFile(
+  givenDir: string,
+  path: string,
+  token: string,
+): Promise<StaticFile> {
+  // Absolute and normalised, whatever the caller passed, so the containment check below holds.
+  const dir = resolve(givenDir);
   let rel: string;
   try {
     rel = decodeURIComponent(path);

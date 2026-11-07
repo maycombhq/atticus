@@ -429,6 +429,56 @@ describe("hardening (threat model S1, D1)", () => {
     expect(status).toBe(403);
   });
 
+  it("answers a request target that isn't a URL with 400 on upgrade, and keeps serving", async () => {
+    const raw = (target: string) =>
+      new Promise<number>((resolve, reject) => {
+        const sock = connect(srv.port, "127.0.0.1", () => {
+          sock.write(
+            [
+              `GET ${target} HTTP/1.1`,
+              `Host: 127.0.0.1:${srv.port}`,
+              "Upgrade: websocket",
+              "Connection: Upgrade",
+              `Sec-WebSocket-Key: ${randomBytes(16).toString("base64")}`,
+              "Sec-WebSocket-Version: 13",
+              "",
+              "",
+            ].join("\r\n"),
+          );
+        });
+        let head = "";
+        sock.on("data", (b) => {
+          head += b.toString();
+          if (head.includes("\r\n")) {
+            resolve(Number(head.split(" ")[1]));
+            sock.destroy();
+          }
+        });
+        sock.on("error", reject);
+        sock.on("close", () => resolve(-1));
+      });
+    expect(await raw("//[::1")).toBe(400);
+    // The server is still up (a fresh connection: the raw socket above was closed by the server).
+    const h = await new Promise<number>((resolve, reject) => {
+      const rq = request(
+        {
+          host: "127.0.0.1",
+          port: srv.port,
+          path: "/api/health",
+          headers: { "X-Atticus-Token": srv.token },
+          agent: false,
+        },
+        (res) => {
+          res.resume();
+          resolve(res.statusCode ?? 0);
+        },
+      );
+      rq.on("error", reject);
+      rq.end();
+    });
+    expect(h).toBe(200);
+  });
+
   it("reports each API call by method and path, never its query", async () => {
     const seen: { method: string; path: string; status: number }[] = [];
     const s = await startServer({ root, port: 0, onRequest: (r) => seen.push(r) });

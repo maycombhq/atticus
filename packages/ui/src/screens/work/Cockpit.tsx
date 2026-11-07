@@ -1,7 +1,7 @@
 import type { Api } from "@maycombhq/core";
 import { api, useApi, useReloadOnFiles, type Loaded } from "../../api/client.js";
 import { screenOf, tabHref } from "../../app/screens.js";
-import { Panel, View } from "../../app/ui.js";
+import { ExternalLink, Panel, View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
 import { Note, queryParam, useAction } from "../know/common.js";
 import type { ChangeRow } from "./next.js";
@@ -122,7 +122,7 @@ export function CockpitView({ c }: { c: Cockpit }) {
                 {r.pr && (
                   <>
                     {" · "}
-                    <a href={r.pr}>{C.pr}</a>
+                    <ExternalLink href={r.pr}>{C.pr}</ExternalLink>
                   </>
                 )}
               </li>

@@ -40,6 +40,9 @@ const MERMAID = [
   "  orders -->|forge.orders.placed| stock",
   "  ghost[forge-ghost] -->|GET /x| orders",
   "  nonsense here",
+  "  orders <--> stock",
+  "  orders -.->|forge.orders.cancelled| pay",
+  "  v2[Orders (v2)] --> stock",
 ].join("\n");
 
 describe("reading a sketch", () => {
@@ -54,8 +57,13 @@ describe("reading a sketch", () => {
       ["forge-orders", "forge-stock", "POST /stock/reservations", "retire"],
       ["forge-orders", "forge-stock", "forge.orders.placed", undefined],
       ["forge-ghost", "forge-orders", "GET /x", undefined],
+      ["forge-orders", "Northwind Pay", "forge.orders.cancelled", undefined],
+      ["Orders (v2)", "forge-stock", "", undefined],
     ]);
-    expect(r.problems).toEqual(["line 10: not a box or a line: nonsense here"]);
+    expect(r.problems).toEqual([
+      "line 10: not a box or a line: nonsense here",
+      "line 11: a two-way line: draw one line each way: orders <--> stock",
+    ]);
   });
 
   it("reads a draw.io export through the reconcile reader", () => {
@@ -102,7 +110,7 @@ describe("atticus change sketch", () => {
         b.io,
       ),
     ).toBe(0);
-    expect(b.out.join("\n")).toContain("3 strokes written");
+    expect(b.out.join("\n")).toContain("4 strokes written");
     const files = await readdir(join(root, "openspec/changes/add-fraud-check/target-flows"));
     expect(files).toContain("forge-orders.place-order.yaml");
     // The listener's side of the topic lands on forge-stock's flow.

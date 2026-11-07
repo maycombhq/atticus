@@ -10,6 +10,9 @@ import type { NextStep } from "./types";
  * nothing, and never as if all were well.
  */
 export const WORDS = {
+  /** The atticus found is older than the extension needs (ADR 0099): what to do, in words. */
+  cliOld: (found: string, needed: string) =>
+    `Atticus ${found} is installed, and this extension needs ${needed} or newer: some pages and commands will fail until it is updated (npm install -g @maycombhq/atticus@latest, from your npm mirror or the offline bundle).`,
   showOutput: "Show the output",
   lensesFailed: (why: string) =>
     `Atticus couldn't read which flows cite this file, so it shows no lenses for now: ${why}`,

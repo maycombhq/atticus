@@ -198,11 +198,9 @@ export async function ensureLocalIgnore(root: string): Promise<void> {
   const have = new Set(text.split(/\r?\n/).map((l) => l.trim()));
   const missing = LOCAL_ONLY.filter((l) => !have.has(l));
   if (!missing.length) return;
-  await mkdir(dirname(file), { recursive: true });
   const prefix = text && !text.endsWith("\n") ? `${text}\n` : text;
-  await writeFile(
+  await writeFileAtomic(
     file,
     `${prefix}${prefix ? "" : "# This machine's own files: never committed.\n"}${missing.join("\n")}\n`,
-    "utf8",
   );
 }

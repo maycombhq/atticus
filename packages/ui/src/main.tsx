@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { hostBridge } from "./api/bridge.js";
 import { App } from "./app/App.js";
+import { AppBoundary } from "./app/boundary.js";
 import { startTheme } from "./app/theme.js";
 // Fonts ship with the app (no network: Atticus runs offline inside a company).
 import "@fontsource/rajdhani/600.css";
@@ -18,6 +19,8 @@ if (!hostBridge()) startTheme();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <App />
+    <AppBoundary>
+      <App />
+    </AppBoundary>
   </StrictMode>,
 );

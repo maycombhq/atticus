@@ -105,6 +105,8 @@ export function LoadError({ error, retry }: { error: string; retry?: (() => void
  * prompt. The words say so, never the icon alone.
  */
 export function ExternalLink({ href, children }: { href: string; children: ReactNode }) {
+  // A link from a file or a wiki is followed only to a web address (defence in depth beside the CSP).
+  if (!/^https?:\/\//i.test(href.trim())) return <span title={href}>{children}</span>;
   return (
     <a href={href} target="_blank" rel="noreferrer noopener">
       {children}

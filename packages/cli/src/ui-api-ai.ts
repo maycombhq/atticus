@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
-import { parse, stringify } from "yaml";
+import { parse, parseDocument, stringify } from "yaml";
 import { providerFactoryFor, type ModelProvider, type ModelProviderFactory } from "@maycombhq/ai";
 import { ASSISTANT_FORMATS, readProbes, whatRunsWhere } from "@maycombhq/assistant-files";
 import {
@@ -148,20 +148,18 @@ export function uiAiRoutes(r: Router, ctx: ServerContext, deps: AiDeps = {}): Ro
               .map((i) => `${i.path.join(".") || "runtime.yaml"}: ${i.message}`)
               .join("; "),
           );
-        // Keep the file's own opening comments; write the rest as YAML.
-        const header = (text ?? "")
-          .split(/\r?\n/)
-          .filter((l, i, a) => a.slice(0, i + 1).every((x) => x.startsWith("#")));
+        // The person's file keeps its comments (everywhere, not only at the top): the changed keys
+        // are set on the document as read; a new file is written as YAML.
+        const out = (() => {
+          if (text === undefined) return stringify(raw, { lineWidth: 0 });
+          const doc = parseDocument(text);
+          for (const f of FIELDS) if (b[f] !== undefined) doc.set(f, raw[f]);
+          if (b.model !== undefined) doc.set("adapters", raw.adapters);
+          return doc.toString({ lineWidth: 0 });
+        })();
         // Only onto the file as read (another window or the CLI meanwhile is a 409), in its own
         // line endings.
-        await writeFileIfUnchanged(
-          file(),
-          text,
-          inEol(
-            `${header.length ? `${header.join("\n")}\n` : ""}${stringify(raw, { lineWidth: 0 })}`,
-            eolOf(text ?? ""),
-          ),
-        );
+        await writeFileIfUnchanged(file(), text, inEol(out, eolOf(text ?? "")));
         return {
           status: 200,
           body: {

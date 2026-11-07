@@ -24,7 +24,7 @@ import {
 } from "./beta11";
 import { answerApp, saveFromApp, bundledHtml } from "./app-bundle";
 import { evidenceRows } from "./question-evidence";
-import { diagramHash, panelHtml, type RunningApp } from "./app-panel";
+import { diagramHash, MIN_CLI, panelHtml, versionAtLeast, type RunningApp } from "./app-panel";
 import { changeDiagramHash, estimateHash } from "./change-map";
 import { HISTORY_HASH } from "./history";
 import { chatHandler } from "./chat";
@@ -636,10 +636,17 @@ ${view.next.why}`
   });
 
   // ADR 0098: what is set up, as context keys the welcome views and the walkthrough read.
+  let warnedOld = false;
   const updateContext = async () => {
     const at = svc.root ?? svc.folder ?? context.extensionPath;
     const v = await svc.cli(at)(["--version"]);
     svc.cliOk = v.code === 0;
+    // An atticus older than the extension's flags and pages: said once, the app still starts.
+    const found = /\d+\.\d+\.\d+(?:-[a-z]+\.\d+)?/i.exec(v.stdout)?.[0];
+    if (svc.cliOk && found && !versionAtLeast(found, MIN_CLI) && !warnedOld) {
+      warnedOld = true;
+      void vscode.window.showWarningMessage(WORDS.cliOld(found, MIN_CLI));
+    }
     void vscode.commands.executeCommand("setContext", "atticus.cliMissing", !svc.cliOk);
     void vscode.commands.executeCommand("setContext", "atticus.hasMetarepo", !!svc.root);
     void vscode.commands.executeCommand(

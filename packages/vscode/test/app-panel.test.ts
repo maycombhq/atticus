@@ -3,7 +3,16 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { appUrlFrom, diagramHash, panelHtml, startApp, stopChild } from "../src/app-panel";
+import {
+  appUrlFrom,
+  diagramHash,
+  MIN_CLI,
+  panelHtml,
+  startApp,
+  stopChild,
+  versionAtLeast,
+} from "../src/app-panel";
+import { WORDS } from "../src/words";
 import { commandText } from "../src/cli";
 
 /** A stand-in for `atticus ui`: a .js file the extension runs with node. */
@@ -156,4 +165,17 @@ describe("stopping the app", { timeout: 60_000 }, () => {
       expect(alive(pid)).toBe(false);
     },
   );
+});
+
+describe("the atticus found against the one the extension needs", () => {
+  it("tells an older atticus from a newer one, betas before the release, and gives an unreadable one the benefit of the doubt", () => {
+    expect(versionAtLeast("2.0.0-beta.21", MIN_CLI)).toBe(true);
+    expect(versionAtLeast("2.0.0-beta.22", "2.0.0-beta.21")).toBe(true);
+    expect(versionAtLeast("2.0.0", "2.0.0-beta.21")).toBe(true);
+    expect(versionAtLeast("2.1.0-beta.1", "2.0.0-beta.21")).toBe(true);
+    expect(versionAtLeast("2.0.0-beta.20", "2.0.0-beta.21")).toBe(false);
+    expect(versionAtLeast("1.9.9", "2.0.0-beta.21")).toBe(false);
+    expect(versionAtLeast("dev", "2.0.0-beta.21")).toBe(true);
+    expect(WORDS.cliOld("2.0.0-beta.20", MIN_CLI)).toContain("2.0.0-beta.20");
+  });
 });

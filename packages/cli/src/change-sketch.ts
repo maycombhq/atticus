@@ -11,6 +11,7 @@ import {
   TARGET_DIR,
   writeSketch,
   type Estate,
+  type FlowDelta,
   type Stroke,
 } from "@maycombhq/planner";
 import { labelText, readDrawio, type DiagramEdge, type Legend } from "@maycombhq/reconcile";
@@ -72,9 +73,13 @@ export function readMermaidSketch(text: string): { lines: SketchLine[]; problems
     };
   };
   const node = (tok: string): string => {
-    const m = /^([A-Za-z0-9_.-]+)(?:[[({>]+\s*"?([^\]})"]*)"?\s*[\])}]+)?$/.exec(tok.trim());
+    const m =
+      /^([A-Za-z0-9_.-]+)(?:\[\s*"?([^\]"]*)"?\s*\]|\(+\s*"?([^)"]*)"?\s*\)+|\{+\s*"?([^}"]*)"?\s*\}+|>\s*"?([^\]"]*)"?\s*\])?$/.exec(
+        tok.trim(),
+      );
     if (!m) return tok.trim();
-    if (m[2] !== undefined && m[2].trim()) labels.set(m[1]!, m[2].trim());
+    const label = (m[2] ?? m[3] ?? m[4] ?? m[5])?.trim();
+    if (label) labels.set(m[1]!, label);
     return m[1]!;
   };
   const rows = text.split(/\r?\n/);
@@ -86,6 +91,10 @@ export function readMermaidSketch(text: string): { lines: SketchLine[]; problems
       /^(subgraph|end|classDef|class|style|direction)\b/i.test(row)
     )
       return;
+    if (/<\s*[-=.]/.test(row)) {
+      problems.push(`line ${i + 1}: a two-way line: draw one line each way: ${row}`);
+      return;
+    }
     // A -->|text| B  ·  A -- text --> B  ·  A --> B  ·  A ==>|text| B  ·  A -.->|text| B
     const m =
       /^(.+?)\s*(?:--+|==+|-\.+-?)\s*(?:\|([^|]*)\||"?([^">=-]*?)"?\s*(?:--+|==+|\.-+))?\s*>\s*(?:\|([^|]*)\|)?\s*(.+)$/.exec(
@@ -172,7 +181,11 @@ export interface SketchPlan {
 }
 
 /** Lines into strokes, against today's map: what to draw, and what the picture can't say. */
-export function strokesOfLines(lines: readonly SketchLine[], estate: Estate): SketchPlan {
+export function strokesOfLines(
+  lines: readonly SketchLine[],
+  estate: Estate,
+  drawnAlready: readonly FlowDelta[] = [],
+): SketchPlan {
   const plan: SketchPlan = { strokes: [], skipped: [] };
   for (const l of lines) {
     const from = componentOf(l.from, estate);
@@ -229,6 +242,21 @@ export function strokesOfLines(lines: readonly SketchLine[], estate: Estate): Sk
       plan.skipped.push({ line: l, why: "already on today's map; nothing to draw." });
       continue;
     }
+    // Drawn before (a second --save, or on the canvas): the same line isn't drawn twice.
+    const drawnBefore = drawnAlready.some(
+      (d) =>
+        (d.repo === from || d.runsOn?.component === from || d.flow.startsWith(`${from}.`)) &&
+        d.steps.some(
+          (st) =>
+            st.op === "add" &&
+            ((l.topic && st.kind === "publish" && st.to?.entry === l.topic) ||
+              (!l.topic && st.to?.component === to && st.to.entry === entry)),
+        ),
+    );
+    if (drawnBefore) {
+      plan.skipped.push({ line: l, why: "already drawn in this change; nothing to add." });
+      continue;
+    }
     const isNew =
       !componentOf(l.to, estate) || (!!l.method && !estate.endpoints.has(endpointKey(entry)));
     plan.strokes.push({
@@ -279,8 +307,8 @@ export async function changeSketchCommand(
       ? readDrawioSketch(text)
       : readMermaidSketch(text);
   const estate = await loadEstate(root, t.records);
-  const plan = strokesOfLines(read.lines, estate);
   const dir = changeFolder(root, change);
+  const plan = strokesOfLines(read.lines, estate, (await readDeltas(dir)).deltas);
   const by = `${o.by ?? "a person"} from ${basename(o.from)}`;
   const problems = [...read.problems];
   const drawn: string[] = [];

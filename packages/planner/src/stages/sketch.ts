@@ -173,6 +173,10 @@ function deltaFor(
   if (from.newFlow) {
     const id = from.newFlow.id;
     const had = deltas.find((d) => d.flow === id);
+    if (had?.change === "remove")
+      return {
+        problem: `${id} is removed in this change: take the removal back, or draw on another flow.`,
+      };
     if (had) return { delta: had, deltas };
     if (estate.flows.some((f) => f.flow.id === id))
       return { problem: `${id} is a flow of today's map already: draw on it, not a new one.` };
@@ -205,6 +209,10 @@ function deltaFor(
   if (from.flow && !own.some((f) => f.id === from.flow))
     return { problem: `${from.flow} isn't a flow of ${from.component}.` };
   const had = deltas.find((d) => d.flow === flowId);
+  if (had?.change === "remove")
+    return {
+      problem: `${flowId} is removed in this change: take the removal back, or draw on another flow.`,
+    };
   if (had) return { delta: had, deltas };
   const today = estate.flows.find((f) => f.flow.id === flowId);
   if (!today) return { problem: `No flow of today's map is ${flowId}.` };
@@ -313,6 +321,12 @@ export function applyStroke(
         };
       let all = before;
       let d = all.find((x) => x.flow === stroke.flow);
+      if (d?.change === "remove")
+        return {
+          deltas: before,
+          changed: [],
+          problem: `${stroke.flow} is removed in this change: take the removal back, or draw on another flow.`,
+        };
       if (!d) {
         d = {
           schemaVersion: FLOW_DELTA_SCHEMA_VERSION,
@@ -472,16 +486,19 @@ export async function writeSketch(dir: string, files: readonly SketchFile[]): Pr
   }
 }
 
-/** A fingerprint of the delta files as they are, so a write can refuse files that changed since the preview. */
+/** A fingerprint of the files a stroke reads and writes, so a write can refuse files that changed since the preview. */
 export async function sketchFingerprint(dir: string): Promise<string> {
   const h = createHash("sha256");
+  const take = async (rel: string) => {
+    h.update(rel);
+    h.update("\0");
+    h.update(await readFile(join(dir, ...rel.split("/")), "utf8").catch(() => ""));
+    h.update("\0");
+  };
   for (const f of (await readdir(join(dir, TARGET_DIR)).catch(() => [] as string[])).sort())
-    if (f.endsWith(".yaml")) {
-      h.update(f);
-      h.update("\0");
-      h.update(await readFile(join(dir, TARGET_DIR, f), "utf8"));
-      h.update("\0");
-    }
+    if (f.endsWith(".yaml")) await take(`${TARGET_DIR}/${f}`);
+  // Everything the write renders from, so the write is the preview, design.md included.
+  for (const f of [READS_FILE, DEPLOY_FILE, "design.md", "data.md"]) await take(f);
   return h.digest("hex").slice(0, 16);
 }
 

@@ -291,7 +291,13 @@ function Evidence({ id, refs }: { id: string; refs: string[] }) {
 
 /** The question id in #/questions/<id>, if any. */
 export function questionRoute(hash: string): string | undefined {
-  const id = decodeURIComponent(hash.replace(/^#\/?/, "").split(/[?]/)[0]!.split("/")[1] ?? "");
+  const raw = hash.replace(/^#\/?/, "").split(/[?]/)[0]!.split("/")[1] ?? "";
+  let id: string;
+  try {
+    id = decodeURIComponent(raw);
+  } catch {
+    return undefined;
+  }
   return ID.test(id) ? id : undefined;
 }
 

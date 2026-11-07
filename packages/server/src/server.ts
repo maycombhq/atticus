@@ -270,10 +270,12 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
           ? e
           : e instanceof FileChangedError
             ? new HttpError(409, "The file changed meanwhile", e.message)
-            : new HttpError(
+            : // The message stays in the log (onRequest gets the error): an fs error names the
+              // metarepo's absolute path, which the page has no use for.
+              new HttpError(
                 500,
                 "Something went wrong",
-                e instanceof Error ? e.message : String(e),
+                "The app's log (.atticus/logs/atticus.log) has the details.",
               );
       send(res, err.status, problem(err), "application/problem+json");
       done(err.status, err.status >= 500 && e instanceof Error ? e : undefined);
@@ -281,8 +283,9 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
   });
 
   server.on("upgrade", (req: IncomingMessage, sock: Duplex) => {
-    const url = new URL(req.url ?? "/", "http://127.0.0.1");
     try {
+      // Inside the try: a request target that isn't a URL is a 400, never a crash of the server.
+      const url = new URL(req.url ?? "/", "http://127.0.0.1");
       if (url.pathname !== "/api/events") throw new HttpError(404, "Not found");
       guard(req, url, true);
     } catch (e) {

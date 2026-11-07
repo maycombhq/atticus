@@ -145,9 +145,13 @@ export function CommandPalette() {
         onClick={(e) => e.stopPropagation()}
         onKeyDown={(e) => {
           if (e.key === "Escape") close();
-          else if (e.key === "ArrowDown") {
+          else if (e.key === "Tab") {
+            // A modal keeps focus: Tab stays on the input (the list is driven by the arrows).
             e.preventDefault();
-            setSel((s) => Math.min(s + 1, items.length - 1));
+            input.current?.focus();
+          } else if (e.key === "ArrowDown") {
+            e.preventDefault();
+            setSel((s) => Math.max(0, Math.min(s + 1, items.length - 1)));
           } else if (e.key === "ArrowUp") {
             e.preventDefault();
             setSel((s) => Math.max(s - 1, 0));
@@ -178,7 +182,7 @@ export function CommandPalette() {
         <ul id="palette-list" role="listbox" aria-label={T.results}>
           {items.map((i, k) => (
             <li
-              key={`${i.kind}/${i.href}`}
+              key={`${i.kind}/${i.detail}/${i.href}`}
               id={`palette-${k}`}
               role="option"
               aria-selected={k === sel}

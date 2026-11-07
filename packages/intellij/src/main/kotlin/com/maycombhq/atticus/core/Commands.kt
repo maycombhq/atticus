@@ -339,4 +339,23 @@ object Commands {
         }
         return out
     }
+
+    /** `a` is at least `b`, for versions like 2.0.0-beta.21 (a release is newer than its betas). */
+    fun versionAtLeast(a: String, b: String): Boolean {
+        val re = Regex("""(\d+)\.(\d+)\.(\d+)(?:-([a-z]+)\.(\d+))?""", RegexOption.IGNORE_CASE)
+        val x = re.find(a) ?: return true
+        val y = re.find(b) ?: return true
+        for (i in 1..3) {
+            val p = x.groupValues[i].toInt()
+            val q = y.groupValues[i].toInt()
+            if (p != q) return p > q
+        }
+        val px = x.groupValues[5].toIntOrNull() ?: Int.MAX_VALUE
+        val py = y.groupValues[5].toIntOrNull() ?: Int.MAX_VALUE
+        return px >= py
+    }
+
+    /** The version in `atticus --version`'s output, if it reads as one. */
+    fun versionIn(text: String): String? =
+        Regex("""\d+\.\d+\.\d+(?:-[a-z]+\.\d+)?""", RegexOption.IGNORE_CASE).find(text)?.value
 }

@@ -10,6 +10,7 @@ import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
+import com.intellij.notification.NotificationType
 import com.intellij.openapi.util.Key
 import com.intellij.util.io.BaseOutputReader
 import com.maycombhq.atticus.core.Catalog
@@ -83,6 +84,8 @@ class AtticusApp(private val project: Project) : Disposable {
         ApplicationManager.getApplication().invokeLater({ for (l in listeners) l(s) }, project.disposed)
     }
 
+    private var warnedOld = false
+
     /** Check the command line, then start the app when the project is a metarepo. */
     fun refresh() {
         stop()
@@ -91,7 +94,17 @@ class AtticusApp(private val project: Project) : Disposable {
             val v = AtticusCli.run(project, Roots.cwd(project), listOf("--version"), 60_000)
             when {
                 !v.ok -> set(AppState.CliMissing)
-                else -> Roots.metarepo(project)?.let { start(it) } ?: set(AppState.NoMetarepo)
+                else -> {
+                    // An atticus older than the plugin's pages and commands: said once, the app still starts.
+                    val found = Commands.versionIn(v.stdout)
+                    if (found != null && !Commands.versionAtLeast(found, Copy.MIN_CLI) && !warnedOld) {
+                        warnedOld = true
+                        ApplicationManager.getApplication().invokeLater {
+                            Notify.show(project, Copy.cliOld(found, Copy.MIN_CLI), NotificationType.WARNING)
+                        }
+                    }
+                    Roots.metarepo(project)?.let { start(it) } ?: set(AppState.NoMetarepo)
+                }
             }
         }
     }

@@ -205,6 +205,36 @@ describe("strokes become flow deltas", () => {
     ).toContain("isn't a flow of forge-orders");
   });
 
+  it("a flow this change removes takes no stroke", () => {
+    const gone = FlowDelta.parse({
+      schemaVersion: 2,
+      flow: "forge-orders.place-order",
+      repo: "forge-orders",
+      change: "remove",
+      why: "Orders are placed elsewhere now.",
+      steps: [],
+    });
+    const call = applyStroke(
+      [gone],
+      stroke({
+        kind: "call",
+        from: { component: "forge-orders" },
+        to: { component: "forge-fraud", entry: "POST /screen" },
+      }),
+      estate,
+      "pat",
+    );
+    expect(call.problem).toContain("is removed in this change");
+    expect(call.deltas).toEqual([gone]);
+    const rm = applyStroke(
+      [gone],
+      stroke({ kind: "remove", flow: "forge-orders.place-order", step: 2, why: "x" }),
+      estate,
+      "pat",
+    );
+    expect(rm.problem).toContain("is removed in this change");
+  });
+
   it("a new box: a new flow of a component the catalog lacks carries where it runs", () => {
     const r = applyStroke(
       [],

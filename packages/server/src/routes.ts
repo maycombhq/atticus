@@ -6,6 +6,7 @@ import {
   Lens,
   questionOfLens,
   RECORD_KINDS,
+  RecordId,
   SCHEMA_VERSION,
   Severity,
   layoutOf,
@@ -311,6 +312,9 @@ export function apiRoutes(r: Router, ctx: Context): Router {
     })
     .add("GET", "/api/findings", async ({ query }) => {
       const change = strParam(query, "change");
+      // An id, never a path: nothing outside changes/ is read.
+      if (change !== undefined && !RecordId.safeParse(change).success)
+        throw badRequest(`${change} isn't a change id.`);
       const gate = strParam(query, "gate");
       const state = strParam(query, "state");
       const lens = enumParam(query, "lens", Lens.options);
@@ -330,6 +334,8 @@ export function apiRoutes(r: Router, ctx: Context): Router {
       return { status: 200, body };
     })
     .add("GET", "/api/findings/{changeId}/{findingId}", async ({ params }) => {
+      if (!RecordId.safeParse(params.changeId!).success)
+        throw badRequest(`${params.changeId} isn't a change id.`);
       const f = (await latestFindings(root, params.changeId!)).find(
         (x) => x.id === params.findingId,
       );

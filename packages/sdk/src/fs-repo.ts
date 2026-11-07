@@ -103,9 +103,10 @@ export function fsRepo(
     }
     const abs = join(root, ...path.split("/"));
     const info = await lstat(abs).catch(() => undefined);
-    if (!info || !info.isFile()) throw new RepoReadError(`no such file: ${path}`, path);
-    if (info.isSymbolicLink())
+    // A link is said to be one (lstat says link, not file), then a non-file is "no such file".
+    if (info?.isSymbolicLink())
       throw new RepoReadError(`symbolic links are not read: ${path}`, path);
+    if (!info || !info.isFile()) throw new RepoReadError(`no such file: ${path}`, path);
     const real = await realpath(abs);
     const realRoot = await realpath(root);
     if (real !== realRoot && !real.startsWith(realRoot + sep)) {

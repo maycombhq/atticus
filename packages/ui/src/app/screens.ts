@@ -207,7 +207,14 @@ export function screenOf(hash: string): ScreenDef {
 export function changeOf(hash: string): string | undefined {
   const path = hash.replace(/^#\/?/, "");
   const m = /^changes\/([^/?]+)/.exec(path);
-  if (m) return decodeURIComponent(m[1]!);
+  if (m) {
+    // A hash someone typed or mangled (#/changes/100%) is a name, never a blank page.
+    try {
+      return decodeURIComponent(m[1]!);
+    } catch {
+      return m[1];
+    }
+  }
   const q = path.split("?")[1];
   return q ? (new URLSearchParams(q).get("change") ?? undefined) : undefined;
 }

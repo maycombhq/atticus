@@ -100,5 +100,8 @@ describe("a change's tabs keep the change", () => {
     expect(changeOf("#/release?change=forge-b")).toBe("forge-b");
     expect(changeOf("#/changes/forge-a")).toBe("forge-a");
     expect(changeOf("#/release")).toBeUndefined();
+    // A mangled hash is a name, never a blank page.
+    expect(changeOf("#/changes/100%")).toBe("100%");
+    expect(changeOf("#/changes/add%20transfer")).toBe("add transfer");
   });
 });

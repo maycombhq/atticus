@@ -1,6 +1,6 @@
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import type { Api } from "@maycombhq/core";
-import { api, ApiError, useApi } from "../../api/client.js";
+import { api, ApiError, useApi, useReloadOnFiles } from "../../api/client.js";
 import { COPY } from "../../copy.js";
 import { Diff } from "../architecture/Owner.js";
 import { CopyButton } from "../run/shared.js";
@@ -169,6 +169,8 @@ type Post = (body: Api.SketchStrokeRequestT) => Promise<Api.SketchResultT>;
 /** The panel under a change's picture: the form, Preview → Draw, the strokes drawn, Undo. */
 export function SketchPanel({ change, map }: { change: string; map?: Api.ChangeMapT }) {
   const state = useApi<Api.SketchResultT>(`/api/changes/${encodeURIComponent(change)}/sketch`);
+  // A stroke from elsewhere (another tab, atticus change sketch --save, the stage) shows here too.
+  useReloadOnFiles(state);
   const post: Post = (body) =>
     api<Api.SketchResultT>(`/api/changes/${encodeURIComponent(change)}/sketch`, {
       method: "POST",
@@ -180,6 +182,7 @@ export function SketchPanel({ change, map }: { change: string; map?: Api.ChangeM
       map={map}
       drawn={state.state === "ready" ? state.data.drawn : []}
       commit={state.state === "ready" ? state.data.commit : undefined}
+      fingerprint={state.state === "ready" ? state.data.fingerprint : undefined}
       post={post}
       onWritten={() => state.reload()}
     />
@@ -191,6 +194,8 @@ export function SketchForm(p: {
   map?: Api.ChangeMapT;
   drawn: Api.SketchResultT["drawn"];
   commit?: string;
+  /** The files as last read: Undo sends it back, so it never takes back a stroke it didn't show. */
+  fingerprint?: string;
   post: Post;
   onWritten?: (r: Api.SketchResultT) => void;
 }) {
@@ -200,13 +205,17 @@ export function SketchForm(p: {
   const [error, setError] = useState<string | undefined>();
   const [preview, setPreview] = useState<Api.SketchResultT | undefined>();
   const [previewed, setPreviewed] = useState<string | undefined>();
-  const [written, setWritten] = useState<Api.SketchResultT | undefined>();
   /** The flows to pick from when the component has several (kept until the component changes). */
   const [pick, setPick] = useState<{ component: string; flows: { id: string; name: string }[] }>();
   /** The problem the server said of the stroke as it stood; cleared by any change. */
   const [problem, setProblem] = useState<string | undefined>();
+  // The list as last read wins: a write's answer stands only until the next read lands.
+  const [written, setWritten] = useState<Api.SketchResultT | undefined>();
+  const [wrote, setWrote] = useState(false);
+  useEffect(() => setWritten(undefined), [p.drawn, p.fingerprint]);
   const drawn = written?.drawn ?? p.drawn;
   const commit = written?.commit ?? p.commit;
+  const fingerprint = written?.fingerprint ?? p.fingerprint;
   const said = strokeOf(f);
   const asked = "stroke" in said ? JSON.stringify(said.stroke) : undefined;
   const set = <K extends keyof SketchForm>(k: K, v: SketchForm[K]) => {
@@ -243,6 +252,7 @@ export function SketchForm(p: {
         setPreviewed(JSON.stringify(said.stroke));
       } else {
         setWritten(r);
+        setWrote(true);
         setPreview(undefined);
         p.onWritten?.(r);
       }
@@ -259,10 +269,14 @@ export function SketchForm(p: {
     setBusy(key);
     setError(undefined);
     try {
-      const r = await p.post({ stroke: { kind: "undo", flow: d.flow, index: d.index } });
+      const r = await p.post({
+        stroke: { kind: "undo", flow: d.flow, index: d.index },
+        ...(fingerprint ? { expect: fingerprint } : {}),
+      });
       if (r.problem) setError(r.problem);
       else {
         setWritten(r);
+        setWrote(true);
         setPreview(undefined);
         p.onWritten?.(r);
       }
@@ -448,7 +462,7 @@ export function SketchForm(p: {
           <Diff r={{ files: preview.files }} />
         </>
       )}
-      {written && (
+      {wrote && (
         <div className="stack" role="status">
           <p className="ev-say">{S.written}</p>
           {commit && (

@@ -100,6 +100,10 @@ object Copy {
         "The plugin runs the atticus command line, and couldn't start it. Install it with " +
             "npm install -g @maycombhq/atticus (from your npm mirror) or from the offline bundle " +
             "(no network needed), or set the path to atticus if it is installed somewhere else."
+    /** The oldest atticus the plugin's commands and pages work with. */
+    const val MIN_CLI = "2.0.0-beta.21"
+    fun cliOld(found: String, needed: String) =
+        "Atticus $found is installed, and this plugin needs $needed or newer: some pages and commands will fail until it is updated (npm install -g @maycombhq/atticus@latest, from your npm mirror or the offline bundle)."
     const val INSTALL_GUIDE = "How to install atticus"
     const val SET_PATH = "Set the path to atticus…"
     const val CHECK_AGAIN = "Check again"

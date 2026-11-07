@@ -59,6 +59,10 @@ export function appTokenFrom(stdout: string): string | undefined {
 
 /** What `atticus ui --embed` prints when it took the token the editor gave it. */
 const TOKEN_GIVEN = /session token isn't printed/;
+/** How long atticus ui may take to say its address and token before the start is given up. */
+const START_TIMEOUT_MS = 30_000;
+/** The oldest atticus this extension's flags and pages work with (atticus ui --embed, --parent). */
+export const MIN_CLI = "2.0.0-beta.21";
 
 const attr = (s: string) => s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 
@@ -159,6 +163,17 @@ export function startApp(o: CliOptions, how: { full?: boolean } = {}): Promise<R
     let err = "";
     let url: string | undefined;
     const exits: ((code: number | null) => void)[] = [];
+    // An atticus that never says its address and token (too old, or stuck) doesn't leave the
+    // panel "starting" for good.
+    const timer = setTimeout(() => {
+      if (url) return;
+      stopChild(child);
+      reject(
+        new Error(
+          `atticus ui didn't say its address and session token within ${START_TIMEOUT_MS / 1000}s. Is Atticus up to date (this extension needs ${MIN_CLI})?`,
+        ),
+      );
+    }, START_TIMEOUT_MS);
     child.stdout?.setEncoding("utf8").on("data", (d: string) => {
       for (const l of d.split("\n").filter((x) => x.trim())) log(l.trimEnd());
       if (url) return;
@@ -171,6 +186,7 @@ export function startApp(o: CliOptions, how: { full?: boolean } = {}): Promise<R
       // Both lines are printed one after the other; wait for the token too.
       if (at && token) {
         url = at;
+        clearTimeout(timer);
         resolve({
           url,
           token,
@@ -199,4 +215,21 @@ export function startApp(o: CliOptions, how: { full?: boolean } = {}): Promise<R
       for (const f of exits) f(code);
     });
   });
+}
+
+/** `a` is at least `b`, for versions like 2.0.0-beta.21 (a release is newer than its betas). */
+export function versionAtLeast(a: string, b: string): boolean {
+  const parse = (v: string) => {
+    const m = /(\d+)\.(\d+)\.(\d+)(?:-([a-z]+)\.(\d+))?/i.exec(v);
+    if (!m) return undefined;
+    return {
+      n: [Number(m[1]), Number(m[2]), Number(m[3])],
+      pre: m[4] ? Number(m[5]) : Number.POSITIVE_INFINITY,
+    };
+  };
+  const x = parse(a);
+  const y = parse(b);
+  if (!x || !y) return true; // an unreadable version is given the benefit of the doubt
+  for (let i = 0; i < 3; i++) if (x.n[i] !== y.n[i]) return x.n[i]! > y.n[i]!;
+  return x.pre >= y.pre;
 }

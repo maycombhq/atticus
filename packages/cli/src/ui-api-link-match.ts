@@ -81,14 +81,22 @@ export function uiLinkMatchRoutes(
       const job = ctx.jobs.start("step", async (c) => {
         c.progress(0, 1, `Matching ${from} with ${view.toName}`);
         const signal = currentSignal();
-        done = await runMatch(ctx.root, {
-          view,
-          quotes: quotesOf(facts),
-          mode: "copilot-acp",
-          ...(deps.runner ? { runner: deps.runner } : {}),
-          ...(signal ? { signal } : {}),
-          onProgress: (line) => c.progress(0, 1, line.slice(0, 200)),
-        });
+        try {
+          done = await runMatch(ctx.root, {
+            view,
+            quotes: quotesOf(facts),
+            mode: "copilot-acp",
+            ...(deps.runner ? { runner: deps.runner } : {}),
+            ...(signal ? { signal } : {}),
+            onProgress: (line) => c.progress(0, 1, line.slice(0, 200)),
+          });
+        } catch (e) {
+          // The brief couldn't be written or the answer read: said as failed, not left as a hand-off.
+          const msg = e instanceof Error ? e.message : String(e);
+          const me = running.get(key);
+          if (me) me.error = msg;
+          return { errors: [msg] };
+        }
         const me = running.get(key);
         if (me && done.error) me.error = done.error;
         // The page follows the job's done event (ADR 0015) and reads the match again.

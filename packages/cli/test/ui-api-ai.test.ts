@@ -1,4 +1,4 @@
-import { cp, mkdtemp, readFile } from "node:fs/promises";
+import { cp, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -31,6 +31,15 @@ const call = async (method: string, path: string, body?: unknown) => {
 beforeAll(async () => {
   root = await mkdtemp(join(tmpdir(), "atticus-ui-ai-"));
   await cp(FORGE, root, { recursive: true });
+  // A person's comment inside the file, not only at the top: a save keeps it.
+  const rt = join(root, "org-pack", "runtime.yaml");
+  await writeFile(
+    rt,
+    (await readFile(rt, "utf8")).replace(
+      /^autonomy:/m,
+      "# the autonomy caps are the platform team's\nautonomy:",
+    ),
+  );
   srv = await startServer({
     root,
     port: 0,
@@ -114,6 +123,7 @@ describe("the AI tab's API (ADR 0121)", () => {
     // What the tab didn't touch stays as it was.
     expect(saved.autonomy).toMatchObject({ capPerRepo: { "forge-gateway": "plan-only" } });
     expect((saved.adapters as Record<string, unknown>).gitHost).toEqual({ type: "mock" });
+    expect(await runtimeFile()).toContain("# the autonomy caps are the platform team's");
     const after = (await call("GET", "/api/settings/ai")).body as { keySet: boolean };
     expect(after.keySet).toBe(true);
   });

@@ -206,4 +206,16 @@ class CommandsTest {
         assertEquals(".runs/knowledge-scan/run-20261023034002-0001/prompt.md", Commands.promptPathFrom(out))
         assertNull(Commands.promptPathFrom("Scanned 7 repos."))
     }
+
+    @Test
+    fun `an older atticus is told from a newer one, betas before the release`() {
+        assertEquals("2.0.0-beta.21", Commands.versionIn("atticus 2.0.0-beta.21 (node 22)"))
+        assertNull(Commands.versionIn("nothing here"))
+        assertTrue(Commands.versionAtLeast("2.0.0-beta.21", "2.0.0-beta.21"))
+        assertTrue(Commands.versionAtLeast("2.0.0-beta.22", "2.0.0-beta.21"))
+        assertTrue(Commands.versionAtLeast("2.0.0", "2.0.0-beta.21"))
+        assertTrue(Commands.versionAtLeast("2.1.0-beta.1", "2.0.0-beta.21"))
+        assertFalse(Commands.versionAtLeast("2.0.0-beta.20", "2.0.0-beta.21"))
+        assertFalse(Commands.versionAtLeast("1.9.9", "2.0.0-beta.21"))
+    }
 }

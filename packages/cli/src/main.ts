@@ -848,8 +848,18 @@ export async function main(
   const flags = [
     ...new Set(argv.filter((a) => a.startsWith("--")).map((a) => a.slice(2).split("=")[0]!)),
   ];
+  // The same root the command runs at (--root <dir>, --root=<dir>, or a Copilot session's own).
   const rootAt = argv.indexOf("--root");
-  const root = resolve(rootAt >= 0 && argv[rootAt + 1] ? argv[rootAt + 1]! : process.cwd());
+  const rootEq = argv.find((a) => a.startsWith("--root="));
+  const root = resolve(
+    rootAt >= 0 && argv[rootAt + 1]
+      ? argv[rootAt + 1]!
+      : rootEq
+        ? rootEq.slice("--root=".length)
+        : process.env.ATTICUS_ACP_SESSION && process.env.ATTICUS_ROOT
+          ? process.env.ATTICUS_ROOT
+          : process.cwd(),
+  );
   const log = () =>
     isMetarepoRoot(root) ? createLog(root, o.quiet ? { level: "warn" } : {}) : undefined;
   try {
