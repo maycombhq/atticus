@@ -168,3 +168,25 @@ describe("reconcile: drawn data access", () => {
     ).toBe(false);
   });
 });
+
+describe("a link a person paired (ADR 0174)", () => {
+  it("isn't said to be seen at one end only", async () => {
+    const op = await loadOrgPack(join(FORGE, "metarepo/org-pack"));
+    const profile = op.profiles[0]!.profile!;
+    const id = "if-5c55930b735276a9";
+    const summary = (flags?: string[]) =>
+      reconcile({
+        diagram: readDrawio(readFileSync(join(FORGE, DIAGRAM), "utf8"), profile.legend),
+        file: DIAGRAM,
+        records: catalog().map((r) =>
+          r.id === id
+            ? ({ ...r, confidence: "inferred", ...(flags ? { flags } : {}) } as CatalogRecord)
+            : r,
+        ),
+        systems: profile.systems,
+        patterns: op.patterns,
+      }).items.find((i) => i.type === "code-only" && i.records[0] === id)!.summary;
+    expect(summary()).toContain("seen at one end only");
+    expect(summary(["joined-by-person"])).not.toContain("seen at one end only");
+  });
+});

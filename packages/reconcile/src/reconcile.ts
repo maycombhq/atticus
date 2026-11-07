@@ -1,4 +1,4 @@
-import type { CatalogRecord, IntegrationPattern } from "@maycombhq/core";
+import { JOINED_BY_PERSON, type CatalogRecord, type IntegrationPattern } from "@maycombhq/core";
 import { resolveNames, slug, type NameResolution, type ProfileSystem } from "./aliases.js";
 import type { Diagram, DiagramEdge, Legend } from "./drawio.js";
 
@@ -388,7 +388,7 @@ export function reconcile(input: ReconcileInput): ReconcileResult {
     add({
       key: i.id,
       type: "code-only",
-      summary: `In code ${i.from} ${what} ${i.to}${i.sync === "async" ? "" : ` (${i.method ?? ""} ${i.normalizedPath}`.trimEnd() + ")"}${i.confidence === "inferred" ? ", seen at one end only" : ""}; the diagram doesn't show it.`,
+      summary: `In code ${i.from} ${what} ${i.to}${i.sync === "async" ? "" : ` (${i.method ?? ""} ${i.normalizedPath}`.trimEnd() + ")"}${i.confidence === "inferred" && !i.flags?.includes(JOINED_BY_PERSON) ? ", seen at one end only" : ""}; the diagram doesn't show it.`,
       records: [i.id],
       suggestion: {
         text: `Add it to the diagram, or record why it is left out`,

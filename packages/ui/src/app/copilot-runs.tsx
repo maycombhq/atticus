@@ -167,9 +167,14 @@ export function CopilotRunsProvider({ children }: { children: ReactNode }) {
       setStopping(false);
       return;
     }
+    // When it ends, one more look: lines missed while it ran come back with it.
+    const last = () => void refresh(true);
     // Polled as well as heard, so a page whose events don't come (a VS Code panel) still moves.
     const t = setInterval(() => void refresh(true), hostBridge() ? 1000 : 3000);
-    return () => clearInterval(t);
+    return () => {
+      clearInterval(t);
+      last();
+    };
   }, [running, refresh]);
 
   useLiveEvents((e) => {

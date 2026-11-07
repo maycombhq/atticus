@@ -106,9 +106,17 @@ export async function effectiveRules(
   // The repo type the pack defines (by the manifest, else its fingerprint), else the manifest's
   // type as it is written: a team's rules for "fuse-service" need no repo type defined first.
   // Its checkout when none is given, so a read and a staleness check work out the same type.
-  // (the org pack is loaded once: the base clone found from it, not by loading it again).
-  const clone = isAdopted(root) ? root : baseClonePath(root, repo);
-  const dir = o.dir ?? (op && existsSync(clone) ? clone : undefined);
+  // (the org pack is loaded once: the base clone found from it, not by loading it again; a repo
+  // id the workspace can't name has no clone).
+  const cloneOf = (): string | undefined => {
+    try {
+      const c = isAdopted(root) ? root : baseClonePath(root, repo);
+      return existsSync(c) ? c : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+  const dir = o.dir ?? (op ? cloneOf() : undefined);
   const type = op
     ? ((await repoTypeOf(op, repo, dir))?.id ?? estateRepos(op).find((r) => r.id === repo)?.type)
     : undefined;

@@ -437,6 +437,13 @@ describe("atticus rules import", () => {
     expect((await effectiveRules(root, "forge-refunds")).rules).toEqual([]);
   });
 
+  it("reads a repo whose id the workspace can't name, from the folder given", async () => {
+    const root = metarepo();
+    await expect(effectiveRules(root, "My_Repo", { dir: root })).resolves.toMatchObject({
+      rules: [],
+    });
+  });
+
   it("says when two teams' copies give one key", async () => {
     const root = metarepo();
     const rule = (team: string) =>
