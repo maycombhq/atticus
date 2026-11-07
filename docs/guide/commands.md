@@ -79,6 +79,7 @@ Every command under the twelve, with its options.
   atticus change new "<title>"         Start a change from a template: --type <type>
           [--template id] [--id id] [--owner role=a,b]... [--system id]... [--like <archived change>]
           [--impact <vendor spec>]  (its footprint: what the spec's newer version reaches, see intake impact)
+  atticus change sketch <change> --from <file.drawio|.mmd> [--save] [--json]   Read a draw.io export or a Mermaid flowchart as strokes into the change's target flows (a line marked new or not on today's map is a call or a topic; one marked retired takes today's step out); shows what it would draw, --save draws it (ADR 0179)
   atticus change impact <change> [--json]  What the change's target flows break across the estate: each entry or table, who calls or uses it (a link the map guessed: may break, not counted), the fields that stop crossing and the gateway routes to update, each with its owner team; then who calls the callers, up to five hops up
   atticus change similar "<brief>"     The archived changes nearest a new brief (or --change <id>: a change's own), to start from one with change new --like or change attach --like [--limit n] [--json]
   atticus change feature <change>      The feature stage: your assistant places the change on the estate's flows and features from the brief, stories or a design; checked and criticised every draft until done [--from-figma f.json] [--mode m] [--resume run] [--force] [--context-tokens n] [--whole-context] [--max-tokens n]
@@ -152,6 +153,7 @@ Every other command. `atticus legacy` lists them by area; each runs by its own n
   atticus skills list [--json]         The skills, agents and team instructions the org pack keeps (yours and other teams' imported), and where each is written for Claude and Copilot (ADR 0177)
   atticus skills import <their repo> --team <team> [--at <tag>] [--only <names>] [--replace]   A pinned copy of another team's skills, agents and instructions in the org pack, then written for both assistants; a file edited here is kept
   atticus skills write [--check]       Write .claude/ and .github/ files (and CLAUDE.md's team instructions) from the org pack's sources; --check exits 1 when they are behind
+  atticus connect match <repo> --to <repo> | --system <id> [--mode copilot-acp|hand-off] [--json]   Copilot reads the repo's loose call sites and proposes which of the other box's APIs each reaches, naming the lines; it writes only its answer under proposals/matching/, and nothing is a correction until a person ticks it in the app's Connect panel (ADR 0178)
   atticus rules list [<repo>] [--json]   The organisation's reading rules (ADR 0176): every layer's file, or the rules a repo's reads are given, with their layer, drafts and what is switched off
   atticus rules add --org-wide | --type <t> | --repo <r> --key <k> --rule "..." [--files <glob,glob>] [--example <path:line>] [--draft]   Write a reading rule to a layer's file, for review
   atticus rules activate <key> --org-wide | --type <t> | --repo <r> | --team <team> --type <t>   Give a draft rule to reads (--team: one of another team's imported copy)
