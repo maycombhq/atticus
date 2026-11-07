@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parse, stringify } from "yaml";
-import { FileChangedError, writeFileAtomic } from "./fs.js";
+import { FileChangedError, writeFileAtomic, writeFileIfUnchanged } from "./fs.js";
 import {
   addManifestHost,
   addOutsideSystem,
@@ -1063,6 +1063,6 @@ export async function answerQuestion(
     // TODO(lead, repo types): no skill file for this type yet; the path is in the answer.
     return { question: answered, ...extra, skill: { path: skill, written: false } };
   }
-  await writeFileAtomic(file, withSkillAnswer(body, answered));
+  await writeFileIfUnchanged(file, body, withSkillAnswer(body, answered));
   return { question: answered, ...extra, skill: { path: skill, written: true } };
 }

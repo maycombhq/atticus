@@ -111,7 +111,8 @@ describe("one source, two outputs", () => {
     ]);
     expect(splitFm(skill[2]!.text).fm).toEqual({
       description: "Publish an event.",
-      agent: "agent",
+      // Another team's skill runs as an ask prompt here.
+      agent: "ask",
     });
     expect(skill[0]!.text).toContain(
       "<!-- atticus: written from org-pack/skills/imported/harbor/harbor-publish (harbor)",
@@ -157,21 +158,32 @@ describe("one source, two outputs", () => {
 });
 
 describe("another team's frontmatter", () => {
-  it("keeps what describes it and what narrows an agent; an agent with no tools reads only", () => {
+  it("keeps what describes it; an agent of theirs reads only, whatever tools it asks for", () => {
     expect(
       teamFrontmatter("agent", { name: "a", tools: "Read, Grep", model: "x", hooks: {} }),
     ).toEqual({
       fm: { name: "a", tools: "Read, Grep" },
       dropped: ["model", "hooks"],
       readOnly: false,
+      toolsLeft: [],
     });
-    expect(teamFrontmatter("agent", { name: "a" })).toMatchObject({
-      fm: { name: "a", tools: "Read, Grep, Glob" },
-      readOnly: true,
+    expect(teamFrontmatter("agent", { name: "a", tools: ["Bash", "Read"] })).toMatchObject({
+      fm: { tools: "Read" },
+      toolsLeft: ["Bash"],
     });
+    for (const tools of [undefined, null, "", [], "*", "Bash, Write"])
+      expect(teamFrontmatter("agent", { name: "a", tools }).fm.tools).toBe("Read, Grep, Glob");
     expect(teamFrontmatter("skill", { name: "s", "allowed-tools": "Bash" }).dropped).toEqual([
       "allowed-tools",
     ]);
+  });
+
+  it("writes their agent read-only for Copilot too, and their skill as an ask prompt", () => {
+    const team = { source: "s", team: "harbor", files: [] as { path: string; text: string }[] };
+    const agent = outputsOf({ ...team, kind: "agent", name: "a", text: "---\nname: a\n---\nX\n" });
+    expect(splitFm(agent[1]!.text).fm.tools).toEqual(["read", "search"]);
+    const skill = outputsOf({ ...team, kind: "skill", name: "s", text: "---\nname: s\n---\nX\n" });
+    expect(splitFm(skill.at(-1)!.text).fm.agent).toBe("ask");
   });
 });
 
@@ -182,6 +194,7 @@ describe("where a copy came from", () => {
       "https://git.example.com/o/r.git",
     );
     expect(await at("git@git.example.com:o/r.git")).toBe("git@git.example.com:o/r.git");
+    expect(await at("https://user:pa@ss@git.example.com/r")).toBe("https://git.example.com/r");
     expect(await at("/home/tom/repos/their")).toBe("their");
     expect(await at("C:\\Users\\tom\\their")).toBe("their");
     expect(await at("file:///home/tom/their")).toBe("their");

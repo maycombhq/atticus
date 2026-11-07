@@ -138,19 +138,38 @@ const TEAM_KEYS: Record<Kind, ReadonlySet<string>> = {
   agent: new Set(["name", "description", "tools", "disallowedTools"]),
   instructions: new Set(["name", "description"]),
 };
-/** An agent of another team's that names no tools reads only (Claude gives one with none all). */
-const TEAM_AGENT_TOOLS = "Read, Grep, Glob";
+/**
+ * The tools another team's agent may have here: reading only. Their list is kept where it names
+ * these (it narrows); anything more (Bash, Write, an MCP tool, `*`) a person gives it in their
+ * own copy. An agent with no list, or an empty one, gets all tools in Claude and Copilot, so it
+ * is given these.
+ */
+const TEAM_READ_TOOLS = ["Read", "Grep", "Glob"] as const;
+/** The same for Copilot's agent files (its tool set names). */
+const TEAM_COPILOT_TOOLS = ["read", "search"] as const;
+
+const namesOf = (v: unknown): string[] =>
+  (Array.isArray(v) ? v.map(String) : typeof v === "string" ? v.split(",") : [])
+    .map((x) => x.trim())
+    .filter(Boolean);
 
 /** Another team's frontmatter as written here, and the keys left out (said to the person). */
 export function teamFrontmatter(
   kind: Kind,
   fm: Record<string, unknown>,
-): { fm: Record<string, unknown>; dropped: string[]; readOnly: boolean } {
+): { fm: Record<string, unknown>; dropped: string[]; readOnly: boolean; toolsLeft: string[] } {
   const keep = TEAM_KEYS[kind];
   const out = Object.fromEntries(Object.entries(fm).filter(([k]) => keep.has(k)));
-  const readOnly = kind === "agent" && out.tools === undefined;
-  if (readOnly) out.tools = TEAM_AGENT_TOOLS;
-  return { fm: out, dropped: Object.keys(fm).filter((k) => !keep.has(k)), readOnly };
+  let readOnly = false;
+  let toolsLeft: string[] = [];
+  if (kind === "agent") {
+    const asked = namesOf(fm.tools);
+    const kept = asked.filter((t) => (TEAM_READ_TOOLS as readonly string[]).includes(t));
+    toolsLeft = asked.filter((t) => !kept.includes(t));
+    readOnly = kept.length === 0;
+    out.tools = (readOnly ? [...TEAM_READ_TOOLS] : kept).join(", ");
+  }
+  return { fm: out, dropped: Object.keys(fm).filter((k) => !keep.has(k)), readOnly, toolsLeft };
 }
 
 /** What each assistant reads, written from one source item. */
@@ -178,7 +197,8 @@ export function outputsOf(i: SourceItem): { path: string; text: string }[] {
         ...i.files.map((f) => ({ path: `.claude/skills/${i.name}/${f.path}`, text: f.text })),
         {
           path: `.github/prompts/${i.name}.prompt.md`,
-          text: `${fmText({ description, agent: "agent" })}${mark}\n${body}${i.files.length ? `\n\nThis skill's files are in \`.claude/skills/${i.name}/\`: ${i.files.map((f) => `\`${f.path}\``).join(", ")}.\n` : ""}`,
+          // Another team's runs in ask mode (it reads; it edits nothing and runs no command).
+          text: `${fmText({ description, agent: i.team ? "ask" : "agent" })}${mark}\n${body}${i.files.length ? `\n\nThis skill's files are in \`.claude/skills/${i.name}/\`: ${i.files.map((f) => `\`${f.path}\``).join(", ")}.\n` : ""}`,
         },
       ];
     case "agent":
@@ -189,7 +209,8 @@ export function outputsOf(i: SourceItem): { path: string; text: string }[] {
         },
         {
           path: `.github/agents/${i.name}.agent.md`,
-          text: `${fmText({ name: i.name, description })}${mark}\n${body}`,
+          // Another team's reads only in Copilot too (an agent with no tools there gets them all).
+          text: `${fmText({ name: i.name, description, ...(i.team ? { tools: [...TEAM_COPILOT_TOOLS] } : {}) })}${mark}\n${body}`,
         },
       ];
     case "instructions":
@@ -490,8 +511,11 @@ export async function skillsImportCommand(
           ? join(pack, "skills", "imported", o.team, f.name)
           : join(pack, f.kind === "agent" ? "agents" : "instructions", "imported", o.team);
       const files: Record<string, string> = {};
+      // Whether the item's file came in (a link out of their repo is refused).
+      let copied = true;
       const copy = async (src: string, to: string, key: string) => {
         if (!inside(dir, src)) {
+          copied = false;
           notes.push(`left out ${src}: it isn't in their repo (a link to somewhere else)`);
           return;
         }
@@ -542,12 +566,18 @@ export async function skillsImportCommand(
         f.kind,
         splitFm(await readFile(mainFile, "utf8").catch(() => "")).fm,
       );
-      if (t.dropped.length)
+      if (t.dropped.length && copied)
         notes.push(
           `${f.name}: left out of what the assistants read: ${t.dropped.join(", ")} (another team's file can't give itself these here; set them in your own copy if you want them)`,
         );
-      if (t.readOnly)
-        notes.push(`${f.name} names no tools, so it is written to read only (${TEAM_AGENT_TOOLS})`);
+      if (f.kind === "agent" && copied)
+        notes.push(
+          t.toolsLeft.length
+            ? `${f.name} asks for ${t.toolsLeft.join(", ")}: another team's agent reads only here (${TEAM_READ_TOOLS.join(", ")}); give it more in your own copy if you want`
+            : t.readOnly
+              ? `${f.name} names no read tools, so it is written to read only (${TEAM_READ_TOOLS.join(", ")})`
+              : `${f.name} reads only, as its tools say`,
+        );
       items.push({ kind: f.kind, name: f.name, files, from: origin, at: o.at ?? "working copy" });
     }
     await mkdir(dirname(provPath), { recursive: true });

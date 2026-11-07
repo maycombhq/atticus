@@ -215,7 +215,13 @@ describe("canvas views kept in the metarepo, and a cited line to open (ADR 0175,
     expect(list.views.map((v) => v.name)).toEqual(["ledger-only"]);
     expect((await call(srv, "/api/graph/views/Not%20One", { method: "PUT", body })).status).toBe(
       400,
+    ); // A view kept already is replaced only when asked.
+    expect((await call(srv, "/api/graph/views/ledger-only", { method: "PUT", body })).status).toBe(
+      409,
     );
+    expect(
+      (await call(srv, "/api/graph/views/ledger-only?replace=1", { method: "PUT", body })).status,
+    ).toBe(200);
   });
 
   it("says when a repo has no checkout here, and refuses a path that climbs out", async () => {

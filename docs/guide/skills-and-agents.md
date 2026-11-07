@@ -29,6 +29,6 @@ A written file you edit, or an imported copy you change, is left as it is on the
 
 ## What another team's files may set here
 
-A copy of another team's file is written for the assistants with only the frontmatter that describes it: `name` and `description`, and for an agent `tools` and `disallowedTools`, which can only narrow what it may do. Anything that would give it more here (a skill's `allowed-tools`, `hooks`, `model`, `permissionMode`, an instructions file's `applyTo`) is left out, and `atticus skills import` names what it left out. An agent of theirs that names no tools is written to read only (`Read, Grep, Glob`), since an agent with no `tools` gets every tool. To give one more, copy it into your own skills or agents and set it there, in a reviewed change.
+A copy of another team's file is written for the assistants with only the frontmatter that describes it (`name`, `description`). Their agent reads only, in Claude (`tools: Read, Grep, Glob`, or fewer if it names fewer) and in Copilot (`tools: [read, search]`), whatever tools it asks for, and their skill runs as an `ask` prompt in Copilot. Anything else (`allowed-tools`, `hooks`, `model`, `permissionMode`, an instructions file's `applyTo`) is left out, and `atticus skills import` names what it left out. To give one of theirs more, copy it into your own skills or agents and set it there, in a reviewed change.
 
 Each imported item records where it came from (their remote, never a folder on this machine) and the tag it came at.

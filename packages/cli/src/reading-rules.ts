@@ -208,13 +208,19 @@ export const exampleOf = (e: string | undefined): string => {
   if (!e || e.length > 300) return "";
   const m = /^(.+):(\d+)$/.exec(e);
   if (!m) return "";
-  const segs = m[1]!.split("/");
+  // Windows paths read as forward ones; a drive's letter is no folder.
+  const segs = m[1]!
+    .replace(/\\/g, "/")
+    .replace(/^[A-Za-z]:\//, "")
+    .split("/");
   const last = segs.at(-1)!;
   // Folders may have spaces ("Forge Accounts"); the file is name.ext with none; no part is a
   // sentence (". ", a backtick, a line break).
+  // The file: a name with no spaces (a.ts, Dockerfile, .env); folders: a few words at most, no
+  // sentence marks (": , . ` !?" followed by a space, a line break).
   const ok =
-    /^[^\s`/]+\.[^\s`/.]+$/.test(last) &&
-    segs.slice(0, -1).every((x) => x.length > 0 && !/[`\n\r]|\.\s/.test(x)) &&
+    /^[^\s`/:,]+$/.test(last) &&
+    segs.slice(0, -1).every((x) => !/[`\n\r:,!?]|\.\s/.test(x) && x.split(/\s+/).length <= 3) &&
     segs.join(" ").split(/\s+/).length <= 8;
   return ok ? ` For example ${e}.` : "";
 };

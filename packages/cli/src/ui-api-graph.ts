@@ -21,6 +21,7 @@ import {
 } from "@maycombhq/diagrams";
 import {
   badRequest,
+  conflict,
   HttpError,
   notFound,
   type Router,
@@ -158,7 +159,7 @@ export function uiGraphRoutes(r: Router, ctx: ServerContext): Router {
           body: { views, dir: "diagrams/views" } satisfies Api.SavedCanvasViewsT,
         };
       })
-      .add("PUT", "/api/graph/views/{name}", async ({ params, body }) => {
+      .add("PUT", "/api/graph/views/{name}", async ({ params, body, query }) => {
         const b = Api.SavedCanvasView.safeParse({ ...(body as object), name: params.name });
         if (!b.success)
           throw badRequest(
@@ -169,6 +170,11 @@ export function uiGraphRoutes(r: Router, ctx: ServerContext): Router {
           );
         const v = { ...b.data, by: ctx.user, at: new Date().toISOString() };
         const rel = `diagrams/views/${v.name}.yaml`;
+        // A view kept already (perhaps a teammate's, committed) is replaced only when asked.
+        if (existsSync(join(ctx.root, rel)) && query.get("replace") !== "1")
+          throw conflict(
+            `There is a view ${v.name} already (${rel}): pick another name, or replace it.`,
+          );
         await writeFileAtomic(join(ctx.root, rel), stringify(v));
         ctx.events.publish({ type: "file.changed", path: rel });
         return { status: 200, body: v };

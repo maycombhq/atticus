@@ -166,7 +166,8 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  * 2.56.0 (ADR 0173, review): GET /api/copilot-runs/current takes `tail` (each tab's last lines,
  *   200 by default; 0 for all) and GET /api/copilot-runs/{runId}/tabs/{tab}?from=N gives a tab's
  *   lines from a line on; GET /api/links/candidates says `why: unverified` on noCalls and noApis
- *   for a repo whose facts aren't all verified. Additive only.
+ *   for a repo whose facts aren't all verified; PUT /api/graph/views/{name} replaces a view kept
+ *   already only with `replace=1` (409 otherwise). A changed file is 409 on every write.
  */
 export const API_VERSION = "2.56.0";
 export const DEFAULT_PORT = 4321;
@@ -4473,10 +4474,10 @@ const OPS: Record<string, Record<string, Op>> = {
       id: "putCanvasView",
       summary: "Keep a canvas view by name in diagrams/views/<name>.yaml, for review (ADR 0175)",
       tag: "views",
-      params: [p("name")],
+      params: [p("name"), q("replace", str, "1 to replace a view of that name kept already")],
       body: SavedCanvasView,
       ok: { status: 200, schema: "SavedCanvasView", description: "Kept" },
-      errors: [400],
+      errors: [400, 409],
     },
   },
   "/api/code-link": {

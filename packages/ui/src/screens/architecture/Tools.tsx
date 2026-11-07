@@ -145,7 +145,8 @@ export function CanvasTools(p: {
     setError(undefined);
     try {
       const v = await api<Api.SavedCanvasViewT>(
-        `/api/graph/views/${encodeURIComponent(viewName)}`,
+        // A name kept already is replaced: the button said Replace.
+        `/api/graph/views/${encodeURIComponent(viewName)}${views.state === "ready" && views.data.views.some((v) => v.name === viewName) ? "?replace=1" : ""}`,
         {
           method: "PUT",
           body: {

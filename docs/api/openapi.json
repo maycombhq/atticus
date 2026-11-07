@@ -6747,6 +6747,15 @@
               "type": "string"
             },
             "required": true
+          },
+          {
+            "name": "replace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "1 to replace a view of that name kept already",
+            "required": false
           }
         ],
         "requestBody": {
@@ -6835,6 +6844,16 @@
           },
           "401": {
             "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict: the file changed since you read it, or the state doesn't allow this",
             "content": {
               "application/problem+json": {
                 "schema": {
