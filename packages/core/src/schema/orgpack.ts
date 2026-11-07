@@ -602,7 +602,7 @@ export const Sources = z
               .string()
               .min(1)
               .max(200)
-              .regex(/^[A-Za-z0-9][A-Za-z0-9._\/-]*$/, "a branch or tag name")
+              .regex(/^[A-Za-z0-9][A-Za-z0-9._/-]*$/, "a branch or tag name")
               .optional(),
             /** The folder of a git wiki its pages are in; default the whole repository. */
             path: RelPath.optional(),

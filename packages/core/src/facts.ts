@@ -369,7 +369,13 @@ export function projectFacts(input: readonly Fact[], opts: ProjectOptions = {}):
         evidence: byPerson
           ? [
               evidenceOf(f, "code", "caller"),
-              { source: "manual", repo: f.repo, path: f.cite.file, line: f.cite.line, by: "person" },
+              {
+                source: "manual",
+                repo: f.repo,
+                path: f.cite.file,
+                line: f.cite.line,
+                by: "person",
+              },
             ]
           : [evidenceOf(f, "code", "caller")],
       } as CatalogRecord);

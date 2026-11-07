@@ -57,7 +57,7 @@ async function datesOf(git: GitRun, dir: string, path?: string): Promise<Map<str
 
 /** A ref as the org pack may name one: never a word git would read as an option. */
 const safeRef = (ref: string) => {
-  if (!/^[A-Za-z0-9][A-Za-z0-9._\/-]*$/.test(ref))
+  if (!/^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(ref))
     throw new Error(`${ref} isn't a branch or tag name git takes (sources.yaml ref)`);
   return ref;
 };

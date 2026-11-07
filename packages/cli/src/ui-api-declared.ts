@@ -9,7 +9,6 @@ import {
   factsDirOf,
   factsRelOf,
   FileChangedError,
-  isAdopted,
   loadOrgPack,
   orgPackDirOf,
   parseCorrections,

@@ -25,7 +25,9 @@ describe("the loading bar's count", () => {
       () =>
         new Promise((r) => {
           release = () =>
-            r(new Response(JSON.stringify({}), { headers: { "content-type": "application/json" } }));
+            r(
+              new Response(JSON.stringify({}), { headers: { "content-type": "application/json" } }),
+            );
         }),
     );
     const p = api("/api/x");
