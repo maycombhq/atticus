@@ -85,6 +85,11 @@ export function factsDirOf(root: string): string {
   return join(root, ...factsRelOf(root).split("/"));
 }
 
+/** The diagrams folder (kept arrangements and views, ADR 0081, 0175), relative to the root: `diagrams`, or `.atticus/diagrams` when adopted. */
+export function diagramsRelOf(root: string): string {
+  return isAdopted(root) ? ".atticus/diagrams" : "diagrams";
+}
+
 /** Where evidence from outside the code lives (ADR 0151), relative to the root: `evidence`, or `.atticus/evidence` when adopted. */
 export function evidenceRelOf(root: string): string {
   return isAdopted(root) ? ".atticus/evidence" : "evidence";

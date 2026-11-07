@@ -153,7 +153,7 @@ export async function addOutsideSystem(
       throw new Error(
         `${rel} would not be valid: ${checked.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`,
       );
-    await writeFileIfUnchanged(file, before, doc.toString());
+    await writeFileIfUnchanged(file, before, inEol(doc.toString(), eolOf(before ?? "")));
     return { id: sys.id, profile: rel, added: true };
   }
   throw new Error(`${repo} isn't in any repos.manifest.yaml`);
@@ -220,7 +220,7 @@ export async function addProfileSystem(
         if (isSeq(list)) for (const t of missing) list.add(doc.createNode(t));
         else node.set("topics", doc.createNode([...(had.topics ?? []), ...missing]));
         valid(doc, platform);
-        await writeFileIfUnchanged(file, text, doc.toString());
+        await writeFileIfUnchanged(file, text, inEol(doc.toString(), eolOf(text!)));
       }
     }
     return {
@@ -318,7 +318,7 @@ export async function addManifestHost(
     if (o.basePath && had === undefined) node.set("basePath", o.basePath);
     // The manifest must still be one Atticus reads before it is written.
     RepoManifest.parse(doc.toJS());
-    await writeFileIfUnchanged(file, text, doc.toString());
+    await writeFileIfUnchanged(file, text, inEol(doc.toString(), eolOf(text)));
     return { manifest: rel, added: true };
   }
   throw new Error(`${repo} isn't in any repos.manifest.yaml`);

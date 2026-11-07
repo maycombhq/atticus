@@ -15,6 +15,7 @@ import {
   parseFactsLines,
   sampleConfirmed,
   type Fact,
+  FactId,
 } from "@maycombhq/core";
 import {
   applyCorrections,
@@ -220,6 +221,8 @@ export function uiFactsRoutes(
       .add("GET", "/api/facts/{repo}/preview", async ({ params, query }) => {
         const repo = repoOf(params.repo!);
         const fact = query.get("fact") || undefined;
+        if (fact && !FactId.safeParse(fact).success)
+          throw badRequest(`${JSON.stringify(fact)} isn't a fact id.`);
         const { verifyWritePreview } = await import("./verify-preview.js");
         const v = await verifyWritePreview(ctx.root, repo, fact ? { fact } : {});
         if (!v)

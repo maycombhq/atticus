@@ -237,7 +237,15 @@ export function App() {
       <CopilotRunsProvider>
         <div className="shell">
           <LoadingBar />
-          <a className="skip" href="#main">
+          <a
+            className="skip"
+            href="#main"
+            onClick={(e) => {
+              // The address is the screen (#/...): the skip link moves focus, never the address.
+              e.preventDefault();
+              document.getElementById("main")?.focus();
+            }}
+          >
             {T.skipToContent}
           </a>
           <Nav current={current} hash={hash} full={full} />

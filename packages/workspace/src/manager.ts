@@ -142,7 +142,7 @@ export function createWorkspace(root: string, git: GitRunner = createGit()): Wor
         reason: `your clone at ${from} has no ${branch} branch; fetch it there, or sync without --from`,
       };
     await g(["clone", "--quiet", "--no-tags", "--no-checkout", "--", from, dest]);
-    await g(["remote", "set-url", "origin", repo.url], dest);
+    await g(["remote", "set-url", "origin", "--", repo.url], dest);
     // Your clone's own branches came over as origin/*: replace them with the one we read.
     const refs = (
       await g(["for-each-ref", "--format=%(refname)", "refs/remotes/origin"], dest)

@@ -187,6 +187,36 @@ describe("an unattended Copilot run started from the app (ADR 0173)", () => {
     expect((await call(srv, "POST", `/api/copilot-runs/${id}/stop`)).status).toBe(409);
   });
 
+  it("tells the pages the facts changed when the run fails part-way", async () => {
+    const failing = await startServer({
+      root: await metarepo(RUNTIME_ACP),
+      port: 0,
+      extend: (r, ctx) =>
+        uiCopilotRunRoutes(r, ctx, {
+          flushMs: 1,
+          start: async (_o, io, deps) => {
+            deps.onEvent?.({
+              type: "plan",
+              repos: [{ repo: "forge-ledger", kind: "read", parts: 1 }],
+            });
+            io.out("one repo written");
+            throw new Error("the second repo's clone is gone");
+          },
+        }),
+    });
+    const seen: Record<string, unknown>[] = [];
+    failing.events.listen((e) => seen.push(e as Record<string, unknown>));
+    try {
+      expect((await call(failing, "POST", "/api/copilot-runs", { kind: "stale" })).status).toBe(
+        202,
+      );
+      await until(async () => (await current(failing)).run?.state === "failed");
+      expect(seen.some((e) => e.type === "file.changed" && e.path === "facts")).toBe(true);
+    } finally {
+      await failing.close();
+    }
+  });
+
   it("starts only one of two asks that come at once (a double click, or two windows)", async () => {
     const [x, y] = await Promise.all([
       call(srv, "POST", "/api/copilot-runs", { kind: "gaps" }),

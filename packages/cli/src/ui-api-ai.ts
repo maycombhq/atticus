@@ -10,7 +10,9 @@ import {
   loadOrgPack,
   orgPackDirOf,
   Runtime,
-  writeFileAtomic,
+  eolOf,
+  inEol,
+  writeFileIfUnchanged,
   type OrgPack,
 } from "@maycombhq/core";
 import {
@@ -150,9 +152,15 @@ export function uiAiRoutes(r: Router, ctx: ServerContext, deps: AiDeps = {}): Ro
         const header = (text ?? "")
           .split(/\r?\n/)
           .filter((l, i, a) => a.slice(0, i + 1).every((x) => x.startsWith("#")));
-        await writeFileAtomic(
+        // Only onto the file as read (another window or the CLI meanwhile is a 409), in its own
+        // line endings.
+        await writeFileIfUnchanged(
           file(),
-          `${header.length ? `${header.join("\n")}\n` : ""}${stringify(raw, { lineWidth: 0 })}`,
+          text,
+          inEol(
+            `${header.length ? `${header.join("\n")}\n` : ""}${stringify(raw, { lineWidth: 0 })}`,
+            eolOf(text ?? ""),
+          ),
         );
         return {
           status: 200,

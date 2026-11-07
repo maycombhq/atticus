@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { request } from "node:http";
-import { join } from "node:path";
+import { join, relative, sep } from "node:path";
 import * as vscode from "vscode";
 import {
   actionFor,
@@ -1460,8 +1460,15 @@ ${view.next.why}`
   const appFiles = vscode.workspace.createFileSystemWatcher(
     "**/{specs,catalog,openspec,questions,knowledge,org-pack,proposals,inputs,.runs,history}/**/*",
   );
-  const toAppPath = (u: vscode.Uri) =>
-    toApp({ type: "file.changed", path: vscode.workspace.asRelativePath(u, false) });
+  // Relative to the metarepo (the app's paths are), not to the workspace folder it sits in.
+  const toAppPath = (u: vscode.Uri) => {
+    const root = svc.root;
+    const rel =
+      root && u.fsPath.startsWith(root)
+        ? relative(root, u.fsPath).split(sep).join("/")
+        : vscode.workspace.asRelativePath(u, false);
+    toApp({ type: "file.changed", path: rel });
+  };
   context.subscriptions.push(
     appFiles,
     appFiles.onDidChange(toAppPath),

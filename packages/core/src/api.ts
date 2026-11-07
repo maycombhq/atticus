@@ -168,8 +168,12 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   lines from a line on; GET /api/links/candidates says `why: unverified` on noCalls and noApis
  *   for a repo whose facts aren't all verified; PUT /api/graph/views/{name} replaces a view kept
  *   already only with `replace=1` (409 otherwise). A changed file is 409 on every write.
+ * 2.57.0 (ADR 0178): GET /api/links/candidates gives each call its likeliest APIs (`suggestions`,
+ *   at most three) and `confident` on a sure one; an API carries `words` (an operationId) and a
+ *   gateway route `forwards`; more ways a call is matched (its settings filled in, a version
+ *   prefix, the operation's name, what a route forwards to). Additive only.
  */
-export const API_VERSION = "2.56.0";
+export const API_VERSION = "2.57.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -2974,6 +2978,19 @@ export type KeptCandidateT = z.infer<typeof KeptCandidate>;
 export const LinkBox = z
   .strictObject({ repo: z.string().min(1).optional(), system: z.string().min(1).optional() })
   .refine((b) => !!b.repo !== !!b.system, { message: "name a repo or a system" });
+export const CandidateSuggestion = z.object({
+  api: z.string(),
+  score: z.number(),
+  why: z.enum([
+    "same-path",
+    "prefix",
+    "parameter",
+    "names-alike",
+    "setting",
+    "operation-words",
+    "forwarded-path",
+  ]),
+});
 export const CandidateCallView = z.object({
   fact: z.string(),
   callType: z.string(),
@@ -2983,13 +3000,11 @@ export const CandidateCallView = z.object({
   status: z.enum(["asked", "missed", "left", "outside", "unresolved", "paired"]),
   why: z.string().optional(),
   paired: z.string().optional(),
-  suggestion: z
-    .object({
-      api: z.string(),
-      score: z.number(),
-      why: z.enum(["same-path", "prefix", "parameter", "names-alike"]),
-    })
-    .optional(),
+  suggestion: CandidateSuggestion.optional(),
+  /** 2.57: the APIs it most likely is, best first, at most three. */
+  suggestions: z.array(CandidateSuggestion).max(3).optional(),
+  /** 2.57: the best suggestion is sure and well ahead: Pair all confident takes it. */
+  confident: z.boolean().optional(),
 });
 export const CandidateApiView = z.object({
   id: z.string(),
@@ -2997,6 +3012,10 @@ export const CandidateApiView = z.object({
   method: z.string().optional(),
   path: z.string(),
   at: z.string().optional(),
+  /** 2.57: words that name it besides its path (an operationId). */
+  words: z.string().optional(),
+  /** 2.57: a gateway route: the path it forwards to. */
+  forwards: z.string().optional(),
 });
 export const LinkCandidatesView = z.object({
   from: z.string(),
@@ -4657,6 +4676,7 @@ const OPS: Record<string, Record<string, Op>> = {
       tag: "release",
       params: [q("change"), q("all", { type: "boolean" })],
       ok: { status: 200, schema: { type: "object" }, description: "OK" },
+      errors: [422],
     },
   },
   "/api/todo/{stepId}/export": {
@@ -4855,6 +4875,17 @@ const OPS: Record<string, Record<string, Op>> = {
       tag: "run",
       body: z.record(z.string(), z.unknown()),
       ok: { status: 200, schema: { type: "object" }, description: "OK" },
+      errors: [409, 422],
+    },
+  },
+  "/api/settings/ai/key": {
+    post: {
+      id: "putAiKey",
+      summary:
+        "Keep the model provider's key in this machine's credential store under keyEnv's name; never in a file, a log or an answer",
+      tag: "run",
+      body: z.object({ name: z.string(), value: z.string() }),
+      ok: { status: 200, schema: { type: "object" }, description: "OK" },
       errors: [422],
     },
   },
@@ -5004,7 +5035,7 @@ const OPS: Record<string, Record<string, Op>> = {
       tag: "questions",
       params: [p("id")],
       ok: { status: 200, schema: "Question", description: "OK" },
-      errors: [404],
+      errors: [404, 422],
     },
   },
   "/api/questions/{id}/answer": {
@@ -5159,7 +5190,7 @@ const OPS: Record<string, Record<string, Op>> = {
       tag: "changes",
       params: [p("changeId")],
       ok: { status: 200, schema: "ChangeNeedsView", description: "OK" },
-      errors: [400, 404],
+      errors: [400, 404, 422],
     },
   },
   "/api/changes/{changeId}/needs/{itemId}": {

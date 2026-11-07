@@ -16,6 +16,8 @@ import {
   ReadingRule,
   ReadingRulesFile,
   FileChangedError,
+  eolOf,
+  inEol,
   writeFileAtomic,
   writeFileIfUnchanged,
   type Fact,
@@ -97,10 +99,12 @@ async function saveDoc(
   if (!r.success)
     return r.error.issues.map((i) => `${i.path.join(".") || "(top)"}: ${i.message}`).join("; ");
   await mkdir(join(path, ".."), { recursive: true });
-  if (before === null) await writeFileAtomic(path, doc.toString({ lineWidth: 0 }));
+  // In the file's own line endings (a Windows checkout's CRLF); a new copy as LF.
+  const out = inEol(doc.toString({ lineWidth: 0 }), eolOf(before ?? ""));
+  if (before === null) await writeFileAtomic(path, out);
   else {
     try {
-      await writeFileIfUnchanged(path, before, doc.toString({ lineWidth: 0 }));
+      await writeFileIfUnchanged(path, before, out);
     } catch (e) {
       if (e instanceof FileChangedError) return e.message;
       throw e;

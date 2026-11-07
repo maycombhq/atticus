@@ -54,7 +54,8 @@ export function initialPicks(v: Api.LinkCandidatesViewT): {
     if (c.status === "paired") continue;
     if (c.suggestion) {
       picked[c.fact] = c.suggestion.api;
-      ticked.add(c.fact);
+      // Only the confident ones start ticked: the rest a person looks at (Tick all suggested).
+      if (c.confident) ticked.add(c.fact);
     }
   }
   return { picked, ticked };
@@ -121,6 +122,25 @@ export function Pairing(p: {
     setTicked(i.ticked);
   }, [v]);
   const loose = useMemo(() => v?.calls.filter((c) => c.status !== "paired") ?? [], [v]);
+  const [find, setFind] = useState("");
+  const tally = useMemo(
+    () => ({
+      confident: loose.filter((c) => c.confident).length,
+      suggested: loose.filter((c) => c.suggestion).length,
+      none: loose.filter((c) => !c.suggestion).length,
+    }),
+    [loose],
+  );
+  const tick = (which: "confident" | "suggested" | "none") =>
+    setTicked(
+      which === "none"
+        ? new Set()
+        : new Set(
+            loose
+              .filter((c) => c.suggestion && (which === "suggested" || c.confident))
+              .map((c) => c.fact),
+          ),
+    );
   const pairs = pairsOf(picked, ticked);
   const post =
     p.post ??
@@ -217,6 +237,44 @@ export function Pairing(p: {
       )}
       {!d.noCalls && !loose.length && <p className="ev-say">{C.noLoose}</p>}
       {loose.length > 0 && d.apis.length > 0 && (
+        <>
+          <p className="ev-say">{C.tally(tally.confident, tally.suggested, tally.none)}</p>
+          <div className="row" style={{ gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+            {tally.confident > 0 && (
+              <button type="button" className="btn" onClick={() => tick("confident")}>
+                {C.tickConfident(tally.confident)}
+              </button>
+            )}
+            {tally.suggested > 0 && (
+              <button type="button" className="btn" onClick={() => tick("suggested")}>
+                {C.tickSuggested(tally.suggested)}
+              </button>
+            )}
+            {ticked.size > 0 && (
+              <button type="button" className="btn" onClick={() => tick("none")}>
+                {C.untickAll}
+              </button>
+            )}
+            {d.apis.length > 20 && (
+              <>
+                <label htmlFor="connect-find" className="sr">
+                  {C.findApi}
+                </label>
+                <input
+                  id="connect-find"
+                  className="field"
+                  type="search"
+                  placeholder={C.findApi}
+                  value={find}
+                  onChange={(e) => setFind(e.target.value)}
+                  style={{ minWidth: 240 }}
+                />
+              </>
+            )}
+          </div>
+        </>
+      )}
+      {loose.length > 0 && d.apis.length > 0 && (
         <table className="run-table">
           <caption className="hud" style={{ textAlign: "left" }}>
             {C.caption(d.from, d.toName)}
@@ -269,11 +327,37 @@ export function Pairing(p: {
                       }}
                     >
                       <option value="">{C.pickApi}</option>
-                      {d.apis.map((a) => (
-                        <option key={a.id} value={a.id}>
-                          {`${a.method ?? ""} ${a.path}`.trim()}
-                        </option>
-                      ))}
+                      {/* The likely ones first; then every API, narrowed by the search box. */}
+                      {c.suggestions?.length ? (
+                        <optgroup label={C.likely}>
+                          {c.suggestions.map((s) => {
+                            const a = d.apis.find((x) => x.id === s.api);
+                            return a ? (
+                              <option key={a.id} value={a.id}>
+                                {`${a.method ?? ""} ${a.path}`.trim()} · {C.why[s.why] ?? s.why}
+                              </option>
+                            ) : null;
+                          })}
+                        </optgroup>
+                      ) : null}
+                      <optgroup label={C.allApis}>
+                        {d.apis
+                          .filter((a) => {
+                            const q = find.trim().toLowerCase();
+                            if (!q) return true;
+                            const text =
+                              `${a.method ?? ""} ${a.path} ${a.words ?? ""}`.toLowerCase();
+                            return (
+                              q.split(/\s+/).every((w) => text.includes(w)) ||
+                              a.id === picked[c.fact]
+                            );
+                          })
+                          .map((a) => (
+                            <option key={a.id} value={a.id}>
+                              {`${a.method ?? ""} ${a.path}`.trim()}
+                            </option>
+                          ))}
+                      </optgroup>
                     </select>
                     {c.suggestion && picked[c.fact] === c.suggestion.api && (
                       <div className="hud">{C.suggested(C.why[c.suggestion.why]!)}</div>

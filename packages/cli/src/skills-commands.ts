@@ -591,7 +591,10 @@ export async function skillsImportCommand(
         for (const p of (await filesUnder(dest).catch(() => [])).filter((x) => !theirsNow.has(x))) {
           const here = await readFile(join(dest, ...p.split("/")), "utf8").catch(() => undefined);
           const before = was.get(`${f.kind}:${f.name}`)?.[p];
-          if (here !== undefined && before && sha(here) !== before && !o.replace) {
+          if (here !== undefined && !before) {
+            // Never theirs: a file a person added here stays, and isn't in the record.
+            notes.push(`kept ${f.name}/${p}: added here, not one of ${o.team}'s`);
+          } else if (here !== undefined && before && sha(here) !== before && !o.replace) {
             notes.push(`kept ${f.name}/${p}: ${o.team} removed it, but it was edited here`);
             files[p] = before;
           } else {

@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { api, useApi, useLiveEvents } from "../../api/client.js";
 import { changeOf } from "../../app/screens.js";
 import { Donut, Panel, Ring, View } from "../../app/ui.js";
@@ -386,6 +386,10 @@ export function Todo({ hash = "" }: { hash?: string }) {
   const [current, setCurrent] = useState<string | undefined>();
   // Opened from a change's tabs: that change's work first; the filter can still be changed.
   const [change, setChange] = useState<string>(changeOf(hash) ?? "all");
+  const fromHash = changeOf(hash);
+  useEffect(() => {
+    if (fromHash) setChange(fromHash);
+  }, [fromHash]);
   const [text, setText] = useState("");
   useLiveEvents((e) => {
     if (e.type === "file.changed") {
@@ -435,14 +439,19 @@ export function Todo({ hash = "" }: { hash?: string }) {
               active={filtering}
             />
           </div>
-          {changes.length > 1 && (
+          {(changes.length > 1 || change !== "all") && (
             <Choice
               label={T.change}
               value={change}
               onChange={setChange}
               options={[
                 { value: "all", label: T.allChanges },
-                ...changes.map((c) => ({ value: c, label: c === "none" ? T.noChange2 : c })),
+                // The change picked stays a choice even when no step is its yet, so it can be
+                // cleared.
+                ...[...new Set([...changes, ...(change !== "all" ? [change] : [])])].map((c) => ({
+                  value: c,
+                  label: c === "none" ? T.noChange2 : c,
+                })),
               ]}
             />
           )}

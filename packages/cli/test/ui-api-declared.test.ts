@@ -69,6 +69,21 @@ describe("add a box (ADR 0174, G3)", () => {
     expect((await call("POST", "/api/boxes", body)).status).toBe(409);
     expect((await call("POST", "/api/boxes", { ...body, id: "Not An Id" })).status).toBe(400);
   });
+
+  it("previews the lines the write makes, and keeps a Windows profile's CRLF", async () => {
+    const was = await readFile(profile(), "utf8");
+    await writeFile(profile(), was.replace(/\r?\n/g, "\r\n"));
+    const body = { id: "harbor-ledger", name: "Harbor ledger", boundary: "internal" };
+    const p = Api.FileChangeResult.parse(
+      (await call("POST", "/api/boxes", { ...body, preview: true })).body,
+    );
+    const w = Api.FileChangeResult.parse((await call("POST", "/api/boxes", body)).body);
+    expect(w.files[0]!.changes).toEqual(p.files[0]!.changes);
+    const now = await readFile(profile(), "utf8");
+    expect(now.includes("\r\n")).toBe(true);
+    expect(now.replace(/\r\n/g, "").includes("\n")).toBe(false);
+    await writeFile(profile(), was);
+  });
 });
 
 describe("declare a link, and undo it", () => {

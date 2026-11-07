@@ -90,6 +90,7 @@ export function uiOwnerRoutes(r: Router, ctx: ServerContext): Router {
       if (system && !o.systems.some((s) => s.id === system))
         throw badRequest(`No system of the profiles is ${system}.`);
       const files: Api.SetRepoOwnerResultT["files"] = [];
+      const writtenSoFar: string[] = [];
       try {
         if (addTeam) {
           const t = await addRolesTeam(ctx.root, addTeam, { preview: true });
@@ -108,14 +109,22 @@ export function uiOwnerRoutes(r: Router, ctx: ServerContext): Router {
         }
         if (!preview) {
           // The manifest first: a team is added to roles.yaml only once its repo has it as
-          // owner (a manifest refused, say changed meanwhile, leaves roles.yaml as it was).
-          if (owner) await setManifestField(ctx.root, repo, "owner", owner);
-          if (system) await setManifestField(ctx.root, repo, "system", system);
+          // owner (a manifest refused, say changed meanwhile, leaves roles.yaml as it was). A
+          // refusal part-way says which file was written already.
+          if (owner)
+            writtenSoFar.push((await setManifestField(ctx.root, repo, "owner", owner)).file.rel);
+          if (system)
+            writtenSoFar.push((await setManifestField(ctx.root, repo, "system", system)).file.rel);
           if (addTeam) await addRolesTeam(ctx.root, addTeam);
           for (const f of files) ctx.events.publish({ type: "file.changed", path: f.file });
         }
       } catch (e) {
-        if (e instanceof FileChangedError) throw conflict(e.message);
+        if (e instanceof FileChangedError)
+          throw conflict(
+            writtenSoFar.length
+              ? `${e.message} (${[...new Set(writtenSoFar)].join(", ")} was written already; do the rest again.)`
+              : e.message,
+          );
         if (e instanceof ManifestEditError)
           throw e.code === "not-found"
             ? notFound(e.message)

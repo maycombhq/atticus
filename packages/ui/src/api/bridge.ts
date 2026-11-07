@@ -47,6 +47,8 @@ const isMsg = (m: unknown): m is Msg => typeof m === "object" && m !== null;
 
 /** How long a call waits for the extension's reply before it is given up (the page says so). */
 export const BRIDGE_TIMEOUT_MS = 60_000;
+/** A step the extension says nothing about for this long is given up. */
+const STEP_SILENT_MS = 60 * 60_000;
 /** How long an export waits for the Save dialog's answer. */
 const SAVE_TIMEOUT_MS = 10 * 60_000;
 
@@ -123,7 +125,26 @@ export function makeBridge(
     runStep(args, onLine) {
       const id = ++next;
       return new Promise((resolve) => {
-        steps.set(id, { onLine, done: resolve });
+        // A step may run for an hour; one that says nothing for that long is given up as failed.
+        let quiet: ReturnType<typeof setTimeout> | undefined;
+        const arm = () => {
+          clearTimeout(quiet);
+          quiet = setTimeout(() => {
+            if (!steps.delete(id)) return;
+            resolve({ state: "failed", lines: [COPY.bridge.stepSilent] });
+          }, STEP_SILENT_MS);
+        };
+        arm();
+        steps.set(id, {
+          onLine: (l) => {
+            arm();
+            onLine(l);
+          },
+          done: (e) => {
+            clearTimeout(quiet);
+            resolve(e);
+          },
+        });
         post({ type: "run-step", id, args });
       });
     },

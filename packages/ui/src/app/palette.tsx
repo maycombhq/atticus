@@ -109,14 +109,19 @@ export function CommandPalette() {
       setRecords([]);
       return;
     }
+    // A slower answer to an earlier word never lands over the newer one's.
+    let live = true;
     const timer = setTimeout(() => {
       void api<{ rows: { kind: string; id: string; name?: string }[] }>(
         `/api/search?q=${encodeURIComponent(t.split(/\s+/)[0]!)}&limit=6`,
       )
-        .then((r) => setRecords(r.rows))
-        .catch(() => setRecords([]));
+        .then((r) => live && setRecords(r.rows))
+        .catch(() => live && setRecords([]));
     }, 150);
-    return () => clearTimeout(timer);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
   }, [text, open]);
 
   const items = useMemo(() => paletteItems(text, changes, records), [text, changes, records]);

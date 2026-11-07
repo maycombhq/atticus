@@ -11,7 +11,7 @@ Atticus 2 (ADR 0124): the assistant reads the code and writes cited facts; `veri
   - `facts.ts`: the facts file, additive to C1 (ADR 0124).
   - `dialect.ts` (C2), `review.ts` (C3 rules and findings, with the critic's four questions), `orgpack.ts` (C6), `ai.ts` (C5).
   - `workspace.ts`, `change.ts` and `executors.ts`: C4 files.
-  - The local API document is `packages/core/src/api.ts` (C4 2.23.0), written to `docs/api/openapi.json` by `pnpm api:doc`.
+  - The local API document is `packages/core/src/api.ts` (C4: the version is `API_VERSION` there), written to `docs/api/openapi.json` by `pnpm api:doc`.
   - The stage files of a change (`packages/planner/src/stages/schema.ts`, stage schema 1, flow delta 2) are the planner's, not a frozen contract.
 - **Paths in a metarepo or adopted repo:** always resolve with the helpers in `packages/core/src/metarepo.ts`: `orgPackDirOf`, `catalogDirOf`, `stateDirOf`, `layoutOf`, `changesDirOf`, `runsDirOf`, `inputsDirOf`, `proposalsDirOf`, `factsDirOf`, `specDirOf`, `mapDirOf`, `evidenceDirOf`. For messages and stored paths use their `*RelOf` forms. Never `join(root, "org-pack")` and the like. In a repo adopted in place they are all under `.atticus/`.
 - **Records:** parse with `parseRecord`, write with `serializeRecord` (canonical YAML), file path `recordPath` (`<kind>/<id>.yaml`). Merge and identity: `packages/core/src/merge.ts`. Curated decisions: `curated.ts` (`applyCurated`). References: `refs.ts`.

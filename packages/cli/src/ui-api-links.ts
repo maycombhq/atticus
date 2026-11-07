@@ -47,6 +47,15 @@ const REPO = /^[A-Za-z0-9._-]{1,200}$/;
 const SPECS = new Set(["openapi", "swagger"]);
 
 const quiet = { out: () => undefined, err: () => undefined };
+const JOINABLE_CALL = new Set(["rest", "soap", "grpc", "graphql"]);
+
+/** A's settings with a value, by key, for a call's `${key}` (a URL's path, not its host). */
+export function settingsOf(facts: readonly Fact[]): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const f of facts)
+    if (f.kind === "config" && f.value && !(f.key in out)) out[f.key] = f.value;
+  return out;
+}
 
 async function boxApis(
   root: string,
@@ -58,19 +67,28 @@ async function boxApis(
     const known = estateRepos(op).find((r) => r.id === to.repo);
     if (!known) throw notFound(`No repo of the manifest is ${to.repo}.`);
     const facts = estate.repos.find((r) => r.repo === to.repo)?.facts ?? [];
-    const apis: CandidateApi[] = facts.flatMap((f) =>
-      f.kind === "entry" && f.path
-        ? [
-            {
-              id: f.id,
-              kind: /gateway|proxy|apigee/i.test(known.type ?? "") ? "route" : "entry",
-              ...(f.method ? { method: f.method.toUpperCase() } : {}),
-              path: f.path,
-              at: `${f.cite.file}:${f.cite.line}`,
-            } satisfies CandidateApi,
-          ]
-        : [],
-    );
+    const gateway = /gateway|proxy|apigee/i.test(known.type ?? "");
+    // A gateway's route forwards somewhere: the call made `from` the route says where.
+    const forwardsOf = (entry: string) => {
+      const f = facts.find(
+        (x) => x.kind === "call" && x.from === entry && JOINABLE_CALL.has(x.callType),
+      );
+      return f?.kind === "call" ? f.path : undefined;
+    };
+    const apis: CandidateApi[] = facts.flatMap((f) => {
+      if (f.kind !== "entry" || !f.path) return [];
+      const forwards = gateway ? forwardsOf(f.id) : undefined;
+      return [
+        {
+          id: f.id,
+          kind: gateway ? "route" : "entry",
+          ...(f.method ? { method: f.method.toUpperCase() } : {}),
+          path: f.path,
+          at: `${f.cite.file}:${f.cite.line}`,
+          ...(forwards ? { forwards } : {}),
+        } satisfies CandidateApi,
+      ];
+    });
     return {
       name: to.repo,
       apis,
@@ -102,6 +120,7 @@ async function boxApis(
     method: o.method.toUpperCase(),
     path: o.fullPath ?? o.path,
     ...(o.cite ? { at: o.cite } : {}),
+    ...(o.operationId ? { words: o.operationId } : {}),
   }));
   return {
     name: system.name || system.id,
@@ -162,6 +181,7 @@ export function uiLinkRoutes(
           apis: c.b.apis,
           pairs: c.pairs,
           to,
+          settings: settingsOf(c.facts),
         });
         const q = await openRuleQuestion(ctx.root, from);
         const loose = cands.calls.filter((x) => x.status !== "paired").length;
@@ -274,7 +294,7 @@ export function uiLinkRoutes(
               by: ctx.user,
               at,
             });
-            ctx.events.publish({ type: "file.changed", path: "questions" });
+            ctx.events.publish({ type: "file.changed", path: questionsRelOf(ctx.root) });
           } catch (e) {
             if (e instanceof QuestionError)
               throw new HttpError(422, "Atticus can't do that yet", e.message);

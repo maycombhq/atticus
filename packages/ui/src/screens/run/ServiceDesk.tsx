@@ -224,15 +224,21 @@ export function ServiceDesk({ hash = "" }: { hash?: string }) {
   useLiveEvents((e) => {
     if (e.type === "file.changed") q.reload();
   });
-  const all = q.state === "ready" ? q.data.requests : [];
-  const shown = all.filter(
-    (r) => (filter === "all" || r.state === filter) && (!change || r.change === change),
+  // Opened from a change's tabs, the whole page is that change's; the counts agree with the list.
+  const all = (q.state === "ready" ? q.data.requests : []).filter(
+    (r) => !change || r.change === change,
   );
+  const shown = all.filter((r) => filter === "all" || r.state === filter);
   const selected = shown.find((r) => keyOf(r) === current) ?? shown[0];
   const n = (s: Request["state"]) => all.filter((r) => r.state === s).length;
 
   return (
     <>
+      {change && (
+        <p className="ev-say" style={{ margin: 0 }}>
+          {T.ofChange(change)} <a href="#/service-desk">{T.showAll}</a>
+        </p>
+      )}
       <div className="row between" style={{ flexWrap: "wrap" }}>
         <p className="n" style={{ margin: 0, fontSize: 24 }}>
           {q.state !== "ready"

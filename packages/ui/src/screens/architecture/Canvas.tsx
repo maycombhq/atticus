@@ -379,6 +379,14 @@ export function ArchitectureCanvas(p: {
           : { ...n, data: { ...n.data, box, selected } };
       }),
     );
+    // A link's marks and gaps (compare, the contract check) change without a new layout too.
+    const linkById = new Map(p.graph.links.map((l) => [l.id, l]));
+    setEdges((es) =>
+      es.map((e) => {
+        const link = linkById.get(e.id) ?? e.data!.link;
+        return link === e.data!.link ? e : { ...e, data: { ...e.data!, link } };
+      }),
+    );
   }, [p.graph, p.selected]);
 
   const onNodesChange = useCallback(

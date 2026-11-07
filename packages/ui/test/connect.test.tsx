@@ -63,11 +63,20 @@ const view: Api.LinkCandidatesViewT = {
 };
 
 describe("the pairs", () => {
-  it("picks the suggestion and ticks it; a call with none waits for the person", () => {
+  it("picks the suggestion, ticks only a confident one; a call with none waits for the person", () => {
     const i = initialPicks(view);
     expect(i.picked).toEqual({ "call.post.capture-charge": "e-capture" });
-    expect([...i.ticked]).toEqual(["call.post.capture-charge"]);
-    expect(pairsOf({ ...i.picked, "call.get.ping": "e-charges" }, i.ticked)).toEqual([
+    // Names alike is a hint to look at, not a pair to write unseen.
+    expect([...i.ticked]).toEqual([]);
+    const sure = {
+      ...view,
+      calls: view.calls.map((c) =>
+        c.fact === "call.post.capture-charge" ? { ...c, confident: true } : c,
+      ),
+    };
+    expect([...initialPicks(sure).ticked]).toEqual(["call.post.capture-charge"]);
+    const t = initialPicks(sure);
+    expect(pairsOf({ ...t.picked, "call.get.ping": "e-charges" }, t.ticked)).toEqual([
       { call: "call.post.capture-charge", api: "e-capture" },
     ]);
     // Ticked with no API picked is no pair.
@@ -108,6 +117,45 @@ describe("the panel", () => {
     expect(out).toContain(`aria-label="${C.col.api}: GET pingPath"`);
     expect(out).toContain(C.rule(2));
     expect(out).toContain(C.preview);
+  });
+
+  it("counts the confident, suggested and unsuggested calls, offers to tick them, and lists the likely APIs first", () => {
+    const many = {
+      ...view,
+      calls: view.calls.map((c) =>
+        c.fact === "call.post.capture-charge"
+          ? {
+              ...c,
+              confident: true,
+              suggestions: [
+                c.suggestion!,
+                { api: "e-charges", score: 0.4, why: "names-alike" as const },
+              ],
+            }
+          : c,
+      ),
+      apis: [
+        ...view.apis,
+        ...Array.from({ length: 30 }, (_, i) => ({
+          id: `e-${i}`,
+          kind: "route" as const,
+          method: "GET",
+          path: `/partners/northwind/things/${i}`,
+        })),
+      ],
+    };
+    const out = un(
+      renderToStaticMarkup(
+        <Pairing from="forge-billing" box={box} cands={{ state: "ready", data: many }} />,
+      ),
+    );
+    expect(out).toContain(C.tally(1, 1, 1));
+    expect(out).toContain(C.tickConfident(1));
+    expect(out).toContain(C.tickSuggested(1));
+    expect(out).toContain(`<optgroup label="${C.likely}">`);
+    expect(out).toContain(C.why["same-path"]);
+    // Many APIs: a box to find one by its path or name.
+    expect(out).toContain(C.findApi);
   });
 
   it("says what to run when one side has nothing on record", () => {

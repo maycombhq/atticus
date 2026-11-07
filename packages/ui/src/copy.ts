@@ -2861,6 +2861,8 @@ export const COPY = {
     copyEvidenceMd: (id: string | number) => `Copy evidence-${id}.md`,
   },
   serviceDesk: {
+    ofChange: (c: string) => `Requests of ${c} only.`,
+    showAll: "Show every change's",
     filters: {
       all: (n: number) => `All ${n}`,
       "to-file": (n: number) => `To file ${n}`,
@@ -3843,6 +3845,14 @@ export const COPY = {
     caption: (from: string, to: string) => `${from}'s loose calls, each with an API of ${to}`,
     col: { pick: "Pair", call: "Call", line: "Line", status: "Now", api: "API" },
     pickApi: "Pick an API",
+    likely: "Likely",
+    allApis: "All APIs",
+    findApi: "Find an API (type part of its path or name)",
+    tickConfident: (n: number) => `Tick the ${n} confident`,
+    tickSuggested: (n: number) => `Tick all ${n} suggested`,
+    untickAll: "Untick all",
+    tally: (confident: number, suggested: number, none: number) =>
+      `${confident} confident, ${suggested} suggested, ${none} with no suggestion. A confident pair is the same path (or the same once a setting or a gateway's forwarding is read), well ahead of every other API.`,
     status: {
       asked: "asked",
       missed: "no route",
@@ -3856,6 +3866,9 @@ export const COPY = {
       prefix: "same but for a prefix",
       parameter: "same but for a parameter or setting",
       "names-alike": "names alike",
+      setting: "the same path once its setting is filled in",
+      "operation-words": "the operation's name says the same",
+      "forwarded-path": "what the gateway's route forwards to",
     } as Record<string, string>,
     suggested: (why: string) => `Suggested: ${why}`,
     rule: (n: number) =>
@@ -3953,6 +3966,8 @@ export const COPY = {
   },
   bridge: {
     noAnswer: "No answer from VS Code",
+    stepSilent:
+      "No word from VS Code about this step for an hour: given up here. Its run, if any, is in Runs.",
     noAnswerTo: (path: string, s: number) =>
       `No answer to ${path} in ${s} s. Close the Atticus panel and open it again.`,
   },

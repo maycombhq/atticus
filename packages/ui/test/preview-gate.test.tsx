@@ -34,7 +34,8 @@ describe("a write is of what was previewed", () => {
       path: `/${fact}`,
       at: "x:1",
       status: "left",
-      suggestion: { api, score: 0.9, why: "names-alike" },
+      suggestion: { api, score: 0.9, why: "same-path" },
+      confident: true,
     });
     const view = {
       from: "forge-billing",

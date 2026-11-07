@@ -25,6 +25,7 @@ import { stringify } from "yaml";
 import { checkoutOf } from "./facts-files.js";
 import { repoContractsOf } from "./link-evidence-files.js";
 import { claimOf, factLabel } from "./ui-api-facts.js";
+import { safeMessage } from "./file-lock.js";
 import { verifyInputsOf } from "./verify-commands.js";
 
 /**
@@ -83,9 +84,12 @@ function stepsOf(
   o: { fact?: string; host?: string; files: readonly string[] },
 ): { branch: string; steps: View["steps"] } {
   const branch = `correct/${slugPart(repo)}${o.fact ? `-${slugPart(o.fact)}` : ""}`;
-  const message = o.fact
-    ? `${repo}: a person's correction of ${o.fact}, applied by atticus verify --write`
-    : `${repo}: a person's corrections, applied by atticus verify --write`;
+  // Safe to paste into a shell: a name a person typed never ends the quotes or runs.
+  const message = safeMessage(
+    o.fact
+      ? `${repo}: a person's correction of ${o.fact}, applied by atticus verify --write`
+      : `${repo}: a person's corrections, applied by atticus verify --write`,
+  );
   const pr = prCommand(o.host, branch);
   return {
     branch,

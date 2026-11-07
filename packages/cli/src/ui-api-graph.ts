@@ -10,6 +10,8 @@ import {
   layoutPath,
   ViewKey,
   writeFileAtomic,
+  diagramsRelOf,
+  isAdopted,
 } from "@maycombhq/core";
 import {
   buildEstate,
@@ -107,13 +109,17 @@ export function uiGraphRoutes(r: Router, ctx: ServerContext): Router {
       throw e;
     }
   };
+  // In a repo adopted in place every file Atticus writes is under .atticus/ (ADR 0132).
+  const layoutRel = (view: string) =>
+    isAdopted(ctx.root) ? `.atticus/${layoutPath(view)}` : layoutPath(view);
+  const viewsRel = diagramsRelOf(ctx.root) + "/views";
   const readLayout = async (view: string) => {
     try {
       const f = DiagramLayout.safeParse(
-        parse(await readFile(join(ctx.root, layoutPath(view)), "utf8")),
+        parse(await readFile(join(ctx.root, layoutRel(view)), "utf8")),
       );
       if (!f.success)
-        throw new HttpError(422, "Atticus refused", `${layoutPath(view)} isn't a layout file.`);
+        throw new HttpError(422, "Atticus refused", `${layoutRel(view)} isn't a layout file.`);
       return f.data;
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code === "ENOENT") return undefined;
@@ -143,7 +149,7 @@ export function uiGraphRoutes(r: Router, ctx: ServerContext): Router {
       })
       // G6 (ADR 0175): a canvas's named filters and layers, kept in the metarepo for review.
       .add("GET", "/api/graph/views", async () => {
-        const dir = join(ctx.root, "diagrams", "views");
+        const dir = join(ctx.root, ...viewsRel.split("/"));
         const names = (await readdir(dir).catch(() => [] as string[]))
           .filter((n) => n.endsWith(".yaml"))
           .sort();
@@ -156,7 +162,7 @@ export function uiGraphRoutes(r: Router, ctx: ServerContext): Router {
         }
         return {
           status: 200,
-          body: { views, dir: "diagrams/views" } satisfies Api.SavedCanvasViewsT,
+          body: { views, dir: viewsRel } satisfies Api.SavedCanvasViewsT,
         };
       })
       .add("PUT", "/api/graph/views/{name}", async ({ params, body, query }) => {
@@ -169,7 +175,7 @@ export function uiGraphRoutes(r: Router, ctx: ServerContext): Router {
             },
           );
         const v = { ...b.data, by: ctx.user, at: new Date().toISOString() };
-        const rel = `diagrams/views/${v.name}.yaml`;
+        const rel = `${viewsRel}/${v.name}.yaml`;
         // A view kept already (perhaps a teammate's, committed) is replaced only when asked.
         if (existsSync(join(ctx.root, rel)) && query.get("replace") !== "1")
           throw conflict(
@@ -213,7 +219,7 @@ export function uiGraphRoutes(r: Router, ctx: ServerContext): Router {
         const f = await readLayout(view);
         return {
           status: 200,
-          body: { view, saved: !!f, path: layoutPath(view), positions: f?.positions ?? {} },
+          body: { view, saved: !!f, path: layoutRel(view), positions: f?.positions ?? {} },
         };
       })
       .add("PUT", "/api/graph/layout/{viewKey}", async ({ params, body }) => {
@@ -241,11 +247,11 @@ export function uiGraphRoutes(r: Router, ctx: ServerContext): Router {
           at: new Date().toISOString(),
           positions: sorted,
         });
-        await writeFileAtomic(join(ctx.root, layoutPath(view)), stringify(file));
-        ctx.events.publish({ type: "file.changed", path: layoutPath(view) });
+        await writeFileAtomic(join(ctx.root, layoutRel(view)), stringify(file));
+        ctx.events.publish({ type: "file.changed", path: layoutRel(view) });
         return {
           status: 200,
-          body: { view, saved: true, path: layoutPath(view), positions: file.positions },
+          body: { view, saved: true, path: layoutRel(view), positions: file.positions },
         };
       })
   );

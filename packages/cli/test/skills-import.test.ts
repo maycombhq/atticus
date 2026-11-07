@@ -354,6 +354,17 @@ describe("atticus skills import, write and list", () => {
     await skillsWriteCommand(root, {}, w.io);
     expect(w.err).toEqual([]);
     expect(read(root, ".claude/agents/harbor-architect.md")).toContain("Ours.");
+    // A copy that got in by hand under the same name: ours is written, and the clash is said.
+    write(
+      root,
+      "org-pack/agents/imported/harbor/harbor-architect.md",
+      "---\nname: harbor-architect\ndescription: Theirs.\n---\nTheirs.\n",
+    );
+    const c = io();
+    await skillsWriteCommand(root, {}, c.io);
+    expect(c.err.join(" ")).toContain("are both agent harbor-architect");
+    expect(read(root, ".claude/agents/harbor-architect.md")).toContain("Ours.");
+    rmSync(join(root, "org-pack/agents/imported/harbor/harbor-architect.md"));
     // They remove check.sh at a later tag: gone here too, and no longer flagged as a script.
     const git = (...a: string[]) => execFileSync("git", ["-C", theirs, ...a], { stdio: "pipe" });
     git("rm", "-q", ".claude/skills/harbor-publish/check.sh");

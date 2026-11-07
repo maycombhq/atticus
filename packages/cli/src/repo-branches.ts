@@ -10,6 +10,8 @@ import {
   RepoDescription,
   RepoManifest,
   setManifestDescription,
+  eolOf,
+  inEol,
   writeFileIfUnchanged,
   type CatalogRecord,
 } from "@maycombhq/core";
@@ -153,7 +155,11 @@ export async function editRepoBranches(
       "invalid",
       check.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "),
     );
-  await writeFileIfUnchanged(file, was, doc.toString({ flowCollectionPadding: true }));
+  await writeFileIfUnchanged(
+    file,
+    was,
+    inEol(doc.toString({ flowCollectionPadding: true }), eolOf(was)),
+  );
   return rel;
 }
 

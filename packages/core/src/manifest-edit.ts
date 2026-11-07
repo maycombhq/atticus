@@ -74,10 +74,11 @@ async function save(path: string, doc: Document, before: string): Promise<void> 
       "invalid",
       check.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "),
     );
+  // In the file's own line endings (a Windows checkout's CRLF).
   await writeFileIfUnchanged(
     path,
     before,
-    doc.toString({ lineWidth: 0, flowCollectionPadding: true }),
+    inEol(doc.toString({ lineWidth: 0, flowCollectionPadding: true }), eolOf(before)),
   );
 }
 

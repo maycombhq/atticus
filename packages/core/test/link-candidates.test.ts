@@ -91,12 +91,13 @@ describe("how likely a call is an API", () => {
 
   it("ranks the same path, a prefix, a parameter and names alike, and halves a method that differs", () => {
     expect(pairScore({ path: "/a/b" }, { path: "/a/b" })).toEqual({ score: 1, why: "same-path" });
+    // A version prefix names the API's age, not its shape: the same path.
     expect(
       pairScore({ path: "/payments/{id}/status" }, { path: "/v2/payments/{x}/status" }),
-    ).toEqual({
-      score: 0.85,
-      why: "prefix",
-    });
+    ).toEqual({ score: 1, why: "same-path" });
+    expect(
+      pairScore({ path: "/payments/{id}/status" }, { path: "/gw/payments/{x}/status" }),
+    ).toEqual({ score: 0.85, why: "prefix" });
     expect(pairScore({ path: "/a/${x}" }, { path: "/a/b" })).toEqual({
       score: 0.75,
       why: "parameter",
@@ -108,6 +109,27 @@ describe("how likely a call is an API", () => {
       pairScore({ method: "GET", path: "/a/b" }, { method: "POST", path: "/a/b" })?.score,
     ).toBe(0.5);
     expect(pairScore({ path: "requestRefundPath" }, { path: "/v2/accounts/open" })).toBeUndefined();
+    // A setting filled in: the call's `${key}` becomes what the config fact says.
+    expect(
+      pairScore(
+        { path: "${refunds.base}/request" },
+        { path: "/v2/refunds/request" },
+        {
+          "refunds.base": "https://refunds.forge.example/v2/refunds",
+        },
+      ),
+    ).toEqual({ score: 1, why: "setting" });
+    // A gateway route is found by the path it forwards to.
+    expect(
+      pairScore(
+        { path: "/internal/refunds/request" },
+        { path: "/api/partners/refunds", forwards: "/internal/refunds/request" },
+      ),
+    ).toMatchObject({ why: "forwarded-path" });
+    // An operation's name says what a call site's constant names.
+    expect(
+      pairScore({ path: "captureChargePath" }, { path: "/x/{id}/y", words: "captureCharge" }),
+    ).toMatchObject({ why: "operation-words" });
   });
 });
 
@@ -133,7 +155,15 @@ describe("the candidates of two boxes", () => {
       suggestion: { api: "e-refunds-request", why: "names-alike" },
     });
     expect(by["c-cancel-payment"]!.suggestion).toMatchObject({ api: "e-payments-cancel" });
-    expect(by["c-status"]!.suggestion).toMatchObject({ api: "e-payments-status", why: "prefix" });
+    expect(by["c-status"]!.suggestion).toMatchObject({
+      api: "e-payments-status",
+      why: "same-path",
+    });
+    // The same path, well ahead of the rest: confident; names alike alone is not.
+    expect(by["c-status"]!.confident).toBe(true);
+    expect(by["c-request-refund"]!.confident).toBeUndefined();
+    expect(by["c-status"]!.suggestions![0]).toEqual(by["c-status"]!.suggestion);
+    expect(by["c-status"]!.suggestions!.length).toBeLessThanOrEqual(3);
   });
 
   it("joins a call a person paired, by the entry's id or its method and path, flagged as theirs", () => {

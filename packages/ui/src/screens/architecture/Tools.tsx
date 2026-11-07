@@ -90,13 +90,15 @@ function downloadPng(name: string, svg: string): Promise<SaveEnd> {
   });
 }
 
-function printSvg(svg: string, title: string) {
+function printSvg(svg: string, title: string): SaveEnd {
   const w = window.open("", "_blank");
-  if (!w) return;
+  // Blocked (a popup setting, an embedded browser): said, with the SVG as the way out.
+  if (!w) return "failed";
   w.document.title = title;
   w.document.body.innerHTML = svg;
   w.focus();
   w.print();
+  return undefined;
 }
 
 export function CanvasTools(p: {
@@ -502,7 +504,9 @@ export function CanvasTools(p: {
                 <button
                   type="button"
                   className="btn"
-                  onClick={() => printSvg(toSvg(p.graph, p.placed), p.name)}
+                  onClick={() =>
+                    void said(Promise.resolve(printSvg(toSvg(p.graph, p.placed), p.name)))
+                  }
                 >
                   {T.exports.pdf}
                 </button>

@@ -107,6 +107,9 @@ const NO_FINDINGS: readonly Api.ContractMismatchViewT[] = [];
 export const contractsPathWhen = (o: { ready: boolean; drawn: boolean }): string | undefined =>
   o.ready && o.drawn ? "/api/contracts" : undefined;
 
+/** An answer that came after the picture started again: not an error anyone sees. */
+class StalePicture extends Error {}
+
 function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: string }) {
   const lensParam = queryParam(hash, "lens");
   const lens: Lens = (LENSES as readonly string[]).includes(lensParam ?? "")
@@ -170,7 +173,11 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
 
   const load = useCallback(
     async (id: string, into?: Views) => {
+      // An answer from before the picture started again (another lens) is dropped: it would
+      // put that lens's boxes on this one.
+      const at = epoch.current;
       const v = await api<Api.GraphNodeViewT>(nodePath(id, lens));
+      if (at !== epoch.current) throw new StalePicture();
       setViews((old) => new Map(into ?? old).set(id, v));
       return v;
     },
@@ -264,7 +271,12 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
       setInPlace(new Set());
     } catch (e) {
       // A box the catalog no longer has leaves the picture where it is; anything else is said.
-      if (epoch.current !== at0 || (e instanceof ApiError && e.problem.status === 404)) return;
+      if (
+        e instanceof StalePicture ||
+        epoch.current !== at0 ||
+        (e instanceof ApiError && e.problem.status === 404)
+      )
+        return;
       setStatus({ state: "error", error: e instanceof Error ? e.message : String(e) });
     }
   };
@@ -283,6 +295,7 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
       setFocus(undefined);
       setInPlace(new Set());
     } catch (e) {
+      if (e instanceof StalePicture) return;
       setStatus({ state: "error", error: e instanceof Error ? e.message : String(e) });
     }
   };
@@ -310,6 +323,7 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
       setExpanded((s) => new Set(s).add(id));
       setSelected(id);
     } catch (e) {
+      if (e instanceof StalePicture) return;
       setStatus({ state: "error", error: e instanceof Error ? e.message : String(e) });
     }
   };
@@ -414,6 +428,15 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
     [tools.radius, selected, graph.links],
   );
   const shown = focus ? focus.node.id : current;
+  // A snapshot is of one view of the picture: another box opened is another set of links.
+  const shownKey = `${shown}|${focus ? "f" : "n"}`;
+  const snapshotView = useRef(shownKey);
+  useEffect(() => {
+    if (snapshotView.current === shownKey) return;
+    snapshotView.current = shownKey;
+    setSnapshot(undefined);
+    setTools((t) => (t.compareWith ? { ...t, compareWith: undefined } : t));
+  }, [shownKey]);
   const key = viewKey(lens, shown, focus ? "focus" : "node");
 
   // A view's kept arrangement, read before the canvas lays it out.
@@ -639,7 +662,12 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
                   })()
                 : {})}
               {...(snapshot ? { snapshot } : {})}
-              onSnapshot={() => setSnapshot(snapshotOf(whole, new Date().toLocaleTimeString()))}
+              onSnapshot={() => {
+                const snap = snapshotOf(whole, new Date().toLocaleTimeString());
+                setSnapshot(snap);
+                // Compare, when on, is against the newest snapshot.
+                setTools((t) => (t.compareWith ? { ...t, compareWith: snap } : t));
+              }}
               name={key}
             />
             <ArrangementBar
