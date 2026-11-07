@@ -71,6 +71,8 @@ export const WORDS = {
   evidence: "Where it was found",
   noEvidence: "No file cited.",
   gaps: "What is missing",
+  gapsBadge: (n: number) => (n === 1 ? "thing missing" : "things missing"),
+  kindWord: { repo: "repo", system: "system", component: "component" } as Record<string, string>,
   noGaps: "Nothing missing.",
   next: "Next step",
   copy: "Copy",

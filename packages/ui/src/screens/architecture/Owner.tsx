@@ -66,10 +66,14 @@ export function OwnerForm(p: {
   // What the form says now: Write it writes only what was previewed, nothing changed since.
   const asked = JSON.stringify(body() ?? null);
   const [previewed, setPreviewed] = useState<string | undefined>();
+  // "Nothing to change" is said of the form as it was; a change to any field takes it back.
+  const [nothingAt, setNothingAt] = useState<string | undefined>();
+  const shownError = error === O.nothing && nothingAt !== asked ? undefined : error;
   const send = async (mode: "preview" | "write") => {
     const b = body();
     if (!b) {
       setError(O.nothing);
+      setNothingAt(asked);
       setPreview(undefined);
       return;
     }
@@ -180,9 +184,9 @@ export function OwnerForm(p: {
               </option>
             ))}
           </select>
-          {error && (
+          {shownError && (
             <p role="alert" className="state error">
-              {error}
+              {shownError}
             </p>
           )}
           <div className="row" style={{ gap: 8 }}>

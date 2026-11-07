@@ -314,7 +314,7 @@ export function Pairing(p: {
             disabled={!!busy || !preview || previewed !== asked}
             aria-busy={busy === "write"}
           >
-            {busy === "write" ? C.writing : C.confirm(pairs.length)}
+            {busy === "write" ? C.writing : C.confirm(pairs.length, rule)}
           </button>
         </div>
       )}
@@ -331,7 +331,9 @@ export function Pairing(p: {
       )}
       {written && (
         <div className="stack" role="status">
-          <p className="ev-say">{C.written(written.lines.length, written.file)}</p>
+          <p className="ev-say" role="status">
+            {C.written(written.lines.length, written.file)}
+          </p>
           {written.rule && <p className="ev-say">{C.ruleWritten(written.rule.question)}</p>}
           <Cmd text={written.verify} />
           <Cmd text={written.commit} />

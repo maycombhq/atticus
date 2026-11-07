@@ -10,6 +10,7 @@ import { COPY } from "../../copy.js";
 export function OpenCode({ repo, at }: { repo: string; at: string }) {
   const [link, setLink] = useState<Api.CodeLinkT | undefined>();
   const [failed, setFailed] = useState<string | undefined>();
+  const [busy, setBusy] = useState(false);
   if (link?.missing) return <span className="hud"> · {link.missing}</span>;
   if (link)
     return (
@@ -31,13 +32,19 @@ export function OpenCode({ repo, at }: { repo: string; at: string }) {
       <button
         type="button"
         className="link hud"
-        onClick={() =>
+        disabled={busy}
+        aria-busy={busy}
+        onClick={() => {
+          setBusy(true);
+          setFailed(undefined);
           void api<Api.CodeLinkT>(
             `/api/code-link?repo=${encodeURIComponent(repo)}&at=${encodeURIComponent(at)}`,
-          ).then(setLink, (e: unknown) => setFailed(e instanceof Error ? e.message : String(e)))
-        }
+          )
+            .then(setLink, (e: unknown) => setFailed(e instanceof Error ? e.message : String(e)))
+            .finally(() => setBusy(false));
+        }}
       >
-        {COPY.canvasTools.openCode}
+        {busy ? COPY.canvasTools.openingCode : COPY.canvasTools.openCode}
       </button>
       {failed && <span className="hud"> · {failed}</span>}
     </>

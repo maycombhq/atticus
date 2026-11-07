@@ -3630,7 +3630,7 @@ export const COPY = {
     filterHint: "team:<id> system:<id> type:<repo type> path:/accounts/** or words",
     filtered: (n: number, all: number) => `${n} of ${all} boxes shown`,
     overlay: "Colour boxes by",
-    questionsBadge: "open questions",
+    questionsBadge: (n: number) => (n === 1 ? "open question" : "open questions"),
     overlayLoading: "Getting the open questions…",
     overlayFailed: (why: string) => `Couldn't get the open questions: ${why}`,
     viewsLoading: "Getting the kept views…",
@@ -3683,6 +3683,7 @@ export const COPY = {
       pdf: "Print or PDF",
     } as Record<string, string>,
     openCode: "Open in your editor",
+    openingCode: "Finding the file…",
     inVsCode: "VS Code",
     inIntellij: "IntelliJ",
     noCheckout: (why: string) => why,
@@ -3746,6 +3747,7 @@ export const COPY = {
     preview: "Preview",
     confirm: "Add it",
     writing: "Adding…",
+    previewing: "Working out the change…",
     written: "Added to the profile for review. Run this to redraw the map:",
     close: "Close",
     copy: "Copy the command",
@@ -3832,10 +3834,13 @@ export const COPY = {
       `All ${n} loose calls go there, and calls read later too: answer the open target question with /** (a rule)`,
     preview: "Preview",
     previewing: "Working out what changes…",
-    confirm: (n: number) => (n === 1 ? "Write the pair" : `Write ${n} pairs`),
+    confirm: (n: number, rule: boolean) =>
+      n === 0 && rule
+        ? "Answer for all its calls"
+        : `${n === 1 ? "Write the pair" : `Write ${n} pairs`}${rule ? " and answer for all" : ""}`,
     writing: "Writing…",
     written: (n: number, file: string) =>
-      `${n === 1 ? "One pair" : `${n} pairs`} written to ${file}.`,
+      n === 0 ? "No pair written." : `${n === 1 ? "One pair" : `${n} pairs`} written to ${file}.`,
     ruleWritten: (q: string) => `The open target question ${q} is answered with /**.`,
     undo: "Undo",
     undone: "Undone: the line is removed.",

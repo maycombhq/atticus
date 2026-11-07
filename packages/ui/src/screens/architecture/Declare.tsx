@@ -144,6 +144,7 @@ export function DeclarePanel(p: {
           type="button"
           className="btn"
           disabled={!!busy}
+          aria-busy={busy === "preview"}
           onClick={() => void send("preview")}
         >
           {busy === "preview" ? D.previewing : D.preview}
@@ -426,9 +427,10 @@ export function AddBoxForm(p: {
               type="button"
               className="btn"
               disabled={!!busy || !sid.trim() || !name.trim()}
+              aria-busy={busy === "preview"}
               onClick={() => void send("preview")}
             >
-              {A.preview}
+              {busy === "preview" ? A.previewing : A.preview}
             </button>
             <button
               type="button"

@@ -181,6 +181,9 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
   useEffect(() => {
     let live = true;
     epoch.current++;
+    // A snapshot is of one picture: another lens or address starts without it.
+    setSnapshot(undefined);
+    setTools((t) => (t.compareWith ? { ...t, compareWith: undefined } : t));
     setStatus({ state: "loading" });
     setCurrent("estate");
     setExpanded(new Set(["estate"]));
@@ -368,7 +371,9 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
       propsOf,
     );
     if (tools.compareWith) {
-      const c = compare(tools.compareWith, g);
+      // Against the whole picture, not what the layers and filter leave: hiding a link isn't
+      // losing it. Only the links drawn are marked.
+      const c = compare(tools.compareWith, whole);
       const added = new Set(c.added.map((l) => l.id));
       g = {
         ...g,
@@ -384,13 +389,15 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
           b.group
             ? b
             : tools.overlay === "gaps"
-              ? { ...b, badge: { n: b.gaps.length, what: WORDS.gaps } }
-              : b.kind === "repo" && openQuestions.state === "ready"
+              ? b.gaps.length
+                ? { ...b, badge: { n: b.gaps.length, what: WORDS.gapsBadge(b.gaps.length) } }
+                : b
+              : b.kind === "repo" && openQuestions.state === "ready" && byRepo[b.label]?.open
                 ? {
                     ...b,
                     badge: {
-                      n: byRepo[b.label]?.open ?? 0,
-                      what: COPY.canvasTools.questionsBadge,
+                      n: byRepo[b.label]!.open,
+                      what: COPY.canvasTools.questionsBadge(byRepo[b.label]!.open),
                     },
                   }
                 : b,
@@ -627,7 +634,7 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
               }}
               {...(tools.compareWith
                 ? (() => {
-                    const c = compare(tools.compareWith, graph);
+                    const c = compare(tools.compareWith, whole);
                     return { compared: { added: c.added.length, removed: c.removed } };
                   })()
                 : {})}
@@ -695,9 +702,14 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
                 onLaid={setLaid}
                 {...(radius ? { lit: radius } : {})}
                 onConnect={(a, b) => {
-                  const from = boxOf(find(a))?.repo;
-                  const to = boxOf(find(b));
-                  if (from && to) setConnecting({ from, initial: to });
+                  // A line is drawn from a repo (or its component) to another box; drawn the
+                  // other way round from a system, the ends swap; within one repo, nothing.
+                  let from = boxOf(find(a));
+                  let to = boxOf(find(b));
+                  if (from && !from.repo && to?.repo) [from, to] = [to, from];
+                  if (!from?.repo || !to) return;
+                  if (to.repo === from.repo) return;
+                  setConnecting({ from: from.repo, initial: to });
                 }}
                 aside={
                   <div className="stack">
@@ -834,7 +846,8 @@ export function connectChoices(views: Views): BoxChoice[] {
       const b = boxOf(n);
       if (!b) continue;
       const k = b.repo ? `r:${b.repo}` : `s:${b.system}`;
-      if (!seen.has(k)) seen.set(k, { label: `${n.kind}: ${n.label}`, box: b });
+      if (!seen.has(k))
+        seen.set(k, { label: `${WORDS.kindWord[n.kind] ?? n.kind}: ${n.label}`, box: b });
     }
   return [...seen.values()].sort((x, y) => (x.label < y.label ? -1 : 1));
 }

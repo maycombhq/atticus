@@ -678,6 +678,13 @@ export function RunConsole() {
                       ? T.console.copyFailed
                       : T.console.copy}
                 </button>
+                <span role="status" className="sr">
+                  {copied === "yes"
+                    ? T.console.copied
+                    : copied === "failed"
+                      ? T.console.copyFailed
+                      : ""}
+                </span>
               </div>
               <div
                 role="tabpanel"
