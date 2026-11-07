@@ -162,6 +162,9 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
   const [tidy, setTidy] = useState(0);
   const [keeping, setKeeping] = useState<Keeping>({ state: "idle" });
   const rowRefs = useRef(new Map<string, HTMLButtonElement>());
+  // Counts the picture's starts again (a new lens or address): a box opened from before one is
+  // left, as its answers belong to the picture before.
+  const epoch = useRef(0);
   // C2 (ADR 0135): the calls a person said are wrong here, and the views as they were then.
   const [watched, setWatched] = useState<{ calls: string[]; before: Views } | undefined>();
 
@@ -177,6 +180,7 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
   // A new lens starts again from the estate, or from the node a link names.
   useEffect(() => {
     let live = true;
+    epoch.current++;
     setStatus({ state: "loading" });
     setCurrent("estate");
     setExpanded(new Set(["estate"]));
@@ -240,6 +244,7 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
 
   /** A box anywhere in this lens opened as a link to it opens it, the boxes above it too. */
   const openDeep = async (id: string) => {
+    const at0 = epoch.current;
     try {
       const v = await load(id);
       const at = openAt(v);
@@ -248,13 +253,16 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
           .filter((x) => x !== "estate" && x !== v.node.id)
           .map((x) => load(x).catch(() => undefined)),
       );
+      if (epoch.current !== at0) return;
       setExpanded(new Set(at.expanded));
       setCurrent(at.current);
       setSelected(at.selected);
       setFocus(undefined);
       setInPlace(new Set());
-    } catch {
-      // A box the catalog no longer has: the picture stays where it is.
+    } catch (e) {
+      // A box the catalog no longer has leaves the picture where it is; anything else is said.
+      if (epoch.current !== at0 || (e instanceof ApiError && e.problem.status === 404)) return;
+      setStatus({ state: "error", error: e instanceof Error ? e.message : String(e) });
     }
   };
 

@@ -26,6 +26,13 @@ describe("Ask: plain questions become catalog queries, and the query is always s
       "show gateway interfaces without a pattern",
       { action: "query", query: "kind:interface via:gateway missing:pattern" },
     ],
+    [
+      "interfaces seen at one end",
+      {
+        action: "query",
+        query: "kind:interface confidence:inferred -flags:joined-by-person",
+      },
+    ],
     ["list the tables in ledger", { action: "query", query: "kind:table system:ledger" }],
     [
       "personal data in ledger",

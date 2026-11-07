@@ -166,7 +166,11 @@ export function translate(question: string, lookup: Lookup): Asked {
     if (system) terms.push(`system:${system}`);
     else if (rec) terms.push(`refs:${rec.id}`);
     if (has(/\b(without|no|missing) (a |an )?pattern\b/)) terms.push("missing:pattern");
-    if (has(/\b(inferred|unconfirmed|one end)\b/)) terms.push("confidence:inferred");
+    if (has(/\b(inferred|unconfirmed|one end)\b/)) {
+      terms.push("confidence:inferred");
+      // A link a person paired cites both ends: not one seen at one end (ADR 0174).
+      if (has(/\bone end\b/)) terms.push("-flags:joined-by-person");
+    }
     return {
       action: "query",
       query: terms.join(" "),
