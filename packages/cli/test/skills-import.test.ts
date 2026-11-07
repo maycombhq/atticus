@@ -184,6 +184,8 @@ describe("another team's frontmatter", () => {
     expect(splitFm(agent[1]!.text).fm.tools).toEqual(["read", "search"]);
     const skill = outputsOf({ ...team, kind: "skill", name: "s", text: "---\nname: s\n---\nX\n" });
     expect(splitFm(skill.at(-1)!.text).fm.agent).toBe("ask");
+    // And the model never picks it on its own: a person runs it.
+    expect(splitFm(skill[0]!.text).fm["disable-model-invocation"]).toBe(true);
   });
 });
 
@@ -195,6 +197,7 @@ describe("where a copy came from", () => {
     );
     expect(await at("git@git.example.com:o/r.git")).toBe("git@git.example.com:o/r.git");
     expect(await at("https://user:pa@ss@git.example.com/r")).toBe("https://git.example.com/r");
+    expect(await at("https://u:p#w@git.example.com/r")).toBe("https://git.example.com/r");
     expect(await at("/home/tom/repos/their")).toBe("their");
     expect(await at("C:\\Users\\tom\\their")).toBe("their");
     expect(await at("file:///home/tom/their")).toBe("their");

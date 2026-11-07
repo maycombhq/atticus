@@ -163,6 +163,8 @@ export function CanvasTools(p: {
       views.reload();
     } catch (e) {
       setError(e instanceof ApiError ? (e.problem.detail ?? e.message) : String(e));
+      // Kept meanwhile (a teammate's): the list again, so the button says Replace.
+      if (e instanceof ApiError && e.problem.status === 409) views.reload();
     } finally {
       setKeeping(false);
     }

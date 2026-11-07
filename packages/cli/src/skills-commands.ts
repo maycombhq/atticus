@@ -192,7 +192,9 @@ export function outputsOf(i: SourceItem): { path: string; text: string }[] {
       return [
         {
           path: `.claude/skills/${i.name}/SKILL.md`,
-          text: `${fmText({ ...fm, name: i.name, description })}${mark}\n${body}`,
+          // Another team's skill is run by a person only, never picked by the model on its own
+          // (Claude Code and VS Code both read SKILL.md from here and honour this).
+          text: `${fmText({ ...fm, name: i.name, description, ...(i.team ? { "disable-model-invocation": true } : {}) })}${mark}\n${body}`,
         },
         ...i.files.map((f) => ({ path: `.claude/skills/${i.name}/${f.path}`, text: f.text })),
         {

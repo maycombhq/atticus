@@ -1063,6 +1063,14 @@ export async function answerQuestion(
     // TODO(lead, repo types): no skill file for this type yet; the path is in the answer.
     return { question: answered, ...extra, skill: { path: skill, written: false } };
   }
-  await writeFileIfUnchanged(file, body, withSkillAnswer(body, answered));
+  // The question is answered already: an edit of the skill file meanwhile is read again once,
+  // and the answer's line goes in that (it replaces its own line by its marker).
+  try {
+    await writeFileIfUnchanged(file, body, withSkillAnswer(body, answered));
+  } catch (e) {
+    if (!(e instanceof FileChangedError)) throw e;
+    const now = await readFile(file, "utf8");
+    await writeFileIfUnchanged(file, now, withSkillAnswer(now, answered));
+  }
   return { question: answered, ...extra, skill: { path: skill, written: true } };
 }

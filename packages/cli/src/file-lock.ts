@@ -56,9 +56,9 @@ export async function originOf(
     .then((r) => r.stdout.trim())
     .catch(() => "");
   // A remote: scheme://host/... (not file://) with no sign-in, query or fragment, or user@host:path.
-  const clean = url.replace(/[?#].*$/, "");
-  if (/^(https?|ssh|git):\/\/[^/]/i.test(clean))
-    return clean.replace(/^([a-z][a-z0-9+.-]*:\/\/)[^/]*@/i, "$1");
+  // The sign-in goes first (a password may hold # or ?), then any query or fragment.
+  const clean = url.replace(/^([a-z][a-z0-9+.-]*:\/\/)[^/]*@/i, "$1").replace(/[?#].*$/, "");
+  if (/^(https?|ssh|git):\/\/[^/]/i.test(clean)) return clean;
   if (/^[\w.-]+@[\w.-]+:[^\\]/.test(clean) && !/^[a-z]:[\\/]/i.test(clean)) return clean;
   // A local folder (a teammate's clone, file://) says no more than its name.
   return nameOf(url ? url.replace(/^file:\/*/i, "/").replace(/[?#].*$/, "") : dir);

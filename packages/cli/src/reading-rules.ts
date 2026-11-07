@@ -208,11 +208,10 @@ export const exampleOf = (e: string | undefined): string => {
   if (!e || e.length > 300) return "";
   const m = /^(.+):(\d+)$/.exec(e);
   if (!m) return "";
-  // Windows paths read as forward ones; a drive's letter is no folder.
-  const segs = m[1]!
-    .replace(/\\/g, "/")
-    .replace(/^[A-Za-z]:\//, "")
-    .split("/");
+  // A path in the repo: forward slashes, never absolute (a drive, /, ~: someone's machine).
+  const rel = m[1]!.replace(/\\/g, "/");
+  if (/^([A-Za-z]:|\/|~)/.test(rel)) return "";
+  const segs = rel.split("/");
   const last = segs.at(-1)!;
   // Folders may have spaces ("Forge Accounts"); the file is name.ext with none; no part is a
   // sentence (". ", a backtick, a line break).
@@ -220,7 +219,7 @@ export const exampleOf = (e: string | undefined): string => {
   // sentence marks (": , . ` !?" followed by a space, a line break).
   const ok =
     /^[^\s`/:,]+$/.test(last) &&
-    segs.slice(0, -1).every((x) => !/[`\n\r:,!?]|\.\s/.test(x) && x.split(/\s+/).length <= 3) &&
+    segs.slice(0, -1).every((x) => !/[`\n\r:,!?]|\.\s/.test(x) && x.split(/\s+/).length <= 2) &&
     segs.join(" ").split(/\s+/).length <= 8;
   return ok ? ` For example ${e}.` : "";
 };
