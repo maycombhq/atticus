@@ -24,5 +24,5 @@ A stroke is a plan, reviewed in the change's pull request like any target flow; 
 ## Consequences
 
 - An architect can draw a change before any stage runs, and the stage completes the drawing rather than replacing it.
-- Importing a draw.io or Mermaid sketch as strokes (`atticus change sketch --from`) builds on the same `applyStroke`; a stroke the file can't be read as is reported, never guessed.
+- `atticus change sketch <change> --from <file.drawio|.mmd> [--save]` reads a draw.io export (the reconcile reader) or a Mermaid flowchart as the same strokes through `applyStroke`: a line marked new or not on today's map is a call (a topic when its label names one), a line marked retired is today's matching step taken out, a box the catalog doesn't know is only ever a call's target; a line the file can't be read as is reported, never guessed. The editors open the Change diagram, where the panel lives.
 - Two people drawing the same change at once: the second write is refused and the person draws the stroke again on the fresh picture.

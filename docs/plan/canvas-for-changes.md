@@ -1,6 +1,6 @@
 # Plan: drawing a change on the canvas, and matching calls to APIs at scale
 
-- Status: in progress. B1–B2 shipped as ADR 0178 (part 1); A1–A3 as ADR 0179; B3 and A4–A5 follow.
+- Status: done in beta.21. B1–B2 shipped as ADR 0178 part 1, B3 as part 2; A1–A5 as ADR 0179 (the strokes live under the Change diagram rather than as a layer on the estate canvas; a planned box is a new flow's `runsOn`, drawn + new).
 - Date: 2026-11-07
 - Builds on: ADR 0108 (a change drawn from its target flows), ADR 0174 (correcting the map on the canvas), ADR 0175 (a canvas you work in), ADR 0176 (reading rules)
 

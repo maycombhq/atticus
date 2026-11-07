@@ -625,6 +625,7 @@ Usage:
   atticus change new "<title>"         Start a change from a template: --type <type>
           [--template id] [--id id] [--owner role=a,b]... [--system id]... [--like <archived change>]
           [--impact <vendor spec>]  (its footprint: what the spec's newer version reaches, see intake impact)
+  atticus change sketch <change> --from <file.drawio|.mmd> [--save] [--json]   Read a draw.io export or a Mermaid flowchart as strokes into the change's target flows (a line marked new or not on today's map is a call or a topic; one marked retired takes today's step out); shows what it would draw, --save draws it (ADR 0179)
   atticus change impact <change> [--json]  What the change's target flows break across the estate: each entry or table, who calls or uses it (a link the map guessed: may break, not counted), the fields that stop crossing and the gateway routes to update, each with its owner team; then who calls the callers, up to five hops up
   atticus change similar "<brief>"     The archived changes nearest a new brief (or --change <id>: a change's own), to start from one with change new --like or change attach --like [--limit n] [--json]
   atticus domain profile <system>      A system as a domain profile, filled from the catalog [--out file]
@@ -3188,6 +3189,21 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
         },
         io,
       );
+    if (command === "sketch") {
+      // ADR 0179: a change drawn elsewhere first, read back as strokes into its target flows.
+      const { changeSketchCommand } = await import("./change-sketch.js");
+      return changeSketchCommand(
+        root,
+        arg,
+        {
+          ...(str(values.from) ? { from: str(values.from)! } : {}),
+          ...(values.save === true ? { save: true } : {}),
+          json,
+          by: who(),
+        },
+        io,
+      );
+    }
     if (command === "impact") {
       // ADR 0144 (V1): what the change's target flows break across the estate, and whose it is.
       const { changeImpactCli } = await import("./change-impact.js");
