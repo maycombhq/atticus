@@ -1069,8 +1069,17 @@ export async function answerQuestion(
     await writeFileIfUnchanged(file, body, withSkillAnswer(body, answered));
   } catch (e) {
     if (!(e instanceof FileChangedError)) throw e;
-    const now = await readFile(file, "utf8");
-    await writeFileIfUnchanged(file, now, withSkillAnswer(now, answered));
+    // Gone, or changed again: the answer stands; the skill file says it next time.
+    const now = await readFile(file, "utf8").catch(() => undefined);
+    if (now === undefined)
+      return { question: answered, ...extra, skill: { path: skill, written: false } };
+    try {
+      await writeFileIfUnchanged(file, now, withSkillAnswer(now, answered));
+    } catch (again) {
+      if (again instanceof FileChangedError)
+        return { question: answered, ...extra, skill: { path: skill, written: false } };
+      throw again;
+    }
   }
   return { question: answered, ...extra, skill: { path: skill, written: true } };
 }

@@ -215,13 +215,15 @@ export const exampleOf = (e: string | undefined): string => {
   const last = segs.at(-1)!;
   // Folders may have spaces ("Forge Accounts"); the file is name.ext with none; no part is a
   // sentence (". ", a backtick, a line break).
-  // The file: a name with no spaces (a.ts, Dockerfile, .env); folders: a few words at most, no
-  // sentence marks (": , . ` !?" followed by a space, a line break).
+  // The file: a name with no spaces (a.ts, Dockerfile, .env); folders: no `..`, no sentence
+  // marks (": , ! ?", ". ", a backtick, a line break), and at most one folder of two words (a
+  // "Forge Accounts"): several worded folders read as a sentence, not a path.
+  const folders = segs.slice(0, -1);
   const ok =
     /^[^\s`/:,]+$/.test(last) &&
-    segs.slice(0, -1).every((x) => !/[`\n\r:,!?]|\.\s/.test(x) && x.split(/\s+/).length <= 2) &&
-    segs.join(" ").split(/\s+/).length <= 8;
-  return ok ? ` For example ${e}.` : "";
+    folders.every((x) => x !== ".." && !/[`\n\r:,!?]|\.\s/.test(x) && x.split(/\s+/).length <= 2) &&
+    folders.filter((x) => /\s/.test(x)).length <= 1;
+  return ok ? ` For example \`${e}\`.` : "";
 };
 
 /**
