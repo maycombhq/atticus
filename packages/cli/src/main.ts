@@ -576,6 +576,7 @@ Usage:
   atticus patterns scan [--json]       Find integration patterns in the wikis and compare them with the org pack
   atticus coverage [--json]            What the catalog knows per system and area: verified, document-only, unknown
   atticus questions [--json]           Knowledge gaps and the owner questions that close them
+  atticus questions owner <id> --text "..." [--by who] [--json]   Record an owner's answer to a gap's owner question in catalog/curated/ownerquestion/<id>.yaml; the gap closes once the fact is in the catalog
   atticus questions list [--state open] [--mine] [--json]   The questions in questions/ a step raised for a person,
           in the order to ask them, each with its owner team; --mine, your teams' only
   atticus questions show <id> [--json]  One question on file, with its options, evidence and answer
@@ -3844,6 +3845,9 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
       process.off("SIGINT", onInt);
     }
   }
+  // UX review (2026-11-08): an owner's answer to a knowledge gap's owner question.
+  if (group === "questions" && command === "owner")
+    return (await import("./owner-questions.js")).ownerQuestionCommand(root, argv, io);
   if (group === "questions" && command) return questionsFiles(root, argv, io);
   if (group === "questions") return questionsCommand(root, io, { json: values.json === true });
   if (group === "reconcile")

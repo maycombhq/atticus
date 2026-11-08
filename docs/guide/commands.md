@@ -64,6 +64,7 @@ Every command under the twelve, with its options.
   atticus knowledge correct <item> --set field=value  Correct an item's details (a list takes a|b|c); the corrected item is what plans read [--note <text>]
   atticus knowledge reject <item> --note <why>  Mark an item wrong: plans and answers leave it out
   atticus questions [--json]           Knowledge gaps and the owner questions that close them
+  atticus questions owner <id> --text "..." [--by who] [--json]   Record an owner's answer to a gap's owner question in catalog/curated/ownerquestion/<id>.yaml; the gap closes once the fact is in the catalog
   atticus questions list [--state open] [--mine] [--json]   The questions in questions/ a step raised for a person,
           in the order to ask them, each with its owner team; --mine, your teams' only
   atticus questions show <id> [--json]  One question on file, with its options, evidence and answer

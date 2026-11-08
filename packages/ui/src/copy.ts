@@ -175,6 +175,35 @@ export const COPY = {
     emptyAll: "No questions yet. A scan step adds one here when the code is unclear.",
     unreadable: (file: string) => `${file} isn't a valid question file.`,
     pickFromList: "Pick a question from the list to answer it.",
+    /** UX review (2026-11-08): the questions a step raised, or the knowledge gaps' owner questions. */
+    kind: "Kind",
+    kindSteps: (n?: number) => (n === undefined ? "From the steps" : `From the steps (${n})`),
+    kindOwner: (n?: number) => (n === undefined ? "Owner questions" : `Owner questions (${n})`),
+    ownerQuestions: {
+      title: "Owner questions",
+      intro:
+        "A knowledge gap asks a system's owner for a fact the code can't give. Ask the owner, then record what they said here: it is written to catalog/curated/ownerquestion/<id>.yaml, which every scan keeps. The gap itself closes once the fact is in the catalog.",
+      empty: "No owner questions: the catalog has every fact its checks need.",
+      emptyCatalog:
+        "The catalog is empty, so nothing is asked yet. Read the repos first (Set up), and the owner questions appear here.",
+      ask: (owner: string, system: string, channel: string) =>
+        `Ask ${owner} · ${system} · by ${channel}`,
+      routeTo: (role: string) => `Nobody owns it: it goes to the ${role}.`,
+      needs: (fact: string) => `Needs: ${fact}`,
+      fill: (file: string, field: string) => `The fact itself goes in org-pack/${file}: ${field}.`,
+      open: "OPEN",
+      answered: "ANSWERED",
+      answeredWas: (answer: string) => `Recorded answer: ${answer}`,
+      answerLabel: "The owner's answer",
+      answerAgain: "Change the recorded answer",
+      save: "Record the answer",
+      saving: "Recording…",
+      saved: (file: string) =>
+        `Recorded in ${file}. The gap closes once the fact is in the catalog. Propose it for review below.`,
+      needAnswer: "Write what the owner said first.",
+      command: (id: string) => `atticus questions owner ${id} --text "…"`,
+      copyCommand: "Copy the command",
+    },
     askedBy: (command: string, day: string) => `Asked by ${command} on ${day}`,
     /** The copy button beside a question's id on its card. */
     copyId: "Copy the id",
@@ -2099,7 +2128,8 @@ export const COPY = {
     build: "Build",
     release: "Release",
     theCatalogIsAccepted:
-      "The catalog is accepted as the baseline, with your name, in catalog/baseline.yaml. Commit it and open a pull request: merging it makes it the baseline on main.",
+      "The catalog is accepted as the baseline, with your name, in catalog/baseline.yaml. Propose it for review: merging the pull request makes it the baseline on main.",
+    baselineAccepted: "Baseline accepted",
     changesInFlight2: "Changes in flight",
     blockingFindings: "Blocking findings",
     openOwnerQuestions: "Open owner questions",
@@ -3611,7 +3641,8 @@ export const COPY = {
     copyQuestionText: "Copy question text",
     openChange: "Open change",
     eachQuestionIsAsked:
-      "Each question is asked once and the answer is reused at every gate. Asking happens outside Atticus: copy the text, then record the answer on the change.",
+      "Each question is asked once and the answer is reused at every gate. Asking happens outside Atticus: copy the text, ask the owner, then record what they said on the Questions page.",
+    answerOnQuestions: "Record the answer",
     noOwnerQuestionsWaiting: "No owner questions waiting.",
     ownerQuestionsWaiting: "Owner questions waiting",
   },

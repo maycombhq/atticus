@@ -131,7 +131,8 @@ export function inboxOf(d: InboxData): InboxItem[] {
       kind: "question",
       title: q.question,
       detail: `${q.system ?? ""}${q.owner ? ` · ask ${q.owner}` : ""}`,
-      href: "#/map",
+      // UX review (2026-11-08): answered on the Questions page, not read-only on the Map.
+      href: "#/questions?kind=owner",
       id: q.id,
       ...(q.system ? { repo: q.system } : {}),
     });
