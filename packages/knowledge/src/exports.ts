@@ -2,7 +2,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { stringify } from "yaml";
 import type { KnowledgeSourceAdapter, RawPage, WikiSource } from "./sources.js";
-import { readMarkdown } from "./markdown.js";
+import { frontMatterEnd, readMarkdown } from "./markdown.js";
 
 /**
  * Wikis read from an export folder when there is no API (ADR 0132): a Confluence space exported
@@ -488,9 +488,28 @@ export const sharepointExportAdapter: KnowledgeSourceAdapter = {
       // Round 37: CRLF-safe, and the page's own front matter is kept (a page marked confidential
       // or restricted stays so), not thrown away.
       const lf = md ? text.replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n") : text;
-      const own = md ? readMarkdown(lf).frontMatter : {};
+      const doc = md ? readMarkdown(lf) : undefined;
+      // Round 41: front matter that can't be read may hold the page's classification or
+      // restriction, so the page is refused (the sync lists it as skipped, with the error), not
+      // read as if it had none.
+      if (doc?.frontMatterProblem) {
+        out.push({
+          pagePath: rel.replace(/\.markdown$/i, ".md"),
+          path: toPosix(relative(root, full)),
+          content: "",
+          skipReason: doc.frontMatterProblem,
+        });
+        continue;
+      }
+      const own = doc ? doc.frontMatter : {};
+      // Round 41: the body starts after the line the reader found closing the front matter
+      // (`---` or `...`, a trailing space allowed), not after a stricter pattern of its own.
+      const lines = lf.split("\n");
+      const end = md ? frontMatterEnd(lines) : -1;
       const body = md
-        ? lf.replace(/^---\n[\s\S]*?\n---\n/, "")
+        ? end > 0
+          ? lines.slice(end + 1).join("\n")
+          : lf
         : htmlToMarkdown(
             elementInner(
               text,

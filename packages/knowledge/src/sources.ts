@@ -29,6 +29,11 @@ export interface RawPage {
   /** Date the source system reports (an API's last-updated), when it has one. */
   updatedAt?: string;
   version?: string;
+  /**
+   * Round 41: why the adapter refused the page (front matter it couldn't read, say). The page
+   * is not read: the sync lists it as skipped with this reason, and its content is empty.
+   */
+  skipReason?: string;
 }
 
 /**
@@ -423,7 +428,10 @@ export async function syncSources(o: SyncOptions): Promise<SyncResult> {
       });
       continue;
     }
-    read.push({ source, raw: raw.filter((r) => sourceReadsPage(source, r.pagePath)) });
+    const reads = raw.filter((r) => sourceReadsPage(source, r.pagePath));
+    for (const r of reads)
+      if (r.skipReason) res.skipped.push({ source: source.id, path: r.path, reason: r.skipReason });
+    read.push({ source, raw: reads.filter((r) => !r.skipReason) });
   }
   const owners = pageOwners(read.filter((x) => !o.adaptersById?.[x.source.id]));
   // ADR 0132: the same page mirrored in two wikis (the same words, front matter aside) is read

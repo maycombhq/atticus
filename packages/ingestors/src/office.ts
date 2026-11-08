@@ -233,7 +233,7 @@ const stringItem = (si: XNode | undefined) =>
     .map(textOf)
     .join("");
 
-export function readXlsx(zip: ZipArchive): ParsedText {
+export function readXlsx(zip: ZipArchive, maxCells = MAX_CELLS): ParsedText {
   const wb = need(zip, "xl/workbook.xml");
   const rels = relationships(zip.text("xl/_rels/workbook.xml.rels"));
   const shared = childrenNamed(parseXmlTree(zip.text("xl/sharedStrings.xml") ?? ""), "si").map(
@@ -245,20 +245,27 @@ export function readXlsx(zip: ZipArchive): ParsedText {
   // Round 37: a few bytes can name row 1e9 or column ZZZZZ; Excel's own limits bound a cell,
   // blank rows and columns between cells are bounded, and the whole read has a budget.
   const notes: string[] = [];
-  let budget = MAX_CELLS;
+  let budget = maxCells;
+  // Round 41: set when a cell is actually left unread for the budget, so the note says so even
+  // when the budget ran out exactly at the end of a row.
+  let unread = false;
   findAll(child(wb, "sheets"), "sheet").forEach((sheet, i) => {
+    const name = sheet.attrs.name ?? `Sheet ${i + 1}`;
     const target = rels.get(relId(sheet) ?? "");
     const part = target ? resolvePart("xl", target) : undefined;
     const doc = part ? parseXmlTree(zip.text(part) ?? "") : undefined;
     const rows: string[][] = [];
     let prev: number | undefined;
+    let squeezed = false;
     for (const row of findAll(child(doc, "sheetData"), "row")) {
-      if (budget <= 0) break;
+      if (budget <= 0) {
+        if (childrenNamed(row, "c").length) unread = true;
+        if (unread) break;
+        continue;
+      }
       const r = Number(row.attrs.r) || (prev ?? 0) + 1;
       if (r > EXCEL_ROWS) {
-        notes.push(
-          `${sheet.attrs.name ?? `Sheet ${i + 1}`}: row ${r} is past Excel's last row; skipped.`,
-        );
+        notes.push(`${name}: row ${r} is past Excel's last row; skipped.`);
         continue;
       }
       if (prev !== undefined)
@@ -266,9 +273,24 @@ export function readXlsx(zip: ZipArchive): ParsedText {
       prev = r;
       const cells: string[] = [];
       let next = 0;
+      // Round 41: columns of a blank run past MAX_GAP are left out, so a cell after one is read
+      // at its column less `shift`; the cell itself is never dropped for the gap.
+      let shift = 0;
       for (const c of childrenNamed(row, "c")) {
-        const at = c.attrs.r ? colIndex(c.attrs.r) : next;
-        if (at >= EXCEL_COLUMNS || at - cells.length > MAX_GAP || --budget < 0) continue;
+        const col = c.attrs.r ? colIndex(c.attrs.r) : next;
+        if (col >= EXCEL_COLUMNS) continue;
+        if (budget <= 0) {
+          unread = true;
+          break;
+        }
+        budget--;
+        next = col + 1;
+        let at = Math.max(0, col - shift);
+        if (at - cells.length > MAX_GAP) {
+          shift += at - cells.length - MAX_GAP;
+          at = cells.length + MAX_GAP;
+          squeezed = true;
+        }
         const v = textOf(child(c, "v"));
         let value: string;
         switch (c.attrs.t) {
@@ -286,22 +308,26 @@ export function readXlsx(zip: ZipArchive): ParsedText {
         }
         while (cells.length < at) cells.push("");
         cells[at] = value;
-        next = at + 1;
       }
       while (cells.length && cells.at(-1) === "") cells.pop();
       rows.push(cells);
     }
+    if (squeezed)
+      notes.push(`${name}: more than ${MAX_GAP} blank columns between cells were left out.`);
     tables.push(rows);
-    s.heading(sheet.attrs.name ?? `Sheet ${i + 1}`, 1, { page: i + 1 });
+    s.heading(name, 1, { page: i + 1 });
     for (const r of rows) s.add(r.join("\t"));
   });
-  if (budget < 0)
-    notes.push(`The workbook has more than ${MAX_CELLS} cells; the rest wasn't read.`);
+  if (unread) notes.push(`The workbook has more than ${maxCells} cells; the rest wasn't read.`);
   return { ...(title ? { title } : {}), sections: s.done(), tables, meta, notes };
 }
 
 const EXCEL_ROWS = 1_048_576;
 const EXCEL_COLUMNS = 16_384;
-/** Blank rows or columns kept between two cells: a far-off one is still read, the gap isn't. */
+/**
+ * Blank rows or columns kept between two cells: a far-off one is still read, the gap isn't (a
+ * cell past a longer blank run of columns sits MAX_GAP blanks after the one before it, with a
+ * note).
+ */
 const MAX_GAP = 1000;
 const MAX_CELLS = 2_000_000;

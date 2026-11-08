@@ -60,6 +60,9 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
   - **Facts read at a later commit, or on another branch, stay in the facts file when the clone is checked out behind them.** Round 40 kept only facts of a commit the clone hadn't got; a clone put back on an older commit still diffed backwards and dropped the facts that cite a changed file.
   - **Bring in never takes what merged as the base of a change's record.** It uses the hand-off branch, here or on the remote; with neither, a record both sides changed is refused, not merged so as to drop the reviewer's edit.
   - **Bring in puts the person's own record back when the fast-forward fails**, unstages a new record so the fast-forward can go ahead, and refuses (rather than failing) when the record was deleted here and changed in what merged.
+- Round 41 (review):
+  - **A SharePoint export page whose front matter can't be read is refused.** Before, a typo in its YAML dropped its classification and the page was read as if it had none. The sync now lists it as skipped, with the error. Front matter closed by `...`, or by `---` with a trailing space, is stripped from the body too.
+  - **An Excel cell past a long run of blank columns is read.** Before, the cell itself was skipped. Now the blanks are left out (at most 1,000 kept), with a note once per sheet. The note that the workbook had too many cells also shows when the limit is reached at the end of a row.
 - Round 40 (review):
   - **Facts read at a commit the clone doesn't have stay in the facts file, and are still refused.** Before, a verify (or the app's Apply) on the wrong checkout emptied `<repo>.jsonl`, and the next one wrote a catalog without that repo's records.
   - **What's next asks the gate whether the draft is missing.** On the stage path the define gate needs no separate draft, so a placed change is handed off, not sent to `change draft`, which refused.
