@@ -328,6 +328,43 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
   };
   return (
     r
+      // ADR 0183: the app runs the local steps and proposes them for review on the person's yes.
+      .add("POST", "/api/facts/{repo}/apply", async ({ params }) => {
+        const { verifyCommand } = await import("./verify-commands.js");
+        const res = await run((io) =>
+          verifyCommand(root, params.repo!, { write: true, verbose: false, json: false }, io),
+        );
+        if (res.code === 2) throw refused(res);
+        return { status: 200, body: { code: res.code, lines: [...res.out, ...res.err] } };
+      })
+      .add("GET", "/api/propose", async ({ query }) => {
+        const { proposePlan, PROPOSE_SCOPES } = await import("./propose.js");
+        const scope = query.get("scope") ?? "";
+        if (!(PROPOSE_SCOPES as readonly string[]).includes(scope))
+          throw refused({
+            code: 2,
+            out: [],
+            err: [`scope is one of ${PROPOSE_SCOPES.join(", ")}.`],
+          });
+        return {
+          status: 200,
+          body: await proposePlan(root, scope as (typeof PROPOSE_SCOPES)[number], { by: user }),
+        };
+      })
+      .add("POST", "/api/propose", async ({ body }) => {
+        const b = parseBody(Api.ProposeRequest, body);
+        const { proposeForReview } = await import("./propose.js");
+        // The person's click is the approval to push the branch and open the PR (ADR 0183).
+        const res = await run((io) =>
+          proposeForReview(
+            root,
+            { scope: b.scope, by: user, files: b.files, ...(b.title ? { title: b.title } : {}) },
+            io,
+          ),
+        );
+        if (res.code !== 0) throw refused(res);
+        return { status: 201, body: { lines: res.out } };
+      })
       .add("GET", "/api/change-types", async () => {
         const op = await loadOrgPack(orgPackDirOf(root));
         return {

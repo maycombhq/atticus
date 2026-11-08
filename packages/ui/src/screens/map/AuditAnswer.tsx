@@ -1,4 +1,5 @@
 import { useEffect, useId, useState } from "react";
+import { Propose } from "../../app/propose.js";
 import type { Api } from "@maycombhq/core";
 import { api, useApi, type Loaded } from "../../api/client.js";
 import { CorrectFact, useEvidence } from "../../app/evidence.js";
@@ -199,6 +200,7 @@ export function AuditAnswerForm(p: {
       {s.state === "done" && (
         <div role="status">
           <p className="work-say">{A.saved(s.result.file, s.result.answered, s.result.open)}</p>
+          <Propose scope="audit" />
           <Cmd text={s.result.commit} label={A.copyCommit} />
         </div>
       )}

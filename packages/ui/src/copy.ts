@@ -222,11 +222,11 @@ export const COPY = {
     pickOne: "Pick one of the options, or answer in your own words.",
     needWords: "Write your answer, or pick one of the options.",
     needType: "Say which repo type the answer is for, or keep it to this repo.",
-    saved: (file: string) => `Saved to ${file}. Commit it for review with the rest of the scan.`,
+    saved: (file: string) => `Saved to ${file}.`,
     skillWritten: (path: string) => `Also written under Answers in ${path}.`,
     skillMissing: (path: string) =>
       `${path} isn't there yet, so the answer is kept in the question file, with that path.`,
-    next: "Run this next; it reads your answer:",
+    next: "Apply it to the map, then propose it for review. On the command line:",
     copy: "Copy the command",
     answered: (by: string, day: string) => `Answered by ${by} on ${day}`,
     retired: "This question is retired; nothing reads its answer.",
@@ -833,7 +833,7 @@ export const COPY = {
       saving: "Writing the answers…",
       nothingPicked: "Answer at least one item first.",
       saved: (file: string, answered: number, open: number) =>
-        `Written to ${file}: ${answered} answered, ${open} open. The app wrote only that file; commit it in a pull request:`,
+        `Written to ${file}: ${answered} answered, ${open} open. Propose it for review, or commit it yourself:`,
       copyCommit: "Copy the git command",
       sameInTerminal: "The same draw in a terminal:",
       copyCommand: "Copy the audit command",
@@ -3350,8 +3350,8 @@ export const COPY = {
       `Kept ${name} in this machine's credential store. It never goes in runtime.yaml.`,
     save: "Save",
     saved: (path: string) =>
-      `Saved ${path}. Commit it in a pull request: the org pack is reviewed like code.`,
-    saveNote: (path: string) => `Saving writes ${path}; commit it in a pull request.`,
+      `Saved ${path}. Propose it for review: the org pack is reviewed like code.`,
+    saveNote: (path: string) => `Saving writes ${path}; then propose it for review.`,
     test: "Test the provider",
     budgetsLabel: "Models and budgets",
     modelsLabel: "Models allowed",
@@ -3679,6 +3679,29 @@ export const COPY = {
     start: "Start",
   },
   /** ADR 0106: what Atticus asked a model and what it answered, run by run. */
+  /** ADR 0183: Apply and Propose for review, run from the app. */
+  propose: {
+    apply: (repo?: string) => (repo ? `Apply to ${repo}'s map` : "Apply"),
+    applying: "Applying…",
+    applied: (repo: string) => `Applied: ${repo}'s facts are checked again and in the catalog.`,
+    applyFailed: "Verify found problems; they are listed above.",
+    propose: "Propose for review",
+    listed: "Here is what would be proposed.",
+    title: "Propose for review",
+    nothing: "Nothing has changed to propose.",
+    willCommit: (branch: string, title: string) =>
+      `These files go on branch ${branch} as "${title}", and a pull request is opened. Untick any you don't want in it.`,
+    status: { "??": "new", M: "changed", A: "added", D: "removed", R: "renamed" } as Record<
+      string,
+      string
+    >,
+    yes: (n: number) => `Push ${n} file${n === 1 ? "" : "s"} and open the PR`,
+    proposing: "Proposing…",
+    proposed: "Proposed for review.",
+    cancel: "Not now",
+    whoMerges:
+      "A person reviews and merges it on the Git host; Atticus never merges. Your click is your approval to push the branch.",
+  },
   /** UX review: starting a change in the app. */
   newChange: {
     start: "New change",

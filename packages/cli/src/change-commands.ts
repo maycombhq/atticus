@@ -18,6 +18,7 @@ import {
   newChange,
   returnToPo,
   syncHandoff,
+  gitHandoffPublisher,
   type HandoffPublisher,
   type Reason,
 } from "@maycombhq/changes";
@@ -89,6 +90,33 @@ async function gitHostFor(
 }
 
 const approvalOf = (by: string, at: string, ref: string): Approval => ({ by, at, ref });
+
+/**
+ * Review: the hand-off's files reach its branch on the remote before the PR is asked for.
+ * Before, nothing in production passed a publisher, so the PR's branch was never pushed: a live
+ * Git host refused a PR from a branch that isn't there, and a manual one's step named a branch
+ * nobody had made. The person's --approve (the app's click) is the approval for the push too.
+ * A test that gives its own Git host gives its own publisher, or none.
+ */
+export function handoffPublisherFor(deps: ChangeDeps, io?: Output): HandoffPublisher | undefined {
+  if (deps.publisher) return deps.publisher;
+  if (deps.gitHost) return undefined;
+  const git = gitHandoffPublisher();
+  // A metarepo Atticus can't push from (no remote, the practice sandbox, a host it can't reach)
+  // still gets its PR, or its manual step (ADR 0032), with the branch for the person to push.
+  return {
+    async publish(input) {
+      try {
+        return await git.publish(input);
+      } catch (e) {
+        io?.out(
+          `The branch ${input.branch} wasn't pushed (${(e as Error).message.split("\n")[0]}): push it yourself before you open the PR.`,
+        );
+        return { commit: "" };
+      }
+    },
+  };
+}
 
 /** Parse --owner role=a,b (repeatable) into owners by role. */
 export function parseOwners(values: string[]): Record<string, string[]> | string {
@@ -364,7 +392,7 @@ export async function changeHandoff(
       now,
       ...(o.repo ? { repo: o.repo } : {}),
       ...(o.base ? { base: o.base } : {}),
-      ...(deps.publisher ? { publisher: deps.publisher } : {}),
+      publisher: handoffPublisherFor(deps, io),
       // WP7.4: the PR reviews itself: the change as a picture, its estimate, its open findings.
       review: await (await import("./handoff-review.js")).handoffReview(root, id),
       ...(metarepoOpenSpec(root) ? { openspec: metarepoOpenSpec(root)! } : {}),

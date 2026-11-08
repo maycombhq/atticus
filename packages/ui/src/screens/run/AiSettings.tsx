@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Propose } from "../../app/propose.js";
 import { api, useApi, useReloadOnFiles } from "../../api/client.js";
 import { Panel, View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
@@ -419,6 +420,7 @@ export function AiSettingsForm(p: { data: AiSettings; onSaved?: () => void }) {
         </span>
       </div>
       <Note note={save.note} />
+      {save.note?.ok && !save.note.working && <Propose scope="org-pack" />}
       <Note note={test.note} />
     </form>
   );

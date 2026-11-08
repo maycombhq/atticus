@@ -188,8 +188,11 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   records of a large estate by `total` instead of reading them all. Additive only.
  * 2.64.0 (UX review): GET /api/change-types, the org pack's change types for the app's New change
  *   form (POST /api/changes was there; nothing listed what `type` could be). Additive only.
+ * 2.65.0 (ADR 0183): POST /api/facts/{repo}/apply runs verify --write; GET and POST
+ *   /api/propose list what a kind of work changed and, on the person's yes, push it to a branch
+ *   and open the PR. Additive only.
  */
-export const API_VERSION = "2.64.0";
+export const API_VERSION = "2.65.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -2205,6 +2208,25 @@ export const NewChangeRequest = z.strictObject({
   template: z.string().optional(),
   /** WP7.6: an archived change to start from (its folder or its id), attached as an example. */
   like: z.string().min(1).optional(),
+});
+
+/** 2.65.0 (ADR 0183): what Propose for review commits, and the person's yes to it. */
+export const ProposeScope = z.enum(["answers", "corrections", "audit", "org-pack"]);
+export const ProposePlanView = z.object({
+  scope: ProposeScope,
+  files: z.array(z.object({ path: z.string(), status: z.string() })),
+  branch: z.string(),
+  title: z.string(),
+});
+export const ProposeRequest = z.strictObject({
+  scope: ProposeScope,
+  /** Exactly the files the person saw listed; one that changed back since is left out. */
+  files: z.array(z.string().min(1)).min(1),
+  title: z.string().max(200).optional(),
+});
+export const LinesView = z.object({
+  code: z.number().int().optional(),
+  lines: z.array(z.string()),
 });
 
 /** 2.64.0: a change type, as the New change form offers it. */
@@ -4378,6 +4400,37 @@ const OPS: Record<string, Record<string, Op>> = {
       errors: [400, 409, 422],
     },
   },
+  "/api/facts/{repo}/apply": {
+    post: {
+      id: "applyFacts",
+      summary:
+        "2.65.0 (ADR 0183): run atticus verify <repo> --write, as Apply after an answer or a correction",
+      tag: "workspace",
+      params: [p("repo")],
+      ok: { status: 200, schema: "LinesView", description: "What verify printed" },
+      errors: [400, 422],
+    },
+  },
+  "/api/propose": {
+    get: {
+      id: "proposePlan",
+      summary:
+        "2.65.0 (ADR 0183): the files a kind of work changed, the branch and the title Propose for review would use",
+      tag: "workspace",
+      params: [q("scope", str, "answers, corrections, audit or org-pack")],
+      ok: { status: 200, schema: "ProposePlanView", description: "OK" },
+      errors: [422],
+    },
+    post: {
+      id: "proposeForReview",
+      summary:
+        "2.65.0 (ADR 0183): on the person's yes, commit exactly those files to the branch, push it and open the PR; a person merges",
+      tag: "workspace",
+      body: ProposeRequest,
+      ok: { status: 201, schema: "LinesView", description: "Proposed" },
+      errors: [400, 422],
+    },
+  },
   "/api/change-types": {
     get: {
       id: "listChangeTypes",
@@ -5525,6 +5578,9 @@ export function openApiDocument(): Record<string, unknown> {
     JobAccepted,
     ChangeSummary,
     ChangeTypeView,
+    ProposePlanView,
+    ProposeRequest,
+    LinesView,
     ChangeDetail,
     ArtifactContent,
     Task,

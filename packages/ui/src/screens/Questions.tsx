@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import { ApplyAndPropose } from "../app/propose.js";
 import type { Api, Question } from "@maycombhq/core";
 import { api, useApi, useReloadOnFiles, type Loaded } from "../api/client.js";
 import { Panel, View } from "../app/ui.js";
@@ -510,6 +511,10 @@ export function QuestionList(p: {
   );
 }
 
+/** The repo of a rerun that is `atticus verify <repo> --write`, which Apply runs (ADR 0183). */
+export const verifyRepoOf = (rerun: string) =>
+  /^atticus verify ([a-z0-9][a-z0-9._-]*) --write$/.exec(rerun.trim())?.[1];
+
 /** What happened after the answer was saved: the file, the skill file, the command to run next. */
 export function AnsweredView({ result }: { result: AnsweredResult }) {
   return (
@@ -525,6 +530,7 @@ export function AnsweredView({ result }: { result: AnsweredResult }) {
             : C.skillMissing(result.skill.path)}
         </p>
       )}
+      <ApplyAndPropose scope="answers" repo={verifyRepoOf(result.rerun)} />
       <p style={{ margin: 0 }}>{C.next}</p>
       <div className="row" style={{ gap: 8, alignItems: "center", flexWrap: "wrap" }}>
         <code className="mono">{result.rerun}</code>

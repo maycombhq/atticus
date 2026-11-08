@@ -1,4 +1,5 @@
 import { useId } from "react";
+import { ApplyAndPropose } from "./propose.js";
 import type { Api } from "@maycombhq/core";
 import { useApi, type Loaded } from "../api/client.js";
 import { COPY } from "../copy.js";
@@ -9,7 +10,7 @@ import { CopyButton } from "../screens/run/shared.js";
  * one panel with the commands to run, each with a copy button, the correction file's change as
  * written, and what the next `atticus verify <repo> --write` will change in the facts and the
  * catalog, worked out by the server with that command's own functions and nothing written. The
- * app runs none of the commands (build-status B1).
+ * app runs them too, on the person's click (ADR 0183: Apply, then Propose for review).
  */
 
 const N = COPY.correctionNext;
@@ -103,6 +104,8 @@ export function CorrectionNextPanel(p: {
   file: string;
   line?: string | undefined;
   preview: Loaded<Preview>;
+  /** ADR 0183: Apply and Propose for review run from here. */
+  repo?: string | undefined;
 }) {
   const id = useId();
   const v = p.preview.state === "ready" ? p.preview.data : undefined;
@@ -120,6 +123,7 @@ export function CorrectionNextPanel(p: {
           </pre>
         </figure>
       )}
+      {p.repo && <ApplyAndPropose scope="corrections" repo={p.repo} />}
       <h5 className="hud">{N.stepsTitle}</h5>
       {p.preview.state === "loading" && (
         <p role="status" aria-busy="true" className="ev-say">
@@ -161,5 +165,12 @@ export function CorrectionNext(p: { repo: string; result: Api.FactCorrectionResu
   const preview = useApi<Preview>(
     `/api/facts/${encodeURIComponent(p.repo)}/preview?fact=${encodeURIComponent(p.result.correction.fact)}`,
   );
-  return <CorrectionNextPanel file={p.result.file} line={p.result.line} preview={preview} />;
+  return (
+    <CorrectionNextPanel
+      file={p.result.file}
+      line={p.result.line}
+      preview={preview}
+      repo={p.repo}
+    />
+  );
 }
