@@ -55,6 +55,7 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 ### Fixed before release (review)
 
 - Round 44 (review):
+  - **Sync reads only a change's own release PR**, by its head branch, never another PR that shares its number on a manual Git host, and corrects a recorded number that named the wrong PR.
   - **A change's hand-off carries the questions its own steps asked**, matched by the step (`atticus change <step> <id>`, `atticus plan <step> <id>`, `atticus critic <id>`), never by the repo field: a stage's question about a repo rides with the change, and a repo's own map question never does, even when a change shares the repo's name.
   - **Setting the org pack's owner keeps pack.yaml's line endings** (Windows CRLF stays CRLF), in the app and on the command line.
   - **A regex grep whose call has used its whole time stops as cut** ("the search stopped at its cap of files, bytes or time"), not as a pattern that is too slow.

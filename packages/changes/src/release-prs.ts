@@ -354,6 +354,23 @@ export async function syncReleasePrs(
     let pr: PullRequest;
     try {
       pr = await o.gitHost.getPullRequest(r.id, r.pr.number);
+      // Round 44: only the change branch's own PR counts (a manual host's recorded number may
+      // be another PR's): by its head, or else the one PR from the change branch.
+      if (pr.head !== r.branch) {
+        const mine = await o.gitHost.listPullRequests(r.id, { head: r.branch });
+        const own =
+          mine.find((x) => x.url === r.pr!.url) ?? (mine.length === 1 ? mine[0] : undefined);
+        if (!own) {
+          rows.push({
+            repo: r.id,
+            outcome: "failed",
+            pr: r.pr,
+            message: `${r.id}: PR #${r.pr.number} on the Git host is from ${pr.head}, not ${r.branch}: check the release PR's number on the Git host (on a manual host, on its step), then sync again.`,
+          });
+          continue;
+        }
+        pr = own;
+      }
     } catch (e) {
       if (!(e instanceof AdapterError)) throw e;
       rows.push({
@@ -365,7 +382,7 @@ export async function syncReleasePrs(
       continue;
     }
     const build = buildOf(pr);
-    if (pr.state !== r.pr.state || pr.url !== r.pr.url) {
+    if (pr.state !== r.pr.state || pr.url !== r.pr.url || pr.number !== r.pr.number) {
       r.pr = prOf(pr, now);
       changed = true;
     }

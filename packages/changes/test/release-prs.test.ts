@@ -239,6 +239,37 @@ describe("release PRs (ADR 0184)", () => {
     expect(r!.build.status).toBe("passed");
   });
 
+  it("Sync reads only the change branch's own PR, never another PR by the same number (round 44)", async () => {
+    const { root } = await setup("release-ready", [{ id: "forge-ledger" }]);
+    const host = new MockGitHost([{ repo: "forge-ledger" }]);
+    // PR #1 on the host is another branch's, merged; the release PR is #2.
+    await host.createPullRequest(
+      {
+        repo: "forge-ledger",
+        head: "feature/other",
+        base: "main",
+        title: "Other",
+        body: "",
+      },
+      approval("ari", NOW, "other"),
+    );
+    host.review("forge-ledger", 1, "ari", "approved");
+    await host.merge("forge-ledger", 1, approval("ari", NOW, "host"));
+    await raiseReleasePrs(root, ID, { gitHost: host, approval: YES, now: NOW });
+    const cr = (await readChangeRepos(root, ID))!;
+    expect(cr.repos[0]!.pr!.number).toBe(2);
+    // The number goes wrong (say, recorded by hand as #1).
+    await writeChangeRepos(root, {
+      ...cr,
+      repos: cr.repos.map((r) => ({ ...r, pr: { ...r.pr!, number: 1 } })),
+    });
+    await syncReleasePrs(root, ID, { gitHost: host, now: NOW });
+    expect((await readChangeRepos(root, ID))!.repos[0]!.pr).toMatchObject({
+      number: 2,
+      state: "open",
+    });
+  });
+
   it("a manual Git host records the PR as a step, and Sync takes the link the person recorded", async () => {
     const { root } = await setup("release-ready", [{ id: "forge-ledger", onHost: true }]);
     const store = memoryStepStore();
