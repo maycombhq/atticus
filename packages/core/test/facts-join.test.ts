@@ -694,6 +694,8 @@ describe("joinRecords: every Interface says how it was joined (C1, ADR 0135)", (
   it("names every flag that says how in JOIN_HOW_FLAGS, apart from the guesses", () => {
     expect([...JOIN_HOW_FLAGS].sort()).toEqual([
       "declared-caller",
+      // ADR 0181: the AI decided it (a pairing or a target answer), from its run.
+      "joined-by-ai",
       "joined-by-answer",
       "joined-by-host",
       "joined-by-name",

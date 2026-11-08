@@ -110,6 +110,20 @@ describe("a change that rests on a guessed link says so (ADR 0140)", () => {
     expect(f[0]!.finding.evidence[0]).toMatchObject({ source: "artifact", path: "interfaces.md" });
   });
 
+  it("asks the caller's owner about a link the AI decided: never a person's word (ADR 0181)", async () => {
+    const root = await forgeChangeRoot();
+    await guessed(root, "if-d99f508a2ac9b6e0", ["joined-by-ai"]);
+    const f = of(await runCritic(root, CHANGE, { now: NOW }));
+    expect(f).toHaveLength(1);
+    expect(f[0]!.finding.kind).toBe("knowledge-gap");
+    expect(f[0]!.finding.summary).toContain("a link the AI decided");
+    expect(f[0]!.finding.question?.owner).toBe("team-portal");
+    // A person's pairing says nothing.
+    const mine = await forgeChangeRoot();
+    await guessed(mine, "if-d99f508a2ac9b6e0", ["joined-by-person"]);
+    expect(of(await runCritic(mine, CHANGE, { now: NOW }))).toEqual([]);
+  });
+
   it("says a join by a host's first label is a guess too", async () => {
     const root = await forgeChangeRoot();
     await guessed(root, "if-5c55930b735276a9", ["joined-by-label"]);

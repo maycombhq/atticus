@@ -1,4 +1,4 @@
-schemaVersion: 4
+schemaVersion: 5
 kind: Endpoint
 id: bad
 status: current

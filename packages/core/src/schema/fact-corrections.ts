@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { normalizeFactPaths } from "../fact-paths.js";
 import { FactId, FACT_KINDS } from "./facts.js";
+import { AI_RUNTIMES, AppliedRule, BatchId, DecideBar } from "./question.js";
 
 /**
  * A person's correction of a fact (ADR 0124 addendum D-app, F3): `facts/<repo>.corrections.jsonl`
@@ -15,7 +16,26 @@ import { FactId, FACT_KINDS } from "./facts.js";
  * meets no fact is stale: the verifier says so and applies nothing.
  */
 
-export const FACT_CORRECTIONS_SCHEMA_VERSION = 1 as const;
+/**
+ * Version 2 (ADR 0181) adds what AI deciding needs, all optional: `ai` (a pairing Atticus applied
+ * from an AI run: by `atticus`, never the person, joined `joined-by-ai`), `batch` (the batch that
+ * wrote a line, so Undo removes exactly its lines), `rule` (a line a person's rule wrote, from
+ * which correction), `match` (the rule a person's correction spreads, "Apply to similar") and the
+ * action `unlink` (a person says the call reaches none of these). A version 1 line reads as it
+ * is and means the same; a line that uses any of them says version 2.
+ */
+export const FACT_CORRECTIONS_SCHEMA_VERSION = 2 as const;
+
+/** ADR 0181: who writes an AI pairing's line: Atticus, from the run, never the session or a person. */
+export const AI_LINE_BY = "atticus";
+
+/** ADR 0181: the AI run a pairing came from, and the bar it met to be applied. */
+export const CorrectionAi = z.strictObject({
+  runtime: z.enum(AI_RUNTIMES),
+  run: z.string().trim().min(1),
+  bar: DecideBar.optional(),
+});
+export type CorrectionAi = z.infer<typeof CorrectionAi>;
 
 /** The fields of a fact a correction may not set: what it is, where it comes from, who checked it. */
 export const FACT_FIXED_FIELDS = [
@@ -49,7 +69,7 @@ export type CorrectionLink = z.infer<typeof CorrectionLink>;
 
 export const FactCorrection = z
   .strictObject({
-    schemaVersion: z.literal(FACT_CORRECTIONS_SCHEMA_VERSION),
+    schemaVersion: z.union([z.literal(1), z.literal(FACT_CORRECTIONS_SCHEMA_VERSION)]),
     /** The fact's id, as the facts file had it when the person corrected it. */
     fact: FactId,
     /** What the assistant cited: the fact a correction is about when a read changes its id. */
@@ -63,7 +83,7 @@ export const FactCorrection = z
      * wrong: the fact isn't so, and is left out; edit: its claim is what `set` says; link (G1,
      * ADR 0174): a call the person paired with the API in `link`, the fact itself unchanged.
      */
-    action: z.enum(["wrong", "edit", "link"]),
+    action: z.enum(["wrong", "edit", "link", "unlink"]),
     /** For link: what the call reaches. */
     link: CorrectionLink.optional(),
     /** For edit: the fact's own fields with their new values (`value` sets the cite's value). */
@@ -72,11 +92,63 @@ export const FactCorrection = z
     line: z.number().int().positive().optional(),
     /** Why, in the person's words: required to mark a fact wrong. */
     reason: z.string().trim().min(1).max(500).optional(),
-    /** The Git user who corrected it (ADR 0073). */
+    /** The Git user who corrected it (ADR 0073); `atticus` for an AI pairing (ADR 0181). */
     by: z.string().min(1),
     at: z.iso.datetime({ offset: true }),
+    /** Version 2 (ADR 0181): an AI pairing, with the run that made it. */
+    ai: CorrectionAi.optional(),
+    /** Version 2 (ADR 0181): the batch that wrote the line. */
+    batch: BatchId.optional(),
+    /** Version 2 (ADR 0181): a person's rule wrote it, from their correction. */
+    rule: AppliedRule.optional(),
+    /** Version 2 (ADR 0181): the rule the person's correction spreads (a path prefix, host or topic pattern). */
+    match: z.string().trim().min(1).max(300).optional(),
   })
   .superRefine((c, ctx) => {
+    const v2 = c.ai || c.batch || c.rule || c.match || c.action === "unlink";
+    if (v2 && c.schemaVersion !== FACT_CORRECTIONS_SCHEMA_VERSION)
+      ctx.addIssue({
+        code: "custom",
+        path: ["schemaVersion"],
+        message: "ai, batch, rule, match and unlink are version 2's (ADR 0181)",
+      });
+    if (c.ai) {
+      // ADR 0181: an AI decision is a pairing with a repo's entry, written by Atticus as the AI's.
+      if (c.action !== "link" || !c.link?.repo)
+        ctx.addIssue({
+          code: "custom",
+          path: ["ai"],
+          message: "the AI only pairs a call with a repo's entry",
+        });
+      if (c.by !== AI_LINE_BY)
+        ctx.addIssue({
+          code: "custom",
+          path: ["by"],
+          message: `an AI pairing is written by ${AI_LINE_BY}, never as a person`,
+        });
+      if (c.rule || c.match)
+        ctx.addIssue({ code: "custom", path: ["rule"], message: "an AI pairing carries no rule" });
+    } else if (c.by === AI_LINE_BY && c.rule === undefined && c.action !== "wrong")
+      ctx.addIssue({
+        code: "custom",
+        path: ["by"],
+        message: `${AI_LINE_BY} writes only an AI pairing: say the run (ai)`,
+      });
+    if (c.action === "unlink") {
+      if (c.target.kind !== "call")
+        ctx.addIssue({
+          code: "custom",
+          path: ["target", "kind"],
+          message: "only a call is unlinked",
+        });
+      if (c.link || c.set || c.line !== undefined)
+        ctx.addIssue({
+          code: "custom",
+          path: ["link"],
+          message: "an unlink names no API and sets nothing",
+        });
+      return;
+    }
     if (c.action === "link") {
       if (!c.link)
         ctx.addIssue({
@@ -165,6 +237,10 @@ export function correctionLine(c: FactCorrection): string {
     "reason",
     "by",
     "at",
+    "ai",
+    "batch",
+    "rule",
+    "match",
   ];
   const out: Record<string, unknown> = {};
   for (const k of order)
@@ -184,32 +260,40 @@ export function linksFor(f: CallLike, corrections: readonly FactCorrection[]): F
   const moved = corrections.some(
     (c) => c.action === "edit" && c.fact === f.id && c.line === f.cite.line,
   );
+  // Newest first; of two at the same time, the later line in the file (ADR 0181: a rule's line
+  // written in the same instant as the AI's it replaces).
   return corrections
+    .map((c, i) => [c, i] as const)
     .filter(
-      (c) =>
-        c.action === "link" &&
-        !!c.link &&
+      ([c]) =>
+        ((c.action === "link" && !!c.link) || c.action === "unlink") &&
         c.target.kind === "call" &&
         c.target.file === f.cite.file &&
         ((c.target.line === f.cite.line && (c.fact === f.id || c.target.value === f.cite.value)) ||
           (moved && c.fact === f.id)),
     )
-    .sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
+    .sort(([a, i], [b, j]) => (a.at < b.at ? 1 : a.at > b.at ? -1 : j - i))
+    .map(([c]) => c);
 }
+
+/** A pairing as the join reads it: what the call reaches, who said so, and (ADR 0181) the AI run. */
+export type PairOnFile = CorrectionLink & { by: string; ai?: CorrectionAi };
 
 /**
  * G1 (ADR 0174): a repo's pairings, call fact id → what the person paired it with, from its
  * corrections file: the newest link per call (a repo's or an outside system's), met as linksFor
- * meets it. A link that meets no call is left out (the verifier says so).
+ * meets it. A link that meets no call is left out (the verifier says so). ADR 0181: an AI
+ * pairing keeps its run (`ai`); a newer `unlink` withdraws any pairing.
  */
 export function pairsFromCorrections(
   facts: readonly CallLike[],
   corrections: readonly FactCorrection[],
-): Record<string, CorrectionLink & { by: string }> {
-  const out: Record<string, CorrectionLink & { by: string }> = {};
+): Record<string, PairOnFile> {
+  const out: Record<string, PairOnFile> = {};
   for (const f of facts) {
     const c = linksFor(f, corrections)[0];
-    if (c?.link) out[f.id] = { ...c.link, by: c.by };
+    if (c?.action === "link" && c.link)
+      out[f.id] = { ...c.link, by: c.by, ...(c.ai ? { ai: { ...c.ai } } : {}) };
   }
   return out;
 }

@@ -27,10 +27,12 @@ import { BasePath, HostPattern } from "./workspace.js";
  * as version 4 in memory.
  */
 /**
- * Version 5 (ADR 0181 part 4) adds `role`: the role that owns the question on a change (product,
- * architecture, analysis, delivery), written when it is raised from the stage that raised it,
- * unless the question says otherwise. Optional: version-1 to version-4 files read unchanged, and
- * `roleOfQuestion` derives their role from the step that asked (question-roles.ts).
+ * Version 5 (one version with role-owned questions' optional `role`, ADR 0181 part 4; merged as
+ * one bump) also lets an answer be the AI's: `by` is a person's Git user, or
+ * `{ kind: ai, runtime, run }` for a decision Atticus applied from an AI run (never written as the
+ * person's); `batch` names the batch that applied an answer (by AI, or by a person's rule), so
+ * Undo removes exactly it; `rule` says a person's rule applied it, from which correction. All
+ * optional; version-1 to version-4 files read as before and come back as version 5 in memory.
  */
 export const QUESTION_SCHEMA_VERSION = 5 as const;
 
@@ -52,6 +54,54 @@ const QuestionSchemaVersion = z
 export const QUESTION_ROLES = ["product", "architecture", "analysis", "delivery"] as const;
 export const QuestionRole = z.enum(QUESTION_ROLES);
 export type QuestionRole = z.infer<typeof QuestionRole>;
+
+/**
+ * ADR 0181: the runtimes whose runs Atticus drives and records, so a decision can name its run.
+ * A hand-off answer a person pasted is no AI decision: it stays a proposal.
+ */
+export const AI_RUNTIMES = ["copilot-acp"] as const;
+
+/**
+ * ADR 0181: the bar an AI decision met to be applied without a person. `confident`: the shapes
+ * score the same pair 0.85 or more and 0.2 ahead (ADR 0178); `agrees-with-shapes`: the AI picked
+ * what the shapes rank first; `person-rule`: a person's rule covers it and says the same.
+ */
+export const DECIDE_BARS = ["confident", "agrees-with-shapes", "person-rule"] as const;
+export const DecideBar = z.enum(DECIDE_BARS);
+export type DecideBar = z.infer<typeof DecideBar>;
+
+/** ADR 0181: who decided, when it was the AI: the runtime and the run that made it. */
+export const AiBy = z.strictObject({
+  kind: z.literal("ai"),
+  runtime: z.enum(AI_RUNTIMES),
+  /** The run under .runs/ that made it (prompt, transcript, run.json). */
+  run: z.string().trim().min(1),
+  bar: DecideBar.optional(),
+});
+export type AiBy = z.infer<typeof AiBy>;
+
+/** Whether an answer's or a line's `by` is the AI's. */
+export const isAiBy = (by: unknown): by is AiBy =>
+  typeof by === "object" && by !== null && (by as { kind?: unknown }).kind === "ai";
+
+/** Who decided, in words: a person's handle, or "AI (copilot-acp, run <id>)"; never a person for the AI. */
+export const answerByWords = (by: string | AiBy): string =>
+  isAiBy(by) ? `AI (${by.runtime}, run ${by.run})` : by;
+
+/** ADR 0181: a batch of decisions applied at once (by AI, or by a person's rule). */
+export const BatchId = z
+  .string()
+  .regex(/^b-\d{8}-\d{6}-[0-9a-f]{6}$/, "a batch id is b-<yyyymmdd>-<hhmmss>-<6 hex>");
+
+/**
+ * ADR 0181: an answer or line a person's rule applied: the correction it came from (a question id,
+ * or `link:<repo>:<call fact id>`) and the rule (a path prefix, host or topic pattern).
+ */
+export const AppliedRule = z.strictObject({
+  from: z.string().trim().min(1),
+  match: z.string().trim().min(1),
+});
+export type AppliedRule = z.infer<typeof AppliedRule>;
 
 /** A question's id: q- and 12 hex characters of the fingerprint of what it asks about. */
 export const QuestionId = z.string().regex(/^q-[0-9a-f]{12}$/, "a question id is q- and 12 hex");
@@ -123,8 +173,8 @@ export const QuestionAnswer = z
     option: z.number().int().min(1).optional(),
     /** Or the person's own words. */
     text: z.string().trim().min(1).optional(),
-    /** The Git user who answered. */
-    by: z.string().min(1),
+    /** The Git user who answered; or (version 5, ADR 0181) the AI, with its runtime and run. */
+    by: z.union([z.string().min(1), AiBy]),
     at: IsoDateTime,
     /** The scope the person confirmed. */
     scope: QuestionScope,
@@ -146,9 +196,31 @@ export const QuestionAnswer = z
         cites: z.array(QuestionProposalCite).min(1),
       })
       .optional(),
+    /** ADR 0181: the batch that applied the answer (by AI or by a person's rule): Undo removes it. */
+    batch: BatchId.optional(),
+    /** ADR 0181: a person's rule applied it (by is that person), from their correction. */
+    rule: AppliedRule.optional(),
   })
   .refine((a) => (a.option === undefined) !== (a.text === undefined), {
     message: "an answer is one option or the person's own words, not both or neither",
+  })
+  .superRefine((a, ctx) => {
+    if (!isAiBy(a.by)) return;
+    // ADR 0181: the AI decides an option on file, for its repo only, and writes no rule.
+    if (a.option === undefined)
+      ctx.addIssue({
+        code: "custom",
+        path: ["text"],
+        message: "an AI answer is one of the options",
+      });
+    if (a.scope.level !== "repo")
+      ctx.addIssue({
+        code: "custom",
+        path: ["scope"],
+        message: "an AI answer is for its repo only, never wider",
+      });
+    if (a.match !== undefined || a.rule !== undefined)
+      ctx.addIssue({ code: "custom", path: ["match"], message: "an AI answer carries no rule" });
   });
 export type QuestionAnswer = z.infer<typeof QuestionAnswer>;
 

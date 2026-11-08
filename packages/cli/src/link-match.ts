@@ -144,6 +144,8 @@ export function checkMatchAnswer(
       lines: typeof raw.lines === "string" ? [raw.lines] : raw.lines,
     };
     if (!p.call || !p.api) rejected.push(`A pair without a call and an api was left out.`);
+    // ADR 0181: paired since (by AI, applied from this answer, or by a person): nothing to propose.
+    else if (view.calls.some((c) => c.fact === p.call && c.status === "paired")) continue;
     else if (!calls.has(p.call))
       rejected.push(`${p.call} isn't one of ${view.from}'s loose calls.`);
     else if (!apis.has(p.api)) rejected.push(`${p.api} isn't an API of ${view.toName}.`);
@@ -190,6 +192,12 @@ export async function runMatch(
     runner?: AcpStepRunner;
     signal?: AbortSignal;
     onProgress?: (line: string) => void;
+    /**
+     * ADR 0181: A's facts, so Atticus can apply the session's pairings that pass the citation check
+     * and meet a bar as the AI's (runtime.yaml decide.links: auto). Left out, nothing is decided.
+     */
+    facts?: readonly Fact[];
+    now?: Date;
   },
 ): Promise<Api.MatchLinksViewT> {
   const { view } = o;
@@ -206,14 +214,17 @@ export async function runMatch(
     return { ...base, state: "handoff", proposals: [], none: [], rejected: [] };
   const runner =
     o.runner ?? (await (await import("./copilot-acp-steps.js")).acpStepRunner(root, { op }));
+  let runId: string | undefined;
   try {
-    await runner({
-      line: brief,
-      change: `match-${view.from}`,
-      writeRoots: [files.dir],
-      ...(o.signal ? { signal: o.signal } : {}),
-      ...(o.onProgress ? { onProgress: o.onProgress } : {}),
-    });
+    runId = (
+      await runner({
+        line: brief,
+        change: `match-${view.from}`,
+        writeRoots: [files.dir],
+        ...(o.signal ? { signal: o.signal } : {}),
+        ...(o.onProgress ? { onProgress: o.onProgress } : {}),
+      })
+    )?.runId;
   } catch (e) {
     return {
       ...base,
@@ -225,6 +236,25 @@ export async function runMatch(
     };
   }
   const m = await readMatch(root, view);
+  // ADR 0181: the session wrote nothing but its answer; Atticus applies what passes as the AI's.
+  if (m.state === "done" && runId && o.facts) {
+    const { decideLinks } = await import("./ai-decide.js");
+    const decided = await decideLinks(root, {
+      view,
+      proposals: m.proposals,
+      facts: o.facts,
+      run: runId,
+      ...(o.now ? { now: o.now } : {}),
+    });
+    if (decided) {
+      const applied = new Set(decided.applied.map((x) => x.call));
+      return {
+        ...m,
+        proposals: m.proposals.filter((p) => !applied.has(p.call)),
+        decided,
+      };
+    }
+  }
   return m.state === "done" || m.state === "failed"
     ? m
     : {
@@ -318,6 +348,7 @@ export async function connectMatchCommand(
     : await runMatch(root, {
         view,
         quotes: quotesOf(facts),
+        facts,
         ...(o.mode ? { mode: o.mode as "copilot-acp" | "hand-off" } : {}),
         ...(o.runner ? { runner: o.runner } : {}),
         onProgress: io.out,
@@ -352,8 +383,22 @@ export async function connectMatchCommand(
     );
   for (const n of r.none) io.out(`  ${n.call}: none${n.why ? ` (${n.why})` : ""}`);
   for (const x of r.rejected) io.out(`  left out: ${x}`);
-  io.out(
-    `Nothing is written: tick the proposals in the app's Connect panel (${from} › Connect to… › ${view.toName}) and confirm; each becomes a link line in ${from}.corrections.jsonl.`,
-  );
+  // ADR 0181: what Atticus applied itself, as the AI's (runtime.yaml decide.links: auto).
+  const d = r.decided;
+  if (d?.paused) io.out(`Deciding is paused: ${d.paused}`);
+  if (d?.applied.length) {
+    io.out(
+      `Detected by AI: ${d.applied.length} pairing${d.applied.length === 1 ? "" : "s"} applied in batch ${d.batch} (link lines by atticus in ${from}.corrections.jsonl, flagged with the run):`,
+    );
+    for (const a of d.applied) io.out(`  ${a.call} → ${a.api} (${a.bar})`);
+    io.out(
+      `Correct one with atticus questions correct link:${from}:<call> --api <entry> --to <repo> | --none; undo them all with atticus questions undo ${d.batch}.`,
+    );
+  }
+  for (const k of d?.kept ?? []) io.out(`  kept as a proposal: ${k.call} → ${k.api} (${k.why})`);
+  if (r.proposals.length || !d?.applied.length)
+    io.out(
+      `${d?.applied.length ? "The rest are proposals" : "Nothing is written"}: tick the proposals in the app's Connect panel (${from} › Connect to… › ${view.toName}) and confirm; each becomes a link line in ${from}.corrections.jsonl.`,
+    );
   return 0;
 }

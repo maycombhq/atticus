@@ -19,6 +19,12 @@ const RULES: { test: (w: readonly string[], a: readonly string[]) => boolean; wh
   },
   { test: (w) => w[0] === "questions" && w[1] === "answer", why: "a person answers questions" },
   {
+    // ADR 0181: the AI decides as itself, through Atticus; correcting it, spreading the
+    // correction and undoing a batch are a person's word.
+    test: (w) => w[0] === "questions" && (w[1] === "correct" || w[1] === "undo"),
+    why: "a person corrects an AI decision and undoes a batch of decisions (ADR 0181); the AI decides only as itself, through Atticus",
+  },
+  {
     test: (w, a) => w[0] === "questions" && w[1] === "sheet" && flag(a, "--apply"),
     why: "a person answers questions (questions sheet --apply answers as them)",
   },

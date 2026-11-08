@@ -31,7 +31,8 @@ export interface CorrectionsResult {
 export function correctionFor(f: Fact, all: readonly FactCorrection[]): FactCorrection | undefined {
   // G1 (ADR 0174): a pairing leaves the fact's claim as read; one to a repo the join reads
   // (pairsFromCorrections), one to an outside system is applied on top (outsidePairingFor).
-  const corrections = all.filter((c) => c.action !== "link");
+  // ADR 0181: an unlink, like a pairing, sets nothing on the fact.
+  const corrections = all.filter((c) => c.action !== "link" && c.action !== "unlink");
   const at = (c: FactCorrection) =>
     c.target.kind === f.kind && c.target.file === f.cite.file && c.target.line === f.cite.line;
   const byId = corrections.filter((c) => c.fact === f.id && at(c));
@@ -137,8 +138,8 @@ export function applyCorrections(
   // Only the newest correction of a fact counts; an older one it replaced isn't stale.
   for (const c of corrections) {
     if (used.has(c)) continue;
-    if (c.action === "link") {
-      // G1: a pairing is stale only when no call of this read is the one it names.
+    if (c.action === "link" || c.action === "unlink") {
+      // G1: a pairing (ADR 0181: or an unlink) is stale only when no call of this read is the one it names.
       if (!met.has(c))
         stale.push({
           correction: c,

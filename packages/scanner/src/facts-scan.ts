@@ -207,9 +207,12 @@ export async function estateFacts(
   notes: string[];
   /** The repos left out as not all verified yet (G1: the Connect panel says verify them first). */
   unverified: string[];
+  /** ADR 0181: of the targets, those the AI answered, by repo and call fact id, with the run. */
+  aiTargets: Record<string, Record<string, { runtime: string; run: string }>>;
 }> {
   const repos: { repo: string; facts: Fact[] }[] = [];
   const targets: Record<string, Record<string, string>> = {};
+  const aiTargets: Record<string, Record<string, { runtime: string; run: string }>> = {};
   const pairs: Record<string, Record<string, PersonPair>> = {};
   const notes: string[] = [];
   const unverified: string[] = [];
@@ -236,10 +239,12 @@ export async function estateFacts(
       continue;
     }
     repos.push({ repo: r.id, facts: parsed.facts });
-    const named = targetsFromAnswers(r.id, parsed.facts, questions, { repoType: r.type });
+    const ai: Record<string, { runtime: string; run: string }> = {};
+    const named = targetsFromAnswers(r.id, parsed.facts, questions, { repoType: r.type, ai });
     if (Object.keys(named).length) targets[r.id] = named;
+    if (Object.keys(ai).length) aiTargets[r.id] = ai;
     const paired = await pairsOfRepo(root, r.id, parsed.facts);
     if (Object.keys(paired).length) pairs[r.id] = paired;
   }
-  return { repos, targets, pairs, notes, unverified };
+  return { repos, targets, pairs, notes, unverified, aiTargets };
 }

@@ -355,9 +355,10 @@ export async function missedOf(root: string, repos: readonly string[]): Promise<
     const corr = parseCorrections(
       await readFile(join(dir, `${repo}.corrections.jsonl`), "utf8").catch(() => ""),
     ).corrections;
-    for (const c of corr.slice(0, 20))
+    // ADR 0181: an AI pairing is no person's correction: what a person said is what reads learn from.
+    for (const c of corr.filter((x) => !x.ai).slice(0, 20))
       out.push(
-        `${repo}: a person ${c.action === "link" ? "paired" : c.action === "wrong" ? "marked wrong" : "corrected"} ${c.target.kind} ${c.target.value} at ${c.target.file}:${c.target.line}${c.link ? ` with ${c.link.method ?? ""} ${c.link.path}` : ""}${c.reason ? ` (${c.reason})` : ""}`,
+        `${repo}: a person ${c.action === "link" ? "paired" : c.action === "unlink" ? "said reaches none of these:" : c.action === "wrong" ? "marked wrong" : "corrected"} ${c.target.kind} ${c.target.value} at ${c.target.file}:${c.target.line}${c.link ? ` with ${c.link.method ?? ""} ${c.link.path}` : ""}${c.reason ? ` (${c.reason})` : ""}`,
       );
   }
   const qs = (await listQuestions(root).catch(() => ({ questions: [] }))).questions.filter(

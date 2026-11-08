@@ -341,6 +341,7 @@ export async function estateJoinOnFile(
     repos: { repo: string; facts: readonly Fact[] }[];
     targets?: Parameters<typeof estateJoinOf>[2];
     pairs?: Parameters<typeof estateJoinOf>[3];
+    aiTargets?: Parameters<typeof estateJoinOf>[4];
   },
   stamp?: string,
 ): Promise<FactsJoinResult> {
@@ -348,7 +349,7 @@ export async function estateJoinOnFile(
   const hit = await readCached<FactsJoinResult>(root, "estate-join", at);
   if (hit) return hit;
   await breathe();
-  const join = estateJoinOf(op, estate.repos, estate.targets, estate.pairs);
+  const join = estateJoinOf(op, estate.repos, estate.targets, estate.pairs, estate.aiTargets);
   await writeCached(root, "estate-join", at, join);
   return join;
 }

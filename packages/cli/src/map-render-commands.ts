@@ -485,7 +485,9 @@ export async function projectFactsIntoCatalog(
   // is this repo's type, covers every call it matches.
   const repoType = estateRepos(op).find((r) => r.id === repo)?.type;
   const targetsOpts = repoType ? { repoType } : {};
-  const targets = targetsFromAnswers(repo, facts, everyTarget, targetsOpts);
+  // ADR 0181: the calls an AI answer named, so their links are the AI's, never a person's.
+  const aiTargets: Record<string, { runtime: string; run: string }> = {};
+  const targets = targetsFromAnswers(repo, facts, everyTarget, { ...targetsOpts, ai: aiTargets });
   const ruled = ruledTargets(repo, facts, everyTarget, targetsOpts);
   // The estate join (ADR 0124, C-join): the other repos' verified facts, so this repo's calls
   // join the entries that serve them and their calls into this repo are joined again.
@@ -521,6 +523,8 @@ export async function projectFactsIntoCatalog(
     // G1 (ADR 0174): the pairings people made on the canvas, this repo's and the others'.
     pairs: { ...(await pairsOfRepo(root, repo, facts)), ...given.extraPairs },
     estatePairs: estate.pairs,
+    aiTargets,
+    estateAiTargets: estate.aiTargets,
     linkEvidence: { contracts: evidence.contracts, traffic: evidence.traffic },
     ...(shared.maps.length ? { shared: shared.maps } : {}),
   });

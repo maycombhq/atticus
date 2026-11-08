@@ -297,7 +297,14 @@ export async function trustView(root: string): Promise<View> {
       else {
         const byId = new Map(kept.map((f) => [f.id, f] as const));
         const p = auditPrecision(a.file.items, (i) => auditItemHolds(i, byId));
-        audit = { path: rel(auditPath), facts: p.facts, byKind: p.byKind, links: p.links };
+        audit = {
+          path: rel(auditPath),
+          facts: p.facts,
+          byKind: p.byKind,
+          links: p.links,
+          // ADR 0181: the AI's decisions audited apart, when any were drawn.
+          ...(p.ai.drawn ? { ai: p.ai } : {}),
+        };
       }
     }
 

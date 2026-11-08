@@ -14,7 +14,13 @@ import {
 } from "./schema/kinds.js";
 import { ChangeArtifact, Phase, SOURCE_AUTHORITIES, SourceScope } from "./schema/orgpack.js";
 import { Finding, FindingAction, Lens, Severity } from "./schema/review.js";
-import { AnswerMatch, Question, QuestionRole, QuestionScopeLevel } from "./schema/question.js";
+import {
+  AnswerMatch,
+  DECIDE_BARS,
+  Question,
+  QuestionRole,
+  QuestionScopeLevel,
+} from "./schema/question.js";
 import { FactCorrection } from "./schema/fact-corrections.js";
 import { JOIN_GUESS_FLAGS } from "./facts-join.js";
 import { AUDIT_ANSWERS, AuditItem } from "./audit.js";
@@ -289,8 +295,17 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   the stage's next run reads as the person's word, for the item or every similar one, and marks
  *   applied. A save through PUT .../artifacts/{artifact} or .../placement records who saved it.
  *   Additive only.
+ * 2.81.0 (ADR 0181, AI decides first): GET /api/decisions lists the AI's decisions that stand
+ *   (pairings flagged `joined-by-ai`, answers `by: { kind: ai, runtime, run }`), with counts split
+ *   from code, by a person and by AI, the batches, and whether deciding is on or paused by the
+ *   sample audit (with why); POST /api/decisions/correct records a person's correction and spreads
+ *   it by a rule (preview first); POST /api/decisions/batches/{batchId}/undo undoes one batch.
+ *   `MatchLinksView.decided` says what Atticus applied from a Copilot match; a Question's answer's
+ *   `by` may be the AI's, with `batch` and `rule`; a corrections line may carry `ai`, `batch`,
+ *   `rule`, `match` and the action `unlink`; TrustRepo.audit gains `ai`; an Interface's evidence
+ *   may be `source: ai` with `run`. Additive only.
  */
-export const API_VERSION = "2.80.0";
+export const API_VERSION = "2.81.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -1120,6 +1135,8 @@ export const TrustRepo = z.object({
       facts: AuditTallyView,
       byKind: z.record(z.string(), AuditTallyView),
       links: AuditTallyView,
+      /** 2.81.0 (ADR 0181): the AI's decisions drawn from this repo, audited apart. */
+      ai: AuditTallyView.optional(),
     })
     .optional(),
 });
@@ -2223,6 +2240,8 @@ export const ChangeImpact = z.object({
   flows: z.number().int(),
   breaks: z.number().int(),
   mayBreak: z.number().int(),
+  /** 2.81.0 (ADR 0181): of the callers that break, those whose every link the AI decided. */
+  byAi: z.number().int().optional(),
   routes: z.number().int(),
   /** 2.43.0 (ADR 0156): up the chain, hops that surely break and those resting on a guess. */
   upstream: z.object({ breaks: z.number().int(), mayBreak: z.number().int() }).optional(),
@@ -2244,6 +2263,8 @@ export const ChangeImpact = z.object({
           repo: z.string().optional(),
           verdict: z.enum(["breaks", "may-break"]),
           guessed: z.enum(JOIN_GUESS_FLAGS).optional(),
+          /** 2.81.0 (ADR 0181): every link of this caller the AI decided, none a person confirmed. */
+          decidedByAi: z.literal(true).optional(),
           interfaces: z.array(z.string()),
           flows: z.array(z.string()),
           routes: z.array(z.string()),
@@ -3672,6 +3693,208 @@ export const MatchLinksView = z.object({
   /** Lines of the answer that named a call or an API that isn't one, left out. */
   rejected: z.array(z.string()).default([]),
   error: z.string().optional(),
+  /**
+   * 2.81.0 (ADR 0181): what Atticus applied itself, as the AI's, once the session's answer was
+   * read (runtime.yaml decide.links: auto, not paused): the batch, each pairing applied with the
+   * bar it met, and each kept as a proposal with why. Absent when nothing was decided.
+   */
+  decided: z
+    .object({
+      mode: z.enum(["auto", "propose"]),
+      batch: z.string().optional(),
+      applied: z.array(z.object({ call: z.string(), api: z.string(), bar: z.enum(DECIDE_BARS) })),
+      kept: z.array(z.object({ call: z.string(), api: z.string(), why: z.string() })),
+      /** Why deciding is paused back to propose (the sample audit), when it is. */
+      paused: z.string().optional(),
+    })
+    .optional(),
+});
+
+// ------------------------------------------------------------------ AI decisions (ADR 0181)
+
+/** How many links or questions were settled each way: from code, by a person, by AI. */
+export const DecisionCounts = z.object({
+  /** Links: joined from the code (a name, a repo, a host, a path, a topic). Questions: retired because the code or a rule answers them. */
+  fromCode: z.number().int(),
+  /** A person's pairing or answer, or a rule a person gave. */
+  byPerson: z.number().int(),
+  /** Decided by AI ("Detected by AI"), not confirmed by a person. */
+  byAi: z.number().int(),
+  /** Questions still open; links still loose (not counted for links). */
+  open: z.number().int().optional(),
+});
+/** One decision the AI applied that still stands: what every "Detected by AI" chip shows. */
+export const AiDecisionItem = z.object({
+  kind: z.enum(["link", "question"]),
+  /** What `POST /api/decisions/correct` takes: `link:<repo>:<call fact id>`, or the question's id. */
+  item: z.string(),
+  repo: z.string(),
+  /** The decision in words. */
+  what: z.string(),
+  /** What it decided: the API's id (a link), or the option's label (a question). */
+  decided: z.string(),
+  /** A link: the call as it is cited, and the API it was paired with. */
+  call: z
+    .object({ fact: z.string(), file: z.string(), line: z.number().int(), value: z.string() })
+    .optional(),
+  to: z
+    .object({
+      repo: z.string(),
+      entry: z.string().optional(),
+      method: z.string().optional(),
+      path: z.string(),
+    })
+    .optional(),
+  /** A question: its words, the option picked (from 1) and every option's label. */
+  question: z
+    .object({ text: z.string(), option: z.number().int(), options: z.array(z.string()) })
+    .optional(),
+  runtime: z.string(),
+  run: z.string(),
+  bar: z.enum(DECIDE_BARS).optional(),
+  batch: z.string().optional(),
+  at: z.string(),
+  /** The lines the decision rests on, `<repo> file:line`. */
+  cites: z.array(z.string()).default([]),
+});
+/** A batch of decisions applied at once, one Undo away. */
+export const DecisionBatchView = z.object({
+  id: z.string(),
+  /** ai: applied by Atticus from an AI run; rule: a person's correction and what its rule spread. */
+  kind: z.enum(["ai", "rule"]),
+  at: z.string(),
+  /** Who: the person, or "AI (copilot-acp, run <id>)". */
+  by: z.string(),
+  run: z.string().optional(),
+  applied: z.number().int(),
+  reverted: z.number().int(),
+  correction: z
+    .object({
+      item: z.string(),
+      answer: z.string(),
+      rule: z
+        .object({ kind: z.enum(["path", "host", "topic"]), match: z.string(), from: z.string() })
+        .optional(),
+    })
+    .optional(),
+  undone: z.object({ by: z.string(), at: z.string() }).optional(),
+  /** Its record, relative to the metarepo. */
+  file: z.string(),
+});
+/** Whether the AI decides now, as runtime.yaml says and the sample audit allows (Home). */
+export const DecideStateView = z.object({
+  configured: z.object({
+    links: z.enum(["auto", "propose"]),
+    questions: z.enum(["auto", "propose"]),
+    minPrecision: z.number(),
+  }),
+  now: z.object({ links: z.enum(["auto", "propose"]), questions: z.enum(["auto", "propose"]) }),
+  /** Paused back to propose: why, in words Home shows, and the audit's numbers. */
+  paused: z
+    .object({
+      why: z.string(),
+      precision: z.number(),
+      low: z.number().nullable(),
+      high: z.number().nullable(),
+      answered: z.number().int(),
+      minPrecision: z.number(),
+    })
+    .optional(),
+  /** The sample audit's precision for the AI's decisions, every repo summed (Map › Trust). */
+  precision: AuditTallyView,
+});
+/** GET /api/decisions: the AI's decisions, the counts split three ways, the batches, the pause. */
+export const DecisionsView = z.object({
+  decide: DecideStateView,
+  links: z.object({ counts: DecisionCounts, items: z.array(AiDecisionItem) }),
+  questions: z.object({ counts: DecisionCounts, items: z.array(AiDecisionItem) }),
+  /** Newest first. */
+  batches: z.array(DecisionBatchView),
+  problems: z.array(z.object({ file: z.string(), message: z.string() })).default([]),
+});
+export const CorrectDecisionRequest = z.object({
+  /** `link:<repo>:<call fact id>`, or a question's id. */
+  item: z.string().min(1),
+  /** A question: the right option, from 1. */
+  option: z.number().int().min(1).optional(),
+  /** A link: the right API (an entry's fact id) and the repo it is in. */
+  api: z.string().min(1).optional(),
+  repo: z.string().min(1).optional(),
+  /** None of these: the call reaches none, or no option is right ("None of these"). */
+  none: z.boolean().optional(),
+  /** Apply to similar (on by default): derive a rule and re-check every AI decision and open item it covers. */
+  similar: z.boolean().optional(),
+  /** The rule to spread in place of the derived one (a path prefix, host or topic pattern). */
+  match: z.string().min(1).max(300).optional(),
+  /** Say what it would write and spread; write nothing (shown before saving). */
+  preview: z.boolean().optional(),
+});
+/** One item a correction's rule re-checked, and what became of it. */
+export const SpreadItemView = z.object({
+  item: z.string(),
+  repo: z.string(),
+  what: z.string(),
+  /** What the AI had decided (or nothing, for an open item). */
+  was: z.string().optional(),
+  /** What the person's rule says now (absent when reverted to open). */
+  now: z.string().optional(),
+  /** applied: an open item answered by the rule; confirmed: the AI agreed; replaced: the AI disagreed and the rule decides; reverted: the AI disagreed and the rule can't decide it, so it is open again. */
+  change: z.enum(["applied", "confirmed", "replaced", "reverted"]),
+});
+export const CorrectDecisionResult = z.object({
+  written: z.boolean(),
+  batch: z.string().optional(),
+  item: z.string(),
+  /** The person's answer, in words. */
+  answer: z.string(),
+  rule: z
+    .object({
+      kind: z.enum(["path", "host", "topic"]),
+      match: z.string(),
+      /** True when Atticus derived it; false when the person gave it. */
+      derived: z.boolean(),
+    })
+    .optional(),
+  /** Why no rule spreads, when Apply to similar was on. */
+  noRule: z.string().optional(),
+  spread: z.array(SpreadItemView),
+  counts: z.object({
+    applied: z.number().int(),
+    confirmed: z.number().int(),
+    replaced: z.number().int(),
+    reverted: z.number().int(),
+  }),
+  /**
+   * The same shape corrected again and again (three times or more): propose a reading rule
+   * (ADR 0176, "Make this a rule"). For a pairing, `line` is the person's line in the repo's
+   * corrections, as POST /api/reading-rules/from-pairing takes it.
+   */
+  makeRule: z
+    .object({
+      corrections: z.number().int(),
+      shape: z.string(),
+      repo: z.string(),
+      line: z.string().optional(),
+      command: z.string().optional(),
+    })
+    .optional(),
+  /** The files written (or to be), relative to the metarepo. */
+  files: z.array(z.string()),
+  /** The commands that bring the map up to it (atticus verify <repo> --write). */
+  verify: z.array(z.string()),
+  commit: z.string(),
+});
+export const UndoBatchResult = z.object({
+  batch: z.string(),
+  /** Lines and answers of the batch taken away. */
+  removed: z.number().int(),
+  /** AI lines and answers it had taken away, put back. */
+  restored: z.number().int(),
+  /** What changed since the batch and was left as it is now, in words. */
+  skipped: z.array(z.string()),
+  files: z.array(z.string()),
+  verify: z.array(z.string()),
+  commit: z.string(),
 });
 export const ConnectLinksRequest = z.object({
   from: z.string().min(1),
@@ -3838,10 +4061,15 @@ export const AddSystemRequest = z.object({
 export const BoxCorrections = z.object({
   items: z.array(
     z.object({
-      kind: z.enum(["edit", "wrong", "link", "topic", "call"]),
+      /** 2.81.0 (ADR 0181): `unlink`, a person said the call reaches none of these. */
+      kind: z.enum(["edit", "wrong", "link", "topic", "call", "unlink"]),
       /** In words: what it says. */
       says: z.string(),
       by: z.string().optional(),
+      /** 2.81.0 (ADR 0181): a pairing the AI decided ("Detected by AI"), with its run; never a person's. */
+      ai: z.object({ runtime: z.string(), run: z.string() }).optional(),
+      /** 2.81.0 (ADR 0181): the batch that wrote the line (POST /api/decisions/batches/{batchId}/undo). */
+      batch: z.string().optional(),
       at: z.string().optional(),
       file: z.string(),
       /** What undoes exactly it: the line to remove, or the declaration. */
@@ -3913,6 +4141,15 @@ export type ConnectLinksResultT = z.infer<typeof ConnectLinksResult>;
 export type MatchLinksRequestT = z.infer<typeof MatchLinksRequest>;
 export type MatchLinksViewT = z.infer<typeof MatchLinksView>;
 export type MatchProposalT = z.infer<typeof MatchProposal>;
+export type DecisionCountsT = z.infer<typeof DecisionCounts>;
+export type AiDecisionItemT = z.infer<typeof AiDecisionItem>;
+export type DecisionBatchViewT = z.infer<typeof DecisionBatchView>;
+export type DecideStateViewT = z.infer<typeof DecideStateView>;
+export type DecisionsViewT = z.infer<typeof DecisionsView>;
+export type CorrectDecisionRequestT = z.infer<typeof CorrectDecisionRequest>;
+export type SpreadItemViewT = z.infer<typeof SpreadItemView>;
+export type CorrectDecisionResultT = z.infer<typeof CorrectDecisionResult>;
+export type UndoBatchResultT = z.infer<typeof UndoBatchResult>;
 
 // ------------------------------------------------------------------ copilot runs (ADR 0173)
 
@@ -5397,6 +5634,37 @@ const OPS: Record<string, Record<string, Op>> = {
       errors: [400, 404, 409],
     },
   },
+  "/api/decisions": {
+    get: {
+      id: "getDecisions",
+      summary:
+        "The AI's decisions that stand (ADR 0181): its pairings and answers, each 'Detected by AI' with its run, the bar it met and its batch; counts split from code, by a person and by AI; the batches, newest first; and whether the AI decides now or is paused (with why, for Home)",
+      tag: "questions",
+      ok: { status: 200, schema: "DecisionsView", description: "OK" },
+    },
+  },
+  "/api/decisions/correct": {
+    post: {
+      id: "correctDecision",
+      summary:
+        "A person corrects one AI decision (ADR 0181): the right option, API or none, recorded as theirs; with similar (on by default) a rule derived from it (or the one given) re-checks every AI decision and open item it covers, applied as their rule or opened again; with preview, what it would write and spread, and nothing written. One batch, one Undo away",
+      tag: "questions",
+      body: CorrectDecisionRequest,
+      ok: { status: 200, schema: "CorrectDecisionResult", description: "OK" },
+      errors: [400, 404, 409, 422],
+    },
+  },
+  "/api/decisions/batches/{batchId}/undo": {
+    post: {
+      id: "undoDecisionBatch",
+      summary:
+        "Undo a batch of decisions (ADR 0181): remove exactly the lines and answers it wrote, and put back the AI decisions it took away; what changed since is left as it is and said",
+      tag: "questions",
+      params: [p("batchId")],
+      ok: { status: 200, schema: "UndoBatchResult", description: "OK" },
+      errors: [404, 409],
+    },
+  },
   "/api/facts/{repo}/corrections/undo": {
     post: {
       id: "undoCorrection",
@@ -6479,6 +6747,9 @@ export function openApiDocument(): Record<string, unknown> {
     MatchLinksRequest,
     MatchProposal,
     MatchLinksView,
+    DecisionsView,
+    CorrectDecisionResult,
+    UndoBatchResult,
     RepoOwnerView,
     SetRepoOwnerResult,
     FileChangeResult,

@@ -519,7 +519,7 @@ export const interfaceViaMatchesPattern: DeterministicCheckDef = {
             .filter((e) => e.path)
             .slice(0, 1)
             .map((e): Evidence => ({
-              source: e.source,
+              source: e.source === "ai" ? "code" : e.source, // ADR 0181: the call's own line
               path: e.path!,
               ...(e.repo ? { repo: e.repo } : {}),
               ...(e.line ? { line: e.line } : {}),

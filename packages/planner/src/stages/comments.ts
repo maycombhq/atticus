@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import {
+  answerByWords,
   changesDirOf,
   changesRelOf,
   QUESTION_SCHEMA_VERSION,
@@ -71,7 +72,7 @@ export async function stageComments(
       comments.push({
         question: q.id,
         text: q.answer.text,
-        by: q.answer.by,
+        by: answerByWords(q.answer.by),
         at: q.answer.at,
         read: loop.read.includes(q.id),
         about: aboutOf(q),

@@ -55,3 +55,23 @@ export function migrateRuntimeV3Text(text: string): { text: string; changed: boo
   doc.set("schemaVersion", 3);
   return { text: doc.toString(), changed: true };
 }
+
+/**
+ * runtime.yaml to version 4 (ADR 0181), for a file that sets `decide` (whether the AI decides
+ * pairings and option questions itself): the number only, every other line as the person wrote
+ * it. A file without it means the same at version 1 to 3, so it is left as it is.
+ */
+export function migrateRuntimeV4Text(text: string): { text: string; changed: boolean } {
+  const doc = parseDocument(text);
+  if (doc.errors.length || !isMap(doc.contents)) return { text, changed: false };
+  const v = doc.get("schemaVersion");
+  if ((v !== 1 && v !== 2 && v !== 3) || !doc.has("decide")) return { text, changed: false };
+  const line = /^schemaVersion:[ \t]*[123][ \t]*(#.*)?$/m;
+  if (line.test(text))
+    return {
+      text: text.replace(line, (_m, c?: string) => `schemaVersion: 4${c ? ` ${c}` : ""}`),
+      changed: true,
+    };
+  doc.set("schemaVersion", 4);
+  return { text: doc.toString(), changed: true };
+}

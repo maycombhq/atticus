@@ -249,6 +249,12 @@ export const JOINED_DESPITE_CONFLICT = "joined-despite-conflict";
 export const JOINED_BY_SERVICE_NAME = "joined-by-service-name";
 /** G1 (ADR 0174): a person paired the call with this entry on the canvas. */
 export const JOINED_BY_PERSON = "joined-by-person";
+/**
+ * ADR 0181: the AI decided the link (a pairing, or a target answer), applied by Atticus from its
+ * run without a person. A how, never a person's word: the Interface is inferred, its evidence is
+ * `source: ai` with the run, and plans and checks tell it from a person's.
+ */
+export const JOINED_BY_AI = "joined-by-ai";
 /** The guesses of J0 and J1 a join by host can carry (`FactJoin.guesses`). */
 export type JoinHostGuess =
   | typeof JOINED_BY_PLATFORM_SETTING
@@ -276,6 +282,7 @@ const guessList = (gs: Iterable<JoinHostGuess>): JoinHostGuess[] =>
 /** Flags that say how a link was made and nothing more: never a gap (C1, ADR 0135). */
 export const JOIN_HOW_FLAGS: ReadonlySet<string> = new Set([
   JOINED_BY_PERSON,
+  JOINED_BY_AI,
   JOINED_BY_ANSWER,
   JOINED_BY_NAME,
   JOINED_BY_REPO,
@@ -355,8 +362,19 @@ export interface FactJoin {
   path: string;
   /** The catalog Interface of the join. */
   interface: string;
-  /** G1 (ADR 0174): a person paired the call with this entry; who did. */
-  paired?: { by: string };
+  /**
+   * G1 (ADR 0174): a person paired the call with this entry; who did. ADR 0181: `ai` when the
+   * pairing is the AI's (written by Atticus from that run), never a person's word.
+   */
+  paired?: { by: string; ai?: JoinAi };
+  /** ADR 0181: the target answer that joined it was the AI's, from that run. */
+  aiAnswer?: JoinAi;
+}
+
+/** ADR 0181: the AI run a decision came from. */
+export interface JoinAi {
+  runtime: string;
+  run: string;
 }
 
 export interface FactJoinAsk {
@@ -495,12 +513,19 @@ export interface PersonPair {
   method?: string;
   path: string;
   by: string;
+  /** ADR 0181: the pairing is the AI's, with its run; joined `joined-by-ai`. */
+  ai?: JoinAi;
 }
 
 export interface JoinFactsInput {
   repos: readonly JoinRepo[];
   /** A person's answer naming the repo or component a call goes to: repo → call fact id → name. */
   targets?: Readonly<Record<string, Readonly<Record<string, string>>>>;
+  /**
+   * ADR 0181: of `targets`, those the AI answered (repo → call fact id → its run): joined
+   * `joined-by-ai`, never `joined-by-answer`, so no reader takes them as a person's word.
+   */
+  aiTargets?: Readonly<Record<string, Readonly<Record<string, JoinAi>>>>;
   /** G1: a person's pairings, caller repo → call fact id → what it reaches. They outrank answers. */
   pairs?: Readonly<Record<string, Readonly<Record<string, PersonPair>>>>;
   /**
@@ -1415,7 +1440,10 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
           entry: end(hit),
           ...tie,
           how: "answer",
-          paired: { by: pair.by },
+          paired: {
+            by: pair.by,
+            ...(pair.ai ? { ai: { runtime: pair.ai.runtime, run: pair.ai.run } } : {}),
+          },
           callType: f.callType,
           ...(f.method || hit.fact.method
             ? { method: (f.method ?? hit.fact.method)!.toUpperCase() }
@@ -1439,6 +1467,7 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
       continue;
     }
     const answer = input.targets?.[call.repo]?.[f.id];
+    const aiAnswer = answer ? input.aiTargets?.[call.repo]?.[f.id] : undefined;
     const named = (name: string) => {
       const slug = factIdPart(name);
       // A repo's name covers all its components; a component's, only that one.
@@ -1572,6 +1601,8 @@ export function joinFacts(input: JoinFactsInput): FactsJoinResult {
         entry: end(e),
         ...tie,
         how,
+        // ADR 0181: an answer the AI decided is the AI's, never a person's.
+        ...(how === "answer" && aiAnswer ? { aiAnswer: { ...aiAnswer } } : {}),
         ...(within ? { inferred: { within, ...(f.to ? { named: f.to } : {}) } } : {}),
         ...(byLabel ? { byLabel: true as const } : {}),
         ...(guesses.length ? { guesses } : {}),
@@ -1931,8 +1962,12 @@ export const isGuessedJoin = (j: Pick<FactJoin, "inferred" | "byLabel" | "guesse
  * (`joined-by-answer`, `-name`, `-repo`, `-host`); a publish joined to its listener has none.
  */
 export function joinFlagsOf(
-  j: Pick<FactJoin, "how" | "inferred" | "byLabel" | "guesses" | "paired">,
+  j: Pick<FactJoin, "how" | "inferred" | "byLabel" | "guesses" | "paired"> & {
+    aiAnswer?: JoinAi | undefined;
+  },
 ): string[] {
+  // ADR 0181: the AI's pairing or answer is the AI's, never `joined-by-person` or `-answer`.
+  if (j.paired?.ai || (j.how === "answer" && j.aiAnswer)) return [JOINED_BY_AI];
   if (j.paired) return [JOINED_BY_PERSON];
   const guessed = joinGuessesOf(j);
   if (guessed.length) return guessed;
@@ -1955,6 +1990,7 @@ type SharedLink = CatalogRecord & {
 /** How a join nobody guessed found its callee, in the order a shared link lists them. */
 const HOW_FLAG_ORDER: readonly string[] = [
   JOINED_BY_PERSON,
+  JOINED_BY_AI,
   JOINED_BY_ANSWER,
   JOINED_BY_NAME,
   JOINED_BY_REPO,
@@ -2034,21 +2070,35 @@ export function joinRecords(result: FactsJoinResult, repos: readonly JoinRepo[])
   // F2, J0, J1: a guess (by path, a host's first label, a platform setting, a folder name, or
   // despite a conflict) is inferred, however declared its ends are.
   // G1 (ADR 0174): a person's pairing is their word, not code: inferred, with their evidence.
-  const guessed = (j: FactJoin) => isGuessedJoin(j) || !!j.paired;
+  // ADR 0181: the AI's pairing or answer is no more than the AI's: inferred, with its run.
+  const guessed = (j: FactJoin) =>
+    isGuessedJoin(j) || !!j.paired || (j.how === "answer" && !!j.aiAnswer);
   const byPerson = (j: FactJoin): EvidenceT[] => {
-    const call = j.paired ? fact(j.call) : undefined;
-    return j.paired && call
-      ? [
-          {
-            source: "manual",
-            repo: j.call.repo,
-            path: call.cite.file,
-            line: call.cite.line,
-            side: "caller",
-            by: j.paired.by,
-          },
-        ]
-      : [];
+    const ai = j.paired?.ai ?? (j.how === "answer" ? j.aiAnswer : undefined);
+    const call = j.paired || ai ? fact(j.call) : undefined;
+    if (!call) return [];
+    if (ai)
+      return [
+        {
+          source: "ai",
+          repo: j.call.repo,
+          path: call.cite.file,
+          line: call.cite.line,
+          side: "caller",
+          by: ai.runtime,
+          run: ai.run,
+        },
+      ];
+    return [
+      {
+        source: "manual",
+        repo: j.call.repo,
+        path: call.cite.file,
+        line: call.cite.line,
+        side: "caller",
+        by: j.paired!.by,
+      },
+    ];
   };
   for (const j of result.joins) {
     if (j.how === "topic") {

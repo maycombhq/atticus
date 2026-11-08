@@ -85,6 +85,7 @@ export function uiLinkMatchRoutes(
           done = await runMatch(ctx.root, {
             view,
             quotes: quotesOf(facts),
+            facts,
             mode: "copilot-acp",
             ...(deps.runner ? { runner: deps.runner } : {}),
             ...(signal ? { signal } : {}),

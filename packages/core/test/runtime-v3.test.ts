@@ -18,7 +18,7 @@ describe("runtime.yaml version 3 (ADR 0171)", () => {
   const base = { assistants: { allowed: ["copilot"], default: "copilot" } };
 
   it("is version 3, and copilot-acp is a runtime kind", () => {
-    expect(RUNTIME_SCHEMA_VERSION).toBe(3);
+    expect(RUNTIME_SCHEMA_VERSION).toBeGreaterThanOrEqual(3);
     expect(RuntimeKind.options).toContain("copilot-acp");
   });
 

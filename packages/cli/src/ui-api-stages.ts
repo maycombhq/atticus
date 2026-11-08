@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
 import {
   Api,
+  answerByWords,
   changesRelOf,
   readQuestion,
   writeFileAtomic,
@@ -356,7 +357,7 @@ export function uiStageRoutes(
         comment: {
           question: q.id,
           text: q.answer!.text!,
-          by: q.answer!.by,
+          by: answerByWords(q.answer!.by),
           at: q.answer!.at,
           read: false,
         },

@@ -3,6 +3,7 @@ import { parse, stringify } from "yaml";
 import { z } from "zod";
 import {
   answerQuestion,
+  answerByWords,
   answerWords,
   HOSTS_STEP,
   QuestionError,
@@ -146,7 +147,7 @@ export async function applySheet(
       outcomes.push({
         id,
         status: "skipped",
-        why: `it is ${q.state} already${q.answer ? ` (${answerWords(q)}, by ${q.answer.by})` : ""}`,
+        why: `it is ${q.state} already${q.answer ? ` (${answerWords(q)}, by ${answerByWords(q.answer.by)})` : ""}`,
       });
       continue;
     }

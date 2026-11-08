@@ -9,6 +9,7 @@ import {
 } from "@maycombhq/ai";
 import {
   AgentDefinition,
+  answerByWords,
   answerWords,
   FLOW_SCHEMA_VERSION,
   FlowCaller,
@@ -548,7 +549,7 @@ function askedBefore(questions: readonly Question[]): SourceInput[] {
     for (const q of answered)
       lines.push(
         `- ${q.id}: ${q.question} (${q.evidence.join(", ")})`,
-        `  Answer (${q.answer!.by}): ${answerWords(q)}`,
+        `  Answer (${answerByWords(q.answer!.by)}): ${answerWords(q)}`,
       );
   }
   if (open.length) {

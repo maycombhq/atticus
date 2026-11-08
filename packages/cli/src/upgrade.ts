@@ -36,6 +36,8 @@ import {
   migrateRolesText,
   migrateRuntimeText,
   migrateRuntimeV3Text,
+  migrateRuntimeV4Text,
+  migrateCorrections,
   migrateSourcesText,
   orgPackDirOf,
   specsDirOf,
@@ -336,6 +338,43 @@ export const MIGRATIONS: Migration[] = [
       "repos.manifest.yaml at version 3: a repo can give the base path it answers under on a shared host (ADR 0134)",
     pending: (root) => migrateManifests(root, { dryRun: true, to: 3 }),
     apply: (root) => migrateManifests(root, { to: 3 }),
+  },
+  // ADR 0181: the version-4 files: only the number changes; version 5 adds the evidence source
+  // `ai` with its run (a link the AI decided, flagged joined-by-ai).
+  catalogStep(
+    "catalog-schema-v5",
+    "Catalog records at schema version 5: a link can be the AI's, with the run that decided it (ADR 0181)",
+    [4],
+  ),
+  {
+    // ADR 0181: a runtime.yaml that sets `decide` needs version 4; any other file means the same
+    // at 1 to 3 and is left as it is.
+    id: "runtime-v4",
+    summary:
+      "runtime.yaml at version 4 where it sets decide: whether the AI decides pairings and option questions itself (ADR 0181); the number only",
+    async pending(root) {
+      const rel = packRel(root, "runtime.yaml");
+      const text = await readFile(join(root, rel), "utf8").catch(() => undefined);
+      return text !== undefined && migrateRuntimeV4Text(text).changed ? [rel] : [];
+    },
+    async apply(root) {
+      const rel = packRel(root, "runtime.yaml");
+      const text = await readFile(join(root, rel), "utf8").catch(() => undefined);
+      if (text === undefined) return [];
+      const r = migrateRuntimeV4Text(text);
+      if (!r.changed) return [];
+      await writeFileAtomic(join(root, rel), r.text);
+      return [rel];
+    },
+  },
+  {
+    // ADR 0181: a corrections line that uses version 2's fields (ai, batch, rule, match, unlink)
+    // but says version 1 (written by hand) says 2; every other line means the same at 1.
+    id: "corrections-v2",
+    summary:
+      "Corrections lines at version 2 where they use its fields: an AI pairing, a batch, a rule, an unlink (ADR 0181); the number only",
+    pending: (root) => migrateCorrections(root, { dryRun: true }),
+    apply: (root) => migrateCorrections(root),
   },
 ];
 

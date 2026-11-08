@@ -172,9 +172,9 @@ describe("atticus upgrade", () => {
     );
     expect(code).toBe(0);
     expect(r.out.join("\n")).toMatch(/Commit the changes in a pull request/);
-    // A version-1 record is written at the current version (4, ADR 0164) by the version-2 step.
+    // A version-1 record is written at the current version (5, ADR 0181) by the version-2 step.
     expect(await readFile(join(root, "catalog/generated/system/ledger.yaml"), "utf8")).toMatch(
-      /^schemaVersion: 4/m,
+      /^schemaVersion: 5/m,
     );
     const backup = join(root, ".atticus/backups/20261019-100000");
     expect(await readFile(join(backup, "catalog/generated/system/ledger.yaml"), "utf8")).toMatch(
@@ -211,6 +211,10 @@ describe("atticus upgrade", () => {
       "stories-b-short",
       "manifest-schema-v2",
       "manifest-schema-v3",
+      // ADR 0181: nothing here at catalog 4, naming decide or using corrections v2: recorded as done.
+      "catalog-schema-v5",
+      "runtime-v4",
+      "corrections-v2",
     ]);
     // runtime.yaml at version 2 (ADR 0121 addendum): the number only, every line else as it was,
     // so no step names a model of its own.
@@ -300,6 +304,39 @@ describe("atticus upgrade", () => {
     expect((await upgradeCheck(root, "1.0.0")).pending).toEqual([]);
   });
 
+  it("moves a runtime.yaml that sets decide to version 4, and a corrections line using version 2's fields to 2 (ADR 0181)", async () => {
+    const root = await oldMetarepo();
+    const v3 = [
+      "schemaVersion: 3",
+      "assistants: { allowed: [copilot], default: copilot }",
+      "decide: { links: auto }",
+      "",
+    ].join("\n");
+    await writeFile(join(root, "org-pack/runtime.yaml"), v3);
+    await mkdir(join(root, "facts"), { recursive: true });
+    const person =
+      '{"schemaVersion":1,"fact":"c1","target":{"kind":"call","file":"A.java","line":3,"value":"/a"},"action":"link","link":{"repo":"forge-ledger","path":"/a"},"by":"pat","at":"2026-11-08T10:00:00.000Z"}';
+    const hand = person.replace(
+      '"action":"link","link":{"repo":"forge-ledger","path":"/a"}',
+      '"action":"unlink"',
+    );
+    await writeFile(join(root, "facts/forge-web.corrections.jsonl"), `${person}\n${hand}\n`);
+    const c = await upgradeCheck(root, "1.0.0");
+    expect(c.pending.find((p) => p.id === "runtime-v4")?.files).toEqual(["org-pack/runtime.yaml"]);
+    expect(c.pending.find((p) => p.id === "corrections-v2")?.files).toEqual([
+      "facts/forge-web.corrections.jsonl",
+    ]);
+    expect(await upgradeCommand(root, { by: "pat" }, io().io, "1.0.0")).toBe(0);
+    expect(await readFile(join(root, "org-pack/runtime.yaml"), "utf8")).toBe(
+      v3.replace("schemaVersion: 3", "schemaVersion: 4"),
+    );
+    // Only the line that uses version 2's fields changes, and only its number.
+    expect(await readFile(join(root, "facts/forge-web.corrections.jsonl"), "utf8")).toBe(
+      `${person}\n${hand.replace('"schemaVersion":1', '"schemaVersion":2')}\n`,
+    );
+    expect((await upgradeCheck(root, "1.0.0")).pending).toEqual([]);
+  });
+
   it("moves version-2 catalog records to the current version in their own step, changing only the number (ADR 0125)", async () => {
     const root = await oldMetarepo();
     const v2 = [
@@ -334,7 +371,7 @@ describe("atticus upgrade", () => {
       files: ["catalog/generated/schema/ledger-api.post-entries.request.yaml"],
     });
     expect(await upgradeCommand(root, { by: "pat" }, io().io, "1.0.0")).toBe(0);
-    expect(await readFile(f, "utf8")).toBe(v2.replace(/^schemaVersion: 2\n/, "schemaVersion: 4\n"));
+    expect(await readFile(f, "utf8")).toBe(v2.replace(/^schemaVersion: 2\n/, "schemaVersion: 5\n"));
     expect((await upgradeCheck(root, "1.0.0")).pending).toEqual([]);
   });
 

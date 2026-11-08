@@ -117,6 +117,11 @@ function precisionLines(p: AuditPrecision): string[] {
   for (const [k, t] of Object.entries(p.byKind)) out.push(`  ${k}: ${tallyWords(t)}`);
   out.push(`Links: ${tallyWords(p.links)}.`);
   for (const [k, t] of Object.entries(p.byHow)) out.push(`  ${k}: ${tallyWords(t)}`);
+  // ADR 0181: the AI's decisions, apart: what decide.minPrecision is held to.
+  if (p.ai?.drawn) {
+    out.push(`AI decisions: ${tallyWords(p.ai)}.`);
+    for (const [k, t] of Object.entries(p.byAi ?? {})) out.push(`  ${k}: ${tallyWords(t)}`);
+  }
   const answered = p.facts.right + p.facts.wrong + p.links.right + p.links.wrong;
   if (answered < 30) out.push(AUDIT_WORDS.small(answered));
   const gone = p.facts.gone + p.links.gone;
@@ -153,7 +158,7 @@ async function linksOf(root: string, repo: string): Promise<AuditItemT[]> {
   const { estateFacts, estateJoinOf, auditLinkCandidates } = await import("@maycombhq/scanner");
   const op = await loadOrgPack(orgPackDirOf(root));
   const estate = await estateFacts(root, op, "");
-  const join = estateJoinOf(op, estate.repos, estate.targets, estate.pairs);
+  const join = estateJoinOf(op, estate.repos, estate.targets, estate.pairs, estate.aiTargets);
   return auditLinkCandidates(join, estate.repos, repo);
 }
 
@@ -266,7 +271,10 @@ export async function prepareAudit(
   const size = o.size && o.size > 0 ? Math.floor(o.size) : AUDIT_DEFAULT_SIZE;
   const seed = o.seed ?? defaultAuditSeed(repo, commit);
   const links = await linksOf(root, repo);
-  const drawn = drawAudit({ facts: auditCandidates(facts), links, size, seed });
+  // ADR 0181: the AI's decisions that stand for the repo, drawn apart and audited as the AI's.
+  const { aiAuditCandidates } = await import("./ai-decide.js");
+  const ai = await aiAuditCandidates(root, repo);
+  const drawn = drawAudit({ facts: auditCandidates(facts), links, ai, size, seed });
   const now = (o.now ?? (() => new Date()))().toISOString();
   const audit = mergeDraw(onFile.file, repo, drawn, {
     seed,
@@ -295,7 +303,8 @@ export function answerAudit(
   const byId = new Map(audit.items.map((i) => [i.id, i] as const));
   const unknown: string[] = [];
   for (const [id, a] of answers) {
-    const item = byId.get(id) ?? byId.get(`fact:${id}`) ?? byId.get(`link:${id}`);
+    const item =
+      byId.get(id) ?? byId.get(`fact:${id}`) ?? byId.get(`link:${id}`) ?? byId.get(`ai:${id}`);
     if (!item) {
       unknown.push(id);
       continue;
@@ -465,8 +474,14 @@ export async function precisionOf(
 ): Promise<AuditPrecision> {
   const byId = new Map(facts.map((f) => [f.id, f] as const));
   const links = new Map((await linksOf(root, repo)).map((l) => [l.id, l] as const));
+  // ADR 0181: an answer about an AI decision counts whatever became of it since (one a person
+  // then corrected was still the AI's mistake).
   return auditPrecision(audit.items, (i) =>
-    i.kind === "fact" ? auditItemHolds(i, byId) : links.get(i.id)?.to === i.to,
+    i.kind === "fact"
+      ? auditItemHolds(i, byId)
+      : i.kind === "ai"
+        ? true
+        : links.get(i.id)?.to === i.to,
   );
 }
 

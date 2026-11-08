@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Atticus local API",
-    "version": "2.80.0",
+    "version": "2.81.0",
     "description": "Served by `atticus ui` on 127.0.0.1. The UI only calls this API, and the API only reads and writes files in the metarepo.",
     "license": {
       "name": "Apache-2.0",
@@ -8027,6 +8027,215 @@
         }
       }
     },
+    "/api/decisions": {
+      "get": {
+        "operationId": "getDecisions",
+        "summary": "The AI's decisions that stand (ADR 0181): its pairings and answers, each 'Detected by AI' with its run, the bar it met and its batch; counts split from code, by a person and by AI; the batches, newest first; and whether the AI decides now or is paused (with why, for Home)",
+        "tags": [
+          "questions"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DecisionsView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/decisions/correct": {
+      "post": {
+        "operationId": "correctDecision",
+        "summary": "A person corrects one AI decision (ADR 0181): the right option, API or none, recorded as theirs; with similar (on by default) a rule derived from it (or the one given) re-checks every AI decision and open item it covers, applied as their rule or opened again; with preview, what it would write and spread, and nothing written. One batch, one Undo away",
+        "tags": [
+          "questions"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "item": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "option": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                  },
+                  "api": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "repo": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "none": {
+                    "type": "boolean"
+                  },
+                  "similar": {
+                    "type": "boolean"
+                  },
+                  "match": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 300
+                  },
+                  "preview": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "item"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CorrectDecisionResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict: the file changed since you read it, or the state doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Atticus refused: the problem carries the command's own words (ADR 0043)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/decisions/batches/{batchId}/undo": {
+      "post": {
+        "operationId": "undoDecisionBatch",
+        "summary": "Undo a batch of decisions (ADR 0181): remove exactly the lines and answers it wrote, and put back the AI decisions it took away; what changed since is left as it is and said",
+        "tags": [
+          "questions"
+        ],
+        "parameters": [
+          {
+            "name": "batchId",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UndoBatchResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict: the file changed since you read it, or the state doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/facts/{repo}/corrections/undo": {
       "post": {
         "operationId": "undoCorrection",
@@ -14584,6 +14793,10 @@
               {
                 "type": "number",
                 "const": 4
+              },
+              {
+                "type": "number",
+                "const": 5
               }
             ]
           },
@@ -14631,7 +14844,8 @@
                     "diagram",
                     "document",
                     "export",
-                    "manual"
+                    "manual",
+                    "ai"
                   ]
                 },
                 "repo": {
@@ -14672,6 +14886,10 @@
                 },
                 "by": {
                   "type": "string"
+                },
+                "run": {
+                  "type": "string",
+                  "minLength": 1
                 }
               },
               "required": [
@@ -14761,6 +14979,10 @@
               {
                 "type": "number",
                 "const": 4
+              },
+              {
+                "type": "number",
+                "const": 5
               }
             ]
           },
@@ -14808,7 +15030,8 @@
                     "diagram",
                     "document",
                     "export",
-                    "manual"
+                    "manual",
+                    "ai"
                   ]
                 },
                 "repo": {
@@ -14849,6 +15072,10 @@
                 },
                 "by": {
                   "type": "string"
+                },
+                "run": {
+                  "type": "string",
+                  "minLength": 1
                 }
               },
               "required": [
@@ -14937,6 +15164,10 @@
               {
                 "type": "number",
                 "const": 4
+              },
+              {
+                "type": "number",
+                "const": 5
               }
             ]
           },
@@ -14984,7 +15215,8 @@
                     "diagram",
                     "document",
                     "export",
-                    "manual"
+                    "manual",
+                    "ai"
                   ]
                 },
                 "repo": {
@@ -15025,6 +15257,10 @@
                 },
                 "by": {
                   "type": "string"
+                },
+                "run": {
+                  "type": "string",
+                  "minLength": 1
                 }
               },
               "required": [
@@ -15133,6 +15369,10 @@
               {
                 "type": "number",
                 "const": 4
+              },
+              {
+                "type": "number",
+                "const": 5
               }
             ]
           },
@@ -15180,7 +15420,8 @@
                     "diagram",
                     "document",
                     "export",
-                    "manual"
+                    "manual",
+                    "ai"
                   ]
                 },
                 "repo": {
@@ -15221,6 +15462,10 @@
                 },
                 "by": {
                   "type": "string"
+                },
+                "run": {
+                  "type": "string",
+                  "minLength": 1
                 }
               },
               "required": [
@@ -15398,6 +15643,10 @@
               {
                 "type": "number",
                 "const": 4
+              },
+              {
+                "type": "number",
+                "const": 5
               }
             ]
           },
@@ -15445,7 +15694,8 @@
                     "diagram",
                     "document",
                     "export",
-                    "manual"
+                    "manual",
+                    "ai"
                   ]
                 },
                 "repo": {
@@ -15486,6 +15736,10 @@
                 },
                 "by": {
                   "type": "string"
+                },
+                "run": {
+                  "type": "string",
+                  "minLength": 1
                 }
               },
               "required": [
@@ -15575,6 +15829,10 @@
               {
                 "type": "number",
                 "const": 4
+              },
+              {
+                "type": "number",
+                "const": 5
               }
             ]
           },
@@ -15622,7 +15880,8 @@
                     "diagram",
                     "document",
                     "export",
-                    "manual"
+                    "manual",
+                    "ai"
                   ]
                 },
                 "repo": {
@@ -15663,6 +15922,10 @@
                 },
                 "by": {
                   "type": "string"
+                },
+                "run": {
+                  "type": "string",
+                  "minLength": 1
                 }
               },
               "required": [
@@ -15760,6 +16023,10 @@
               {
                 "type": "number",
                 "const": 4
+              },
+              {
+                "type": "number",
+                "const": 5
               }
             ]
           },
@@ -15807,7 +16074,8 @@
                     "diagram",
                     "document",
                     "export",
-                    "manual"
+                    "manual",
+                    "ai"
                   ]
                 },
                 "repo": {
@@ -15848,6 +16116,10 @@
                 },
                 "by": {
                   "type": "string"
+                },
+                "run": {
+                  "type": "string",
+                  "minLength": 1
                 }
               },
               "required": [
@@ -15917,6 +16189,10 @@
               {
                 "type": "number",
                 "const": 4
+              },
+              {
+                "type": "number",
+                "const": 5
               }
             ]
           },
@@ -15964,7 +16240,8 @@
                     "diagram",
                     "document",
                     "export",
-                    "manual"
+                    "manual",
+                    "ai"
                   ]
                 },
                 "repo": {
@@ -16005,6 +16282,10 @@
                 },
                 "by": {
                   "type": "string"
+                },
+                "run": {
+                  "type": "string",
+                  "minLength": 1
                 }
               },
               "required": [
@@ -16074,6 +16355,10 @@
               {
                 "type": "number",
                 "const": 4
+              },
+              {
+                "type": "number",
+                "const": 5
               }
             ]
           },
@@ -16121,7 +16406,8 @@
                     "diagram",
                     "document",
                     "export",
-                    "manual"
+                    "manual",
+                    "ai"
                   ]
                 },
                 "repo": {
@@ -16162,6 +16448,10 @@
                 },
                 "by": {
                   "type": "string"
+                },
+                "run": {
+                  "type": "string",
+                  "minLength": 1
                 }
               },
               "required": [
@@ -16264,6 +16554,10 @@
               {
                 "type": "number",
                 "const": 4
+              },
+              {
+                "type": "number",
+                "const": 5
               }
             ]
           },
@@ -16311,7 +16605,8 @@
                     "diagram",
                     "document",
                     "export",
-                    "manual"
+                    "manual",
+                    "ai"
                   ]
                 },
                 "repo": {
@@ -16352,6 +16647,10 @@
                 },
                 "by": {
                   "type": "string"
+                },
+                "run": {
+                  "type": "string",
+                  "minLength": 1
                 }
               },
               "required": [
@@ -16414,7 +16713,8 @@
                       "diagram",
                       "document",
                       "export",
-                      "manual"
+                      "manual",
+                      "ai"
                     ]
                   },
                   "repo": {
@@ -16455,6 +16755,10 @@
                   },
                   "by": {
                     "type": "string"
+                  },
+                  "run": {
+                    "type": "string",
+                    "minLength": 1
                   }
                 },
                 "required": [
@@ -16517,6 +16821,10 @@
               {
                 "type": "number",
                 "const": 4
+              },
+              {
+                "type": "number",
+                "const": 5
               }
             ]
           },
@@ -16564,7 +16872,8 @@
                     "diagram",
                     "document",
                     "export",
-                    "manual"
+                    "manual",
+                    "ai"
                   ]
                 },
                 "repo": {
@@ -16605,6 +16914,10 @@
                 },
                 "by": {
                   "type": "string"
+                },
+                "run": {
+                  "type": "string",
+                  "minLength": 1
                 }
               },
               "required": [
@@ -16704,6 +17017,10 @@
               {
                 "type": "number",
                 "const": 4
+              },
+              {
+                "type": "number",
+                "const": 5
               }
             ]
           },
@@ -16751,7 +17068,8 @@
                     "diagram",
                     "document",
                     "export",
-                    "manual"
+                    "manual",
+                    "ai"
                   ]
                 },
                 "repo": {
@@ -16792,6 +17110,10 @@
                 },
                 "by": {
                   "type": "string"
+                },
+                "run": {
+                  "type": "string",
+                  "minLength": 1
                 }
               },
               "required": [
@@ -16881,6 +17203,10 @@
               {
                 "type": "number",
                 "const": 4
+              },
+              {
+                "type": "number",
+                "const": 5
               }
             ]
           },
@@ -16928,7 +17254,8 @@
                     "diagram",
                     "document",
                     "export",
-                    "manual"
+                    "manual",
+                    "ai"
                   ]
                 },
                 "repo": {
@@ -16969,6 +17296,10 @@
                 },
                 "by": {
                   "type": "string"
+                },
+                "run": {
+                  "type": "string",
+                  "minLength": 1
                 }
               },
               "required": [
@@ -17106,6 +17437,10 @@
               {
                 "type": "number",
                 "const": 4
+              },
+              {
+                "type": "number",
+                "const": 5
               }
             ]
           },
@@ -17153,7 +17488,8 @@
                     "diagram",
                     "document",
                     "export",
-                    "manual"
+                    "manual",
+                    "ai"
                   ]
                 },
                 "repo": {
@@ -17194,6 +17530,10 @@
                 },
                 "by": {
                   "type": "string"
+                },
+                "run": {
+                  "type": "string",
+                  "minLength": 1
                 }
               },
               "required": [
@@ -17283,6 +17623,10 @@
               {
                 "type": "number",
                 "const": 4
+              },
+              {
+                "type": "number",
+                "const": 5
               }
             ]
           },
@@ -17330,7 +17674,8 @@
                     "diagram",
                     "document",
                     "export",
-                    "manual"
+                    "manual",
+                    "ai"
                   ]
                 },
                 "repo": {
@@ -17371,6 +17716,10 @@
                 },
                 "by": {
                   "type": "string"
+                },
+                "run": {
+                  "type": "string",
+                  "minLength": 1
                 }
               },
               "required": [
@@ -17447,6 +17796,10 @@
               {
                 "type": "number",
                 "const": 4
+              },
+              {
+                "type": "number",
+                "const": 5
               }
             ]
           },
@@ -17494,7 +17847,8 @@
                     "diagram",
                     "document",
                     "export",
-                    "manual"
+                    "manual",
+                    "ai"
                   ]
                 },
                 "repo": {
@@ -17535,6 +17889,10 @@
                 },
                 "by": {
                   "type": "string"
+                },
+                "run": {
+                  "type": "string",
+                  "minLength": 1
                 }
               },
               "required": [
@@ -17616,6 +17974,10 @@
               {
                 "type": "number",
                 "const": 4
+              },
+              {
+                "type": "number",
+                "const": 5
               }
             ]
           },
@@ -17663,7 +18025,8 @@
                     "diagram",
                     "document",
                     "export",
-                    "manual"
+                    "manual",
+                    "ai"
                   ]
                 },
                 "repo": {
@@ -17704,6 +18067,10 @@
                 },
                 "by": {
                   "type": "string"
+                },
+                "run": {
+                  "type": "string",
+                  "minLength": 1
                 }
               },
               "required": [
@@ -17781,6 +18148,10 @@
               {
                 "type": "number",
                 "const": 4
+              },
+              {
+                "type": "number",
+                "const": 5
               }
             ]
           },
@@ -17828,7 +18199,8 @@
                     "diagram",
                     "document",
                     "export",
-                    "manual"
+                    "manual",
+                    "ai"
                   ]
                 },
                 "repo": {
@@ -17869,6 +18241,10 @@
                 },
                 "by": {
                   "type": "string"
+                },
+                "run": {
+                  "type": "string",
+                  "minLength": 1
                 }
               },
               "required": [
@@ -17948,6 +18324,10 @@
               {
                 "type": "number",
                 "const": 4
+              },
+              {
+                "type": "number",
+                "const": 5
               }
             ]
           },
@@ -17995,7 +18375,8 @@
                     "diagram",
                     "document",
                     "export",
-                    "manual"
+                    "manual",
+                    "ai"
                   ]
                 },
                 "repo": {
@@ -18036,6 +18417,10 @@
                 },
                 "by": {
                   "type": "string"
+                },
+                "run": {
+                  "type": "string",
+                  "minLength": 1
                 }
               },
               "required": [
@@ -18107,6 +18492,10 @@
               {
                 "type": "number",
                 "const": 4
+              },
+              {
+                "type": "number",
+                "const": 5
               }
             ]
           },
@@ -18154,7 +18543,8 @@
                     "diagram",
                     "document",
                     "export",
-                    "manual"
+                    "manual",
+                    "ai"
                   ]
                 },
                 "repo": {
@@ -18195,6 +18585,10 @@
                 },
                 "by": {
                   "type": "string"
+                },
+                "run": {
+                  "type": "string",
+                  "minLength": 1
                 }
               },
               "required": [
@@ -18463,6 +18857,10 @@
               {
                 "type": "number",
                 "const": 4
+              },
+              {
+                "type": "number",
+                "const": 5
               }
             ]
           },
@@ -18510,7 +18908,8 @@
                     "diagram",
                     "document",
                     "export",
-                    "manual"
+                    "manual",
+                    "ai"
                   ]
                 },
                 "repo": {
@@ -18551,6 +18950,10 @@
                 },
                 "by": {
                   "type": "string"
+                },
+                "run": {
+                  "type": "string",
+                  "minLength": 1
                 }
               },
               "required": [
@@ -18816,6 +19219,10 @@
               {
                 "type": "number",
                 "const": 4
+              },
+              {
+                "type": "number",
+                "const": 5
               }
             ]
           },
@@ -18863,7 +19270,8 @@
                     "diagram",
                     "document",
                     "export",
-                    "manual"
+                    "manual",
+                    "ai"
                   ]
                 },
                 "repo": {
@@ -18904,6 +19312,10 @@
                 },
                 "by": {
                   "type": "string"
+                },
+                "run": {
+                  "type": "string",
+                  "minLength": 1
                 }
               },
               "required": [
@@ -18996,6 +19408,10 @@
               {
                 "type": "number",
                 "const": 4
+              },
+              {
+                "type": "number",
+                "const": 5
               }
             ]
           },
@@ -19043,7 +19459,8 @@
                     "diagram",
                     "document",
                     "export",
-                    "manual"
+                    "manual",
+                    "ai"
                   ]
                 },
                 "repo": {
@@ -19084,6 +19501,10 @@
                 },
                 "by": {
                   "type": "string"
+                },
+                "run": {
+                  "type": "string",
+                  "minLength": 1
                 }
               },
               "required": [
@@ -19332,6 +19753,10 @@
               {
                 "type": "number",
                 "const": 4
+              },
+              {
+                "type": "number",
+                "const": 5
               }
             ]
           },
@@ -19379,7 +19804,8 @@
                     "diagram",
                     "document",
                     "export",
-                    "manual"
+                    "manual",
+                    "ai"
                   ]
                 },
                 "repo": {
@@ -19420,6 +19846,10 @@
                 },
                 "by": {
                   "type": "string"
+                },
+                "run": {
+                  "type": "string",
+                  "minLength": 1
                 }
               },
               "required": [
@@ -19523,6 +19953,10 @@
               {
                 "type": "number",
                 "const": 4
+              },
+              {
+                "type": "number",
+                "const": 5
               }
             ]
           },
@@ -19570,7 +20004,8 @@
                     "diagram",
                     "document",
                     "export",
-                    "manual"
+                    "manual",
+                    "ai"
                   ]
                 },
                 "repo": {
@@ -19611,6 +20046,10 @@
                 },
                 "by": {
                   "type": "string"
+                },
+                "run": {
+                  "type": "string",
+                  "minLength": 1
                 }
               },
               "required": [
@@ -19709,6 +20148,10 @@
               {
                 "type": "number",
                 "const": 4
+              },
+              {
+                "type": "number",
+                "const": 5
               }
             ]
           },
@@ -19756,7 +20199,8 @@
                     "diagram",
                     "document",
                     "export",
-                    "manual"
+                    "manual",
+                    "ai"
                   ]
                 },
                 "repo": {
@@ -19797,6 +20241,10 @@
                 },
                 "by": {
                   "type": "string"
+                },
+                "run": {
+                  "type": "string",
+                  "minLength": 1
                 }
               },
               "required": [
@@ -19889,6 +20337,10 @@
               {
                 "type": "number",
                 "const": 4
+              },
+              {
+                "type": "number",
+                "const": 5
               }
             ]
           },
@@ -19936,7 +20388,8 @@
                     "diagram",
                     "document",
                     "export",
-                    "manual"
+                    "manual",
+                    "ai"
                   ]
                 },
                 "repo": {
@@ -19977,6 +20430,10 @@
                 },
                 "by": {
                   "type": "string"
+                },
+                "run": {
+                  "type": "string",
+                  "minLength": 1
                 }
               },
               "required": [
@@ -20191,6 +20648,10 @@
               {
                 "type": "number",
                 "const": 4
+              },
+              {
+                "type": "number",
+                "const": 5
               }
             ]
           },
@@ -20238,7 +20699,8 @@
                     "diagram",
                     "document",
                     "export",
-                    "manual"
+                    "manual",
+                    "ai"
                   ]
                 },
                 "repo": {
@@ -20279,6 +20741,10 @@
                 },
                 "by": {
                   "type": "string"
+                },
+                "run": {
+                  "type": "string",
+                  "minLength": 1
                 }
               },
               "required": [
@@ -20356,6 +20822,10 @@
               {
                 "type": "number",
                 "const": 4
+              },
+              {
+                "type": "number",
+                "const": 5
               }
             ]
           },
@@ -20403,7 +20873,8 @@
                     "diagram",
                     "document",
                     "export",
-                    "manual"
+                    "manual",
+                    "ai"
                   ]
                 },
                 "repo": {
@@ -20444,6 +20915,10 @@
                 },
                 "by": {
                   "type": "string"
+                },
+                "run": {
+                  "type": "string",
+                  "minLength": 1
                 }
               },
               "required": [
@@ -20656,6 +21131,10 @@
               {
                 "type": "number",
                 "const": 4
+              },
+              {
+                "type": "number",
+                "const": 5
               }
             ]
           },
@@ -20703,7 +21182,8 @@
                     "diagram",
                     "document",
                     "export",
-                    "manual"
+                    "manual",
+                    "ai"
                   ]
                 },
                 "repo": {
@@ -20744,6 +21224,10 @@
                 },
                 "by": {
                   "type": "string"
+                },
+                "run": {
+                  "type": "string",
+                  "minLength": 1
                 }
               },
               "required": [
@@ -20920,7 +21404,8 @@
                     "diagram",
                     "document",
                     "export",
-                    "manual"
+                    "manual",
+                    "ai"
                   ]
                 },
                 "repo": {
@@ -20961,6 +21446,10 @@
                 },
                 "by": {
                   "type": "string"
+                },
+                "run": {
+                  "type": "string",
+                  "minLength": 1
                 }
               },
               "required": [
@@ -21045,7 +21534,8 @@
                             "diagram",
                             "document",
                             "export",
-                            "manual"
+                            "manual",
+                            "ai"
                           ]
                         },
                         "repo": {
@@ -21086,6 +21576,10 @@
                         },
                         "by": {
                           "type": "string"
+                        },
+                        "run": {
+                          "type": "string",
+                          "minLength": 1
                         }
                       },
                       "required": [
@@ -21121,7 +21615,8 @@
                         "diagram",
                         "document",
                         "export",
-                        "manual"
+                        "manual",
+                        "ai"
                       ]
                     },
                     "repo": {
@@ -21162,6 +21657,10 @@
                     },
                     "by": {
                       "type": "string"
+                    },
+                    "run": {
+                      "type": "string",
+                      "minLength": 1
                     }
                   },
                   "required": [
@@ -21328,7 +21827,8 @@
                           "diagram",
                           "document",
                           "export",
-                          "manual"
+                          "manual",
+                          "ai"
                         ]
                       },
                       "repo": {
@@ -21369,6 +21869,10 @@
                       },
                       "by": {
                         "type": "string"
+                      },
+                      "run": {
+                        "type": "string",
+                        "minLength": 1
                       }
                     },
                     "required": [
@@ -21449,7 +21953,8 @@
                           "diagram",
                           "document",
                           "export",
-                          "manual"
+                          "manual",
+                          "ai"
                         ]
                       },
                       "repo": {
@@ -21490,6 +21995,10 @@
                       },
                       "by": {
                         "type": "string"
+                      },
+                      "run": {
+                        "type": "string",
+                        "minLength": 1
                       }
                     },
                     "required": [
@@ -21571,6 +22080,10 @@
               {
                 "type": "number",
                 "const": 4
+              },
+              {
+                "type": "number",
+                "const": 5
               }
             ]
           },
@@ -21618,7 +22131,8 @@
                     "diagram",
                     "document",
                     "export",
-                    "manual"
+                    "manual",
+                    "ai"
                   ]
                 },
                 "repo": {
@@ -21659,6 +22173,10 @@
                 },
                 "by": {
                   "type": "string"
+                },
+                "run": {
+                  "type": "string",
+                  "minLength": 1
                 }
               },
               "required": [
@@ -21721,6 +22239,10 @@
               {
                 "type": "number",
                 "const": 4
+              },
+              {
+                "type": "number",
+                "const": 5
               }
             ]
           },
@@ -21764,7 +22286,8 @@
                     "diagram",
                     "document",
                     "export",
-                    "manual"
+                    "manual",
+                    "ai"
                   ]
                 },
                 "repo": {
@@ -21805,6 +22328,10 @@
                 },
                 "by": {
                   "type": "string"
+                },
+                "run": {
+                  "type": "string",
+                  "minLength": 1
                 }
               },
               "required": [
@@ -27512,7 +28039,8 @@
                             "diagram",
                             "document",
                             "export",
-                            "manual"
+                            "manual",
+                            "ai"
                           ]
                         },
                         "repo": {
@@ -27553,6 +28081,10 @@
                         },
                         "by": {
                           "type": "string"
+                        },
+                        "run": {
+                          "type": "string",
+                          "minLength": 1
                         }
                       },
                       "required": [
@@ -27594,7 +28126,8 @@
                     "diagram",
                     "document",
                     "export",
-                    "manual"
+                    "manual",
+                    "ai"
                   ]
                 },
                 "repo": {
@@ -27635,6 +28168,10 @@
                 },
                 "by": {
                   "type": "string"
+                },
+                "run": {
+                  "type": "string",
+                  "minLength": 1
                 }
               },
               "required": [
@@ -27804,7 +28341,8 @@
                           "diagram",
                           "document",
                           "export",
-                          "manual"
+                          "manual",
+                          "ai"
                         ]
                       },
                       "repo": {
@@ -27845,6 +28383,10 @@
                       },
                       "by": {
                         "type": "string"
+                      },
+                      "run": {
+                        "type": "string",
+                        "minLength": 1
                       }
                     },
                     "required": [
@@ -28376,6 +28918,11 @@
             "minimum": -9007199254740991,
             "maximum": 9007199254740991
           },
+          "byAi": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
           "routes": {
             "type": "integer",
             "minimum": -9007199254740991,
@@ -28515,6 +29062,10 @@
                           "joined-despite-conflict",
                           "joined-by-service-name"
                         ]
+                      },
+                      "decidedByAi": {
+                        "type": "boolean",
+                        "const": true
                       },
                       "interfaces": {
                         "type": "array",
@@ -32541,6 +33092,81 @@
           },
           "error": {
             "type": "string"
+          },
+          "decided": {
+            "type": "object",
+            "properties": {
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "auto",
+                  "propose"
+                ]
+              },
+              "batch": {
+                "type": "string"
+              },
+              "applied": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "call": {
+                      "type": "string"
+                    },
+                    "api": {
+                      "type": "string"
+                    },
+                    "bar": {
+                      "type": "string",
+                      "enum": [
+                        "confident",
+                        "agrees-with-shapes",
+                        "person-rule"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "call",
+                    "api",
+                    "bar"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "kept": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "call": {
+                      "type": "string"
+                    },
+                    "api": {
+                      "type": "string"
+                    },
+                    "why": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "call",
+                    "api",
+                    "why"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "paused": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "mode",
+              "applied",
+              "kept"
+            ],
+            "additionalProperties": false
           }
         },
         "required": [
@@ -32550,6 +33176,893 @@
           "proposals",
           "none",
           "rejected"
+        ],
+        "additionalProperties": false
+      },
+      "DecisionsView": {
+        "type": "object",
+        "properties": {
+          "decide": {
+            "type": "object",
+            "properties": {
+              "configured": {
+                "type": "object",
+                "properties": {
+                  "links": {
+                    "type": "string",
+                    "enum": [
+                      "auto",
+                      "propose"
+                    ]
+                  },
+                  "questions": {
+                    "type": "string",
+                    "enum": [
+                      "auto",
+                      "propose"
+                    ]
+                  },
+                  "minPrecision": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "links",
+                  "questions",
+                  "minPrecision"
+                ],
+                "additionalProperties": false
+              },
+              "now": {
+                "type": "object",
+                "properties": {
+                  "links": {
+                    "type": "string",
+                    "enum": [
+                      "auto",
+                      "propose"
+                    ]
+                  },
+                  "questions": {
+                    "type": "string",
+                    "enum": [
+                      "auto",
+                      "propose"
+                    ]
+                  }
+                },
+                "required": [
+                  "links",
+                  "questions"
+                ],
+                "additionalProperties": false
+              },
+              "paused": {
+                "type": "object",
+                "properties": {
+                  "why": {
+                    "type": "string"
+                  },
+                  "precision": {
+                    "type": "number"
+                  },
+                  "low": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "high": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "answered": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "minPrecision": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "why",
+                  "precision",
+                  "low",
+                  "high",
+                  "answered",
+                  "minPrecision"
+                ],
+                "additionalProperties": false
+              },
+              "precision": {
+                "type": "object",
+                "properties": {
+                  "drawn": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "right": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "wrong": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "unsure": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "open": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "gone": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "precision": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "low": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "high": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "drawn",
+                  "right",
+                  "wrong",
+                  "unsure",
+                  "open",
+                  "gone",
+                  "precision",
+                  "low",
+                  "high"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "configured",
+              "now",
+              "precision"
+            ],
+            "additionalProperties": false
+          },
+          "links": {
+            "type": "object",
+            "properties": {
+              "counts": {
+                "type": "object",
+                "properties": {
+                  "fromCode": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "byPerson": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "byAi": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "open": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "fromCode",
+                  "byPerson",
+                  "byAi"
+                ],
+                "additionalProperties": false
+              },
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "link",
+                        "question"
+                      ]
+                    },
+                    "item": {
+                      "type": "string"
+                    },
+                    "repo": {
+                      "type": "string"
+                    },
+                    "what": {
+                      "type": "string"
+                    },
+                    "decided": {
+                      "type": "string"
+                    },
+                    "call": {
+                      "type": "object",
+                      "properties": {
+                        "fact": {
+                          "type": "string"
+                        },
+                        "file": {
+                          "type": "string"
+                        },
+                        "line": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "value": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "fact",
+                        "file",
+                        "line",
+                        "value"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "to": {
+                      "type": "object",
+                      "properties": {
+                        "repo": {
+                          "type": "string"
+                        },
+                        "entry": {
+                          "type": "string"
+                        },
+                        "method": {
+                          "type": "string"
+                        },
+                        "path": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "repo",
+                        "path"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "question": {
+                      "type": "object",
+                      "properties": {
+                        "text": {
+                          "type": "string"
+                        },
+                        "option": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "options": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "required": [
+                        "text",
+                        "option",
+                        "options"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "runtime": {
+                      "type": "string"
+                    },
+                    "run": {
+                      "type": "string"
+                    },
+                    "bar": {
+                      "type": "string",
+                      "enum": [
+                        "confident",
+                        "agrees-with-shapes",
+                        "person-rule"
+                      ]
+                    },
+                    "batch": {
+                      "type": "string"
+                    },
+                    "at": {
+                      "type": "string"
+                    },
+                    "cites": {
+                      "default": [],
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "item",
+                    "repo",
+                    "what",
+                    "decided",
+                    "runtime",
+                    "run",
+                    "at",
+                    "cites"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "counts",
+              "items"
+            ],
+            "additionalProperties": false
+          },
+          "questions": {
+            "type": "object",
+            "properties": {
+              "counts": {
+                "type": "object",
+                "properties": {
+                  "fromCode": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "byPerson": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "byAi": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "open": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "fromCode",
+                  "byPerson",
+                  "byAi"
+                ],
+                "additionalProperties": false
+              },
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "link",
+                        "question"
+                      ]
+                    },
+                    "item": {
+                      "type": "string"
+                    },
+                    "repo": {
+                      "type": "string"
+                    },
+                    "what": {
+                      "type": "string"
+                    },
+                    "decided": {
+                      "type": "string"
+                    },
+                    "call": {
+                      "type": "object",
+                      "properties": {
+                        "fact": {
+                          "type": "string"
+                        },
+                        "file": {
+                          "type": "string"
+                        },
+                        "line": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "value": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "fact",
+                        "file",
+                        "line",
+                        "value"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "to": {
+                      "type": "object",
+                      "properties": {
+                        "repo": {
+                          "type": "string"
+                        },
+                        "entry": {
+                          "type": "string"
+                        },
+                        "method": {
+                          "type": "string"
+                        },
+                        "path": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "repo",
+                        "path"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "question": {
+                      "type": "object",
+                      "properties": {
+                        "text": {
+                          "type": "string"
+                        },
+                        "option": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "options": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "required": [
+                        "text",
+                        "option",
+                        "options"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "runtime": {
+                      "type": "string"
+                    },
+                    "run": {
+                      "type": "string"
+                    },
+                    "bar": {
+                      "type": "string",
+                      "enum": [
+                        "confident",
+                        "agrees-with-shapes",
+                        "person-rule"
+                      ]
+                    },
+                    "batch": {
+                      "type": "string"
+                    },
+                    "at": {
+                      "type": "string"
+                    },
+                    "cites": {
+                      "default": [],
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "item",
+                    "repo",
+                    "what",
+                    "decided",
+                    "runtime",
+                    "run",
+                    "at",
+                    "cites"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "counts",
+              "items"
+            ],
+            "additionalProperties": false
+          },
+          "batches": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "ai",
+                    "rule"
+                  ]
+                },
+                "at": {
+                  "type": "string"
+                },
+                "by": {
+                  "type": "string"
+                },
+                "run": {
+                  "type": "string"
+                },
+                "applied": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "reverted": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "correction": {
+                  "type": "object",
+                  "properties": {
+                    "item": {
+                      "type": "string"
+                    },
+                    "answer": {
+                      "type": "string"
+                    },
+                    "rule": {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "path",
+                            "host",
+                            "topic"
+                          ]
+                        },
+                        "match": {
+                          "type": "string"
+                        },
+                        "from": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "match",
+                        "from"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "item",
+                    "answer"
+                  ],
+                  "additionalProperties": false
+                },
+                "undone": {
+                  "type": "object",
+                  "properties": {
+                    "by": {
+                      "type": "string"
+                    },
+                    "at": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "by",
+                    "at"
+                  ],
+                  "additionalProperties": false
+                },
+                "file": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "kind",
+                "at",
+                "by",
+                "applied",
+                "reverted",
+                "file"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "problems": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "file": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "file",
+                "message"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "decide",
+          "links",
+          "questions",
+          "batches",
+          "problems"
+        ],
+        "additionalProperties": false
+      },
+      "CorrectDecisionResult": {
+        "type": "object",
+        "properties": {
+          "written": {
+            "type": "boolean"
+          },
+          "batch": {
+            "type": "string"
+          },
+          "item": {
+            "type": "string"
+          },
+          "answer": {
+            "type": "string"
+          },
+          "rule": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "path",
+                  "host",
+                  "topic"
+                ]
+              },
+              "match": {
+                "type": "string"
+              },
+              "derived": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "kind",
+              "match",
+              "derived"
+            ],
+            "additionalProperties": false
+          },
+          "noRule": {
+            "type": "string"
+          },
+          "spread": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "item": {
+                  "type": "string"
+                },
+                "repo": {
+                  "type": "string"
+                },
+                "what": {
+                  "type": "string"
+                },
+                "was": {
+                  "type": "string"
+                },
+                "now": {
+                  "type": "string"
+                },
+                "change": {
+                  "type": "string",
+                  "enum": [
+                    "applied",
+                    "confirmed",
+                    "replaced",
+                    "reverted"
+                  ]
+                }
+              },
+              "required": [
+                "item",
+                "repo",
+                "what",
+                "change"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "counts": {
+            "type": "object",
+            "properties": {
+              "applied": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "confirmed": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "replaced": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "reverted": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "applied",
+              "confirmed",
+              "replaced",
+              "reverted"
+            ],
+            "additionalProperties": false
+          },
+          "makeRule": {
+            "type": "object",
+            "properties": {
+              "corrections": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "shape": {
+                "type": "string"
+              },
+              "repo": {
+                "type": "string"
+              },
+              "line": {
+                "type": "string"
+              },
+              "command": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "corrections",
+              "shape",
+              "repo"
+            ],
+            "additionalProperties": false
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "verify": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "commit": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "written",
+          "item",
+          "answer",
+          "spread",
+          "counts",
+          "files",
+          "verify",
+          "commit"
+        ],
+        "additionalProperties": false
+      },
+      "UndoBatchResult": {
+        "type": "object",
+        "properties": {
+          "batch": {
+            "type": "string"
+          },
+          "removed": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "restored": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "skipped": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "verify": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "commit": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "batch",
+          "removed",
+          "restored",
+          "skipped",
+          "files",
+          "verify",
+          "commit"
         ],
         "additionalProperties": false
       },
@@ -33082,13 +34595,33 @@
                     "wrong",
                     "link",
                     "topic",
-                    "call"
+                    "call",
+                    "unlink"
                   ]
                 },
                 "says": {
                   "type": "string"
                 },
                 "by": {
+                  "type": "string"
+                },
+                "ai": {
+                  "type": "object",
+                  "properties": {
+                    "runtime": {
+                      "type": "string"
+                    },
+                    "run": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "runtime",
+                    "run"
+                  ],
+                  "additionalProperties": false
+                },
+                "batch": {
                   "type": "string"
                 },
                 "at": {
@@ -33491,8 +35024,45 @@
                 "minLength": 1
               },
               "by": {
-                "type": "string",
-                "minLength": 1
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "ai"
+                      },
+                      "runtime": {
+                        "type": "string",
+                        "enum": [
+                          "copilot-acp"
+                        ]
+                      },
+                      "run": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "bar": {
+                        "type": "string",
+                        "enum": [
+                          "confident",
+                          "agrees-with-shapes",
+                          "person-rule"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "runtime",
+                      "run"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
               },
               "at": {
                 "type": "string",
@@ -33581,6 +35151,28 @@
                   "cites"
                 ],
                 "additionalProperties": false
+              },
+              "batch": {
+                "type": "string",
+                "pattern": "^b-\\d{8}-\\d{6}-[0-9a-f]{6}$"
+              },
+              "rule": {
+                "type": "object",
+                "properties": {
+                  "from": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "match": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "from",
+                  "match"
+                ],
+                "additionalProperties": false
               }
             },
             "required": [
@@ -33641,8 +35233,45 @@
                     "minLength": 1
                   },
                   "by": {
-                    "type": "string",
-                    "minLength": 1
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "ai"
+                          },
+                          "runtime": {
+                            "type": "string",
+                            "enum": [
+                              "copilot-acp"
+                            ]
+                          },
+                          "run": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "bar": {
+                            "type": "string",
+                            "enum": [
+                              "confident",
+                              "agrees-with-shapes",
+                              "person-rule"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "runtime",
+                          "run"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ]
                   },
                   "at": {
                     "type": "string",
@@ -33729,6 +35358,28 @@
                       "by",
                       "at",
                       "cites"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "batch": {
+                    "type": "string",
+                    "pattern": "^b-\\d{8}-\\d{6}-[0-9a-f]{6}$"
+                  },
+                  "rule": {
+                    "type": "object",
+                    "properties": {
+                      "from": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "match": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "required": [
+                      "from",
+                      "match"
                     ],
                     "additionalProperties": false
                   }
@@ -36352,6 +38003,71 @@
                         "high"
                       ],
                       "additionalProperties": false
+                    },
+                    "ai": {
+                      "type": "object",
+                      "properties": {
+                        "drawn": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "right": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "wrong": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "unsure": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "open": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "gone": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "precision": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "low": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "high": {
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "drawn",
+                        "right",
+                        "wrong",
+                        "unsure",
+                        "open",
+                        "gone",
+                        "precision",
+                        "low",
+                        "high"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [
@@ -37022,8 +38738,16 @@
                   "type": "object",
                   "properties": {
                     "schemaVersion": {
-                      "type": "number",
-                      "const": 1
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "const": 1
+                        },
+                        {
+                          "type": "number",
+                          "const": 2
+                        }
+                      ]
                     },
                     "fact": {
                       "type": "string",
@@ -37076,7 +38800,8 @@
                       "enum": [
                         "wrong",
                         "edit",
-                        "link"
+                        "link",
+                        "unlink"
                       ]
                     },
                     "link": {
@@ -37138,6 +38863,61 @@
                       "type": "string",
                       "format": "date-time",
                       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                    },
+                    "ai": {
+                      "type": "object",
+                      "properties": {
+                        "runtime": {
+                          "type": "string",
+                          "enum": [
+                            "copilot-acp"
+                          ]
+                        },
+                        "run": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "bar": {
+                          "type": "string",
+                          "enum": [
+                            "confident",
+                            "agrees-with-shapes",
+                            "person-rule"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "runtime",
+                        "run"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "batch": {
+                      "type": "string",
+                      "pattern": "^b-\\d{8}-\\d{6}-[0-9a-f]{6}$"
+                    },
+                    "rule": {
+                      "type": "object",
+                      "properties": {
+                        "from": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "match": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "required": [
+                        "from",
+                        "match"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "match": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 300
                     }
                   },
                   "required": [
@@ -37256,8 +39036,16 @@
             "type": "object",
             "properties": {
               "schemaVersion": {
-                "type": "number",
-                "const": 1
+                "anyOf": [
+                  {
+                    "type": "number",
+                    "const": 1
+                  },
+                  {
+                    "type": "number",
+                    "const": 2
+                  }
+                ]
               },
               "fact": {
                 "type": "string",
@@ -37310,7 +39098,8 @@
                 "enum": [
                   "wrong",
                   "edit",
-                  "link"
+                  "link",
+                  "unlink"
                 ]
               },
               "link": {
@@ -37372,6 +39161,61 @@
                 "type": "string",
                 "format": "date-time",
                 "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+              },
+              "ai": {
+                "type": "object",
+                "properties": {
+                  "runtime": {
+                    "type": "string",
+                    "enum": [
+                      "copilot-acp"
+                    ]
+                  },
+                  "run": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "bar": {
+                    "type": "string",
+                    "enum": [
+                      "confident",
+                      "agrees-with-shapes",
+                      "person-rule"
+                    ]
+                  }
+                },
+                "required": [
+                  "runtime",
+                  "run"
+                ],
+                "additionalProperties": false
+              },
+              "batch": {
+                "type": "string",
+                "pattern": "^b-\\d{8}-\\d{6}-[0-9a-f]{6}$"
+              },
+              "rule": {
+                "type": "object",
+                "properties": {
+                  "from": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "match": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "from",
+                  "match"
+                ],
+                "additionalProperties": false
+              },
+              "match": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 300
               }
             },
             "required": [
@@ -37959,7 +39803,8 @@
                   "type": "string",
                   "enum": [
                     "fact",
-                    "link"
+                    "link",
+                    "ai"
                   ]
                 },
                 "of": {
@@ -37985,6 +39830,12 @@
                   "type": "string"
                 },
                 "to": {
+                  "type": "string"
+                },
+                "decided": {
+                  "type": "string"
+                },
+                "run": {
                   "type": "string"
                 },
                 "answer": {
@@ -38231,7 +40082,8 @@
                   "type": "string",
                   "enum": [
                     "fact",
-                    "link"
+                    "link",
+                    "ai"
                   ]
                 },
                 "of": {
@@ -38257,6 +40109,12 @@
                   "type": "string"
                 },
                 "to": {
+                  "type": "string"
+                },
+                "decided": {
+                  "type": "string"
+                },
+                "run": {
                   "type": "string"
                 },
                 "answer": {

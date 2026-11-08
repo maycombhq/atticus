@@ -1013,7 +1013,41 @@ export type StepClass = z.infer<typeof StepClass>;
  * step on the one model; `atticus upgrade` moves it to version 2 (`runtime-v2`), changing nothing
  * else.
  */
-export const RUNTIME_SCHEMA_VERSION = 3 as const;
+export const RUNTIME_SCHEMA_VERSION = 4 as const;
+
+/**
+ * runtime.yaml version 4 (ADR 0181): whether the AI decides, itself, what it can (a loose call's
+ * pairing with an API, an option question about a target on file), shown as the AI's, or only
+ * proposes for a person, as before. `propose` until the organisation turns it on in a pull
+ * request. `minPrecision`: the share right of the AI's decisions a sample audit must show
+ * (ADR 0148); below it, deciding pauses back to propose and Home says why. Configuration, not a
+ * safety rule: a human still approves every write to shared systems, and the AI never decides a
+ * free-text question, a scope wider than the repo, an org-pack change, a gate or anything a
+ * person only may do.
+ */
+export const DecideSettings = z.strictObject({
+  links: z.enum(["auto", "propose"]).default("propose"),
+  questions: z.enum(["auto", "propose"]).default("propose"),
+  minPrecision: z.number().min(0).max(1).default(0.95),
+});
+export type DecideSettings = z.infer<typeof DecideSettings>;
+export const DECIDE_DEFAULTS: DecideSettings = {
+  links: "propose",
+  questions: "propose",
+  minPrecision: 0.95,
+};
+
+/** runtime.yaml's decide section with its defaults (ADR 0181). */
+export function decideOf(
+  runtime: { decide?: Partial<DecideSettings> | undefined } | undefined,
+): DecideSettings {
+  const d = runtime?.decide ?? {};
+  return {
+    links: d.links ?? DECIDE_DEFAULTS.links,
+    questions: d.questions ?? DECIDE_DEFAULTS.questions,
+    minPrecision: d.minPrecision ?? DECIDE_DEFAULTS.minPrecision,
+  };
+}
 
 /** The modes runtime.yaml decides; copilot-acp needs version 3 (ADR 0171). */
 const ConfiguredMode = z.enum(["hand-off", "model", "headless-claude-code", "copilot-acp"]);
@@ -1077,7 +1111,7 @@ export function copilotAcpOf(
 const StepModel = z.string().min(1).regex(/^\S+$/, "a model name or vendor/family, without spaces");
 
 const RuntimeFields = z.strictObject({
-  schemaVersion: z.union([V, z.literal(2), z.literal(RUNTIME_SCHEMA_VERSION)]),
+  schemaVersion: z.union([V, z.literal(2), z.literal(3), z.literal(RUNTIME_SCHEMA_VERSION)]),
   assistants: z
     .strictObject({
       allowed: z.array(AssistantId).min(1),
@@ -1153,6 +1187,8 @@ const RuntimeFields = z.strictObject({
   retrieval: RetrievalSettings.optional(),
   /** Version 3 (ADR 0171): how copilot-acp starts the Copilot language server. */
   copilotAcp: CopilotAcpSettings.optional(),
+  /** Version 4 (ADR 0181): whether the AI decides pairings and option questions itself. */
+  decide: DecideSettings.optional(),
   /** Atticus sends no telemetry unless an organisation turns it on here. */
   telemetry: z.strictObject({ enabled: z.boolean().default(false) }).default({ enabled: false }),
   adapters: z
@@ -1197,6 +1233,12 @@ const RuntimeFields = z.strictObject({
 });
 
 export const Runtime = RuntimeFields.superRefine((r, ctx) => {
+  if (r.schemaVersion < 4 && r.decide !== undefined)
+    ctx.addIssue({
+      code: "custom",
+      path: ["decide"],
+      message: "decide needs schemaVersion 4 (ADR 0181): run atticus upgrade",
+    });
   if (r.schemaVersion < 3) {
     // ADR 0171: copilot-acp and its section are version 3's.
     if ([...r.modes.allowed, r.modes.default].includes("copilot-acp"))

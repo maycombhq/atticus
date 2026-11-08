@@ -41,7 +41,9 @@ const says = (c: FactCorrection): string => {
   const what = `${c.target.kind} ${c.target.value} (${c.target.file}:${c.target.line})`;
   if (c.action === "wrong") return `${what} is wrong: ${c.reason ?? ""}`.trim();
   if (c.action === "link")
-    return `${what} goes to ${[c.link?.method, c.link?.path].filter(Boolean).join(" ")} on ${c.link?.repo ?? c.link?.system}`;
+    return `${what} goes to ${[c.link?.method, c.link?.path].filter(Boolean).join(" ")} on ${c.link?.repo ?? c.link?.system}${c.ai ? ` (detected by AI, run ${c.ai.run})` : ""}`;
+  // ADR 0181: a person said the call reaches none of these.
+  if (c.action === "unlink") return `${what} reaches none of these`;
   const set = Object.entries(c.set ?? {})
     .map(([k, v]) => `${k} ${v}`)
     .join(", ");
@@ -224,6 +226,8 @@ export function uiDeclaredRoutes(
             says: says(c),
             by: c.by,
             at: c.at,
+            ...(c.ai ? { ai: { runtime: c.ai.runtime, run: c.ai.run } } : {}),
+            ...(c.batch ? { batch: c.batch } : {}),
             file: rel,
             undo: { repo, line },
           });

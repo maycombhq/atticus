@@ -65,6 +65,19 @@ export function proposalsDirOf(root: string): string {
   return join(root, ...proposalsRelOf(root).split("/"));
 }
 
+/**
+ * ADR 0181: the record of each batch of decisions applied at once (by the AI, or by a person's
+ * rule), so Undo removes exactly its lines: `decisions/<batch id>.yaml`, or under `.atticus/`.
+ */
+export function decisionsRelOf(root: string): string {
+  return isAdopted(root) ? ".atticus/decisions" : "decisions";
+}
+
+/** The decisions folder (ADR 0181). */
+export function decisionsDirOf(root: string): string {
+  return join(root, ...decisionsRelOf(root).split("/"));
+}
+
 /** Where questions to people live (ADR 0078), relative to the root: `questions`, or `.atticus/questions` when adopted. */
 export function questionsRelOf(root: string): string {
   return isAdopted(root) ? ".atticus/questions" : "questions";

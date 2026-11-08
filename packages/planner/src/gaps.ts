@@ -3,6 +3,7 @@ import { join } from "node:path";
 import type { SourceInput } from "@maycombhq/ai";
 import { loadChangeContext } from "@maycombhq/changes";
 import {
+  answerByWords,
   answerText,
   changesDirOf,
   changesRelOf,
@@ -406,7 +407,7 @@ export async function gapAnswers(
         "People said what these names are; their answers are asserted knowledge (who and when), not read from code:",
         ...answered.map(
           (q) =>
-            `- ${gapNameOf(q)}: ${answerText(q) ?? ""} (${q.answer!.by}, ${q.answer!.at}, question ${q.id})`,
+            `- ${gapNameOf(q)}: ${answerText(q) ?? ""} (${answerByWords(q.answer!.by)}, ${q.answer!.at}, question ${q.id})`,
         ),
       ].join("\n"),
       classification: "internal",

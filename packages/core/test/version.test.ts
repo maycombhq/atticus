@@ -17,49 +17,49 @@ import { EXAMPLES } from "./examples.js";
 /**
  * ADR 0031: catalog schema version 2 added the Capability kind. ADR 0125: version 3 adds
  * `required` on a Schema field. ADR 0164: version 4 adds `protobuf` to a Schema's formats.
- * Version-1, -2 and -3 files still read.
+ * ADR 0181: version 5 adds the evidence source `ai` and its `run`. Version-1 to -4 files still read.
  */
-describe("catalog schema version 4", () => {
-  it("is version 4, and readers accept 1, 2, 3 and 4", () => {
-    expect(SCHEMA_VERSION).toBe(4);
-    expect([...SUPPORTED_SCHEMA_VERSIONS]).toEqual([1, 2, 3, 4]);
+describe("catalog schema version 5", () => {
+  it("is version 5, and readers accept 1, 2, 3, 4 and 5", () => {
+    expect(SCHEMA_VERSION).toBe(5);
+    expect([...SUPPORTED_SCHEMA_VERSIONS]).toEqual([1, 2, 3, 4, 5]);
   });
 
-  it("reads a version-1, -2 or -3 record and returns it as version 4, since no field changed", () => {
+  it("reads a version-1, -2, -3 or -4 record and returns it as version 5, since no field changed", () => {
     const r = parseRecord({ ...EXAMPLES.System, schemaVersion: 1 });
     if (!r.ok) throw new Error(JSON.stringify(r.issues));
-    expect(r.record.schemaVersion).toBe(4);
-    for (const v of [2, 3, 4]) {
+    expect(r.record.schemaVersion).toBe(5);
+    for (const v of [2, 3, 4, 5]) {
       const back = parseRecord({ ...EXAMPLES.System, schemaVersion: v });
       expect(back.ok && back.record, String(v)).toEqual(r.record);
     }
   });
 
   it("refuses a version it doesn't know", () => {
-    for (const v of [0, 5, "3"]) {
+    for (const v of [0, 6, "3"]) {
       const r = parseRecord({ ...EXAMPLES.System, schemaVersion: v });
       expect(r.ok, String(v)).toBe(false);
       if (!r.ok) {
         expect(r.issues[0]?.path).toBe("schemaVersion");
         expect(r.issues[0]?.message).toBe(
-          "schemaVersion must be 1, 2, 3 or 4 (older files are read as version 4)",
+          "schemaVersion must be 1, 2, 3, 4 or 5 (older files are read as version 5)",
         );
       }
     }
   });
 
-  it("always writes version 4", () => {
-    for (const v of [1, 2, 3]) {
+  it("always writes version 5", () => {
+    for (const v of [1, 2, 3, 4]) {
       const text = serializeRecord({
         ...EXAMPLES.System,
         schemaVersion: v,
         tags: [],
         accessGroup: "everyone",
       } as never);
-      expect(text.startsWith("schemaVersion: 4\nkind: System\n")).toBe(true);
+      expect(text.startsWith("schemaVersion: 5\nkind: System\n")).toBe(true);
     }
     const decision = parseRecord({ ...EXAMPLES.CuratedDecision, schemaVersion: 1 });
-    expect(decision.ok && serializeRecord(decision.record)).toMatch(/^schemaVersion: 4\n/);
+    expect(decision.ok && serializeRecord(decision.record)).toMatch(/^schemaVersion: 5\n/);
   });
 
   it("takes a protobuf Schema, and nothing an older version couldn't read changed meaning", () => {
@@ -70,7 +70,7 @@ describe("catalog schema version 4", () => {
 
   it("names the version in the JSON Schema ids", () => {
     const s = catalogJsonSchemas().Capability as { $id: string };
-    expect(s.$id).toBe("https://maycombhq.github.io/atticus/schema/catalog/v4/Capability.json");
+    expect(s.$id).toBe("https://maycombhq.github.io/atticus/schema/catalog/v5/Capability.json");
   });
 });
 
@@ -120,7 +120,7 @@ describe("Schema field required", () => {
     const text = serializeRecord(r.record);
     expect(text).toBe(
       [
-        "schemaVersion: 4",
+        "schemaVersion: 5",
         "kind: Schema",
         "id: balance-response",
         "status: current",
@@ -270,7 +270,7 @@ describe("migrateCatalog", () => {
     const text = await readFile(join(dir, "generated/system/ledger.yaml"), "utf8");
     expect(text).toBe(
       [
-        "schemaVersion: 4",
+        "schemaVersion: 5",
         "kind: System",
         "id: ledger",
         "status: current",
@@ -300,15 +300,15 @@ describe("migrateCatalog", () => {
     const dir = await catalog();
     await migrateCatalog(dir);
     expect(await readFile(join(dir, SCHEMA_FILE), "utf8")).toBe(
-      v2Schema.replace(/^schemaVersion: 2\n/, "schemaVersion: 4\n"),
+      v2Schema.replace(/^schemaVersion: 2\n/, "schemaVersion: 5\n"),
     );
   });
 
   it("version 3 to 4 changes only the version (ADR 0164)", async () => {
     const dir = await catalog();
     const before = await readFile(join(dir, "generated/component/ledger-api.yaml"), "utf8");
-    expect(before).toMatch(/^schemaVersion: 4\n/);
-    const v3 = before.replace(/^schemaVersion: 4\n/, "schemaVersion: 3\n");
+    expect(before).toMatch(/^schemaVersion: 5\n/);
+    const v3 = before.replace(/^schemaVersion: 5\n/, "schemaVersion: 3\n");
     await writeFile(join(dir, "generated/component/ledger-api.yaml"), v3);
     expect((await migrateCatalog(dir, { dryRun: true, versions: [3] })).migrated).toEqual([
       "generated/component/ledger-api.yaml",
@@ -331,7 +331,7 @@ describe("migrateCatalog", () => {
     await migrateCatalog(dir, { versions: [1] });
     // a step writes the current version, and leaves the other step's files alone
     expect(await readFile(join(dir, "generated/system/ledger.yaml"), "utf8")).toMatch(
-      /^schemaVersion: 4\n/,
+      /^schemaVersion: 5\n/,
     );
     expect(await readFile(join(dir, SCHEMA_FILE), "utf8")).toBe(v2Schema);
   });
@@ -375,7 +375,7 @@ describe("migrateCatalog", () => {
     await migrateCatalog(dir);
     for (const f of ["generated/system/ledger.yaml", SCHEMA_FILE]) {
       const r = deserializeRecord(await readFile(join(dir, f), "utf8"));
-      expect(r.ok && r.record.schemaVersion, f).toBe(4);
+      expect(r.ok && r.record.schemaVersion, f).toBe(5);
     }
   });
 });

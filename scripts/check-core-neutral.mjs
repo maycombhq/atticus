@@ -190,6 +190,12 @@ export const ALLOW = [
       "copilot-acp is the C5 runtime kind's own name (ADR 0171): the runtime enum names the mode, as runtime.yaml writes it",
   },
   {
+    file: "packages/core/src/schema/question.ts",
+    names: ["copilot"],
+    reason:
+      "an AI answer names the runtime whose run decided it, copilot-acp, the C5 runtime kind's own name (ADR 0181, ADR 0171)",
+  },
+  {
     file: "packages/core/src/runtime-migrate.ts",
     names: ["copilot"],
     reason:

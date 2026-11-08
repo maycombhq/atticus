@@ -8,6 +8,7 @@ import {
   type SourceInput,
 } from "@maycombhq/ai";
 import {
+  answerByWords,
   answerWords,
   QuestionDraft,
   ScanSettings,
@@ -319,7 +320,7 @@ export function askedBefore(questions: Question[]): SourceInput[] {
     for (const q of answered)
       lines.push(
         `- ${q.id}: ${q.question} (${q.evidence.join(", ")})`,
-        `  Answer (${q.answer!.by}): ${answerWords(q)}`,
+        `  Answer (${answerByWords(q.answer!.by)}): ${answerWords(q)}`,
       );
   }
   if (open.length) {

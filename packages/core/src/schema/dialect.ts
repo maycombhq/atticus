@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { parseTemplate, templateSources, TemplateError } from "../template.js";
-import { Confidence, EvidenceSource, RecordId } from "./common.js";
+import { Confidence, RecordId, RuleEvidenceSource } from "./common.js";
 import { RECORD_KINDS, RECORD_SCHEMAS, type RecordKind } from "./kinds.js";
 
 /**
@@ -194,7 +194,7 @@ export const DialectEmit = z.strictObject({
   fields: z.record(z.string(), FieldValue).default({}),
   evidence: z
     .strictObject({
-      source: EvidenceSource.default("code"),
+      source: RuleEvidenceSource.default("code"),
       side: z.enum(["caller", "callee", "gateway", "definition"]).optional(),
     })
     .default({ source: "code" }),
