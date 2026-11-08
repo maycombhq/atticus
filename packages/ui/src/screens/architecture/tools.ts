@@ -7,7 +7,16 @@ import type { CanvasBox, CanvasGraph, CanvasLink } from "./model.js";
  * since a snapshot; the exporters write the picture as Mermaid, draw.io or SVG. Pure.
  */
 
-export const LAYERS = ["verified", "guessed", "declared", "paired", "outside", "topics"] as const;
+export const LAYERS = [
+  "verified",
+  "guessed",
+  "declared",
+  "paired",
+  // ADR 0181: links the AI paired, "Detected by AI".
+  "ai",
+  "outside",
+  "topics",
+] as const;
 export type Layer = (typeof LAYERS)[number];
 export type Layers = Record<Layer, boolean>;
 export const ALL_LAYERS: Layers = {
@@ -15,16 +24,40 @@ export const ALL_LAYERS: Layers = {
   guessed: true,
   declared: true,
   paired: true,
+  // On by default, so what the AI decided is seen.
+  ai: true,
   outside: true,
   topics: true,
 };
 
-/** Which layer a link is on: a person's word, a guess or gap, or read and cited. */
-export function layerOf(l: CanvasLink): "declared" | "paired" | "guessed" | "verified" {
+/** The layers a link is on (the others choose boxes). */
+const LINK_LAYERS = ["verified", "guessed", "declared", "paired", "ai"] as const;
+
+/**
+ * Which layer a link is on: a person's word, the AI's, a guess or gap, or read and cited. The AI's
+ * comes before the guesses: an AI pairing is inferred, but it is shown as the AI's.
+ */
+export function layerOf(l: CanvasLink): "declared" | "paired" | "ai" | "guessed" | "verified" {
   if (l.declared) return "declared";
   if (l.paired) return "paired";
+  if (l.ai) return "ai";
   // A contract finding is about the payload, not about where the call goes.
   return l.gaps.some((g) => !g.startsWith("contract-")) ? "guessed" : "verified";
+}
+
+/** Only links detected by AI: the AI's layer on, every other link layer off. */
+export const isOnlyAi = (on: Layers): boolean =>
+  on.ai && LINK_LAYERS.every((l) => l === "ai" || !on[l]);
+
+/**
+ * ADR 0181: show only the links the AI detected, or, when that is what is shown, every link layer
+ * again. Boxes (outside systems, topics) stay as they were. Kept views save it as their layers.
+ */
+export function onlyAi(on: Layers): Layers {
+  const only = !isOnlyAi(on);
+  const out = { ...on };
+  for (const l of LINK_LAYERS) out[l] = only ? l === "ai" : true;
+  return out;
 }
 
 /** The picture with only the layers asked for; with `mismatches`, only links the check marks. */
@@ -230,13 +263,21 @@ export function compare(
 const mid = (id: string) => `n_${id.replace(/[^A-Za-z0-9_]/g, "_")}`;
 const quote = (s: string) => s.replace(/"/g, "#quot;");
 
-/** The picture as a Mermaid flowchart, labels intact; a person's word drawn dotted. */
+/**
+ * How an exported link is stroked: a person's word dashed, the AI's (ADR 0181) dotted, so the two
+ * differ in shape; each also says so in its label (◆ and the words), never by colour alone.
+ */
+const strokeOf = (l: CanvasLink): "ai" | "word" | undefined =>
+  l.declared || l.paired ? "word" : l.ai ? "ai" : undefined;
+
+/** The picture as a Mermaid flowchart, labels intact; a person's word and the AI's drawn dotted. */
 export function toMermaid(g: CanvasGraph, dir: "LR" | "TB" = "LR"): string {
   const lines = [`flowchart ${dir}`];
   for (const b of g.boxes.filter((x) => !x.group))
     lines.push(`  ${mid(b.id)}["${quote(`${b.label}`)}"]`);
   for (const l of g.links) {
-    const arrow = l.declared || l.paired ? "-.->" : l.async ? "-->" : "-->";
+    // Mermaid has one dotted arrow: the label tells the AI's (◆) from a person's word.
+    const arrow = strokeOf(l) ? "-.->" : "-->";
     lines.push(`  ${mid(l.from)} ${arrow}|"${quote(l.label)}"| ${mid(l.to)}`);
   }
   return lines.join("\n") + "\n";
@@ -252,6 +293,13 @@ export interface Placed {
   height: number;
 }
 
+const DRAWIO_STROKE = { word: "dashed=1;", ai: "dashed=1;dashPattern=1 4;", none: "" } as const;
+const SVG_STROKE = {
+  word: ' stroke-dasharray="6 4"',
+  ai: ' stroke-dasharray="1 4" stroke-linecap="round"',
+  none: "",
+} as const;
+
 /** The picture as a draw.io file: each box where the layout put it, each link with its label. */
 export function toDrawio(g: CanvasGraph, at: (id: string) => Placed | undefined): string {
   const cells: string[] = ['<mxCell id="0"/>', '<mxCell id="1" parent="0"/>'];
@@ -263,7 +311,7 @@ export function toDrawio(g: CanvasGraph, at: (id: string) => Placed | undefined)
   }
   g.links.forEach((l, i) =>
     cells.push(
-      `<mxCell id="e${i}" value="${esc(l.label)}" style="endArrow=block;${l.declared || l.paired ? "dashed=1;" : ""}" edge="1" parent="1" source="${esc(mid(l.from))}" target="${esc(mid(l.to))}"><mxGeometry relative="1" as="geometry"/></mxCell>`,
+      `<mxCell id="e${i}" value="${esc(l.label)}" style="endArrow=block;${DRAWIO_STROKE[strokeOf(l) ?? "none"]}" edge="1" parent="1" source="${esc(mid(l.from))}" target="${esc(mid(l.to))}"><mxGeometry relative="1" as="geometry"/></mxCell>`,
     ),
   );
   return `<mxfile host="atticus"><diagram name="Atticus"><mxGraphModel><root>${cells.join("")}</root></mxGraphModel></diagram></mxfile>\n`;
@@ -292,7 +340,7 @@ export function toSvg(g: CanvasGraph, at: (id: string) => Placed | undefined): s
       b.y + b.height / 2,
     ];
     parts.push(
-      `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="dimgray" stroke-width="1.5" marker-end="url(#arrow)"${l.declared || l.paired ? ' stroke-dasharray="6 4"' : ""}/>`,
+      `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="dimgray" stroke-width="1.5" marker-end="url(#arrow)"${SVG_STROKE[strokeOf(l) ?? "none"]}/>`,
       `<text x="${(x1 + x2) / 2}" y="${(y1 + y2) / 2 - 4}" font-size="11" text-anchor="middle" fill="darkslategray">${esc(l.label)}</text>`,
     );
   }

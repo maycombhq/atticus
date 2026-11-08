@@ -70,6 +70,8 @@ interface LinkData extends Record<string, unknown> {
   points?: Point[];
   labelAt?: Point;
   ends?: { from: Point; to: Point };
+  /** ADR 0181: the link picked (its inspector is open). */
+  picked?: boolean;
 }
 type LinkEdge = Edge<LinkData, "link">;
 
@@ -195,8 +197,11 @@ function LinkView(p: EdgeProps<LinkEdge>) {
         sourcePosition: p.sourcePosition,
         targetPosition: p.targetPosition,
       });
-  // ADR 0174: a person's word (declared, or paired on the canvas) is drawn dashed.
-  const cls = `arch-link ${d.link.async ? "async" : ""} ${d.link.gaps.length ? "gappy" : ""} ${d.link.mark ? `m-${d.link.mark}` : ""} ${d.link.declared || d.link.paired ? "word" : ""}`;
+  // ADR 0174: a person's word (declared, or paired on the canvas) is drawn dashed; ADR 0181: the
+  // AI's pairing dotted, with ◆ and the words in its label.
+  const word = d.link.declared || d.link.paired;
+  const ai = !word && !!d.link.ai;
+  const cls = `arch-link ${d.link.async ? "async" : ""} ${d.link.gaps.length ? "gappy" : ""} ${d.link.mark ? `m-${d.link.mark}` : ""} ${word ? "word" : ""} ${ai ? "ai" : ""} ${d.picked ? "picked" : ""}`;
   return (
     <>
       <BaseEdge
@@ -207,7 +212,7 @@ function LinkView(p: EdgeProps<LinkEdge>) {
       />
       <EdgeLabelRenderer>
         <div
-          className={`arch-link-label nodrag nopan ${d.link.gaps.length ? "gappy" : ""} ${d.link.mark ? `m-${d.link.mark}` : ""}`}
+          className={`arch-link-label nodrag nopan ${d.link.gaps.length ? "gappy" : ""} ${d.link.mark ? `m-${d.link.mark}` : ""} ${ai ? "ai" : ""} ${d.picked ? "picked" : ""}`}
           style={{ transform: `translate(-50%, -50%) translate(${lx}px, ${ly}px)` }}
         >
           {d.link.gaps.length > 0 && <span aria-hidden="true">⚠ </span>}
@@ -332,6 +337,9 @@ export function ArchitectureCanvas(p: {
   onConnect?: (from: string, to: string) => void;
   /** G6 (ADR 0175): the boxes to keep lit (a blast radius); the rest are dimmed. */
   lit?: ReadonlySet<string>;
+  /** ADR 0181: a link clicked, and the link picked (drawn picked). */
+  onSelectLink?: (id: string) => void;
+  selectedLink?: string;
 }) {
   const [state, setState] = useState<LayoutState>(
     p.initial ? { state: "ready" } : { state: "running" },
@@ -422,10 +430,13 @@ export function ArchitectureCanvas(p: {
     setEdges((es) =>
       es.map((e) => {
         const link = linkById.get(e.id) ?? e.data!.link;
-        return link === e.data!.link ? e : { ...e, data: { ...e.data!, link } };
+        const picked = e.id === p.selectedLink;
+        return link === e.data!.link && picked === !!e.data!.picked
+          ? e
+          : { ...e, data: { ...e.data!, link, picked } };
       }),
     );
-  }, [p.graph, p.selected, p.types]);
+  }, [p.graph, p.selected, p.types, p.selectedLink]);
 
   const onNodesChange = useCallback(
     (changes: NodeChange<BoxNode>[]) => setNodes((ns) => applyNodeChanges(changes, ns)),
@@ -550,6 +561,9 @@ export function ArchitectureCanvas(p: {
             }}
             onMove={(_, v) => setZoom(v.zoom)}
             onNodeClick={(_, n) => p.onSelect(n.id)}
+            // ADR 0181: a link clicked opens it in the inspector (the keyboard's way is the
+            // inspector's links and the Detected by AI list in the tools).
+            {...(p.onSelectLink ? { onEdgeClick: (_, e) => p.onSelectLink!(e.id) } : {})}
             onSelectionChange={({ nodes: picked }) => {
               if (picked.length === 1 && picked[0]!.id !== p.selected) p.onSelect(picked[0]!.id);
             }}

@@ -699,6 +699,41 @@ describe("why is this linked: each link's joins, how each was made and both ends
     expect(link.joins!.find((j) => j.interface === PATH)).toMatchObject({ how, verified: false });
   });
 
+  it("says a call the AI paired is joined by AI, with its run: inferred, and the flag no gap (ADR 0181)", () => {
+    const rs = records().map((r) =>
+      r.id === PATH
+        ? ({
+            ...r,
+            flags: ["joined-by-ai"],
+            evidence: [
+              {
+                source: "ai",
+                repo: "forge-web",
+                path: "src/tags.ts",
+                line: 7,
+                side: "caller",
+                by: "copilot-acp",
+                run: "run-ai-0042",
+              },
+              cite("forge-customers", "src/TagsController.java", 12, "callee"),
+            ],
+          } as typeof r)
+        : r,
+    );
+    const v = nodeView(buildEstate(rs), "estate", { lens: "architecture" });
+    const link = v.edges.find((e) => e.from === "system:web" && e.to === "system:customers")!;
+    expect(link.joins!.find((j) => j.interface === PATH)).toMatchObject({
+      how: "ai",
+      run: "run-ai-0042",
+      verified: false,
+      caller: [{ source: "ai", repo: "forge-web", at: "src/tags.ts:7" }],
+    });
+    // The AI's word is a guess until a person confirms it; how it was made is no gap of its own.
+    expect(link.gaps).toEqual(["inferred"]);
+    // Only an AI join carries a run.
+    expect(link.joins!.find((j) => j.interface === HOST)!.run).toBeUndefined();
+  });
+
   it("says a call joined to another team's shared map is theirs, naming the team, their line and commit (O3, ADR 0160)", () => {
     const rs = records().map((r) =>
       r.id === OLD

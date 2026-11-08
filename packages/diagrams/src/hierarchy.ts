@@ -1,6 +1,7 @@
 import {
   DECLARED_TOPIC,
   JOIN_HOW_FLAGS,
+  JOINED_BY_AI,
   JOINED_BY_PERSON,
   JOINED_TO_SHARED_MAP,
   LINK_EVIDENCE_NOT_GAPS,
@@ -206,6 +207,8 @@ const HOW_OF_FLAG: Record<string, Join["how"]> = {
   "joined-by-service-name": "service-name",
   // G1 (ADR 0174): a person paired the call with the entry on the canvas.
   "joined-by-person": "person",
+  // ADR 0181: the AI paired it, applied by Atticus from its run: the AI's word, not a person's.
+  [JOINED_BY_AI]: "ai",
   "joined-by-answer": "answer",
   "joined-by-name": "named",
   "joined-by-repo": "repo",
@@ -241,7 +244,15 @@ function joinOf(i: RecordOf<"Interface">): Join {
     hops: side("gateway"),
     other: evidenceOf(i.evidence.filter((e) => !e.side || !sided.has(e.side))),
     ...sharedOf(i),
+    ...aiRunOf(i),
   };
+}
+
+/** ADR 0181: the run that paired a call the AI decided, from its `source: ai` evidence. */
+function aiRunOf(i: RecordOf<"Interface">): Pick<Join, "run"> {
+  if (!i.flags?.includes(JOINED_BY_AI)) return {};
+  const run = i.evidence.find((e) => e.source === "ai" && e.run)?.run;
+  return run ? { run } : {};
 }
 
 /** ADR 0160: the entry of another team's shared map a call is joined to, from its evidence. */

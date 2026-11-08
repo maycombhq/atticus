@@ -4297,6 +4297,30 @@ export const COPY = {
   },
   /** ADR 0106: an AI step run from the app, with Copilot in a VS Code panel or the server's model. */
   /** ADR 0175 (G6): the canvas's tools. */
+  /** ADR 0181 on the canvas: the Detected by AI layer, its legend, filter and a picked AI link. */
+  canvasAi: {
+    /** On a link's label: ◆ and the chip's words; how many of its calls when not all. */
+    mark: (n: number, of: number) =>
+      n >= of ? "◆ Detected by AI" : `◆ ${n} of ${of} calls detected by AI`,
+    title: "Detected by AI",
+    hint: "Links the AI paired as itself, from a run Atticus started, that no person has confirmed. Drawn dotted, with ◆ and the words. Pick one to see its run and correct it.",
+    only: "Only links detected by AI",
+    listed: (n: number) => `${n} link${n === 1 ? "" : "s"} on this picture detected by AI:`,
+    pick: (from: string, to: string) => `Show the link ${from} → ${to}`,
+    none: "No link on this picture was detected by AI.",
+    noneOnly:
+      "Only links detected by AI are shown, and this picture has none. Press the button again to show every link.",
+    legend: "How links are drawn",
+    legendCode: "Solid line: read from code",
+    legendPerson: "Dashed line: a person's word (declared or paired)",
+    legendAi: "Dotted line with ◆: detected by AI",
+    linkTitle: (from: string, to: string, type: string) => `${from} → ${to} (${type})`,
+    link: "Link",
+    close: "Close the link",
+    gone: "This link isn't on the picture any more: a correction or a new read moved it.",
+    corrected:
+      "Correction saved as your word. The canvas was read again; the link moves once atticus verify --write has joined the caller's repo again.",
+  },
   canvasTools: {
     types: "Types",
     typesHint:
@@ -4310,6 +4334,8 @@ export const COPY = {
       guessed: "Guesses and gaps",
       declared: "Declared (a person's word)",
       paired: "Paired by a person",
+      // ADR 0181: the chip's words, so the layer and the chip are one thing.
+      ai: "Detected by AI",
       outside: "Outside systems",
       topics: "Topics and queues",
     } as Record<string, string>,
@@ -4851,6 +4877,7 @@ export const COPY = {
         "Its host is a Kubernetes Service's short name, which reaches that Service only from its own namespace, and no deploy file says this service runs there, so this is a guess.",
       shared:
         "It calls another team's system, and the map that team shares has the entry that answers it.",
+      ai: "The AI paired this call with the entry, as itself, from a run Atticus started. No person has confirmed it; correct it if it is wrong.",
       unknown:
         "The catalog doesn't say how this was joined: it was written before Atticus kept that, or by a built-in reader. Run atticus verify on the caller's repo with --write to record it.",
     } as Record<string, string>,

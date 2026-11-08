@@ -124,6 +124,51 @@ export interface CanvasLink {
   declared?: boolean;
   /** G1 (ADR 0174): every call on it a person paired on the canvas: drawn dashed, their word. */
   paired?: boolean;
+  /**
+   * ADR 0181: how many of the calls it lists the AI paired ("Detected by AI"): drawn dotted with
+   * ◆ and the words, on the AI's layer. Absent when none.
+   */
+  ai?: number;
+  /** ADR 0181: the run that paired its first AI call, for the chip's link. */
+  run?: string;
+}
+
+/** Who made a link (ADR 0181 part 1, counts split three ways): from code, a person, or the AI. */
+export type LinkBy = "code" | "person" | "ai";
+
+/**
+ * Who made a link: the AI when it decided any of the link's calls (the safe side: a link that
+ * rests on the AI anywhere is shown as the AI's), a person when a person's word stands for every
+ * call (declared, or paired on the canvas), else read from code.
+ */
+export function linkBy(l: Pick<CanvasLink, "ai" | "declared" | "paired">): LinkBy {
+  if (l.ai) return "ai";
+  return l.declared || l.paired ? "person" : "code";
+}
+
+/** The links of a picture counted three ways, as GET /api/decisions counts them. */
+export function linkCounts(links: readonly Pick<CanvasLink, "ai" | "declared" | "paired">[]): {
+  fromCode: number;
+  byPerson: number;
+  byAi: number;
+} {
+  const out = { fromCode: 0, byPerson: 0, byAi: 0 };
+  for (const l of links) {
+    const by = linkBy(l);
+    if (by === "ai") out.byAi++;
+    else if (by === "person") out.byPerson++;
+    else out.fromCode++;
+  }
+  return out;
+}
+
+/** The AI's calls among a link's joins (C4 2.82.0 `how: ai`), and the run of the first. */
+export function aiJoins(e: Pick<Api.HierEdgeT, "joins">): { n: number; run?: string } {
+  const ai = (e.joins ?? []).filter(
+    (j) => j.how === "ai" || j.caller.some((c) => c.source === "ai"),
+  );
+  const run = ai.find((j) => j.run)?.run;
+  return { n: ai.length, ...(run ? { run } : {}) };
 }
 
 export interface CanvasGraph {
@@ -283,7 +328,10 @@ export function canvasGraph(
       e.gaps.includes(DECLARED_TOPIC) ||
       (!!e.joins?.length && e.joins.every((j) => j.how === "declared"));
     const paired = !!e.joins?.length && e.joins.every((j) => j.how === "person");
-    const label = linkLabel(e.count, listens ? COPY.topics.listens : e.type);
+    // ADR 0181: a link resting on the AI's pairing says so in its label (◆ and words).
+    const ai = aiJoins(e);
+    const base = linkLabel(e.count, listens ? COPY.topics.listens : e.type);
+    const label = ai.n ? `${base} · ${COPY.canvasAi.mark(ai.n, e.joins!.length)}` : base;
     links.push({
       id: e.id,
       from: listens ? e.to : e.from,
@@ -299,6 +347,8 @@ export function canvasGraph(
       gaps: e.gaps,
       ...(declared ? { declared: true } : {}),
       ...(paired ? { paired: true } : {}),
+      ...(ai.n ? { ai: ai.n } : {}),
+      ...(ai.run ? { run: ai.run } : {}),
     });
   }
   // A gap every part inside has (two or more parts) is said once, not on every box.
