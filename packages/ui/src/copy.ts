@@ -4117,7 +4117,7 @@ export const COPY = {
       },
       model: (model?: string) =>
         model ? `Model: ${model} (runtime.yaml's copilotAcp).` : "Model: Copilot's default.",
-      may: "Each session may only read the code, write that repo's facts and run atticus verify. It never pushes, deploys or writes anywhere else.",
+      may: "Each session may only read the code, write facts and run atticus verify. It can't answer, accept, audit or mark anything done as you, and it never pushes, deploys or writes anywhere else.",
       long: "A large repo takes several sessions. Stop at any time: the next run carries on from there.",
       yes: "Start the run",
       no: "Not now",

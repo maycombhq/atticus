@@ -74,7 +74,8 @@ class CommandLine(
         // Windows matches an extension in any case (atticus.cmd for .CMD); try it as PATHEXT writes
         // it and in lower case, so a case-sensitive disk finds the same file.
         val exts = (if (!windows || name.contains('.')) listOf("") + pathExt else pathExt).flatMap { listOf(it, it.lowercase()) }.distinct()
-        for (d in pathDirs) {
+        // A PATH entry may be quoted ("C:\\Users\\dev\\AppData\\Roaming\\npm"): Windows reads it without them.
+        for (d in pathDirs.map { it.trim().removeSurrounding("\"") }.filter { it.isNotEmpty() }) {
             for (e in exts) {
                 val f = runCatching { Path.of(d, name + e) }.getOrNull() ?: continue
                 // The name as it is on disk: Windows finds atticus.EXE for atticus.exe.

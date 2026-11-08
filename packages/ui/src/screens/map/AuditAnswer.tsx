@@ -105,8 +105,10 @@ export function AuditAnswerForm(p: {
   const submit = () => {
     const answers = v.items.flatMap((i) => {
       const k = p.picks[i.id];
-      return k?.answer
-        ? [{ id: i.id, answer: k.answer, ...(k.note.trim() ? { note: k.note.trim() } : {}) }]
+      // Review round 32: a note edited on an item answered before keeps the answer on file.
+      const answer = k && (k.answer ?? i.answer);
+      return answer
+        ? [{ id: i.id, answer, ...(k.note.trim() ? { note: k.note.trim() } : {}) }]
         : [];
     });
     p.onSave(answers);

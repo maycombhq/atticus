@@ -34,3 +34,31 @@ describe("atticus map inside a Copilot session (beta.17)", () => {
     }
   });
 });
+
+describe("a person's decision inside a Copilot session (review round 32)", () => {
+  it.each([
+    ["verify", "audit", "forge-ledger", "--right", "f1"],
+    ["--json", "questions", "sheet", "--apply", "facts/sheet.yaml"],
+    ["knowledge", "verify", "k1"],
+    ["spec", "accept", "forge-ledger"],
+    ["todo", "done", "s1"],
+  ])("refuses %s …", async (...args) => {
+    const was = process.env.ATTICUS_ACP_SESSION;
+    process.env.ATTICUS_ACP_SESSION = "1";
+    try {
+      const out: string[] = [];
+      const code = await main(
+        [...args, "--root", root],
+        { out: (l) => out.push(l), err: (l) => out.push(`ERR ${l}`) },
+        { quiet: true },
+      );
+      expect(code).toBe(2);
+      expect(out.join("\n")).toContain(
+        "This runs inside a Copilot session that Atticus started, so it is refused",
+      );
+    } finally {
+      if (was === undefined) delete process.env.ATTICUS_ACP_SESSION;
+      else process.env.ATTICUS_ACP_SESSION = was;
+    }
+  });
+});

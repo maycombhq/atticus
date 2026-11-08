@@ -344,6 +344,24 @@ describe("editor workspaces", () => {
     },
     T,
   );
+
+  it(
+    "opening again keeps the person's .idea files and drops only modules no longer listed (review round 32)",
+    async () => {
+      const ws = createWorkspace(root);
+      await ws.sync(repos);
+      await ws.openChange("add-transfer-limit", [repos[0]!, repos[1]!]);
+      const idea = join(intellijProjectPath(root, "add-transfer-limit"), ".idea");
+      await writeFile(join(idea, "workspace.xml"), "<project/>\n");
+      await mkdir(join(idea, "shelf"), { recursive: true });
+      await writeFile(join(idea, "shelf", "wip.patch"), "diff\n");
+      await ws.openChange("add-transfer-limit", [repos[1]!]);
+      expect(await readFile(join(idea, "workspace.xml"), "utf8")).toBe("<project/>\n");
+      expect(await readFile(join(idea, "shelf", "wip.patch"), "utf8")).toBe("diff\n");
+      expect(await readFile(join(idea, "modules.xml"), "utf8")).toContain("forge-ledger.iml");
+    },
+    T,
+  );
 });
 
 describe("prune", () => {

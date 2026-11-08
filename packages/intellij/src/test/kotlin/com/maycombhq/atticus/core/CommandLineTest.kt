@@ -39,6 +39,14 @@ class CommandLineTest {
     }
 
     @Test
+    fun `finds atticus on a quoted PATH entry, as Windows does`() {
+        val js = write("npm/node_modules/@maycombhq/atticus/dist/bin.js")
+        write("npm/atticus.cmd", "@ECHO off\r\n\"%_prog%\"  \"%dp0%\\node_modules\\@maycombhq\\atticus\\dist\\bin.js\" %*\r\n")
+        val quoted = CommandLine(windows = true, pathDirs = listOf(" \"${dir.resolve("npm")}\" "), pathExt = listOf(".EXE", ".CMD"))
+        assertEquals(Launch("node", listOf(js.toString())), quoted.resolve("atticus", dir.toString()))
+    }
+
+    @Test
     fun `skips npm's shell script for Git Bash beside the cmd shim, as Windows does`() {
         val js = write("npm/node_modules/@maycombhq/atticus/dist/bin.js")
         // npm writes three: atticus (for sh), atticus.cmd and atticus.ps1.

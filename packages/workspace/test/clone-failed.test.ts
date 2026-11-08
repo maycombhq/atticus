@@ -22,8 +22,10 @@ describe("a clone whose checkout failed", () => {
     });
     const dest = baseClonePath(root, repo.id);
     let fail = true;
+    const clones: string[][] = [];
     const git: GitRunner = async (args) => {
       if (args[0] === "clone") {
+        clones.push(args);
         await mkdir(join(dest, ".git"), { recursive: true });
         await writeFile(join(dest, ".git", "index"), "");
         if (fail)
@@ -38,6 +40,8 @@ describe("a clone whose checkout failed", () => {
     };
     const [first] = await createWorkspace(root, git).sync([repo]);
     expect(first).toMatchObject({ action: "failed" });
+    // Review round 32: kept in the clone's own config, for the person's git and editor too.
+    expect(clones[0]!.slice(0, 3)).toEqual(["clone", "-c", "core.longpaths=true"]);
     expect((first as { reason: string }).reason).toMatch(
       /git config --global core\.longpaths true/,
     );

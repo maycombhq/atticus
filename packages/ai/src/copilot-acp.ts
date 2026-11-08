@@ -33,6 +33,7 @@ import { DATA_RULE, estimateTokens } from "./context.js";
 import { HandoffRuntime } from "./handoff.js";
 import { OneShotRuntime, RuntimeError, type AiRequest, type Run, type Usage } from "./runtime.js";
 import { stepClassOf } from "./step-class.js";
+import { isPersonsFactsFile, personOnlyWhy } from "./person-only.js";
 
 /**
  * copilot-acp (C5, ADR 0171): GitHub Copilot driven unattended through the Copilot language
@@ -149,6 +150,13 @@ export function atticusArgvOf(
   if (!argv.length)
     return { refused: "atticus needs a command (atticus next, atticus verify <repo>, ...)" };
   for (const p of PERSONS) if (p.test(argv)) return { refused: `Refused: ${p.why}.` };
+  // The command comes first, so what it is can't hide behind a flag and its value.
+  if (argv[0]!.startsWith("-") && !["--help", "--version", "-h"].includes(argv[0]!))
+    return {
+      refused: `Put the command first: atticus <command> [arguments] (got ${short(argv.join(" "))})`,
+    };
+  const person = personOnlyWhy(argv);
+  if (person) return { refused: `Refused: ${person}; Atticus lets a session act as no one.` };
   return { argv };
 }
 
@@ -210,6 +218,9 @@ class Paths {
     const r = caseOf(real(path));
     if (r.split(sep).includes(".git"))
       return `Atticus never lets a session write in .git (${short(path)})`;
+    // Review round 32: an audit's answers and a person's corrections are theirs to write.
+    if (isPersonsFactsFile(basename(r)))
+      return `Atticus never lets a session write a person's record (${short(path)}: an audit's answers or a person's corrections)`;
     if (this.files.includes(r) || this.writeDirs.some((x) => sameOrUnder(x, r))) return undefined;
     // Said relative to the metarepo, as the agent names its files.
     const base = this.p.readRoots[0] ?? "";
@@ -224,6 +235,9 @@ class Paths {
     return `Atticus lets this session write only its step's result: it writes only under ${where || "nothing"}; ${short(path)} is refused`;
   }
 }
+
+/** The read and write checks for a policy, as a session meets them. */
+export const acpPathsOf = (p: AcpPolicy) => new Paths(p);
 
 /** Under facts/ (the step's own result path), or only under it, as the message says. */
 export const factsOnly = (root: string, factsDir: string): AcpPolicy => ({

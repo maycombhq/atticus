@@ -141,7 +141,17 @@ export function createWorkspace(root: string, git: GitRunner = createGit()): Wor
         action: "failed",
         reason: `your clone at ${from} has no ${branch} branch; fetch it there, or sync without --from`,
       };
-    await g(["clone", "--quiet", "--no-tags", "--no-checkout", "--", from, dest]);
+    await g([
+      "clone",
+      "-c",
+      "core.longpaths=true",
+      "--quiet",
+      "--no-tags",
+      "--no-checkout",
+      "--",
+      from,
+      dest,
+    ]);
     await g(["remote", "set-url", "origin", "--", repo.url], dest);
     // Your clone's own branches came over as origin/*: replace them with the one we read.
     const refs = (
@@ -178,7 +188,17 @@ export function createWorkspace(root: string, git: GitRunner = createGit()): Wor
         await mkdir(dirname(dest), { recursive: true });
         const from = local && yourClone(local, repo);
         if (from) return await copyFrom(repo, from, dest);
-        const args = ["clone", "--no-tags", "--branch", branch, "--filter=blob:none"];
+        // Review round 32: a clone-level -c is kept in the clone's config, so the person's own git
+        // (and the editor's) copes with paths past 260 characters in the clone and its worktrees.
+        const args = [
+          "clone",
+          "-c",
+          "core.longpaths=true",
+          "--no-tags",
+          "--branch",
+          branch,
+          "--filter=blob:none",
+        ];
         if (repo.sparse.length > 0) args.push("--sparse");
         args.push("--", repo.url, dest);
         await g(args);

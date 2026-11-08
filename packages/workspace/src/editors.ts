@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
 import { runsDirOf, type ChangeRepos } from "@maycombhq/core";
 import { intellijProjectPath, vscodeWorkspacePath, WORKSPACE_DIR } from "./layout.js";
@@ -110,9 +110,13 @@ export async function writeEditorWorkspaces(
 
   const intellij = intellijProjectPath(root, repos.change);
   const ideaDir = join(intellij, ".idea");
-  await rm(ideaDir, { recursive: true, force: true });
+  // Review round 32: .idea/ is the person's working project too (workspace.xml, shelf/, run
+  // configurations): Atticus writes only its own files and removes only modules no longer listed.
   await mkdir(ideaDir, { recursive: true });
-  for (const [name, text] of Object.entries(intellijProject(root, repos))) {
+  const files = intellijProject(root, repos);
+  for (const name of await readdir(ideaDir).catch(() => [] as string[]))
+    if (name.endsWith(".iml") && !(name in files)) await rm(join(ideaDir, name), { force: true });
+  for (const [name, text] of Object.entries(files)) {
     await writeFile(join(ideaDir, name), text, "utf8");
   }
   return { vscode, intellij };

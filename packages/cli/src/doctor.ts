@@ -198,9 +198,12 @@ async function defaultFreeBytes(dir: string): Promise<number | undefined> {
   }
 }
 
-function defaultOnPath(env: NodeJS.ProcessEnv, platform: NodeJS.Platform) {
+export function defaultOnPath(env: NodeJS.ProcessEnv, platform: NodeJS.Platform) {
   const exts = platform === "win32" ? (env.PATHEXT ?? ".EXE;.CMD;.BAT").split(";") : [""];
-  const dirs = (env.PATH ?? env.Path ?? "").split(platform === "win32" ? ";" : delimiter);
+  // A quoted PATH entry ("C:\\Program Files\\nodejs") is read without its quotes, as Windows does.
+  const dirs = (env.PATH ?? env.Path ?? "")
+    .split(platform === "win32" ? ";" : delimiter)
+    .map((d) => d.trim().replace(/^"(.*)"$/, "$1"));
   return (program: string) =>
     dirs.some(
       (d) =>

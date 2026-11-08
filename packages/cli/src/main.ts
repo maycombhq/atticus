@@ -1165,6 +1165,18 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
   const [group, command, arg] = positionals;
   const refused = await checkFlags(argv, positionals, io);
   if (refused !== undefined) return refused;
+  // Review round 32: inside a Copilot session Atticus started, a person's decision is refused
+  // here too, whatever started the command (the list is the session check's own).
+  if (process.env.ATTICUS_ACP_SESSION) {
+    const { personOnlyWhy } = await import("@maycombhq/ai");
+    const why = personOnlyWhy([...positionals, ...argv.filter((x) => x.startsWith("-"))]);
+    if (why) {
+      io.err(
+        `This runs inside a Copilot session that Atticus started, so it is refused: ${why}. The person runs it, in the app or their own terminal.`,
+      );
+      return 2;
+    }
+  }
   // ADR 0119: one command's help, with `atticus help <command>` or `<command> --help`.
   if (group === "help" || values.help || !group) {
     const { helpCommand } = await import("./help-commands.js");
