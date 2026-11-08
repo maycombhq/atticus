@@ -9,7 +9,7 @@ plugins {
 }
 
 group = "com.maycombhq"
-version = "0.4.0"
+version = "0.5.0"
 
 // The IntelliJ IDEA on this machine, so nothing big is downloaded (ADR 0099). Its JetBrains
 // Runtime (Java 25 for 2026.x) compiles the plugin and runs the tests.
@@ -100,6 +100,13 @@ intellijPlatform {
         // What changed in this version, shown on the plugin's page in the IDE and the Marketplace.
         changeNotes =
             """
+            <h3>0.5.0 (with Atticus 2.0.0-beta.21)</h3>
+            <ul>
+              <li><b>Says when the installed atticus is too old.</b> The plugin needs Atticus 2.0.0-beta.21 or newer; an older one is named once in a notification, with how to update, and the app still starts.</li>
+              <li><b>Open in your editor opens here.</b> A cited line's link in the App tab opens the file at that line in this IDE (a VS Code link goes to the system).</li>
+              <li><b>The canvas's exports save.</b> Mermaid, draw.io, SVG and PNG exports from the App tab ask where to save with the system's Save dialog, under the name the app gave.</li>
+              <li>The App tab hosts the beta.21 app as it is: drawing a change on the canvas (Sketch), Match for links, and the organisation's own component types, each with its notes.</li>
+            </ul>
             <h3>0.4.0 (with Atticus 2.0.0-beta.11)</h3>
             <ul>
               <li><b>Another repo… names any repo, system or team.</b> On a target question, Another repo… (and a topic question's A topic owned by another team or vendor) opens a picker of every repo of the manifest, read or not, every system of the profiles and every team in roles.yaml, and answers with <code>atticus questions answer &lt;id&gt; --target &lt;id&gt;</code>. A team with no system, or a name the list doesn't have, is offered as a new system, the command shown, and added to the profile (<code>--add-system vendor</code> or <code>internal</code>) only after your yes.</li>

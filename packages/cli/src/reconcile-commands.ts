@@ -27,7 +27,9 @@ async function findDiagrams(dir: string): Promise<string[]> {
     for (const e of entries.sort((a, b) => a.name.localeCompare(b.name))) {
       const full = join(d, e.name);
       if (e.isDirectory()) await walk(full);
-      else if (/\.(drawio|drawio\.xml|vsdx|mmd|mermaid|csv)$/i.test(e.name)) out.push(full);
+      // Files only: a diagram that is a link to a file elsewhere isn't read.
+      else if (e.isFile() && /\.(drawio|drawio\.xml|vsdx|mmd|mermaid|csv)$/i.test(e.name))
+        out.push(full);
     }
   }
   await walk(dir);

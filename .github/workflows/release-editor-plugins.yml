@@ -1,0 +1,81 @@
+name: Attach the editor plugins to the release
+
+# Every GitHub release carries the two editor plugins as files, for a machine that can't reach the
+# VS Code Marketplace (and the IntelliJ plugin, which isn't on the JetBrains Marketplace yet):
+# the VS Code extension as atticus-<extension version>.vsix, packaged the way publish-vscode.yml
+# packages it, and the IntelliJ plugin as atticus-intellij-<plugin version>.zip from
+# ./gradlew test buildPlugin, with SHA256SUMS.txt beside them. The release was published by a
+# person; this only adds files to it (gh release upload --clobber), so it asks no second approval.
+# Started by hand with a tag, it attaches them to that release; with dry run, it builds them and
+# keeps them as the run's artifacts only. docs/guide/install.md, The editor plugins.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "The release's tag (v2.0.0-beta.21)"
+        type: string
+        required: true
+      dry_run:
+        description: "Build and check the two files only (nothing is attached)"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write # gh release upload
+
+concurrency:
+  group: release-editor-plugins-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  attach:
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v4
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec turbo run build --filter=@maycombhq/ui --filter=@maycombhq/cli
+      - run: pnpm --filter atticus test
+      - name: Package the .vsix
+        working-directory: packages/vscode
+        # As publish-vscode.yml: an odd minor is packaged as a pre-release.
+        run: |
+          version=$(node -p "require('./package.json').version")
+          minor=$(echo "$version" | cut -d. -f2)
+          if [ $((minor % 2)) -eq 1 ]; then flag=--pre-release; else flag=; fi
+          pnpm run package $flag
+          mkdir -p "$GITHUB_WORKSPACE/out"
+          cp "atticus-$version.vsix" "$GITHUB_WORKSPACE/out/"
+      - name: Build the IntelliJ plugin
+        working-directory: packages/intellij
+        run: |
+          ./gradlew --no-daemon test buildPlugin
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' build.gradle.kts)
+          cp "build/distributions/atticus-intellij-$version.zip" "$GITHUB_WORKSPACE/out/"
+      - name: Checksums
+        working-directory: out
+        run: sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: editor-plugins-${{ env.TAG }}
+          path: out/
+      - name: Attach to the release
+        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.dry_run) }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$TAG" out/* --clobber

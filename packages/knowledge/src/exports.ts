@@ -301,7 +301,8 @@ const listOf = (v: string | undefined) =>
 /** The metadata rows of an export, by the page's path in it and by its file name. */
 async function exportMetadata(dir: string): Promise<Map<string, Record<string, string>>> {
   const out = new Map<string, Record<string, string>>();
-  for (const f of await readdir(dir).catch(() => [] as string[])) {
+  const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
+  for (const f of entries.filter((e) => e.isFile()).map((e) => e.name)) {
     if (!/\.csv$/i.test(f)) continue;
     for (const r of readCsv(await readFile(join(dir, f), "utf8"))) {
       const path = col(r, "path", "fileref", "url path", "serverrelativeurl");
@@ -350,7 +351,8 @@ async function walkFiles(dir: string, test: (name: string) => boolean): Promise<
       if (e.name.startsWith(".") || skip.has(e.name)) continue;
       const full = join(d, e.name);
       if (e.isDirectory()) await walk(full, false);
-      else if (test(e.name)) out.push(full);
+      // A file, never a link: a page linked to a file elsewhere (a key, a credentials file) isn't read.
+      else if (e.isFile() && test(e.name)) out.push(full);
     }
   }
   await walk(dir, true);

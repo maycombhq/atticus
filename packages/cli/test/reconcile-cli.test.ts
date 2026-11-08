@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { cp, mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -54,6 +54,11 @@ describe("atticus reconcile", () => {
 
   it("reads every diagram under inputs/diagrams by default, and prints JSON", async () => {
     const root = await forgeRoot();
+    // A diagram that is a link to a file elsewhere isn't read.
+    await writeFile(join(root, "secret.csv"), "TOP-SECRET-KEY\n");
+    await symlink(join(root, "secret.csv"), join(root, "inputs/diagrams/planted.csv")).catch(
+      () => undefined, // a machine where links can't be made: the rest still holds
+    );
     const c = capture();
     expect(await main(["reconcile", "--json", "--root", root], c.io)).toBe(1);
     const res = JSON.parse(c.out.join("\n")) as {

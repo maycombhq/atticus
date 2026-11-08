@@ -61,12 +61,15 @@ function stopTree(child: Child, signal: NodeJS.Signals = "SIGTERM") {
  */
 const live = new Set<Child>();
 const SIGNALS: NodeJS.Signals[] = ["SIGINT", "SIGTERM", "SIGHUP"];
+/** Who else listened for each signal when the hook went on (a `once` listener is gone by the time it fires). */
+const others = new Map<NodeJS.Signals, boolean>();
 const onSignal = (sig: NodeJS.Signals) => {
   for (const c of live) stopTree(c);
+  const heard = others.get(sig) || process.listenerCount(sig) > 1;
   unhook();
   // Nobody else listens (atticus task run): the signal ends Atticus as it would have. Someone
-  // does (atticus ui stops gracefully): they heard it already.
-  if (process.listenerCount(sig) === 0) process.kill(process.pid, sig);
+  // does (atticus ui stops gracefully, with process.once): they heard it already.
+  if (!heard) process.kill(process.pid, sig);
 };
 const onExit = () => {
   for (const c of live) stopTree(c, "SIGKILL");
@@ -75,7 +78,10 @@ let hooked = false;
 function hook() {
   if (hooked) return;
   hooked = true;
-  for (const s of SIGNALS) process.on(s, onSignal);
+  for (const s of SIGNALS) {
+    others.set(s, process.listenerCount(s) > 0);
+    process.on(s, onSignal);
+  }
   process.on("exit", onExit);
 }
 function unhook() {

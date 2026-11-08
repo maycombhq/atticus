@@ -46,7 +46,7 @@ export class ManualWiki extends ManualBase implements Wiki {
         if (e.name.startsWith(".")) continue;
         const full = join(d, e.name);
         if (e.isDirectory()) await walk(full);
-        else if (/\.(md|markdown)$/i.test(e.name)) {
+        else if (e.isFile() && /\.(md|markdown)$/i.test(e.name)) {
           const id = relative(root, full).split(sep).join("/");
           const body = await readFile(full, "utf8");
           const title =

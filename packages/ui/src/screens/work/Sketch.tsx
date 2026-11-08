@@ -3,7 +3,7 @@ import type { Api } from "@maycombhq/core";
 import { api, ApiError, useApi, useReloadOnFiles } from "../../api/client.js";
 import { COPY } from "../../copy.js";
 import { Diff } from "../architecture/Owner.js";
-import { LoadError } from "../../app/ui.js";
+import { LoadError, View } from "../../app/ui.js";
 import { CopyButton } from "../run/shared.js";
 import { Command } from "./RunNext.js";
 
@@ -184,6 +184,8 @@ const errorOf = (e: unknown) =>
       : String(e);
 
 type Post = (body: Api.SketchStrokeRequestT) => Promise<Api.SketchResultT>;
+/** One empty list, so a re-render while the types load isn't a new list each time. */
+const NO_TYPES: readonly Api.ComponentTypeViewT[] = [];
 
 /** The panel under a change's picture: the form, Preview → Draw, the strokes drawn, Undo. */
 export function SketchPanel({ change, map }: { change: string; map?: Api.ChangeMapT }) {
@@ -196,19 +198,24 @@ export function SketchPanel({ change, map }: { change: string; map?: Api.ChangeM
       method: "POST",
       body,
     });
-  // The strokes drawn couldn't be read: said with a way to try again, never "none drawn yet".
-  if (state.state === "error") return <LoadError error={state.error} retry={state.reload} />;
+  // The strokes drawn couldn't be read, or aren't yet: said (with a way to try again) or shown
+  // loading, never "none drawn yet".
+  if (state.state !== "ready") return <View of={state}>{() => null}</View>;
   return (
-    <SketchForm
-      change={change}
-      map={map}
-      drawn={state.state === "ready" ? state.data.drawn : []}
-      commit={state.state === "ready" ? state.data.commit : undefined}
-      fingerprint={state.state === "ready" ? state.data.fingerprint : undefined}
-      types={typeList.state === "ready" ? typeList.data.types : []}
-      post={post}
-      onWritten={() => state.reload()}
-    />
+    <>
+      {/* The types couldn't be read: a new box goes without one, and it says so with a retry. */}
+      {typeList.state === "error" && <LoadError error={typeList.error} retry={typeList.reload} />}
+      <SketchForm
+        change={change}
+        map={map}
+        drawn={state.data.drawn}
+        commit={state.data.commit}
+        fingerprint={state.data.fingerprint}
+        types={typeList.state === "ready" ? typeList.data.types : NO_TYPES}
+        post={post}
+        onWritten={() => state.reload()}
+      />
+    </>
   );
 }
 

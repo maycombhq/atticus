@@ -45,6 +45,8 @@ The script checks Node and every file against `SHA256SUMS`, copies the version i
 
 Atticus itself never downloads anything after install; only the plugin's fetch step does, when a person runs it.
 
+**The editor plugins** come with every release on GitHub (maycombhq/atticus, Releases), each with its own version and checked against the release's `SHA256SUMS.txt`: the VS Code extension as `atticus-<extension version>.vsix` (Extensions → ⋯ → _Install from VSIX…_, for a machine that can't reach the Marketplace; elsewhere it is `maycombhq.atticus` on the Marketplace), and the IntelliJ plugin as `atticus-intellij-<plugin version>.zip` (Settings → Plugins → ⚙ → _Install Plugin from Disk…_; see [IntelliJ](intellij.md)). Each needs the `atticus` command line above.
+
 On Windows, once: `git config --global core.longpaths true`. If Git doesn't know you yet: `git config --global user.name "Your Name"` and `user.email`; Atticus records who did what by your Git user, with no sign-in.
 
 ## Minute 5: a metarepo and the machine check

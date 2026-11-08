@@ -1,4 +1,4 @@
-import { cp, mkdir, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readdir, readFile, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { parse } from "yaml";
@@ -68,6 +68,32 @@ async function sync(root: string, now = NOW) {
 }
 
 const source = (op: OrgPack, id: string) => op.sources.wikis.find((w) => w.id === id)!;
+
+describe("an export folder never follows a link", () => {
+  it("skips a page or a metadata file that is a link to a file elsewhere, in both exports", async () => {
+    const root = await estate();
+    const secret = join(root, "outside-secret.txt");
+    await writeFile(secret, "TOP-SECRET-KEY\n");
+    try {
+      await symlink(secret, join(root, "wikis/ea-standards/EA/Planted_1.html"));
+      await symlink(secret, join(root, "wikis/payments-team/SitePages/Planted.aspx"));
+      await symlink(secret, join(root, "wikis/payments-team/planted.csv"));
+    } catch {
+      return; // a machine where links can't be made (Windows without the right): nothing to test
+    }
+    const op = await pack(root);
+    const ctx = { root, orgPackDir: join(root, "org-pack") };
+    for (const [adapter, id] of [
+      [confluenceExportAdapter, "ea-standards"],
+      [sharepointExportAdapter, "payments-team"],
+    ] as const) {
+      const pages = await adapter.pages(source(op, id), ctx);
+      expect(pages.length).toBeGreaterThan(0);
+      expect(pages.some((p) => /planted/i.test(p.path))).toBe(false);
+      expect(pages.some((p) => p.content.includes("TOP-SECRET-KEY"))).toBe(false);
+    }
+  });
+});
 
 describe("a Confluence space export as a source", () => {
   it("reads every page with its place in the space, last edit, author and labels", async () => {

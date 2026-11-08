@@ -81,6 +81,35 @@ setTimeout(() => process.kill(process.pid, "SIGINT"), 800);
     30_000,
   );
 
+  it.runIf(posix)(
+    "stops the build and leaves Atticus to stop itself when it listens with once (atticus ui)",
+    async () => {
+      const dir = await mkdtemp(join(tmpdir(), "atticus-cmd-"));
+      const script = join(dir, "parent.mjs");
+      const runner = JSON.stringify(pathToFileURL(join(HERE, "../dist/commands.js")).href);
+      // As atticus ui does: process.once, which Node removes before calling it.
+      await writeFile(
+        script,
+        `process.once("SIGINT", () => setTimeout(() => { console.log("Stopped."); process.exit(0); }, 200));
+const { shellCommandRunner } = await import(${runner});
+shellCommandRunner()(${JSON.stringify(`sleep 3; echo survived > ${join(dir, "f")}`)}, ${JSON.stringify(dir)});
+setTimeout(() => process.kill(process.pid, "SIGINT"), 800);
+`,
+      );
+      const p = spawn(process.execPath, [script], { cwd: join(HERE, ".."), stdio: "pipe" });
+      let out = "";
+      p.stdout!.on("data", (d: Buffer) => (out += d.toString()));
+      const code = await new Promise<number | null>((r) =>
+        p.on("exit", (c, sig) => r(sig ? -1 : c)),
+      );
+      expect(code).toBe(0);
+      expect(out).toContain("Stopped.");
+      await new Promise((r) => setTimeout(r, 3500));
+      expect(existsSync(join(dir, "f"))).toBe(false);
+    },
+    30_000,
+  );
+
   it("gives a finished command's output and exit code", async () => {
     const dir = await mkdtemp(join(tmpdir(), "atticus-cmd-"));
     const r = await shellCommandRunner()(`${node} -e "console.log('built')"`, dir);

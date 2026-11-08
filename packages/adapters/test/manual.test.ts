@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -415,6 +415,14 @@ describe("manual notifications and wiki", () => {
     ]);
     expect((await wiki.search("firewall")).length).toBe(1);
     await expect(wiki.getPage("nope.md")).rejects.toMatchObject({ code: "not-found" });
+    // A page that is a link to a file elsewhere isn't read.
+    await writeFile(join(root, "secret.txt"), "TOP-SECRET-KEY\n");
+    try {
+      await symlink(join(root, "secret.txt"), join(root, "inputs/wiki/how-to/planted.md"));
+    } catch {
+      return; // a machine where links can't be made: nothing more to test
+    }
+    expect((await wiki.listPages("how-to")).map((p) => p.id)).toEqual(["how-to/firewall.md"]);
   });
 });
 
