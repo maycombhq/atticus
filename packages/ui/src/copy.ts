@@ -5055,6 +5055,7 @@ export const COPY = {
       `Ran ${n} ${n === 1 ? "task" : "tasks"}. A person reviews and merges each PR on the Git host.`,
     failed: "The ready tasks couldn't be run.",
     waits: (task: string, why: string) => `Task ${task} isn't ready: ${why}.`,
+  },
   /**
    * ADR 0181 (stage drafts): AI decides first, a person corrects, and the AI corrects the rest
    * like it. Each stage draft says who wrote it last, and every item has Correct.
