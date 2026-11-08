@@ -237,6 +237,8 @@ interface HandOff {
   state: string;
   runId: string;
   lens?: string;
+  /** ADR 0185: a stage's critic lenses in one hand-off, one `=== <lens>` section each. */
+  lenses?: string[];
   promptFile: string;
   resultFile: string;
   doneArgs: string[];
@@ -265,7 +267,19 @@ describe("the agent drafts a stage, the critic finds something, the agent fixes 
     const drafts: string[] = [];
     let fixed = false;
     for (let round = 0; h.state === "handoff" && round < 12; round++) {
-      if (h.lens) {
+      if (h.lenses?.length) {
+        // ADR 0185: every lens in one answer, a section each. The true lens finds the flow
+        // marked read while the draft still says so.
+        lenses.push(...h.lenses);
+        const prompt = await a.read(h.promptFile);
+        const says = /\n\d+: .*Flow forge-stock\.reserve-stock \(read\)/.test(prompt);
+        await a.write(
+          h.resultFile,
+          h.lenses
+            .map((l) => `=== ${l}\n${l === "true" && says ? FINDING : "findings: []\n"}`)
+            .join(""),
+        );
+      } else if (h.lens) {
         // A critic lens. It finds the flow marked read while the draft still says so.
         lenses.push(h.lens);
         const prompt = await a.read(h.promptFile);
@@ -334,12 +348,18 @@ describe("what the agent cannot do, whatever its instructions say", () => {
     };
     await step(PLACED);
     let guard = 0;
-    while (h.state === "handoff" && h.lens && guard++ < 8) {
+    while (h.state === "handoff" && (h.lens || h.lenses?.length) && guard++ < 8) {
       const prompt = await a.read(h.promptFile);
+      const says = /\n\d+: .*Flow forge-stock\.reserve-stock \(read\)/.test(prompt);
+      // ADR 0185: the stage's lenses come as one hand-off, a section each.
       await step(
-        /\n\d+: .*Flow forge-stock\.reserve-stock \(read\)/.test(prompt)
-          ? FINDING
-          : "findings: []\n",
+        h.lenses?.length
+          ? h.lenses
+              .map((l) => `=== ${l}\n${l === "true" && says ? FINDING : "findings: []\n"}`)
+              .join("")
+          : says
+            ? FINDING
+            : "findings: []\n",
       );
     }
 

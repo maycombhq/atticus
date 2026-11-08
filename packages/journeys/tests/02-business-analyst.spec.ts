@@ -12,12 +12,17 @@ test("sees the stories, their bar and what isn't covered", async ({ page }) => {
   await accessible(page, "breakdown");
 });
 
-test("asks the story writer, and is stopped from overwriting stories a person wrote", async ({
+test("writes stories at the stories stage, one path from Breakdown (eighth UX walk)", async ({
   page,
 }) => {
   await open(page, app(), "breakdown?change=add-transfer-limit");
-  await page.getByRole("button", { name: "Write stories with AI" }).click();
-  await expect(page.getByRole("alert")).toContainText("already has planning files a person wrote");
+  // Breakdown runs nothing itself: it sends the analyst to the stories stage.
+  await expect(page.getByRole("button", { name: "Write stories with AI" })).toHaveCount(0);
+  const go = page.getByRole("link", { name: "Open the stories stage" });
+  await expect(go).toHaveAttribute("href", "#/stories?change=add-transfer-limit");
+  await go.click();
+  await expect(page).toHaveURL(/#\/stories\?change=add-transfer-limit$/);
+  await accessible(page, "the stories stage from Breakdown");
 });
 
 test("checks requirement to test trace", async ({ page }) => {
