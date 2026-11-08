@@ -1,4 +1,4 @@
-import { useEffect, useId, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 import type { Api } from "@maycombhq/core";
 import { api, type Loaded } from "../../api/client.js";
 import { Citation, useEvidence, type FactsView } from "../../app/evidence.js";
@@ -8,6 +8,7 @@ import { message } from "../run/shared.js";
 import { CorrectionNext } from "../../app/correction-next.js";
 import { findingsOfJoin, mismatchesHash } from "../../app/contracts.js";
 import { AiMark, linkDecisionAt, readyView, useDecisions } from "../../app/decisions.js";
+import { aiJoins } from "./model.js";
 import {
   callerLine,
   callFactsOf,
@@ -74,19 +75,25 @@ export function JoinView({
   join,
   topic,
   children,
+  onCorrected,
 }: {
   join: Api.HierJoinT;
   /** The link publishes to or listens on a topic or queue. */
   topic?: boolean;
   children?: ReactNode;
+  /** ADR 0181: a correction of the AI's pairing saved (the canvas reads its picture again). */
+  onCorrected?: (r: Api.CorrectDecisionResultT) => void;
 }) {
   const what = [join.method, join.path].filter(Boolean).join(" ");
   // ADR 0162 §6 (F8): a topic the profile names as an outside system's is the person's word.
   const declared = !!topic && join.how === "declared" && !join.gateway;
   const said = declared ? join.other.filter((e) => e.source === "manual") : [];
   const other = declared ? join.other.filter((e) => e.source !== "manual") : join.other;
-  // ADR 0181: a pairing the AI decided rests on its `ai` evidence at the call's line.
-  const ai = join.caller.find((e) => e.source === "ai");
+  // ADR 0181: a pairing the AI decided rests on its `ai` evidence at the call's line; since C4
+  // 2.82.0 the join says so itself (`how: ai`, with its run).
+  const aiLine = join.caller.find((e) => e.source === "ai");
+  const ai: { repo?: string | undefined; at: string } | undefined =
+    aiLine ?? (join.how === "ai" ? (callerLine(join) ?? { at: "" }) : undefined);
   const decisions = useDecisions();
   const decision = ai ? linkDecisionAt(readyView(decisions), ai.repo, ai.at) : undefined;
   return (
@@ -110,7 +117,14 @@ export function JoinView({
         {join.gateway && ` ${W.gateway}`}
         {join.shared && ` ${W.sharedMap(join.shared.team, join.shared.commit)}`}
       </p>
-      {ai && <AiMark item={decision?.item} ai />}
+      {ai && (
+        <AiMark
+          item={decision?.item}
+          ai
+          {...(join.run ? { run: join.run } : {})}
+          {...(onCorrected ? { onDone: onCorrected } : {})}
+        />
+      )}
       {join.shared && (
         <p className="ev-say" style={{ margin: 0 }}>
           {W.sharedTheirs(join.shared.team)}
@@ -170,6 +184,8 @@ export function WhyLinked(p: {
   under?: (join: Api.HierJoinT) => ReactNode;
   /** ADR 0164: the contract check's findings, of which each call's are shown under it. */
   contracts?: readonly Api.ContractMismatchViewT[];
+  /** ADR 0181: a correction of one of its AI pairings saved. */
+  onCorrected?: (r: Api.CorrectDecisionResultT) => void;
 }) {
   const joins = p.link.joins ?? [];
   if (!joins.length) return <p className="ev-say">{W.none}</p>;
@@ -183,6 +199,7 @@ export function WhyLinked(p: {
           key={j.interface}
           join={j}
           topic={p.link.type === "publishes" || p.link.type === "subscribes"}
+          {...(p.onCorrected ? { onCorrected: p.onCorrected } : {})}
         >
           {p.contracts && <ContractFindings list={findingsOfJoin(j, p.contracts)} />}
           {p.under?.(j)}
@@ -192,6 +209,78 @@ export function WhyLinked(p: {
         <p className="ev-say">{W.more(p.link.count - joins.length)}</p>
       )}
     </div>
+  );
+}
+
+// ------------------------------------------------------------------ a picked link (ADR 0181)
+
+/**
+ * A link picked on the canvas (clicked, or from the Detected by AI list): who made it, its calls
+ * with Why is this linked, and, on a call the AI paired, the chip with its run and Correct. The
+ * heading takes the focus when it opens, so a keyboard user lands on it; undefined: the link left
+ * the picture (a correction or a new read moved it).
+ */
+export function LinkInspector(p: {
+  link: Api.HierEdgeT | undefined;
+  labelOf: (id: string) => string;
+  onClose: () => void;
+  under?: (join: Api.HierJoinT) => ReactNode;
+  contracts?: readonly Api.ContractMismatchViewT[];
+  onCorrected?: (r: Api.CorrectDecisionResultT) => void;
+  /** Move the focus to the heading when it opens (picked from the keyboard). */
+  autoFocus?: boolean;
+}) {
+  const A = COPY.canvasAi;
+  const D = COPY.decisions;
+  const id = useId();
+  const head = useRef<HTMLHeadingElement | null>(null);
+  const decisions = useDecisions();
+  const linkId = p.link?.id;
+  useEffect(() => {
+    if (p.autoFocus) head.current?.focus();
+  }, [linkId, p.autoFocus]);
+  const ai = p.link ? aiJoins(p.link) : { n: 0 };
+  const view = decisions?.view;
+  return (
+    <section className="stack link-inspector" aria-labelledby={`${id}-h`} style={{ gap: 6 }}>
+      <h3 id={`${id}-h`} className="h" tabIndex={-1} ref={head}>
+        {p.link ? A.linkTitle(p.labelOf(p.link.from), p.labelOf(p.link.to), p.link.type) : A.link}
+      </h3>
+      {!p.link ? (
+        <p className="state" role="status">
+          {A.gone}
+        </p>
+      ) : (
+        <>
+          {/* Each AI call's chip, run and Correct are on the call, below. */}
+          {ai.n > 0 && (
+            <>
+              {view?.state === "loading" && (
+                <p className="ev-say" role="status" aria-busy="true" style={{ margin: 0 }}>
+                  {D.loading}
+                </p>
+              )}
+              {view?.state === "error" && (
+                <p className="state error" role="alert" style={{ margin: 0 }}>
+                  {D.failed(view.error)}
+                </p>
+              )}
+            </>
+          )}
+          <WhyLinked
+            link={p.link}
+            {...(p.under ? { under: p.under } : {})}
+            {...(p.contracts ? { contracts: p.contracts } : {})}
+            {...(p.onCorrected ? { onCorrected: p.onCorrected } : {})}
+          />
+        </>
+      )}
+      <div className="row" style={{ gap: 6 }}>
+        <button type="button" className="btn" onClick={p.onClose}>
+          {A.close}
+        </button>
+      </div>
+    </section>
   );
 }
 

@@ -4,11 +4,14 @@ import { api, ApiError, useApi } from "../../api/client.js";
 import { hostBridge } from "../../api/bridge.js";
 import { COPY } from "../../copy.js";
 import type { TypeDraws } from "./Canvas.js";
-import type { CanvasGraph } from "./model.js";
+import { SplitCounts } from "../../app/decisions.js";
+import { linkCounts, type CanvasGraph, type CanvasLink, type LinkBy } from "./model.js";
 import { WORDS } from "./words.js";
 import {
   LAYERS,
   inbox,
+  isOnlyAi,
+  onlyAi,
   toDrawio,
   toMermaid,
   toSvg,
@@ -114,6 +117,8 @@ export function CanvasTools(p: {
   overlayNote?: string;
   selected?: string;
   onSelect(id: string): void;
+  /** ADR 0181: pick a link (an AI link from the Detected by AI list). */
+  onPickLink?(id: string): void;
   labelOf(id: string): string;
   placed(id: string): Placed | undefined;
   /** What a kept view stands for. */
@@ -214,6 +219,14 @@ export function CanvasTools(p: {
               {T.mismatches}
             </label>
           </fieldset>
+
+          <AiLayer
+            graph={p.graph}
+            layers={s.layers}
+            onLayers={(layers) => set({ layers })}
+            onPick={(l) => p.onPickLink?.(l)}
+            labelOf={p.labelOf}
+          />
 
           <div className="stack">
             <label htmlFor={`${id}-f`} className="hud">
@@ -531,6 +544,130 @@ export function CanvasTools(p: {
             )}
           </div>
         </div>
+      )}
+    </section>
+  );
+}
+
+/** A sample of how a kind of link is drawn: a short line, its pattern and, for the AI's, ◆. */
+function LineSample({ by }: { by: LinkBy }) {
+  return (
+    <svg width="28" height="10" viewBox="0 0 28 10" aria-hidden="true" focusable="false">
+      <line
+        x1="1"
+        y1="5"
+        x2={by === "ai" ? 19 : 27}
+        y2="5"
+        stroke="currentColor"
+        strokeWidth="2"
+        {...(by === "person" ? { strokeDasharray: "6 4" } : {})}
+        {...(by === "ai" ? { strokeDasharray: "1 4", strokeLinecap: "round" as const } : {})}
+      />
+      {by === "ai" && <path d="M24 1 L28 5 L24 9 L20 5 Z" fill="currentColor" />}
+    </svg>
+  );
+}
+
+/**
+ * ADR 0181: the picture's links counted from code, by a person and by AI, with how each kind is
+ * drawn (a legend in shapes and words). Nothing for a picture with no links.
+ */
+export function LinkKinds({ links }: { links: readonly CanvasLink[] }) {
+  if (!links.length) return null;
+  const A = COPY.canvasAi;
+  return (
+    <div className="stack" style={{ gap: 2, margin: "4px 0" }}>
+      <SplitCounts counts={linkCounts(links)} what={COPY.decisions.counts.links} />
+      <ul
+        className="row link-legend"
+        aria-label={A.legend}
+        style={{ gap: 12, flexWrap: "wrap", listStyle: "none", margin: 0, padding: 0 }}
+      >
+        {(
+          [
+            ["code", A.legendCode],
+            ["person", A.legendPerson],
+            ["ai", A.legendAi],
+          ] as const
+        ).map(([by, words]) => (
+          <li
+            key={by}
+            className={`row work-say${by === "ai" ? " ai-sample" : ""}`}
+            style={{ gap: 4 }}
+          >
+            <LineSample by={by} />
+            {words}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/**
+ * ADR 0181: the Detected by AI layer's own part of the tools: its legend entry, a filter to show
+ * only the AI's links (or every link again), and each AI link as a button that picks it, so a
+ * keyboard reaches every AI link without the picture.
+ */
+export function AiLayer(p: {
+  graph: CanvasGraph;
+  layers: Layers;
+  onLayers(l: Layers): void;
+  onPick(link: string): void;
+  labelOf(id: string): string;
+}) {
+  const A = COPY.canvasAi;
+  const id = useId();
+  const only = isOnlyAi(p.layers);
+  const ai = p.graph.links.filter((l) => l.ai);
+  return (
+    <section className="stack" aria-labelledby={`${id}-ai`} style={{ gap: 4 }}>
+      <h4 id={`${id}-ai`} className="hud" style={{ margin: 0 }}>
+        <span aria-hidden="true">◆ </span>
+        {A.title}
+      </h4>
+      <p className="muted" style={{ margin: 0, fontSize: 12 }}>
+        {A.hint}
+      </p>
+      <p className="row work-say ai-sample" style={{ gap: 4, margin: 0 }}>
+        <LineSample by="ai" />
+        {A.legendAi}
+      </p>
+      <div>
+        <button
+          type="button"
+          className={`btn${only ? " primary" : ""}`}
+          aria-pressed={only}
+          onClick={() => p.onLayers(onlyAi(p.layers))}
+        >
+          {A.only}
+        </button>
+      </div>
+      {ai.length ? (
+        <>
+          <p className="work-say" style={{ margin: 0 }}>
+            {A.listed(ai.length)}
+          </p>
+          <ul className="stack" style={{ paddingLeft: 18, margin: 0, gap: 2 }}>
+            {ai.map((l) => (
+              <li key={l.id}>
+                <button
+                  type="button"
+                  className="link"
+                  aria-label={A.pick(p.labelOf(l.from), p.labelOf(l.to))}
+                  onClick={() => p.onPick(l.id)}
+                >
+                  {p.labelOf(l.from)} → {p.labelOf(l.to)}
+                </button>{" "}
+                <span className="work-say">{l.label}</span>
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : (
+        <p className="work-say" role="status" style={{ margin: 0 }}>
+          {only ? A.noneOnly : A.none}
+        </p>
       )}
     </section>
   );

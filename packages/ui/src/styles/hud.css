@@ -1610,6 +1610,34 @@ a.q-item[aria-current="true"] {
 .arch-link.word {
   stroke-dasharray: 6 4;
 }
+/*
+ * ADR 0181: a link the AI paired: dotted (a shape apart from a person's dashes), wider so the
+ * dots hold up, in the chip's violet (text-grade, so above 3:1 against the canvas: WCAG 1.4.11),
+ * and its label says "◆ Detected by AI" in words (WCAG 1.4.1).
+ */
+.react-flow__edge-path.arch-link.ai,
+.arch-link.ai {
+  stroke: var(--violet-text);
+  stroke-width: 2.5;
+  stroke-dasharray: 1 5;
+  stroke-linecap: round;
+}
+.arch-link-label.ai {
+  color: var(--violet-text);
+  border-color: var(--violet-line);
+}
+/* The link picked: thicker, and its label outlined (with the inspector open beside it). */
+.react-flow__edge-path.arch-link.picked,
+.arch-link.picked {
+  stroke-width: 3.5;
+}
+.arch-link-label.picked {
+  outline: 2px solid var(--text-2);
+  outline-offset: 1px;
+}
+.ai-sample {
+  color: var(--violet-text);
+}
 
 /* ADR 0175 (G6): the canvas's tools, and the health overlay's counts. */
 .canvas-tools {

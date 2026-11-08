@@ -304,8 +304,11 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   `by` may be the AI's, with `batch` and `rule`; a corrections line may carry `ai`, `batch`,
  *   `rule`, `match` and the action `unlink`; TrustRepo.audit gains `ai`; an Interface's evidence
  *   may be `source: ai` with `run`. Additive only.
+ * 2.82.0 (ADR 0181, the canvas's Detected by AI layer): a graph join's `how` may be `ai` (a call
+ *   the AI paired, its Interface flagged `joined-by-ai`), with the deciding `run`, so the canvas
+ *   draws, filters and counts the AI's links apart from the code's and a person's. Additive only.
  */
-export const API_VERSION = "2.81.0";
+export const API_VERSION = "2.82.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -437,7 +440,9 @@ export const HIER_EDGE_TYPES = [
  * (written before 2.32.0, or by the built-in readers). 2.38.0 (J0, J1): the guesses a join by
  * host can rest on, a `platform-setting` nobody aimed at the caller, a setting's `folder-name`,
  * or a host or base path an open `conflict` disputes. 2.44.0 (J1): or a Kubernetes Service's
- * short name (`service-name`) the caller's own cited namespace doesn't resolve.
+ * short name (`service-name`) the caller's own cited namespace doesn't resolve. 2.82.0 (ADR
+ * 0181): or `ai`, a pairing the AI decided (never a person's word; inferred until one corrects or
+ * confirms it).
  */
 export const LINK_HOWS = [
   // 2.53.0 (ADR 0174, G1): a person paired the call with the entry on the canvas.
@@ -455,6 +460,8 @@ export const LINK_HOWS = [
   "conflict",
   "service-name",
   "shared",
+  // 2.82.0 (ADR 0181): the AI paired the call, applied by Atticus from its run (`joined-by-ai`).
+  "ai",
   "unknown",
 ] as const;
 export const HierJoin = z.object({
@@ -489,6 +496,11 @@ export const HierJoin = z.object({
       commit: z.string().optional(),
     })
     .optional(),
+  /**
+   * 2.82.0 (ADR 0181): for a call the AI paired (`how: ai`), the run that decided it, from the
+   * call's `source: ai` evidence; what the "Detected by AI" chip links to.
+   */
+  run: z.string().optional(),
 });
 
 /** Parallel edges between the same two nodes of the same type are one edge with a count. */

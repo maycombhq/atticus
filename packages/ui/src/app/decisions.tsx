@@ -163,6 +163,8 @@ export function AiMark(p: {
   /** Correct opened and closed: a page keeps the item shown while its result is read. */
   onOpen?: (d: Decision) => void;
   onClose?: () => void;
+  /** A correction saved: the page reads what it shows again (the canvas, ADR 0181). */
+  onDone?: (r: Api.CorrectDecisionResultT) => void;
 }) {
   const ds = useDecisions();
   const live = decisionOf(readyView(ds), p.item);
@@ -200,6 +202,7 @@ export function AiMark(p: {
             // A word that outlives the panel, should the page redraw without the item.
             flash({ text: D.savedFlash(r.answer, r.counts), href: "#/decisions", link: D.title });
             ds?.reload();
+            p.onDone?.(r);
           }}
         />
       )}

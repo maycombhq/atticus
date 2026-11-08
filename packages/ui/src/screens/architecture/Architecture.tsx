@@ -18,12 +18,13 @@ import { CopyButton, Facts } from "../run/shared.js";
 import { ConnectPanel, type BoxChoice } from "./Connect.js";
 import { OwnerPanel } from "./Owner.js";
 import { AddBoxPanel, BoxCorrections, DeclarePanel } from "./Declare.js";
-import { CanvasTools, type ToolsState } from "./Tools.js";
+import { CanvasTools, LinkKinds, type ToolsState } from "./Tools.js";
 import { OpenCode } from "./OpenCode.js";
 import {
   ALL_LAYERS,
   blastRadius,
   compare,
+  isOnlyAi,
   snapshotOf,
   withFilter,
   withLayers,
@@ -31,7 +32,7 @@ import {
 } from "./tools.js";
 import { RunStep } from "../../app/runstep.js";
 import { ArchitectureCanvas, type TypeDraws } from "./Canvas.js";
-import { LinkWrong, WhatMoved, WhyLinked } from "./WhyLinked.js";
+import { LinkInspector, LinkWrong, WhatMoved, WhyLinked } from "./WhyLinked.js";
 import { knownTargets, whatMoved } from "./links.js";
 import { Citation, EvidenceProvider, useEvidence } from "../../app/evidence.js";
 import {
@@ -178,6 +179,10 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
   const epoch = useRef(0);
   // C2 (ADR 0135): the calls a person said are wrong here, and the views as they were then.
   const [watched, setWatched] = useState<{ calls: string[]; before: Views } | undefined>();
+  // ADR 0181: the link picked (clicked, or from the Detected by AI list: the keyboard's way), and
+  // what was said after a correction of the AI's pairing.
+  const [pickedLink, setPickedLink] = useState<{ id: string; keyboard: boolean } | undefined>();
+  const [corrected, setCorrected] = useState(false);
 
   const load = useCallback(
     async (id: string, into?: Views) => {
@@ -205,6 +210,8 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
     setCurrent("estate");
     setExpanded(new Set(["estate"]));
     setSelected(undefined);
+    setPickedLink(undefined);
+    setCorrected(false);
     setFocus(undefined);
     setInPlace(new Set());
     load("estate", new Map()).then(
@@ -242,10 +249,13 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
   }, [load, nodeParam]);
 
   // A rescan or a kept arrangement changes files: load the open views again.
+  const reloadViews = () => {
+    for (const id of views.keys()) void load(id).catch(() => undefined);
+  };
   useLiveEvents((e) => {
     if (e.type !== "file.changed" || typeof e.path !== "string") return;
     if (!e.path.startsWith("catalog")) return;
-    for (const id of views.keys()) void load(id).catch(() => undefined);
+    reloadViews();
   });
 
   const find = (id: string): Api.HierNodeT | undefined => {
@@ -523,6 +533,12 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
   };
 
   const sel = selected ? find(selected) : undefined;
+  // ADR 0181: the picked link as the views have it now (undefined once it left the picture).
+  const pickedEdge = pickedLink
+    ? [...(focus?.edges ?? []), ...[...views.values()].flatMap((v) => v.edges)].find(
+        (e) => e.id === pickedLink.id,
+      )
+    : undefined;
   const boxes = connectChoices(views);
   const known = knownTargets(loaded);
   const moved = watched ? whatMoved(watched.before, loaded, watched.calls) : [];
@@ -680,6 +696,10 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
               onChange={setTools}
               {...(selected ? { selected } : {})}
               onSelect={setSelected}
+              onPickLink={(id) => {
+                setPickedLink({ id, keyboard: true });
+                setCorrected(false);
+              }}
               labelOf={(id) => find(id)?.label ?? id}
               placed={(id) => laid?.boxes[id]}
               lens={lens}
@@ -741,6 +761,17 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
                 {keeping.text}
               </p>
             )}
+            {/* ADR 0181: the links drawn, from code, by a person and by AI, and how each looks. */}
+            <LinkKinds links={graph.links} />
+            {isOnlyAi(tools.layers) && !graph.links.length && graph.boxes.length > 0 && (
+              <p className="state" role="status">
+                {COPY.canvasAi.noneOnly}
+              </p>
+            )}
+            {/* Said once a correction of the AI's pairing is saved and the picture read again. */}
+            <p className="sr" role="status" aria-live="polite">
+              {corrected ? COPY.canvasAi.corrected : ""}
+            </p>
             {!graph.boxes.length ? (
               <div className="state">{WORDS.empty}</div>
             ) : arrangement.state === "error" ? (
@@ -776,6 +807,11 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
                 }
                 onLaid={setLaid}
                 {...(radius ? { lit: radius } : {})}
+                onSelectLink={(id) => {
+                  setPickedLink({ id, keyboard: false });
+                  setCorrected(false);
+                }}
+                {...(pickedLink ? { selectedLink: pickedLink.id } : {})}
                 onConnect={(a, b) => {
                   // A line is drawn from a repo (or its component) to another box; drawn the
                   // other way round from a system, the ends swap; within one repo, nothing.
@@ -789,6 +825,22 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
                 aside={
                   <div className="stack">
                     <h2 className="h">{WORDS.inspector}</h2>
+                    {pickedLink && (
+                      <LinkInspector
+                        key={pickedLink.id}
+                        link={pickedEdge}
+                        labelOf={(id) => find(id)?.label ?? id}
+                        under={under}
+                        contracts={findings}
+                        autoFocus={pickedLink.keyboard}
+                        onClose={() => setPickedLink(undefined)}
+                        onCorrected={() => {
+                          // The decisions reload themselves; the picture is read again here.
+                          reloadViews();
+                          setCorrected(true);
+                        }}
+                      />
+                    )}
                     {sel ? (
                       <Inspector
                         node={sel}
