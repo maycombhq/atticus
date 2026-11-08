@@ -22,6 +22,18 @@ vi.mock("../src/api/client.js", async () => ({
         branch: "propose/answers/2026-11-08-pat",
         title: "Answers to the map's questions",
       };
+    // Round 41: one local step at a time; the server refuses a second with a 409 problem.
+    if (path === "/api/facts/forge-busy/apply") {
+      const { ApiError } =
+        await vi.importActual<typeof import("../src/api/client.js")>("../src/api/client.js");
+      throw new ApiError({
+        type: "about:blank",
+        title: "Conflict",
+        status: 409,
+        detail:
+          "Bringing in what merged is running on this server (job-9): wait for it to finish, then try again.",
+      });
+    }
     // Apply and Propose run as server jobs: the start answers its id, the job its lines.
     if (path.endsWith("/apply")) return { jobId: "job-1" };
     if (path === "/api/propose") return { jobId: "job-2" };
@@ -86,6 +98,27 @@ it("applies, lists, lets a file be left out, and proposes the rest", async () =>
     branch: "propose/answers/2026-11-08-pat",
   });
   expect(text(n.tree)).toContain("PR #7 is open for review");
+});
+
+it("an Apply the server won't start says why, not that verify found problems", async () => {
+  const m = mount(ApplyAndPropose as never, { scope: "answers", repo: "forge-busy" } as never);
+  const btn = all(m.tree).find(
+    (e) => e.type === "button" && text(e.props.children) === P.apply("forge-busy"),
+  )!;
+  (btn.props.onClick as () => void)();
+  for (let i = 0; i < 5; i++) await tick();
+  m.render();
+  const note = all(m.tree).find((e) => e.props.note !== undefined)!.props.note as {
+    ok: boolean;
+    text: string;
+  };
+  expect(note).toEqual({
+    ok: false,
+    text: P.notStarted(
+      "Bringing in what merged is running on this server (job-9): wait for it to finish, then try again.",
+    ),
+  });
+  expect(text(m.tree)).not.toContain(P.applyFailed);
 });
 
 it("a job that stopped is an error with its lines", async () => {

@@ -3804,6 +3804,8 @@ export const COPY = {
     applying: "Applying…",
     applied: (repo: string) => `Applied: ${repo}'s facts are checked again and in the catalog.`,
     applyFailed: "Verify found problems; they are listed above.",
+    /** Round 41: the server refused to start it (another local step runs, say). */
+    notStarted: (why: string) => `It didn't start: ${why}`,
     propose: "Propose for review",
     listed: "Here is what would be proposed.",
     title: "Propose for review",

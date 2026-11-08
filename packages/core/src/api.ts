@@ -212,8 +212,12 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   /api/runs and /api/runs/handoff accept `--source <wiki>` on knowledge scan and find.
  *   Additive only. Round 37: a job's kind may be `local` (Apply, Propose, Bring in), and a
  *   proposal plan's file says when it is already `proposed`.
+ * 2.68.0 (review round 41): one AI step and one local step at a time. POST /api/runs answers 409
+ *   while another AI step runs on the server, and POST /api/facts/{repo}/apply, POST
+ *   /api/propose and POST /api/propose/bring-in answer 409 while another local step (Apply,
+ *   Propose, Bring in) runs; each problem names the job that runs. Additive only.
  */
-export const API_VERSION = "2.67.0";
+export const API_VERSION = "2.68.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -4617,7 +4621,8 @@ const OPS: Record<string, Record<string, Op>> = {
         schema: "JobAccepted",
         description: "Started: its job's result is the code and the lines verify printed",
       },
-      errors: [400],
+      // 2.68.0: 409 while another local step (Apply, Propose, Bring in) runs.
+      errors: [400, 409],
     },
   },
   "/api/propose": {
@@ -4647,7 +4652,8 @@ const OPS: Record<string, Record<string, Op>> = {
         schema: "JobAccepted",
         description: "Started: its job's result is the code and the lines",
       },
-      errors: [400],
+      // 2.68.0: 409 while another local step (Apply, Propose, Bring in) runs.
+      errors: [400, 409],
     },
   },
   "/api/owner-questions": {
@@ -4682,7 +4688,8 @@ const OPS: Record<string, Record<string, Op>> = {
         schema: "JobAccepted",
         description: "Started: its job's result is the code and the lines",
       },
-      errors: [],
+      // 2.68.0: 409 while another local step (Apply, Propose, Bring in) runs.
+      errors: [409],
     },
   },
   "/api/change-types": {
@@ -4842,7 +4849,7 @@ const OPS: Record<string, Record<string, Op>> = {
     post: {
       id: "startStep",
       summary:
-        "Start an AI step on the server with runtime.yaml's model, as a job (ADR 0106); 409 when no model is configured",
+        "Start an AI step on the server with runtime.yaml's model, as a job (ADR 0106); 409 when no model is configured, or (2.68.0) while another AI step runs",
       tag: "ai",
       body: StartStepRequest,
       ok: {

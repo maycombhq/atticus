@@ -1,5 +1,5 @@
 import { useId, useState } from "react";
-import { api, useApi } from "../api/client.js";
+import { api, ApiError, useApi } from "../api/client.js";
 import { COPY } from "../copy.js";
 import { flash } from "./flash.js";
 import { Note, useAction } from "../screens/know/common.js";
@@ -84,6 +84,13 @@ export function ApplyAndPropose(p: {
                     if (p.scope === "corrections")
                       flash({ text: P.appliedFlash(p.repo!), href: "#/home", link: P.toHome });
                   } catch (e) {
+                    // Round 41: a refusal to start (409: another local step runs) is the server's
+                    // own words, not verify's problems; nothing ran.
+                    if (e instanceof ApiError && e.problem.status === 409) {
+                      const said = P.notStarted(e.problem.detail ?? e.problem.title);
+                      if (p.scope === "corrections") flash({ text: said.slice(0, 400) });
+                      throw new Error(said, { cause: e });
+                    }
                     setApplied([(e as Error).message]);
                     // Fifth UX walk: a failed Apply can take its panel away too: say it stays.
                     if (p.scope === "corrections")

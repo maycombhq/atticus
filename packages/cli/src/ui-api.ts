@@ -342,7 +342,16 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
    * laptop can take longer than an editor panel waits for one answer (30 s). They run as jobs
    * (202 and the job's id; the page follows /api/jobs/{id}), whose result is the code and lines.
    */
+  /** What each local job does, in words, for the refusal of a second one (round 41). */
+  const localWhat = new Map<string, string>();
   const asJob = (what: string, work: () => Promise<Ran>) => {
+    // Round 41: one local step at a time: Bring in moves the working tree, so it never runs
+    // while Apply writes facts or Propose commits them. The refusal names the one that runs.
+    const busy = ctx.jobs.runningOf("local");
+    if (busy)
+      throw conflict(
+        `${localWhat.get(busy.id) ?? busy.progress.message} is running on this server (${busy.id}): wait for it to finish, then try again.`,
+      );
     // Round 37: its own kind, so a slow Apply never reads as "an AI step is running".
     const job = ctx.jobs.start("local", async (c) => {
       c.progress(0, 1, what);
@@ -352,6 +361,7 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
       const lines = [...res.out, ...res.err];
       return { result: { code: res.code, lines }, errors: res.code === 0 ? [] : lines };
     });
+    localWhat.set(job.id, what);
     return { status: 202, body: { jobId: job.id } };
   };
   return (

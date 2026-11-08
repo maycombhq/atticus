@@ -50,6 +50,34 @@ describe("JobManager cancel", () => {
   });
 });
 
+/** Round 41: a second job of a kind never hides the first, still running, from runningOf. */
+describe("JobManager runningOf", () => {
+  it("names a job still running after a later job of its kind ends", async () => {
+    const jobs = new JobManager(() => undefined);
+    let release!: () => void;
+    const a = jobs.start("step", () => new Promise<void>((r) => (release = r)));
+    const b = jobs.start("step", async () => undefined);
+    await jobs.settle(b.id);
+    expect(jobs.runningOf("step")?.id).toBe(a.id);
+    release();
+    await jobs.settle(a.id);
+    expect(jobs.runningOf("step")).toBeUndefined();
+  });
+
+  it("names the later job while it runs, once the first of its kind has ended", async () => {
+    const jobs = new JobManager(() => undefined);
+    let release!: () => void;
+    const a = jobs.start("local", async () => undefined);
+    const b = jobs.start("local", () => new Promise<void>((r) => (release = r)));
+    await jobs.settle(a.id);
+    expect(jobs.runningOf("local")?.id).toBe(b.id);
+    expect(jobs.runningOf("step")).toBeUndefined();
+    release();
+    await jobs.settle(b.id);
+    expect(jobs.runningOf("local")).toBeUndefined();
+  });
+});
+
 describe("EventHub listeners (ADR 0119)", () => {
   it("tells a listener in this process every event, until it stops listening", () => {
     const hub = new EventHub();
