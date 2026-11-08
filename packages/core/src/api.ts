@@ -222,8 +222,14 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   the person's click (the push and PR the pr level makes, the AI step not run again); GET
  *   /api/propose lists `applyFirst`, the repos whose corrections are newer than their last
  *   Apply. Additive only.
+ * 2.70.0 (seventh UX walk, what's next): GET /api/changes/{changeId}/cockpit's `next` follows
+ *   the change's state and gate, never a later stage: a raised hand-off's step is `merge` and
+ *   carries `pr`, the PR it waits on (a manual Git host's manual:// placeholder too, which a page
+ *   never shows as a link); every task ticked is the state's `handoff`. A manual Git host's
+ *   hand-off PR not opened yet is said as a step waiting on a person in `nextStep` and the
+ *   `pr-not-merged` reason, never its manual:// URL. Additive only.
  */
-export const API_VERSION = "2.69.0";
+export const API_VERSION = "2.70.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -2232,6 +2238,8 @@ export const ChangeCockpit = z.object({
       command: z.string(),
       slash: z.string().optional(),
       why: z.string(),
+      /** 2.70.0: the hand-off PR a `merge` step waits on (manual:// on a manual Git host). */
+      pr: z.string().optional(),
     })
     .passthrough()
     .optional(),

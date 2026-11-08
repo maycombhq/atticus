@@ -4,12 +4,12 @@ import { screenOf, tabHref } from "../../app/screens.js";
 import { ExternalLink, Panel, View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
 import { Note, queryParam, useAction } from "../know/common.js";
-import { RaiseHandoff } from "../know/Phase.js";
 import { isManualLink, ManualPr, TaskRunState, taskNext } from "../know/task-pr.js";
 import type { Task } from "../Changes.js";
-import type { ChangeRow } from "./next.js";
+import { kindOfStep, type ChangeRow } from "./next.js";
 import { Command, PickAChange } from "./RunNext.js";
 import { ChangePicker } from "./Stage.js";
+import { hasAction, StepAction } from "./step-action.js";
 
 /**
  * The change cockpit (WP7.1): one page per change with what a person needs to follow it. Where
@@ -38,22 +38,35 @@ export function stageMark(s: Cockpit["stages"][number]): "done" | "current" | "t
 export const isHandoffCommand = (command: string): boolean =>
   /^atticus change handoff \S+/.test(command.trim());
 
-/** Raise hand-off at a glance: held while the gate's status says something blocks it. */
-function CockpitHandoff({ change }: { change: string }) {
-  const status = useApi<{ blockers: unknown[] }>(
-    `/api/changes/${encodeURIComponent(change)}/status`,
-  );
-  return (
-    <div className="stack" style={{ gap: 4 }}>
-      <p className="muted" style={{ margin: 0 }}>
-        {C.raiseHere}
+/**
+ * The cockpit's next step: its in-app action first (seventh UX walk: Raise hand-off, the Task
+ * board, Questions, Prepare), then the slash command, and the command under Or in a terminal.
+ */
+function NextAction({ change, next }: { change: string; next: NonNullable<Cockpit["next"]> }) {
+  // Round 42: the brief is written on Feature brief, not a command to copy.
+  if (next.step === "brief")
+    return (
+      <p style={{ margin: 0 }}>
+        <a href={`#/brief?change=${encodeURIComponent(change)}`}>{C.writeBrief}</a>
       </p>
-      <RaiseHandoff
-        change={change}
-        blockers={status.state === "ready" ? status.data.blockers.length : 0}
-        onDone={status.reload}
-      />
-    </div>
+    );
+  // Sixth UX walk: a hand-off is raised from here too, on the person's click.
+  const kind = isHandoffCommand(next.command) ? "handoff" : kindOfStep(next.step);
+  const step = { kind, command: next.command, change, pr: next.pr };
+  const action = hasAction(step);
+  return (
+    <>
+      {action && <StepAction {...step} />}
+      {next.slash && <Command text={next.slash} label={C.copySlash} />}
+      {action ? (
+        <details className="work-terminal">
+          <summary>{COPY.runNext.orTerminal}</summary>
+          <Command text={next.command} label={C.copyCommand} noRun />
+        </details>
+      ) : (
+        <Command text={next.command} label={C.copyCommand} />
+      )}
+    </>
   );
 }
 
@@ -158,19 +171,7 @@ export function CockpitView(p: {
               <p className="muted" style={{ margin: 0 }}>
                 {c.next.why}
               </p>
-              {/* Round 42: the brief is written on Feature brief, not a command to copy. */}
-              {c.next.step === "brief" ? (
-                <p style={{ margin: 0 }}>
-                  <a href={`#/brief?change=${encodeURIComponent(c.id)}`}>{C.writeBrief}</a>
-                </p>
-              ) : (
-                <>
-                  {c.next.slash && <Command text={c.next.slash} label={C.copySlash} />}
-                  <Command text={c.next.command} label={C.copyCommand} />
-                </>
-              )}
-              {/* Sixth UX walk: a hand-off is raised from here too, on the person's click. */}
-              {isHandoffCommand(c.next.command) && <CockpitHandoff change={c.id} />}
+              <NextAction change={c.id} next={c.next} />
             </>
           )
         )}

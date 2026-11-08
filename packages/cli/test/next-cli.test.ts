@@ -5,13 +5,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { parseRecord, raiseQuestions, recordPath, serializeRecord } from "@maycombhq/core";
 import { main } from "../src/main.js";
-import {
-  canMoveOn,
-  changeSteps,
-  nextSteps,
-  type NextState,
-  type NextStep,
-} from "../src/next-commands.js";
+import { changeSteps, nextSteps, type NextState, type NextStep } from "../src/next-commands.js";
 
 /** `atticus next` (ADR 0086): the next step from the metarepo's files, in several states. */
 
@@ -729,6 +723,106 @@ describe("nextSteps (pure)", () => {
   });
 });
 
+// Seventh UX walk: What's next ran ahead of the gate. At define with the feature stage's questions
+// open it said "then run the architecture stage again", and at design with the architecture stage
+// done it said "has an approved design: write its stories" before the design PR was raised: the
+// stage OpenSpec's artifacts named came before the change's state. The step follows the state's
+// own stage and its gate, never a later stage.
+describe("the next step follows the change's state and gate (seventh UX walk)", () => {
+  const PR = "https://git.example.com/forge/forge-gq/pull/3";
+  const MANUAL = "manual://git-host/forge/forge-gq/pull/3";
+  type C = NextState["changes"][number];
+  const at = (c: Partial<C>): C => ({ id: "show-status", state: "define", tasks: [], ...c });
+
+  it("with the state's stage asking questions: answer them, then run that stage again", () => {
+    const steps = changeSteps(at({ questions: ["q-aaaaaaaaaaaa"], loop: "questions" }));
+    expect(steps.map((x) => x.step)).toEqual(["answer", "feature"]);
+    expect(steps[0]!.why).toContain("then run the feature stage again.");
+    expect(steps.map((x) => x.why).join(" ")).not.toContain("architecture");
+  });
+
+  it("with its questions answered and the stage not run again: run that stage again", () => {
+    const [s] = changeSteps(at({ loop: "questions" }));
+    expect(s).toMatchObject({ step: "feature", command: "atticus change feature show-status" });
+    expect(s!.why).toBe(
+      "The questions the feature stage of show-status asked are answered: run the stage again so it reads the answers (ADR 0087).",
+    );
+    const [d] = changeSteps(at({ state: "design", loop: "questions", stagesDone: ["feature"] }));
+    expect(d).toMatchObject({ step: "architecture" });
+    expect(d!.why).toContain("The questions the architecture stage of show-status asked");
+  });
+
+  it("with the stage done and no hand-off raised: raise the hand-off, never a later stage", () => {
+    const [s] = changeSteps(at({ state: "design", stagesDone: ["feature", "architecture"] }));
+    expect(s).toMatchObject({ step: "handoff", person: true });
+    expect(s!.why).not.toContain("approved design");
+  });
+
+  it("with the hand-off raised and not merged: the merge, whatever ran ahead or is asked", () => {
+    const steps = changeSteps(
+      at({
+        state: "design",
+        stagesDone: ["feature", "architecture", "stories"],
+        questions: ["q-aaaaaaaaaaaa"],
+        handoff: { phase: "design", number: 3, url: PR, state: "open" },
+      }),
+    );
+    expect(steps[0]).toMatchObject({
+      step: "merge",
+      command: "atticus change sync show-status",
+      person: true,
+      pr: PR,
+    });
+    expect(steps[0]!.why).toBe(
+      `show-status's design hand-off PR #3 is raised (${PR}): a person approves and merges it on the Git host, then syncing moves the change on (ADR 0073).`,
+    );
+    expect(steps.map((x) => x.step)).not.toContain("stories");
+    expect(steps.map((x) => x.step)).not.toContain("handoff");
+  });
+
+  it("on a manual Git host, the hand-off's PR is a step waiting on a person, never a manual:// link", () => {
+    const [s] = changeSteps(
+      at({
+        state: "plan",
+        stagesDone: ["feature", "architecture", "stories"],
+        handoff: { phase: "plan", number: 4, url: MANUAL, state: "open" },
+      }),
+    );
+    expect(s).toMatchObject({ step: "merge", command: "atticus todo --change show-status" });
+    expect(s!.why).toBe(
+      "show-status's plan hand-off PR isn't open yet: your Git host is manual, so opening it is a step waiting on you (atticus todo, or Home › Manual steps in the app). Open it on the Git host as its step says, record its link, then sync; merging it approves the plan gate.",
+    );
+    expect(s!.why).not.toContain("manual://");
+  });
+
+  it("with changes requested on the hand-off: update the work, then hand off again", () => {
+    const [s] = changeSteps(
+      at({
+        state: "design",
+        stagesDone: ["feature", "architecture"],
+        handoff: { phase: "design", number: 3, url: PR, state: "changes-requested" },
+      }),
+    );
+    expect(s).toMatchObject({
+      step: "handoff",
+      command: "atticus change handoff show-status --approve",
+    });
+    expect(s!.why).toContain("Changes were requested on PR #3");
+  });
+
+  it("with every task ticked: raise the build hand-off, not change status", () => {
+    const [s] = changeSteps(
+      at({ state: "build", tasks: [{ id: "1.1", repo: "forge-ledger", done: true }] }),
+    );
+    expect(s).toMatchObject({
+      step: "handoff",
+      command: "atticus change handoff show-status --approve",
+      person: true,
+    });
+    expect(s!.why).toContain("a person raises its build hand-off PR");
+  });
+});
+
 describe("atticus next with a change in hand, and the assistant that was probed", () => {
   it("hands off a placed change on the stage path, never drafting what its gate doesn't need (round 40)", async () => {
     const root = await metarepo({ clone: true });
@@ -825,16 +919,6 @@ describe("atticus next with a change in hand, and the assistant that was probed"
       step: "brief",
       command: "openspec/changes/add-fraud-check/brief.md",
     });
-  });
-
-  // ADR 0006 addendum: `openspec status` is a child process, so it is run only where its answer
-  // could move the change on — a drafting stage with a later one after it. A change at the last
-  // drafting stage, or past them, keeps the stage its state says whatever OpenSpec reports.
-  it("asks OpenSpec's status only where its answer could move the change on", () => {
-    for (const state of ["draft", "define", "returned", "design"])
-      expect(canMoveOn(state), state).toBe(true);
-    for (const state of ["plan", "build", "qa", "released", "archived", "post-release-review"])
-      expect(canMoveOn(state), state).toBe(false);
   });
 
   it("names the assistant a probe measured here, not the default's chat", async () => {

@@ -1,6 +1,6 @@
 import type { Api } from "@maycombhq/core";
 import { NewChange } from "./NewChange.js";
-import type { Loaded } from "../../api/client.js";
+import { useApi, useReloadOnFiles, type Loaded } from "../../api/client.js";
 import { Panel, Ring, View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
 import { Table } from "../know/common.js";
@@ -10,6 +10,7 @@ import {
   changeStep,
   dashboardStep,
   inFlight,
+  onboarded,
   onboardingProgress,
   STAGE_SCREEN,
   stageOf,
@@ -174,11 +175,32 @@ export function HomeNext(p: {
   trust?: Loaded<Api.TrustViewT>;
 }) {
   const trust = p.trust?.state === "ready" ? p.trust.data : undefined;
+  // Seventh UX walk: the change in flight's own next step, from its cockpit (its state and gate),
+  // not the stage its state names: Home said "at the feature stage" while its PR waited.
+  const all = together(p.onboarding, p.changes, p.questions);
+  // Only once onboarding is done is the change's step the one shown.
+  const first =
+    all.state === "ready" &&
+    onboarded(all.data.onboarding, all.data.questions.questions.length, trust)
+      ? all.data.changes.find(inFlight)?.id
+      : undefined;
+  const cockpit = useApi<Api.ChangeCockpitT>(
+    first ? `/api/changes/${encodeURIComponent(first)}/cockpit` : undefined,
+  );
+  useReloadOnFiles(cockpit);
+  // Its cockpit read, the step is the change's own; one that can't be read leaves the stage's.
+  const of: Loaded<All> = first && cockpit.state === "loading" ? { state: "loading" } : all;
   return (
-    <View of={together(p.onboarding, p.changes, p.questions)}>
+    <View of={of}>
       {(d) => (
         <RunNextPanel
-          step={dashboardStep(d.onboarding, d.questions.questions.length, d.changes, trust)}
+          step={dashboardStep(
+            d.onboarding,
+            d.questions.questions.length,
+            d.changes,
+            trust,
+            cockpit.state === "ready" ? cockpit.data : undefined,
+          )}
         />
       )}
     </View>

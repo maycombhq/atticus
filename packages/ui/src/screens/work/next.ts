@@ -15,6 +15,29 @@ const W = COPY.work;
 
 export type OnboardingData = Api.OnboardingViewT;
 
+/** Seventh UX walk: the kinds of step the app can take in place (step-action.tsx). */
+export type StepKind = "new-change" | "handoff" | "task" | "brief" | "answer" | "merge" | "release";
+
+/** The kind of step `atticus next` names (its `step`), where the app can take it in place. */
+export function kindOfStep(step: string | undefined): StepKind | undefined {
+  switch (step) {
+    case "new-change":
+    case "brief":
+    case "answer":
+    case "merge":
+    case "release":
+    case "task":
+      return step;
+    case "handoff":
+    case "small-handoff":
+      return "handoff";
+    case "tasks":
+      return "task";
+    default:
+      return undefined;
+  }
+}
+
 export interface ChangeRow {
   id: string;
   title: string;
@@ -46,6 +69,12 @@ export interface Step {
   after?: { command: string; why: string; slash?: Slash }[];
   /** Onboarding has nothing left to do: this step only says so. */
   done?: boolean;
+  /** Seventh UX walk: the kind of step, so the page shows its in-app action before the command. */
+  kind?: StepKind;
+  /** The change the step is about, for its action (Raise hand-off, the Task board). */
+  change?: string;
+  /** The hand-off PR a merge step waits on (manual:// on a manual Git host: never a link). */
+  pr?: string;
 }
 
 export type Stage = "feature" | "architecture" | "stories" | "tasks" | "release" | "done";
@@ -97,6 +126,8 @@ const critic = (id: string) => ({
 const handoff = (id: string) => ({
   command: `atticus change handoff ${id} --approve`,
   why: W.why.handoff,
+  kind: "handoff" as const,
+  change: id,
 });
 
 /**
@@ -108,6 +139,8 @@ export function taskStep(change: string, t: TaskRow): Step {
     command: `atticus task run ${change} ${t.id}`,
     why: W.why.task(t.id, t.repo),
     slash: metarepo(`/atticus-task ${change} ${t.id}`),
+    kind: "task",
+    change,
     after: [
       {
         command: `atticus task context ${change} ${t.id}`,
@@ -185,6 +218,15 @@ function gateStep(page: Stage, c: ChangeRow, cockpit: Api.ChangeCockpitT): Step 
   const status = { command: `atticus change status ${c.id}` };
   if (others.length) return { ...status, why: W.why.stageBlocked(page, others[0]!.message) };
   const why = W.why.stageDone(page, cockpit.nextStep);
+  // Seventh UX walk: the PR the change waits on, as its cockpit's next step names it.
+  if (cockpit.next?.step === "merge")
+    return {
+      command: cockpit.next.command,
+      why,
+      kind: "merge",
+      change: c.id,
+      ...(cockpit.next.pr ? { pr: cockpit.next.pr } : {}),
+    };
   if (cockpit.reasons.some((r) => r.code === "pr-not-merged"))
     return { command: `atticus change sync ${c.id}`, why };
   if (cockpit.reasons.some((r) => r.code === "no-handoff" || r.code === "changes-requested"))
@@ -211,7 +253,14 @@ export function stageStep(
       return { ...ownStep(page, c, tasks), why: W.why.stageUnderWay(page, own.state) };
   }
   const at = stageOf(c.state);
-  if (at === page) return changeStep(c, tasks);
+  if (at === page) {
+    const own = changeStep(c, tasks);
+    // Seventh UX walk: where the change's own next step (its state and gate) is another, that
+    // one: its questions, its hand-off with every task ticked, the PR it waits on.
+    return cockpit?.next && cockpit.id === c.id && cockpit.next.command !== own.command
+      ? cockpitStep(c, cockpit.next)
+      : own;
+  }
   // ADR 0113: every planning page shows a small change's one step.
   const planning = (s: Stage) => s === "feature" || s === "architecture" || s === "stories";
   if (c.fastPath && planning(at) && planning(page)) return changeStep(c, tasks);
@@ -316,25 +365,55 @@ export function onboarded(
   return onboardingStep(v, openQuestions, trust).done === true;
 }
 
-/** The dashboard's one step: onboarding first, then the first change in flight, then a new one. */
+/**
+ * Seventh UX walk: a change's own next step as its cockpit gives it (`atticus next`'s, which
+ * follows the change's state and gate), with the in-app action its kind has.
+ */
+export function cockpitStep(c: ChangeRow, next: NonNullable<Api.ChangeCockpitT["next"]>): Step {
+  const kind = kindOfStep(next.step);
+  return {
+    command: next.command,
+    why: next.why,
+    ...(next.slash ? { slash: metarepo(next.slash) } : {}),
+    ...(kind ? { kind } : {}),
+    change: c.id,
+    ...(next.pr ? { pr: next.pr } : {}),
+  };
+}
+
+/**
+ * The dashboard's one step: onboarding first, then the first change in flight, then a new one.
+ * With that change's cockpit, its own next step (seventh UX walk: Home said "at the feature
+ * stage" while the change waited on its hand-off PR).
+ */
 export function dashboardStep(
   v: OnboardingData,
   openQuestions: number | undefined,
   changes: ChangeRow[],
   trust?: Api.TrustViewT,
+  cockpit?: Api.ChangeCockpitT,
 ): Step {
   if (!onboarded(v, openQuestions, trust)) {
     const s = onboardingStep(v, openQuestions, trust);
     return s.link ? s : { ...s, link: { href: "#/onboarding", label: W.openOnboarding } };
   }
   const c = changes.find(inFlight);
-  if (!c) return { command: 'atticus change new "<title>" --type <type>', why: W.why.newChange };
+  if (!c)
+    return {
+      command: 'atticus change new "<title>" --type <type>',
+      why: W.why.newChange,
+      kind: "new-change",
+    };
   const stage = stageOf(c.state);
   const screen = STAGE_SCREEN[stage];
+  const link = screen
+    ? { link: { href: href(screen.id, c.id), label: W.goStage(screen.label) } }
+    : {};
+  if (cockpit?.id === c.id && cockpit.next) return { ...cockpitStep(c, cockpit.next), ...link };
   return {
     ...changeStep(c),
     why: W.why.change(c.id, W.stage[stage]),
-    ...(screen ? { link: { href: href(screen.id, c.id), label: W.goStage(screen.label) } } : {}),
+    ...link,
   };
 }
 

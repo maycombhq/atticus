@@ -37,9 +37,14 @@
 .work-after {
   margin-top: 10px;
 }
-.work-after summary {
+.work-after summary,
+.work-terminal summary {
   cursor: pointer;
   color: var(--text-2);
+}
+/* Seventh UX walk: the command under the step's in-app action. */
+.work-terminal {
+  margin-top: 8px;
 }
 .work-after ol,
 .work-steps {

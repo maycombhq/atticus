@@ -54,6 +54,12 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ### Fixed before release (review)
 
+- Seventh UX walk (what's next):
+  - **What's next follows the change's state and gate, never a later stage** (`atticus next`, At a glance, Home, the stage pages; ADR 0006 addendum 2026-11-08). It took the stage OpenSpec's status named, so at define it said "then run the architecture stage again" and at design "has an approved design: write its stories" before the design PR was raised. Now: the state's own stage's questions, then that stage again (said as "its questions are answered: run the stage again" once they are); with the stage done, Raise hand-off; with the hand-off raised, its merge (`merge`, carrying `pr`); with changes requested, hand off again; with every task ticked, the build or QA hand-off instead of `atticus change status`. Home's Run next reads the change's cockpit, so it no longer says "at the feature stage" while the PR waits. `atticus next` no longer runs `openspec status`.
+  - **"What blocks it" says when a stage's questions are answered**: the gate said the stage "waits for a person to answer its questions" after every one was answered; it now says to run the stage again. Raise hand-off at a glance reads the gate again when files change.
+  - **Run next puts the in-app action first**: New change on Home, Raise hand-off for a hand-off, the Task board for a task, Feature brief, Questions, Release, Prepare or Run for an AI step, the PR for a merge, or the page that does the step; the command stays copyable under "Or in a terminal". The same on At a glance, the stage pages and the no-change panel.
+  - **A manual Git host's PR is a step waiting on a person, never a `manual://` link**: `change status`, At a glance, Release ("WAITS ON YOU", and Ask for go / no-go says the step is yours) and Across changes say so with a link to Home › Manual steps, instead of "Merge PR #4 once it is approved (manual://…)" and "Go / no-go PR OPEN".
+  - C4 2.70.0: the cockpit's `next.pr`. Additive only.
 - Round 42 (review):
   - **One plural rule for endpoint ids and the glossary**, in core. Round 43 narrowed it so only wrong ids move. **Ids that change on upgrade:**
     - Endpoints whose last word is a known -us noun in the plural: `/payment-statuses` is `get-payment-status` in every version, and `/status` is `get-status` (it was `get-statu` in beta.20).

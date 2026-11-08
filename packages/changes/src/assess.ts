@@ -52,6 +52,16 @@ export interface Assessment {
 export const liveHandoff = (c: ChangeLifecycle) =>
   c.handoffs.find((h) => h.state === "open" || h.state === "changes-requested");
 
+/** A manual Git host's link to a PR no person has opened yet (manual:// until one records it). */
+export const isManualPrUrl = (url: string): boolean => /^manual:\/\//i.test(url.trim());
+
+/**
+ * Seventh UX walk: on a manual Git host a raised hand-off's PR isn't open until a person opens
+ * it, so the change waits on that step, said as the change page says it; never its manual:// URL.
+ */
+export const manualHandoffWords = (phase: string): string =>
+  `The ${phase} hand-off's PR isn't open yet: your Git host is manual, so opening it is a step waiting on you (atticus todo, or Home › Manual steps in the app). Open it on the Git host as its step says, record its link, then sync; merging it approves the gate.`;
+
 export async function assess(ctx: ChangeContext, change: ChangeLifecycle): Promise<Assessment> {
   const type = changeTypeOf(ctx, change.type);
   const footprint = await changeFootprint(ctx, change);
@@ -138,9 +148,11 @@ export async function assess(ctx: ChangeContext, change: ChangeLifecycle): Promi
     );
     reasons.push({
       code: "pr-not-merged",
-      message: approved.length
-        ? `PR #${live.pr.number} is approved (${approved.join(", ")}) but not merged yet: ${live.pr.url}`
-        : `Waiting for PR #${live.pr.number} to be approved and merged on the Git host: ${live.pr.url}`,
+      message: isManualPrUrl(live.pr.url)
+        ? manualHandoffWords(phase)
+        : approved.length
+          ? `PR #${live.pr.number} is approved (${approved.join(", ")}) but not merged yet: ${live.pr.url}`
+          : `Waiting for PR #${live.pr.number} to be approved and merged on the Git host: ${live.pr.url}`,
     });
   }
   return { ...base, phase, next, ...(live ? { handoff: live } : {}), blockers, reasons };
@@ -212,5 +224,6 @@ function nextStep(a: Assessment): string {
       : `Ready to raise "${name}".`;
   if (a.handoff.state === "changes-requested")
     return `Update the artifacts and hand off again on PR #${a.handoff.pr.number}.`;
+  if (isManualPrUrl(a.handoff.pr.url)) return manualHandoffWords(a.handoff.phase);
   return `Merge PR #${a.handoff.pr.number} once it is approved (${a.handoff.pr.url}); syncing then moves the change on.`;
 }

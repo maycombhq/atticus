@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { api, useApi, useLiveEvents, type Loaded } from "../../api/client.js";
 import { changeOf } from "../../app/screens.js";
 import { Panel, View } from "../../app/ui.js";
@@ -11,6 +11,7 @@ import {
 } from "./ReleaseViews.js";
 import { Note, plural, useAction } from "./shared.js";
 import { COPY } from "../../copy.js";
+import { isManualLink, ManualHandoff } from "../know/task-pr.js";
 
 const T = COPY.release;
 
@@ -112,7 +113,7 @@ function List({ list, current }: { list: Loaded<ReleaseItem[]>; current?: string
   );
 }
 
-function Gate(p: { label: string; value: string; ok: boolean; warn?: boolean; detail: string }) {
+function Gate(p: { label: string; value: string; ok: boolean; warn?: boolean; detail: ReactNode }) {
   return (
     <li aria-label={`${p.label}: ${p.value}`}>
       <span className="hud" style={{ fontSize: 10 }}>
@@ -129,6 +130,42 @@ function Gate(p: { label: string; value: string; ok: boolean; warn?: boolean; de
       </span>
     </li>
   );
+}
+
+/**
+ * The go / no-go gate: its PR's state and what merging it means. Seventh UX walk: on a manual
+ * Git host the PR isn't open until a person opens it, so it waits on them, said as the change
+ * page says it; never "OPEN" with its manual:// link.
+ */
+export function goNoGoGate(r: {
+  change: Pick<ReleaseDetail["change"], "state">;
+  handoff?: ReleaseDetail["handoff"];
+}): { value: string; ok: boolean; warn: boolean; detail: ReactNode } {
+  const h = r.handoff;
+  const approvers = h?.approvals.map((a) => a.by) ?? [];
+  if (h && h.state === "open" && isManualLink(h.pr))
+    return {
+      value: T.waitsOnYouChip,
+      ok: false,
+      warn: true,
+      detail: <ManualHandoff phase="release" />,
+    };
+  return {
+    value: h
+      ? h.state === "merged"
+        ? T.mergedChip
+        : approvers.length
+          ? T.approvedNotMerged
+          : h.state.toUpperCase()
+      : r.change.state === "release-ready"
+        ? T.notRaised
+        : T.laterChip,
+    ok: h?.state === "merged",
+    warn: !h,
+    detail: h
+      ? T.mergingIsTheGo(h.pr, approvers.length ? T.approvedBy(approvers.join(", ")) : "")
+      : T.goNoGoIs,
+  };
 }
 
 function Detail({ id }: { id: string }) {
@@ -154,7 +191,6 @@ function Detail({ id }: { id: string }) {
         <View of={d}>
           {(r) => {
             const blockingFindings = r.openFindings.blocking + r.openFindings.gap;
-            const approvers = r.handoff?.approvals.map((a) => a.by) ?? [];
             return (
               <div className="stack" style={{ gap: 12 }}>
                 <p style={{ margin: 0, fontSize: 14 }}>
@@ -200,30 +236,7 @@ function Detail({ id }: { id: string }) {
                       plural(r.openFindings.gap, T.knowledgeGap),
                     )}
                   />
-                  <Gate
-                    label={T.goNoGoPr}
-                    value={
-                      r.handoff
-                        ? r.handoff.state === "merged"
-                          ? T.mergedChip
-                          : approvers.length
-                            ? T.approvedNotMerged
-                            : r.handoff.state.toUpperCase()
-                        : r.change.state === "release-ready"
-                          ? T.notRaised
-                          : T.laterChip
-                    }
-                    ok={r.handoff?.state === "merged"}
-                    warn={!r.handoff}
-                    detail={
-                      r.handoff
-                        ? T.mergingIsTheGo(
-                            r.handoff.pr,
-                            approvers.length ? T.approvedBy(approvers.join(", ")) : "",
-                          )
-                        : T.goNoGoIs
-                    }
-                  />
+                  <Gate label={T.goNoGoPr} {...goNoGoGate(r)} />
                   <Gate
                     label={T.archiveGate}
                     value={r.archive.pass ? T.openChip : T.blockersChip(r.archive.blockers.length)}
@@ -245,7 +258,23 @@ function Detail({ id }: { id: string }) {
                       (!!r.handoff && r.handoff.state === "open")
                     }
                     title={r.change.state !== "release-ready" ? T.theChangeReachesGo : undefined}
-                    onClick={() => post(`/api/changes/${id}/handoff`, {}, T.goNoGoPr2)}
+                    onClick={() =>
+                      void act.run(
+                        () =>
+                          api<{ handoff?: { pr?: string } }>(`/api/changes/${id}/handoff`, {
+                            method: "POST",
+                            body: {},
+                          }).then((x) => {
+                            d.reload();
+                            return x;
+                          }),
+                        // Seventh UX walk: a manual Git host's PR is a step for the person.
+                        (x) =>
+                          isManualLink((x as { handoff?: { pr?: string } }).handoff?.pr)
+                            ? T.goNoGoManual
+                            : T.goNoGoPr2,
+                      )
+                    }
                   >
                     {T.askForGoNo}
                   </button>

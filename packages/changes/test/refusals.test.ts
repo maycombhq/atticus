@@ -213,6 +213,30 @@ describe("refusals", () => {
     ).toMatchObject({ merged: true, state: "plan" });
   });
 
+  // Seventh UX walk: on a manual Git host the PR isn't open until a person opens it, and its
+  // manual:// placeholder is no link: "Merge PR #2 once it is approved (manual://…)" misled.
+  it("on a manual Git host, says opening the hand-off's PR waits on a person, never its manual:// link", async () => {
+    const root = await forgeMetarepo();
+    const gh = host();
+    await inDesign(root, gh);
+    await handoff(root, ID, {
+      gitHost: gh,
+      repo: REPO,
+      by: "ari",
+      approval: approval("ari", T("12:30")),
+      now: T("12:30"),
+    });
+    const store = changeStore(root);
+    const c = await store.read(ID);
+    c.handoffs.at(-1)!.pr.url = "manual://git-host/forge/forge-metarepo/pull/2";
+    await store.write(c);
+    const words =
+      "The design hand-off's PR isn't open yet: your Git host is manual, so opening it is a step waiting on you (atticus todo, or Home › Manual steps in the app). Open it on the Git host as its step says, record its link, then sync; merging it approves the gate.";
+    const r = await changeReport(root, ID);
+    expect(r.nextStep).toBe(words);
+    expect(r.reasons).toEqual([{ code: "pr-not-merged", message: words }]);
+  });
+
   it("names the PR the change waits on until it merges", async () => {
     const root = await forgeMetarepo();
     const gh = host();

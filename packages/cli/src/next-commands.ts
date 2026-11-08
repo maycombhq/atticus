@@ -26,6 +26,8 @@ import { stepClassOfNextStep } from "@maycombhq/ai";
 import {
   assess,
   changeStore,
+  isManualPrUrl as isManualPr,
+  liveHandoff,
   loadChangeContext,
   loadChangePolicy,
   stageCompletion,
@@ -33,13 +35,7 @@ import {
 } from "@maycombhq/changes";
 import type { ChangeLifecycle } from "@maycombhq/core";
 import { readKnowledge, snapshotDates, workingDays } from "@maycombhq/knowledge";
-import {
-  metarepoOpenSpec,
-  openspecProgress,
-  readNeeds,
-  seedCollisions,
-  type SeedCollision,
-} from "@maycombhq/planner";
+import { readNeeds, seedCollisions, type SeedCollision } from "@maycombhq/planner";
 import { readChangeFiles } from "@maycombhq/naysayer";
 import { readChangeTasks } from "@maycombhq/speckit";
 import { readTaskRun } from "@maycombhq/taskrun";
@@ -94,6 +90,11 @@ export interface NextStep {
   repo?: string;
   change?: string;
   source?: string;
+  /**
+   * Seventh UX walk: the hand-off PR a merge step waits on (on a manual Git host, its manual://
+   * placeholder, which a page never shows as a link).
+   */
+  pr?: string;
 }
 
 export interface RepoState {
@@ -215,10 +216,15 @@ export interface NextState {
      */
     knowledge?: boolean;
     /**
-     * ADR 0006 addendum: the stage whose OpenSpec artifacts come next, from `openspec status`
-     * (org-flow v2), in a metarepo set up with OpenSpec. Left out when every artifact is done.
+     * Seventh UX walk: the loop state of the state's own drafting stage (stage/<stage>.yaml), so
+     * a stage whose questions are all answered is run again, and said so.
      */
-    openspecStage?: "feature" | "architecture" | "stories";
+    loop?: string;
+    /**
+     * Seventh UX walk: its hand-off PR, raised and not merged yet (not for a returned change): the
+     * change waits on it, so merging it is the step, never a later stage.
+     */
+    handoff?: { phase: string; number: number; url: string; state: "open" | "changes-requested" };
     /**
      * ADR 0156: flows its spec files add as new that a repo's open seed adds too: archiving both
      * would fail, so a person accepts the seed and the stories stage runs again.
@@ -229,20 +235,10 @@ export interface NextState {
 }
 
 const METAREPO = "metarepo";
-/** The drafting stages in order: OpenSpec's status may move a change on among them, never past. */
+/** The drafting stages in order. */
 const DRAFTING = ["feature", "architecture", "stories"] as const;
 /** Where a stage sits among the drafting stages; -1 for a stage that isn't one of them. */
 const draftingAt = (s: string) => DRAFTING.indexOf(s as (typeof DRAFTING)[number]);
-
-/**
- * Whether OpenSpec's status could move this change on: only a change at a drafting stage with
- * a later one after it (stageSteps takes a later stage only). For every other state the answer
- * can't change, so `openspec status` isn't run for it.
- */
-export const canMoveOn = (state: string) => {
-  const at = draftingAt(stageOf(state));
-  return at >= 0 && at < DRAFTING.length - 1;
-};
 /** A snapshot older than this many days is synced again (ADR 0101). */
 const STALE_DAYS = 14;
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
@@ -448,7 +444,6 @@ export async function readNextState(root: string): Promise<NextState> {
   const types = orgPack instanceof Error ? [] : orgPack.changeTypes.types;
   // B-change: which stages each change has done, read the way the lifecycle reads them.
   const { policy } = await loadChangePolicy(orgPackDirOf(root));
-  const os = metarepoOpenSpec(root);
   // ADR 0156: the flows a change adds that an open seed adds too.
   const clashes = await seedCollisions(root).catch(() => [] as SeedCollision[]);
   // One change context per call, read only when a change at define needs it (round 40).
@@ -476,15 +471,12 @@ export async function readNextState(root: string): Promise<NextState> {
           days: n.leadTimeDays ? workingDays(n.leadTimeDays) : 0,
         }))
         .sort((a, b) => b.days - a.days)[0];
-      // ADR 0006 addendum: which stage's artifacts are written comes from OpenSpec's status.
-      // It runs `openspec status` in a child process, so it is asked only where its answer can
-      // move the change on: a change whose state is already at the last drafting stage, or past
-      // the drafting stages, keeps the stage its state says whatever OpenSpec reports
-      // (stageSteps below takes a later stage only).
-      const progress =
-        os && canMoveOn(c.state)
-          ? await openspecProgress(os, c.id).catch(() => undefined)
-          : undefined;
+      // Seventh UX walk: the step follows the state's own stage and its gate. OpenSpec's status
+      // (which stage's artifacts come next) once moved it on to a later stage, ahead of the gate
+      // a person approves, so it isn't read here: the stage loops and the hand-off say it all.
+      const own = stageOf(c.state);
+      const loop = draftingAt(own) >= 0 ? await loopState(root, c.id, own) : undefined;
+      const live = c.state === "returned" ? undefined : liveHandoff(c);
       const busy = await stageInProgress(root, c.id);
       // Sixth UX walk: the questions its stages raised and nobody has answered, with its own.
       const asked = await stageQuestions(root, c.id, openIds);
@@ -517,7 +509,17 @@ export async function readNextState(root: string): Promise<NextState> {
         ...(questions.length ? { questions } : {}),
         ...(knowledge.items.length ? { knowledge: true } : {}),
         ...(stagesDone.length ? { stagesDone } : {}),
-        ...(progress?.next ? { openspecStage: progress.next } : {}),
+        ...(loop ? { loop } : {}),
+        ...(live
+          ? {
+              handoff: {
+                phase: live.phase,
+                number: live.pr.number,
+                url: live.pr.url,
+                state: live.state as "open" | "changes-requested",
+              },
+            }
+          : {}),
         ...(clash.length ? { seedCollisions: clash } : {}),
         ...((await isFast(root, c, types))
           ? {
@@ -587,6 +589,21 @@ async function stageInProgress(root: string, change: string): Promise<string | u
       newest = at || "0";
   }
   return newest;
+}
+
+/** The loop state of one of a change's stages (stage/<stage>.yaml), or undefined without one. */
+async function loopState(root: string, change: string, stage: string): Promise<string | undefined> {
+  const t = await readFile(
+    join(changesDirOf(root), change, "stage", `${stage}.yaml`),
+    "utf8",
+  ).catch(() => undefined);
+  if (t === undefined) return undefined;
+  try {
+    const s = (parse(t) as { state?: unknown } | null)?.state;
+    return typeof s === "string" ? s : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /** The open questions a change's drafting stages raised (stage/<stage>.yaml's questions). */
@@ -714,16 +731,67 @@ export function changeSteps(c: NextState["changes"][number]): NextStep[] {
           repo,
         };
       });
+  // Seventh UX walk: a raised hand-off is what the change waits on: its merge comes first, and
+  // nothing a later stage could do is offered ahead of it.
+  const gate = done ? [] : handoffWait(c);
+  if (gate.length) return [...gate, ...find, ...raise];
   // Sixth UX walk: the questions its stage stopped on come first; the stage runs again after.
+  // Seventh UX walk: once the state's own stage is done its hand-off comes first, and questions a
+  // stage that ran ahead asked come after it.
   const asked: NextStep[] = done ? [] : questionStep(c);
-  return [...asked, ...seeds, ...stage, ...find, ...raise];
+  const ownDone = (c.stagesDone ?? []).includes(stageOf(c.state));
+  return ownDone
+    ? [...seeds, ...stage, ...asked, ...find, ...raise]
+    : [...asked, ...seeds, ...stage, ...find, ...raise];
+}
+
+/** Seventh UX walk: the hand-off PR raised and not merged, which the change waits on. */
+function handoffWait(c: NextState["changes"][number]): NextStep[] {
+  const h = c.handoff;
+  if (!h) return [];
+  const id = c.id;
+  if (h.state === "changes-requested")
+    return [
+      {
+        step: "handoff",
+        command: `atticus change handoff ${id} --approve`,
+        where: METAREPO,
+        why: `Changes were requested on PR #${h.number} (${id}'s ${h.phase} hand-off): update the work, then a person hands it off again.`,
+        change: id,
+        person: true,
+        ...(isManualPr(h.url) ? {} : { pr: h.url }),
+      },
+    ];
+  if (isManualPr(h.url))
+    return [
+      {
+        step: "merge",
+        command: `atticus todo --change ${id}`,
+        where: METAREPO,
+        why: `${id}'s ${h.phase} hand-off PR isn't open yet: your Git host is manual, so opening it is a step waiting on you (atticus todo, or Home › Manual steps in the app). Open it on the Git host as its step says, record its link, then sync; merging it approves the ${h.phase} gate.`,
+        change: id,
+        person: true,
+        pr: h.url,
+      },
+    ];
+  return [
+    {
+      step: "merge",
+      command: `atticus change sync ${id}`,
+      where: METAREPO,
+      why: `${id}'s ${h.phase} hand-off PR #${h.number} is raised (${h.url}): a person approves and merges it on the Git host, then syncing moves the change on (ADR 0073).`,
+      change: id,
+      person: true,
+      pr: h.url,
+    },
+  ];
 }
 
 /** A change's own open questions, for a person to answer before its stage runs again. */
 function questionStep(c: NextState["changes"][number]): NextStep[] {
   const ids = c.questions ?? [];
   if (!ids.length) return [];
-  const stage = stageAt(c);
+  const stage = stageOf(c.state);
   const again =
     draftingAt(stage) >= 0
       ? `Answer ${plural(ids.length, "question")} on Questions (or atticus questions answer <id>), then run the ${c.fast ? "fast path's one step" : `${stage} stage`} again.`
@@ -741,21 +809,20 @@ function questionStep(c: NextState["changes"][number]): NextStep[] {
   ];
 }
 
-/** The stage a change is at: its state's, or a later drafting one OpenSpec's status says. */
-function stageAt(c: NextState["changes"][number]): ReturnType<typeof stageOf> {
-  const byState = stageOf(c.state);
-  // ADR 0006 addendum: in a drafting stage, the stage whose artifacts OpenSpec says come next
-  // (a later one only: the hand-off PRs a person merges still move the state).
-  return c.openspecStage &&
-    draftingAt(byState) >= 0 &&
-    draftingAt(c.openspecStage) > draftingAt(byState)
-    ? c.openspecStage
-    : byState;
+/**
+ * Seventh UX walk: the why of a stage's own step when its loop stopped on questions that are all
+ * answered now (none of the change's is open): it runs again to read them.
+ */
+function againWhy(c: NextState["changes"][number], stage: string): string | undefined {
+  return c.loop === "questions" && !c.questions?.length
+    ? `The questions the ${stage} stage of ${c.id} asked are answered: run the stage again so it reads the answers (ADR 0087).`
+    : undefined;
 }
 
 function stageSteps(c: NextState["changes"][number]): NextStep[] {
   const id = c.id;
-  const stage = stageAt(c);
+  // Seventh UX walk: the stage the change's state puts it at, never a later one.
+  const stage = stageOf(c.state);
   // Sixth UX walk: a brief that holds only the template is written before any stage reads it.
   if (c.brief && stage === "feature" && !c.stagesDone?.includes("feature"))
     return [
@@ -831,7 +898,9 @@ function stageSteps(c: NextState["changes"][number]): NextStep[] {
           command: `atticus change feature ${id}`,
           slash: `/atticus-feature ${id}`,
           where: METAREPO,
-          why: `${id} is at the feature stage: your assistant places it on the estate's flows and features, and Atticus checks and criticises every draft until nothing blocks (ADR 0087).`,
+          why:
+            againWhy(c, "feature") ??
+            `${id} is at the feature stage: your assistant places it on the estate's flows and features, and Atticus checks and criticises every draft until nothing blocks (ADR 0087).`,
           change: id,
         },
       ];
@@ -855,7 +924,9 @@ function stageSteps(c: NextState["changes"][number]): NextStep[] {
           command: `atticus change architecture ${id}`,
           slash: `/atticus-architecture ${id}`,
           where: METAREPO,
-          why: `${id} is at the architecture stage: your assistant writes its target flows, and Atticus checks and criticises every draft until nothing blocks (ADR 0087).`,
+          why:
+            againWhy(c, "architecture") ??
+            `${id} is at the architecture stage: your assistant writes its target flows, and Atticus checks and criticises every draft until nothing blocks (ADR 0087).`,
           change: id,
         },
       ];
@@ -866,7 +937,8 @@ function stageSteps(c: NextState["changes"][number]): NextStep[] {
           command: `atticus plan stories ${id}`,
           slash: `/atticus-stories ${id}`,
           where: METAREPO,
-          why: `${id} has an approved design: write its stories and tasks.`,
+          why:
+            againWhy(c, "stories") ?? `${id} has an approved design: write its stories and tasks.`,
           change: id,
         },
       ];
@@ -891,14 +963,16 @@ function stageSteps(c: NextState["changes"][number]): NextStep[] {
             change: id,
           },
         ];
+      // Seventh UX walk: every task ticked, the state's hand-off is next, raised by a person.
       if (!t)
         return [
           {
-            step: "tasks",
-            command: `atticus change status ${id}`,
+            step: "handoff",
+            command: `atticus change handoff ${id} --approve`,
             where: METAREPO,
-            why: `Every task of ${id} is ticked; the status says what is left before release.`,
+            why: `Every task of ${id} is ticked: a person raises its ${c.state} hand-off PR, and merging it approves the ${c.state} gate and moves it on (ADR 0073).`,
             change: id,
+            person: true,
           },
         ];
       return [
