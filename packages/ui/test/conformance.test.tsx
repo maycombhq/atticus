@@ -140,4 +140,15 @@ describe("Code against design (ADR 0114)", () => {
     expect(early).toContain(esc(C.noTargets("add-transfer-limit")));
     expect(early).toContain("atticus change architecture add-transfer-limit");
   });
+
+  it("offers Check the code again as a button where the check is shown, the command beside it (eighth UX walk)", () => {
+    for (const c of [VIEW, { ...VIEW, results: [] }]) {
+      const out = renderToStaticMarkup(<ConformanceView c={c} />);
+      expect(out).toMatch(
+        new RegExp(`<button type="button" class="btn primary"[^>]*>${esc(C.run)}</button>`),
+      );
+      expect(out).toContain(esc(C.orTerminal));
+      expect(out).toContain("atticus change conform add-transfer-limit");
+    }
+  });
 });

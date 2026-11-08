@@ -45,7 +45,18 @@ function print(results: Api.ConformRepoResultT[], io: Output): void {
 export async function changeConformCommand(
   root: string,
   change: string,
-  o: { repo?: string; ref?: string; task?: string; latest?: boolean; json?: boolean },
+  o: {
+    repo?: string;
+    ref?: string;
+    task?: string;
+    latest?: boolean;
+    json?: boolean;
+    /**
+     * Eighth UX walk: the app's Check the code again. Findings are the check's answer, not a
+     * failed step, so a check that ran exits 0 with them.
+     */
+    findingsAnswer?: boolean;
+  },
   io: Output,
 ): Promise<number> {
   if (o.latest) {
@@ -95,7 +106,7 @@ export async function changeConformCommand(
         ? `The findings are on the conform gate${run.round ? ` (round ${run.round})` : ""}: atticus findings ${change} lists them; dismiss one with atticus finding ${change} <id> not-relevant --reason "...".`
         : "The code has everything its target flows add, and nothing they don't name.",
     );
-    return bad ? 1 : 0;
+    return bad && !o.findingsAnswer ? 1 : 0;
   } catch (e) {
     if (e instanceof ConformError) {
       io.err(e.message);

@@ -16,7 +16,7 @@ import {
   type OrgPack,
   stackHelpersOff,
 } from "@maycombhq/core";
-import { dirSource, sameCommit, verifyFacts } from "@maycombhq/verify";
+import { dirSource, rereadPlan, sameCommit, verifyFacts } from "@maycombhq/verify";
 import { changesSince, type GitRunner } from "@maycombhq/workspace";
 import {
   componentRenames,
@@ -25,6 +25,14 @@ import {
   TARGETS_STEP,
 } from "./facts-catalog.js";
 import { estateRepos, productionRepos } from "./merge-input.js";
+
+/**
+ * What a repo's records at a commit rest on (eighth UX walk, rule 4): the assistant's verified
+ * facts, or the built-in readers. `unread` lists the source files changed since the facts were
+ * read (edited, added or renamed to) that no fact covers yet: only facts with nothing unread
+ * can say something is not in the code; elsewhere the records say only what is there.
+ */
+export type FactBasis = { from: "facts"; unread: string[] } | { from: "readers" };
 
 /**
  * A scan's use of a repo's verified facts (ADR 0124 §3): when the assistant has read a repo and
@@ -53,6 +61,8 @@ export async function factsForScan(
   /** The facts used (with the manifest's component), and the targets people named, for the estate join. */
   facts?: Fact[];
   targets?: Record<string, string>;
+  /** What the records rest on; none when the readers stand in. */
+  basis?: FactBasis;
 }> {
   const rel = `${factsRelOf(root)}/${repo}.jsonl`;
   const text = await readFile(join(factsDirOf(root), `${repo}.jsonl`), "utf8").catch(
@@ -72,6 +82,7 @@ export async function factsForScan(
     };
   const older = commit ? facts.filter((f) => !sameCommit(f.commit, commit)) : [];
   let carriedSaid = "";
+  let unread: string[] = [];
   if (older.length) {
     const diff = at.dir
       ? await changesSince(
@@ -103,6 +114,14 @@ export async function factsForScan(
       return {
         note: `${repo}: every one of its facts (of commit ${from}) cites a file changed since, or names a fact that does; its readers' records are used until it is read again (/atticus-map ${repo}, then atticus verify ${repo} --write).`,
       };
+    // The source files changed since the read: no fact covers what they now say.
+    unread = rereadPlan({
+      facts,
+      commit: commit!,
+      carry: diff.changes,
+      source: dirSource(at.dir!),
+      conventions: conventionsOf(op),
+    }).files.map((f) => f.path);
     facts = report.accepted;
     const left = report.rejected.length;
     carriedSaid = `; ${report.carried.length} carried from commit ${from} to ${commit!.slice(0, 7)} (the files they cite are unchanged, their lines checked again)${left ? `, ${left} left out until read again (they cite a file changed since, or name a fact that does: /atticus-map ${repo}, then atticus verify ${repo} --write)` : ""}`;
@@ -149,6 +168,7 @@ export async function factsForScan(
     records: newRecords,
     facts: used,
     targets,
+    basis: { from: "facts", unread },
     note: `${repo}: read from its facts (${facts.length}, ${rel}${carriedSaid})${said ? `; its readers found ${said} the facts don't have (a cross-check: read those lines again, or a reader misreads them)` : "; its readers agree"}.`,
   };
 }

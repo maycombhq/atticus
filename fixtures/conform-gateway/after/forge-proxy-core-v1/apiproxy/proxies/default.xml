@@ -1,0 +1,29 @@
+<ProxyEndpoint name="default">
+  <Flows>
+    <Flow name="GetAccount">
+      <Condition>(proxy.pathsuffix MatchesPath "/accounts/*") and (request.verb = "GET")</Condition>
+    </Flow>
+    <Flow name="UpdateAccount">
+      <Condition>(proxy.pathsuffix MatchesPath "/accounts/*") and (request.verb = "PUT")</Condition>
+    </Flow>
+    <Flow name="SetAccountStatus">
+      <Condition>(proxy.pathsuffix MatchesPath "/accounts/*/status") and (request.verb = "PUT")</Condition>
+    </Flow>
+    <Flow name="GetPin">
+      <Condition>(proxy.pathsuffix MatchesPath "/cards/*/pin") and (request.verb = "GET")</Condition>
+    </Flow>
+    <Flow name="SetPin">
+      <Condition>(proxy.pathsuffix MatchesPath "/cards/*/pin") and (request.verb = "PUT")</Condition>
+    </Flow>
+    <Flow name="LockCard">
+      <Condition>(proxy.pathsuffix MatchesPath "/cards/*/lock") and (request.verb = "PUT")</Condition>
+    </Flow>
+  </Flows>
+  <HTTPProxyConnection>
+    <BasePath>/forge/core/v1</BasePath>
+    <VirtualHost>internal</VirtualHost>
+  </HTTPProxyConnection>
+  <RouteRule name="default">
+    <TargetEndpoint>core</TargetEndpoint>
+  </RouteRule>
+</ProxyEndpoint>

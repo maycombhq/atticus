@@ -3392,17 +3392,29 @@ export function renderStoryFile(
     "",
   );
   // The repo first, alone on its line (the learn measure reads it); its command once, not per task.
-  lines.push(
-    "## Systems and repos",
-    "",
-    s.repo,
-    "",
-    command
-      ? `Build and test with \`${command}\`.`
-      : `repos.manifest.yaml names no build command for ${s.repo}: use the repo's own build and tests.`,
-    "",
-  );
+  lines.push("## Systems and repos", "", s.repo, "", buildLine(s.repo, command), "");
   return lines.join("\n");
+}
+
+/** A story's line for its repo's build command, as repos.manifest.yaml has it. */
+export function buildLine(repo: string, command: string | undefined): string {
+  return command
+    ? `Build and test with \`${command}\`.`
+    : `repos.manifest.yaml names no build command for ${repo}: use the repo's own build and tests.`;
+}
+
+/**
+ * Eighth UX walk: a story's build line, written when the stories stage ran, said again from the
+ * manifest as it is now (a person may have set or changed the command since). Only a line in
+ * one of the two forms `buildLine` writes is touched; a story without one stays as it is.
+ */
+export function withBuildLine(story: string, repo: string, command: string | undefined): string {
+  const esc = repo.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const line = new RegExp(
+    `^(?:Build and test with \`.*\`\\.|repos\\.manifest\\.yaml names no build command for ${esc}: use the repo's own build and tests\\.)$`,
+    "gm",
+  );
+  return story.replace(line, () => buildLine(repo, command));
 }
 
 function renderIndex(stories: DeltaStory[], a: StoriesAnswer): string {

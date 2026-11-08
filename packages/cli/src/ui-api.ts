@@ -554,6 +554,15 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
         const { bringInMerged } = await import("./propose.js");
         return asJob("Bringing in what merged", () => run((io) => bringInMerged(root, io)));
       })
+      // 2.76.0 (eighth UX walk): Check the code again, on the person's click (ADR 0114). It
+      // scans each repo's branch from its base clone, a local step like Apply.
+      .add("POST", "/api/changes/{changeId}/conformance", async ({ params }) => {
+        await readChange(root, params.changeId!);
+        const { changeConformCommand } = await import("./change-conform.js");
+        return asJob(`Checking ${params.changeId!}'s code against its design`, () =>
+          run((io) => changeConformCommand(root, params.changeId!, { findingsAnswer: true }, io)),
+        );
+      })
       .add("GET", "/api/change-types", async () => {
         const op = await loadOrgPack(orgPackDirOf(root));
         return {

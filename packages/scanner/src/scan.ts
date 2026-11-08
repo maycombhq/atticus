@@ -59,7 +59,7 @@ import {
   productionRepos,
   prototypeScanNotes,
 } from "./merge-input.js";
-import { factsForScan } from "./facts-scan.js";
+import { factsForScan, type FactBasis } from "./facts-scan.js";
 import { applyFactJoins, joinReposOf, outsideSystems } from "./facts-catalog.js";
 import {
   applyClients,
@@ -186,6 +186,11 @@ export interface EstateScan {
   unmodelled: UnmodelledFramework[];
   /** Federated metarepos and what they contributed, when there are any. */
   federated?: FederatedContribution[];
+  /**
+   * Per repo scanned, what its records rest on (rule 4): the assistant's verified facts, with the
+   * changed source files no fact covers yet, or the built-in readers.
+   */
+  basis?: Record<string, FactBasis>;
 }
 
 async function isDir(p: string): Promise<boolean> {
@@ -422,6 +427,7 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
   const repos = productionRepos(op, o.repos);
   const results: RepoScan[] = [];
   const factNotes: string[] = prototypeScanNotes(op, o.repos);
+  const basis: Record<string, FactBasis> = {};
   /** The repos read from their facts, for the estate join (ADR 0124, C-join). */
   const factRepos: { repo: string; facts: Fact[]; targets: Record<string, string> }[] = [];
   /** Each repo's structured files, to tell which no record cites. */
@@ -564,6 +570,7 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
       ...(o.git ? { git: o.git } : {}),
     });
     if (fromFacts.note) factNotes.push(fromFacts.note);
+    basis[r.id] = fromFacts.records && fromFacts.basis ? fromFacts.basis : { from: "readers" };
     if (fromFacts.facts)
       factRepos.push({ repo: r.id, facts: fromFacts.facts, targets: fromFacts.targets ?? {} });
     results.push({ ...scan, records: fromFacts.records ?? readerRecords });
@@ -750,5 +757,6 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
     curated: { applied: applied.applied, suppressed: applied.suppressed },
     notes,
     ...(federated ? { federated } : {}),
+    basis,
   };
 }

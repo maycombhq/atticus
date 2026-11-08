@@ -69,6 +69,8 @@ describe("a scan takes a repo's verified facts over its readers (ADR 0124 §3)",
         }),
       ].join("\n");
       const withFacts = await scan(facts);
+      expect(readers.basis?.["forge-ledger"]).toEqual({ from: "readers" });
+      expect(withFacts.basis?.["forge-ledger"]).toEqual({ from: "facts", unread: [] });
       const eps = ledgerEndpoints(withFacts.records);
       expect(eps).toHaveLength(1);
       expect(eps[0]!.evidence.every((e) => e.by === "assistant")).toBe(true);
@@ -94,6 +96,7 @@ describe("a scan takes a repo's verified facts over its readers (ADR 0124 §3)",
         },
       });
       const r = await scan(facts, "b".repeat(40));
+      expect(r.basis?.["forge-ledger"]).toEqual({ from: "readers" });
       expect(ledgerEndpoints(r.records).length).toBeGreaterThan(1);
       expect(r.notes.join("\n")).toMatch(/forge-ledger: its facts are of commit a{7}/);
     },
@@ -196,6 +199,12 @@ describe("a scan takes a repo's verified facts over its readers (ADR 0124 §3)",
           `read from its facts \\(2, facts/forge-ledger\\.jsonl; 2 carried from commit ${one.slice(0, 7)} to ${two.slice(0, 7)} .*, 1 left out until read again`,
         ),
       );
+      // Eighth UX walk (rule 4): the changed file no fact covers yet is named, so a check of this
+      // commit knows the facts can't say what is not in it.
+      expect(carried.basis?.["forge-ledger"]).toEqual({
+        from: "facts",
+        unread: ["src/main/java/forge/ledger/NorthwindClient.java"],
+      });
       const eps = ledgerEndpoints(carried.records);
       expect(eps).toHaveLength(2);
       expect(eps.every((e) => e.evidence.every((x) => x.by === "assistant"))).toBe(true);

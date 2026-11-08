@@ -54,6 +54,10 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ### Fixed before release (review)
 
+- Eighth UX walk (code against design):
+  - **The code-against-design check rests on facts; a reader alone never says missing** (rule 4, ADR 0074, 0124). A task branch changes the files the repo's facts cite, so its scan carried none of them (or only an unrelated config fact) and nobody had read the new code; the check then called the gateway proxy's new Apigee `LockCard` flow and the teller app's `config.getUri("core-gateway") + path` call missing. Now the scan says what each repo's records rest on (`basis`: facts, with the changed source files no fact covers yet, or the readers), and only facts that cover the commit can make something missing. Elsewhere the step is under "Not checked by a scan" as "couldn't confirm ... from the code; check it by hand", naming the files to read again (`/atticus-map <repo>`, then `atticus verify <repo> --write`). A migration file is still checked from git. Fixture `fixtures/conform-gateway`.
+  - **Check the code again is a button** where the check is shown, beside the command: `POST /api/changes/{changeId}/conformance` runs the check as a local job on the person's click (API 2.76.0); findings are the check's answer, not a failed job.
+  - **The task prompt says the build command the manifest has now.** A story's "repos.manifest.yaml names no build command" line, written before a person set the command, is said again from the current manifest when a task runs.
 - Round 44 (review):
   - **Sync reads only a change's own release PR**, by its head branch, never another PR that shares its number on a manual Git host, and corrects a recorded number that named the wrong PR.
   - **A change's hand-off carries the questions its own steps asked**, matched by the step (`atticus change <step> <id>`, `atticus plan <step> <id>`, `atticus critic <id>`), never by the repo field: a stage's question about a repo rides with the change, and a repo's own map question never does, even when a change shares the repo's name.

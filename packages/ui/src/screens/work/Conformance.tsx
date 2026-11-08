@@ -1,8 +1,9 @@
 import type { Api } from "@maycombhq/core";
 import { useApi, isFileChange, useLiveEvents } from "../../api/client.js";
+import { followJob } from "../../app/propose.js";
 import { Panel, View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
-import { queryParam } from "../know/common.js";
+import { Note, queryParam, useAction } from "../know/common.js";
 import type { ChangeRow } from "./next.js";
 import { Command } from "./RunNext.js";
 import { ChangePicker } from "./Stage.js";
@@ -11,7 +12,8 @@ import { ChangePicker } from "./Stage.js";
  * Code against design (ADR 0114): the newest check of each repo's branch against the change's
  * target flows. Every call, table, column, migration and endpoint found, missing, still there
  * or not in the design, with the file and line it cites and its finding's state. It reads the
- * stored check; checking again is a command a person runs.
+ * stored check; a person checks again with a click (a local job on the server, eighth UX walk)
+ * or the command.
  */
 
 const C = COPY.conformance;
@@ -89,6 +91,35 @@ function RepoResult({ r }: { r: Api.ConformRepoResultT }) {
   );
 }
 
+/** Check the code again: the same check as the command, run by the server on the click. */
+function CheckAgain({ change }: { change: string }) {
+  const check = useAction();
+  return (
+    <div className="stack" style={{ gap: 4, margin: "8px 0 4px" }}>
+      <div className="row" style={{ gap: 6 }}>
+        <button
+          type="button"
+          className="btn primary"
+          disabled={check.busy}
+          onClick={() =>
+            void check.run(
+              () => followJob(`/api/changes/${encodeURIComponent(change)}/conformance`, {}),
+              C.checked,
+            )
+          }
+        >
+          {check.busy ? C.checking : C.run}
+        </button>
+      </div>
+      <Note note={check.note} />
+      <p className="muted" style={{ margin: "4px 0 0" }}>
+        {C.orTerminal}
+      </p>
+      <Command text={`atticus change conform ${change}`} label={COPY.runNext.copy} />
+    </div>
+  );
+}
+
 /** A change's newest checks. */
 export function ConformanceView({ c }: { c: Api.ChangeConformanceT }) {
   if (!c.flows)
@@ -102,7 +133,7 @@ export function ConformanceView({ c }: { c: Api.ChangeConformanceT }) {
     return (
       <>
         <p>{C.notChecked(c.change)}</p>
-        <Command text={`atticus change conform ${c.change}`} label={COPY.runNext.copy} />
+        <CheckAgain change={c.change} />
       </>
     );
   return (
@@ -111,10 +142,7 @@ export function ConformanceView({ c }: { c: Api.ChangeConformanceT }) {
         <RepoResult key={r.repo} r={r} />
       ))}
       <p>{C.gate(c.round)}</p>
-      <p className="hud" style={{ margin: "8px 0 4px" }}>
-        {C.run}
-      </p>
-      <Command text={`atticus change conform ${c.change}`} label={COPY.runNext.copy} />
+      <CheckAgain change={c.change} />
       {c.problems.length > 0 && (
         <div role="note" className="cd-problems">
           <h3 className="hud">{C.problems}</h3>

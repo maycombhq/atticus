@@ -179,7 +179,7 @@ describe("does the code do what the design says? (ADR 0114)", () => {
           i.finding!.state,
         ]),
       ).toEqual([
-        ["conform-missing-call-ledger-api-create-transfer-2", "open"],
+        // Eighth UX walk (rule 4): no facts here, so the velocity check isn't a missing finding.
         ["conform-still-there-call-ledger-api-create-transfer-4", "open"],
         ["conform-unexpected-call-if-e25b9623de50b834", "dismissed"],
         ["conform-unexpected-table-ledger-db-limit-override", "open"],

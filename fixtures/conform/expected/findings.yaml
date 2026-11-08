@@ -1,12 +1,8 @@
 # The C3 findings the conformance check (ADR 0114) writes on the built-in conform gate for the
 # same after state as result.yaml: what is missing or still there blocks the Build hand-off,
 # what no target flow names is a risk. Hand-written; never regenerate it from output.
-- id: conform-missing-call-ledger-api-create-transfer-2
-  rule: conform.missing
-  severity: blocking
-  artifact: target-flows/ledger-api.create-transfer.yaml
-  summary: ledger-api makes no call to northwind-pay POST /v2/velocity-checks (item 2 of target-flows/ledger-api.create-transfer.yaml).
-  evidence: [{ source: artifact, path: target-flows/ledger-api.create-transfer.yaml, line: 18 }]
+# Eighth UX walk (rule 4): forge-ledger has no facts here, so the velocity check the readers
+# don't find is a step a person checks (result.yaml's unchecked), not a missing finding.
 - id: conform-still-there-call-ledger-api-create-transfer-4
   rule: conform.still-there
   severity: blocking

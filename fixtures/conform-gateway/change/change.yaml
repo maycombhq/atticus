@@ -1,0 +1,27 @@
+schemaVersion: 1
+id: let-tellers-lock-a-card
+title: Let tellers lock a card from the branch
+type: feature
+template: feature
+state: build
+authors:
+  stories:
+    - ada
+createdAt: 2026-11-08T18:57:58Z
+createdBy: ada
+history:
+  - from: draft
+    to: build
+    at: 2026-11-08T19:15:08Z
+    by: ada
+    reason: Plan ready merged
+owners:
+  product-owner:
+    - ada
+systems: []
+touches:
+  dataStores: []
+  interfaces: []
+  records: []
+  repos: []
+  tables: []
