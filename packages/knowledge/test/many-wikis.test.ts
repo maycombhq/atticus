@@ -184,11 +184,20 @@ describe("a SharePoint site export as a source", () => {
       join(root, "wikis/payments-team/SitePages/Secret-crlf.md"),
       `${fm}# Limits\n\nText.\n`.replace(/\n/g, "\r\n"),
     );
+    // Round 38: saved with a BOM (PowerShell 5's Out-File -Encoding utf8).
+    await writeFile(
+      join(root, "wikis/payments-team/SitePages/Secret-bom.md"),
+      `\uFEFF${fm}# Limits\n\nText.\n`.replace(/\n/g, "\r\n"),
+    );
     const pages = await sharepointExportAdapter.pages(source(op, "payments-team"), {
       root,
       orgPackDir: join(root, "org-pack"),
     });
-    for (const name of ["SitePages/Secret-limits.md", "SitePages/Secret-crlf.md"]) {
+    for (const name of [
+      "SitePages/Secret-limits.md",
+      "SitePages/Secret-crlf.md",
+      "SitePages/Secret-bom.md",
+    ]) {
       const p = pages.find((x) => x.pagePath === name)!;
       const head = parse(p.content.split("---")[1]!) as Record<string, unknown>;
       expect(head, name).toMatchObject({ classification: "confidential", restricted: true });

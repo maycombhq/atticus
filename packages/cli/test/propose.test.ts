@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { cp, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -39,6 +40,8 @@ async function metarepo() {
     ),
   );
   g(base, "init", "-q", "--bare", remote);
+  // As atticus init writes it: this machine's folders stay out of Git.
+  await writeFile(join(root, ".gitignore"), "/workspace/\n/.index/\n/.runs/\n");
   g(root, "init", "-q", "-b", "main");
   g(root, "add", "-A");
   g(root, "commit", "-q", "-m", "init");
@@ -412,5 +415,8 @@ describe("review round 36: Bring in never loses an edit", () => {
     await writeFile(join(root, "questions/q1.yaml"), "answer: 2\n");
     const changed = await proposePlan(root, "answers", { by: "pat" });
     expect(changed.files.find((f) => f.path === "questions/q1.yaml")?.proposed).toBeUndefined();
+    // Round 38: the record is in .index, which a metarepo's .gitignore leaves out.
+    expect(existsSync(join(root, ".index", "proposed.json"))).toBe(true);
+    expect(existsSync(join(root, "proposed.json"))).toBe(false);
   });
 });

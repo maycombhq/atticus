@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { join, relative } from "node:path";
+import { dirname, join, relative } from "node:path";
 import {
   catalogDirOf,
   changesRelOf,
@@ -128,8 +128,9 @@ export interface ProposePlan {
  * Round 37: what was pushed, by path and content, so a file already in an open proposal shows
  * as that (`proposed`: its PR or branch) and isn't offered again. Kept on this machine only.
  */
-const proposedFile = (root: string) => join(stateDirOf(root), "proposed.json");
-type Proposed = Record<string, { blob: string; where: string }>;
+// Round 38: in .index, which Git ignores (a normal metarepo's state folder is its root).
+const proposedFile = (root: string) => join(stateDirOf(root), ".index", "proposed.json");
+type Proposed = Record<string, { blob: string; where: string; branch?: string }>;
 async function readProposed(root: string): Promise<Proposed> {
   try {
     return JSON.parse(await readFile(proposedFile(root), "utf8")) as Proposed;
@@ -175,6 +176,19 @@ export async function proposePlan(
   for (const f of files) {
     const p = was[f.path];
     if (!p) continue;
+    // A branch the remote no longer has (merged and deleted, or closed: Bring in prunes) is no
+    // proposal any more.
+    if (
+      p.branch &&
+      !(await git(
+        ["rev-parse", "--verify", "--quiet", `refs/remotes/origin/${p.branch}`],
+        root,
+      ).then(
+        () => true,
+        () => false,
+      ))
+    )
+      continue;
     const blob = existsSync(join(root, f.path))
       ? (await git(["hash-object", "--", f.path], root).catch(() => ({ stdout: "" }))).stdout.trim()
       : "";
@@ -292,9 +306,9 @@ export async function proposeForReview(
       const blob = existsSync(join(root, f))
         ? (await g2(["hash-object", "--", f], root)).stdout.trim()
         : "";
-      was[f] = { blob, where };
+      was[f] = { blob, where, branch: plan.branch };
     }
-    await mkdir(stateDirOf(root), { recursive: true });
+    await mkdir(dirname(proposedFile(root)), { recursive: true });
     await writeFile(proposedFile(root), JSON.stringify(was, null, 2) + "\n", "utf8");
   } catch {
     // Only a hint for the next list: the PR is open either way.
@@ -333,7 +347,8 @@ export async function bringInMerged(
     return 2;
   }
   try {
-    await run(["fetch", "--quiet", up.split("/")[0]!]);
+    // --prune: a proposal's branch deleted after its merge stops being marked as proposed.
+    await run(["fetch", "--quiet", "--prune", up.split("/")[0]!]);
   } catch (e) {
     io.err(`The remote couldn't be reached, so nothing was changed: ${first(e)}`);
     return 1;

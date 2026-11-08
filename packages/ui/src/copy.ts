@@ -3817,7 +3817,7 @@ export const COPY = {
     cancel: "Not now",
     pending: (n: number) =>
       `${n} file${n === 1 ? "" : "s"} you changed in the app ${n === 1 ? "isn't" : "aren't"} proposed for review yet.`,
-    inReview: (where: string) => `already in review (${where})`,
+    inReview: (where: string) => `already proposed (${where})`,
     bringIn: "Bring in what merged",
     bringingIn: "Bringing it in…",
     bringInWhy:

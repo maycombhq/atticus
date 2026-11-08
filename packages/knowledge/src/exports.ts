@@ -487,7 +487,7 @@ export const sharepointExportAdapter: KnowledgeSourceAdapter = {
           .replace(/\.[^.]+$/, "");
       // Round 37: CRLF-safe, and the page's own front matter is kept (a page marked confidential
       // or restricted stays so), not thrown away.
-      const lf = md ? text.replace(/\r\n?/g, "\n") : text;
+      const lf = md ? text.replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n") : text;
       const own = md ? readMarkdown(lf).frontMatter : {};
       const body = md
         ? lf.replace(/^---\n[\s\S]*?\n---\n/, "")
