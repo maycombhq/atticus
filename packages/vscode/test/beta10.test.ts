@@ -218,6 +218,16 @@ describe("the Next view's beta.10 steps", () => {
   it("says the re-read and the accept-seed steps in plain words", () => {
     expect(stepTitle(reread)).toBe("Read forge-ledger again: its clone moved past its facts");
     expect(stepTitle(seed)).toBe("Read and accept forge-notes's starting spec");
+    // Sixth UX walk: the brief is the first step of a change whose brief is the template.
+    expect(
+      stepTitle({
+        step: "brief",
+        command: "openspec/changes/add-pins/brief.md",
+        why: "Write the brief of add-pins (openspec/changes/add-pins/brief.md): it still holds only the template.",
+        person: true,
+        change: "add-pins",
+      }),
+    ).toBe("Write the brief of add-pins");
     // The re-read is a read with Copilot; accepting the seed is a person's.
     expect(actionFor(reread).kind).toBe("ai");
     expect(actionFor(seed).kind).toBe("person");

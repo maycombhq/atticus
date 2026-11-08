@@ -464,6 +464,7 @@ const STEP_TITLES: Record<string, (s: NextStep, c: (id?: string) => string) => s
   spec: (s) => `Draft ${s.repo ?? "the repo"}'s spec with Copilot`,
   "spec-check": (s) => `Check ${s.repo ?? "the repo"}'s spec`,
   answer: () => "Answer the open questions",
+  brief: (s, c) => `Write the brief of ${c(s.change)}`,
   "sync-source": (s) => `Sync the knowledge source ${s.source ?? ""}`.trimEnd(),
   knowledge: () => "Read the knowledge sources with Copilot",
   "new-change": () => "Start a change",
