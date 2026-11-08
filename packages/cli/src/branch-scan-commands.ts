@@ -1,5 +1,6 @@
 import { join } from "node:path";
-import { stringify } from "yaml";
+import { readFile } from "node:fs/promises";
+import { parse, stringify } from "yaml";
 import { catalogDirOf, writeFileAtomic, type CatalogRecord } from "@maycombhq/core";
 import { diffCatalogs, readCatalog, scanEstate, writeCatalog } from "@maycombhq/scanner";
 import { branchSlug, createWorkspace, isInPlace, loadRepos } from "@maycombhq/workspace";
@@ -71,12 +72,34 @@ export async function scanBranch(
   });
   const rel = branchCatalogRel(branch);
   const dir = join(catalogDirOf(root), ...rel.split("/"));
-  const write = await writeCatalog(join(dir, "generated"), scan.records);
+  const ofRepos = new Set(ids);
+  // Merged with what an earlier scan of this branch kept for other repos (Set up › Repos scans
+  // one repo's row at a time): their records and commits stay; only this scan's repos are new.
+  const kept = await readCatalog(join(dir, "generated"), { cacheRoot: root }).catch(() => ({
+    records: [] as CatalogRecord[],
+  }));
+  const others = kept.records.filter(
+    (r) => r.evidence.length > 0 && r.evidence.every((e) => !e.repo || !ofRepos.has(e.repo)),
+  );
+  const ids2 = new Set(scan.records.map((r) => `${r.kind}/${r.id}`));
+  const merged = [...scan.records, ...others.filter((r) => !ids2.has(`${r.kind}/${r.id}`))];
+  const write = await writeCatalog(join(dir, "generated"), merged);
+  const was =
+    (
+      parse(await readFile(join(dir, "branch.yaml"), "utf8").catch(() => "")) as
+        { repos?: { id: string; commit: string }[] } | undefined
+    )?.repos ?? [];
   await writeFileAtomic(
     join(dir, "branch.yaml"),
-    stringify({ schemaVersion: 1, branch, scannedAt, repos: commits }),
+    stringify({
+      schemaVersion: 1,
+      branch,
+      scannedAt,
+      repos: [...was.filter((x) => !ofRepos.has(x.id)), ...commits].sort((a, b) =>
+        a.id < b.id ? -1 : a.id > b.id ? 1 : 0,
+      ),
+    }),
   );
-  const ofRepos = new Set(ids);
   const before = await readCatalog(join(catalogDirOf(root), "generated"), { cacheRoot: root });
   const diff = diffCatalogs(fromRepos(before.records, ofRepos), fromRepos(scan.records, ofRepos));
   problems += scan.problems.length;

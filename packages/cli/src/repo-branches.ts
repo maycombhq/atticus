@@ -111,7 +111,7 @@ export async function compareBranch(root: string, branch: string) {
 
 export class RepoEditError extends Error {
   constructor(
-    readonly code: "not-found" | "invalid",
+    readonly code: "not-found" | "invalid" | "conflict",
     message: string,
   ) {
     super(message);
@@ -126,10 +126,25 @@ export class RepoEditError extends Error {
 export async function editRepoBranches(
   root: string,
   repoId: string,
-  set: { defaultBranch?: string; branches?: string[] },
+  set: {
+    defaultBranch?: string;
+    branches?: string[];
+    was?: { defaultBranch: string; branches: string[] };
+  },
 ): Promise<string> {
   const repo = (await loadRepos(root)).find((r) => r.id === repoId);
   if (!repo) throw new RepoEditError("not-found", `There is no repo ${repoId} in any manifest.`);
+  // The form showed other branches than the manifest has now (a teammate's pull): never
+  // written over, said so.
+  if (
+    set.was &&
+    (set.was.defaultBranch !== repo.defaultBranch ||
+      set.was.branches.join("\n") !== repo.branches.join("\n"))
+  )
+    throw new RepoEditError(
+      "conflict",
+      `${repoId}'s branches changed in the manifest since you opened the form (now ${repo.defaultBranch}, ${repo.branches.join(", ") || "no others"}): open Edit again to see them, then save.`,
+    );
   const rel = `org-pack/profiles/${repo.platform}/repos.manifest.yaml`;
   const file = join(orgPackDirOf(root), "profiles", repo.platform, "repos.manifest.yaml");
   const was = await readFile(file, "utf8");
@@ -171,11 +186,16 @@ export async function editRepoBranches(
 export async function editRepoDescription(
   root: string,
   repoId: string,
-  set: { text?: string; accept?: boolean; reject?: boolean },
+  set: { text?: string; accept?: boolean; reject?: boolean; was?: string },
   o: { by?: string; now?: Date } = {},
 ): Promise<{ file: string; description?: RepoDescription }> {
   const repo = (await loadRepos(root)).find((r) => r.id === repoId);
   if (!repo) throw new RepoEditError("not-found", `There is no repo ${repoId} in any manifest.`);
+  if (set.was !== undefined && set.was !== (repo.description?.text ?? ""))
+    throw new RepoEditError(
+      "conflict",
+      `What ${repoId} is changed in the manifest since you opened the form: open Edit again to see it, then save.`,
+    );
   const now = o.now ?? new Date();
   let next: RepoDescription | undefined;
   if (!set.reject) {

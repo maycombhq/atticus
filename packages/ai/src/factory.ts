@@ -173,7 +173,11 @@ export function resolveWindowsCommand(
   if (platform !== "win32" || /[\\/]/.test(command) || /\.[a-z0-9]+$/i.test(command))
     return command;
   const exts = (env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD").split(";").filter(Boolean);
-  for (const dir of (env.Path ?? env.PATH ?? "").split(";").filter(Boolean))
+  // An entry may be quoted ("C:\\Users\\dev\\AppData\\Roaming\\npm"), as cmd.exe reads it.
+  for (const dir of (env.Path ?? env.PATH ?? "")
+    .split(";")
+    .map((d) => d.trim().replace(/^"(.*)"$/, "$1"))
+    .filter(Boolean))
     for (const ext of exts) {
       const full = `${dir.replace(/[\\/]+$/, "")}\\${command}${ext.toLowerCase()}`;
       if (exists(full)) return full;

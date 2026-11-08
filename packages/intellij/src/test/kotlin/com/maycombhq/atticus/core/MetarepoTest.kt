@@ -100,4 +100,23 @@ class MetarepoTest {
         // When the line isn't there (an older command line), its metarepo/ folder.
         assertEquals(Path.of(dir, "metarepo").toString(), Metarepo.sandboxMetarepo("Made a practice sandbox.", dir))
     }
+
+    @Test
+    fun `the layout from sources yaml, and the defaults`() {
+        Files.createDirectories(dir.resolve("org-pack"))
+        assertEquals(Metarepo.Layout("openspec", "catalog"), Metarepo.layout(dir))
+        Files.writeString(
+            dir.resolve("org-pack/sources.yaml"),
+            "schemaVersion: 3\nlayout:\n  openspec: docs/openspec   # ours\n  catalog: \"arch/catalog\"\nwikis: []\n",
+        )
+        assertEquals(Metarepo.Layout("docs/openspec", "arch/catalog"), Metarepo.layout(dir))
+    }
+
+    @Test
+    fun `a file in ANSI from an older Notepad is read, not thrown`() {
+        val f = dir.resolve("tasks.md")
+        Files.write(f, byteArrayOf('C'.code.toByte(), 'a'.code.toByte(), 'f'.code.toByte(), 0xE9.toByte()))
+        assertEquals(listOf("Caf\u00e9"), Metarepo.readLines(f))
+        assertEquals(emptyList<String>(), Metarepo.readLines(dir.resolve("missing.md")))
+    }
 }

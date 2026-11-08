@@ -39,6 +39,15 @@ describe("a command on Windows", () => {
         on(["C:\\Users\\dev\\AppData\\Roaming\\npm\\claude.cmd"]),
       ),
     ).toBe("C:\\Users\\dev\\AppData\\Roaming\\npm\\claude.cmd");
+    // A quoted PATH entry, as Windows keeps some.
+    expect(
+      resolveWindowsCommand(
+        "claude",
+        { Path: 'C:\\Windows;"C:\\Users\\tom\\AppData\\Roaming\\npm"' },
+        "win32",
+        on(["C:\\Users\\tom\\AppData\\Roaming\\npm\\claude.cmd"]),
+      ),
+    ).toBe("C:\\Users\\tom\\AppData\\Roaming\\npm\\claude.cmd");
     // Not there: the bare name, so starting it says it isn't installed (ENOENT).
     expect(resolveWindowsCommand("claude", env, "win32", on([]))).toBe("claude");
     expect(resolveWindowsCommand("claude", env, "linux", on([]))).toBe("claude");

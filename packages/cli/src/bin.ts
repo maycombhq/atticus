@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { nodeTooOld, nodeTooOldMessage } from "./node-version.js";
 import { VERSION } from "./version.js";
 
 // Output piped into a reader that stops early (`| head`) closes the pipe: stop quietly, not
@@ -17,10 +16,11 @@ const argv = process.argv.slice(2);
 // one runs). Kept as a dynamic import so a bundler keeps the split.
 if (argv.length === 1 && (argv[0] === "--version" || argv[0] === "-v"))
   process.stdout.write(VERSION + "\n");
-else if (nodeTooOld(process.versions.node)) {
+else if ((await import("./node-version.js")).nodeTooOld(process.versions.node)) {
   // An older Node (a company image with Node 20) says so plainly, rather than failing on
   // whatever it meets first. --version still answers above: the editors run it to find the
   // install, and would otherwise say Atticus isn't installed.
+  const { nodeTooOldMessage } = await import("./node-version.js");
   process.stderr.write(nodeTooOldMessage(process.versions.node) + "\n");
   process.exitCode = 1;
 } else {

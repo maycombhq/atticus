@@ -56,6 +56,20 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 - Draw the change: the preview is the write (the flow's file, and design.md / data.md where Atticus wrote them); a write after the target flows changed is refused; Undo takes back a whole stroke (a retarget's two steps) and only strokes, never a step the stage wrote; a stroke lands on the component's own flow, never a sibling's; a topic's listener step goes nowhere (one line, publisher → listener); a delta file that doesn't read blocks strokes instead of being lost; the panel keeps its state when the first stroke or last Undo redraws the picture, and Draw it turns off after a failed write. `change sketch`: dotted Mermaid lines read, chains and `&` are reported rather than guessed, parameterised paths aren't marked new, a retired line removes the step from every flow that makes it.
 - Safety and robustness (review): a Markdown folder or a cloned wiki never reads a link (a planted link to a key or a credentials file stays out of the knowledge store; wikis clone with `core.symlinks=false`); PDF bombs are read within one budget per file (each stream decoded once, 256 MB in all, a lying object count bounded, at most 10,000 pages); the events socket closes on an unmasked or oversized client frame; the server follows a folder removed and made again, and `.atticus/` made after it started; a build command's timeout stops everything it started (the whole tree on Windows) and the log keeps the last 4 MB of its output; a branch checkout with a person's edits is refused rather than overwritten; a change folder is named by an id only; drift merges with the organisation's component types (no false drift); the C6 page's component-type fields have their descriptions back.
+- Round 28 (review):
+  - **PDFs from Chrome and Edge Save as PDF, Confluence exports and iText-made files are read as text.** Atticus now reads their Type0 fonts through each font's ToUnicode map. Before, the reader produced garbage and flagged nothing. A font with no such map gives no text and is flagged for a person to read.
+  - **`atticus upgrade` writing a change's stories again.**
+    - It backs up the whole change folder first, recursively. Before, the backup it reported was empty, and hand edits to tasks.md, stories and specs were written over.
+    - If the backup fails, the upgrade stops before changing anything.
+    - A rewrite that fails is reported, not followed by "Done".
+  - **Scanning a branch from one repo's row on Set up › Repos keeps the other repos' scans of that branch.** Before, it erased them.
+  - **Word text boxes and tracked moves are read once.**
+  - **`claude` is found on a quoted PATH entry.**
+  - **The Repos page's Edit forms open with what the manifest says now.** Save sends what the form showed, and a manifest changed since then (for example by a teammate's pull) is refused (409, local API 2.62.0), not written over.
+  - **Picking another box or change shows loading, not the last one's data.**
+  - **Placing a need's quote in a long file takes one pass, not tens of seconds.**
+  - **IntelliJ's task, story and record pickers follow sources.yaml's layout and read ANSI files.**
+  - **`atticus upgrade` keeps a Windows file's CRLF** in gates.yaml, change-types.yaml and sources.yaml.
 - Round 27 (review):
   - **Build output beside its build is skipped anywhere, `src/` included.** Examples are a .NET project's `bin/` and `obj/` beside its `.csproj`, a web app's `dist/` and `coverage/` beside `package.json`, `target/` beside `pom.xml` and `build/` beside Gradle. Other folders with those names below `src/` are still read.
   - **`skills write` on a Windows checkout of the org pack.** It no longer marks every file "kept as edited", and `--check` says current.

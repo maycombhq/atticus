@@ -1,3 +1,4 @@
+import { keepLineEndings } from "./eol.js";
 import { isMap, isSeq, parseDocument, type YAMLMap } from "yaml";
 import { GATES_SCHEMA_VERSION } from "./schema/orgpack.js";
 
@@ -16,5 +17,5 @@ export function migrateGatesText(text: string): { text: string; changed: boolean
     for (const g of gates.items)
       if (isMap(g) && !g.has("maxAuthorRounds"))
         (g as YAMLMap<string, unknown>).set("maxAuthorRounds", 2);
-  return { text: doc.toString(), changed: true };
+  return { text: keepLineEndings(text, doc.toString()), changed: true };
 }

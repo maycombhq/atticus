@@ -1,3 +1,4 @@
+import { keepLineEndings } from "./eol.js";
 import { isMap, parseDocument } from "yaml";
 import { SOURCES_SCHEMA_VERSION } from "./schema/orgpack.js";
 
@@ -20,5 +21,5 @@ export function migrateSourcesText(
   if (typeof v !== "number" || v >= to || (o.from !== undefined && v !== o.from))
     return { text, changed: false };
   doc.set("schemaVersion", to);
-  return { text: doc.toString({ lineWidth: 0 }), changed: true };
+  return { text: keepLineEndings(text, doc.toString({ lineWidth: 0 })), changed: true };
 }

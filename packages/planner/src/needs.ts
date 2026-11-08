@@ -186,6 +186,32 @@ const key = (n: { item: string; for: string }) => `${n.item}|${n.for}`;
 const fold = (s: string) =>
   s.replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/\s+/g, " ").trim().toLowerCase();
 
+/**
+ * The line (from 1) on which folded offset `at` falls: the first line whose text before it folds
+ * to at least `at` characters. One pass over the text, as `fold` counts (a run of whitespace is
+ * one space, none at either end): an 8,000-line design doc no longer costs seconds per need.
+ */
+export function lineAtFolded(text: string, at: number): number {
+  let count = 0;
+  let pending = false;
+  let line = 1;
+  for (const ch of text) {
+    if (ch === "\n") {
+      // The text before this line break folds to `count` characters.
+      if (count < at) line++;
+      else break;
+    }
+    if (/\s/.test(ch)) {
+      if (count > 0) pending = true;
+    } else {
+      if (pending) count++;
+      pending = false;
+      count += ch.toLowerCase().length;
+    }
+  }
+  return line;
+}
+
 export async function readNeeds(root: string, change: string): Promise<NeedsFile | undefined> {
   const text = await readFile(join(changeFolder(root, change), NEEDS_FILE), "utf8").catch(
     () => undefined,
@@ -718,11 +744,7 @@ export async function findNeeds(
       if (seen.has(key(n))) continue;
       seen.add(key(n));
       // The line the words start on, in the file as it is.
-      const lines = text.split("\n");
-      let line = 1;
-      for (let j = 1; j < lines.length; j++)
-        if (fold(lines.slice(0, j).join("\n")).length < at) line = j + 1;
-        else break;
+      const line = lineAtFolded(text, at);
       fresh.push(
         needFrom(
           r,

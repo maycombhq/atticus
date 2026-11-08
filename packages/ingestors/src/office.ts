@@ -48,7 +48,11 @@ function need(zip: ZipArchive, part: string): XNode {
 
 // ---------- Word ----------
 
-/** Text of a Word paragraph: runs, tabs and breaks, deleted text left out. */
+/**
+ * Text of a Word paragraph: runs, tabs and breaks. Left out: deleted text, and the old place of
+ * text a tracked change moved (`moveFrom`), so moved text is read once, where it is now. A
+ * text box comes as one choice and its fallback (`mc:AlternateContent`): only one is read.
+ */
 function wordText(p: XNode): string {
   let out = "";
   const walk = (n: XNode) => {
@@ -57,7 +61,13 @@ function wordText(p: XNode): string {
       else if (c.name === "tab") out += "\t";
       else if (c.name === "br" || c.name === "cr") out += "\n";
       else if (c.name === "noBreakHyphen") out += "-";
-      else if (c.name !== "pPr" && c.name !== "rPr" && c.name !== "del") walk(c);
+      else if (c.name === "AlternateContent") {
+        const one =
+          elements(c).find((x) => x.name === "Choice") ??
+          elements(c).find((x) => x.name === "Fallback");
+        if (one) walk(one);
+      } else if (c.name !== "pPr" && c.name !== "rPr" && c.name !== "del" && c.name !== "moveFrom")
+        walk(c);
     }
   };
   walk(p);

@@ -138,6 +138,27 @@ describe("atticus upgrade", () => {
     expect(await readFile(join(root, "catalog/generated/system/ledger.yaml"), "utf8")).toBe(before);
   });
 
+  it("backs up a change's whole folder before writing its stories again, and stops on a rewrite that fails", async () => {
+    const root = await oldMetarepo();
+    const ch = join(root, "openspec/changes/add-limit");
+    await mkdir(join(ch, "stage"), { recursive: true });
+    await mkdir(join(ch, "stories"), { recursive: true });
+    // A kept answer that doesn't read, a long story, and a person's edit of tasks.md.
+    await writeFile(join(ch, "stage/stories-answer.yaml"), "not: [a, stories, answer\n");
+    await writeFile(
+      join(ch, "stories/s1.md"),
+      "# S1\n\nPrompt for Copilot or Claude Code:\n\nDo it.\n",
+    );
+    await writeFile(join(ch, "tasks.md"), "- [ ] 1.1 my own wording\n");
+    const r = io();
+    await expect(
+      upgradeCommand(root, { by: "pat", now: new Date("2026-10-19T10:00:00Z") }, r.io, "1.0.0"),
+    ).rejects.toThrow(/The stories of add-limit couldn't be written again/);
+    const backup = join(root, ".atticus/backups/20261019-100000/openspec/changes/add-limit");
+    expect(await readFile(join(backup, "tasks.md"), "utf8")).toBe("- [ ] 1.1 my own wording\n");
+    expect(await readFile(join(backup, "stories/s1.md"), "utf8")).toContain("Prompt for Copilot");
+  });
+
   it("backs up what it changes, upgrades, records the version, and is then up to date", async () => {
     const root = await oldMetarepo();
     const r = io();

@@ -182,8 +182,10 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  * 2.61.0 (ADR 0036 addendum, review): a run's view carries `taskRun`, the task run it is part
  *   of (its state, notes, worktree, last build log and commit); POST /api/runs/{runId}/done on a
  *   task run's hand-off builds, fixes and commits as `atticus handoff done` does. Additive only.
+ * 2.62.0 (review): PUT /api/repos/{repoId}/branches and /description take `was`, what the form
+ *   showed; a manifest changed since (a teammate's pull) is 409, never written over. Additive.
  */
-export const API_VERSION = "2.61.0";
+export const API_VERSION = "2.62.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -737,6 +739,8 @@ export const EditRepoDescriptionRequest = z.object({
   accept: z.boolean().optional(),
   /** Drop the description: nothing then says what the repo is. */
   reject: z.boolean().optional(),
+  /** 2.62.0: the line as the form showed it ("" for none); 409 when the manifest says otherwise. */
+  was: z.string().optional(),
 });
 
 export const OnboardingRepo = z.object({
@@ -2128,6 +2132,8 @@ export const BranchCompare = z.object({
 export const EditRepoBranchesRequest = z.strictObject({
   defaultBranch: GitRef.optional(),
   branches: z.array(GitRef).optional(),
+  /** 2.62.0: the branches as the form showed them; 409 when the manifest says otherwise now. */
+  was: z.strictObject({ defaultBranch: z.string(), branches: z.array(z.string()) }).optional(),
 });
 /** WP7.5: follow a change, or stop following it (the person's own .atticus/me.yaml). */
 export const WatchRequest = z.strictObject({ change: RecordId, watch: z.boolean() });

@@ -172,7 +172,10 @@ export type Loaded<T> =
 export function useApi<T>(
   path: string | undefined,
 ): Loaded<T> & { reload: () => void; refreshing: boolean; at?: number } {
-  const [s, set] = useState<Loaded<T>>({ state: "loading" });
+  // What was loaded, and for which path: a new path shows loading, never the last path's answer
+  // as if it were this one's (box X's candidates under box Y, change A's detail under B).
+  const [held, hold] = useState<{ s: Loaded<T>; for?: string }>({ s: { state: "loading" } });
+  const set = (v: Loaded<T>, forPath: string) => hold({ s: v, for: forPath });
   const [tick, setTick] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const [at, setAt] = useState<number | undefined>();
@@ -184,15 +187,20 @@ export function useApi<T>(
     if (answered.current) setRefreshing(true);
     api<T>(path, { signal: ctl.signal })
       .then(
-        (data) => set({ state: "ready", data }),
+        (data) => {
+          if (!ctl.signal.aborted) set({ state: "ready", data }, path);
+        },
         (e: unknown) => {
           if (ctl.signal.aborted) return;
-          set({
-            state: "error",
-            error: e instanceof Error ? e.message : String(e),
-            ...(e instanceof ApiError && e.problem.notYet ? { notYet: true } : {}),
-            ...(e instanceof ApiError && e.problem.status ? { status: e.problem.status } : {}),
-          });
+          set(
+            {
+              state: "error",
+              error: e instanceof Error ? e.message : String(e),
+              ...(e instanceof ApiError && e.problem.notYet ? { notYet: true } : {}),
+              ...(e instanceof ApiError && e.problem.status ? { status: e.problem.status } : {}),
+            },
+            path,
+          );
         },
       )
       .finally(() => {
@@ -203,6 +211,8 @@ export function useApi<T>(
       });
     return () => ctl.abort();
   }, [path, tick]);
+  // A reload of the same path keeps what is shown; another path (or none) is loading.
+  const s: Loaded<T> = held.for === path && path !== undefined ? held.s : { state: "loading" };
   return { ...s, reload, refreshing, ...(at !== undefined ? { at } : {}) };
 }
 

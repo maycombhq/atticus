@@ -122,11 +122,11 @@ object Lists {
     /** The catalog's records, of one kind or all: `catalog/<layer>/<kind>/<id>.yaml`. */
     fun records(root: Path, kind: String?): List<Pick> {
         val out = mutableListOf<Pick>()
-        for (layer in dirs(root.resolve("catalog")))
+        for (layer in dirs(root.resolve(Metarepo.layout(root).catalog)))
             for (k in dirs(layer)) {
                 if (kind != null && k.fileName.toString() != kind.lowercase()) continue
                 for (f in yamlFiles(k)) {
-                    val text = runCatching { Files.readString(f) }.getOrNull() ?: continue
+                    val text = Metarepo.readText(f) ?: continue
                     val id = top(text, "id") ?: continue
                     val recordKind = top(text, "kind") ?: k.fileName.toString()
                     if (kind != null && recordKind != kind) continue
@@ -157,14 +157,16 @@ object Lists {
     private val TASK_LINE = Regex("""^\s*[-*]\s+\[([ xX]?)]\s+(\S+)\s+(.*)$""")
     private val STORY_NOTE = Regex("""\s*\((?:story|stories)\b[^)]*\)\s*$""")
 
+    /** A change's folder: under the metarepo's OpenSpec folder (sources.yaml layout), else the defaults. */
+    private fun changeDirs(root: Path, change: String): List<Path> =
+        listOf(Metarepo.layout(root).openspec, "openspec", ".atticus/openspec").distinct().map { root.resolve("$it/changes/$change") }
+
     /** ADR 0113: a change's tasks from its tasks.md, each checkbox line under a repo's heading. */
     fun tasks(root: Path, change: String): List<Pick> {
-        val file =
-            listOf(root.resolve("openspec/changes/$change/tasks.md"), root.resolve(".atticus/openspec/changes/$change/tasks.md"))
-                .firstOrNull { Files.isRegularFile(it) } ?: return emptyList()
+        val file = changeDirs(root, change).map { it.resolve("tasks.md") }.firstOrNull { Files.isRegularFile(it) } ?: return emptyList()
         var repo = ""
         val out = mutableListOf<Pick>()
-        for (line in Files.readAllLines(file)) {
+        for (line in Metarepo.readLines(file)) {
             REPO_HEADING.find(line)?.let { repo = it.groupValues[1].replace("`", "").replace("*", "").trim().split(Regex("""\s+""")).first() }
             val m = TASK_LINE.find(line) ?: continue
             if (repo.isEmpty()) continue
@@ -177,10 +179,10 @@ object Lists {
     /** A change's stories: `openspec/changes/<change>/stories/<id>.md`, titled by their first heading. */
 
     fun stories(root: Path, change: String): List<Pick> {
-        val dir = listOf(root.resolve("openspec/changes/$change/stories"), root.resolve(".atticus/openspec/changes/$change/stories")).firstOrNull { Files.isDirectory(it) } ?: return emptyList()
+        val dir = changeDirs(root, change).map { it.resolve("stories") }.firstOrNull { Files.isDirectory(it) } ?: return emptyList()
         return Files.list(dir).use { s -> s.filter { it.fileName.toString().endsWith(".md") }.sorted().toList() }.map { f ->
             val id = f.fileName.toString().removeSuffix(".md")
-            val head = Regex("^#\\s+(.+)$", RegexOption.MULTILINE).find(Files.readString(f))?.groupValues?.get(1)?.trim()
+            val head = Regex("^#\\s+(.+)$", RegexOption.MULTILINE).find(Metarepo.readText(f) ?: "")?.groupValues?.get(1)?.trim()
             Pick(id, head ?: id, id)
         }
     }

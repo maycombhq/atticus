@@ -1,5 +1,5 @@
 import { Api } from "@maycombhq/core";
-import { badRequest, notFound, type Router } from "@maycombhq/server";
+import { badRequest, conflict, notFound, type Router } from "@maycombhq/server";
 import type { ServerContext } from "@maycombhq/server";
 
 /**
@@ -38,7 +38,11 @@ export function uiRepoRoutes(r: Router, ctx: ServerContext): Router {
         };
       } catch (e) {
         if (e instanceof RepoEditError)
-          throw e.code === "not-found" ? notFound(e.message) : badRequest(e.message);
+          throw e.code === "not-found"
+            ? notFound(e.message)
+            : e.code === "conflict"
+              ? conflict(e.message)
+              : badRequest(e.message);
         throw e;
       }
     })
@@ -64,7 +68,11 @@ export function uiRepoRoutes(r: Router, ctx: ServerContext): Router {
         };
       } catch (e) {
         if (e instanceof RepoEditError)
-          throw e.code === "not-found" ? notFound(e.message) : badRequest(e.message);
+          throw e.code === "not-found"
+            ? notFound(e.message)
+            : e.code === "conflict"
+              ? conflict(e.message)
+              : badRequest(e.message);
         throw e;
       }
     });

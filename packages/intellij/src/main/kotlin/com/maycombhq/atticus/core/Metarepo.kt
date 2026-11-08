@@ -13,6 +13,38 @@ object Metarepo {
     fun orgPack(dir: Path): Path? =
         listOf(dir.resolve("org-pack"), dir.resolve(".atticus").resolve("org-pack")).firstOrNull { Files.isDirectory(it) }
 
+    /**
+     * Where the metarepo keeps OpenSpec and the catalog: `layout.openspec` and `layout.catalog` of
+     * `org-pack/sources.yaml` (a repo adopted in place may move them), else `openspec` and `catalog`.
+     */
+    data class Layout(val openspec: String, val catalog: String)
+
+    fun layout(root: Path): Layout {
+        val pack = orgPack(root) ?: return Layout("openspec", "catalog")
+        val lines = readLines(pack.resolve("sources.yaml"))
+        var inLayout = false
+        var openspec = "openspec"
+        var catalog = "catalog"
+        val entry = Regex("""^\s+(openspec|catalog):\s*["']?([^"'#\s]+)["']?\s*(#.*)?$""")
+        for (line in lines) {
+            if (Regex("^\\S").containsMatchIn(line)) inLayout = line.startsWith("layout:")
+            else if (inLayout) entry.find(line)?.let {
+                if (it.groupValues[1] == "openspec") openspec = it.groupValues[2] else catalog = it.groupValues[2]
+            }
+        }
+        return Layout(openspec.trimEnd('/'), catalog.trimEnd('/'))
+    }
+
+    /**
+     * A file's lines, or none: one saved in another encoding (ANSI from an older Notepad) is read
+     * as Windows-1252 rather than throwing from the action; a missing or unreadable one is empty.
+     */
+    fun readLines(file: Path): List<String> = readText(file)?.lines() ?: emptyList()
+
+    fun readText(file: Path): String? =
+        runCatching { Files.readString(file) }.getOrNull()
+            ?: runCatching { String(Files.readAllBytes(file), java.nio.charset.Charset.forName("windows-1252")) }.getOrNull()
+
     /** The repo ids in every profile's `repos.manifest.yaml`, in order, once each; read without a YAML parser. */
     fun repos(orgPack: Path): List<String> {
         val profiles = orgPack.resolve("profiles")
@@ -22,7 +54,7 @@ object Metarepo {
         val id = Regex("""^ {0,4}-\s+id:\s*["']?([A-Za-z0-9][A-Za-z0-9._-]*)["']?\s*$""")
         for (m in manifests) {
             var inRepos = false
-            for (line in Files.readAllLines(m)) {
+            for (line in readLines(m)) {
                 if (Regex("^\\S").containsMatchIn(line)) inRepos = line.startsWith("repos:")
                 if (inRepos) id.find(line)?.let { out += it.groupValues[1] }
             }

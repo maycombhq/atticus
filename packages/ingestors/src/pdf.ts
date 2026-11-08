@@ -5,8 +5,10 @@ import { ReadError, Sections, type ParsedText } from "./text-model.js";
 /*
  * PDF, best effort and honest about it. It reads uncompressed and Flate-compressed content
  * streams (also inside object streams), follows the page tree for page numbers, and takes text
- * from the Tj, TJ, ' and " operators. Fonts with custom encodings and no ToUnicode map, other
- * filters and encrypted files give no text: then it says so and never guesses.
+ * from the Tj, TJ, ' and " operators, through a font's ToUnicode map when it has one (a Type0 font,
+ * as browsers' Save as PDF and Confluence's export write, shows glyph ids, not letters). A Type0
+ * font with no ToUnicode map, other filters and encrypted files give no text: then it says so
+ * and never guesses.
  */
 
 const NO_TEXT =
@@ -23,8 +25,8 @@ const MAX_TEXT = 64 * 1024 * 1024;
 /** One file's decoding: each stream decoded once, and all of them within MAX_DECODED. */
 interface Decoding {
   cache: Map<PdfObject, Buffer | undefined>;
-  /** A content stream's lines of text, read once however many pages show it. */
-  texts: Map<PdfObject, string[]>;
+  /** A content stream's lines of text, read once per set of fonts however many pages show it. */
+  texts: Map<PdfObject, Map<string, { lines: string[]; unreadable: boolean }>>;
   left: number;
   /** Text the pages may still hold, counted on every page that shows it. */
   textLeft: number;
@@ -182,6 +184,7 @@ function bytesText(b: number[]): string {
 
 type Token =
   | { t: "str"; v: number[] }
+  | { t: "name"; v: string }
   | { t: "num"; v: number }
   | { t: "arr"; v: Token[] }
   | { t: "op"; v: string }
@@ -208,19 +211,95 @@ function hexBytes(h: string): number[] {
   return out;
 }
 
-/** Text shown by a content stream, one line per text line. */
-export function contentText(src: string): string[] {
+/**
+ * A page's font, as its text needs it: the codes its strings carry mapped to text (ToUnicode),
+ * and how many bytes a code takes. A Type0 font with no map shows glyph ids: unreadable.
+ */
+export interface PdfFont {
+  map?: Map<number, string>;
+  bytes: 1 | 2;
+  unreadable?: boolean;
+}
+
+/** A ToUnicode CMap: bfchar and bfrange entries, and the code length its codespace says. */
+export function parseToUnicode(cmap: string): { map: Map<number, string>; bytes: 1 | 2 } {
+  const map = new Map<number, string>();
+  const utf16 = (h: string) => {
+    const b = hexBytes(h);
+    let out = "";
+    for (let i = 0; i + 1 < b.length; i += 2) out += String.fromCharCode((b[i]! << 8) | b[i + 1]!);
+    return out;
+  };
+  const space = /begincodespacerange\s*<([0-9a-fA-F]+)>/.exec(cmap)?.[1];
+  const bytes: 1 | 2 = space && space.length <= 2 ? 1 : 2;
+  for (const block of cmap.matchAll(/beginbfchar([\s\S]*?)endbfchar/g))
+    for (const m of block[1]!.matchAll(/<([0-9a-fA-F]+)>\s*<([0-9a-fA-F]*)>/g))
+      map.set(parseInt(m[1]!, 16), utf16(m[2]!));
+  for (const block of cmap.matchAll(/beginbfrange([\s\S]*?)endbfrange/g))
+    for (const m of block[1]!.matchAll(
+      /<([0-9a-fA-F]+)>\s*<([0-9a-fA-F]+)>\s*(?:<([0-9a-fA-F]*)>|\[([^\]]*)\])/g,
+    )) {
+      const lo = parseInt(m[1]!, 16);
+      const hi = Math.min(parseInt(m[2]!, 16), lo + 65535);
+      if (m[3] !== undefined) {
+        const start = utf16(m[3]);
+        const last = start.charCodeAt(start.length - 1);
+        for (let c = lo; c <= hi; c++)
+          map.set(c, start.slice(0, -1) + String.fromCharCode(last + (c - lo)));
+      } else {
+        const each = [...m[4]!.matchAll(/<([0-9a-fA-F]*)>/g)].map((x) => utf16(x[1]!));
+        each.forEach((t, k) => lo + k <= hi && map.set(lo + k, t));
+      }
+    }
+  return { map, bytes };
+}
+
+/** A string's bytes as the font shows them: through its map, or Latin-1 when it has none. */
+function fontText(b: number[], f: PdfFont | undefined): string {
+  if (!f?.map) return bytesText(b);
+  let out = "";
+  for (let i = 0; i < b.length; i += f.bytes) {
+    const code = f.bytes === 2 ? (b[i]! << 8) | (b[i + 1] ?? 0) : b[i]!;
+    out += f.map.get(code) ?? "";
+  }
+  return clean(out);
+}
+
+/** Tab, line feed and carriage return kept; other control characters dropped. */
+function clean(s: string): string {
+  let out = "";
+  for (const ch of s) {
+    const c = ch.charCodeAt(0);
+    if (c >= 32 ? c !== 127 : c === 9 || c === 10 || c === 13) out += ch;
+  }
+  return out;
+}
+
+/** Text shown by a content stream, one line per text line; `unreadable` when a font hid some. */
+export function contentText(
+  src: string,
+  fonts: ReadonlyMap<string, PdfFont> = new Map(),
+  said: { unreadable?: boolean } = {},
+): string[] {
   const lines: string[] = [];
   let cur = "";
+  let font: PdfFont | undefined;
   const newline = () => {
     if (cur.trim()) lines.push(cur.replace(/\s+/g, " ").trim());
     cur = "";
   };
+  const text = (b: number[]) => {
+    if (font?.unreadable) {
+      if (b.length) said.unreadable = true;
+      return "";
+    }
+    return fontText(b, font);
+  };
   const show = (tok: Token | undefined) => {
-    if (tok?.t === "str") cur += bytesText(tok.v);
+    if (tok?.t === "str") cur += text(tok.v);
     else if (tok?.t === "arr")
       for (const x of tok.v) {
-        if (x.t === "str") cur += bytesText(x.v);
+        if (x.t === "str") cur += text(x.v);
         else if (x.t === "num" && x.v < -200) cur += " ";
       }
   };
@@ -257,7 +336,7 @@ export function contentText(src: string): string[] {
       i++;
     } else if (c === "/") {
       const m = /^\/[^\s/[\]()<>{}%]*/.exec(src.slice(i, i + 128))!;
-      push({ t: "other" });
+      push({ t: "name", v: m[0].slice(1) });
       i += m[0].length;
     } else {
       const m = /^[+-]?(\d+\.?\d*|\.\d+)/.exec(src.slice(i, i + 32));
@@ -287,6 +366,11 @@ export function contentText(src: string): string[] {
           const y = num(1);
           if (lastY !== undefined && y !== lastY) newline();
           lastY = y;
+          break;
+        }
+        case "Tf": {
+          const name = stack[stack.length - 2];
+          font = name?.t === "name" ? fonts.get(name.v) : undefined;
           break;
         }
         case "Tj":
@@ -394,8 +478,70 @@ export function readPdf(bytes: Uint8Array): ParsedText {
     notes.push(`This PDF has ${pages.length} pages; the first ${MAX_PAGES} are read.`);
     pages.length = MAX_PAGES;
   }
+  // A dictionary given inline (<< … >>) or by reference.
+  const dictOf = (owner: string, key: string): string | undefined => {
+    const r = ref(owner, key);
+    if (r !== undefined) return objs.get(r)?.dict;
+    const at = new RegExp(`/${key}\\s*<<`).exec(owner);
+    if (!at) return undefined;
+    let depth = 0;
+    for (let k = at.index + at[0].length - 2; k < owner.length - 1; k++) {
+      if (owner[k] === "<" && owner[k + 1] === "<") {
+        depth++;
+        k++;
+      } else if (owner[k] === ">" && owner[k + 1] === ">") {
+        if (--depth === 0) return owner.slice(at.index + at[0].length - 2, k + 2);
+        k++;
+      }
+    }
+    return undefined;
+  };
+  const fontCache = new Map<number, PdfFont>();
+  const fontOf = (no: number): PdfFont => {
+    const had = fontCache.get(no);
+    if (had) return had;
+    const d = objs.get(no)?.dict ?? "";
+    const type0 = /\/Subtype\s*\/Type0\b/.test(d);
+    const tu = ref(d, "ToUnicode");
+    const cmap = tu !== undefined ? objs.get(tu) : undefined;
+    const text = cmap ? decodeStream(cmap, decoding)?.toString("latin1") : undefined;
+    const f: PdfFont = text
+      ? (() => {
+          const t = parseToUnicode(text);
+          return { map: t.map, bytes: type0 ? 2 : t.bytes };
+        })()
+      : type0
+        ? { bytes: 2, unreadable: true }
+        : { bytes: 1 };
+    fontCache.set(no, f);
+    return f;
+  };
+  /** A page's fonts by resource name, its own or inherited from the page tree. */
+  const pageFonts = (pageDict: string): Map<string, PdfFont> => {
+    const out = new Map<string, PdfFont>();
+    let d: string | undefined = pageDict;
+    for (let up = 0; d && up < 32; up++) {
+      const res = dictOf(d, "Resources");
+      const fd = res ? dictOf(res, "Font") : undefined;
+      if (fd) {
+        for (const m of fd.matchAll(/\/([^\s/[\]()<>{}%]+)\s+(\d+)\s+\d+\s+R\b/g))
+          if (!out.has(m[1]!)) out.set(m[1]!, fontOf(Number(m[2])));
+        break;
+      }
+      const parent = ref(d, "Parent");
+      d = parent !== undefined ? objs.get(parent)?.dict : undefined;
+    }
+    return out;
+  };
+  let unreadablePages = 0;
+
   pages.forEach((n, i) => {
     const dict = objs.get(n)!.dict;
+    const fonts = pageFonts(dict);
+    const key = [...fonts]
+      .map(([k, f]) => `${k}:${f.map ? "m" : f.unreadable ? "u" : "l"}`)
+      .join(",");
+    const said: { unreadable?: boolean } = {};
     const contents = /\/Contents\s*(\[[^\]]*\]|\d+\s+\d+\s+R)/.exec(dict)?.[1] ?? "";
     let streams = refs(contents);
     // /Contents may point at an array object rather than a stream.
@@ -405,12 +551,21 @@ export function readPdf(bytes: Uint8Array): ParsedText {
       .map((r) => objs.get(r))
       .flatMap((o) => {
         if (!o) return [];
-        let lines = decoding.texts.get(o);
-        if (!lines) {
+        // Read once per stream and set of fonts, however many pages show it.
+        let byFonts = decoding.texts.get(o);
+        if (!byFonts) decoding.texts.set(o, (byFonts = new Map()));
+        let hit = byFonts.get(key);
+        if (!hit) {
           const t = decodeStream(o, decoding)?.toString("latin1");
-          lines = t === undefined ? [] : contentText(t);
-          decoding.texts.set(o, lines);
+          const one: { unreadable?: boolean } = {};
+          hit = {
+            lines: t === undefined ? [] : contentText(t, fonts, one),
+            unreadable: !!one.unreadable,
+          };
+          byFonts.set(key, hit);
         }
+        if (hit.unreadable) said.unreadable = true;
+        const lines = hit.lines;
         // Every page that shows the text is charged for it: one stream shown by thousands of
         // pages never builds gigabytes of sections.
         decoding.textLeft -= lines.reduce((n, l) => n + l.length, 0);
@@ -420,10 +575,18 @@ export function readPdf(bytes: Uint8Array): ParsedText {
           );
         return lines;
       });
+    if (said.unreadable) unreadablePages++;
     s.heading("", 0, { page: i + 1 });
     for (const l of text) s.add(l);
   });
   const sections = s.done();
+  if (unreadablePages) {
+    // Never guessed: text shown in a font with no map to letters is left out, and said.
+    notes.push(
+      `${unreadablePages} page${unreadablePages === 1 ? "" : "s"} of this PDF use a font with no map to letters, so some text wasn't read. A person needs to read ${unreadablePages === 1 ? "it" : "them"}.`,
+    );
+    meta.flags = ["needs-reading"];
+  }
   if (!sections.length) {
     notes.push(NO_TEXT);
     meta.flags = ["needs-reading"];

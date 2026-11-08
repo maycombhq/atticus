@@ -111,6 +111,39 @@ describe("atticus scan --ref (ADR 0123)", { timeout: 300_000 }, () => {
     expect(meta.repos[0]!.commit).toMatch(/^[0-9a-f]{40}$/);
   });
 
+  it("keeps another repo's scan of the branch when one repo's row is scanned again", async () => {
+    const root = await estate();
+    expect((await run(["workspace", "sync", "--root", root])).code).toBe(0);
+    expect((await run(["scan", "--ref", "develop", "--root", root])).code).toBeLessThan(2);
+    const dir = join(root, "catalog", "branches", "develop");
+    // As if forge-ledger's develop had been scanned from its own row before.
+    const { readdir: ls } = await import("node:fs/promises");
+    const kinds = await ls(join(dir, "generated"));
+    const kind = kinds.find((k) => !k.endsWith(".yaml"))!;
+    const file = (await ls(join(dir, "generated", kind)))[0]!;
+    const text = await readFile(join(dir, "generated", kind, file), "utf8");
+    await writeFile(
+      join(dir, "generated", kind, `ledger-${file}`),
+      text
+        .replace(/^id: .*$/m, `id: ledger-${file.replace(/\.yaml$/, "")}`)
+        .replace(/repo: forge-notes/g, "repo: forge-ledger"),
+    );
+    const meta = parse(await readFile(join(dir, "branch.yaml"), "utf8")) as {
+      repos: { id: string; commit: string }[];
+    };
+    await writeFile(
+      join(dir, "branch.yaml"),
+      `schemaVersion: 1\nbranch: develop\nscannedAt: x\nrepos:\n  - { id: forge-ledger, commit: ${"a".repeat(40)} }\n  - { id: forge-notes, commit: ${meta.repos[0]!.commit} }\n`,
+    );
+    const again = await run(["scan", "--ref", "develop", "--repos", "forge-notes", "--root", root]);
+    expect(again.code, again.err).toBeLessThan(2);
+    expect(existsSync(join(dir, "generated", kind, `ledger-${file}`))).toBe(true);
+    const after = parse(await readFile(join(dir, "branch.yaml"), "utf8")) as {
+      repos: { id: string }[];
+    };
+    expect(after.repos.map((x) => x.id)).toEqual(["forge-ledger", "forge-notes"]);
+  });
+
   it("refuses the default branch, and a branch no repo lists unless --repos names them", async () => {
     const root = await estate();
     await run(["workspace", "sync", "--root", root]);
@@ -188,6 +221,27 @@ describe("the Repos screen's API (ADR 0123)", { timeout: 300_000 }, () => {
       const bad = await call("PUT", "/api/repos/forge-notes/branches", { branches: ["main"] });
       expect(bad.status).toBe(400);
       expect(JSON.stringify(bad.body)).toMatch(/default branch/);
+      // A form opened before that edit: refused (409), the manifest kept as it is now.
+      const stale = await call("PUT", "/api/repos/forge-notes/branches", {
+        defaultBranch: "main",
+        branches: ["develop", "hotfix"],
+        was: { defaultBranch: "main", branches: ["develop"] },
+      });
+      expect(stale.status).toBe(409);
+      expect(JSON.stringify(stale.body)).toMatch(
+        /changed in the manifest since you opened the form/,
+      );
+      const kept = await readFile(
+        join(root, "org-pack", "profiles", "forge", "repos.manifest.yaml"),
+        "utf8",
+      );
+      expect(kept).toContain("release/2026.11");
+      expect(kept).not.toContain("hotfix");
+      const staleAbout = await call("PUT", "/api/repos/forge-notes/description", {
+        text: "Notes for the ledger.",
+        was: "An older line.",
+      });
+      expect(staleAbout.status).toBe(409);
     } finally {
       srv.close();
     }

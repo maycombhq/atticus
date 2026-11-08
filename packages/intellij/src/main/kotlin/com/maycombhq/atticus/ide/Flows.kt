@@ -250,7 +250,7 @@ class CommandFlow(private val project: Project) {
             when {
                 cmd.id == "change new" && f.name == "--type" -> {
                     val file = orgPack?.resolve("change-types.yaml")
-                    val types = file?.takeIf { Files.isRegularFile(it) }?.let { Commands.changeTypesFrom(Files.readString(it)) } ?: emptyList()
+                    val types = file?.takeIf { Files.isRegularFile(it) }?.let { Commands.changeTypesFrom(Metarepo.readText(it) ?: "") } ?: emptyList()
                     if (types.isEmpty()) typed(title, Copy.flagPrompt(f.value)) else pickOrType("The kind of change", Copy.PICK_OR_TYPE, types.map { it.id })
                 }
                 f.name == "--repo" -> fromList(title, repos(), Copy.NO_REPOS, Copy.flagPrompt(f.value))

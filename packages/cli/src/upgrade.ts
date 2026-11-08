@@ -303,14 +303,22 @@ export const MIGRATIONS: Migration[] = [
     id: "stories-b-short",
     summary:
       "Each change's stories in the short form, with OpenSpec spec deltas and a proposal, from the kept stories answer (no model call; ADR 0124 addendum B-short)",
+    // The whole change folder: writing the stories again also writes stories.md, tasks.md,
+    // requests.md, the proposal, specs/, the task prompts and the needs files, all backed up.
     async pending(root) {
-      return (await longStories(root)).map((c) => `${changesRelOf(root)}/${c}/stories`);
+      return (await longStories(root)).map((c) => `${changesRelOf(root)}/${c}`);
     },
     async apply(root) {
       const out: string[] = [];
-      for (const c of await longStories(root))
-        for (const f of await rewriteStories(root, c).catch(() => [] as string[]))
-          out.push(`${changesRelOf(root)}/${c}/${f}`);
+      for (const c of await longStories(root)) {
+        // A change that can't be written again is said, never "Done" over it.
+        const files = await rewriteStories(root, c).catch((e: unknown) => {
+          throw new Error(
+            `The stories of ${c} couldn't be written again (${e instanceof Error ? e.message : String(e)}); its files as they were are in the backup.`,
+          );
+        });
+        for (const f of files) out.push(`${changesRelOf(root)}/${c}/${f}`);
+      }
       return out;
     },
   },
@@ -590,9 +598,19 @@ export async function upgradeCommand(
   if (c.pending.length) {
     await mkdir(backup, { recursive: true });
     await ensureLocalIgnore(root);
+    // Every file or folder a step changes, copied whole before any step runs. One that isn't
+    // there yet (a step that makes it) has nothing to keep; any other failure stops the upgrade
+    // before anything is changed, so "the files as they were are in" is always true.
     for (const p of c.pending)
       for (const f of p.files)
-        await cp(join(root, ...f.split("/")), join(backup, ...f.split("/"))).catch(() => undefined);
+        await cp(join(root, ...f.split("/")), join(backup, ...f.split("/")), {
+          recursive: true,
+        }).catch((e: NodeJS.ErrnoException) => {
+          if (e.code === "ENOENT") return;
+          throw new Error(
+            `Couldn't back up ${f} before upgrading (${e.message}); nothing was changed.`,
+          );
+        });
     for (const p of c.pending) {
       const m = MIGRATIONS.find((x) => x.id === p.id)!;
       changed.push(...(await m.apply(root)));

@@ -66,12 +66,14 @@ function About({ r, onChanged }: { r: Repo; onChanged?: () => void }) {
   const draft = d?.trust === "suggested";
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(d?.text ?? "");
+  /** The line as the form was opened with it, sent back so a changed manifest is refused. */
+  const [shown, setShown] = useState(d?.text ?? "");
   const save = useAction();
   const put = (body: { text?: string; accept?: boolean; reject?: boolean }, ok: string) =>
     save.run(async () => {
       const res = await api<{ note: string }>(`/api/repos/${r.id}/description`, {
         method: "PUT",
-        body,
+        body: { ...body, was: body.text !== undefined ? shown : (d?.text ?? "") },
       });
       setEditing(false);
       onChanged?.();
@@ -111,7 +113,14 @@ function About({ r, onChanged }: { r: Repo; onChanged?: () => void }) {
           className="btn"
           aria-expanded={editing}
           aria-controls={`repo-${r.id}-about-form`}
-          onClick={() => setEditing(!editing)}
+          onClick={() => {
+            // Opened with what the repo says now (a reload may have brought a new line).
+            if (!editing) {
+              setText(d?.text ?? "");
+              setShown(d?.text ?? "");
+            }
+            setEditing(!editing);
+          }}
         >
           {d ? R.editAboutDraft : R.editAbout}
         </button>
@@ -189,6 +198,8 @@ export function RepoRow({ r, onChanged }: { r: Repo; onChanged?: () => void }) {
   const [editing, setEditing] = useState(false);
   const [def, setDef] = useState(r.defaultBranch);
   const [branches, setBranches] = useState(r.branches.join("\n"));
+  /** The branches as the form was opened with them, sent back so a changed manifest is refused. */
+  const [shown, setShown] = useState({ defaultBranch: r.defaultBranch, branches: r.branches });
   const [compare, setCompare] = useState<Api.BranchCompareT | undefined>();
   const act = useAction();
   const save = useAction();
@@ -271,7 +282,15 @@ export function RepoRow({ r, onChanged }: { r: Repo; onChanged?: () => void }) {
           type="button"
           className="btn"
           aria-expanded={editing}
-          onClick={() => setEditing(!editing)}
+          onClick={() => {
+            // Opened with the branches the manifest has now, not those of the first load.
+            if (!editing) {
+              setDef(r.defaultBranch);
+              setBranches(r.branches.join("\n"));
+              setShown({ defaultBranch: r.defaultBranch, branches: r.branches });
+            }
+            setEditing(!editing);
+          }}
         >
           {R.edit}
         </button>
@@ -287,7 +306,12 @@ export function RepoRow({ r, onChanged }: { r: Repo; onChanged?: () => void }) {
             void save.run(async () => {
               const res = await api<{ note: string }>(`/api/repos/${r.id}/branches`, {
                 method: "PUT",
-                body: { defaultBranch: def, branches: branchesOf(branches) },
+                body: {
+                  defaultBranch: def,
+                  branches: branchesOf(branches),
+                  // What the form showed: a manifest changed since is refused (409), not undone.
+                  was: shown,
+                },
               });
               onChanged?.();
               return res;

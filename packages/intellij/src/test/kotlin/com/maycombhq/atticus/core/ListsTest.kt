@@ -92,4 +92,16 @@ class ListsTest {
         )
         assertEquals(emptyList<Pick>(), Lists.tasks(root, "no-such-change"))
     }
+
+    @Test
+    fun `tasks and stories follow the metarepo's layout`(@TempDir dir: Path) {
+        Files.createDirectories(dir.resolve("org-pack"))
+        Files.writeString(dir.resolve("org-pack/sources.yaml"), "schemaVersion: 3\nlayout:\n  openspec: docs/openspec\n")
+        val ch = dir.resolve("docs/openspec/changes/add-limit")
+        Files.createDirectories(ch.resolve("stories"))
+        Files.writeString(ch.resolve("tasks.md"), "## forge-ledger\n\n- [ ] 1.1 Check the limit\n")
+        Files.writeString(ch.resolve("stories/s1.md"), "# Place an order\n")
+        assertEquals(listOf("1.1"), Lists.tasks(dir, "add-limit").map { it.value })
+        assertEquals(listOf("s1"), Lists.stories(dir, "add-limit").map { it.value })
+    }
 }
