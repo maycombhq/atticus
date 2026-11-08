@@ -245,6 +245,7 @@ export const COPY = {
     ownWordsLabel: "Your answer, in your own words",
     scope: "Who the answer is for",
     scopeRepo: (repo: string) => `This repo only (${repo})`,
+    scopeChange: (change: string) => `This change only (${change})`,
     scopeType: (type: string) => `Every repo of type ${type}`,
     scopeTypeOther: "Every repo of a type",
     typeLabel: "The repo type",
@@ -258,7 +259,9 @@ export const COPY = {
     skillWritten: (path: string) => `Also written under Answers in ${path}.`,
     skillMissing: (path: string) =>
       `${path} isn't there yet, so the answer is kept in the question file, with that path.`,
-    next: "Apply it to the map, then propose it for review. On the command line:",
+    next: "Apply it to the map, then propose it for review.",
+    nextStage: "Run the step it came from again, from here:",
+    orCommandLine: "Or on the command line:",
     copy: "Copy the command",
     answered: (by: string, day: string) => `Answered by ${by} on ${day}`,
     retired: "This question is retired; nothing reads its answer.",

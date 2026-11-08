@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { ApplyAndPropose } from "../app/propose.js";
+import { RunStep, stepArgs } from "../app/runstep.js";
 import type { Api, Question } from "@maycombhq/core";
 import { api, useApi, useReloadOnFiles, type Loaded } from "../api/client.js";
 import { Panel, View } from "../app/ui.js";
@@ -523,6 +524,12 @@ export function QuestionList(p: {
 export const verifyRepoOf = (rerun: string) =>
   /^atticus verify ([a-z0-9][a-z0-9._-]*) --write$/.exec(rerun.trim())?.[1];
 
+/** A question a change's stage asked, filed under the change's id (sixth UX walk). */
+export const isChangeQuestion = (q: QuestionView) => {
+  const words = (q.askedBy?.command ?? "").trim().split(/\s+/);
+  return /^atticus (change|plan) /.test(q.askedBy?.command ?? "") && words.includes(q.repo);
+};
+
 /** What happened after the answer was saved: the file, the skill file, the command to run next. */
 export function AnsweredView({ result }: { result: AnsweredResult }) {
   return (
@@ -538,8 +545,21 @@ export function AnsweredView({ result }: { result: AnsweredResult }) {
             : C.skillMissing(result.skill.path)}
         </p>
       )}
-      <ApplyAndPropose scope="answers" repo={verifyRepoOf(result.rerun)} />
-      <p style={{ margin: 0 }}>{C.next}</p>
+      {/* Sixth UX walk: what to do next is in the app first, the command after it. */}
+      {verifyRepoOf(result.rerun) || !stepArgs(result.rerun) ? (
+        <>
+          <ApplyAndPropose scope="answers" repo={verifyRepoOf(result.rerun)} />
+          <p style={{ margin: 0 }}>{C.next}</p>
+        </>
+      ) : (
+        <>
+          <p style={{ margin: 0 }}>{C.nextStage}</p>
+          <RunStep command={result.rerun} />
+        </>
+      )}
+      <p className="work-say" style={{ margin: 0 }}>
+        {C.orCommandLine}
+      </p>
       <div className="row" style={{ gap: 8, alignItems: "center", flexWrap: "wrap" }}>
         <code className="mono">{result.rerun}</code>
         <CopyButton text={result.rerun} label={C.copy} />
@@ -746,7 +766,7 @@ export function QuestionDetail(p: {
                 onChange={() => set({ scope: "repo" })}
               />
               <label htmlFor={`${name}-repo`}>
-                {C.scopeRepo(q.repo)}
+                {isChangeQuestion(q) ? C.scopeChange(q.repo) : C.scopeRepo(q.repo)}
                 {q.scope.level === "repo" ? ` (${C.proposed})` : ""}
               </label>
             </div>

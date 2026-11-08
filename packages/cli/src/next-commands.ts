@@ -42,6 +42,7 @@ import {
 } from "@maycombhq/planner";
 import { readChangeFiles } from "@maycombhq/naysayer";
 import { readChangeTasks } from "@maycombhq/speckit";
+import { readTaskRun } from "@maycombhq/taskrun";
 import { readCatalog } from "@maycombhq/scanner";
 import { baseClonePath } from "@maycombhq/workspace";
 import { rulesLackingAll } from "./reading-rules.js";
@@ -182,7 +183,8 @@ export interface NextState {
   changes: {
     id: string;
     state: string;
-    tasks: { id: string; repo: string; done: boolean }[];
+    /** Sixth UX walk: `run` is the task's run state (task-run.yaml), when it has one. */
+    tasks: { id: string; repo: string; done: boolean; run?: string }[];
     /** ADR 0101: whether its feature is placed, and what it needs from the organisation. */
     feature?: boolean;
     needs?: { open: number; longest?: string };
@@ -500,7 +502,14 @@ export async function readNextState(root: string): Promise<NextState> {
         id: c.id,
         state: c.state,
         tasks: files
-          ? readChangeTasks(files).map((t) => ({ id: t.id, repo: t.repo, done: t.done }))
+          ? await Promise.all(
+              readChangeTasks(files).map(async (t) => {
+                const run = t.done
+                  ? undefined
+                  : (await readTaskRun(root, c.id, t.id).catch(() => undefined))?.state;
+                return { id: t.id, repo: t.repo, done: t.done, ...(run ? { run } : {}) };
+              }),
+            )
           : [],
         feature: existsSync(join(changesDirOf(root), c.id, "feature.yaml")),
         ...(missing.draft ? { undrafted: true } : {}),
@@ -862,7 +871,26 @@ function stageSteps(c: NextState["changes"][number]): NextStep[] {
         },
       ];
     case "tasks": {
-      const t = c.tasks.find((x) => !x.done);
+      // Sixth UX walk: a task drafted, with the person's assistant, or with its PR open is under
+      // way: the next task is the first not started (or stopped), and the drafted ones are said.
+      const underWay = (x: { run?: string }) =>
+        x.run === "built" || x.run === "unverified" || x.run === "pr-open" || x.run === "waiting";
+      const open = c.tasks.filter((x) => !x.done);
+      const t = open.find((x) => !underWay(x));
+      const drafted = open.filter(underWay).map((x) => x.id);
+      const draftedNote = drafted.length
+        ? ` ${drafted.length === 1 ? "Task" : "Tasks"} ${drafted.join(", ")} ${drafted.length === 1 ? "is" : "are"} under way: raise or merge ${drafted.length === 1 ? "its" : "their"} PR on the Task board.`
+        : "";
+      if (!t && drafted.length)
+        return [
+          {
+            step: "tasks",
+            command: `atticus change status ${id}`,
+            where: METAREPO,
+            why: `Every task of ${id} not ticked is under way.${draftedNote}`,
+            change: id,
+          },
+        ];
       if (!t)
         return [
           {
@@ -879,7 +907,7 @@ function stageSteps(c: NextState["changes"][number]): NextStep[] {
           command: `atticus task run ${id} ${t.id}`,
           slash: `/atticus-task ${id} ${t.id}`,
           where: METAREPO,
-          why: `Task ${t.id} of ${id} in ${t.repo} is the first one not done. /atticus-task gives your assistant its context (atticus task context ${id} ${t.id}): the story, the criteria, the step with today's code and the files to change (ADR 0113).`,
+          why: `Task ${t.id} of ${id} in ${t.repo} is the first one not done. /atticus-task gives your assistant its context (atticus task context ${id} ${t.id}): the story, the criteria, the step with today's code and the files to change (ADR 0113).${draftedNote}`,
           repo: t.repo,
           change: id,
         },

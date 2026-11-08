@@ -57,6 +57,21 @@ export interface CheckedExpansion {
 const fold = (s: string) => s.replace(/\s+/g, " ").trim().toLowerCase();
 
 /** The model's answer, checked against the input and the index. */
+/**
+ * The step's input under its title, unless the text already opens with that heading (a brief
+ * does): the sixth UX walk saw "# Show…" twice.
+ */
+export function titledText(title: string | undefined, text: string): string {
+  if (!title) return text;
+  const first = text
+    .replace(/^\uFEFF/, "")
+    .trimStart()
+    .split(/\r?\n/, 1)[0]!
+    .trim();
+  const heading = /^#\s+(.*?)\s*#*$/.exec(first)?.[1]?.trim();
+  return heading === title.trim() ? text : `# ${title}\n\n${text}`;
+}
+
 export function checkExpansion(
   text: string,
   input: ContextInput,
@@ -204,7 +219,7 @@ export async function expandFor(
           id: "input",
           kind: "document",
           origin: "the step's input",
-          text: `${input.title ? `# ${input.title}\n\n` : ""}${input.text}`,
+          text: titledText(input.title, input.text),
           classification: "internal",
           priority: 50,
         },

@@ -8,6 +8,7 @@ import {
   type ContextSelection,
 } from "@maycombhq/index";
 import { filePending, judged, yamlOf, type Judged, type Judgments } from "./judged.js";
+import { titledText } from "./expand.js";
 
 /**
  * The model's rerank of a step's candidates (ADR 0116): when what the engine found doesn't fit
@@ -106,7 +107,7 @@ export async function rerankFor(
         id: "input",
         kind: "document",
         origin: "the step's input",
-        text: `${input.title ? `# ${input.title}\n\n` : ""}${input.text}`,
+        text: titledText(input.title, input.text),
         classification: "internal",
         priority: 50,
       },

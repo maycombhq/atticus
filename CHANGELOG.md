@@ -54,6 +54,11 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ### Fixed before release (review)
 
+- Sixth UX walk (what's left):
+  - **What's next skips a task that is drafted, with the person's assistant or with its PR open**, and says that its PR is on the Task board.
+  - **After a change's question is answered, Questions offers the stage's step from the app**, with the command after it ("Or on the command line"), and calls the answer's scope "This change only".
+  - **A stage waiting on its questions says to answer them on Questions**, then run the stage again.
+  - **A step's input carries the brief's title once**, not twice.
 - Sixth UX walk (Bring in and ids):
   - **Bring in says a change's merged record is merged**, not one of "your own edits", and a long list of edits names five and counts the rest. "1 file were already the same" reads "1 file was".
   - **An endpoint's id keeps a word that only ends in s whole**: `PUT /accounts/{id}/status` is `put-status`, not `put-statu`; `/responses` and `/cases` lose only their s.

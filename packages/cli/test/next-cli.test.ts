@@ -442,6 +442,34 @@ describe("nextSteps (pure)", () => {
     expect(steps[2]!.repo).toBe("forge-ledger");
   });
 
+  it("skips a task under way to the next one, and says the drafted task's PR is on the Task board (sixth UX walk)", () => {
+    const tasks = (runs: (string | undefined)[]) =>
+      runs.map((run, i) => ({
+        id: `1.${i + 1}`,
+        repo: "forge-ledger",
+        done: false,
+        ...(run ? { run } : {}),
+      }));
+    const [next] = nextSteps({
+      ...base,
+      changes: [{ id: "split-fees", state: "build", tasks: tasks(["unverified", undefined]) }],
+    });
+    expect(next!.command).toBe("atticus task run split-fees 1.2");
+    expect(next!.why).toContain("Task 1.1 is under way: raise or merge its PR on the Task board.");
+    const [all] = nextSteps({
+      ...base,
+      changes: [{ id: "split-fees", state: "build", tasks: tasks(["built", "pr-open"]) }],
+    });
+    expect(all!.command).toBe("atticus change status split-fees");
+    expect(all!.why).toContain("Tasks 1.1, 1.2 are under way");
+    // a stopped task is the next one again
+    const [stopped] = nextSteps({
+      ...base,
+      changes: [{ id: "split-fees", state: "build", tasks: tasks(["needs-person"]) }],
+    });
+    expect(stopped!.command).toBe("atticus task run split-fees 1.1");
+  });
+
   it("once the state's stage is done, has a person raise its hand-off, not run the stage again (B-change)", () => {
     const steps = nextSteps({
       ...base,

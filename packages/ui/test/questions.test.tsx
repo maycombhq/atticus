@@ -2,6 +2,7 @@ import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { COPY } from "../src/copy.js";
+import { RunStep } from "../src/app/runstep.js";
 import {
   aboutWords,
   ANOTHER_REPO,
@@ -9,6 +10,7 @@ import {
   TargetPickerView,
   type AnswerForm,
   AnsweredView,
+  isChangeQuestion,
   ExcerptView,
   QuestionDetail,
   QuestionList,
@@ -139,6 +141,42 @@ describe("the Questions page (ADR 0078)", () => {
     expect(out).toContain(C.next);
     expect(out).toContain("atticus scan survey forge-notes --force");
     expect(out).toContain("Copy");
+  });
+});
+
+describe("after a change's question is answered (sixth UX walk)", () => {
+  const change = "show-account-status";
+  const asked: QuestionView = {
+    ...question,
+    askedBy: {
+      step: "context-gap",
+      command: `atticus change feature ${change}`,
+      at: question.askedBy.at,
+    },
+    repo: change,
+    scope: { level: "repo", id: change },
+  };
+  it("offers the stage's step from the app first, then the command", () => {
+    const tree = AnsweredView({
+      result: { question: asked, rerun: `atticus change feature ${change}` },
+    });
+    const found: string[] = [];
+    const walk = (t: unknown) => {
+      if (Array.isArray(t)) t.forEach(walk);
+      else if (t && typeof t === "object" && "props" in t) {
+        const e = t as { type: unknown; props: { command?: string; children?: unknown } };
+        if (e.type === RunStep) found.push(e.props.command!);
+        walk(e.props.children);
+      }
+    };
+    walk(tree);
+    expect(found).toEqual([`atticus change feature ${change}`]);
+    expect(JSON.stringify(tree)).toContain(C.orCommandLine);
+    expect(JSON.stringify(tree)).not.toContain("On the command line:");
+  });
+  it("calls the change's scope the change's, a repo's the repo's", () => {
+    expect(isChangeQuestion(asked)).toBe(true);
+    expect(isChangeQuestion(question)).toBe(false);
   });
 });
 
