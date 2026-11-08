@@ -46,7 +46,8 @@ it("keeps facts of another commit, and never writes the catalog without them", a
     let n = 0;
     const walk = (d: string) => {
       for (const e of readdirSync(d, { withFileTypes: true }))
-        e.isDirectory() ? walk(join(d, e.name)) : n++;
+        if (e.isDirectory()) walk(join(d, e.name));
+        else n++;
     };
     walk(join(root, "catalog", "generated"));
     return n;
