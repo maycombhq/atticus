@@ -213,9 +213,13 @@ describe("atticus ci", () => {
     const r = await root();
     const c = io();
     expect(await ciArchiveGate(r, CHANGE, {}, c.io, { commit: "a".repeat(40) })).toBe(1);
-    expect(c.out[0]).toBe("add-transfer-limit can't be archived yet (1 blocker):");
+    expect(c.out[0]).toBe("add-transfer-limit can't be archived yet (2 blockers):");
     expect(c.out[1]).toBe(
       "- add-transfer-limit is plan; a change is archived once it is released (go/no-go merged).",
+    );
+    // ADR 0184: its one code repo has no release PR yet.
+    expect(c.out[2]).toMatch(
+      /^- forge-ledger: no release PR from change\/add-transfer-limit into main was raised/,
     );
     expect(await ciArchiveGate(r, "nope", {}, io().io)).toBe(2);
     expect(await ciArchiveGate(r, undefined, {}, io().io)).toBe(2);

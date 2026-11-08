@@ -68,6 +68,10 @@ interface ReleaseDetail {
   evidence: { path: string; bytes: number }[];
 }
 
+/** ADR 0184: the states the release PRs may be raised in (packages/changes RELEASE_PR_STATES). */
+const RELEASE_PR_STATES = ["qa", "release-ready", "released", "post-release-review"];
+const LIVE_PR = new Set(["open", "draft", "merged"]);
+
 const STATE_LABEL: Record<string, string> = {
   "release-ready": T.atGoNoGo,
   released: T.releasedChipWord,
@@ -168,7 +172,7 @@ export function goNoGoGate(r: {
   };
 }
 
-function Detail({ id }: { id: string }) {
+export function Detail({ id }: { id: string }) {
   const d = useApi<ReleaseDetail>(`/api/release/${id}`);
   const act = useAction();
   // the generated views reload with the screen when a file changes
@@ -251,6 +255,23 @@ function Detail({ id }: { id: string }) {
                 <div className="row" style={{ flexWrap: "wrap" }}>
                   <button
                     type="button"
+                    className="btn"
+                    disabled={
+                      act.busy ||
+                      !RELEASE_PR_STATES.includes(r.change.state) ||
+                      !r.repos.some((x) => !x.pr || !LIVE_PR.has(x.pr.state))
+                    }
+                    title={
+                      RELEASE_PR_STATES.includes(r.change.state)
+                        ? T.raisesReleasePrs
+                        : T.releasePrsNotYet
+                    }
+                    onClick={() => post(`/api/changes/${id}/release-prs`, {}, T.releasePrsRaised)}
+                  >
+                    {T.raiseReleasePrs}
+                  </button>
+                  <button
+                    type="button"
                     className="btn primary"
                     disabled={
                       act.busy ||
@@ -281,7 +302,7 @@ function Detail({ id }: { id: string }) {
                   <button
                     type="button"
                     className="btn"
-                    disabled={act.busy || !r.handoff}
+                    disabled={act.busy || (!r.handoff && !r.repos.some((x) => x.pr))}
                     title={T.readsThePrMerges}
                     onClick={() => post(`/api/changes/${id}/sync`, {}, T.syncedWithTheGit)}
                   >
@@ -303,6 +324,51 @@ function Detail({ id }: { id: string }) {
               </div>
             );
           }}
+        </View>
+      </Panel>
+
+      <Panel title={T.releasePrs} span="span 6">
+        <View of={d} empty={(r) => r.repos.length === 0} emptyText={T.noCodeRepos}>
+          {(r) => (
+            <div className="stack">
+              <p className="muted" style={{ margin: 0, fontSize: 12 }}>
+                {T.releasePrsIntro}
+              </p>
+              <table className="run-table">
+                <caption className="sr">{T.releasePrsCaption}</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">{T.releasePrCol.repo}</th>
+                    <th scope="col">{T.releasePrCol.branch}</th>
+                    <th scope="col">{T.releasePrCol.pr}</th>
+                    <th scope="col">{T.releasePrCol.build}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {r.repos.map((x) => (
+                    <tr key={x.id}>
+                      <td className="mono">{x.id}</td>
+                      <td className="mono">{x.branch}</td>
+                      <td>
+                        {x.pr ? (
+                          x.pr.url && /^https?:/.test(x.pr.url) ? (
+                            <a href={x.pr.url} target="_blank" rel="noreferrer">
+                              {T.prState(x.pr.number, x.pr.state)}
+                            </a>
+                          ) : (
+                            T.prState(x.pr.number, x.pr.state)
+                          )
+                        ) : (
+                          <span className="muted">{T.notRaisedYet}</span>
+                        )}
+                      </td>
+                      <td>{x.build.status}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </View>
       </Panel>
 

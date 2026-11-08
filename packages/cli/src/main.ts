@@ -392,6 +392,8 @@ const changeStatus: typeof import("./change-commands.js").changeStatus = (...a) 
   loadChangeCommands().then((m) => m.changeStatus(...a));
 const changeSync: typeof import("./change-commands.js").changeSync = (...a) =>
   loadChangeCommands().then((m) => m.changeSync(...a));
+const changeReleasePrs: typeof import("./change-commands.js").changeReleasePrs = (...a) =>
+  loadChangeCommands().then((m) => m.changeReleasePrs(...a));
 const changeLearn: typeof import("./change-commands.js").changeLearn = (...a) =>
   loadChangeCommands().then((m) => m.changeLearn(...a));
 const loadDialectCommands = () => import("./dialect-commands.js");
@@ -640,7 +642,9 @@ Usage:
   atticus change knowledge <id>        The patterns, standards, decisions, processes, requests and wiki and document sections that apply to the change, picked by each of its stages from the feature stage on and by each task, with near-misses and the pages that disagree (each undecided one asked of a person once); confirm one (later stages that take its kind pick it) or exclude it (they leave it out) [--confirm id] [--exclude id] [--json]
   atticus change handoff <id> --approve  Open the phase's hand-off PR; merging it approves the gate [--repo]
                                        (without --approve: say what it would open, send nothing)
-  atticus change sync <id> [--approve]   Read the hand-off PR; a merged PR moves the change on (--approve merges a ready one) and keeps what Atticus drafted beside what merged (stage/<stage>.drafted/, .merged/)
+  atticus change sync <id> [--approve]   Read the hand-off PR and the release PRs; a merged hand-off PR moves the change on (--approve merges a ready one) and keeps what Atticus drafted beside what merged (stage/<stage>.drafted/, .merged/)
+  atticus change release-prs <id> --approve  Open one release PR per code repo from change/<id> into its default branch, before go/no-go; a person merges each on the Git host (ADR 0184)
+                                       (without --approve: say which it would open, send nothing)
   atticus change learn [--json]        How much people changed Atticus's drafts: per merged change and stage, lines per file and each story's criteria and fields, and whether it falls over time (from the kept drafts; completes any whose merge you have since pulled)
   atticus change return <id> --reason "<why>" --approve  Close the hand-off PR and return the change to the product owner
   atticus change archive <id> [--no-rescan]  Archive a released change and rescan its repos
@@ -3403,6 +3407,7 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
         { ...(approve ? { by: who() } : {}), approve, ...(repo ? { repo } : {}) },
         io,
       );
+    if (command === "release-prs") return changeReleasePrs(root, arg, { by: who(), approve }, io);
     if (command === "return")
       return changeReturn(
         root,

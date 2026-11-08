@@ -132,7 +132,12 @@ async function probeCopy(): Promise<string> {
 }
 
 beforeAll(async () => {
-  gh = new MockGitHost([{ repo: METAREPO }]);
+  gh = new MockGitHost([
+    { repo: METAREPO },
+    { repo: "forge-ledger" },
+    { repo: "forge-portal-bff" },
+    { repo: "forge-portal-ui" },
+  ]);
   tracker = new MockWorkTracker();
   desk = new MockServiceDesk();
   shared.adapters = { gitHost: gh, workTracker: tracker, serviceDesk: desk };
@@ -701,6 +706,33 @@ describe("M3 exit step 2: the seeded feature from Define to Release", () => {
   );
 
   it(
+    "Release PRs (ADR 0184): go / no-go waits for change/<id> to reach the code repo's default branch by a PR a person merges",
+    async () => {
+      const st = json<{ reasons: { code: string }[] }>(
+        await run("change", "status", CHANGE, "--json"),
+      );
+      expect(st.reasons.map((b) => b.code)).toContain("release-pr-missing");
+      const r = await run("change", "release-prs", CHANGE, "--approve", "--by", "tia");
+      expect(r.code, r.text).toBe(0);
+      expect(r.out[0]).toBe(
+        "forge-ledger: release PR #1 from change/add-transfer-limit into main is open: https://git.example.com/forge-ledger/pull/1 Pushed change/add-transfer-limit, which the Git host didn't have.",
+      );
+      // On the Git host: a reviewer approves, the checks pass and a person merges it.
+      gh.review("forge-ledger", 1, "dee", "approved");
+      gh.setChecks("forge-ledger", 1, [{ name: "build", status: "passed" }]);
+      await gh.merge("forge-ledger", 1, { by: "dee", at: "2026-10-22T10:00:00Z", ref: "host" });
+      const bare = join(e.top, "remotes", "forge-ledger.git");
+      sh(bare, "update-ref", "refs/heads/main", "refs/heads/change/add-transfer-limit");
+      expect((await run("workspace", "sync")).code).toBe(0);
+      const s = await run("change", "sync", CHANGE);
+      expect(s.out).toContain(
+        "forge-ledger: release PR #1 is merged, checks passed (https://git.example.com/forge-ledger/pull/1).",
+      );
+    },
+    T,
+  );
+
+  it(
     "Go/no-go: the release hand-off PR is go / no-go; it merges once someone other than its raiser approves, then it is released",
     async () => {
       const st = await run("change", "status", CHANGE);
@@ -727,7 +759,11 @@ describe("M3 exit step 2: the seeded feature from Define to Release", () => {
       expect(ready.out[0]).toMatch(/^PR #6 is approved and the Git host's rules are met\./);
       expect(
         merged((await run("change", "sync", CHANGE, "--approve", "--by", "dana")).out),
-      ).toEqual(["PR #6 merged. add-transfer-limit is now released."]);
+      ).toEqual([
+        "PR #6 merged. add-transfer-limit is now released.",
+        // ADR 0184: sync reads the release PRs back too.
+        "forge-ledger: release PR #1 is merged, checks passed (https://git.example.com/forge-ledger/pull/1).",
+      ]);
     },
     T,
   );
@@ -737,7 +773,7 @@ describe("M3 exit step 2: the seeded feature from Define to Release", () => {
     async () => {
       const g = await run("ci", "archive-gate", CHANGE);
       expect(g.out).toEqual([
-        "add-transfer-limit may be archived: no blockers, builds passed and the catalog matches its repos.",
+        "add-transfer-limit may be archived: no blockers, its release PRs merged and built, and the catalog says what shipped.",
       ]);
       expect(g.code).toBe(0);
       const a = await run("change", "archive", CHANGE, "--by", "dana");
@@ -772,11 +808,19 @@ describe("M3 exit step 2: the seeded feature from Define to Release", () => {
       const prWrites = writes(gh.journal, ["createPullRequest", "merge", "comment"]);
       expect(prWrites.length).toBeGreaterThanOrEqual(12);
       for (const w of prWrites) expect(w.approval?.by, w.method).toMatch(/^[a-z]+$/);
-      // Each hand-off merged on the approval of someone holding the phase's role.
+      // Each hand-off merged on the approval of someone holding the phase's role; dee's second
+      // merge is the release PR, merged on the host by this test as a person would (ADR 0184).
       const merges = writes(gh.journal, ["merge"]).map((m) => m.approval!.by);
-      expect(merges).toEqual(["pat", "avery", "tia", "dee", "quinn", "dana"]);
-      // AI never pushes: every remote still has only its initial commit on main.
-      for (const repo of ["forge-ledger", "forge-portal-bff", "forge-portal-ui"]) {
+      expect(merges).toEqual(["pat", "avery", "tia", "dee", "quinn", "dee", "dana"]);
+      // ADR 0184: the one push is the change branch, on tia's approval of the release PRs; main
+      // moved only by the merge on the host.
+      const ledger = join(e.top, "remotes", "forge-ledger.git");
+      expect(sh(ledger, "for-each-ref", "--format=%(refname)").split("\n")).toEqual([
+        "refs/heads/change/add-transfer-limit",
+        "refs/heads/main",
+      ]);
+      // AI never pushes otherwise: every other remote still has only its initial commit on main.
+      for (const repo of ["forge-portal-bff", "forge-portal-ui"]) {
         const refs = sh(
           join(e.top, "remotes", `${repo}.git`),
           "for-each-ref",

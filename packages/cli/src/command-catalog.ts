@@ -204,6 +204,7 @@ const KIND_BY_COMMAND: Record<string, ArgKind[]> = {
   "change status": ["change"],
   "change handoff": ["change"],
   "change sync": ["change"],
+  "change release-prs": ["change"],
   "change return": ["change"],
   "change archive": ["change"],
   finding: ["change", "finding"],

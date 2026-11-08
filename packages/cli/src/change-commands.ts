@@ -7,7 +7,13 @@ import {
   type Approval,
   type GitHost,
 } from "@maycombhq/adapters";
-import { changesRelOf, handoffBranch, loadOrgPack, orgPackDirOf } from "@maycombhq/core";
+import {
+  changeBranch,
+  changesRelOf,
+  handoffBranch,
+  loadOrgPack,
+  orgPackDirOf,
+} from "@maycombhq/core";
 import {
   ChangeError,
   archiveChange,
@@ -24,6 +30,10 @@ import {
   newChange,
   returnToPo,
   syncHandoff,
+  liveHandoff,
+  raiseReleasePrs,
+  syncReleasePrs,
+  RELEASE_PR_STATES,
   gitHandoffPublisher,
   type HandoffPublisher,
   type Reason,
@@ -33,6 +43,7 @@ import {
   createWorkspace,
   isInPlace,
   loadRepos,
+  readChangeRepos,
   type GitRunner,
 } from "@maycombhq/workspace";
 import { gateStatus, ownerWaitsLine, reviewedGates } from "@maycombhq/naysayer";
@@ -463,6 +474,80 @@ async function handoffPreview(root: string, id: string, by: string, io: Output):
 }
 
 /**
+ * atticus change release-prs <id> [--approve] [--by <you>] (ADR 0184): one PR per code repo from
+ * change/<id> into its default branch, raised in the release phase so go/no-go is decided over
+ * the PRs that will ship. Without --approve it says which it would raise; nothing is sent. With
+ * it, the change branch is pushed only where the host lacks it (never forced, never the default
+ * branch) and the PRs are opened, or written as steps on a manual Git host. A person merges each.
+ */
+export async function changeReleasePrs(
+  root: string,
+  id: string,
+  o: { by?: string; approve?: boolean },
+  io: Output,
+  deps: ChangeDeps = {},
+): Promise<number> {
+  if (!o.by) {
+    io.err(
+      "Say who raises the release PRs: set your Git user (git config user.name), or pass --by <you>.",
+    );
+    return 2;
+  }
+  if (!o.approve) {
+    try {
+      const c = await changeStore(root).read(id);
+      const repos = (await readChangeRepos(root, id))?.repos ?? [];
+      if (!RELEASE_PR_STATES.includes(c.state)) {
+        io.err(
+          `${id} is ${c.state}; the release PRs are raised once the build is done (in QA or at go/no-go).`,
+        );
+        return 1;
+      }
+      if (!repos.length) {
+        io.err(`${id} has no code repos (repos.yaml), so there is no release PR to raise.`);
+        return 1;
+      }
+      const todo = repos.filter((r) => !r.pr || !["open", "draft", "merged"].includes(r.pr.state));
+      io.out(
+        todo.length
+          ? `Would open a release PR from ${changeBranch(id)} into each repo's default branch: ${todo.map((r) => r.id).join(", ")}.`
+          : `Every repo's release PR is already raised: ${repos.map((r) => `${r.id} #${r.pr!.number} (${r.pr!.state})`).join(", ")}.`,
+      );
+      io.out(
+        `Nothing was sent. To do it: atticus change release-prs ${id} --approve. A person merges each PR on the Git host; atticus change sync records it.`,
+      );
+      return 0;
+    } catch (e) {
+      if (e instanceof Error && e.name === "WorkspaceFileError") {
+        io.err(e.message);
+        return 1;
+      }
+      return fail(io, e);
+    }
+  }
+  const gitHost = await gitHostFor(root, deps, io);
+  if (!gitHost) return 1;
+  const now = deps.now ?? nowIso();
+  try {
+    const r = await raiseReleasePrs(root, id, {
+      gitHost,
+      approval: approvalOf(o.by, now, `${changeBranch(id)}#release`),
+      now,
+      ...(deps.git ? { git: deps.git } : {}),
+    });
+    for (const row of r.rows)
+      (row.outcome === "failed" || row.outcome === "refused" ? io.err : io.out)(row.message);
+    return r.rows.some((x) => x.outcome === "failed" || x.outcome === "refused") ? 1 : 0;
+  } catch (e) {
+    if (e instanceof Error && e.name === "WorkspaceFileError") {
+      io.err(e.message);
+      return 1;
+    }
+    return fail(io, e);
+  }
+}
+
+/**
  * atticus change sync <id> [--approve] [--by <you>] [--repo <metarepo>]: read the PR and record
  * what happened on the Git host. A merged PR moves the change on; with --approve, a PR that is
  * approved and meets the host's rules is merged as the person.
@@ -477,6 +562,41 @@ export async function changeSync(
   const gitHost = await gitHostFor(root, deps, io);
   if (!gitHost) return 1;
   const now = deps.now ?? nowIso();
+  // ADR 0184: the release PRs are read back too (merged, closed, a link recorded on a manual
+  // step), so a change past its hand-offs still syncs what reached the default branch. Their
+  // lines follow the hand-off's.
+  const releaseLines: string[] = [];
+  try {
+    const rel = await syncReleasePrs(root, id, { gitHost, now });
+    releaseLines.push(...rel.rows.map((r) => r.message));
+  } catch (e) {
+    if (!(e instanceof Error && e.name === "WorkspaceFileError")) throw e;
+    io.err(e.message);
+  }
+  if (releaseLines.length) {
+    const c = await changeStore(root)
+      .read(id)
+      .catch(() => undefined);
+    // Nothing else to read: the change has no hand-off PR open.
+    if (c && !liveHandoff(c)) {
+      for (const l of releaseLines) io.out(l);
+      return 0;
+    }
+  }
+  const code = await syncTheHandoff(root, id, o, io, deps, gitHost, now);
+  for (const l of releaseLines) io.out(l);
+  return code;
+}
+
+async function syncTheHandoff(
+  root: string,
+  id: string,
+  o: { by?: string; approve?: boolean; repo?: string },
+  io: Output,
+  deps: ChangeDeps,
+  gitHost: GitHost,
+  now: string,
+): Promise<number> {
   try {
     const r = await syncHandoff(root, id, {
       gitHost,
