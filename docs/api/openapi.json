@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Atticus local API",
-    "version": "2.79.0",
+    "version": "2.80.0",
     "description": "Served by `atticus ui` on 127.0.0.1. The UI only calls this API, and the API only reads and writes files in the metarepo.",
     "license": {
       "name": "Apache-2.0",
@@ -13704,6 +13704,358 @@
           },
           "422": {
             "description": "Atticus refused: the problem carries the command's own words (ADR 0043)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/changes/{changeId}/drafts/{page}": {
+      "get": {
+        "operationId": "getStageDrafts",
+        "summary": "2.80.0 (ADR 0181): a page's stage drafts, each with who wrote it last (the AI with its stage and run, or a person's save) and the items a person can correct, with the corrections of them and the stage to run again",
+        "tags": [
+          "changes"
+        ],
+        "parameters": [
+          {
+            "name": "changeId",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "page",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "feature",
+                "architecture",
+                "stories",
+                "tasks"
+              ]
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StageDraftsView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Atticus refused: the problem carries the command's own words (ADR 0043)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/changes/{changeId}/corrections": {
+      "get": {
+        "operationId": "listCorrections",
+        "summary": "2.80.0 (ADR 0181): a person's corrections of the change's AI-drafted items (stage/corrections.yaml), waiting, read or applied",
+        "tags": [
+          "changes"
+        ],
+        "parameters": [
+          {
+            "name": "changeId",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CorrectionList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Atticus refused: the problem carries the command's own words (ADR 0043)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "addCorrection",
+        "summary": "2.80.0 (ADR 0181): correct an AI-drafted item (or a whole draft) as the signed-in person, optionally for every similar item; the stage's next run reads it as the person's word. Returns the git command and the stage's command",
+        "tags": [
+          "changes"
+        ],
+        "parameters": [
+          {
+            "name": "changeId",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "item": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "text": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4000
+                  },
+                  "similar": {
+                    "default": true,
+                    "type": "boolean"
+                  },
+                  "like": {
+                    "type": "string",
+                    "maxLength": 200
+                  }
+                },
+                "required": [
+                  "file",
+                  "text"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Written",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CorrectionResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict: the file changed since you read it, or the state doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Atticus refused: the problem carries the command's own words (ADR 0043)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/changes/{changeId}/corrections/{correctionId}/remove": {
+      "post": {
+        "operationId": "removeCorrection",
+        "summary": "2.80.0 (ADR 0181): take back a correction no run has read yet (one a run read stays on file; a later correction wins)",
+        "tags": [
+          "changes"
+        ],
+        "parameters": [
+          {
+            "name": "changeId",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "correctionId",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Removed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CorrectionList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict: the file changed since you read it, or the state doesn't allow this",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -39580,6 +39932,436 @@
           "source",
           "sourceContent",
           "sha256"
+        ],
+        "additionalProperties": false
+      },
+      "StageDraftsView": {
+        "type": "object",
+        "properties": {
+          "change": {
+            "type": "string"
+          },
+          "page": {
+            "type": "string",
+            "enum": [
+              "feature",
+              "architecture",
+              "stories",
+              "tasks"
+            ]
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "file": {
+                  "type": "string"
+                },
+                "path": {
+                  "type": "string"
+                },
+                "stage": {
+                  "type": "string"
+                },
+                "drafted": {
+                  "type": "object",
+                  "properties": {
+                    "by": {
+                      "type": "string",
+                      "enum": [
+                        "ai",
+                        "person"
+                      ]
+                    },
+                    "stage": {
+                      "type": "string"
+                    },
+                    "run": {
+                      "type": "string"
+                    },
+                    "who": {
+                      "type": "string"
+                    },
+                    "at": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "by"
+                  ],
+                  "additionalProperties": false
+                },
+                "items": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "label": {
+                        "type": "string"
+                      },
+                      "like": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "label"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "file",
+                "path",
+                "stage",
+                "items"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "corrections": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "stage": {
+                  "type": "string"
+                },
+                "file": {
+                  "type": "string"
+                },
+                "item": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "text": {
+                  "type": "string"
+                },
+                "scope": {
+                  "type": "string",
+                  "enum": [
+                    "one",
+                    "similar"
+                  ]
+                },
+                "like": {
+                  "type": "string"
+                },
+                "by": {
+                  "type": "string"
+                },
+                "at": {
+                  "type": "string"
+                },
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "waiting",
+                    "read",
+                    "applied"
+                  ]
+                },
+                "run": {
+                  "type": "string"
+                },
+                "iteration": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "appliedAt": {
+                  "type": "string"
+                },
+                "touched": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "id",
+                "stage",
+                "file",
+                "label",
+                "text",
+                "scope",
+                "by",
+                "at",
+                "state"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "next": {
+            "type": "object",
+            "properties": {
+              "stage": {
+                "type": "string"
+              },
+              "command": {
+                "type": "string"
+              },
+              "slash": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "stage",
+              "command",
+              "slash"
+            ],
+            "additionalProperties": false
+          },
+          "problems": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "file": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "file",
+                "message"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "change",
+          "page",
+          "files",
+          "corrections",
+          "next",
+          "problems"
+        ],
+        "additionalProperties": false
+      },
+      "CorrectionResult": {
+        "type": "object",
+        "properties": {
+          "correction": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "stage": {
+                "type": "string"
+              },
+              "file": {
+                "type": "string"
+              },
+              "item": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              },
+              "text": {
+                "type": "string"
+              },
+              "scope": {
+                "type": "string",
+                "enum": [
+                  "one",
+                  "similar"
+                ]
+              },
+              "like": {
+                "type": "string"
+              },
+              "by": {
+                "type": "string"
+              },
+              "at": {
+                "type": "string"
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "waiting",
+                  "read",
+                  "applied"
+                ]
+              },
+              "run": {
+                "type": "string"
+              },
+              "iteration": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "appliedAt": {
+                "type": "string"
+              },
+              "touched": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "id",
+              "stage",
+              "file",
+              "label",
+              "text",
+              "scope",
+              "by",
+              "at",
+              "state"
+            ],
+            "additionalProperties": false
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "commit": {
+            "type": "string"
+          },
+          "next": {
+            "type": "object",
+            "properties": {
+              "stage": {
+                "type": "string"
+              },
+              "command": {
+                "type": "string"
+              },
+              "slash": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "stage",
+              "command",
+              "slash"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "correction",
+          "files",
+          "commit",
+          "next"
+        ],
+        "additionalProperties": false
+      },
+      "CorrectionList": {
+        "type": "object",
+        "properties": {
+          "change": {
+            "type": "string"
+          },
+          "corrections": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "stage": {
+                  "type": "string"
+                },
+                "file": {
+                  "type": "string"
+                },
+                "item": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "text": {
+                  "type": "string"
+                },
+                "scope": {
+                  "type": "string",
+                  "enum": [
+                    "one",
+                    "similar"
+                  ]
+                },
+                "like": {
+                  "type": "string"
+                },
+                "by": {
+                  "type": "string"
+                },
+                "at": {
+                  "type": "string"
+                },
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "waiting",
+                    "read",
+                    "applied"
+                  ]
+                },
+                "run": {
+                  "type": "string"
+                },
+                "iteration": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "appliedAt": {
+                  "type": "string"
+                },
+                "touched": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "id",
+                "stage",
+                "file",
+                "label",
+                "text",
+                "scope",
+                "by",
+                "at",
+                "state"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "change",
+          "corrections"
         ],
         "additionalProperties": false
       },

@@ -5055,5 +5055,68 @@ export const COPY = {
       `Ran ${n} ${n === 1 ? "task" : "tasks"}. A person reviews and merges each PR on the Git host.`,
     failed: "The ready tasks couldn't be run.",
     waits: (task: string, why: string) => `Task ${task} isn't ready: ${why}.`,
+  /**
+   * ADR 0181 (stage drafts): AI decides first, a person corrects, and the AI corrects the rest
+   * like it. Each stage draft says who wrote it last, and every item has Correct.
+   */
+  stageDrafts: {
+    title: "The drafts",
+    intro:
+      "What the AI drafted for this stage. Read each one: if something is wrong, Correct it in your words. The stage's next run follows your correction, and with Apply to similar, makes the same fix everywhere it fits.",
+    none: "Nothing drafted for this page yet. Run the stage: its drafts show here, each marked as drafted by AI until you edit it.",
+    draftedByAi: "Drafted by AI",
+    draftedByAiRun: (run: string) => `in run ${run}`,
+    draftedByAiWhy: (stage: string) =>
+      `Drafted by AI at the ${stage} stage; no person has edited it since. Read it before the hand-off.`,
+    editedBy: (who: string, day: string) => `Edited by ${who} on ${day}`,
+    editedByPerson: "Edited by a person",
+    editedOutside: "Changed outside the app since the AI drafted it.",
+    openRun: (run: string) => `Open run ${run}`,
+    items: (file: string) => `What you can correct in ${file}`,
+    correct: "Correct",
+    correctFile: (file: string) => `Correct ${file} as a whole`,
+    correctItem: (label: string) => `Correct ${label}`,
+    formTitle: (label: string) => `Your correction of ${label}`,
+    textLabel: "What should it say or do instead?",
+    textHint:
+      "Say it as you would to a colleague. Your words go to the stage's assistant as your instruction; a fact verified from the code still wins over them.",
+    similar: "Apply to similar",
+    similarHint:
+      "The next run makes the same correction to every other step, story, section or task like this one.",
+    likeLabel: "Similar items name",
+    likeHint:
+      "The component, entry, table or term they share. Leave it empty to let the run judge.",
+    save: "Save the correction",
+    saving: "Writing the correction…",
+    cancel: "Cancel",
+    needText: "Write the correction first.",
+    saved: (label: string) =>
+      `Your correction of ${label} is saved. Run the stage again to apply it.`,
+    waitingTitle: "Corrections waiting for the next run",
+    waitingNone: "No correction waits. Correct an item above, then run the stage again.",
+    runAgain: "Run the stage again to apply them",
+    runAgainWhy:
+      "The stage's next run reads every correction as your instruction, drafts again from the current drafts, and the critic checks the new draft.",
+    doneTitle: "Corrections the stage has read",
+    state: {
+      waiting: "Waiting for the next run",
+      read: "Read, but the item didn't change",
+      applied: "Applied",
+    } as Record<string, string>,
+    scope: {
+      one: "This item",
+      similar: "This item and similar ones",
+    } as Record<string, string>,
+    likeOf: (like: string) => `naming ${like}`,
+    by: (who: string, day: string) => `${who}, ${day}`,
+    appliedIn: (run: string) => `in run ${run}`,
+    touched: (n: number) => `Also changed ${n} similar item${n === 1 ? "" : "s"}:`,
+    readNotApplied:
+      "The draft had your correction but didn't change this item. Correct it again in other words, or edit the file.",
+    remove: "Take back",
+    removeFor: (label: string) => `Take back your correction of ${label}`,
+    removed: "Correction taken back.",
+    copyCommit: "Copy the git command",
+    commitWhy: "Commit the corrections file so the hand-off carries it:",
   },
 } as const;

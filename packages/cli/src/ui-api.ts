@@ -699,6 +699,15 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
           // Atomic, and refused (409) if another save landed between the read and the write.
           await mkdir(dirname(file), { recursive: true });
           await writeFileIfUnchanged(file, was, b.content);
+          // ADR 0181 (2.79.0): a person's save of a stage draft says who saved it and when, so
+          // its "Drafted by AI" chip becomes "Edited by <who>".
+          const { recordPersonSave } = await import("@maycombhq/planner");
+          await recordPersonSave(join(changesDirOf(root), params.changeId!), params.changeId!, {
+            file: rel,
+            who: user,
+            at: (deps.now ? new Date(deps.now) : new Date()).toISOString(),
+            content: b.content,
+          }).catch(() => undefined);
           ctx.events.publish({
             type: "file.changed",
             path: `${changesRelOf(root)}/${params.changeId}/${rel}`,

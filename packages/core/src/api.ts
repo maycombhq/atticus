@@ -281,8 +281,16 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   /api/changes/{changeId}/tasks/run-ready, one task run per ready task in cross-repo order as
  *   one job, stopping on the first that needs a person; the click is the approval for draft,
  *   never the pr level; nothing is merged. Additive only.
+ * 2.80.0 (ADR 0181, stage drafts: AI-drafted, corrections carried): GET
+ *   /api/changes/{changeId}/drafts/{page}, a page's stage drafts with who wrote each last (the AI
+ *   with its stage and run, from stage/drafted.yaml, until a person saves it) and the items a
+ *   person can correct; GET and POST /api/changes/{changeId}/corrections and POST
+ *   .../corrections/{correctionId}/remove, a person's corrections (stage/corrections.yaml), which
+ *   the stage's next run reads as the person's word, for the item or every similar one, and marks
+ *   applied. A save through PUT .../artifacts/{artifact} or .../placement records who saved it.
+ *   Additive only.
  */
-export const API_VERSION = "2.79.0";
+export const API_VERSION = "2.80.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -1830,6 +1838,103 @@ export const StageCommentResult = z.object({
 export type StageReviewViewT = z.infer<typeof StageReviewView>;
 export type StageFindingViewT = z.infer<typeof StageFindingView>;
 export type StageCommentResultT = z.infer<typeof StageCommentResult>;
+
+/**
+ * 2.80.0 (ADR 0181, stage drafts): AI decides first, a person corrects, and the AI corrects the
+ * rest like it. A page's stage drafts (Feature design: feature.md and proposal.md; Architecture:
+ * the target flows, design.md and data.md; Stories: the stories and the specs; Tasks: tasks.md),
+ * each with who wrote it last (`drafted`: the AI with its stage and run, from
+ * `stage/drafted.yaml`, until a person saves it) and the items a person can correct. A
+ * correction (`stage/corrections.yaml`) is read by the stage's next run as the person's word in
+ * its brief; with `scope: similar` the run applies it to every item like it. After the run it is
+ * `applied` when the draft changed its item (else `read`), and `touched` lists the other items
+ * the draft changed for it. Kept on file either way.
+ */
+export const DRAFT_PAGES = ["feature", "architecture", "stories", "tasks"] as const;
+export const DraftPage = z.enum(DRAFT_PAGES);
+export const DraftProvenance = z.object({
+  by: z.enum(["ai", "person"]),
+  /** ai: the stage that drafted it. */
+  stage: z.string().optional(),
+  /** ai: the run that drafted it, when known (GET /api/runs/{runId}). */
+  run: z.string().optional(),
+  /** person: who saved it in the app; left out for an edit outside the app. */
+  who: z.string().optional(),
+  at: z.string().optional(),
+});
+export const DraftItemView = z.object({
+  id: z.string(),
+  label: z.string(),
+  /** Names the item shares with items like it (a step's component, entry or table). */
+  like: z.array(z.string()).optional(),
+});
+export const DraftFileView = z.object({
+  /** Change-folder relative, as a correction names it. */
+  file: z.string(),
+  /** From the metarepo's root. */
+  path: z.string(),
+  /** The stage whose next run reads a correction of it. */
+  stage: z.string(),
+  drafted: DraftProvenance.optional(),
+  items: z.array(DraftItemView),
+});
+export const CorrectionView = z.object({
+  id: z.string(),
+  stage: z.string(),
+  file: z.string(),
+  item: z.string().optional(),
+  label: z.string(),
+  text: z.string(),
+  scope: z.enum(["one", "similar"]),
+  like: z.string().optional(),
+  by: z.string(),
+  at: z.string(),
+  state: z.enum(["waiting", "read", "applied"]),
+  run: z.string().optional(),
+  iteration: z.number().int().optional(),
+  appliedAt: z.string().optional(),
+  /** similar: the other items the draft changed for it, as `<file>#<item>`. */
+  touched: z.array(z.string()).optional(),
+});
+export const StageDraftsView = z.object({
+  change: z.string(),
+  page: DraftPage,
+  files: z.array(DraftFileView),
+  /** The corrections of these files, oldest first. */
+  corrections: z.array(CorrectionView),
+  /** The stage to run again for the corrections waiting (or the page's), with its slash command. */
+  next: z.object({ stage: z.string(), command: z.string(), slash: z.string() }),
+  problems: z.array(z.object({ file: z.string(), message: z.string() })),
+});
+export const AddCorrectionRequest = z.strictObject({
+  /** The file, change-folder relative (a file of a page's drafts). */
+  file: z.string().min(1),
+  /** The item in it; left out, the whole file. */
+  item: z.string().min(1).optional(),
+  text: z.string().trim().min(1).max(4000),
+  /** Apply to similar: the next run applies it to every item like it. Default on. */
+  similar: z.boolean().default(true),
+  /** What the similar items share (a component, an entry, a term). */
+  like: z.string().trim().max(200).optional(),
+});
+export const CorrectionResult = z.object({
+  correction: CorrectionView,
+  /** The files written, from the metarepo's root. */
+  files: z.array(z.string()),
+  /** The git command that commits them (the app runs no git). */
+  commit: z.string(),
+  next: z.object({ stage: z.string(), command: z.string(), slash: z.string() }),
+});
+export const CorrectionList = z.object({
+  change: z.string(),
+  corrections: z.array(CorrectionView),
+});
+export type StageDraftsViewT = z.infer<typeof StageDraftsView>;
+export type DraftFileViewT = z.infer<typeof DraftFileView>;
+export type DraftProvenanceT = z.infer<typeof DraftProvenance>;
+export type CorrectionViewT = z.infer<typeof CorrectionView>;
+export type CorrectionResultT = z.infer<typeof CorrectionResult>;
+export type CorrectionListT = z.infer<typeof CorrectionList>;
 
 /**
  * ADR 0092: the specs (ADR 0079) as the Flows screen reads them, from files only: the repos
@@ -6173,6 +6278,49 @@ const OPS: Record<string, Record<string, Op>> = {
       errors: [400, 404, 409, 422],
     },
   },
+  "/api/changes/{changeId}/drafts/{page}": {
+    get: {
+      id: "getStageDrafts",
+      summary:
+        "2.80.0 (ADR 0181): a page's stage drafts, each with who wrote it last (the AI with its stage and run, or a person's save) and the items a person can correct, with the corrections of them and the stage to run again",
+      tag: "changes",
+      params: [p("changeId"), p("page", { schema: { type: "string", enum: [...DRAFT_PAGES] } })],
+      ok: { status: 200, schema: "StageDraftsView", description: "OK" },
+      errors: [400, 404, 422],
+    },
+  },
+  "/api/changes/{changeId}/corrections": {
+    get: {
+      id: "listCorrections",
+      summary:
+        "2.80.0 (ADR 0181): a person's corrections of the change's AI-drafted items (stage/corrections.yaml), waiting, read or applied",
+      tag: "changes",
+      params: [p("changeId")],
+      ok: { status: 200, schema: "CorrectionList", description: "OK" },
+      errors: [400, 404, 422],
+    },
+    post: {
+      id: "addCorrection",
+      summary:
+        "2.80.0 (ADR 0181): correct an AI-drafted item (or a whole draft) as the signed-in person, optionally for every similar item; the stage's next run reads it as the person's word. Returns the git command and the stage's command",
+      tag: "changes",
+      params: [p("changeId")],
+      body: AddCorrectionRequest,
+      ok: { status: 200, schema: "CorrectionResult", description: "Written" },
+      errors: [400, 404, 409, 422],
+    },
+  },
+  "/api/changes/{changeId}/corrections/{correctionId}/remove": {
+    post: {
+      id: "removeCorrection",
+      summary:
+        "2.80.0 (ADR 0181): take back a correction no run has read yet (one a run read stays on file; a later correction wins)",
+      tag: "changes",
+      params: [p("changeId"), p("correctionId")],
+      ok: { status: 200, schema: "CorrectionList", description: "Removed" },
+      errors: [400, 404, 409],
+    },
+  },
   "/api/changes/{changeId}/stages/{stage}/comments": {
     post: {
       id: "commentOnFinding",
@@ -6373,6 +6521,9 @@ export function openApiDocument(): Record<string, unknown> {
     StageReviewView,
     StageCommentResult,
     PlacementView,
+    StageDraftsView,
+    CorrectionResult,
+    CorrectionList,
     OrgPackDraftView,
     AcceptedOrgPack,
   };

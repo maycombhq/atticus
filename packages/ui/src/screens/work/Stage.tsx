@@ -10,6 +10,7 @@ import { StoryFiles } from "../know/Phase.js";
 import { ChangeInputs } from "../ChangeInputs.js";
 import { StageReviewPanel } from "./StageReview.js";
 import { PlacementPanel } from "./Placement.js";
+import { StageDraftsPanel } from "./StageDrafts.js";
 import {
   architectureStep,
   pickChange,
@@ -252,6 +253,9 @@ export function StagePage(p: {
             <div className="bento">
               {/* Eighth UX walk: where the feature lands (feature.md), the stage's own draft. */}
               {p.stage === "feature" && <PlacementPanel change={c.id} />}
+              {/* ADR 0181: the stage's drafts, drafted by AI until a person edits them, each
+                  with Correct; corrections wait for the stage's next run. */}
+              <StageDraftsPanel change={c.id} page={p.stage} />
               {/* ADR 0124 addendum D-app, B10: what the critic found, with options and comments. */}
               {p.stage !== "tasks" && (
                 <StageReviewPanel
@@ -483,6 +487,8 @@ export function ArchitecturePage({ hash }: { hash: string }) {
       {picked && (
         <div className="bento" style={{ marginBottom: 12 }}>
           <ChangeImpactPanel change={picked.id} />
+          {/* ADR 0181: the target flows and design, drafted by AI, each with Correct. */}
+          <StageDraftsPanel change={picked.id} page="architecture" />
         </div>
       )}
       <ArchitectureReview list={list} wanted={queryParam(hash, "change")} />
