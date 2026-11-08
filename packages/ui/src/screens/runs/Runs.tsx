@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import type { Api } from "@maycombhq/core";
 import { api, useApi, useLiveEvents, type Loaded } from "../../api/client.js";
 import { Note, useAction } from "../know/common.js";
+import { CopyButton } from "../run/shared.js";
 import {
   FilterBox,
   FilterCount,
@@ -178,7 +179,12 @@ function TextBox({ text, label }: { text: string; label: string }) {
 
 /** One run: its facts, the prompt beside the answer, what was handed back, its step's rounds. */
 /** UX review: a waiting run's Done and Cancel, so no one needs `atticus handoff done`. */
-export function WaitingActions(p: { runId: string; reload?: (() => void) | undefined }) {
+export function WaitingActions(p: {
+  runId: string;
+  reload?: (() => void) | undefined;
+  /** The prompt to paste into the assistant. */
+  prompt?: string | undefined;
+}) {
   const act = useAction();
   const go = (path: string, ok: string) =>
     void act.run(() => api(path, { method: "POST", body: {} }).then(() => p.reload?.()), ok);
@@ -186,6 +192,7 @@ export function WaitingActions(p: { runId: string; reload?: (() => void) | undef
     <div className="stack" style={{ gap: 6 }}>
       <p className="work-say">{R.waitingSay}</p>
       <div className="row" style={{ gap: 6 }}>
+        {p.prompt && <CopyButton text={p.prompt} label={R.copyPrompt} />}
         <button
           type="button"
           className="btn primary"
@@ -246,7 +253,7 @@ export function RunDetail(p: { of: Loaded<Api.RunTranscript> & { reload?: () => 
             ]}
           />
           {(t.run.state === "waiting" || t.run.state === "prepared") && (
-            <WaitingActions runId={t.run.runId} reload={p.of.reload} />
+            <WaitingActions runId={t.run.runId} reload={p.of.reload} prompt={t.prompt} />
           )}
           {t.rounds.length > 1 && (
             <nav aria-label={R.rounds}>

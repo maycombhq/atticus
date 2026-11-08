@@ -230,3 +230,41 @@ describe("model runs (ADR 0106)", () => {
     });
   });
 });
+
+describe("a step prepared for the person's own assistant (UX review)", () => {
+  it("runs it with --handoff, with no model needed, and gives the run to open", async () => {
+    const asked: string[][] = [];
+    const s = await startServer({
+      root,
+      port: 0,
+      user: "pat",
+      version: "1.0.0",
+      extend: (r, ctx) =>
+        uiModelRunRoutes(r, ctx, {
+          runStep: async (args) => {
+            asked.push(args);
+            await run(9, "2026-10-23T03:40:09Z", "# Task: write the stories\n", "waiting");
+            return {
+              code: 0,
+              out: ["Run prepared: paste prompt.md into your assistant."],
+              err: [],
+            };
+          },
+        }),
+    });
+    try {
+      await setModel("schemaVersion: 1\n");
+      const r = await fetch(s.url + "/api/runs", {
+        method: "POST",
+        headers: { "X-Atticus-Token": s.token, "Content-Type": "application/json" },
+        body: JSON.stringify({ args: ["plan", "stories", "add-limit"], mode: "hand-off" }),
+      });
+      const body = (await r.json()) as { runId?: string; lines?: string[] };
+      expect(r.status, JSON.stringify(body)).toBe(201);
+      expect(asked).toEqual([["plan", "stories", "add-limit", "--handoff"]]);
+      expect(body.runId).toBe("run-20261023034009-0001");
+    } finally {
+      await s.close();
+    }
+  });
+});

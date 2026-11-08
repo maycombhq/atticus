@@ -3734,6 +3734,7 @@ export const COPY = {
     waitingSay:
       "This run waits for its answer. Paste the prompt into your assistant; when it has written the answer, Done checks it.",
     done: "Done: check the answer",
+    copyPrompt: "Copy the prompt",
     doneOk: "Checked the answer.",
     cancel: "Cancel the run",
     cancelled: "Cancelled. The step can run again.",
@@ -4228,6 +4229,13 @@ export const COPY = {
       `No answer to ${path} in ${s} s. Close the Atticus panel and open it again.`,
   },
   runStep: {
+    /** UX review: in a browser with no model, the step is prepared for the person's assistant. */
+    handoffPrepare: "Prepare it for your assistant",
+    handoffWorking: "Preparing…",
+    handoffHint:
+      "Atticus writes the prompt; paste it into your assistant (Copilot, Claude Code), then Done checks the answer.",
+    handoffReady: "Prepared.",
+    handoffOpen: "Open the prompt and Done",
     withCopilot: "Run with Copilot",
     withModel: (model: string) => `Run with ${model}`,
     running: "Running…",

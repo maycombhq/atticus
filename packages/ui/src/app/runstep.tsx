@@ -332,6 +332,9 @@ export function RunStep({ command }: { command: string }) {
         }).catch(() => undefined);
       }
     : undefined;
+  // UX review: no model here and not in an editor: prepare the step for the person's own
+  // assistant, then its run page has the prompt to paste and Done to check the answer.
+  if (choice.kind === "copy" && serverModel === null) return <HandoffStep args={args} />;
   return (
     <RunStepView
       choice={choice}
@@ -340,5 +343,53 @@ export function RunStep({ command }: { command: string }) {
       {...(onCancel ? { onCancel } : {})}
       stopping={stopping}
     />
+  );
+}
+
+/** Prepares an AI step as a hand-off (POST /api/runs, mode hand-off) and links to its run. */
+export function HandoffStep({ args }: { args: string[] }) {
+  const [state, set] = useState<
+    { s: "idle" } | { s: "working" } | { s: "ready"; runId: string } | { s: "error"; why: string }
+  >({ s: "idle" });
+  const id = useId();
+  if (state.s === "ready")
+    return (
+      <p role="status" className="work-say" style={{ margin: 0 }}>
+        {T.handoffReady}{" "}
+        <a className="btn primary" href={`#/runs?run=${encodeURIComponent(state.runId)}`}>
+          {T.handoffOpen}
+        </a>
+      </p>
+    );
+  return (
+    <div className="runstep stack">
+      <div className="row" style={{ gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <button
+          type="button"
+          className="btn primary"
+          disabled={state.s === "working"}
+          aria-describedby={`${id}-why`}
+          onClick={() => {
+            set({ s: "working" });
+            api<{ runId: string }>("/api/runs", {
+              method: "POST",
+              body: { args, mode: "hand-off" },
+            })
+              .then((r) => set({ s: "ready", runId: r.runId }))
+              .catch((e: unknown) => set({ s: "error", why: why(e) }));
+          }}
+        >
+          {state.s === "working" ? T.handoffWorking : T.handoffPrepare}
+        </button>
+        <span id={`${id}-why`} className="muted" style={{ fontSize: 12 }}>
+          {T.handoffHint}
+        </span>
+      </div>
+      {state.s === "error" && (
+        <p role="alert" className="run-note bad">
+          {T.cantStart(state.why)}
+        </p>
+      )}
+    </div>
   );
 }

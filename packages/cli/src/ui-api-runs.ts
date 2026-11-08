@@ -1,7 +1,14 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Api, runsRelOf } from "@maycombhq/core";
-import { badRequest, conflict, notFound, type Router, type ServerContext } from "@maycombhq/server";
+import {
+  badRequest,
+  conflict,
+  HttpError,
+  notFound,
+  type Router,
+  type ServerContext,
+} from "@maycombhq/server";
 import { parse } from "yaml";
 import { orgPackDirOf } from "@maycombhq/core";
 import { isHandoffStep } from "./handoff-flag.js";
@@ -95,6 +102,21 @@ export function uiModelRunRoutes(
       const option = words.find((a) => a.startsWith("-"));
       if (option)
         throw badRequest(`${option} would be read as an option; give the step's arguments only.`);
+      // UX review: in a browser with no model, the step is prepared for the person's own
+      // assistant (`--handoff`): the run's page shows its prompt, and Done checks the answer.
+      if ((body as { mode?: unknown }).mode === "hand-off") {
+        const before = new Set((await listRuns(root, { limit: 100000 })).map((x) => x.runId));
+        const res = await runStep([...words, "--handoff"]);
+        const made = (await listRuns(root, { limit: 100000 })).find((x) => !before.has(x.runId));
+        ctx.events.publish({ type: "file.changed", path: runsRelOf(root) });
+        if (!made)
+          throw new HttpError(
+            422,
+            "The step wasn't prepared",
+            [...res.err, ...res.out].join("\n") || "The step prepared no run.",
+          );
+        return { status: 201, body: { runId: made.runId, lines: [...res.out, ...res.err] } };
+      }
       const configured = await configuredModel(root);
       const model = configured?.type;
       if (!model)

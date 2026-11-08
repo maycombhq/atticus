@@ -191,8 +191,10 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  * 2.65.0 (ADR 0183): POST /api/facts/{repo}/apply runs verify --write; GET and POST
  *   /api/propose list what a kind of work changed and, on the person's yes, push it to a branch
  *   and open the PR. Additive only.
+ * 2.66.0 (UX review): POST /api/runs takes `mode: hand-off`, which prepares the step for the
+ *   person's own assistant (201 with its run) where no model is configured. Additive only.
  */
-export const API_VERSION = "2.65.0";
+export const API_VERSION = "2.66.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -607,7 +609,11 @@ export const RunListItem = RunView.extend({
 });
 export type RunListItem = z.infer<typeof RunListItem>;
 /** ADR 0106: the AI step to start on the server: its command words and arguments. */
-export const StartStepRequest = z.object({ args: z.array(z.string().min(1)).min(2) });
+export const StartStepRequest = z.object({
+  args: z.array(z.string().min(1)).min(2),
+  /** 2.66.0 (UX review): hand-off prepares the step for the person's own assistant (201, its run). */
+  mode: z.enum(["model", "hand-off"]).optional(),
+});
 export type StartStepRequest = z.infer<typeof StartStepRequest>;
 
 export const RunList = z.object({
@@ -4588,7 +4594,7 @@ const OPS: Record<string, Record<string, Op>> = {
     post: {
       id: "startStep",
       summary:
-        "Start an AI step on the server with runtime.yaml's model, as a job (ADR 0106); 409 when no model is configured",
+        "Start an AI step on the server with runtime.yaml's model, as a job (ADR 0106); 409 when no model is configured. 2.66.0: mode hand-off prepares it for the person's own assistant instead (201, with the run)",
       tag: "ai",
       body: StartStepRequest,
       ok: {
@@ -4596,7 +4602,7 @@ const OPS: Record<string, Record<string, Op>> = {
         schema: { type: "object", required: ["jobId", "model"] },
         description: "Started",
       },
-      errors: [400, 409],
+      errors: [400, 409, 422],
     },
   },
   "/api/links/candidates": {

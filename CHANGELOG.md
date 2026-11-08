@@ -62,6 +62,7 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
   - **Raise hand-off waits until nothing blocks the gate**, and says how many things do. Before, it stayed the primary button and a click returned the whole list as an error.
   - **The Stories and Tasks tabs open with the page where the work is done**: _Write stories with AI_ (Breakdown) and _Run tasks with AI_ (the Task board).
   - **Set up › AI offers Copilot, unattended (copilot-acp, ADR 0171).** Choosing it on a version 2 `runtime.yaml` lifts the file to version 3.
+  - **In a browser with no model, an AI step is prepared for your own assistant**: _Prepare it for your assistant_ writes the prompt (`POST /api/runs` with `mode: hand-off`, API 2.66.0). The run's page has _Copy the prompt_ and _Done_, so stories, feature design and architecture no longer stop at a terminal command.
   - **A change starts in the app.** _New change_ (on Changes, Home and Run next) takes a title, an id made from it and a type from the org pack (`GET /api/change-types`, API 2.64.0).
   - **A run waiting on its hand-off answer has Done and Cancel on its Model runs page**, and the gate's waiting lines point there instead of only to `atticus handoff done`.
   - **Task board › Run with AI opens the task's worktree itself** (and clones the repo first when it isn't cloned yet), so it no longer stops at "has no worktree… run atticus workspace open".
