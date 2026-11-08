@@ -205,6 +205,57 @@ describe("a SharePoint site export as a source", () => {
       expect(p.content, name).not.toContain("\r");
     }
   });
+
+  it("strips front matter closed by ... or by --- with a trailing space (round 41)", async () => {
+    const root = await estate();
+    const op = await pack(root);
+    const dir = join(root, "wikis/payments-team/SitePages");
+    await writeFile(
+      join(dir, "Dots.md"),
+      "---\nclassification: confidential\n...\n# Dots\n\nbody\n",
+    );
+    await writeFile(
+      join(dir, "Trail.md"),
+      "---\nclassification: confidential\n--- \n# Trail\n\nbody\n",
+    );
+    const pages = await sharepointExportAdapter.pages(source(op, "payments-team"), {
+      root,
+      orgPackDir: join(root, "org-pack"),
+    });
+    for (const [name, heading] of [
+      ["SitePages/Dots.md", "# Dots"],
+      ["SitePages/Trail.md", "# Trail"],
+    ] as const) {
+      const p = pages.find((x) => x.pagePath === name)!;
+      expect(p.skipReason, name).toBeUndefined();
+      const parts = p.content.split(/^---$/m);
+      expect(parts.length, name).toBe(3);
+      expect(parse(parts[1]!), name).toMatchObject({ classification: "confidential" });
+      expect(parts[2], name).toBe(`\n${heading}\n\nbody\n`);
+    }
+  });
+
+  it("refuses a Markdown page whose front matter can't be read, naming the error (round 41)", async () => {
+    const root = await estate();
+    const op = await pack(root);
+    await writeFile(
+      join(root, "wikis/payments-team/SitePages/Typo.md"),
+      "---\nclassification: confidential\nowner: [pat\n---\n# Typo\n\nsecret body\n",
+    );
+    const pages = await sharepointExportAdapter.pages(source(op, "payments-team"), {
+      root,
+      orgPackDir: join(root, "org-pack"),
+    });
+    const typo = pages.find((p) => p.pagePath === "SitePages/Typo.md")!;
+    expect(typo.skipReason).toMatch(/^can't read front matter: /);
+    expect(typo.content).toBe("");
+    const { sync: s } = await sync(root);
+    const skipped = s.skipped.find((x) => x.path.endsWith("SitePages/Typo.md"));
+    expect(skipped?.reason).toMatch(/can't read front matter/);
+    expect(s.documents.some((d) => d.path.endsWith("Typo.md"))).toBe(false);
+    const snap = await readSnapshot(root, "payments-team");
+    for (const p of snap!.pages) expect(p.text).not.toContain("secret body");
+  });
 });
 
 describe("syncing 12 sources", () => {

@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, it } from "vitest";
 import { readDocument } from "../src/documents.js";
+import { readXlsx } from "../src/office.js";
+import { readZip } from "../src/zip.js";
 import { writeZip } from "./helpers/zip-writer.js";
 
 /**
@@ -43,4 +45,33 @@ it("reads a far-off row and column at once, without their blanks, and skips past
   expect(text).not.toContain("past");
   expect(r.text!.tables![0]!.length).toBeLessThan(2000);
   expect(r.notes.join(" ")).toContain("past Excel's last row");
+});
+
+it("reads a cell past a long blank run, without the blanks, and says so once a sheet (round 41)", () => {
+  const r = readDocument(
+    "wide.xlsx",
+    book(
+      `<row r="1">${cell("A1", "first")}${cell("BAA1", "wideButLegal")}</row>` +
+        `<row r="2">${cell("BBB2", "startsFar")}${cell("BBC2", "next")}</row>`,
+    ),
+  );
+  const rows = r.text!.tables![0]!;
+  expect(rows[0]).toEqual(["first", ...Array<string>(1000).fill(""), "wideButLegal"]);
+  expect(rows[1]).toEqual([...Array<string>(1000).fill(""), "startsFar", "next"]);
+  const notes = r.notes.filter((n) => /blank columns/.test(n));
+  expect(notes).toEqual(["S: more than 1000 blank columns between cells were left out."]);
+});
+
+it("notes the cells left unread whenever the cell budget runs out, even at exactly 0 (round 41)", () => {
+  const read = (rows: string) => readXlsx(readZip(book(rows)), 3);
+  const truncated = (n: string[]) => n.some((x) => /more than 3 cells/.test(x));
+  const abc = `${cell("A1", "a")}${cell("B1", "b")}${cell("C1", "c")}`;
+  // Exactly the budget: everything read, no note.
+  expect(truncated(read(`<row r="1">${abc}</row>`).notes)).toBe(false);
+  // The budget runs out at the end of a row and the next row is left unread.
+  const r = read(`<row r="1">${abc}</row><row r="2">${cell("A2", "d")}</row>`);
+  expect(r.sections.map((s) => s.text).join("\n")).not.toContain("d");
+  expect(truncated(r.notes)).toBe(true);
+  // The budget runs out inside a row.
+  expect(truncated(read(`<row r="1">${abc}${cell("D1", "d")}</row>`).notes)).toBe(true);
 });

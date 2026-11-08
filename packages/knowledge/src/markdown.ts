@@ -63,14 +63,24 @@ function splitRow(line: string): string[] {
 
 const isRow = (l: string) => l.trim().startsWith("|") || (l.includes("|") && TABLE_SEP.test(l));
 
+/**
+ * Round 41: the 0-based index of the line that closes a page's front matter (`---` or `...`,
+ * spaces around it allowed), or -1 when the page has none; the body starts on the next line.
+ * One rule for the reader and for anything that strips front matter from a page.
+ */
+export function frontMatterEnd(lines: readonly string[]): number {
+  if (lines[0]?.trim() !== "---") return -1;
+  return lines.findIndex((l, k) => k > 0 && (l.trim() === "---" || l.trim() === "..."));
+}
+
 export function readMarkdown(text: string): MarkdownDoc {
   const lines = text.replace(/\r\n?/g, "\n").split("\n");
   let i = 0;
   let frontMatter: Record<string, unknown> = {};
   let frontMatterProblem: string | undefined;
 
-  if (lines[0]?.trim() === "---") {
-    const end = lines.findIndex((l, k) => k > 0 && (l.trim() === "---" || l.trim() === "..."));
+  {
+    const end = frontMatterEnd(lines);
     if (end > 0) {
       try {
         const data: unknown = parse(lines.slice(1, end).join("\n"));
