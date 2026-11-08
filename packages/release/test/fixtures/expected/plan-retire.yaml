@@ -1,0 +1,36 @@
+# The deployment plan for add-transfer-limit with POST /transfers retired, on Wednesday
+# 2026-10-21, worked out by hand. The plain fixture changed three ways (test/release.test.ts,
+# "retire"): interfaces.md marks POST /transfers (portal-bff -> ledger-api) planned-retire and
+# drops the new GET /accounts/{id}/limit row; stories.md drops s2's and s3's dependency on s1.
+# Hand-written: never regenerate it from deploymentPlan output.
+#
+# - a retired operation: the caller stops calling it before the callee removes it, so
+#   forge-portal-bff (portal-bff stops calling POST /transfers) deploys before forge-ledger
+#   (ledger-api retires it); the reverse of a new or changed operation's edge
+# - the migration and gw-northwind-v2 still go before forge-ledger, as in plan.yaml
+# - forge-portal-ui has no edge left, so it sits last by repo name
+steps:
+  - n: 1
+    repo: forge-ledger
+    kind: migration
+    after: []
+  - n: 2
+    repo: forge-gateway
+    kind: gateway-route
+    after: []
+  - n: 3
+    repo: forge-portal-bff
+    kind: code
+    after: []
+    what: [portal-bff stops calling POST /transfers on ledger-api (retired)]
+  - n: 4
+    repo: forge-ledger
+    kind: code
+    after: [1, 2, 3]
+    what: [ledger-api retires POST /transfers]
+    why:
+      - "After step 3: portal-bff calls ledger-api's retired POST /transfers, so portal-bff stops calling it first."
+  - n: 5
+    repo: forge-portal-ui
+    kind: code
+    after: []

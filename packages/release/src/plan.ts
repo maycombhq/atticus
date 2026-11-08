@@ -17,7 +17,9 @@ import {
  * The deployment plan: a deploy order across the change's repos computed from dependencies,
  * never typed by hand. A gateway route goes before its caller, a topic before its publisher, a
  * migration (expand) before the code that reads the table, a callee before its caller for a
- * new or changed interface, and a story's repos after the repos of the stories it depends on.
+ * new or changed interface, a caller before its callee for a retired one (the caller stops
+ * calling it before it is removed), and a story's repos after the repos of the stories it
+ * depends on. Dependencies that fight each other are a gap, never a silent order.
  * Each step says why it sits where it does, how to roll it back (from design.md and data.md,
  * or a flagged gap), and which service requests it waits on with a forecast wait in working
  * days. The release sections (rollout, rollback, readiness, verification, hypercare) come from
@@ -261,6 +263,7 @@ export async function deploymentPlan(ctx: ReleaseContext): Promise<DeploymentPla
   // ---- hops: routes, topics and code
   for (const h of m.hops) {
     const live = /^planned-(new|modify)$/.test(h.change);
+    const retire = h.change === "planned-retire";
     const op = opOf(h);
     const src = `interfaces.md:${h.line}`;
     // O2: a vendor's system or another team's is outside the estate: nothing of it deploys here.
@@ -275,6 +278,20 @@ export async function deploymentPlan(ctx: ReleaseContext): Promise<DeploymentPla
     }
     if (live && calleeInternal) {
       if (h.calleeRepo) addWhat(codeUnit(h.calleeRepo), `${h.callee} serves ${op} (${verb})`, src);
+      else unplaced.set(h.callee, placeWhy(ctx, h.callee, `callee of ${op}`));
+    }
+    // a retired operation: the caller stops calling it, then the callee removes it
+    if (retire && callerInternal) {
+      if (h.callerRepo)
+        addWhat(
+          codeUnit(h.callerRepo),
+          `${h.caller} stops calling ${op} on ${h.callee} (retired)`,
+          src,
+        );
+      else unplaced.set(h.caller, placeWhy(ctx, h.caller, `caller of ${op}`));
+    }
+    if (retire && calleeInternal) {
+      if (h.calleeRepo) addWhat(codeUnit(h.calleeRepo), `${h.callee} retires ${op}`, src);
       else unplaced.set(h.callee, placeWhy(ctx, h.callee, `callee of ${op}`));
     }
     if (live && !calleeInternal && h.calleeSystem) {
@@ -336,6 +353,20 @@ export async function deploymentPlan(ctx: ReleaseContext): Promise<DeploymentPla
         from: `code:${h.calleeRepo}`,
         to: `code:${h.callerRepo}`,
         why: `${h.caller} calls ${h.callee}'s ${verb} ${op}, so ${h.callee} deploys first`,
+      });
+    // caller before callee for a retired one: nothing may still call it once it is gone
+    if (
+      retire &&
+      h.callerRepo &&
+      h.calleeRepo &&
+      h.callerRepo !== h.calleeRepo &&
+      callerInternal &&
+      calleeInternal
+    )
+      edges.push({
+        from: `code:${h.callerRepo}`,
+        to: `code:${h.calleeRepo}`,
+        why: `${h.caller} calls ${h.callee}'s retired ${op}, so ${h.caller} stops calling it first`,
       });
   }
 
