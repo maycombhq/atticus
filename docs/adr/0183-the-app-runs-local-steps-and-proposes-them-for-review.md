@@ -4,7 +4,7 @@
 - Date: 2026-11-08
 - Amends: build-status B1 ("the app shows the command to run next; it never runs anything itself"), already amended by ADR 0173 for an unattended Copilot run
 - Builds on: ADR 0073 (a gate is approved when its hand-off PR merges), ADR 0124 addendum D-app, ADR 0149 (after a correction, the commands and what they change), ADR 0171 addendum (a session acts as no one)
-- Contracts: C4 (local API 2.65.0) adds `POST /api/facts/{repo}/apply`, and `GET` and `POST /api/propose`; 2.66.0 adds `POST /api/propose/bring-in` and a hand-off's `notes`. All additive.
+- Contracts: C4 (local API 2.65.0) adds `POST /api/facts/{repo}/apply`, and `GET` and `POST /api/propose`; 2.66.0 adds `POST /api/propose/bring-in` and a hand-off's `notes`; 2.67.0 adds the owner questions, initiatives, prototype and service-desk routes the UX review asked for, and the proposal scopes owner-answers, baseline, initiatives, outcomes, service-desk and work (everything the app's work writes, offered on Home). All additive.
 
 ## Context
 

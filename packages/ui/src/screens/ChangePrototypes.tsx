@@ -1,7 +1,9 @@
+import { useId, useState } from "react";
 import type { Api } from "@maycombhq/core";
-import { useApi, useLiveEvents } from "../api/client.js";
+import { api, useApi, useLiveEvents } from "../api/client.js";
 import { Panel, View } from "../app/ui.js";
 import { COPY } from "../copy.js";
+import { Note, useAction } from "./know/common.js";
 
 const T = COPY.changes;
 const GROUPS = ["exists", "changes", "new", "vendor"] as const;
@@ -102,9 +104,78 @@ export function PrototypeComparison({ p }: { p: Api.ChangePrototypeT }) {
 }
 
 /**
+ * Round 36 (UX review): Compare a prototype from the app. The repos the manifest types prototype
+ * to pick from; Compare runs what `atticus change attach <change> --prototype <repo>` runs
+ * (POST /api/changes/{id}/prototypes), a write to the change's own files, and says what it
+ * printed or why it refused.
+ */
+export function ComparePrototype(p: { change: string; candidates: string[]; onDone: () => void }) {
+  const [picked, setPicked] = useState("");
+  const act = useAction();
+  const id = useId();
+  if (!p.candidates.length)
+    return (
+      <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
+        {T.prototypeNoCandidates}
+      </p>
+    );
+  const repo = picked && p.candidates.includes(picked) ? picked : p.candidates[0]!;
+  return (
+    <div className="stack" style={{ gap: 6 }}>
+      <div className="row" style={{ gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
+        <div className="stack" style={{ gap: 4 }}>
+          <label htmlFor={`${id}-repo`} className="hud">
+            {T.prototypePick}
+          </label>
+          <select
+            id={`${id}-repo`}
+            className="field"
+            value={repo}
+            disabled={act.busy}
+            onChange={(e) => setPicked(e.target.value)}
+          >
+            {p.candidates.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+        </div>
+        <button
+          type="button"
+          className="btn primary"
+          disabled={act.busy}
+          aria-describedby={`${id}-help`}
+          onClick={() =>
+            void act.run(
+              async () => {
+                const r = await api<Api.ComparePrototypeViewT>(
+                  `/api/changes/${encodeURIComponent(p.change)}/prototypes`,
+                  { method: "POST", body: { repo } },
+                );
+                p.onDone();
+                return r;
+              },
+              (r) => r.lines.join("\n") || T.prototypeCompared(repo),
+            )
+          }
+        >
+          {act.busy ? T.prototypeComparing : T.prototypeCompare}
+        </button>
+      </div>
+      <span id={`${id}-help`} className="muted" style={{ fontSize: 12 }}>
+        {T.prototypeCompareHelp}
+      </span>
+      <Note note={act.note} />
+    </div>
+  );
+}
+
+/**
  * ADR 0133: the prototypes attached to a change (atticus change attach <change> --prototype
  * <repo>), each compared again with the estate as it is now: every call its UI makes to its BFF
- * and its BFF makes to a mock, as exists, changes, new or only a vendor, each cited.
+ * and its BFF makes to a mock, as exists, changes, new or only a vendor, each cited. Round 36:
+ * Compare attaches one from here.
  */
 export function ChangePrototypes({ change }: { change: string }) {
   const list = useApi<Api.ChangePrototypeListT>(`/api/changes/${change}/prototypes`);
@@ -117,16 +188,19 @@ export function ChangePrototypes({ change }: { change: string }) {
       span="span 4"
       meta={list.state === "ready" ? list.data.prototypes.length : undefined}
     >
-      <View
-        of={list}
-        empty={(d) => d.prototypes.length === 0}
-        emptyContent={<div className="state">{T.noPrototypes(change)}</div>}
-      >
+      <View of={list}>
         {(d) => (
           <div className="stack" style={{ gap: 14 }}>
-            {d.prototypes.map((p) => (
-              <PrototypeComparison key={p.repo} p={p} />
-            ))}
+            <ComparePrototype
+              change={change}
+              candidates={d.candidates ?? []}
+              onDone={list.reload}
+            />
+            {d.prototypes.length === 0 ? (
+              <div className="state">{T.noPrototypes(change)}</div>
+            ) : (
+              d.prototypes.map((p) => <PrototypeComparison key={p.repo} p={p} />)
+            )}
           </div>
         )}
       </View>

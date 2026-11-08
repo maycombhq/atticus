@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
@@ -11,6 +12,7 @@ import {
 } from "@maycombhq/adapters";
 import {
   Api,
+  changesRelOf,
   gateRoundLimit,
   inputsDirOf,
   loadOrgPack,
@@ -21,6 +23,7 @@ import {
   type Finding,
   type ManualStep,
   type OrgPack,
+  writeFileIfUnchanged,
 } from "@maycombhq/core";
 import { archiveGate } from "@maycombhq/ci";
 import { changeFolder, changeReport, changeStore, detectConflicts } from "@maycombhq/changes";
@@ -39,10 +42,11 @@ import {
   reviewedGates,
   roundsOf,
 } from "@maycombhq/naysayer";
-import { SYNC_FILE } from "@maycombhq/planner";
+import { fillSnowFields, SnowFillError, SYNC_FILE } from "@maycombhq/planner";
 import { readChangeRepos } from "@maycombhq/workspace";
 import {
   badRequest,
+  conflict,
   HttpError,
   notFound,
   strParam,
@@ -260,7 +264,13 @@ interface RequestView {
   step?: string;
   number?: string;
   url?: string;
+  /** Round 36: snow.md as the metarepo names it, and its sha256, for the app's Fill form. */
+  file: string;
+  sha256: string;
 }
+
+const sha = (s: string) => createHash("sha256").update(s).digest("hex");
+const snowText = (dir: string) => readFile(join(dir, "snow.md"), "utf8").catch(() => "");
 
 const SyncEntries = z.object({
   requests: z.array(z.object({ key: z.string(), id: z.string() })).default([]),
@@ -276,6 +286,10 @@ async function changeRequests(
   const dir = changeFolder(root, change);
   const drafts = readSnowDrafts(await readChangeFiles(dir));
   if (drafts.length === 0) return [];
+  const snow = {
+    file: `${changesRelOf(root)}/${change}/snow.md`,
+    sha256: sha(await snowText(dir)),
+  };
   let synced: { key: string; id: string }[] = [];
   try {
     synced = SyncEntries.parse(parse(await readFile(join(dir, SYNC_FILE), "utf8"))).requests;
@@ -304,6 +318,7 @@ async function changeRequests(
       approvers: t?.approvers ?? [],
       fields,
       missing: fields.filter((f) => f.required && !f.value.trim()).map((f) => f.name),
+      ...snow,
     };
     const entry = t ? synced.find((e) => e.key === `${t.id}|${record}`) : undefined;
     if (!entry) return { ...base, state: "to-file" as const };
@@ -551,6 +566,45 @@ export function uiRunRoutes(r: Router, ctx: ServerContext, deps: RunDeps = {}): 
         if (res.code !== 0 && (res.code !== 1 || res.err.length)) throw refused(res);
         ctx.events.publish({ type: "file.changed", path: `${params.changeId}/snow.md` });
         return { status: 200, body: { lines: res.out, toFill: res.code === 1 } };
+      })
+      // Round 36 (UX review): fill a draft's fields in the app, in snow.md itself, as a person
+      // editing the file would (the value cells only; comments and the rest stay). A file changed
+      // since the page read it is 409, never written over. Filing stays the person's File below.
+      .add("PUT", "/api/service-desk/{changeId}/fields", async ({ params, body }) => {
+        const c = await readChange(root, params.changeId!);
+        const b = parseBody(Api.FillRequestFieldsRequest, body);
+        const dir = changeFolder(root, c.id);
+        const rel = `${changesRelOf(root)}/${c.id}/snow.md`;
+        const was = await readFile(join(dir, "snow.md"), "utf8").catch(() => undefined);
+        if (was === undefined) throw notFound(`${c.id} has no snow.md: draft its requests first.`);
+        if (sha(was) !== b.baseSha256)
+          throw conflict(
+            `${rel} changed since you opened it (another edit, or a person's): reload the page and fill the fields again.`,
+          );
+        let next: string;
+        try {
+          next = fillSnowFields(was, b.heading, b.values);
+        } catch (e) {
+          if (e instanceof SnowFillError)
+            throw new HttpError(422, "Atticus can't fill that", e.message);
+          throw e;
+        }
+        await writeFileIfUnchanged(join(dir, "snow.md"), was, next);
+        ctx.events.publish({ type: "file.changed", path: rel });
+        const op = await pack();
+        const now = (await changeRequests(root, c.id, op.serviceRequests, [])).find(
+          (r) => r.heading === b.heading,
+        );
+        const names = Object.keys(b.values).join(", ");
+        return {
+          status: 200,
+          body: {
+            path: rel,
+            sha256: sha(next),
+            missing: now?.missing ?? [],
+            lines: [`Filled ${names} in ${rel}.`],
+          } satisfies Api.FilledRequestFieldsView,
+        };
       })
       .add("POST", "/api/service-desk/{changeId}/submit", async ({ params }) => {
         await readChange(root, params.changeId!);

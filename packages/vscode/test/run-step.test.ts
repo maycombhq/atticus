@@ -119,6 +119,25 @@ describe("a step started from the app in a panel (ADR 0106)", () => {
     }
   });
 
+  it("passes a wiki's --source to knowledge scan, and no other option (round 36)", () => {
+    expect(
+      checkRunStep(msg(["knowledge", "scan", "--source", "forge-wiki"]), catalog),
+    ).toMatchObject({
+      ok: true,
+      command: "knowledge scan",
+      args: ["knowledge", "scan", "--source", "forge-wiki"],
+    });
+    for (const args of [
+      ["knowledge", "scan", "--source"],
+      ["knowledge", "scan", "--source", "--full"],
+      ["knowledge", "scan", "--source", "a", "--source", "b"],
+      ["scan", "survey", "forge-ledger", "--source", "forge-wiki"],
+    ]) {
+      const r = checkRunStep(msg(args), catalog);
+      expect(r?.ok, args.join(" ")).toBe(false);
+    }
+  });
+
   it("refuses a step without what it needs, or with words that aren't text", () => {
     const missing = checkRunStep(msg(["scan", "survey"]), catalog);
     expect(missing).toMatchObject({ ok: false });

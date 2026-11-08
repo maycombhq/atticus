@@ -268,3 +268,47 @@ describe("a step prepared for the person's own assistant (UX review)", () => {
     }
   });
 });
+
+describe("a wiki's own scan from the app (UX review, round 36)", () => {
+  it("passes knowledge scan's --source with its value, and no other option", async () => {
+    const asked: string[][] = [];
+    const s = await startServer({
+      root,
+      port: 0,
+      user: "pat",
+      version: "1.0.0",
+      extend: (r, ctx) =>
+        uiModelRunRoutes(r, ctx, {
+          runStep: async (args) => {
+            asked.push(args);
+            await run(7, "2026-10-23T03:40:07Z", "# Task: read the wiki\n", "waiting");
+            return { code: 0, out: ["Run prepared."], err: [] };
+          },
+        }),
+    });
+    const prep = (args: string[]) =>
+      fetch(s.url + "/api/runs/handoff", {
+        method: "POST",
+        headers: { "X-Atticus-Token": s.token, "Content-Type": "application/json" },
+        body: JSON.stringify({ args }),
+      });
+    try {
+      await setModel("schemaVersion: 1\n");
+      const ok = await prep(["knowledge", "scan", "--source", "forge-wiki"]);
+      expect(ok.status, await ok.clone().text()).toBe(201);
+      expect(asked).toEqual([["knowledge", "scan", "--source", "forge-wiki", "--handoff"]]);
+      // Only --source, only on the steps that read a wiki, once, and only with a value.
+      for (const bad of [
+        ["knowledge", "scan", "--full"],
+        ["knowledge", "scan", "--source"],
+        ["knowledge", "scan", "--source", "--mode"],
+        ["knowledge", "scan", "--source", "a", "--source", "b"],
+        ["scan", "survey", "--source", "forge-wiki"],
+      ])
+        expect((await prep(bad)).status, bad.join(" ")).toBe(400);
+      expect(asked).toHaveLength(1);
+    } finally {
+      await s.close();
+    }
+  });
+});

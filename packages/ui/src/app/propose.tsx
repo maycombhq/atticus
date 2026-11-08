@@ -39,7 +39,8 @@ type Scope =
   | "baseline"
   | "initiatives"
   | "outcomes"
-  | "work";
+  | "work"
+  | "service-desk";
 interface Plan {
   scope: Scope;
   files: { path: string; status: string; from?: string }[];

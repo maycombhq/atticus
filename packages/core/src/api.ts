@@ -204,7 +204,13 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   owner-answers and baseline. POST /api/initiatives, POST /api/initiatives/{initiativeId}/plan
  *   and POST /api/commitments/{commitmentId}/status start, plan and record initiatives as the
  *   signed-in person (as atticus initiative new|plan|commit); a commitment's status carries its
- *   latest note; ProposeScope adds initiatives and outcomes. Additive only.
+ *   latest note; ProposeScope adds initiatives and outcomes, and (UX re-walk) work, everything
+ *   the app's work writes. POST /api/changes/{changeId}/prototypes compares a prototype and
+ *   attaches it, as change attach --prototype (GET adds `candidates`); PUT
+ *   /api/service-desk/{changeId}/fields fills a draft's fields in snow.md, 409 if it changed
+ *   since read (GET requests carry `file` and `sha256`); ProposeScope adds service-desk; POST
+ *   /api/runs and /api/runs/handoff accept `--source <wiki>` on knowledge scan and find.
+ *   Additive only.
  */
 export const API_VERSION = "2.67.0";
 export const DEFAULT_PORT = 4321;
@@ -2243,6 +2249,8 @@ export const ProposeScope = z.enum([
   "outcomes",
   /** 2.67.0 (UX re-walk): everything the app's work writes, for the one Propose on Home. */
   "work",
+  /** 2.67.0 (UX review): the changes' snow.md, after filling a service-desk draft's fields. */
+  "service-desk",
 ]);
 export const ProposePlanView = z.object({
   scope: ProposeScope,
@@ -2512,7 +2520,16 @@ export const ChangePrototype = z.object({
   comparison: PrototypeComparisonView.optional(),
   problem: z.string().optional(),
 });
-export const ChangePrototypeList = z.object({ prototypes: z.array(ChangePrototype) });
+export const ChangePrototypeList = z.object({
+  prototypes: z.array(ChangePrototype),
+  /** Round 36: the repos the manifest types prototype, for the page's Compare. */
+  candidates: z.array(z.string()).optional(),
+});
+/** Round 36: compare a prototype from the app, as `atticus change attach <change> --prototype <repo>`. */
+export const ComparePrototypeRequest = z.strictObject({ repo: z.string().trim().min(1).max(200) });
+/** The prototypes attached now, and what the command printed (the four groups, the footprint). */
+export const ComparePrototypeView = ChangePrototypeList.extend({ lines: z.array(z.string()) });
+export type ComparePrototypeViewT = z.infer<typeof ComparePrototypeView>;
 export type PrototypeCallViewT = z.infer<typeof PrototypeCallView>;
 export type ChangePrototypeT = z.infer<typeof ChangePrototype>;
 export type ChangePrototypeListT = z.infer<typeof ChangePrototypeList>;
@@ -2569,6 +2586,23 @@ export const StepRunRequest = z.strictObject({
 });
 export const ArchiveRequest = z.strictObject({ rescan: z.boolean().optional() });
 export const DraftRequestsRequest = z.strictObject({ force: z.boolean().optional() });
+/** Round 36 (UX review): fill a draft's fields in snow.md from the app. */
+export const FillRequestFieldsRequest = z.strictObject({
+  /** The request's heading in snow.md, as GET /api/service-desk gives it. */
+  heading: z.string().min(1).max(300),
+  /** The sha256 of snow.md the form was filled from (GET's `sha256`); a mismatch is 409. */
+  baseSha256: z.string().min(1).max(64),
+  /** Field name → value. */
+  values: z.record(z.string().min(1).max(100), z.string().max(2000)),
+});
+export const FilledRequestFieldsView = z.object({
+  path: z.string(),
+  sha256: z.string(),
+  /** The request's required fields still empty. */
+  missing: z.array(z.string()),
+  lines: z.array(z.string()),
+});
+export type FilledRequestFieldsView = z.infer<typeof FilledRequestFieldsView>;
 /** ADR 0045: record a measured outcome of a released change, as the signed-in person. */
 export const RecordOutcomeRequest = z.strictObject({
   /** The measure's id, its number in the brief, or its words. */
@@ -4213,6 +4247,16 @@ const OPS: Record<string, Record<string, Op>> = {
       ok: { status: 200, schema: "ChangePrototypeList", description: "OK" },
       errors: [400, 404],
     },
+    post: {
+      id: "compareChangePrototype",
+      summary:
+        "Round 36 (UX review): compare a prototype repo with the estate and attach the comparison to the change, as atticus change attach <change> --prototype <repo>; 422 with its words when it refuses",
+      tag: "changes",
+      params: [p("changeId")],
+      body: ComparePrototypeRequest,
+      ok: { status: 201, schema: "ComparePrototypeView", description: "Compared and attached" },
+      errors: [400, 404, 422],
+    },
   },
   "/api/questions/{id}/targets": {
     get: {
@@ -4566,7 +4610,7 @@ const OPS: Record<string, Record<string, Op>> = {
         q(
           "scope",
           str,
-          "answers, corrections, audit, org-pack, owner-answers, baseline, initiatives, outcomes or work",
+          "answers, corrections, audit, org-pack, owner-answers, baseline, initiatives, outcomes, work or service-desk",
         ),
       ],
       ok: { status: 200, schema: "ProposePlanView", description: "OK" },
@@ -5236,6 +5280,18 @@ const OPS: Record<string, Record<string, Op>> = {
       errors: [400, 404, 422],
     },
   },
+  "/api/service-desk/{changeId}/fields": {
+    put: {
+      id: "fillServiceRequestFields",
+      summary:
+        "Round 36 (UX review): fill a draft's fields in snow.md, as a person editing it would (the value cells only; its comments and other lines stay); 409 when snow.md changed since it was read. Filing stays the person's File",
+      tag: "release",
+      params: [p("changeId")],
+      body: FillRequestFieldsRequest,
+      ok: { status: 200, schema: "FilledRequestFieldsView", description: "Filled" },
+      errors: [400, 404, 409, 422],
+    },
+  },
   "/api/governance": {
     get: {
       id: "getGovernance",
@@ -5811,6 +5867,8 @@ export function openApiDocument(): Record<string, unknown> {
     ChangeInputList,
     AttachResult,
     ChangePrototypeList,
+    ComparePrototypeView,
+    FilledRequestFieldsView,
     DocumentList,
     AddDocumentResult,
     RepoBranchesList,

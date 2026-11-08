@@ -32,6 +32,7 @@ export const PROPOSE_SCOPES = [
   "initiatives",
   "outcomes",
   "work",
+  "service-desk",
 ] as const;
 export type ProposeScope = (typeof PROPOSE_SCOPES)[number];
 
@@ -45,17 +46,22 @@ const TITLES: Record<ProposeScope, string> = {
   initiatives: "Initiatives and commitments",
   outcomes: "Outcomes measured after release",
   work: "Changes made in the Atticus app",
+  "service-desk": "Service-desk request fields",
 };
 
 const rel = (root: string, dir: string) => relative(root, dir).split("\\").join("/");
 
-/** The folders a kind of work owns, relative to the metarepo. */
+/** The folders a kind of work owns, relative to the metarepo (git pathspecs). */
 export function scopeDirs(root: string, scope: ProposeScope): string[] {
   const facts = rel(root, factsDirOf(root));
   const catalog = rel(root, catalogDirOf(root));
   const map = rel(root, mapDirOf(root));
   const specs = rel(root, specsDirOf(root));
   switch (scope) {
+    // Round 36: the fields filled in the app are each open change's snow.md, nothing else of
+    // the change (its other files are its stages' and its hand-off's).
+    case "service-desk":
+      return [`:(glob)${changesRelOf(root)}/*/snow.md`];
     // An answer also writes in the org pack (a repo type's skill file, a host in the manifest,
     // an outside system in a profile): its PR carries those too (review round 35).
     // UX re-walk: Apply (verify --write) also writes the repo's map and specs: they go too.
@@ -84,6 +90,7 @@ export function scopeDirs(root: string, scope: ProposeScope): string[] {
         specs,
         rel(root, initiativesDirOf(root)),
         `${changesRelOf(root)}/*/review/outcomes.yaml`,
+        `${changesRelOf(root)}/*/snow.md`,
       ];
     case "org-pack":
       return [rel(root, orgPackDirOf(root))];

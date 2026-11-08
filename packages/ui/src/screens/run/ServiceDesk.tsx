@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import { api, useApi, useLiveEvents } from "../../api/client.js";
+import { Propose } from "../../app/propose.js";
 import { changeOf } from "../../app/screens.js";
 import { Donut, ExternalLink, Panel, View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
@@ -29,6 +30,9 @@ interface Request {
   step?: string;
   number?: string;
   url?: string;
+  /** snow.md as the metarepo names it, and the sha256 the page read (round 36). */
+  file?: string;
+  sha256?: string;
 }
 interface Queue {
   adapter: { configured: string | null };
@@ -115,6 +119,97 @@ function DraftForm({ done }: { done: () => void }) {
   );
 }
 
+/**
+ * Round 36 (UX review): the draft's missing fields, filled here and written into snow.md (the
+ * file a person would edit; its comments and other lines stay), from the version the page read:
+ * a file changed since is refused. Then Propose for review commits snow.md through a PR. Filing
+ * stays the File button's, the person's explicit approval.
+ */
+export function FillFields({ r, done }: { r: Request; done: () => void }) {
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [filled, setFilled] = useState(false);
+  const act = useAction();
+  const id = useId();
+  if (!r.missing.length && !filled) return null;
+  const given = Object.fromEntries(
+    r.missing.flatMap((n) => (values[n]?.trim() ? [[n, values[n]!.trim()]] : [])),
+  );
+  return (
+    <div className="stack" style={{ gap: 8 }}>
+      {r.missing.length > 0 && (
+        <form
+          className="stack"
+          style={{ gap: 8 }}
+          aria-labelledby={`${id}-title`}
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!Object.keys(given).length || !r.sha256) {
+              void act.run(() => Promise.reject(new Error(T.fillSomething)), "");
+              return;
+            }
+            void act.run(
+              async () => {
+                const x = await api<{ lines: string[] }>(
+                  `/api/service-desk/${encodeURIComponent(r.change)}/fields`,
+                  {
+                    method: "PUT",
+                    body: { heading: r.heading, baseSha256: r.sha256, values: given },
+                  },
+                );
+                setFilled(true);
+                setValues({});
+                done();
+                return x;
+              },
+              (x) => (x as { lines: string[] }).lines.join("\n") || T.fillDone,
+            );
+          }}
+        >
+          <span id={`${id}-title`} className="hud" style={{ fontSize: 10 }}>
+            {T.fillTitle}
+          </span>
+          <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
+            {T.fillHelp(r.file ?? "snow.md")}
+          </p>
+          {r.missing.map((name, i) => (
+            <div key={name} className="stack" style={{ gap: 4 }}>
+              <label htmlFor={`${id}-f${i}`} className="hud" style={{ fontSize: 10 }}>
+                {T.fillField(name)}
+              </label>
+              <input
+                id={`${id}-f${i}`}
+                className="field"
+                required
+                aria-required="true"
+                disabled={act.busy}
+                value={values[name] ?? ""}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setValues((o) => ({ ...o, [name]: v }));
+                }}
+              />
+            </div>
+          ))}
+          <div className="row">
+            <button type="submit" className="btn" disabled={act.busy}>
+              {act.busy ? T.fillSaving : T.fillSave}
+            </button>
+          </div>
+        </form>
+      )}
+      <Note note={act.note} />
+      {filled && (
+        <div className="stack" style={{ gap: 4 }}>
+          <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
+            {T.fillPropose}
+          </p>
+          <Propose scope="service-desk" />
+        </div>
+      )}
+    </div>
+  );
+}
+
 function RequestDetail({ r, done }: { r: Request; done: () => void }) {
   const act = useAction();
   const all = r.fields.map((f) => `${f.name}: ${f.value}`).join("\n");
@@ -157,6 +252,7 @@ function RequestDetail({ r, done }: { r: Request; done: () => void }) {
           </div>
         ))}
       </div>
+      {r.state === "to-file" && <FillFields r={r} done={done} />}
       {r.state === "to-file" && (
         <div className="stack">
           <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>

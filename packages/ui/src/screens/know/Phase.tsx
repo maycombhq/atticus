@@ -16,6 +16,8 @@ import { AI_OFF_TEXT, useAiOn } from "../../app/me.js";
 import { COPY } from "../../copy.js";
 import { withForceHint } from "../run/shared.js";
 import { NoChangeYet } from "../work/RunNext.js";
+import { ChangeInputs } from "../ChangeInputs.js";
+import { ChangePrototypes } from "../ChangePrototypes.js";
 import { ChangeWaiting, Markdown, Note, Table, useAction, useChange, useView } from "./common.js";
 
 const T = COPY.phase;
@@ -414,14 +416,20 @@ export function UX({ hash }: { hash: string }) {
       title={T.prototypesAndUx}
       artifacts={["ux"]}
       critic="ux-critic"
-      extra={() => (
-        <Panel title={T.bringInAPrototype} span="span 4">
-          <p className="muted" style={{ margin: 0, fontSize: 12.5, lineHeight: 1.6 }}>
-            {T.dropADesignExport}
-            <span className="mono">{T.inputs}</span> {T.fromThe}
-            <a href="#/intake">{T.intake}</a> {T.screenAtticusReadsThe}
-          </p>
-        </Panel>
+      // Round 36 (UX review): the export is attached and the prototype compared from here, not
+      // only from a terminal; the same code as atticus change attach (and --prototype).
+      extra={(id) => (
+        <>
+          <Panel title={T.bringInAPrototype} span="span 4">
+            <p className="muted" style={{ margin: 0, fontSize: 12.5, lineHeight: 1.6 }}>
+              {T.attachADesignExport}
+              <span className="mono">{T.inputs}</span>
+              {T.screenAtticusReadsThe}
+            </p>
+          </Panel>
+          <ChangeInputs change={id} />
+          <ChangePrototypes change={id} />
+        </>
       )}
     />
   );

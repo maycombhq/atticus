@@ -4,7 +4,14 @@ import { describe, expect, it } from "vitest";
 import type { Api } from "@maycombhq/core";
 import { ApiError } from "../src/api/client.js";
 import { COPY } from "../src/copy.js";
-import { quietReads, runChoice, runOnServer, RunStepView, stepArgs } from "../src/app/runstep.js";
+import {
+  quietReads,
+  runChoice,
+  runOnServer,
+  RunStep,
+  RunStepView,
+  stepArgs,
+} from "../src/app/runstep.js";
 import { RunDetail, RunsTable, runsHref, shownRuns } from "../src/screens/runs/Runs.js";
 import { AiStep } from "../src/screens/knowledge/shared.js";
 import { RunNextPanel } from "../src/screens/work/RunNext.js";
@@ -327,6 +334,42 @@ describe("which Run button an AI step gets (ADR 0106)", () => {
     expect(stepArgs('atticus change new "<title>" --type <type>')).toBeUndefined();
     expect(stepArgs("atticus repos discover <folder>")).toBeUndefined();
     expect(stepArgs("/atticus-feature add-transfer-limit")).toBeUndefined();
+  });
+
+  it("keeps a wiki's --source on the steps that read one, and no other option (round 36)", () => {
+    expect(stepArgs("atticus knowledge scan --source forge-wiki")).toEqual([
+      "knowledge",
+      "scan",
+      "--source",
+      "forge-wiki",
+    ]);
+    expect(stepArgs('atticus knowledge find "firewall rule" --source forge-wiki')).toEqual([
+      "knowledge",
+      "find",
+      "firewall rule",
+      "--source",
+      "forge-wiki",
+    ]);
+    expect(stepArgs("atticus knowledge scan --source")).toBeUndefined();
+    expect(stepArgs("atticus knowledge scan --source --full")).toBeUndefined();
+    expect(stepArgs("atticus knowledge scan --full")).toBeUndefined();
+    expect(stepArgs("atticus knowledge scan --source a --source b")).toBeUndefined();
+    expect(stepArgs("atticus scan survey forge-ledger --source forge-wiki")).toBeUndefined();
+  });
+
+  it("gives every knowledge AI step its Run or Prepare button beside the command (round 36)", () => {
+    const tree = AiStep({ command: "atticus knowledge scan --source forge-wiki" });
+    const found: unknown[] = [];
+    const walk = (t: unknown) => {
+      if (Array.isArray(t)) t.forEach(walk);
+      else if (t && typeof t === "object" && "props" in t) {
+        const e = t as { type: unknown; props: { command?: string; children?: unknown } };
+        if (e.type === RunStep) found.push(e.props.command);
+        walk(e.props.children);
+      }
+    };
+    walk(tree);
+    expect(found).toEqual(["atticus knowledge scan --source forge-wiki"]);
   });
 
   it("is Copilot in a VS Code panel, the server's model in a browser that has one, else copy", () => {

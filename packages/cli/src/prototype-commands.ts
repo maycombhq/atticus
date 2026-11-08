@@ -252,8 +252,15 @@ export async function changePrototypes(
     comparison?: PrototypeComparison;
     problem?: string;
   }[];
+  /** Round 36: the repos the manifest types prototype, for the page's Compare. */
+  candidates: string[];
 }> {
   const quiet: Output = { out: () => undefined, err: () => undefined };
+  const { op } = await intakeContext(root, quiet);
+  const candidates = estateRepos(op)
+    .filter((r) => isPrototypeType(r.type))
+    .map((r) => r.id)
+    .sort();
   const files = (await readChangeInputs(changeFolder(root, change))).files
     .filter((f) => !f.supersededBy && ATTACHED.test(f.name))
     .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
@@ -272,7 +279,7 @@ export async function changePrototypes(
           },
     );
   }
-  return { prototypes };
+  return { prototypes, candidates };
 }
 
 /**

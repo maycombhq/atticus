@@ -181,7 +181,8 @@ describe("GET /api/changes/{id}/prototypes (the app's change page)", () => {
     };
     try {
       const empty = await call(`/api/changes/${CHANGE}/prototypes`);
-      expect(empty).toEqual({ status: 200, body: { prototypes: [] } });
+      // Round 36: the repos the manifest types prototype, for the page's Compare.
+      expect(empty).toEqual({ status: 200, body: { prototypes: [], candidates: [PROTO] } });
       const c = capture();
       expect(
         await changeAttachCli(r, CHANGE, [], { by: "pat", prototype: PROTO, now: NOW }, c.io),
@@ -204,6 +205,56 @@ describe("GET /api/changes/{id}/prototypes (the app's change page)", () => {
         `${PROTO} has no verified facts yet: read it with /atticus-map ${PROTO}, then atticus verify ${PROTO}.`,
       );
       expect((await call(`/api/changes/no-such/prototypes`)).status).toBe(404);
+    } finally {
+      await srv.close();
+    }
+  });
+});
+
+describe("POST /api/changes/{id}/prototypes (Compare, from the app; round 36)", () => {
+  it("attaches the comparison as change attach --prototype does, and refuses what it would", async () => {
+    const r = await root();
+    const srv = await startServer({
+      root: r,
+      port: 0,
+      user: "pat",
+      extend: (rt, ctx) => uiRoutes(rt, ctx, { now: "2026-10-26T10:00:00Z" }),
+    });
+    const post = async (path: string, body: unknown) => {
+      const res = await fetch(srv.url + path, {
+        method: "POST",
+        headers: { "X-Atticus-Token": srv.token, "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      return { status: res.status, body: (await res.json()) as Record<string, unknown> };
+    };
+    try {
+      const got = await post(`/api/changes/${CHANGE}/prototypes`, { repo: PROTO });
+      expect(got.status, JSON.stringify(got.body)).toBe(201);
+      const view = Api.ComparePrototypeView.parse(got.body);
+      expect(view.prototypes.map((p) => [p.repo, p.attached])).toEqual([
+        [PROTO, `inputs/prototype-${PROTO}.md`],
+      ]);
+      expect(view.prototypes[0]!.comparison).toEqual(
+        parse(readFileSync(join(FX, "expected/comparison.yaml"), "utf8")),
+      );
+      // What the command line prints, so the page says what was attached and the footprint.
+      expect(view.lines.join("\n") + "\n").toBe(
+        readFileSync(join(FX, "expected/attach.txt"), "utf8"),
+      );
+      expect((await changeStore(r).read(CHANGE)).touches.repos).toEqual([
+        "forge-partner-gateway",
+        "forge-shop-bff",
+      ]);
+      // Not a prototype, not in the manifest, no change, or no repo given.
+      const notProto = await post(`/api/changes/${CHANGE}/prototypes`, { repo: "forge-shop-bff" });
+      expect(notProto.status).toBe(422);
+      expect(notProto.body.detail).toBe(
+        PROTOTYPE_CLI_WORDS.notPrototype("forge-shop-bff", "spring-boot"),
+      );
+      expect((await post(`/api/changes/${CHANGE}/prototypes`, { repo: "nope" })).status).toBe(422);
+      expect((await post(`/api/changes/no-such/prototypes`, { repo: PROTO })).status).toBe(404);
+      expect((await post(`/api/changes/${CHANGE}/prototypes`, {})).status).toBe(400);
     } finally {
       await srv.close();
     }

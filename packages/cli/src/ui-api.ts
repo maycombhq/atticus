@@ -600,6 +600,31 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
           body: Api.ChangePrototypeList.parse(await changePrototypes(root, c.id)),
         };
       })
+      // Round 36 (UX review): Compare from the app, the command line's own attach. A write to the
+      // change's own files in the metarepo (ADR 0183's local steps), on the person's click.
+      .add("POST", "/api/changes/{changeId}/prototypes", async ({ params, body }) => {
+        const c = await readChange(root, params.changeId!);
+        const b = parseBody(Api.ComparePrototypeRequest, body);
+        const { attachPrototype, changePrototypes } = await import("./prototype-commands.js");
+        const res = await run((io) =>
+          attachPrototype(
+            root,
+            c.id,
+            b.repo,
+            { by: user, ...(deps.now ? { now: new Date(deps.now) } : {}) },
+            io,
+          ),
+        );
+        if (res.code !== 0) throw refused(res);
+        ctx.events.publish({ type: "file.changed", path: `${changesRelOf(root)}/${c.id}/inputs` });
+        return {
+          status: 201,
+          body: Api.ComparePrototypeView.parse({
+            ...(await changePrototypes(root, c.id)),
+            lines: res.out,
+          }),
+        };
+      })
       .add(
         "POST",
         "/api/changes/{changeId}/inputs",

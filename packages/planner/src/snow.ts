@@ -1,6 +1,7 @@
 import type { RecordOf, ServiceRequestTemplate } from "@maycombhq/core";
 import {
   matchServiceRequestTriggers,
+  parseDoc,
   readSnowDrafts,
   triggerReason,
   type Hop,
@@ -229,4 +230,108 @@ export function readDrafts(
     for (const f of t.fields) fields[f.name] = d.fields.get(f.name.toLowerCase())?.value ?? "";
     return [{ template: t, record, fields, heading: d.heading }];
   });
+}
+
+/** Why snow.md's fields weren't filled: nothing was changed. */
+export class SnowFillError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "SnowFillError";
+  }
+}
+
+/** A table row's cells, as the reader splits them (naysayer's parseDoc). */
+const rowCells = (line: string) => {
+  let s = line.trim();
+  if (s.startsWith("|")) s = s.slice(1);
+  if (s.endsWith("|")) s = s.slice(0, -1);
+  return s.split("|").map((c) => c.trim());
+};
+
+/**
+ * Round 36 (UX review): fill fields of one draft in snow.md, as a person would edit the file.
+ * Only the value cell of each field's row in that request's Field | Value table changes; a field
+ * the table lacks is added as a row after its last one. A filled field's line in the request's
+ * "To fill:" note goes (and the note, once it lists nothing). Comments, the other requests and
+ * every other line stay as written, with the file's own line ends. Throws SnowFillError.
+ */
+export function fillSnowFields(
+  text: string,
+  heading: string,
+  values: Record<string, string>,
+): string {
+  const given = Object.entries(values).map(([name, v]) => [name.trim(), v.trim()] as const);
+  if (!given.length) throw new SnowFillError("Give at least one field to fill.");
+  for (const [name, v] of given)
+    if (!name || /[|\r\n]/.test(v) || /[|\r\n]/.test(name))
+      throw new SnowFillError(
+        `${name || "A field"}: a value can't hold | or a line break (snow.md keeps it in a table cell).`,
+      );
+  const eol = text.includes("\r\n") ? "\r\n" : "\n";
+  const doc = parseDoc("snow.md", text);
+  const raw = doc.rawLines;
+  const s = doc.sections.find((x) => x.level === 2 && x.heading === heading);
+  if (!s)
+    throw new SnowFillError(
+      `snow.md has no request "${heading}". Reload the page to see its requests.`,
+    );
+  const table = doc.tables.find(
+    (t) => t.line >= s.line && t.line <= s.end && t.headers.includes("field"),
+  );
+  if (!table || !table.headers.includes("value"))
+    throw new SnowFillError(`"${heading}" in snow.md has no Field | Value table to fill.`);
+  const fieldAt = table.headers.indexOf("field");
+  const valueAt = table.headers.indexOf("value");
+  const edited = new Map<number, string>();
+  const added: string[] = [];
+  const row = (cells: string[]) => `| ${cells.join(" | ")} |`;
+  for (const [name, v] of given) {
+    const r = table.rows.find((x) => (x.cells.field ?? "").toLowerCase() === name.toLowerCase());
+    if (!r) {
+      const cells = table.headers.map(() => "");
+      cells[fieldAt] = name;
+      cells[valueAt] = v;
+      added.push(row(cells));
+      continue;
+    }
+    const at = r.line - 1;
+    if (raw[at]!.includes("<!--"))
+      throw new SnowFillError(`${name}'s row in snow.md holds a comment: edit that row there.`);
+    const cells = rowCells(raw[at]!);
+    while (cells.length < table.headers.length) cells.push("");
+    cells[valueAt] = v;
+    edited.set(at, row(cells));
+  }
+  // The "To fill:" note's lines for the fields filled now, and the note once it lists nothing.
+  const filled = given.filter(([, v]) => v).map(([n]) => n.toLowerCase());
+  const drop = new Set<number>();
+  const lines = doc.lines;
+  for (let i = s.line; i < s.end; i++) {
+    if (lines[i]!.trim() !== "To fill:") continue;
+    let j = i + 1;
+    const bullets: number[] = [];
+    for (; j < s.end; j++) {
+      const l = lines[j]!.trim();
+      if (!l) continue;
+      if (!l.startsWith("- ")) break;
+      bullets.push(j);
+    }
+    for (const b of bullets) {
+      const l = lines[b]!.trim().slice(2).toLowerCase();
+      if (filled.some((n) => l.startsWith(`${n}:`))) drop.add(b);
+    }
+    if (bullets.length && bullets.every((b) => drop.has(b))) {
+      // The note, its bullets and the blank lines among them; one blank line after it too.
+      const last = bullets[bullets.length - 1]!;
+      for (let k = i; k <= last; k++) drop.add(k);
+      if (last + 1 < raw.length && !raw[last + 1]!.trim() && last + 1 < s.end) drop.add(last + 1);
+    }
+  }
+  const lastRow = table.rows.length ? table.rows[table.rows.length - 1]!.line - 1 : table.line;
+  const out: string[] = [];
+  raw.forEach((l, i) => {
+    if (!drop.has(i)) out.push(edited.get(i) ?? l);
+    if (i === lastRow) out.push(...added);
+  });
+  return out.join(eol);
 }

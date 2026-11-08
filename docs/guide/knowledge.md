@@ -60,6 +60,8 @@ A quote is matched with the page's blockquote (`>`) and list markers left out, s
 
 A rescan reads only the pages that changed (`--full` reads them all; `--source <id>` reads one source).
 
+**From the app.** The Knowledge sources page runs these without a terminal. **Sync** copies a source's pages to a snapshot. Each source's card and the last scan's panel run the scan: with the server's model when `runtime.yaml` sets one, with Copilot in a VS Code panel, or else **Prepare it for your assistant**, which writes the hand-off and opens its run, with the prompt to paste and Done to check the answer. A source's card reads only that source (`--source <id>`, the one option the app passes to a step). The command and slash command stay beside each button.
+
 The scan reads every page, in batches that each fit the knowledge reader's prompt: its budget (`budgets.perAgent.knowledge-reader` in `runtime.yaml`, or the model's limit with `--max-tokens`) less the instructions, or `--batch-tokens n` for the pages' room. A model or headless runtime reads batch after batch in one run. A hand-off hands one batch a run: it says how many pages wait and which, and after you resume, `atticus knowledge scan` again hands the next. A page too big for the prompt on its own is named, with what to raise, and the other pages are still read. A page that wasn't read is never recorded as read, so the next scan reads it.
 
 ## 4. Ask and search
