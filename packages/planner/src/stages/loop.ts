@@ -62,6 +62,15 @@ import { rerunOf } from "./waiting.js";
 import { citeFiles } from "./cite.js";
 import { unfence, YAML_QUOTE_RULE } from "./answer.js";
 import { questionsOnFile, stepJudges } from "./questions-on-file.js";
+import {
+  correctionsText,
+  CORRECTIONS_RULE,
+  recordAiDraft,
+  settleCorrections,
+  snapshotFiles,
+  stageCorrections,
+  type Correction,
+} from "./drafts.js";
 import type { ContextOptions, ContextReport, RetrievalAi } from "../engine.js";
 import { askGaps, type ContextGap } from "../gaps.js";
 import {
@@ -575,13 +584,47 @@ export async function runStageLoop<A>(
     ...spec.sources,
     ...(a !== undefined && spec.reviewSources ? spec.reviewSources(a) : []),
   ];
+  // ADR 0181: a person's corrections of the stage's drafts. Every one goes in each draft's brief
+  // (a person's word stands, as an answer does); one no draft has read yet makes a draft.
+  const corrections = await stageCorrections(dir, change.id, spec.stage).catch(() => ({
+    all: [] as Correction[],
+    waiting: [] as Correction[],
+  }));
   // Every write of the stage's files keeps their hashes, so a person's edit is a fact (P1).
-  const write = async (a: A): Promise<string[]> => {
+  // A draft's write (`drafted`) also says who drafted each file (ADR 0181, stage/drafted.yaml),
+  // and what it did with the corrections it had.
+  const write = async (a: A, drafted?: { run?: string }): Promise<string[]> => {
     // What was on disk before, so a write that changes nothing says so.
     const before = await hashFiles(dir, [
       ...new Set([...Object.keys(loop.written ?? {}), ...(await sourceFiles(dir, spec.source))]),
     ]);
+    const texts =
+      drafted && corrections.all.length
+        ? await snapshotFiles(dir, [...Object.keys(before), ...corrections.all.map((c) => c.file)])
+        : undefined;
     const files = await spec.write(a);
+    if (drafted) {
+      const draft = {
+        stage: spec.stage,
+        ...(drafted.run ? { run: drafted.run } : {}),
+        iteration: loop.iteration,
+        at,
+      };
+      await recordAiDraft(dir, change.id, { ...draft, files }).catch(() => undefined);
+      if (texts) {
+        const settled = await settleCorrections(dir, change.id, {
+          ...draft,
+          before: texts,
+          files,
+        }).catch(() => [] as Correction[]);
+        const n = settled.length;
+        const applied = settled.filter((c) => c.state === "applied").length;
+        if (n)
+          notes.push(
+            `The draft had ${n === 1 ? "a person's correction" : `${n} corrections people made`} (stage/corrections.yaml); ${n === 1 ? (applied ? "it changed the item" : "it didn't change the item") : `it changed the items of ${applied} of them`}.`,
+          );
+      }
+    }
     // The file a person edits; every other file written is rendered from it (act.ts reads this).
     loop.source = spec.source;
     loop.written = await hashFiles(dir, [
@@ -705,7 +748,7 @@ export async function runStageLoop<A>(
       : [];
   if (edited.length) {
     const kept = await keepFiles(dir, rel, spec.stage, loop.iteration + 1, edited);
-    if (o.force || unreadAnswers.length) {
+    if (o.force || unreadAnswers.length || corrections.waiting.length) {
       personDraft = await draftText(dir, edited);
       (loop.byPerson ??= []).push({
         iteration: loop.iteration + 1,
@@ -715,7 +758,7 @@ export async function runStageLoop<A>(
         how: "redrafted",
       });
       notes.push(
-        `A person edited ${edited.join(", ")}; a copy is in ${kept}, and your assistant drafts again from those files${o.force ? " (--force)" : ", with the answers"}.`,
+        `A person edited ${edited.join(", ")}; a copy is in ${kept}, and your assistant drafts again from those files${o.force ? " (--force)" : unreadAnswers.length ? ", with the answers" : ", with the corrections"}.`,
       );
     } else {
       loop.iteration++;
@@ -814,7 +857,13 @@ export async function runStageLoop<A>(
   // again without AI; draft only if the check finds something.
   const answers = await questionsOf(loop.questions);
   const unread = answers.filter((q) => q.state === "answered" && !loop.read.includes(q.id));
-  if (!o.resume && !o.force && loop.state === "done" && unread.length === 0) {
+  if (
+    !o.resume &&
+    !o.force &&
+    loop.state === "done" &&
+    unread.length === 0 &&
+    corrections.waiting.length === 0
+  ) {
     const cur = await spec.current();
     if (cur !== undefined) {
       issues = (await spec.check(cur, { onFile: true })).filter((i) => i.blocking);
@@ -944,10 +993,13 @@ export async function runStageLoop<A>(
       const risks = issues.filter((i) => !i.blocking && i.risk);
       if (risks.length)
         loop.handedBack = [...new Set([...(loop.handedBack ?? []), ...risks.map(riskKey)])].sort();
-      const back = handBacks(fix, answered, risks);
+      const back = handBacks(fix, answered, risks, corrections.all);
       // B-place: a draft going back says where the last one is, so the next starts from it.
+      // ADR 0181: so does a draft with a person's corrections (it changes what they name).
       const last =
-        (fix.length || risks.length) && !personDraft && (await sourceFiles(dir, spec.source)).length
+        (fix.length || risks.length || corrections.all.length) &&
+        !personDraft &&
+        (await sourceFiles(dir, spec.source)).length
           ? `${rel}/${spec.source}`
           : undefined;
       const sources: SourceInput[] = [
@@ -956,7 +1008,7 @@ export async function runStageLoop<A>(
           kind: "instruction",
           origin: "atticus",
           text: [
-            instructionsWith(spec.instructions, fix, answered, risks, last),
+            instructionsWith(spec.instructions, fix, answered, risks, last, corrections.all),
             // The last answer is in the new run's folder already (2026-10-26): an edit, not a
             // rewrite. A person's own draft replaces it, so it isn't carried then.
             ...(carriesAnswer && lastAnswerText !== undefined && !personDraft
@@ -1147,7 +1199,7 @@ export async function runStageLoop<A>(
         if (answer === undefined) failedOutput = unfence(run.output);
         if (answer !== undefined) {
           found.push(...(await spec.check(answer)));
-          files = await write(answer);
+          files = await write(answer, { run: run.runId });
         }
       }
       // ---- the critic, on each draft that passes the stage's own checks: its rules and its AI
@@ -1771,6 +1823,7 @@ function instructionsWith(
   answered: Question[],
   risks: StageIssue[] = [],
   last?: string,
+  corrections: Correction[] = [],
 ): string {
   const out = [base];
   if (last)
@@ -1793,6 +1846,8 @@ function instructionsWith(
       "",
       `People answered questions; the "${HAND_BACKS}" data block lists each question with its answer. Their answers are part of the brief: follow them, and never ask any of those questions again, in any words, or ask what an answer already says.`,
     );
+  // ADR 0181: a person's corrections, after everything else, so a stage without them is unchanged.
+  if (corrections.length) out.push("", CORRECTIONS_RULE);
   return out.join("\n");
 }
 
@@ -1801,6 +1856,7 @@ function handBacks(
   fix: StageIssue[],
   answered: Question[],
   risks: StageIssue[] = [],
+  corrections: Correction[] = [],
 ): string | undefined {
   const out: string[] = [];
   if (fix.length)
@@ -1820,6 +1876,9 @@ function handBacks(
       "Questions people answered:",
       ...answered.map((q) => `- ${q.question} Answer: ${answerWords(q) ?? ""}`),
     );
+  // ADR 0181: the person's corrections of the stage's drafts, quoted as data like the answers.
+  const said = correctionsText(corrections);
+  if (said) out.push(...(out.length ? [""] : []), said);
   return out.length ? out.join("\n") : undefined;
 }
 

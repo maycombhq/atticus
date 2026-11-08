@@ -26,6 +26,7 @@ import {
   PlannerError,
   renderFeature,
   readStageLoop,
+  recordPersonSave,
   rerunOf,
   STAGE_PHASE,
   stageComments,
@@ -40,6 +41,7 @@ import {
   type Router,
   type ServerContext,
 } from "@maycombhq/server";
+import { uiDraftRoutes } from "./ui-api-drafts.js";
 
 /**
  * A stage tab's findings with their options and a comment box (ADR 0124 addendum D-app, B10,
@@ -239,7 +241,8 @@ export function uiStageRoutes(
       throw notFound(`There is no change ${v}.`);
     return v;
   };
-  return r
+  // ADR 0181 (2.79.0): the pages' stage drafts and a person's corrections of them.
+  return uiDraftRoutes(r, ctx, deps)
     .add("GET", "/api/changes/{changeId}/placement", async ({ params }) => {
       const change = await changeOf(params.changeId!);
       return { status: 200, body: await placementView(ctx.root, change) };
@@ -286,8 +289,18 @@ export function uiStageRoutes(
         );
       const at = now().toISOString();
       const head = `${PLACED_HEAD} Edited by ${ctx.user} on ${at}; review it in the feature PR.`;
-      await writeFileIfUnchanged(file, was, `${head}\n${own.join("\n")}`);
-      await writeFileAtomic(join(dir, "feature.md"), renderFeature(p.data));
+      const saved = `${head}\n${own.join("\n")}`;
+      await writeFileIfUnchanged(file, was, saved);
+      const md = renderFeature(p.data);
+      await writeFileAtomic(join(dir, "feature.md"), md);
+      // ADR 0181: who saved the stage's draft, for its chip on every page that shows it.
+      for (const [f, content] of [
+        [FEATURE_FILE, saved],
+        ["feature.md", md],
+      ] as const)
+        await recordPersonSave(dir, change, { file: f, who: ctx.user, at, content }).catch(
+          () => undefined,
+        );
       const rel = `${changesRelOf(ctx.root)}/${change}`;
       for (const f of [FEATURE_FILE, "feature.md"])
         ctx.events.publish({ type: "file.changed", path: `${rel}/${f}` });
