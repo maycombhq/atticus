@@ -355,6 +355,30 @@ describe("atticus upgrade", () => {
   }, 30_000); // doctor runs every machine check (git, npm, the port): seconds on a busy machine
 });
 
+describe("beta against beta (round 38)", () => {
+  it("orders pre-releases as semver does", async () => {
+    const { newerThan } = await import("../src/upgrade.js");
+    expect(newerThan("2.0.0-beta.30", "2.0.0-beta.21")).toBe(true);
+    expect(newerThan("2.0.0-beta.21", "2.0.0-beta.9")).toBe(true);
+    expect(newerThan("2.0.0-beta.9", "2.0.0-beta.21")).toBe(false);
+    expect(newerThan("2.0.0", "2.0.0-beta.30")).toBe(true);
+    expect(newerThan("2.0.0-beta.30", "2.0.0")).toBe(false);
+    expect(newerThan("2.0.0-rc.1", "2.0.0-beta.30")).toBe(true);
+    expect(newerThan("2.0.0-beta.21", "2.0.0-beta.21")).toBe(false);
+  });
+
+  it("refuses a metarepo a newer beta upgraded, and keeps its stamp", async () => {
+    const root = await oldMetarepo();
+    await upgradeCommand(root, { by: "pat" }, io().io, "2.0.0-beta.30");
+    const r = io();
+    expect(await upgradeCommand(root, {}, r.io, "2.0.0-beta.21")).toBe(1);
+    expect(r.err[0]).toMatch(/upgraded by Atticus 2\.0\.0-beta\.30; this is 2\.0\.0-beta\.21/);
+    expect(await readFile(join(root, ".atticus", "metarepo.yaml"), "utf8")).toContain(
+      "atticus: 2.0.0-beta.30",
+    );
+  }, 30_000);
+});
+
 describe("atticus upgrade and the starter review (ADR 0120)", () => {
   /** An org's own checklist with deterministic rules only: no AI review of its own. */
   const HOUSE = [

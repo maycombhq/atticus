@@ -45,7 +45,7 @@ import {
 } from "@maycombhq/core";
 import { ensureGitignore, gitUser, IGNORED } from "@maycombhq/workspace";
 import type { Output } from "./commands.js";
-import { VERSION, versionAtLeast } from "./version.js";
+import { VERSION } from "./version.js";
 
 /**
  * `atticus upgrade` (ADR 0051): bring a metarepo's files up to what this Atticus writes, after
@@ -473,8 +473,40 @@ export interface UpgradeCheck {
   pending: { id: string; summary: string; files: string[] }[];
 }
 
-/** Numeric version order (pre-release suffixes ignored): a > b. */
-const newerThan = (a: string, b: string) => !versionAtLeast(b, a.replace(/-.*$/, ""));
+/**
+ * Round 38: semver order with pre-releases (2.0.0-beta.30 > 2.0.0-beta.21 > 2.0.0-beta.9, and a
+ * release above its pre-releases), so an older beta refuses a metarepo a newer beta upgraded.
+ */
+export function newerThan(a: string, b: string): boolean {
+  const split = (v: string) => {
+    const [core, pre] = v.trim().replace(/^v/, "").split(/-(.*)/s, 2);
+    return { core: (core ?? "").split(".").map((n) => Number(n) || 0), pre: pre ?? "" };
+  };
+  const x = split(a);
+  const y = split(b);
+  for (let i = 0; i < Math.max(x.core.length, y.core.length); i++) {
+    const d = (x.core[i] ?? 0) - (y.core[i] ?? 0);
+    if (d) return d > 0;
+  }
+  if (x.pre === y.pre) return false;
+  if (!x.pre) return true; // a release is above its pre-releases
+  if (!y.pre) return false;
+  const xp = x.pre.split(".");
+  const yp = y.pre.split(".");
+  for (let i = 0; i < Math.max(xp.length, yp.length); i++) {
+    const p = xp[i];
+    const q = yp[i];
+    if (p === undefined) return false;
+    if (q === undefined) return true;
+    if (p === q) continue;
+    const pn = /^\d+$/.test(p);
+    const qn = /^\d+$/.test(q);
+    if (pn && qn) return Number(p) > Number(q);
+    if (pn !== qn) return !pn; // numeric identifiers sort below the others
+    return p > q;
+  }
+  return false;
+}
 
 export async function upgradeCheck(root: string, version = VERSION): Promise<UpgradeCheck> {
   // Each migration's dry run only reads, so they run at once; the list keeps MIGRATIONS' order.
@@ -488,7 +520,7 @@ export async function upgradeCheck(root: string, version = VERSION): Promise<Upg
   return {
     atticus: version,
     ...(stamp ? { stamp } : {}),
-    newer: !!stamp && newerThan(stamp.atticus.replace(/-.*$/, ""), version.replace(/-.*$/, "")),
+    newer: !!stamp && newerThan(stamp.atticus, version),
     pending,
   };
 }
