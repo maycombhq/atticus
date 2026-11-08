@@ -18,7 +18,7 @@ endbfchar
 endbfrange
 endcmap`;
 
-function pdf(o: { toUnicode: boolean; show: string }): Uint8Array {
+function pdf(o: { toUnicode: boolean; show: string; simple?: string }): Uint8Array {
   const objs: string[] = [];
   const add = (body: string) => objs.push(body);
   add("<< /Type /Catalog /Pages 2 0 R >>");
@@ -27,9 +27,12 @@ function pdf(o: { toUnicode: boolean; show: string }): Uint8Array {
   const content = `BT /F1 12 Tf 72 700 Td ${o.show} Tj ET`;
   add(`<< /Length ${content.length} >>\nstream\n${content}\nendstream`);
   add(
-    `<< /Type /Font /Subtype /Type0 /BaseFont /ABCDEF+Calibri /Encoding /Identity-H${o.toUnicode ? " /ToUnicode 6 0 R" : ""} >>`,
+    o.simple !== undefined
+      ? "<< /Type /Font /Subtype /TrueType /BaseFont /Arial /ToUnicode 6 0 R >>"
+      : `<< /Type /Font /Subtype /Type0 /BaseFont /ABCDEF+Calibri /Encoding /Identity-H${o.toUnicode ? " /ToUnicode 6 0 R" : ""} >>`,
   );
-  add(`<< /Length ${CMAP.length} >>\nstream\n${CMAP}\nendstream`);
+  const cmap = o.simple ?? CMAP;
+  add(`<< /Length ${cmap.length} >>\nstream\n${cmap}\nendstream`);
   const text =
     "%PDF-1.7\n" +
     objs.map((b, i) => `${i + 1} 0 obj ${b} endobj\n`).join("") +
@@ -61,5 +64,23 @@ describe("a PDF in a Type0 font", () => {
     );
     expect(range.bytes).toBe(1);
     expect([0x41, 0x42, 0x43].map((c) => range.map.get(c))).toEqual(["a", "b", "c"]);
+  });
+
+  it("reads a simple TrueType font's one-byte codes, whatever its map's codespace", () => {
+    for (const space of [
+      "",
+      "1 begincodespacerange <0000> <FFFF> endcodespacerange",
+      "1 begincodespacerange <00> <FF> endcodespacerange",
+    ]) {
+      const r = readDocument(
+        "guide.pdf",
+        pdf({
+          toUnicode: true,
+          show: "(HELLO)",
+          simple: `${space}\n1 beginbfchar\n<48> <0048>\nendbfchar`,
+        }),
+      );
+      expect(r.text.sections.map((s) => s.text).join(" "), space).toContain("HELLO");
+    }
   });
 });

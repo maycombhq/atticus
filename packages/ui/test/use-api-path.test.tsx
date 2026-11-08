@@ -47,4 +47,22 @@ describe("useApi when the path changes", () => {
     m.render();
     expect((m.tree as { state: string }).state).toBe("loading");
   });
+
+  it("keeps the last answer for the same view asked again (Check again's fresh path)", async () => {
+    vi.stubGlobal("document", { querySelector: () => null });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 200 })),
+    );
+    const props = { path: "/api/doctor" };
+    const Probe = (p: { path: string }) => useApi<{ ok: boolean }>(p.path, { view: "/api/doctor" });
+    const m = mount(Probe as never, props as never);
+    await flush();
+    await flush();
+    m.render();
+    expect((m.tree as { state: string }).state).toBe("ready");
+    props.path = "/api/doctor?fresh=1&n=1";
+    m.render();
+    expect((m.tree as { state: string }).state).toBe("ready");
+  });
 });

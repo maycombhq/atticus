@@ -55,5 +55,22 @@ describe("editing a repo's branches after a reload", () => {
       path: "/api/repos/forge-notes/branches",
       body: { was: { defaultBranch: "main", branches: ["develop", "release/2026.11"] } },
     });
+    // A typo fixed and saved again in the same form: sent with what the first save wrote.
+    (
+      all(m.tree).find((e) => e.props.id === "repo-forge-notes-branches")!.props.onChange as (
+        e: unknown,
+      ) => void
+    )({ target: { value: "develop\nrelease/2026.12" } });
+    m.render();
+    (all(m.tree).find((e) => e.type === "form")!.props.onSubmit as (e: unknown) => void)({
+      preventDefault: () => undefined,
+    });
+    await flush();
+    expect(sent.at(-1)).toMatchObject({
+      body: {
+        branches: ["develop", "release/2026.12"],
+        was: { defaultBranch: "main", branches: ["develop", "release/2026.11"] },
+      },
+    });
   });
 });

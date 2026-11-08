@@ -171,7 +171,13 @@ export type Loaded<T> =
  */
 export function useApi<T>(
   path: string | undefined,
+  /**
+   * `view`: what the answer is of, when the path changes only to ask again (a fresh check,
+   * `?fresh=1&n=2`): the last answer stays shown while the new one comes, as a reload's does.
+   */
+  o: { view?: string } = {},
 ): Loaded<T> & { reload: () => void; refreshing: boolean; at?: number } {
+  const view = path === undefined ? undefined : (o.view ?? path);
   // What was loaded, and for which path: a new path shows loading, never the last path's answer
   // as if it were this one's (box X's candidates under box Y, change A's detail under B).
   const [held, hold] = useState<{ s: Loaded<T>; for?: string }>({ s: { state: "loading" } });
@@ -188,7 +194,7 @@ export function useApi<T>(
     api<T>(path, { signal: ctl.signal })
       .then(
         (data) => {
-          if (!ctl.signal.aborted) set({ state: "ready", data }, path);
+          if (!ctl.signal.aborted) set({ state: "ready", data }, view!);
         },
         (e: unknown) => {
           if (ctl.signal.aborted) return;
@@ -199,7 +205,7 @@ export function useApi<T>(
               ...(e instanceof ApiError && e.problem.notYet ? { notYet: true } : {}),
               ...(e instanceof ApiError && e.problem.status ? { status: e.problem.status } : {}),
             },
-            path,
+            view!,
           );
         },
       )
@@ -212,7 +218,7 @@ export function useApi<T>(
     return () => ctl.abort();
   }, [path, tick]);
   // A reload of the same path keeps what is shown; another path (or none) is loading.
-  const s: Loaded<T> = held.for === path && path !== undefined ? held.s : { state: "loading" };
+  const s: Loaded<T> = held.for === view && view !== undefined ? held.s : { state: "loading" };
   return { ...s, reload, refreshing, ...(at !== undefined ? { at } : {}) };
 }
 

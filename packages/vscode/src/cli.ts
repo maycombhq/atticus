@@ -53,10 +53,17 @@ export function shimTarget(cmdFile: string): string | undefined {
 
 /** Find a command on PATH (with PATHEXT on Windows). */
 function onPath(name: string, env: NodeJS.ProcessEnv, win: boolean): string | undefined {
-  const dirs = (env.PATH ?? env.Path ?? "").split(delimiter).filter(Boolean);
+  // A PATH entry may be quoted ("C:\\Users\\dev\\AppData\\Roaming\\npm"), as cmd.exe reads it.
+  const dirs = (env.PATH ?? env.Path ?? "")
+    .split(delimiter)
+    .map((d) => d.trim().replace(/^"(.*)"$/, "$1"))
+    .filter(Boolean);
   const exts = win ? (env.PATHEXT ?? ".EXE;.CMD;.BAT").split(";").filter(Boolean) : [""];
+  // On Windows a bare name is found with PATHEXT's extensions only, as Windows does: npm's
+  // extensionless `atticus` beside atticus.cmd is a Git Bash script, which cmd can't run directly.
+  const tries = win ? (/\.[a-z0-9]+$/i.test(name) ? [""] : exts.map((e) => e.toLowerCase())) : exts;
   for (const d of dirs)
-    for (const e of win ? ["", ...exts] : exts) {
+    for (const e of tries) {
       const f = join(d, name + e);
       if (isFile(f)) return f;
     }

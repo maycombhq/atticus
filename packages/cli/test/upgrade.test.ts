@@ -153,7 +153,9 @@ describe("atticus upgrade", () => {
     const r = io();
     await expect(
       upgradeCommand(root, { by: "pat", now: new Date("2026-10-19T10:00:00Z") }, r.io, "1.0.0"),
-    ).rejects.toThrow(/The stories of add-limit couldn't be written again/);
+    ).rejects.toThrow(
+      /The stories of add-limit couldn.t be written again .* The files as they were before this upgrade are in .atticus\/backups\/20261019-100000/,
+    );
     const backup = join(root, ".atticus/backups/20261019-100000/openspec/changes/add-limit");
     expect(await readFile(join(backup, "tasks.md"), "utf8")).toBe("- [ ] 1.1 my own wording\n");
     expect(await readFile(join(backup, "stories/s1.md"), "utf8")).toContain("Prompt for Copilot");
@@ -350,7 +352,7 @@ describe("atticus upgrade", () => {
     });
     // The installed CLI reports its own version (2.0.0-beta.2 here), older than 2.1.0.
     expect(doctor.find((c) => c.id === "upgrade")).toMatchObject({ status: "fail" });
-  });
+  }, 30_000); // doctor runs every machine check (git, npm, the port): seconds on a busy machine
 });
 
 describe("atticus upgrade and the starter review (ADR 0120)", () => {

@@ -1,5 +1,5 @@
 import { cp, mkdir, readdir, readFile, stat } from "node:fs/promises";
-import { join } from "node:path";
+import { join, relative, sep } from "node:path";
 import { parse, stringify } from "yaml";
 import {
   ATTICUS_FOLDER_IGNORE,
@@ -314,7 +314,8 @@ export const MIGRATIONS: Migration[] = [
         // A change that can't be written again is said, never "Done" over it.
         const files = await rewriteStories(root, c).catch((e: unknown) => {
           throw new Error(
-            `The stories of ${c} couldn't be written again (${e instanceof Error ? e.message : String(e)}); its files as they were are in the backup.`,
+            `The stories of ${c} couldn't be written again (${e instanceof Error ? e.message : String(e)}).`,
+            { cause: e },
           );
         });
         for (const f of files) out.push(`${changesRelOf(root)}/${c}/${f}`);
@@ -613,7 +614,16 @@ export async function upgradeCommand(
         });
     for (const p of c.pending) {
       const m = MIGRATIONS.find((x) => x.id === p.id)!;
-      changed.push(...(await m.apply(root)));
+      try {
+        changed.push(...(await m.apply(root)));
+      } catch (e) {
+        // Said with where the files as they were are kept, and which steps already ran.
+        const done = c.pending.slice(0, c.pending.indexOf(p)).map((x) => x.id);
+        throw new Error(
+          `${e instanceof Error ? e.message : String(e)} The files as they were before this upgrade are in ${relative(root, backup).split(sep).join("/")}${done.length ? `; these steps had already run: ${done.join(", ")}` : ""}. Run atticus upgrade again once it's fixed.`,
+          { cause: e },
+        );
+      }
     }
   }
   const stamp: MetarepoStamp = MetarepoStamp.parse({

@@ -78,8 +78,13 @@ export async function scanBranch(
   const kept = await readCatalog(join(dir, "generated"), { cacheRoot: root }).catch(() => ({
     records: [] as CatalogRecord[],
   }));
+  // Only repos the manifests still list (and not archived): a removed repo's records go.
+  const listed = new Set(all.map((r) => r.id));
   const others = kept.records.filter(
-    (r) => r.evidence.length > 0 && r.evidence.every((e) => !e.repo || !ofRepos.has(e.repo)),
+    (r) =>
+      r.evidence.length > 0 &&
+      r.evidence.every((e) => !e.repo || !ofRepos.has(e.repo)) &&
+      r.evidence.some((e) => e.repo && listed.has(e.repo)),
   );
   const ids2 = new Set(scan.records.map((r) => `${r.kind}/${r.id}`));
   const merged = [...scan.records, ...others.filter((r) => !ids2.has(`${r.kind}/${r.id}`))];
@@ -95,8 +100,8 @@ export async function scanBranch(
       schemaVersion: 1,
       branch,
       scannedAt,
-      repos: [...was.filter((x) => !ofRepos.has(x.id)), ...commits].sort((a, b) =>
-        a.id < b.id ? -1 : a.id > b.id ? 1 : 0,
+      repos: [...was.filter((x) => !ofRepos.has(x.id) && listed.has(x.id)), ...commits].sort(
+        (a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
       ),
     }),
   );

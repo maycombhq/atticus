@@ -192,6 +192,11 @@ describe("starting atticus", { timeout: 120_000 }, () => {
     const js = join(dir, "node_modules", "@maycombhq", "cli", "dist", "bin.js");
     await mkdir(join(js, ".."), { recursive: true });
     await writeFile(js, "");
+    // npm writes an extensionless Git Bash script beside the .cmd: never the one taken.
+    await writeFile(
+      join(dir, "atticus"),
+      '#!/bin/sh\nexec node "$basedir/node_modules/@maycombhq/cli/dist/bin.js" "$@"\n',
+    );
     await writeFile(
       join(dir, "atticus.cmd"),
       '@SETLOCAL\r\n@IF EXIST "%~dp0\\node.exe" (\r\n  "%~dp0\\node.exe"  "%~dp0\\node_modules\\@maycombhq\\cli\\dist\\bin.js" %*\r\n) ELSE (\r\n  node  "%~dp0\\node_modules\\@maycombhq\\cli\\dist\\bin.js" %*\r\n)\r\n',
@@ -211,6 +216,17 @@ describe("starting atticus", { timeout: 120_000 }, () => {
         shell: false,
       });
     } else expect(shimTarget(join(dir, "missing.cmd"))).toBeUndefined();
+    // Windows' lookup, wherever the test runs: the .cmd, never npm's extensionless script,
+    // and found on a quoted PATH entry too.
+    for (const PATH of [dir, `"${dir}"`]) {
+      const c = resolveCommand({
+        atticusPath: "atticus",
+        cwd: dir,
+        platform: "win32",
+        env: { PATH, PATHEXT: ".EXE;.CMD" },
+      });
+      expect(c.file === "node" || c.file.endsWith("atticus.cmd"), JSON.stringify(c)).toBe(true);
+    }
   });
 
   it("quotes what it logs, and reads the one JSON object", () => {

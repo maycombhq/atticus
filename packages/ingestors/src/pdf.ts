@@ -260,7 +260,8 @@ function fontText(b: number[], f: PdfFont | undefined): string {
   let out = "";
   for (let i = 0; i < b.length; i += f.bytes) {
     const code = f.bytes === 2 ? (b[i]! << 8) | (b[i + 1] ?? 0) : b[i]!;
-    out += f.map.get(code) ?? "";
+    // A code a simple font's map leaves out reads as Latin-1, as it would with no map at all.
+    out += f.map.get(code) ?? (f.bytes === 1 ? String.fromCharCode(code) : "");
   }
   return clean(out);
 }
@@ -508,7 +509,8 @@ export function readPdf(bytes: Uint8Array): ParsedText {
     const f: PdfFont = text
       ? (() => {
           const t = parseToUnicode(text);
-          return { map: t.map, bytes: type0 ? 2 : t.bytes };
+          // A simple font (TrueType, Type1) shows one byte a code, whatever its map's codespace says.
+          return { map: t.map, bytes: type0 ? 2 : 1 };
         })()
       : type0
         ? { bytes: 2, unreadable: true }

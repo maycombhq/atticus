@@ -127,7 +127,10 @@ interface Doctor {
 /** What this machine needs (atticus doctor, ADR 0049): each check with its fix. */
 function MachinePanel() {
   const [fresh, setFresh] = useState(0);
-  const d = useApi<Doctor>(`/api/doctor${fresh ? `?fresh=1&n=${fresh}` : ""}`);
+  // Asked again (Check again): the same view, so the checks stay shown while they run again.
+  const d = useApi<Doctor>(`/api/doctor${fresh ? `?fresh=1&n=${fresh}` : ""}`, {
+    view: "/api/doctor",
+  });
   const chip = { ok: "done", warn: "warn", fail: "blocking" } as const;
   return (
     <Panel

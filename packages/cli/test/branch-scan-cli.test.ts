@@ -135,6 +135,13 @@ describe("atticus scan --ref (ADR 0123)", { timeout: 300_000 }, () => {
       join(dir, "branch.yaml"),
       `schemaVersion: 1\nbranch: develop\nscannedAt: x\nrepos:\n  - { id: forge-ledger, commit: ${"a".repeat(40)} }\n  - { id: forge-notes, commit: ${meta.repos[0]!.commit} }\n`,
     );
+    // forge-ledger is in the manifest too (its row scanned it before).
+    const manifest = join(root, "org-pack", "profiles", "forge", "repos.manifest.yaml");
+    const listed = await readFile(manifest, "utf8");
+    await writeFile(
+      manifest,
+      `${listed}  - { id: forge-ledger, url: "https://git.example.com/forge/forge-ledger.git", type: spring-boot, owner: team-ledger, component: ledger-svc, system: ledger, branches: [develop] }\n`,
+    );
     const again = await run(["scan", "--ref", "develop", "--repos", "forge-notes", "--root", root]);
     expect(again.code, again.err).toBeLessThan(2);
     expect(existsSync(join(dir, "generated", kind, `ledger-${file}`))).toBe(true);
@@ -142,6 +149,16 @@ describe("atticus scan --ref (ADR 0123)", { timeout: 300_000 }, () => {
       repos: { id: string }[];
     };
     expect(after.repos.map((x) => x.id)).toEqual(["forge-ledger", "forge-notes"]);
+    // forge-ledger leaves the manifest: the next scan drops its records and its commit.
+    await writeFile(manifest, listed);
+    expect(
+      (await run(["scan", "--ref", "develop", "--repos", "forge-notes", "--root", root])).code,
+    ).toBeLessThan(2);
+    expect(existsSync(join(dir, "generated", kind, `ledger-${file}`))).toBe(false);
+    const gone = parse(await readFile(join(dir, "branch.yaml"), "utf8")) as {
+      repos: { id: string }[];
+    };
+    expect(gone.repos.map((x) => x.id)).toEqual(["forge-notes"]);
   });
 
   it("refuses the default branch, and a branch no repo lists unless --repos names them", async () => {
