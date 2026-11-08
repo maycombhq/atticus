@@ -168,6 +168,37 @@ describe("Run with AI: draft", () => {
   );
 
   it(
+    "does nothing more once Atticus is stopped during the build: no fix round, no commit",
+    async () => {
+      const { root } = await speckitRoot({ repos: ["forge-ledger"] });
+      let asked = 0;
+      const runtime = new MockRuntime(
+        () => {
+          asked++;
+          return answer("// TODO");
+        },
+        { now },
+      );
+      const r = await runTask(root, CHANGE, "1.2", {
+        level: "draft",
+        by: "dev",
+        runtime,
+        git,
+        now,
+        commands: async () => ({ exitCode: null, stdout: "", stderr: "", stopped: true }),
+      });
+      expect(asked).toBe(1); // the task's own answer, and no fix round after the stop
+      expect(r.attempts).toHaveLength(1);
+      expect(r.state).toBe("needs-person");
+      expect(r.notes.at(-1)).toMatch(
+        /^Atticus was stopped while the build ran, so nothing more was done; a person takes over in workspace\/.worktrees\/add-transfer-limit\/.tasks\/1.2\/forge-ledger\./,
+      );
+      expect(r.commit).toBeUndefined();
+    },
+    T,
+  );
+
+  it(
     "refuses an answer that writes outside the repo or into Git's files",
     async () => {
       expect(parseAnswer("=== file: ../escape.txt\nx\n=== end file\n").problems).toEqual([

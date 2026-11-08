@@ -33,7 +33,7 @@ import {
 } from "@maycombhq/speckit";
 import { createGit, toRepoRelative, type GitRunner } from "@maycombhq/workspace";
 import { applyChanges, parseAnswer } from "./apply.js";
-import { shellCommandRunner, type CommandRunner } from "./commands.js";
+import { shellCommandRunner, stopRequested, type CommandRunner } from "./commands.js";
 import { conformAfterBuild } from "./conform.js";
 import { taskPack, taskRunnerAgent } from "./prompt.js";
 import {
@@ -124,6 +124,8 @@ interface Ctx {
   approval?: Approval;
   now: () => Date;
   maxFix: number;
+  /** Atticus was stopped during a build (Ctrl+C on atticus ui): the run does nothing more. */
+  stopped?: boolean;
 }
 
 async function summarise(c: Ctx, run: Run) {
@@ -198,6 +200,7 @@ async function build(c: Ctx, runId: string, fixRun?: string): Promise<BuildAttem
   if (!command) return undefined;
   const n = c.record.attempts.length + 1;
   const res = await c.commands(command, c.worktree);
+  if (res.stopped) c.stopped = true;
   const logRel = `${runsRelOf(c.root)}/${c.t.change.id}/${runId}/build-${n}.log`;
   await mkdir(join(runsDirOf(c.root), c.t.change.id, runId), { recursive: true });
   await writeFile(
@@ -256,7 +259,8 @@ async function buildAndFix(c: Ctx, runId: string): Promise<void> {
     return;
   }
   let fixes = 0;
-  while (!a.passed && fixes < c.maxFix && c.runtime.kind !== "hand-off") {
+  const halted = () => c.stopped || stopRequested();
+  while (!a.passed && !halted() && fixes < c.maxFix && c.runtime.kind !== "hand-off") {
     fixes++;
     const log = await import("node:fs/promises").then((fs) =>
       fs.readFile(join(c.root, a!.log), "utf8"),
@@ -266,12 +270,21 @@ async function buildAndFix(c: Ctx, runId: string): Promise<void> {
       c.record.notes.push(`Fix round ${fixes} failed: ${fix.errors.join("; ") || fix.state}.`);
       break;
     }
+    // Stopped while the model answered: its files aren't written.
+    if (halted()) break;
     const problems = await applyAnswer(c, fix);
     if (problems.length) {
       c.record.notes.push(`Fix round ${fixes} was not applied: ${problems.join("; ")}.`);
       break;
     }
     a = (await build(c, runId, fix.runId))!;
+  }
+  if (halted()) {
+    c.record.state = "needs-person";
+    c.record.notes.push(
+      `Atticus was stopped while the build ran, so nothing more was done; a person takes over in ${c.record.worktree}. See ${a.log}.`,
+    );
+    return;
   }
   if (!a.passed) {
     c.record.state = "needs-person";
@@ -385,6 +398,14 @@ async function finish(c: Ctx, run: Run): Promise<TaskRunRecord> {
       );
     c.record.state = "planned";
   } else {
+    // Stopped while the model answered (Ctrl+C on atticus ui): its files aren't written.
+    if (stopRequested()) {
+      c.record.state = "needs-person";
+      c.record.notes.push(
+        `Atticus was stopped before the answer was applied, so nothing was written; run the task again.`,
+      );
+      return done(c);
+    }
     if (c.runtime.kind !== "hand-off") {
       const problems = await applyAnswer(c, run);
       if (problems.length) {

@@ -235,7 +235,8 @@ export async function readServiceRequestExports(o: { root: string; inputsDir?: s
       if (e.name.startsWith(".")) continue;
       const full = join(d, e.name);
       if (e.isDirectory()) await walk(full);
-      else if (/\.(json|ya?ml|csv)$/i.test(e.name)) found.push(full);
+      // Files only: an export that is a link to a file elsewhere isn't read.
+      else if (e.isFile() && /\.(json|ya?ml|csv)$/i.test(e.name)) found.push(full);
     }
   }
   await walk(dir);

@@ -8,6 +8,7 @@ import {
   type RunningServer,
   type ServerContext,
 } from "@maycombhq/server";
+import { stopAllBuilds } from "@maycombhq/taskrun";
 import { uiDistDir } from "@maycombhq/ui";
 import type { Output } from "./commands.js";
 import { uiRoutes, type UiDeps } from "./ui-api.js";
@@ -350,6 +351,9 @@ export async function uiCommand(
     process.stdin,
     o.parent !== undefined ? { parent: o.parent } : {},
   );
+  // A task run's build stops with the app, and the run does nothing more (no fix round, no
+  // commit); on Windows the signal never reached the build's own handler, so it is stopped here.
+  stopAllBuilds();
   await srv.close();
   io.out("Stopped.");
   return 0;

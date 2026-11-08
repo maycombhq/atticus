@@ -1,4 +1,6 @@
 import { readFileSync } from "node:fs";
+import { cp, mkdtemp, symlink } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -123,6 +125,20 @@ describe("readWorkItemExports", () => {
     ]);
     expect(res.items.map((i) => i.id)).toEqual(["8001", "8002", "8003", "7001", "7002", "7003"]);
     expect(res.problems).toEqual([]);
+  });
+
+  it("doesn't read an export that is a link to a file elsewhere", async () => {
+    const root = await mkdtemp(join(tmpdir(), "atticus-items-"));
+    await cp(join(ROOT, "inputs"), join(root, "inputs"), { recursive: true });
+    await symlink(
+      join(ROOT, "inputs/tickets/ado-query.csv"),
+      join(root, "inputs/tickets/planted.csv"),
+    ).catch(() => undefined);
+    const res = await readWorkItemExports({ root });
+    expect(res.files).toEqual([
+      "inputs/tickets/ado-query.csv",
+      "inputs/tickets/ado-rest-export.json",
+    ]);
   });
 
   it("reads the Forge inputs, which sit beside the metarepo", async () => {

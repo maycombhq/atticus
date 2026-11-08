@@ -8,6 +8,8 @@ export interface CommandResult {
   exitCode: number | null;
   stdout: string;
   stderr: string;
+  /** Atticus was stopping (Ctrl+C, a stop signal, stopAllBuilds) when the command ended. */
+  stopped?: true;
 }
 
 export type CommandRunner = (
@@ -61,14 +63,24 @@ function stopTree(child: Child, signal: NodeJS.Signals = "SIGTERM") {
  */
 const live = new Set<Child>();
 const SIGNALS: NodeJS.Signals[] = ["SIGINT", "SIGTERM", "SIGHUP"];
-/** Who else listened for each signal when the hook went on (a `once` listener is gone by the time it fires). */
-const others = new Map<NodeJS.Signals, boolean>();
-const onSignal = (sig: NodeJS.Signals) => {
+/** Atticus is stopping: no build that ends now counts, and a task run does nothing more. */
+let stopping = false;
+export const stopRequested = () => stopping;
+
+/** Stop every build running now and every one asked for later (atticus ui on its way out). */
+export function stopAllBuilds(): void {
+  stopping = true;
   for (const c of live) stopTree(c);
-  const heard = others.get(sig) || process.listenerCount(sig) > 1;
+}
+
+const onSignal = (sig: NodeJS.Signals) => {
+  stopAllBuilds();
+  // Put first (prependListener), this runs before any other listener, a `once` one still in
+  // place: what listens now is what hears it.
+  const heard = process.listenerCount(sig) > 1;
   unhook();
   // Nobody else listens (atticus task run): the signal ends Atticus as it would have. Someone
-  // does (atticus ui stops gracefully, with process.once): they heard it already.
+  // does (atticus ui stops itself): they hear it next.
   if (!heard) process.kill(process.pid, sig);
 };
 const onExit = () => {
@@ -78,10 +90,7 @@ let hooked = false;
 function hook() {
   if (hooked) return;
   hooked = true;
-  for (const s of SIGNALS) {
-    others.set(s, process.listenerCount(s) > 0);
-    process.on(s, onSignal);
-  }
+  for (const s of SIGNALS) process.prependListener(s, onSignal);
   process.on("exit", onExit);
 }
 function unhook() {
@@ -127,7 +136,7 @@ export function shellCommandRunner(): CommandRunner {
         clearTimeout(kill);
         clearTimeout(drain);
         untrack(child);
-        resolve(r);
+        resolve(stopping ? { ...r, stopped: true } : r);
       };
       const timer = setTimeout(
         () => {

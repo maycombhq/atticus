@@ -283,7 +283,8 @@ export async function readWorkItemExports(o: { root: string; inputsDir?: string 
       if (e.name.startsWith(".")) continue;
       const full = join(d, e.name);
       if (e.isDirectory()) await walk(full);
-      else if (/\.(json|ya?ml|csv)$/i.test(e.name)) files.push(full);
+      // Files only: an export that is a link to a file elsewhere isn't read.
+      else if (e.isFile() && /\.(json|ya?ml|csv)$/i.test(e.name)) files.push(full);
     }
   }
   await walk(dir);

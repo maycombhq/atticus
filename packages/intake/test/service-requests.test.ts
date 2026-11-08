@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -97,6 +97,11 @@ describe("service-request exports (golden)", () => {
         join(root, "inputs/tickets", f),
         readFileSync(join(FORGE, "inputs/tickets", f)),
       );
+    // An export that is a link to a file elsewhere isn't read.
+    await symlink(
+      join(FORGE, "inputs/tickets/closed-service-requests.json"),
+      join(root, "inputs/tickets/planted.json"),
+    ).catch(() => undefined);
     const r = await readServiceRequestExports({ root });
     expect(r.files).toEqual(["inputs/tickets/closed-service-requests.json"]);
     expect(r.requests.map((x) => x.id)).toEqual(["SR-0001", "SR-0002", "SR-0003"]);
