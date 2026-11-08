@@ -32,6 +32,14 @@ On a system's box, **Declare a link…** says what the code can't show: the syst
 
 Every box lists its corrections (a repo's) or declarations (a system's) under **Corrections and declarations**, each with who and when. **Undo** removes exactly the line it wrote; a topic or route written into the profile by hand is changed there, not by Undo. Undoing a pairing doesn't undo a `/**` answer written with it: change that answer on the Questions page. Each change ends with the command to redraw the map and the `git` command to commit the file.
 
+## Decided by AI: correct one, and it spreads
+
+When `runtime.yaml` says `decide: { links: auto, questions: auto }`, Atticus applies what a Copilot session it ran decided, as the AI's and never as yours (ADR 0181). Everywhere such a decision shows, it carries **Detected by AI** in words, with the run it came from linked to Set up › Model runs: the Connect panel (what the AI already paired between the two boxes), Match with Copilot (what it applied, and what it kept for you), Why is this linked?, Corrections and declarations, Questions, Contracts, a change's impact and its knowledge. Counts say how many links and questions were settled from code, by a person and by AI.
+
+**Correct** on any of them opens a form: the right option, the right API with its repo, or none of these. **Apply to similar** is on: **Preview** shows your answer, the rule Atticus derived from it (a path prefix, host or topic pattern, which you can change) and every other item it re-checks: applied, confirmed, replaced, or reverted to open. **Save my correction** writes it as your word. A shape corrected three times offers **Make this a reading rule**, so the next read gets it right at the source.
+
+**Map › Decided by AI** lists what the AI decided that still stands, by repo and kind, and every batch the AI or a correction's rule applied, newest first. **Undo** asks first, then removes exactly the batch's lines and answers, puts back what it took away, and says what it left because it changed since. Map › Trust shows the sample audit's precision for the AI's decisions beside the facts' and links'; below the bar (`decide.minPrecision`), deciding pauses back to proposing and Home says why.
+
 ## Working on the canvas
 
 **Layers, filters and tools** above the canvas (ADR 0175) choose what is drawn and help you find your way; none of them changes the map.

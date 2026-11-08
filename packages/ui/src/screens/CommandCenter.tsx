@@ -22,6 +22,13 @@ import { Propose } from "../app/propose.js";
 import type { OnboardingData } from "./work/next.js";
 import { HomeEstate, HomeNext, SlashCommands } from "./work/Overview.js";
 import { YourRoleQuestions } from "./RoleQuestions.js";
+import { DecidePaused, readyView, useDecisions } from "../app/decisions.js";
+
+/** ADR 0181: when the sample audit paused AI deciding, Home says why, with Map › Trust's link. */
+export function HomeDecidePaused() {
+  const v = readyView(useDecisions());
+  return v ? <DecidePaused decide={v.decide} /> : null;
+}
 
 const T = COPY.commandCenter;
 
@@ -792,6 +799,7 @@ export function CommandCenter() {
       <HowStepsRun />
       <SetupChecklist />
       <HomeNext onboarding={onboarding} changes={changes} questions={asked} trust={trust} />
+      <HomeDecidePaused />
       {/* ADR 0181 part 4: each role answers its own questions on a change. */}
       {changes.state === "ready" && <YourRoleQuestions changes={changes.data} />}
       <div className="bento">

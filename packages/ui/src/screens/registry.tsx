@@ -4,6 +4,7 @@ import { Changes } from "./Changes.js";
 import { Trust } from "./map/Trust.js";
 import { Outside } from "./map/Outside.js";
 import { Mismatches } from "./map/Mismatches.js";
+import { Decisions } from "./map/Decisions.js";
 import { CommandCenter } from "./CommandCenter.js";
 import { Explore } from "./Explore.js";
 import { Flows } from "./flows/Flows.js";
@@ -44,6 +45,8 @@ export const SCREEN_COMPONENTS: Record<string, Screen> = {
   outside: Outside,
   // F7 (ADR 0164): the contract check on every link, estate-wide.
   mismatches: Mismatches,
+  // ADR 0181: what the AI decided, Correct, and each batch's Undo.
+  decisions: Decisions,
   // Home: one page, Waiting on you with the Overview merged in.
   home: () => <CommandCenter />,
   // Every other page, unchanged (behind --full, or reached by a link).

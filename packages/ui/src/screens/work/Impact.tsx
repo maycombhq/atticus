@@ -3,6 +3,7 @@ import { useApi, useLiveEvents } from "../../api/client.js";
 import { Panel, View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
 import { Command, PrepareFirst } from "./RunNext.js";
+import { AiChip } from "../../app/decisions.js";
 
 /**
  * A change's impact, as designed (ADR 0144, V1), on its Architecture tab: what its target flows
@@ -37,6 +38,12 @@ export function ImpactView({ i }: { i: Api.ChangeImpactT }) {
       ) : (
         <>
           <p className="est-big">{I.counts(i.breaks, i.mayBreak, i.routes)}</p>
+          {/* ADR 0181: breaks resting only on links the AI decided, counted (the safe side). */}
+          {(i.byAi ?? 0) > 0 && (
+            <p>
+              <a href="#/decisions?kind=link">{COPY.decisions.impactByAi(i.byAi!)}</a>
+            </p>
+          )}
           {i.upstream && (i.upstream.breaks > 0 || i.upstream.mayBreak > 0) && (
             <p>{I.upstream(i.upstream.breaks, i.upstream.mayBreak)}</p>
           )}
@@ -87,6 +94,12 @@ export function ImpactView({ i }: { i: Api.ChangeImpactT }) {
                               <strong>{I.breaks}</strong>
                             ) : (
                               I.mayBreak(I.guessWords[c.guessed ?? ""] ?? "")
+                            )}
+                            {c.decidedByAi && (
+                              <div>
+                                <AiChip />
+                                <span className="sr"> {COPY.decisions.impactCaller}</span>
+                              </div>
                             )}
                           </td>
                           <td>{ownerWords(c.owner)}</td>

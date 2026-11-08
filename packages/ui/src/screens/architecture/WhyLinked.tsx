@@ -7,6 +7,7 @@ import { COPY } from "../../copy.js";
 import { message } from "../run/shared.js";
 import { CorrectionNext } from "../../app/correction-next.js";
 import { findingsOfJoin, mismatchesHash } from "../../app/contracts.js";
+import { AiMark, linkDecisionAt, readyView, useDecisions } from "../../app/decisions.js";
 import {
   callerLine,
   callFactsOf,
@@ -84,6 +85,10 @@ export function JoinView({
   const declared = !!topic && join.how === "declared" && !join.gateway;
   const said = declared ? join.other.filter((e) => e.source === "manual") : [];
   const other = declared ? join.other.filter((e) => e.source !== "manual") : join.other;
+  // ADR 0181: a pairing the AI decided rests on its `ai` evidence at the call's line.
+  const ai = join.caller.find((e) => e.source === "ai");
+  const decisions = useDecisions();
+  const decision = ai ? linkDecisionAt(readyView(decisions), ai.repo, ai.at) : undefined;
   return (
     <article className="stack" style={{ gap: 4 }} aria-label={W.call(join.from, join.to, what)}>
       <p style={{ margin: 0 }}>
@@ -97,10 +102,15 @@ export function JoinView({
         )}
       </p>
       <p className="ev-say" style={{ margin: 0 }}>
-        {declared ? W.declaredTopic : (W.how[join.how] ?? W.how.unknown)}
+        {declared
+          ? W.declaredTopic
+          : ai
+            ? COPY.decisions.whyLinked
+            : (W.how[join.how] ?? W.how.unknown)}
         {join.gateway && ` ${W.gateway}`}
         {join.shared && ` ${W.sharedMap(join.shared.team, join.shared.commit)}`}
       </p>
+      {ai && <AiMark item={decision?.item} ai />}
       {join.shared && (
         <p className="ev-say" style={{ margin: 0 }}>
           {W.sharedTheirs(join.shared.team)}

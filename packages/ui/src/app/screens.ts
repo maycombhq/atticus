@@ -70,6 +70,13 @@ export const SCREENS: ScreenDef[] = [
   { id: "contracts", label: S.contracts, section: "Map" },
   { id: "impact", label: S.impact, section: "Map" },
   { id: "trust", label: S.trust, section: "Map" },
+  // ADR 0181: what the AI decided, beside Trust (which audits it): Correct, and each batch's Undo.
+  {
+    id: "decisions",
+    label: S.decisions,
+    section: "Map",
+    also: [COPY.decisions.chip, COPY.decisions.batchesTitle],
+  },
   // Ask (the box at the top), and a system's page (WP7.7).
   { id: "explore", label: S.explore, section: "Map", aside: true },
   { id: "systems", label: S.systems, section: "Map", aside: true },

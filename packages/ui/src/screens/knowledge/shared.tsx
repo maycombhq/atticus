@@ -1,6 +1,7 @@
 import type { Api } from "@maycombhq/core";
 import { RunStep, stepArgs } from "../../app/runstep.js";
 import { ExternalLink } from "../../app/ui.js";
+import { AiMark } from "../../app/decisions.js";
 import { COPY } from "../../copy.js";
 import { RunsLink } from "../runs/Runs.js";
 import { Command } from "../work/RunNext.js";
@@ -143,6 +144,8 @@ export function ConflictList({ conflicts }: { conflicts: Api.KnowledgeConflictVi
                   ? C.open(c.question.id)
                   : C.notAsked}
             </p>
+            {/* ADR 0181: an answer the AI decided shows as the AI's, with Correct. */}
+            {c.question && <AiMark item={c.question.id} />}
             {s ? (
               <p className="muted" style={{ margin: 0 }}>
                 {C.suggested(ref(s), s.signal, s.detail)}

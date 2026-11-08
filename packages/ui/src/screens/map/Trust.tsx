@@ -9,6 +9,7 @@ import { Command, Problems } from "../work/RunNext.js";
 import "../work/work.css";
 import { AuditAnswer } from "./AuditAnswer.js";
 import { mismatchesHash } from "../../app/contracts.js";
+import { DecidePaused, useDecisions } from "../../app/decisions.js";
 
 /**
  * Map › Trust (ADR 0124): how far to trust each repo's map, from the files the verifier writes.
@@ -325,6 +326,8 @@ export function TrustRow({ r }: { r: Repo }) {
             <>
               {T.auditTally(T.auditFacts, r.audit.facts)} ·{" "}
               {T.auditTally(T.auditLinks, r.audit.links)}
+              {/* ADR 0181: the AI's decisions, audited apart from the facts and links. */}
+              {r.audit.ai && <> · {COPY.decisions.trustTally(r.audit.ai)}</>}
               {r.audit.facts.right +
                 r.audit.facts.wrong +
                 r.audit.links.right +
@@ -506,16 +509,44 @@ export function FreshPanel({ of }: { of: Loaded<Api.FreshViewT> & { reload?: () 
 }
 
 /** The tab from loaded data, so tests can render every state. */
+/**
+ * ADR 0181: the sample audit's precision for the AI's decisions, every repo summed, against the
+ * organisation's bar (decide.minPrecision); below it, deciding pauses and this says why.
+ */
+export function AiPrecision({ of }: { of: Loaded<Api.DecisionsViewT> & { reload?: () => void } }) {
+  const D = COPY.decisions;
+  return (
+    <Panel title={D.trustTitle} span="1 / -1">
+      <View of={of}>
+        {(v) => (
+          <div className="stack" style={{ gap: 6 }}>
+            <p style={{ margin: 0 }}>{D.trustTally(v.decide.precision)}</p>
+            <p className="work-say" style={{ margin: 0 }}>
+              {D.trustBar(v.decide.configured.minPrecision)}
+            </p>
+            <DecidePaused decide={v.decide} />
+            <a href="#/decisions">{D.trustOpen}</a>
+          </div>
+        )}
+      </View>
+    </Panel>
+  );
+}
+
 export function TrustPage({
   of,
   fresh,
+  decide,
 }: {
   of: Loaded<Api.TrustViewT> & { reload?: () => void };
   fresh?: Loaded<Api.FreshViewT> & { reload?: () => void };
+  /** ADR 0181: GET /api/decisions, for the AI's precision row. */
+  decide?: Loaded<Api.DecisionsViewT> & { reload?: () => void };
 }) {
   return (
     <div className="bento">
       {fresh && <FreshPanel of={fresh} />}
+      {decide && <AiPrecision of={decide} />}
       <Panel
         title={COPY.nav.screens.trust}
         span="1 / -1"
@@ -570,9 +601,14 @@ export function Trust() {
   useReloadOnFiles(view);
   const fresh = useApi<Api.FreshViewT>("/api/trust/fresh");
   useReloadOnFiles(fresh);
+  const ds = useDecisions();
   return (
     <EvidenceProvider>
-      <TrustPage of={view} fresh={fresh} />
+      <TrustPage
+        of={view}
+        fresh={fresh}
+        decide={{ ...(ds?.view ?? { state: "loading" }), ...(ds ? { reload: ds.reload } : {}) }}
+      />
     </EvidenceProvider>
   );
 }

@@ -3,6 +3,7 @@ import type { Api } from "@maycombhq/core";
 import { api, ApiError, useLiveEvents } from "../../api/client.js";
 import { COPY } from "../../copy.js";
 import { CopyButton } from "../run/shared.js";
+import { AiChip } from "../../app/decisions.js";
 
 /**
  * ADR 0178, part 2: Match with Copilot. One session reads the repo's loose call sites and
@@ -26,6 +27,62 @@ export type MatchIo = {
   get: () => Promise<Api.MatchLinksViewT>;
   post: () => Promise<Api.MatchLinksViewT>;
 };
+
+/**
+ * ADR 0181: what Atticus applied itself, as the AI's, once the session's answer was read (each
+ * "Detected by AI"), what it kept as proposals and why, or why deciding is paused.
+ */
+export function MatchDecided(p: {
+  decided: NonNullable<Api.MatchLinksViewT["decided"]>;
+  label: (call: string) => string;
+  apiLabel: (api: string) => string;
+  from: string;
+}) {
+  const D = COPY.decisions;
+  const d = p.decided;
+  return (
+    <div className="stack" style={{ gap: 4 }}>
+      {d.paused && (
+        <p className="ev-say" role="status" style={{ margin: 0 }}>
+          {D.matchPaused(d.paused)}
+        </p>
+      )}
+      {d.applied.length > 0 && (
+        <>
+          <p className="ev-say" style={{ margin: 0 }}>
+            {D.matchApplied(d.applied.length)}
+          </p>
+          <ul className="stack" style={{ gap: 4, margin: 0, paddingLeft: 18 }}>
+            {d.applied.map((x) => (
+              <li key={x.call}>
+                <code className="mono">{p.label(x.call)}</code> →{" "}
+                <code className="mono">{p.apiLabel(x.api)}</code> <AiChip />
+                <span className="muted"> · {D.because(D.bar[x.bar] ?? x.bar)}</span>
+              </li>
+            ))}
+          </ul>
+          <a href={`#/decisions?repo=${encodeURIComponent(p.from)}`}>{D.matchUndo}</a>
+        </>
+      )}
+      {d.kept.length > 0 && (
+        <>
+          <p className="ev-say" style={{ margin: 0 }}>
+            {D.matchKept(d.kept.length)}
+          </p>
+          <ul className="stack" style={{ gap: 2, margin: 0, paddingLeft: 18 }}>
+            {d.kept.map((x) => (
+              <li key={x.call}>
+                <code className="mono">{p.label(x.call)}</code> →{" "}
+                <code className="mono">{p.apiLabel(x.api)}</code>
+                {x.why ? <span className="muted"> · {x.why}</span> : null}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </div>
+  );
+}
 
 export function MatchWithCopilot(p: {
   from: string;
@@ -156,6 +213,9 @@ export function MatchWithCopilot(p: {
           <p className="ev-say" role="status">
             {M.done(proposals.length, m?.none.length ?? 0, m?.rejected.length ?? 0)}
           </p>
+          {m?.decided && (
+            <MatchDecided decided={m.decided} label={label} apiLabel={apiLabel} from={p.from} />
+          )}
           {proposals.length > 0 && (
             <>
               <ul className="stack" style={{ gap: 4, margin: 0, paddingLeft: 18 }}>
