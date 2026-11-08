@@ -493,6 +493,12 @@ export async function syncSources(o: SyncOptions): Promise<SyncResult> {
       });
       // ADR 0132: a page under view restrictions is above the limit for the metarepo's audience
       // (its snapshot is committed), unless the source says that audience may read it.
+      // Round 41: front matter that doesn't read may hold the page's classification or its
+      // restrictions: the page is skipped with why, never read at the default classification.
+      if (page.doc.frontMatterProblem) {
+        res.skipped.push({ source: source.id, path: r.path, reason: page.doc.frontMatterProblem });
+        continue;
+      }
       if (!source.readRestricted && pageRestricted(page.frontMatter)) {
         res.skipped.push({
           source: source.id,

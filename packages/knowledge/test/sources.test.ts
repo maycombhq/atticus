@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parseRecord, type OrgPack } from "@maycombhq/core";
@@ -342,5 +343,35 @@ describe("an adapter for one source by its id (ADR 0122)", () => {
     expect(res.pages.map((p) => [p.source, p.path, p.title])).toEqual([
       ["inputs", "inputs/partner/hub-runbook.pdf", "Hub runbook"],
     ]);
+  });
+});
+
+describe("review round 41: a page whose front matter doesn't read", () => {
+  it("is skipped with why, never read at the default classification", async () => {
+    const root = mkdtempSync(join(tmpdir(), "fm-problem-"));
+    mkdirSync(join(root, "wiki"), { recursive: true });
+    writeFileSync(
+      join(root, "wiki", "typo.md"),
+      "---\nclassification: confidential\nowner: [pat\n---\n# Ledger keys\n\nsecret body\n",
+    );
+    writeFileSync(join(root, "wiki", "fine.md"), "# Ledger guide\n\nHow the ledger posts.\n");
+    const res = await syncSources({
+      root,
+      orgPackDir: root,
+      orgPack: await hubPack([
+        { id: "hub-wiki", type: "markdown-folder", location: "wiki", spaces: [] },
+      ]),
+      records: HUB_RECORDS,
+      now: NOW,
+    });
+    expect(res.pages.map((p) => p.path)).toEqual(["wiki/fine.md"]);
+    expect(res.skipped).toEqual([
+      {
+        source: "hub-wiki",
+        path: "wiki/typo.md",
+        reason: expect.stringMatching(/^can't read front matter/),
+      },
+    ]);
+    expect(JSON.stringify(res)).not.toContain("secret body");
   });
 });
