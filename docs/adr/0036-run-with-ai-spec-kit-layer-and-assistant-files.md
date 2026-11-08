@@ -18,3 +18,15 @@
 ## Consequences
 
 Every AI code change is reviewable, reproducible in tests and gated by a build and a person; a repo with no build command can't get an AI PR. Teams change assistant instructions in one place. Not yet: real model provider plugins and real assistant smoke runs (done by a person, decisions-pending items 9 and 10), drift after every scan for open changes, parsing a hand-up lens run completed in hand-off mode, and the manual adapter's instruction behaviour (planning track). Candidate additive contract: a C6 schema for `process/commands`.
+
+## Addendum (2026-11-07, review): a task run from the app and the editors, and a stop
+
+Review rounds 21 and 22 found four ways a task run went wrong outside the command line, and these are the decisions that put them right.
+
+**Mark done in the app goes through the task run.** `POST /api/runs/{runId}/done` on a task run's hand-off builds, fixes and commits as `atticus handoff done` does. Before this, the route checked the answer as an artifact, so the task run waited forever and the CLI's own Done then refused the run. It never pushes or opens a PR: that still takes the person's `--approve` on the command line (CLAUDE.md, rule 6).
+
+**The editors run a task once.** `atticus commands --json` gives `task run` and `task` an `approveWhen` of `--level pr`, an additive field. Without `--level pr` the editors run the command once, with no "dry run" first. Running a task is the work itself, so the old dry run was a whole run and Approve and run did it again. With `--level pr`, a run without `--approve` is a real dry run: it says what it would do, does nothing and exits 0. The editors' Approve and run then passes `--approve`.
+
+**A stop ends the task run.** Ctrl+C on `atticus ui`, or the editor that started it going away, stops every build (`stopAllBuilds`), aborts the model call or the assistant's session (`stopSignal`), and refuses any build asked for after it. The run then does nothing more: it writes no answer, runs no fix round and makes no commit. It is recorded for a person with a note that says so. A hand-off's Done that is stopped isn't counted as a failed attempt; the run waits for Done again. The signal handler is registered first (`prependListener`), so a signal is re-raised exactly when no other listener is left to hear it.
+
+**The app shows the task run.** A run's view carries `taskRun` (local API 2.61.0, additive): the task's state, branch, worktree, notes, last build log and commit. The AI runs panel says "Task 1.2: needs a person" with the note, rather than only the run's own VALIDATED.

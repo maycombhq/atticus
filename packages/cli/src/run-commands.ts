@@ -21,6 +21,7 @@ import {
 } from "@maycombhq/taskrun";
 import type { GitRunner } from "@maycombhq/workspace";
 import type { Output } from "./commands.js";
+import { handoffDone } from "./workspace-commands.js";
 
 /**
  * atticus task run / spec hand-down / spec hand-up / drift / assistant-files, and the AI
@@ -115,6 +116,17 @@ export async function taskRun(
     io.err(`Unknown mode ${mode}. Use one of: hand-off, model, headless-claude-code, replay.`);
     return 2;
   }
+  // --level pr without --approve: what it would do, and nothing done (the editors' dry run before
+  // their "Approve and run"; a task run has no other dry run, since running it is the work).
+  if (o.level === "pr" && !o.approve) {
+    const what = [
+      `Task ${taskId} of ${changeId} at the pr level: drafted on task/${changeId}/${taskId} in its own worktree, built and committed, then the branch is pushed and a PR opened into change/${changeId}.`,
+      "Nothing was done: run it again with --approve to let it push and open the PR.",
+    ];
+    if (o.json) io.out(JSON.stringify({ dryRun: true, level: "pr", lines: what }, null, 2));
+    else for (const l of what) io.out(l);
+    return 0;
+  }
   const now = deps.now ?? (() => new Date());
   try {
     const r = await runTask(root, changeId, taskId, {
@@ -181,6 +193,23 @@ export async function taskHandoff(
   } catch (e) {
     return fail(io, e);
   }
+}
+
+/**
+ * A hand-off's Done from the app (POST /api/runs/{runId}/done): a task run's goes through its
+ * build, fix and commit as `atticus handoff done` does, never a push or PR (that takes the
+ * person's --approve on the command line); any other run is checked as an artifact.
+ */
+export async function runDone(
+  root: string,
+  runId: string,
+  o: { by?: string },
+  io: Output,
+  deps: RunDeps = {},
+): Promise<number> {
+  if (await isTaskRun(root, runId))
+    return taskHandoff(root, runId, { ...(o.by ? { by: o.by } : {}) }, io, deps);
+  return handoffDone(root, runId, io);
 }
 
 /** atticus spec hand-down <change> <task> [--force] [--json] */

@@ -98,6 +98,24 @@ const catalog: Catalog = {
       runs: "serve",
     },
     {
+      id: "task run",
+      words: ["task", "run"],
+      usage: "atticus task run <change> <task>",
+      summary: "Run a task with AI",
+      args: [
+        { name: "change", kind: "change", optional: false, many: false },
+        { name: "task", kind: "text", optional: false, many: false },
+      ],
+      flags: [
+        { name: "--level", value: "plan|draft|pr", required: false },
+        { name: "--approve", required: false },
+      ],
+      area: "plan",
+      runs: "shared",
+      approve: "--approve",
+      approveWhen: { flag: "--level", value: "pr" },
+    },
+    {
       id: "intake add",
       words: ["intake", "add"],
       usage: "atticus intake add <files...>",
@@ -146,6 +164,19 @@ describe("every command, from the command line's own catalogue (ADR 0096)", () =
     expect(howToRun(cmd("spec check"))).toEqual({ mode: "run" });
   });
 
+  it("runs a task once, and asks first only for the pr level's push and PR (no double run)", () => {
+    const t = cmd("task run");
+    expect(howToRun(t, ["task", "run", "c", "1.2"])).toEqual({ mode: "run" });
+    expect(howToRun(t, ["task", "run", "c", "1.2", "--level", "draft"])).toEqual({ mode: "run" });
+    expect(howToRun(t, ["task", "run", "c", "1.2", "--level", "pr"])).toEqual({
+      mode: "approve",
+      flag: "--approve",
+    });
+    expect(howToRun(t, ["task", "run", "c", "1.2", "--level=pr"])).toMatchObject({
+      mode: "approve",
+    });
+  });
+
   it("offers the options a person may add, leaving out what the extension sets itself", () => {
     expect(optionsOf(cmd("spec draft")).map((f) => f.name)).toEqual(["--attempts", "--force"]);
     expect(optionsOf(cmd("ado sync")).map((f) => f.name)).toEqual(["--epic"]);
@@ -172,7 +203,11 @@ describe("every command, from the command line's own catalogue (ADR 0096)", () =
 
   it("offers the commands that take a repo, or a change, for that item", () => {
     expect(commandsFor(catalog, "repo").map((c) => c.id)).toEqual(["spec draft", "spec check"]);
-    expect(commandsFor(catalog, "change").map((c) => c.id)).toEqual(["change status", "ado sync"]);
+    expect(commandsFor(catalog, "change").map((c) => c.id)).toEqual([
+      "change status",
+      "ado sync",
+      "task run",
+    ]);
   });
 });
 

@@ -2819,7 +2819,11 @@
       ],
       "area": "plan",
       "runs": "shared",
-      "approve": "--approve"
+      "approve": "--approve",
+      "approveWhen": {
+        "flag": "--level",
+        "value": "pr"
+      }
     },
     {
       "id": "spec hand-down",

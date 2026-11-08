@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Atticus local API",
-    "version": "2.60.0",
+    "version": "2.61.0",
     "description": "Served by `atticus ui` on 127.0.0.1. The UI only calls this API, and the API only reads and writes files in the metarepo.",
     "license": {
       "name": "Apache-2.0",
@@ -21484,6 +21484,54 @@
           },
           "workspaceFile": {
             "type": "string"
+          },
+          "taskRun": {
+            "type": "object",
+            "properties": {
+              "task": {
+                "type": "string"
+              },
+              "repo": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 120,
+                "pattern": "^[a-z0-9][a-z0-9._-]*$"
+              },
+              "level": {
+                "type": "string"
+              },
+              "state": {
+                "type": "string"
+              },
+              "branch": {
+                "type": "string"
+              },
+              "worktree": {
+                "type": "string"
+              },
+              "notes": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "commit": {
+                "type": "string"
+              },
+              "log": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "task",
+              "repo",
+              "level",
+              "state",
+              "branch",
+              "worktree",
+              "notes"
+            ],
+            "additionalProperties": false
           }
         },
         "required": [
@@ -21829,6 +21877,54 @@
                 },
                 "workspaceFile": {
                   "type": "string"
+                },
+                "taskRun": {
+                  "type": "object",
+                  "properties": {
+                    "task": {
+                      "type": "string"
+                    },
+                    "repo": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120,
+                      "pattern": "^[a-z0-9][a-z0-9._-]*$"
+                    },
+                    "level": {
+                      "type": "string"
+                    },
+                    "state": {
+                      "type": "string"
+                    },
+                    "branch": {
+                      "type": "string"
+                    },
+                    "worktree": {
+                      "type": "string"
+                    },
+                    "notes": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "commit": {
+                      "type": "string"
+                    },
+                    "log": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "task",
+                    "repo",
+                    "level",
+                    "state",
+                    "branch",
+                    "worktree",
+                    "notes"
+                  ],
+                  "additionalProperties": false
                 },
                 "answered": {
                   "type": "boolean"
@@ -22205,6 +22301,54 @@
               },
               "workspaceFile": {
                 "type": "string"
+              },
+              "taskRun": {
+                "type": "object",
+                "properties": {
+                  "task": {
+                    "type": "string"
+                  },
+                  "repo": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120,
+                    "pattern": "^[a-z0-9][a-z0-9._-]*$"
+                  },
+                  "level": {
+                    "type": "string"
+                  },
+                  "state": {
+                    "type": "string"
+                  },
+                  "branch": {
+                    "type": "string"
+                  },
+                  "worktree": {
+                    "type": "string"
+                  },
+                  "notes": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "commit": {
+                    "type": "string"
+                  },
+                  "log": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "task",
+                  "repo",
+                  "level",
+                  "state",
+                  "branch",
+                  "worktree",
+                  "notes"
+                ],
+                "additionalProperties": false
               },
               "answered": {
                 "type": "boolean"

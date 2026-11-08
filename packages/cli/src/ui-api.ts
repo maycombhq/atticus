@@ -43,9 +43,10 @@ import { changeHandoff, changeNew, changeSync } from "./change-commands.js";
 import { critic, findingAction } from "./critic-commands.js";
 import { planStories } from "./plan-commands.js";
 import { reconcileCommand } from "./reconcile-commands.js";
-import { taskRun } from "./run-commands.js";
+import { taskRunOfRun } from "@maycombhq/taskrun";
+import { runDone, taskRun } from "./run-commands.js";
 import { scanCommand } from "./scan-commands.js";
-import { handoffDone, workspaceOpen, workspaceSync } from "./workspace-commands.js";
+import { workspaceOpen, workspaceSync } from "./workspace-commands.js";
 
 /**
  * The write side of the local API (ADR 0015). Every call runs the same command function the
@@ -209,6 +210,7 @@ async function runView(root: string, change: string, runId: string) {
     model?: string;
   };
   const manifest = await readFile(join(dir, "context-manifest.json"), "utf8").catch(() => "");
+  const tr = await taskRunOfRun(root, change, runId).catch(() => undefined);
   return {
     schemaVersion: RUN_SCHEMA_VERSION,
     runId: r.runId,
@@ -226,6 +228,21 @@ async function runView(root: string, change: string, runId: string) {
     ...(r.stepClass ? { stepClass: r.stepClass } : {}),
     ...(r.model ? { model: r.model } : {}),
     promptPath: `${runsRelOf(root)}/${change}/${runId}/prompt.md`,
+    ...(tr
+      ? {
+          taskRun: {
+            task: tr.task,
+            repo: tr.repo,
+            level: tr.level,
+            state: tr.state,
+            branch: tr.branch,
+            worktree: tr.worktree,
+            notes: tr.notes,
+            ...(tr.commit ? { commit: tr.commit } : {}),
+            ...(tr.attempts.at(-1) ? { log: tr.attempts.at(-1)!.log } : {}),
+          },
+        }
+      : {}),
   };
 }
 
@@ -569,7 +586,8 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
         const before = await findRun(root, params.runId!);
         if (before.state === "validated" || before.state === "cancelled")
           throw conflict(`Run ${params.runId} is already ${before.state}.`);
-        const res = await run((io) => handoffDone(root, params.runId!, io));
+        // A task run's Done builds, fixes and commits as atticus handoff done does (round 22).
+        const res = await run((io) => runDone(root, params.runId!, { by: user }, io));
         const after = await findRun(root, params.runId!);
         ctx.events.publish({ type: "run.changed", runId: after.runId, state: after.state });
         return { status: 200, body: { ...after, lines: [...res.out, ...res.err] } };

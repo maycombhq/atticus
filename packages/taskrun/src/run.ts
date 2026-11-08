@@ -33,7 +33,7 @@ import {
 } from "@maycombhq/speckit";
 import { createGit, toRepoRelative, type GitRunner } from "@maycombhq/workspace";
 import { applyChanges, parseAnswer } from "./apply.js";
-import { shellCommandRunner, stopRequested, type CommandRunner } from "./commands.js";
+import { shellCommandRunner, stopRequested, stopSignal, type CommandRunner } from "./commands.js";
 import { conformAfterBuild } from "./conform.js";
 import { taskPack, taskRunnerAgent } from "./prompt.js";
 import {
@@ -174,7 +174,8 @@ async function aiStep(
       "utf8",
     );
   }
-  const run = await c.runtime.run(prepared.runId);
+  // Stopping Atticus ends the model call or the assistant's session too (headless, Copilot).
+  const run = await c.runtime.run(prepared.runId, stopSignal);
   await summarise(c, run);
   return run;
 }
@@ -390,6 +391,16 @@ async function openPr(c: Ctx): Promise<void> {
 }
 
 async function finish(c: Ctx, run: Run): Promise<TaskRunRecord> {
+  // Stopped while the model answered (Ctrl+C on atticus ui): its answer isn't written.
+  if (stopRequested()) {
+    c.record.state = "needs-person";
+    c.record.notes.push(
+      c.runtime.kind === "headless-claude-code"
+        ? `Atticus was stopped while Claude Code worked, so nothing more was done; the worktree ${c.record.worktree} may hold some of its edits.`
+        : `Atticus was stopped before the answer was applied, so nothing was written; run the task again.`,
+    );
+    return done(c);
+  }
   if (c.record.level === "plan") {
     if (c.runtime.kind !== "hand-off")
       await writeFileAtomic(
@@ -398,14 +409,6 @@ async function finish(c: Ctx, run: Run): Promise<TaskRunRecord> {
       );
     c.record.state = "planned";
   } else {
-    // Stopped while the model answered (Ctrl+C on atticus ui): its files aren't written.
-    if (stopRequested()) {
-      c.record.state = "needs-person";
-      c.record.notes.push(
-        `Atticus was stopped before the answer was applied, so nothing was written; run the task again.`,
-      );
-      return done(c);
-    }
     if (c.runtime.kind !== "hand-off") {
       const problems = await applyAnswer(c, run);
       if (problems.length) {
@@ -528,7 +531,8 @@ export async function runTask(
     record.waiting = run.runId;
     return saveTaskRun(root, record);
   }
-  if (run.state !== "validated") {
+  // A run ended by the stop is said as stopped (finish), not as a failed AI run.
+  if (run.state !== "validated" && !stopRequested()) {
     record.notes.push(
       `The AI run ended ${run.state}: ${run.errors.join("; ") || "no reason given"}.`,
     );
@@ -577,7 +581,10 @@ export async function completeTaskHandoff(
       const text = await import("node:fs/promises").then((fs) => fs.readFile(file, "utf8"));
       if (!text.trim()) return [`${file.slice(root.length + 1)} is empty`];
       if (record.level === "plan") return [];
+      // Stopping (Ctrl+C on atticus ui): no build starts, and none that ends counts.
+      if (stopRequested()) return ["Atticus was stopped"];
       attempt = await build(c, runId);
+      if (c.stopped) return ["Atticus was stopped while the build ran"];
       if (!attempt) return [];
       return attempt.passed ? [] : [`${attempt.command} failed; see ${attempt.log}`];
     },
@@ -603,6 +610,18 @@ export async function completeTaskHandoff(
       if (record.level === "pr") await openPr(c);
     }
     return done(c);
+  }
+  if (c.stopped || stopRequested()) {
+    // Not a failed attempt: nothing is used up, and the person runs atticus handoff done again.
+    if (c.stopped && record.attempts.at(-1)?.passed === false) record.attempts.pop();
+    record.state = "waiting";
+    record.waiting = runId;
+    await handoff.retry(runId);
+    await handoff.run(runId);
+    record.notes.push(
+      `Atticus was stopped while it checked the work, so nothing more was done; run atticus handoff done ${runId} again.`,
+    );
+    return saveTaskRun(root, record);
   }
   const builds = record.attempts.length;
   if (attempt && !attempt.passed && builds <= c.maxFix) {

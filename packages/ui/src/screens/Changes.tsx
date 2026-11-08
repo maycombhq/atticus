@@ -71,6 +71,19 @@ export interface Run {
   startedAt: string;
   errors: string[];
   promptPath?: string;
+  /** API 2.61.0: the task run this run is part of. */
+  taskRun?: TaskRunOfRun;
+}
+export interface TaskRunOfRun {
+  task: string;
+  repo: string;
+  level: string;
+  state: string;
+  branch: string;
+  worktree: string;
+  notes: string[];
+  commit?: string;
+  log?: string;
 }
 export interface Finding {
   id: string;
@@ -762,6 +775,7 @@ function Detail({ id }: { id: string }) {
                         {r.errors.join("; ")}
                       </span>
                     )}
+                    {r.taskRun && <TaskRunLine of={r.taskRun} />}
                   </span>
                   <span className="row" style={{ gap: 6 }}>
                     <span
@@ -839,5 +853,27 @@ export function Changes({ hash }: { hash: string }) {
         </Panel>
       )}
     </div>
+  );
+}
+
+/** Where a run's task stands: its state, its last note (stopped, a person takes over) and log. */
+export function TaskRunLine({ of: t }: { of: TaskRunOfRun }) {
+  const alert = t.state === "needs-person" || t.state === "failed";
+  const last = t.notes.at(-1);
+  return (
+    <span className="stack" style={{ gap: 2, fontSize: 12 }}>
+      <span className={`chip ${alert ? "blocking" : t.state === "waiting" ? "ai" : "done"}`}>
+        {T.taskRunLine(t.task, t.state)}
+      </span>
+      {last && (
+        <span
+          role={alert ? "alert" : undefined}
+          style={alert ? { color: "var(--magenta-text)" } : undefined}
+        >
+          {last}
+        </span>
+      )}
+      {t.log && <code className="mono">{T.taskRunLog(t.log)}</code>}
+    </span>
   );
 }

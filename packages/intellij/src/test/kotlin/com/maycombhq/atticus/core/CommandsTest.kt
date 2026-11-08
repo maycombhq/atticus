@@ -79,6 +79,15 @@ class CommandsTest {
     }
 
     @Test
+    fun `a task runs once, and asks first only for the pr level's push and PR`() {
+        val t = cmd("task run")
+        assertEquals(HowToRun.Capture, Commands.howToRun(t, listOf("task", "run", "c", "1.2")))
+        assertEquals(HowToRun.Capture, Commands.howToRun(t, listOf("task", "run", "c", "1.2", "--level", "draft")))
+        assertEquals(HowToRun.Approve("--approve"), Commands.howToRun(t, listOf("task", "run", "c", "1.2", "--level", "pr")))
+        assertEquals(HowToRun.Approve("--approve"), Commands.howToRun(t, listOf("task", "run", "c", "1.2", "--level=pr")))
+    }
+
+    @Test
     fun `a shared write runs first without its approve flag, then with it`() {
         val argv = listOf("change", "handoff", "add-note-tags", "--approve", "--repo")
         assertEquals(listOf("change", "handoff", "add-note-tags", "--repo"), Commands.dryRun(argv, "--approve"))

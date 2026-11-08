@@ -51,6 +51,8 @@ data class CatalogCommand(
     val runs: Runs,
     /** The option that makes a shared write happen (`--approve`, `--send`). */
     val approve: String? = null,
+    /** [approve] is needed only with this option and value (task run: `--level pr`); else one run. */
+    val approveWhen: Pair<String, String>? = null,
 )
 
 data class Area(val id: String, val title: String)
@@ -91,6 +93,12 @@ data class Catalog(val areas: List<Area>, val commands: List<CatalogCommand>) {
                         area = c.str("area") ?: "",
                         runs = Runs.of(c.str("runs")),
                         approve = c.str("approve"),
+                        approveWhen =
+                            c["approveWhen"].obj()?.let { w ->
+                                val f = w.str("flag")
+                                val v = w.str("value")
+                                if (f != null && v != null) f to v else null
+                            },
                     )
                 }
             return Catalog(areas, commands)

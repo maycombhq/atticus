@@ -55,6 +55,12 @@ export interface CommandInfo {
   /** For shared: the flag a person adds to approve the write (--approve, --send). */
   approve?: string;
   /**
+   * The approve flag is needed only with this option and value (task run: `--level pr`, the push
+   * and PR); without it the command runs once, as it is, with no dry run before it. Additive: an
+   * editor that doesn't read it treats the command as a shared write.
+   */
+  approveWhen?: { flag: string; value: string };
+  /**
    * Outside the twelve `atticus help` shows (ADR 0124 addendum D-cli): listed by `atticus legacy`,
    * still run by its own name. Additive: an editor that doesn't read it offers every command.
    */
@@ -209,6 +215,14 @@ const KIND_BY_COMMAND: Record<string, ArgKind[]> = {
 
 const SERVES = new Set(["ui", "stub serve", "mcp"]);
 const APPROVE_FLAGS = ["--approve", "--send"];
+/**
+ * Commands whose write to a shared system is one option's (round 22): `task run` runs the task
+ * itself (a dry run would be the whole run), and only `--level pr` pushes and opens a PR.
+ */
+const APPROVE_WHEN: Record<string, { flag: string; value: string }> = {
+  "task run": { flag: "--level", value: "pr" },
+  task: { flag: "--level", value: "pr" },
+};
 
 /** The command words: up to the first argument, option or quoted part. */
 const isWord = (t: string) => /^[a-z][a-z-]*$/.test(t);
@@ -355,6 +369,9 @@ export function commandCatalog(help: string): CommandInfo[] {
       area,
       runs,
       ...(approve && runs === "shared" ? { approve } : {}),
+      ...(approve && runs === "shared" && APPROVE_WHEN[c.id]
+        ? { approveWhen: APPROVE_WHEN[c.id] }
+        : {}),
       legacy: isLegacy(c.words[0]),
     };
   });

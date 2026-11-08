@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { cp, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,6 +9,7 @@ import {
   assistantFiles,
   driftCommand,
   isTaskRun,
+  runDone,
   runtimeForCli,
   specHandDown,
   specHandUp,
@@ -144,6 +146,65 @@ describe("atticus task run", () => {
       );
       c = capture();
       expect(await taskHandoff(root, runId, {}, c.io, { git, now, commands: ok })).toBe(0);
+      expect(c.out[0]).toMatch(
+        /^Task 1.3 is drafted on task\/add-transfer-limit\/1.3 and the build passes \(1 attempt\); committed [0-9a-f]{12}\.$/,
+      );
+    },
+    T,
+  );
+});
+
+describe("atticus task run --level pr without --approve", () => {
+  it(
+    "says what it would do and does nothing: the editors' dry run before Approve and run",
+    async () => {
+      const { root } = await speckitRoot({ repos: ["forge-ledger"] });
+      const c = capture();
+      let ran = 0;
+      expect(
+        await taskRun(root, CHANGE, "1.2", { by: "dev", level: "pr" }, c.io, {
+          git,
+          now,
+          commands: async () => {
+            ran++;
+            return { exitCode: 0, stdout: "", stderr: "" };
+          },
+        }),
+      ).toBe(0);
+      expect(c.out.at(-1)).toBe(
+        "Nothing was done: run it again with --approve to let it push and open the PR.",
+      );
+      expect(ran).toBe(0);
+      expect(
+        existsSync(join(root, "workspace/.worktrees", CHANGE, ".tasks/1.2/forge-ledger")),
+      ).toBe(false);
+    },
+    T,
+  );
+});
+
+describe("Mark done in the app on a task run", () => {
+  it(
+    "builds and commits as atticus handoff done does, and pushes nothing",
+    async () => {
+      const { root } = await speckitRoot({ repos: ["forge-ledger"] });
+      let c = capture();
+      expect(
+        await taskRun(root, CHANGE, "1.3", { by: "dev", level: "draft", mode: "hand-off" }, c.io, {
+          git,
+          now,
+          commands: ok,
+        }),
+      ).toBe(0);
+      const runId = /atticus handoff done (run-[0-9a-z-]+)$/.exec(c.out[0]!)![1]!;
+      const wt = join(root, "workspace/.worktrees", CHANGE, ".tasks/1.3/forge-ledger");
+      await writeFile(join(wt, "src/main/java/forge/ledger/Velocity.java"), "class Velocity {}\n");
+      await writeFile(
+        join(root, "openspec/changes", CHANGE, "tasks/1.3/report.md"),
+        "Added Velocity.\n",
+      );
+      c = capture();
+      expect(await runDone(root, runId, { by: "pat" }, c.io, { git, now, commands: ok })).toBe(0);
       expect(c.out[0]).toMatch(
         /^Task 1.3 is drafted on task\/add-transfer-limit\/1.3 and the build passes \(1 attempt\); committed [0-9a-f]{12}\.$/,
       );

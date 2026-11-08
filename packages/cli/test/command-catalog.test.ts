@@ -84,6 +84,14 @@ describe("the command catalogue (ADR 0096)", () => {
     expect(byId.get("change handoff")).toMatchObject({ runs: "shared", approve: "--approve" });
     expect(byId.get("digest")).toMatchObject({ runs: "shared", approve: "--send" });
     expect(byId.get("plan submit")!.runs).toBe("shared");
+    // A task run's only shared write is the pr level's push and PR: editors run it once otherwise.
+    for (const id of ["task run", "task"])
+      expect(byId.get(id)).toMatchObject({
+        runs: "shared",
+        approve: "--approve",
+        approveWhen: { flag: "--level", value: "pr" },
+      });
+    expect(byId.get("ado sync")!.approveWhen).toBeUndefined();
     // A required option is said as such: change new needs its type.
     expect(byId.get("change new")).toMatchObject({
       args: [{ name: "title", kind: "text" }],

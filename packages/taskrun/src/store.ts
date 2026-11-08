@@ -124,6 +124,23 @@ export async function saveRunSummary(
   return rel;
 }
 
+/** The task run a run belongs to (its main run, a fix run, or the hand-off it waits on), if any. */
+export async function taskRunOfRun(
+  root: string,
+  change: string,
+  runId: string,
+): Promise<TaskRunRecord | undefined> {
+  for (const t of (
+    await readdir(join(changeFolder(root, change), "tasks"), { withFileTypes: true }).catch(
+      () => [],
+    )
+  ).filter((d) => d.isDirectory())) {
+    const r = await readTaskRun(root, change, t.name).catch(() => undefined);
+    if (r && (r.waiting === runId || r.runs.includes(runId))) return r;
+  }
+  return undefined;
+}
+
 /** The task run waiting on a hand-off run, if `runId` is one (for `atticus handoff done`). */
 export async function findWaitingTaskRun(
   root: string,

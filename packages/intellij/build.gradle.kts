@@ -105,6 +105,7 @@ intellijPlatform {
               <li><b>Says when the installed atticus is too old.</b> The plugin needs Atticus 2.0.0-beta.21 or newer; an older one is named once in a notification, with how to update, and the app still starts.</li>
               <li><b>Open in your editor opens here.</b> A cited line's link in the App tab opens the file at that line in this IDE (a VS Code link goes to the system).</li>
               <li><b>The canvas's exports save.</b> Mermaid, draw.io, SVG and PNG exports from the App tab ask where to save with the system's Save dialog, under the name the app gave.</li>
+              <li><b>Run a task runs it once.</b> Run a Command on <code>task run</code> runs the task once; only <code>--level pr</code> (the push and the PR) shows what it would do first and asks your yes.</li>
               <li>The App tab hosts the beta.21 app as it is: drawing a change on the canvas (Sketch), Match for links, and the organisation's own component types, each with its notes.</li>
             </ul>
             <h3>0.4.0 (with Atticus 2.0.0-beta.11)</h3>

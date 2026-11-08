@@ -167,7 +167,7 @@ async function runTyped(
     return;
   }
   const argv = buildArgv(m.command, answers);
-  const how = howToRun(m.command);
+  const how = howToRun(m.command, argv);
   if (how.mode === "ai") {
     stream.markdown(
       `Running ${inline(`atticus ${argv.join(" ")} --handoff`)} with Copilot's model.\n`,

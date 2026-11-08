@@ -868,7 +868,7 @@ export class CommandUi {
   /** Run a command as its kind needs. */
   async run(root: string, cmd: CatalogCommand, a: Answers): Promise<void> {
     const argv = buildArgv(cmd, a);
-    const how = howToRun(cmd);
+    const how = howToRun(cmd, argv);
     if (how.mode === "ai" && cmd.id === "knowledge ask" && typeof a.args[0] === "string") {
       await this.askKnowledge(root, a.args[0]);
     } else if (how.mode === "ai") {
@@ -897,7 +897,7 @@ export class CommandUi {
    */
   async runLine(root: string, args: string[]): Promise<void> {
     const m = matchCommand(await this.load(root), lineOf(args));
-    const how = m ? howToRun(m.command) : { mode: "run" as const };
+    const how = m ? howToRun(m.command, args) : { mode: "run" as const };
     if (how.mode === "ai") {
       await this.d.runAi(args);
       return;

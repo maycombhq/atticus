@@ -113,13 +113,20 @@ object Commands {
         return out
     }
 
-    fun howToRun(cmd: CatalogCommand): HowToRun =
+    fun howToRun(cmd: CatalogCommand, argv: List<String> = emptyList()): HowToRun =
         when {
             cmd.runs == Runs.AI -> HowToRun.Ai
+            // A task run without --level pr writes nowhere shared: it runs once, never a "dry run" first.
+            cmd.approveWhen != null && !hasOption(argv, cmd.approveWhen.first, cmd.approveWhen.second) ->
+                HowToRun.Capture
             cmd.runs == Runs.SHARED && cmd.approve != null -> HowToRun.Approve(cmd.approve)
             cmd.runs == Runs.SERVE -> HowToRun.Console
             else -> HowToRun.Capture
         }
+
+    /** `--level pr` or `--level=pr` in the command line. */
+    private fun hasOption(argv: List<String>, flag: String, value: String): Boolean =
+        argv.indices.any { i -> argv[i] == "$flag=$value" || (argv[i] == flag && argv.getOrNull(i + 1) == value) }
 
     /** The command without its approve flag: what it would do, written nowhere shared. */
     fun dryRun(argv: List<String>, flag: String): List<String> = argv.filter { it != flag }

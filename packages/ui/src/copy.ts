@@ -2032,6 +2032,22 @@ export const COPY = {
     markDone: "Mark done",
     retry: "Retry",
     noAiRunsYet: "No AI runs yet.",
+    /** A run that is part of a task run: where the task stands (ADR 0036 addendum, review). */
+    taskRunLine: (task: string, state: string) =>
+      `Task ${task}: ${
+        (
+          {
+            planned: "planned",
+            built: "built",
+            unverified: "drafted, not built (no build command)",
+            "pr-open": "PR open",
+            waiting: "waiting for your assistant",
+            "needs-person": "needs a person",
+            failed: "failed",
+          } as Record<string, string>
+        )[state] ?? state
+      }`,
+    taskRunLog: (path: string) => `Last build: ${path}`,
     aiRuns: "AI runs",
     pickAChangeOn: "Pick a change on the left, or start one with ",
     atticusChangeNew: "atticus change new",

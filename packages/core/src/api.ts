@@ -179,8 +179,11 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  * 2.60.0 (ADR 0180): GET /api/component-types, the organisation's component types (Atticus's
  *   built-ins with the org pack's own, reworded and switched-off ones applied), each with how
  *   the canvas draws it, its signals, what it must and must not do, and its notes. Additive only.
+ * 2.61.0 (ADR 0036 addendum, review): a run's view carries `taskRun`, the task run it is part
+ *   of (its state, notes, worktree, last build log and commit); POST /api/runs/{runId}/done on a
+ *   task run's hand-off builds, fixes and commits as `atticus handoff done` does. Additive only.
  */
-export const API_VERSION = "2.60.0";
+export const API_VERSION = "2.61.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -560,6 +563,24 @@ export const RunView = RunSummary.extend({
   /** For hand-off runs: the prompt file and the editor workspace to open. */
   promptPath: z.string().optional(),
   workspaceFile: z.string().optional(),
+  /**
+   * 2.61.0: the task run this run is part of (Run with AI on a task): where it stands, which a
+   * run's own state doesn't say (a validated answer whose build fails, a run stopped with Atticus).
+   */
+  taskRun: z
+    .object({
+      task: z.string(),
+      repo: RecordId,
+      level: z.string(),
+      state: z.string(),
+      branch: z.string(),
+      worktree: z.string(),
+      notes: z.array(z.string()),
+      commit: z.string().optional(),
+      /** The last build's log, relative to the metarepo. */
+      log: z.string().optional(),
+    })
+    .optional(),
 });
 
 /** ADR 0106: one run in the list of model runs. */

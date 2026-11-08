@@ -45,6 +45,8 @@ export interface CatalogCommand {
   area: string;
   runs: "ai" | "shared" | "serve" | "local";
   approve?: string;
+  /** The approve flag is needed only with this option (task run: --level pr); else one run. */
+  approveWhen?: { flag: string; value: string };
   /**
    * Outside the twelve (ADR 0124 addendum D-cli): reached with `atticus legacy`, and still run
    * by its own name. Absent from an older command line's catalogue.
@@ -142,11 +144,19 @@ export type HowToRun =
  * run first and asks the person before it adds its approve flag; a server keeps a terminal; the
  * rest runs and shows what it printed.
  */
-export function howToRun(cmd: CatalogCommand): HowToRun {
+export function howToRun(cmd: CatalogCommand, argv: readonly string[] = []): HowToRun {
   if (cmd.runs === "ai") return { mode: "ai" };
+  // A task run without --level pr writes nowhere shared: it runs once, never a "dry run" first.
+  if (cmd.approveWhen && !hasOption(argv, cmd.approveWhen.flag, cmd.approveWhen.value))
+    return { mode: "run" };
   if (cmd.runs === "shared" && cmd.approve) return { mode: "approve", flag: cmd.approve };
   if (cmd.runs === "serve") return { mode: "terminal" };
   return { mode: "run" };
+}
+
+/** `--level pr` or `--level=pr` in the command line. */
+function hasOption(argv: readonly string[], flag: string, value: string): boolean {
+  return argv.some((a, i) => a === `${flag}=${value}` || (a === flag && argv[i + 1] === value));
 }
 
 /** Options the extension sets itself, never offered: the metarepo, JSON output, the run mode. */

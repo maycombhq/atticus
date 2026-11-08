@@ -296,7 +296,7 @@ class CommandFlow(private val project: Project) {
 
     /** Run a command as its kind needs (ADR 0099). */
     fun run(cmd: CatalogCommand?, argv: List<String>) {
-        when (val how = cmd?.let { Commands.howToRun(it) } ?: HowToRun.Capture) {
+        when (val how = cmd?.let { Commands.howToRun(it, argv) } ?: HowToRun.Capture) {
             HowToRun.Ai -> aiStep(argv, Commands.slashFor(argv))
             is HowToRun.Approve -> approveAndRun(argv, how.flag)
             HowToRun.Console -> inConsole(cmd?.id ?: argv.take(2).joinToString(" "), argv)

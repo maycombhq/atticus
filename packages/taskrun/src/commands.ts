@@ -66,11 +66,15 @@ const SIGNALS: NodeJS.Signals[] = ["SIGINT", "SIGTERM", "SIGHUP"];
 /** Atticus is stopping: no build that ends now counts, and a task run does nothing more. */
 let stopping = false;
 export const stopRequested = () => stopping;
+const stopper = new AbortController();
+/** Aborted when Atticus stops: a model call, headless Claude Code or a Copilot session ends with it. */
+export const stopSignal: AbortSignal = stopper.signal;
 
 /** Stop every build running now and every one asked for later (atticus ui on its way out). */
 export function stopAllBuilds(): void {
   stopping = true;
   for (const c of live) stopTree(c);
+  if (!stopper.signal.aborted) stopper.abort();
 }
 
 const onSignal = (sig: NodeJS.Signals) => {
@@ -115,6 +119,11 @@ export const STOP_GRACE_MS = 5_000;
 export function shellCommandRunner(): CommandRunner {
   return (command, cwd, o = {}) =>
     new Promise((resolve) => {
+      // Atticus is stopping: a build asked for now doesn't start.
+      if (stopping) {
+        resolve({ exitCode: null, stdout: "", stderr: "Atticus is stopping.", stopped: true });
+        return;
+      }
       const child = spawn(command, {
         cwd,
         shell: true,

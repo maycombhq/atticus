@@ -395,6 +395,40 @@ describe("Run with AI: hand-off and headless modes", () => {
   );
 
   it(
+    "hand-off: a build stopped by Ctrl+C isn't a failed attempt; the run waits for Done again",
+    async () => {
+      const { root } = await speckitRoot({ repos: ["forge-ledger"] });
+      const r = await runTask(root, CHANGE, "1.2", {
+        level: "draft",
+        mode: "hand-off",
+        by: "dev",
+        git,
+        now,
+        commands: fakeBuild(),
+      });
+      const runId = r.waiting!;
+      await writeFile(join(paths(root).wt, FILE), "class TransferLimits { boolean ok; }\n");
+      await writeFile(paths(root).task("report.md"), "Added TransferLimits.\n");
+      const stopped = await completeTaskHandoff(root, runId, {
+        git,
+        now,
+        commands: async () => ({ exitCode: null, stdout: "", stderr: "", stopped: true }),
+      });
+      expect(stopped).toMatchObject({ state: "waiting", waiting: runId });
+      expect(stopped.attempts).toHaveLength(0);
+      expect(stopped.commit).toBeUndefined();
+      expect(stopped.notes.at(-1)).toBe(
+        `Atticus was stopped while it checked the work, so nothing more was done; run atticus handoff done ${runId} again.`,
+      );
+      // Done again, not stopped: built and committed.
+      const again = await completeTaskHandoff(root, runId, { git, now, commands: fakeBuild() });
+      expect(again.state).toBe("built");
+      expect(again.attempts.map((a) => a.passed)).toEqual([true]);
+    },
+    T,
+  );
+
+  it(
     "headless Claude Code: runs claude -p in the task worktree (fake runner) and builds what it changed",
     async () => {
       const { root } = await speckitRoot({ repos: ["forge-ledger"] });
