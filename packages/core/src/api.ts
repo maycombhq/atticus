@@ -2,9 +2,11 @@ import { z } from "zod";
 import { RunRetrieval, RunState, RunSummary, RunTools, RuntimeKind } from "./schema/ai.js";
 import { Evidence, RecordId } from "./schema/common.js";
 import {
+  Commitment,
   Flow,
   FlowCaller,
   FlowData,
+  Initiative,
   KNOWLEDGE_KINDS,
   RECORD_KINDS,
   RECORD_SCHEMAS,
@@ -199,7 +201,10 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  * 2.67.0 (UX review, 2026-11-08): the knowledge gaps' owner questions answered in the app:
  *   GET /api/owner-questions and POST /api/owner-questions/{id}/answer (writing
  *   catalog/curated/ownerquestion/<id>.yaml, as atticus questions owner); ProposeScope adds
- *   owner-answers and baseline. Additive only.
+ *   owner-answers and baseline. POST /api/initiatives, POST /api/initiatives/{initiativeId}/plan
+ *   and POST /api/commitments/{commitmentId}/status start, plan and record initiatives as the
+ *   signed-in person (as atticus initiative new|plan|commit); a commitment's status carries its
+ *   latest note; ProposeScope adds initiatives and outcomes. Additive only.
  */
 export const API_VERSION = "2.67.0";
 export const DEFAULT_PORT = 4321;
@@ -2233,6 +2238,9 @@ export const ProposeScope = z.enum([
   "owner-answers",
   /** 2.67.0 (UX review): the accepted baseline, catalog/baseline.yaml, over the catalog. */
   "baseline",
+  /** 2.67.0 (UX review): initiatives, their commitments and notes; outcomes after release. */
+  "initiatives",
+  "outcomes",
 ]);
 export const ProposePlanView = z.object({
   scope: ProposeScope,
@@ -2602,6 +2610,42 @@ export const TriageDecideRequest = z.strictObject({
 });
 
 export const ReconcileRequest = z.strictObject({ diagram: z.string().min(1) });
+
+/**
+ * UX review: an initiative starts in the app, as `atticus initiative new` starts it; the
+ * signed-in person is recorded as who started it.
+ */
+export const NewInitiativeRequest = z.strictObject({
+  title: z.string().trim().min(1).max(200),
+  journey: Initiative.shape.journey,
+  /** Default: a slug of the title. */
+  id: RecordId.optional(),
+  /** The target release, YYYY-MM-DD. */
+  release: z.iso.date().optional(),
+  /** A work-tracker epic it belongs to. */
+  epic: z.string().trim().min(1).max(200).optional(),
+});
+/** UX review: plan an initiative's changes and commitments, as `atticus initiative plan` does. */
+export const InitiativePlanRequest = z.strictObject({
+  /** The system the journey is about; may be left out when the initiative was planned before. */
+  target: RecordId.optional(),
+  release: z.iso.date().optional(),
+  /** Other systems it touches. */
+  systems: z.array(RecordId).optional(),
+});
+/**
+ * UX review: record where a commitment stands, as `atticus initiative commit` does, with an
+ * optional note kept in the initiative's notes.yaml.
+ */
+export const CommitmentStatusRequest = z.strictObject({
+  status: Commitment.shape.commitmentStatus,
+  note: z.string().trim().max(2000).optional(),
+});
+/** What a save of an initiative printed, and the initiative it was for. */
+export const InitiativeSavedView = z.object({
+  initiative: z.string(),
+  lines: z.array(z.string()),
+});
 
 /** ADR 0078: the questions in questions/, and the files that aren't valid questions. */
 export const QuestionList = z.object({
@@ -3844,6 +3888,39 @@ const OPS: Record<string, Record<string, Op>> = {
       tag: "views",
       ok: { status: 200, schema: { type: "array", items: { type: "object" } }, description: "OK" },
     },
+    post: {
+      id: "createInitiative",
+      summary:
+        "UX review: start an initiative from a guided journey, as atticus initiative new does; the signed-in person started it",
+      tag: "views",
+      body: NewInitiativeRequest,
+      ok: { status: 201, schema: "InitiativeSavedView", description: "Started" },
+      errors: [400, 409, 422],
+    },
+  },
+  "/api/initiatives/{initiativeId}/plan": {
+    post: {
+      id: "planInitiative",
+      summary:
+        "UX review: plan an initiative's changes and commitments back from its release, as atticus initiative plan does",
+      tag: "views",
+      params: [p("initiativeId")],
+      body: InitiativePlanRequest,
+      ok: { status: 200, schema: "InitiativeSavedView", description: "Planned" },
+      errors: [400, 404, 422],
+    },
+  },
+  "/api/commitments/{commitmentId}/status": {
+    post: {
+      id: "recordCommitment",
+      summary:
+        "UX review: record a commitment's state (open, at-risk, done, slipped) with a note, as the signed-in person",
+      tag: "views",
+      params: [p("commitmentId")],
+      body: CommitmentStatusRequest,
+      ok: { status: 200, schema: "InitiativeSavedView", description: "Recorded" },
+      errors: [400, 404, 422],
+    },
   },
   "/api/diagram/{view}": {
     get: {
@@ -4483,7 +4560,13 @@ const OPS: Record<string, Record<string, Op>> = {
       summary:
         "2.65.0 (ADR 0183): the files a kind of work changed, the branch and the title Propose for review would use",
       tag: "workspace",
-      params: [q("scope", str, "answers, corrections, audit, org-pack, owner-answers or baseline")],
+      params: [
+        q(
+          "scope",
+          str,
+          "answers, corrections, audit, org-pack, owner-answers, baseline, initiatives or outcomes",
+        ),
+      ],
       ok: { status: 200, schema: "ProposePlanView", description: "OK" },
       errors: [400, 422],
     },
@@ -5702,6 +5785,7 @@ export function openApiDocument(): Record<string, unknown> {
     PreparedStepView,
     ProposeRequest,
     LinesView,
+    InitiativeSavedView,
     ChangeDetail,
     ArtifactContent,
     Task,

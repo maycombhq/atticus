@@ -218,22 +218,32 @@ export async function requestFromTeam(
   }
 }
 
-/** atticus initiative commit <commitment> <open|at-risk|done|slipped> [--by <you>]: record a commitment's status. */
+/**
+ * atticus initiative commit <commitment> <open|at-risk|done|slipped> [--by <you>] [--note "<words>"]:
+ * record a commitment's status; a note is kept in the initiative's notes.yaml.
+ */
 export async function initiativeCommitment(
   root: string,
   id: string | undefined,
   status: string | undefined,
-  o: { by?: string },
+  o: { by?: string; note?: string },
   io: Output,
 ): Promise<number> {
   const states = ["open", "at-risk", "done", "slipped"];
   if (!id || !status || !o.by || !states.includes(status)) {
-    io.err(`Usage: atticus initiative commit <commitment> <${states.join("|")}> [--by <you>]`);
+    io.err(
+      `Usage: atticus initiative commit <commitment> <${states.join("|")}> [--by <you>] [--note "<words>"]`,
+    );
     return 2;
   }
   try {
-    const r = await recordCommitment(root, id, { status: status as never, by: o.by });
+    const r = await recordCommitment(root, id, {
+      status: status as never,
+      by: o.by,
+      ...(o.note ? { note: o.note } : {}),
+    });
     io.out(`${r.commitment.id} is ${status}. Wrote ${r.written}.`);
+    if (r.notes) io.out(`Noted in ${r.notes}.`);
     return 0;
   } catch (e) {
     return fail(io, e);

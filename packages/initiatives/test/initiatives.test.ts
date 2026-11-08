@@ -459,3 +459,40 @@ describe("every journey plans on Forge", () => {
     ]);
   });
 });
+
+describe("a commitment's note", () => {
+  it("keeps who said what and when beside the plan, and shows the latest with the commitment", async () => {
+    const root = await forgeRoot();
+    await startGolden(root);
+    const c = `${ID}.vendor-sandbox`;
+    const first = await recordCommitment(root, c, {
+      status: "at-risk",
+      by: "@ari",
+      note: "Northwind Pay moved the sandbox to next week.",
+      now: at("2027-01-12T09:00:00Z"),
+    });
+    expect(first.written).toBe(`catalog/curated/commitment/${c}.yaml`);
+    expect(first.notes).toBe(`initiatives/${ID}/notes.yaml`);
+    await recordCommitment(root, c, {
+      status: "done",
+      by: "pat",
+      note: "  Sandbox keys arrived.  ",
+      now: at("2027-01-13T09:00:00Z"),
+    });
+    // a status with no note writes no note
+    const bare = await recordCommitment(root, `${ID}.vendor-spec`, { status: "done", by: "pat" });
+    expect(bare.notes).toBeUndefined();
+    expect(parse(await read(join(root, "initiatives", ID, "notes.yaml")))).toEqual(
+      expectedYaml("notes.yaml"),
+    );
+    const s = await initiativeStatus(root, ID, { now: at("2027-01-13T12:00:00Z") });
+    const sandbox = s.commitments.find((x) => x.id === c)!;
+    expect(sandbox.note).toEqual({
+      at: "2027-01-13T09:00:00Z",
+      by: "pat",
+      status: "done",
+      note: "Sandbox keys arrived.",
+    });
+    expect(s.commitments.find((x) => x.id === `${ID}.vendor-spec`)!.note).toBeUndefined();
+  });
+});

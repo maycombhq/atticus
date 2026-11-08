@@ -362,10 +362,20 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
             out: [],
             err: [`scope is one of ${PROPOSE_SCOPES.join(", ")}.`],
           });
-        return {
-          status: 200,
-          body: await proposePlan(root, scope as (typeof PROPOSE_SCOPES)[number], { by: user }),
-        };
+        // Initiatives review: a metarepo that isn't a Git repository (the practice sandbox) is
+        // said, never a 500.
+        const plan = await proposePlan(root, scope as (typeof PROPOSE_SCOPES)[number], {
+          by: user,
+        }).catch((e: Error) => {
+          throw refused({
+            code: 1,
+            out: [],
+            err: [
+              `Atticus can't list what changed here: ${e.message.split("\n")[0]}. Propose for review needs the metarepo to be a Git repository with a remote.`,
+            ],
+          });
+        });
+        return { status: 200, body: plan };
       })
       .add("POST", "/api/propose", async ({ body }) => {
         const b = parseBody(Api.ProposeRequest, body);

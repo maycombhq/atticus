@@ -3,6 +3,7 @@ import { api, useApi } from "../../api/client.js";
 import { hostBridge } from "../../api/bridge.js";
 import { COPY } from "../../copy.js";
 import { Panel, View } from "../../app/ui.js";
+import { Propose } from "../../app/propose.js";
 import { Choice, CopyButton, Note, day, plural, useAction } from "./shared.js";
 
 const TX = COPY.releaseViews;
@@ -562,6 +563,7 @@ export function OutcomesPanel({ id, tick }: { id: string; tick: number }) {
   const [measure, setMeasure] = useState("");
   const [value, setValue] = useState("");
   const [note, setNote] = useState("");
+  const [saved, setSaved] = useState(false);
   const submit = (e: FormEvent) => {
     e.preventDefault();
     void act.run(
@@ -572,6 +574,7 @@ export function OutcomesPanel({ id, tick }: { id: string; tick: number }) {
         }).then(() => {
           setValue("");
           setNote("");
+          setSaved(true);
           o.reload();
         }),
       TX.recorded,
@@ -663,6 +666,8 @@ export function OutcomesPanel({ id, tick }: { id: string; tick: number }) {
                   </button>
                 </div>
                 <Note note={act.note} />
+                {/* ADR 0183: the outcome is a file in the change's review folder; propose it. */}
+                {saved && <Propose scope="outcomes" />}
               </form>
             ) : (
               <p className="muted" style={{ margin: 0, fontSize: 12 }}>

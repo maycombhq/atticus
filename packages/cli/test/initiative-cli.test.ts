@@ -103,10 +103,14 @@ describe("atticus initiative", () => {
           root,
           "northwind-pay-v3-migration.vendor-spec",
           "done",
-          { by: "tia" },
+          { by: "tia", note: "Signed off by Northwind Pay." },
           c.io,
         ),
       ).toBe(0);
+      expect(c.out).toEqual([
+        "northwind-pay-v3-migration.vendor-spec is done. Wrote catalog/curated/commitment/northwind-pay-v3-migration.vendor-spec.yaml.",
+        "Noted in initiatives/northwind-pay-v3-migration/notes.yaml.",
+      ]);
       expect(
         await initiativeCommitment(
           root,

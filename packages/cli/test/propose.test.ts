@@ -110,6 +110,50 @@ describe("Propose for review", () => {
     expect(code).toBe(2);
     expect(said[0]).toContain("Nothing to propose");
   });
+
+  it("proposes an initiative's records and its folder, not the rest of the curated catalog", async () => {
+    const { root } = await metarepo();
+    const put = async (p: string) => {
+      await mkdir(join(root, p, ".."), { recursive: true });
+      await writeFile(join(root, p), "x: 1\n");
+    };
+    await put("catalog/curated/initiative/pay-v3.yaml");
+    await put("catalog/curated/commitment/pay-v3.vendor-spec.yaml");
+    await put("catalog/curated/party/party.northwind-pay.yaml");
+    await put("initiatives/pay-v3/plan.yaml");
+    await put("initiatives/pay-v3/notes.yaml");
+    await put("catalog/curated/decision/d1.yaml");
+    const plan = await proposePlan(root, "initiatives", {
+      by: "tia",
+      now: new Date("2026-11-08T10:00:00Z"),
+    });
+    expect(plan.files.map((f) => f.path)).toEqual([
+      "catalog/curated/commitment/pay-v3.vendor-spec.yaml",
+      "catalog/curated/initiative/pay-v3.yaml",
+      "catalog/curated/party/party.northwind-pay.yaml",
+      "initiatives/pay-v3/notes.yaml",
+      "initiatives/pay-v3/plan.yaml",
+    ]);
+    expect(plan.branch).toBe("propose/initiatives/2026-11-08-100000-tia");
+    expect(plan.title).toBe("Initiatives and commitments");
+  });
+
+  it("proposes the outcomes measured after release, not the rest of the change", async () => {
+    const { root } = await metarepo();
+    const put = async (p: string) => {
+      await mkdir(join(root, p, ".."), { recursive: true });
+      await writeFile(join(root, p), "x: 1\n");
+    };
+    await put("openspec/changes/add-transfer-limit/review/outcomes.yaml");
+    await put("openspec/changes/add-transfer-limit/brief.md");
+    await put("openspec/changes/archive/2026-10-01-old-change/review/outcomes.yaml");
+    const plan = await proposePlan(root, "outcomes", { by: "pat" });
+    expect(plan.files.map((f) => f.path)).toEqual([
+      "openspec/changes/add-transfer-limit/review/outcomes.yaml",
+      "openspec/changes/archive/2026-10-01-old-change/review/outcomes.yaml",
+    ]);
+    expect(plan.title).toBe("Outcomes measured after release");
+  });
 });
 
 const envOn = () => {
