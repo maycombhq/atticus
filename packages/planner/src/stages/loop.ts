@@ -223,8 +223,11 @@ export interface StageResult<A> {
   questions: Question[];
   files: string[];
   answer?: A;
-  /** The run handed off: a draft, or one of the critic's AI lenses reviewing it (ADR 0115). */
-  waiting?: { runId: string; lens?: string };
+  /**
+   * The run handed off: a draft, one of the critic's AI lenses reviewing it (ADR 0115), or the
+   * one prompt that asks the lenses still out together (`lenses`, ADR 0185).
+   */
+  waiting?: { runId: string; lens?: string; lenses?: string[] };
   /** The command that opens the stage's PR, once it is done. */
   pr?: string;
   notes: string[];
@@ -531,7 +534,7 @@ export async function runStageLoop<A>(
     loop.run = w.runId;
     loop.updatedAt = at;
     await writeLoop(dir, loop);
-    return result("waiting", { ...extra, waiting: { runId: w.runId, lens: w.lens } });
+    return result("waiting", { ...extra, waiting: waitingOf(w) });
   };
 
   // A stage waiting for a person stays stopped until the questions are answered.
@@ -636,22 +639,34 @@ export async function runStageLoop<A>(
         (e: NodeJS.ErrnoException) => (e.code === "ENOENT" ? undefined : "unreadable"),
       )
       .catch(() => undefined);
-    // While the critic's lenses review the draft, the run waited on is a lens's.
+    // While the critic's lenses review the draft, the run waited on is a lens's, or the one
+    // prompt that asks the lenses still out (ADR 0185).
+    const metaLenses = loop.review
+      ? ((await readRoundMeta(root, change.id, loop.review.gate, loop.review.round))?.lenses ?? [])
+      : [];
+    const batched = metaLenses
+      .filter((l) => l.batch === loop.run && l.state === "waiting")
+      .map((l) => l.lens);
     const lens = loop.review
-      ? ((await readRoundMeta(root, change.id, loop.review.gate, loop.review.round))?.lenses.find(
-          (l) => l.runId === loop.run,
-        )?.lens ?? "AI")
+      ? (metaLenses.find((l) => l.runId === loop.run)?.lens ??
+        (batched.length ? listed(batched) : "AI"))
       : undefined;
     // A lens whose answer failed its check is offered again, to be fixed (M6).
     // A draft whose self-check failed (handoff done listed its problems) is still being fixed (W3a).
     const out = ["waiting", "prepared", "produced", "unreadable", "failed"];
     if (run !== undefined && out.includes(run)) {
       notes.push(
-        lens
-          ? `The ${lens} lens's review of the draft is still with your assistant (run ${loop.run}).`
-          : `The draft is still with your assistant (run ${loop.run}).`,
+        batched.length
+          ? `The critic's ${lens} ${batched.length === 1 ? "lens's" : "lenses'"} review of the draft is still with your assistant (run ${loop.run}).`
+          : lens
+            ? `The ${lens} lens's review of the draft is still with your assistant (run ${loop.run}).`
+            : `The draft is still with your assistant (run ${loop.run}).`,
       );
-      return result("waiting", { waiting: { runId: loop.run, ...(lens ? { lens } : {}) } });
+      return result("waiting", {
+        waiting: batched.length
+          ? { runId: loop.run, lenses: batched }
+          : { runId: loop.run, ...(lens ? { lens } : {}) },
+      });
     }
     if (lens) {
       // The lenses on the same draft are read in again; a lens with no run left didn't review.
@@ -1838,13 +1853,25 @@ export async function lineExists(root: string, at: string): Promise<boolean> {
   return n <= text.replace(/\n$/, "").split(/\r?\n/).length;
 }
 
-/** A critic lens handed off and waiting for the person's assistant (ADR 0115). */
+/**
+ * A critic lens handed off and waiting for the person's assistant (ADR 0115), or the one prompt
+ * that asks the round's lenses still out together (`lenses`, ADR 0185).
+ */
 interface LensWait {
   runId: string;
-  lens: string;
+  lens?: string;
+  lenses?: string[];
   gate: string;
   round: number;
 }
+
+/** What a stage's result says it waits on, for a lens or a batch of them. */
+const waitingOf = (w: LensWait): { runId: string; lens?: string; lenses?: string[] } =>
+  w.lenses ? { runId: w.runId, lenses: w.lenses } : { runId: w.runId, lens: w.lens! };
+
+/** Names in a sentence: "true", "true and complete", "true, complete and safe". */
+const listed = (names: string[]) =>
+  names.length < 2 ? (names[0] ?? "") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
 
 /** The draft the critic's AI lenses review with the artifacts it was drafted from (ADR 0115). */
 interface DraftReview {
@@ -1866,7 +1893,8 @@ async function isLensOf(
   runId: string,
 ): Promise<boolean> {
   const meta = await readRoundMeta(root, change, review.gate, review.round);
-  return !!meta?.lenses.some((l) => l.runId === runId);
+  // A lens's own run, or the batch that asks the round's lenses in one prompt (ADR 0185).
+  return !!meta?.lenses.some((l) => l.runId === runId || l.batch === runId);
 }
 
 /** The lenses of a round that failed, with why. */
@@ -1956,6 +1984,7 @@ async function lensesIn(
   discarded: Discarded[];
 }> {
   const rt = o.criticRuntime ?? o.runtime;
+  const out: { run: Run; lens: string; runId: string; round: number }[] = [];
   for (const w of await waitingLenses(root, change, review.gate, review.round)) {
     const run = await rt.result(w.runId).catch(() => undefined);
     if (run?.state === "validated") {
@@ -1973,7 +2002,33 @@ async function lensesIn(
       );
       continue;
     }
-    return { waiting: { ...w, gate: review.gate }, issues: [], failed: [], discarded: [] };
+    out.push({ ...w, run });
+  }
+  if (out.length) {
+    // ADR 0185: lenses still out of the one prompt that asked them are waited on in that prompt,
+    // until it is in; a lens left out of a batch that is in, or never batched, is asked alone.
+    const first = out[0]!;
+    const batch = first.run.batch
+      ? await rt.result(first.run.batch).catch(() => undefined)
+      : undefined;
+    if (batch && batch.state !== "validated" && batch.state !== "cancelled")
+      return {
+        waiting: {
+          runId: batch.runId,
+          lenses: out.filter((x) => x.run.batch === batch.runId).map((x) => x.lens),
+          gate: review.gate,
+          round: review.round,
+        },
+        issues: [],
+        failed: [],
+        discarded: [],
+      };
+    return {
+      waiting: { runId: first.runId, lens: first.lens, gate: review.gate, round: review.round },
+      issues: [],
+      failed: [],
+      discarded: [],
+    };
   }
   const { findings } = await readRound(root, change, review.gate, review.round);
   return {
@@ -2034,6 +2089,8 @@ async function criticRound(
       gate,
       ...(lensRuntime ? { runtime: lensRuntime } : {}),
       review: { stage: spec.stage, files: draft.files, sources: draft.sources },
+      // ADR 0185: the lenses on the draft go to the person's assistant in one prompt.
+      batchLenses: true,
       now: (o.now ?? new Date()).toISOString().replace(/\.\d{3}Z$/, "Z"),
     });
   } catch (e) {
@@ -2053,6 +2110,17 @@ async function criticRound(
     return { issues: [] };
   }
   loop.critic = [...loop.critic, { gate, round: r.round }];
+  // ADR 0185: the lenses handed off together are asked in one prompt, the draft's next.
+  if (r.batch)
+    return {
+      issues: [],
+      waiting: {
+        runId: r.batch,
+        lenses: r.lenses.filter((l) => l.batch === r.batch).map((l) => l.lens),
+        gate,
+        round: r.round,
+      },
+    };
   const first = r.lenses.find((l) => l.state === "waiting" && l.runId);
   if (first)
     return {

@@ -60,6 +60,7 @@ import {
   taskRunOfRun,
 } from "@maycombhq/taskrun";
 import { runDone, taskRun, taskRunNotWaiting } from "./run-commands.js";
+import { partStates } from "./runs-view.js";
 import { scanCommand } from "./scan-commands.js";
 import { workspaceOpen, workspaceSync } from "./workspace-commands.js";
 
@@ -386,6 +387,9 @@ async function runView(root: string, change: string, runId: string) {
     /** ADR 0121 addendum: the kind of step and the model that ran it. */
     stepClass?: Api.RunListItem["stepClass"];
     model?: string;
+    /** ADR 0185: the batch a lens was asked in, or a batch's lenses. */
+    batch?: string;
+    parts?: { name: string; runId: string }[];
   };
   const manifest = await readFile(join(dir, "context-manifest.json"), "utf8").catch(() => "");
   const tr = await taskRunOfRun(root, change, runId).catch(() => undefined);
@@ -405,6 +409,8 @@ async function runView(root: string, change: string, runId: string) {
     attempt: r.attempt ?? 1,
     ...(r.stepClass ? { stepClass: r.stepClass } : {}),
     ...(r.model ? { model: r.model } : {}),
+    ...(r.batch ? { batch: r.batch } : {}),
+    ...(r.parts?.length ? { parts: await partStates(root, change, r.parts) } : {}),
     promptPath: `${runsRelOf(root)}/${change}/${runId}/prompt.md`,
     ...(tr
       ? {

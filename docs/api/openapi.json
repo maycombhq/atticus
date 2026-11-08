@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Atticus local API",
-    "version": "2.77.0",
+    "version": "2.78.0",
     "description": "Served by `atticus ui` on 127.0.0.1. The UI only calls this API, and the API only reads and writes files in the metarepo.",
     "license": {
       "name": "Apache-2.0",
@@ -22903,7 +22903,7 @@
         "properties": {
           "schemaVersion": {
             "type": "number",
-            "const": 5
+            "const": 6
           },
           "runId": {
             "type": "string",
@@ -23217,6 +23217,43 @@
               "name"
             ],
             "additionalProperties": false
+          },
+          "batch": {
+            "type": "string",
+            "pattern": "^run-[0-9a-z-]+$"
+          },
+          "parts": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9-]*$"
+                },
+                "runId": {
+                  "type": "string",
+                  "pattern": "^run-[0-9a-z-]+$"
+                },
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "prepared",
+                    "waiting",
+                    "produced",
+                    "validated",
+                    "failed",
+                    "cancelled"
+                  ]
+                }
+              },
+              "required": [
+                "name",
+                "runId"
+              ],
+              "additionalProperties": false
+            }
           },
           "promptPath": {
             "type": "string"
@@ -23726,7 +23763,7 @@
         "properties": {
           "schemaVersion": {
             "type": "number",
-            "const": 5
+            "const": 6
           },
           "runId": {
             "type": "string",
@@ -24041,6 +24078,43 @@
             ],
             "additionalProperties": false
           },
+          "batch": {
+            "type": "string",
+            "pattern": "^run-[0-9a-z-]+$"
+          },
+          "parts": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9-]*$"
+                },
+                "runId": {
+                  "type": "string",
+                  "pattern": "^run-[0-9a-z-]+$"
+                },
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "prepared",
+                    "waiting",
+                    "produced",
+                    "validated",
+                    "failed",
+                    "cancelled"
+                  ]
+                }
+              },
+              "required": [
+                "name",
+                "runId"
+              ],
+              "additionalProperties": false
+            }
+          },
           "promptPath": {
             "type": "string"
           },
@@ -24120,7 +24194,7 @@
               "properties": {
                 "schemaVersion": {
                   "type": "number",
-                  "const": 5
+                  "const": 6
                 },
                 "runId": {
                   "type": "string",
@@ -24434,6 +24508,43 @@
                   ],
                   "additionalProperties": false
                 },
+                "batch": {
+                  "type": "string",
+                  "pattern": "^run-[0-9a-z-]+$"
+                },
+                "parts": {
+                  "minItems": 1,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "pattern": "^[a-z][a-z0-9-]*$"
+                      },
+                      "runId": {
+                        "type": "string",
+                        "pattern": "^run-[0-9a-z-]+$"
+                      },
+                      "state": {
+                        "type": "string",
+                        "enum": [
+                          "prepared",
+                          "waiting",
+                          "produced",
+                          "validated",
+                          "failed",
+                          "cancelled"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "runId"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
                 "promptPath": {
                   "type": "string"
                 },
@@ -24544,7 +24655,7 @@
             "properties": {
               "schemaVersion": {
                 "type": "number",
-                "const": 5
+                "const": 6
               },
               "runId": {
                 "type": "string",
@@ -24857,6 +24968,43 @@
                   "name"
                 ],
                 "additionalProperties": false
+              },
+              "batch": {
+                "type": "string",
+                "pattern": "^run-[0-9a-z-]+$"
+              },
+              "parts": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9-]*$"
+                    },
+                    "runId": {
+                      "type": "string",
+                      "pattern": "^run-[0-9a-z-]+$"
+                    },
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "prepared",
+                        "waiting",
+                        "produced",
+                        "validated",
+                        "failed",
+                        "cancelled"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "runId"
+                  ],
+                  "additionalProperties": false
+                }
               },
               "promptPath": {
                 "type": "string"

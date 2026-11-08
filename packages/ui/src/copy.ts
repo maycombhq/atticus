@@ -4231,6 +4231,15 @@ export const COPY = {
     rounds: "Rounds of this step",
     round: (n: number) => `Round ${n}`,
     thisRound: "(this one)",
+    /** ADR 0185: a stage's critic lenses asked in one prompt, each with its own run. */
+    batch: {
+      parts: "Lenses in this prompt",
+      partsSay:
+        "One prompt asks these lenses together; Done checks each lens's section on its own. A lens still out can be fixed here and Done pressed again, or answered alone from its own run.",
+      lens: (name: string) => `The ${name} lens`,
+      askedIn: "Asked in",
+      askedInLink: "The prompt that asked the lenses together",
+    },
     facts: {
       agent: "Agent",
       runtime: "Runs with",

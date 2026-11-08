@@ -4,6 +4,7 @@ import {
   type AgentDefinition,
   type RunState,
   type RunAssistant,
+  type RunPart,
   type RunRetrieval,
   type RunSummary,
   type RunTools,
@@ -71,6 +72,10 @@ export interface Run {
   model?: string;
   /** The assistant program it talked to (copilot-acp, ADR 0171): its name and version. */
   assistant?: RunAssistant;
+  /** The batched hand-off this run was asked in with others (ADR 0185). */
+  batch?: string;
+  /** A batched hand-off's parts, each its own run (ADR 0185). */
+  parts?: RunPart[];
 }
 
 export interface AiRuntime {
@@ -147,6 +152,8 @@ export function toRunSummary(run: Run): RunSummary {
     stepClass: run.stepClass ?? stepClassOf(run.request),
     ...(run.model ? { model: run.model } : {}),
     ...(run.assistant ? { assistant: run.assistant } : {}),
+    ...(run.batch ? { batch: run.batch } : {}),
+    ...(run.parts?.length ? { parts: run.parts } : {}),
   };
 }
 

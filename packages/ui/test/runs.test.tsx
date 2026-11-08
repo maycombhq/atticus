@@ -37,7 +37,7 @@ const esc = (s: string) =>
 
 type Item = Api.RunListItem;
 const run = (n: number, over: Partial<Item> = {}): Item => ({
-  schemaVersion: 5,
+  schemaVersion: 6,
   runId: `run-2026102303400${n}-0001`,
   change: "knowledge-scan",
   agent: "knowledge-reader",
@@ -102,6 +102,55 @@ describe("which model ran each run, and its kind of step (ADR 0121 addendum)", (
     );
     expect(old).toContain(R.modelNotRecorded);
     expect(old).not.toContain(R.facts.stepClass);
+  });
+});
+
+describe("a stage's critic lenses in one prompt (ADR 0185)", () => {
+  const batch = run(5, {
+    change: "lock-a-card",
+    agent: "critic-lenses",
+    state: "failed",
+    stepClass: "critic",
+    parts: [
+      { name: "true", runId: "run-20261023034006-0001", state: "validated" },
+      { name: "complete", runId: "run-20261023034007-0001", state: "failed" },
+    ],
+  });
+
+  it("shows a batch as one prompt with its lenses listed, each a link to its own run", () => {
+    const out = html(
+      <RunDetail
+        of={{ state: "ready", data: { run: batch, prompt: "p", handedBack: [], rounds: [] } }}
+      />,
+    );
+    expect(out).toContain(R.batch.parts);
+    expect(out).toContain(esc(R.batch.partsSay));
+    expect(out).toContain(esc(R.batch.lens("true")));
+    expect(out).toContain(`href="${runsHref({ run: "run-20261023034007-0001" })}"`);
+    expect(out).toContain(R.states.validated);
+    expect(out).toContain(R.states.failed);
+    // A plain run lists no lenses.
+    const plain = html(
+      <RunDetail
+        of={{ state: "ready", data: { run: run(4), prompt: "p", handedBack: [], rounds: [] } }}
+      />,
+    );
+    expect(plain).not.toContain(R.batch.parts);
+  });
+
+  it("links a lens's own run back to the prompt it was asked in", () => {
+    const lens = run(6, {
+      change: "lock-a-card",
+      agent: "true-critic",
+      batch: batch.runId,
+    });
+    const out = html(
+      <RunDetail
+        of={{ state: "ready", data: { run: lens, prompt: "p", handedBack: [], rounds: [] } }}
+      />,
+    );
+    expect(out).toContain(R.batch.askedIn);
+    expect(out).toContain(`href="${runsHref({ run: batch.runId })}"`);
   });
 });
 

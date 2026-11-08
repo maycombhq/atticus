@@ -120,10 +120,23 @@ export type RunState = z.infer<typeof RunState>;
  * its context was retrieved (ADR 0116): the model's expansion of the input and its order of the
  * candidates; 4 the step's class and the model that ran it (ADR 0121 addendum, per-step models);
  * 5 the assistant program that ran it and its version (ADR 0171: the Copilot language server a
- * copilot-acp run talked to). A version 1 to 4 record is read through `migrateRunSummary`,
- * without what came later.
+ * copilot-acp run talked to); 6 the batch a hand-off was asked in and a batch's parts (ADR 0185:
+ * a stage's critic lenses in one prompt). A version 1 to 5 record is read through
+ * `migrateRunSummary`, without what came later.
  */
-export const RUN_SCHEMA_VERSION = 5 as const;
+export const RUN_SCHEMA_VERSION = 6 as const;
+
+const RunId = z.string().regex(/^run-[0-9a-z-]+$/);
+
+/**
+ * One part of a batched hand-off (version 6, ADR 0185): its name (the section that answers it,
+ * `=== <name>`, a critic lens's name) and its own run, which keeps its own prompt, pack and answer.
+ */
+export const RunPart = z.strictObject({
+  name: z.string().regex(/^[a-z][a-z0-9-]*$/),
+  runId: RunId,
+});
+export type RunPart = z.infer<typeof RunPart>;
 
 /**
  * The assistant program a run talked to (version 5, ADR 0171), as it named itself: the agent's
@@ -216,7 +229,7 @@ export type RunTools = z.infer<typeof RunTools>;
 /** What goes into review/ for every run; full packs and transcripts stay in git-ignored .runs/. */
 export const RunSummary = z.strictObject({
   schemaVersion: z.literal(RUN_SCHEMA_VERSION),
-  runId: z.string().regex(/^run-[0-9a-z-]+$/),
+  runId: RunId,
   change: RecordId,
   agent: RecordId,
   runtime: RuntimeKind,
@@ -245,13 +258,18 @@ export const RunSummary = z.strictObject({
   model: z.string().min(1).optional(),
   /** The assistant program it talked to (version 5, ADR 0171), when the runtime drives one. */
   assistant: RunAssistant.optional(),
+  /** The batched hand-off this run was asked in with others (version 6, ADR 0185). */
+  batch: RunId.optional(),
+  /** A batched hand-off's parts, each its own run (version 6, ADR 0185). */
+  parts: z.array(RunPart).min(1).optional(),
 });
 export type RunSummary = z.infer<typeof RunSummary>;
 
 /**
  * A stored run record at the current version: version 1 (before tools), 2 (before retrieval), 3
- * (before the step's class and model) and 4 (before the assistant program, ADR 0171) read as
- * version 5 without them; anything else is returned as it is, for the schema to judge.
+ * (before the step's class and model), 4 (before the assistant program, ADR 0171) and 5 (before
+ * batches, ADR 0185) read as version 6 without them; anything else is returned as it is, for the
+ * schema to judge.
  */
 export function migrateRunSummary(raw: unknown): unknown {
   if (typeof raw !== "object" || raw === null) return raw;
@@ -259,7 +277,8 @@ export function migrateRunSummary(raw: unknown): unknown {
   return r.schemaVersion === 1 ||
     r.schemaVersion === 2 ||
     r.schemaVersion === 3 ||
-    r.schemaVersion === 4
+    r.schemaVersion === 4 ||
+    r.schemaVersion === 5
     ? { ...r, schemaVersion: RUN_SCHEMA_VERSION }
     : raw;
 }

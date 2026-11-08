@@ -278,6 +278,8 @@ async function printJson(
           runId: run.runId,
           // ADR 0115: one of the critic's AI lenses, reviewing what the step wrote.
           ...(lens ? { lens } : {}),
+          // ADR 0185: a batch asks these lenses together, each in its own section of one answer.
+          ...(run.parts?.length ? { lenses: run.parts.map((p) => p.name) } : {}),
           stepClass,
           ...(orgModel ? { orgModel } : {}),
           root,

@@ -246,6 +246,71 @@ describe("atticus critic --mode hand-off", () => {
   });
 });
 
+/**
+ * ADR 0185: `atticus handoff done <batch>` on the one prompt a stage's critic round asks its lenses
+ * in: each lens's section is checked in its own run and read into the round; a lens still out is
+ * named with what to do, and the others are in.
+ */
+describe("atticus handoff done on the lenses' one prompt (ADR 0185)", () => {
+  async function batched(r: string) {
+    const { waiting } = await start(r);
+    const rt = new HandoffRuntime({ root: r, validate: async () => [], batch: true });
+    const first = (await rt.result(waiting[0]!.runId!)).request.agent;
+    const batch = await rt.prepareBatch({
+      change: CHANGE,
+      agent: { ...first, id: "critic-lenses" },
+      parts: waiting.map((l) => ({ name: l.lens, runId: l.runId! })),
+      stepClass: "critic",
+    });
+    await rt.run(batch.runId);
+    return { waiting, batch: batch.runId };
+  }
+  const answers = (r: string, batch: string, text: string) =>
+    writeFile(join(r, ".runs", CHANGE, batch, "answers.md"), text);
+
+  it("reads every lens in with one Done and prints the gate's verdict", async () => {
+    const r = await root();
+    const { waiting, batch } = await batched(r);
+    const text = (
+      await Promise.all(waiting.map(async (l) => `=== ${l.lens}\n${await recordedAnswer(r, l)}`))
+    ).join("");
+    await answers(r, batch, text);
+    const c = capture();
+    expect(await handoffDone(r, batch, c.io, { now: () => new Date(LATER) })).toBe(0);
+    expect(c.err).toEqual([]);
+    expect(c.out.slice(0, 3).map((l) => l.split(" lens of round")[0])).toEqual([
+      "The complete",
+      "The safe",
+      "The ship",
+    ]);
+    expect(c.out.at(-1)).toMatch(/^The plan gate is closed: 12 blocking/);
+  });
+
+  it("a lens whose section fails is named with what to do; the others are in", async () => {
+    const r = await root();
+    const { waiting, batch } = await batched(r);
+    const [complete, safe] = waiting;
+    await answers(
+      r,
+      batch,
+      `=== complete\n${await recordedAnswer(r, complete!)}=== safe\n${await recordedAnswer(r, safe!)}=== ship\nfindings: [unclosed\n`,
+    );
+    const c = capture();
+    expect(await handoffDone(r, batch, c.io, { now: () => new Date(LATER) })).toBe(1);
+    expect(c.out.filter((l) => /lens of round 1/.test(l))).toHaveLength(2);
+    expect(c.err[0]).toMatch(/^ship: findings-ship\.yaml isn't YAML/);
+    expect(c.err.at(-1)).toBe(
+      `Fix what is listed in .runs/${CHANGE}/${batch}/answers.md and run atticus handoff done ${batch} again: only the lenses still out are checked. Or answer a lens alone with its own run.`,
+    );
+    expect(c.out.at(-1)).toBe("1 AI lens is still with your assistant: ship.");
+    // Fixed in the batch: only the ship lens is checked and read in.
+    await answers(r, batch, "=== ship\nfindings: []\n");
+    const again = capture();
+    expect(await handoffDone(r, batch, again.io, { now: () => new Date(LATER) })).toBe(0);
+    expect(again.out[0]).toBe("The ship lens of round 1 at the plan gate raised 0 findings.");
+  });
+});
+
 describe("completionOf and the hand-off runs it routes", () => {
   it("recognises a critic lens's run, the glossary definer's and the story writer's", () => {
     expect(

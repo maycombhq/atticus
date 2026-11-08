@@ -879,3 +879,98 @@ gates:
     );
   });
 });
+
+/**
+ * ADR 0185 (eighth UX walk): in hand-off mode a stage round is two pastes, the draft and then one
+ * prompt for every lens of the critic. The stage waits on the batch; Done on it checks each lens's
+ * section on its own; a lens whose section is missing stays out alone, the batch is offered again
+ * until it is in, and the lens can be answered alone.
+ */
+describe("a stage's critic lenses in one prompt (ADR 0185)", () => {
+  function batched(root: string) {
+    const tick = clock();
+    const rt = () =>
+      new HandoffRuntime({
+        root,
+        validate: async (f, req) =>
+          !req.outputPath.startsWith("findings-") || /findings:/.test(await readFile(f, "utf8"))
+            ? []
+            : ["no findings list"],
+        now: tick,
+        batch: true,
+      });
+    const step = (resume?: string) =>
+      featureStage(root, CHANGE, { runtime: rt(), now: tick(), ...(resume ? { resume } : {}) });
+    const write = (run: string, file: string, text: string) =>
+      writeFile(join(root, ".runs", CHANGE, run, file), text);
+    return { rt, step, write };
+  }
+  const runJson = async (root: string, run: string) =>
+    JSON.parse(await readFile(join(root, ".runs", CHANGE, run, "run.json"), "utf8")) as {
+      state: string;
+      parts?: { name: string; runId: string }[];
+      batch?: string;
+    };
+
+  it("follows the draft's Done with one prompt for all its lenses, and one Done reads them in", async () => {
+    const root = await estateRoot({ lenses: true });
+    const h = batched(root);
+    const first = await h.step();
+    await h.write(first.waiting!.runId, "feature-answer.yaml", PLACED);
+    expect((await h.rt().done(first.waiting!.runId)).state).toBe("validated");
+    // Paste 2: the draft's resume hands every lens over in one prompt.
+    const second = await h.step(first.waiting!.runId);
+    expect(second.state).toBe("waiting");
+    expect(second.waiting!.lenses).toEqual(["true", "complete"]);
+    expect(second.waiting!.lens).toBeUndefined();
+    const batch = await runJson(root, second.waiting!.runId);
+    expect(batch.parts!.map((p) => p.name)).toEqual(["true", "complete"]);
+    for (const p of batch.parts!)
+      expect((await runJson(root, p.runId)).batch).toBe(second.waiting!.runId);
+    // Run again before the answer: the same batch, still waiting.
+    const plain = await h.step();
+    expect(plain.waiting).toEqual(second.waiting);
+    expect(plain.notes.join("\n")).toContain(
+      `The critic's true and complete lenses' review of the draft is still with your assistant (run ${second.waiting!.runId}).`,
+    );
+    await h.write(
+      second.waiting!.runId,
+      "answers.md",
+      "=== true\nfindings: []\n=== complete\nfindings: []\n",
+    );
+    expect((await h.rt().done(second.waiting!.runId)).state).toBe("validated");
+    const third = await h.step(second.waiting!.runId);
+    expect(third.state).toBe("done");
+    expect(third.drafts).toBe(0);
+    expect((await roundMeta(root, 1)).lenses.map((l) => [l.lens, l.state])).toEqual([
+      ["true", "ran"],
+      ["complete", "ran"],
+    ]);
+  });
+
+  it("offers the batch again while a lens's section is out, and a lens answered alone goes in alone", async () => {
+    const root = await estateRoot({ lenses: true });
+    const h = batched(root);
+    const first = await h.step();
+    await h.write(first.waiting!.runId, "feature-answer.yaml", PLACED);
+    await h.rt().done(first.waiting!.runId);
+    const wait = (await h.step(first.waiting!.runId)).waiting!;
+    await h.write(wait.runId, "answers.md", "=== true\nfindings: []\n");
+    const done = await h.rt().done(wait.runId);
+    expect(done.state).toBe("failed");
+    // The true lens is in; the complete lens is out, so the batch is offered again for it.
+    const again = await h.step(wait.runId);
+    expect(again.state).toBe("waiting");
+    expect(again.waiting).toEqual({ runId: wait.runId, lenses: ["complete"] });
+    expect((await roundMeta(root, 1)).lenses.map((l) => [l.lens, l.state])).toEqual([
+      ["true", "ran"],
+      ["complete", "waiting"],
+    ]);
+    // The complete lens answered alone, in its own run.
+    const complete = (await runJson(root, wait.runId)).parts!.find((p) => p.name === "complete")!;
+    await h.write(complete.runId, "findings-complete.yaml", "findings: []\n");
+    expect((await h.rt().done(complete.runId)).state).toBe("validated");
+    const end = await h.step(complete.runId);
+    expect(end.state).toBe("done");
+  });
+});

@@ -433,6 +433,8 @@ export interface RoundLens {
   promptSha256?: string;
   /** The hand-off run a waiting (or read-in) lens was with. */
   runId?: string;
+  /** The batched hand-off it was asked in with the round's other lenses (ADR 0185). */
+  batch?: string;
   /** What the lens was sent, sized to need (ai.ts LensContext). */
   context?: { tokens: number; since?: number; unchanged?: string[] };
 }

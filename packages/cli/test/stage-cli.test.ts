@@ -178,7 +178,7 @@ describe("a stage run again while its hand-off waits (--handoff --json)", () => 
 });
 
 describe("atticus change feature --handoff --json with the critic's AI lenses (ADR 0115)", () => {
-  it("offers the expansion, then the draft, then each lens, one hand-off at a time, and ends done", async () => {
+  it("offers the expansion, then the draft, then its lenses in one prompt (ADR 0185), and ends done", async () => {
     // The real default (ADR 0116 addendum): the expansion is a round of its own, first.
     const root = await estate();
     await cp(join(FIXTURES, "stages/lenses/checklists"), join(root, "org-pack/checklists"), {
@@ -199,6 +199,7 @@ describe("atticus change feature --handoff --json with the critic's AI lenses (A
         state: string;
         runId: string;
         lens?: string;
+        lenses?: string[];
         resultFile: string;
         promptFile: string;
         doneArgs: string[];
@@ -224,11 +225,12 @@ describe("atticus change feature --handoff --json with the critic's AI lenses (A
 
     // The draft passes the rules: the lenses of the questions its rules ask are offered in the
     // questions' order (ADR 0124 addendum, Part 4): true (the old architecture rule), then complete
-    // (the old business rule).
-    const truth = await answer(draft, PLACED);
-    expect(truth).toMatchObject({ state: "handoff", lens: "true" });
-    expect(truth.resultFile).toMatch(/\/findings-true\.yaml$/);
-    expect(truth.resumeArgs).toEqual([
+    // (the old business rule). ADR 0185: both in one prompt, the draft's next.
+    const lenses = await answer(draft, PLACED);
+    expect(lenses).toMatchObject({ state: "handoff", lenses: ["true", "complete"] });
+    expect(lenses.lens).toBeUndefined();
+    expect(lenses.resultFile).toMatch(/\/answers\.md$/);
+    expect(lenses.resumeArgs).toEqual([
       "change",
       "feature",
       CHANGE,
@@ -237,17 +239,17 @@ describe("atticus change feature --handoff --json with the critic's AI lenses (A
       "--handoff",
       "--json",
       "--resume",
-      truth.runId,
+      lenses.runId,
     ]);
-    expect(await readFile(join(root, truth.promptFile), "utf8")).toContain(
+    const prompt = await readFile(join(root, lenses.promptFile), "utf8");
+    expect(prompt).toContain(
       "Review the draft against the estate and the brief, including what the draft left out",
     );
-    const complete = await answer(truth, "findings: []\n");
-    expect(complete).toMatchObject({ state: "handoff", lens: "complete" });
-    expect(complete.runId).not.toBe(truth.runId);
+    expect(prompt).toContain('Part 1 of 2: true. Its answer is the section "=== true".');
+    expect(prompt).toContain('Part 2 of 2: complete. Its answer is the section "=== complete".');
 
-    // Every lens is in and nothing blocks: the stage is done.
-    const end = await answer(complete, "findings: []\n");
+    // Every lens is in with one answer and nothing blocks: the stage is done.
+    const end = await answer(lenses, "=== true\nfindings: []\n=== complete\nfindings: []\n");
     expect(end.state).toBe("done");
     const round = parse(
       await readFile(
@@ -284,6 +286,7 @@ describe("the starter review on a metarepo atticus init made (ADR 0120)", () => 
         state: string;
         runId: string;
         lens?: string;
+        lenses?: string[];
         resultFile: string;
         promptFile: string;
         doneArgs: string[];
@@ -303,21 +306,18 @@ describe("the starter review on a metarepo atticus init made (ADR 0120)", () => 
     await finish(h.doneArgs);
     h = await run(h.resumeArgs);
 
-    // No checklist was added by hand: the starter review's lenses come one at a time.
-    const offered: string[] = [];
-    while (h.state === "handoff" && h.lens) {
-      offered.push(h.lens);
-      const prompt = await readFile(join(root, h.promptFile), "utf8");
-      if (h.lens === "complete") expect(prompt).toContain("review.brief-outcomes-placed");
-      if (h.lens === "true") {
-        expect(prompt).toContain("review.changed-flow-not-read");
-        expect(prompt).toContain("review.assumed-capability-named");
-      }
-      await writeFile(join(root, h.resultFile), "findings: []\n");
-      await finish(h.doneArgs);
-      h = await run(h.resumeArgs);
-    }
-    expect(offered).toEqual(["true", "complete"]);
+    // No checklist was added by hand: the starter review's lenses come in one prompt (ADR 0185).
+    expect(h).toMatchObject({ state: "handoff", lenses: ["true", "complete"] });
+    const prompt = await readFile(join(root, h.promptFile), "utf8");
+    expect(prompt).toContain("review.brief-outcomes-placed");
+    expect(prompt).toContain("review.changed-flow-not-read");
+    expect(prompt).toContain("review.assumed-capability-named");
+    await writeFile(
+      join(root, h.resultFile),
+      "=== true\nfindings: []\n=== complete\nfindings: []\n",
+    );
+    await finish(h.doneArgs);
+    h = await run(h.resumeArgs);
     expect(h.state).toBe("done");
     const round = parse(
       await readFile(
@@ -383,7 +383,7 @@ describe("a stage's --handoff --json offers its own run, named as data (M5, M6)"
     expect(again.j).toMatchObject({ state: "handoff", runId: mine.j.runId, stillWaiting: true });
   });
 
-  it("offers a lens again, still waiting, when its answer failed the check", async () => {
+  it("offers the lenses' prompt again, still waiting, when its answer failed the check", async () => {
     const root = await estate();
     await cp(join(FIXTURES, "stages/lenses/checklists"), join(root, "org-pack/checklists"), {
       recursive: true,
@@ -399,15 +399,19 @@ describe("a stage's --handoff --json offers its own run, named as data (M5, M6)"
     await writeFile(join(root, draft.resultFile as string), PLACED);
     await run(root, draft.doneArgs as string[]);
     const lens = (await run(root, draft.resumeArgs as string[])).j;
-    expect(lens).toMatchObject({ state: "handoff", lens: "true" });
-    // Copilot answered with nothing: the check fails it.
-    await writeFile(join(root, lens.resultFile as string), "");
+    // ADR 0185: the lenses in one prompt.
+    expect(lens).toMatchObject({ state: "handoff", lenses: ["true", "complete"] });
+    // Copilot answered with nothing for the true lens: the check fails it, the complete lens is in.
+    await writeFile(
+      join(root, lens.resultFile as string),
+      "=== true\n\n=== complete\nfindings: []\n",
+    );
     expect((await run(root, lens.doneArgs as string[])).code).toBe(1);
     const again = (await run(root, lens.resumeArgs as string[])).j;
     expect(again).toMatchObject({
       state: "handoff",
       runId: lens.runId,
-      lens: "true",
+      lenses: ["true", "complete"],
       stillWaiting: true,
     });
   });

@@ -95,6 +95,11 @@ export interface RunCriticOptions {
    */
   review?: { stage: string; files: string[]; sources: SourceInput[] };
   /**
+   * ADR 0185: ask the lenses that go to the person's assistant together in one prompt as well, when
+   * the runtime batches (a stage's critic round asks it). Each lens keeps its own run.
+   */
+  batchLenses?: boolean;
+  /**
    * Where the code has a name a lens's finding says is missing (W1). Default: the search the
    * command line registered (registerCodeSearch); without one, only the catalog is checked.
    */
@@ -155,6 +160,11 @@ export interface CriticResult {
   refused: RefusedPack[];
   problems: string[];
   lenses: LensRun[];
+  /**
+   * ADR 0185: the batched hand-off that asks the round's waiting lenses in one prompt (one
+   * `atticus handoff done` reads them all in); each lens's own run can still be answered alone.
+   */
+  batch?: string;
   discarded: Discarded[];
   /** Artifacts with blocking layer-1 findings; they were kept out of layer 2. */
   failedLayer1: string[];
@@ -326,6 +336,7 @@ export async function runCritic(
       : undefined;
   const ai = await runLenses(ctx, applicable, {
     ...(opts.runtime ? { runtime: opts.runtime } : {}),
+    ...(opts.batchLenses ? { batch: true } : {}),
     lenses,
     failed,
     ...(opts.maxClassification ? { maxClassification: opts.maxClassification } : {}),
@@ -451,6 +462,8 @@ export async function runCritic(
           artifacts: r.artifacts,
           ...(r.promptSha256 ? { promptSha256: r.promptSha256 } : {}),
           ...(r.runId ? { runId: r.runId } : {}),
+          // ADR 0185: the one prompt it was asked in with the round's other waiting lenses.
+          ...(r.batch ? { batch: r.batch } : {}),
           // What the lens was sent (ADR 0115 addendum, 2026-10-25): its size, what was cut to
           // need, and in a redraft the round it was diffed against and what wasn't sent.
           ...(r.context ? { context: r.context } : {}),
@@ -474,6 +487,7 @@ export async function runCritic(
     refused: layered.refused,
     problems,
     lenses: ai.runs,
+    ...(ai.batch ? { batch: ai.batch } : {}),
     discarded: ai.discarded,
     failedLayer1: [...failed].sort(),
     model,

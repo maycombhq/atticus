@@ -123,7 +123,7 @@ describe("Raise hand-off says what holds it", () => {
 
 type Item = Api.RunListItem;
 const run = (id: string, over: Partial<Item> = {}): Item => ({
-  schemaVersion: 5,
+  schemaVersion: 6,
   runId: id,
   change: "lock-card",
   agent: "complete-critic",

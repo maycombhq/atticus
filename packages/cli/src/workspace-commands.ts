@@ -38,7 +38,7 @@ import {
 } from "@maycombhq/planner";
 import { completeHandUpLens, handUpLensTask } from "@maycombhq/speckit";
 import type { Output } from "./commands.js";
-import { completeCriticLens } from "./critic-commands.js";
+import { completeCriticBatch, completeCriticLens } from "./critic-commands.js";
 import { completeFeatureNaming } from "./feature-commands.js";
 import { yamlAnswerProblems } from "./handoff-yaml.js";
 import { storeSummaryLines } from "./openspec-stores-commands.js";
@@ -302,6 +302,14 @@ export async function handoffDone(
     },
   });
   const run = await rt.done(runId, deps.model ? { model: deps.model } : {});
+  // ADR 0185: a batch of a round's lenses: each lens's section was checked in its own run; the
+  // lenses that passed are read into their round, and those still out are named.
+  if (run.parts?.length) {
+    const now = deps.now?.();
+    return completeCriticBatch(root, run, (id) => rt.result(id), io, {
+      ...(now ? { now: now.toISOString().replace(/\.\d{3}Z$/, "Z") } : {}),
+    });
+  }
   if (run.state === "validated") {
     const kind = completionOf(run.request);
     const now = deps.now?.();

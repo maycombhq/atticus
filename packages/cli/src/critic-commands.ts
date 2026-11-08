@@ -21,6 +21,7 @@ import { CriticQuestion, LEGACY_LENSES, Lens, runsDirOf, runsRelOf } from "@mayc
 import {
   CriticError,
   act,
+  completeLensBatch,
   completeLensRun,
   gateStatus,
   checkRoundRule,
@@ -297,6 +298,52 @@ export async function completeCriticLens(
   } catch (e) {
     return fail(io, e);
   }
+}
+
+/**
+ * ADR 0185: the end of a batched hand-off of a round's lenses. `atticus handoff done` checked each
+ * lens's section in that lens's own run; every lens that passed is read into its round here, as
+ * one answered alone is, and a lens still out is named with what to do: fix its section and run
+ * Done on the batch again, or answer it alone. Exit 0 once every lens of the batch is in.
+ */
+export async function completeCriticBatch(
+  root: string,
+  batch: Run,
+  result: (runId: string) => Promise<Run>,
+  io: Output,
+  o: { now?: string } = {},
+): Promise<number> {
+  let read: CompletedLens[];
+  try {
+    read = await completeLensBatch(root, batch, result, o.now ? { now: o.now } : {});
+  } catch (e) {
+    return fail(io, e);
+  }
+  for (const c of read) {
+    const where = `The ${c.lens.lens} lens of round ${c.round} at the ${c.gate} gate`;
+    io.out(
+      c.lens.state === "ran"
+        ? `${where} raised ${plural(c.findings.length, "finding", "findings")}.`
+        : `${where} ${c.lens.state}: ${c.lens.reason ?? ""}`.trimEnd(),
+    );
+    for (const d of c.discarded) io.err(`Discarded: ${d.reason}`);
+    if (c.lens.state === "ran" && c.lens.reason) io.out(`  ${c.lens.reason}`);
+  }
+  if (batch.state !== "validated") {
+    for (const e of batch.errors) io.err(e);
+    io.err(
+      `Fix what is listed in ${runsRelOf(root)}/${batch.request.change}/${batch.runId}/${batch.request.outputPath} and run atticus handoff done ${batch.runId} again: only the lenses still out are checked. Or answer a lens alone with its own run.`,
+    );
+  }
+  const last = read.at(-1);
+  if (last) {
+    if (last.waiting.length)
+      io.out(
+        `${plural(last.waiting.length, "AI lens", "AI lenses")} ${last.waiting.length === 1 ? "is" : "are"} still with your assistant: ${last.waiting.map((w) => w.lens).join(", ")}.`,
+      );
+    else io.out(statusLine(last.status));
+  }
+  return batch.state === "validated" && read.every((c) => c.lens.state === "ran") ? 0 : 1;
 }
 
 /**

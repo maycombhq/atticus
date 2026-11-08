@@ -19,6 +19,7 @@ import {
   type AiRuntime,
   type ContextPack,
   type QuarantineItem,
+  type Run,
   type SourceInput,
 } from "@maycombhq/ai";
 import { answersText, checkedAnswerLink } from "./answers.js";
@@ -72,12 +73,69 @@ export interface LensRun {
   state: "ran" | "skipped" | "failed" | "waiting";
   /** The hand-off run a waiting lens is with. */
   runId?: string;
+  /**
+   * ADR 0185: the batched hand-off that asks this lens with the round's other waiting lenses in
+   * one prompt. The lens keeps its own run (`runId`), which can still be answered alone.
+   */
+  batch?: string;
   reason?: string;
   rules: string[];
   artifacts: string[];
   runtime?: string;
   summary?: RunSummary;
   promptSha256?: string;
+}
+
+/** The agent a batched hand-off of a round's lenses is recorded under (ADR 0185). */
+export const LENS_BATCH_AGENT = "critic-lenses";
+
+/** The runtime's batching, when it batches (the hand-off runtime, ADR 0185). */
+interface Batching {
+  canBatch(parts: number, tokens: number): boolean;
+  prepareBatch(o: {
+    change: string;
+    agent: AgentDefinition;
+    parts: { name: string; runId: string }[];
+    stepClass?: "critic";
+  }): Promise<Run>;
+}
+const batchingOf = (rt: AiRuntime): Batching | undefined =>
+  typeof (rt as Partial<Batching>).prepareBatch === "function" &&
+  typeof (rt as Partial<Batching>).canBatch === "function"
+    ? (rt as unknown as Batching)
+    : undefined;
+
+/**
+ * ADR 0185: a round's lenses that went to the person's assistant together are asked in one prompt
+ * too, when the runtime batches and there are two or more: each lens's section of one answer is
+ * checked and read in on its own. Model and Copilot runtimes run the lenses themselves, unbatched.
+ * Returns the batch's run id, or undefined when the lenses stay one prompt each.
+ */
+async function batchLenses(
+  ctx: CriticContext,
+  runtime: AiRuntime,
+  runs: LensRun[],
+): Promise<string | undefined> {
+  const batching = batchingOf(runtime);
+  const waiting = runs.filter((r) => r.state === "waiting" && r.runId);
+  if (!batching || waiting.length < 2) return undefined;
+  const tokens = waiting.reduce((n, r) => n + (r.context?.tokens ?? 0), 0);
+  if (!batching.canBatch(waiting.length, tokens)) return undefined;
+  const first = lensAgent(ctx, waiting[0]!.lens);
+  const batch = await batching.prepareBatch({
+    change: ctx.change.id,
+    agent: {
+      ...first,
+      id: LENS_BATCH_AGENT,
+      description: `The critic's ${waiting.map((r) => r.lens).join(", ")} lenses on change ${ctx.change.id}, asked in one prompt: each lens is its own review, answered in its own section.`,
+      allowedRuntimes: ["hand-off"],
+    },
+    parts: waiting.map((r) => ({ name: r.lens, runId: r.runId! })),
+    stepClass: "critic",
+  });
+  const run = await runtime.run(batch.runId);
+  for (const r of waiting) r.batch = run.runId;
+  return run.runId;
 }
 
 export interface Discarded {
@@ -667,6 +725,8 @@ function sinceRule(since: ReviewSince, unchanged: readonly string[], open: numbe
 
 export interface LensOptions {
   runtime?: AiRuntime;
+  /** ADR 0185: ask the lenses handed off together in one prompt too, when the runtime batches. */
+  batch?: boolean;
   /** A stage's draft to review with the artifacts, when nothing failed layer 1. */
   review?: StageReview;
   /** The questions whose lenses run (ADR 0124 addendum, Part 4). */
@@ -730,6 +790,8 @@ export async function runLenses(
   skipped: { rule: string; reason: string }[];
   /** The texts the lenses were sent, whole, by path (a worked-out data block under `source/<id>`). */
   reviewed: Map<string, string>;
+  /** The batched hand-off asking the waiting lenses in one prompt (ADR 0185). */
+  batch?: string;
 }> {
   const reviewed = new Map<string, string>();
   const hits: RuledHit[] = [];
@@ -1147,5 +1209,11 @@ export async function runLenses(
       runs.push({ ...base, state: "failed", reason: (e as Error).message });
     }
   }
-  return { hits, runs, discarded, skipped, reviewed };
+  // ADR 0185: the lenses waiting for the person's assistant, asked in one prompt as well. A batch
+  // that can't be made leaves each lens its own prompt, as before.
+  const batch =
+    o.runtime && o.batch
+      ? await batchLenses(ctx, o.runtime, runs).catch(() => undefined)
+      : undefined;
+  return { hits, runs, discarded, skipped, reviewed, ...(batch ? { batch } : {}) };
 }
