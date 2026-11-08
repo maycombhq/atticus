@@ -135,6 +135,11 @@ export interface ParsedStory {
   dependsOn?: string[];
   interfaces: { id: string; caller?: string; callee?: string; operation?: string }[];
   records: string[];
+  /**
+   * "Systems and repos" names its items without the "system (repo)" form: the stories stage
+   * writes the repo alone. The bar sorts the names into repos and systems by what it knows.
+   */
+  bare?: boolean;
   text: string;
 }
 
@@ -163,8 +168,18 @@ export function parseStory(path: string, text: string): ParsedStory {
   const w = /\bas an?\s+(.+?)\s*,?\s+i want\s+(.+?)\s*,?\s+so that\s+(.+?)\s*$/i.exec(
     intro.replace(/\s+/g, " ").trim(),
   );
-  const sysLine = (body(doc, /^systems and repos$/i) ?? []).join(" ");
+  // The first paragraph alone: the stories stage writes the repo on its own line, then the
+  // build command under it, which names nothing the story touches.
+  const sysSection = section(doc, /^systems and repos$/i);
+  const sysLines = sysSection ? sectionLines(doc, sysSection) : [];
+  const sysEnd = sysLines.findIndex((l, i) => i > 0 && l.n !== sysLines[i - 1]!.n + 1);
+  const sysLine = sysLines
+    .slice(0, sysEnd < 0 ? undefined : sysEnd)
+    .map((l) => l.text)
+    .join(" ")
+    .trim();
   const m = /^(.*?)(?:\((.*)\))?\s*$/.exec(sysLine);
+  const parens = !!m?.[2];
   const links = bullets(body(doc, /^links$/i));
   const interfaces = links.flatMap((l) => {
     const x = /^Interface\s+(\S+):\s*(\S+)\s*→\s*(\S+)\s+([A-Z]+\s+\S+)/.exec(l);
@@ -187,6 +202,7 @@ export function parseStory(path: string, text: string): ParsedStory {
     ...(body(doc, /^traces to$/i)?.[0] ? { traces: body(doc, /^traces to$/i)![0]!.trim() } : {}),
     systems: list(m?.[1] ?? ""),
     repos: list(m?.[2] ?? ""),
+    ...(sysLine && !parens ? { bare: true } : {}),
     tests: list((body(doc, /^tests$/i) ?? []).join(" ")),
     ...(dep ? { dependsOn: list(dep.join(" ")) } : {}),
     interfaces,
@@ -299,6 +315,8 @@ function knownNames(ctx: PlanContext, storyIds: string[]): Known {
   const names = new Set<string>([
     ...ctx.records.map((r) => r.id),
     ...storyIds,
+    // The change's own id: the stage names it in each task's prompt line.
+    ctx.change.id,
     ...systems,
     ...ctx.knownRepos,
   ]);
@@ -325,6 +343,18 @@ function knownNames(ctx: PlanContext, storyIds: string[]): Known {
     for (const n of ctx.notes(h))
       for (const g of n.text.matchAll(/\bgw-[a-z0-9-]+\b/g)) names.add(g[0]);
   }
+  // The design as the stages write it now: the target flows (and design.md drawn from them).
+  // Every component and operation they name is the design's.
+  const design = [
+    ...(ctx.files.flows ?? []).map((d) => d.raw),
+    ctx.files.docs.get("design.md")?.raw ?? "",
+  ];
+  for (const text of design) {
+    for (const m of text.matchAll(COMPONENT_LIKE)) names.add(m[0]);
+    for (const m of text.matchAll(/\bcomponent:\s*([a-z0-9][a-z0-9._-]*)/g)) names.add(m[1]!);
+    for (const m of text.matchAll(OPERATION))
+      operations.add(op(m[1]!, m[2]!.replace(/[.:'"]+$/, "")));
+  }
   const records = new Set([
     ...ctx.records.filter((r) => r.kind === "Table" || r.kind === "Column").map((r) => r.id),
     ...ctx.data.map((d) => d.tableId),
@@ -348,10 +378,43 @@ const COMPONENT_LIKE =
   /(?<![\w-])[a-z][a-z0-9]*(?:-[a-z0-9]+)*-(?:api|svc|service|bff|ui|db|job|engine|gateway|app|worker)(?![\w-])/g;
 const OPERATION = /\b(GET|POST|PUT|PATCH|DELETE|HEAD)\s+(\/[^\s,;)]*)/g;
 
+/**
+ * The systems and repos a story names. In the "system (repo)" form, as written; with the names
+ * bare (the stories stage writes the repo alone), a known repo is a repo and the rest systems.
+ */
+function named(s: ParsedStory, known: Known): { systems: string[]; repos: string[] } {
+  if (!s.bare) return { systems: s.systems, repos: s.repos };
+  return {
+    systems: s.systems.filter((x) => !known.repos.has(x)),
+    repos: s.systems.filter((x) => known.repos.has(x)),
+  };
+}
+
+/**
+ * Whether an operation the story names is one the catalog or the design has: the same, or a
+ * concrete example of it (GET /accounts/42/status, /accounts//status or the gateway's pattern
+ * /accounts/x/status for GET /accounts/{id}/status).
+ */
+function knownOperation(method: string, path: string, known: Set<string>): boolean {
+  const key = `${method} ${normalizePath(path)}`;
+  if (known.has(key)) return true;
+  const want = normalizePath(path).split("/");
+  const wild = (x: string) => x === "{}" || x === "*" || x === "**";
+  for (const k of known) {
+    const sp = k.indexOf(" ");
+    if (k.slice(0, sp) !== method) continue;
+    const have = k.slice(sp + 1).split("/");
+    if (have.length !== want.length) continue;
+    if (have.every((h, i) => h === want[i] || wild(h) || wild(want[i]!))) return true;
+  }
+  return false;
+}
+
 function invented(s: ParsedStory, known: Known): string[] {
   const out = new Set<string>();
-  for (const x of s.systems) if (!known.systems.has(x)) out.add(`system ${x}`);
-  for (const x of s.repos) if (!known.repos.has(x)) out.add(`repo ${x}`);
+  const n = named(s, known);
+  for (const x of n.systems) if (!known.systems.has(x)) out.add(`system ${x}`);
+  for (const x of n.repos) if (!known.repos.has(x)) out.add(`repo ${x}`);
   for (const r of s.records) if (!known.records.has(r)) out.add(`record ${r}`);
   for (const i of s.interfaces) {
     if (i.id !== "new" && !known.interfaces.has(i.id)) out.add(`interface ${i.id}`);
@@ -364,10 +427,9 @@ function invented(s: ParsedStory, known: Known): string[] {
   }
   const prose = s.doc.lines.join("\n").replace(/<!--[\s\S]*?-->/g, "");
   for (const m of prose.matchAll(COMPONENT_LIKE)) if (!known.names.has(m[0])) out.add(m[0]);
-  for (const m of prose.matchAll(OPERATION)) {
-    const key = `${m[1]} ${normalizePath(m[2]!.replace(/[.:]+$/, ""))}`;
-    if (!known.operations.has(key)) out.add(`${m[1]} ${m[2]}`);
-  }
+  for (const m of prose.matchAll(OPERATION))
+    if (!knownOperation(m[1]!, m[2]!.replace(/[.:'"]+$/, ""), known.operations))
+      out.add(`${m[1]} ${m[2]}`);
   return [...out].sort();
 }
 
@@ -383,9 +445,25 @@ function checkStory(
   if (checks.has("traced")) {
     const m = s.traces ? /^(\S+?):(\d+)/.exec(s.traces) : null;
     const doc = m ? ctx.files.docs.get(m[1]!) : undefined;
-    if (!m) problems.push("doesn't trace to the brief, proposal or a spec");
-    else if (!doc || Number(m[2]) > doc.lines.length)
-      problems.push(`traces to ${s.traces}, which isn't in the change`);
+    // The stories stage's form: the target flow and the spec, each a change-folder path,
+    // with no line ("target-flows/<flow>.yaml (…); specs/<capability>/spec.md").
+    const paths = m
+      ? []
+      : (s.traces ?? "")
+          .split(";")
+          .map((p) => /^\s*((?:target-flows|specs)\/\S+\.(?:ya?ml|md))\b/.exec(p)?.[1])
+          .filter((p): p is string => !!p);
+    const inChange = (p: string) =>
+      ctx.files.docs.has(p) || (ctx.files.flows ?? []).some((f) => f.path === p);
+    if (m) {
+      if (!doc || Number(m[2]) > doc.lines.length)
+        problems.push(`traces to ${s.traces}, which isn't in the change`);
+    } else if (paths.length === 0) problems.push("doesn't trace to the brief, proposal or a spec");
+    else {
+      const missing = paths.filter((p) => !inChange(p));
+      if (missing.length)
+        problems.push(`traces to ${missing.join(", ")}, which isn't in the change`);
+    }
   }
   if (checks.has("criteria")) {
     const gwt = s.criteria.filter((c) => GWT.test(c));
@@ -394,8 +472,10 @@ function checkStory(
       wording.push(`criterion not in Given/When/Then form: ${c.slice(0, 60)}`);
   }
   if (checks.has("systems")) {
-    if (s.systems.length === 0) problems.push("names no system");
-    if (s.repos.length === 0) problems.push("names no repo");
+    const n = named(s, known);
+    // A repo named alone names its system too: the catalog knows which system it builds.
+    if (n.systems.length === 0 && n.repos.length === 0) problems.push("names no system");
+    if (n.repos.length === 0) problems.push("names no repo");
   }
   if (checks.has("depends") && !s.dependsOn) problems.push('no "Depends on" section');
   if (checks.has("tests")) {

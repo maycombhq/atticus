@@ -86,6 +86,9 @@ export const COPY = {
     noSpecs:
       "No repo has a spec yet. Draft one with atticus spec draft <repo>, or /atticus-spec in Copilot Chat or Claude Code.",
     noFlows: "This repo's spec has no flows yet.",
+    /** Seventh UX walk: the spec step writes a repo's flows; offered where there are none. */
+    noFlowsSpec: (repo: string) =>
+      `Its spec step reads ${repo} and writes its flows, one per trigger, each step cited. A change's diagram can take a step out of a flow only once the flow is here.`,
     noMatch: "No flow matches. Try part of its name or what starts it.",
     pick: "Pick a flow from the list to see its steps.",
     counts: (steps: number, confirmed: number) =>
@@ -181,6 +184,14 @@ export const COPY = {
       accept: "Accept as my answer",
       accepting: "Accepting…",
       orAnswer: "Or answer it yourself below.",
+      /** Seventh UX walk: AI proposes first; a person accepts or corrects each one. */
+      askTitle: "Ask AI to propose answers",
+      askWhy:
+        "Your assistant reads the code and config behind each open question and proposes an answer with the lines it rests on. Atticus checks every line it cites and shows each proposal on its question; nothing is answered until you accept it or answer otherwise.",
+      askSlash: "In Copilot Chat or Claude Code, at the metarepo:",
+      askCommand:
+        "Or in a terminal (where runtime.yaml allows copilot-acp, it runs in a new Copilot session):",
+      askCopy: "Copy",
       command: (id: string) => `atticus questions answer ${id} --accept-proposal`,
     },
     title: "Questions",
@@ -1283,6 +1294,8 @@ export const COPY = {
   /** ADR 0179: a change drawn on the canvas, stroke by stroke, into its target flows. */
   sketch: {
     title: "Draw the change",
+    /** Seventh UX walk: where today's flows and their ids are, for a step taken out. */
+    openFlows: "Find today's flows and their ids on Flows",
     intro:
       "Say a stroke: a call one component makes to another, a topic it publishes, a table it reads or writes, or a step of today's flow taken out or sent elsewhere. Preview shows the lines it adds to the change's target flows; Draw writes them and the picture redraws with the stroke marked. A stroke is a plan for the pull request, never a fact.",
     kind: "Stroke",
@@ -1608,6 +1621,10 @@ export const COPY = {
     /** UX review: the stage's work is on these pages. */
     openBreakdown: "Write stories with AI",
     openBreakdownWhy: "on Breakdown, with the story bar and what no story covers yet.",
+    /** Seventh UX walk: the stories themselves, on the Stories tab, each with Edit. */
+    storiesIndex: "The stories",
+    storyFile: (id: string) => `Story ${id}`,
+    noStoryFiles: "No story is written yet: write them with AI on Breakdown.",
     openTaskBoard: "Run tasks with AI",
     openTaskBoardWhy:
       "on the Task board: each task runs on its repo and ends as a pull request a person approves.",
@@ -2192,6 +2209,15 @@ export const COPY = {
     afterWalkingTheEcosystem:
       "After walking the ecosystem map with the architect. Every later scan, document and change is compared with it. It is a file in the metarepo, so it reaches main through a pull request.",
     setUpAtticus: "Set up Atticus",
+    // Seventh UX walk: the org pack's owner, set here instead of in pack.yaml.
+    ownerLabel: "Who looks after the org pack",
+    ownerHint:
+      "One handle, such as priya.nair or team-platform. Saved as owner in org-pack/pack.yaml: propose it for review; its owner approves changes to the org pack from then on.",
+    ownerSave: "Save the owner",
+    ownerSaving: "Saving…",
+    ownerBad: "One handle: letters, digits, dots and hyphens, no spaces.",
+    ownerSaved: (h: string) =>
+      `${h} now looks after the org pack. Propose org-pack/pack.yaml for review to share it.`,
     ofDone: (done: string | number, v: string | number) => `${done} of ${v} done`,
     showMyDigest: "Show my digest",
     sendItToMe: "Send it to me",
@@ -2803,7 +2829,7 @@ export const COPY = {
     taskBuilt: (branch: string, commit: string) =>
       `Drafted and built: committed on ${branch} (${commit.slice(0, 7)}). Its PR is the next step.`,
     taskUnverified: (repo: string, branch: string, base: string) =>
-      `Drafted and committed on ${branch}, but ${repo} has no build command, so nothing was built or tested. Atticus opens a task's PR only after a passing build: add a build command to repos.manifest.yaml and run the task again, or push ${branch} and open its PR into ${base} yourself.`,
+      `Drafted and committed on ${branch}, but ${repo} has no build command, so nothing was built or tested. Atticus opens a task's PR only after a passing build: set ${repo}'s build command on Set up › Repos and run the task again, or push ${branch} and open its PR into ${base} yourself.`,
     taskWaiting: "Your assistant has it: Done on its run checks the work.",
     taskPrOpen: "Its PR is raised:",
     /** Review round 43: the Git host says the task's PR is merged or closed. */
@@ -3456,7 +3482,7 @@ export const COPY = {
     taskDrafted: (task: string) =>
       `Task ${task} is drafted: its PR is the step now. Raise it here or on the Task board.`,
     taskUnverified: (task: string) =>
-      `Task ${task} is drafted but not built: its PR is the step now, and it waits on a build command or on you.`,
+      `Task ${task} is drafted but not built: its PR is the step now, and it waits on a build command (set it on Set up › Repos) or on you.`,
     taskPrRaised: (task: string) => `Task ${task}'s PR is raised; a person reviews and merges it.`,
     taskWaiting: (task: string) =>
       `Task ${task} is with your assistant: Done on its run checks it.`,
@@ -3527,6 +3553,19 @@ export const COPY = {
     compared: (b: string, added: number, removed: number, changed: number) =>
       `${b} against the baseline: ${added} added, ${removed} removed, ${changed} changed.`,
     edit: "Edit branches",
+    // Seventh UX walk: a repo's build command, set here instead of in repos.manifest.yaml.
+    build: "Build command",
+    noBuild:
+      "None: a task drafted here isn't built or tested, so Atticus doesn't raise its PR. Set one here.",
+    buildHint:
+      "One line, run in the repo's folder, for example ./gradlew test or npm ci && npm test. A task's PR is raised only after it passes.",
+    setBuild: "Set the build command",
+    changeBuild: "Change the build command",
+    buildOneLine: "One line: join the steps with &&.",
+    buildSaved:
+      "Saved to the manifest: propose it for review. Run the repo's drafted tasks again to build and test them.",
+    buildCleared:
+      "Cleared from the manifest: propose it for review. The repo's tasks aren't built or tested now.",
     save: "Save to the manifest",
     saved:
       "Saved to the manifest: commit it in a pull request. Run atticus workspace sync if the default branch changed.",

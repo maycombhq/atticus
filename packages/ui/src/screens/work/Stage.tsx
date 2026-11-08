@@ -6,6 +6,7 @@ import { COPY } from "../../copy.js";
 import { queryParam, setQueryParam, Table } from "../know/common.js";
 import { Architecture } from "../architecture/Architecture.js";
 import { NeedsPanel } from "../knowledge/Needs.js";
+import { StoryFiles } from "../know/Phase.js";
 import { ChangeInputs } from "../ChangeInputs.js";
 import { StageReviewPanel } from "./StageReview.js";
 import {
@@ -230,6 +231,19 @@ export function StagePage(p: {
                     <div className="state">{W.noTasks.replace("<change>", c.id)}</div>
                   )}
                 </Panel>
+              )}
+              {/* Seventh UX walk: the stories themselves, each with Edit, as on Breakdown. */}
+              {p.stage === "stories" && (
+                <StoryFiles
+                  change={c.id}
+                  listed={
+                    p.detail?.state === "ready"
+                      ? p.detail.data.artifacts.some((a) => a.artifact === "stories")
+                      : p.detail?.state === "error"
+                        ? true
+                        : undefined
+                  }
+                />
               )}
               {/* ADR 0113: the specs, screenshots and documents the change starts from. */}
               {p.stage === "feature" && <ChangeInputs change={c.id} />}

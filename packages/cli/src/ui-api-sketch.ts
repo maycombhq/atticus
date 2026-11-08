@@ -78,7 +78,8 @@ export function uiSketchRoutes(r: Router, ctx: ServerContext): Router {
       const t = await targetFlowsOf(root, change);
       if (!t) throw notFound(`There is no change ${change}.`);
       const estate = await loadEstate(root, t.records);
-      const by = `${ctx.user ?? "a person"} on the canvas`;
+      // Who drew it: the marks say "drawn on the canvas by <who>", so the place isn't said twice.
+      const by = ctx.user ?? "a person";
       return withFileLock(join(dir, TARGET_DIR), async () => {
         const fingerprint = await sketchFingerprint(dir);
         const { deltas, problems } = await readDeltas(dir);

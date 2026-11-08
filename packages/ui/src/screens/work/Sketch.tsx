@@ -219,6 +219,32 @@ export function SketchPanel({ change, map }: { change: string; map?: Api.ChangeM
   );
 }
 
+/** A command the problem ends with: the step that would let the stroke be drawn (its spec). */
+const SPEC_STEP = /^([\s\S]*?):\s*(atticus spec draft \S+)$/;
+
+/**
+ * Why a stroke can't be drawn, as the server said it. Seventh UX walk: a step can be taken out
+ * only of a flow today's map has; when the repo's spec has none yet, its spec step is offered
+ * here, and Flows is where today's flows and their ids are.
+ */
+export function StrokeProblem({ problem }: { problem: string }) {
+  const m = SPEC_STEP.exec(problem);
+  const noFlow = /^No flow of today's map is /.test(problem);
+  return (
+    <div className="stack" style={{ gap: 6 }}>
+      <p role="alert" className="state error">
+        {m ? `${m[1]}:` : problem}
+      </p>
+      {m && <Command text={m[2]!} label={COPY.runNext.copy} />}
+      {noFlow && (
+        <p className="work-say" style={{ margin: 0 }}>
+          <a href="#/flows">{S.openFlows}</a>
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function SketchForm(p: {
   change: string;
   map?: Api.ChangeMapT;
@@ -485,11 +511,8 @@ export function SketchForm(p: {
           {error}
         </p>
       )}
-      {problem && (
-        <p role="alert" className="state error">
-          {problem}
-        </p>
-      )}
+      {/* Called, not mounted: it has no state of its own, and the form's text stays in one tree. */}
+      {problem && StrokeProblem({ problem })}
       <div className="row" style={{ gap: 8 }}>
         <button
           type="button"

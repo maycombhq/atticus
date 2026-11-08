@@ -1080,6 +1080,46 @@ export function countsOf(d: QuestionListView, repo = "") {
   return { ...all, repos: Object.keys(by).length };
 }
 
+/**
+ * Seventh UX walk: AI proposes first. Proposed answers came only from /atticus-propose, which the
+ * page never named; here it is, with its command, while questions are open. Each proposal then
+ * shows on its question, and a person accepts it or answers otherwise (it never answers alone).
+ */
+export function AskAiToPropose({ open }: { open: number }) {
+  const P = C.proposal;
+  if (open === 0) return null;
+  const slash = "/atticus-propose";
+  const command = "atticus questions propose";
+  return (
+    <section
+      aria-labelledby="ask-ai-propose"
+      className="stack"
+      style={{ gap: 6, margin: "0 0 12px" }}
+    >
+      <h2 id="ask-ai-propose" className="hud" style={{ margin: 0, fontSize: 11 }}>
+        {P.askTitle}
+      </h2>
+      <p className="muted" style={{ margin: 0, fontSize: 12.5, lineHeight: 1.55 }}>
+        {P.askWhy}
+      </p>
+      <p className="work-say" style={{ margin: 0 }}>
+        {P.askSlash}
+      </p>
+      <div className="work-cmd">
+        <code className="mono">{slash}</code>
+        <CopyButton text={slash} label={`${P.askCopy}: ${slash}`} />
+      </div>
+      <p className="work-say" style={{ margin: 0 }}>
+        {P.askCommand}
+      </p>
+      <div className="work-cmd">
+        <code className="mono">{command}</code>
+        <CopyButton text={command} label={`${P.askCopy}: ${command}`} />
+      </div>
+    </section>
+  );
+}
+
 /** The counts at the top of the page; Open and All pick the list's filter. */
 export function QuestionCounts(p: {
   counts: ReturnType<typeof questionCounts>;
@@ -1241,6 +1281,7 @@ export function Questions({ hash }: { hash: string }) {
               onFilter={setFilter}
             />
           )}
+          {list.state === "ready" && <AskAiToPropose open={countsOf(list.data).open} />}
           <div className="bento">
             <Panel title={C.listTitle} span="span 5">
               <QuestionList
