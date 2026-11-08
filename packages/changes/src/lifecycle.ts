@@ -162,7 +162,7 @@ export async function checkStage(
       );
     case "questions":
       return reason(
-        `The ${step.stage} stage waits for a person to answer its questions: answer them (atticus questions), then run ${run} again.`,
+        `The ${step.stage} stage waits for a person to answer its questions: answer them on Questions (or atticus questions), then run the stage again (${run}).`,
       );
     case "waiting":
       return reason(
