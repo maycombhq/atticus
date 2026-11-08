@@ -157,7 +157,10 @@ export async function taskPack(p: PackInput): Promise<ContextPack> {
   };
   // ADR 0113: the same task context the assistants get (atticus task context): the story and
   // criteria, the step with today's code, what applies and the files likely to change.
-  const context = await taskContext(t.root, t.change.id, t.task.id).catch(() => undefined);
+  // It names this run's worktree and branch, the same place the prompt's top says.
+  const context = await taskContext(t.root, t.change.id, t.task.id, {
+    at: { worktree: p.worktreeRel, branch: taskBranch(t.change.id, t.task.id) },
+  }).catch(() => undefined);
   if (context)
     sources.push({
       id: "task-context",

@@ -238,6 +238,11 @@ export async function taskContext(
     embeddings?: TaskKnowledgeOptions["embeddings"];
     /** "words": keep a task's knowledge by words alone (the bench's before, ADR 0132 addendum). */
     keep?: TaskKnowledgeOptions["keep"];
+    /**
+     * Where the work happens, when a task run has its own worktree (`.tasks/<task>/<repo>`,
+     * metarepo-relative) and branch: named instead of the change's worktree for the repo.
+     */
+    at?: { worktree: string; branch: string };
   } = {},
 ): Promise<TaskContext> {
   const change: ChangeLifecycle = await changeStore(root)
@@ -452,7 +457,8 @@ export async function taskContext(
     name: s.input.name,
     kind: s.input.kind,
   }));
-  const worktree = await worktreeOf(dir, line.repo);
+  // A task run passes its own worktree and branch, so the context names where it works.
+  const worktree = o.at?.worktree ?? (await worktreeOf(dir, line.repo));
   if (!worktree)
     notes.push(
       `${line.repo} has no worktree for ${change.id} yet: open one with atticus workspace open ${change.id} --repos ${line.repo}.`,
@@ -476,7 +482,7 @@ export async function taskContext(
       repo: line.repo,
       done: line.done,
       ...(storyId ? { story: storyId } : {}),
-      branch: taskBranch(change.id, id),
+      branch: o.at?.branch ?? taskBranch(change.id, id),
       ...(worktree ? { worktree } : {}),
     },
     ...(storyId && sf

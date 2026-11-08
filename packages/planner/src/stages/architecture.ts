@@ -2297,7 +2297,8 @@ export function renderArchitecture(
  * design.md's Rollout and rollback (ADR 0006 addendum, 2026-10-25; OpenSpec's design artifact asks
  * for it): a line per table the change writes or alters, saying what a redeploy of the old code
  * undoes and what it leaves, from the target flows alone. An added column or a new table is
- * expand-only; a write with no schema change leaves the rows the new code wrote. A person
+ * expand-only; a write with no schema change leaves the rows the new code wrote; a change that
+ * writes no table says a redeploy undoes it. A person
  * confirms each line in the architecture PR; the critic's rollback check reads this section.
  */
 export function renderRollback(deltas: FlowDelta[], e: Estate): string[] {
@@ -2325,7 +2326,14 @@ export function renderRollback(deltas: FlowDelta[], e: Estate): string[] {
         `| ${s.store.table} | writes ${s.store.columns.join(", ") || "rows"} (flow ${d.flow}) | A redeploy of the old code stops the new writes; no schema to undo | The rows the new code wrote stay; a person decides whether to keep them |`,
       );
     }
-  if (!rows.size) return [];
+  // The design artifact's instruction asks for the section every time (Atticus's OpenSpec schema).
+  if (!rows.size)
+    return [
+      "## Rollout and rollback",
+      "",
+      "The change writes and alters no table, so it has nothing to migrate back: roll back by redeploying the previous version of each repo, in the reverse of the deploy order. Atticus wrote this from the target flows; a person confirms it in the architecture PR.",
+      "",
+    ];
   return [
     "## Rollout and rollback",
     "",

@@ -11,7 +11,7 @@ import {
 import { createGit, type GitRunner } from "@maycombhq/workspace";
 import type { ChangeContext } from "./context.js";
 import { phaseArtifacts, phaseStage, sha256 } from "./lifecycle.js";
-import type { StageStep } from "./policy.js";
+import { writeMatches, type StageStep } from "./policy.js";
 import { changeFolder, changeStore, writeFileAtomic } from "./store.js";
 import type { Artifact, PhaseId } from "./types.js";
 
@@ -108,8 +108,7 @@ export function draftedPath(
 ): boolean {
   if (machinery(path)) return false;
   if (step) {
-    for (const w of step.writes)
-      if (w.endsWith("/") ? path.startsWith(w) : path === w) return !machinery(path);
+    for (const w of step.writes) if (writeMatches(w, path)) return !machinery(path);
     return step.artifacts.some((a) => artifactMatch(path, a));
   }
   return artifacts.some((a) => a !== "brief" && artifactMatch(path, a));
