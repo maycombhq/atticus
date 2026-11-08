@@ -5,6 +5,7 @@ import { CorrectionNextPanel } from "../../app/correction-next.js";
 import { CopyButton } from "../run/shared.js";
 import { COPY } from "../../copy.js";
 import { MatchWithCopilot, type MatchIo } from "./Match.js";
+import { AiMark, readyView, useDecisions } from "../../app/decisions.js";
 
 /**
  * G1 (ADR 0174): connect two boxes call by call. From a repo's box, pick the other box (by
@@ -94,8 +95,34 @@ export function ConnectPanel(p: {
           </option>
         ))}
       </select>
+      {box && <AiPairedBetween from={p.from} box={box} />}
       {box && <Pairing key={to} from={p.from} box={box} cands={cands} />}
     </section>
+  );
+}
+
+/**
+ * ADR 0181: what the AI already paired from this repo to the picked box, each with its chip, run
+ * and Correct; nothing when it paired none.
+ */
+export function AiPairedBetween(p: { from: string; box: Api.LinkBoxT }) {
+  const v = readyView(useDecisions());
+  const items = (v?.links.items ?? []).filter(
+    (d) => d.repo === p.from && !!p.box.repo && d.to?.repo === p.box.repo,
+  );
+  if (!items.length) return null;
+  return (
+    <details className="stack">
+      <summary className="hud">{COPY.decisions.betweenTitle(items.length)}</summary>
+      <ul className="stack" style={{ gap: 8, margin: 0, paddingLeft: 18 }}>
+        {items.map((d) => (
+          <li key={d.item} className="stack" style={{ gap: 4 }}>
+            <span>{d.what}</span>
+            <AiMark item={d.item} run={d.run} />
+          </li>
+        ))}
+      </ul>
+    </details>
   );
 }
 

@@ -10,6 +10,7 @@ import { FilterBox, FilterCount, FilterEmpty, filteredWhat, matchesWords } from 
 import { OwnerQuestionList, questionsKind, type QuestionsKind } from "./OwnerQuestions.js";
 import { queryParam } from "./know/common.js";
 import { RoleFilter, roleScopeOf, scopeWithRole, withRoleScope } from "./RoleQuestions.js";
+import { AiChip, AiMark, isAiBy, readyView, SplitCounts, useDecisions } from "../app/decisions.js";
 
 /**
  * The Questions page (ADR 0078, plan Phase 2a): the questions a step raised for a person, each
@@ -507,6 +508,7 @@ export function QuestionList(p: {
                               {q.state}
                             </span>
                             <span className="mono">{q.id}</span>
+                            {q.answer && isAiBy(q.answer.by) && <AiChip inLink />}
                           </span>
                           {aboutWords(d.about?.[q.id]).map((w) => (
                             <span key={w} className="q-about">
@@ -667,6 +669,8 @@ export function QuestionDetail(p: {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>();
   const [done, setDone] = useState<AnsweredResult | undefined>();
+  // ADR 0181: Correct stays open, with its result, after the answer becomes the person's.
+  const [correcting, setCorrecting] = useState(false);
   const set = (f: Partial<AnswerForm>) => setForm((x) => ({ ...x, ...f }));
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -730,15 +734,25 @@ export function QuestionDetail(p: {
         <Evidence id={q.id} refs={q.evidence} />
       </div>
       {q.answer && (
-        <p style={{ margin: 0 }}>
-          {C.answered(
-            // ADR 0181: an AI answer names the AI and its run (the UI builder words its chip).
-            typeof q.answer.by === "string" ? q.answer.by : `AI, run ${q.answer.by.run}`,
-            day(q.answer.at),
+        <div className="stack" style={{ gap: 4 }}>
+          <p style={{ margin: 0 }}>
+            {/* ADR 0181: an AI answer is the AI's, never a person's: said so, with its chip. */}
+            {isAiBy(q.answer.by)
+              ? COPY.decisions.answeredByAi(day(q.answer.at))
+              : C.answered(q.answer.by, day(q.answer.at))}
+            : {q.answer.text ?? q.options[(q.answer.option ?? 1) - 1]?.label}
+            {q.answer.match ? ` · ${C.rule.answered(q.answer.match)}` : ""}
+          </p>
+          {(isAiBy(q.answer.by) || correcting) && (
+            <AiMark
+              item={q.id}
+              run={isAiBy(q.answer.by) ? q.answer.by.run : undefined}
+              ai
+              onOpen={() => setCorrecting(true)}
+              onClose={() => setCorrecting(false)}
+            />
           )}
-          : {q.answer.text ?? q.options[(q.answer.option ?? 1) - 1]?.label}
-          {q.answer.match ? ` · ${C.rule.answered(q.answer.match)}` : ""}
-        </p>
+        </div>
       )}
       {q.state === "answered" && !done && verifyRepoOf(q.rerun) && (
         <ApplyPending repo={verifyRepoOf(q.rerun)!} />
@@ -1150,6 +1164,14 @@ export function AskAiToPropose({ open }: { open: number }) {
   );
 }
 
+/** ADR 0181: how the questions were settled, three ways (from code, by a person, by AI). */
+export function QuestionsAiCounts() {
+  const v = readyView(useDecisions());
+  return v ? (
+    <SplitCounts counts={v.questions.counts} what={COPY.decisions.counts.questions} />
+  ) : null;
+}
+
 /** The counts at the top of the page; Open and All pick the list's filter. */
 export function QuestionCounts(p: {
   counts: ReturnType<typeof questionCounts>;
@@ -1359,6 +1381,7 @@ export function Questions({ hash }: { hash: string }) {
               onFilter={setFilter}
             />
           )}
+          {list.state === "ready" && <QuestionsAiCounts />}
           {list.state === "ready" && <AskAiToPropose open={countsOf(list.data).open} />}
           <div className="bento">
             <Panel title={C.listTitle} span="span 5">

@@ -822,6 +822,8 @@ export const COPY = {
       conformance: "Code against design",
       /** A change's knowledge (2026-10-27): its own page, beside Feature design. */
       changeKnowledge: "Knowledge",
+      /** ADR 0181: what the AI decided, its batches and Undo. */
+      decisions: "Decided by AI",
     },
   },
   /** Map › Trust (ADR 0124): how far to trust each repo's map, from the verifier's report. */
@@ -4410,6 +4412,7 @@ export const COPY = {
       link: "paired",
       topic: "declared topic",
       call: "declared call",
+      unlink: "said it reaches none of these",
     } as Record<string, string>,
     undo: "Undo",
     undoing: "Undoing…",
@@ -5119,5 +5122,196 @@ export const COPY = {
     removed: "Correction taken back.",
     copyCommit: "Copy the git command",
     commitWhy: "Commit the corrections file so the hand-off carries it:",
+  },
+  /**
+   * ADR 0181 parts 1 to 3 (screens): AI decides first, as itself; a person corrects one, and the
+   * correction spreads to everything like it; every batch is one Undo away.
+   */
+  decisions: {
+    chip: "Detected by AI",
+    /** Spoken after the chip: what it means, so the chip is never colour alone. */
+    chipWhy:
+      "Decided by AI as itself, from a run Atticus started. No person has confirmed it; correct it if it is wrong.",
+    run: (run: string) => `run ${run}`,
+    openRun: (run: string) => `Open run ${run}: what the AI was asked and what it answered`,
+    title: "Decided by AI",
+    intro:
+      "What the AI decided without a person: pairings of calls to APIs and answers to option questions. Each is the AI's, never yours. If one is wrong, Correct it: your answer is your word, and Apply to similar spreads it to everything like it. Every batch is one Undo away.",
+    loading: "Reading the AI's decisions…",
+    failed: (why: string) => `The AI's decisions couldn't be read: ${why}`,
+    problems: "Files that couldn't be read:",
+    /** How the links or questions were settled, three ways. */
+    counts: {
+      label: (what: string) => `How the ${what} were settled`,
+      links: "links",
+      questions: "questions",
+      line: (c: { fromCode: number; byPerson: number; byAi: number; open?: number | undefined }) =>
+        `${c.fromCode} from code · ${c.byPerson} by a person · ${c.byAi} by AI${c.open !== undefined ? ` · ${c.open} open` : ""}`,
+    },
+    mode: {
+      auto: "decided by AI",
+      propose: "proposed for a person",
+    } as Record<string, string>,
+    modeLine: (links: string, questions: string) =>
+      `Now: pairings are ${links}; option answers are ${questions}.`,
+    kind: { link: "Pairing", question: "Answer" } as Record<string, string>,
+    filterRepo: "Repo",
+    allRepos: "All repos",
+    filterKind: "Kind",
+    allKinds: "Pairings and answers",
+    kinds: { link: "Pairings", question: "Answers" } as Record<string, string>,
+    itemsTitle: "What the AI decided",
+    itemsCaption: "Each decision the AI applied that still stands",
+    itemsEmpty:
+      "The AI has decided nothing that still stands. When runtime.yaml's decide says auto, Match with Copilot and Ask AI to propose apply what passes the bar here.",
+    itemsFiltered: "Nothing the AI decided matches the filter.",
+    shown: (n: number, total: number) =>
+      n === total ? `${total} decision${total === 1 ? "" : "s"}` : `${n} of ${total} decisions`,
+    decided: (what: string) => `Decided: ${what}`,
+    bar: {
+      confident: "it met the confidence bar",
+      "agrees-with-shapes": "it agrees with what the code's shapes say",
+      "person-rule": "it agrees with a person's rule",
+    } as Record<string, string>,
+    because: (bar: string) => `Applied because ${bar}.`,
+    restsOn: "Rests on",
+    question: "Question",
+    /** Correct one, and Apply to similar. */
+    correct: "Correct",
+    correctOf: (what: string) => `Correct: ${what}`,
+    formTitle: (what: string) => `Your correction of ${what}`,
+    pickOption: "The right answer",
+    pickLink: "Where the call really goes",
+    linkApi: "This API",
+    noneOption: "None of these",
+    noneLink: "The call reaches none of these",
+    repoLabel: "Repo the API is in",
+    apiLabel: "API",
+    apiPick: "Pick the API",
+    apisLoading: "Reading that repo's APIs…",
+    apisFailed: (why: string) => `That repo's APIs couldn't be read: ${why}. Type the API's id:`,
+    apiIdLabel: "The API's id (its entry fact)",
+    similar: "Apply to similar",
+    similarHint:
+      "Atticus derives a rule from your correction, shows it below before you save, and re-checks every AI decision and open item it covers in this repo.",
+    matchLabel: "The rule to spread (a path prefix, host or topic pattern)",
+    matchHint: "Atticus derived it; change it to spread wider or narrower.",
+    preview: "Preview",
+    previewing: "Working out what it changes…",
+    save: "Save my correction",
+    saving: "Writing your correction…",
+    cancel: "Cancel",
+    needPick: "Pick the right answer first.",
+    needApi: "Pick the API and say its repo, or pick None of these.",
+    previewFirst:
+      "Preview first: you see the rule and what it spreads to before anything is saved.",
+    changedSince: "The correction changed since the preview. Preview it again.",
+    approval:
+      "Saving is your approval: the correction is recorded as your word, and its rule as yours.",
+    previewTitle: "What saving does",
+    yourAnswer: (a: string) => `Your answer: ${a}`,
+    rule: (kind: string, match: string, derived: boolean) =>
+      derived ? `The rule derived from it (${kind}): ${match}` : `Your rule (${kind}): ${match}`,
+    noRule: (why: string) => `No rule spreads: ${why}`,
+    spreadNone: "No other item is like it: only this one changes.",
+    spreadTitle: (n: number) => `${n} other item${n === 1 ? "" : "s"} the rule re-checks`,
+    spreadCaption: "What the rule does to each item like it",
+    change: {
+      applied: "Applied",
+      confirmed: "Confirmed",
+      replaced: "Replaced",
+      reverted: "Reverted to open",
+    } as Record<string, string>,
+    changeWhy: {
+      applied: "an open item your rule answers",
+      confirmed: "the AI had decided the same",
+      replaced: "the AI had decided otherwise; your rule decides",
+      reverted: "the AI had decided otherwise and your rule can't decide it, so it is open again",
+    } as Record<string, string>,
+    col: { item: "Item", change: "What happens", was: "Was", now: "Now" },
+    spreadCounts: (c: { applied: number; confirmed: number; replaced: number; reverted: number }) =>
+      `${c.applied} applied, ${c.confirmed} confirmed, ${c.replaced} replaced, ${c.reverted} reverted to open.`,
+    nothing: "—",
+    saved: (answer: string) => `Saved as your word: ${answer}.`,
+    savedBatch: (batch: string) =>
+      `Written as batch ${batch}, one Undo away on Map › Decided by AI.`,
+    whatSpread: "What your correction spread to",
+    savedFlash: (
+      answer: string,
+      c: { applied: number; confirmed: number; replaced: number; reverted: number },
+    ) =>
+      `Your correction is saved as your word: ${answer}. Similar items: ${c.applied} applied, ${c.confirmed} confirmed, ${c.replaced} replaced, ${c.reverted} reverted to open.`,
+    verify: "Bring the map up to it:",
+    commit: "Commit it for review:",
+    copy: (cmd: string) => `Copy: ${cmd}`,
+    makeRuleOffer: (n: number, shape: string) =>
+      `This shape has been corrected ${n} times (${shape}). Make it a reading rule, so the next read gets it right at the source.`,
+    makeRule: "Make this a reading rule",
+    makingRule: "Drafting the reading rule…",
+    ruleMade: (file: string) => `Drafted the reading rule in ${file}. Turn it on with:`,
+    ruleCommand: "Draft it with:",
+    /** Batches and Undo. */
+    batchesTitle: "Batches",
+    batchesIntro:
+      "Every batch the AI or a person's rule applied, newest first. Undo removes exactly its lines and answers, and puts back what it took away.",
+    batchesEmpty: "No batch yet: nothing has been applied by AI or by a correction's rule.",
+    batchesCaption: "Batches applied, newest first, each with Undo",
+    batchKind: { ai: "By AI", rule: "By a person's rule" } as Record<string, string>,
+    batchCol: { batch: "Batch", by: "Who and when", what: "What it did", undo: "Undo" },
+    batchBy: (by: string, day: string) => `${by}, ${day}`,
+    batchApplied: (applied: number, reverted: number) =>
+      `${applied} applied${reverted ? `, ${reverted} reverted to open` : ""}`,
+    batchFrom: (item: string, answer: string) => `From the correction of ${item}: ${answer}`,
+    batchRule: (kind: string, match: string) => `Rule (${kind}): ${match}`,
+    undone: (by: string, day: string) => `Undone by ${by} on ${day}`,
+    undo: "Undo",
+    undoOf: (id: string) => `Undo batch ${id}`,
+    confirmUndo: (id: string, applied: number) =>
+      `Undo batch ${id}? It removes the ${applied} line${applied === 1 ? "" : "s"} and answer${applied === 1 ? "" : "s"} it applied and puts back what it took away. Anything changed since is left as it is now.`,
+    confirmYes: "Yes, undo it",
+    confirmNo: "Keep it",
+    undoing: "Undoing…",
+    undoneResult: (batch: string, removed: number, restored: number) =>
+      `Batch ${batch} undone: removed ${removed}, put back ${restored}.`,
+    skipped: "Left as it is now, because it changed since the batch:",
+    undoFailed: (why: string) => `The batch couldn't be undone: ${why}`,
+    record: (file: string) => `Record: ${file}`,
+    /** Home and Map › Trust. */
+    pausedTitle: "AI deciding is paused",
+    pausedWhy: (why: string) =>
+      `${why} Until the audit is back above the bar, the AI only proposes.`,
+    pausedLink: "See the audit on Map › Trust",
+    trustTitle: "AI decisions",
+    trustTally: (t: {
+      right: number;
+      wrong: number;
+      precision: number | null;
+      low: number | null;
+      high: number | null;
+    }) =>
+      t.precision === null
+        ? "AI decisions: no audited answers yet"
+        : `AI decisions: ${Math.round(t.precision * 100)}% right (${t.right} of ${t.right + t.wrong}; 95% between ${Math.round((t.low ?? 0) * 100)}% and ${Math.round((t.high ?? 0) * 100)}%)`,
+    trustBar: (min: number) =>
+      `The bar is ${Math.round(min * 100)}%: below it, the AI stops deciding and only proposes.`,
+    trustOpen: "Open Decided by AI",
+    trustAudit: "ai decisions",
+    /** A change's impact. */
+    impactByAi: (n: number) =>
+      `${n} of the callers that break ${n === 1 ? "is" : "are"} linked only by AI; confirm or correct ${n === 1 ? "its link" : "their links"} on Decided by AI.`,
+    impactCaller: "every link of this caller was decided by AI",
+    /** The AI's answer on a question, beside who answered. */
+    answeredByAi: (day: string) => `Answered by AI on ${day}`,
+    /** Match with Copilot: what Atticus applied as the AI's. */
+    matchApplied: (n: number) =>
+      `Atticus applied ${n} pairing${n === 1 ? "" : "s"} as the AI's (they met the bar):`,
+    matchKept: (n: number) => `${n} kept as proposals for you:`,
+    matchPaused: (why: string) => `Not applied: AI deciding is paused. ${why}`,
+    matchUndo: "Undo or correct them on Decided by AI",
+    /** The Connect panel: what the AI already paired between the two boxes. */
+    betweenTitle: (n: number) => `Paired by AI between these boxes (${n})`,
+    /** Why is this linked?: a link the AI decided. */
+    whyLinked:
+      "The AI paired this call with this entry, from a run Atticus started. No person has confirmed it, so it is inferred until someone does.",
   },
 } as const;

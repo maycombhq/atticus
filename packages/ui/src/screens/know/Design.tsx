@@ -7,6 +7,14 @@ import { Table, queryParam, setQueryParam, useView } from "./common.js";
 import { COPY } from "../../copy.js";
 import { CommitmentState, NewInitiative, PlanInitiative } from "./InitiativeForms.js";
 import {
+  AiChip,
+  AiMark,
+  linkDecisionAt,
+  readyView,
+  SplitCounts,
+  useDecisions,
+} from "../../app/decisions.js";
+import {
   Citation,
   EvidenceProvider,
   GapMarks,
@@ -24,6 +32,8 @@ interface Evidence {
   repo?: string;
   path?: string;
   line?: number;
+  /** ADR 0181: the AI run that decided it (`source: ai`). */
+  run?: string;
 }
 type Rec = Record<string, unknown> & {
   kind: string;
@@ -32,6 +42,17 @@ type Rec = Record<string, unknown> & {
   confidence?: string;
   evidence?: Evidence[];
 };
+
+/** ADR 0181: a record the AI decided (`joined-by-ai`, or evidence from an AI run). */
+const byAi = (r: Rec): boolean =>
+  (Array.isArray(r.flags) && (r.flags as unknown[]).includes("joined-by-ai")) ||
+  (r.evidence ?? []).some((e) => e.source === "ai");
+
+/** ADR 0181: how the links were settled, three ways, from the AI's decisions. */
+export function ContractsAiCounts() {
+  const v = readyView(useDecisions());
+  return v ? <SplitCounts counts={v.links.counts} what={COPY.decisions.counts.links} /> : null;
+}
 
 const label = (r: Rec): string => {
   if (r.kind === "Endpoint")
@@ -121,6 +142,8 @@ export function ContractList({
                     <span className={`chip ${r.confidence === "verified" ? "done" : "warn"}`}>
                       {(r.confidence ?? "unknown").toUpperCase()}
                     </span>
+                    {/* ADR 0181: a link the AI decided; inside the button, the chip alone. */}
+                    {byAi(r) && <AiChip inLink />}
                   </button>
                 </li>
               ))}
@@ -230,6 +253,7 @@ function CallPath({ r }: { r: Rec }) {
 
 function ContractDetail({ r }: { r: Rec }) {
   const rec = useApi<Rec>(`/api/catalog/${r.kind}/${encodeURIComponent(r.id)}`);
+  const decisions = useDecisions();
   const imp = useApi<{ affected: { id: string; kind: string; owner?: string }[] }>(
     `/api/impact/${encodeURIComponent(r.id)}?depth=2`,
   );
@@ -250,9 +274,25 @@ function ContractDetail({ r }: { r: Rec }) {
               ) : (
                 (d.evidence ?? []).map((e, i) => (
                   <div key={i} style={{ fontSize: 12.5, marginBottom: 4 }}>
-                    <span className={`chip ${e.source === "code" ? "" : "warn"}`}>
-                      {e.source.toUpperCase()}
-                    </span>{" "}
+                    {e.source === "ai" ? (
+                      <AiMark
+                        run={e.run}
+                        ai
+                        {...(e.repo && e.path && e.line
+                          ? {
+                              item: linkDecisionAt(
+                                readyView(decisions),
+                                e.repo,
+                                `${e.path}:${e.line}`,
+                              )?.item,
+                            }
+                          : {})}
+                      />
+                    ) : (
+                      <span className={`chip ${e.source === "code" ? "" : "warn"}`}>
+                        {e.source.toUpperCase()}
+                      </span>
+                    )}{" "}
                     {e.path && e.line ? (
                       <>
                         {e.repo && <span className="mono">{e.repo} · </span>}
@@ -396,6 +436,7 @@ export function Contracts() {
                 <p className="muted" style={{ margin: 0, fontSize: 11.5 }}>
                   {T.aVendorSpecIs}
                 </p>
+                <ContractsAiCounts />
                 <a href="#/mappings">{T.fieldMappings}</a>
               </div>
             )}

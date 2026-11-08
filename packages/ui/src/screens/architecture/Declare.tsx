@@ -3,6 +3,7 @@ import type { Api } from "@maycombhq/core";
 import { api, ApiError, useApi, type Loaded } from "../../api/client.js";
 import { RunWithCopilot } from "../../app/copilot-runs.js";
 import { COPY } from "../../copy.js";
+import { AiChip } from "../../app/decisions.js";
 import { CopyButton } from "../run/shared.js";
 import { Diff } from "./Owner.js";
 
@@ -224,6 +225,13 @@ export function CorrectionsList(p: {
           {items.map((x, i) => (
             <li key={`${x.file}:${i}`}>
               <span className="chip dim">{K.kinds[x.kind]}</span> {x.says}
+              {/* ADR 0181: a pairing the AI decided is the AI's, with its run, never a person's. */}
+              {x.ai && (
+                <>
+                  {" "}
+                  <AiChip run={x.ai.run} />
+                </>
+              )}
               {x.by && <span className="hud"> · {K.by(x.by, x.at ?? "")}</span>}{" "}
               <button
                 type="button"

@@ -129,7 +129,8 @@ describe("the app's map: six entries (the Surfaces design)", () => {
 
   it("gives each entry exactly its tabs", () => {
     expect(of("Home")).toEqual(["home"]);
-    expect(of("Map")).toEqual(["canvas", "flows", "contracts", "impact", "trust"]);
+    // ADR 0181: Decided by AI, beside Trust, which audits it.
+    expect(of("Map")).toEqual(["canvas", "flows", "contracts", "impact", "trust", "decisions"]);
     // The product owner, 2026-10-24: the list and At a glance are tabs, before the stages.
     expect(of("Change")).toEqual([
       "changes",
