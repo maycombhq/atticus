@@ -7,6 +7,7 @@ import {
   requireApproval,
   type Approval,
   type GitHost,
+  type PullRequest,
 } from "@maycombhq/adapters";
 import {
   createRuntime,
@@ -548,6 +549,28 @@ function levelOf(t: TaskContext, asked: RunLevel | undefined): RunLevel {
 }
 
 /**
+ * Review round 44: the task's own PR, as the Git host has it. Read by the number its record
+ * holds; a PR from another branch (a manual host's recorded number equal to another PR's, a
+ * number a person got wrong) is never used: the task's PR is looked up by its branch instead,
+ * and without one this throws, so another task's merge or close can't stand for this one's.
+ */
+async function ownTaskPr(
+  host: GitHost,
+  r: Pick<TaskRunRecord, "repo" | "branch">,
+  held: { number: number; url: string },
+): Promise<PullRequest> {
+  const pr = await host.getPullRequest(r.repo, held.number);
+  if (pr.head === r.branch) return pr;
+  const mine = await host.listPullRequests(r.repo, { head: r.branch });
+  const own = mine.find((x) => x.url === held.url) ?? mine.at(-1);
+  if (own) return own;
+  throw new TaskRunError(
+    "refused",
+    `PR #${held.number} on the Git host is from ${pr.head}, not ${r.branch}, and no PR from ${r.branch} was found`,
+  );
+}
+
+/**
  * Refused while a run of this task waits on the person's assistant (and wasn't cancelled), or
  * while its PR is open: a new run would write over the record that names the PR, and its raise
  * would then collide with it. A PR the Git host says is merged or closed no longer holds the
@@ -565,7 +588,7 @@ async function refuseIfHeld(
     try {
       const h = host();
       if (!h) why = "no Git host is connected (runtime.yaml adapters.gitHost)";
-      else if (before.pr) state = (await h.getPullRequest(t.repo.id, before.pr.number)).state;
+      else if (before.pr) state = (await ownTaskPr(h, before, before.pr)).state;
     } catch (e) {
       why = e instanceof Error ? e.message : String(e);
     }
@@ -613,7 +636,7 @@ export async function taskPrState(
   const ask = async (): Promise<TaskPrState | undefined> => {
     const host = o.gitHost ?? gitHostOf(root, await loadTask(root, changeId, taskId));
     if (!host) return undefined;
-    const s = (await host.getPullRequest(r.repo, pr.number)).state;
+    const s = (await ownTaskPr(host, r, pr)).state;
     return s === "merged" || s === "closed" ? s : "open";
   };
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -655,10 +678,7 @@ export async function settleTaskPr(
   const ask = async () => {
     const host = o.gitHost ?? gitHostOf(root, await loadTask(root, changeId, taskId));
     if (!host) return undefined;
-    const pr = await host.getPullRequest(r.repo, recorded.number);
-    if (pr.head === r.branch) return pr;
-    const mine = await host.listPullRequests(r.repo, { head: r.branch });
-    return mine.find((x) => x.url === recorded.url) ?? mine.at(-1);
+    return ownTaskPr(host, r, recorded);
   };
   let timer: ReturnType<typeof setTimeout> | undefined;
   const late = new Promise<undefined>((res) => {

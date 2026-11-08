@@ -169,3 +169,49 @@ describe("manual Git host: the PR the person recorded", () => {
     ]);
   });
 });
+
+describe("manual Git host: a recorded number never takes another PR's", () => {
+  const x = { ...handoff, head: "handoff/change-x/plan", title: "X: Plan ready" };
+  const y = { ...handoff, head: "handoff/change-y/plan", title: "Y: Plan ready" };
+
+  it("keeps the number Atticus gave each PR when a recorded one equals another PR's", async () => {
+    const store = memoryStepStore();
+    const gh = new ManualGitHost({ store, now });
+    expect((await gh.createPullRequest(x, A())).number).toBe(1);
+    expect((await gh.createPullRequest(y, A())).number).toBe(2);
+    // The person records X's real number on the host: #2, the number Atticus gave Y.
+    await recordStep(store, "open-pr-handoff-change-x-plan", {
+      by: "pat",
+      values: { url: "https://git.forge.example/forge/forge-metarepo/pull/2", number: "2" },
+    });
+    // Y's holder still gets Y by its number.
+    expect(await gh.getPullRequest(META, 2)).toMatchObject({ number: 2, head: y.head });
+    // X goes by the number Atticus gave it, with the link the person recorded.
+    expect(await gh.getPullRequest(META, 1)).toMatchObject({
+      number: 1,
+      url: "https://git.forge.example/forge/forge-metarepo/pull/2",
+      head: x.head,
+    });
+    expect((await gh.listPullRequests(META, { head: x.head })).map((p) => p.number)).toEqual([1]);
+    // Writes by number go to the PR that holds it.
+    await gh.comment(META, 2, "pat updated the hand-off for another review.", A());
+    expect((await store.list({ action: "comment-pull-request" })).map((s) => s.id)).toEqual([
+      "comment-pr-handoff-change-y-plan",
+    ]);
+  });
+
+  it("finds no PR by a real number recorded for two of them, only by their own numbers", async () => {
+    const store = memoryStepStore();
+    const gh = new ManualGitHost({ store, now });
+    await gh.createPullRequest(x, A());
+    await gh.createPullRequest(y, A());
+    for (const id of ["open-pr-handoff-change-x-plan", "open-pr-handoff-change-y-plan"])
+      await recordStep(store, id, {
+        by: "pat",
+        values: { url: "https://git.forge.example/forge/forge-metarepo/pull/9", number: "9" },
+      });
+    await expect(gh.getPullRequest(META, 9)).rejects.toThrow(/#9/);
+    expect(await gh.getPullRequest(META, 1)).toMatchObject({ number: 1, head: x.head });
+    expect(await gh.getPullRequest(META, 2)).toMatchObject({ number: 2, head: y.head });
+  });
+});
