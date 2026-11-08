@@ -631,11 +631,18 @@ export const RunListItem = RunView.extend({
 export type RunListItem = z.infer<typeof RunListItem>;
 /** ADR 0106: the AI step to start on the server: its command words and arguments. */
 export const StartStepRequest = z.object({ args: z.array(z.string().min(1)).min(2) });
+/** 2.67.0: what Done did: the run, what it printed, and the step's next run when it offers one. */
+export const RunDoneView = RunView.extend({
+  lines: z.array(z.string()).optional(),
+  next: z.string().optional(),
+});
 /** 2.66.0 (UX review): the step prepared for the person's own assistant, and its run. */
 export const PreparedStepView = z.object({
   /** Left out when the step had nothing left to hand off: its lines say what it did. */
   runId: z.string().optional(),
   lines: z.array(z.string()),
+  /** 2.67.0: the run named is one that still waits for its answer. */
+  stillWaiting: z.boolean().optional(),
 });
 export type StartStepRequest = z.infer<typeof StartStepRequest>;
 
@@ -5120,11 +5127,12 @@ const OPS: Record<string, Record<string, Op>> = {
   "/api/runs/{runId}/done": {
     post: {
       id: "markRunDone",
-      summary: "Mark done: validate the hand-off output now",
+      summary:
+        "Mark done: validate the hand-off output now. 2.67.0 (fourth UX walk): a step the app prepared then resumes, writing what the answer said; `lines` says what happened and `next` names the step's next run when it offers another prompt",
       tag: "ai",
       params: [p("runId")],
-      ok: { status: 200, schema: "RunView", description: "OK" },
-      errors: [404, 409],
+      ok: { status: 200, schema: "RunDoneView", description: "OK" },
+      errors: [404, 409, 422],
     },
   },
   "/api/runs/{runId}/retry": {
@@ -5854,6 +5862,7 @@ export function openApiDocument(): Record<string, unknown> {
     OwnerAnswerRequest,
     OwnerAnswerResult,
     PreparedStepView,
+    RunDoneView,
     ProposeRequest,
     LinesView,
     InitiativeSavedView,

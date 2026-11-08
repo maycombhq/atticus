@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -247,10 +247,22 @@ describe("a step prepared for the person's own assistant (UX review)", () => {
         uiModelRunRoutes(r, ctx, {
           runStep: async (args) => {
             asked.push(args);
-            await run(9, "2026-10-23T03:40:09Z", "# Task: write the stories\n", "waiting");
+            const id = await run(
+              9,
+              "2026-10-23T03:40:09Z",
+              "# Task: write the stories\n",
+              "waiting",
+            );
             return {
               code: 0,
-              out: ["Run prepared: paste prompt.md into your assistant."],
+              out: [
+                JSON.stringify({
+                  state: "handoff",
+                  runId: id,
+                  resumeArgs: [...args.filter((a) => a !== "--json"), "--json", "--resume", id],
+                  messages: ["Paste prompt.md into your assistant."],
+                }),
+              ],
               err: [],
             };
           },
@@ -265,8 +277,21 @@ describe("a step prepared for the person's own assistant (UX review)", () => {
       });
       const body = (await r.json()) as { runId?: string; lines?: string[] };
       expect(r.status, JSON.stringify(body)).toBe(201);
-      expect(asked).toEqual([["plan", "stories", "add-limit", "--handoff"]]);
+      expect(asked).toEqual([["plan", "stories", "add-limit", "--handoff", "--json"]]);
       expect(body.runId).toBe("run-20261023034009-0001");
+      expect(body.lines).toEqual(["Paste prompt.md into your assistant."]);
+      // Fourth UX walk: its resume is kept beside the run, so Done finishes the step.
+      const kept = JSON.parse(
+        await readFile(join(root, ".runs", "knowledge-scan", body.runId!, "resume.json"), "utf8"),
+      ) as { args: string[] };
+      expect(kept.args).toEqual([
+        "plan",
+        "stories",
+        "add-limit",
+        "--handoff",
+        "--resume",
+        "run-20261023034009-0001",
+      ]);
     } finally {
       await s.close();
     }
@@ -300,7 +325,9 @@ describe("a wiki's own scan from the app (UX review, round 36)", () => {
       await setModel("schemaVersion: 1\n");
       const ok = await prep(["knowledge", "scan", "--source", "forge-wiki"]);
       expect(ok.status, await ok.clone().text()).toBe(201);
-      expect(asked).toEqual([["knowledge", "scan", "--source", "forge-wiki", "--handoff"]]);
+      expect(asked).toEqual([
+        ["knowledge", "scan", "--source", "forge-wiki", "--handoff", "--json"],
+      ]);
       // Only --source, only on the steps that read a wiki, once, and only with a value.
       for (const bad of [
         ["knowledge", "scan", "--full"],
@@ -314,5 +341,50 @@ describe("a wiki's own scan from the app (UX review, round 36)", () => {
     } finally {
       await s.close();
     }
+  });
+});
+
+describe("Done finishes a step the app prepared (fourth UX walk)", () => {
+  it("runs its kept resume, and names the next run when the step offers another prompt", async () => {
+    const { resumeAfterDone } = await import("../src/handoff-resume.js");
+    const id = await run(8, "2026-10-23T03:40:08Z", "# Task: draft the change\n", "validated");
+    await writeFile(
+      join(root, ".runs", "knowledge-scan", id, "resume.json"),
+      JSON.stringify({ args: ["change", "draft", "c1", "--handoff", "--resume", id] }),
+    );
+    const asked: string[][] = [];
+    const wrote = await resumeAfterDone(
+      root,
+      async (args) => {
+        asked.push(args);
+        return { code: 0, out: ["Wrote proposal.md and specs/limits/spec.md."], err: [] };
+      },
+      "knowledge-scan",
+      id,
+    );
+    expect(asked).toEqual([["change", "draft", "c1", "--resume", id, "--handoff", "--json"]]);
+    expect(wrote).toEqual({ lines: ["Wrote proposal.md and specs/limits/spec.md."] });
+    const next = await resumeAfterDone(
+      root,
+      async () => {
+        const n = await run(7, "2026-10-23T03:40:07Z", "# Task: the next part\n", "waiting");
+        return {
+          code: 0,
+          out: [JSON.stringify({ state: "handoff", runId: n, messages: ["Next part."] })],
+          err: [],
+        };
+      },
+      "knowledge-scan",
+      id,
+    );
+    expect(next).toEqual({ next: "run-20261023034007-0001", lines: ["Next part."] });
+    expect(
+      await resumeAfterDone(
+        root,
+        async () => ({ code: 0, out: [], err: [] }),
+        "knowledge-scan",
+        "run-none",
+      ),
+    ).toBeUndefined();
   });
 });

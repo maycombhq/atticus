@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api, ApiError, useApi, useLiveEvents, type Loaded } from "../api/client.js";
 import { NewChange } from "./work/NewChange.js";
 import { BringIn } from "../app/propose.js";
+import { RunStep } from "../app/runstep.js";
 import { AI_OFF_TEXT, useAiOn } from "../app/me.js";
 import { escapeCloses, Panel, Ring, View } from "../app/ui.js";
 import { ACROSS, AcrossPanel, type AcrossId } from "./Across.js";
@@ -682,6 +683,11 @@ function Detail({ id }: { id: string }) {
             </table>
           )}
         </View>
+        {/* Fourth UX walk: a change whose proposal or specs aren't written yet drafts them here. */}
+        {detail.state === "ready" &&
+          detail.data.artifacts.some(
+            (a) => (a.artifact === "proposal" || a.artifact === "specs") && a.status !== "done",
+          ) && <RunStep command={`atticus change draft ${id}`} />}
       </Panel>
 
       <ChangeInputs change={id} />

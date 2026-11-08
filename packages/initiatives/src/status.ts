@@ -183,22 +183,34 @@ export async function initiativeStatus(
       const d = done.get(i.key)!;
       const finish = ef.get(i.key)!;
       const float = d ? 0 : workingDays(finish, lf.get(i.key)!);
-      const status: ItemStatus = d
+      let status: ItemStatus = d
         ? "done"
         : today > i.due
           ? "slipped"
           : finish > i.due
             ? "at-risk"
             : "open";
+      // Fourth UX walk: a commitment's item says what a person recorded (at risk, slipped)
+      // until the dates say worse, as the commitment itself does.
+      const said = i.commitment
+        ? commitmentRecords.find((c) => c.id === i.commitment)?.commitmentStatus
+        : undefined;
+      const recorded = said === "at-risk" || said === "slipped" ? said : undefined;
+      const rank: Record<string, number> = { slipped: 3, "at-risk": 2 };
+      if (!d && recorded && rank[recorded]! > (rank[status] ?? 0)) status = recorded;
       const lateBefore = i.after.filter((a) => !done.get(a) && ef.get(a)! > byKey.get(a)!.due);
       const why =
         status === "done"
           ? "Done."
-          : status === "slipped"
-            ? `Due ${i.due} and not done.`
-            : status === "at-risk"
-              ? `Projected to finish ${finish}, after its due date ${i.due}${lateBefore.length ? `, because ${lateBefore.join(", ")} ${lateBefore.length === 1 ? "is" : "are"} late` : ""}.`
-              : `On plan: due ${i.due}.`;
+          : recorded && status === recorded
+            ? recorded === "slipped"
+              ? "Recorded as slipped."
+              : "Recorded as at risk."
+            : status === "slipped"
+              ? `Due ${i.due} and not done.`
+              : status === "at-risk"
+                ? `Projected to finish ${finish}, after its due date ${i.due}${lateBefore.length ? `, because ${lateBefore.join(", ")} ${lateBefore.length === 1 ? "is" : "are"} late` : ""}.`
+                : `On plan: due ${i.due}.`;
       items.push({
         key: i.key,
         kind: i.kind,

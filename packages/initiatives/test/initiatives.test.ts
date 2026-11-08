@@ -324,6 +324,9 @@ describe("the Northwind Pay v3 migration (golden, vendor-api-change)", () => {
       status: "at-risk",
       recorded: "at-risk",
     });
+    // Fourth UX walk: the plan item of that commitment says so too.
+    for (const i of after.items.filter((x) => x.commitment === one.id))
+      expect(i.status, i.key).toBe("at-risk");
   });
 
   it("is on track when everything is on plan, and done when every item is done", async () => {

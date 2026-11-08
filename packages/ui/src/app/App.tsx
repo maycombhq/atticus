@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import { FlashLine } from "./flash.js";
 import { LoadingBar } from "./loading-bar.js";
 import { api, SERVER_EVENT, useApi } from "../api/client.js";
 import { hostBridge } from "../api/bridge.js";
@@ -260,6 +261,7 @@ export function App() {
             }
           />
           <main id="main" className="main" tabIndex={-1}>
+            <FlashLine />
             <TopBar health={health.state === "ready" ? health.data : undefined} />
             <RunStrip />
             <h1 className="sr">{current.label}</h1>

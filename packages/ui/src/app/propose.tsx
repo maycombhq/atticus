@@ -1,6 +1,7 @@
 import { useId, useState } from "react";
 import { api, useApi } from "../api/client.js";
 import { COPY } from "../copy.js";
+import { flash } from "./flash.js";
 import { Note, useAction } from "../screens/know/common.js";
 
 const P = COPY.propose;
@@ -53,7 +54,12 @@ interface Plan {
  * `atticus verify <repo> --write`; Propose for review shows the files, the branch and the title,
  * and on the person's yes pushes exactly those and opens the PR. A person merges.
  */
-export function ApplyAndPropose(p: { scope: Scope; repo?: string | undefined }) {
+export function ApplyAndPropose(p: {
+  scope: Scope;
+  repo?: string | undefined;
+  /** Apply only (Home's pending list offers one Propose for everything). */
+  noPropose?: boolean;
+}) {
   const apply = useAction();
   const [applied, setApplied] = useState<string[]>();
   return (
@@ -73,6 +79,10 @@ export function ApplyAndPropose(p: { scope: Scope; repo?: string | undefined }) 
                       {},
                     );
                     setApplied(r.lines);
+                    // A correction's Apply can take its panel away (the fact it was on goes):
+                    // what happened, and where to propose it, stays on the page.
+                    if (p.scope === "corrections")
+                      flash({ text: P.appliedFlash(p.repo!), href: "#/home", link: P.toHome });
                   } catch (e) {
                     setApplied([(e as Error).message]);
                     throw new Error(P.applyFailed, { cause: e });
@@ -91,7 +101,7 @@ export function ApplyAndPropose(p: { scope: Scope; repo?: string | undefined }) 
           )}
         </div>
       )}
-      <Propose scope={p.scope} />
+      {!p.noPropose && <Propose scope={p.scope} />}
     </div>
   );
 }
@@ -237,11 +247,33 @@ export function PendingProposals() {
   const plan = useApi<Plan>("/api/propose?scope=work");
   const waiting = plan.state === "ready" ? plan.data.files.filter((f) => !f.proposed).length : 0;
   if (waiting === 0) return null;
+  // Fourth UX walk: a correction saved but not applied would go out without its map: each repo
+  // with one gets Apply first.
+  const repos =
+    plan.state === "ready"
+      ? [
+          ...new Set(
+            plan.data.files
+              .map((f) => /(?:^|\/)facts\/([^/]+)\.corrections\.jsonl$/.exec(f.path)?.[1])
+              .filter((r): r is string => !!r),
+          ),
+        ]
+      : [];
   return (
     <div className="stack" style={{ gap: 4 }}>
       <p className="work-say" style={{ margin: 0 }}>
         {P.pending(waiting)}
       </p>
+      {repos.length > 0 && (
+        <>
+          <p className="work-say" style={{ margin: 0 }}>
+            {P.applyFirst}
+          </p>
+          {repos.map((r) => (
+            <ApplyAndPropose key={r} scope="corrections" repo={r} noPropose />
+          ))}
+        </>
+      )}
       <Propose scope="work" />
     </div>
   );

@@ -6,6 +6,8 @@
 export const COPY = {
   /** Words every screen shares: loading, failures, links that leave the app, actions under way. */
   app: {
+    /** A page-level note's close (fourth UX walk). */
+    dismiss: "Close",
     loading: "Loading",
     /** A list cut short: how many it doesn't show. */
     andMore: (n: number) => `and ${n} more`,
@@ -3815,6 +3817,10 @@ export const COPY = {
     proposing: "Proposing…",
     proposed: "Proposed for review.",
     cancel: "Not now",
+    appliedFlash: (repo: string) =>
+      `Applied the correction to ${repo}'s map. It waits on Home to be proposed for review.`,
+    toHome: "Propose it from Home",
+    applyFirst: "Apply the corrections first, so the map in the pull request matches them:",
     pending: (n: number) =>
       `${n} file${n === 1 ? "" : "s"} you changed in the app ${n === 1 ? "isn't" : "aren't"} proposed for review yet.`,
     inReview: (where: string) => `already proposed (${where})`,
@@ -3847,6 +3853,7 @@ export const COPY = {
     failedSay:
       "The answer didn't pass its checks. Have your assistant fix what is listed, then Done checks it again:",
     copyPrompt: "Copy the prompt",
+    nextPrompt: "Next: open the step's next prompt",
     doneOk: "Checked the answer.",
     cancel: "Cancel the run",
     cancelled: "Cancelled. The step can run again.",
@@ -4347,6 +4354,7 @@ export const COPY = {
     handoffHint:
       "Atticus writes the prompt; paste it into your assistant (Copilot, Claude Code), then Done checks the answer.",
     handoffReady: "Prepared.",
+    handoffStill: "A run of this step still waits for its answer.",
     handoffOpen: "Open the prompt and Done",
     handoffOpenWaiting: "Open the run that waits",
     withCopilot: "Run with Copilot",

@@ -97,6 +97,8 @@ export interface UiDeps {
   now?: string;
   /** Tests: a task run's build and Git, for Done (otherwise the repo's build and real Git). */
   taskRun?: Pick<import("./run-commands.js").RunDeps, "commands" | "git">;
+  /** Tests: the in-process atticus a step's resume runs with (fourth UX walk). */
+  runStep?: import("./handoff-resume.js").StepRunner;
 }
 
 /** The errors a task run's checks raise, said to the person as the CLI says them. */
@@ -802,7 +804,34 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
         // The answer had problems, the build failed, or the task needs a person: said as such,
         // with what the command printed, never as a success.
         if (res.code !== 0) throw refused(res);
-        return { status: 200, body: { ...after, lines: [...res.out, ...res.err] } };
+        // Fourth UX walk: a step the app prepared is finished here too: its resume writes what
+        // the answer said (a draft's proposal and specs), or offers its next prompt (`next`).
+        const { resumeAfterDone } = await import("./handoff-resume.js");
+        const stepRunner =
+          deps.runStep ??
+          (async (args: string[]) => {
+            const { main } = await import("./main.js");
+            const out: string[] = [];
+            const err: string[] = [];
+            const code = await main(
+              [...args, "--root", root],
+              { out: (l) => out.push(l), err: (l) => err.push(l) },
+              { quiet: true },
+            );
+            return { code, out, err };
+          });
+        const resumed = await resumeAfterDone(root, stepRunner, after.change, after.runId).catch(
+          (e: Error) => ({ lines: [e.message] }) as { next?: string; lines: string[] },
+        );
+        if (resumed) ctx.events.publish({ type: "file.changed", path: changesRelOf(root) });
+        return {
+          status: 200,
+          body: {
+            ...after,
+            lines: [...res.out, ...res.err, ...(resumed?.lines ?? [])],
+            ...(resumed?.next ? { next: resumed.next } : {}),
+          },
+        };
       })
       .add("POST", "/api/runs/{runId}/retry", async ({ params }) => {
         const v = await findRun(root, params.runId!);

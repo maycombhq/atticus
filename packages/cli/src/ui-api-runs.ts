@@ -89,21 +89,18 @@ export function uiModelRunRoutes(
       // assistant (`--handoff`): the run's page shows its prompt, and Done checks the answer.
       .add("POST", "/api/runs/handoff", async ({ body }) => {
         const words = stepWords(body);
-        const before = new Set((await listRuns(root, { limit: 100000 })).map((x) => x.runId));
-        const res = await runStep([...words, "--handoff"]);
-        const made = (await listRuns(root, { limit: 100000 })).find((x) => !before.has(x.runId));
+        const { prepareStep } = await import("./handoff-resume.js");
+        const { code, prepared } = await prepareStep(root, runStep, words);
         ctx.events.publish({ type: "file.changed", path: runsRelOf(root) });
-        // UX re-walk: a step with nothing left to hand off (its stage is done) ran and made
-        // no run: what it said is the answer, not a refusal.
-        if (!made && res.code === 0)
-          return { status: 201, body: { lines: [...res.out, ...res.err] } };
-        if (!made)
+        // A step with nothing left to hand off (its stage is done) ran and made no run: what it
+        // said is the answer. A run that still waits is named, to open (fourth UX walk).
+        if (!prepared.runId && code !== 0)
           throw new HttpError(
             422,
             "The step wasn't prepared",
-            [...res.err, ...res.out].join("\n") || "The step prepared no run.",
+            prepared.lines.join("\n") || "The step prepared no run.",
           );
-        return { status: 201, body: { runId: made.runId, lines: [...res.out, ...res.err] } };
+        return { status: 201, body: prepared };
       })
       .add("POST", "/api/runs", async ({ body }) => {
         const words = stepWords(body);

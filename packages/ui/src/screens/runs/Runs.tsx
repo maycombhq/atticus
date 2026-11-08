@@ -186,8 +186,19 @@ export function WaitingActions(p: {
   prompt?: string | undefined;
 }) {
   const act = useAction();
+  const [next, setNext] = useState<{ lines: string[]; next?: string }>();
+  // Fourth UX walk: the page reloads after Done either way (a second failure shows its own
+  // problems), and says what the step did next: its files written, or its next prompt.
   const go = (path: string, ok: string) =>
-    void act.run(() => api(path, { method: "POST", body: {} }).then(() => p.reload?.()), ok);
+    void act.run(
+      () =>
+        api<{ lines?: string[]; next?: string }>(path, { method: "POST", body: {} })
+          .then((r) => {
+            setNext({ lines: r.lines ?? [], ...(r.next ? { next: r.next } : {}) });
+          })
+          .finally(() => p.reload?.()),
+      ok,
+    );
   return (
     <div className="stack" style={{ gap: 6 }}>
       <p className="work-say">{R.waitingSay}</p>
@@ -211,6 +222,20 @@ export function WaitingActions(p: {
         </button>
       </div>
       <Note note={act.note} />
+      {next && (
+        <div role="status" className="stack" style={{ gap: 4 }}>
+          {next.lines.length > 0 && (
+            <pre className="mono" style={{ whiteSpace: "pre-wrap", margin: 0, fontSize: 11.5 }}>
+              {next.lines.join("\n")}
+            </pre>
+          )}
+          {next.next && (
+            <a className="btn primary" href={runsHref({ run: next.next })}>
+              {R.nextPrompt}
+            </a>
+          )}
+        </div>
+      )}
     </div>
   );
 }

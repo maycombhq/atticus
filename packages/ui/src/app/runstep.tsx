@@ -365,7 +365,7 @@ export function HandoffStep({ args }: { args: string[] }) {
   const [state, set] = useState<
     | { s: "idle" }
     | { s: "working" }
-    | { s: "ready"; runId: string }
+    | { s: "ready"; runId: string; still?: boolean }
     | { s: "said"; lines: string[] }
     | { s: "error"; why: string; runId?: string }
   >({ s: "idle" });
@@ -379,7 +379,7 @@ export function HandoffStep({ args }: { args: string[] }) {
   if (state.s === "ready")
     return (
       <p role="status" className="work-say" style={{ margin: 0 }}>
-        {T.handoffReady}{" "}
+        {state.still ? T.handoffStill : T.handoffReady}{" "}
         <a className="btn primary" href={`#/runs?run=${encodeURIComponent(state.runId)}`}>
           {T.handoffOpen}
         </a>
@@ -395,12 +395,16 @@ export function HandoffStep({ args }: { args: string[] }) {
           aria-describedby={`${id}-why`}
           onClick={() => {
             set({ s: "working" });
-            api<{ runId?: string; lines: string[] }>("/api/runs/handoff", {
+            api<{ runId?: string; lines: string[]; stillWaiting?: boolean }>("/api/runs/handoff", {
               method: "POST",
               body: { args },
             })
               .then((r) =>
-                set(r.runId ? { s: "ready", runId: r.runId } : { s: "said", lines: r.lines }),
+                set(
+                  r.runId
+                    ? { s: "ready", runId: r.runId, ...(r.stillWaiting ? { still: true } : {}) }
+                    : { s: "said", lines: r.lines },
+                ),
               )
               .catch((e: unknown) => {
                 // UX re-walk: a step that still waits on a run names it; offer that run.
