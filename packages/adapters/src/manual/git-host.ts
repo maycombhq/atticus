@@ -79,6 +79,19 @@ export class ManualGitHost extends ManualBase implements GitHost {
     );
   }
 
+  /**
+   * Review round 44: the number the PR goes by. The recorded one, unless it is the number Atticus
+   * gave another PR in the repo, or one recorded for another PR too: then the number Atticus gave
+   * it, so no number a caller holds ever names two PRs (new numbers skip recorded ones).
+   */
+  private async numberOf(open: ManualStep): Promise<number> {
+    const local = localOf(open);
+    const rec = recordedOf(open);
+    if (rec === undefined || rec === local) return local;
+    const others = (await this.prSteps(String(open.inputs.repo))).filter((s) => s.id !== open.id);
+    return others.some((s) => localOf(s) === rec || recordedOf(s) === rec) ? local : rec;
+  }
+
   private async toPr(open: ManualStep): Promise<PullRequest> {
     const repo = String(open.inputs.repo);
     const number = localOf(open);
@@ -102,7 +115,7 @@ export class ManualGitHost extends ManualBase implements GitHost {
     if (merged) state = "merged";
     return {
       repo,
-      number: recordedOf(open) ?? number,
+      number: await this.numberOf(open),
       url: typeof rec?.url === "string" ? rec.url : `manual://git-host/${repo}/pull/${number}`,
       title: String(open.inputs.title ?? ""),
       body: open.fields.find((f) => f.name === "Description")?.value ?? "",
@@ -119,15 +132,23 @@ export class ManualGitHost extends ManualBase implements GitHost {
   }
 
   /**
-   * The PR by the number it goes by (the recorded one, else Atticus's), or by the number Atticus
-   * gave it first, which a caller may have kept from before the person recorded the real one.
+   * The PR by the number Atticus gave it (which a caller may have kept from before the person
+   * recorded the real one, and which no other PR in the repo has), else by the recorded number
+   * it goes by (numberOf). Review round 44: a recorded number equal to another PR's own number
+   * finds that other PR, never this one, so a caller can't be handed another change's PR.
    */
   private async find(repo: string, number: number): Promise<ManualStep> {
     const all = await this.prSteps(repo);
-    const s =
-      all.find((x) => (recordedOf(x) ?? localOf(x)) === number) ??
-      all.find((x) => localOf(x) === number);
-    return s ?? this.notFound(`PR ${repo}#${number}`, "no manual step opened it");
+    const local = all.find((x) => localOf(x) === number);
+    if (local) return local;
+    for (const x of all) if ((await this.numberOf(x)) === number) return x;
+    if (all.filter((x) => recordedOf(x) === number).length > 1)
+      throw new AdapterError(
+        this.name,
+        "conflict",
+        `#${number} was recorded for more than one pull request in ${repo}: correct the number on the step of the one it isn't (atticus todo), or use the number Atticus gave it`,
+      );
+    return this.notFound(`PR ${repo}#${number}`, "no manual step opened it");
   }
 
   async getPullRequest(repo: string, number: number): Promise<PullRequest> {

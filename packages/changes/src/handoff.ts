@@ -6,6 +6,7 @@ import {
   requireApproval,
   type Approval,
   type GitHost,
+  type PullRequest,
 } from "@maycombhq/adapters";
 import {
   changesRelOf,
@@ -306,7 +307,7 @@ export async function handoff(
 
   const live = change.state === "returned" ? undefined : liveHandoff(change);
   if (live && live.phase === phase) {
-    const pr = await opts.gitHost.getPullRequest(repo, live.pr.number);
+    const pr = await handoffPr(opts.gitHost, repo, id, live);
     if (pr.state === "open" || pr.state === "draft") {
       await opts.publisher?.publish({
         root,
@@ -318,7 +319,7 @@ export async function handoff(
       });
       await opts.gitHost.comment(
         repo,
-        live.pr.number,
+        pr.number,
         `${by} updated the hand-off for another review.`,
         opts.approval,
       );
@@ -430,6 +431,28 @@ export interface SyncResult {
 }
 
 /**
+ * Review round 44: the hand-off's own PR. Read by the number the hand-off holds; a PR from
+ * another branch (a manual host's recorded number equal to another PR's, a number a person got
+ * wrong) is never used: the hand-off's PR is looked up by its branch instead, and without one
+ * the sync is refused, so another change's merge can't move this change's gate.
+ */
+async function handoffPr(
+  gitHost: GitHost,
+  repo: string,
+  id: string,
+  live: ChangeHandoff,
+): Promise<PullRequest> {
+  const branch = handoffBranch(id, live.phase);
+  const pr = await gitHost.getPullRequest(repo, live.pr.number);
+  if (pr.head === branch) return pr;
+  const mine = await gitHost.listPullRequests(repo, { head: branch });
+  const own = mine.find((x) => x.url === live.pr.url) ?? (mine.length === 1 ? mine[0] : undefined);
+  if (own) return own;
+  const message = `PR #${live.pr.number} on the Git host is from ${pr.head}, not ${branch}, and no PR from ${branch} was found: Atticus uses only the hand-off's own PR. Check the PR's number on the Git host (on a manual host, on its step: atticus todo), then sync again.`;
+  throw new ChangeError("refused", message, [{ code: "host-refused", message }]);
+}
+
+/**
  * Read the hand-off PR from the Git host and act on it (ADR 0073: the PR is the approval).
  * Merged on the host → the gate is approved, the state advances and history records it.
  * Changes requested → it stays. Approved by someone other than the person who raised it,
@@ -450,7 +473,7 @@ export async function syncHandoff(
       { code: "no-handoff", message: `${id} has no open hand-off PR.` },
     ]);
   const a = await assess(ctx, change);
-  const pr = await opts.gitHost.getPullRequest(repo, live.pr.number);
+  const pr = await handoffPr(opts.gitHost, repo, id, live);
   // The host knows the PR best: a link recorded since (manual:// until a person records it).
   const current: ChangeHandoff =
     pr.url !== live.pr.url || pr.number !== live.pr.number

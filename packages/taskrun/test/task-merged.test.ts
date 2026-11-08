@@ -154,6 +154,113 @@ describe("a task branch is cut from the change branch as the Git host has it", (
     T,
   );
 
+  /** Squash-merge the task's branch into the change branch on the bare remote, as a host may. */
+  async function squashOnHost(remote: string, task: string) {
+    const c = await mkdtemp(join(tmpdir(), "atticus-host-"));
+    sh(c, "clone", "-q", remote, "w");
+    const w = join(c, "w");
+    sh(w, "checkout", "-q", `change/${CHANGE}`);
+    sh(w, "merge", "-q", "--squash", `origin/task/${CHANGE}/${task}`);
+    sh(w, "commit", "-q", "-m", `Task ${task} (squashed)`);
+    sh(w, "push", "-q", "origin", `change/${CHANGE}`);
+  }
+
+  it(
+    "review round 44: with squash merges, every later task still catches up (hand-downs the host has)",
+    async () => {
+      const { root, remotes } = await speckitRoot({ repos: ["forge-ledger"] });
+      const remote = remotes["forge-ledger"]!;
+      const host = new MockGitHost([{ repo: "forge-ledger" }]);
+      const pr = (task: string, file: string, body: string) =>
+        runTask(root, CHANGE, task, {
+          level: "pr",
+          by: "dev",
+          approval: APPROVAL,
+          runtime: answer(file, body),
+          git,
+          gitHost: host,
+          now,
+          commands: ok,
+        });
+      expect((await pr("1.2", LIMITS, "class TransferLimits {}")).state).toBe("pr-open");
+      await squashOnHost(remote, "1.2");
+      expect((await pr("1.3", RULES, "class LimitRules {}")).state).toBe("pr-open");
+      await squashOnHost(remote, "1.3");
+      const third = await runTask(root, CHANGE, "1.1", {
+        level: "draft",
+        by: "dev",
+        runtime: answer("src/main/resources/db/migration/V3__add_daily_limit.sql", "-- limit"),
+        git,
+        now,
+        commands: ok,
+      });
+      expect(third.state).toBe("built");
+      // The third task starts from both squashed tasks, and the local change branch is the host's
+      // plus only the third task's hand-down: nothing was pushed over the host's.
+      const wt = join(root, third.worktree);
+      await expect(readFile(join(wt, LIMITS), "utf8")).resolves.toContain("TransferLimits");
+      await expect(readFile(join(wt, RULES), "utf8")).resolves.toContain("LimitRules");
+      const cw = worktree(root, "forge-ledger");
+      const onHost = sh(cw, "rev-parse", `origin/change/${CHANGE}`);
+      expect(sh(cw, "rev-parse", "HEAD~1")).toBe(onHost);
+      expect(sh(cw, "log", "-1", "--format=%s")).toMatch(/^Hand down task 1\.1 of /);
+      expect(sh(remote, "rev-parse", `change/${CHANGE}`)).toBe(onHost);
+      expect(third.notes.join(" ")).toContain(
+        `Brought change/${CHANGE} in forge-ledger up to the Git host's first`,
+      );
+    },
+    T,
+  );
+
+  it(
+    "review round 44: still refuses when a local hand-down's files differ from the host's",
+    async () => {
+      const { root, remotes } = await speckitRoot({ repos: ["forge-ledger"] });
+      const host = new MockGitHost([{ repo: "forge-ledger" }]);
+      await runTask(root, CHANGE, "1.2", {
+        level: "pr",
+        by: "dev",
+        approval: APPROVAL,
+        runtime: answer(LIMITS, "class TransferLimits {}"),
+        git,
+        gitHost: host,
+        now,
+        commands: ok,
+      });
+      await squashOnHost(remotes["forge-ledger"]!, "1.2");
+      // Task 1.3 handed down and drafted, never raised: its hand-down isn't on the host; then
+      // something else merges there.
+      const cw = worktree(root, "forge-ledger");
+      await runTask(root, CHANGE, "1.3", {
+        level: "draft",
+        by: "dev",
+        runtime: answer(RULES, "class LimitRules {}"),
+        git,
+        now,
+        commands: ok,
+      });
+      const c = await mkdtemp(join(tmpdir(), "atticus-host-"));
+      sh(c, "clone", "-q", remotes["forge-ledger"]!, "w");
+      const w = join(c, "w");
+      sh(w, "checkout", "-q", `change/${CHANGE}`);
+      sh(w, "commit", "-q", "--allow-empty", "-m", "Another task merged");
+      sh(w, "push", "-q", "origin", `change/${CHANGE}`);
+      const local = sh(cw, "rev-parse", "HEAD");
+      const err = await runTask(root, CHANGE, "1.1", {
+        level: "draft",
+        by: "dev",
+        runtime: answer("src/main/resources/db/migration/V3__add_daily_limit.sql", "-- limit"),
+        git,
+        now,
+        commands: ok,
+      }).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(TaskRunError);
+      expect((err as Error).message).toMatch(/has commits the Git host's hasn't/);
+      expect(sh(cw, "rev-parse", "HEAD")).toBe(local);
+    },
+    T,
+  );
+
   it(
     "refuses, never rewriting it, when the local change branch has commits the host's hasn't",
     async () => {

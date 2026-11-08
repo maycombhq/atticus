@@ -72,21 +72,61 @@ export async function catchUpChangeBranch(
     );
   // The host's is behind or the same: the local commits go up with the task's PR.
   if (await ancestor(remote, local)) return undefined;
+  /**
+   * Review round 44: whether the commits only the local branch has are all this change's
+   * hand-downs, and the host's branch has their files as they are (a squash or rebase merge of
+   * the tasks' PRs, which carried them).
+   */
+  const onlyHandDowns = async (onHostTip: string, localTip: string): Promise<boolean> => {
+    try {
+      const log = await git(["log", "--format=%P%x00%B%x1e", `${onHostTip}..${localTip}`], base);
+      const commits = log.stdout
+        .split("\x1e")
+        .map((c) => c.replace(/^\n+/, ""))
+        .filter(Boolean);
+      if (commits.length === 0) return false;
+      for (const c of commits) {
+        const [parents = "", body = ""] = c.split("\x00");
+        if (parents.trim().split(/\s+/).length !== 1) return false;
+        if (!body.startsWith("Hand down task ")) return false;
+        if (!body.split("\n").includes(`Atticus-Change: ${change}`)) return false;
+      }
+      const diff = await git(["diff", "--name-only", "-z", `${onHostTip}...${localTip}`], base);
+      const files = [...new Set(diff.stdout.split("\0").filter(Boolean))];
+      if (files.length > 0)
+        await git(
+          ["--literal-pathspecs", "diff", "--quiet", onHostTip, localTip, "--", ...files],
+          base,
+        );
+      return true;
+    } catch {
+      return false;
+    }
+  };
   const rel = changeDir.slice(root.length + 1).replace(/\\/g, "/");
-  if (!(await ancestor(local, remote)))
+  // Review round 44: a hand-down commit reaches the host only inside its task's PR, so a squash
+  // or rebase merge leaves it local-only for good. When every local-only commit is a hand-down
+  // of this change whose files the host's branch already has as they are, the local branch moves
+  // to the host's (local bookkeeping: nothing is pushed). Anything else is never rewritten.
+  const behind = await ancestor(local, remote);
+  const handedDown = !behind && (await onlyHandDowns(remote, local));
+  if (!behind && !handedDown)
     throw new SpecKitError(
       "refused",
       `${from} in ${repo} has commits the Git host's hasn't, and the host's has commits it hasn't (tasks merged there): Atticus doesn't rewrite it. Merge origin/${from} into it in ${rel} (or push it), then run task ${task} again.`,
     );
   try {
-    await git(["merge", "-q", "--ff-only", remote], changeDir);
+    await git(
+      handedDown ? ["reset", "-q", "--keep", remote] : ["merge", "-q", "--ff-only", remote],
+      changeDir,
+    );
   } catch (e) {
     throw new SpecKitError(
       "refused",
       `${from} in ${repo} is behind the Git host's (tasks merged there), and it can't fast-forward in ${rel}: ${(e instanceof Error ? e.message : String(e)).trim()}. Commit or put aside the edits there, then run task ${task} again.`,
     );
   }
-  return `Brought ${from} in ${repo} up to the Git host's first (the tasks merged into it there).`;
+  return `Brought ${from} in ${repo} up to the Git host's first (the tasks merged into it there).${handedDown ? " Its local hand-down commits were already there, in the tasks' merged PRs." : ""}`;
 }
 
 export async function openTaskWorktree(
