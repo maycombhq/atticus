@@ -2763,6 +2763,12 @@ export const COPY = {
       `Drafted and committed on ${branch}, but ${repo} has no build command, so nothing was built or tested. Atticus opens a task's PR only after a passing build: add a build command to repos.manifest.yaml and run the task again, or push ${branch} and open its PR into ${base} yourself.`,
     taskWaiting: "Your assistant has it: Done on its run checks the work.",
     taskPrOpen: "Its PR is raised:",
+    /** Review round 43: the Git host says the task's PR is merged or closed. */
+    taskPrStateChip: { merged: "PR MERGED", closed: "PR CLOSED" } as Record<string, string>,
+    taskPrMerged:
+      "Its PR is merged into the change branch. Tick the task in tasks.md, or Run with AI again to start it over:",
+    taskPrClosed:
+      "Its PR was closed without merging. Run with AI again to start the task over, or do it by hand:",
     taskPrNumber: (n: number) => `PR #${n}`,
     raiseTaskPr: "Raise the task's PR",
     raisingTaskPr: "Raising the PR…",

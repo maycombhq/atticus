@@ -61,6 +61,12 @@ describe("POST /api/runs/{runId}/done on a task run", () => {
     );
     const runId = /atticus handoff done (run-[0-9a-z-]+)$/.exec(out[0]!)![1]!;
     await writeFile(join(root, "openspec/changes", CHANGE, "tasks/1.3/report.md"), "Did it.\n");
+    // The assistant's change in the task's worktree (review round 43: one that changes nothing
+    // needs a person, never a built task with nothing committed).
+    await writeFile(
+      join(root, "workspace/.worktrees", CHANGE, ".tasks/1.3/forge-ledger/VELOCITY.md"),
+      "Velocity check.\n",
+    );
     let pass = false;
     const commands = async () => {
       await new Promise((r) => setTimeout(r, 300));

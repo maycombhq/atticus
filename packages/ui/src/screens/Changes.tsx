@@ -74,7 +74,8 @@ export interface Task {
     level: string;
     branch: string;
     commit?: string;
-    pr?: { number: number; url: string };
+    /** API 2.70.0 (review round 43): `state` is the PR's on the Git host now, when it said. */
+    pr?: { number: number; url: string; state?: "open" | "merged" | "closed" };
     notes: string[];
   };
 }

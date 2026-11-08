@@ -54,6 +54,9 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ### Fixed before release (review)
 
+- Round 43 (review, tasks):
+  - **A task whose PR was merged or closed runs again from the app.** The app's Run with AI didn't give its Git host to the check that holds a task with an open PR, so the run was refused saying no Git host was connected. It now asks the Git host (read-only) whether the PR is still open, as `atticus task run` does. The Task board hears it too: listing the tasks asks the Git host for each raised PR's state (read-only, a short timeout, the recorded state when the host can't say; `taskRun.pr.state`, local API 2.70.0), says a PR merged or closed, and offers Run with AI again, where before it showed the PR open for ever.
+  - **An answer that changes nothing needs a person, never a built task with nothing to raise.** A build with nothing to commit left the task built with no commit, so the Task board offered Raise, which refused it, and at the pr level an empty PR was opened. The task now needs a person, with a note that the AI's answer changed nothing (run it again or do it by hand); no PR is opened, and Raise is shown only for a task with a commit.
 - Round 42 (review):
   - **One plural rule for endpoint ids and the glossary**, in core: "statuses", "buses" and "aliases" become "status", "bus" and "alias", so `GET /payment-statuses` keeps its id `get-payment-status` and "Payment statuses" is the same glossary term as "Payment status".
   - **A stage's write entries stay inside the change folder**, with a `*` only in the last part; an org pack that writes otherwise is refused at load, not followed.

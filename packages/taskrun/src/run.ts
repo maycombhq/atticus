@@ -326,12 +326,19 @@ async function buildAndFix(c: Ctx, runId: string): Promise<void> {
   c.record.state = "built";
 }
 
-async function commit(c: Ctx, runId: string): Promise<void> {
+/**
+ * Commit the worktree's change; false when there is none. Review round 43: an answer that changed
+ * nothing isn't a draft (no commit, nothing to raise), so the task is a person's, never left built.
+ */
+async function commit(c: Ctx, runId: string): Promise<boolean> {
   await c.git(["add", "-A", "--", "."], c.worktree);
   const staged = (await c.git(["diff", "--cached", "--name-only"], c.worktree)).stdout.trim();
   if (!staged) {
-    c.record.notes.push("Nothing to commit.");
-    return;
+    c.record.state = "needs-person";
+    c.record.notes.push(
+      `The AI's answer changed nothing in ${c.record.branch}, so there is nothing to commit: run the task again, or do it by hand in ${c.record.worktree}.`,
+    );
+    return false;
   }
   await c.git(
     [
@@ -345,6 +352,7 @@ async function commit(c: Ctx, runId: string): Promise<void> {
     c.worktree,
   );
   c.record.commit = (await c.git(["rev-parse", "HEAD"], c.worktree)).stdout.trim();
+  return true;
 }
 
 async function openPr(c: Ctx): Promise<void> {
@@ -369,23 +377,27 @@ async function openPr(c: Ctx): Promise<void> {
   // Review round 42: the PR's body says the build passed, so what is pushed is the commit it
   // passed at. A branch that moved on since is refused rather than pushed at record.commit,
   // which would leave the branch here and the one on the host saying different things.
-  if (c.record.commit) {
-    const head = (
-      await c
-        .git(["rev-parse", "--verify", "-q", `refs/heads/${c.record.branch}`], c.worktree)
-        .catch(() => ({ stdout: "" }))
-    ).stdout.trim();
-    if (!head)
-      throw new TaskRunError(
-        "refused",
-        `Task ${c.t.task.id}'s branch ${c.record.branch} isn't in ${c.record.worktree} any more: run the task again.`,
-      );
-    if (head !== c.record.commit)
-      throw new TaskRunError(
-        "refused",
-        `Task ${c.t.task.id}'s branch ${c.record.branch} has commits that weren't built (it is at ${head.slice(0, 12)}; the build passed at ${c.record.commit.slice(0, 12)}): run the task again so its build checks them, or push ${c.record.branch} and open its PR into ${base} yourself.`,
-      );
-  }
+  // Review round 43: with no commit there is nothing built to raise (never an empty PR).
+  if (!c.record.commit)
+    throw new TaskRunError(
+      "refused",
+      `Task ${c.t.task.id} has no commit to raise: run the task again, or do it by hand in ${c.record.worktree}.`,
+    );
+  const head = (
+    await c
+      .git(["rev-parse", "--verify", "-q", `refs/heads/${c.record.branch}`], c.worktree)
+      .catch(() => ({ stdout: "" }))
+  ).stdout.trim();
+  if (!head)
+    throw new TaskRunError(
+      "refused",
+      `Task ${c.t.task.id}'s branch ${c.record.branch} isn't in ${c.record.worktree} any more: run the task again.`,
+    );
+  if (head !== c.record.commit)
+    throw new TaskRunError(
+      "refused",
+      `Task ${c.t.task.id}'s branch ${c.record.branch} has commits that weren't built (it is at ${head.slice(0, 12)}; the build passed at ${c.record.commit.slice(0, 12)}): run the task again so its build checks them, or push ${c.record.branch} and open its PR into ${base} yourself.`,
+    );
   try {
     const info = await c.gitHost.getRepo(c.t.repo.id);
     for (const b of [c.record.branch, base])
@@ -494,7 +506,8 @@ async function afterBuild(
 ): Promise<void> {
   try {
     await first?.();
-    if (commitIt) await commit(c, runId);
+    // Nothing to commit: the task is a person's (commit says why), with nothing to check or raise.
+    if (commitIt && !(await commit(c, runId))) return;
     // ADR 0114: a passing build is checked against the design before anything goes further.
     await conformAfterBuild(c);
     if (c.record.level === "pr") await openPr(c);
@@ -577,6 +590,43 @@ async function refuseIfHeld(
   return [];
 }
 
+/** A task PR's state on the Git host, as the Task board says it. */
+export type TaskPrState = "open" | "merged" | "closed";
+
+/**
+ * Review round 43: where a task's raised PR stands on the Git host, so the Task board can offer
+ * Run with AI again once it is merged or closed (the run itself still asks, in refuseIfHeld).
+ * A read-only call, given `timeoutMs` (3 s by default); undefined when the task's PR isn't open
+ * in its record, or the host isn't there, fails or doesn't answer in time: the record stands.
+ */
+export async function taskPrState(
+  root: string,
+  changeId: string,
+  taskId: string,
+  o: { gitHost?: GitHost; timeoutMs?: number } = {},
+): Promise<TaskPrState | undefined> {
+  const r = await readTaskRun(root, changeId, taskId).catch(() => undefined);
+  if (r?.state !== "pr-open" || !r.pr) return undefined;
+  const pr = r.pr;
+  const ask = async (): Promise<TaskPrState | undefined> => {
+    const host = o.gitHost ?? gitHostOf(root, await loadTask(root, changeId, taskId));
+    if (!host) return undefined;
+    const s = (await host.getPullRequest(r.repo, pr.number)).state;
+    return s === "merged" || s === "closed" ? s : "open";
+  };
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<undefined>((res) => {
+    timer = setTimeout(() => res(undefined), o.timeoutMs ?? 3_000);
+  });
+  try {
+    return await Promise.race([ask(), late]);
+  } catch {
+    return undefined;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** Whether a Git host is there to push to: one that can't be made (no adapter installed) isn't. */
 function gitHostConnected(root: string, t: TaskContext, given?: GitHost): boolean {
   try {
@@ -597,7 +647,11 @@ export interface TaskRunPreview {
   gitHost: boolean;
 }
 
-/** `atticus task run --dry-run`: the task, its level (runtime.yaml's default when none is asked), the cap. */
+/**
+ * `atticus task run --dry-run`: the task, its level (runtime.yaml's default when none is asked), the
+ * cap. `skipGitHost` leaves out whether a Git host is there to push to (the app never pushes); a
+ * task whose PR is open still asks the host whether it is (review round 43: read-only).
+ */
 export async function previewTaskRun(
   root: string,
   changeId: string,
@@ -606,7 +660,7 @@ export async function previewTaskRun(
 ): Promise<TaskRunPreview> {
   const t = await loadTask(root, changeId, taskId);
   const level = levelOf(t, o.level);
-  await refuseIfHeld(root, t, () => o.gitHost ?? (o.skipGitHost ? undefined : gitHostOf(root, t)));
+  await refuseIfHeld(root, t, () => o.gitHost ?? gitHostOf(root, t));
   return {
     change: t.change.id,
     task: t.task.id,
