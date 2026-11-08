@@ -110,6 +110,36 @@ function waitText(w: RequestWait): string {
   return `${TX.waitFor(w.requestType, w.record)}: ${state}${w.readyBy ? TX.readyBy(w.readyBy, plural(w.waitDays ?? 0, TX.workingDay)) : TX.noLeadTimeTo}${w.missing.length ? TX.missing(w.missing.join(", ")) : ""}.`;
 }
 
+/**
+ * A deployment step's rollback: its label, then its words or its gap. Ninth UX walk: the label ran
+ * into the words ("ROLLBACKNo rollback…"); the source keeps its own case (a path, not a label).
+ */
+export function RollbackLine({
+  rollback,
+  label = TX.rollback,
+}: {
+  rollback: { text?: string | undefined; source?: string | undefined; gap?: string | undefined };
+  label?: string;
+}) {
+  return (
+    <span style={{ fontSize: 11.5 }}>
+      <span className="hud" style={{ fontSize: 9.5, marginRight: 6 }}>
+        {label}
+      </span>{" "}
+      {rollback.text ? (
+        <>
+          {rollback.text}{" "}
+          <span className="hud cite" style={{ fontSize: 9.5 }}>
+            {rollback.source}
+          </span>
+        </>
+      ) : (
+        <span style={{ color: "var(--magenta-text)" }}>{rollback.gap}</span>
+      )}
+    </span>
+  );
+}
+
 /** The deployment plan, its forecast and the release sections: one read, three panels. */
 export function PlanPanels({ id, tick }: { id: string; tick: number }) {
   const p = useReloadOn(useApi<Plan>(`/api/release/${id}/plan`), tick);
@@ -132,7 +162,7 @@ export function PlanPanels({ id, tick }: { id: string; tick: number }) {
                     <span style={{ fontSize: 12.5 }}>{TX.n0BeforeAnything}</span>
                     {x.before.map((w) => (
                       <span key={w.heading} className="muted" style={{ fontSize: 12 }}>
-                        {waitText(w)} <span className="hud">{w.source}</span>
+                        {waitText(w)} <span className="hud cite">{w.source}</span>
                       </span>
                     ))}
                   </span>
@@ -173,21 +203,7 @@ export function PlanPanels({ id, tick }: { id: string; tick: number }) {
                           {TX.waitsOn(waitText(w))}
                         </span>
                       ))}
-                      <span style={{ fontSize: 11.5 }}>
-                        <span className="hud" style={{ fontSize: 9.5, marginRight: 6 }}>
-                          {TX.rollback}
-                        </span>
-                        {s.rollback.text ? (
-                          <>
-                            {s.rollback.text}{" "}
-                            <span className="hud" style={{ fontSize: 9.5 }}>
-                              {s.rollback.source}
-                            </span>
-                          </>
-                        ) : (
-                          <span style={{ color: "var(--magenta-text)" }}>{s.rollback.gap}</span>
-                        )}
-                      </span>
+                      <RollbackLine rollback={s.rollback} />
                     </span>
                     <span className={`chip ${s.kind === "code" ? "dim" : "warn"}`}>
                       {KIND[s.kind]}
@@ -221,7 +237,7 @@ export function PlanPanels({ id, tick }: { id: string; tick: number }) {
                   <ul className="run-steps">
                     {x.findings.map((f) => (
                       <li key={f.id}>
-                        {f.summary} <span className="hud">{f.path}</span>
+                        {f.summary} <span className="hud cite">{f.path}</span>
                       </li>
                     ))}
                   </ul>
@@ -257,7 +273,7 @@ export function PlanPanels({ id, tick }: { id: string; tick: number }) {
                     {f.drivers.map((d) => (
                       <li key={d.what}>
                         {d.until}: {d.what}{" "}
-                        <span className="hud" style={{ fontSize: 9.5 }}>
+                        <span className="hud cite" style={{ fontSize: 9.5 }}>
                           {d.source}
                         </span>
                       </li>
@@ -295,7 +311,7 @@ export function PlanPanels({ id, tick }: { id: string; tick: number }) {
                     {s.text ? (
                       <>
                         <span className="run-text">{s.text}</span>{" "}
-                        <span className="hud" style={{ fontSize: 9.5 }}>
+                        <span className="hud cite" style={{ fontSize: 9.5 }}>
                           {s.source}
                         </span>
                       </>
@@ -383,7 +399,7 @@ export function SecurityPanel({ id, tick }: { id: string; tick: number }) {
                         <span className={`chip ${i.auth === "not stated" ? "blocking" : "done"}`}>
                           {i.auth.toUpperCase()}
                         </span>{" "}
-                        <span className="hud" style={{ fontSize: 9.5 }}>
+                        <span className="hud cite" style={{ fontSize: 9.5 }}>
                           {i.authSource ?? TX.saidNowhere}
                         </span>
                       </td>
@@ -456,7 +472,7 @@ export function SecurityPanel({ id, tick }: { id: string; tick: number }) {
                   {r.secrets.map((x) => (
                     <li key={`${x.what}|${x.source}`}>
                       {x.what}{" "}
-                      <span className="hud" style={{ fontSize: 9.5 }}>
+                      <span className="hud cite" style={{ fontSize: 9.5 }}>
                         {x.source}
                       </span>
                     </li>

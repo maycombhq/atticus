@@ -1400,6 +1400,10 @@ export const COPY = {
     openRelease: "Open Release",
     /** Eighth UX walk: blocking findings hold the hand-off; they are resolved on the change's page. */
     resolveFindings: "Resolve them on the change's page",
+    /** Ninth UX walk: a knowledge gap holds the gate; it is answered on the change's page. */
+    answerGap: "Answer it on the change's page",
+    answerGapSay:
+      "A knowledge gap is closed on the change's page: Apply fix, ask its owner (Ask), or say it isn't relevant, with a reason.",
     resolveFindingsSay:
       "Each blocking finding is resolved on the change's page: Apply fix, Not relevant or Waive, with a reason.",
     /** Eighth UX walk: a step the app has no control for opens the change's At a glance. */
@@ -1662,9 +1666,8 @@ export const COPY = {
       "The feature stage hasn't placed this change yet. Its run writes feature.md here: the feature in a few sentences, the flows it touches and the gaps.",
     placementNotDrawn:
       "feature.md isn't drawn yet. Save in Edit, or the stage's next run, draws it from feature.yaml.",
-    draftedByAi: "Drafted by AI",
     draftedByAiWhy:
-      "Drafted by AI at the feature stage, and no person has edited it here since. Read it before the hand-off; Edit changes feature.yaml, which the stage's next run reads.",
+      "The AI drafted it at the feature stage, and no person has edited it here since (The drafts below says which run). Read it before the hand-off; Edit changes feature.yaml, which the stage's next run reads.",
     editedBy: (who: string) => `Edited by ${who}`,
     editedByPerson: "Edited by a person",
     editedByWhy: (who: string, day: string) =>
@@ -3228,6 +3231,8 @@ export const COPY = {
     releasePrsCaption: "Each code repo's release PR and its checks",
     notRaisedYet: "Not raised yet",
     prState: (n: number, state: string) => `#${n} ${state.toUpperCase()}`,
+    /** Ninth UX walk: a manual Git host's release PR isn't open until a person opens it. */
+    prToOpen: "Waits on you to open it, a step in",
     nothingStopsThisChange: "Nothing stops this change right now.",
     whatStopsIt: "What stops it",
     theChangeMayBe: "The change may be archived.",
@@ -3602,7 +3607,7 @@ export const COPY = {
       `Make the change's branch in ${repos === 1 ? "its repo" : `its ${repos} repos`}`,
     workspaceOpened: "The change's branches are made in your clones.",
     noReposToOpen:
-      "The change names no repo yet, so there is no branch to make. Name its repos on its brief, or in a terminal:",
+      "The change names no repo yet, so there is no branch to make. Name its repos on its brief:",
     /** Eighth UX walk: Raise hand-off held while the gate's status loads or something blocks it. */
     raiseHeld: (n: number) =>
       `${n} thing${n === 1 ? "" : "s"} block${n === 1 ? "s" : ""} the hand-off, so Raise hand-off waits:`,
@@ -3662,6 +3667,11 @@ export const COPY = {
     editAboutDraft: "Confirm, change or drop",
     acceptAbout: "Confirm it",
     rejectAbout: "Drop it",
+    /** Ninth UX walk: each repo's buttons name the repo (their visible words first, WCAG 2.5.3). */
+    editAboutFor: (repo: string) => `Say what it is: ${repo}`,
+    editAboutDraftFor: (repo: string) => `Confirm, change or drop what ${repo} is`,
+    acceptAboutFor: (repo: string) => `Confirm it: what ${repo} is`,
+    rejectAboutFor: (repo: string) => `Drop it: what ${repo} is`,
     aboutSaved:
       "Saved to the manifest: commit it in a pull request. Every reading prompt, question and view now says what this repo is.",
     aboutDropped:
@@ -3684,6 +3694,7 @@ export const COPY = {
     compared: (b: string, added: number, removed: number, changed: number) =>
       `${b} against the baseline: ${added} added, ${removed} removed, ${changed} changed.`,
     edit: "Edit branches",
+    editFor: (repo: string) => `Edit branches of ${repo}`,
     // Seventh UX walk: a repo's build command, set here instead of in repos.manifest.yaml.
     build: "Build command",
     noBuild:
@@ -4142,6 +4153,9 @@ export const COPY = {
     done: "Done: check the answer",
     failedSay:
       "The answer didn't pass its checks. Have your assistant fix what is listed, then Done checks it again:",
+    /** Ninth UX walk: a failed hand-off says what to do once, not "waits for its answer". */
+    failedAgainSay: "Fix the answer, then press Done again.",
+    failedStill: "The answer still has the problems listed above.",
     copyPrompt: "Copy the prompt",
     nextPrompt: "Next: open the step's next prompt",
     doneOk: "Checked the answer.",
@@ -4194,6 +4208,7 @@ export const COPY = {
     /** Eighth UX walk: a finished run with no next one goes back to its change, or its task. */
     toGlance: (change: string) => `Go on with ${change} on At a glance`,
     toTaskBoard: (task: string) => `Go on with task ${task} on the Task board`,
+    toTaskBoardAny: "Go on with the tasks on the Task board",
     toNextRun: "Open the run that waits next",
     missing: (id: string) => `There is no run ${id}. It may have been removed from .runs/.`,
     runTitle: (change: string, round: number) => `${change}, round ${round}`,
@@ -5150,7 +5165,11 @@ export const COPY = {
     removeFor: (label: string) => `Take back your correction of ${label}`,
     removed: "Correction taken back.",
     copyCommit: "Copy the git command",
-    commitWhy: "Commit the corrections file so the hand-off carries it:",
+    /** Ninth UX walk: the corrections file goes with the stage's hand-off, no git in the app. */
+    ridesHandoff: (file: string) =>
+      `It is kept in ${file}, which goes with the stage's hand-off: running the stage again and raising its hand-off carries it to the pull request.`,
+    outsideHandoff: "Not raising this stage's hand-off? Propose the file for review:",
+    correctionsFile: "the change's stage/corrections.yaml",
   },
   /**
    * ADR 0181 parts 1 to 3 (screens): AI decides first, as itself; a person corrects one, and the

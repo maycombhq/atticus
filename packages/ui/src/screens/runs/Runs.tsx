@@ -1,7 +1,7 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { Api } from "@maycombhq/core";
 import { api, useApi, useLiveEvents, type Loaded } from "../../api/client.js";
-import { Note, useAction } from "../know/common.js";
+import { message, Note, useAction } from "../know/common.js";
 import { CopyButton } from "../run/shared.js";
 import { flash } from "../../app/flash.js";
 import {
@@ -11,7 +11,7 @@ import {
   filteredWhat,
   matchesWords,
 } from "../../app/filter.js";
-import { Panel, View } from "../../app/ui.js";
+import { focusIfLost, Panel, View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
 import { queryParam, Table } from "../know/common.js";
 import { Facts } from "../run/shared.js";
@@ -178,6 +178,19 @@ function TextBox({ text, label }: { text: string; label: string }) {
   );
 }
 
+/**
+ * Ninth UX walk: what Done's refusal says that the page doesn't list already (a failed run's
+ * errors are listed once, above), else that the problems listed still stand.
+ */
+export function notListed(said: string, listed: readonly string[]): string {
+  const known = new Set(listed.map((l) => l.trim()));
+  const rest = said
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l && !known.has(l));
+  return rest.length ? rest.join("\n") : R.failedStill;
+}
+
 /** One run: its facts, the prompt beside the answer, what was handed back, its step's rounds. */
 /** UX review: a waiting run's Done and Cancel, so no one needs `atticus handoff done`. */
 export function WaitingActions(p: {
@@ -185,6 +198,8 @@ export function WaitingActions(p: {
   reload?: (() => void) | undefined;
   /** The prompt to paste into the assistant. */
   prompt?: string | undefined;
+  /** Ninth UX walk: the run failed its checks; its errors are listed above, once. */
+  failed?: readonly string[] | undefined;
 }) {
   const act = useAction();
   const [next, setNext] = useState<{ lines: string[]; next?: string }>();
@@ -194,6 +209,9 @@ export function WaitingActions(p: {
     void act.run(
       () =>
         api<{ lines?: string[]; next?: string }>(path, { method: "POST", body: {} })
+          .catch((e: unknown) => {
+            throw new Error(p.failed ? notListed(message(e), p.failed) : message(e));
+          })
           .then((r) => {
             setNext({ lines: r.lines ?? [], ...(r.next ? { next: r.next } : {}) });
             // Round 39: a validated run's page drops these actions on reload; what the step did
@@ -213,7 +231,7 @@ export function WaitingActions(p: {
     );
   return (
     <div className="stack" style={{ gap: 6 }}>
-      <p className="work-say">{R.waitingSay}</p>
+      <p className="work-say">{p.failed ? R.failedAgainSay : R.waitingSay}</p>
       <div className="row" style={{ gap: 6 }}>
         {p.prompt && <CopyButton text={p.prompt} label={R.copyPrompt} />}
         <button
@@ -342,7 +360,12 @@ export function RunDetail(p: { of: Loaded<Api.RunTranscript> & { reload?: () => 
           {(t.run.state === "waiting" ||
             t.run.state === "prepared" ||
             (t.run.state === "failed" && t.run.runtime === "hand-off")) && (
-            <WaitingActions runId={t.run.runId} reload={p.of.reload} prompt={t.prompt} />
+            <WaitingActions
+              runId={t.run.runId}
+              reload={p.of.reload}
+              prompt={t.prompt}
+              failed={t.run.state === "failed" ? (t.run.errors ?? []) : undefined}
+            />
           )}
           {t.rounds.length > 1 && (
             <nav aria-label={R.rounds}>
@@ -507,15 +530,21 @@ export function afterRun(
 ): { href: string; label: string } | undefined {
   const open = (s: string) => s === "waiting" || s === "prepared";
   if (open(t.run.state)) return undefined;
+  const change = encodeURIComponent(t.run.change);
+  // Ninth UX walk: a task's run goes on on the Task board (its PR is raised there), even when the
+  // view no longer finds its task run or another run of the change waits.
+  const task = t.run.taskRun?.task;
+  if (changes?.has(t.run.change) && (task || t.run.agent === "task-runner"))
+    return {
+      href: `#/tasks?change=${change}`,
+      label: task ? R.toTaskBoard(task) : R.toTaskBoardAny,
+    };
   const next = runs?.find(
     (r) => r.change === t.run.change && r.runId !== t.run.runId && open(r.state),
   );
   if (next) return { href: runsHref({ run: next.runId }), label: R.toNextRun };
   if (!changes?.has(t.run.change)) return undefined;
-  const change = encodeURIComponent(t.run.change);
-  return t.run.taskRun
-    ? { href: `#/tasks?change=${change}`, label: R.toTaskBoard(t.run.taskRun.task) }
-    : { href: `#/cockpit?change=${change}`, label: R.toGlance(t.run.change) };
+  return { href: `#/cockpit?change=${change}`, label: R.toGlance(t.run.change) };
 }
 
 /** The Model runs screen: #/runs, ?change= for one change or step, ?q= to filter, ?run= for one. */
@@ -549,6 +578,23 @@ export function Runs({ hash }: { hash: string }) {
           changes.state === "ready" ? new Set(changes.data.map((c) => c.id)) : undefined,
         )
       : undefined;
+  // Ninth UX walk: Done went with the run's waiting actions and the keyboard fell to the page:
+  // it comes to where the run goes on, else back to every run.
+  const ahead = useRef<HTMLAnchorElement>(null);
+  const back = useRef<HTMLAnchorElement>(null);
+  const shownState = shownOne.state === "ready" ? shownOne.data.run.state : undefined;
+  const was = useRef<{ run: string | undefined; state: string | undefined }>({
+    run: undefined,
+    state: undefined,
+  });
+  useEffect(() => {
+    // Only when the run's state changed under the page (Done, Cancel), not on opening it.
+    if (!shownState) return;
+    const prev = was.current;
+    if (prev.run === current && prev.state && prev.state !== shownState)
+      focusIfLost(ahead.current ?? back.current);
+    was.current = { run: current, state: shownState };
+  }, [shownState, current]);
   return (
     <div className="bento">
       {current && (
@@ -563,11 +609,13 @@ export function Runs({ hash }: { hash: string }) {
         >
           <p className="row" style={{ margin: "0 0 10px", gap: 12, flexWrap: "wrap" }}>
             {after && (
-              <a className="btn primary" href={after.href}>
+              <a ref={ahead} className="btn primary" href={after.href}>
                 {after.label}
               </a>
             )}
-            <a href={runsHref(change ? { change } : {})}>{R.back}</a>
+            <a ref={back} href={runsHref(change ? { change } : {})}>
+              {R.back}
+            </a>
           </p>
           {one.state === "error" ? (
             <RunDetail of={{ ...one, error: one.error || R.missing(current) }} />

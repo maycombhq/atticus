@@ -6,7 +6,7 @@ import { FEATURE_OWNERS, forgeMetarepo } from "./helpers.js";
 
 /**
  * Seventh UX walk (finding 13): a change in build whose tasks are still open was "Ready to raise
- * "Raise PR"". What comes next says the tasks first; once every task is ticked it is ready.
+ * "Build ready"". What comes next says the tasks first; once every task is ticked it is ready.
  */
 
 const ID = "add-transfer-limit";
@@ -42,12 +42,12 @@ describe("what comes next for a change in build", () => {
     const r = await changeReport(await inBuild(TASKS("x", " ")), ID);
     expect(r.blockers).toEqual([]);
     expect(r.nextStep).toBe(
-      'Finish the build work (1 of 2 tasks ticked in tasks.md), then raise "Raise PR".',
+      'Finish the build work (1 of 2 tasks ticked in tasks.md), then raise "Build ready".',
     );
   });
 
   it("is ready to raise once every task is ticked", async () => {
     const r = await changeReport(await inBuild(TASKS("x", "x")), ID);
-    expect(r.nextStep).toBe('Ready to raise "Raise PR".');
+    expect(r.nextStep).toBe('Ready to raise "Build ready".');
   });
 });

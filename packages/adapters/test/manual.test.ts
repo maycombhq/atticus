@@ -339,6 +339,10 @@ describe("manual Git host", () => {
     });
     await expect(gh.createPullRequest(pr, A("bao"))).rejects.toMatchObject({ code: "conflict" });
     const steps = await store.list({ change: "add-transfer-limit" });
+    // Ninth UX walk: release PRs of three repos had one title; each names its repo.
+    expect(steps[0]!.title).toBe(
+      "Open a pull request in forge/forge-metarepo from handoff/add-transfer-limit/plan into main",
+    );
     expect(steps.map((s) => [s.id, s.action, s.dependsOn])).toEqual([
       ["open-pr-handoff-add-transfer-limit-plan", "open-pull-request", []],
       [

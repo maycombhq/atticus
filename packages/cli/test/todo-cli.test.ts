@@ -99,7 +99,7 @@ describe("atticus todo", () => {
         "3 open steps:",
         "STEP                                       CHANGE              STATE  WHAT",
         'request-firewall-rule                      add-transfer-limit  open   Raise a "Network firewall rule" request in the service desk',
-        "open-pr-handoff-add-transfer-limit-plan    add-transfer-limit  open   Open a pull request from handoff/add-transfer-limit/plan into main",
+        "open-pr-handoff-add-transfer-limit-plan    add-transfer-limit  open   Open a pull request in forge/forge-metarepo from handoff/add-transfer-limit/plan into main",
         "report-pr-handoff-add-transfer-limit-plan  add-transfer-limit  open   Record the reviews and checks on the PR from handoff/add-transfer-limit/plan (Plan ready), and whether it merged (after open-pr-handoff-add-transfer-limit-plan)",
         "Show a step with atticus todo show <step>; record it with atticus todo done <step> --result name=value.",
       ].map((l) => l.replace(/ +$/, "")),

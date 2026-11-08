@@ -957,11 +957,13 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
           ),
         );
         if (res.code === 2) throw refused(res);
+        // Ninth UX walk: a merge not pulled yet is brought in on Home, not with git pull.
+        const { appLines } = await import("./handoff-resume.js");
         return {
           status: 200,
           body: {
             ...(await changeDetail(root, params.changeId!)),
-            lines: [...res.out, ...res.err],
+            lines: appLines([...res.out, ...res.err]),
           },
         };
       })
@@ -1178,11 +1180,13 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
         const after = await findRun(root, params.runId!);
         ctx.events.publish({ type: "run.changed", runId: after.runId, state: after.state });
         // The answer had problems, the build failed, or the task needs a person: said as such,
-        // with what the command printed, never as a success.
-        if (res.code !== 0) throw refused(res);
+        // with what the command printed, never as a success. Ninth UX walk: in the app's words
+        // (fix the answer, then press Done again; not atticus handoff done <run> again).
+        const { resumeAfterDone, appLines } = await import("./handoff-resume.js");
+        if (res.code !== 0)
+          throw refused({ ...res, out: appLines(res.out), err: appLines(res.err) });
         // Fourth UX walk: a step the app prepared is finished here too: its resume writes what
         // the answer said (a draft's proposal and specs), or offers its next prompt (`next`).
-        const { resumeAfterDone, appLines } = await import("./handoff-resume.js");
         const stepRunner =
           deps.runStep ??
           (async (args: string[]) => {

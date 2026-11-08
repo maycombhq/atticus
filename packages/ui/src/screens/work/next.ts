@@ -18,7 +18,16 @@ export type OnboardingData = Api.OnboardingViewT;
 
 /** Seventh UX walk: the kinds of step the app can take in place (step-action.tsx). */
 export type StepKind =
-  "new-change" | "handoff" | "task" | "brief" | "answer" | "merge" | "release" | "findings";
+  | "new-change"
+  | "handoff"
+  | "task"
+  | "brief"
+  | "answer"
+  | "merge"
+  | "release"
+  | "findings"
+  /** Ninth UX walk: a knowledge gap holds the gate; answered on the change's page. */
+  | "gap";
 
 /** The kind of step `atticus next` names (its `step`), where the app can take it in place. */
 export function kindOfStep(step: string | undefined): StepKind | undefined {
@@ -227,7 +236,19 @@ function gateStep(page: Stage, c: ChangeRow, cockpit: Api.ChangeCockpitT): Step 
     (r) => r.code !== "no-handoff" && r.code !== "pr-not-merged" && r.code !== "changes-requested",
   );
   const status = { command: `atticus change status ${c.id}` };
-  if (others.length) return { ...status, why: W.why.stageBlocked(page, others[0]!.message) };
+  // Ninth UX walk: a knowledge gap or a blocking finding is resolved on the change's page (Run
+  // next said "In a terminal… No slash command does this step yet"); the command stays folded.
+  const first = others[0];
+  if (first)
+    return {
+      ...status,
+      why: W.why.stageBlocked(page, first.message),
+      ...(first.code === "open-gap"
+        ? { kind: "gap" as const, change: c.id }
+        : first.code === "blocking-finding"
+          ? { kind: "findings" as const, change: c.id }
+          : {}),
+    };
   const why = W.why.stageDone(page, cockpit.nextStep);
   // Seventh UX walk: the PR the change waits on, as its cockpit's next step names it.
   if (cockpit.next?.step === "merge")
@@ -275,6 +296,12 @@ export function stageStep(
   // ADR 0113: every planning page shows a small change's one step.
   const planning = (s: Stage) => s === "feature" || s === "architecture" || s === "stories";
   if (c.fastPath && planning(at) && planning(page)) return changeStep(c, tasks);
+  // Ninth UX walk: on Tasks (no stage loop of its own), the stage the change is at is done (it
+  // said "at the stories stage" with the stories done): the change's step is that stage's gate,
+  // as the stage's own page says.
+  const atOwn = cockpit?.stages.find((s) => s.stage === at);
+  if (page === "tasks" && cockpit?.id === c.id && atOwn?.state === "done" && !c.fastPath)
+    return gateStep(at, c, cockpit);
   const screen = STAGE_SCREEN[at];
   return {
     command: `atticus change status ${c.id}`,

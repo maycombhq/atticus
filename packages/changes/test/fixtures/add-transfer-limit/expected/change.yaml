@@ -180,7 +180,7 @@ history:
     at: 2026-10-20T11:00:00Z
     by: dee
     pr: 4
-    reason: Raise PR merged
+    reason: Build ready merged
   - from: qa
     to: release-ready
     at: 2026-10-20T13:00:00Z

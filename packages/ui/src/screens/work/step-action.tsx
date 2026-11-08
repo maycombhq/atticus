@@ -72,7 +72,13 @@ export function hasAction(p: {
   change?: string | undefined;
   pr?: string | undefined;
 }) {
-  if (p.kind === "handoff" || p.kind === "task" || p.kind === "release" || p.kind === "findings")
+  if (
+    p.kind === "handoff" ||
+    p.kind === "task" ||
+    p.kind === "release" ||
+    p.kind === "findings" ||
+    p.kind === "gap"
+  )
     return !!p.change;
   if (p.kind === "merge") return !!p.pr;
   return !!p.kind || stepArgs(p.command) !== undefined;
@@ -120,6 +126,16 @@ export function StepAction(p: {
             {R.resolveFindingsSay}
           </p>
           {link(`#/changes/${encodeURIComponent(p.change)}`, R.resolveFindings)}
+        </div>
+      ) : null;
+    case "gap":
+      // Ninth UX walk: a knowledge gap is answered on the change's page (Apply fix, Ask, Not relevant).
+      return p.change ? (
+        <div className="stack" style={{ gap: 4 }}>
+          <p className="muted" style={{ margin: 0 }}>
+            {R.answerGapSay}
+          </p>
+          {link(`#/changes/${encodeURIComponent(p.change)}`, R.answerGap)}
         </div>
       ) : null;
     case "merge":

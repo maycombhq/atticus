@@ -147,6 +147,8 @@ export function CockpitView(p: {
                 >
                   {C.stage(C.stages[s.stage]!, C.marks[mark]!)}
                 </a>
+                {/* Ninth UX walk: "done2 drafts" ran together; a space keeps them apart. */}
+                {(s.drafts > 0 || s.openQuestions > 0) && " "}
                 {(s.drafts > 0 || s.openQuestions > 0) && (
                   <span className="muted" style={{ fontSize: 11.5, marginLeft: 4 }}>
                     {C.progress(s.drafts, s.rounds, s.openQuestions)}
@@ -207,19 +209,21 @@ export function CockpitView(p: {
             {c.repos.map((r) => (
               <li key={r.id}>
                 <span className="mono">{r.id}</span>: {C.branchOn(r.branch, r.base)}
-                {r.pr && (
+                {r.pr && !isManualLink(r.pr) && (
                   <>
                     {" · "}
-                    {isManualLink(r.pr) ? (
-                      <ManualPr />
-                    ) : (
-                      <ExternalLink href={r.pr}>{C.pr}</ExternalLink>
-                    )}
+                    <ExternalLink href={r.pr}>{C.pr}</ExternalLink>
                   </>
                 )}
               </li>
             ))}
           </ul>
+        )}
+        {/* Ninth UX walk: one PR a manual Git host leaves to a person is said once, not per repo. */}
+        {c.repos.some((r) => r.pr && isManualLink(r.pr)) && (
+          <p className="muted" style={{ margin: 0 }}>
+            <ManualPr />
+          </p>
         )}
       </section>
     </div>
@@ -276,9 +280,14 @@ export function OpenWorkspace({ change, onDone }: { change: string; onDone?: () 
           ) : (
             <>
               <p className="muted" style={{ margin: 0 }}>
-                {C.noReposToOpen}
+                {C.noReposToOpen}{" "}
+                <a href={`#/brief?change=${encodeURIComponent(change)}`}>{C.writeBrief}</a>
               </p>
-              <Command text={command} label={C.copyCommand} noRun />
+              {/* Ninth UX walk: the command only under Or in a terminal, never the step itself. */}
+              <details className="work-terminal">
+                <summary>{COPY.runNext.orTerminal}</summary>
+                <Command text={command} label={C.copyCommand} noRun />
+              </details>
             </>
           )
         }

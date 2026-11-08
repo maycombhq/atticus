@@ -4,6 +4,7 @@ import { api, useApi, useReloadOnFiles, type Loaded } from "../../api/client.js"
 import { escapeCloses, focusIfLost, Panel, View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
 import { message } from "../know/common.js";
+import { Propose } from "../../app/propose.js";
 import { runsHref } from "../runs/Runs.js";
 import { Command, PrepareFirst } from "./RunNext.js";
 import "./work.css";
@@ -15,7 +16,9 @@ import "./work.css";
  * and Correct on the draft and on each of its items (a target flow's step, a story's or a
  * proposal's section, a task). A correction, for the item or every similar one, waits for the
  * stage's next run, which reads it as the person's word; the page offers that run (Prepare first)
- * and shows what each run did with the corrections. The app runs no git: it shows the command.
+ * and shows what each run did with the corrections. The app runs no git: the corrections file
+ * goes with the stage's hand-off (ninth UX walk), Propose offers it outside one, and the git
+ * command stays under "Or in a terminal".
  */
 
 const D = COPY.stageDrafts;
@@ -319,10 +322,41 @@ function DraftRow(p: {
   );
 }
 
+/**
+ * Ninth UX walk: what a saved correction says. Not "commit the corrections file" with git: the
+ * file goes with the stage's hand-off; outside one, Propose for review; the command is folded.
+ */
+export function CorrectionSaved(p: { text: string; files?: string[]; commit?: string }) {
+  return (
+    <>
+      <p className="work-say" style={{ margin: 0 }}>
+        {p.text}
+      </p>
+      {p.commit && (
+        <>
+          <p className="work-why" style={{ margin: "4px 0" }}>
+            {D.ridesHandoff(p.files?.join(", ") || D.correctionsFile)}
+          </p>
+          <p className="work-why" style={{ margin: "4px 0" }}>
+            {D.outsideHandoff}
+          </p>
+          <Propose scope="work" />
+          <details className="work-terminal">
+            <summary>{COPY.runNext.orTerminal}</summary>
+            <Command text={p.commit} label={D.copyCommit} noRun />
+          </details>
+        </>
+      )}
+    </>
+  );
+}
+
 /** The panel from loaded data, so tests can render every state. */
 export function StageDraftsView(p: { of: Loaded<Drafts> } & StageDraftsHandlers) {
   const [open, setOpen] = useState<Target | undefined>();
-  const [said, setSaid] = useState<{ text: string; commit?: string; n: number } | undefined>();
+  const [said, setSaid] = useState<
+    { text: string; files?: string[]; commit?: string; n: number } | undefined
+  >();
   const [busy, setBusy] = useState(false);
   const from = useRef<HTMLButtonElement | null>(null);
   const status = useRef<HTMLDivElement>(null);
@@ -336,6 +370,7 @@ export function StageDraftsView(p: { of: Loaded<Drafts> } & StageDraftsHandlers)
     if (r)
       setSaid((s) => ({
         text: D.saved(r.correction.label),
+        files: r.files,
         commit: r.commit,
         n: (s?.n ?? 0) + 1,
       }));
@@ -387,19 +422,11 @@ export function StageDraftsView(p: { of: Loaded<Drafts> } & StageDraftsHandlers)
               </ul>
               <div ref={status} tabIndex={-1} role="status">
                 {said && (
-                  <>
-                    <p className="work-say" style={{ margin: 0 }}>
-                      {said.text}
-                    </p>
-                    {said.commit && (
-                      <>
-                        <p className="work-why" style={{ margin: "4px 0" }}>
-                          {D.commitWhy}
-                        </p>
-                        <Command text={said.commit} label={D.copyCommit} noRun />
-                      </>
-                    )}
-                  </>
+                  <CorrectionSaved
+                    text={said.text}
+                    {...(said.files ? { files: said.files } : {})}
+                    {...(said.commit ? { commit: said.commit } : {})}
+                  />
                 )}
               </div>
               <section aria-label={D.waitingTitle}>

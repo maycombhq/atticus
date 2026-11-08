@@ -151,12 +151,14 @@ describe("focus after saving an answer (WCAG 2.4.3)", () => {
 });
 
 describe("the header's Ask field shows focus (WCAG 2.4.7)", () => {
-  it("has a focus rule on the form that holds the field", () => {
+  // Ninth UX walk: the field draws its own ring (the walk read no outline on the focused field).
+  it("has a focus rule on the field and on the form that holds it", () => {
     const css = readFileSync(
       fileURLToPath(new URL("../src/styles/hud.css", import.meta.url)),
       "utf8",
     );
-    expect(css).toMatch(/\.ask-form:focus-within\s*\{[^}]*outline:\s*2px solid/);
+    expect(css).toMatch(/\.ask-form input:focus-visible\s*\{[^}]*outline:\s*2px solid/);
+    expect(css).toMatch(/\.ask-form:focus-within\s*\{[^}]*border-color/);
   });
 });
 

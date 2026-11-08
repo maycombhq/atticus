@@ -277,7 +277,8 @@ export class ManualGitHost extends ManualBase implements GitHost {
         slug: `open-pr-${input.head}`,
         action: "open-pull-request",
         key: `git-host|pr|${input.repo}|${input.head}|${number}`,
-        title: `Open a pull request from ${input.head} into ${input.base}`,
+        // Ninth UX walk: the release PRs of three repos had one title on Home; the repo tells them apart.
+        title: `Open a pull request in ${input.repo} from ${input.head} into ${input.base}`,
         where: `Git host: ${input.repo}, new pull request`,
         ...(change ? { change } : {}),
         ...(proc ?? {}),

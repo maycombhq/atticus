@@ -19,12 +19,13 @@ type Placement = Api.PlacementViewT;
 
 const day = (at: string | undefined) => (at ? at.slice(0, 10) : "");
 
-/** Who wrote it last, as a chip and a line. */
+/** Who wrote it last: a person's edit as a chip and a line; the AI's as a line (The drafts chips it). */
 function Drafted({ d }: { d: NonNullable<Placement["drafted"]> }) {
   if (d.by === "ai")
     return (
       <p className="work-say" style={{ margin: 0 }}>
-        <span className="chip ai">{W.draftedByAi}</span> {W.draftedByAiWhy}
+        {/* Ninth UX walk: The drafts below chips feature.md as drafted by AI; said once. */}
+        {W.draftedByAiWhy}
       </p>
     );
   return (

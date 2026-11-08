@@ -681,7 +681,7 @@ describe("M3 exit step 2: the seeded feature from Define to Release", () => {
   );
 
   it(
-    "Raise PR: the developer raises it and the other developer approves",
+    "Build ready: the developer raises it and the other developer approves",
     async () => {
       expect((await run("change", "handoff", CHANGE, "--approve", "--by", "dev")).code).toBe(0);
       gh.review(METAREPO, 4, "dee", "approved");

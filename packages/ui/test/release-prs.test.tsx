@@ -79,7 +79,9 @@ it("raises the release PRs on the person's click and lists each repo's PR", asyn
   expect((prs.props.empty as (d: unknown) => boolean)({ ...DETAIL, repos: [] })).toBe(true);
   const rows = all((prs.props.children as (d: unknown) => unknown)(DETAIL));
   expect(rows.some((e) => e.type === "span" && text(e).includes(T.notRaisedYet))).toBe(true);
-  const link = rows.find((e) => e.type === "a")!;
+  // Ninth UX walk: each PR is a cell of its own (a manual Git host's placeholder waits on you).
+  const cell = rows.find((e) => e.props.pr !== undefined)!;
+  const link = all((cell.type as (p: unknown) => unknown)(cell.props)).find((e) => e.type === "a")!;
   expect(link.props.href).toBe("https://git.example.com/forge/forge-portal-bff/pull/4");
   expect(text(link)).toContain("#4 OPEN");
 });

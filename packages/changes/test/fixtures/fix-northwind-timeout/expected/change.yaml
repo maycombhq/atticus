@@ -63,7 +63,7 @@ history:
     at: 2026-10-21T02:45:00Z
     by: dee
     pr: 1
-    reason: Raise PR merged
+    reason: Build ready merged
   - from: release-ready
     to: released
     at: 2026-10-21T03:20:00Z

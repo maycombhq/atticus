@@ -58,7 +58,8 @@ export function handoffName(type: ChangeType, phase: PhaseId): string {
     case "plan":
       return "Plan ready";
     case "build":
-      return "Raise PR";
+      // Ninth UX walk: "raise \"Raise PR\"" said raise twice; the build is ready for review.
+      return "Build ready";
     case "qa":
       return "QA sign-off";
     case "release":

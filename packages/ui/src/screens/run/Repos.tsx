@@ -113,6 +113,8 @@ function About({ r, onChanged }: { r: Repo; onChanged?: () => void }) {
           className="btn"
           aria-expanded={editing}
           aria-controls={`repo-${r.id}-about-form`}
+          // Ninth UX walk: the same words on every repo's row; the name says which repo.
+          aria-label={d ? R.editAboutDraftFor(r.id) : R.editAboutFor(r.id)}
           onClick={() => {
             // Opened with what the repo says now (a reload may have brought a new line).
             if (!editing) {
@@ -129,6 +131,7 @@ function About({ r, onChanged }: { r: Repo; onChanged?: () => void }) {
             type="button"
             className="btn primary"
             disabled={save.busy}
+            aria-label={R.acceptAboutFor(r.id)}
             onClick={() => void put({ accept: true }, R.aboutSaved)}
           >
             {R.acceptAbout}
@@ -139,6 +142,7 @@ function About({ r, onChanged }: { r: Repo; onChanged?: () => void }) {
             type="button"
             className="btn"
             disabled={save.busy}
+            aria-label={R.rejectAboutFor(r.id)}
             onClick={() => void put({ reject: true }, R.aboutDropped)}
           >
             {R.rejectAbout}
@@ -392,6 +396,7 @@ export function RepoRow({ r, onChanged }: { r: Repo; onChanged?: () => void }) {
           type="button"
           className="btn"
           aria-expanded={editing}
+          aria-label={R.editFor(r.id)}
           onClick={() => {
             // Opened with the branches the manifest has now, not those of the first load.
             if (!editing) {

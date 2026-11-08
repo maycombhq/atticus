@@ -82,7 +82,8 @@ describe("Feature design shows where the feature lands", () => {
     expect(html).toContain(esc(W.placementTitle));
     expect(html).toContain("Tellers lock a card from the branch.");
     expect(html).toContain("No unlock by tellers");
-    expect(html).toContain(esc(W.draftedByAi));
+    // Ninth UX walk: The drafts chips feature.md as drafted by AI; this panel says it in words.
+    expect(html).not.toContain("chip ai");
     expect(html).toContain(esc(W.draftedByAiWhy));
     expect(html).toContain(`aria-label="${esc(W.editPlacementLabel)}"`);
     expect(html).toContain(`${REL}/feature.md`);
@@ -100,7 +101,8 @@ describe("Feature design shows where the feature lands", () => {
         onEdit={() => {}}
       />,
     );
-    expect(html).not.toContain(esc(W.draftedByAi));
+    expect(html).not.toContain("chip ai");
+    expect(html).not.toContain(esc(W.draftedByAiWhy));
     expect(html).toContain(esc(W.editedBy("Priya Nair")));
     expect(html).toContain(esc(W.editedByWhy("Priya Nair", "2026-11-08")));
   });

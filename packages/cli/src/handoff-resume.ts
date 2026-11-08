@@ -49,6 +49,16 @@ export function appLines(lines: string[], o: { next?: boolean } = {}): string[] 
   return lines.map((l) =>
     l
       .replace(/\s*When it is done(?:, run)?: atticus handoff done \S+.*$/, ` ${ready}`)
+      // Ninth UX walk: an answer that failed its checks is fixed, then Done is pressed again.
+      .replace(/,? (?:and|then) run atticus handoff done \S+ again/g, ", then press Done again")
+      .replace(/\b([Rr])un atticus handoff done \S+ again/g, (_m, r: string) =>
+        r === "R" ? "Press Done again" : "press Done again",
+      )
+      // Ninth UX walk: the app's Bring in what merged does the pull (the command line keeps it).
+      .replace(
+        /: pull \S+, then run atticus change learn\.$/,
+        ": Bring in what merged on Home; the comparison with what Atticus drafted is kept the next time the drafts are measured.",
+      )
       .replace(
         /^Answer each with atticus questions answer <id> .*, or with \/atticus-answer\.$/,
         "Answer each on Questions.",

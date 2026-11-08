@@ -68,6 +68,15 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ### Fixed before release (review)
 
+- Ninth UX walk (no terminal in the daily path, wording):
+  - **A saved stage correction says where the file goes**: stage/corrections.yaml goes with the stage's hand-off; outside one, Propose for review; the git command is under "Or in a terminal".
+  - **A knowledge gap or a blocking finding on a stage's gate has an in-app step** on Run next: answer it on the change's page (Apply fix, Ask, Not relevant), not "In a terminal… No slash command does this step yet".
+  - **The app's lines say the app's actions**: a failed answer says "fix the answer, then press Done again", and a merge not pulled yet says "Bring in what merged on Home" (the command line keeps its commands).
+  - **A failed hand-off's page says one state and each error once**; a task's run goes on to the Task board after Done, and the keyboard comes to that link; the AI task runs count a task with the assistant.
+  - **At a glance**: "done 2 drafts" no longer runs together, a manual Git host's PR is said once (not once per repo), and the workspace command is only under "Or in a terminal".
+  - **Words and layout**: no "2 edges ()" in the Impact explorer; Feature design chips feature.md as drafted by AI once; paths and cites keep their case; the build hand-off is "Build ready" (not 'raise "Raise PR"'); a manual host's open-PR step names its repo; the Tasks page follows the change's step once the stories are done; the Release plan's rollback label is apart from its words.
+  - **Release PRs on a manual Git host** say they wait on you to open them (Home › Manual steps), never "#103 DRAFT".
+  - **Set up › Repos**: Say what it is, Confirm it, Drop it and Edit branches name their repo; the Ask Atticus field draws its own focus ring.
 - Round 45 (review):
   - **The AI never overrides a person's word on a pairing.** Atticus adds an AI pairing only under the corrections file's lock, and never for a call a person has paired or said reaches none, whenever they wrote it (a person's "none" before the run, or a pairing made while the Copilot session ran).
   - **One Run all ready tasks at a time**: the server checks and starts the job in one tick, and the button is held from the click, so a double click starts one job. The panel says when it is reading the ready list and when it couldn't.

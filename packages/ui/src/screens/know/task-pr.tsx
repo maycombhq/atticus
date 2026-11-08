@@ -53,6 +53,21 @@ export function taskRunsOnly<R extends { agent: string; taskRun?: unknown }>(run
 }
 
 /**
+ * Ninth UX walk: the AI task runs, with each run a task names as its latest (a task with the
+ * assistant waits on a run the run list may not mark as a task's yet): "No task has run with AI
+ * yet" was said while task 1.1 was with the assistant.
+ */
+export function taskRunsShown<R extends { runId: string; agent: string; taskRun?: unknown }>(
+  runs: readonly R[],
+  tasks: readonly { run?: string | undefined }[] | undefined,
+) {
+  const named = new Set((tasks ?? []).map((t) => t.run).filter(Boolean));
+  return runs.filter(
+    (r) => r.agent === "task-runner" || r.taskRun !== undefined || named.has(r.runId),
+  );
+}
+
+/**
  * At a glance's next step when it names a task (`atticus task run <change> <task>`) that has run
  * already: drafted and waiting for its PR, its PR raised, or with the assistant. Then the task's
  * step is said, and the first task not run yet is offered beside it. Undefined otherwise.

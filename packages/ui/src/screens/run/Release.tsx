@@ -11,9 +11,30 @@ import {
 } from "./ReleaseViews.js";
 import { Note, plural, useAction } from "./shared.js";
 import { COPY } from "../../copy.js";
-import { isManualLink, ManualHandoff } from "../know/task-pr.js";
+import { isManualLink, ManualHandoff, MANUAL_STEPS_HREF } from "../know/task-pr.js";
 
 const T = COPY.release;
+
+/**
+ * A repo's release PR: its number and state, linked on the Git host. Ninth UX walk: a manual Git
+ * host's placeholder (manual://) isn't a PR yet: it showed "#103 DRAFT" before anyone opened it;
+ * it waits on a person, a step on Home.
+ */
+export function ReleasePrCell({ pr }: { pr: NonNullable<RepoRow["pr"]> }) {
+  if (pr.url && isManualLink(pr.url))
+    return (
+      <span>
+        {T.prToOpen} <a href={MANUAL_STEPS_HREF}>{COPY.phase.manualSteps}</a>
+      </span>
+    );
+  return pr.url && /^https?:/.test(pr.url) ? (
+    <a href={pr.url} target="_blank" rel="noreferrer">
+      {T.prState(pr.number, pr.state)}
+    </a>
+  ) : (
+    <>{T.prState(pr.number, pr.state)}</>
+  );
+}
 
 interface ReleaseItem {
   id: string;
@@ -351,13 +372,7 @@ export function Detail({ id }: { id: string }) {
                       <td className="mono">{x.branch}</td>
                       <td>
                         {x.pr ? (
-                          x.pr.url && /^https?:/.test(x.pr.url) ? (
-                            <a href={x.pr.url} target="_blank" rel="noreferrer">
-                              {T.prState(x.pr.number, x.pr.state)}
-                            </a>
-                          ) : (
-                            T.prState(x.pr.number, x.pr.state)
-                          )
+                          <ReleasePrCell pr={x.pr} />
                         ) : (
                           <span className="muted">{T.notRaisedYet}</span>
                         )}

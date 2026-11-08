@@ -38,7 +38,7 @@ import {
   ManualHandoff,
   runIsTheStep,
   TaskRunState,
-  taskRunsOnly,
+  taskRunsShown,
   TaskTick,
 } from "./task-pr.js";
 
@@ -1113,11 +1113,19 @@ function TasksByRepo({
 
 function RunsPanel({ change }: { change: string }) {
   const runs = useApi<Run[]>(`/api/changes/${change}/runs`);
+  // Ninth UX walk: a task with the assistant names its run; it counts here too.
+  const tasks = useApi<Task[]>(`/api/changes/${encodeURIComponent(change)}/tasks`);
   useLiveEvents((e) => {
-    if (e.type === "run.changed") runs.reload();
+    if (e.type === "run.changed" || e.type === "file.changed") {
+      runs.reload();
+      tasks.reload();
+    }
   });
   // Sixth UX walk: the task runs only; the critics' and stages' runs are on Model runs.
-  const mine = runs.state === "ready" ? taskRunsOnly(runs.data) : [];
+  const mine =
+    runs.state === "ready"
+      ? taskRunsShown(runs.data, tasks.state === "ready" ? tasks.data : undefined)
+      : [];
   const passed = mine.filter((r) => r.state === "validated").length;
   return (
     <Panel title={T.aiTaskRuns} span="span 4" kind="dark">

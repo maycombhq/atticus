@@ -188,7 +188,7 @@ describe("a task that has run, on the Task board", () => {
 const COCKPIT: Api.ChangeCockpitT = {
   id: CHANGE,
   state: "build",
-  nextStep: 'Ready to raise "Raise PR".',
+  nextStep: 'Ready to raise "Build ready".',
   next: {
     step: "task",
     command: `atticus task run ${CHANGE} 1.1`,

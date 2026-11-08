@@ -66,6 +66,15 @@ export function edgeSummary(labels: string[], max = 5): string {
     : T.andMore(labels.slice(0, max).join(", "), labels.length - max);
 }
 
+/**
+ * Ninth UX walk: a lit box's edge labels in brackets, or nothing when its edges have none (the
+ * Impact explorer said "2 edges ()").
+ */
+export function edgeLabels(labels: readonly (string | undefined)[]): string {
+  const named = [...new Set(labels.filter((l): l is string => !!l && !!l.trim()))];
+  return named.length ? ` (${edgeSummary(named)})` : "";
+}
+
 /** A box's text: its label, and how many of its calls stay inside it. */
 export const boxText = (label: string, inside = 0) =>
   inside ? `${label} · ${inside} inside` : label;
@@ -578,9 +587,7 @@ export function FlowCanvas({
               label(hot),
               hotEdges.length,
               hotEdges.length === 1 ? "" : "s",
-              hotEdges.length
-                ? ` (${edgeSummary([...new Set(hotEdges.map((e) => e.label).filter(Boolean))])})`
-                : "",
+              edgeLabels(hotEdges.map((e) => e.label)),
               l.inside.get(hot) ? T.callsInsideIt(l.inside.get(hot) ?? 0) : "",
             )
           : view.type === "context" && view.nodes.length === 1

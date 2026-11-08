@@ -573,7 +573,6 @@ a:hover {
   min-width: 0;
   background: transparent;
   border: 0;
-  outline: none;
   color: var(--text);
   font: inherit;
   font-size: 12.5px;
@@ -581,10 +580,17 @@ a:hover {
 .ask-form input::placeholder {
   color: var(--placeholder);
 }
-/* Seventh UX walk (WCAG 2.4.7): the field draws no outline of its own, so the form shows focus. */
-.ask-form:focus-within {
+/*
+ * WCAG 2.4.7: the field shows its own focus ring (ninth UX walk: the walk found no outline on the
+ * focused field, since the ring was only on the form); the form's border lights too.
+ */
+.ask-form input:focus-visible {
   outline: 2px solid var(--accent-soft);
-  outline-offset: 2px;
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+.ask-form:focus-within {
+  border-color: var(--accent-soft);
 }
 
 /* ---------------------------------------------------------------- building blocks */
@@ -661,6 +667,17 @@ a:hover {
 }
 .mono {
   font-family: var(--mono);
+}
+/*
+ * Ninth UX walk: a path or a cite keeps its own case ("RESTS ON: SRC/MAIN/JAVA/…" read wrong): a
+ * mono inside a HUD label or a heading, and a cite set as HUD, aren't upper-cased.
+ */
+.hud .mono,
+.h .mono,
+.chip .mono,
+.cite {
+  text-transform: none;
+  letter-spacing: 0.02em;
 }
 /* A command shown to copy can be two lines (git add, then git commit): keep its line break. */
 code.mono {
