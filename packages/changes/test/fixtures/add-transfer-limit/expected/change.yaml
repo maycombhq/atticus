@@ -112,6 +112,8 @@ handoffs:
     artifacts:
       - path: tasks.md
         sha256: 5f51a266de34151a73907f779ccfd6bf3eba1fcc31eeb43d606b666fd72f14c2
+      - path: tasks/1.1/report.md
+        sha256: 9a857496a68057c3ebcbeb15e9c86b426e566ad39b2a30c1838aed3bb54c2112
     branch: handoff/add-transfer-limit/build
     by: dev
     openedAt: 2026-10-20T09:00:00Z

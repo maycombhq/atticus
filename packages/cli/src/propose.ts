@@ -5,6 +5,7 @@ import { dirname, join, relative } from "node:path";
 import {
   catalogDirOf,
   changesRelOf,
+  decisionsRelOf,
   factsDirOf,
   mapDirOf,
   specsDirOf,
@@ -12,10 +13,11 @@ import {
   loadOrgPack,
   orgPackDirOf,
   questionsDirOf,
+  type ManualStep,
 } from "@maycombhq/core";
 import type { Output } from "./commands.js";
 import { createAdapters, fileStepStore, type GitHost } from "@maycombhq/adapters";
-import { gitHandoffPublisher, type HandoffPublisher } from "@maycombhq/changes";
+import { gitHandoffPublisher, mergeChangeText, type HandoffPublisher } from "@maycombhq/changes";
 import { initiativesDirOf } from "@maycombhq/initiatives";
 import { createGit, type GitRunner } from "@maycombhq/workspace";
 
@@ -59,6 +61,9 @@ export function scopeDirs(root: string, scope: ProposeScope): string[] {
   const catalog = rel(root, catalogDirOf(root));
   const map = rel(root, mapDirOf(root));
   const specs = rel(root, specsDirOf(root));
+  // Ninth UX walk: a batch of decisions' record (ADR 0181), which Undo reads, goes with the
+  // answers and corrections it names, or another clone can't undo the batch.
+  const decisions = decisionsRelOf(root);
   switch (scope) {
     // Round 36: the fields filled in the app are each open change's snow.md, nothing else of
     // the change (its other files are its stages' and its hand-off's).
@@ -75,9 +80,10 @@ export function scopeDirs(root: string, scope: ProposeScope): string[] {
         rel(root, orgPackDirOf(root)),
         map,
         specs,
+        decisions,
       ];
     case "corrections":
-      return [facts, catalog, map, specs];
+      return [facts, catalog, map, specs, decisions];
     // An audit is its repo's audit file, not every repo's facts.
     case "audit":
       return [`${facts}/*.audit.yaml`];
@@ -90,9 +96,14 @@ export function scopeDirs(root: string, scope: ProposeScope): string[] {
         rel(root, orgPackDirOf(root)),
         map,
         specs,
+        decisions,
         rel(root, initiativesDirOf(root)),
         `${changesRelOf(root)}/*/review/outcomes.yaml`,
         `${changesRelOf(root)}/*/snow.md`,
+        // Ninth UX walk: a person's corrections of a stage's drafts, and who drafted each file
+        // (ADR 0181), saved in the app; they ride the stage's hand-off too.
+        `${changesRelOf(root)}/*/stage/corrections.yaml`,
+        `${changesRelOf(root)}/*/stage/drafted.yaml`,
       ];
     case "org-pack":
       return [rel(root, orgPackDirOf(root))];
@@ -335,7 +346,7 @@ export async function proposeForReview(
 export async function bringInMerged(
   root: string,
   io: Output,
-  o: { git?: GitRunner } = {},
+  o: { git?: GitRunner; now?: Date } = {},
 ): Promise<number> {
   const git = o.git ?? createGit();
   const run = async (args: string[]) => (await git(args, root)).stdout;
@@ -467,9 +478,24 @@ export async function bringInMerged(
       const baseText = inHead ? await at("HEAD") : handoff ? await at(handoff) : "";
       const mine = await readFile(join(root, k), "utf8");
       original.set(k, mine);
+      const theirsText = await at(up);
+      // Ninth UX walk: the record is merged by its fields (Sync's state and hand-off entries
+      // here, the hand-off branch's copy upstream), refused only when both sides changed the same
+      // field differently. A file that isn't a record Atticus can read is merged as text.
+      const fields = mergeChangeText(baseText, mine, theirsText);
+      if (fields && !fields.ok) {
+        io.err(
+          `What merged also changes ${fields.field} in ${k} where your copy changed it differently, so nothing was changed. Propose your edits for review, or ask someone who uses git to bring them together.`,
+        );
+        return 1;
+      }
+      if (fields) {
+        held.set(k, fields.text);
+        continue;
+      }
       await writeFile(base, baseText, "utf8");
       await writeFile(ours, mine, "utf8");
-      await writeFile(theirs, await at(up), "utf8");
+      await writeFile(theirs, theirsText, "utf8");
       const merged = await git(["merge-file", "-p", ours, base, theirs], root).then(
         (r) => ({ ok: true, text: r.stdout }),
         () => ({ ok: false, text: "" }),
@@ -526,9 +552,17 @@ export async function bringInMerged(
     );
     return 1;
   }
+  const closed = await closeMergedSteps(root, up, run, o.now);
+  const sayClosed = () => {
+    if (closed.length)
+      io.out(
+        `Closed the manual steps of ${closed.length === 1 ? "a pull request" : `${closed.length} pull requests`} that merged (merged, seen by Bring in): ${closed.join(", ")}.`,
+      );
+  };
   if (!incoming.size && !done.length) {
     io.out(`Nothing new has merged on ${up} yet: your copy is up to date with it.`);
     if (kept.length) io.out(`Your own edits stay as they were: ${editsText(kept)}.`);
+    sayClosed();
     return 0;
   }
   io.out(
@@ -539,5 +573,97 @@ export async function bringInMerged(
       `Merged with your copy's newer state: ${[...held.keys()].join(", ")} (Sync's state and the reviewer's edits are both kept).`,
     );
   if (ownEdits.length) io.out(`Your own edits stay as they were: ${editsText(ownEdits)}.`);
+  sayClosed();
   return 0;
+}
+
+/**
+ * Ninth UX walk: on a manual Git host, the steps of a pull request into the metarepo (a hand-off's
+ * or a proposal's) stayed open after Bring in had brought its merge in. A PR whose branch tip is
+ * now in the upstream branch, merged in (not on its first-parent line, where a branch with no
+ * commits of its own would be), has merged: its open steps are closed with the note "merged, seen
+ * by Bring in", so Sync reads the PR as merged. Who approved, which only a person can say, is
+ * left out; the PR keeps the number and link Atticus gave it. Returns the PRs' branches.
+ */
+async function closeMergedSteps(
+  root: string,
+  up: string,
+  run: (args: string[]) => Promise<string>,
+  now?: Date,
+): Promise<string[]> {
+  let repo: unknown;
+  try {
+    repo = (await loadOrgPack(orgPackDirOf(root))).runtime.adapters.gitHost?.settings.metarepo;
+  } catch {
+    return [];
+  }
+  if (typeof repo !== "string") return [];
+  const store = fileStepStore(root);
+  const steps = await store.list({ system: "git-host" }).catch(() => [] as ManualStep[]);
+  const opens = steps.filter(
+    (s) =>
+      s.action === "open-pull-request" &&
+      s.state !== "skipped" &&
+      s.inputs.repo === repo &&
+      typeof s.inputs.head === "string",
+  );
+  if (!opens.length) return [];
+  const mainLine = new Set(
+    (await run(["rev-list", "--first-parent", up]).catch(() => "")).split("\n").filter(Boolean),
+  );
+  const remote = up.split("/")[0]!;
+  const at = (now ?? new Date()).toISOString().replace(/\.\d{3}Z$/, "Z");
+  type Values = NonNullable<ManualStep["recorded"]>["values"];
+  const close = (s: ManualStep, values: Values) =>
+    store.save({
+      ...s,
+      state: "done",
+      recorded: {
+        at,
+        by: "atticus",
+        values,
+        via: "person",
+        evidence: [],
+        note: "merged, seen by Bring in",
+      },
+    });
+  const out: string[] = [];
+  for (const open of opens) {
+    const number = open.inputs.number;
+    const related = steps.filter(
+      (s) =>
+        s.state === "open" &&
+        s.inputs.repo === repo &&
+        s.inputs.number === number &&
+        (s.action === "report-pull-request" || s.action === "merge-pull-request"),
+    );
+    if (open.state !== "open" && !related.length) continue;
+    const head = String(open.inputs.head);
+    let tip = "";
+    for (const ref of [`refs/remotes/${remote}/${head}`, `refs/heads/${head}`]) {
+      tip = (
+        await run(["rev-parse", "--verify", "--quiet", `${ref}^{commit}`]).catch(() => "")
+      ).trim();
+      if (tip) break;
+    }
+    if (!tip || mainLine.has(tip)) continue;
+    const merged = await run(["merge-base", "--is-ancestor", tip, up]).then(
+      () => true,
+      () => false,
+    );
+    if (!merged) continue;
+    if (open.state === "open")
+      await close(open, {
+        number: Number(number),
+        url: `manual://git-host/${repo}/pull/${String(number)}`,
+      });
+    // The host merged it, so its rules (required checks among them) let it.
+    for (const s of related)
+      await close(
+        s,
+        s.action === "report-pull-request" ? { merged: true, checksPassing: true } : {},
+      );
+    out.push(head);
+  }
+  return out;
 }

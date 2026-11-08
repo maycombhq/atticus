@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { cp } from "node:fs/promises";
+import { cp, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
@@ -195,12 +195,18 @@ describe("a Forge feature from Define to Release against the mock Git host", () 
 
     // ---- Build: the host refuses to merge while a check fails
     await copyPhase(root, ID, `${ID}/build`);
-    await handoff(root, ID, {
+    // Ninth UX walk: a task's report rides with the build hand-off; its run records don't.
+    await mkdir(join(dir, "tasks/1.1/runs"), { recursive: true });
+    await writeFile(join(dir, "tasks/1.1/report.md"), "# Task 1.1\n\nDone.\n");
+    await writeFile(join(dir, "tasks/1.1/runs/run-1.yaml"), "run: 1\n");
+    const build = await handoff(root, ID, {
       ...base,
       by: "dev",
       approval: approval("dev", "2026-10-20T09:00:00Z"),
       now: "2026-10-20T09:00:00Z",
     });
+    expect(build.artifacts.map((a) => a.path)).toContain("tasks/1.1/report.md");
+    expect(build.artifacts.map((a) => a.path)).not.toContain("tasks/1.1/runs/run-1.yaml");
     gh.review(REPO, 4, "dee", "approved");
     gh.setChecks(REPO, 4, [{ name: "tests", status: "failed" }]);
     const refused = await syncHandoff(root, ID, {

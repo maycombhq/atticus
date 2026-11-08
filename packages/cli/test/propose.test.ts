@@ -4,8 +4,9 @@ import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { MockGitHost } from "@maycombhq/adapters";
+import { fileStepStore, MockGitHost } from "@maycombhq/adapters";
 import { changesRelOf } from "@maycombhq/core";
+import { serializeChange } from "@maycombhq/changes";
 import { createGit } from "@maycombhq/workspace";
 import { bringInMerged, proposeForReview, proposePlan } from "../src/propose.js";
 
@@ -177,6 +178,35 @@ describe("Propose for review", () => {
     ]);
     expect(plan.branch).toBe("propose/service-desk/2026-11-08-100000-pat-lee");
     expect(plan.title).toBe("Service-desk request fields");
+  });
+
+  // Ninth UX walk: a batch's record (decisions/) never reached main, so Undo couldn't work on
+  // another clone. It goes with the answers and corrections it names, and with Home's Propose.
+  it("proposes the decision batches' records with the work, the answers and the corrections", async () => {
+    const { root } = await metarepo();
+    await mkdir(join(root, "decisions"), { recursive: true });
+    await writeFile(join(root, "decisions/b-20261108-221204-48de16.yaml"), "id: b\n");
+    for (const scope of ["work", "answers", "corrections"] as const)
+      expect((await proposePlan(root, scope, { by: "pat" })).files.map((f) => f.path)).toContain(
+        "decisions/b-20261108-221204-48de16.yaml",
+      );
+    expect(
+      (await proposePlan(root, "org-pack", { by: "pat" })).files.map((f) => f.path),
+    ).not.toContain("decisions/b-20261108-221204-48de16.yaml");
+  });
+
+  // Ninth UX walk: a stage correction saved in the app is proposed with Home's Propose.
+  it("proposes a change's stage corrections and drafted record with the work, not its loop files", async () => {
+    const { root } = await metarepo();
+    const stage = join(root, changesRelOf(root), "add-transfer-limit", "stage");
+    await mkdir(stage, { recursive: true });
+    for (const f of ["corrections.yaml", "drafted.yaml", "feature.yaml"])
+      await writeFile(join(stage, f), "x: 1\n");
+    const files = (await proposePlan(root, "work", { by: "pat" })).files.map((f) => f.path);
+    const rel = `${changesRelOf(root)}/add-transfer-limit/stage`;
+    expect(files).toContain(`${rel}/corrections.yaml`);
+    expect(files).toContain(`${rel}/drafted.yaml`);
+    expect(files).not.toContain(`${rel}/feature.yaml`);
   });
 });
 
@@ -544,6 +574,112 @@ describe("review round 36: Bring in never loses an edit", () => {
     expect(existsSync(file)).toBe(false);
   });
 
+  /**
+   * Ninth UX walk: the design hand-off merged on the host while Sync here moved the change to
+   * plan and added the hand-off's entries. Both sides edit the same lines of change.yaml, so the
+   * text merge refused; the record is merged by its fields instead.
+   */
+  const ID = "let-tellers-lock-a-card";
+  const T = (h: string) => `2026-11-08T${h}:00Z`;
+  const ho = (phase: string, n: number, state: string, at: string) => ({
+    phase,
+    branch: `handoff/${ID}/${phase}`,
+    pr: { number: n, url: `https://git.forge.example/pr/${n}` },
+    state,
+    by: "ada",
+    openedAt: at,
+    updatedAt: at,
+    approvals: [{ by: "bo", at }],
+  });
+  const st = (from: string, to: string, at: string, pr?: number) => ({
+    from,
+    to,
+    at,
+    by: "ada",
+    ...(pr ? { pr } : {}),
+  });
+  const atDefine = {
+    schemaVersion: 1 as const,
+    id: ID,
+    title: "Let tellers lock a card",
+    type: "feature",
+    state: "define" as const,
+    owners: { "product-owner": ["ada"] },
+    createdAt: T("22:00"),
+    createdBy: "ada",
+    history: [st("draft", "define", T("22:00"))],
+    handoffs: [ho("define", 102, "open", T("22:28"))],
+  };
+  const onBranch = {
+    ...atDefine,
+    state: "design" as const,
+    authors: { brief: ["ada"] },
+    history: [...atDefine.history, st("define", "design", T("22:32"), 102)],
+    handoffs: [ho("define", 102, "merged", T("22:32")), ho("design", 103, "open", T("22:46"))],
+  };
+  const synced = {
+    ...onBranch,
+    state: "plan" as const,
+    authors: { brief: ["ada"], design: ["ada"] },
+    history: [...onBranch.history, st("design", "plan", T("22:47"), 103)],
+    handoffs: [ho("define", 102, "merged", T("22:32")), ho("design", 103, "merged", T("22:47"))],
+  };
+  const handedOff = async (reviewer?: Partial<typeof onBranch>) => {
+    const { root, work } = await setup();
+    const rel = `openspec/changes/${ID}`;
+    const file = join(root, rel, "change.yaml");
+    await mkdir(join(root, rel), { recursive: true });
+    await writeFile(file, serializeChange(atDefine as never));
+    g(root, "add", "-A");
+    g(root, "commit", "-q", "-m", "define merged");
+    g(root, "push", "-q", "origin", "main");
+    // The design hand-off branch, published from here, merged on the host.
+    g(work, "pull", "-q", "origin", "main");
+    await writeFile(join(work, rel, "design.md"), "# Design\n");
+    await writeFile(
+      join(work, rel, "change.yaml"),
+      serializeChange({ ...onBranch, ...reviewer } as never),
+    );
+    g(work, "add", "-A");
+    g(work, "commit", "-q", "-m", "Approve design");
+    g(work, "push", "-q", "origin", `HEAD:refs/heads/handoff/${ID}/design`);
+    g(work, "push", "-q", "origin", "HEAD:main");
+    // Here: the design.md the hand-off carried, and Sync's newer record.
+    await writeFile(join(root, rel, "design.md"), "# Design\n");
+    await writeFile(file, serializeChange(synced as never));
+    return { root, file };
+  };
+
+  it("merges the change's record by its fields after a hand-off merged (ninth UX walk)", async () => {
+    const { root, file } = await handedOff();
+    const said: string[] = [];
+    expect(await bringInMerged(root, io(said)), said.join("\n")).toBe(0);
+    expect(g(root, "log", "-1", "--format=%s").trim()).toBe("Approve design");
+    expect(await readFile(file, "utf8")).toBe(serializeChange(synced as never));
+    expect(said.join("\n")).toContain(
+      `Merged with your copy's newer state: openspec/changes/${ID}/change.yaml`,
+    );
+  });
+
+  it("keeps a reviewer's title with Sync's state, and refuses two different titles", async () => {
+    const kept = await handedOff({ title: "Let tellers lock a card from the branch" });
+    expect(await bringInMerged(kept.root, io([]))).toBe(0);
+    const now = await readFile(kept.file, "utf8");
+    expect(now).toContain("title: Let tellers lock a card from the branch");
+    expect(now).toContain("state: plan");
+
+    const { root, file } = await handedOff({ title: "Lock a card at the counter" });
+    const mine = serializeChange({ ...synced, title: "Lock a card from the branch" } as never);
+    await writeFile(file, mine);
+    const head = g(root, "rev-parse", "HEAD");
+    const said: string[] = [];
+    expect(await bringInMerged(root, io(said))).toBe(1);
+    expect(said.join("\n")).toContain("nothing was changed");
+    expect(said.join("\n")).toContain("title");
+    expect(await readFile(file, "utf8")).toBe(mine);
+    expect(g(root, "rev-parse", "HEAD")).toBe(head);
+  });
+
   it("puts the person's own record back when the copy can't be brought up (round 41)", async () => {
     const { root, file, mine } = await reviewed({ committed: true });
     const real = createGit();
@@ -552,5 +688,105 @@ describe("review round 36: Bring in never loses an edit", () => {
     const said: string[] = [];
     expect(await bringInMerged(root, io(said), { git }), said.join("\n")).toBe(1);
     expect(await readFile(file, "utf8")).toBe(mine);
+  });
+});
+
+/**
+ * Ninth UX walk: on a manual Git host, the "Open a pull request" steps of a hand-off or proposal
+ * stayed open after Bring in had brought its merge in. They close, saying so, and Sync then reads
+ * the PR as merged; a PR not merged, or into another repo, keeps its steps.
+ */
+describe("Bring in closes the manual steps of a PR that merged", () => {
+  const io = (said: string[]) => ({
+    out: (l: string) => said.push(l),
+    err: (l: string) => said.push(`ERR ${l}`),
+  });
+  const openStep = (head: string, number: number, repo = "forge-meta", change?: string) => ({
+    slug: `open-pr-${head}`,
+    ...(change ? { change } : {}),
+    system: "git-host" as const,
+    action: "open-pull-request",
+    key: `git-host|pr|${repo}|${head}|${number}`,
+    title: `Open a pull request from ${head} into main`,
+    where: `Git host: ${repo}, new pull request`,
+    inputs: { title: head, base: "main", head, number, repo },
+    result: [
+      { name: "url", label: "Pull request link", format: "url" as const, required: true },
+      { name: "number", label: "Pull request number", format: "integer" as const, required: true },
+    ],
+    createdBy: "ada",
+  });
+  const reportStep = (head: string, number: number, dependsOn: string, change?: string) => ({
+    slug: `report-pr-${head}`,
+    ...(change ? { change } : {}),
+    system: "git-host" as const,
+    action: "report-pull-request",
+    key: `git-host|report|forge-meta|${number}|0`,
+    title: `Record the reviews and checks on the PR from ${head}, and whether it merged`,
+    where: "Git host: forge-meta",
+    inputs: { number, repo: "forge-meta" },
+    dependsOn: [dependsOn],
+    result: [
+      { name: "approvers", label: "Approved by", format: "handles" as const, required: false },
+      {
+        name: "checksPassing",
+        label: "All checks pass",
+        format: "yes-no" as const,
+        required: true,
+      },
+      {
+        name: "merged",
+        label: "Merged on the Git host",
+        format: "yes-no" as const,
+        required: false,
+      },
+    ],
+    createdBy: "atticus",
+  });
+
+  it("closes a merged hand-off's steps, and leaves an unmerged PR's and another repo's open", async () => {
+    const { root, remote } = await metarepo();
+    g(root, "branch", "-q", "--set-upstream-to=origin/main", "main");
+    // The branches, published from here (gitHandoffPublisher keeps them here and pushes them).
+    for (const [branch, file] of [
+      ["handoff/c1/define", "brief.md"],
+      ["propose/work/2026-11-08-221013-ada", "notes.md"],
+    ] as const) {
+      g(root, "checkout", "-q", "-b", branch, "main");
+      await writeFile(join(root, file), "x\n");
+      g(root, "add", "-A");
+      g(root, "commit", "-q", "-m", branch);
+      g(root, "push", "-q", "origin", branch);
+      g(root, "checkout", "-q", "main");
+    }
+    // A branch with no commits of its own reads as not merged.
+    g(root, "branch", "-q", "handoff/c2/define", "main");
+    const store = fileStepStore(root);
+    const define = await store.create(openStep("handoff/c1/define", 1, "forge-meta", "c1"));
+    const report = await store.create(reportStep("handoff/c1/define", 1, define.id, "c1"));
+    const proposal = await store.create(openStep("propose/work/2026-11-08-221013-ada", 2));
+    const empty = await store.create(openStep("handoff/c2/define", 3));
+    const release = await store.create(openStep("handoff/c1/define", 4, "forge-ledger"));
+    // The host merges the hand-off (a merge commit), and deletes its branch.
+    const hostClone = join(root, "..", "host");
+    g(join(root, ".."), "clone", "-q", "-b", "main", remote, hostClone);
+    g(hostClone, "merge", "-q", "--no-ff", "origin/handoff/c1/define", "-m", "Merge PR #1");
+    g(hostClone, "push", "-q", "origin", "main");
+    g(hostClone, "push", "-q", "origin", "--delete", "handoff/c1/define");
+    const said: string[] = [];
+    expect(
+      await bringInMerged(root, io(said), { now: new Date("2026-11-08T23:30:00Z") }),
+      said.join("\n"),
+    ).toBe(0);
+    expect(said.join("\n")).toContain(
+      "Closed the manual steps of a pull request that merged (merged, seen by Bring in): handoff/c1/define.",
+    );
+    const opened = (await store.get(define.id))!;
+    expect(opened.state).toBe("done");
+    expect(opened.recorded).toMatchObject({ by: "atticus", note: "merged, seen by Bring in" });
+    const reported = (await store.get(report.id))!;
+    expect(reported.state).toBe("done");
+    expect(reported.recorded?.values).toMatchObject({ merged: true });
+    for (const s of [proposal, empty, release]) expect((await store.get(s.id))!.state).toBe("open");
   });
 });
