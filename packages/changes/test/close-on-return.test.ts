@@ -59,7 +59,7 @@ describe("return to PO and the hand-off PR", () => {
     const r = await back(root, gh);
     expect(r).toMatchObject({ state: "returned", closedOnHost: false });
     expect((await store.list({ action: "close-pull-request" })).map((s) => s.id)).toEqual([
-      "close-pr-1",
+      "close-pr-handoff-add-transfer-limit-define",
     ]);
   });
 });

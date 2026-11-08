@@ -35,7 +35,7 @@ import {
 } from "@maycombhq/changes";
 import type { GitHost } from "@maycombhq/adapters";
 import { readChangeFiles, readRound, reviewedGates, roundsOf } from "@maycombhq/naysayer";
-import { readChangeTasks } from "@maycombhq/speckit";
+import { readChangeTasks, setTaskDone } from "@maycombhq/speckit";
 import {
   badRequest,
   conflict,
@@ -55,7 +55,7 @@ import {
   previewTaskRun,
   raiseTaskPr,
   readTaskRun,
-  taskPrState,
+  settleTaskPr,
   taskRunOfRun,
 } from "@maycombhq/taskrun";
 import { runDone, taskRun, taskRunNotWaiting } from "./run-commands.js";
@@ -309,28 +309,38 @@ async function answeredMapQuestionRepo(root: string, path: string): Promise<stri
  * with `prs`, a raised PR's state is asked of the Git host (read-only, a short timeout, all at
  * once), so a PR merged or closed there is said and its task can run with AI again; a host that
  * can't say leaves the record's state.
+ *
+ * Seventh UX walk (2.72.0): asking also keeps each record in step with the host (settleTaskPr):
+ * the PR's number and link as the host has them now (a manual host's, as the person recorded
+ * them), and a task whose PR merged ticked in tasks.md, once; the list is read after that, so it
+ * says the tick (`taskRun.ticked`). `onTick` hears of a task ticked just now.
  */
 async function taskViews(
   root: string,
   change: string,
-  prs?: { gitHost?: GitHost },
+  prs?: { gitHost?: GitHost; now?: string; onTick?: () => void },
 ): Promise<Api.TaskT[]> {
-  const files = await readChangeFiles(join(changesDirOf(root), change));
-  const tasks = readChangeTasks(files);
+  const dir = join(changesDirOf(root), change);
+  let tasks = readChangeTasks(await readChangeFiles(dir));
   const states = prs
     ? await Promise.all(
         tasks.map((t) =>
-          taskPrState(root, change, t.id, prs.gitHost ? { gitHost: prs.gitHost } : {}).catch(
-            () => undefined,
-          ),
+          settleTaskPr(root, change, t.id, {
+            ...(prs.gitHost ? { gitHost: prs.gitHost } : {}),
+            ...(prs.now ? { now: () => new Date(prs.now!) } : {}),
+          }).catch(() => ({}) as Awaited<ReturnType<typeof settleTaskPr>>),
         ),
       )
     : [];
+  if (states.some((s) => s.ticked)) {
+    tasks = readChangeTasks(await readChangeFiles(dir));
+    prs?.onTick?.();
+  }
   const out: Api.TaskT[] = [];
   for (const [i, t] of tasks.entries()) {
     const tr = await readTaskRun(root, change, t.id).catch(() => undefined);
     const run = tr ? (tr.waiting ?? tr.runs[0]) : undefined;
-    const prState = tr?.state === "pr-open" ? states[i] : undefined;
+    const prState = tr?.state === "pr-open" ? states[i]?.state : undefined;
     out.push({
       id: t.id,
       repo: t.repo,
@@ -347,6 +357,7 @@ async function taskViews(
               branch: tr.branch,
               ...(tr.commit ? { commit: tr.commit } : {}),
               ...(tr.pr ? { pr: { ...tr.pr, ...(prState ? { state: prState } : {}) } } : {}),
+              ...(tr.ticked ? { ticked: tr.ticked } : {}),
               notes: tr.notes,
             },
           }
@@ -670,11 +681,38 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
       )
       .add("GET", "/api/changes/{changeId}/tasks", async ({ params }) => {
         await readChange(root, params.changeId!);
+        const change = params.changeId!;
         return {
           status: 200,
-          body: await taskViews(root, params.changeId!, {
+          body: await taskViews(root, change, {
             ...(deps.gitHost ? { gitHost: deps.gitHost } : {}),
+            ...(deps.now ? { now: deps.now } : {}),
+            // Seventh UX walk: a task ticked because its PR merged changed tasks.md.
+            onTick: () =>
+              ctx.events.publish({
+                type: "file.changed",
+                path: `${changesRelOf(root)}/${change}/tasks.md`,
+              }),
           }),
+        };
+      })
+      // Seventh UX walk (2.72.0): a person ticks or unticks a task in tasks.md from the Task board,
+      // a local edit to the change's files that rides its build hand-off (only the box changes).
+      .add("POST", "/api/changes/{changeId}/tasks/{taskId}/done", async ({ params, body }) => {
+        await readChange(root, params.changeId!);
+        const change = params.changeId!;
+        const task = params.taskId!;
+        const b = parseBody(Api.TaskDoneRequest, body);
+        if (!(await taskViews(root, change)).some((t) => t.id === task))
+          throw notFound(`Change ${change} has no task ${task}.`);
+        if (await setTaskDone(root, change, task, b.done))
+          ctx.events.publish({
+            type: "file.changed",
+            path: `${changesRelOf(root)}/${change}/tasks.md`,
+          });
+        return {
+          status: 200,
+          body: (await taskViews(root, change)).find((t) => t.id === task)!,
         };
       })
       // Sixth UX walk (2.69.0): a drafted task's PR from the Task board. The person's click is

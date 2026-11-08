@@ -131,6 +131,47 @@ export function RaiseTaskPr(p: { change: string; task: string; onDone?: () => vo
   );
 }
 
+/**
+ * Seventh UX walk (API 2.72.0): tick or untick the task in tasks.md, on the person's click (a
+ * local edit to the change's files, which rides its build hand-off). A task Atticus ticked because
+ * its PR merged says so.
+ */
+export function TaskTick(p: {
+  change: string;
+  task: Pick<Task, "id" | "done" | "taskRun">;
+  onDone?: () => void;
+}) {
+  const act = useAction();
+  const t = p.task;
+  const done = t.done;
+  return (
+    <div className="stack" style={{ gap: 4, fontSize: 12 }}>
+      {done && t.taskRun?.ticked && <span>{T.tickedByMerge}</span>}
+      <span className="row" style={{ gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+        <button
+          type="button"
+          className="btn"
+          disabled={act.busy}
+          aria-label={done ? T.untickTaskLabel(t.id) : T.tickTaskLabel(t.id)}
+          onClick={() =>
+            void act.run(
+              () =>
+                api<Task>(
+                  `/api/changes/${encodeURIComponent(p.change)}/tasks/${encodeURIComponent(t.id)}/done`,
+                  { method: "POST", body: { done: !done } },
+                ).finally(() => p.onDone?.()),
+              (r) => (r.done ? T.tickedTask(t.id) : T.untickedTask(t.id)),
+            )
+          }
+        >
+          {done ? T.untickTask : T.tickTask}
+        </button>
+      </span>
+      <Note note={act.note} />
+    </div>
+  );
+}
+
 /** What a task that has run says under its row: its state, its run, and its next step. */
 export function TaskRunState(p: { change: string; task: Task; onDone?: () => void }) {
   const t = p.task;

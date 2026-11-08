@@ -94,6 +94,39 @@ export async function markTaskDone(
   return true;
 }
 
+/**
+ * Seventh UX walk (tasks and manual steps): tick or untick a task in the change's tasks.md, by
+ * its id, the way readChangeTasks reads it (a checkbox line under a `## <repo>` heading). Only
+ * the box's character changes: the line's spacing, the file's line endings and every other line
+ * stay as they are. False when the task isn't there or its box already says so.
+ */
+export async function setTaskDone(
+  root: string,
+  changeId: string,
+  taskId: string,
+  done: boolean,
+): Promise<boolean> {
+  const path = join(changeFolder(root, changeId), "tasks.md");
+  const text = await readFile(path, "utf8").catch(() => undefined);
+  if (text === undefined) return false;
+  const lines = text.split("\n");
+  let repo = false;
+  for (const [i, l] of lines.entries()) {
+    if (/^##\s+\S/.test(l)) {
+      repo = true;
+      continue;
+    }
+    const m = repo ? TASK_LINE.exec(l.replace(/\r$/, "")) : null;
+    if (!m || m[4]!.toLowerCase() !== taskId.toLowerCase()) continue;
+    if ((m[2]!.toLowerCase() === "x") === done) return false;
+    const at = m[1]!.length;
+    lines[i] = `${l.slice(0, at)}${done ? "x" : " "}${l.slice(at + m[2]!.length)}`;
+    await writeFileAtomic(path, lines.join("\n"));
+    return true;
+  }
+  return false;
+}
+
 export interface Story {
   id: string;
   title: string;

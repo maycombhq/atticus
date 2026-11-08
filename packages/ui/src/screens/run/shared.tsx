@@ -31,7 +31,7 @@ export const withForceHint = (hint: string) => (e: unknown) => {
 export function useAction() {
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<Outcome | undefined>();
-  const run = async (f: () => Promise<unknown>, ok: string | ((r: unknown) => string)) => {
+  const run = async <R,>(f: () => Promise<R>, ok: string | ((r: R) => string)) => {
     setBusy(true);
     // Say at once that it started: some steps take a while, and a still page reads as a dead click.
     setNote({ ok: true, text: COPY.app.working, working: true });

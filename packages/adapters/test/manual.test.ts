@@ -341,7 +341,11 @@ describe("manual Git host", () => {
     const steps = await store.list({ change: "add-transfer-limit" });
     expect(steps.map((s) => [s.id, s.action, s.dependsOn])).toEqual([
       ["open-pr-handoff-add-transfer-limit-plan", "open-pull-request", []],
-      ["report-pr-1", "report-pull-request", ["open-pr-handoff-add-transfer-limit-plan"]],
+      [
+        "report-pr-handoff-add-transfer-limit-plan",
+        "report-pull-request",
+        ["open-pr-handoff-add-transfer-limit-plan"],
+      ],
     ]);
     await recordStep(store, steps[0]!.id, {
       by: "bao",
@@ -355,7 +359,7 @@ describe("manual Git host", () => {
     expect(mergeBlockers(opened)).toEqual(["needs at least one approval"]);
     await expect(gh.merge(REPO, 1, A("tia"))).rejects.toMatchObject({ code: "conflict" });
 
-    await recordStep(store, "report-pr-1", {
+    await recordStep(store, "report-pr-handoff-add-transfer-limit-plan", {
       by: "bao",
       values: { approvers: "tia", checksPassing: "yes" },
     });
@@ -363,9 +367,9 @@ describe("manual Git host", () => {
     const refused = await gh.merge(REPO, 1, A("tia")).catch((e: AdapterError) => e);
     expect(refused).toMatchObject({ code: "unavailable", retryable: false });
     expect((refused as Error).message).toBe(
-      "git-host: a person merges PR 1 on the Git host: do step merge-pr-1 (atticus todo), then sync again",
+      "git-host: a person merges PR #12 on the Git host: do step merge-pr-handoff-add-transfer-limit-plan (atticus todo), then sync again",
     );
-    await recordStep(store, "merge-pr-1", { by: "tia" });
+    await recordStep(store, "merge-pr-handoff-add-transfer-limit-plan", { by: "tia" });
     expect((await gh.getPullRequest(REPO, 1)).state).toBe("merged");
     expect((await gh.merge(REPO, 1, A("tia"))).state).toBe("merged");
   });
@@ -378,7 +382,7 @@ describe("manual Git host", () => {
       by: "bao",
       values: { url: "https://git.example.com/x/pull/3", number: 3 },
     });
-    await recordStep(store, "report-pr-1", {
+    await recordStep(store, "report-pr-handoff-add-transfer-limit-plan", {
       by: "bao",
       values: { changesRequestedBy: "tia", checksPassing: "yes" },
     });
@@ -388,7 +392,7 @@ describe("manual Git host", () => {
     await gh.comment(REPO, 1, "bao updated the hand-off for another review.", A("bao"));
     expect(
       (await store.list({ action: "report-pull-request", state: "open" })).map((s) => s.id),
-    ).toEqual(["report-pr-1-2"]);
+    ).toEqual(["report-pr-handoff-add-transfer-limit-plan-2"]);
   });
 });
 

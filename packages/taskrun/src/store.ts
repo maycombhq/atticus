@@ -70,6 +70,11 @@ export const TaskRunRecord = z.strictObject({
   changed: z.array(z.string()).default([]),
   commit: z.string().optional(),
   pr: z.strictObject({ number: z.number().int().positive(), url: z.string() }).optional(),
+  /**
+   * Seventh UX walk: when Atticus ticked the task in tasks.md because its PR merged. It ticks a
+   * task once, so a person who unticks it keeps it unticked.
+   */
+  ticked: z.string().optional(),
   startedAt: z.string(),
   finishedAt: z.string().optional(),
   notes: z.array(z.string()).default([]),

@@ -97,10 +97,10 @@ describe("atticus todo", () => {
     expect(a.out).toEqual(
       [
         "3 open steps:",
-        "STEP                                     CHANGE              STATE  WHAT",
-        'request-firewall-rule                    add-transfer-limit  open   Raise a "Network firewall rule" request in the service desk',
-        "open-pr-handoff-add-transfer-limit-plan  add-transfer-limit  open   Open a pull request from handoff/add-transfer-limit/plan into main",
-        "report-pr-1                              add-transfer-limit  open   Record the reviews and checks on PR 1 (Plan ready) (after open-pr-handoff-add-transfer-limit-plan)",
+        "STEP                                       CHANGE              STATE  WHAT",
+        'request-firewall-rule                      add-transfer-limit  open   Raise a "Network firewall rule" request in the service desk',
+        "open-pr-handoff-add-transfer-limit-plan    add-transfer-limit  open   Open a pull request from handoff/add-transfer-limit/plan into main",
+        "report-pr-handoff-add-transfer-limit-plan  add-transfer-limit  open   Record the reviews and checks on the PR from handoff/add-transfer-limit/plan (Plan ready), and whether it merged (after open-pr-handoff-add-transfer-limit-plan)",
         "Show a step with atticus todo show <step>; record it with atticus todo done <step> --result name=value.",
       ].map((l) => l.replace(/ +$/, "")),
     );
@@ -128,10 +128,15 @@ describe("atticus todo", () => {
     ]);
     const early = io();
     expect(
-      await todoDone(r, "report-pr-1", { by: "bao", result: ["checksPassing=yes"] }, early.io),
+      await todoDone(
+        r,
+        "report-pr-handoff-add-transfer-limit-plan",
+        { by: "bao", result: ["checksPassing=yes"] },
+        early.io,
+      ),
     ).toBe(1);
     expect(early.err).toEqual([
-      "Do step open-pr-handoff-add-transfer-limit-plan first: step report-pr-1 depends on it.",
+      "Do step open-pr-handoff-add-transfer-limit-plan first: step report-pr-handoff-add-transfer-limit-plan depends on it.",
     ]);
     const ok = io();
     expect(
@@ -151,7 +156,7 @@ describe("atticus todo", () => {
     ]);
     expect((await store.get("open-pr-handoff-add-transfer-limit-plan"))!.recorded?.at).toBe(NOW);
     expect(await todoDone(r, "nope", { by: "bao" }, io().io)).toBe(1);
-    expect(await todoDone(r, "report-pr-1", {}, io().io)).toBe(2);
+    expect(await todoDone(r, "report-pr-handoff-add-transfer-limit-plan", {}, io().io)).toBe(2);
   });
 
   it("runs a step with an executor only with the person's approval of the exact inputs", async () => {

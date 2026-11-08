@@ -1657,6 +1657,11 @@ export const COPY = {
     runCol: "Run it",
     taskDone: "DONE",
     taskOpen: "OPEN",
+    /** Seventh UX walk: a task's row goes to its row on the Task board, where it runs. */
+    openOnBoard: "Open on the Task board",
+    openOnBoardLabel: (task: string) => `Open task ${task} on the Task board`,
+    runOnBoard: "Run with AI there, or mark it done.",
+    fromTerminal: "From a terminal or your assistant",
     taskInRepo: (repo: string) =>
       `Prints the same context for any assistant, to read before coding in ${repo}.`,
     stage: {
@@ -2846,7 +2851,19 @@ export const COPY = {
     /** Review round 43: the Git host says the task's PR is merged or closed. */
     taskPrStateChip: { merged: "PR MERGED", closed: "PR CLOSED" } as Record<string, string>,
     taskPrMerged:
-      "Its PR is merged into the change branch. Tick the task in tasks.md, or Run with AI again to start it over:",
+      "Its PR is merged into the change branch. Mark the task done, or Run with AI again to start it over:",
+    /** Seventh UX walk: tick or untick a task in tasks.md from the Task board. */
+    tickTask: "Mark done",
+    untickTask: "Mark not done",
+    tickTaskLabel: (task: string) => `Mark task ${task} done`,
+    untickTaskLabel: (task: string) => `Mark task ${task} not done`,
+    tickedTask: (task: string) =>
+      `Ticked task ${task} in tasks.md. The tick rides the change's build hand-off.`,
+    untickedTask: (task: string) =>
+      `Unticked task ${task} in tasks.md. That rides the change's build hand-off too.`,
+    /** Seventh UX walk: Atticus ticked the task because the Git host says its PR merged. */
+    tickedByMerge:
+      "Atticus ticked it in tasks.md when its PR merged on the Git host. The tick rides the change's build hand-off.",
     taskPrClosed:
       "Its PR was closed without merging. Run with AI again to start the task over, or do it by hand:",
     taskPrNumber: (n: number) => `PR #${n}`,
@@ -2866,7 +2883,7 @@ export const COPY = {
     manualPrWaits: "Opening this PR is a step waiting on you, in",
     manualSteps: "Home › Manual steps",
     handOffWaitsManual: (phase: string) =>
-      `The ${phase} hand-off's PR isn't open yet: your Git host is manual, so opening it is a step waiting on you. Open it on the Git host as its step says, record its link there, then Sync; merging it approves the gate.`,
+      `The ${phase} hand-off's PR isn't open yet: your Git host is manual, so opening it is a step waiting on you. Open it on the Git host as its step says and record its link there; once it is merged on the Git host, record that on its reviews step. Atticus syncs the change each time you mark one done, and merging approves the gate.`,
     handOffManual: (phase: string) => ` · hand-off ${phase} waits on a manual step`,
     taskBoard: "Task board",
     tasksInCrossRepo:
@@ -3791,6 +3808,9 @@ export const COPY = {
     requestWord: "request",
     executorDid: (executor: string) => `${executor} did the step.`,
     recordedStep: (id: string) => `Recorded step ${id}.`,
+    /** Seventh UX walk: a Git host step of a hand-off's PR syncs the change when it is done. */
+    recordedAndSynced: (id: string, said: string) =>
+      `Recorded step ${id}, and synced the change: ${said}`,
     skippedStep: (id: string) => `Skipped step ${id}.`,
     noClipboard: "This browser won't copy from here; use Copy all fields.",
     theseAreTheExact: "These are the exact inputs the tool gets. Approve them to run it.",

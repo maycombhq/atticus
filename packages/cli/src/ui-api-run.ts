@@ -26,7 +26,13 @@ import {
   writeFileIfUnchanged,
 } from "@maycombhq/core";
 import { archiveGate } from "@maycombhq/ci";
-import { changeFolder, changeReport, changeStore, detectConflicts } from "@maycombhq/changes";
+import {
+  changeFolder,
+  changeReport,
+  changeStore,
+  detectConflicts,
+  liveHandoff,
+} from "@maycombhq/changes";
 import { listReports, readQuality } from "@maycombhq/evals";
 import { inputsSha256, loadExecutors } from "@maycombhq/executors";
 import { readServiceRequestExports, readWorkItemExports } from "@maycombhq/intake";
@@ -54,7 +60,7 @@ import {
   type ServerContext,
 } from "@maycombhq/server";
 import type { Output } from "./commands.js";
-import { changeArchive } from "./change-commands.js";
+import { changeArchive, changeSync } from "./change-commands.js";
 import { criticStats } from "./critic-commands.js";
 import { defencesScan, evalRun } from "./eval-commands.js";
 import { learnCheck, learnStart, sandboxCreate } from "./learn-commands.js";
@@ -375,6 +381,37 @@ export function uiRunRoutes(r: Router, ctx: ServerContext, deps: RunDeps = {}): 
   const pack = () => loadOrgPack(orgPackDirOf(root));
   const rel = deps.now ? { now: () => new Date(deps.now!) } : {};
 
+  /**
+   * Seventh UX walk (2.72.0): a Git host step marked done (a hand-off PR's link, its reviews, its
+   * merge) syncs the change's open hand-off, as Sync does, so the gate moves on without a second
+   * click. Read-only: without the person's approval, sync never merges, it only records what the
+   * Git host (here, what was recorded) says. Undefined when there is nothing to sync; a sync that
+   * can't say is said in its own words, never a failed step.
+   */
+  const syncAfterStep = async (s: ManualStep): Promise<string[] | undefined> => {
+    if (s.system !== "git-host" || !s.change || s.state === "open") return undefined;
+    const c = await changeStore(root)
+      .tryRead(s.change)
+      .catch(() => undefined);
+    const live = c && c.state !== "returned" ? liveHandoff(c) : undefined;
+    // Only a step of the hand-off's own PR (its branch, in the metarepo the step names).
+    const steps = await fileStepStore(root).list({ change: s.change, system: "git-host" });
+    const open =
+      s.action === "open-pull-request"
+        ? s
+        : steps.find((x) => x.action === "open-pull-request" && s.dependsOn.includes(x.id));
+    if (!live || !open || open.inputs.head !== live.branch) return undefined;
+    const repo = typeof open.inputs.repo === "string" ? open.inputs.repo : undefined;
+    const res = await run((io) =>
+      changeSync(root, s.change!, { by: user, ...(repo ? { repo } : {}) }, io, {
+        ...(deps.gitHost ? { gitHost: deps.gitHost } : {}),
+        ...(deps.now ? { now: deps.now } : {}),
+      }),
+    );
+    ctx.events.publish({ type: "file.changed", path: `${changesRelOf(root)}/${s.change}` });
+    return [...res.out, ...res.err];
+  };
+
   return (
     r
       // ---------------------------------------------------------------- to-do
@@ -473,7 +510,8 @@ export function uiRunRoutes(r: Router, ctx: ServerContext, deps: RunDeps = {}): 
         }
         ctx.events.publish({ type: "file.changed", path: `steps/${params.stepId}` });
         const s = await findStep(root, params.stepId!, b.change);
-        return { status: 200, body: { ...s, lines: res.out } };
+        const synced = await syncAfterStep(s);
+        return { status: 200, body: { ...s, lines: res.out, ...(synced ? { synced } : {}) } };
       })
       .add("GET", "/api/todo/{stepId}/run", async ({ params, query }) => {
         const s = await findStep(root, params.stepId!, strParam(query, "change"));

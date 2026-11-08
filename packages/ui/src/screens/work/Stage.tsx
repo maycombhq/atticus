@@ -140,8 +140,21 @@ export function TaskList({ change, tasks }: { change: string; tasks: TaskRow[] }
           label: W.runCol,
           cell: (t) => {
             const s = taskStep(change, t);
+            // Seventh UX walk: a task runs (and is marked done) on the Task board, at its row.
             return (
               <div className="stack" style={{ gap: 4 }}>
+                <a
+                  href={`#/tasks?change=${encodeURIComponent(change)}&task=${encodeURIComponent(t.id)}`}
+                  aria-label={W.openOnBoardLabel(t.id)}
+                >
+                  {W.openOnBoard}
+                </a>
+                <span className="muted" style={{ fontSize: 12 }}>
+                  {W.runOnBoard}
+                </span>
+                <span className="hud" style={{ fontSize: 10, marginTop: 4 }}>
+                  {W.fromTerminal}
+                </span>
                 <Command text={s.command} label={R.copy} />
                 <Command text={s.slash!.command} label={R.copySlash} />
               </div>

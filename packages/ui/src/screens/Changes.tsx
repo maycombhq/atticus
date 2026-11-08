@@ -79,6 +79,8 @@ export interface Task {
     commit?: string;
     /** API 2.70.0 (review round 43): `state` is the PR's on the Git host now, when it said. */
     pr?: { number: number; url: string; state?: "open" | "merged" | "closed" };
+    /** API 2.72.0 (seventh UX walk): when Atticus ticked it because its PR merged. */
+    ticked?: string;
     notes: string[];
   };
 }

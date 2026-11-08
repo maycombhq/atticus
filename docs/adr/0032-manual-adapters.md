@@ -24,3 +24,9 @@ In the target organisation the work tracker (ADO), the service desk (ServiceNow)
 ## Consequences
 
 Atticus works on day one with no integrations at all, and each integration can be switched on later without changing the workflow. Manual steps are tracked, so nothing is lost; the cost is that the person must record results back, and Atticus can only check what is recorded. Overdue manual steps show on Home and in governance views.
+
+## Addendum: seventh UX walk (tasks and manual steps)
+
+- A manual PR's steps are named by its branch (a hand-off's or a task's), never by a number a person may not have recorded yet. Once the person records the PR's number and link, the PR goes by them; the local number Atticus gave it still finds it, and a new PR never takes a number recorded for another.
+- The reviews step also records whether the PR merged on the Git host, so a PR merged there needs no Merge step. A task's PR has no gate to make a Merge step, so a task's PR whose reviews were recorded without its merge gets a reviews step again; a hand-off's PR in that case waits for its Merge step, made after the gate checks the approvals. A reviews step still open once the PR reads merged or closed is skipped, saying why.
+- Marking a Git host step of a change's open hand-off done in the app syncs the change, so the gate moves on. Sync reads what was recorded and never merges.

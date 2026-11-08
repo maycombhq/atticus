@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Atticus local API",
-    "version": "2.74.0",
+    "version": "2.75.0",
     "description": "Served by `atticus ui` on 127.0.0.1. The UI only calls this API, and the API only reads and writes files in the metarepo.",
     "license": {
       "name": "Apache-2.0",
@@ -6560,6 +6560,104 @@
         }
       }
     },
+    "/api/changes/{changeId}/tasks/{taskId}/done": {
+      "post": {
+        "operationId": "setTaskDone",
+        "summary": "2.75.0 (seventh UX walk): tick or untick a task in the change's tasks.md, on the person's click",
+        "tags": [
+          "changes"
+        ],
+        "parameters": [
+          {
+            "name": "changeId",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "taskId",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "done": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "done"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The task as tasks.md now says it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Task"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "You can't do this; the problem says who can",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/changes/{changeId}/workspace": {
       "post": {
         "operationId": "openWorkspace",
@@ -9745,7 +9843,7 @@
     "/api/todo/{stepId}/done": {
       "post": {
         "operationId": "recordStep",
-        "summary": "Record a manual step's result, or skip it with a reason",
+        "summary": "Record a manual step's result, or skip it with a reason; 2.75.0: a Git host step of a change with a hand-off open syncs it (`synced`, read-only, never a merge)",
         "tags": [
           "release"
         ],
@@ -23342,6 +23440,9 @@
                   "url"
                 ],
                 "additionalProperties": false
+              },
+              "ticked": {
+                "type": "string"
               },
               "notes": {
                 "type": "array",

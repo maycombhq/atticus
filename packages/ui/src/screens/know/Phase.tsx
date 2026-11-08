@@ -20,13 +20,23 @@ import { withForceHint } from "../run/shared.js";
 import { NoChangeYet } from "../work/RunNext.js";
 import { ChangeInputs } from "../ChangeInputs.js";
 import { ChangePrototypes } from "../ChangePrototypes.js";
-import { ChangeWaiting, Markdown, Note, Table, useAction, useChange, useView } from "./common.js";
+import {
+  ChangeWaiting,
+  Markdown,
+  Note,
+  queryParam,
+  Table,
+  useAction,
+  useChange,
+  useView,
+} from "./common.js";
 import {
   isManualLink,
   ManualHandoff,
   runIsTheStep,
   TaskRunState,
   taskRunsOnly,
+  TaskTick,
 } from "./task-pr.js";
 
 const T = COPY.phase;
@@ -880,17 +890,32 @@ export function Breakdown({ hash }: { hash: string }) {
 
 // ------------------------------------------------------------------ Build
 
+/** A task's row on the Task board, for a link's `?task=` (an id is safe in an element id). */
+const taskRowId = (task: string) => `task-row-${task.replace(/[^A-Za-z0-9_-]/g, "-")}`;
+
 function TasksByRepo({
   change,
   span,
   compact,
+  focus,
 }: {
   change: string;
   span: string;
   compact?: boolean;
+  /** Seventh UX walk: the task a link asked for (`?task=`), scrolled to and focused once. */
+  focus?: string | undefined;
 }) {
   const tasks = useApi<Task[]>(`/api/changes/${change}/tasks`);
   const aiOn = useAiOn();
+  const focused = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (!focus || tasks.state !== "ready" || focused.current === focus) return;
+    const row = document.getElementById(taskRowId(focus));
+    if (!row) return;
+    focused.current = focus;
+    row.scrollIntoView({ block: "center" });
+    row.focus({ preventScroll: true });
+  }, [focus, tasks.state]);
   const [ran, setRan] = useState<Record<string, string>>({});
   // UX re-walk: the run a task's Run with AI prepared, to open (its prompt, Done and Cancel).
   const [runOf, setRunOf] = useState<Record<string, string>>({});
@@ -954,11 +979,14 @@ function TasksByRepo({
                       mine.map((x) => (
                         <div
                           key={x.id}
+                          id={taskRowId(x.id)}
+                          tabIndex={x.id === focus ? -1 : undefined}
+                          aria-current={x.id === focus ? "true" : undefined}
                           className="stack"
                           style={{
                             gap: 4,
                             padding: "6px 0 6px 10px",
-                            borderLeft: `2px solid ${x.done ? "var(--green)" : "var(--line-2)"}`,
+                            borderLeft: `2px solid ${x.done ? "var(--green)" : x.id === focus ? "var(--accent)" : "var(--line-2)"}`,
                           }}
                         >
                           <div className="row between" style={{ alignItems: "flex-start" }}>
@@ -990,6 +1018,7 @@ function TasksByRepo({
                           {!ran[x.id] && (
                             <TaskRunState change={change} task={x} onDone={tasks.reload} />
                           )}
+                          <TaskTick change={change} task={x} onDone={tasks.reload} />
                           {ran[x.id] && (
                             <span role="status" style={{ fontSize: 12 }}>
                               {ran[x.id]}{" "}
@@ -1076,7 +1105,7 @@ export function Tasks({ hash }: { hash: string }) {
           {T.tasksInCrossRepo}
         </p>
       </Panel>
-      <TasksByRepo change={c.id} span="span 8" />
+      <TasksByRepo change={c.id} span="span 8" focus={queryParam(hash, "task")} />
       <div className="stack" style={{ gridColumn: "span 4", gap: 16 }}>
         <RunsPanel change={c.id} />
         <DriftPanel change={c.id} />
