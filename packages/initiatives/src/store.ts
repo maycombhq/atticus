@@ -202,6 +202,64 @@ export async function readPlan(root: string, id: string): Promise<PlanFile | und
   return r.data;
 }
 
+// ------------------------------------------------------------------ commitment notes
+
+/**
+ * UX review: what a person said when they recorded a commitment's state (the vendor moved the
+ * date, the team signed off), kept beside the plan in `initiatives/<id>/notes.yaml`. Not a
+ * record: the Commitment record (C1) keeps its state, this keeps the words, oldest first.
+ */
+export const CommitmentNote = z.strictObject({
+  at: IsoDateTime,
+  by: z.string().min(1),
+  commitment: RecordId,
+  status: z.enum(["open", "at-risk", "done", "slipped"]),
+  note: z.string().min(1),
+});
+export type CommitmentNote = z.infer<typeof CommitmentNote>;
+
+export const NotesFile = z.strictObject({
+  schemaVersion: z.literal(1),
+  initiative: RecordId,
+  notes: z.array(CommitmentNote).default([]),
+});
+export type NotesFile = z.infer<typeof NotesFile>;
+
+export const notesPath = (root: string, id: string) => join(initiativeDir(root, id), "notes.yaml");
+
+export async function readNotes(root: string, id: string): Promise<CommitmentNote[]> {
+  let text: string;
+  try {
+    text = await readFile(notesPath(root, id), "utf8");
+  } catch {
+    return [];
+  }
+  const r = NotesFile.safeParse(parse(text));
+  if (!r.success)
+    throw new InitiativeError(
+      `initiatives/${id}/notes.yaml: ${r.error.issues.map((i) => `${i.path.join(".")} ${i.message}`).join("; ")}`,
+    );
+  return r.data.notes;
+}
+
+/** Add one note to the end of the initiative's notes file. */
+export async function appendNote(root: string, id: string, note: CommitmentNote): Promise<string> {
+  const notes = [...(await readNotes(root, id)), CommitmentNote.parse(note)];
+  await writeAtomic(
+    notesPath(root, id),
+    toCanonicalYaml(NotesFile.parse({ schemaVersion: 1, initiative: id, notes }), [
+      "schemaVersion",
+      "initiative",
+      "at",
+      "by",
+      "commitment",
+      "status",
+      "note",
+    ]),
+  );
+  return `initiatives/${id}/notes.yaml`;
+}
+
 export const slugOf = (s: string) =>
   s
     .toLowerCase()

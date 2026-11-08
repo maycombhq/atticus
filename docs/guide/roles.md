@@ -20,7 +20,7 @@ _Send it to me_ on Home sends you a digest (your hand-offs that came back with c
 **Screens you use most:** Home, Feature brief, Prototypes and UX, Changes, Breakdown, Initiatives, Ecosystem map, Search the catalog.
 **Watch for:** changes in Define, and blocking findings on the brief and proposal.
 
-Start a change (`atticus change new "<title>" --type feature`, or from Changes), write the brief: the problem, who it is for, how you'll know it worked. The business critic sits beside it with plain reasons and fixes. When nothing blocking is open, _Raise hand-off_ sends it to architecture; merging its PR on the Git host approves it. After release, record what the measures showed: `atticus outcome record <change> <measure> --value <v>`.
+Start a change (`atticus change new "<title>" --type feature`, or from Changes), write the brief: the problem, who it is for, how you'll know it worked. The business critic sits beside it with plain reasons and fixes. When nothing blocking is open, _Raise hand-off_ sends it to architecture; merging its PR on the Git host approves it. After release, record what the measures showed in the Release plan's _Outcomes_ panel (choose the measure, say what you measured, _Record_), then _Propose for review_ (or `atticus outcome record <change> <measure> --value <v>`).
 
 ## Business analyst
 
@@ -41,7 +41,7 @@ Architecture review puts the design next to the integration patterns and what th
 **Screens you use most:** Home, Breakdown, Task board, Changes, Initiatives, Release plan, Impact explorer.
 **Watch for:** changes in Plan, and findings on tasks and service-desk drafts.
 
-Breakdown and the Task board show tasks by repo in cross-repo order. _Changes > Across all changes > Tasks_ lists every open change's tasks in one place, with a filter. Initiatives shows who owes what against the target release (`atticus initiative status <id>`).
+Breakdown and the Task board show tasks by repo in cross-repo order. _Changes > Across all changes > Tasks_ lists every open change's tasks in one place, with a filter. Initiatives shows who owes what against the target release (`atticus initiative status <id>`). When a team or vendor tells you where their part stands, choose _Update_ on the commitment, set it to open, at risk, done or slipped with a note of what they said, and _Propose for review_ (or `atticus initiative commit <commitment> <state> --note "<what changed>"`).
 
 ## Developer
 
@@ -63,6 +63,8 @@ Test trace shows coverage, the gaps before sign-off and the test kinds this chan
 **Watch for:** changes ready for release, and manual steps.
 
 The Service desk queue holds the drafted requests with every field ready to copy; Atticus never files on its own, so filing makes a step a person does. The Release plan computes the deploy order, the forecast, the evidence pack, release notes and the security review draft, and asks for go / no-go by raising the release hand-off PR; merging it is the go (`atticus release plan <change>`).
+
+Start an initiative for a release that needs several teams or vendors on Initiatives: _New initiative_ takes the title, the guided journey and the target release; _Plan it_ names the system it is about and works back from the release to the changes to start and who owes what by when. Record each commitment as it moves (_Update_: open, at risk, done or slipped, with a note). After each save, _Propose for review_ opens the pull request with the initiative's files; a person merges it. The commands do the same: `atticus initiative new "<title>" --journey <j>`, `atticus initiative plan <id> --target <system>` and `atticus initiative commit <commitment> <state>`.
 
 ## Platform lead
 

@@ -15,6 +15,7 @@ import { uiRoutes, type UiDeps } from "./ui-api.js";
 import { uiRunRoutes } from "./ui-api-run.js";
 import { uiMeRoutes } from "./ui-api-me.js";
 import { uiKnowRoutes } from "./ui-api-know.js";
+import { uiInitiativeRoutes } from "./ui-api-initiatives.js";
 import { uiQuestionRoutes } from "./ui-api-questions.js";
 import { uiAcrossRoutes } from "./ui-api-across.js";
 import { uiGraphRoutes } from "./ui-api-graph.js";
@@ -67,9 +68,11 @@ export function extendUiRoutes(
   deps: UiDeps = {},
   o: { warm?: boolean } = {},
 ): Router {
-  const base = uiKnowRoutes(uiRunRoutes(uiRoutes(r, ctx, deps), ctx, deps), ctx, {
+  const known = uiKnowRoutes(uiRunRoutes(uiRoutes(r, ctx, deps), ctx, deps), ctx, {
     warm: o.warm === true,
   });
+  // UX review: initiatives started, planned and recorded in the app.
+  const base = uiInitiativeRoutes(known, ctx);
   const views = uiGraphRoutes(uiAcrossRoutes(uiMeRoutes(base, ctx), ctx), ctx);
   const specs = uiSpecRoutes(uiOnboardingRoutes(uiQuestionRoutes(views, ctx), ctx), ctx);
   // ADR 0102: knowledge, a change's needs and the org pack from the wikis.

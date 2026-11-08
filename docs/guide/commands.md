@@ -320,7 +320,7 @@ Every other command. `atticus legacy` lists them by area; each runs by its own n
   atticus initiative plan <id> --target <system>  Plan its changes and commitments [--release d] [--system s]... [--dry-run]
   atticus initiative status <id>       Critical path, at-risk and slipped commitments
   atticus initiative request <id> <party>  Send a team a system card and track the reply [--system s]...
-  atticus initiative commit <commitment> <open|at-risk|done|slipped>  Record a commitment's status
+  atticus initiative commit <commitment> <open|at-risk|done|slipped>  Record a commitment's status [--note "<words>"]
   atticus learn [list] | learn start <role|lesson> | learn check [--answer a] [--lesson l] [--step s]
                                        Lessons by role in a practice sandbox: list them, start one, check a step
   atticus sandbox create <dir>         A throwaway practice metarepo

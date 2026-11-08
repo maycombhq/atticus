@@ -5,6 +5,7 @@ import { GraphView, type Graph } from "../../app/graph.js";
 import { Bar, CheckAgain, Donut, Panel, Ring, View } from "../../app/ui.js";
 import { Table, queryParam, setQueryParam, useView } from "./common.js";
 import { COPY } from "../../copy.js";
+import { CommitmentState, NewInitiative, PlanInitiative } from "./InitiativeForms.js";
 import {
   Citation,
   EvidenceProvider,
@@ -847,6 +848,8 @@ interface InitiativeStatus {
     neededBy: string;
     status: string;
     why: string;
+    recorded?: string;
+    note?: { at: string; by: string; status: string; note: string };
   }[];
   changes: { id: string; state?: string }[];
   notes: string[];
@@ -957,8 +960,11 @@ const STATUS_CHIP: Record<string, string> = {
 export function Initiatives({ hash }: { hash: string }) {
   const all = useApi<InitiativeStatus[]>("/api/initiatives");
   const id = queryParam(hash, "id");
+  const [editing, setEditing] = useState<string>();
   const one =
     all.state === "ready" ? (all.data.find((i) => i.initiative === id) ?? all.data[0]) : undefined;
+  const reload = () => all.reload();
+  const editingOne = one?.commitments.find((c) => c.id === editing);
   return (
     <div className="bento">
       <Panel title={T.initiatives} span="span 4">
@@ -999,9 +1005,17 @@ export function Initiatives({ hash }: { hash: string }) {
             </div>
           )}
         </View>
+        <div style={{ marginTop: 10 }}>
+          <NewInitiative
+            onCreated={(made) => {
+              setQueryParam("initiatives", "id", made);
+              reload();
+            }}
+          />
+        </div>
         <p className="muted" style={{ margin: "10px 0 0", fontSize: 12 }}>
           {T.startOneFromA}
-          <span className="mono">{T.atticusInitiativeNewTitle}</span>.
+          <span className="mono">{T.atticusInitiativeNewTitle}</span>
         </p>
       </Panel>
       {one ? (
@@ -1060,6 +1074,15 @@ export function Initiatives({ hash }: { hash: string }) {
           <Panel title={T.timeline} span="span 8" kind="dark">
             <Timeline s={one} />
           </Panel>
+          <Panel title={T.planTitle} span="span 8">
+            <PlanInitiative
+              key={one.initiative}
+              initiative={one.initiative}
+              planned={one.status !== "not-planned"}
+              release={one.targetRelease}
+              onSaved={reload}
+            />
+          </Panel>
           <Panel title={T.whoOwesWhat} span="span 8">
             {one.commitments.length === 0 ? (
               <div className="state">{T.noCommitmentsYet}</div>
@@ -1075,13 +1098,39 @@ export function Initiatives({ hash }: { hash: string }) {
                   {
                     label: T.status,
                     cell: (c) => (
-                      <span className={`chip ${STATUS_CHIP[c.status] ?? ""}`} title={c.why}>
-                        {c.status.toUpperCase()}
+                      <span className="stack" style={{ gap: 2 }}>
+                        <span className={`chip ${STATUS_CHIP[c.status] ?? ""}`} title={c.why}>
+                          {c.status.toUpperCase()}
+                        </span>
+                        {c.note && (
+                          <span className="muted" style={{ fontSize: 11.5 }}>
+                            {T.lastNote(c.note.note, c.note.by, c.note.at)}
+                          </span>
+                        )}
                       </span>
+                    ),
+                  },
+                  {
+                    label: T.update,
+                    cell: (c) => (
+                      <button
+                        type="button"
+                        className="btn"
+                        aria-pressed={editing === c.id}
+                        aria-label={T.setCommitment(c.what)}
+                        onClick={() => setEditing(editing === c.id ? undefined : c.id)}
+                      >
+                        {T.update}
+                      </button>
                     ),
                   },
                 ]}
               />
+            )}
+            {editingOne && (
+              <div style={{ marginTop: 10 }}>
+                <CommitmentState key={editingOne.id} commitment={editingOne} onSaved={reload} />
+              </div>
             )}
             {one.notes.map((n, i) => (
               <p key={i} className="muted" style={{ margin: "8px 0 0", fontSize: 12 }}>

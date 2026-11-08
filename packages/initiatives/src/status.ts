@@ -4,6 +4,8 @@ import { addWorkingDays, dayOf, laterOf, subtractWorkingDays, workingDays } from
 import {
   InitiativeError,
   manualEvidence,
+  appendNote,
+  readNotes,
   readPlan,
   readView,
   writeCurated,
@@ -60,6 +62,8 @@ export interface CommitmentState {
   recorded: CommitmentRecord["commitmentStatus"];
   status: ItemStatus;
   why: string;
+  /** The last note a person left when they recorded its state (initiatives/<id>/notes.yaml). */
+  note?: { at: string; by: string; status: CommitmentRecord["commitmentStatus"]; note: string };
 }
 
 export interface ChangeState {
@@ -126,6 +130,9 @@ export async function initiativeStatus(
   }
   const commitmentRecords = view.all("Commitment").filter((c) => c.initiative === id);
   const recordOf = new Map(commitmentRecords.map((c) => [c.id, c]));
+  const lastNote = new Map<string, CommitmentState["note"]>();
+  for (const n of await readNotes(root, id))
+    lastNote.set(n.commitment, { at: n.at, by: n.by, status: n.status, note: n.note });
 
   const items: ItemState[] = [];
   let projectedRelease: string | undefined;
@@ -254,6 +261,7 @@ export async function initiativeStatus(
       recorded: c.commitmentStatus,
       status,
       why,
+      ...(lastNote.get(c.id) ? { note: lastNote.get(c.id)! } : {}),
     };
   });
 
@@ -321,8 +329,8 @@ function topo(items: PlanItem[]): string[] {
 export async function recordCommitment(
   root: string,
   id: string,
-  o: { status: CommitmentRecord["commitmentStatus"]; by: string },
-): Promise<{ commitment: CommitmentRecord; written: string }> {
+  o: { status: CommitmentRecord["commitmentStatus"]; by: string; note?: string; now?: Date },
+): Promise<{ commitment: CommitmentRecord; written: string; notes?: string }> {
   const view = await readView(root);
   const c = view.get("Commitment", id);
   if (!c) throw new InitiativeError(`There is no commitment ${id}.`, "not-found");
@@ -331,7 +339,18 @@ export async function recordCommitment(
     ? c.evidence
     : [...c.evidence, ...manualEvidence(by)];
   const updated: CommitmentRecord = { ...c, commitmentStatus: o.status, evidence };
-  return { commitment: updated, written: await writeCurated(root, updated as CatalogRecord) };
+  const written = await writeCurated(root, updated as CatalogRecord);
+  const note = o.note?.trim();
+  if (!note) return { commitment: updated, written };
+  const at = (o.now ?? new Date()).toISOString().replace(/\.\d{3}Z$/, "Z");
+  const notes = await appendNote(root, c.initiative, {
+    at,
+    by,
+    commitment: id,
+    status: o.status,
+    note,
+  });
+  return { commitment: updated, written, notes };
 }
 
 /** Record a plan task as done, or an item as started (a request sent, a team asked), by a person. */

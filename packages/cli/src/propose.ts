@@ -3,6 +3,7 @@ import { rm } from "node:fs/promises";
 import { join, relative } from "node:path";
 import {
   catalogDirOf,
+  changesRelOf,
   factsDirOf,
   loadOrgPack,
   orgPackDirOf,
@@ -11,6 +12,7 @@ import {
 import type { Output } from "./commands.js";
 import { createAdapters, fileStepStore, type GitHost } from "@maycombhq/adapters";
 import { gitHandoffPublisher, type HandoffPublisher } from "@maycombhq/changes";
+import { initiativesDirOf } from "@maycombhq/initiatives";
 import { createGit, type GitRunner } from "@maycombhq/workspace";
 
 /**
@@ -18,7 +20,14 @@ import { createGit, type GitRunner } from "@maycombhq/workspace";
  * branch (without touching the person's working tree, index or checked-out branch), pushed, and
  * opened as a PR, after the person's yes. A human approves and merges on the Git host.
  */
-export const PROPOSE_SCOPES = ["answers", "corrections", "audit", "org-pack"] as const;
+export const PROPOSE_SCOPES = [
+  "answers",
+  "corrections",
+  "audit",
+  "org-pack",
+  "initiatives",
+  "outcomes",
+] as const;
 export type ProposeScope = (typeof PROPOSE_SCOPES)[number];
 
 const TITLES: Record<ProposeScope, string> = {
@@ -26,6 +35,8 @@ const TITLES: Record<ProposeScope, string> = {
   corrections: "Corrections to the map",
   audit: "A sample audit's answers",
   "org-pack": "Org pack and settings",
+  initiatives: "Initiatives and commitments",
+  outcomes: "Outcomes measured after release",
 };
 
 const rel = (root: string, dir: string) => relative(root, dir).split("\\").join("/");
@@ -45,6 +56,18 @@ export function scopeDirs(root: string, scope: ProposeScope): string[] {
       return [facts];
     case "org-pack":
       return [rel(root, orgPackDirOf(root))];
+    // UX review: an initiative's curated records (the initiative, its commitments and the
+    // parties its plan names) and its folder (the plan, the notes, the system cards); not the
+    // rest of the curated catalog (a triage decision is its own review).
+    case "initiatives":
+      return [
+        ...["initiative", "commitment", "party"].map((k) => `${catalog}/curated/${k}`),
+        rel(root, initiativesDirOf(root)),
+      ];
+    // UX review: an outcome recorded after release is the change's review/outcomes.yaml, open
+    // or archived (a pathspec's * crosses folders); nothing else of the change.
+    case "outcomes":
+      return [`${changesRelOf(root)}/*/review/outcomes.yaml`];
   }
 }
 

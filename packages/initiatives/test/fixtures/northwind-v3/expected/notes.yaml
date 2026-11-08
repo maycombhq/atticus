@@ -1,0 +1,13 @@
+schemaVersion: 1
+initiative: northwind-pay-v3-migration
+notes:
+  - at: 2027-01-12T09:00:00Z
+    by: ari
+    commitment: northwind-pay-v3-migration.vendor-sandbox
+    status: at-risk
+    note: Northwind Pay moved the sandbox to next week.
+  - at: 2027-01-13T09:00:00Z
+    by: pat
+    commitment: northwind-pay-v3-migration.vendor-sandbox
+    status: done
+    note: Sandbox keys arrived.
