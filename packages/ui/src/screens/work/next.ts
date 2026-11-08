@@ -33,6 +33,9 @@ export function kindOfStep(step: string | undefined): StepKind | undefined {
       return "handoff";
     case "tasks":
       return "task";
+    case "release-prs":
+    case "release-prs-merge":
+      return "release";
     default:
       return undefined;
   }

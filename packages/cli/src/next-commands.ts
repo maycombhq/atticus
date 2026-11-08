@@ -30,6 +30,7 @@ import {
   liveHandoff,
   loadChangeContext,
   loadChangePolicy,
+  releasePrReasons,
   stageCompletion,
   type ChangeContext,
 } from "@maycombhq/changes";
@@ -184,6 +185,11 @@ export interface NextState {
   changes: {
     id: string;
     state: string;
+    /**
+     * ADR 0184: before go/no-go, the release PRs: `raise` when a repo has none, `merge` when one
+     * waits on a person on the Git host.
+     */
+    releasePrs?: "raise" | "merge";
     /** Sixth UX walk: `run` is the task's run state (task-run.yaml), when it has one. */
     tasks: { id: string; repo: string; done: boolean; run?: string }[];
     /** ADR 0101: whether its feature is placed, and what it needs from the organisation. */
@@ -505,6 +511,7 @@ export async function readNextState(root: string): Promise<NextState> {
           : [],
         feature: existsSync(join(changesDirOf(root), c.id, "feature.yaml")),
         ...(missing.draft ? { undrafted: true } : {}),
+        ...(stageOf(c.state) === "release" ? await releasePrsOf(root, c.id) : {}),
         ...(missing.brief ? { brief: `${changesRelOf(root)}/${c.id}/brief.md` } : {}),
         ...(questions.length ? { questions } : {}),
         ...(knowledge.items.length ? { knowledge: true } : {}),
@@ -655,6 +662,14 @@ async function draftMissing(
         (b.code === "missing-artifact" || b.code === "unfilled-artifact") && b.artifact === "brief",
     ),
   };
+}
+
+/** ADR 0184: what the release PRs still need, for a change on its way to release. */
+async function releasePrsOf(root: string, id: string): Promise<{ releasePrs?: "raise" | "merge" }> {
+  const reasons = await releasePrReasons(root, id).catch(() => []);
+  if (reasons.some((r) => r.code === "release-pr-missing")) return { releasePrs: "raise" };
+  if (reasons.some((r) => r.code === "release-pr-not-merged")) return { releasePrs: "merge" };
+  return {};
 }
 
 /** The stage a change's state puts it at (plan 4.4), as the app's Work pages read it. */
@@ -988,6 +1003,29 @@ function stageSteps(c: NextState["changes"][number]): NextStep[] {
       ];
     }
     case "release":
+      // ADR 0184: go/no-go is over the release PRs, so they come first.
+      if (c.releasePrs === "raise")
+        return [
+          {
+            step: "release-prs",
+            command: `atticus change release-prs ${id} --approve`,
+            where: METAREPO,
+            why: `${id}'s code reaches each repo's default branch through its release PRs: raise them (Release › Raise the release PRs), then a person merges each on the Git host.`,
+            person: true,
+            change: id,
+          },
+        ];
+      if (c.releasePrs === "merge")
+        return [
+          {
+            step: "release-prs-merge",
+            command: `atticus change sync ${id}`,
+            where: METAREPO,
+            why: `${id}'s release PRs wait on a person on the Git host: merge each, then Sync records it (Release).`,
+            person: true,
+            change: id,
+          },
+        ];
       return [
         {
           step: "release",

@@ -436,6 +436,25 @@ describe("nextSteps (pure)", () => {
     expect(steps[2]!.repo).toBe("forge-ledger");
   });
 
+  it("puts the release PRs before go/no-go (ADR 0184)", () => {
+    const step = (releasePrs?: "raise" | "merge") =>
+      nextSteps({
+        ...base,
+        changes: [
+          {
+            id: "split-fees",
+            state: "release-ready",
+            tasks: [],
+            ...(releasePrs ? { releasePrs } : {}),
+          },
+        ],
+      })[0]!;
+    expect(step("raise").command).toBe("atticus change release-prs split-fees --approve");
+    expect(step("raise").person).toBe(true);
+    expect(step("merge").step).toBe("release-prs-merge");
+    expect(step().step).toBe("release");
+  });
+
   it("skips a task under way to the next one, and says the drafted task's PR is on the Task board (sixth UX walk)", () => {
     const tasks = (runs: (string | undefined)[]) =>
       runs.map((run, i) => ({
