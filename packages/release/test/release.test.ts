@@ -163,6 +163,70 @@ describe("deployment plan", () => {
   });
 });
 
+describe("deployment plan: a retired interface", () => {
+  /** Lay the change over a fresh metarepo with POST /transfers retired, then edit more. */
+  async function retired(edit?: (iface: string, stories: string) => [string, string]) {
+    const root = await forgeRoot();
+    const ifile = join(changeDir(root), "interfaces.md");
+    const sfile = join(changeDir(root), "stories.md");
+    let iface = (await readFile(ifile, "utf8")).replace(
+      "| POST /transfers | api/ledger-openapi.yaml | planned-modify |",
+      "| POST /transfers | api/ledger-openapi.yaml | planned-retire |",
+    );
+    expect(iface).toContain("planned-retire");
+    let stories = await readFile(sfile, "utf8");
+    if (edit) [iface, stories] = edit(iface, stories);
+    await writeFile(ifile, iface);
+    await writeFile(sfile, stories);
+    return deploymentPlan(await loadRelease(root, ID, { now: NOW, runtime: forgeJudge().runtime }));
+  }
+
+  it("deploys the caller that stops calling a retired operation before the callee that removes it", async () => {
+    const want = parse(expected("plan-retire.yaml")) as {
+      steps: {
+        n: number;
+        repo: string;
+        kind: string;
+        after: number[];
+        what?: string[];
+        why?: string[];
+      }[];
+    };
+    const p = await retired((iface, stories) => [
+      iface
+        .split("\n")
+        .filter((l) => !l.includes("GET /accounts/{id}/limit |"))
+        .join("\n"),
+      stories.replace(/ \| s1-refuse-over-limit \|/g, " |  |"),
+    ]);
+    expect(p.steps.map((s) => ({ n: s.n, repo: s.repo, kind: s.kind, after: s.after }))).toEqual(
+      want.steps.map((s) => ({ n: s.n, repo: s.repo, kind: s.kind, after: s.after })),
+    );
+    for (const w of want.steps) {
+      const s = p.steps[w.n - 1]!;
+      for (const x of w.what ?? []) expect(s.what).toContain(x);
+      for (const x of w.why ?? []) expect(s.why).toContain(x);
+    }
+    expect(p.gaps.some((g) => /depend on each other/.test(g))).toBe(false);
+  });
+
+  it("reports a retired operation's order that fights another dependency as a gap", async () => {
+    // GET /accounts/{id}/limit is new (ledger-api first) while POST /transfers is retired
+    // (portal-bff first), and s2 and s3 depend on s1: no order satisfies both.
+    const p = await retired();
+    const by = (repo: string) => p.steps.find((s) => s.repo === repo && s.kind === "code")!;
+    expect(by("forge-portal-bff").what).toContain(
+      "portal-bff stops calling POST /transfers on ledger-api (retired)",
+    );
+    expect(by("forge-ledger").what).toContain("ledger-api retires POST /transfers");
+    expect(p.gaps).toContainEqual(
+      expect.stringMatching(
+        /^forge-(ledger|portal-bff) and forge-(ledger|portal-bff) depend on each other, so no order satisfies both; agree one and write it in design\.md\.$/,
+      ),
+    );
+  });
+});
+
 describe("forecast", () => {
   it("is the earliest day the request lead times allow, with no target outside an initiative", async () => {
     const f = await releaseForecast(await plain());

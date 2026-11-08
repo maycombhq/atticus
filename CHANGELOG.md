@@ -54,6 +54,8 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ### Fixed before release (review)
 
+- Round 43 (review, release plan):
+  - **The deployment plan orders a retired interface**, in release: a `planned-retire` hop in interfaces.md was ignored, so the plan could deploy the callee (removing the operation) before its caller stopped calling it, with no gap. The caller's step now says it stops calling the operation and the callee's that it retires it, and the caller deploys first (the reverse of a new or changed operation). When that order fights another dependency (a new operation the other way, or a story dependency), the plan says so with the "depend on each other … agree one and write it in design.md" gap. Golden `packages/release/test/fixtures/expected/plan-retire.yaml`, tests in `packages/release/test/release.test.ts`.
 - Round 42 (review):
   - **One plural rule for endpoint ids and the glossary**, in core: "statuses", "buses" and "aliases" become "status", "bus" and "alias", so `GET /payment-statuses` keeps its id `get-payment-status` and "Payment statuses" is the same glossary term as "Payment status".
   - **A stage's write entries stay inside the change folder**, with a `*` only in the last part; an org pack that writes otherwise is refused at load, not followed.
