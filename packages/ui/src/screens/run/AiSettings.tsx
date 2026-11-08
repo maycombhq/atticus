@@ -125,12 +125,15 @@ export function AiSettingsForm(p: { data: AiSettings; onSaved?: () => void }) {
   // stored (it trims and drops empties); with edits here it says so and the edits stay.
   const onDisk = JSON.stringify(formOf(p.data));
   const [base, setBase] = useState(onDisk);
-  const justSaved = useRef(false);
+  // The form as it was sent by the last save that went through; its reload is taken quietly only
+  // while the form still says the same (an edit typed meanwhile is kept and said).
+  const sent = useRef<string | undefined>(undefined);
   const edited = JSON.stringify(f) !== base;
   useEffect(() => {
+    const wasSent = sent.current;
+    sent.current = undefined;
     if (onDisk === base) return;
-    if (justSaved.current || !edited) {
-      justSaved.current = false;
+    if (!edited || (wasSent !== undefined && wasSent === JSON.stringify(f))) {
       setF(formOf(p.data));
       setBase(onDisk);
     }
@@ -152,10 +155,11 @@ export function AiSettingsForm(p: { data: AiSettings; onSaved?: () => void }) {
       className="stack"
       onSubmit={(e) => {
         e.preventDefault();
+        const asSent = JSON.stringify(f);
         void save.run(async () => {
           await api("/api/settings/ai", { method: "PUT", body: toSave(f) });
           // Only a save that went through takes the file as the server stored it.
-          justSaved.current = true;
+          sent.current = asSent;
           p.onSaved?.();
         }, T.saved(p.data.path));
       }}

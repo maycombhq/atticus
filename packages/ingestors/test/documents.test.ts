@@ -317,8 +317,50 @@ describe("PDF (golden, best effort)", () => {
     ]);
     const m = readDocument("many.pdf", new Uint8Array(many));
     expect(m.text.sections).toEqual([]);
-    expect(m.notes.join(" ")).toMatch(/inflate to more than 256 MB/);
+    expect(m.notes.join(" ")).toMatch(/inflate to more than 256 MB, so it isn't read\.$/);
   }, 60_000);
+
+  it("charges a shared text stream on every page that shows it, and skips a corrupt stream", () => {
+    // ~4 MB of text in one stream, shown by 30 pages: 120 MB of sections, over the 64 MB budget.
+    const line = "BT (" + "word ".repeat(200) + ") Tj ET\n";
+    const text = deflateSync(Buffer.from(line.repeat(4000)));
+    const n = 30;
+    const kids = Array.from({ length: n }, (_, i) => `${10 + i} 0 R`).join(" ");
+    const pages = Array.from(
+      { length: n },
+      (_, i) => `${10 + i} 0 obj << /Type /Page /Parent 2 0 R /Contents 4 0 R >> endobj\n`,
+    ).join("");
+    const pdf = Buffer.concat([
+      Buffer.from(
+        "%PDF-1.5\n1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n" +
+          `2 0 obj << /Type /Pages /Kids [${kids}] /Count ${n} >> endobj\n` +
+          pages +
+          `4 0 obj << /Length ${text.length} /Filter /FlateDecode >>\nstream\n`,
+      ),
+      text,
+      Buffer.from("\nendstream\nendobj\ntrailer << /Root 1 0 R >>\n%%EOF\n"),
+    ]);
+    const r = readDocument("shared.pdf", new Uint8Array(pdf));
+    expect(r.text.sections).toEqual([]);
+    expect(r.notes.join(" ")).toMatch(/hold more than 64 MB of text/);
+    // A corrupt stream beside a good one: the good page is read, the bad one skipped.
+    const good = deflateSync(Buffer.from("BT (Still here) Tj ET"));
+    const broken = Buffer.concat([
+      Buffer.from(
+        "%PDF-1.5\n1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n" +
+          "2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj\n" +
+          "3 0 obj << /Type /Page /Parent 2 0 R /Contents [4 0 R 5 0 R] >> endobj\n" +
+          `4 0 obj << /Length ${good.length} /Filter /FlateDecode >>\nstream\n`,
+      ),
+      good,
+      Buffer.from(
+        "\nendstream\nendobj\n5 0 obj << /Length 7 /Filter /FlateDecode >>\nstream\ngarbage\nendstream\nendobj\n",
+      ),
+      Buffer.from("trailer << /Root 1 0 R >>\n%%EOF\n"),
+    ]);
+    const b = readDocument("broken.pdf", new Uint8Array(broken));
+    expect(b.text.sections).toEqual([{ heading: "", level: 0, text: "Still here", page: 1 }]);
+  });
 
   it("says so when there is no text, and never guesses", () => {
     const r = readDocument("scanned.pdf", bytes("scanned.pdf"));

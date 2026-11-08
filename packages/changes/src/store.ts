@@ -30,9 +30,26 @@ const LEADING = [
   "to",
 ];
 
+/** A name that is a path, not a folder: separators, `.`/`..`, a drive or nothing at all. */
+const isPathLike = (id: string) =>
+  !id ||
+  id === "." ||
+  id === ".." ||
+  /[\\/]/.test(id) ||
+  /^[A-Za-z]:/.test(id) ||
+  id.includes("\0");
+
+/** A change folder, or an archived one as `archive/<folder>` (how archived reviews are read). */
+const isFolderRef = (id: string) => {
+  const parts = id.split("/");
+  if (parts.length === 2 && parts[0] === "archive") return !isPathLike(parts[1]!);
+  return !isPathLike(id);
+};
+
 export function changeFolder(root: string, id: string): string {
-  // An id, never a path: nothing outside the changes folder is read or written through it.
-  if (!RecordId.safeParse(id).success) throw new Error(`${id} isn't a change id.`);
+  // A folder name, never a path: nothing outside the changes folder is read or written through
+  // it. (Any plain folder name is taken, as a stray folder in openspec/changes is listed and skipped.)
+  if (!isFolderRef(id)) throw new Error(`${id} isn't a change id.`);
   return join(changesDirOf(root), id);
 }
 
@@ -76,6 +93,8 @@ export interface ChangeStore {
 
 export function changeStore(root: string): ChangeStore {
   async function tryRead(id: string): Promise<ChangeLifecycle | undefined> {
+    // Not an id (a stray folder, a mistyped argument): no change, as for a folder with no change.yaml.
+    if (!RecordId.safeParse(id).success) return undefined;
     const path = changeFilePath(root, id);
     let text: string;
     try {
@@ -116,7 +135,9 @@ export function changeStore(root: string): ChangeStore {
       let names: string[];
       try {
         names = (await readdir(changesDirOf(root), { withFileTypes: true }))
-          .filter((d) => d.isDirectory() && d.name !== "archive")
+          .filter(
+            (d) => d.isDirectory() && d.name !== "archive" && RecordId.safeParse(d.name).success,
+          )
           .map((d) => d.name)
           .sort();
       } catch {

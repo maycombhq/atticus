@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -141,5 +141,18 @@ describe("watchMetarepo", () => {
     await writeFile(join(root, ".atticus/me.yaml"), "name: pat\n");
     await until(() => paths(events).includes(".atticus/me.yaml"));
     expect(paths(events)).toContain(".atticus/me.yaml");
+  });
+
+  it("follows a folder swapped in by a rename (a new folder under the same name)", async () => {
+    const root = await metarepo();
+    const { events } = collect(root);
+    await mkdir(join(root, "catalog-next/generated"), { recursive: true });
+    // Gone and back in one step: the root's event comes after the name is a folder again.
+    await rm(join(root, "catalog"), { recursive: true, force: true });
+    await rename(join(root, "catalog-next"), join(root, "catalog"));
+    await new Promise((r) => setTimeout(r, 200));
+    await writeFile(join(root, "catalog/generated/two.yaml"), "x: 2\n");
+    await until(() => paths(events).includes("catalog/generated/two.yaml"));
+    expect(paths(events)).toContain("catalog/generated/two.yaml");
   });
 });

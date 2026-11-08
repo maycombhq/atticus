@@ -93,10 +93,17 @@ export async function checkoutGitWiki(
       const listed = await git(["config", "--file", ".gitmodules", "--get-regexp", "path"], root)
         .then((r) => r.stdout.split(/\r?\n/).some((l) => l.trim().endsWith(` ${rel}`)))
         .catch(() => false);
-      if (listed) await git([...fileOk(url), "submodule", "update", "--init", "--", rel], root);
+      // core.symlinks=false reaches the submodule's checkout too (git passes -c down).
+      if (listed)
+        await git(
+          ["-c", "core.symlinks=false", ...fileOk(url), "submodule", "update", "--init", "--", rel],
+          root,
+        );
       else
         await git(
           [
+            "-c",
+            "core.symlinks=false",
             ...fileOk(url),
             "submodule",
             "add",

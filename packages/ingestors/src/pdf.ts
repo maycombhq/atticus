@@ -17,6 +17,8 @@ const MAX_DECODED = 256 * 1024 * 1024;
 /** The most objects one object stream may pack, and the most pages read. */
 const MAX_PACKED = 100_000;
 const MAX_PAGES = 10_000;
+/** The most text one file's pages may hold together (characters). */
+const MAX_TEXT = 64 * 1024 * 1024;
 
 /** One file's decoding: each stream decoded once, and all of them within MAX_DECODED. */
 interface Decoding {
@@ -24,6 +26,8 @@ interface Decoding {
   /** A content stream's lines of text, read once however many pages show it. */
   texts: Map<PdfObject, string[]>;
   left: number;
+  /** Text the pages may still hold, counted on every page that shows it. */
+  textLeft: number;
 }
 
 interface PdfObject {
@@ -39,42 +43,47 @@ const ref = (dict: string, key: string) => {
 const isType = (dict: string, type: string) =>
   new RegExp(`/Type\\s*/${type}(?![A-Za-z])`).test(dict);
 
+const tooMuch = () =>
+  new ReadError(
+    `This PDF's streams inflate to more than ${MAX_DECODED / 1024 / 1024} MB, so it isn't read`,
+  );
+
 function decodeStream(o: PdfObject, d: Decoding): Buffer | undefined {
   if (d.cache.has(o)) return d.cache.get(o);
-  const over = () =>
-    new ReadError(
-      `This PDF's streams inflate to more than ${MAX_DECODED / 1024 / 1024} MB; it isn't read.`,
-    );
-  if (o.stream && d.left <= 0) throw over();
+  if (o.stream && d.left <= 0) throw tooMuch();
   const max = Math.min(MAX_STREAM, d.left);
   const out = decodeOnce(o, max);
-  // A stream that didn't fit what was left of the budget (but would fit one stream's cap).
-  if (o.stream && out === undefined && max < MAX_STREAM && decodeOnce(o, 0) === "flate")
-    throw over();
-  d.cache.set(o, out instanceof Buffer ? out : undefined);
-  if (out instanceof Buffer) d.left -= out.length;
-  return out instanceof Buffer ? out : undefined;
+  // Too big for what is left of the file's budget (a stream merely corrupt is skipped, as before).
+  if (out === "too-big") {
+    if (max < MAX_STREAM) throw tooMuch();
+    d.cache.set(o, undefined);
+    return undefined;
+  }
+  d.cache.set(o, out);
+  if (out) d.left -= out.length;
+  return out;
 }
 
-/** The stream decoded within `max` bytes; with max 0, whether it is one Atticus decodes ("flate"). */
-function decodeOnce(o: PdfObject, max: number): Buffer | undefined | "flate" {
+/** The stream decoded within `max` bytes: "too-big" when it inflates past that. */
+function decodeOnce(o: PdfObject, max: number): Buffer | undefined | "too-big" {
   if (!o.stream) return undefined;
   const filter = /\/Filter\s*(\[[^\]]*\]|\/\w+)/.exec(o.dict)?.[1];
   if (!filter) return o.stream;
   const names = filter.match(/\/\w+/g) ?? [];
   if (names.length !== 1 || names[0] !== "/FlateDecode") return undefined;
-  if (max <= 0) return "flate";
+  const big = (e: unknown) => (e as { code?: string }).code === "ERR_BUFFER_TOO_LARGE";
   try {
     return inflateSync(o.stream, { maxOutputLength: max });
-  } catch {
+  } catch (e) {
+    if (big(e)) return "too-big";
     try {
       // Some writers leave streams unterminated; take what inflates.
       return inflateSync(o.stream, {
         finishFlush: constants.Z_SYNC_FLUSH,
         maxOutputLength: max,
       });
-    } catch {
-      return undefined;
+    } catch (e2) {
+      return big(e2) ? "too-big" : undefined;
     }
   }
 }
@@ -326,7 +335,12 @@ function pdfDate(s: string | undefined): string | undefined {
 export function readPdf(bytes: Uint8Array): ParsedText {
   const buf = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const src = buf.toString("latin1");
-  const decoding: Decoding = { cache: new Map(), texts: new Map(), left: MAX_DECODED };
+  const decoding: Decoding = {
+    cache: new Map(),
+    texts: new Map(),
+    left: MAX_DECODED,
+    textLeft: MAX_TEXT,
+  };
   const objs = objects(src, buf, decoding);
   const trailers = [...src.matchAll(/trailer\s*(<<[\s\S]*?>>)/g)].map((m) => m[1]!);
   for (const o of objs.values()) if (isType(o.dict, "XRef")) trailers.push(o.dict);
@@ -391,11 +405,19 @@ export function readPdf(bytes: Uint8Array): ParsedText {
       .map((r) => objs.get(r))
       .flatMap((o) => {
         if (!o) return [];
-        const had = decoding.texts.get(o);
-        if (had) return had;
-        const t = decodeStream(o, decoding)?.toString("latin1");
-        const lines = t === undefined ? [] : contentText(t);
-        decoding.texts.set(o, lines);
+        let lines = decoding.texts.get(o);
+        if (!lines) {
+          const t = decodeStream(o, decoding)?.toString("latin1");
+          lines = t === undefined ? [] : contentText(t);
+          decoding.texts.set(o, lines);
+        }
+        // Every page that shows the text is charged for it: one stream shown by thousands of
+        // pages never builds gigabytes of sections.
+        decoding.textLeft -= lines.reduce((n, l) => n + l.length, 0);
+        if (decoding.textLeft < 0)
+          throw new ReadError(
+            `This PDF's pages hold more than ${MAX_TEXT / 1024 / 1024} MB of text, so it isn't read`,
+          );
         return lines;
       });
     s.heading("", 0, { page: i + 1 });

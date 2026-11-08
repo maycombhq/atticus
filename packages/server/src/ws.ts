@@ -1,11 +1,11 @@
 import { createHash } from "node:crypto";
 import type { IncomingMessage } from "node:http";
+import type { Duplex } from "node:stream";
 
 /** The largest frame a client may send (a ping or a close carries 125 bytes at most). */
 const MAX_CLIENT_FRAME = 64 * 1024;
 /** The most a client may have unread at once. */
 const MAX_CLIENT_BUFFER = 256 * 1024;
-import type { Duplex } from "node:stream";
 
 /**
  * The server side of RFC 6455, just what live events need: the handshake, text frames out,

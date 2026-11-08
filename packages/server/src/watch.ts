@@ -61,6 +61,16 @@ export function watchMetarepo(o: WatchOptions): MetarepoWatch {
   const delay = o.delayMs ?? 300;
   const maxPaths = o.maxPaths ?? 50;
   const watchers = new Map<string, FSWatcher>();
+  // The folder each watcher was made on (its inode): a folder removed and made again, or renamed
+  // into place, before the root's event is a new folder, though isDir says yes.
+  const inodes = new Map<string, number>();
+  const inodeOf = (d: string) => {
+    try {
+      return statSync(d).ino;
+    } catch {
+      return undefined;
+    }
+  };
   const problems: string[] = [];
   const pending = new Set<string>();
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -126,11 +136,20 @@ export function watchMetarepo(o: WatchOptions): MetarepoWatch {
         note(name ? join(dir, String(name)) : dir);
       });
       w.on("error", (e) => {
-        problems.push(`${posix(relative(root, dir)) || "."}: ${e.message}`);
         w.close();
+        // A late error from an old watcher never untracks the one that replaced it.
+        if (watchers.get(dir) !== w) return;
+        problems.push(`${posix(relative(root, dir)) || "."}: ${e.message}`);
         watchers.delete(dir);
+        inodes.delete(dir);
       });
       watchers.set(dir, w);
+      const ino = inodeOf(dir);
+      if (ino !== undefined) inodes.set(dir, ino);
+      // Followed again: a problem said of this folder before is over.
+      const label = `${posix(relative(root, dir)) || "."}: `;
+      for (let i = problems.length - 1; i >= 0; i--)
+        if (problems[i]!.startsWith(label)) problems.splice(i, 1);
     } catch (e) {
       problems.push(`${posix(relative(root, dir)) || "."}: ${(e as Error).message}`);
     }
@@ -139,11 +158,14 @@ export function watchMetarepo(o: WatchOptions): MetarepoWatch {
   const attach = () => {
     // A followed folder removed (a scan rebuilt catalog/, say) goes quiet without an error on
     // Linux and macOS: drop its watcher, so the folder made again is followed again.
-    for (const [d, w] of watchers)
-      if (!isDir(d)) {
+    for (const [d, w] of watchers) {
+      const ino = inodeOf(d);
+      if (ino === undefined || (inodes.has(d) && inodes.get(d) !== ino)) {
         w.close();
         watchers.delete(d);
+        inodes.delete(d);
       }
+    }
     // The root and .atticus/ each time too: .atticus/ may appear after the server started (the
     // first atticus map), or come back after a Windows error dropped its watcher.
     follow(root, false);

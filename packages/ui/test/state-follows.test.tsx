@@ -124,6 +124,38 @@ describe("the AI form and runtime.yaml on disk", () => {
   });
 });
 
+describe("the AI form after a save, with an edit typed meanwhile", () => {
+  it("keeps the later edit and says the file changed, rather than taking the reload over it", async () => {
+    const DATA = {
+      ai: "on",
+      modes: { allowed: ["hand-off"], default: "hand-off" },
+      assistants: [{ id: "copilot", name: "GitHub Copilot", allowed: true, default: true }],
+      providers: [{ type: "anthropic", settings: ["model"] }],
+      model: null,
+      keySet: false,
+      models: { allowed: [], recommended: {} },
+      budgets: { defaultTokens: 200000, perAgent: {} },
+      path: "org-pack/runtime.yaml",
+    } as never as Parameters<typeof AiSettingsForm>[0]["data"];
+    const props = { data: DATA, onSaved: () => undefined };
+    const m = mount(AiSettingsForm as never, props as never);
+    const models = () => all(m.tree).find((e) => e.props.id === "ai-models")!;
+    (models().props.onChange as (e: unknown) => void)({ target: { value: "model-b" } });
+    m.render();
+    (all(m.tree).find((e) => e.type === "form")!.props.onSubmit as (e: unknown) => void)({
+      preventDefault: () => undefined,
+    });
+    await flush();
+    m.render();
+    // Typed after the save went, before its reload landed.
+    (models().props.onChange as (e: unknown) => void)({ target: { value: "model-c" } });
+    m.render();
+    props.data = { ...DATA, models: { allowed: ["model-b"], recommended: {} } } as never;
+    m.render();
+    expect(models().props.value).toBe("model-c");
+  });
+});
+
 describe("Reset asks first", () => {
   it("takes two clicks, and Keep it changes nothing", () => {
     let reset = 0;

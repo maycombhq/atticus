@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
-import { changesRelOf, orgPackDirOf } from "@maycombhq/core";
+import { changesRelOf, orgPackDirOf, RecordId } from "@maycombhq/core";
 import { RuntimeConfigError, runtimeForCli, type AiRuntime } from "@maycombhq/ai";
 import { changeFolder, loadChangeContext } from "@maycombhq/changes";
 import { gateStatus, ownerWaitsLine } from "@maycombhq/naysayer";
@@ -197,6 +197,8 @@ export async function stageCli(
     (group === "plan" &&
       command === "stories" &&
       !!arg &&
+      // A mistyped argument isn't a change: it falls through to planStories and its usage words.
+      RecordId.safeParse(arg).success &&
       existsSync(join(changeFolder(root, arg), TARGET_DIR)));
   if (group === "bench" && command === "design") return benchDesign(root, values, io, deps);
   if (!isStage) return undefined;

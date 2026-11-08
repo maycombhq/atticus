@@ -1,7 +1,13 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { changeFolder, changeSize, loadChangeContext, newChange } from "../src/index.js";
+import {
+  changeFolder,
+  changeSize,
+  changeStore,
+  loadChangeContext,
+  newChange,
+} from "../src/index.js";
 import { forgeMetarepo } from "./helpers.js";
 
 /** ADR 0113: a change's size decides its path. */
@@ -56,8 +62,27 @@ describe("changeSize", () => {
 });
 
 describe("a change's folder", () => {
-  it("is named by an id, never a path", () => {
+  it("is named by a folder name, never a path; a stray folder is skipped, never an error", async () => {
     expect(() => changeFolder("/m", "../../etc")).toThrow(/isn't a change id/);
+    expect(() => changeFolder("/m", "a/b")).toThrow(/isn't a change id/);
+    expect(() => changeFolder("/m", "C:x")).toThrow(/isn't a change id/);
     expect(changeFolder("/m", "add-fraud-check")).toMatch(/add-fraud-check$/);
+    expect(changeFolder("/m", "_templates")).toMatch(/_templates$/);
+    // An archived change is read as archive/<folder>, and only one folder deep.
+    expect(changeFolder("/m", "archive/2026-10-01-c4")).toMatch(/2026-10-01-c4$/);
+    expect(() => changeFolder("/m", "archive/..")).toThrow(/isn't a change id/);
+    expect(() => changeFolder("/m", "archive/a/b")).toThrow(/isn't a change id/);
+    expect(() => changeFolder("/m", "archive\\x")).toThrow(/isn't a change id/);
+    const root = await forgeMetarepo();
+    const c = await newChange(root, {
+      title: "Return the order's time",
+      type: "small-change",
+      by: "pat",
+      now: "2026-10-23T09:00:00Z",
+    });
+    for (const stray of ["_templates", "WIP", "My Change"])
+      await mkdir(join(changeFolder(root, c.id), "..", stray), { recursive: true });
+    expect((await changeStore(root).list()).map((x) => x.id)).toEqual([c.id]);
+    expect(await changeStore(root).tryRead("My Change")).toBeUndefined();
   });
 });
