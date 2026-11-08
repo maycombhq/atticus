@@ -112,6 +112,11 @@ describe("the local index", () => {
       "portal-bff",
       "portal-ui",
     ]);
+    // A count of one confidence by total, without reading every record (the Contracts ring).
+    const all = ix.list("Column", { limit: 500 }).items;
+    const verified = ix.list("Column", { confidence: "verified", limit: 1 });
+    expect(verified.total).toBe(all.filter((r) => r.confidence === "verified").length);
+    expect(ix.list("Column", { confidence: "no-such", limit: 1 }).total).toBe(0);
     ix.close();
   });
 });

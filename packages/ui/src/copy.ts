@@ -2248,6 +2248,10 @@ export const COPY = {
     contractMix: "Contract mix",
     ofInterfacesVerifiedFrom: (verified: string | number, total: string | number) =>
       `${verified} of ${total} interfaces verified from code`,
+    /** A long list shows a page; a filter finds the rest (review round 31). */
+    filterContracts: (kind: string) => `Find ${kind} by id or name`,
+    showingOf: (shown: number, total: number) => `Showing ${shown} of ${total}`,
+    showMore: "Show more",
     aVendorSpecIs:
       "A vendor spec is a document until its caller is scanned; code wins when they differ.",
     fieldMappings: "Field mappings",

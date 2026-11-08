@@ -613,10 +613,43 @@ export interface StoreMigrations {
    * The numbering every file name shares, when they all share one: a prefix, a number, a
    * separator, words and an extension (V3__add_sku.sql: V, 3, __, add_sku, .sql).
    */
-  pattern?: { prefix: string; sep: string; ext: string; width: number; newest: number };
+  pattern?: {
+    prefix: string;
+    sep: string;
+    ext: string;
+    width: number;
+    newest: number;
+    /**
+     * Flyway's dotted or underscored versions (V1_2__add_acct.sql, V2024.01.15.1__x.sql): the
+     * newest version's parts and the character between them. The number alone is its first part.
+     */
+    version?: number[];
+    /** The newest version's parts as written (01 keeps its zero). */
+    vtext?: string[];
+    vsep?: "." | "_";
+  };
 }
 
 const NUMBERED = /^([A-Za-z]*)(\d+)([^A-Za-z0-9]+)([A-Za-z0-9].*?)(\.[A-Za-z0-9]+)$/;
+/** Flyway's names: a prefix, a version of parts (1, 1_2, 1.2.3), `__`, words, an extension. */
+const VERSIONED = /^([A-Za-z]*)(\d+(?:[._]\d+)*)(__)([A-Za-z0-9].*?)(\.[A-Za-z0-9]+)$/;
+const versionOf = (v: string) => v.split(/[._]/).map(Number);
+const cmpVersion = (a: number[], b: number[]) => {
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const d = (a[i] ?? 0) - (b[i] ?? 0);
+    if (d) return d;
+  }
+  return 0;
+};
+/** The name's version, as its store numbers them (a dotted Flyway version, or the one number). */
+function versionIn(name: string, p: NonNullable<StoreMigrations["pattern"]>): number[] | undefined {
+  if (p.vsep) {
+    const v = VERSIONED.exec(name);
+    return v && v[1] === p.prefix && v[5] === p.ext ? versionOf(v[2]!) : undefined;
+  }
+  const x = NUMBERED.exec(name);
+  return x && x[1] === p.prefix && x[3] === p.sep && x[5] === p.ext ? [Number(x[2])] : undefined;
+}
 
 /** The store's migrations, as facts read off the catalog: no guess at a tool's convention. */
 export function migrationsOf(e: Estate, store: string): StoreMigrations {
@@ -640,7 +673,30 @@ export function migrationsOf(e: Estate, store: string): StoreMigrations {
   const all = parts.every((p) => p) && parts.length > 0;
   const same = (k: number) => all && new Set(parts.map((p) => p![k])).size === 1;
   let pattern: StoreMigrations["pattern"];
-  if (same(1) && same(3) && same(5)) {
+  // Flyway's dotted or underscored versions first: V1_1__init.sql is version 1.1, not 1.
+  const vparts = names.map((n) => VERSIONED.exec(n));
+  const dotted = vparts.map((v) => v?.[2]?.match(/[._]/)?.[0]).find((x) => x);
+  if (
+    dotted &&
+    vparts.every((v) => v) &&
+    new Set(vparts.map((v) => v![1])).size === 1 &&
+    new Set(vparts.map((v) => v![5])).size === 1
+  ) {
+    const at = vparts.reduce((a, b) =>
+      cmpVersion(versionOf(a![2]!), versionOf(b![2]!)) >= 0 ? a : b,
+    )!;
+    const newest = versionOf(at[2]!);
+    pattern = {
+      prefix: vparts[0]![1]!,
+      sep: "__",
+      ext: vparts[0]![5]!,
+      width: 0,
+      newest: newest[0]!,
+      version: newest,
+      vtext: at[2]!.split(/[._]/),
+      vsep: dotted as "." | "_",
+    };
+  } else if (same(1) && same(3) && same(5)) {
     const nums = parts.map((p) => p![2]!);
     const padded =
       nums.some((x) => x.startsWith("0")) && new Set(nums.map((x) => x.length)).size === 1;
@@ -652,10 +708,12 @@ export function migrationsOf(e: Estate, store: string): StoreMigrations {
       newest: Math.max(...nums.map(Number)),
     };
   }
-  const num = (n: string) => Number(NUMBERED.exec(n)?.[2] ?? -1);
-  const files = [...names].sort((a, b) =>
-    pattern ? num(b) - num(a) || b.localeCompare(a) : b.localeCompare(a),
-  );
+  const files = [...names].sort((a, b) => {
+    if (!pattern) return b.localeCompare(a);
+    return (
+      cmpVersion(versionIn(b, pattern) ?? [-1], versionIn(a, pattern) ?? [-1]) || b.localeCompare(a)
+    );
+  });
   const folders = [
     ...new Set(recs.map((r) => unit(r.file!).split(/[\\/]/).slice(0, -1).join("/"))),
   ];
@@ -686,6 +744,13 @@ export function sqlNameOf(e: Estate, table: string): string {
 export function nextMigration(m: StoreMigrations, words: string): string | undefined {
   const p = m.pattern;
   if (!p) return undefined;
+  // A dotted or underscored version goes up in its last part: V1_3 after V1_2, V2024.01.15.2.
+  if (p.version && p.vsep) {
+    const next = [...(p.vtext ?? p.version.map(String))];
+    const last = next.at(-1)!;
+    next[next.length - 1] = String(Number(last) + 1).padStart(last.length, "0");
+    return `${p.prefix}${next.join(p.vsep)}__${words}${p.ext}`;
+  }
   return `${p.prefix}${String(p.newest + 1).padStart(p.width, "0")}${p.sep}${words}${p.ext}`;
 }
 
@@ -742,19 +807,20 @@ function migrationProblem(
   // B-places: a migration the store already has is never edited; the change is a new one.
   if (m?.files.includes(file)) {
     const where = m.folder ? `, in ${m.folder}` : "";
-    const stem = file.replace(/^[A-Za-z]*\d+[^A-Za-z0-9]+/, "").replace(/\.[A-Za-z0-9]+$/, "");
+    const stem = file
+      .replace(/^[A-Za-z]*\d+(?:[._]\d+)*(?:__|[^A-Za-z0-9]+)/, "")
+      .replace(/\.[A-Za-z0-9]+$/, "");
     const next = nextMigration(m, stem);
     return `names the migration ${name}, which ${store} already has: a change to its tables is a new migration beside it${where}: name the file ${next ?? `as its migrations are named (${m.files.slice(0, 3).join(", ")})`}.`;
   }
   const p = m?.pattern;
   if (m && p) {
-    const x = NUMBERED.exec(file);
-    const fits =
-      x && x[1] === p.prefix && x[3] === p.sep && x[5] === p.ext && Number(x[2]) > p.newest;
+    const v = versionIn(file, p);
+    const fits = !!v && cmpVersion(v, p.version ?? [p.newest]) > 0;
     if (fits) return undefined;
     const what =
       m.tool === "flyway"
-        ? `Flyway, the newest ${p.prefix}${p.newest}`
+        ? `Flyway, the newest ${p.prefix}${p.vtext && p.vsep ? p.vtext.join(p.vsep) : p.newest}`
         : `the newest ${m.files[0]}`;
     const where = m.folder ? `, in ${m.folder}` : "";
     const wordy = /^[A-Za-z0-9][\w.-]*$/.test(name.trim());

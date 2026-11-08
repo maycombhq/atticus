@@ -68,16 +68,19 @@ describe("init", () => {
     // ADR 0120: the starter review, the org's own checklist to change or delete.
     const review = await readFile(join(root, "org-pack/checklists/review.yaml"), "utf8");
     expect(review).toBe(await starterReviewText());
-    // AI rules, and the two code checks the product owner moved out of the constitution (2026-10-24).
-    expect(
-      ChecklistPack.parse(parse(review))
-        .rules.filter((r) => r.check.type !== "ai")
-        .map((r) => r.id),
-    ).toEqual([
+    // AI rules, and the code checks: two the product owner moved out of the constitution
+    // (2026-10-24) and the attached note's line (ADR 0113 addendum).
+    const code = ChecklistPack.parse(parse(review))
+      .rules.filter((r) => r.check.type !== "ai")
+      .map((r) => r.id);
+    expect(code).toEqual([
       "review.call-timeout-stated",
       "review.store-write-rollback",
       "review.note-cites-on-line",
     ]);
+    // The README beside it counts them as the file has them.
+    const readme = await readFile(join(root, "org-pack/checklists/README.md"), "utf8");
+    expect(readme).toContain(`${["no", "one", "two", "three", "four"][code.length]} code checks`);
     expect(await readFile(join(root, "org-pack/checklists/README.md"), "utf8")).toContain(
       "`review.yaml` is the starter review",
     );

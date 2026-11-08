@@ -28,9 +28,11 @@ export interface WriteReport {
 /** The full text Atticus writes for a whole file. */
 export const fileText = (f: RenderedFile) => withHeader(f.content, f.style, f.source);
 
-async function read(path: string): Promise<string | undefined> {
+/** A file's text with LF line endings, and whether it had CRLF (a Windows checkout). */
+async function read(path: string): Promise<{ text: string; crlf: boolean } | undefined> {
   try {
-    return (await readFile(path, "utf8")).replace(/\r\n/g, "\n");
+    const raw = await readFile(path, "utf8");
+    return { text: raw.replace(/\r\n/g, "\n"), crlf: raw.includes("\r\n") };
   } catch {
     return undefined;
   }
@@ -94,9 +96,11 @@ export async function writeAssistantFiles(
     if (f.path.startsWith("/") || f.path.split("/").includes("..") || /^[A-Za-z]:/.test(f.path))
       throw new Error(`refusing to write outside the target folder: ${f.path}`);
     const full = join(dir, f.path);
-    const p = plan(f, await read(full), !!o.force);
+    const was = await read(full);
+    const p = plan(f, was?.text, !!o.force);
     const write = !o.check && p.text !== undefined;
-    if (write) await put(full, p.text!);
+    // A file that was CRLF stays CRLF: only Atticus's lines change, never the person's endings.
+    if (write) await put(full, was?.crlf ? p.text!.replace(/\n/g, "\r\n") : p.text!);
     results.push({ path: f.path, action: p.action, written: write });
   }
   return { results, upToDate: results.every((r) => r.action === "unchanged") };

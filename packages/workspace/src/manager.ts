@@ -169,8 +169,12 @@ export function createWorkspace(root: string, git: GitRunner = createGit()): Wor
       };
     const dest = baseClonePath(root, repo.id);
     const branch = repo.defaultBranch;
+    // Made by this sync: a clone or copy that fails half-way (git leaves the folder when only its
+    // checkout fails) is taken away, so the next sync clones it again rather than calling it a
+    // base clone with local changes forever.
+    const made = !existsSync(dest);
     try {
-      if (!existsSync(dest)) {
+      if (made) {
         await mkdir(dirname(dest), { recursive: true });
         const from = local && yourClone(local, repo);
         if (from) return await copyFrom(repo, from, dest);
@@ -207,7 +211,15 @@ export function createWorkspace(root: string, git: GitRunner = createGit()): Wor
         ...(await remoteDefault(dest)),
       };
     } catch (err) {
-      return { id: repo.id, action: "failed", reason: (err as Error).message };
+      if (made) await rm(dest, { recursive: true, force: true }).catch(() => undefined);
+      const msg = (err as Error).message;
+      return {
+        id: repo.id,
+        action: "failed",
+        reason: /Filename too long/i.test(msg)
+          ? `${msg.trim()} — a path in the repo is longer than Windows allows: run git config --global core.longpaths true, then sync again`
+          : msg,
+      };
     }
   }
 

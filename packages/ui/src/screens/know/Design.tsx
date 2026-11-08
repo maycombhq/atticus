@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useApi, useLiveEvents } from "../../api/client.js";
+import { api, useApi, useLiveEvents } from "../../api/client.js";
 import { FlowCanvas, type FlowViewData } from "../../app/flow.js";
 import { GraphView, type Graph } from "../../app/graph.js";
 import { Bar, CheckAgain, Donut, Panel, Ring, View } from "../../app/ui.js";
@@ -40,7 +40,7 @@ const label = (r: Rec): string => {
   return r.name ?? r.id;
 };
 
-function ContractList({
+export function ContractList({
   kind,
   title,
   pick,
@@ -51,7 +51,21 @@ function ContractList({
   pick: (r: Rec) => void;
   picked?: string;
 }) {
-  const l = useApi<{ items: Rec[]; total: number }>(`/api/catalog/${kind}?limit=200`);
+  // A large estate (1,000s of endpoints) is a page and a filter, never a silent first 200.
+  const [q, setQ] = useState("");
+  const [more, setMore] = useState<{ items: Rec[]; next?: string; for: string }>();
+  const path = `/api/catalog/${kind}?limit=200${q.trim() ? `&q=${encodeURIComponent(q.trim())}` : ""}`;
+  const l = useApi<{ items: Rec[]; total: number; next?: string }>(path);
+  const extra = more?.for === path ? more : undefined;
+  const next = extra ? extra.next : l.state === "ready" ? l.data.next : undefined;
+  const loadMore = async () => {
+    if (!next) return;
+    const page = await api<{ items: Rec[]; next?: string }>(
+      `${path}&cursor=${encodeURIComponent(next)}`,
+    );
+    setMore({ items: [...(extra?.items ?? []), ...page.items], next: page.next, for: path });
+  };
+  const fieldId = `contracts-${kind}-q`;
   return (
     <div className="stack" style={{ gap: 4 }}>
       <div className="row between">
@@ -62,42 +76,67 @@ function ContractList({
           {l.state === "ready" ? l.data.total : ""}
         </span>
       </div>
+      <label className="sr" htmlFor={fieldId}>
+        {T.filterContracts(title.toLowerCase())}
+      </label>
+      <input
+        id={fieldId}
+        className="field"
+        type="search"
+        placeholder={T.filterContracts(title.toLowerCase())}
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+      />
       <View
         of={l}
         empty={(d) => d.items.length === 0}
         emptyText={T.noInTheCatalog(title.toLowerCase())}
       >
         {(d) => (
-          <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
-            {d.items.map((r) => (
-              <li key={r.id}>
-                <button
-                  type="button"
-                  aria-pressed={picked === r.id}
-                  onClick={() => pick(r)}
-                  className="list-row"
-                  style={{
-                    width: "100%",
-                    background: picked === r.id ? "var(--picked)" : "transparent",
-                    border: 0,
-                    color: "inherit",
-                    font: "inherit",
-                    textAlign: "left",
-                    cursor: "pointer",
-                    padding: "6px",
-                    borderRadius: 6,
-                  }}
-                >
-                  <span className="mono" style={{ fontSize: 11.5, wordBreak: "break-all" }}>
-                    {label(r)}
-                  </span>
-                  <span className={`chip ${r.confidence === "verified" ? "done" : "warn"}`}>
-                    {(r.confidence ?? "unknown").toUpperCase()}
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
+          <>
+            <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+              {[...d.items, ...(extra?.items ?? [])].map((r) => (
+                <li key={r.id}>
+                  <button
+                    type="button"
+                    aria-pressed={picked === r.id}
+                    onClick={() => pick(r)}
+                    className="list-row"
+                    style={{
+                      width: "100%",
+                      background: picked === r.id ? "var(--picked)" : "transparent",
+                      border: 0,
+                      color: "inherit",
+                      font: "inherit",
+                      textAlign: "left",
+                      cursor: "pointer",
+                      padding: "6px",
+                      borderRadius: 6,
+                    }}
+                  >
+                    <span className="mono" style={{ fontSize: 11.5, wordBreak: "break-all" }}>
+                      {label(r)}
+                    </span>
+                    <span className={`chip ${r.confidence === "verified" ? "done" : "warn"}`}>
+                      {(r.confidence ?? "unknown").toUpperCase()}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+            {d.total > d.items.length + (extra?.items.length ?? 0) && (
+              <div className="row" style={{ gap: 8 }}>
+                <span className="muted" style={{ fontSize: 12 }}>
+                  {T.showingOf(d.items.length + (extra?.items.length ?? 0), d.total)}
+                </span>
+                {next && (
+                  <button type="button" className="btn" onClick={() => void loadMore()}>
+                    {T.showMore}
+                  </button>
+                )}
+              </div>
+            )}
+          </>
         )}
       </View>
     </div>
@@ -276,17 +315,18 @@ function ContractDetail({ r }: { r: Rec }) {
 
 export function Contracts() {
   const kinds = useApi<{ kind: string; count: number }[]>("/api/catalog/kinds");
-  const iface = useApi<{ items: Rec[] }>("/api/catalog/Interface?limit=500");
+  // Counted by the index, however many there are: never "N of 500" for an estate of thousands.
+  const iface = useApi<{ total: number }>("/api/catalog/Interface?limit=1");
+  const ifaceVerified = useApi<{ total: number }>(
+    "/api/catalog/Interface?limit=1&confidence=verified",
+  );
   const [chosen, setPicked] = useState<Rec | undefined>();
   const first = useApi<{ items: Rec[] }>("/api/catalog/Endpoint?limit=1");
   const picked = chosen ?? (first.state === "ready" ? first.data.items[0] : undefined);
   const n = (k: string) =>
     kinds.state === "ready" ? (kinds.data.find((x) => x.kind === k)?.count ?? 0) : 0;
-  const verified =
-    iface.state === "ready"
-      ? iface.data.items.filter((i) => i.confidence === "verified").length
-      : 0;
-  const total = iface.state === "ready" ? iface.data.items.length : 0;
+  const verified = ifaceVerified.state === "ready" ? ifaceVerified.data.total : 0;
+  const total = iface.state === "ready" ? iface.data.total : 0;
   return (
     <EvidenceProvider>
       <div className="bento">

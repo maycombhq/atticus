@@ -143,7 +143,11 @@ export async function unadopt(path: string): Promise<UnadoptResult> {
       const now = sha256(await readFile(full));
       if (now === before[f]) continue;
       const text = (await readText(full)) ?? "";
-      const back = withoutSection(text).find((t) => sha256(t) === before[f]);
+      // The file as adopt found it may have had CRLF (a Windows checkout): each candidate is
+      // tried with LF and with CRLF, and the bytes that match are written back.
+      const back = withoutSection(text)
+        .flatMap((t) => [t, t.replace(/\r?\n/g, "\r\n")])
+        .find((t) => sha256(t) === before[f]);
       if (back !== undefined) {
         await writeFile(full, back, "utf8");
         res.restored.push(f);

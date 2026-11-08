@@ -388,10 +388,21 @@ export class CatalogIndex {
   /** Records of one kind, filtered and paged by id (the API's listRecords). */
   list(
     kind: string,
-    o: { status?: string; system?: string; q?: string; limit?: number; cursor?: string } = {},
+    o: {
+      status?: string;
+      system?: string;
+      q?: string;
+      confidence?: string;
+      limit?: number;
+      cursor?: string;
+    } = {},
   ): { items: CatalogRecord[]; total: number; next?: string } {
     const where = ["kind = ?"];
     const params: (string | number)[] = [kind];
+    if (o.confidence) {
+      where.push("confidence = ?");
+      params.push(o.confidence);
+    }
     if (o.status) {
       where.push("status = ?");
       params.push(o.status);

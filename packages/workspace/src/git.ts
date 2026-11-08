@@ -31,11 +31,14 @@ export function createGit(opts: { timeoutMs?: number; env?: NodeJS.ProcessEnv } 
     GIT_PAGER: "cat",
     LC_ALL: "C",
   };
+  // Windows: paths past 260 characters (a deep Java package in a deep folder) work for every
+  // command, whether or not the person set core.longpaths themselves.
+  const pre = process.platform === "win32" ? ["-c", "core.longpaths=true"] : [];
   return (args, cwd) =>
     new Promise((resolve, reject) => {
       execFile(
         "git",
-        args,
+        [...pre, ...args],
         {
           cwd,
           env,

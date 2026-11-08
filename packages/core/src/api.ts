@@ -184,8 +184,10 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   task run's hand-off builds, fixes and commits as `atticus handoff done` does. Additive only.
  * 2.62.0 (review): PUT /api/repos/{repoId}/branches and /description take `was`, what the form
  *   showed; a manifest changed since (a teammate's pull) is 409, never written over. Additive.
+ * 2.63.0 (review): GET /api/catalog/{kind} takes `confidence`, so a page counts the verified
+ *   records of a large estate by `total` instead of reading them all. Additive only.
  */
-export const API_VERSION = "2.62.0";
+export const API_VERSION = "2.63.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -3587,6 +3589,7 @@ const OPS: Record<string, Record<string, Op>> = {
         q("status"),
         q("system"),
         q("q", str, "Text search over id and name"),
+        q("confidence", str, "2.63.0: only records of this confidence (verified, inferred, ...)"),
         q("limit", { type: "integer", minimum: 1, maximum: 500 }),
         q("cursor"),
       ],
