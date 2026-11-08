@@ -303,6 +303,8 @@ describe("bench: an assistant's facts file, projected and scored", () => {
         framework: 0,
         flow: 1,
         term: 0,
+        // ADR 0180: what a component is; this facts file says it of none.
+        component: 0,
       },
       left: { screens: 1, screenFields: 1, batchJobs: 0, keyPatterns: 0, frameworks: 0, flows: 1 },
     });

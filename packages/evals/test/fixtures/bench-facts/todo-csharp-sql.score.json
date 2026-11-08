@@ -200,7 +200,8 @@
       "config": 4,
       "framework": 0,
       "flow": 1,
-      "term": 0
+      "term": 0,
+      "component": 0
     },
     "left": {
       "screens": 1,
