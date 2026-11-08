@@ -142,6 +142,25 @@ describe("Run all ready tasks on the Task board", () => {
     expect(busy).toContain('aria-busy="true"');
   });
 
+  it("says it is reading the list, or that it couldn't, and stays disabled (round 45)", () => {
+    const loading = renderToStaticMarkup(
+      <RunReadyView ready={undefined} busy={false} loading onRun={() => {}} />,
+    );
+    expect(loading).toContain(esc(COPY.runReady.reading));
+    expect(loading).toContain("disabled");
+    const failed = renderToStaticMarkup(
+      <RunReadyView
+        ready={undefined}
+        busy={false}
+        error="the server answered 500"
+        onRun={() => {}}
+      />,
+    );
+    expect(failed).toContain('role="alert"');
+    expect(failed).toContain(esc(COPY.runReady.cantRead("the server answered 500")));
+    expect(failed).toContain("disabled");
+  });
+
   it("says each task's end and where the job stopped", () => {
     expect(
       runReadyWords({

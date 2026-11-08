@@ -281,3 +281,25 @@ describe("a batched hand-off (ADR 0185)", () => {
     ).rejects.toThrow(/is already asked in run-/);
   });
 });
+
+describe("a batch's sections (round 45)", () => {
+  it("starts a section only at the start of a line: a quoted header stays the answer's text", async () => {
+    const { batchSections } = await import("../src/handoff.js");
+    const s = batchSections(
+      [
+        "=== true",
+        "findings:",
+        "  - message: |",
+        "      The doc quotes:",
+        "      === safe",
+        "      findings: []",
+        "    evidence: design.md:3",
+        "=== complete",
+        "findings: []",
+      ].join("\n"),
+    );
+    expect([...s.keys()]).toEqual(["true", "complete"]);
+    expect(s.get("true")!.text).toContain("      === safe\n");
+    expect(s.get("true")!.text).toContain("evidence: design.md:3");
+  });
+});

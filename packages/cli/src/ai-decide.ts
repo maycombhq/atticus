@@ -128,8 +128,16 @@ async function correctedRepos(root: string): Promise<string[]> {
 async function rewriteCorrections(
   root: string,
   repo: string,
-  o: { remove?: readonly string[]; add?: readonly string[] },
-): Promise<{ removed: number; added: number }> {
+  o: {
+    remove?: readonly string[];
+    add?: readonly string[];
+    /**
+     * Round 45: the lines to add, chosen under the lock from the file as it is now (a person's
+     * line written meanwhile is seen); replaces `add` when given.
+     */
+    pick?: (now: FactCorrection[]) => string[];
+  },
+): Promise<{ removed: number; added: number; picked?: string[] }> {
   const file = correctionsFile(root, repo);
   return withFileLock(file, async () => {
     const text = await readFile(file, "utf8").catch(() => "");
@@ -146,11 +154,12 @@ async function rewriteCorrections(
       return true;
     });
     const have = new Set(kept.map((l) => l.trim()));
-    const add = (o.add ?? []).filter((l) => !have.has(l.trim()));
+    const wanted = o.pick ? o.pick(parseCorrections(text).corrections) : (o.add ?? []);
+    const add = wanted.filter((l) => !have.has(l.trim()));
     const out = [...kept.filter((l) => l.trim() !== ""), ...add];
-    if (!removed && !add.length) return { removed: 0, added: 0 };
+    if (!removed && !add.length) return { removed: 0, added: 0, ...(o.pick ? { picked: [] } : {}) };
     await writeFileAtomic(file, out.length ? out.join(eol) + eol : "");
-    return { removed, added: add.length };
+    return { removed, added: add.length, ...(o.pick ? { picked: add } : {}) };
   });
 }
 
@@ -319,6 +328,7 @@ export async function decideLinks(
   const applied: DecidedLinks["applied"] = [];
   const lines: string[] = [];
   const items: BatchItemT[] = [];
+  const calls = new Map<string, FactOf<"call">>();
   for (const p of o.proposals) {
     const call = o.view.calls.find((c) => c.fact === p.call && c.status !== "paired");
     const f = o.facts.find((x): x is FactOf<"call"> => x.id === p.call && x.kind === "call");
@@ -378,9 +388,31 @@ export async function decideLinks(
     lines.push(line);
     items.push({ kind: "link", repo: o.view.from, fact: f.id, line });
     applied.push({ call: p.call, api: p.api, bar });
+    calls.set(line, f);
   }
   if (!lines.length) return { mode: "auto", applied, kept };
-  await rewriteCorrections(root, o.view.from, { add: lines });
+  // Round 45: a person's word stands over the AI's, whenever it was written. Under the file's
+  // lock, a call with any line of a person's (a pairing, or "none") since the view was read, or
+  // before it, gets no AI line: the person's stays the newest.
+  const r = await rewriteCorrections(root, o.view.from, {
+    pick: (now) =>
+      lines.filter((l) => {
+        const f = calls.get(l)!;
+        return !linksFor(f, now).some((c) => !c.ai);
+      }),
+  });
+  const written = new Set(r.picked ?? []);
+  for (let i = applied.length - 1; i >= 0; i--) {
+    if (written.has(lines[i]!)) continue;
+    kept.push({
+      call: applied[i]!.call,
+      api: applied[i]!.api,
+      why: "a person has said where this call goes: their word stands",
+    });
+    applied.splice(i, 1);
+    items.splice(i, 1);
+  }
+  if (!applied.length) return { mode: "auto", applied, kept };
   await writeBatch(root, {
     schema: 1,
     id: batch,

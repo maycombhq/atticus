@@ -785,11 +785,6 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
         const change = params.changeId!;
         await readChange(root, change);
         const b = parseBody(Api.RunReadyRequest, body);
-        const busy = ctx.jobs.runningOf("step");
-        if (busy)
-          throw conflict(
-            `An AI step is running on this server (${busy.id}): wait for it to finish, or cancel it.`,
-          );
         const view = await readyView(change);
         const tasks = b.tasks ? view.ready.filter((t) => b.tasks!.includes(t)) : view.ready;
         if (!tasks.length)
@@ -803,6 +798,13 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
             ],
           });
         const repoOf = new Map(view.tasks.map((t) => [t.id, t.repo]));
+        // Round 45: checked and started in one tick, with nothing awaited in between, so two
+        // clicks never start two jobs.
+        const busy = ctx.jobs.runningOf("step");
+        if (busy)
+          throw conflict(
+            `An AI step is running on this server (${busy.id}): wait for it to finish, or cancel it.`,
+          );
         const job = ctx.jobs.start("step", async (c) => {
           const r = await runReadyTasks(root, change, {
             by: user,

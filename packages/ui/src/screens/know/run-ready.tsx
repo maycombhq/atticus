@@ -37,6 +37,9 @@ export function runReadyWords(r: Api.RunReadyResultT): string {
 export function RunReadyView(p: {
   ready: Api.ReadyTasksT | undefined;
   busy: boolean;
+  /** Round 45: the ready list is being read, or couldn't be. */
+  loading?: boolean;
+  error?: string | undefined;
   note?: NoteT | undefined;
   onRun: () => void;
 }) {
@@ -47,7 +50,7 @@ export function RunReadyView(p: {
         <button
           type="button"
           className="btn primary"
-          disabled={p.busy || n === 0}
+          disabled={p.busy || n === 0 || !!p.loading || !!p.error}
           aria-busy={p.busy}
           aria-describedby="run-ready-why"
           onClick={p.onRun}
@@ -55,9 +58,15 @@ export function RunReadyView(p: {
           {p.busy ? T.running : n ? T.buttonCount(n) : T.button}
         </button>
       </div>
-      <p id="run-ready-why" className="muted" style={{ margin: 0, fontSize: 12 }}>
-        {p.ready && n === 0 ? T.noneReady : T.why}
-      </p>
+      {p.error ? (
+        <p id="run-ready-why" role="alert" style={{ margin: 0, fontSize: 12 }}>
+          {T.cantRead(p.error)}
+        </p>
+      ) : (
+        <p id="run-ready-why" className="muted" style={{ margin: 0, fontSize: 12 }}>
+          {p.loading ? T.reading : p.ready && n === 0 ? T.noneReady : T.why}
+        </p>
+      )}
       <Note note={p.note} />
     </div>
   );
@@ -69,6 +78,8 @@ export function RunReadyTasks({ change }: { change: string }) {
   useReloadOnFiles(ready);
   const aiOn = useAiOn();
   const [job, setJob] = useState<string | undefined>();
+  // Round 45: held from the click until the job is known, so a double click sends one request.
+  const [posting, setPosting] = useState(false);
   const [note, setNote] = useState<NoteT | undefined>();
   const end = async (id: string) => {
     try {
@@ -100,6 +111,8 @@ export function RunReadyTasks({ change }: { change: string }) {
   });
   if (!aiOn) return null;
   const run = async () => {
+    if (posting || job) return;
+    setPosting(true);
     setNote({ ok: true, working: true, text: COPY.app.working });
     try {
       const r = await api<{ jobId: string; tasks: string[] }>(
@@ -117,12 +130,16 @@ export function RunReadyTasks({ change }: { change: string }) {
         ok: false,
         text: e instanceof ApiError ? (e.problem.detail ?? e.problem.title) : String(e),
       });
+    } finally {
+      setPosting(false);
     }
   };
   return (
     <RunReadyView
       ready={ready.state === "ready" ? ready.data : undefined}
-      busy={!!job}
+      busy={!!job || posting}
+      loading={ready.state === "loading"}
+      error={ready.state === "error" ? ready.error : undefined}
       note={note}
       onRun={() => void run()}
     />

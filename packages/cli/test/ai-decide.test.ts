@@ -611,3 +611,52 @@ describe("after a Copilot session Atticus ran (ADR 0181 with ADR 0178 and ADR 01
     expect((await readQuestion(root, QA))!.answer?.by).toMatchObject({ kind: "ai", run: "r7" });
   });
 });
+
+describe("a person's word stands over the AI's (round 45)", () => {
+  const propose = [
+    { call: "call.post.capture-charge", api: CAPTURE, why: "x", lines: [`${FILE}:31`] },
+  ];
+  it("never re-pairs a call a person said reaches none", async () => {
+    await writeFile(
+      join(root, "facts/forge-billing.corrections.jsonl"),
+      JSON.stringify({
+        schemaVersion: 2,
+        fact: "call.post.capture-charge",
+        target: { kind: "call", file: FILE, line: 31, value: "captureChargePath" },
+        action: "unlink",
+        by: "pat",
+        at: "2026-11-08T09:00:00.000Z",
+      }) + "\n",
+    );
+    const { view, facts } = await candidatesOf(root, "forge-billing", { repo: GW });
+    const d = await decideLinks(root, { view, facts, run: "r1", now: AT, proposals: propose });
+    expect(d?.applied).toEqual([]);
+    expect(d?.kept[0]?.why).toMatch(/a person has said where this call goes/);
+    expect((await corrections()).filter((c) => c.ai)).toEqual([]);
+  });
+
+  it("never overrides a pairing a person made while the session ran", async () => {
+    const { view, facts } = await candidatesOf(root, "forge-billing", { repo: GW });
+    await writeFile(
+      join(root, "facts/forge-billing.corrections.jsonl"),
+      JSON.stringify({
+        schemaVersion: 2,
+        fact: "call.post.capture-charge",
+        target: { kind: "call", file: FILE, line: 31, value: "captureChargePath" },
+        action: "link",
+        link: {
+          repo: GW,
+          entry: REFUNDS,
+          method: "POST",
+          path: "/partners/northwind/charges/{chargeId}/refunds",
+        },
+        by: "pat",
+        at: "2026-11-08T10:00:00.000Z",
+      }) + "\n",
+    );
+    const d = await decideLinks(root, { view, facts, run: "r1", now: AT, proposals: propose });
+    expect(d?.applied).toEqual([]);
+    const pairs = pairsFromCorrections(await billingFacts(), await corrections());
+    expect(pairs["call.post.capture-charge"]).toMatchObject({ by: "pat", entry: REFUNDS });
+  });
+});

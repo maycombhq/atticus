@@ -5046,6 +5046,8 @@ export const COPY = {
     button: "Run all ready tasks",
     buttonCount: (n: number) => `Run all ready tasks (${n})`,
     running: "Running the ready tasks…",
+    reading: "Reading which tasks are ready…",
+    cantRead: (why: string) => `Which tasks are ready couldn't be read: ${why}`,
     why: "The tech lead or architect runs the tasks: every task whose dependencies are done, in cross-repo order, one task run each, stopping on the first that needs a person. Your click approves the drafts; each PR is raised on its own Raise click, and nothing is merged.",
     noneReady:
       "No task is ready to run: each waits for the tasks before it, its PR, the assistant or a person.",

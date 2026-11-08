@@ -47,7 +47,9 @@ export const BATCH_OUTPUT = "answers.md";
 export const DEFAULT_BATCH_MAX_TOKENS = 60_000;
 
 /** The line that starts a part's section in a batched answer: `=== <part>`. */
-const SECTION = /^[ \t]*===[ \t]*([a-z][a-z0-9-]*)[ \t]*$/;
+// Round 45: a section starts only at the start of a line. An indented `=== <lens>` (quoted in an
+// answer, say inside a YAML block) is the answer's text, never a new section.
+const SECTION = /^===[ \t]*([a-z][a-z0-9-]*)[ \t]*$/;
 
 /**
  * A batched answer's sections, by part name: the lines under each `=== <part>` line, up to the

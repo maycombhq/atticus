@@ -63,6 +63,10 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ### Fixed before release (review)
 
+- Round 45 (review):
+  - **The AI never overrides a person's word on a pairing.** Atticus adds an AI pairing only under the corrections file's lock, and never for a call a person has paired or said reaches none, whenever they wrote it (a person's "none" before the run, or a pairing made while the Copilot session ran).
+  - **One Run all ready tasks at a time**: the server checks and starts the job in one tick, and the button is held from the click, so a double click starts one job. The panel says when it is reading the ready list and when it couldn't.
+  - **A batched hand-off's section starts only at the start of a line**, so a `=== <lens>` quoted inside an answer stays that answer's text.
 - ADR 0181 (stage drafts: AI-drafted, corrections carried):
   - **Every stage draft says who wrote it last.** On Feature design (feature.md, proposal.md), Architecture (the target flows, design.md, data.md), Stories (the stories, the specs) and Tasks (tasks.md), each draft shows "Drafted by AI" with the run that drafted it, linked, until a person saves it in the app ("Edited by <who> on <date>"); a draft changed outside the app says "Edited by a person". The stage loop records what each draft wrote, with its stage, run and hash, in one per-change file, `stage/drafted.yaml`; a save through the artifact or placement routes records who and when. A change drafted before falls back to the loop files' hashes.
   - **Correct any AI-drafted item, not only when the critic found something.** Each draft and each of its items (a target flow's step, a section of the proposal, design, a story or a spec, a task) has **Correct**: say what it should say or do instead. Corrections are kept per change in `stage/corrections.yaml` (the item, the person's words, who, when) and listed as waiting for the stage's next run, with **Run the stage again to apply them** (Prepare first). A waiting correction can be taken back.

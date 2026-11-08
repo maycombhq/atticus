@@ -144,3 +144,30 @@ describe("Run all ready tasks on the Task board (API 2.76.0)", () => {
     T,
   );
 });
+
+describe("one Run all ready tasks at a time (round 45)", () => {
+  it("of two clicks at once, one starts and the other is told a step is running", async () => {
+    const { root } = await speckitRoot({ repos: ["forge-ledger"] });
+    const s = await startServer({
+      root,
+      port: 0,
+      user: "ari",
+      watch: false,
+      extend: (r, ctx) => uiRoutes(r, ctx, { taskRun: { git } }),
+    });
+    try {
+      const post = async () => {
+        const res = await fetch(`${s.url}/api/changes/${CHANGE}/tasks/run-ready`, {
+          method: "POST",
+          headers: { "X-Atticus-Token": s.token, "Content-Type": "application/json" },
+          body: JSON.stringify({ runtime: "hand-off" }),
+        });
+        return res.status;
+      };
+      const statuses = (await Promise.all([post(), post()])).sort();
+      expect(statuses).toEqual([202, 409]);
+    } finally {
+      s.close();
+    }
+  }, 180_000);
+});
