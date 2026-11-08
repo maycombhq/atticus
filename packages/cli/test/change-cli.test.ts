@@ -177,7 +177,8 @@ describe("atticus change", () => {
     ).toBe(0);
     expect(c.out).toEqual([
       "Hand-off PR #1 (handoff/add-transfer-limit/define) is open: https://git.example.com/forge/forge-metarepo/pull/1",
-      "Reviewers: @forge/platform",
+      // Sixth UX walk: a sentence, so the app's run-on line ("none named Merging") reads.
+      "Reviewers: @forge/platform.",
       "Merging it approves the gate; the Git host's own rules decide who may approve it.",
     ]);
     expect(gh.journal.find((j) => j.method === "createPullRequest")!.approval).toEqual({

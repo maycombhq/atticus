@@ -416,7 +416,7 @@ export async function changeHandoff(
         : `Hand-off PR #${h.pr.number} (${h.branch}) is open: ${h.pr.url}`,
     );
     io.out(
-      `Reviewers: ${h.reviewers.length ? h.reviewers.map((r) => `@${r}`).join(", ") : "none named"}`,
+      `Reviewers: ${h.reviewers.length ? h.reviewers.map((r) => `@${r}`).join(", ") : "none named"}.`,
     );
     io.out(`Merging it approves the gate; the Git host's own rules decide who may approve it.`);
     return 0;

@@ -816,7 +816,7 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
         if (res.code !== 0) throw refused(res);
         // Fourth UX walk: a step the app prepared is finished here too: its resume writes what
         // the answer said (a draft's proposal and specs), or offers its next prompt (`next`).
-        const { resumeAfterDone } = await import("./handoff-resume.js");
+        const { resumeAfterDone, appLines } = await import("./handoff-resume.js");
         const stepRunner =
           deps.runStep ??
           (async (args: string[]) => {
@@ -838,9 +838,12 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
           status: 200,
           body: {
             ...after,
-            // When the app resumed the step, runDone's "run the step again with --resume" is done.
+            // When the app resumed the step, runDone's "run the step again with --resume" is done;
+            // sixth UX walk: what is left to do is said in the app's words.
             lines: [
-              ...[...res.out, ...res.err].filter((l) => !(resumed && /--resume run-/.test(l))),
+              ...(resumed
+                ? appLines([...res.out, ...res.err].filter((l) => !/--resume run-/.test(l)))
+                : [...res.out, ...res.err]),
               ...(resumed?.lines ?? []),
             ],
             ...(resumed?.next ? { next: resumed.next } : {}),
