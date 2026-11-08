@@ -27,7 +27,12 @@ const FORGE = join(FIXTURES, "forge");
 const CONFORM = join(FIXTURES, "conform");
 const T = 300_000;
 
-async function scan(dir: string): Promise<CatalogRecord[]> {
+let afterBasis: ConformInput["basis"];
+
+async function scan(
+  dir: string,
+  keep?: (b: ConformInput["basis"]) => void,
+): Promise<CatalogRecord[]> {
   const s = await scanEstate({
     root: await mkdtemp(join(tmpdir(), "atticus-conform-scan-")),
     orgPack: join(FORGE, "metarepo/org-pack"),
@@ -39,6 +44,7 @@ async function scan(dir: string): Promise<CatalogRecord[]> {
     inputsDir: join(FORGE, "inputs"),
   });
   expect(s.problems).toEqual([]);
+  keep?.(s.basis?.["forge-ledger"]);
   return s.records;
 }
 
@@ -103,7 +109,7 @@ beforeAll(async () => {
     deltas,
     tasks: await readTaskSteps(change),
     before: await scan(join(FORGE, "repos/forge-ledger")),
-    after: await scan(after),
+    after: await scan(after, (b) => (afterBasis = b)),
     files: await files(after),
   };
 }, T);
@@ -126,8 +132,11 @@ describe("conformance on the Forge fixture (ADR 0114)", () => {
   });
 
   it("finds what is built, what is missing, what is still there and what no target flow names (golden)", () => {
+    // Eighth UX walk (rule 4): forge-ledger has no facts here, so its records are the readers'
+    // and what they don't find is a step a person checks, not a missing finding.
+    expect(afterBasis).toEqual({ from: "readers" });
     const want = parse(readFileSync(join(CONFORM, "expected/result.yaml"), "utf8")) as unknown;
-    expect(compact(conform(input))).toEqual(want);
+    expect(compact(conform({ ...input, basis: afterBasis }))).toEqual(want);
   });
 
   it("checks only a task's steps, and still reports what nothing names", () => {
@@ -456,6 +465,128 @@ describe("conformance rules on small records (ADR 0114)", () => {
         "call",
         "forge-orders still calls forge-stock POST /stock/reservations, which item 1 of target-flows/forge-orders.place-order.yaml sends elsewhere.",
       ],
+    ]);
+  });
+});
+
+describe("only facts that cover the commit say something is missing (eighth UX walk, rule 4)", () => {
+  // fixtures/conform-gateway: the gateway proxy's new LockCard flow and its forward to the card
+  // vault. The records are what a scan of the task branch gave when no fact covered the changed
+  // proxy file: the proxy's component, and nothing for the new code.
+  const GATEWAY = join(FIXTURES, "conform-gateway/change");
+  const proxy = {
+    kind: "Component",
+    schemaVersion: 2,
+    id: "proxy-core-v1",
+    status: "current",
+    confidence: "verified",
+    system: "platform",
+    repo: "forge-proxy-core-v1",
+    type: "gateway",
+    evidence: [
+      { source: "code", repo: "forge-proxy-core-v1", path: "apiproxy/forge-core-v1.xml", line: 1 },
+    ],
+  } as unknown as CatalogRecord;
+  const check = async (basis: ConformInput["basis"]) => {
+    const { deltas, problems } = await readConformDeltas(GATEWAY);
+    expect(problems).toEqual([]);
+    return conform({
+      repo: "forge-proxy-core-v1",
+      deltas,
+      tasks: await readTaskSteps(GATEWAY),
+      scope: [
+        { flow: "proxy-core-v1.lock-card", item: 1 },
+        { flow: "proxy-core-v1.lock-card", item: 2 },
+      ],
+      before: [proxy],
+      after: [proxy],
+      files: ["apiproxy/proxies/default.xml"],
+      ...(basis ? { basis } : {}),
+    });
+  };
+  const READ_AGAIN =
+    "/atticus-map forge-proxy-core-v1, then atticus verify forge-proxy-core-v1 --write";
+
+  it("a changed file no fact covers: the trigger and the forward couldn't be confirmed, never missing", async () => {
+    const r = await check({ from: "facts", unread: ["apiproxy/proxies/default.xml"] });
+    expect(r.items).toEqual([]);
+    expect(r.unchecked.map((u) => [u.item ?? 0, u.kind, u.why])).toEqual([
+      [
+        0,
+        "endpoint",
+        `No fact covers what changed in apiproxy/proxies/default.xml since forge-proxy-core-v1 was read, so Atticus couldn't confirm that proxy-core-v1 serves PUT /forge/core/v1/cards/{id}/lock, the trigger of proxy-core-v1.lock-card from the code; check it by hand, or read those files again (${READ_AGAIN}) and check the code again.`,
+      ],
+      [
+        1,
+        "entry",
+        "A step of this kind names no call, table, column or migration a scan records; a person or a test checks it.",
+      ],
+      [
+        2,
+        "call-out",
+        `No fact covers what changed in apiproxy/proxies/default.xml since forge-proxy-core-v1 was read, so Atticus couldn't confirm that proxy-core-v1 calls card-vault PUT /cards/{id}/lock from the code; check it by hand, or read those files again (${READ_AGAIN}) and check the code again.`,
+      ],
+    ]);
+  });
+
+  it("the readers alone are a cross-check, so what they don't see couldn't be confirmed", async () => {
+    const r = await check({ from: "readers" });
+    expect(r.items).toEqual([]);
+    expect(
+      r.unchecked.filter((u) => /couldn't confirm/.test(u.why)).map((u) => u.item ?? 0),
+    ).toEqual([0, 2]);
+    expect(r.unchecked[0]!.why).toMatch(
+      /^forge-proxy-core-v1 hasn't been read into facts at this commit, and the built-in readers alone are only a cross-check/,
+    );
+  });
+
+  it("facts that cover the commit decide: what they lack is missing", async () => {
+    const r = await check({ from: "facts", unread: [] });
+    expect(r.items.map((i) => [i.status, i.check, i.item ?? 0])).toEqual([
+      ["missing", "trigger", 0],
+      ["missing", "call", 2],
+    ]);
+  });
+
+  it("a table and columns the readers don't see are one note; a migration file is still checked from git", () => {
+    const r = conform({
+      repo: "forge-orders",
+      deltas: [
+        {
+          file: "target-flows/forge-orders.place-order.yaml",
+          delta: {
+            schemaVersion: 1,
+            flow: "forge-orders.place-order",
+            repo: "forge-orders",
+            change: "modify",
+            why: "Orders are screened.",
+            steps: [
+              {
+                op: "add",
+                after: 1,
+                kind: "write",
+                what: "The screen is stored",
+                store: {
+                  table: "orders-db.screenings",
+                  columns: ["verdict"],
+                  new: true,
+                  migration: "V5__screenings.sql",
+                },
+              },
+            ],
+          } as ConformDelta["delta"],
+          stepLines: [10],
+          triggerLine: 4,
+        },
+      ],
+      before: [],
+      after: [],
+      files: [],
+      basis: { from: "readers" },
+    });
+    expect(r.items.map((i) => [i.status, i.check])).toEqual([["missing", "migration"]]);
+    expect(r.unchecked.map((u) => u.why)).toEqual([
+      "forge-orders hasn't been read into facts at this commit, and the built-in readers alone are only a cross-check, so Atticus couldn't confirm that the code has the table orders-db.screenings, orders-db.screenings.verdict from the code; check it by hand, or read the repo (/atticus-map forge-orders, then atticus verify forge-orders --write) and check the code again.",
     ]);
   });
 });

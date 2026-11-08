@@ -1,0 +1,32 @@
+# The target of flow card-vault.lock-card (ADR 0087): the steps this change adds, changes or removes. Drafted by atticus change architecture; base pins the version of today's flow it was written against (ADR 0111).
+schemaVersion: 2
+flow: card-vault.lock-card
+repo: forge-card-vault
+change: new
+name: Lock a card in the card vault
+trigger:
+  kind: endpoint
+  what: The card vault locks a card
+  entry: PUT /cards/{id}/lock
+why: The card vault serves only the PIN routes; a lock route is needed so a locked card is refused.
+steps:
+  - op: add
+    after: 0
+    at: src/main/java/forge/vault/CardPinController.java:11
+    kind: entry
+    what: Takes PUT /cards/{id}/lock with the card id.
+    fields:
+      from:
+        - id
+      required:
+        - id
+    why: The teller's lock request enters the vault here.
+  - op: add
+    after: 0
+    at: src/main/java/forge/vault/CardPinController.java:11
+    kind: respond
+    what: Answers that the card is locked.
+    fields:
+      returns:
+        - id
+    why: The teller app shows the result to the teller.

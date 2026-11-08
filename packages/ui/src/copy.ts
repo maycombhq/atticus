@@ -1148,13 +1148,18 @@ export const COPY = {
     step: (flow: string, item?: number) => (item ? `${flow} item ${item}` : `${flow} trigger`),
     noStep: "no target flow",
     unchecked: "Not checked by a scan",
-    uncheckedIntro: "A scan can't show these steps; a person or a test checks them.",
+    uncheckedIntro:
+      "A scan can't show these steps, or the facts don't cover them at this commit, so the code couldn't confirm them; a person or a test checks them.",
     gate: (round?: number) =>
       round
         ? `The findings are on the conform gate, round ${round}. Dismiss one as not relevant from the change's findings.`
         : "Nothing was written to the conform gate.",
     problems: "What couldn't be read",
     run: "Check the code again",
+    /** Eighth UX walk: the check runs from the app, on the person's click. */
+    checking: "Checking the code…",
+    checked: "Checked. What it found is below.",
+    orTerminal: "Or in a terminal:",
   },
   /** ADR 0109: a change's estimate, from its target flows. */
   /** ADR 0144 (V1): a change's impact, as designed, on its Architecture tab. */

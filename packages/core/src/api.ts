@@ -254,8 +254,14 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   manual host's as the person recorded them); POST /api/todo/{stepId}/done syncs the change's
  *   open hand-off after a Git host step and returns what it said in `synced` (read-only: never a
  *   merge). Additive only.
+ * 2.76.0 (eighth UX walk, code against design): POST /api/changes/{changeId}/conformance checks
+ *   the code against the design again on the person's click (as atticus change conform), a local
+ *   step that answers 202 with its job (409 while another local step runs). The check rests on
+ *   facts (rule 4): what a repo's facts don't cover at the branch's commit (files changed since
+ *   the read, or a repo read only by the built-in readers) is never `missing`; it is under
+ *   `unchecked`, saying it couldn't be confirmed from the code. Additive only.
  */
-export const API_VERSION = "2.75.0";
+export const API_VERSION = "2.76.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -2161,7 +2167,10 @@ export const ConformRepoResult = z.object({
     unexpected: z.number().int(),
   }),
   items: z.array(ConformItem),
-  /** Steps no scan can show (a branch, a transform): a person or a test checks them. */
+  /**
+   * Steps no scan can show (a branch, a transform), and (2.76.0) what the facts don't cover at
+   * the commit, so the code couldn't confirm it: a person or a test checks them.
+   */
   unchecked: z.array(
     z.object({
       flow: z.string(),
@@ -4540,6 +4549,19 @@ const OPS: Record<string, Record<string, Op>> = {
       params: [p("changeId")],
       ok: { status: 200, schema: "ChangeConformance", description: "OK" },
       errors: [400, 404],
+    },
+    post: {
+      id: "checkChangeConformance",
+      summary:
+        "2.76.0 (eighth UX walk): check the code against the design again on the person's click, as atticus change conform; what the facts don't cover is never missing (rule 4)",
+      tag: "changes",
+      params: [p("changeId")],
+      ok: {
+        status: 202,
+        schema: "JobAccepted",
+        description: "Started: its job's result is the code and the lines",
+      },
+      errors: [400, 404, 409],
     },
   },
   "/api/changes/{changeId}/target-flows/{flowId}": {

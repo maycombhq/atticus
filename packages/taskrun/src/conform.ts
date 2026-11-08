@@ -26,7 +26,7 @@ import {
   type ConformDelta,
   type ConformItem,
 } from "@maycombhq/planner";
-import { scanEstate } from "@maycombhq/scanner";
+import { scanEstate, type FactBasis } from "@maycombhq/scanner";
 import { readChangeTasks } from "@maycombhq/speckit";
 import { slug, writeGateRound } from "@maycombhq/testgen";
 import { baseClonePath, createGit, type GitRunner } from "@maycombhq/workspace";
@@ -54,11 +54,14 @@ export class ConformError extends Error {
   }
 }
 
-/** The records and files of a repo at one commit; tests pass their own. */
+/**
+ * The records and files of a repo at one commit, and what the records rest on (rule 4: the
+ * assistant's facts, with the changed files no fact covers yet, or the built-in readers).
+ */
 export type ScanAt = (
   repo: string,
   commit: string,
-) => Promise<{ records: CatalogRecord[]; files: string[]; problems: string[] }>;
+) => Promise<{ records: CatalogRecord[]; files: string[]; problems: string[]; basis: FactBasis }>;
 
 export interface ConformOptions {
   /** Only this repo; default every repo the target flows name. */
@@ -115,6 +118,7 @@ function gitScanAt(root: string, git: GitRunner): ScanAt {
       return {
         records: s.records,
         files,
+        basis: s.basis?.[repo] ?? { from: "readers" },
         problems: s.problems
           .filter((p) => !p.repo || p.repo === repo)
           .map((p) => `${p.repo ? `${p.repo}: ` : ""}${p.source}: ${p.message}`),
@@ -358,6 +362,7 @@ export async function conformChange(
       before: before.records,
       after: after.records,
       files: after.files,
+      basis: after.basis,
     });
     const count = (s: ConformItem["status"]) => r.items.filter((i) => i.status === s).length;
     const result: Api.ConformRepoResultT = {

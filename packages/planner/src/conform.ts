@@ -77,6 +77,14 @@ export interface ConformInput {
   after: CatalogRecord[];
   /** Repo-relative files at the commit. */
   files: string[];
+  /**
+   * What `after` rests on (rule 4, ADR 0074 and 0124): the assistant's verified facts, with the
+   * changed source files no fact covers yet, or the built-in readers. Only facts with nothing
+   * unread can say a call, endpoint, table or column is not in the code; otherwise what isn't
+   * found is a step a person checks ("couldn't confirm"), never a missing finding. Left out,
+   * the records are taken as complete (a caller that vouches for them, as the unit tests do).
+   */
+  basis?: { from: "facts"; unread: string[] } | { from: "readers" };
 }
 
 export interface ConformResult {
@@ -227,6 +235,19 @@ export function conform(input: ConformInput): ConformResult {
   const designed = (d: ConformDelta, line: number): ConformCite[] => [
     { source: "artifact", path: d.file, line },
   ];
+  // Rule 4: only facts that cover the commit say something is not in the code.
+  const basis = input.basis;
+  const decisive = !basis || (basis.from === "facts" && basis.unread.length === 0);
+  const readAgain = `/atticus-map ${repo}, then atticus verify ${repo} --write`;
+  /** Why an absence can't be told from the code here: what wasn't read, and how to read it. */
+  const unconfirmed = (claim: string): string => {
+    if (basis?.from === "facts") {
+      const shown = basis.unread.slice(0, 3).join(", ");
+      const more = basis.unread.length > 3 ? ` and ${basis.unread.length - 3} more` : "";
+      return `No fact covers what changed in ${shown}${more} since ${repo} was read, so Atticus couldn't confirm ${claim} from the code; check it by hand, or read those files again (${readAgain}) and check the code again.`;
+    }
+    return `${repo} hasn't been read into facts at this commit, and the built-in readers alone are only a cross-check, so Atticus couldn't confirm ${claim} from the code; check it by hand, or read the repo (${readAgain}) and check the code again.`;
+  };
 
   for (const d of input.deltas) {
     if (!flowInScope(d)) continue;
@@ -247,22 +268,29 @@ export function conform(input: ConformInput): ConformResult {
       const entry = t?.entry ?? t?.what ?? "";
       if (t && (t.kind === "endpoint" || t.kind === "listener") && (httpEntry(entry) || t.entry)) {
         const found = endpointsFor(after, from, entry)[0];
-        push(
-          found
-            ? {
-                status: "found",
-                check: "trigger",
-                what: `${from} serves ${entry}, the trigger of ${flow}.`,
-                record: found.id,
-                at: citesIn(found, repo),
-              }
-            : {
-                status: "missing",
-                check: "trigger",
-                what: `${from} serves no ${entry}, the trigger of new flow ${flow} (${d.file}).`,
-                at: designed(d, d.triggerLine),
-              },
-        );
+        if (!found && !decisive)
+          unchecked.push({
+            flow,
+            kind: t.kind,
+            why: unconfirmed(`that ${from} serves ${entry}, the trigger of ${flow}`),
+          });
+        else
+          push(
+            found
+              ? {
+                  status: "found",
+                  check: "trigger",
+                  what: `${from} serves ${entry}, the trigger of ${flow}.`,
+                  record: found.id,
+                  at: citesIn(found, repo),
+                }
+              : {
+                  status: "missing",
+                  check: "trigger",
+                  what: `${from} serves no ${entry}, the trigger of new flow ${flow} (${d.file}).`,
+                  at: designed(d, d.triggerLine),
+                },
+          );
       } else
         unchecked.push({
           flow,
@@ -308,24 +336,32 @@ export function conform(input: ConformInput): ConformResult {
           const found = callsTo(after, from, s.to)[0];
           const publish = kind === "publish";
           const verb = publish ? "publishes to" : "calls";
-          push(
-            found
-              ? {
-                  status: "found",
-                  check: publish ? "publish" : "call",
-                  item,
-                  what: `${from} ${verb} ${s.to.component} ${s.to.entry}.`,
-                  record: found.id,
-                  at: citesIn(found, repo),
-                }
-              : {
-                  status: "missing",
-                  check: publish ? "publish" : "call",
-                  item,
-                  what: `${from} makes no ${publish ? "publish to" : "call to"} ${s.to.component} ${s.to.entry} (${where(item)}).`,
-                  at: designed(d, line),
-                },
-          );
+          if (!found && !decisive)
+            unchecked.push({
+              flow,
+              item,
+              kind,
+              why: unconfirmed(`that ${from} ${verb} ${s.to.component} ${s.to.entry}`),
+            });
+          else
+            push(
+              found
+                ? {
+                    status: "found",
+                    check: publish ? "publish" : "call",
+                    item,
+                    what: `${from} ${verb} ${s.to.component} ${s.to.entry}.`,
+                    record: found.id,
+                    at: citesIn(found, repo),
+                  }
+                : {
+                    status: "missing",
+                    check: publish ? "publish" : "call",
+                    item,
+                    what: `${from} makes no ${publish ? "publish to" : "call to"} ${s.to.component} ${s.to.entry} (${where(item)}).`,
+                    at: designed(d, line),
+                  },
+            );
           // A changed step that goes elsewhere: today's call goes, unless another step keeps it.
           if (
             s.op === "change" &&
@@ -367,6 +403,15 @@ export function conform(input: ConformInput): ConformResult {
       );
       if (kept) return;
       const left = callsTo(after, from, to)[0];
+      if (!left && !decisive) {
+        unchecked.push({
+          flow: d.delta.flow,
+          item,
+          kind: "call",
+          why: unconfirmed(`that ${from} no longer calls ${to.component} ${to.entry}`),
+        });
+        return;
+      }
       push(
         left
           ? {
@@ -443,7 +488,19 @@ export function conform(input: ConformInput): ConformResult {
           why: `The scans read no column of ${st.table} (its columns are kept where the reader doesn't look), so ${st.columns.join(", ")} can't be checked here.`,
         });
       } else if (st.new || table) {
-        if (st.new)
+        // What the records don't have, when they can't say it isn't there (rule 4): one note.
+        const absent = [
+          ...(st.new && !table ? [`the table ${st.table}`] : []),
+          ...st.columns.filter((c) => !columnOf(after, st.table, c)).map((c) => `${st.table}.${c}`),
+        ];
+        if (absent.length && !decisive)
+          unchecked.push({
+            flow: d.delta.flow,
+            item,
+            kind: s.kind ?? "step",
+            why: unconfirmed(`that the code has ${absent.join(", ")}`),
+          });
+        if (st.new && (table || decisive))
           push(
             table
               ? {
@@ -464,6 +521,7 @@ export function conform(input: ConformInput): ConformResult {
           );
         for (const c of st.columns) {
           const col = columnOf(after, st.table, c);
+          if (!col && !decisive) continue;
           push(
             col
               ? {

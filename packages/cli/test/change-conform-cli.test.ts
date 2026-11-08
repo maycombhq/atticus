@@ -5,6 +5,7 @@ import { Api } from "@maycombhq/core";
 import { startServer, type RunningServer } from "@maycombhq/server";
 import { CHANGE, FIXTURES, sh, speckitRoot, worktree } from "./run-helpers.js";
 import { main } from "../src/main.js";
+import { uiRoutes } from "../src/ui-api.js";
 import { uiSpecRoutes } from "../src/ui-api-specs.js";
 
 /**
@@ -52,10 +53,13 @@ describe("atticus change conform", () => {
       const r = await run(["change", "conform", CHANGE, "--root", root]);
       expect(r.code).toBe(1);
       expect(r.out).toMatch(
-        /^forge-ledger at change\/add-transfer-limit \([0-9a-f]{12}, from [0-9a-f]{12}\): 4 found, 1 missing, 1 still there, 2 not in the design\.$/m,
+        /^forge-ledger at change\/add-transfer-limit \([0-9a-f]{12}, from [0-9a-f]{12}\): 4 found, 0 missing, 1 still there, 2 not in the design\.$/m,
       );
+      // Eighth UX walk (rule 4): forge-ledger has no facts, so what its readers don't see is a
+      // step a person checks, never MISSING.
+      expect(r.out).not.toContain("MISSING");
       expect(r.out).toContain(
-        "  MISSING  ledger-api makes no call to northwind-pay POST /v2/velocity-checks (item 2 of target-flows/ledger-api.create-transfer.yaml).  target-flows/ledger-api.create-transfer.yaml:18",
+        "    ledger-api.create-transfer item 2 (call-out): forge-ledger hasn't been read into facts at this commit, and the built-in readers alone are only a cross-check, so Atticus couldn't confirm that ledger-api calls northwind-pay POST /v2/velocity-checks from the code; check it by hand",
       );
       expect(r.out).toContain(
         "  STILL THERE  ledger-api still calls northwind-pay POST /v2/payments, which item 4 of target-flows/ledger-api.create-transfer.yaml removes.  forge-ledger:src/main/java/forge/ledger/NorthwindClient.java:8",
@@ -80,7 +84,7 @@ describe("atticus change conform", () => {
         [
           "forge-ledger",
           "change/add-transfer-limit",
-          { found: 4, missing: 1, stillThere: 1, unexpected: 2 },
+          { found: 4, missing: 0, stillThere: 1, unexpected: 2 },
         ],
       ]);
       expect((await run(["change", "conform", "no-such", "--root", root])).code).toBe(2);
@@ -114,9 +118,55 @@ describe("GET /api/changes/{id}/conformance (ADR 0114)", () => {
         "open",
         "open",
         "open",
-        "open",
       ]);
       expect((await get("/api/changes/no-such/conformance")).status).toBe(404);
+    },
+    T,
+  );
+});
+
+describe("POST /api/changes/{id}/conformance: Check the code again from the app (eighth UX walk)", () => {
+  it(
+    "runs the check as a local job on the person's click: 202, then the job's lines; 404 for no change",
+    async () => {
+      const s = await startServer({
+        root,
+        port: 0,
+        user: "pat",
+        extend: (r, ctx) => uiRoutes(r, ctx),
+      });
+      try {
+        const h = { "X-Atticus-Token": s.token, "Content-Type": "application/json" };
+        const r = await fetch(`${s.url}/api/changes/${CHANGE}/conformance`, {
+          method: "POST",
+          headers: h,
+          body: "{}",
+        });
+        expect(r.status).toBe(202);
+        const { jobId } = (await r.json()) as { jobId: string };
+        let job: { state: string; kind?: string; result?: { code: number; lines: string[] } };
+        for (;;) {
+          job = (await (
+            await fetch(`${s.url}/api/jobs/${jobId}`, { headers: h })
+          ).json()) as typeof job;
+          if (job.state !== "running" && job.state !== "queued") break;
+          await new Promise((x) => setTimeout(x, 100));
+        }
+        // Findings are the check's answer, not a failed step: the job is done.
+        expect(job.state).toBe("done");
+        expect(job.result?.code).toBe(0);
+        expect(job.result?.lines.join("\n")).toMatch(
+          /^forge-ledger at change\/add-transfer-limit \([0-9a-f]{12}, from [0-9a-f]{12}\): 4 found, 0 missing, 1 still there, 2 not in the design\.$/m,
+        );
+        const none = await fetch(`${s.url}/api/changes/no-such/conformance`, {
+          method: "POST",
+          headers: h,
+          body: "{}",
+        });
+        expect(none.status).toBe(404);
+      } finally {
+        await s.close();
+      }
     },
     T,
   );

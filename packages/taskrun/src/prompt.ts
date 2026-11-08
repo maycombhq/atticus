@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { AgentDefinition, changesRelOf, taskBranch } from "@maycombhq/core";
 import { buildContextPack, type ContextPack, type SourceInput } from "@maycombhq/ai";
-import { renderTaskContext, taskContext } from "@maycombhq/planner";
+import { renderTaskContext, taskContext, withBuildLine } from "@maycombhq/planner";
 import type { TaskContext } from "@maycombhq/speckit";
 import type { GitRunner } from "@maycombhq/workspace";
 import { FILE_FORMAT } from "./apply.js";
@@ -143,14 +143,14 @@ export async function taskPack(p: PackInput): Promise<ContextPack> {
       trusted: true,
     })),
   ];
-  const artifact = (rel: string, priority: number) => {
+  const artifact = (rel: string, priority: number, text = (raw: string) => raw) => {
     const d = t.files.docs.get(rel);
     if (d)
       sources.push({
         id: rel,
         kind: "artifact",
         origin: `${changesRelOf(t.root)}/${t.change.id}/${rel}`,
-        text: d.raw,
+        text: text(d.raw),
         classification: "internal",
         priority,
       });
@@ -170,7 +170,10 @@ export async function taskPack(p: PackInput): Promise<ContextPack> {
       classification: "internal",
       priority: 35,
     });
-  for (const s of t.task.stories) artifact(`stories/${s}.md`, 30);
+  // Eighth UX walk: the story's build line as the manifest says it now, not as it was when the
+  // stories stage wrote it (a person may have set the command since).
+  for (const s of t.task.stories)
+    artifact(`stories/${s}.md`, 30, (raw) => withBuildLine(raw, t.repo.id, t.repo.build));
   for (const a of ["design.md", "interfaces.md", "mappings.md", "data.md"]) artifact(a, 20);
   // ADR 0101: what the organisation needs of the change: the standards to follow, the requests
   // a person raises. Items not yet verified are there too, marked.
