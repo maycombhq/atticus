@@ -487,7 +487,7 @@ describe("only facts that cover the commit say something is missing (eighth UX w
       { source: "code", repo: "forge-proxy-core-v1", path: "apiproxy/forge-core-v1.xml", line: 1 },
     ],
   } as unknown as CatalogRecord;
-  const check = async (basis: ConformInput["basis"]) => {
+  const check = async (basis: ConformInput["basis"], extra: CatalogRecord[] = []) => {
     const { deltas, problems } = await readConformDeltas(GATEWAY);
     expect(problems).toEqual([]);
     return conform({
@@ -499,7 +499,7 @@ describe("only facts that cover the commit say something is missing (eighth UX w
         { flow: "proxy-core-v1.lock-card", item: 2 },
       ],
       before: [proxy],
-      after: [proxy],
+      after: [proxy, ...extra],
       files: ["apiproxy/proxies/default.xml"],
       ...(basis ? { basis } : {}),
     });
@@ -546,6 +546,34 @@ describe("only facts that cover the commit say something is missing (eighth UX w
       ["missing", "trigger", 0],
       ["missing", "call", 2],
     ]);
+  });
+
+  it("a call the code makes whose target isn't settled yet couldn't be confirmed, never missing (round 44)", async () => {
+    const unsettled = {
+      kind: "Unresolved",
+      schemaVersion: 4,
+      id: "unresolved.call-put-cards-id-lock",
+      status: "current",
+      confidence: "verified",
+      unresolvedKind: "call",
+      raw: "PUT core-backend /cards/{id}/lock",
+      owner: "proxy-core-v1",
+      evidence: [
+        {
+          source: "code",
+          repo: "forge-proxy-core-v1",
+          path: "apiproxy/proxies/default.xml",
+          line: 22,
+        },
+      ],
+    } as unknown as CatalogRecord;
+    const r = await check({ from: "facts", unread: [] }, [unsettled]);
+    expect(r.items.map((i) => [i.status, i.check, i.item ?? 0])).toEqual([
+      ["missing", "trigger", 0],
+    ]);
+    expect(r.unchecked.find((u) => u.item === 2)?.why).toBe(
+      "proxy-core-v1 calls PUT core-backend /cards/{id}/lock, but where it goes isn't settled yet, so Atticus couldn't confirm it reaches card-vault; answer its map question on Questions, then check the code again.",
+    );
   });
 
   it("a table and columns the readers don't see are one note; a migration file is still checked from git", () => {

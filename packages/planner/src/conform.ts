@@ -179,6 +179,20 @@ export function conform(input: ConformInput): ConformResult {
     return out;
   };
 
+  /**
+   * Round 44: a call the code makes from `from` whose target the estate hasn't settled (an
+   * Unresolved call, raw `METHOD base /path`) with the step's method and path.
+   */
+  const unsettledCall = (records: Rec[], from: string, entry: string) => {
+    const http = httpEntry(entry);
+    if (!http) return undefined;
+    return records.find((r) => {
+      if (r.kind !== "Unresolved" || r.unresolvedKind !== "call" || r.owner !== from) return false;
+      const m = /^(\S+)\s+\S+\s+(\S+)$/.exec(str(r.raw) ?? "");
+      return !!m && m[1]!.toUpperCase() === http.method && normalizePath(m[2]!) === http.path;
+    }) as (Rec & { raw: string }) | undefined;
+  };
+
   /** Endpoints of the repo's components a trigger or another repo's call names. */
   const endpointsFor = (records: Rec[], component: string, entry: string) => {
     const http = httpEntry(entry);
@@ -336,12 +350,21 @@ export function conform(input: ConformInput): ConformResult {
           const found = callsTo(after, from, s.to)[0];
           const publish = kind === "publish";
           const verb = publish ? "publishes to" : "calls";
+          const unsettled = found ? undefined : unsettledCall(after, from, s.to.entry);
           if (!found && !decisive)
             unchecked.push({
               flow,
               item,
               kind,
               why: unconfirmed(`that ${from} ${verb} ${s.to.component} ${s.to.entry}`),
+            });
+          else if (unsettled)
+            // Round 44: the code makes the call; only where it goes isn't settled yet.
+            unchecked.push({
+              flow,
+              item,
+              kind,
+              why: `${from} calls ${unsettled.raw}, but where it goes isn't settled yet, so Atticus couldn't confirm it reaches ${s.to.component}; answer its map question on Questions, then check the code again.`,
             });
           else
             push(
