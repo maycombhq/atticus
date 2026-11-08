@@ -31,6 +31,21 @@ const PERSON = [
   "needs skip c1 n1 --note x",
   "change needs done c1 n1",
   "next --by someone",
+  "change handoff c1 --approve",
+  "plan submit c1 --approve",
+  "ado sync c1 --approve",
+  "task run c1 t1 --level pr --approve",
+  "handoff done r1 --approve",
+  "scan verify forge --accept",
+  "repo describe forge-ledger --accept",
+  "repo describe forge-ledger --description Ledger",
+  "repo describe forge-ledger --reject",
+  "repo add forge-x --url u",
+  "knowledge keep k1 --find s",
+  "alias Ledger forge-ledger",
+  "glossary define Limit --text x",
+  "glossary link Limit forge-ledger",
+  "glossary alias Limit Cap",
 ];
 const SESSION = [
   "verify forge-ledger",
@@ -43,6 +58,9 @@ const SESSION = [
   "todo",
   "needs c1",
   "spec check forge-ledger",
+  "repo describe forge-ledger --drafted Ledger --cites a:1",
+  "glossary list",
+  "map forge-ledger --estimate",
 ];
 
 describe("what only a person does", () => {

@@ -42,6 +42,29 @@ const RULES: { test: (w: readonly string[], a: readonly string[]) => boolean; wh
     why: "a person records a need done or not needed",
   },
   { test: (_w, a) => flag(a, "--by"), why: "--by names a person; a session acts as no one" },
+  {
+    test: (_w, a) => flag(a, "--approve"),
+    why: "--approve is a person's: a human approves every write to shared systems",
+  },
+  {
+    test: (_w, a) => flag(a, "--accept", "--accept-proposal"),
+    why: "a person accepts what is proposed (--accept is theirs)",
+  },
+  {
+    test: (w, a) =>
+      w[0] === "repo" &&
+      (w[1] === "add" || (w[1] === "describe" && flag(a, "--description", "--reject"))),
+    why: "a person adds a repo and writes or drops its description (a session drafts with --drafted)",
+  },
+  {
+    test: (w) => w[0] === "knowledge" && w[1] === "keep",
+    why: "a person keeps a knowledge item (it is recorded as verified by them)",
+  },
+  { test: (w) => w[0] === "alias", why: "a person decides what a name means" },
+  {
+    test: (w) => w[0] === "glossary" && ["define", "link", "alias"].includes(w[1] ?? ""),
+    why: "a person defines, links or aliases a glossary term",
+  },
 ];
 
 /** Why the command is a person's to run, or undefined when a session may run it. */

@@ -97,20 +97,9 @@ export function commandLineOf(line: string): { command: string; args: string[] }
 
 class RuntimeConfigLikeError extends RuntimeError {}
 
-/** The atticus commands a session may not run: what only a person does, and what loops. */
+/** The atticus commands a session may not run beyond a person's: what loops, servers, --root. */
 const PERSONS: { test: (a: string[]) => boolean; why: string }[] = [
-  {
-    test: (a) => a[0] === "questions" && a[1] === "answer",
-    why: "a person answers questions (atticus questions answer is theirs to run)",
-  },
-  {
-    test: (a) => a.includes("--approve"),
-    why: "--approve is a person's: a human approves every write to shared systems",
-  },
-  {
-    test: (a) => a.includes("--accept") || a.includes("--accept-proposal"),
-    why: "a person accepts what is proposed (--accept is theirs)",
-  },
+  // What only a person does is personOnlyWhy's list (person-only.ts), shared with the CLI.
   {
     test: (a) => a[0] === "map" && a.includes("--all"),
     why: "this session is one step of atticus map --all; Atticus runs the loop, not the session",

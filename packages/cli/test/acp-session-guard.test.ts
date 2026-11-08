@@ -42,6 +42,11 @@ describe("a person's decision inside a Copilot session (review round 32)", () =>
     ["knowledge", "verify", "k1"],
     ["spec", "accept", "forge-ledger"],
     ["todo", "done", "s1"],
+    ["change", "handoff", "c1", "--approve"],
+    ["plan", "submit", "c1", "--approve"],
+    ["repo", "describe", "forge-ledger", "--description", "Ledger"],
+    ["knowledge", "keep", "k1"],
+    ["alias", "Ledger", "forge-ledger"],
   ])("refuses %s …", async (...args) => {
     const was = process.env.ATTICUS_ACP_SESSION;
     process.env.ATTICUS_ACP_SESSION = "1";

@@ -300,11 +300,15 @@ export function answerAudit(
       unknown.push(id);
       continue;
     }
+    // Review round 33: a note on an answer already on file keeps who answered it, and when.
+    const same = item.answer === a.answer && item.by !== undefined;
     item.answer = a.answer;
     if (a.note) item.note = a.note;
     else delete item.note;
-    item.by = by;
-    item.at = now;
+    if (!same) {
+      item.by = by;
+      item.at = now;
+    }
   }
   return unknown;
 }
