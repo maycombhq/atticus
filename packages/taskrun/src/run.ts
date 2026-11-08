@@ -32,10 +32,12 @@ import {
 import { writeQuarantineItems } from "@maycombhq/naysayer";
 import {
   buildEngineFor,
+  catchUpChangeBranch,
   changeWorktree,
   handDown,
   loadTask,
   openTaskWorktree,
+  setTaskDone,
   type TaskContext,
 } from "@maycombhq/speckit";
 import { createGit, toRepoRelative, type GitRunner } from "@maycombhq/workspace";
@@ -627,6 +629,68 @@ export async function taskPrState(
   }
 }
 
+/** Where a task's PR stands after settleTaskPr, and whether it ticked the task just now. */
+export interface TaskPrSettled {
+  state?: TaskPrState;
+  ticked?: true;
+}
+
+/**
+ * Seventh UX walk (tasks and manual steps): taskPrState, and the task's record kept in step with
+ * the Git host. The PR's number and link as the host has them now (on a manual host, the ones the
+ * person recorded, in place of manual://) replace the record's; a PR read as another branch's is
+ * looked up by the task's branch instead. Once the PR is merged, the task is ticked in tasks.md,
+ * once (the record keeps when): a person who unticks it later keeps it unticked. The tick is a
+ * local edit to the change's files, which rides the change's build hand-off. Nothing is sent.
+ */
+export async function settleTaskPr(
+  root: string,
+  changeId: string,
+  taskId: string,
+  o: { gitHost?: GitHost; timeoutMs?: number; now?: () => Date } = {},
+): Promise<TaskPrSettled> {
+  const r = await readTaskRun(root, changeId, taskId).catch(() => undefined);
+  if (r?.state !== "pr-open" || !r.pr) return {};
+  const recorded = r.pr;
+  const ask = async () => {
+    const host = o.gitHost ?? gitHostOf(root, await loadTask(root, changeId, taskId));
+    if (!host) return undefined;
+    const pr = await host.getPullRequest(r.repo, recorded.number);
+    if (pr.head === r.branch) return pr;
+    const mine = await host.listPullRequests(r.repo, { head: r.branch });
+    return mine.find((x) => x.url === recorded.url) ?? mine.at(-1);
+  };
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<undefined>((res) => {
+    timer = setTimeout(() => res(undefined), o.timeoutMs ?? 3_000);
+  });
+  const pr = await Promise.race([ask(), late])
+    .catch(() => undefined)
+    .finally(() => clearTimeout(timer));
+  if (!pr) return {};
+  const state: TaskPrState = pr.state === "merged" || pr.state === "closed" ? pr.state : "open";
+  // Read again just before writing: a run of the task may have started meanwhile.
+  const cur = await readTaskRun(root, changeId, taskId).catch(() => undefined);
+  if (cur?.state !== "pr-open" || cur.pr?.url !== recorded.url) return { state };
+  let changed = false;
+  if (pr.number !== recorded.number || pr.url !== recorded.url) {
+    cur.pr = { number: pr.number, url: pr.url };
+    changed = true;
+  }
+  let ticked = false;
+  if (state === "merged" && !cur.ticked) {
+    ticked = await setTaskDone(root, changeId, taskId, true);
+    cur.ticked = stamp((o.now ?? (() => new Date()))());
+    if (ticked)
+      cur.notes.push(
+        `Ticked ${taskId} in tasks.md: PR #${pr.number} merged on the Git host. The tick rides the change's build hand-off.`,
+      );
+    changed = true;
+  }
+  if (changed) await saveTaskRun(root, cur);
+  return { state, ...(ticked ? { ticked: true as const } : {}) };
+}
+
 /** Whether a Git host is there to push to: one that can't be made (no adapter installed) isn't. */
 function gitHostConnected(root: string, t: TaskContext, given?: GitHost): boolean {
   try {
@@ -786,6 +850,22 @@ async function runTaskHeld(
   const handed =
     engine === "speckit" ? `specs/${t.task.id}/plan.md` : `.atticus/tasks/${t.task.id}.md`;
   const notes: string[] = [...earlier];
+  // Seventh UX walk: a new task branch starts from the tasks already merged on the Git host.
+  try {
+    const caught = await catchUpChangeBranch(
+      root,
+      t.change.id,
+      t.task.id,
+      t.repo.id,
+      changeDir,
+      git,
+    );
+    if (caught) notes.push(caught);
+  } catch (e) {
+    if (e instanceof Error && e.name === "SpecKitError")
+      throw new TaskRunError("refused", e.message);
+    throw e;
+  }
   if (!existsSync(join(changeDir, handed))) {
     const h = await handDown(root, t.change.id, t.task.id, { git });
     notes.push(

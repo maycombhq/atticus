@@ -240,7 +240,9 @@ describe("to-do and manual steps", () => {
     });
     expect(desk.fields).toContainEqual({ name: "Target", value: "ledger-api:8443" });
     expect(desk.result.map((f: { name: string }) => f.name)).toEqual(["requestNumber", "url"]);
-    const report = t.body.steps.find((s: { id: string }) => s.id === "report-pr-1");
+    const report = t.body.steps.find(
+      (s: { id: string }) => s.id === "report-pr-handoff-add-transfer-limit-plan",
+    );
     expect(report.waitsFor).toEqual(["open-pr-handoff-add-transfer-limit-plan"]);
     expect(t.body.sources.find((s: { system: string }) => s.system === "service-desk")).toEqual({
       system: "service-desk",
@@ -269,12 +271,17 @@ describe("to-do and manual steps", () => {
     });
     expect(bad.status).toBe(400);
     expect(bad.body.detail).toContain("Pull request link: nope isn't a link");
-    const early = await post("/api/todo/report-pr-1/done", { values: { checksPassing: "yes" } });
+    const early = await post("/api/todo/report-pr-handoff-add-transfer-limit-plan/done", {
+      values: { checksPassing: "yes" },
+    });
     expect(early.status).toBe(422);
     expect(early.body.detail).toBe(
-      "Do step open-pr-handoff-add-transfer-limit-plan first: step report-pr-1 depends on it.",
+      "Do step open-pr-handoff-add-transfer-limit-plan first: step report-pr-handoff-add-transfer-limit-plan depends on it.",
     );
-    expect((await post("/api/todo/report-pr-1/done", { skip: true })).status).toBe(400);
+    expect(
+      (await post("/api/todo/report-pr-handoff-add-transfer-limit-plan/done", { skip: true }))
+        .status,
+    ).toBe(400);
   });
 
   it("records a result as the signed-in person, and skips a step with a reason", async () => {
@@ -283,7 +290,10 @@ describe("to-do and manual steps", () => {
     });
     expect(ok.status).toBe(200);
     expect(ok.body).toMatchObject({ state: "done", recorded: { by: "pat", at: NOW } });
-    const skip = await post("/api/todo/report-pr-1/done", { skip: true, note: "Checked by hand" });
+    const skip = await post("/api/todo/report-pr-handoff-add-transfer-limit-plan/done", {
+      skip: true,
+      note: "Checked by hand",
+    });
     expect(skip.status).toBe(200);
     expect(skip.body).toMatchObject({ state: "skipped", recorded: { note: "Checked by hand" } });
     const all = await call("/api/todo?all=1");

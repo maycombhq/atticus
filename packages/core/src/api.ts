@@ -230,8 +230,15 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  * 2.71.0 (review round 43): a task's raised PR in GET /api/changes/{changeId}/tasks carries
  *   `taskRun.pr.state`, open, merged or closed as the Git host says it now (asked read-only, with
  *   a short timeout; absent when the host can't say). Additive only.
+ * 2.72.0 (seventh UX walk, tasks and manual steps): POST
+ *   /api/changes/{changeId}/tasks/{taskId}/done ticks or unticks a task in tasks.md on the
+ *   person's click; GET /api/changes/{changeId}/tasks ticks a task whose PR merged on the Git host
+ *   (once) and says so in `taskRun.ticked`, and a raised PR's number and link are the host's (a
+ *   manual host's as the person recorded them); POST /api/todo/{stepId}/done syncs the change's
+ *   open hand-off after a Git host step and returns what it said in `synced` (read-only: never a
+ *   merge). Additive only.
  */
-export const API_VERSION = "2.71.0";
+export const API_VERSION = "2.72.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -633,6 +640,11 @@ export const Task = z.object({
           state: z.enum(["open", "merged", "closed"]).optional(),
         })
         .optional(),
+      /**
+       * 2.72.0 (seventh UX walk): when Atticus ticked the task in tasks.md because its PR merged
+       * on the Git host (once: a person may untick it after).
+       */
+      ticked: z.string().optional(),
       notes: z.array(z.string()),
     })
     .optional(),
@@ -2642,6 +2654,9 @@ export const HandoffRequest = z.strictObject({
 
 /** ADR 0043: refresh a change from its hand-off PR. */
 export const SyncRequest = z.strictObject({ repo: z.string().optional() });
+
+/** 2.72.0 (seventh UX walk): tick (done) or untick a task in the change's tasks.md. */
+export const TaskDoneRequest = z.strictObject({ done: z.boolean() });
 
 /** ADR 0043, Release and Run screens: request bodies the CLI's uiRunRoutes parse. */
 export const StepDoneRequest = z
@@ -4831,6 +4846,18 @@ const OPS: Record<string, Record<string, Op>> = {
       errors: [403, 404, 409, 422],
     },
   },
+  "/api/changes/{changeId}/tasks/{taskId}/done": {
+    post: {
+      id: "setTaskDone",
+      summary:
+        "2.72.0 (seventh UX walk): tick or untick a task in the change's tasks.md, on the person's click",
+      tag: "changes",
+      params: [p("changeId"), p("taskId")],
+      body: TaskDoneRequest,
+      ok: { status: 200, schema: "Task", description: "The task as tasks.md now says it" },
+      errors: [400, 403, 404],
+    },
+  },
   "/api/changes/{changeId}/workspace": {
     post: {
       id: "openWorkspace",
@@ -5282,7 +5309,8 @@ const OPS: Record<string, Record<string, Op>> = {
   "/api/todo/{stepId}/done": {
     post: {
       id: "recordStep",
-      summary: "Record a manual step's result, or skip it with a reason",
+      summary:
+        "Record a manual step's result, or skip it with a reason; 2.72.0: a Git host step of a change with a hand-off open syncs it (`synced`, read-only, never a merge)",
       tag: "release",
       params: [p("stepId")],
       body: StepDoneRequest,

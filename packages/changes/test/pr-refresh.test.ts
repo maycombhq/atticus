@@ -39,8 +39,13 @@ describe("change sync refreshes the hand-off's pull request", () => {
       values: { url: `https://git.example.com/${REPO}/pull/41`, number: 41 },
     });
     const s = await syncHandoff(root, ID, { gitHost, repo: REPO, now: "2026-10-19T10:10:00Z" });
-    expect(s.handoff.pr).toEqual({ number: 1, url: `https://git.example.com/${REPO}/pull/41` });
+    // Seventh UX walk: the PR goes by the number the person recorded, not Atticus's local one.
+    expect(s.handoff.pr).toEqual({ number: 41, url: `https://git.example.com/${REPO}/pull/41` });
     const saved = (await changeStore(root).read(ID)).handoffs.at(-1)!;
-    expect(saved.pr.url).toBe(`https://git.example.com/${REPO}/pull/41`);
+    expect(saved.pr).toEqual({ number: 41, url: `https://git.example.com/${REPO}/pull/41` });
+
+    // A sync after that still finds the PR by its recorded number.
+    const again = await syncHandoff(root, ID, { gitHost, repo: REPO, now: "2026-10-19T10:20:00Z" });
+    expect(again.handoff.pr.number).toBe(41);
   });
 });

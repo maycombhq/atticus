@@ -225,11 +225,18 @@ export function StepDetail({ step, done }: { step: Step; done: () => void }) {
     const filled = Object.fromEntries(Object.entries(values).filter(([, v]) => v.trim()));
     void act.run(
       () =>
-        api(`/api/todo/${step.id}/done`, {
+        api<{ synced?: string[] }>(`/api/todo/${step.id}/done`, {
           method: "POST",
           body: { values: filled, ...(step.change ? { change: step.change } : {}) },
-        }).then(done),
-      T.recordedStep(step.id),
+        }).then((r) => {
+          done();
+          return r;
+        }),
+      // Seventh UX walk (API 2.72.0): a hand-off PR's step syncs the change; what it said.
+      (r) =>
+        r.synced?.length
+          ? T.recordedAndSynced(step.id, r.synced.join(" "))
+          : T.recordedStep(step.id),
     );
   };
   return (

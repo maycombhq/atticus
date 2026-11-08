@@ -56,7 +56,7 @@ describe("closing a pull request", () => {
     expect(r.state).not.toBe("closed");
     const [step] = await store.list({ action: "close-pull-request" });
     expect(step).toMatchObject({
-      id: `close-pr-${p.number}`,
+      id: "close-pr-handoff-add-transfer-limit-design",
       change: "add-transfer-limit",
       approval: { by: "ari" },
       state: "open",

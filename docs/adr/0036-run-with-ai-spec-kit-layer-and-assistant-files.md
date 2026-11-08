@@ -68,3 +68,9 @@ Round 43 (tasks) settled two more:
 
 - **Every way in asks the Git host.** The app's Run with AI asks the same Git host the other routes use whether a task's PR is still open, and the Task board asks it (read-only, with a short timeout) for each raised PR's state when it lists the tasks. A PR merged or closed there offers Run with AI again; a host that can't say leaves the PR open as recorded. A merged PR doesn't tick the task: ticking it in `tasks.md` stays the person's.
 - **Nothing to commit is a person's task.** An answer that changes nothing in the task's worktree leaves no commit, so the task needs a person with a note saying so, and no PR is opened. Raise is offered only for a built task with a commit.
+
+The seventh UX walk (tasks and manual steps) changed one of those and added two:
+
+- **A merged PR ticks its task, once.** This replaces round 43's "a merged PR doesn't tick the task". When the Git host says a task's PR merged, listing the tasks ticks it in `tasks.md` and the task's record keeps when (`taskRun.ticked`), so it is ticked only once: a person who unticks it keeps it unticked. A person can also tick or untick any task from the Task board. Only the box's character changes, and the edit is a local one to the change's files that rides the change's build hand-off; nothing is sent.
+- **A task starts from the tasks merged before it.** Before a task's branch is cut, the local change branch catches up with the Git host's by fast-forward. A local branch with commits of its own while the host's has moved on is never rewritten: the run is refused, saying what to do. A host that can't be reached leaves the branch as it is.
+- **A PR goes by the host's number and link.** The task's record takes the PR's number and link as the Git host has them now (a manual host's as the person recorded them).
