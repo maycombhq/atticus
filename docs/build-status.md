@@ -96,7 +96,8 @@ Still owed from before Atticus 2: CI on the hosted runners (A8), and the person 
 3. **For a person (M4):** time the onboarding bars with someone new on a sandbox, accept a drafted org pack, and a screen-reader pass (`docs/m4-exit.md`, "For a person").
 4. **For a person (M5):** run the full CI matrix (Windows, Node 24 and the offline bundle on both systems), install the bundle on the target laptop and run `atticus doctor`, hand the threat model, SBOM and licences to the security review, then decide 1.0 (`docs/m5-exit.md`).
 5. **Review ADRs 0053–0072** (Tom George).
-6. **For a person (ADR 0065):** call each model provider once against a real endpoint (Anthropic, Azure OpenAI or the internal gateway, Bedrock) from a laptop behind the corporate proxy, and record the result.
+6. **2.0.0-beta.22 (ADR 0181, proposed; Tom George to review):** AI decides first as itself (`joined-by-ai` links, AI-answered questions, the `decide` setting, "Detected by AI" on every screen), a person's correction spreads to similar items by a derived rule, the AI kind in the sample audit with a precision pause, questions owned by role, and _Run all ready tasks_ on a change's Task board. Also: tighten C1 `RecordId` for Windows-reserved names (round 25).
+7. **For a person (ADR 0065):** call each model provider once against a real endpoint (Anthropic, Azure OpenAI or the internal gateway, Bedrock) from a laptop behind the corporate proxy, and record the result.
 
 ## To do (consolidated 2026-10-20)
 
