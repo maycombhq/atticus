@@ -5,6 +5,7 @@ import { FilterBox, FilterEmpty, filteredWhat, matchesWords } from "../app/filte
 import { Table } from "./know/common.js";
 import { NeedsAcross } from "./knowledge/NeedsAcross.js";
 import { COPY } from "../copy.js";
+import { isManualLink, MANUAL_STEPS_HREF } from "./know/task-pr.js";
 
 const T = COPY.across;
 
@@ -47,6 +48,17 @@ const changeCell = (r: AcrossRow) => (
 const chip = (text: string, kind = "") => (
   <span className={`chip ${kind}`}>{text.toUpperCase()}</span>
 );
+
+/**
+ * A release row's hand-off: its PR's link and state. Seventh UX walk: a manual Git host's PR
+ * isn't open until a person opens it, so it links to where that step waits, never manual://.
+ */
+export function handoffCell(h: { phase: string; pr: string; state: string } | undefined) {
+  if (!h) return <span className="muted">{T.noneOpen}</span>;
+  if (h.state === "open" && isManualLink(h.pr))
+    return <a href={MANUAL_STEPS_HREF}>{T.handOffManual(h.phase)}</a>;
+  return <ExternalLink href={h.pr}>{`${h.phase} · ${h.state}`}</ExternalLink>;
+}
 
 type Col = { label: string; cell: (r: AcrossRow) => ReactNode; mono?: boolean; width?: string };
 
@@ -110,14 +122,8 @@ const COLS: Record<RowsId, Col[]> = {
     { label: T.next, cell: (r) => s(r.nextStep) },
     {
       label: T.handOff,
-      cell: (r) => {
-        const h = r.handoff as { phase: string; pr: string; state: string } | undefined;
-        return h ? (
-          <ExternalLink href={h.pr}>{`${h.phase} · ${h.state}`}</ExternalLink>
-        ) : (
-          <span className="muted">{T.noneOpen}</span>
-        );
-      },
+      cell: (r) =>
+        handoffCell(r.handoff as { phase: string; pr: string; state: string } | undefined),
     },
   ],
 };

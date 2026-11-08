@@ -5,6 +5,7 @@ import { parse } from "yaml";
 import {
   Finding,
   isAssistantResolution,
+  listQuestions,
   PHASES,
   type ChangeLifecycle,
   type ChangeType,
@@ -146,7 +147,7 @@ export async function checkStage(
   const reason = (message: string): Reason[] => [{ code: "stage-not-done", message }];
   const text = await readFile(join(dir, ...step.loop.split("/")), "utf8").catch(() => undefined);
   if (text === undefined) return reason(`The ${step.stage} stage hasn't run yet: run ${run}.`);
-  let loop: { state?: unknown; run?: unknown } | null;
+  let loop: { state?: unknown; run?: unknown; questions?: unknown } | null;
   try {
     loop = parse(text) as typeof loop;
   } catch {
@@ -160,10 +161,26 @@ export async function checkStage(
       return reason(
         `The ${step.stage} stage stopped and isn't done: see what stopped it, then run ${run} again.`,
       );
-    case "questions":
+    case "questions": {
+      // Seventh UX walk: once every question it asked is answered, it runs again to read them.
+      const asked = Array.isArray(loop?.questions)
+        ? loop.questions.filter((q): q is string => typeof q === "string")
+        : [];
+      if (asked.length) {
+        const open = new Set(
+          (
+            await listQuestions(root, { state: "open" }).catch(() => ({ questions: [] }))
+          ).questions.map((q) => q.id),
+        );
+        if (!asked.some((q) => open.has(q)))
+          return reason(
+            `The ${step.stage} stage's questions are answered: run it again so it reads the answers (${run}).`,
+          );
+      }
       return reason(
         `The ${step.stage} stage waits for a person to answer its questions: answer them on Questions (or atticus questions), then run the stage again (${run}).`,
       );
+    }
     case "waiting":
       return reason(
         `The ${step.stage} stage is with your assistant${typeof loop?.run === "string" ? ` (run ${loop.run})` : ""}: finish the hand-off, then run ${run} again.`,

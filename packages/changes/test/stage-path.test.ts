@@ -66,6 +66,30 @@ describe("a change on the stage path", () => {
     );
   });
 
+  // Seventh UX walk: At a glance's "What blocks it" still said the stage waits for a person to
+  // answer its questions after every one was answered.
+  it("says a stage whose questions are all answered is run again, not that it waits for answers", async () => {
+    const root = await forgeMetarepo();
+    await featureChange(root);
+    await copyPhase(root, ID, `${ID}/stages/define`);
+    const loop = (extra: string) =>
+      writeFile(
+        join(root, "openspec/changes", ID, "stage/feature.yaml"),
+        `schemaVersion: 1\nchange: add-transfer-limit\nstage: feature\niteration: 2\nstate: questions\n${extra}updatedAt: 2026-10-19T10:00:00Z\n`,
+      );
+    await loop("questions:\n  - q-aaaaaaaaaaaa\n");
+    const answered = await changeReport(root, ID);
+    expect(answered.blockers[0]!.message).toBe(
+      "The feature stage's questions are answered: run it again so it reads the answers (atticus change feature add-transfer-limit).",
+    );
+    // A loop that names no questions still says it waits for them.
+    await loop("");
+    const asking = await changeReport(root, ID);
+    expect(asking.blockers[0]!.message).toContain(
+      "The feature stage waits for a person to answer its questions",
+    );
+  });
+
   it("carries the stage's files in its hand-off PR, and at design follows the architecture stage", async () => {
     const root = await forgeMetarepo();
     const gh = host();

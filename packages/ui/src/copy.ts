@@ -1365,6 +1365,15 @@ export const COPY = {
     slash: "Or type this in Copilot Chat or Claude Code:",
     slashIn: (where: string) => `Or type this in Copilot Chat or Claude Code in ${where}:`,
     noSlash: "No slash command does this step yet. Run the command in a terminal.",
+    /** Seventh UX walk: the step's in-app action comes first; the command is kept under this. */
+    orTerminal: "Or in a terminal",
+    openTaskBoard: "Open the Task board",
+    taskOnBoard:
+      "Run the task with AI on the Task board: Atticus prepares its prompt, checks the result and raises its PR on your click.",
+    writeBrief: "Write the brief on Feature brief",
+    answerOnQuestions: "Answer them on Questions",
+    openPr: "Open the hand-off PR",
+    openRelease: "Open Release",
     whatNext:
       "Not sure what comes next? Type /atticus-next in Copilot Chat or Claude Code, or run atticus next.",
     after: "After that",
@@ -1951,6 +1960,8 @@ export const COPY = {
     noOpenChanges: "No open changes.",
     notYet: "not yet",
     noneOpen: "none open",
+    /** Seventh UX walk: a manual Git host's hand-off PR no person has opened yet. */
+    handOffManual: (phase: string) => `${phase} · waits on a manual step`,
     acrossChanges: "Across changes",
     ofAcrossOpenChange: (
       rowsLength: string | number,
@@ -3053,6 +3064,10 @@ export const COPY = {
     approvedNotMerged: "APPROVED, NOT MERGED",
     notRaised: "NOT RAISED",
     goNoGoPr2: "Go / no-go PR opened. Reviewers decide on the Git host; merging it is the go.",
+    /** Seventh UX walk: on a manual Git host, no PR is open until a person opens it. */
+    goNoGoManual:
+      "Go / no-go raised as a step for you: open its PR on the Git host from Home › Manual steps, then record its link. Merging it is the go.",
+    waitsOnYouChip: "WAITS ON YOU",
     syncedWithTheGit: "Synced with the Git host.",
     archivedItsReposWere: "Archived. Its repos were rescanned.",
     changes: "Changes",

@@ -5,6 +5,7 @@ import { View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
 import { CopyButton } from "../run/shared.js";
 import type { Slash, Step } from "./next.js";
+import { hasAction, StepAction } from "./step-action.js";
 import "./work.css";
 
 const R = COPY.runNext;
@@ -52,21 +53,44 @@ function SlashLine({ slash }: { slash: Slash }) {
  * where a model can be reached from here (ADR 0106).
  */
 export function RunNextPanel({ step }: { step: Step }) {
+  // Seventh UX walk: the step's in-app action first (a button, Prepare, or the page that does
+  // it); the command stays copyable under "Or in a terminal". A step the app can't take keeps
+  // the command first.
+  const action = hasAction(step);
+  // With no control of its own, the page that does the step is the action.
+  const link = step.link && (
+    <p style={{ margin: 0 }}>
+      <a className={action ? undefined : "btn primary"} href={step.link.href}>
+        {step.link.label}
+      </a>
+    </p>
+  );
+  const inApp = action || !!step.link;
   return (
     <section className="panel hero work-next" aria-labelledby="run-next">
       <h2 id="run-next" className="h">
         {R.title}
       </h2>
       <p className="work-why">{step.why}</p>
-      <p className="work-say">{R.terminal}</p>
-      <Command text={step.command} label={R.copy} />
-      {step.slash ? <SlashLine slash={step.slash} /> : <p className="work-say">{R.noSlash}</p>}
-      <p className="work-say">{R.whatNext}</p>
-      {step.link && (
-        <p style={{ margin: "8px 0 0" }}>
-          <a href={step.link.href}>{step.link.label}</a>
-        </p>
+      {inApp ? (
+        <>
+          {action && <StepAction {...step} />}
+          {link}
+          {step.slash && <SlashLine slash={step.slash} />}
+          <details className="work-terminal">
+            <summary>{R.orTerminal}</summary>
+            <p className="work-say">{R.terminal}</p>
+            <Command text={step.command} label={R.copy} noRun />
+          </details>
+        </>
+      ) : (
+        <>
+          <p className="work-say">{R.terminal}</p>
+          <Command text={step.command} label={R.copy} />
+          {step.slash ? <SlashLine slash={step.slash} /> : <p className="work-say">{R.noSlash}</p>}
+        </>
       )}
+      <p className="work-say">{R.whatNext}</p>
       {step.after && step.after.length > 0 && (
         <details className="work-after">
           <summary>{R.after}</summary>
@@ -128,8 +152,11 @@ export function NoChangeYet({ title }: { title?: string }) {
       </h2>
       <p className="work-why">{W.noChangeYet}</p>
       <NewChange />
-      <p className="work-say">{R.terminal}</p>
-      <Command text={W.noChangeCommand} label={R.copy} />
+      <details className="work-terminal">
+        <summary>{R.orTerminal}</summary>
+        <p className="work-say">{R.terminal}</p>
+        <Command text={W.noChangeCommand} label={R.copy} />
+      </details>
       <p className="work-say">
         <a href="#/changes">{W.noChangeLink}</a>
       </p>

@@ -230,8 +230,14 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  * 2.71.0 (review round 43): a task's raised PR in GET /api/changes/{changeId}/tasks carries
  *   `taskRun.pr.state`, open, merged or closed as the Git host says it now (asked read-only, with
  *   a short timeout; absent when the host can't say). Additive only.
+ * 2.72.0 (seventh UX walk, what's next): GET /api/changes/{changeId}/cockpit's `next` follows
+ *   the change's state and gate, never a later stage: a raised hand-off's step is `merge` and
+ *   carries `pr`, the PR it waits on (a manual Git host's manual:// placeholder too, which a page
+ *   never shows as a link); every task ticked is the state's `handoff`. A manual Git host's
+ *   hand-off PR not opened yet is said as a step waiting on a person in `nextStep` and the
+ *   `pr-not-merged` reason, never its manual:// URL. Additive only.
  */
-export const API_VERSION = "2.71.0";
+export const API_VERSION = "2.72.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -626,7 +632,7 @@ export const Task = z.object({
           number: z.number().int(),
           url: z.string(),
           /**
-           * 2.70.0 (review round 43): the PR's state as the Git host says it now, asked read-only
+           * 2.71.0 (review round 43): the PR's state as the Git host says it now, asked read-only
            * when the tasks are listed; absent when the host isn't there or didn't answer in time
            * (the record's state stands). Merged or closed, the task can run with AI again.
            */
@@ -2253,6 +2259,8 @@ export const ChangeCockpit = z.object({
       command: z.string(),
       slash: z.string().optional(),
       why: z.string(),
+      /** 2.72.0: the hand-off PR a `merge` step waits on (manual:// on a manual Git host). */
+      pr: z.string().optional(),
     })
     .passthrough()
     .optional(),
