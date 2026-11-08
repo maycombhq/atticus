@@ -332,7 +332,8 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
    * (202 and the job's id; the page follows /api/jobs/{id}), whose result is the code and lines.
    */
   const asJob = (what: string, work: () => Promise<Ran>) => {
-    const job = ctx.jobs.start("step", async (c) => {
+    // Round 37: its own kind, so a slow Apply never reads as "an AI step is running".
+    const job = ctx.jobs.start("local", async (c) => {
       c.progress(0, 1, what);
       const res = await work();
       c.progress(1, 1, res.code === 0 ? "Done" : "Stopped");

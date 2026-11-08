@@ -1,5 +1,6 @@
 import { rm } from "node:fs/promises";
-import { join } from "node:path";
+import { randomUUID } from "node:crypto";
+import { join, resolve } from "node:path";
 import { requireApproval, type Approval } from "@maycombhq/adapters";
 import { createGit } from "@maycombhq/workspace";
 
@@ -31,8 +32,29 @@ export function gitHandoffPublisher(
   const remote = opts.remote ?? "origin";
   const env = opts.env ?? process.env;
   return {
-    async publish({ root, branch, base, files, message, approval }) {
-      requireApproval("git", approval);
+    async publish(input) {
+      requireApproval("git", input.approval);
+      // Round 37: one publish at a time per metarepo, each in its own index, so two proposals (or a
+      // proposal and a hand-off) at once never push each other's files.
+      const key = resolve(input.root);
+      const before = queue.get(key) ?? Promise.resolve();
+      const mine = before.catch(() => undefined).then(() => publishOne(input));
+      queue.set(
+        key,
+        mine.catch(() => undefined),
+      );
+      return mine;
+    },
+  };
+
+  async function publishOne({
+    root,
+    branch,
+    base,
+    files,
+    message,
+  }: Parameters<HandoffPublisher["publish"]>[0]): Promise<{ commit: string }> {
+    {
       const git = createGit({ env });
       const out = async (args: string[]) => (await git(args, root)).stdout.trim();
       const tryOut = (args: string[]) => out(args).catch(() => undefined);
@@ -55,7 +77,7 @@ export function gitHandoffPublisher(
         ])) ??
         (await out(["rev-parse", "--verify", `refs/heads/${base}^{commit}`]));
 
-      const index = join(gitDir, "atticus-handoff-index");
+      const index = join(gitDir, `atticus-handoff-index-${process.pid}-${randomUUID()}`);
       const staged = createGit({ env: { ...env, GIT_INDEX_FILE: index } });
       try {
         await staged(["read-tree", start], root);
@@ -70,6 +92,8 @@ export function gitHandoffPublisher(
       } finally {
         await rm(index, { force: true });
       }
-    },
-  };
+    }
+  }
 }
+
+const queue = new Map<string, Promise<unknown>>();

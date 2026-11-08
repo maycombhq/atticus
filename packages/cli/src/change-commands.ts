@@ -1,6 +1,12 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { createAdapters, fileStepStore, type Approval, type GitHost } from "@maycombhq/adapters";
+import {
+  createAdapters,
+  fileStepStore,
+  MockGitHost,
+  type Approval,
+  type GitHost,
+} from "@maycombhq/adapters";
 import { changesRelOf, handoffBranch, loadOrgPack, orgPackDirOf } from "@maycombhq/core";
 import {
   ChangeError,
@@ -98,9 +104,15 @@ const approvalOf = (by: string, at: string, ref: string): Approval => ({ by, at,
  * nobody had made. The person's --approve (the app's click) is the approval for the push too.
  * A test that gives its own Git host gives its own publisher, or none.
  */
-export function handoffPublisherFor(deps: ChangeDeps, io?: Output): HandoffPublisher | undefined {
+export function handoffPublisherFor(
+  deps: ChangeDeps,
+  io?: Output,
+  gitHost?: GitHost,
+): HandoffPublisher | undefined {
   if (deps.publisher) return deps.publisher;
   if (deps.gitHost) return undefined;
+  // runtime.yaml's mock Git host (the evals, a dry run of the process) has no remote to push to.
+  if (gitHost instanceof MockGitHost) return undefined;
   const git = gitHandoffPublisher();
   // A metarepo Atticus can't push from (no remote, the practice sandbox, a host it can't reach)
   // still gets its PR, or its manual step (ADR 0032), with the branch for the person to push.
@@ -392,7 +404,7 @@ export async function changeHandoff(
       now,
       ...(o.repo ? { repo: o.repo } : {}),
       ...(o.base ? { base: o.base } : {}),
-      publisher: handoffPublisherFor(deps, io),
+      publisher: handoffPublisherFor(deps, io, gitHost),
       // WP7.4: the PR reviews itself: the change as a picture, its estimate, its open findings.
       review: await (await import("./handoff-review.js")).handoffReview(root, id),
       ...(metarepoOpenSpec(root) ? { openspec: metarepoOpenSpec(root)! } : {}),

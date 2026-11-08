@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { rm } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import {
   catalogDirOf,
@@ -7,6 +7,7 @@ import {
   factsDirOf,
   mapDirOf,
   specsDirOf,
+  stateDirOf,
   loadOrgPack,
   orgPackDirOf,
   questionsDirOf,
@@ -118,9 +119,23 @@ export function scopeDirs(root: string, scope: ProposeScope): string[] {
 export interface ProposePlan {
   scope: ProposeScope;
   /** A rename's old path is `from`: proposing the new one records the old one's removal. */
-  files: { path: string; status: string; from?: string }[];
+  files: { path: string; status: string; from?: string; proposed?: string }[];
   branch: string;
   title: string;
+}
+
+/**
+ * Round 37: what was pushed, by path and content, so a file already in an open proposal shows
+ * as that (`proposed`: its PR or branch) and isn't offered again. Kept on this machine only.
+ */
+const proposedFile = (root: string) => join(stateDirOf(root), "proposed.json");
+type Proposed = Record<string, { blob: string; where: string }>;
+async function readProposed(root: string): Promise<Proposed> {
+  try {
+    return JSON.parse(await readFile(proposedFile(root), "utf8")) as Proposed;
+  } catch {
+    return {};
+  }
 }
 
 /** What Propose for review would commit: the changed files under the scope's folders. */
@@ -146,7 +161,7 @@ export async function proposePlan(
       root,
     )
   ).stdout;
-  const files: { path: string; status: string; from?: string }[] = [];
+  const files: { path: string; status: string; from?: string; proposed?: string }[] = [];
   const parts = out.split("\0");
   for (let i = 0; i < parts.length; i++) {
     const e = parts[i]!;
@@ -155,6 +170,15 @@ export async function proposePlan(
     // A rename's old path follows it (with -z): kept as `from`, so its removal goes too.
     if (status.startsWith("R")) files.push({ path: e.slice(3), status, from: parts[++i]! });
     else files.push({ path: e.slice(3), status });
+  }
+  const was = await readProposed(root);
+  for (const f of files) {
+    const p = was[f.path];
+    if (!p) continue;
+    const blob = existsSync(join(root, f.path))
+      ? (await git(["hash-object", "--", f.path], root).catch(() => ({ stdout: "" }))).stdout.trim()
+      : "";
+    if (blob === p.blob) f.proposed = p.where;
   }
   // Review round 35: each proposal its own branch (a second one the same day isn't added to
   // the first's PR).
@@ -258,6 +282,22 @@ export async function proposeForReview(
   } catch (e) {
     io.err(`The PR wasn't opened: ${(e as Error).message.split("\n")[0]}`);
     return 1;
+  }
+  // Round 37: remember what went, as its content, so it isn't offered again until it changes.
+  try {
+    const was = await readProposed(root);
+    const where = pr.url.startsWith("manual:") ? plan.branch : pr.url;
+    const g2 = o.git ?? createGit();
+    for (const f of files) {
+      const blob = existsSync(join(root, f))
+        ? (await g2(["hash-object", "--", f], root)).stdout.trim()
+        : "";
+      was[f] = { blob, where };
+    }
+    await mkdir(stateDirOf(root), { recursive: true });
+    await writeFile(proposedFile(root), JSON.stringify(was, null, 2) + "\n", "utf8");
+  } catch {
+    // Only a hint for the next list: the PR is open either way.
   }
   // A manual Git host records a step: the person opens the PR and records its link (ADR 0032).
   io.out(

@@ -7,7 +7,8 @@ import { withSignal } from "@maycombhq/core";
  * stops on at once and a scan checks between repos, and `cancelled` says so between steps.
  */
 
-export type JobKind = "scan" | "sync" | "reconcile" | "index" | "intake" | "step";
+/** `local`: a person's local step (Apply, Propose, Bring in, round 37): never an AI step's slot. */
+export type JobKind = "scan" | "sync" | "reconcile" | "index" | "intake" | "step" | "local";
 export type JobState = "queued" | "running" | "done" | "failed" | "cancelled";
 
 export interface Job {

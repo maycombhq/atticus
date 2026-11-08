@@ -52,6 +52,9 @@ const PERSON = [
   "rules off builtin:spring --reason x",
   "rules add k1 --type service",
   "initiative commit c1 done",
+  "initiative new Pay --journey new-feature",
+  "initiative plan i1 --target s",
+  "questions owner q1 --text yes",
   "outcome record c1 m1 --value 3",
 ];
 const SESSION = [
@@ -69,6 +72,7 @@ const SESSION = [
   "glossary list",
   "map forge-ledger --estimate",
   "rules list",
+  "initiative status i1",
   "rules add k1 --type service --draft",
   "digest",
 ];

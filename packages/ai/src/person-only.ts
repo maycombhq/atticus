@@ -54,8 +54,12 @@ const RULES: { test: (w: readonly string[], a: readonly string[]) => boolean; wh
     why: "a person sets a reading rule active or off (a session drafts)",
   },
   {
-    test: (w) => w[0] === "initiative" && w[1] === "commit",
-    why: "a person records where a commitment stands",
+    test: (w) => w[0] === "initiative" && ["commit", "new", "plan", "request"].includes(w[1] ?? ""),
+    why: "a person starts, plans and records an initiative",
+  },
+  {
+    test: (w) => w[0] === "questions" && w[1] === "owner",
+    why: "an owner answers a knowledge gap's question",
   },
   { test: (w) => w[0] === "outcome" && w[1] === "record", why: "a person records an outcome" },
   {

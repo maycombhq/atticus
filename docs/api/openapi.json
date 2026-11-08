@@ -21732,7 +21732,8 @@
               "reconcile",
               "index",
               "intake",
-              "step"
+              "step",
+              "local"
             ]
           },
           "state": {
@@ -21956,6 +21957,9 @@
                   "type": "string"
                 },
                 "from": {
+                  "type": "string"
+                },
+                "proposed": {
                   "type": "string"
                 }
               },

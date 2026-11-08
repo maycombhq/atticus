@@ -43,7 +43,7 @@ type Scope =
   | "service-desk";
 interface Plan {
   scope: Scope;
-  files: { path: string; status: string; from?: string }[];
+  files: { path: string; status: string; from?: string; proposed?: string }[];
   branch: string;
   title: string;
 }
@@ -125,7 +125,10 @@ export function Propose({ scope }: { scope: Scope }) {
           disabled={look.busy}
           onClick={() =>
             void look.run(async () => {
-              setPlan(await api<Plan>(`/api/propose?scope=${scope}`));
+              const got = await api<Plan>(`/api/propose?scope=${scope}`);
+              // Round 37: a file already in an open proposal starts unticked, and says where.
+              setOff(new Set(got.files.filter((f) => f.proposed).map((f) => f.path)));
+              setPlan(got);
             }, P.listed)
           }
         >
@@ -161,6 +164,7 @@ export function Propose({ scope }: { scope: Scope }) {
                   />
                   <code className="mono">{f.path}</code>
                   <span className="muted">{P.status[f.status] ?? f.status}</span>
+                  {f.proposed && <span className="muted">{P.inReview(f.proposed)}</span>}
                 </label>
               </li>
             ))}
@@ -232,11 +236,12 @@ export function BringIn() {
  */
 export function PendingProposals() {
   const plan = useApi<Plan>("/api/propose?scope=work");
-  if (plan.state !== "ready" || plan.data.files.length === 0) return null;
+  const waiting = plan.state === "ready" ? plan.data.files.filter((f) => !f.proposed).length : 0;
+  if (waiting === 0) return null;
   return (
     <div className="stack" style={{ gap: 4 }}>
       <p className="work-say" style={{ margin: 0 }}>
-        {P.pending(plan.data.files.length)}
+        {P.pending(waiting)}
       </p>
       <Propose scope="work" />
     </div>

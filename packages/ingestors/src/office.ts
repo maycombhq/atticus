@@ -242,6 +242,10 @@ export function readXlsx(zip: ZipArchive): ParsedText {
   const { title, meta } = coreProps(zip);
   const s = new Sections();
   const tables: string[][][] = [];
+  // Round 37: a few bytes can name row 1e9 or column ZZZZZ; Excel's own limits bound a cell,
+  // blank rows and columns between cells are bounded, and the whole read has a budget.
+  const notes: string[] = [];
+  let budget = MAX_CELLS;
   findAll(child(wb, "sheets"), "sheet").forEach((sheet, i) => {
     const target = rels.get(relId(sheet) ?? "");
     const part = target ? resolvePart("xl", target) : undefined;
@@ -249,13 +253,22 @@ export function readXlsx(zip: ZipArchive): ParsedText {
     const rows: string[][] = [];
     let prev: number | undefined;
     for (const row of findAll(child(doc, "sheetData"), "row")) {
+      if (budget <= 0) break;
       const r = Number(row.attrs.r) || (prev ?? 0) + 1;
-      if (prev !== undefined) for (let k = prev + 1; k < r; k++) rows.push([]);
+      if (r > EXCEL_ROWS) {
+        notes.push(
+          `${sheet.attrs.name ?? `Sheet ${i + 1}`}: row ${r} is past Excel's last row; skipped.`,
+        );
+        continue;
+      }
+      if (prev !== undefined)
+        for (let k = prev + 1; k < Math.min(r, prev + 1 + MAX_GAP); k++) rows.push([]);
       prev = r;
       const cells: string[] = [];
       let next = 0;
       for (const c of childrenNamed(row, "c")) {
         const at = c.attrs.r ? colIndex(c.attrs.r) : next;
+        if (at >= EXCEL_COLUMNS || at - cells.length > MAX_GAP || --budget < 0) continue;
         const v = textOf(child(c, "v"));
         let value: string;
         switch (c.attrs.t) {
@@ -282,5 +295,13 @@ export function readXlsx(zip: ZipArchive): ParsedText {
     s.heading(sheet.attrs.name ?? `Sheet ${i + 1}`, 1, { page: i + 1 });
     for (const r of rows) s.add(r.join("\t"));
   });
-  return { ...(title ? { title } : {}), sections: s.done(), tables, meta, notes: [] };
+  if (budget < 0)
+    notes.push(`The workbook has more than ${MAX_CELLS} cells; the rest wasn't read.`);
+  return { ...(title ? { title } : {}), sections: s.done(), tables, meta, notes };
 }
+
+const EXCEL_ROWS = 1_048_576;
+const EXCEL_COLUMNS = 16_384;
+/** Blank rows or columns kept between two cells: a far-off one is still read, the gap isn't. */
+const MAX_GAP = 1000;
+const MAX_CELLS = 2_000_000;

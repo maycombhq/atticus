@@ -171,6 +171,31 @@ describe("a SharePoint site export as a source", () => {
     const fraud = pages.find((p) => p.pagePath === "SitePages/Fraud-thresholds.md")!;
     expect(parse(fraud.content.split("---")[1]!)).toMatchObject({ restricted: true });
   });
+
+  it("keeps a Markdown page's own classification and restriction, LF or CRLF (round 37)", async () => {
+    const root = await estate();
+    const op = await pack(root);
+    const fm = "---\ntitle: Secret limits\nclassification: confidential\nrestricted: true\n---\n";
+    await writeFile(
+      join(root, "wikis/payments-team/SitePages/Secret-limits.md"),
+      `${fm}# Limits\n\nText.\n`,
+    );
+    await writeFile(
+      join(root, "wikis/payments-team/SitePages/Secret-crlf.md"),
+      `${fm}# Limits\n\nText.\n`.replace(/\n/g, "\r\n"),
+    );
+    const pages = await sharepointExportAdapter.pages(source(op, "payments-team"), {
+      root,
+      orgPackDir: join(root, "org-pack"),
+    });
+    for (const name of ["SitePages/Secret-limits.md", "SitePages/Secret-crlf.md"]) {
+      const p = pages.find((x) => x.pagePath === name)!;
+      const head = parse(p.content.split("---")[1]!) as Record<string, unknown>;
+      expect(head, name).toMatchObject({ classification: "confidential", restricted: true });
+      expect(p.content.split("---").length, name).toBe(3);
+      expect(p.content, name).not.toContain("\r");
+    }
+  });
 });
 
 describe("syncing 12 sources", () => {

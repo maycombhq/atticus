@@ -210,7 +210,8 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   /api/service-desk/{changeId}/fields fills a draft's fields in snow.md, 409 if it changed
  *   since read (GET requests carry `file` and `sha256`); ProposeScope adds service-desk; POST
  *   /api/runs and /api/runs/handoff accept `--source <wiki>` on knowledge scan and find.
- *   Additive only.
+ *   Additive only. Round 37: a job's kind may be `local` (Apply, Propose, Bring in), and a
+ *   proposal plan's file says when it is already `proposed`.
  */
 export const API_VERSION = "2.67.0";
 export const DEFAULT_PORT = 4321;
@@ -506,7 +507,7 @@ export const Coverage = z.object({
 export const JobState = z.enum(["queued", "running", "done", "failed", "cancelled"]);
 export const Job = z.object({
   id: z.string(),
-  kind: z.enum(["scan", "sync", "reconcile", "index", "intake", "step"]),
+  kind: z.enum(["scan", "sync", "reconcile", "index", "intake", "step", "local"]),
   state: JobState,
   progress: z.object({ done: z.number().int(), total: z.number().int(), message: z.string() }),
   startedAt: z.string(),
@@ -2258,7 +2259,15 @@ export const ProposeScope = z.enum([
 ]);
 export const ProposePlanView = z.object({
   scope: ProposeScope,
-  files: z.array(z.object({ path: z.string(), status: z.string(), from: z.string().optional() })),
+  files: z.array(
+    z.object({
+      path: z.string(),
+      status: z.string(),
+      from: z.string().optional(),
+      /** Round 37: already in an open proposal, as this content: its PR, or its branch. */
+      proposed: z.string().optional(),
+    }),
+  ),
   branch: z.string(),
   title: z.string(),
 });

@@ -383,4 +383,34 @@ describe("review round 36: Bring in never loses an edit", () => {
     expect(g(root, "log", "-1", "--format=%s").trim()).toBe("removed");
     expect(g(root, "status", "--porcelain").trim()).toBe("");
   });
+
+  it("marks a file already proposed, until its content changes (round 37)", async () => {
+    const { root } = await setup();
+    await mkdir(join(root, "questions"), { recursive: true });
+    await writeFile(join(root, "questions/q1.yaml"), "answer: 1\n");
+    const said: string[] = [];
+    const off = envOn();
+    try {
+      expect(
+        await proposeForReview(
+          root,
+          {
+            scope: "answers",
+            by: "pat",
+            files: ["questions/q1.yaml"],
+            gitHost: new MockGitHost([{ repo: "forge-meta" }]),
+          },
+          io(said),
+        ),
+        said.join("\n"),
+      ).toBe(0);
+    } finally {
+      off();
+    }
+    const after = await proposePlan(root, "answers", { by: "pat" });
+    expect(after.files.find((f) => f.path === "questions/q1.yaml")?.proposed).toBeTruthy();
+    await writeFile(join(root, "questions/q1.yaml"), "answer: 2\n");
+    const changed = await proposePlan(root, "answers", { by: "pat" });
+    expect(changed.files.find((f) => f.path === "questions/q1.yaml")?.proposed).toBeUndefined();
+  });
 });
