@@ -828,7 +828,11 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
           status: 200,
           body: {
             ...after,
-            lines: [...res.out, ...res.err, ...(resumed?.lines ?? [])],
+            // When the app resumed the step, runDone's "run the step again with --resume" is done.
+            lines: [
+              ...[...res.out, ...res.err].filter((l) => !(resumed && /--resume run-/.test(l))),
+              ...(resumed?.lines ?? []),
+            ],
             ...(resumed?.next ? { next: resumed.next } : {}),
           },
         };

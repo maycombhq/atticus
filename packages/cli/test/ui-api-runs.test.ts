@@ -387,4 +387,33 @@ describe("Done finishes a step the app prepared (fourth UX walk)", () => {
       ),
     ).toBeUndefined();
   });
+
+  it("says what a step said in its JSON when it hands nothing off (round 39)", async () => {
+    const { prepareStep } = await import("../src/handoff-resume.js");
+    const r = await prepareStep(
+      root,
+      async () => ({
+        code: 1,
+        out: [
+          JSON.stringify(
+            {
+              state: "stopped",
+              messages: ["forge-notes already has scan settings."],
+              errors: ["Nothing to read."],
+              questions: [{ id: "q1", question: "Which host is it?" }],
+            },
+            null,
+            2,
+          ),
+        ],
+        err: [],
+      }),
+      ["scan", "survey", "forge-notes"],
+    );
+    expect(r.prepared.lines).toEqual([
+      "forge-notes already has scan settings.",
+      "Nothing to read.",
+      "Question q1: Which host is it? (answer it on Questions)",
+    ]);
+  });
 });

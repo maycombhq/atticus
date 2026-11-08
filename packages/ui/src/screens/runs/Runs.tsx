@@ -3,6 +3,7 @@ import type { Api } from "@maycombhq/core";
 import { api, useApi, useLiveEvents, type Loaded } from "../../api/client.js";
 import { Note, useAction } from "../know/common.js";
 import { CopyButton } from "../run/shared.js";
+import { flash } from "../../app/flash.js";
 import {
   FilterBox,
   FilterCount,
@@ -195,6 +196,13 @@ export function WaitingActions(p: {
         api<{ lines?: string[]; next?: string }>(path, { method: "POST", body: {} })
           .then((r) => {
             setNext({ lines: r.lines ?? [], ...(r.next ? { next: r.next } : {}) });
+            // Round 39: a validated run's page drops these actions on reload; what the step did
+            // and its next prompt stay on the page as a note.
+            if (r.next || r.lines?.length)
+              flash({
+                text: (r.lines ?? []).slice(-3).join(" "),
+                ...(r.next ? { href: runsHref({ run: r.next }), link: R.nextPrompt } : {}),
+              });
           })
           .finally(() => p.reload?.()),
       ok,

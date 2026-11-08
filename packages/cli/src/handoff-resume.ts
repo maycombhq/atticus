@@ -34,16 +34,25 @@ export async function prepareStep(
     resumeArgs?: string[];
     stillWaiting?: boolean;
     messages?: string[];
+    errors?: string[];
+    questions?: { id: string; question: string; answer?: string }[];
+    pagesLeft?: number;
   } = {};
   try {
     h = json ? JSON.parse(json) : {};
   } catch {
     h = {};
   }
-  if (h.state !== "handoff" || !h.runId) {
-    const said = lines.filter((l) => !l.trim().startsWith("{"));
-    return { code: res.code, prepared: { lines: said } };
-  }
+  // Round 39: what the step said is inside its JSON (messages, errors, questions, pages left):
+  // all of it reaches the person, never an empty "prepared no run".
+  const said = [
+    ...lines.filter((l) => !l.trim().startsWith("{")),
+    ...(h.messages ?? []),
+    ...(h.errors ?? []),
+    ...(h.questions ?? []).map((q) => `Question ${q.id}: ${q.question} (answer it on Questions)`),
+    ...(h.pagesLeft ? [`${h.pagesLeft} pages are left for the next part: Prepare it again.`] : []),
+  ];
+  if (h.state !== "handoff" || !h.runId) return { code: res.code, prepared: { lines: said } };
   const run = (await listRuns(root, { limit: 100000 })).find((x) => x.runId === h.runId);
   if (run && h.resumeArgs)
     await writeFile(
@@ -55,7 +64,7 @@ export async function prepareStep(
     code: res.code,
     prepared: {
       runId: h.runId,
-      lines: h.messages ?? [],
+      lines: said,
       ...(h.stillWaiting ? { stillWaiting: true } : {}),
     },
   };
