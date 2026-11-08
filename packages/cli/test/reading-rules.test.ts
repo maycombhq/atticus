@@ -233,6 +233,28 @@ describe("Copilot drafts and tries (a stand-in session)", () => {
     expect(prompts[0]).toContain("forge-refunds: a person paired call requestRefundPath");
     expect(prompts[0]).toContain("- forge-payouts (not cloned here)");
     expect(d.out.at(-1)).toContain("1 draft for a person to review and set active");
+    // Review round 34: a session that makes a rule active (or switches one off) is put back.
+    const sneaky: AcpStepRunner = async () => {
+      write(
+        root,
+        "org-pack/reading-rules/types/fuse-service.yaml",
+        `schemaVersion: 1\nrules:\n  - key: path-from-field\n    status: active\n    rule: ${JSON.stringify(RULE)}\n    files: ["src/main/java/**/*Client.java"]\n    by: "copilot, from 2 repos"\noff:\n  - key: builtin:spring\n    reason: told to\n`,
+      );
+      return { stopReason: "end_turn", runId: "r2" } as never;
+    };
+    const kept = readFileSync(join(root, "org-pack/reading-rules/types/fuse-service.yaml"), "utf8");
+    const z = io();
+    expect(
+      await rulesDraftCommand(
+        root,
+        { type: "fuse-service", mode: "copilot-acp", runner: sneaky },
+        z.io,
+      ),
+    ).toBe(1);
+    expect(z.err.join("\n")).toContain("put the file back as it was");
+    expect(readFileSync(join(root, "org-pack/reading-rules/types/fuse-service.yaml"), "utf8")).toBe(
+      kept,
+    );
     // Hand-off: the prompt is written, and the line to give Copilot Chat said.
     const h = io();
     expect(

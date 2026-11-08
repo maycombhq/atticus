@@ -501,6 +501,10 @@ export async function rulesDraftCommand(
     return 2;
   }
   const runner = o.runner ?? (await acpStepRunner(root, { op }));
+  // Review round 34: the session only adds drafts. What the layer file held before (active rules,
+  // rules switched off) is a person's, so it is kept to compare with, and put back if changed.
+  const layer = join(rulesDirOf(root), ...f.split("/"));
+  const before = await readFile(layer, "utf8").catch(() => undefined);
   io.out(`Drafting reading rules in a new Copilot session (${promptRel}).`);
   try {
     const r = await runner({
@@ -520,6 +524,33 @@ export async function rulesDraftCommand(
   if (!parsed?.success) {
     io.err(
       `${file} doesn't read as reading rules after the session: fix it by hand, or run again.`,
+    );
+    return 1;
+  }
+  const was =
+    before === undefined
+      ? { rules: [], off: [] }
+      : (() => {
+          const b = ReadingRulesFile.safeParse(parseDocument(before).toJS());
+          return b.success ? b.data : { rules: [], off: [] };
+        })();
+  const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+  const kept = new Map(was.rules.map((r) => [r.key, r] as const));
+  const touched =
+    !same(was.off, parsed.data.off) ||
+    was.rules.some(
+      (r) =>
+        !same(
+          r,
+          parsed.data.rules.find((n) => n.key === r.key),
+        ),
+    ) ||
+    parsed.data.rules.some((r) => !kept.has(r.key) && r.status !== "draft");
+  if (touched) {
+    if (before === undefined) await rm(layer, { force: true });
+    else await writeFileAtomic(layer, before);
+    io.err(
+      `The session changed what a person set in ${file} (a rule made active, changed or switched off), so Atticus put the file back as it was. A session adds drafts only; run it again.`,
     );
     return 1;
   }

@@ -300,15 +300,16 @@ export function answerAudit(
       unknown.push(id);
       continue;
     }
-    // Review round 33: a note on an answer already on file keeps who answered it, and when.
-    const same = item.answer === a.answer && item.by !== undefined;
+    // Review rounds 33-34: the same answer again changes nothing (its note and who gave it stay);
+    // a new answer or a new note is the person giving it, now.
+    if (item.answer === a.answer && item.by !== undefined && (!a.note || a.note === item.note))
+      continue;
+    const changedAnswer = item.answer !== a.answer;
     item.answer = a.answer;
     if (a.note) item.note = a.note;
-    else delete item.note;
-    if (!same) {
-      item.by = by;
-      item.at = now;
-    }
+    else if (changedAnswer) delete item.note;
+    item.by = by;
+    item.at = now;
   }
   return unknown;
 }

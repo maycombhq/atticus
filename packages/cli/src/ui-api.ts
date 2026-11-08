@@ -1,7 +1,10 @@
 import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
+import { parse as parseYaml } from "yaml";
+import { baseClonePath } from "@maycombhq/workspace";
 import {
   Api,
   ChangeArtifact,
@@ -58,6 +61,35 @@ import { workspaceOpen, workspaceSync } from "./workspace-commands.js";
  * terminal does, so the screen and `atticus …` can never disagree: exit 0 is success, 1 is a
  * refusal (422 with the command's own words), 2 a bad request (400).
  */
+
+/** Opens the task's repo's worktree when the change has none for it; undefined when it has. */
+async function openTaskWorktree(
+  root: string,
+  change: string,
+  task: string,
+): Promise<Ran | undefined> {
+  const p = await previewTaskRun(root, change, task, { skipGitHost: true }).catch(() => undefined);
+  if (!p) return undefined; // the run itself says what is wrong, as before
+  const text = await readFile(join(changesDirOf(root), change, "repos.yaml"), "utf8").catch(
+    () => "",
+  );
+  let has = false;
+  try {
+    const d = parseYaml(text) as { repos?: { id?: string; worktree?: string }[] } | null;
+    has = !!d?.repos?.some((r) => r.id === p.repo && r.worktree);
+  } catch {
+    // A repos.yaml that doesn't read: opening the workspace writes it again.
+  }
+  if (has) return undefined;
+  // No base clone yet either (a repo the person never cloned): clone it first.
+  if (!existsSync(baseClonePath(root, p.repo))) {
+    const synced = await run((io) => workspaceSync(root, [p.repo], io));
+    if (synced.code !== 0) return synced;
+    const opened = await run((io) => workspaceOpen(root, change, [p.repo], io));
+    return { ...opened, out: [...synced.out, ...opened.out] };
+  }
+  return run((io) => workspaceOpen(root, change, [p.repo], io));
+}
 
 export interface UiDeps {
   /** Tests inject a mock Git host; otherwise runtime.yaml decides. */
@@ -550,9 +582,14 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
             }
           }
           const lv = level;
+          // UX review: the task's repo gets its worktree here when it has none yet (a local
+          // folder, nothing shared), so Run with AI never sends the person to a terminal first.
+          const opened = await openTaskWorktree(root, params.changeId!, b.task!);
+          if (opened && opened.code !== 0) throw refused(opened);
           res = await run((io) =>
             taskRun(root, params.changeId!, b.task!, { mode: b.runtime, by: user, level: lv }, io),
           );
+          if (opened) res = { ...res, out: [...opened.out, ...res.out] };
         } else if (b.agent === "story-writer")
           res = await run((io) => planStories(root, params.changeId!, { mode: b.runtime }, io));
         else if (b.agent.endsWith("-critic"))

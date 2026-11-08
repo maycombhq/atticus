@@ -43,9 +43,21 @@ const RULES: { test: (w: readonly string[], a: readonly string[]) => boolean; wh
   },
   { test: (_w, a) => flag(a, "--by"), why: "--by names a person; a session acts as no one" },
   {
-    test: (_w, a) => flag(a, "--approve"),
-    why: "--approve is a person's: a human approves every write to shared systems",
+    test: (_w, a) => flag(a, "--approve", "--send"),
+    why: "--approve and --send are a person's: a human approves every write to shared systems",
   },
+  { test: (_w, a) => flag(a, "--as"), why: "--as names a person; a session acts as no one" },
+  {
+    test: (w, a) =>
+      w[0] === "rules" &&
+      (w[1] === "activate" || w[1] === "off" || (w[1] === "add" && !flag(a, "--draft"))),
+    why: "a person sets a reading rule active or off (a session drafts)",
+  },
+  {
+    test: (w) => w[0] === "initiative" && w[1] === "commit",
+    why: "a person records where a commitment stands",
+  },
+  { test: (w) => w[0] === "outcome" && w[1] === "record", why: "a person records an outcome" },
   {
     test: (_w, a) => flag(a, "--accept", "--accept-proposal"),
     why: "a person accepts what is proposed (--accept is theirs)",

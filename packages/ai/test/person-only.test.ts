@@ -46,6 +46,13 @@ const PERSON = [
   "glossary define Limit --text x",
   "glossary link Limit forge-ledger",
   "glossary alias Limit Cap",
+  "digest --send --channel x",
+  "digest --as dana",
+  "rules activate k1 --type service",
+  "rules off builtin:spring --reason x",
+  "rules add k1 --type service",
+  "initiative commit c1 done",
+  "outcome record c1 m1 --value 3",
 ];
 const SESSION = [
   "verify forge-ledger",
@@ -61,6 +68,9 @@ const SESSION = [
   "repo describe forge-ledger --drafted Ledger --cites a:1",
   "glossary list",
   "map forge-ledger --estimate",
+  "rules list",
+  "rules add k1 --type service --draft",
+  "digest",
 ];
 
 describe("what only a person does", () => {
