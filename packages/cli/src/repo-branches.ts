@@ -74,6 +74,8 @@ export async function repoBranches(root: string) {
       ...(remoteDefault ? { remoteDefault } : {}),
       branches: r.branches,
       ...(commit ? { commit } : {}),
+      // Seventh UX walk: the build command a task's PR waits on, shown and set on Repos.
+      ...(r.build ? { build: r.build } : {}),
       scans: scans.flatMap((s) =>
         s.repos
           .filter((x) => x.id === r.id)
@@ -176,6 +178,54 @@ export async function editRepoBranches(
     inEol(doc.toString({ flowCollectionPadding: true }), eolOf(was)),
   );
   return rel;
+}
+
+/**
+ * Set or clear a repo's build command in its manifest (seventh UX walk): what `build` in
+ * repos.manifest.yaml says, the command a task's draft is built and tested with before its PR is
+ * raised. One line; the rest of the file and its comments stay; the result is checked against the
+ * manifest schema before it is written. A form that showed another command than the manifest has
+ * now is refused, never written over. Returns the manifest's path, relative to the metarepo.
+ */
+export async function editRepoBuild(
+  root: string,
+  repoId: string,
+  set: { build: string; was?: string },
+): Promise<{ file: string; build?: string }> {
+  const repo = (await loadRepos(root)).find((r) => r.id === repoId);
+  if (!repo) throw new RepoEditError("not-found", `There is no repo ${repoId} in any manifest.`);
+  if (set.was !== undefined && set.was !== (repo.build ?? ""))
+    throw new RepoEditError(
+      "conflict",
+      `${repoId}'s build command changed in the manifest since you opened the form (now ${repo.build ? `\`${repo.build}\`` : "none"}): open it again to see it, then save.`,
+    );
+  const build = set.build.trim();
+  if (/[\r\n]/.test(build))
+    throw new RepoEditError(
+      "invalid",
+      "A build command is one line: join the steps with && (for example npm ci && npm test).",
+    );
+  const rel = `org-pack/profiles/${repo.platform}/repos.manifest.yaml`;
+  const file = join(orgPackDirOf(root), "profiles", repo.platform, "repos.manifest.yaml");
+  const was = await readFile(file, "utf8");
+  const doc = parseDocument(was);
+  const list = doc.get("repos");
+  const item = isSeq(list) ? list.items.find((x) => isMap(x) && x.get("id") === repoId) : undefined;
+  if (!isMap(item)) throw new RepoEditError("not-found", `${rel} doesn't list ${repoId}.`);
+  if (build) item.set("build", build);
+  else item.delete("build");
+  const check = RepoManifest.safeParse(doc.toJS());
+  if (!check.success)
+    throw new RepoEditError(
+      "invalid",
+      check.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "),
+    );
+  await writeFileIfUnchanged(
+    file,
+    was,
+    inEol(doc.toString({ flowCollectionPadding: true }), eolOf(was)),
+  );
+  return { file: rel, ...(build ? { build } : {}) };
 }
 
 /**

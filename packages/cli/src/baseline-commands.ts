@@ -111,7 +111,7 @@ export async function setupSteps(
       label: "The org pack has an owner",
       done: !!op.pack?.owner && op.pack.owner !== "unassigned",
       detail: op.pack?.owner && op.pack.owner !== "unassigned" ? op.pack.owner : "unassigned",
-      fix: "Set owner in org-pack/pack.yaml to the person who looks after the org pack (normally the platform lead), and commit it through a pull request.",
+      fix: "Name the person who looks after the org pack (normally the platform lead): type their handle under this step on Home in the app, or run atticus orgpack owner <handle>. It is saved as owner in org-pack/pack.yaml; propose it for review.",
     },
     {
       // ADR 0121 item 6: how AI runs here is a choice, not the default left by accident.

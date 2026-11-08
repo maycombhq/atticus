@@ -168,7 +168,7 @@ function flowsOf(
 function deltaFor(
   deltas: FlowDelta[],
   from: z.infer<typeof From>,
-  estate: Pick<Estate, "flows" | "ids">,
+  estate: StrokeEstate,
   by: string,
 ): { delta: FlowDelta; deltas: FlowDelta[] } | { problem: string; pick?: SketchResult["pick"] } {
   const own = flowsOf(deltas, from.component, estate);
@@ -229,14 +229,37 @@ function deltaFor(
   return { delta: d, deltas: [...deltas, d] };
 }
 
-const repoOf = (estate: Pick<Estate, "flows">, component: string) =>
-  estate.flows.find((f) => f.flow.component === component)?.repo;
+/** The estate a stroke reads: today's flows, the ids, and the catalog's records when given. */
+type StrokeEstate = Pick<Estate, "flows" | "ids"> & Partial<Pick<Estate, "byId">>;
+
+/**
+ * The repo a component is built in: from its flows, else the catalog's component record (a repo
+ * whose spec has no flows yet still has its component in the catalog).
+ */
+const repoOf = (estate: StrokeEstate, component: string): string | undefined => {
+  const fromFlows = estate.flows.find((f) => f.flow.component === component)?.repo;
+  if (fromFlows) return fromFlows;
+  const r = estate.byId?.get(component) as { kind?: string; repo?: unknown } | undefined;
+  return r?.kind === "Component" && typeof r.repo === "string" && r.repo ? r.repo : undefined;
+};
+
+/**
+ * Why a step of a flow today's map doesn't have can't be taken out: when the flow's component is
+ * built in a repo whose spec has no flows, the repo's spec step writes them, and it says so.
+ */
+function noTodayFlow(estate: StrokeEstate, flow: string): string {
+  const component = flow.split(".")[0] ?? flow;
+  const repo = repoOf(estate, component);
+  if (repo && !estate.flows.some((f) => f.repo === repo))
+    return `No flow of today's map is ${flow}: ${repo}'s spec has no flows yet, so there is no step to take out. Its spec step writes them: atticus spec draft ${repo}`;
+  return `No flow of today's map is ${flow}.`;
+}
 
 /** A stroke applied to the change's deltas: the deltas after, and which flows changed. */
 export function applyStroke(
   deltas: readonly FlowDelta[],
   stroke: Stroke,
-  estate: Pick<Estate, "flows" | "ids">,
+  estate: StrokeEstate,
   by: string,
   strokeId: string = newStrokeId(),
 ): SketchResult {
@@ -312,7 +335,7 @@ export function applyStroke(
         return {
           deltas: before,
           changed: [],
-          problem: `No flow of today's map is ${stroke.flow}.`,
+          problem: noTodayFlow(estate, stroke.flow),
         };
       const was = today.flow.steps[stroke.step - 1];
       if (!was)

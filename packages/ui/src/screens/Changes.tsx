@@ -306,16 +306,24 @@ export function Pipeline({ state }: { state: string }) {
   );
 }
 
+/** An artifact's address in the API; with `file`, that one of its files (a story, a spec). */
+export const artifactUrl = (change: string, artifact: string, file?: string) =>
+  `/api/changes/${change}/artifacts/${artifact}${file ? `?file=${encodeURIComponent(file)}` : ""}`;
+
 export function ArtifactEditor({
   change,
   artifact,
+  file,
   onClose,
 }: {
   change: string;
   artifact: string;
+  /** 2.72.0: one file of a many-file artifact, such as stories/<id>.md. */
+  file?: string;
   onClose: () => void;
 }) {
-  const a = useApi<Artifact>(`/api/changes/${change}/artifacts/${artifact}`);
+  const a = useApi<Artifact>(artifactUrl(change, artifact, file));
+  const textId = `artifact-text${file ? `-${file.replace(/[^a-z0-9]+/gi, "-")}` : ""}`;
   const [text, setText] = useState<string | undefined>();
   const act = useAction();
   // The keyboard goes into the text once it loads, so Escape (or Close) can close it at once.
@@ -329,7 +337,7 @@ export function ArtifactEditor({
   }, [ready]);
   return (
     <Panel
-      title={T.edit(artifact)}
+      title={T.edit(file ?? artifact)}
       span="1 / -1"
       meta={a.state === "ready" ? a.data.path : undefined}
     >
@@ -341,7 +349,7 @@ export function ArtifactEditor({
               setChangedMeanwhile(false);
               void act.run(
                 () =>
-                  api(`/api/changes/${change}/artifacts/${artifact}`, {
+                  api(artifactUrl(change, artifact, file), {
                     method: "PUT",
                     body: { content: text ?? d.content, baseSha256: d.sha256 },
                   })
@@ -360,12 +368,12 @@ export function ArtifactEditor({
             onKeyDown={escapeCloses(onClose)}
             className="stack"
           >
-            <label htmlFor="artifact-text" className="sr">
-              {T.text(artifact)}
+            <label htmlFor={textId} className="sr">
+              {T.text(file ?? artifact)}
             </label>
             <textarea
               ref={box}
-              id="artifact-text"
+              id={textId}
               value={text ?? d.content}
               onChange={(e) => setText(e.target.value)}
               rows={18}

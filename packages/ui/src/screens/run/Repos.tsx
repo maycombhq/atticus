@@ -194,6 +194,113 @@ function About({ r, onChanged }: { r: Repo; onChanged?: () => void }) {
   );
 }
 
+/** The longest build command the manifest form takes (the API's limit). */
+export const BUILD_MAX = 500;
+
+/**
+ * Seventh UX walk: the repo's build command (repos.manifest.yaml's `build`), set on a person's
+ * click instead of in the file. A task drafted in a repo without one isn't built or tested, so
+ * its PR isn't raised: this is where the Task board sends people to fix that.
+ */
+export function BuildCommand({ r, onChanged }: { r: Repo; onChanged?: () => void }) {
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState(r.build ?? "");
+  /** The command as the form was opened with it, sent back so a changed manifest is refused. */
+  const [shown, setShown] = useState(r.build ?? "");
+  const save = useAction();
+  const twoLines = /[\r\n]/.test(text.trim());
+  const tooLong = text.trim().length > BUILD_MAX;
+  const id = `repo-${r.id}-build`;
+  return (
+    <div className="stack" style={{ gap: 4, margin: "8px 0" }}>
+      <span className="muted" style={{ fontSize: 12 }}>
+        {R.build}
+      </span>
+      <p style={{ margin: 0, maxWidth: "70ch" }}>
+        {r.build ? (
+          <code className="mono">{r.build}</code>
+        ) : (
+          <span className="muted">{R.noBuild}</span>
+        )}
+      </p>
+      <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
+        <button
+          type="button"
+          className="btn"
+          aria-expanded={editing}
+          aria-controls={`${id}-form`}
+          onClick={() => {
+            // Opened with what the manifest says now (a reload may have brought another).
+            if (!editing) {
+              setText(r.build ?? "");
+              setShown(r.build ?? "");
+            }
+            setEditing(!editing);
+          }}
+        >
+          {r.build ? R.changeBuild : R.setBuild}
+        </button>
+      </div>
+      {editing && (
+        <form
+          id={`${id}-form`}
+          className="stack"
+          style={{ gap: 4 }}
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (twoLines || tooLong) return;
+            const build = text.trim();
+            void save.run(
+              async () => {
+                const res = await api<{ note: string }>(`/api/repos/${r.id}/build`, {
+                  method: "PUT",
+                  body: { build, was: shown },
+                });
+                setShown(build);
+                setEditing(false);
+                onChanged?.();
+                return res;
+              },
+              build ? R.buildSaved : R.buildCleared,
+            );
+          }}
+        >
+          <label className="stack" htmlFor={id}>
+            <span>{R.build}</span>
+            <span className="muted" id={`${id}-hint`}>
+              {R.buildHint}
+            </span>
+          </label>
+          <input
+            id={id}
+            className="field mono"
+            value={text}
+            maxLength={BUILD_MAX}
+            aria-describedby={`${id}-hint`}
+            aria-invalid={twoLines || tooLong || undefined}
+            onChange={(e) => setText(e.target.value)}
+          />
+          {twoLines && (
+            <p role="alert" style={{ margin: 0 }}>
+              {R.buildOneLine}
+            </p>
+          )}
+          <div className="row" style={{ gap: 8 }}>
+            <button
+              type="submit"
+              className="btn primary"
+              disabled={save.busy || twoLines || tooLong}
+            >
+              {R.save}
+            </button>
+          </div>
+        </form>
+      )}
+      <Note note={save.note} />
+    </div>
+  );
+}
+
 export function RepoRow({ r, onChanged }: { r: Repo; onChanged?: () => void }) {
   const [editing, setEditing] = useState(false);
   const [def, setDef] = useState(r.defaultBranch);
@@ -233,6 +340,7 @@ export function RepoRow({ r, onChanged }: { r: Repo; onChanged?: () => void }) {
         <dt>{R.branches}</dt>
         <dd>{r.branches.length ? r.branches.join(", ") : R.noBranches}</dd>
       </dl>
+      <BuildCommand r={r} onChanged={onChanged} />
       {r.scans.length > 0 && (
         <ul style={{ margin: "0 0 8px", paddingLeft: 18, fontSize: 12.5 }}>
           {r.scans.map((s) => (

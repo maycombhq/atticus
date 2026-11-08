@@ -85,6 +85,11 @@ const RULES: { test: (w: readonly string[], a: readonly string[]) => boolean; wh
     test: (w) => w[0] === "glossary" && ["define", "link", "alias"].includes(w[1] ?? ""),
     why: "a person defines, links or aliases a glossary term",
   },
+  {
+    // Seventh UX walk: shown by anyone; set (a handle given) only by a person, as in the app.
+    test: (w) => w[0] === "orgpack" && w[1] === "owner" && !!w[2],
+    why: "a person says who looks after the org pack",
+  },
 ];
 
 /** Why the command is a person's to run, or undefined when a session may run it. */

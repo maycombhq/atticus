@@ -4,6 +4,7 @@ import { api, ApiError, useApi, useLiveEvents } from "../../api/client.js";
 import { Bar, Donut, ExternalLink, Panel, Ring, View } from "../../app/ui.js";
 import {
   ArtifactEditor,
+  artifactUrl,
   FindingActions,
   Pipeline,
   type Artifact,
@@ -215,20 +216,25 @@ export function listsArtifact(
  * One artifact, rendered; Edit opens the editor in place. One the change doesn't have (an
  * Atticus 1 artifact on an Atticus 2 change) says so, without asking the server for it.
  */
-function ArtifactPanel({
+export function ArtifactPanel({
   change,
   artifact,
   listed,
   span,
+  file,
+  title: named,
 }: {
   change: string;
   artifact: string;
   /** Whether the change lists it (listsArtifact). */
   listed: boolean | undefined;
   span?: string;
+  /** Seventh UX walk: one file of a many-file artifact (a story), read and edited alone. */
+  file?: string;
+  title?: string;
 }) {
   const a = useApi<Artifact & { artifact: string }>(
-    listed ? `/api/changes/${change}/artifacts/${artifact}` : undefined,
+    listed ? artifactUrl(change, artifact, file) : undefined,
   );
   const [edit, setEdit] = useState(false);
   // Closing the editor puts the keyboard back on Edit, which comes back with the panel.
@@ -243,13 +249,14 @@ function ArtifactPanel({
       <ArtifactEditor
         change={change}
         artifact={artifact}
+        {...(file ? { file } : {})}
         onClose={() => {
           setEdit(false);
           a.reload();
         }}
       />
     );
-  const title = artifact[0]!.toUpperCase() + artifact.slice(1);
+  const title = named ?? artifact[0]!.toUpperCase() + artifact.slice(1);
   if (listed === false)
     return (
       <Panel title={title} span={span}>
@@ -799,6 +806,56 @@ function StoryWriter({ change }: { change: string }) {
         <Note note={act.note} />
       </div>
     </Panel>
+  );
+}
+
+/**
+ * Seventh UX walk: the stories themselves on the Stories tab, as Breakdown shows them, each with
+ * Edit: the index, then each story's own file (the story bar lists them), read-only until Edit.
+ */
+export function StoryFiles({
+  change,
+  listed,
+}: {
+  change: string;
+  /** Whether the change lists its stories (listsArtifact). */
+  listed: boolean | undefined;
+}) {
+  const bar = useView<StoryBar>("story-bar", change, listed === false);
+  const W = COPY.work;
+  return (
+    <>
+      <ArtifactPanel
+        change={change}
+        artifact="stories"
+        listed={listed}
+        span="1 / -1"
+        title={W.storiesIndex}
+      />
+      {listed !== false && (
+        <View
+          of={bar}
+          empty={(b) => !b || b.stories.length === 0}
+          emptyContent={<div className="state">{W.noStoryFiles}</div>}
+        >
+          {(b) => (
+            <>
+              {b.stories.map((s) => (
+                <ArtifactPanel
+                  key={s.path}
+                  change={change}
+                  artifact="stories"
+                  listed={listed}
+                  file={s.path}
+                  span="1 / -1"
+                  title={W.storyFile(s.id)}
+                />
+              ))}
+            </>
+          )}
+        </View>
+      )}
+    </>
   );
 }
 

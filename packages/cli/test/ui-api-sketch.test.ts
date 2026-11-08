@@ -82,9 +82,11 @@ describe("a change drawn on the canvas", () => {
       join(root, "openspec/changes/add-fraud-check/target-flows/forge-orders.place-order.yaml"),
       "utf8",
     );
-    expect(text).toContain("Drafted by pat on the canvas");
-    expect(text).toContain("why: Drawn on the canvas by pat on the canvas.");
-    expect(text).toMatch(/why: drawn on the canvas by pat on the canvas, stroke [a-z0-9]+/);
+    // Seventh UX walk (finding 13): where it was drawn is said once, with who drew it.
+    expect(text).toContain("Drafted by pat;");
+    expect(text).toContain("why: Drawn on the canvas by pat.");
+    expect(text).toMatch(/why: drawn on the canvas by pat, stroke [a-z0-9]+/);
+    expect(text).not.toMatch(/on the canvas by pat on the canvas/);
     // design.md was written too, as previewed.
     expect(
       await readFile(join(root, "openspec/changes/add-fraud-check/design.md"), "utf8"),
@@ -95,7 +97,7 @@ describe("a change drawn on the canvas", () => {
         flow: "forge-orders.place-order",
         index: 0,
         what: "call-out → northwind-pay POST /v1/screenings",
-        by: "pat on the canvas",
+        by: "pat",
       },
     ]);
   });

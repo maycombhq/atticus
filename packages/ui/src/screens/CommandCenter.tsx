@@ -123,6 +123,76 @@ function HowStepsRun() {
   );
 }
 
+/** One handle, as atticus orgpack owner takes it. */
+const HANDLE = /^[A-Za-z0-9][A-Za-z0-9._@-]*$/;
+
+/**
+ * Who looks after the org pack, set on a person's click (PUT /api/orgpack/owner): pack.yaml's
+ * owner, the same line atticus orgpack owner writes, then proposed for review like any file.
+ */
+export function OrgPackOwnerForm({ onSaved }: { onSaved?: () => void }) {
+  const [owner, setOwner] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<{ ok: boolean; text: string } | undefined>();
+  const h = owner.trim();
+  const bad = h !== "" && !HANDLE.test(h);
+  return (
+    <form
+      className="stack"
+      style={{ gap: 4, marginTop: 4 }}
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (!h || bad) return;
+        setBusy(true);
+        api("/api/orgpack/owner", { method: "PUT", body: { owner: h, was: "" } })
+          .then(() => {
+            setNote({ ok: true, text: T.ownerSaved(h) });
+            onSaved?.();
+          })
+          .catch((err: unknown) =>
+            setNote({
+              ok: false,
+              text:
+                err instanceof ApiError ? (err.problem.detail ?? err.problem.title) : String(err),
+            }),
+          )
+          .finally(() => setBusy(false));
+      }}
+    >
+      <label className="stack" htmlFor="org-pack-owner" style={{ gap: 2 }}>
+        <span style={{ fontSize: 12.5 }}>{T.ownerLabel}</span>
+        <span className="muted" id="org-pack-owner-hint" style={{ fontSize: 12 }}>
+          {T.ownerHint}
+        </span>
+      </label>
+      <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+        <input
+          id="org-pack-owner"
+          className="field mono"
+          value={owner}
+          autoComplete="off"
+          aria-describedby="org-pack-owner-hint"
+          aria-invalid={bad || undefined}
+          onChange={(e) => setOwner(e.target.value)}
+        />
+        <button type="submit" className="btn primary" disabled={busy || !h || bad}>
+          {busy ? T.ownerSaving : T.ownerSave}
+        </button>
+      </div>
+      {bad && (
+        <p role="alert" style={{ margin: 0, fontSize: 12 }}>
+          {T.ownerBad}
+        </p>
+      )}
+      {note && (
+        <p role={note.ok ? "status" : "alert"} style={{ margin: 0, fontSize: 12.5 }}>
+          {note.text}
+        </p>
+      )}
+    </form>
+  );
+}
+
 /** Guided setup: the checklist until the catalog is accepted (ADR 0047). */
 export function SetupChecklist() {
   const setup = useApi<Setup>("/api/setup");
@@ -184,6 +254,10 @@ export function SetupChecklist() {
                   <span className="muted" style={{ fontSize: 12 }}>
                     {x.fix}
                   </span>
+                )}
+                {/* Seventh UX walk: the owner is set here, not by editing pack.yaml. */}
+                {!x.done && x.id === "org-pack-owner" && (
+                  <OrgPackOwnerForm onSaved={() => setup.reload()} />
                 )}
               </span>
             </li>

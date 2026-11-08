@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Atticus local API",
-    "version": "2.73.0",
+    "version": "2.74.0",
     "description": "Served by `atticus ui` on 127.0.0.1. The UI only calls this API, and the API only reads and writes files in the metarepo.",
     "license": {
       "name": "Apache-2.0",
@@ -2669,6 +2669,183 @@
           },
           "404": {
             "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/repos/{repoId}/build": {
+      "put": {
+        "operationId": "editRepoBuild",
+        "summary": "Set or clear a repo's build command in its manifest, keeping the rest of the file and its comments; checked as the manifest schema checks it, and committed in a pull request. A task's PR is raised only after a passing build",
+        "tags": [
+          "workspace"
+        ],
+        "parameters": [
+          {
+            "name": "repoId",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "build": {
+                    "type": "string",
+                    "maxLength": 500
+                  },
+                  "was": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "build"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Written",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict: the file changed since you read it, or the state doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/orgpack/owner": {
+      "put": {
+        "operationId": "setOrgPackOwner",
+        "summary": "Set who looks after the org pack (pack.yaml's owner, one handle), as atticus orgpack owner does; committed in a pull request its owner approves",
+        "tags": [
+          "run"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "owner": {
+                    "type": "string"
+                  },
+                  "was": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "owner"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Written",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict: the file changed since you read it, or the state doesn't allow this",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6053,6 +6230,15 @@
               ]
             },
             "required": true
+          },
+          {
+            "name": "file",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "2.74.0: one file of a many-file artifact, relative to the change folder (stories/<id>.md, specs/<capability>/spec.md); left out, its first file",
+            "required": false
           }
         ],
         "responses": {
@@ -6062,6 +6248,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ArtifactContent"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -6123,6 +6319,15 @@
               ]
             },
             "required": true
+          },
+          {
+            "name": "file",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "2.74.0: one file of a many-file artifact, relative to the change folder (stories/<id>.md, specs/<capability>/spec.md); left out, its first file",
+            "required": false
           }
         ],
         "requestBody": {
@@ -28921,6 +29126,9 @@
                     ],
                     "additionalProperties": false
                   }
+                },
+                "build": {
+                  "type": "string"
                 }
               },
               "required": [

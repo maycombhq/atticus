@@ -5,6 +5,7 @@ import { Panel, View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
 import { queryParam } from "../know/common.js";
 import { CopyButton } from "../run/shared.js";
+import { Command } from "../work/RunNext.js";
 import { Citation, EvidenceProvider } from "../../app/evidence.js";
 import { useFullScreen } from "../../app/viewer.js";
 import { sequence, targetSequence, type Lane, type Row, type Sequence } from "./model.js";
@@ -249,7 +250,14 @@ export function FlowList(p: { spec: Api.SpecViewT; filter: string; current: stri
   return (
     <div className="stack">
       {p.spec.flows.length === 0 ? (
-        <div className="state">{C.noFlows}</div>
+        <div className="stack" style={{ gap: 6 }}>
+          <div className="state">{C.noFlows}</div>
+          {/* Seventh UX walk: the spec step is offered where it is missing, not only in Help. */}
+          <p className="work-say" style={{ margin: 0 }}>
+            {C.noFlowsSpec(p.spec.repo)}
+          </p>
+          <Command text={`atticus spec draft ${p.spec.repo}`} label={COPY.runNext.copy} />
+        </div>
       ) : shown.length === 0 ? (
         <div className="state">{C.noMatch}</div>
       ) : (

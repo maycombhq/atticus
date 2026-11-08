@@ -425,7 +425,7 @@ async function artifactPath(
   root: string,
   id: string,
   artifact: string,
-  o: { orNew?: boolean } = {},
+  o: { orNew?: boolean; file?: string | null } = {},
 ): Promise<string> {
   const a = ChangeArtifact.safeParse(artifact);
   if (!a.success)
@@ -434,6 +434,13 @@ async function artifactPath(
     );
   const dir = join(changesDirOf(root), id);
   const files = await artifactFiles(dir, a.data);
+  // 2.72.0 (seventh UX walk): one file of a many-file artifact, such as a story, by its path in
+  // the change folder; only a file the artifact has, never a path elsewhere.
+  if (o.file) {
+    if (!files.includes(o.file))
+      throw notFound(`${o.file} isn't one of change ${id}'s ${artifact} files.`);
+    return o.file;
+  }
   // Third UX walk: a one-file artifact not written yet opens empty, and Save creates it (a new
   // change's proposal, written by hand). Specs are one file per capability: drafted, not here.
   if (files.length === 0 && o.orNew && a.data !== "specs")
@@ -606,9 +613,12 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
           },
         };
       })
-      .add("GET", "/api/changes/{changeId}/artifacts/{artifact}", async ({ params }) => {
+      .add("GET", "/api/changes/{changeId}/artifacts/{artifact}", async ({ params, query }) => {
         await readChange(root, params.changeId!);
-        const rel = await artifactPath(root, params.changeId!, params.artifact!, { orNew: true });
+        const rel = await artifactPath(root, params.changeId!, params.artifact!, {
+          orNew: true,
+          file: query.get("file"),
+        });
         const content = await readFile(
           join(changesDirOf(root), params.changeId!, rel),
           "utf8",
@@ -623,34 +633,41 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
           },
         };
       })
-      .add("PUT", "/api/changes/{changeId}/artifacts/{artifact}", async ({ params, body }) => {
-        await readChange(root, params.changeId!);
-        const b = parseBody(Api.SaveArtifactRequest, body);
-        const rel = await artifactPath(root, params.changeId!, params.artifact!, { orNew: true });
-        const file = join(changesDirOf(root), params.changeId!, rel);
-        const was = await readFile(file, "utf8").catch(() => undefined);
-        const now = was ?? "";
-        if (sha(now) !== b.baseSha256)
-          throw conflict(
-            `${rel} changed since you opened it. Reload it, then make your edit again.`,
-          );
-        // Atomic, and refused (409) if another save landed between the read and the write.
-        await mkdir(dirname(file), { recursive: true });
-        await writeFileIfUnchanged(file, was, b.content);
-        ctx.events.publish({
-          type: "file.changed",
-          path: `${changesRelOf(root)}/${params.changeId}/${rel}`,
-        });
-        return {
-          status: 200,
-          body: {
-            artifact: params.artifact,
+      .add(
+        "PUT",
+        "/api/changes/{changeId}/artifacts/{artifact}",
+        async ({ params, body, query }) => {
+          await readChange(root, params.changeId!);
+          const b = parseBody(Api.SaveArtifactRequest, body);
+          const rel = await artifactPath(root, params.changeId!, params.artifact!, {
+            orNew: true,
+            file: query.get("file"),
+          });
+          const file = join(changesDirOf(root), params.changeId!, rel);
+          const was = await readFile(file, "utf8").catch(() => undefined);
+          const now = was ?? "";
+          if (sha(now) !== b.baseSha256)
+            throw conflict(
+              `${rel} changed since you opened it. Reload it, then make your edit again.`,
+            );
+          // Atomic, and refused (409) if another save landed between the read and the write.
+          await mkdir(dirname(file), { recursive: true });
+          await writeFileIfUnchanged(file, was, b.content);
+          ctx.events.publish({
+            type: "file.changed",
             path: `${changesRelOf(root)}/${params.changeId}/${rel}`,
-            content: b.content,
-            sha256: sha(b.content),
-          },
-        };
-      })
+          });
+          return {
+            status: 200,
+            body: {
+              artifact: params.artifact,
+              path: `${changesRelOf(root)}/${params.changeId}/${rel}`,
+              content: b.content,
+              sha256: sha(b.content),
+            },
+          };
+        },
+      )
       .add("GET", "/api/changes/{changeId}/tasks", async ({ params }) => {
         await readChange(root, params.changeId!);
         return {

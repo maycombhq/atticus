@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import type { ChangeHandoff, ChangeLifecycle, ChangeType, LifecycleState } from "@maycombhq/core";
 import { prApprovers, privacyImpact, type PrivacyImpact } from "./approvals.js";
 import { changeTypeOf, loadChangeContext, type ChangeContext } from "./context.js";
@@ -21,7 +23,7 @@ import {
 import { releasePrReasons } from "./release-prs.js";
 import { stageCompletion, workProgress, type WorkProgress } from "./progress.js";
 import { scoreRisk, testPlanFor, type Risk, type TestPlan } from "./risk.js";
-import { changeStore } from "./store.js";
+import { changeFolder, changeStore } from "./store.js";
 import type { PhaseId } from "./types.js";
 
 /** Where a change stands and everything that decides whether it can move on. */
@@ -203,10 +205,21 @@ export interface ChangeReport extends Assessment {
 export async function changeReport(root: string, id: string): Promise<ChangeReport> {
   const ctx = await loadChangeContext(root);
   const a = await assess(ctx, await changeStore(root).read(id));
-  return { ...a, nextStep: nextStep(a), problems: ctx.problems };
+  const tasks = a.phase === "build" ? await taskTicks(root, id) : undefined;
+  return { ...a, nextStep: nextStep(a, tasks), problems: ctx.problems };
 }
 
-function nextStep(a: Assessment): string {
+/** How many of tasks.md's tasks are ticked; undefined when it lists none. */
+async function taskTicks(
+  root: string,
+  id: string,
+): Promise<{ done: number; total: number } | undefined> {
+  const text = await readFile(join(changeFolder(root, id), "tasks.md"), "utf8").catch(() => "");
+  const boxes = [...text.matchAll(/^\s*[-*]\s+\[([ xX])\]/gm)].map((m) => m[1] !== " ");
+  return boxes.length ? { done: boxes.filter(Boolean).length, total: boxes.length } : undefined;
+}
+
+function nextStep(a: Assessment, tasks?: { done: number; total: number }): string {
   switch (a.state) {
     case "draft":
       return "Create the change with atticus change new.";
@@ -222,10 +235,14 @@ function nextStep(a: Assessment): string {
       return `Revise the work, then hand off ${a.phase} again.`;
   }
   const name = handoffName(a.type, a.phase!);
-  if (!a.handoff)
+  if (!a.handoff) {
+    // Seventh UX walk: the build hand-off isn't ready while a task is still open.
+    if (!a.blockers.length && tasks && tasks.done < tasks.total)
+      return `Finish the ${a.phase} work (${tasks.done} of ${tasks.total} tasks ticked in tasks.md), then raise "${name}".`;
     return a.blockers.length
       ? `Finish the ${a.phase} work, then raise "${name}".`
       : `Ready to raise "${name}".`;
+  }
   if (a.handoff.state === "changes-requested")
     return `Update the artifacts and hand off again on PR #${a.handoff.pr.number}.`;
   if (isManualPrUrl(a.handoff.pr.url)) return manualHandoffWords(a.handoff.phase);

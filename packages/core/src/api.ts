@@ -241,8 +241,14 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   recorded in repos.yaml (`pr`); POST /api/changes/{changeId}/sync also reads the release PRs
  *   back; the archive gate's blockers add `pr-missing`, `not-synced`, `needs-reading` and
  *   `catalog-stale`, and the readers' drift becomes a note (ADR 0074). Additive only.
+ * 2.74.0 (seventh UX walk, setup and stories): a repo in GET /api/repos/branches carries `build`,
+ *   its build command from the manifest; PUT /api/repos/{repoId}/build sets or clears it, and PUT
+ *   /api/orgpack/owner sets who looks after the org pack (pack.yaml's owner), each on a person's
+ *   click and written to the file the person then proposes; GET and PUT
+ *   /api/changes/{changeId}/artifacts/{artifact} take `?file=`, one file of a many-file artifact
+ *   (a story under stories/, a spec), so each story can be read and edited. Additive only.
  */
-export const API_VERSION = "2.73.0";
+export const API_VERSION = "2.74.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -2220,6 +2226,11 @@ export const RepoBranchesView = z.object({
   commit: z.string().optional(),
   /** Its branches scanned beside the baseline, with when and at which commit. */
   scans: z.array(z.object({ branch: z.string(), scannedAt: z.string(), commit: z.string() })),
+  /**
+   * 2.74.0: the manifest's build command for this repo, when it names one. A task drafted in a
+   * repo without one isn't built or tested, so its PR isn't raised.
+   */
+  build: z.string().optional(),
 });
 export const RepoBranchesList = z.object({ repos: z.array(RepoBranchesView) });
 /** What a branch's catalog changes against the baseline, for the repos it read. */
@@ -2236,6 +2247,20 @@ export const EditRepoBranchesRequest = z.strictObject({
   branches: z.array(GitRef).optional(),
   /** 2.62.0: the branches as the form showed them; 409 when the manifest says otherwise now. */
   was: z.strictObject({ defaultBranch: z.string(), branches: z.array(z.string()) }).optional(),
+});
+/**
+ * 2.74.0: a repo's build command in its manifest, set on a person's click; empty clears it. `was`
+ * is the command the form showed ("" for none): 409 when the manifest says otherwise now.
+ */
+export const EditRepoBuildRequest = z.strictObject({
+  build: z.string().max(500),
+  was: z.string().optional(),
+});
+/** 2.74.0: who looks after the org pack (pack.yaml's owner), set on a person's click. */
+export const SetOrgPackOwnerRequest = z.strictObject({
+  owner: z.string(),
+  /** The owner the form showed ("" for none): 409 when pack.yaml says otherwise now. */
+  was: z.string().optional(),
 });
 /** WP7.5: follow a change, or stop following it (the person's own .atticus/me.yaml). */
 export const WatchRequest = z.strictObject({ change: RecordId, watch: z.boolean() });
@@ -4254,6 +4279,29 @@ const OPS: Record<string, Record<string, Op>> = {
       errors: [400, 404],
     },
   },
+  "/api/repos/{repoId}/build": {
+    put: {
+      id: "editRepoBuild",
+      summary:
+        "Set or clear a repo's build command in its manifest, keeping the rest of the file and its comments; checked as the manifest schema checks it, and committed in a pull request. A task's PR is raised only after a passing build",
+      tag: "workspace",
+      params: [p("repoId")],
+      body: EditRepoBuildRequest,
+      ok: { status: 200, schema: { type: "object" }, description: "Written" },
+      errors: [400, 404, 409],
+    },
+  },
+  "/api/orgpack/owner": {
+    put: {
+      id: "setOrgPackOwner",
+      summary:
+        "Set who looks after the org pack (pack.yaml's owner, one handle), as atticus orgpack owner does; committed in a pull request its owner approves",
+      tag: "run",
+      body: SetOrgPackOwnerRequest,
+      ok: { status: 200, schema: { type: "object" }, description: "Written" },
+      errors: [400, 404, 409],
+    },
+  },
   "/api/repos/{repoId}/description": {
     put: {
       id: "editRepoDescription",
@@ -4825,9 +4873,14 @@ const OPS: Record<string, Record<string, Op>> = {
       params: [
         p("changeId"),
         p("artifact", { schema: { type: "string", enum: ChangeArtifact.options } }),
+        q(
+          "file",
+          str,
+          "2.74.0: one file of a many-file artifact, relative to the change folder (stories/<id>.md, specs/<capability>/spec.md); left out, its first file",
+        ),
       ],
       ok: { status: 200, schema: "ArtifactContent", description: "OK" },
-      errors: [404],
+      errors: [400, 404],
     },
     put: {
       id: "saveArtifact",
@@ -4836,6 +4889,11 @@ const OPS: Record<string, Record<string, Op>> = {
       params: [
         p("changeId"),
         p("artifact", { schema: { type: "string", enum: ChangeArtifact.options } }),
+        q(
+          "file",
+          str,
+          "2.74.0: one file of a many-file artifact, relative to the change folder (stories/<id>.md, specs/<capability>/spec.md); left out, its first file",
+        ),
       ],
       body: SaveArtifactRequest,
       ok: { status: 200, schema: "ArtifactContent", description: "Saved" },

@@ -445,3 +445,45 @@ describe("strokes become flow deltas", () => {
     expect(kept.deltas[0]!.steps).toHaveLength(1);
   });
 });
+
+describe("a stroke on a component whose repo has no spec yet (seventh UX walk)", () => {
+  // The catalog knows the component and the repo it is built in; the repo's spec has no flows.
+  const teller = {
+    ...estate,
+    byId: new Map([["teller", { kind: "Component", id: "teller", repo: "forge-teller" } as never]]),
+  };
+
+  it("writes the repo's id, not the component's, on a new flow", () => {
+    const r = applyStroke(
+      [],
+      stroke({
+        kind: "call",
+        from: {
+          component: "teller",
+          newFlow: {
+            id: "teller.read-a-pin",
+            name: "Read a PIN",
+            trigger: { kind: "action", what: "a teller asks for a PIN" },
+          },
+        },
+        to: { component: "pin-broker", entry: "GET /pins/{card}", new: true },
+      }),
+      teller,
+      "pat",
+    );
+    expect(r.problem).toBeUndefined();
+    expect(r.deltas[0]).toMatchObject({ flow: "teller.read-a-pin", repo: "forge-teller" });
+  });
+
+  it("says a step can't be taken out until the repo's spec step writes its flows, and how", () => {
+    const r = applyStroke(
+      [],
+      stroke({ kind: "remove", flow: "teller.pin", step: 1, why: "retired" }),
+      teller,
+      "pat",
+    );
+    expect(r.problem).toBe(
+      "No flow of today's map is teller.pin: forge-teller's spec has no flows yet, so there is no step to take out. Its spec step writes them: atticus spec draft forge-teller",
+    );
+  });
+});

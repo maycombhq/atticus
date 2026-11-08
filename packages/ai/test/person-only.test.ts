@@ -56,6 +56,8 @@ const PERSON = [
   "initiative plan i1 --target s",
   "questions owner q1 --text yes",
   "outcome record c1 m1 --value 3",
+  // Seventh UX walk: who looks after the org pack is a person's to say (the app sets it too).
+  "orgpack owner priya.nair",
 ];
 const SESSION = [
   "verify forge-ledger",
@@ -75,6 +77,7 @@ const SESSION = [
   "initiative status i1",
   "rules add k1 --type service --draft",
   "digest",
+  "orgpack owner",
 ];
 
 describe("what only a person does", () => {
