@@ -121,7 +121,8 @@ async function call<T>(
         title: "Request failed",
         status: r.status,
       };
-      throw new ApiError(p);
+      // The answer's own status, whatever the body says (a body may leave it out).
+      throw new ApiError({ ...p, status: r.status });
     }
     return r.body as T;
   }
@@ -152,7 +153,7 @@ async function call<T>(
       title: r.statusText || "Request failed",
       status: r.status,
     };
-    throw new ApiError(p);
+    throw new ApiError({ ...p, status: r.status });
   }
   return body as T;
 }

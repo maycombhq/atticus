@@ -505,6 +505,10 @@ describe("another branch beside the base clone (ADR 0123)", () => {
       await expect(ws.checkoutBranch(repos[0]!, "no-such-branch")).rejects.toThrow(
         /no-such-branch/,
       );
+      // A person's edit in the checkout: refused, and the edit is still there.
+      await writeFile(join(next.dir, "src", "More.java"), "class More { int edited; }\n");
+      await expect(ws.checkoutBranch(repos[0]!, "develop")).rejects.toThrow(/local changes/);
+      expect(await readFile(join(next.dir, "src", "More.java"), "utf8")).toContain("edited");
     },
     T,
   );

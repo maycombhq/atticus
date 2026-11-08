@@ -54,6 +54,15 @@ describe("the set of component types", () => {
     expect(gw.draws).toMatchObject({ shape: "diamond", colour: "#e06c75", badge: "gw" });
   });
 
+  it("switches a built-in off without restating its words, and asks for them otherwise", () => {
+    const off = ComponentType.safeParse({ schemaVersion: 1, id: "ml-model", off: true });
+    expect(off.success).toBe(true);
+    expect(off.data!.name).toBe("ml-model");
+    const bare = ComponentType.safeParse({ schemaVersion: 1, id: "x" });
+    expect(bare.success).toBe(false);
+    expect(bare.error!.issues.map((i) => i.path.join("."))).toEqual(["name", "description"]);
+  });
+
   it("refuses a type that isn't one: a badge too long, a notes file that isn't Markdown, an unknown field", () => {
     const base = { schemaVersion: 1, id: "x", name: "X", description: "An x." };
     expect(ComponentType.safeParse(base).success).toBe(true);

@@ -37,12 +37,14 @@ export const TYPE_SHAPES = [
   "circle",
 ] as const;
 
-const ComponentTypeShape = z.strictObject({
+/** The file's fields as written (ComponentType checks them and fills in a switched-off type's words). */
+export const ComponentTypeShape = z.strictObject({
   schemaVersion: z.literal(COMPONENT_TYPE_SCHEMA_VERSION),
   /** The folder name under component-types/, and the value Component.type takes. */
   id: RecordId,
-  /** Left out only on a built-in switched off (`off: true`): its own words stand. */
+  /** What a person calls the type. Required, unless `off: true` (a built-in switched off keeps its own). */
   name: text(80).optional(),
+  /** What a component of the type is, in a sentence or two. Required, unless `off: true`. */
   description: text(500).optional(),
   /** Who in the organisation owns the type's definition (a team id or name). */
   owner: text(80).optional(),
@@ -76,6 +78,10 @@ const ComponentTypeShape = z.strictObject({
     .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*\.md$/, "a Markdown file beside type.yaml")
     .optional(),
 });
+/**
+ * A kind of component, in the organisation's words: org-pack/component-types/<id>/type.yaml.
+ * `name` and `description` are required unless the file switches a built-in off.
+ */
 export const ComponentType = ComponentTypeShape.superRefine((t, ctx) => {
   if (t.off) return;
   for (const k of ["name", "description"] as const)

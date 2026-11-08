@@ -123,4 +123,23 @@ describe("watchMetarepo", () => {
     await new Promise((r) => setTimeout(r, 300));
     expect(events).toEqual([]);
   });
+
+  it("follows a folder removed and made again, and .atticus/ made after it started", async () => {
+    const root = await metarepo();
+    const { events } = collect(root);
+    // catalog/ removed and rebuilt (a clean scan).
+    await rm(join(root, "catalog"), { recursive: true, force: true });
+    await new Promise((r) => setTimeout(r, 150));
+    await mkdir(join(root, "catalog/generated"), { recursive: true });
+    await new Promise((r) => setTimeout(r, 150));
+    await writeFile(join(root, "catalog/generated/one.yaml"), "x: 1\n");
+    await until(() => paths(events).includes("catalog/generated/one.yaml"));
+    expect(paths(events)).toContain("catalog/generated/one.yaml");
+    // .atticus/ wasn't there when the watch started; the first atticus map makes it.
+    await mkdir(join(root, ".atticus"), { recursive: true });
+    await new Promise((r) => setTimeout(r, 150));
+    await writeFile(join(root, ".atticus/me.yaml"), "name: pat\n");
+    await until(() => paths(events).includes(".atticus/me.yaml"));
+    expect(paths(events)).toContain(".atticus/me.yaml");
+  });
 });

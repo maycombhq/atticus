@@ -269,6 +269,57 @@ describe("PDF (golden, best effort)", () => {
     expect(r.text.sections).toEqual([{ heading: "", level: 0, text: "Compressed hello", page: 1 }]);
   });
 
+  it("reads a bomb's stream once and stops at a budget: many pages on one huge stream, and a lying /N", () => {
+    // 40 MB of spaces deflates to ~40 KB; 20 pages all point at it. Decoded once, not 20 times.
+    const bomb = deflateSync(Buffer.alloc(40 * 1024 * 1024, 0x20));
+    const kids = Array.from({ length: 20 }, (_, i) => `${10 + i} 0 R`).join(" ");
+    const pages = Array.from(
+      { length: 20 },
+      (_, i) => `${10 + i} 0 obj << /Type /Page /Parent 2 0 R /Contents 4 0 R >> endobj\n`,
+    ).join("");
+    const pdf = Buffer.concat([
+      Buffer.from(
+        "%PDF-1.5\n1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n" +
+          `2 0 obj << /Type /Pages /Kids [${kids}] /Count 20 >> endobj\n` +
+          pages +
+          `4 0 obj << /Length ${bomb.length} /Filter /FlateDecode >>\nstream\n`,
+      ),
+      bomb,
+      Buffer.from("\nendstream\nendobj\n"),
+      // An object stream that claims a billion objects with a two-number header.
+      Buffer.from(
+        `5 0 obj << /Type /ObjStm /N 1000000000 /First 4 /Length 10 >>\nstream\n7 0 << >>\nendstream\nendobj\n`,
+      ),
+      Buffer.from("trailer << /Root 1 0 R >>\n%%EOF\n"),
+    ]);
+    const t = Date.now();
+    const r = readDocument("bomb.pdf", new Uint8Array(pdf));
+    expect(Date.now() - t).toBeLessThan(5000);
+    // Spaces carry no text: read, said so, never 20 times over.
+    expect(r.notes.join(" ")).toMatch(/No text was found/);
+    // Six streams of 64 MB would pass the per-stream cap; together they pass the file's budget.
+    const z = deflateSync(Buffer.alloc(60 * 1024 * 1024, 0x20));
+    const six = Array.from({ length: 6 }, (_, i) => {
+      return Buffer.concat([
+        Buffer.from(`${40 + i} 0 obj << /Length ${z.length} /Filter /FlateDecode >>\nstream\n`),
+        z,
+        Buffer.from("\nendstream\nendobj\n"),
+      ]);
+    });
+    const many = Buffer.concat([
+      Buffer.from(
+        "%PDF-1.5\n1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n" +
+          "2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj\n" +
+          "3 0 obj << /Type /Page /Parent 2 0 R /Contents [40 0 R 41 0 R 42 0 R 43 0 R 44 0 R 45 0 R] >> endobj\n",
+      ),
+      ...six,
+      Buffer.from("trailer << /Root 1 0 R >>\n%%EOF\n"),
+    ]);
+    const m = readDocument("many.pdf", new Uint8Array(many));
+    expect(m.text.sections).toEqual([]);
+    expect(m.notes.join(" ")).toMatch(/inflate to more than 256 MB/);
+  }, 60_000);
+
   it("says so when there is no text, and never guesses", () => {
     const r = readDocument("scanned.pdf", bytes("scanned.pdf"));
     expect(r.text).toEqual({ title: "scanned", sections: [] });

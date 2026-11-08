@@ -377,8 +377,10 @@ export function BulkBar(p: {
   const [action, setAction] = useState<BulkAction>(needs ? "need-done" : "step-skip");
   // The selection changed kind (only steps left, say): an action with nothing to do is swapped.
   useEffect(() => {
+    // Nothing selected is left (another window resolved them): nothing to swap to.
+    if (!needs && !steps) return;
     if (!needs && action.startsWith("need-")) setAction("step-skip");
-    if (!steps && action.startsWith("step-")) setAction("need-done");
+    else if (!steps && action.startsWith("step-")) setAction("need-done");
   }, [needs, steps, action]);
   const [note, setNote] = useState("");
   const applies = bulkCalls(p.selected, action, note || "-").length;
@@ -475,7 +477,7 @@ export function WaitingList(p: {
         {T.byChangeIntro}
       </p>
       <FilterBox id={FILTER_ID} value={p.text} onChange={p.onText} />
-      {p.onBulk && picked.size > 0 && (
+      {p.onBulk && p.items.some((x) => picked.has(bulkKey(x))) && (
         <BulkBar
           selected={p.items.filter((x) => picked.has(bulkKey(x)))}
           busy={busy}

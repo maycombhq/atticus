@@ -111,6 +111,16 @@ describe("the organisation's component types", () => {
       await typesAddCommand(root, "forge-rules-engine", { name: "x", description: "y" }, io().io),
     ).toBe(2);
     expect(await typesAddCommand(root, "Bad Id", { name: "x", description: "y" }, io().io)).toBe(2);
+    // Any record id the schema takes: dots and underscores too.
+    expect(
+      await typesAddCommand(
+        root,
+        "forge.rules_v2",
+        { name: "Rules v2", description: "z" },
+        io().io,
+      ),
+    ).toBe(0);
+    expect((await componentTypesAt(root)).some((t) => t.id === "forge.rules_v2")).toBe(true);
     expect(
       await typesAddCommand(root, "ok", { name: "x", description: "y", shape: "blob" }, io().io),
     ).toBe(2);

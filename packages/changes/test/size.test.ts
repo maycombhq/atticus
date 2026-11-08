@@ -54,3 +54,10 @@ describe("changeSize", () => {
     expect(f.words).toMatch(/smallWhenBriefSays/);
   });
 });
+
+describe("a change's folder", () => {
+  it("is named by an id, never a path", () => {
+    expect(() => changeFolder("/m", "../../etc")).toThrow(/isn't a change id/);
+    expect(changeFolder("/m", "add-fraud-check")).toMatch(/add-fraud-check$/);
+  });
+});

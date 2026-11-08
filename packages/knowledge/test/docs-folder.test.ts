@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -68,6 +68,32 @@ describe("a folder source's include and exclude (sources.yaml version 2)", () =>
     expect(pagesOf(s, "forge-design")).toEqual(["architecture/assistant-prompts.md"]);
     // Left out by a pattern is not a skip to review: the snapshot lists only what it holds.
     expect(s.skipped).toEqual([]);
+  });
+
+  it("never follows a link: a page that is a link to a file elsewhere isn't read", async () => {
+    const root = await metarepo([]);
+    const folder = join(root, "shared-docs");
+    await mkdir(folder, { recursive: true });
+    await writeFile(join(folder, "real.md"), "# Real\n\nA page.\n");
+    const secret = join(root, "outside-secret.txt");
+    await writeFile(secret, "not for the knowledge store\n");
+    try {
+      await symlink(secret, join(folder, "planted.md"));
+    } catch {
+      return; // a machine where links can't be made (Windows without the right): nothing to test
+    }
+    await writeFile(
+      join(root, "org-pack", "sources.yaml"),
+      [
+        "schemaVersion: 2",
+        "wikis:",
+        `  - { id: shared, type: markdown-folder, location: ${JSON.stringify(folder.split("\\").join("/"))} }`,
+        "",
+      ].join("\n"),
+    );
+    const { sync: s } = await sync(root);
+    expect(pagesOf(s, "shared")).toEqual(["real.md"]);
+    expect(s.pages.some((p) => p.pagePath === "planted.md")).toBe(false);
   });
 
   it("refuses include and exclude in a version 1 sources.yaml, and says to upgrade", async () => {

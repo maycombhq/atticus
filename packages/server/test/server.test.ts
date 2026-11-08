@@ -335,6 +335,73 @@ function wsFirstMessage(path: string): Promise<{ status: number; message?: strin
   });
 }
 
+/** Upgrade, then send `frame` and say whether the server closed the connection (a close frame or the socket's end). */
+function wsAfterSending(frameBytes: Buffer): Promise<"closed" | "open"> {
+  const u = new URL(srv.url);
+  return new Promise((resolve, reject) => {
+    const sock = connect(Number(u.port), "127.0.0.1");
+    const key = randomBytes(16).toString("base64");
+    let buf = Buffer.alloc(0);
+    let upgraded = false;
+    let timer: NodeJS.Timeout | undefined;
+    sock.on("connect", () =>
+      sock.write(
+        [
+          `GET /api/events?token=${srv.token} HTTP/1.1`,
+          `Host: 127.0.0.1:${u.port}`,
+          "Upgrade: websocket",
+          "Connection: Upgrade",
+          `Sec-WebSocket-Key: ${key}`,
+          "Sec-WebSocket-Version: 13",
+          "",
+          "",
+        ].join("\r\n"),
+      ),
+    );
+    sock.on("data", (d) => {
+      buf = Buffer.concat([buf, d]);
+      if (!upgraded) {
+        const end = buf.indexOf("\r\n\r\n");
+        if (end < 0) return;
+        upgraded = true;
+        buf = buf.subarray(end + 4);
+        sock.write(frameBytes);
+        timer = setTimeout(() => {
+          sock.destroy();
+          resolve("open");
+        }, 300);
+        return;
+      }
+      // A close frame from the server.
+      if (buf.length >= 1 && (buf[0]! & 0x0f) === 0x8) {
+        clearTimeout(timer);
+        sock.destroy();
+        resolve("closed");
+      }
+    });
+    sock.on("close", () => {
+      clearTimeout(timer);
+      resolve("closed");
+    });
+    sock.on("error", reject);
+  });
+}
+
+describe("the events socket refuses what a page never sends", () => {
+  it("closes on an unmasked frame and on a frame too long to be a ping, and keeps a masked ping open", async () => {
+    // An unmasked ping (RFC 6455: a client masks every frame).
+    expect(await wsAfterSending(Buffer.from([0x89, 0x00]))).toBe("closed");
+    // A masked frame announcing 2^40 bytes: closed at once, nothing buffered.
+    const big = Buffer.alloc(14);
+    big[0] = 0x82;
+    big[1] = 0x80 | 127;
+    big.writeBigUInt64BE(2n ** 40n, 2);
+    expect(await wsAfterSending(big)).toBe("closed");
+    // A masked ping: answered, the socket stays open.
+    expect(await wsAfterSending(Buffer.from([0x89, 0x80, 1, 2, 3, 4]))).toBe("open");
+  });
+});
+
 describe("hardening (threat model S1, D1)", () => {
   it("sends headers that stop other sites embedding, opening or reading the API", async () => {
     const r = await fetch(srv.url + "/api/health", { headers: { "X-Atticus-Token": srv.token } });

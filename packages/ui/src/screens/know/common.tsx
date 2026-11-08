@@ -26,7 +26,8 @@ export function queryParam(hash: string, name: string): string | undefined {
 /**
  * Sets one query parameter of the page's address and keeps the others (a change picked on the
  * Architecture tab keeps its lens; a lens picked keeps the change), so no tab loses what the
- * others need. `keep` names the parameters that stay; left out, every other one stays.
+ * others need. `drop` names parameters that go with the change (a node of the old lens); every
+ * other one stays.
  */
 export function setQueryParam(
   screen: string,

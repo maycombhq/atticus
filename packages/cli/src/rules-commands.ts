@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, readdir, readFile, rm } from "node:fs/promises";
-import { join, relative, sep } from "node:path";
+import { isAbsolute, join, relative, sep } from "node:path";
 import { promisify } from "node:util";
 import { isMap, isSeq, parseDocument } from "yaml";
 import {
@@ -606,7 +606,9 @@ export async function rulesTryCommand(
     io.err(`No file of ${repo} is one ${rule.key} names (${(rule.files ?? []).join(", ")}).`);
     return 2;
   }
-  const checkout = dir.startsWith(root) ? dir.slice(root.length + 1).replace(/\\/g, "/") : dir;
+  // Inside the metarepo by its relative path (C:\\repo2 isn't inside C:\\repo); else as given.
+  const rel = relative(root, dir);
+  const checkout = rel && !rel.startsWith("..") && !isAbsolute(rel) ? rel.replace(/\\/g, "/") : dir;
   const prompt = [
     `# Try the reading rule ${rule.key} on ${repo}`,
     "",

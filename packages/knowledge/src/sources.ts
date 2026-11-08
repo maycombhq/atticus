@@ -89,7 +89,9 @@ export const markdownFolderAdapter: KnowledgeSourceAdapter = {
         if (e.name.startsWith(".")) continue;
         const full = join(d, e.name);
         if (e.isDirectory()) await walk(full, false);
-        else if (/\.(md|markdown)$/i.test(e.name))
+        // A plain file only: a link (a Dirent from readdir never follows one) could point
+        // anywhere on the machine (a key, a credentials file) and its text would reach a model.
+        else if (e.isFile() && /\.(md|markdown)$/i.test(e.name))
           out.push({
             pagePath: toPosix(relative(dir, full)),
             path: toPosix(relative(root, full)),

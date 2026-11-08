@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, useApi, useReloadOnFiles } from "../../api/client.js";
 import { Panel, View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
@@ -120,14 +120,25 @@ const toggle = (list: string[], id: string, on: boolean) =>
  */
 export function AiSettingsForm(p: { data: AiSettings; onSaved?: () => void }) {
   const [f, setF] = useState<AiForm>(() => formOf(p.data));
-  // The file changed on disk (another window, the CLI) while the form was open: said, with a way
-  // to take the new values; the person's edits aren't thrown away without a word.
-  const [seen, setSeen] = useState(() => JSON.stringify(formOf(p.data)));
+  // The file as the form last took it. When the file changes on disk (another window, the CLI):
+  // with no edits here the form takes it quietly; after our own save it takes what the server
+  // stored (it trims and drops empties); with edits here it says so and the edits stay.
   const onDisk = JSON.stringify(formOf(p.data));
-  const changedOnDisk = onDisk !== seen && onDisk !== JSON.stringify(f);
+  const [base, setBase] = useState(onDisk);
+  const justSaved = useRef(false);
+  const edited = JSON.stringify(f) !== base;
+  useEffect(() => {
+    if (onDisk === base) return;
+    if (justSaved.current || !edited) {
+      justSaved.current = false;
+      setF(formOf(p.data));
+      setBase(onDisk);
+    }
+  }, [onDisk]);
+  const changedOnDisk = onDisk !== base && edited;
   const takeDisk = () => {
     setF(formOf(p.data));
-    setSeen(onDisk);
+    setBase(onDisk);
   };
   const save = useAction();
   const test = useAction();
@@ -140,10 +151,11 @@ export function AiSettingsForm(p: { data: AiSettings; onSaved?: () => void }) {
     <form
       className="stack"
       onSubmit={(e) => {
-        setSeen(JSON.stringify(f));
         e.preventDefault();
         void save.run(async () => {
           await api("/api/settings/ai", { method: "PUT", body: toSave(f) });
+          // Only a save that went through takes the file as the server stored it.
+          justSaved.current = true;
           p.onSaved?.();
         }, T.saved(p.data.path));
       }}

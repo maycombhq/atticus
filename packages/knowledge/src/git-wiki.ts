@@ -64,7 +64,11 @@ const safeRef = (ref: string) => {
 
 async function update(git: GitRun, dir: string, url: string, ref: string | undefined) {
   await git([...fileOk(url), "fetch", "--quiet", "origin", ref ? safeRef(ref) : "HEAD"], dir);
-  await git(["checkout", "--quiet", "--force", "--detach", "FETCH_HEAD"], dir);
+  // An existing clone made before core.symlinks=false: set it for the checkout too.
+  await git(
+    ["-c", "core.symlinks=false", "checkout", "--quiet", "--force", "--detach", "FETCH_HEAD"],
+    dir,
+  );
 }
 
 /** Clone or update a git wiki, as its entry says; return where it is and what was read. */
@@ -119,7 +123,11 @@ export async function checkoutGitWiki(
   const dir = join(root, ...(isAdopted(root) ? [".atticus"] : []), "workspace", "knowledge", w.id);
   if (!existsSync(join(dir, ".git"))) {
     await mkdir(dirname(dir), { recursive: true });
-    await git(["clone", "--quiet", "--no-checkout", "--", url, dir], dirname(dir));
+    // Links in a wiki are checked out as plain files holding their target's name, never as links.
+    await git(
+      ["-c", "core.symlinks=false", "clone", "--quiet", "--no-checkout", "--", url, dir],
+      dirname(dir),
+    );
   }
   await update(git, dir, url, w.ref);
   const commit = (await git(["rev-parse", "HEAD"], dir)).stdout.trim();

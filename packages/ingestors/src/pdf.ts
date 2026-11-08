@@ -1,6 +1,6 @@
 import { constants, inflateSync } from "node:zlib";
 import type { DocumentMeta } from "./record.js";
-import { Sections, type ParsedText } from "./text-model.js";
+import { ReadError, Sections, type ParsedText } from "./text-model.js";
 
 /*
  * PDF, best effort and honest about it. It reads uncompressed and Flate-compressed content
@@ -12,6 +12,19 @@ import { Sections, type ParsedText } from "./text-model.js";
 const NO_TEXT =
   "No text was found in this PDF. It may be a scanned image, so a person needs to read it.";
 const MAX_STREAM = 64 * 1024 * 1024;
+/** All the streams of one file together, decoded: a few MB of PDF never costs gigabytes. */
+const MAX_DECODED = 256 * 1024 * 1024;
+/** The most objects one object stream may pack, and the most pages read. */
+const MAX_PACKED = 100_000;
+const MAX_PAGES = 10_000;
+
+/** One file's decoding: each stream decoded once, and all of them within MAX_DECODED. */
+interface Decoding {
+  cache: Map<PdfObject, Buffer | undefined>;
+  /** A content stream's lines of text, read once however many pages show it. */
+  texts: Map<PdfObject, string[]>;
+  left: number;
+}
 
 interface PdfObject {
   dict: string;
@@ -26,20 +39,39 @@ const ref = (dict: string, key: string) => {
 const isType = (dict: string, type: string) =>
   new RegExp(`/Type\\s*/${type}(?![A-Za-z])`).test(dict);
 
-function decodeStream(o: PdfObject): Buffer | undefined {
+function decodeStream(o: PdfObject, d: Decoding): Buffer | undefined {
+  if (d.cache.has(o)) return d.cache.get(o);
+  const over = () =>
+    new ReadError(
+      `This PDF's streams inflate to more than ${MAX_DECODED / 1024 / 1024} MB; it isn't read.`,
+    );
+  if (o.stream && d.left <= 0) throw over();
+  const max = Math.min(MAX_STREAM, d.left);
+  const out = decodeOnce(o, max);
+  // A stream that didn't fit what was left of the budget (but would fit one stream's cap).
+  if (o.stream && out === undefined && max < MAX_STREAM && decodeOnce(o, 0) === "flate")
+    throw over();
+  d.cache.set(o, out instanceof Buffer ? out : undefined);
+  if (out instanceof Buffer) d.left -= out.length;
+  return out instanceof Buffer ? out : undefined;
+}
+
+/** The stream decoded within `max` bytes; with max 0, whether it is one Atticus decodes ("flate"). */
+function decodeOnce(o: PdfObject, max: number): Buffer | undefined | "flate" {
   if (!o.stream) return undefined;
   const filter = /\/Filter\s*(\[[^\]]*\]|\/\w+)/.exec(o.dict)?.[1];
   if (!filter) return o.stream;
   const names = filter.match(/\/\w+/g) ?? [];
   if (names.length !== 1 || names[0] !== "/FlateDecode") return undefined;
+  if (max <= 0) return "flate";
   try {
-    return inflateSync(o.stream, { maxOutputLength: MAX_STREAM });
+    return inflateSync(o.stream, { maxOutputLength: max });
   } catch {
     try {
       // Some writers leave streams unterminated; take what inflates.
       return inflateSync(o.stream, {
         finishFlush: constants.Z_SYNC_FLUSH,
-        maxOutputLength: MAX_STREAM,
+        maxOutputLength: max,
       });
     } catch {
       return undefined;
@@ -48,7 +80,7 @@ function decodeStream(o: PdfObject): Buffer | undefined {
 }
 
 /** Every "N G obj ... endobj" in the file, plus objects packed in object streams. */
-function objects(src: string, bytes: Buffer): Map<number, PdfObject> {
+function objects(src: string, bytes: Buffer, d: Decoding): Map<number, PdfObject> {
   const out = new Map<number, PdfObject>();
   const re = /(\d+)\s+(\d+)\s+obj\b/g;
   for (let m = re.exec(src); m; m = re.exec(src)) {
@@ -78,11 +110,17 @@ function objects(src: string, bytes: Buffer): Map<number, PdfObject> {
   }
   for (const o of [...out.values()]) {
     if (!isType(o.dict, "ObjStm")) continue;
-    const data = decodeStream(o)?.toString("latin1");
-    const n = Number(/\/N\s+(\d+)/.exec(o.dict)?.[1] ?? 0);
+    const data = decodeStream(o, d)?.toString("latin1");
     const first = Number(/\/First\s+(\d+)/.exec(o.dict)?.[1] ?? 0);
-    if (!data || !n) continue;
+    if (!data) continue;
     const head = data.slice(0, first).trim().split(/\s+/).map(Number);
+    // /N is the file's word: never more objects than the header has number pairs for.
+    const n = Math.min(
+      Number(/\/N\s+(\d+)/.exec(o.dict)?.[1] ?? 0),
+      Math.floor(head.length / 2),
+      MAX_PACKED,
+    );
+    if (!n) continue;
     for (let k = 0; k < n; k++) {
       const num = head[2 * k]!;
       const off = first + head[2 * k + 1]!;
@@ -288,7 +326,8 @@ function pdfDate(s: string | undefined): string | undefined {
 export function readPdf(bytes: Uint8Array): ParsedText {
   const buf = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const src = buf.toString("latin1");
-  const objs = objects(src, buf);
+  const decoding: Decoding = { cache: new Map(), texts: new Map(), left: MAX_DECODED };
+  const objs = objects(src, buf, decoding);
   const trailers = [...src.matchAll(/trailer\s*(<<[\s\S]*?>>)/g)].map((m) => m[1]!);
   for (const o of objs.values()) if (isType(o.dict, "XRef")) trailers.push(o.dict);
   // The last trailer wins (incremental updates append a new one).
@@ -337,6 +376,10 @@ export function readPdf(bytes: Uint8Array): ParsedText {
       if (isType(o.dict, "Page")) pages.push(n);
 
   const s = new Sections();
+  if (pages.length > MAX_PAGES) {
+    notes.push(`This PDF has ${pages.length} pages; the first ${MAX_PAGES} are read.`);
+    pages.length = MAX_PAGES;
+  }
   pages.forEach((n, i) => {
     const dict = objs.get(n)!.dict;
     const contents = /\/Contents\s*(\[[^\]]*\]|\d+\s+\d+\s+R)/.exec(dict)?.[1] ?? "";
@@ -346,9 +389,15 @@ export function readPdf(bytes: Uint8Array): ParsedText {
       streams = refs(objs.get(streams[0]!)?.dict ?? "");
     const text = streams
       .map((r) => objs.get(r))
-      .map((o) => (o ? decodeStream(o)?.toString("latin1") : undefined))
-      .filter((t): t is string => t !== undefined)
-      .flatMap(contentText);
+      .flatMap((o) => {
+        if (!o) return [];
+        const had = decoding.texts.get(o);
+        if (had) return had;
+        const t = decodeStream(o, decoding)?.toString("latin1");
+        const lines = t === undefined ? [] : contentText(t);
+        decoding.texts.set(o, lines);
+        return lines;
+      });
     s.heading("", 0, { page: i + 1 });
     for (const l of text) s.add(l);
   });

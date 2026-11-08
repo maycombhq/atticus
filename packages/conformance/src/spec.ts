@@ -21,6 +21,8 @@ export const GENERATED_NOTE =
 interface Section {
   name: string;
   where?: string;
+  /** The exported const whose comments document the fields, when not `name` (a refined schema). */
+  docs?: string;
 }
 
 interface Contract {
@@ -262,6 +264,7 @@ const CONTRACTS: Contract[] = [
       },
       {
         name: "ComponentType",
+        docs: "ComponentTypeShape",
         where:
           "org-pack/component-types/<id>/type.yaml, with notes.md beside it (optional; what a kind of component is, in the organisation's words, ADR 0180; Atticus's own types are the default set)",
       },
@@ -319,13 +322,16 @@ function contractPage(c: Contract, ctx: DocContext): string {
     const schema = schemaOf(s.name);
     if (!schema) continue;
     out.push(`## ${s.name}`, "");
-    const doc = ctx.docs.get(s.name)?.doc;
+    const doc = ctx.docs.get(s.name)?.doc ?? (s.docs ? ctx.docs.get(s.docs)?.doc : undefined);
     if (s.where) {
       const [path, note] = s.where.split(/ (?=\()/);
       out.push(`Where: \`${path}\`${note ? ` ${note}` : ""}.`, "");
     }
     if (doc) out.push(doc, "");
-    const rows = fieldRows(schema, ctx, s.name, c.id === "C1" ? { skip: new Set(COMMON) } : {});
+    const rows = fieldRows(schema, ctx, s.name, {
+      ...(c.id === "C1" ? { skip: new Set(COMMON) } : {}),
+      ...(s.docs ? { fallbackDocs: [s.docs] } : {}),
+    });
     out.push(rows.length > 0 ? fieldTable(rows) : "No fields.", "");
   }
   return (

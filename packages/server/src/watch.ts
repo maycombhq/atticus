@@ -137,13 +137,22 @@ export function watchMetarepo(o: WatchOptions): MetarepoWatch {
   };
 
   const attach = () => {
+    // A followed folder removed (a scan rebuilt catalog/, say) goes quiet without an error on
+    // Linux and macOS: drop its watcher, so the folder made again is followed again.
+    for (const [d, w] of watchers)
+      if (!isDir(d)) {
+        w.close();
+        watchers.delete(d);
+      }
+    // The root and .atticus/ each time too: .atticus/ may appear after the server started (the
+    // first atticus map), or come back after a Windows error dropped its watcher.
+    follow(root, false);
+    follow(join(root, ".atticus"), false);
     for (const d of folders()) follow(d, true);
   };
 
   // The root and .atticus/, not recursively: they say when a followed folder appears, and
   // carry the files directly in them (.atticus/me.yaml).
-  follow(root, false);
-  follow(join(root, ".atticus"), false);
   attach();
 
   return {

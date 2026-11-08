@@ -3,6 +3,7 @@ import { existsSync, statSync } from "node:fs";
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import {
   catalogDirOf,
+  effectiveComponentTypes,
   loadOrgPack,
   mergeCatalog,
   normalizePath,
@@ -593,6 +594,8 @@ export async function repoDrift(o: DriftOptions): Promise<DriftReport> {
   const merged = mergeCatalog({
     // A fetched copy of the catalog has no manifest, so no declared hosts: route by basepath.
     ...(orgPackDir ? {} : { gatewayByBasepath: true }),
+    // ADR 0180: the organisation's component types, as the scan merges with them (no false drift).
+    componentTypes: new Set(effectiveComponentTypes(op.componentTypes).map((t) => t.id)),
     records: [...context, ...otherEnds(catalog.records, repoId, components), ...scan.records],
     repos: manifest.map((r) => ({
       id: r.id,

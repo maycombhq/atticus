@@ -279,7 +279,14 @@ export function createWorkspace(root: string, git: GitRunner = createGit()): Wor
       if (!existsSync(dir)) {
         await mkdir(dirname(dir), { recursive: true });
         await g(["worktree", "add", "--detach", "--", dir, ref], base);
-      } else await g(["checkout", "--quiet", "--force", "--detach", ref], dir);
+      } else {
+        // A person's edits in the checkout are never thrown away by a forced checkout.
+        if (await dirty(dir))
+          throw new Error(
+            `${repo.id}'s checkout of ${branch} has local changes: commit or stash them in ${dir}, then try again`,
+          );
+        await g(["checkout", "--quiet", "--force", "--detach", ref], dir);
+      }
       return { dir, commit: await head(dir) };
     },
 

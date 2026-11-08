@@ -1,5 +1,10 @@
 import { createHash } from "node:crypto";
 import type { IncomingMessage } from "node:http";
+
+/** The largest frame a client may send (a ping or a close carries 125 bytes at most). */
+const MAX_CLIENT_FRAME = 64 * 1024;
+/** The most a client may have unread at once. */
+const MAX_CLIENT_BUFFER = 256 * 1024;
 import type { Duplex } from "node:stream";
 
 /**
@@ -65,8 +70,13 @@ export class Socket {
     this.onClose(this);
   }
 
-  /** Client frames are masked; only control frames matter to us. */
+  /**
+   * Client frames are masked; only control frames matter to us. The page sends nothing but pings
+   * and a close, so a frame over MAX_CLIENT_FRAME, a buffer over MAX_CLIENT_BUFFER or an unmasked
+   * frame (RFC 6455 5.1) closes the connection rather than growing memory.
+   */
   private read(d: Buffer): void {
+    if (this.buf.length + d.length > MAX_CLIENT_BUFFER) return this.close();
     this.buf = Buffer.concat([this.buf, d]);
     while (this.buf.length >= 2) {
       const opcode = this.buf[0]! & 0x0f;
@@ -82,12 +92,12 @@ export class Socket {
         len = Number(this.buf.readBigUInt64BE(2));
         off = 10;
       }
+      if (!masked || len > MAX_CLIENT_FRAME) return this.close();
       const maskOff = off;
-      if (masked) off += 4;
+      off += 4;
       if (this.buf.length < off + len) return;
       const payload = Buffer.from(this.buf.subarray(off, off + len));
-      if (masked)
-        for (let i = 0; i < payload.length; i++) payload[i]! ^= this.buf[maskOff + (i % 4)]!;
+      for (let i = 0; i < payload.length; i++) payload[i]! ^= this.buf[maskOff + (i % 4)]!;
       this.buf = this.buf.subarray(off + len);
       if (opcode === 0x8) return this.close();
       if (opcode === 0x9) this.sock.write(frame(0xa, payload));

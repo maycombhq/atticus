@@ -1,7 +1,13 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parse } from "yaml";
-import { ChangeLifecycle, changesDirOf, toCanonicalYaml, writeFileAtomic } from "@maycombhq/core";
+import {
+  ChangeLifecycle,
+  changesDirOf,
+  RecordId,
+  toCanonicalYaml,
+  writeFileAtomic,
+} from "@maycombhq/core";
 
 /**
  * Where OpenSpec keeps changes in a metarepo made by `atticus init`; `archive/` under it
@@ -25,6 +31,8 @@ const LEADING = [
 ];
 
 export function changeFolder(root: string, id: string): string {
+  // An id, never a path: nothing outside the changes folder is read or written through it.
+  if (!RecordId.safeParse(id).success) throw new Error(`${id} isn't a change id.`);
   return join(changesDirOf(root), id);
 }
 

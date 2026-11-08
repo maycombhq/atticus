@@ -200,6 +200,8 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
     setSnapshot(undefined);
     setTools((t) => (t.compareWith ? { ...t, compareWith: undefined } : t));
     setStatus({ state: "loading" });
+    // A note about a node of the last picture doesn't hang over this one.
+    setStepError(undefined);
     setCurrent("estate");
     setExpanded(new Set(["estate"]));
     setSelected(undefined);
@@ -293,6 +295,7 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
     const n = find(id);
     if (!n || n.childCount === 0) {
       setSelected(id);
+      setStepError(undefined);
       return;
     }
     try {
@@ -300,6 +303,7 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
       setExpanded((s) => new Set(s).add(id));
       setCurrent(id);
       setSelected(id);
+      setStepError(undefined);
       setFocus(undefined);
       setInPlace(new Set());
     } catch (e) {
@@ -330,6 +334,7 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
       setInPlace((s) => new Set(s).add(id));
       setExpanded((s) => new Set(s).add(id));
       setSelected(id);
+      setStepError(undefined);
     } catch (e) {
       if (e instanceof StalePicture) return;
       stepFailed(e);
@@ -353,6 +358,7 @@ function Workspace({ hash, screen = "architecture" }: { hash: string; screen?: s
         await api<Api.GraphFocusViewT>(`/api/graph/focus/${encodeURIComponent(id)}?lens=${lens}`),
       );
       setSelected(id);
+      setStepError(undefined);
     } catch (e) {
       stepFailed(e);
     }
@@ -1138,7 +1144,7 @@ export function ArrangementBar(p: {
           <button
             type="button"
             className="btn danger"
-            disabled={p.saving}
+            disabled={!p.ready || p.saving}
             onClick={() => {
               setConfirmReset(false);
               p.onReset();
