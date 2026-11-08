@@ -22,8 +22,29 @@ vi.mock("../src/api/client.js", async () => ({
         branch: "propose/answers/2026-11-08-pat",
         title: "Answers to the map's questions",
       };
-    if (path.endsWith("/apply")) return { code: 0, lines: ["forge-ledger: 12 facts kept"] };
-    return { lines: ["PR #7 is open for review: https://git.example.com/pr/7"] };
+    // Apply and Propose run as server jobs: the start answers its id, the job its lines.
+    if (path.endsWith("/apply")) return { jobId: "job-1" };
+    if (path === "/api/propose") return { jobId: "job-2" };
+    if (path === "/api/propose/bring-in") return { jobId: "job-3" };
+    if (path === "/api/jobs/job-3")
+      return {
+        state: "failed",
+        errors: [],
+        result: { code: 1, lines: ["What merged also changes files you edited: other.md"] },
+      };
+    if (path === "/api/jobs/job-1")
+      return {
+        state: "done",
+        errors: [],
+        result: { code: 0, lines: ["forge-ledger: 12 facts kept"] },
+      };
+    if (path === "/api/jobs/job-2")
+      return {
+        state: "done",
+        errors: [],
+        result: { code: 0, lines: ["PR #7 is open for review: https://git.example.com/pr/7"] },
+      };
+    return {};
   },
 }));
 const { COPY } = await import("../src/copy.js");
@@ -54,13 +75,24 @@ it("applies, lists, lets a file be left out, and proposes the rest", async () =>
   n.render();
   expect(calls.map((c) => c.path)).toEqual([
     "/api/facts/forge-ledger/apply",
+    "/api/jobs/job-1",
     "/api/propose?scope=answers",
     "/api/propose",
+    "/api/jobs/job-2",
   ]);
-  expect(calls[2]!.body).toEqual({
+  expect(calls[3]!.body).toEqual({
     scope: "answers",
     files: ["questions/q1.yaml"],
     branch: "propose/answers/2026-11-08-pat",
   });
   expect(text(n.tree)).toContain("PR #7 is open for review");
+});
+
+it("a job that stopped is an error with its lines", async () => {
+  const { followJob } = await import("../src/app/propose.js");
+  const err = await followJob("/api/propose/bring-in", {}, async () => undefined).catch(
+    (e: Error) => e,
+  );
+  expect(err).toBeInstanceOf(Error);
+  expect((err as Error).message).toBe("What merged also changes files you edited: other.md");
 });

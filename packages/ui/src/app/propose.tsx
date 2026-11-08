@@ -4,6 +4,32 @@ import { COPY } from "../copy.js";
 import { Note, useAction } from "../screens/know/common.js";
 
 const P = COPY.propose;
+
+/**
+ * Windows review: Apply, Propose and Bring in run as server jobs (an editor panel waits 30 s for
+ * one answer). Starts one and follows it to the end: its lines, or an error with them.
+ */
+export async function followJob(
+  path: string,
+  body: unknown,
+  wait: (ms: number) => Promise<void> = (ms) => new Promise((r) => setTimeout(r, ms)),
+): Promise<{ code: number; lines: string[] }> {
+  const { jobId } = await api<{ jobId: string }>(path, { method: "POST", body });
+  for (;;) {
+    const j = await api<{
+      state: string;
+      errors: string[];
+      result?: { code?: number; lines?: string[] };
+    }>(`/api/jobs/${encodeURIComponent(jobId)}`, { quiet: true });
+    if (j.state !== "running" && j.state !== "queued") {
+      const lines = j.result?.lines ?? j.errors;
+      const code = j.result?.code ?? (j.state === "done" ? 0 : 1);
+      if (j.state !== "done" || code !== 0) throw new Error(lines.join(" ") || j.state);
+      return { code, lines };
+    }
+    await wait(700);
+  }
+}
 type Scope = "answers" | "corrections" | "audit" | "org-pack";
 interface Plan {
   scope: Scope;
@@ -31,12 +57,16 @@ export function ApplyAndPropose(p: { scope: Scope; repo?: string | undefined }) 
               disabled={apply.busy}
               onClick={() =>
                 void apply.run(async () => {
-                  const r = await api<{ code?: number; lines: string[] }>(
-                    `/api/facts/${encodeURIComponent(p.repo!)}/apply`,
-                    { method: "POST", body: {} },
-                  );
-                  setApplied(r.lines);
-                  if (r.code) throw new Error(P.applyFailed);
+                  try {
+                    const r = await followJob(
+                      `/api/facts/${encodeURIComponent(p.repo!)}/apply`,
+                      {},
+                    );
+                    setApplied(r.lines);
+                  } catch (e) {
+                    setApplied([(e as Error).message]);
+                    throw new Error(P.applyFailed, { cause: e });
+                  }
                 }, P.applied(p.repo!))
               }
             >
@@ -132,9 +162,10 @@ export function Propose({ scope }: { scope: Scope }) {
               disabled={send.busy || files.length === 0}
               onClick={() =>
                 void send.run(async () => {
-                  const r = await api<{ lines: string[] }>("/api/propose", {
-                    method: "POST",
-                    body: { scope, files: files.map((f) => f.path), branch: plan.branch },
+                  const r = await followJob("/api/propose", {
+                    scope,
+                    files: files.map((f) => f.path),
+                    branch: plan.branch,
                   });
                   setDone(r.lines);
                 }, P.proposed)
@@ -168,7 +199,7 @@ export function BringIn() {
           disabled={act.busy}
           onClick={() =>
             void act.run(
-              () => api<{ lines: string[] }>("/api/propose/bring-in", { method: "POST", body: {} }),
+              () => followJob("/api/propose/bring-in", {}),
               (r) => r.lines.join(" "),
             )
           }

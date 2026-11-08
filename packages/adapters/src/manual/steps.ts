@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { parse } from "yaml";
 import {
@@ -9,6 +9,7 @@ import {
   type ManualStepInput,
   type ResultField,
   type StepApproval,
+  renameRetrying,
 } from "@maycombhq/core";
 
 /**
@@ -147,7 +148,7 @@ async function writeAtomic(path: string, text: string): Promise<void> {
   const tmp = `${path}.tmp`;
   try {
     await writeFile(tmp, text, "utf8");
-    await rename(tmp, path);
+    await renameRetrying(tmp, path);
   } catch (e) {
     await rm(tmp, { force: true });
     throw e;

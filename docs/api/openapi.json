@@ -4950,12 +4950,12 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "What verify printed",
+          "202": {
+            "description": "Started: its job's result is the code and the lines verify printed",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/LinesView"
+                  "$ref": "#/components/schemas/JobAccepted"
                 }
               }
             }
@@ -4972,16 +4972,6 @@
           },
           "401": {
             "description": "Missing or wrong session token",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Atticus refused: the problem carries the command's own words (ADR 0043)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5103,12 +5093,12 @@
           }
         },
         "responses": {
-          "201": {
-            "description": "Proposed",
+          "202": {
+            "description": "Started: its job's result is the code and the lines",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/LinesView"
+                  "$ref": "#/components/schemas/JobAccepted"
                 }
               }
             }
@@ -5132,16 +5122,6 @@
                 }
               }
             }
-          },
-          "422": {
-            "description": "Atticus refused: the problem carries the command's own words (ADR 0043)",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
           }
         }
       }
@@ -5154,28 +5134,18 @@
           "workspace"
         ],
         "responses": {
-          "200": {
-            "description": "Brought in",
+          "202": {
+            "description": "Started: its job's result is the code and the lines",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/LinesView"
+                  "$ref": "#/components/schemas/JobAccepted"
                 }
               }
             }
           },
           "401": {
             "description": "Missing or wrong session token",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Atticus refused: the problem carries the command's own words (ADR 0043)",
             "content": {
               "application/problem+json": {
                 "schema": {

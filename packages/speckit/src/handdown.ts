@@ -1,6 +1,6 @@
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { taskBranch, type BuildEngine } from "@maycombhq/core";
+import { renameRetrying, taskBranch, type BuildEngine } from "@maycombhq/core";
 import {
   buildEngineFor,
   generateAssistantFiles,
@@ -88,8 +88,13 @@ async function putIfFree(
     return;
   }
   await mkdir(dirname(full), { recursive: true });
-  await writeFile(`${full}.atticus-tmp`, text, "utf8");
-  await rename(`${full}.atticus-tmp`, full);
+  try {
+    await writeFile(`${full}.atticus-tmp`, text, "utf8");
+    await renameRetrying(`${full}.atticus-tmp`, full);
+  } catch (e) {
+    await rm(`${full}.atticus-tmp`, { force: true });
+    throw e;
+  }
   r.written.push(rel);
 }
 

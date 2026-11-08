@@ -1,4 +1,4 @@
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { parse } from "yaml";
 import { z } from "zod";
@@ -14,6 +14,7 @@ import {
   toCanonicalYaml,
   type CatalogRecord,
   type RecordOf,
+  renameRetrying,
 } from "@maycombhq/core";
 import { readCatalog } from "@maycombhq/scanner";
 
@@ -55,7 +56,7 @@ async function writeAtomic(path: string, text: string): Promise<void> {
   const tmp = `${path}.tmp`;
   try {
     await writeFile(tmp, text, "utf8");
-    await rename(tmp, path);
+    await renameRetrying(tmp, path);
   } catch (e) {
     await rm(tmp, { force: true });
     throw e;

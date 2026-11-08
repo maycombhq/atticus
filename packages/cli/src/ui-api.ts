@@ -326,16 +326,32 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
     ...(deps.gitHost ? { gitHost: deps.gitHost } : {}),
     ...(deps.now ? { now: deps.now } : {}),
   };
+  /**
+   * Windows review: Apply, Propose and Bring in run git, verify and the Git host, which on a bank
+   * laptop can take longer than an editor panel waits for one answer (30 s). They run as jobs
+   * (202 and the job's id; the page follows /api/jobs/{id}), whose result is the code and lines.
+   */
+  const asJob = (what: string, work: () => Promise<Ran>) => {
+    const job = ctx.jobs.start("step", async (c) => {
+      c.progress(0, 1, what);
+      const res = await work();
+      c.progress(1, 1, res.code === 0 ? "Done" : "Stopped");
+      ctx.events.publish({ type: "file.changed", path: "." });
+      const lines = [...res.out, ...res.err];
+      return { result: { code: res.code, lines }, errors: res.code === 0 ? [] : lines };
+    });
+    return { status: 202, body: { jobId: job.id } };
+  };
   return (
     r
       // ADR 0183: the app runs the local steps and proposes them for review on the person's yes.
       .add("POST", "/api/facts/{repo}/apply", async ({ params }) => {
         const { verifyCommand } = await import("./verify-commands.js");
-        const res = await run((io) =>
-          verifyCommand(root, params.repo!, { write: true, verbose: false, json: false }, io),
+        return asJob(`Applying to ${params.repo}`, () =>
+          run((io) =>
+            verifyCommand(root, params.repo!, { write: true, verbose: false, json: false }, io),
+          ),
         );
-        if (res.code === 2) throw refused(res);
-        return { status: 200, body: { code: res.code, lines: [...res.out, ...res.err] } };
       })
       .add("GET", "/api/propose", async ({ query }) => {
         const { proposePlan, PROPOSE_SCOPES } = await import("./propose.js");
@@ -355,27 +371,25 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
         const b = parseBody(Api.ProposeRequest, body);
         const { proposeForReview } = await import("./propose.js");
         // The person's click is the approval to push the branch and open the PR (ADR 0183).
-        const res = await run((io) =>
-          proposeForReview(
-            root,
-            {
-              scope: b.scope,
-              by: user,
-              files: b.files,
-              ...(b.title ? { title: b.title } : {}),
-              ...(b.branch ? { branch: b.branch } : {}),
-            },
-            io,
+        return asJob("Proposing for review", () =>
+          run((io) =>
+            proposeForReview(
+              root,
+              {
+                scope: b.scope,
+                by: user,
+                files: b.files,
+                ...(b.title ? { title: b.title } : {}),
+                ...(b.branch ? { branch: b.branch } : {}),
+              },
+              io,
+            ),
           ),
         );
-        if (res.code !== 0) throw refused(res);
-        return { status: 201, body: { lines: res.out } };
       })
       .add("POST", "/api/propose/bring-in", async () => {
         const { bringInMerged } = await import("./propose.js");
-        const res = await run((io) => bringInMerged(root, io));
-        if (res.code !== 0) throw refused(res);
-        return { status: 200, body: { code: 0, lines: res.out } };
+        return asJob("Bringing in what merged", () => run((io) => bringInMerged(root, io)));
       })
       .add("GET", "/api/change-types", async () => {
         const op = await loadOrgPack(orgPackDirOf(root));

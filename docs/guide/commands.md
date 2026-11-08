@@ -359,6 +359,7 @@ Every other command. `atticus legacy` lists them by area; each runs by its own n
   atticus workspace sync               Clone or update the base clone of every repo in the manifests
           [--repos a,b]                Only these repos
           [--from <folder>]            Copy a missing base clone from your own clone of it in that folder: no network, your clone only read
+  atticus workspace bring-in           After a proposal or hand-off PR merges: put back the edits it already has and fast-forward the metarepo; your own edits stay (ADR 0183)
   atticus workspace open <change>      Create the change's worktrees, repos.yaml and editor workspaces
           --repos a,b                  The repos the change touches
   atticus workspace prune <change>     Remove worktrees whose PRs merged or closed

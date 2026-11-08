@@ -773,6 +773,7 @@ Usage:
   atticus workspace sync               Clone or update the base clone of every repo in the manifests
           [--repos a,b]                Only these repos
           [--from <folder>]            Copy a missing base clone from your own clone of it in that folder: no network, your clone only read
+  atticus workspace bring-in           After a proposal or hand-off PR merges: put back the edits it already has and fast-forward the metarepo; your own edits stay (ADR 0183)
   atticus workspace open <change>      Create the change's worktrees, repos.yaml and editor workspaces
           --repos a,b                  The repos the change touches
   atticus workspace prune <change>     Remove worktrees whose PRs merged or closed
@@ -3899,6 +3900,10 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
   if (group === "openspec") {
     const { openspecRun } = await import("./openspec-run-commands.js");
     return openspecRun(root, openspecArgsOf(argv), io);
+  }
+  if (group === "workspace" && command === "bring-in") {
+    const { bringInMerged } = await import("./propose.js");
+    return bringInMerged(root, io);
   }
   if (group === "workspace" && command === "sync")
     return workspaceSync(

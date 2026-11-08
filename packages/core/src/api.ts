@@ -194,7 +194,8 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  * 2.66.0 (UX review, round 35): POST /api/runs/handoff prepares a step for the person's own
  *   assistant (201 with its run) where no model is configured; POST /api/propose/bring-in
  *   brings in what merged; a proposal takes the branch it was shown; a hand-off's ChangeDetail
- *   carries its `notes`. Additive only.
+ *   carries its `notes`. Apply, Propose and Bring in answer 202 with a job (an editor panel
+ *   waits 30 s for one answer). Additive only.
  */
 export const API_VERSION = "2.66.0";
 export const DEFAULT_PORT = 4321;
@@ -4417,8 +4418,12 @@ const OPS: Record<string, Record<string, Op>> = {
         "2.65.0 (ADR 0183): run atticus verify <repo> --write, as Apply after an answer or a correction",
       tag: "workspace",
       params: [p("repo")],
-      ok: { status: 200, schema: "LinesView", description: "What verify printed" },
-      errors: [400, 422],
+      ok: {
+        status: 202,
+        schema: "JobAccepted",
+        description: "Started: its job's result is the code and the lines verify printed",
+      },
+      errors: [400],
     },
   },
   "/api/propose": {
@@ -4437,8 +4442,12 @@ const OPS: Record<string, Record<string, Op>> = {
         "2.65.0 (ADR 0183): on the person's yes, commit exactly those files to the branch, push it and open the PR; a person merges",
       tag: "workspace",
       body: ProposeRequest,
-      ok: { status: 201, schema: "LinesView", description: "Proposed" },
-      errors: [400, 422],
+      ok: {
+        status: 202,
+        schema: "JobAccepted",
+        description: "Started: its job's result is the code and the lines",
+      },
+      errors: [400],
     },
   },
   "/api/propose/bring-in": {
@@ -4447,8 +4456,12 @@ const OPS: Record<string, Record<string, Op>> = {
       summary:
         "2.66.0 (review round 35): after a proposal or hand-off merges, put back each edit the upstream branch already has and fast-forward; the person's own edits stay",
       tag: "workspace",
-      ok: { status: 200, schema: "LinesView", description: "Brought in" },
-      errors: [422],
+      ok: {
+        status: 202,
+        schema: "JobAccepted",
+        description: "Started: its job's result is the code and the lines",
+      },
+      errors: [],
     },
   },
   "/api/change-types": {

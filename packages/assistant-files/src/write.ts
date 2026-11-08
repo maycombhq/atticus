@@ -1,4 +1,5 @@
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { renameRetrying } from "@maycombhq/core";
 import { dirname, join } from "node:path";
 import { findSection, parseHeader, renderSection, sha256, withHeader } from "./header.js";
 import type { RenderedFile } from "./render.js";
@@ -41,8 +42,15 @@ async function read(path: string): Promise<{ text: string; crlf: boolean } | und
 async function put(path: string, text: string): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
   const tmp = `${path}.atticus-tmp`;
-  await writeFile(tmp, text, "utf8");
-  await rename(tmp, path);
+  // Windows review: Copilot and VS Code hold these files open; a held file is waited for, and a
+  // failed write leaves no .atticus-tmp behind.
+  try {
+    await writeFile(tmp, text, "utf8");
+    await renameRetrying(tmp, path);
+  } catch (e) {
+    await rm(tmp, { force: true });
+    throw e;
+  }
 }
 
 function plan(

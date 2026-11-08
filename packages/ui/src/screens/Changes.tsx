@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api, ApiError, useApi, useLiveEvents, type Loaded } from "../api/client.js";
 import { NewChange } from "./work/NewChange.js";
+import { BringIn } from "../app/propose.js";
 import { AI_OFF_TEXT, useAiOn } from "../app/me.js";
 import { escapeCloses, Panel, Ring, View } from "../app/ui.js";
 import { ACROSS, AcrossPanel, type AcrossId } from "./Across.js";
@@ -611,6 +612,8 @@ function Detail({ id }: { id: string }) {
                     </div>
                     <Note note={handoff.note} />
                     <Note note={critic.note} />
+                    {/* After the hand-off PR merges, the person's copy catches up (ADR 0183). */}
+                    <BringIn />
                   </div>
                 )}
               </View>
