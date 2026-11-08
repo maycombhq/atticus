@@ -344,6 +344,9 @@ describe("Run with AI: pr", () => {
       ).rejects.toThrow(
         "forge-ledger allows Run with AI up to plan-only (runtime.yaml autonomy.capPerRepo); ask for a lower level.",
       );
+      // No level asked: runtime.yaml's default is lowered to the cap, and the task plans.
+      const planned = await runTask(root, CHANGE, "1.2", { by: "dev", runtime, git, now });
+      expect(planned).toMatchObject({ level: "plan", state: "planned" });
     },
     T,
   );
@@ -457,6 +460,48 @@ describe("Run with AI: hand-off and headless modes", () => {
       );
       const again = await runTask(root, CHANGE, "1.2", opts);
       expect(again.waiting).not.toBe(first.waiting);
+    },
+    T,
+  );
+
+  it(
+    "hand-off: Done before the report is written waits for it, using nothing up; a cancelled run says so",
+    async () => {
+      const { root } = await speckitRoot({ repos: ["forge-ledger"] });
+      const r = await runTask(root, CHANGE, "1.2", {
+        level: "draft",
+        mode: "hand-off",
+        by: "dev",
+        git,
+        now,
+        commands: fakeBuild(),
+      });
+      const runId = r.waiting!;
+      await writeFile(join(paths(root).wt, FILE), "class TransferLimits { boolean ok; }\n");
+      // The assistant ran Done before it wrote the report.
+      const early = await completeTaskHandoff(root, runId, { git, now, commands: fakeBuild() });
+      expect(early).toMatchObject({ state: "waiting", waiting: runId });
+      expect(early.attempts).toHaveLength(0);
+      expect(early.notes.at(-1)).toMatch(
+        new RegExp(`: write it, then run atticus handoff done ${runId} again\\.$`),
+      );
+      // The dry run sees the waiting task too.
+      await expect(previewTaskRun(root, CHANGE, "1.2")).rejects.toThrow(
+        /already waits on your assistant/,
+      );
+      await writeFile(paths(root).task("report.md"), "Added TransferLimits.\n");
+      // Cancelled in the app's run.json meanwhile: refused in words, not a transition error.
+      const file = join(root, ".runs", CHANGE, runId, "run.json");
+      const was = await readFile(file, "utf8");
+      await writeFile(file, JSON.stringify({ ...JSON.parse(was), state: "cancelled" }));
+      await expect(
+        completeTaskHandoff(root, runId, { git, now, commands: fakeBuild() }),
+      ).rejects.toThrow(
+        `Run ${runId} was cancelled; run the task again (atticus task run ${CHANGE} 1.2).`,
+      );
+      await writeFile(file, was);
+      const done = await completeTaskHandoff(root, runId, { git, now, commands: fakeBuild() });
+      expect(done.state).toBe("built");
     },
     T,
   );

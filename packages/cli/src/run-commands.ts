@@ -224,8 +224,11 @@ export async function taskHandoff(
     });
     if (o.json) io.out(JSON.stringify(r, null, 2));
     else if (r.state === "waiting")
+      // Why it waits: the build fails, the answer isn't written yet, or Atticus was stopped.
       io.out(
-        `The build still fails; fix it in ${r.worktree} and run atticus handoff done ${runId} again.`,
+        r.notes.at(-1)?.startsWith("Build attempt")
+          ? `The build still fails; fix it in ${r.worktree} and run atticus handoff done ${runId} again.`
+          : (r.notes.at(-1) ?? `Run atticus handoff done ${runId} again.`),
       );
     else return describeRun(root, r, io);
     return r.state === "waiting" ? 1 : 0;

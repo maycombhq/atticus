@@ -448,17 +448,38 @@ async function done(c: Ctx): Promise<TaskRunRecord> {
   return saveTaskRun(c.root, c.record);
 }
 
-/** The level a run takes (asked for, else runtime.yaml's default), refused past the repo's cap. */
+/**
+ * The level a run takes: the one asked for, refused past the repo's cap; else runtime.yaml's
+ * default, lowered to the repo's cap (a repo capped at plan-only plans, it isn't refused).
+ */
 function levelOf(t: TaskContext, asked: RunLevel | undefined): RunLevel {
   const rt = t.ctx.orgPack.runtime;
-  const level = asked ?? AUTONOMY[rt.autonomy.default];
   const cap = rt.autonomy.capPerRepo[t.repo.id];
-  if (cap && LEVEL_RANK[level] > LEVEL_RANK[AUTONOMY[cap]])
+  const capped = cap ? AUTONOMY[cap] : undefined;
+  if (asked === undefined) {
+    const level = AUTONOMY[rt.autonomy.default];
+    return capped && LEVEL_RANK[level] > LEVEL_RANK[capped] ? capped : level;
+  }
+  if (capped && LEVEL_RANK[asked] > LEVEL_RANK[capped])
     throw new TaskRunError(
       "refused",
       `${t.repo.id} allows Run with AI up to ${cap} (runtime.yaml autonomy.capPerRepo); ask for a lower level.`,
     );
-  return level;
+  return asked;
+}
+
+/** Refused while a run of this task waits on the person's assistant (and wasn't cancelled). */
+async function refuseIfWaiting(root: string, t: TaskContext): Promise<void> {
+  const before = await readTaskRun(root, t.change.id, t.task.id);
+  if (
+    before?.state === "waiting" &&
+    before.waiting &&
+    (await handoffRunState(root, t.change.id, before.waiting)) !== "cancelled"
+  )
+    throw new TaskRunError(
+      "refused",
+      `Task ${t.task.id} already waits on your assistant (run ${before.waiting}, in ${before.worktree}): finish it with atticus handoff done ${before.waiting}, or cancel that run (AI runs, Cancel) and run the task again.`,
+    );
 }
 
 /** What a task run would do, with every check it would make first, and nothing done. */
@@ -481,6 +502,7 @@ export async function previewTaskRun(
 ): Promise<TaskRunPreview> {
   const t = await loadTask(root, changeId, taskId);
   const level = levelOf(t, o.level);
+  await refuseIfWaiting(root, t);
   return {
     change: t.change.id,
     task: t.task.id,
@@ -498,13 +520,22 @@ export async function previewTaskRun(
 export async function cancelTaskRunWait(
   root: string,
   runId: string,
-  o: { by: string; now?: () => Date },
+  o: {
+    by: string;
+    now?: () => Date;
+    /** Marks the run itself cancelled: under the task's lock, so a Done running now is refused first. */
+    cancelRun?: () => Promise<void>;
+  },
 ): Promise<TaskRunRecord | undefined> {
   const r = await findWaitingTaskRun(root, runId);
-  if (!r) return undefined;
+  if (!r) {
+    await o.cancelRun?.();
+    return undefined;
+  }
   const lock = await holdTask(root, r.change, r.task);
   try {
     const cur = await findWaitingTaskRun(root, runId);
+    await o.cancelRun?.();
     if (!cur) return undefined;
     delete cur.waiting;
     cur.state = "failed";
@@ -580,16 +611,7 @@ async function runTaskHeld(
   const level = levelOf(t, o.level);
   // A run of this task still waits on the person's assistant: a second one would write over
   // its record, and its Done would then find nothing to build.
-  const before = await readTaskRun(root, t.change.id, t.task.id);
-  if (
-    before?.state === "waiting" &&
-    before.waiting &&
-    (await handoffRunState(root, t.change.id, before.waiting)) !== "cancelled"
-  )
-    throw new TaskRunError(
-      "refused",
-      `Task ${t.task.id} already waits on your assistant (run ${before.waiting}, in ${before.worktree}): finish it with atticus handoff done ${before.waiting}, or cancel that run (AI runs, Cancel) and run the task again.`,
-    );
+  await refuseIfWaiting(root, t);
   if (level === "pr") {
     try {
       requireApproval("git-host", o.approval);
@@ -704,6 +726,12 @@ export async function completeTaskHandoff(
   const lock = await holdTask(root, waiting.change, waiting.task);
   const release = holdSignals();
   try {
+    // Cancelled in the app meanwhile: said so, never a transition error.
+    if ((await handoffRunState(root, waiting.change, runId)) === "cancelled")
+      throw new TaskRunError(
+        "refused",
+        `Run ${runId} was cancelled; run the task again (atticus task run ${waiting.change} ${waiting.task}).`,
+      );
     // Read again under the lock: another Done may have finished it meanwhile.
     const record = await findWaitingTaskRun(root, runId);
     if (!record) throw new TaskRunError("not-found", `No task run is waiting on ${runId}.`);
@@ -788,6 +816,18 @@ async function completeHeld(
     await handoff.run(runId);
     record.notes.push(
       `Atticus was stopped while it checked the work, so nothing more was done; run atticus handoff done ${runId} again.`,
+    );
+    return saveTaskRun(root, record);
+  }
+  if (!attempt) {
+    // No build ran: the answer file is missing or empty (the report not written yet). Nothing is
+    // used up; the run waits for the file and the same Done.
+    record.state = "waiting";
+    record.waiting = runId;
+    await handoff.retry(runId);
+    await handoff.run(runId);
+    record.notes.push(
+      `${run.errors.join("; ") || "The answer isn't there yet"}: write it, then run atticus handoff done ${runId} again.`,
     );
     return saveTaskRun(root, record);
   }

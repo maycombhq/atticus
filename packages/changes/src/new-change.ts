@@ -38,13 +38,24 @@ export interface NewChangeOptions {
 const nowIso = () => new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
 const strip = (h: string) => (h.startsWith("@") ? h.slice(1) : h);
 
+/**
+ * Names Windows can't give a folder (con, nul, com1…, with or without an extension), and a name
+ * ending in a dot, which Windows drops (fix. and fix are one folder there). A change folder with
+ * one, made on macOS or Linux, breaks the metarepo's checkout on every Windows machine.
+ */
+export function windowsUnsafeName(id: string): boolean {
+  return /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\.|$)/i.test(id) || /[. ]$/.test(id);
+}
+
 export function slugify(title: string): string {
-  return title
+  const id = title
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 80)
     .replace(/-+$/, "");
+  // A title such as "Con" or "Aux" gets a name Windows can open.
+  return windowsUnsafeName(id) ? `${id}-change` : id;
 }
 
 async function exists(path: string): Promise<boolean> {
@@ -82,6 +93,11 @@ export async function newChange(root: string, opts: NewChangeOptions): Promise<C
     throw new ChangeError(
       "invalid",
       `"${id}" can't be a change id; use a lowercase slug such as add-transfer-limit.`,
+    );
+  if (windowsUnsafeName(id))
+    throw new ChangeError(
+      "invalid",
+      `"${id}" can't be a change id: Windows can't open a folder named that (con, nul, com1 and the like, or a name ending in a dot). Pick another, such as ${id.replace(/[. ]+$/, "")}-change.`,
     );
   const template = pickTemplate(ctx.templates, type.id, opts.template);
   if (!template)

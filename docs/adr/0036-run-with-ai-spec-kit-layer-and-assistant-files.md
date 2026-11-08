@@ -44,3 +44,10 @@ Round 24 settled three more:
 - **A task that waits is not run again.** A second run of a task that still waits on a hand-off is refused, naming its Done. The app's Cancel on a waiting run ends that task run with a note, and the task can then run again. Done on a run that no task run names any more is refused, never checked as a bare artifact.
 - **The yes is the person's in every message.** Refusals that need `--approve` say that an assistant never approves a push, because the assistant is often the one that reads them.
 - **The lock goes before the stop lets go.** On the way out of a run, the lock is released before the held stop, which may end Atticus by the signal.
+
+Round 25 settled four more points:
+
+- **Cancel and Done share the lock.** The app's Cancel marks the run cancelled under the task's lock. A Done running in another process holds it, so Cancel is refused (409) and never undone. A Done on a cancelled run is refused in words.
+- **A missing answer is not a failure.** A hand-off Done with no answer file, or an empty one, builds nothing. The run waits for the file and the same Done, and no attempt is used up.
+- **The cap lowers the default.** A level asked for past the repo's cap is refused. The org's default is lowered to the cap instead, so a plan-only repo plans. The app never asks for the pr level, so from the app a task runs at most at draft, and the PR is opened with the person's `--approve` in an editor or on the command line.
+- **The dry run checks a waiting task.** It refuses in the same words as the run.

@@ -43,7 +43,12 @@ import { changeHandoff, changeNew, changeSync } from "./change-commands.js";
 import { critic, findingAction } from "./critic-commands.js";
 import { planStories } from "./plan-commands.js";
 import { reconcileCommand } from "./reconcile-commands.js";
-import { cancelTaskRunWait, findTaskRunOfRun, taskRunOfRun } from "@maycombhq/taskrun";
+import {
+  cancelTaskRunWait,
+  findTaskRunOfRun,
+  previewTaskRun,
+  taskRunOfRun,
+} from "@maycombhq/taskrun";
 import { runDone, taskRun, taskRunNotWaiting } from "./run-commands.js";
 import { scanCommand } from "./scan-commands.js";
 import { workspaceOpen, workspaceSync } from "./workspace-commands.js";
@@ -500,30 +505,39 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
           await readdir(join(runsDirOf(root), params.changeId!)).catch(() => [] as string[]),
         );
         let res: Ran;
-        if (b.task)
+        if (b.task) {
+          // The app never pushes or opens a PR (that is the person's --approve, in the editor or
+          // on the command line): asked for nothing, a task runs at runtime.yaml's level,
+          // lowered to the repo's cap, and at most draft; draft-and-pr asked for is refused.
+          let level: "plan" | "draft" | "pr" | undefined = b.autonomy
+            ? b.autonomy === "draft-and-pr"
+              ? "pr"
+              : b.autonomy === "plan-only"
+                ? "plan"
+                : "draft"
+            : undefined;
+          if (level === "pr")
+            throw refused({
+              code: 1,
+              out: [],
+              err: [
+                "The pr level pushes the task branch and opens a PR, which needs the person's yes: start it from VS Code, IntelliJ or the command line (atticus task run <change> <task> --level pr --approve).",
+              ],
+            });
+          if (!level) {
+            try {
+              const p = await previewTaskRun(root, params.changeId!, b.task);
+              level = p.level === "pr" ? "draft" : p.level;
+            } catch (e) {
+              if (e instanceof Error && e.name === "TaskRunError") throw conflict(e.message);
+              throw e;
+            }
+          }
+          const lv = level;
           res = await run((io) =>
-            taskRun(
-              root,
-              params.changeId!,
-              b.task!,
-              {
-                mode: b.runtime,
-                by: user,
-                ...(b.autonomy
-                  ? {
-                      level:
-                        b.autonomy === "draft-and-pr"
-                          ? "pr"
-                          : b.autonomy === "plan-only"
-                            ? "plan"
-                            : "draft",
-                    }
-                  : {}),
-              },
-              io,
-            ),
+            taskRun(root, params.changeId!, b.task!, { mode: b.runtime, by: user, level: lv }, io),
           );
-        else if (b.agent === "story-writer")
+        } else if (b.agent === "story-writer")
           res = await run((io) => planStories(root, params.changeId!, { mode: b.runtime }, io));
         else if (b.agent.endsWith("-critic"))
           res = await run((io) => critic(root, params.changeId!, { mode: b.runtime }, io));
@@ -636,13 +650,21 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
         if (doneBusy.has(v.runId))
           throw conflict(`Done for ${v.runId} is running; wait for it to finish.`);
         const file = join(runsDirOf(root), v.change, v.runId, "run.json");
-        const was = await readFile(file, "utf8");
-        const rec = JSON.parse(was);
-        rec.state = "cancelled";
-        rec.finishedAt = new Date().toISOString();
-        await writeFileIfUnchanged(file, was, JSON.stringify(rec, null, 2) + "\n");
-        // A task run waiting on it ends too, so the task can run again (never left waiting).
-        await cancelTaskRunWait(root, v.runId, { by: user });
+        const cancelRun = async () => {
+          const was = await readFile(file, "utf8");
+          const rec = JSON.parse(was);
+          rec.state = "cancelled";
+          rec.finishedAt = new Date().toISOString();
+          await writeFileIfUnchanged(file, was, JSON.stringify(rec, null, 2) + "\n");
+        };
+        // A task run waiting on it ends too, so the task can run again; both under the task's
+        // lock, so a Done running elsewhere (the assistant's, in a terminal) is waited for: 409.
+        try {
+          await cancelTaskRunWait(root, v.runId, { by: user, cancelRun });
+        } catch (e) {
+          if (e instanceof Error && e.name === "TaskRunError") throw conflict(e.message);
+          throw e;
+        }
         const after = await findRun(root, params.runId!);
         ctx.events.publish({ type: "run.changed", runId: after.runId, state: after.state });
         return { status: 200, body: after };

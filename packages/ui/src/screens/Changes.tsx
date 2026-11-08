@@ -739,8 +739,8 @@ function Detail({ id }: { id: string }) {
                             body: {
                               agent: "task-runner",
                               runtime: "hand-off",
+                              // runtime.yaml's level, lowered to the repo's cap, at most draft.
                               task: t.id,
-                              autonomy: "draft",
                             },
                           }).then(reloadAll),
                         T.taskHanded(t.id),
