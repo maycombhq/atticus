@@ -1,11 +1,12 @@
 import { existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
-import { cp, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { MockGitHost } from "@maycombhq/adapters";
 import { changesRelOf } from "@maycombhq/core";
+import { createGit } from "@maycombhq/workspace";
 import { bringInMerged, proposeForReview, proposePlan } from "../src/propose.js";
 
 /**
@@ -429,6 +430,9 @@ describe("review round 36: Bring in never loses an edit", () => {
     g(work, "add", "-A");
     g(work, "commit", "-q", "-m", "hand-off merged");
     g(work, "push", "-q", "origin", "main");
+    // The hand-off was published from here: its branch is kept here (gitHandoffPublisher).
+    g(root, "fetch", "-q", "origin");
+    g(root, "branch", "-q", "handoff/c1/define", "origin/main");
     await mkdir(join(root, rel), { recursive: true });
     await writeFile(join(root, rel, "brief.md"), "# Brief\n");
     // Sync wrote the gate's newer state after the merge.
@@ -462,5 +466,87 @@ describe("review round 36: Bring in never loses an edit", () => {
     const now = await readFile(join(root, rel, "change.yaml"), "utf8");
     expect(now).toContain("state: design");
     expect(now).toContain("forge-gateway");
+  });
+  /** A change's record the reviewer edited upstream; here Sync moved its state (round 41). */
+  const reviewed = async (o: { committed: boolean; handoff?: boolean }) => {
+    const { root, work } = await setup();
+    const rel = "openspec/changes/c1";
+    const before = "id: c1\nstate: define\nowner: pat\nsystems:\n  - forge-ledger\n";
+    await mkdir(join(root, rel), { recursive: true });
+    await mkdir(join(work, rel), { recursive: true });
+    if (o.committed) {
+      await writeFile(join(root, rel, "change.yaml"), before);
+      g(root, "add", "-A");
+      g(root, "commit", "-q", "-m", "change");
+      g(root, "push", "-q", "origin", "main");
+      g(work, "pull", "-q", "origin", "main");
+    } else {
+      await writeFile(join(work, rel, "change.yaml"), before);
+      g(work, "add", "-A");
+      g(work, "commit", "-q", "-m", "hand-off");
+      g(work, "push", "-q", "origin", "main");
+      if (o.handoff) {
+        g(root, "fetch", "-q", "origin");
+        g(root, "branch", "-q", "handoff/c1/define", "origin/main");
+      }
+    }
+    await writeFile(join(work, rel, "change.yaml"), before + "  - forge-gateway\n");
+    g(work, "commit", "-q", "-am", "reviewer");
+    g(work, "push", "-q", "origin", "main");
+    const mine = before.replace("state: define", "state: design");
+    await writeFile(join(root, rel, "change.yaml"), mine);
+    return { root, file: join(root, rel, "change.yaml"), mine, rel };
+  };
+
+  it("refuses, with nothing changed, when it can't tell what the copy last had of the record (round 41)", async () => {
+    const { root, file, mine } = await reviewed({ committed: false });
+    const head = g(root, "rev-parse", "HEAD");
+    const said: string[] = [];
+    expect(await bringInMerged(root, io(said)), said.join("\n")).toBe(1);
+    expect(said.join("\n")).toContain("nothing was changed");
+    expect(await readFile(file, "utf8")).toBe(mine);
+    expect(g(root, "rev-parse", "HEAD")).toBe(head);
+  });
+
+  it("takes the base from the hand-off branch the remote keeps (round 41)", async () => {
+    const { root, file } = await reviewed({ committed: false });
+    g(root, "fetch", "-q", "origin");
+    // the hand-off was published from another clone: only origin's branch names its base
+    const remoteOf = g(root, "rev-list", "-n", "1", "origin/main~1").trim();
+    g(root, "push", "-q", "origin", `${remoteOf}:refs/heads/handoff/c1/define`);
+    const said: string[] = [];
+    expect(await bringInMerged(root, io(said)), said.join("\n")).toBe(0);
+    const now = await readFile(file, "utf8");
+    expect(now).toContain("state: design");
+    expect(now).toContain("forge-gateway");
+  });
+
+  it("brings in a record new here and staged, kept with the reviewer's edit (round 41)", async () => {
+    const { root, file, rel } = await reviewed({ committed: false, handoff: true });
+    g(root, "add", "--", rel);
+    const said: string[] = [];
+    expect(await bringInMerged(root, io(said)), said.join("\n")).toBe(0);
+    const now = await readFile(file, "utf8");
+    expect(now).toContain("state: design");
+    expect(now).toContain("forge-gateway");
+  });
+
+  it("refuses when the record was deleted here and changed in what merged (round 41)", async () => {
+    const { root, file } = await reviewed({ committed: true });
+    await rm(file);
+    const said: string[] = [];
+    expect(await bringInMerged(root, io(said)), said.join("\n")).toBe(1);
+    expect(said.join("\n")).toContain("change.yaml");
+    expect(existsSync(file)).toBe(false);
+  });
+
+  it("puts the person's own record back when the copy can't be brought up (round 41)", async () => {
+    const { root, file, mine } = await reviewed({ committed: true });
+    const real = createGit();
+    const git: typeof real = (a, c) =>
+      a[0] === "merge" ? Promise.reject(new Error("held by another process")) : real(a, c);
+    const said: string[] = [];
+    expect(await bringInMerged(root, io(said), { git }), said.join("\n")).toBe(1);
+    expect(await readFile(file, "utf8")).toBe(mine);
   });
 });

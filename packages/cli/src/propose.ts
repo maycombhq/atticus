@@ -414,8 +414,9 @@ export async function bringInMerged(
   const own = new RegExp(
     `^${changesRelOf(root).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/[^/]+/change\\.yaml$`,
   );
-  const ownClash = kept.filter((k) => incoming.has(k) && own.test(k));
-  const clash = kept.filter((k) => incoming.has(k) && !own.test(k));
+  // Round 41: a record deleted here is no edit to merge: it is a clash like any other file.
+  const ownClash = kept.filter((k) => incoming.has(k) && own.test(k) && existsSync(join(root, k)));
+  const clash = kept.filter((k) => incoming.has(k) && !ownClash.includes(k));
   if (clash.length) {
     io.err(
       `What merged also changes files you edited, so nothing was changed: ${clash.join(", ")}. Propose your edits for review, or ask someone who uses git to bring them together.`,
@@ -433,6 +434,8 @@ export async function bringInMerged(
   // newer state here, and what merged), so a reviewer's edit on the hand-off branch is kept too.
   // A change both sides made to the same lines is refused, with nothing done.
   const held = new Map<string, string>();
+  /** Round 41: the person's own text of each record, put back if the copy can't be brought up. */
+  const original = new Map<string, string>();
   const tmp = await mkdtemp(join(tmpdir(), "atticus-bring-in-"));
   try {
     for (const k of ownClash) {
@@ -442,7 +445,8 @@ export async function bringInMerged(
       const ours = join(tmp, "ours");
       const theirs = join(tmp, "theirs");
       // The base is what this copy last had of it: HEAD's, or (a change made here and first pushed
-      // by its hand-off) the hand-off branch's, or else what merged (nobody else changed it).
+      // by its hand-off) the hand-off branch's, here or as the remote keeps it. Round 41: never
+      // what merged, which would drop a reviewer's edit; with no base, only the same text merges.
       const inHead = await run(["cat-file", "-e", `HEAD:${k}`]).then(
         () => true,
         () => false,
@@ -457,11 +461,14 @@ export async function bringInMerged(
               "--count=1",
               "--format=%(refname)",
               `refs/heads/handoff/${id}/`,
+              `refs/remotes/origin/handoff/${id}/`,
             ]).catch(() => "")
           ).trim() || undefined;
-      const baseText = inHead ? await at("HEAD") : handoff ? await at(handoff) : await at(up);
+      const baseText = inHead ? await at("HEAD") : handoff ? await at(handoff) : "";
+      const mine = await readFile(join(root, k), "utf8");
+      original.set(k, mine);
       await writeFile(base, baseText, "utf8");
-      await writeFile(ours, await readFile(join(root, k), "utf8"), "utf8");
+      await writeFile(ours, mine, "utf8");
       await writeFile(theirs, await at(up), "utf8");
       const merged = await git(["merge-file", "-p", ours, base, theirs], root).then(
         (r) => ({ ok: true, text: r.stdout }),
@@ -488,7 +495,11 @@ export async function bringInMerged(
         () => false,
       );
       if (inHead) await run(["checkout", "HEAD", "--", k]);
-      else await rm(join(root, k), { force: true });
+      else {
+        // Round 41: a new record the person staged is unstaged too, or the fast-forward refuses.
+        await run(["rm", "--cached", "--quiet", "--ignore-unmatch", "--", k]);
+        await rm(join(root, k), { force: true });
+      }
     }
     for (const t of tidy) {
       if (t.inHead) await run(["checkout", "HEAD", "--", t.path]);
@@ -502,7 +513,7 @@ export async function bringInMerged(
     await restoreHeld();
   } catch (e) {
     await putBack();
-    await restoreHeld();
+    for (const [k, text] of original) await writeFile(join(root, k), text, "utf8");
     io.err(
       `Your copy couldn't be brought up to ${up}: ${first(e)}. Your files are as they were${kept.length ? `, and your own edits stay: ${kept.join(", ")}` : ""}.`,
     );

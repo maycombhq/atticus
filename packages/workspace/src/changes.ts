@@ -51,7 +51,8 @@ const sameCommit = (a: string, b: string) => a.startsWith(b) || b.startsWith(a);
 
 /**
  * The files changed from each earlier commit to `to`, one diff per distinct commit; a commit the
- * clone doesn't have (a shallow or stale clone) is `missing`, never guessed.
+ * clone doesn't have (a shallow or stale clone), or that `to` is behind or beside, is `missing`,
+ * never guessed.
  */
 export async function changesSince(
   dir: string,
@@ -63,6 +64,10 @@ export async function changesSince(
   const missing: string[] = [];
   for (const c of [...new Set(commits)].filter((x) => !sameCommit(x, to)).sort()) {
     try {
+      // Round 41: only an earlier commit of `to` is carried forward. A commit the clone is
+      // behind, or one on another branch, would diff backwards and drop what changed since:
+      // it is missing (git exits non-zero when c isn't an ancestor of `to`).
+      await (git ?? createGit({ timeoutMs: 60_000 }))(["merge-base", "--is-ancestor", c, to], dir);
       changes[c] = await changedFiles(dir, c, to, git);
     } catch {
       missing.push(c);

@@ -114,6 +114,30 @@ describe("changedFiles: what changed between two commits", () => {
     T,
   );
 
+  it(
+    "says a commit HEAD is behind, or that is on another branch, is missing: never diffed backwards (round 41)",
+    async () => {
+      const { dir, src, one } = forgeRepo();
+      writeFileSync(join(src, "AccountController.java"), CONTROLLER + "// later\n");
+      git(dir, "commit", "-q", "-am", "two");
+      const two = git(dir, "rev-parse", "HEAD");
+      git(dir, "checkout", "-q", "-b", "side", one);
+      writeFileSync(join(dir, "README.md"), "# forge-ledger, side\n");
+      git(dir, "commit", "-q", "-am", "side");
+      const side = git(dir, "rev-parse", "HEAD");
+      // facts of two, the clone at one (behind): two isn't an ancestor of one
+      expect(await changesSince(dir, [two], one)).toEqual({ changes: {}, missing: [two] });
+      // facts of side, the clone at two (diverged)
+      expect(await changesSince(dir, [side.slice(0, 7)], two)).toEqual({
+        changes: {},
+        missing: [side.slice(0, 7)],
+      });
+      // facts of one, the clone at two: carried forward as before
+      expect(Object.keys((await changesSince(dir, [one], two)).changes)).toEqual([one]);
+    },
+    T,
+  );
+
   it("reads the -z output of a mocked runner: paths with spaces, copies and type changes", async () => {
     const calls: string[][] = [];
     const runner: GitRunner = async (args) => {
@@ -154,6 +178,7 @@ describe("changedFiles: what changed between two commits", () => {
     ]);
     const r = await changesSince("/repo", ["2222222", "1111111", "1111111"], "2222222", runner);
     expect(Object.keys(r.changes)).toEqual(["1111111"]);
-    expect(calls).toHaveLength(2);
+    // one ancestry check, then one diff
+    expect(calls.slice(1).map((c) => c[0])).toEqual(["merge-base", "diff"]);
   });
 });

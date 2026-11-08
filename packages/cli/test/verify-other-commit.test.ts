@@ -79,3 +79,47 @@ it("keeps facts of another commit, and never writes the catalog without them", a
     expect(count(), `run ${i + 1}`).toBe(records);
   }
 }, 120_000);
+
+it("keeps facts read at a later commit when the clone is checked out behind it (round 41)", async () => {
+  const root = mkdtempSync(join(tmpdir(), "verify-behind-"));
+  cpSync(join(VERIFY, "metarepo/org-pack"), join(root, "org-pack"), { recursive: true });
+  cpSync(join(VERIFY, "metarepo/catalog"), join(root, "catalog"), { recursive: true });
+  const repo = join(root, "workspace", REPO);
+  cpSync(join(VERIFY, "repo"), repo, { recursive: true });
+  const git = (...a: string[]) =>
+    execFileSync(
+      "git",
+      [
+        "-c",
+        "user.name=T",
+        "-c",
+        "user.email=t@example.com",
+        "-c",
+        "init.defaultBranch=main",
+        ...a,
+      ],
+      { cwd: repo, encoding: "utf8" },
+    ).trim();
+  git("init", "-q");
+  git("add", "-A");
+  git("commit", "-qm", "one");
+  const one = git("rev-parse", "HEAD");
+  // two: a cited file gains a line at its end (the cited lines are as they were)
+  const cited = join(repo, "src/main/java/forge/ledger/AccountController.java");
+  writeFileSync(cited, readFileSync(cited, "utf8") + "\n// later\n");
+  git("commit", "-qam", "two");
+  const two = git("rev-parse", "HEAD");
+  mkdirSync(join(root, "facts"), { recursive: true });
+  const facts = join(root, "facts", `${REPO}.jsonl`);
+  const text = readFileSync(join(VERIFY, "forge-ledger.facts.jsonl"), "utf8");
+  writeFileSync(facts, text.replaceAll('"commit":"0123abc"', `"commit":"${two}"`));
+  const sink = { out: () => undefined, err: () => undefined };
+  expect(await verifyCommand(root, REPO, { write: true }, sink)).toBe(0);
+  const before = readFileSync(facts, "utf8");
+  // the clone put back on the older commit: its facts are of a later one, not stale
+  git("checkout", "-q", one);
+  expect(await verifyCommand(root, REPO, { write: true }, sink)).not.toBe(0);
+  expect(readFileSync(facts, "utf8")).toBe(before);
+  git("checkout", "-q", two);
+  expect(await verifyCommand(root, REPO, { write: true }, sink)).toBe(0);
+}, 120_000);
