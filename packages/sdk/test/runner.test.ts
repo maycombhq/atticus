@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
-import type { CatalogRecord } from "@maycombhq/core";
+import { SCHEMA_VERSION, type CatalogRecord } from "@maycombhq/core";
 import {
   cacheKeyHash,
   configHash,
@@ -428,7 +428,7 @@ describe("golden: the runner over the Forge fixture", () => {
       parse(await readFile(join(FORGE, "expected/scan.yaml"), "utf8")) as Record<string, unknown>[]
     )
       .filter((r) => r.kind === "Migration")
-      .map((r) => ({ schemaVersion: 4, status: "current", ...r }));
+      .map((r) => ({ schemaVersion: SCHEMA_VERSION, status: "current", ...r }));
     const strip = (r: CatalogRecord) => ({
       ...r,
       evidence: r.evidence.map(({ commit: _c, scannedAt: _s, extractor: _x, ...rest }) => rest),
