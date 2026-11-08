@@ -144,9 +144,20 @@ export function TaskTick(p: {
   const act = useAction();
   const t = p.task;
   const done = t.done;
+  // Eighth UX walk: who ticked it last, a person by hand or Atticus at the PR's merge.
+  const marked = t.taskRun?.marked;
+  const byHand = marked && marked.done === done ? marked : undefined;
   return (
     <div className="stack" style={{ gap: 4, fontSize: 12 }}>
-      {done && t.taskRun?.ticked && <span>{T.tickedByMerge}</span>}
+      {byHand ? (
+        <span>
+          {byHand.done
+            ? T.markedDoneBy(byHand.by, byHand.at.slice(0, 10))
+            : T.markedNotDoneBy(byHand.by, byHand.at.slice(0, 10))}
+        </span>
+      ) : (
+        done && t.taskRun?.ticked && <span>{T.tickedByMerge}</span>
+      )}
       <span className="row" style={{ gap: 6, flexWrap: "wrap", alignItems: "center" }}>
         <button
           type="button"
@@ -182,15 +193,22 @@ export function TaskRunState(p: { change: string; task: Task; onDone?: () => voi
   const stopped = tr.state === "needs-person" || tr.state === "failed";
   const settled = prSettled(t);
   const alert = stopped || notRaised;
+  // Eighth UX walk: a PR the person records is open, by its number; one a manual Git host left
+  // for a person to open waits on them, said once.
+  const pr = tr.state === "pr-open" && !settled ? tr.pr : undefined;
+  const toOpen = !!pr && isManualLink(pr.url);
+  const chip =
+    (settled && T.taskPrStateChip[settled]) ??
+    (pr ? (toOpen ? T.taskPrToOpen : T.taskPrOpenChip(pr.number)) : undefined) ??
+    T.taskState[tr.state] ??
+    tr.state.toUpperCase();
   return (
     <div className="stack" style={{ gap: 4, fontSize: 12 }}>
       <span className="row" style={{ gap: 6, flexWrap: "wrap", alignItems: "center" }}>
         <span
-          className={`chip ${stopped ? "blocking" : tr.state === "waiting" ? "ai" : tr.state === "unverified" || settled === "closed" ? "warn" : "done"}`}
+          className={`chip ${stopped ? "blocking" : tr.state === "waiting" || toOpen ? "ai" : tr.state === "unverified" || settled === "closed" ? "warn" : "done"}`}
         >
-          {(settled && T.taskPrStateChip[settled]) ??
-            T.taskState[tr.state] ??
-            tr.state.toUpperCase()}
+          {chip}
         </span>
         {t.run && <a href={`#/runs?run=${encodeURIComponent(t.run)}`}>{T.openItsRun}</a>}
       </span>
@@ -203,16 +221,22 @@ export function TaskRunState(p: { change: string; task: Task; onDone?: () => voi
       {tr.state === "unverified" && (
         <span>{T.taskUnverified(t.repo, tr.branch, `change/${p.change}`)}</span>
       )}
-      {tr.state === "pr-open" && tr.pr && (
-        <span>
-          {settled === "merged"
-            ? T.taskPrMerged
-            : settled === "closed"
-              ? T.taskPrClosed
-              : T.taskPrOpen}{" "}
-          <PrLink pr={tr.pr} />
-        </span>
-      )}
+      {tr.state === "pr-open" &&
+        tr.pr &&
+        (toOpen ? (
+          <span>
+            {T.taskPrWaitsOnYou} <a href={MANUAL_STEPS_HREF}>{T.manualSteps}</a>.
+          </span>
+        ) : (
+          <span>
+            {settled === "merged"
+              ? T.taskPrMerged
+              : settled === "closed"
+                ? T.taskPrClosed
+                : T.taskPrOpen}{" "}
+            <PrLink pr={tr.pr} />
+          </span>
+        ))}
       {tr.state === "waiting" && <span>{T.taskWaiting}</span>}
       {alert && last && (
         <span role="alert" style={{ color: "var(--magenta-text)" }}>

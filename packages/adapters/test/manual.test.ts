@@ -369,6 +369,11 @@ describe("manual Git host", () => {
     expect((refused as Error).message).toBe(
       "git-host: a person merges PR #12 on the Git host: do step merge-pr-handoff-add-transfer-limit-plan (atticus todo), then sync again",
     );
+    // Eighth UX walk: anyone may type who approved on a manual host; who recorded it is said.
+    const merge = (await store.list({ change: "add-transfer-limit" })).find(
+      (s) => s.id === "merge-pr-handoff-add-transfer-limit-plan",
+    )!;
+    expect(merge.fields.find((f) => f.name === "Approved by")?.value).toBe("tia (recorded by bao)");
     await recordStep(store, "merge-pr-handoff-add-transfer-limit-plan", { by: "tia" });
     expect((await gh.getPullRequest(REPO, 1)).state).toBe("merged");
     expect((await gh.merge(REPO, 1, A("tia"))).state).toBe("merged");

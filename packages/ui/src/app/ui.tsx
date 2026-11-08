@@ -21,6 +21,25 @@ export function escapeCloses(close: () => void) {
   };
 }
 
+/**
+ * Eighth UX walk: an action's button is disabled while it runs (or goes once it is done), and the
+ * browser then drops the keyboard on the page's body. The result's words take it instead, so
+ * the person hears what happened and carries on from there; focus a person put somewhere else
+ * stays. Give the result tabIndex={-1}.
+ */
+export function focusIfLost(
+  el: { focus(o?: FocusOptions): void } | null | undefined,
+  doc: Pick<Document, "activeElement" | "body"> | undefined = typeof document === "undefined"
+    ? undefined
+    : document,
+): boolean {
+  if (!el || !doc) return false;
+  const at = doc.activeElement;
+  if (at && at !== doc.body) return false;
+  el.focus({ preventScroll: false });
+  return true;
+}
+
 export function Panel(p: {
   title?: string;
   meta?: ReactNode;

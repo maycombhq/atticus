@@ -260,8 +260,14 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   facts (rule 4): what a repo's facts don't cover at the branch's commit (files changed since
  *   the read, or a repo read only by the built-in readers) is never `missing`; it is under
  *   `unchecked`, saying it couldn't be confirmed from the code. Additive only.
+ * 2.77.0 (eighth UX walk, stage pages and access): GET and PUT
+ *   /api/changes/{changeId}/placement, the feature stage's placement (feature.md as the page
+ *   shows it, feature.yaml as a person edits it) with who drafted it last (`drafted`: the AI at
+ *   the feature stage, or a person's save); a task's `taskRun.marked`, who last ticked or
+ *   unticked it by hand on the Task board, so a task Atticus ticked and a person ticked again says
+ *   who. Additive only.
  */
-export const API_VERSION = "2.76.0";
+export const API_VERSION = "2.77.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -668,6 +674,11 @@ export const Task = z.object({
        * on the Git host (once: a person may untick it after).
        */
       ticked: z.string().optional(),
+      /**
+       * 2.77.0 (eighth UX walk): who last ticked (done) or unticked the task by hand on the Task
+       * board, and when; absent when no person has.
+       */
+      marked: z.object({ done: z.boolean(), by: z.string(), at: z.string() }).optional(),
       notes: z.array(z.string()),
     })
     .optional(),
@@ -1746,6 +1757,38 @@ export const StageReviewView = z.object({
   /** The stage's command (and slash command), which reads the answers and comments. */
   next: z.object({ command: z.string(), slash: z.string() }),
   problems: z.array(z.object({ file: z.string(), message: z.string() })),
+});
+/**
+ * 2.77.0 (eighth UX walk): the feature stage's placement. feature.md is drawn from feature.yaml
+ * (the source a person edits; the stage's next run reads it), so the page shows the one and
+ * edits the other. `drafted` says who wrote feature.yaml last: the AI at the feature stage, or a
+ * person who saved it here (or edited its first line away).
+ */
+export const PlacementView = z.object({
+  change: z.string(),
+  /** Whether feature.yaml is there (the feature stage has placed the change). */
+  present: z.boolean(),
+  /** feature.md, from the metarepo's root, and its text ("" when it isn't there). */
+  file: z.string(),
+  content: z.string(),
+  /** feature.yaml, from the metarepo's root, its text and its sha256 (the save's base). */
+  source: z.string(),
+  sourceContent: z.string(),
+  sha256: z.string(),
+  drafted: z
+    .object({
+      by: z.enum(["ai", "person"]),
+      who: z.string().optional(),
+      at: z.string().optional(),
+    })
+    .optional(),
+});
+export type PlacementViewT = z.infer<typeof PlacementView>;
+export const SavePlacementRequest = z.strictObject({
+  /** feature.yaml's new text; it must still read as a placement. */
+  content: z.string().min(1),
+  /** The sha256 the edit started from; a mismatch returns 409. */
+  baseSha256: z.string(),
 });
 export const StageCommentRequest = z.strictObject({
   finding: z.string().min(1),
@@ -5966,6 +6009,27 @@ const OPS: Record<string, Record<string, Op>> = {
       errors: [400, 404],
     },
   },
+  "/api/changes/{changeId}/placement": {
+    get: {
+      id: "getPlacement",
+      summary:
+        "2.77.0 (eighth UX walk): the feature stage's placement, feature.md as the page shows it and feature.yaml as a person edits it, with who drafted it last",
+      tag: "changes",
+      params: [p("changeId")],
+      ok: { status: 200, schema: "PlacementView", description: "OK" },
+      errors: [400, 404],
+    },
+    put: {
+      id: "savePlacement",
+      summary:
+        "2.77.0 (eighth UX walk): save feature.yaml as a person edited it (it must still read as a placement) and draw feature.md from it again; the stage's next run reads it",
+      tag: "changes",
+      params: [p("changeId")],
+      body: SavePlacementRequest,
+      ok: { status: 200, schema: "PlacementView", description: "Saved" },
+      errors: [400, 404, 409, 422],
+    },
+  },
   "/api/changes/{changeId}/stages/{stage}/comments": {
     post: {
       id: "commentOnFinding",
@@ -6162,6 +6226,7 @@ export function openApiDocument(): Record<string, unknown> {
     ContractsView,
     StageReviewView,
     StageCommentResult,
+    PlacementView,
     OrgPackDraftView,
     AcceptedOrgPack,
   };

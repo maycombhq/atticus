@@ -75,6 +75,11 @@ export const TaskRunRecord = z.strictObject({
    * task once, so a person who unticks it keeps it unticked.
    */
   ticked: z.string().optional(),
+  /**
+   * Eighth UX walk: who last ticked (done) or unticked the task by hand on the Task board, and
+   * when, so a task Atticus ticked and a person ticked again says who did.
+   */
+  marked: z.strictObject({ done: z.boolean(), by: z.string().min(1), at: z.string() }).optional(),
   startedAt: z.string(),
   finishedAt: z.string().optional(),
   notes: z.array(z.string()).default([]),

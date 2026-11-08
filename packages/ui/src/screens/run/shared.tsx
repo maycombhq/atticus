@@ -1,5 +1,6 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ApiError } from "../../api/client.js";
+import { focusIfLost } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
 import "./run.css";
 
@@ -48,9 +49,17 @@ export function useAction() {
 }
 
 export function Note({ note }: { note?: Outcome }) {
+  // Eighth UX walk: the button that ran it was disabled (or went): the keyboard comes here.
+  const at = useRef<HTMLParagraphElement>(null);
+  const said = note && !note.working ? note.text : undefined;
+  useEffect(() => {
+    if (said !== undefined) focusIfLost(at.current);
+  }, [said]);
   if (!note) return null;
   return (
     <p
+      ref={at}
+      tabIndex={-1}
       role={note.ok ? "status" : "alert"}
       aria-busy={note.working ? true : undefined}
       className={`run-note ${note.working ? "working" : note.ok ? "ok" : "bad"}`}

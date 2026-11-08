@@ -362,7 +362,6 @@ export function StepDetail({ step, done }: { step: Step; done: () => void }) {
               {T.skipWithThisReason}
             </button>
           </form>
-          <Note note={act.note} />
           <LocalTool step={step} done={done} />
         </div>
       ) : (
@@ -379,8 +378,24 @@ export function StepDetail({ step, done }: { step: Step; done: () => void }) {
           )}
         </p>
       )}
+      {/* Eighth UX walk: on a manual Git host anyone may type who approved: who recorded it shows. */}
+      {step.state === "done" && approvers(step) && (
+        <p className="run-note" role="note">
+          {T.approvalRecordedBy(approvers(step)!, step.recorded?.by ?? "")}
+        </p>
+      )}
+      {/* Eighth UX walk: after Mark done the form goes; what was recorded stays, and takes focus. */}
+      <Note note={act.note} />
     </div>
   );
+}
+
+/** Who a reviews step recorded as approving, in words; undefined when it named nobody. */
+function approvers(step: Step): string | undefined {
+  if (step.action !== "report-pull-request") return undefined;
+  const v = step.recorded?.values.approvers;
+  const list = Array.isArray(v) ? v.map(String) : typeof v === "string" && v ? [v] : [];
+  return list.length ? list.join(", ") : undefined;
 }
 
 /** A step the filter keeps: its words in the step's title, id, change or system. */
@@ -614,7 +629,12 @@ export function Todo({ hash = "" }: { hash?: string }) {
               <StepDetail
                 key={`${selected!.change}/${selected!.id}`}
                 step={selected!}
-                done={() => todo.reload()}
+                done={() => {
+                  // Eighth UX walk: the step marked done stays shown, with what was recorded,
+                  // until the person picks another (the next open one doesn't take its place).
+                  setCurrent(keyOfStep(selected!));
+                  todo.reload();
+                }}
               />
             )}
           </View>

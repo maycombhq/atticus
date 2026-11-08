@@ -377,6 +377,15 @@ export class ManualGitHost extends ManualBase implements GitHost {
     const blockers = mergeBlockers(pr);
     if (blockers.length > 0)
       throw new AdapterError(this.name, "conflict", `can't merge: ${blockers.join("; ")}`);
+    // Eighth UX walk: anyone may type who approved on a manual host, so who recorded it is said.
+    const recorder = (await this.related(open, "report-pull-request"))
+      .filter((s) => s.state === "done" && s.recorded)
+      .sort((a, b) => (a.recorded!.at < b.recorded!.at ? -1 : 1))
+      .at(-1)?.recorded?.by;
+    const approvedBy = pr.reviews
+      .filter((r) => r.state === "approved")
+      .map((r) => r.by)
+      .join(", ");
     const step = await this.step(
       "merge",
       {
@@ -391,10 +400,7 @@ export class ManualGitHost extends ManualBase implements GitHost {
           { name: "Pull request", value: pr.url },
           {
             name: "Approved by",
-            value: pr.reviews
-              .filter((r) => r.state === "approved")
-              .map((r) => r.by)
-              .join(", "),
+            value: approvedBy && recorder ? `${approvedBy} (recorded by ${recorder})` : approvedBy,
           },
         ],
         instructions: [

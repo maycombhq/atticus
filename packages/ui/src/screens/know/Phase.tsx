@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import type { Api } from "@maycombhq/core";
 import { RunStep } from "../../app/runstep.js";
 import { api, ApiError, useApi, useLiveEvents } from "../../api/client.js";
 import { Bar, Donut, ExternalLink, Panel, Ring, View } from "../../app/ui.js";
@@ -16,7 +17,6 @@ import {
 } from "../Changes.js";
 import { AI_OFF_TEXT, useAiOn } from "../../app/me.js";
 import { COPY } from "../../copy.js";
-import { withForceHint } from "../run/shared.js";
 import { NoChangeYet } from "../work/RunNext.js";
 import { ChangeInputs } from "../ChangeInputs.js";
 import { ChangePrototypes } from "../ChangePrototypes.js";
@@ -25,9 +25,11 @@ import {
   Markdown,
   Note,
   queryParam,
+  Said,
   Table,
   useAction,
   useChange,
+  useSaid,
   useView,
 } from "./common.js";
 import {
@@ -56,11 +58,24 @@ export function GateHeader(p: {
   picker: ReactNode;
   critic?: string;
   reload: () => void;
+  /** Eighth UX walk: bumped when an artifact was saved on the page; the gate reads again. */
+  refresh?: number;
 }) {
   const detail = useApi<ChangeDetail>(`/api/changes/${p.id}`);
   const status = useApi<Status>(`/api/changes/${p.id}/status`);
   const act = useAction();
   const aiOn = useAiOn();
+  // Eighth UX walk: a saved brief no longer reads "still holds only the template" until reload.
+  useEffect(() => {
+    if (!p.refresh) return;
+    detail.reload();
+    status.reload();
+  }, [p.refresh]);
+  useLiveEvents((e) => {
+    if (e.type !== "file.changed") return;
+    detail.reload();
+    status.reload();
+  });
   const done = () => {
     detail.reload();
     status.reload();
@@ -251,6 +266,7 @@ export function ArtifactPanel({
   span,
   file,
   title: named,
+  onSaved,
 }: {
   change: string;
   artifact: string;
@@ -260,6 +276,8 @@ export function ArtifactPanel({
   /** Seventh UX walk: one file of a many-file artifact (a story), read and edited alone. */
   file?: string;
   title?: string;
+  /** Eighth UX walk: told after each save, so the page's gate reads again. */
+  onSaved?: () => void;
 }) {
   const a = useApi<Artifact & { artifact: string }>(
     listed ? artifactUrl(change, artifact, file) : undefined,
@@ -278,6 +296,7 @@ export function ArtifactPanel({
         change={change}
         artifact={artifact}
         {...(file ? { file } : {})}
+        {...(onSaved ? { onSaved } : {})}
         onClose={() => {
           setEdit(false);
           a.reload();
@@ -365,6 +384,7 @@ function FindingsPanel({
 }) {
   const f = useApi<Finding[]>(`/api/findings?change=${change}&state=open`);
   const [open, setOpen] = useState<string | undefined>();
+  const findingSaid = useSaid();
   useLiveEvents((e) => {
     if (e.type === "file.changed" || e.type === "run.changed") f.reload();
   });
@@ -382,6 +402,7 @@ function FindingsPanel({
       {...(rows ? { rows } : {})}
       meta={f.state === "ready" ? T.open(mine.length) : undefined}
     >
+      <Said said={findingSaid.said} />
       <View of={f} empty={() => mine.length === 0} emptyText={T.noOpenFindingsOn}>
         {() => (
           <ul style={{ listStyle: "none", margin: 0, padding: 0 }} className="stack">
@@ -424,7 +445,12 @@ function FindingsPanel({
                         )}
                       </p>
                     )}
-                    <FindingActions change={change} f={x} done={() => f.reload()} />
+                    <FindingActions
+                      change={change}
+                      f={x}
+                      done={() => f.reload()}
+                      say={findingSaid.say}
+                    />
                   </div>
                 )}
               </li>
@@ -457,6 +483,8 @@ function PhaseScreen(p: {
 }) {
   const c = useChange(p.hash, p.screen);
   const [tick, setTick] = useState(0);
+  // Eighth UX walk: an artifact saved here makes the gate read again.
+  const [saved, setSaved] = useState(0);
   // Which of its artifacts the change has: an Atticus 1 page asks only for those (2026-10-25).
   const detail = useApi<ChangeDetail>(c.id ? `/api/changes/${c.id}` : undefined);
   const known =
@@ -469,6 +497,7 @@ function PhaseScreen(p: {
     picker: c.picker,
     ...(p.critic ? { critic: p.critic } : {}),
     reload: () => setTick(tick + 1),
+    refresh: saved,
   };
   return (
     <div className="bento" key={c.id}>
@@ -476,7 +505,16 @@ function PhaseScreen(p: {
         <GateHeader part="hero" {...header} />
         {p.main?.(c.id)}
         {p.artifacts.map((a) => (
-          <ArtifactPanel key={a} change={c.id!} artifact={a} listed={listsArtifact(known, a)} />
+          <ArtifactPanel
+            key={a}
+            change={c.id!}
+            artifact={a}
+            listed={listsArtifact(known, a)}
+            onSaved={() => {
+              setSaved((n) => n + 1);
+              detail.reload();
+            }}
+          />
         ))}
       </div>
       <div className="column" style={{ gridColumn: "span 4" }}>
@@ -537,37 +575,57 @@ interface Drift {
   findings: { id: string; summary: string; severity: string; state: string; path?: string }[];
 }
 
+/**
+ * What the drift check found. Eighth UX walk: nothing open before any task has run isn't "in
+ * sync" (there is no code to compare yet), so it says no code yet.
+ */
+export function DriftSummary({ open, codeYet }: { open: Drift["findings"]; codeYet: boolean }) {
+  if (open.length === 0 && !codeYet)
+    return (
+      <>
+        <span className="chip dim" style={{ width: "fit-content" }}>
+          {T.noCodeYet}
+        </span>
+        <span className="muted" style={{ fontSize: 12 }}>
+          {T.noCodeYetWhy}
+        </span>
+      </>
+    );
+  if (open.length === 0)
+    return (
+      <span className="chip done" style={{ width: "fit-content" }}>
+        {T.inSync}
+      </span>
+    );
+  return (
+    <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.6, fontSize: 12.5 }}>
+      {open.map((f) => (
+        <li key={f.id}>
+          <span className={`chip ${SEV_CHIP[f.severity] ?? ""}`}>{f.severity.toUpperCase()}</span>{" "}
+          {f.summary}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function DriftPanel({ change }: { change: string }) {
   const d = useView<Drift>("drift", change);
+  // Code exists once a task has run with AI or been ticked; a list that doesn't read counts as yes.
+  const tasks = useApi<Task[]>(`/api/changes/${encodeURIComponent(change)}/tasks`);
+  const codeYet =
+    tasks.state !== "ready" || tasks.data.some((t) => t.done || t.taskRun !== undefined);
   return (
     <Panel title={T.designVsPlansVs} span="span 4">
-      <View of={d}>
-        {(x) => {
-          const open = x.findings.filter((f) => f.state === "open");
-          return (
-            <div className="stack" style={{ gap: 8 }}>
-              <span className="hud" style={{ fontSize: 10 }}>
-                {x.plans.length ? T.repoPlansCompared(x.plans.length) : T.noRepoPlansYet}
-              </span>
-              {open.length === 0 ? (
-                <span className="chip done" style={{ width: "fit-content" }}>
-                  {T.inSync}
-                </span>
-              ) : (
-                <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.6, fontSize: 12.5 }}>
-                  {open.map((f) => (
-                    <li key={f.id}>
-                      <span className={`chip ${SEV_CHIP[f.severity] ?? ""}`}>
-                        {f.severity.toUpperCase()}
-                      </span>{" "}
-                      {f.summary}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          );
-        }}
+      <View of={tasks.state === "loading" ? { state: "loading" } : d}>
+        {(x) => (
+          <div className="stack" style={{ gap: 8 }}>
+            <span className="hud" style={{ fontSize: 10 }}>
+              {x.plans.length ? T.repoPlansCompared(x.plans.length) : T.noRepoPlansYet}
+            </span>
+            <DriftSummary open={x.findings.filter((f) => f.state === "open")} codeYet={codeYet} />
+          </div>
+        )}
       </View>
     </Panel>
   );
@@ -801,37 +859,29 @@ function StoryBarPanel({ change }: { change: string }) {
   );
 }
 
-function StoryWriter({ change }: { change: string }) {
-  const act = useAction();
-  const aiOn = useAiOn();
+/**
+ * Eighth UX walk: stories have one path, the stories stage's Prepare on its tab (where the critic
+ * checks each draft). Breakdown links to it and runs nothing of its own; once the stage is done,
+ * it says so and the tab offers Run again under a disclosure.
+ */
+export function StoriesAtTheStage({ change }: { change: string }) {
+  const v = useApi<Api.StageReviewViewT>(
+    `/api/changes/${encodeURIComponent(change)}/stages/stories`,
+  );
+  const href = `#/stories?change=${encodeURIComponent(change)}`;
+  // The link is there whatever the stage's state reads as; only the words follow it.
+  const done = v.state === "ready" && v.data.loop.state === "done";
   return (
     <Panel title={T.storiesAndTasks} span="span 4">
       <div className="stack" style={{ gap: 8 }}>
         <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
-          {T.theStoryWriterDrafts}
+          {done ? T.storiesStageDone : T.storiesAtTheStage}
         </p>
-        {aiOn ? (
-          <button
-            type="button"
-            className="btn primary"
-            disabled={act.busy}
-            onClick={() =>
-              void act.run(
-                () =>
-                  api(`/api/changes/${change}/runs`, {
-                    method: "POST",
-                    body: { agent: "story-writer", runtime: "hand-off" },
-                  }).catch(withForceHint(COPY.app.forceStories(change))),
-                T.theStoryWritersPrompt,
-              )
-            }
-          >
-            {T.writeStoriesWithAi}
-          </button>
-        ) : (
-          <p style={{ margin: 0, fontSize: 12.5 }}>{AI_OFF_TEXT}</p>
-        )}
-        <Note note={act.note} />
+        <p style={{ margin: 0 }}>
+          <a className={done ? undefined : "btn primary"} href={href}>
+            {T.openStoriesStage}
+          </a>
+        </p>
       </div>
     </Panel>
   );
@@ -898,7 +948,7 @@ export function Breakdown({ hash }: { hash: string }) {
       extra={(id) => (
         <>
           <StoryBarPanel change={id} />
-          <StoryWriter change={id} />
+          <StoriesAtTheStage change={id} />
           <TasksByRepo change={id} span="span 4" compact />
         </>
       )}

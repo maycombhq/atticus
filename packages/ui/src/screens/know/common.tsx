@@ -1,6 +1,6 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ApiError, useApi, type Loaded } from "../../api/client.js";
-import { LoadError, Panel } from "../../app/ui.js";
+import { focusIfLost, LoadError, Panel } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
 
 const TX = COPY.knowCommon;
@@ -309,14 +309,53 @@ export function useAction() {
   return { busy, note, run };
 }
 
+/**
+ * Eighth UX walk: what an action said, kept by a list whose row the action took away (a finding
+ * dismissed leaves the open ones), so the words aren't lost with the row and the keyboard has
+ * somewhere to go.
+ */
+export function useSaid() {
+  const [said, setSaid] = useState<{ text: string; n: number } | undefined>();
+  return {
+    said,
+    say: (text: string) => setSaid((s) => ({ text, n: (s?.n ?? 0) + 1 })),
+  };
+}
+
+/** The list's status line: always there (a live region), with words once an action said some. */
+export function Said({ said }: { said: { text: string; n: number } | undefined }) {
+  const at = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    if (said) focusIfLost(at.current);
+  }, [said?.n]);
+  return (
+    <p
+      ref={at}
+      tabIndex={-1}
+      role="status"
+      style={{ margin: said ? "0 0 8px" : 0, fontSize: 12.5, color: "var(--green)" }}
+    >
+      {said?.text ?? ""}
+    </p>
+  );
+}
+
 export function Note({
   note,
 }: {
   note?: { ok: boolean; text: string; working?: boolean } | undefined;
 }) {
+  // Eighth UX walk: the button that ran it was disabled (or went): the keyboard comes here.
+  const at = useRef<HTMLParagraphElement>(null);
+  const said = note && !note.working ? note.text : undefined;
+  useEffect(() => {
+    if (said !== undefined) focusIfLost(at.current);
+  }, [said]);
   if (!note) return null;
   return (
     <p
+      ref={at}
+      tabIndex={-1}
       role={note.ok ? "status" : "alert"}
       aria-busy={note.working ? true : undefined}
       style={{

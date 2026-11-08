@@ -9,6 +9,7 @@ import { NeedsPanel } from "../knowledge/Needs.js";
 import { StoryFiles } from "../know/Phase.js";
 import { ChangeInputs } from "../ChangeInputs.js";
 import { StageReviewPanel } from "./StageReview.js";
+import { PlacementPanel } from "./Placement.js";
 import {
   architectureStep,
   pickChange,
@@ -78,15 +79,38 @@ export function ChangePicker(p: {
   );
 }
 
+/**
+ * Eighth UX walk: the feature stage's own files, feature.md and feature.yaml, for the files table
+ * (they aren't org-flow artifacts, so the change's detail doesn't list them). None before the
+ * stage placed the change.
+ */
+export function placementRows(p: Api.PlacementViewT | undefined): ArtifactRow[] {
+  if (!p?.present) return [];
+  const drawn = p.content.trim() !== "";
+  return [
+    {
+      artifact: "feature.md",
+      path: p.file,
+      status: drawn ? "done" : "ready",
+      written: drawn,
+      openFindings: 0,
+    },
+    { artifact: "feature.yaml", path: p.source, status: "done", written: true, openFindings: 0 },
+  ];
+}
+
 export function FilesTable({
   detail,
   stage,
+  extra = [],
 }: {
   detail: ChangeDetailView;
   stage: "feature" | "stories" | "tasks";
+  /** Files a stage writes besides the change's artifacts (feature.md and feature.yaml). */
+  extra?: ArtifactRow[];
 }) {
   const wanted = STAGE_FILES[stage];
-  const rows = detail.artifacts.filter((a) => wanted.includes(a.artifact));
+  const rows = [...detail.artifacts.filter((a) => wanted.includes(a.artifact)), ...extra];
   if (rows.length === 0) return <div className="state">{W.noFiles}</div>;
   return (
     <Table
@@ -175,7 +199,10 @@ export function StagePage(p: {
   tasks: Loaded<TaskRow[]> | undefined;
   /** The change's cockpit: its stages' loop states and what stops its gate (2026-10-25). */
   cockpit?: Loaded<Api.ChangeCockpitT> | undefined;
+  /** Eighth UX walk: the feature stage's placement, for its files (Feature design only). */
+  placement?: Loaded<Api.PlacementViewT> | undefined;
 }) {
+  const extra = placementRows(p.placement?.state === "ready" ? p.placement.data : undefined);
   const screen = STAGE_SCREEN[p.stage]!.id;
   const cockpit = p.cockpit?.state === "ready" ? p.cockpit.data : undefined;
   return (
@@ -203,10 +230,11 @@ export function StagePage(p: {
               </div>
             </div>
             {/* UX review: where the stage's work is done in the app, first. */}
+            {/* Eighth UX walk: stories are written by the stage's own Prepare; Breakdown reads. */}
             {(p.stage === "stories" || p.stage === "tasks") && (
               <p className="work-say" style={{ margin: 0 }}>
                 <a
-                  className="btn primary"
+                  className={p.stage === "tasks" ? "btn primary" : undefined}
                   href={`#/${p.stage === "stories" ? "breakdown" : "tasks"}?change=${encodeURIComponent(c.id)}`}
                 >
                   {p.stage === "stories" ? W.openBreakdown : W.openTaskBoard}
@@ -222,6 +250,8 @@ export function StagePage(p: {
               <RunNextPanel step={stageStep(p.stage, c, ready, cockpit)} />
             )}
             <div className="bento">
+              {/* Eighth UX walk: where the feature lands (feature.md), the stage's own draft. */}
+              {p.stage === "feature" && <PlacementPanel change={c.id} />}
               {/* ADR 0124 addendum D-app, B10: what the critic found, with options and comments. */}
               {p.stage !== "tasks" && (
                 <StageReviewPanel
@@ -231,7 +261,9 @@ export function StagePage(p: {
               )}
               <Panel title={W.files} span={p.stage === "tasks" ? "span 4" : "1 / -1"}>
                 {p.detail ? (
-                  <View of={p.detail}>{(d) => <FilesTable detail={d} stage={p.stage} />}</View>
+                  <View of={p.detail}>
+                    {(d) => <FilesTable detail={d} stage={p.stage} extra={extra} />}
+                  </View>
                 ) : (
                   <div className="state">{W.noFiles}</div>
                 )}
@@ -296,12 +328,16 @@ function useStage(hash: string, stage: "feature" | "stories" | "tasks") {
   const cockpit = useApi<Api.ChangeCockpitT>(
     c && stage !== "tasks" ? `/api/changes/${c.id}/cockpit` : undefined,
   );
+  const placement = useApi<Api.PlacementViewT>(
+    c && stage === "feature" ? `/api/changes/${encodeURIComponent(c.id)}/placement` : undefined,
+  );
   useLiveEvents((e) => {
     if (e.type === "file.changed") {
       list.reload();
       detail.reload();
       tasks.reload();
       cockpit.reload();
+      placement.reload();
     }
   });
   return (
@@ -312,6 +348,7 @@ function useStage(hash: string, stage: "feature" | "stories" | "tasks") {
       detail={c ? detail : undefined}
       tasks={c && stage === "tasks" ? tasks : undefined}
       cockpit={c && stage !== "tasks" ? cockpit : undefined}
+      placement={c && stage === "feature" ? placement : undefined}
     />
   );
 }

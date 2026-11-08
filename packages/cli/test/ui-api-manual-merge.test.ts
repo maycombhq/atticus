@@ -95,6 +95,27 @@ describe("ticking tasks", () => {
         expect(Api.Task.parse(un.body).done).toBe(false);
         tasks = z.array(Api.Task).parse((await call(`/api/changes/${CHANGE}/tasks`)).body);
         expect(tasks.find((x) => x.id === "1.2")?.done).toBe(false);
+        // Eighth UX walk (2.76.0): who unticked it, and who ticked it again, is said.
+        expect(tasks.find((x) => x.id === "1.2")?.taskRun?.marked).toEqual({
+          done: false,
+          by: "pat",
+          at: "2026-11-08T09:00:00Z",
+        });
+        const again = Api.Task.parse(
+          (
+            await call(`/api/changes/${CHANGE}/tasks/1.2/done`, {
+              method: "POST",
+              body: { done: true },
+            })
+          ).body,
+        );
+        expect(again.done).toBe(true);
+        expect(again.taskRun?.ticked).toBe("2026-11-08T09:00:00Z");
+        expect(again.taskRun?.marked).toEqual({
+          done: true,
+          by: "pat",
+          at: "2026-11-08T09:00:00Z",
+        });
         // And ticks one by hand.
         const tick = await call(`/api/changes/${CHANGE}/tasks/1.1/done`, {
           method: "POST",

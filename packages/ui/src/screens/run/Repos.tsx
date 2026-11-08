@@ -229,6 +229,8 @@ export function BuildCommand({ r, onChanged }: { r: Repo; onChanged?: () => void
           className="btn"
           aria-expanded={editing}
           aria-controls={`${id}-form`}
+          // Eighth UX walk: one button per repo, so its name says which repo.
+          aria-label={r.build ? R.changeBuildFor(r.id) : R.setBuildFor(r.id)}
           onClick={() => {
             // Opened with what the manifest says now (a reload may have brought another).
             if (!editing) {

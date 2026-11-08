@@ -1,6 +1,16 @@
-import { stat } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
-import { Api, changesRelOf, readQuestion, type Finding, type Question } from "@maycombhq/core";
+import { parse as parseYaml } from "yaml";
+import {
+  Api,
+  changesRelOf,
+  readQuestion,
+  writeFileAtomic,
+  writeFileIfUnchanged,
+  type Finding,
+  type Question,
+} from "@maycombhq/core";
 import { changeFolder, loadChangeContext } from "@maycombhq/changes";
 import {
   readProposals,
@@ -11,7 +21,10 @@ import {
 } from "@maycombhq/naysayer";
 import {
   commentOnFinding,
+  FEATURE_FILE,
+  FeaturePlacement,
   PlannerError,
+  renderFeature,
   readStageLoop,
   rerunOf,
   STAGE_PHASE,
@@ -171,6 +184,42 @@ export async function stageReviewView(
   };
 }
 
+/** feature.yaml's first line, as the feature stage writes it and as a person's save here does. */
+const PLACED_HEAD = "# The feature placed against the estate (ADR 0087).";
+const EDITED = /^# The feature placed against the estate \(ADR 0087\)\. Edited by (.+) on (\S+); /;
+
+const sha = (s: string) => createHash("sha256").update(s).digest("hex");
+
+/** Who wrote feature.yaml last, from its first line: the stage drafts it, a save here edits it. */
+function draftedOf(text: string): Api.PlacementViewT["drafted"] {
+  const head = text.split("\n", 1)[0] ?? "";
+  if (head.startsWith(PLACED_HEAD) && / Drafted by /.test(head)) return { by: "ai" };
+  const m = EDITED.exec(head);
+  return m ? { by: "person", who: m[1]!, at: m[2]! } : { by: "person" };
+}
+
+/**
+ * Eighth UX walk (2.76.0): the feature stage's placement, feature.md as the Feature design page
+ * shows it and feature.yaml as a person edits it, with who wrote it last.
+ */
+export async function placementView(root: string, change: string): Promise<Api.PlacementViewT> {
+  const rel = `${changesRelOf(root)}/${change}`;
+  const dir = changeFolder(root, change);
+  const read = (f: string) => readFile(join(dir, f), "utf8").catch(() => undefined);
+  const source = await read(FEATURE_FILE);
+  const content = (await read("feature.md")) ?? "";
+  return {
+    change,
+    present: source !== undefined,
+    file: `${rel}/feature.md`,
+    content,
+    source: `${rel}/${FEATURE_FILE}`,
+    sourceContent: source ?? "",
+    sha256: sha(source ?? ""),
+    ...(source !== undefined ? { drafted: draftedOf(source) } : {}),
+  };
+}
+
 function tabOf(v: string): Tab {
   const r = Api.StageTab.safeParse(v);
   if (!r.success)
@@ -191,6 +240,59 @@ export function uiStageRoutes(
     return v;
   };
   return r
+    .add("GET", "/api/changes/{changeId}/placement", async ({ params }) => {
+      const change = await changeOf(params.changeId!);
+      return { status: 200, body: await placementView(ctx.root, change) };
+    })
+    .add("PUT", "/api/changes/{changeId}/placement", async ({ params, body }) => {
+      const change = await changeOf(params.changeId!);
+      const b = Api.SavePlacementRequest.safeParse(body ?? {});
+      if (!b.success)
+        throw badRequest("Send feature.yaml's text and the sha256 it started from.", {
+          errors: b.error.issues.map((i) => ({ path: i.path.join("."), message: i.message })),
+        });
+      const dir = changeFolder(ctx.root, change);
+      const file = join(dir, FEATURE_FILE);
+      const was = await readFile(file, "utf8").catch(() => undefined);
+      if (sha(was ?? "") !== b.data.baseSha256)
+        throw conflict(`${FEATURE_FILE} changed since you opened it. Reload it, then edit again.`);
+      // The person's text, under the first line that says who saved it (one, never two).
+      const lines = b.data.content.replace(/\r\n/g, "\n").split("\n");
+      const own = lines[0]?.startsWith(PLACED_HEAD) ? lines.slice(1) : lines;
+      let parsed: unknown;
+      try {
+        parsed = parseYaml(own.join("\n"));
+      } catch (e) {
+        throw new HttpError(
+          422,
+          "Not a placement",
+          `${FEATURE_FILE} doesn't read as YAML: ${String((e as Error).message ?? e).split("\n")[0]}`,
+        );
+      }
+      const p = FeaturePlacement.safeParse(parsed);
+      if (!p.success)
+        throw new HttpError(
+          422,
+          "Not a placement",
+          `${FEATURE_FILE} doesn't read as a placement: ${p.error.issues
+            .map((i) => `${i.path.join(".") || "(top)"}: ${i.message}`)
+            .join("; ")}`,
+        );
+      if (p.data.change !== change)
+        throw new HttpError(
+          422,
+          "Not a placement",
+          `${FEATURE_FILE} names change ${p.data.change}, not ${change}.`,
+        );
+      const at = now().toISOString();
+      const head = `${PLACED_HEAD} Edited by ${ctx.user} on ${at}; review it in the feature PR.`;
+      await writeFileIfUnchanged(file, was, `${head}\n${own.join("\n")}`);
+      await writeFileAtomic(join(dir, "feature.md"), renderFeature(p.data));
+      const rel = `${changesRelOf(ctx.root)}/${change}`;
+      for (const f of [FEATURE_FILE, "feature.md"])
+        ctx.events.publish({ type: "file.changed", path: `${rel}/${f}` });
+      return { status: 200, body: await placementView(ctx.root, change) };
+    })
     .add("GET", "/api/changes/{changeId}/stages/{stage}", async ({ params }) => {
       const stage = tabOf(params.stage!);
       const change = await changeOf(params.changeId!);
