@@ -200,7 +200,11 @@ export function WaitingActions(p: {
             // and its next prompt stay on the page as a note.
             if (r.next || r.lines?.length)
               flash({
-                text: (r.lines ?? []).slice(-3).join(" "),
+                // The app did the terminal's next steps: their command lines aren't shown.
+                text: (r.lines ?? [])
+                  .filter((l) => !/^\s*(Next: )?atticus |run atticus handoff done/.test(l))
+                  .slice(-3)
+                  .join(" "),
                 ...(r.next ? { href: runsHref({ run: r.next }), link: R.nextPrompt } : {}),
               });
           })

@@ -22,7 +22,7 @@ import {
   stepModelsOf,
 } from "@maycombhq/core";
 import { stepClassOfNextStep } from "@maycombhq/ai";
-import { changeStore, loadChangePolicy, stageCompletion } from "@maycombhq/changes";
+import { artifactFiles, changeStore, loadChangePolicy, stageCompletion } from "@maycombhq/changes";
 import { readKnowledge, snapshotDates, workingDays } from "@maycombhq/knowledge";
 import {
   metarepoOpenSpec,
@@ -186,6 +186,8 @@ export interface NextState {
      * stages can run ahead of the gates, so the state alone doesn't say what is next.
      */
     stagesDone?: string[];
+    /** Fifth UX walk: its proposal or specs aren't written yet (the draft is the next step). */
+    undrafted?: boolean;
     /**
      * ADR 0006 addendum: the stage whose OpenSpec artifacts come next, from `openspec status`
      * (org-flow v2), in a metarepo set up with OpenSpec. Left out when every artifact is done.
@@ -463,6 +465,10 @@ export async function readNextState(root: string): Promise<NextState> {
           ? readChangeTasks(files).map((t) => ({ id: t.id, repo: t.repo, done: t.done }))
           : [],
         feature: existsSync(join(changesDirOf(root), c.id, "feature.yaml")),
+        ...(!existsSync(join(changesDirOf(root), c.id, "proposal.md")) ||
+        (await artifactFiles(join(changesDirOf(root), c.id), "specs")).length === 0
+          ? { undrafted: true }
+          : {}),
         ...(stagesDone.length ? { stagesDone } : {}),
         ...(progress?.next ? { openspecStage: progress.next } : {}),
         ...(clash.length ? { seedCollisions: clash } : {}),
@@ -664,6 +670,19 @@ function stageSteps(c: NextState["changes"][number]): NextStep[] {
   ) {
     const later = c.stagesDone.slice(c.stagesDone.indexOf(stage) + 1);
     const gate = c.state === "returned" ? "define" : c.state;
+    // Fifth UX walk: the feature is placed but the proposal or specs the define gate needs
+    // aren't written: the draft is next, not a hand-off the gate would refuse.
+    if (stage === "feature" && c.undrafted)
+      return [
+        {
+          step: "draft",
+          command: `atticus change draft ${id}`,
+          slash: `/atticus-draft ${id}`,
+          where: METAREPO,
+          why: `${id} is placed on the estate, but its proposal or specs aren't written yet: your assistant drafts them, and Atticus checks the draft. Then a person raises the define hand-off.`,
+          change: id,
+        },
+      ];
     return [
       {
         step: "handoff",
@@ -689,6 +708,19 @@ function stageSteps(c: NextState["changes"][number]): NextStep[] {
       ];
     case "architecture":
       return [
+        // Fifth UX walk: the architecture stage reads the placed feature; without one it refuses.
+        ...(c.feature === false
+          ? [
+              {
+                step: "feature",
+                command: `atticus change feature ${id}`,
+                slash: `/atticus-feature ${id}`,
+                where: METAREPO,
+                why: `${id} isn't placed on the estate yet: your assistant places it on the flows and features first, then writes its target flows.`,
+                change: id,
+              },
+            ]
+          : []),
         {
           step: "architecture",
           command: `atticus change architecture ${id}`,

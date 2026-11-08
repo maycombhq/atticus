@@ -409,7 +409,12 @@ export async function changeHandoff(
       review: await (await import("./handoff-review.js")).handoffReview(root, id),
       ...(metarepoOpenSpec(root) ? { openspec: metarepoOpenSpec(root)! } : {}),
     });
-    io.out(`Hand-off PR #${h.pr.number} (${h.branch}) is open: ${h.pr.url}`);
+    // Fifth UX walk: a manual Git host records the PR as a step the person does first.
+    io.out(
+      h.pr.url.startsWith("manual:")
+        ? `Hand-off raised as a step for you (Home › Manual steps): open its PR on the Git host from ${h.branch}, then record its link.`
+        : `Hand-off PR #${h.pr.number} (${h.branch}) is open: ${h.pr.url}`,
+    );
     io.out(
       `Reviewers: ${h.reviewers.length ? h.reviewers.map((r) => `@${r}`).join(", ") : "none named"}`,
     );

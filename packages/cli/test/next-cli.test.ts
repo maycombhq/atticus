@@ -388,6 +388,27 @@ describe("nextSteps (pure)", () => {
     expect(steps(true, true)[0]!.step).toBe("new-change");
   });
 
+  it("drafts a placed change's missing proposal before its hand-off, and places one before its architecture (fifth UX walk)", () => {
+    const placed = nextSteps({
+      ...base,
+      changes: [
+        { id: "add-limit", state: "define", tasks: [], stagesDone: ["feature"], undrafted: true },
+      ],
+    });
+    expect(commands(placed)[0]).toEqual([
+      "atticus change draft add-limit",
+      "/atticus-draft add-limit",
+    ]);
+    const design = nextSteps({
+      ...base,
+      changes: [{ id: "move-ledger", state: "design", tasks: [], feature: false }],
+    });
+    expect(commands(design)[0]).toEqual([
+      "atticus change feature move-ledger",
+      "/atticus-feature move-ledger",
+    ]);
+  });
+
   it("gives each change its stage's step, a task in the repo it belongs to", () => {
     const steps = nextSteps({
       ...base,

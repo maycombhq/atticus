@@ -85,6 +85,9 @@ export function ApplyAndPropose(p: {
                       flash({ text: P.appliedFlash(p.repo!), href: "#/home", link: P.toHome });
                   } catch (e) {
                     setApplied([(e as Error).message]);
+                    // Fifth UX walk: a failed Apply can take its panel away too: say it stays.
+                    if (p.scope === "corrections")
+                      flash({ text: `${P.applyFailed} ${(e as Error).message}`.slice(0, 400) });
                     throw new Error(P.applyFailed, { cause: e });
                   }
                 }, P.applied(p.repo!))

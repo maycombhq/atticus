@@ -407,7 +407,14 @@ export async function bringInMerged(
     );
     tidy.push({ path, inHead, staged: st[0] !== " " && st[0] !== "?" });
   }
-  const clash = kept.filter((k) => incoming.has(k));
+  // Fifth UX walk: a change's change.yaml is Atticus's own record (Sync writes the gate's newer
+  // state into it after the hand-off merged): it is set aside, the merge goes ahead, and the
+  // newer local record is written back over the merged one.
+  const own = new RegExp(
+    `^${changesRelOf(root).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/[^/]+/change\\.yaml$`,
+  );
+  const ownClash = kept.filter((k) => incoming.has(k) && own.test(k));
+  const clash = kept.filter((k) => incoming.has(k) && !own.test(k));
   if (clash.length) {
     io.err(
       `What merged also changes files you edited, so nothing was changed: ${clash.join(", ")}. Propose your edits for review, or ask someone who uses git to bring them together.`,
@@ -421,7 +428,20 @@ export async function bringInMerged(
         .then(() => run(["reset", "-q", "--", p]))
         .catch(() => undefined);
   };
+  const held = new Map<string, string>();
+  for (const k of ownClash) held.set(k, await readFile(join(root, k), "utf8"));
+  const restoreHeld = async () => {
+    for (const [k, text] of held) await writeFile(join(root, k), text, "utf8");
+  };
   try {
+    for (const k of ownClash) {
+      const inHead = await run(["cat-file", "-e", `HEAD:${k}`]).then(
+        () => true,
+        () => false,
+      );
+      if (inHead) await run(["checkout", "HEAD", "--", k]);
+      else await rm(join(root, k), { force: true });
+    }
     for (const t of tidy) {
       if (t.inHead) await run(["checkout", "HEAD", "--", t.path]);
       else {
@@ -431,8 +451,10 @@ export async function bringInMerged(
       done.push(t.path);
     }
     await run(["merge", "--ff-only", "--quiet", up]);
+    await restoreHeld();
   } catch (e) {
     await putBack();
+    await restoreHeld();
     io.err(
       `Your copy couldn't be brought up to ${up}: ${first(e)}. Your files are as they were${kept.length ? `, and your own edits stay: ${kept.join(", ")}` : ""}.`,
     );

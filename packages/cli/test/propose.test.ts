@@ -419,4 +419,23 @@ describe("review round 36: Bring in never loses an edit", () => {
     expect(existsSync(join(root, ".index", "proposed.json"))).toBe(true);
     expect(existsSync(join(root, "proposed.json"))).toBe(false);
   });
+
+  it("carries a change's own record across a hand-off's merge (fifth UX walk)", async () => {
+    const { root, work } = await setup();
+    const rel = "openspec/changes/c1";
+    await mkdir(join(work, rel), { recursive: true });
+    await writeFile(join(work, rel, "brief.md"), "# Brief\n");
+    await writeFile(join(work, rel, "change.yaml"), "state: define\n");
+    g(work, "add", "-A");
+    g(work, "commit", "-q", "-m", "hand-off merged");
+    g(work, "push", "-q", "origin", "main");
+    await mkdir(join(root, rel), { recursive: true });
+    await writeFile(join(root, rel, "brief.md"), "# Brief\n");
+    // Sync wrote the gate's newer state after the merge.
+    await writeFile(join(root, rel, "change.yaml"), "state: design\n");
+    const said: string[] = [];
+    expect(await bringInMerged(root, io(said)), said.join("\n")).toBe(0);
+    expect(g(root, "log", "-1", "--format=%s").trim()).toBe("hand-off merged");
+    expect(await readFile(join(root, rel, "change.yaml"), "utf8")).toBe("state: design\n");
+  });
 });

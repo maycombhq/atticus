@@ -2626,7 +2626,8 @@ export const COPY = {
     theRuleChecksRan:
       "The rule checks ran; any AI lens is with your assistant. Each waits in Model runs, where Done checks its answer.",
     theRuleChecksRan2: "The rule checks ran. AI is off here, so no lens waits.",
-    handOffPrRaised: "Hand-off PR raised. A person approves and merges it.",
+    handOffPrRaised:
+      "Hand-off raised. A person approves and merges its PR on the Git host (on a manual Git host, its step on Home says how to open it).",
     blockedBy: (n: number) =>
       `${n} thing${n === 1 ? "" : "s"} block${n === 1 ? "s" : ""} the hand-off; clear them first.`,
     syncedWithTheHand: "Synced with the hand-off PR.",
