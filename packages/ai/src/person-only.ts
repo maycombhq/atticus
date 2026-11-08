@@ -9,6 +9,10 @@ const flag = (a: readonly string[], ...names: string[]) =>
   a.some((x) => names.some((n) => x === n || x.startsWith(`${n}=`)));
 
 const RULES: { test: (w: readonly string[], a: readonly string[]) => boolean; why: string }[] = [
+  {
+    test: (w, a) => w[0] === "change" && w[1] === "release-prs" && flag(a, "--approve"),
+    why: "a person raises the release PRs into each repo's default branch (ADR 0184); a session never approves a push or a PR",
+  },
   { test: (w) => w[0] === "questions" && w[1] === "answer", why: "a person answers questions" },
   {
     test: (w, a) => w[0] === "questions" && w[1] === "sheet" && flag(a, "--apply"),

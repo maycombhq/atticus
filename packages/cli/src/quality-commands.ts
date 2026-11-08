@@ -309,7 +309,7 @@ export async function ciArchiveGate(
   else {
     io.out(
       r.pass
-        ? `${changeId} may be archived: no blockers, builds passed and the catalog matches its repos.`
+        ? `${changeId} may be archived: no blockers, its release PRs merged and built, and the catalog says what shipped.`
         : `${changeId} can't be archived yet (${plural(r.blockers.length, "blocker")}):`,
     );
     for (const b of r.blockers) io.out(`- ${b.message}`);

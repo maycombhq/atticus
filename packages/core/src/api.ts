@@ -222,8 +222,13 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  *   the person's click (the push and PR the pr level makes, the AI step not run again); GET
  *   /api/propose lists `applyFirst`, the repos whose corrections are newer than their last
  *   Apply. Additive only.
+ * 2.70.0 (seventh UX walk, release; ADR 0184): POST /api/changes/{changeId}/release-prs raises
+ *   one release PR per code repo from change/<id> into its default branch on the person's click,
+ *   recorded in repos.yaml (`pr`); POST /api/changes/{changeId}/sync also reads the release PRs
+ *   back; the archive gate's blockers add `pr-missing`, `not-synced`, `needs-reading` and
+ *   `catalog-stale`, and the readers' drift becomes a note (ADR 0074). Additive only.
  */
-export const API_VERSION = "2.69.0";
+export const API_VERSION = "2.70.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -2621,6 +2626,9 @@ export const HandoffRequest = z.strictObject({
 /** ADR 0043: refresh a change from its hand-off PR. */
 export const SyncRequest = z.strictObject({ repo: z.string().optional() });
 
+/** ADR 0184: raise the release PRs, change/<id> into each code repo's default branch. */
+export const ReleasePrsRequest = z.strictObject({});
+
 /** ADR 0043, Release and Run screens: request bodies the CLI's uiRunRoutes parse. */
 export const StepDoneRequest = z
   .strictObject({
@@ -4750,6 +4758,22 @@ const OPS: Record<string, Record<string, Op>> = {
         description: "OK",
       },
       errors: [404],
+    },
+  },
+  "/api/changes/{changeId}/release-prs": {
+    post: {
+      id: "raiseReleasePrs",
+      summary:
+        "Raise one release PR per code repo from change/<id> into its default branch, as the signed-in person (ADR 0184)",
+      tag: "changes",
+      params: [p("changeId")],
+      body: ReleasePrsRequest,
+      ok: {
+        status: 201,
+        schema: "LinesView",
+        description: "Raised: what each repo's release PR said",
+      },
+      errors: [400, 404, 422],
     },
   },
   "/api/changes/{changeId}/sync": {

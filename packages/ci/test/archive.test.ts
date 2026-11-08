@@ -1,7 +1,7 @@
 import { cp, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { Finding, toCanonicalYaml } from "@maycombhq/core";
+import { Finding, parseFacts, toCanonicalYaml } from "@maycombhq/core";
 import { writeChangeRepos } from "@maycombhq/workspace";
 import { archiveGate, repoDrift } from "../src/index.js";
 import { CHANGE, metarepo, put, repoDir } from "./helpers.js";
@@ -47,7 +47,13 @@ async function trace(root: string, state: "open" | "dismissed") {
   );
 }
 
-const repos = (root: string, build: "passed" | "failed", pr: "merged" | "open" = "merged") =>
+const BASE_SHA = "a".repeat(40);
+
+const repos = (
+  root: string,
+  build: "passed" | "failed" | "not-run",
+  pr: "merged" | "open" | "none" = "merged",
+) =>
   writeChangeRepos(root, {
     schemaVersion: 1,
     change: CHANGE,
@@ -56,29 +62,214 @@ const repos = (root: string, build: "passed" | "failed", pr: "merged" | "open" =
         id: "forge-ledger",
         branch: `change/${CHANGE}`,
         base: "main",
+        baseSha: BASE_SHA,
         worktree: `workspace/.worktrees/${CHANGE}/forge-ledger`,
-        pr: { url: "https://git.example.com/forge/forge-ledger/pull/7", number: 7, state: pr },
+        ...(pr === "none"
+          ? {}
+          : {
+              pr: {
+                url: "https://git.example.com/forge/forge-ledger/pull/7",
+                number: 7,
+                state: pr,
+              },
+            }),
         build: { status: build },
       },
     ],
   });
 
+/** ADR 0074: the repo's facts, as `atticus verify` keeps them, read at `commit`. */
+async function facts(root: string, commit: string) {
+  const fact = {
+    kind: "entry",
+    id: "entry.post.transfers",
+    repo: "forge-ledger",
+    commit,
+    entryType: "rest",
+    method: "POST",
+    path: "/transfers",
+    cite: {
+      file: "src/main/java/forge/ledger/LedgerEndpoints.java",
+      line: 8,
+      value: "/transfers",
+    },
+    verified: "line",
+    by: "assistant",
+    conf: "declared",
+  };
+  expect(parseFacts(JSON.stringify(fact)).ok).toBe(true);
+  await put(join(root, "facts"), "forge-ledger.jsonl", `${JSON.stringify(fact)}\n`);
+}
+
+/** A catalog record the assistant's facts made, citing forge-ledger at `commit`. */
+async function assistantRecord(root: string, commit: string) {
+  await put(
+    join(root, "catalog/generated"),
+    "endpoint/ledger-api.post-transfers-old.yaml",
+    [
+      "schemaVersion: 2",
+      "kind: Endpoint",
+      "id: ledger-api.post-transfers-old",
+      "status: current",
+      "confidence: verified",
+      "component: ledger-api",
+      "endpointType: rest",
+      "method: POST",
+      "pathOrTopic: /old-transfers",
+      "evidence:",
+      "  - source: code",
+      "    by: assistant",
+      "    repo: forge-ledger",
+      `    commit: ${commit}`,
+      "    path: src/main/java/forge/ledger/LedgerEndpoints.java",
+      "    line: 8",
+      "",
+    ].join("\n"),
+  );
+}
+
+/** The repo's code as the readers see it, with an endpoint the catalog doesn't have. */
+async function readersSeeMore(root: string) {
+  const work = join(root, "..", "work", "forge-ledger");
+  await cp(repoDir(root, "forge-ledger"), work, { recursive: true });
+  await put(
+    work,
+    "src/main/java/forge/ledger/Admin.java",
+    `package forge.ledger;
+
+import forge.framework.*;
+
+@ForgeService(name = "ledger-api")
+public class Admin {
+  @ForgeEndpoint(method = "POST", path = "/admin/reindex", auth = "oauth2")
+  public void reindex() { }
+}
+`,
+  );
+  return work;
+}
+
 describe("archive gate", () => {
-  it("passes a released change with clean findings, merged and built repos and no drift", async () => {
+  it("passes a released change with clean findings, merged and built repos, and facts of the merged commit", async () => {
     const root = await metarepo({ change: "released" });
     await repos(root, "passed");
-    await cp(
-      repoDir(root, "forge-ledger"),
-      join(root, `workspace/.worktrees/${CHANGE}/forge-ledger`),
-      {
-        recursive: true,
-      },
-    );
+    await facts(root, COMMIT);
     await trace(root, "dismissed");
-    const r = await archiveGate(root, CHANGE, { commit: COMMIT });
+    const r = await archiveGate(root, CHANGE, {
+      commit: COMMIT,
+      repoDir: (id) => (id === "forge-ledger" ? repoDir(root, "forge-ledger") : undefined),
+    });
     expect(r.blockers).toEqual([]);
     expect(r.pass).toBe(true);
     expect(r.drift.map((d) => [d.repo, d.drift])).toEqual([["forge-ledger", false]]);
+  });
+
+  it("the readers' drift is a cross-check note: the facts read at the merged commit decide (ADR 0074)", async () => {
+    const root = await metarepo({ change: "released" });
+    await repos(root, "passed");
+    await facts(root, COMMIT);
+    await trace(root, "dismissed");
+    const work = await readersSeeMore(root);
+    const r = await archiveGate(root, CHANGE, {
+      commit: COMMIT,
+      repoDir: (id) => (id === "forge-ledger" ? work : undefined),
+    });
+    expect(r.blockers).toEqual([]);
+    expect(r.pass).toBe(true);
+    expect(r.notes).toEqual([
+      "Cross-check only, not blocking: the built-in readers see 1 difference in forge-ledger (POST /admin/reindex on ledger-api is in the code but not in the catalog). The facts read and verified at the merged commit decide (ADR 0074).",
+    ]);
+  });
+
+  it("asks for the repo to be read again when its facts aren't of the merged commit", async () => {
+    const root = await metarepo({ change: "released" });
+    await repos(root, "passed");
+    await trace(root, "dismissed");
+    // The assistant read the repo once (its record is in the catalog), but its facts are gone.
+    await assistantRecord(root, COMMIT);
+    const none = await archiveGate(root, CHANGE, { commit: COMMIT });
+    expect(none.blockers).toEqual([
+      {
+        code: "needs-reading",
+        message:
+          "forge-ledger: no facts were read at bbbbbbbbbbbb, the commit its release merged into main: read it again (Map › Trust › Freshness: Read again, or atticus map forge-ledger), then atticus verify forge-ledger --write, so the catalog says what shipped.",
+      },
+    ]);
+    await facts(root, "c".repeat(40));
+    const old = await archiveGate(root, CHANGE, { commit: COMMIT });
+    expect(old.blockers.map((b) => b.code)).toEqual(["needs-reading"]);
+    expect(old.blockers[0]!.message).toMatch(
+      /^forge-ledger: its facts were read at cccccccccccc, not at bbbbbbbbbbbb, the commit its release merged into main: read it again/,
+    );
+  });
+
+  it("a repo the assistant never read keeps the readers' check: its catalog is theirs", async () => {
+    const root = await metarepo({ change: "released" });
+    await repos(root, "passed");
+    await trace(root, "dismissed");
+    const work = await readersSeeMore(root);
+    const r = await archiveGate(root, CHANGE, {
+      commit: COMMIT,
+      repoDir: (id) => (id === "forge-ledger" ? work : undefined),
+    });
+    expect(r.blockers).toEqual([
+      {
+        code: "drift",
+        message:
+          "forge-ledger: 1 catalog drift finding (POST /admin/reindex on ledger-api is in the code but not in the catalog).",
+      },
+    ]);
+  });
+
+  it("says to sync first when the clone is still where the change started", async () => {
+    const root = await metarepo({ change: "released" });
+    await repos(root, "passed");
+    await facts(root, BASE_SHA);
+    await trace(root, "dismissed");
+    const r = await archiveGate(root, CHANGE, { commit: BASE_SHA });
+    expect(r.blockers.map((b) => b.code)).toEqual(["not-synced"]);
+    expect(r.blockers[0]!.message).toBe(
+      "forge-ledger: the clone here is still at aaaaaaaaaaaa, where the change started, though release PR #7 merged: sync the workspace (atticus workspace sync), then read the repo again.",
+    );
+  });
+
+  it("asks for the catalog to be written from the facts when it cites an older commit", async () => {
+    const root = await metarepo({ change: "released" });
+    await repos(root, "passed");
+    await facts(root, COMMIT);
+    await trace(root, "dismissed");
+    await assistantRecord(root, "c".repeat(40));
+    const r = await archiveGate(root, CHANGE, { commit: COMMIT });
+    expect(r.blockers).toEqual([
+      {
+        code: "catalog-stale",
+        message:
+          "forge-ledger: its facts are of the merged commit bbbbbbbbbbbb, but 1 catalog record still cites another commit: write them into the catalog (atticus verify forge-ledger --write, or Apply on the Map).",
+      },
+    ]);
+  });
+
+  it("blocks a repo with no release PR (ADR 0184), unless the org pack doesn't require merged PRs", async () => {
+    const root = await metarepo({ change: "released" });
+    await repos(root, "passed", "none");
+    await facts(root, COMMIT);
+    await trace(root, "dismissed");
+    const r = await archiveGate(root, CHANGE, { commit: COMMIT });
+    expect(r.blockers).toEqual([
+      {
+        code: "pr-missing",
+        message:
+          "forge-ledger: no release PR from change/add-transfer-limit into main was raised, so the code never reached main: raise the release PRs (Release › Raise the release PRs, or atticus change release-prs add-transfer-limit --approve), and merge them on the Git host.",
+      },
+    ]);
+    const lax = await metarepo({
+      change: "released",
+      ciYaml: "schemaVersion: 1\narchive:\n  requireMergedPrs: false\n",
+    });
+    await repos(lax, "passed", "none");
+    await facts(lax, COMMIT);
+    await trace(lax, "dismissed");
+    expect((await archiveGate(lax, CHANGE, { commit: COMMIT })).blockers).toEqual([]);
   });
 
   it("blocks a change that isn't released", async () => {
@@ -96,41 +287,38 @@ describe("archive gate", () => {
     ]);
   });
 
-  it("blocks on an open blocking finding on any gate, an open PR, a failed build and drift", async () => {
+  it("blocks on an open blocking finding on any gate, an open PR and a failed build", async () => {
     const root = await metarepo({ change: "released" });
     await repos(root, "failed", "open");
     await trace(root, "open");
-    const work = join(root, "..", "work", "forge-ledger");
-    await cp(repoDir(root, "forge-ledger"), work, { recursive: true });
-    await put(
-      work,
-      "src/main/java/forge/ledger/Admin.java",
-      `package forge.ledger;
-
-import forge.framework.*;
-
-@ForgeService(name = "ledger-api")
-public class Admin {
-  @ForgeEndpoint(method = "POST", path = "/admin/reindex", auth = "oauth2")
-  public void reindex() { }
-}
-`,
-    );
+    const work = await readersSeeMore(root);
     const r = await archiveGate(root, CHANGE, {
       commit: COMMIT,
       repoDir: (id) => (id === "forge-ledger" ? work : undefined),
     });
     expect(r.pass).toBe(false);
-    expect(r.blockers.map((b) => b.code)).toEqual(["finding", "pr-open", "build-failed", "drift"]);
-    expect(r.blockers[1]!.message).toBe("forge-ledger: PR #7 is open; merge it before archiving.");
-    expect(r.blockers[3]!.message).toBe(
-      "forge-ledger: 1 catalog drift finding (POST /admin/reindex on ledger-api is in the code but not in the catalog).",
+    expect(r.blockers.map((b) => b.code)).toEqual(["finding", "pr-open", "build-failed"]);
+    expect(r.blockers[1]!.message).toBe(
+      "forge-ledger: release PR #7 is open; a person merges it on the Git host before archiving.",
+    );
+  });
+
+  it("notes a merged release PR the Git host reported no build on", async () => {
+    const root = await metarepo({ change: "released" });
+    await repos(root, "not-run");
+    await facts(root, COMMIT);
+    await trace(root, "dismissed");
+    const r = await archiveGate(root, CHANGE, { commit: COMMIT });
+    expect(r.blockers).toEqual([]);
+    expect(r.notes).toContain(
+      "forge-ledger: the Git host reported no checks on release PR #7, so no build is recorded for what merged.",
     );
   });
 
   it("reads the pipelines' drift reports instead of checking out the repos", async () => {
     const root = await metarepo({ change: "released" });
     await repos(root, "passed");
+    await facts(root, COMMIT);
     const clean = await repoDrift({
       repoDir: repoDir(root, "forge-ledger"),
       catalog: root,

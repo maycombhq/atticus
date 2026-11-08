@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Atticus local API",
-    "version": "2.69.0",
+    "version": "2.70.0",
     "description": "Served by `atticus ui` on 127.0.0.1. The UI only calls this API, and the API only reads and writes files in the metarepo.",
     "license": {
       "name": "Apache-2.0",
@@ -5836,6 +5836,89 @@
           },
           "404": {
             "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/changes/{changeId}/release-prs": {
+      "post": {
+        "operationId": "raiseReleasePrs",
+        "summary": "Raise one release PR per code repo from change/<id> into its default branch, as the signed-in person (ADR 0184)",
+        "tags": [
+          "changes"
+        ],
+        "parameters": [
+          {
+            "name": "changeId",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Raised: what each repo's release PR said",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LinesView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Atticus refused: the problem carries the command's own words (ADR 0043)",
             "content": {
               "application/problem+json": {
                 "schema": {

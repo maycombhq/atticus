@@ -3021,7 +3021,8 @@ export const COPY = {
     mergingIsTheGo: (pr: string | number, v: string | number) => `Merging ${pr} is the go${v}.`,
     goNoGoIs: "Go / no-go is the release hand-off PR: merging it is the go.",
     archiveGate: "Archive gate",
-    opensOnceReleasedMerged: "Opens once released, merged, built and the catalog matches.",
+    opensOnceReleasedMerged:
+      "Opens once released, its release PRs merged and built, and its repos read again at the merged commit.",
     gatesToGoLive: "Gates to go-live",
     aPersonApprovesEvery:
       "A person approves every gate by merging its hand-off PR; the Git host decides who may approve, and the person who raised a PR can't be its only approver.",
@@ -3032,6 +3033,20 @@ export const COPY = {
       "Reads the PR; merges it as you once it is approved and the Git host's checks pass",
     archive: "Archive",
     archivesTheChangeAnd: "Archives the change and rescans its repos",
+    /** ADR 0184: the release PRs, change/<id> into each code repo's default branch. */
+    raiseReleasePrs: "Raise the release PRs",
+    raisesReleasePrs:
+      "Opens one PR per code repo from the change branch into its default branch, as you; a person merges each on the Git host",
+    releasePrsRaised: "Release PRs raised. A person merges each on the Git host; Sync records it.",
+    releasePrsNotYet: "The release PRs are raised once the build is done (in QA or at go / no-go).",
+    releasePrs: "Release PRs",
+    releasePrsIntro:
+      "Each code repo's change branch, with the task PRs merged into it, goes into the repo's default branch by one PR. Go / no-go is decided over these; Atticus never pushes to the default branch, and a person merges each on the Git host.",
+    noCodeRepos: "This change has no code repos (repos.yaml), so there is no release PR.",
+    releasePrCol: { repo: "Repo", branch: "From", pr: "Release PR", build: "Checks" },
+    releasePrsCaption: "Each code repo's release PR and its checks",
+    notRaisedYet: "Not raised yet",
+    prState: (n: number, state: string) => `#${n} ${state.toUpperCase()}`,
     nothingStopsThisChange: "Nothing stops this change right now.",
     whatStopsIt: "What stops it",
     theChangeMayBe: "The change may be archived.",

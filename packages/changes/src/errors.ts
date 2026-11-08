@@ -20,7 +20,11 @@ export type ReasonCode =
   | "host-refused"
   | "pr-closed"
   /** `openspec validate --strict` refused the change (ADR 0006 addendum). */
-  | "openspec-invalid";
+  | "openspec-invalid"
+  /** ADR 0184: a repo the change touched has no release PR into its default branch. */
+  | "release-pr-missing"
+  /** ADR 0184: a repo's release PR isn't merged yet (unless the org pack doesn't require it). */
+  | "release-pr-not-merged";
 
 export interface Reason {
   code: ReasonCode;

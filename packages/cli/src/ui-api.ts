@@ -45,7 +45,7 @@ import {
   type ServerContext,
 } from "@maycombhq/server";
 import type { Output } from "./commands.js";
-import { changeHandoff, changeNew, changeSync } from "./change-commands.js";
+import { changeHandoff, changeNew, changeReleasePrs, changeSync } from "./change-commands.js";
 import { critic, findingAction } from "./critic-commands.js";
 import { planStories } from "./plan-commands.js";
 import { reconcileCommand } from "./reconcile-commands.js";
@@ -681,6 +681,19 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
           status: 201,
           body: { ...(await changeDetail(root, params.changeId!)), notes: res.out },
         };
+      })
+      .add("POST", "/api/changes/{changeId}/release-prs", async ({ params, body }) => {
+        const id = params.changeId!;
+        await readChange(root, id);
+        parseBody(Api.ReleasePrsRequest, body);
+        // ADR 0184: the person's click is the approval to push the change branch where the host
+        // lacks it (never forced, never the default branch) and to open the release PRs.
+        const res = await run((io) =>
+          changeReleasePrs(root, id, { by: user, approve: true }, io, changeDeps),
+        );
+        ctx.events.publish({ type: "file.changed", path: `${id}/repos.yaml` });
+        if (res.code !== 0) throw refused(res);
+        return { status: 201, body: Api.LinesView.parse({ lines: res.out }) };
       })
       .add("POST", "/api/changes/{changeId}/sync", async ({ params, body }) => {
         await readChange(root, params.changeId!);
