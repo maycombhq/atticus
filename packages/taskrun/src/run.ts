@@ -2,7 +2,6 @@ import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
-  AdapterError,
   createAdapters,
   fileStepStore,
   requireApproval,
@@ -367,30 +366,51 @@ async function openPr(c: Ctx): Promise<void> {
     return;
   }
   const base = changeBranch(c.t.change.id);
-  const info = await c.gitHost.getRepo(c.t.repo.id);
-  for (const b of [c.record.branch, base])
-    if (info.protectedBranches.includes(b))
+  // Review round 42: the PR's body says the build passed, so what is pushed is the commit it
+  // passed at. A branch that moved on since is refused rather than pushed at record.commit,
+  // which would leave the branch here and the one on the host saying different things.
+  if (c.record.commit) {
+    const head = (
+      await c
+        .git(["rev-parse", "--verify", "-q", `refs/heads/${c.record.branch}`], c.worktree)
+        .catch(() => ({ stdout: "" }))
+    ).stdout.trim();
+    if (!head)
       throw new TaskRunError(
         "refused",
-        `${b} is protected in ${c.t.repo.id}; Run with AI never pushes to or opens a PR into a protected branch.`,
+        `Task ${c.t.task.id}'s branch ${c.record.branch} isn't in ${c.record.worktree} any more: run the task again.`,
       );
-  if (base === info.defaultBranch)
-    throw new TaskRunError(
-      "refused",
-      `${base} is ${c.t.repo.id}'s default branch; task PRs go into the change branch.`,
-    );
-  // The approval covers this push: the change branch (so the PR has a base) and the task branch.
-  await c.git(
-    [
-      "push",
-      "-q",
-      "origin",
-      `refs/heads/${base}:refs/heads/${base}`,
-      `refs/heads/${c.record.branch}:refs/heads/${c.record.branch}`,
-    ],
-    c.worktree,
-  );
+    if (head !== c.record.commit)
+      throw new TaskRunError(
+        "refused",
+        `Task ${c.t.task.id}'s branch ${c.record.branch} has commits that weren't built (it is at ${head.slice(0, 12)}; the build passed at ${c.record.commit.slice(0, 12)}): run the task again so its build checks them, or push ${c.record.branch} and open its PR into ${base} yourself.`,
+      );
+  }
   try {
+    const info = await c.gitHost.getRepo(c.t.repo.id);
+    for (const b of [c.record.branch, base])
+      if (info.protectedBranches.includes(b))
+        throw new TaskRunError(
+          "refused",
+          `${b} is protected in ${c.t.repo.id}; Run with AI never pushes to or opens a PR into a protected branch.`,
+        );
+    if (base === info.defaultBranch)
+      throw new TaskRunError(
+        "refused",
+        `${base} is ${c.t.repo.id}'s default branch; task PRs go into the change branch.`,
+      );
+    // The approval covers this push. The change branch is pushed only when the host hasn't got
+    // it (so the PR has a base): once there, it moves by merged PRs on the host, and this
+    // worktree's copy, behind them, is never pushed over it. Both refs go together or not at all.
+    const onHost = (
+      await c.git(["ls-remote", "--heads", "origin", `refs/heads/${base}`], c.worktree)
+    ).stdout.trim();
+    const refs = [`refs/heads/${c.record.branch}:refs/heads/${c.record.branch}`];
+    if (!onHost) refs.unshift(`refs/heads/${base}:refs/heads/${base}`);
+    await c.git(
+      ["push", "-q", ...(refs.length > 1 ? ["--atomic"] : []), "origin", ...refs],
+      c.worktree,
+    );
     const pr = await c.gitHost.createPullRequest(
       {
         repo: c.t.repo.id,
@@ -411,14 +431,21 @@ async function openPr(c: Ctx): Promise<void> {
     c.record.pr = { number: pr.number, url: pr.url };
     c.record.state = "pr-open";
   } catch (e) {
-    if (e instanceof AdapterError) {
-      c.record.state = "needs-person";
-      c.record.notes.push(`The PR couldn't be opened: ${e.message}`);
-      return;
-    }
-    throw e;
+    // A protected branch is the rule's refusal, said as it is.
+    if (e instanceof TaskRunError) throw e;
+    // A push or a PR that fails (the proxy, the host, a hook) leaves the build as it stands:
+    // the task stays built, so the person raises its PR again once that is fixed.
+    c.record.notes.push(
+      `${PR_NOT_RAISED} ${(e instanceof Error ? e.message : String(e)).replace(/\.?$/, ".")} The build still passes: fix that and raise the task's PR again (Raise the task's PR on the Task board), or push ${c.record.branch} and open its PR into ${base} yourself.`,
+    );
   }
 }
+
+/**
+ * How a task's note starts when its PR wasn't raised: the Task board shows that note beside
+ * Raise the task's PR (packages/ui task-pr.tsx matches it).
+ */
+const PR_NOT_RAISED = "The PR wasn't raised:";
 
 async function finish(c: Ctx, run: Run): Promise<TaskRunRecord> {
   // Stopped while the model answered (Ctrl+C on atticus ui): its answer isn't written.
@@ -505,9 +532,35 @@ function levelOf(t: TaskContext, asked: RunLevel | undefined): RunLevel {
   return asked;
 }
 
-/** Refused while a run of this task waits on the person's assistant (and wasn't cancelled). */
-async function refuseIfWaiting(root: string, t: TaskContext): Promise<void> {
+/**
+ * Refused while a run of this task waits on the person's assistant (and wasn't cancelled), or
+ * while its PR is open: a new run would write over the record that names the PR, and its raise
+ * would then collide with it. A PR the Git host says is merged or closed no longer holds the
+ * task; the new run notes what became of it.
+ */
+async function refuseIfHeld(
+  root: string,
+  t: TaskContext,
+  host: () => GitHost | undefined,
+): Promise<string[]> {
   const before = await readTaskRun(root, t.change.id, t.task.id);
+  if (before?.state === "pr-open") {
+    let state: string | undefined;
+    let why = "";
+    try {
+      const h = host();
+      if (!h) why = "no Git host is connected (runtime.yaml adapters.gitHost)";
+      else if (before.pr) state = (await h.getPullRequest(t.repo.id, before.pr.number)).state;
+    } catch (e) {
+      why = e instanceof Error ? e.message : String(e);
+    }
+    if (before.pr && (state === "merged" || state === "closed"))
+      return [`Its earlier PR ${before.pr.url} is ${state}.`];
+    throw new TaskRunError(
+      "refused",
+      `Task ${t.task.id}'s PR is open (${before.pr?.url ?? "see its run"}): running the task again would start over beside it. Merge or close the PR first, then run the task again.${why ? ` (Atticus couldn't ask the Git host whether it still is: ${why}.)` : ""}`,
+    );
+  }
   // Its hand-off run still open on this machine. One cancelled, validated (an earlier Atticus
   // left the record waiting), or not here at all (.runs is this machine's: a teammate's pull,
   // git clean, pruned after 30 days) no longer holds the task.
@@ -521,6 +574,7 @@ async function refuseIfWaiting(root: string, t: TaskContext): Promise<void> {
       "refused",
       `Task ${t.task.id} already waits on your assistant (run ${before.waiting}, in ${before.worktree}): finish it with Done on its run page (Model runs) or atticus handoff done ${before.waiting}, or Cancel it there and run the task again.`,
     );
+  return [];
 }
 
 /** Whether a Git host is there to push to: one that can't be made (no adapter installed) isn't. */
@@ -552,7 +606,7 @@ export async function previewTaskRun(
 ): Promise<TaskRunPreview> {
   const t = await loadTask(root, changeId, taskId);
   const level = levelOf(t, o.level);
-  await refuseIfWaiting(root, t);
+  await refuseIfHeld(root, t, () => o.gitHost ?? (o.skipGitHost ? undefined : gitHostOf(root, t)));
   return {
     change: t.change.id,
     task: t.task.id,
@@ -661,7 +715,7 @@ async function runTaskHeld(
   const level = levelOf(t, o.level);
   // A run of this task still waits on the person's assistant: a second one would write over
   // its record, and its Done would then find nothing to build.
-  await refuseIfWaiting(root, t);
+  const earlier = await refuseIfHeld(root, t, () => o.gitHost ?? gitHostOf(root, t));
   if (level === "pr") {
     try {
       requireApproval("git-host", o.approval);
@@ -677,7 +731,7 @@ async function runTaskHeld(
   const changeDir = await changeWorktree(root, t.change.id, t.repo.id);
   const handed =
     engine === "speckit" ? `specs/${t.task.id}/plan.md` : `.atticus/tasks/${t.task.id}.md`;
-  const notes: string[] = [];
+  const notes: string[] = [...earlier];
   if (!existsSync(join(changeDir, handed))) {
     const h = await handDown(root, t.change.id, t.task.id, { git });
     notes.push(
@@ -907,7 +961,8 @@ async function completeHeld(
  * Sixth UX walk: the PR of a task drafted at the draft level (built and committed on its task
  * branch), on the person's yes: the same push and PR the pr level makes after its build, without
  * running the AI step again. Refused, with nothing changed, for a task with no passing build, one
- * whose PR is open, and without the approval or a Git host.
+ * whose PR is open, one whose branch has commits the build didn't check, and without the approval
+ * or a Git host. A push or PR that fails leaves it built with a note, so it is raised again.
  */
 export async function raiseTaskPr(
   root: string,
@@ -973,16 +1028,9 @@ export async function raiseTaskPr(
       now,
       maxFix: t.ctx.orgPack.runtime.autonomy.maxFixRounds,
     };
-    try {
-      await openPr(c);
-    } catch (e) {
-      // A protected branch is the rule's refusal, said as it is; a push that fails is a person's.
-      if (e instanceof TaskRunError) throw e;
-      record.state = "needs-person";
-      record.notes.push(
-        `${e instanceof Error ? e.message : String(e)} — the work is in ${record.worktree} (branch ${record.branch}): push it and open the PR by hand, or fix that and raise it again.`,
-      );
-    }
+    // A refusal (a protected branch, commits the build didn't check) changes nothing; a push or
+    // PR that fails is noted and the task stays built, so it can be raised again.
+    await openPr(c);
     // openPr moves the state on (TypeScript still reads it as built here).
     if ((record.state as string) === "pr-open")
       record.notes.push(`PR raised by ${o.approval.by} after the draft (${o.approval.ref}).`);

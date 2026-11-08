@@ -54,6 +54,11 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ### Fixed before release (review)
 
+- Round 42 (review, task PRs):
+  - **A second task's PR is raised after the first one is merged.** Raising a task's PR pushed this machine's change branch too, which is behind once a person merges a task PR on the Git host, so the push was refused and every later task PR failed. The change branch is now pushed only when the host hasn't got it (never over it), and then together with the task branch (`--atomic`), so one is never pushed without the other; the PR goes into the host's change branch.
+  - **A task whose push or PR failed can be raised again.** It stays built with a note that starts "The PR wasn't raised:" and says why, instead of needing a person while Raise refused anything but built. The Task board shows that note and offers Raise the task's PR again; the app's Raise answers 422 with the reason (201 only when the PR is raised); `atticus task run --level pr` ends 1 when its PR wasn't raised.
+  - **Raise pushes only what was built.** A task branch with commits after the build is refused, with nothing changed, saying to run the task again so its build checks them (or to push it and open its PR by hand), rather than pushing commits the PR's "Build passed" never covered. Pushing the built commit instead would leave the branch here ahead of the one on the host.
+  - **A task with an open PR isn't run again over it.** `atticus task run` (and `--dry-run`) on a task whose PR is open is refused, saying to merge or close the PR first; once the Git host says it is merged or closed, the task runs again and notes what became of the earlier PR. Before, the run wrote over the record that named the PR, and the next raise collided with it.
 - Sixth UX walk (what's left):
   - **What's next skips a task that is drafted, with the person's assistant or with its PR open**, and says that its PR is on the Task board.
   - **After a change's question is answered, Questions offers the stage's step from the app**, with the command after it ("Or on the command line"), and calls the answer's scope "This change only".

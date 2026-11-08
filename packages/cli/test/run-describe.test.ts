@@ -49,4 +49,14 @@ describe("atticus task run: a failed run says why", () => {
     expect(r.out).toEqual(["Task 1.2 needs a person in w.", "  The build fails."]);
     expect(r.code).toBe(1);
   });
+
+  it("ends 1 for a pr-level run whose PR wasn't raised (its build stands, so it stays built)", () => {
+    const note = "The PR wasn't raised: git push failed: refused. The build still passes: …";
+    const pr = lines(
+      record({ level: "pr", state: "built", branch: "b", commit: "c0ffee", notes: [note] }),
+    );
+    expect(pr.out.at(-1)).toBe(`  ${note}`);
+    expect(pr.code).toBe(1);
+    expect(lines(record({ state: "built", branch: "b", commit: "c0ffee" })).code).toBe(0);
+  });
 });
