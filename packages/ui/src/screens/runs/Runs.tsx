@@ -252,7 +252,23 @@ export function RunDetail(p: { of: Loaded<Api.RunTranscript> & { reload?: () => 
                 : []),
             ]}
           />
-          {(t.run.state === "waiting" || t.run.state === "prepared") && (
+          {/* UX re-walk: a hand-off whose answer failed its checks says why and can be checked
+              again or cancelled here, not only with atticus handoff done. */}
+          {t.run.state === "failed" && t.run.errors.length > 0 && (
+            <div role="alert" className="stack" style={{ gap: 4 }}>
+              <p className="work-say" style={{ margin: 0 }}>
+                {R.failedSay}
+              </p>
+              <ul style={{ margin: 0, paddingLeft: 18 }}>
+                {t.run.errors.map((e) => (
+                  <li key={e}>{e}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {(t.run.state === "waiting" ||
+            t.run.state === "prepared" ||
+            (t.run.state === "failed" && t.run.runtime === "hand-off")) && (
             <WaitingActions runId={t.run.runId} reload={p.of.reload} prompt={t.prompt} />
           )}
           {t.rounds.length > 1 && (

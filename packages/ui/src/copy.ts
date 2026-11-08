@@ -3769,6 +3769,8 @@ export const COPY = {
     waitingSay:
       "This run waits for its answer. Paste the prompt into your assistant; when it has written the answer, Done checks it.",
     done: "Done: check the answer",
+    failedSay:
+      "The answer didn't pass its checks. Have your assistant fix what is listed, then Done checks it again:",
     copyPrompt: "Copy the prompt",
     doneOk: "Checked the answer.",
     cancel: "Cancel the run",
