@@ -223,6 +223,8 @@ const APPROVE_FLAGS = ["--approve", "--send"];
 const LOCAL_ALWAYS = new Set(["handoff done"]);
 const APPROVE_WHEN: Record<string, { flag: string; value: string }> = {
   "task run": { flag: "--level", value: "pr" },
+  // ADR 0181 part 4: Run all ready tasks runs each task itself; only --level pr pushes and opens PRs.
+  "task run-ready": { flag: "--level", value: "pr" },
   task: { flag: "--level", value: "pr" },
 };
 

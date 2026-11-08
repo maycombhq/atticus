@@ -2959,7 +2959,7 @@ export const COPY = {
     handOffManual: (phase: string) => ` · hand-off ${phase} waits on a manual step`,
     taskBoard: "Task board",
     tasksInCrossRepo:
-      "Tasks in cross-repo order. Run a ready task with AI: Atticus hands the Spec Kit feature down to the repo, prepares the prompt for your assistant and reads the result back at the PR.",
+      "Tasks in cross-repo order. The tech lead or architect runs the tasks: Run all ready tasks runs every task whose dependencies are done, and Run with AI runs one. Atticus hands the Spec Kit feature down to the repo, prepares the prompt for your assistant and reads the result back at the PR.",
     everyRequirementShouldReach:
       "Every requirement should reach a story, a test, code and a release. Gaps are flagged before QA sign-off.",
     requirementToCode: "Requirement to code",
@@ -5002,5 +5002,58 @@ export const COPY = {
     runAgainWhy:
       "The stage is done. Run it again only to redraft: it reads your answers and comments, and the critic checks the new draft.",
     pickForArchitecture: "Pick a change to see what the critic found in its architecture.",
+  },
+  /** ADR 0181 part 4: each role answers its own questions on a change. */
+  roles: {
+    names: {
+      product: "Product",
+      architecture: "Architecture",
+      analysis: "Analysis",
+      delivery: "Delivery",
+    } as Record<string, string>,
+    who: {
+      product: "the product owner",
+      architecture: "the architect",
+      analysis: "the business analyst",
+      delivery: "the tech lead",
+    } as Record<string, string>,
+    filter: "Role",
+    allRoles: "All roles",
+    option: (name: string, open: number | undefined, yours: boolean) =>
+      `${name}${open !== undefined ? ` (${open})` : ""}${yours ? " · yours" : ""}`,
+    pickYours: "Your role",
+    pickYoursHint:
+      "The change doesn't name you among its owners, so pick the role you play: Atticus remembers it on this machine.",
+    pickNone: "Pick a role",
+    homeTitle: "Your role's questions",
+    homeIntro:
+      "Each role answers its own questions on a change: the product owner the brief's, the architect the design's, the business analyst the stories', the tech lead the tasks'.",
+    line: (change: string, role: string, open: number) =>
+      open === 0
+        ? `${change}: no open question for ${role}.`
+        : `${change}: ${open} open ${open === 1 ? "question" : "questions"} for ${role}.`,
+    fromOwners: "From the change's owners",
+    fromPicker: "The role you picked",
+    open: "Answer them",
+    noChanges: "No change in flight asks a role anything yet.",
+    cantRead: (change: string) => `The questions of ${change} couldn't be read.`,
+  },
+  /** ADR 0181 part 4: Run all ready tasks, on the Task board. */
+  runReady: {
+    button: "Run all ready tasks",
+    buttonCount: (n: number) => `Run all ready tasks (${n})`,
+    running: "Running the ready tasks…",
+    why: "The tech lead or architect runs the tasks: every task whose dependencies are done, in cross-repo order, one task run each, stopping on the first that needs a person. Your click approves the drafts; each PR is raised on its own Raise click, and nothing is merged.",
+    noneReady:
+      "No task is ready to run: each waits for the tasks before it, its PR, the assistant or a person.",
+    progress: (message: string) => `Running: ${message}`,
+    ran: (task: string, state: string) => `Task ${task}: ${state}`,
+    refused: (task: string, why: string) => `Task ${task} wasn't run: ${why}`,
+    stopped: (task: string, why: string, left: string) =>
+      `Stopped at task ${task}: ${why}.${left ? ` Not run yet: ${left}.` : ""}`,
+    allRan: (n: number) =>
+      `Ran ${n} ${n === 1 ? "task" : "tasks"}. A person reviews and merges each PR on the Git host.`,
+    failed: "The ready tasks couldn't be run.",
+    waits: (task: string, why: string) => `Task ${task} isn't ready: ${why}.`,
   },
 } as const;

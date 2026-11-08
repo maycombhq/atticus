@@ -133,7 +133,7 @@ describe("a proposed answer, checked before it is shown (ADR 0144, Q5)", () => {
     const { root, q } = await estate("good");
     await acceptProposal(root, q.id, { by: "pat", at: AT });
     const text = await readFile(join(root, "questions", `${q.id}.yaml`), "utf8");
-    expect(text).toContain("schemaVersion: 4");
+    expect(text).toContain("schemaVersion: 5");
     const a = (await readQuestion(root, q.id))!.answer!;
     expect(a.by).toBe("pat");
     expect(a.proposal).toEqual({

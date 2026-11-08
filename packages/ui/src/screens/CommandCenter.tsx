@@ -21,6 +21,7 @@ import { waitingQuestions } from "./OwnerQuestions.js";
 import { Propose } from "../app/propose.js";
 import type { OnboardingData } from "./work/next.js";
 import { HomeEstate, HomeNext, SlashCommands } from "./work/Overview.js";
+import { YourRoleQuestions } from "./RoleQuestions.js";
 
 const T = COPY.commandCenter;
 
@@ -791,6 +792,8 @@ export function CommandCenter() {
       <HowStepsRun />
       <SetupChecklist />
       <HomeNext onboarding={onboarding} changes={changes} questions={asked} trust={trust} />
+      {/* ADR 0181 part 4: each role answers its own questions on a change. */}
+      {changes.state === "ready" && <YourRoleQuestions changes={changes.data} />}
       <div className="bento">
         <Panel title={T.waitingOnYou} span="1 / -1">
           <p className="muted" style={{ margin: "0 0 8px", fontSize: 12.5 }}>

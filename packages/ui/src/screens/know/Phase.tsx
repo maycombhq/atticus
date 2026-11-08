@@ -20,6 +20,7 @@ import { COPY } from "../../copy.js";
 import { NoChangeYet } from "../work/RunNext.js";
 import { ChangeInputs } from "../ChangeInputs.js";
 import { ChangePrototypes } from "../ChangePrototypes.js";
+import { RunReadyTasks } from "./run-ready.js";
 import {
   ChangeWaiting,
   Markdown,
@@ -1172,6 +1173,8 @@ export function Tasks({ hash }: { hash: string }) {
         <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
           {T.tasksInCrossRepo}
         </p>
+        {/* ADR 0181 part 4: the tech lead or architect runs every ready task, beside Run with AI. */}
+        <RunReadyTasks change={c.id} />
       </Panel>
       <TasksByRepo change={c.id} span="span 8" focus={queryParam(hash, "task")} />
       <div className="stack" style={{ gridColumn: "span 4", gap: 16 }}>

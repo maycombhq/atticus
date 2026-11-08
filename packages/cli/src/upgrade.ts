@@ -154,7 +154,7 @@ export const MIGRATIONS: Migration[] = [
     // The id is kept as it was first shipped (stamps record it); the step writes the current version.
     id: "questions-v3",
     summary:
-      "Questions at schema version 4: a question can name the earlier one it may be the same as (ADR 0117), an answer can carry its rule and the proposal it accepted (ADR 0153), and a question the code later disagreed with keeps why it reopened and the answer it had (ADR 0162)",
+      "Questions at schema version 5: a question can name the earlier one it may be the same as (ADR 0117), an answer can carry its rule and the proposal it accepted (ADR 0153), a question the code later disagreed with keeps why it reopened and the answer it had (ADR 0162), and a change's question carries the role that owns it, derived from the stage that asked when the file doesn't say (ADR 0181)",
     pending: (root) => migrateQuestions(root, { dryRun: true }),
     apply: (root) => migrateQuestions(root),
   },

@@ -9,6 +9,7 @@ import { Choice, CopyButton, message } from "./run/shared.js";
 import { FilterBox, FilterCount, FilterEmpty, filteredWhat, matchesWords } from "../app/filter.js";
 import { OwnerQuestionList, questionsKind, type QuestionsKind } from "./OwnerQuestions.js";
 import { queryParam } from "./know/common.js";
+import { RoleFilter, roleScopeOf, scopeWithRole, withRoleScope } from "./RoleQuestions.js";
 
 /**
  * The Questions page (ADR 0078, plan Phase 2a): the questions a step raised for a person, each
@@ -29,6 +30,8 @@ export interface QuestionListView {
   me?: Api.QuestionListT["me"];
   /** beta.21: every question on file by state, and per repo. */
   counts?: Api.QuestionListT["counts"];
+  /** ADR 0181 part 4: with change=, the person's roles on it. */
+  yourRoles?: Api.QuestionListT["yourRoles"];
 }
 
 type About = NonNullable<Api.QuestionListT["about"]>[string];
@@ -1224,14 +1227,19 @@ export function QuestionsIntro({ change }: { change?: string | undefined }) {
 export function Questions({ hash }: { hash: string }) {
   const [filter, setFilter] = useState<"open" | "all">("open");
   const [whose, setWhose] = useState<"all" | "mine">("all");
-  const fetched = useApi<QuestionListView>(questionsUrl(filter, whose));
+  // ADR 0181 part 4: one change's questions and one role's, from the address (Home links here).
+  const [scope, setScope] = useState(() => roleScopeOf(hash));
+  useEffect(() => setScope(roleScopeOf(hash)), [hash]);
+  const fetched = useApi<QuestionListView>(withRoleScope(questionsUrl(filter, whose), scope));
   // UX review (2026-11-08): the knowledge gaps' owner questions, the ones Home counts too.
   const owner = useApi<Api.OwnerQuestionListT>("/api/owner-questions");
   useReloadOnFiles(fetched, owner);
   // Eighth UX walk: opened for a change (?change=, "Answer them on Questions"), the page shows
   // the questions its steps asked, says so, and links to every question.
   const forChange = changeOfHash(hash);
-  const list = scopeToChange(fetched, forChange);
+  // ADR 0181 part 4: the server narrows to the change (?change=) by the same rule and more
+  // (its stages' questions, those resting on it); the client narrowing stays for an older server.
+  const list = scope.change ? fetched : scopeToChange(fetched, forChange);
   const [kind, setKind] = useState<QuestionsKind>(questionsKind(hash));
   useEffect(() => setKind(questionsKind(hash)), [hash]);
 
@@ -1312,6 +1320,12 @@ export function Questions({ hash }: { hash: string }) {
                   </select>
                 </div>
               )}
+              <RoleFilter
+                value={scope.role}
+                onChange={(r) => setScope((x) => scopeWithRole(x, r))}
+                byRole={list.state === "ready" ? list.data.counts?.byRole : undefined}
+                yours={list.state === "ready" ? list.data.yourRoles : undefined}
+              />
               <Choice
                 label={C.whose}
                 value={whose}

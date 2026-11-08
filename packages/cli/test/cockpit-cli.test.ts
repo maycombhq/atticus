@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { cp, mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -117,5 +117,18 @@ describe("a stage's questions on the cockpit (WP7.1)", () => {
     });
     expect(c.openQuestions).toBe(1);
     expect(c.stages[0]).not.toHaveProperty("asked");
+    // ADR 0181 part 4: the open questions by the role that owns them, and the person's roles.
+    expect(c.openQuestionsByRole).toEqual({ architecture: 1 });
+    expect(c).not.toHaveProperty("yourRoles");
+    const change = join(at, "openspec/changes", CHANGE, "change.yaml");
+    await writeFile(
+      change,
+      (await readFile(change, "utf8")).replace(
+        "systems:",
+        "owners:\n  architect: [priya.nair]\n  team-lead: [sam]\nsystems:",
+      ),
+    );
+    expect((await cockpit(at, CHANGE, { user: "priya.nair" })).yourRoles).toEqual(["architecture"]);
+    expect((await cockpit(at, CHANGE, { user: "cy" })).yourRoles).toEqual([]);
   });
 });

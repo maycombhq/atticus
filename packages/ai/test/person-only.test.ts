@@ -35,6 +35,8 @@ const PERSON = [
   "plan submit c1 --approve",
   "ado sync c1 --approve",
   "task run c1 t1 --level pr --approve",
+  // ADR 0181 part 4: Run all ready tasks at the pr level is the person's yes to each push and PR.
+  "task run-ready c1 --level pr --approve",
   "handoff done r1 --approve",
   "scan verify forge --accept",
   "repo describe forge-ledger --accept",
@@ -78,6 +80,7 @@ const SESSION = [
   "rules add k1 --type service --draft",
   "digest",
   "orgpack owner",
+  "task run-ready c1 --dry-run",
 ];
 
 describe("what only a person does", () => {

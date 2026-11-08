@@ -26,11 +26,32 @@ import { BasePath, HostPattern } from "./workspace.js";
  * why and the answer it had. Optional; version-1 to version-3 files read as before and come back
  * as version 4 in memory.
  */
-export const QUESTION_SCHEMA_VERSION = 4 as const;
+/**
+ * Version 5 (ADR 0181 part 4) adds `role`: the role that owns the question on a change (product,
+ * architecture, analysis, delivery), written when it is raised from the stage that raised it,
+ * unless the question says otherwise. Optional: version-1 to version-4 files read unchanged, and
+ * `roleOfQuestion` derives their role from the step that asked (question-roles.ts).
+ */
+export const QUESTION_SCHEMA_VERSION = 5 as const;
 
 const QuestionSchemaVersion = z
-  .union([z.literal(1), z.literal(2), z.literal(3), z.literal(QUESTION_SCHEMA_VERSION)])
-  .overwrite((): 1 | 2 | 3 | 4 => QUESTION_SCHEMA_VERSION);
+  .union([
+    z.literal(1),
+    z.literal(2),
+    z.literal(3),
+    z.literal(4),
+    z.literal(QUESTION_SCHEMA_VERSION),
+  ])
+  .overwrite((): 1 | 2 | 3 | 4 | 5 => QUESTION_SCHEMA_VERSION);
+
+/**
+ * ADR 0181 part 4: who owns a question on a change, by the phase that raised it. The product owner
+ * (Define), the architect (Design), the business analyst (Plan's stories) and the tech lead (Plan's
+ * tasks and Build). Words, not permissions: anyone can still read and answer any question.
+ */
+export const QUESTION_ROLES = ["product", "architecture", "analysis", "delivery"] as const;
+export const QuestionRole = z.enum(QUESTION_ROLES);
+export type QuestionRole = z.infer<typeof QuestionRole>;
 
 /** A question's id: q- and 12 hex characters of the fingerprint of what it asks about. */
 export const QuestionId = z.string().regex(/^q-[0-9a-f]{12}$/, "a question id is q- and 12 hex");
@@ -169,6 +190,11 @@ export const Question = z
     evidence: z.array(QuestionEvidence).min(1),
     /** The scope the asker proposed. */
     scope: QuestionScope,
+    /**
+     * Version 5 (ADR 0181 part 4): the role that owns the question on its change, from the stage
+     * that raised it unless the question said otherwise. Left out where no stage owns it.
+     */
+    role: QuestionRole.optional(),
     state: QuestionState,
     /** The command to run once it is answered; it reads the answer. */
     rerun: z.string().min(1),
@@ -249,6 +275,11 @@ export const QuestionDraft = z
     scope: QuestionScopeLevel.default("repo"),
     /** The repo type the answer would apply to, for scope repo-type. */
     repoType: RecordId.optional(),
+    /**
+     * ADR 0181 part 4: the role the question is for, when it isn't the raising stage's own (a
+     * design stage asking the product owner what the brief meant). Left out, the stage's role.
+     */
+    role: QuestionRole.optional(),
     /**
      * The step's own reading (ADR 0117): this question is one already on file (same), or asks
      * part of one (narrower), with the words of the earlier question that say so. Atticus checks
