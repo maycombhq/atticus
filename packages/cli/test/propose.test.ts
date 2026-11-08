@@ -237,3 +237,74 @@ describe("review round 35", () => {
     }
   });
 });
+
+describe("review round 36: Bring in never loses an edit", () => {
+  const setup = async () => {
+    const { root, remote } = await metarepo();
+    g(root, "branch", "-q", "--set-upstream-to=origin/main", "main");
+    await writeFile(join(root, "other.md"), "base\n");
+    g(root, "add", "-A");
+    g(root, "commit", "-q", "-m", "other");
+    g(root, "push", "-q", "origin", "main");
+    const work = join(root, "..", "teammate");
+    g(join(root, ".."), "clone", "-q", "-b", "main", remote, work);
+    return { root, work };
+  };
+  const io = (said: string[]) => ({
+    out: (l: string) => said.push(l),
+    err: (l: string) => said.push(`ERR ${l}`),
+  });
+
+  it("refuses with nothing touched when what merged also changes a file the person edited", async () => {
+    const { root, work } = await setup();
+    await mkdir(join(work, "questions"), { recursive: true });
+    await writeFile(join(work, "questions/q1.yaml"), "answer: 1\n");
+    await writeFile(join(work, "README.md"), "edited\n");
+    await writeFile(join(work, "other.md"), "the teammate's\n");
+    g(work, "add", "-A");
+    g(work, "commit", "-q", "-m", "merged");
+    g(work, "push", "-q", "origin", "main");
+    await mkdir(join(root, "questions"), { recursive: true });
+    await writeFile(join(root, "questions/q1.yaml"), "answer: 1\n");
+    await writeFile(join(root, "README.md"), "edited\n");
+    await writeFile(join(root, "other.md"), "mine\n");
+    const said: string[] = [];
+    expect(await bringInMerged(root, io(said))).toBe(1);
+    expect(said.at(-1)).toContain("nothing was changed: other.md");
+    expect(await readFile(join(root, "questions/q1.yaml"), "utf8")).toBe("answer: 1\n");
+    expect(await readFile(join(root, "README.md"), "utf8")).toBe("edited\n");
+    expect(await readFile(join(root, "other.md"), "utf8")).toBe("mine\n");
+  });
+
+  it("sets a staged new file aside, and brings in the rest", async () => {
+    const { root, work } = await setup();
+    await mkdir(join(work, "questions"), { recursive: true });
+    await writeFile(join(work, "questions/q1.yaml"), "answer: 1\n");
+    await writeFile(join(work, "README.md"), "edited\n");
+    g(work, "add", "-A");
+    g(work, "commit", "-q", "-m", "merged");
+    g(work, "push", "-q", "origin", "main");
+    await mkdir(join(root, "questions"), { recursive: true });
+    await writeFile(join(root, "questions/q1.yaml"), "answer: 1\n");
+    await writeFile(join(root, "README.md"), "edited\n");
+    g(root, "add", "-A");
+    const said: string[] = [];
+    expect(await bringInMerged(root, io(said)), said.join("\n")).toBe(0);
+    expect(g(root, "log", "-1", "--format=%s").trim()).toBe("merged");
+    expect(await readFile(join(root, "questions/q1.yaml"), "utf8")).toBe("answer: 1\n");
+    expect(g(root, "status", "--porcelain").trim()).toBe("");
+  });
+
+  it("refuses a branch with its own commits, with nothing touched", async () => {
+    const { root, work } = await setup();
+    await writeFile(join(work, "other.md"), "theirs\n");
+    g(work, "commit", "-q", "-am", "theirs");
+    g(work, "push", "-q", "origin", "main");
+    await writeFile(join(root, "local.md"), "x\n");
+    g(root, "add", "-A");
+    g(root, "commit", "-q", "-m", "local");
+    const said: string[] = [];
+    expect(await bringInMerged(root, io(said))).toBe(1);
+    expect(said.at(-1)).toContain("Your branch has commits");
+  });
+});

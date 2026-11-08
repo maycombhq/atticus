@@ -198,10 +198,12 @@ export async function proposeForReview(
 }
 
 /**
- * Review round 35: after a proposal (or a hand-off) merges, the person's copy still has the same
- * edits uncommitted, so `git pull` refuses. Each changed file whose content is already what the
- * upstream branch has is put back (tracked) or set aside (new), then the branch fast-forwards.
- * Files with edits the upstream doesn't have are left as they are and named.
+ * Review rounds 35-36: after a proposal (or a hand-off) merges, the person's copy still has the
+ * same edits uncommitted, so `git pull` refuses. Everything is decided before anything is
+ * touched: a branch with its own commits, or an edit of the person's that the incoming commits
+ * also change, refuses with nothing done. Then each changed file whose content is already what
+ * the upstream branch has is put back (or, new, set aside), and the branch fast-forwards. If the
+ * fast-forward still fails, every file put back gets the upstream's content again.
  */
 export async function bringInMerged(
   root: string,
@@ -210,6 +212,7 @@ export async function bringInMerged(
 ): Promise<number> {
   const git = o.git ?? createGit();
   const run = async (args: string[]) => (await git(args, root)).stdout;
+  const first = (e: unknown) => (e as Error).message.split("\n")[0];
   const up = (
     await run(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]).catch(() => "")
   ).trim();
@@ -217,8 +220,27 @@ export async function bringInMerged(
     io.err("This branch follows no remote branch, so there is nothing to bring in.");
     return 2;
   }
-  const remote = up.split("/")[0]!;
-  await run(["fetch", "--quiet", remote]);
+  try {
+    await run(["fetch", "--quiet", up.split("/")[0]!]);
+  } catch (e) {
+    io.err(`The remote couldn't be reached, so nothing was changed: ${first(e)}`);
+    return 1;
+  }
+  const ancestor = await run(["merge-base", "--is-ancestor", "HEAD", up]).then(
+    () => true,
+    () => false,
+  );
+  if (!ancestor) {
+    io.err(
+      `Your branch has commits ${up} doesn't, so nothing was changed. Push them in a pull request, or ask someone who uses git to bring the two together.`,
+    );
+    return 1;
+  }
+  const incoming = new Set(
+    (await run(["-c", "core.quotePath=false", "diff", "--name-only", "-z", "HEAD", up]))
+      .split("\0")
+      .filter(Boolean),
+  );
   const status = await run([
     "-c",
     "core.quotePath=false",
@@ -229,15 +251,14 @@ export async function bringInMerged(
   ]);
   const parts = status.split("\0");
   const kept: string[] = [];
-  let tidied = 0;
+  const tidy: { path: string; inHead: boolean; staged: boolean }[] = [];
   for (let i = 0; i < parts.length; i++) {
     const e = parts[i]!;
     if (e.length < 4) continue;
     const st = e.slice(0, 2);
     const path = e.slice(3);
     if (st.startsWith("R")) {
-      i++;
-      kept.push(path);
+      kept.push(path, parts[++i]!);
       continue;
     }
     const theirs = (
@@ -250,20 +271,45 @@ export async function bringInMerged(
       kept.push(path);
       continue;
     }
-    if (st === "??") await rm(join(root, path), { force: true });
-    else await run(["checkout", "HEAD", "--", path]);
-    tidied++;
+    const inHead = await run(["cat-file", "-e", `HEAD:${path}`]).then(
+      () => true,
+      () => false,
+    );
+    tidy.push({ path, inHead, staged: st[0] !== " " && st[0] !== "?" });
   }
+  const clash = kept.filter((k) => incoming.has(k));
+  if (clash.length) {
+    io.err(
+      `What merged also changes files you edited, so nothing was changed: ${clash.join(", ")}. Propose your edits for review, or ask someone who uses git to bring them together.`,
+    );
+    return 1;
+  }
+  const done: string[] = [];
+  const putBack = async () => {
+    for (const p of done)
+      await run(["checkout", up, "--", p])
+        .then(() => run(["reset", "-q", "--", p]))
+        .catch(() => undefined);
+  };
   try {
+    for (const t of tidy) {
+      if (t.inHead) await run(["checkout", "HEAD", "--", t.path]);
+      else {
+        if (t.staged) await run(["rm", "--cached", "--quiet", "--", t.path]);
+        await rm(join(root, t.path), { force: true });
+      }
+      done.push(t.path);
+    }
     await run(["merge", "--ff-only", "--quiet", up]);
   } catch (e) {
+    await putBack();
     io.err(
-      `Your copy couldn't be brought up to ${up}: ${(e as Error).message.split("\n")[0]}${kept.length ? `. Your own edits stay: ${kept.join(", ")}` : ""}`,
+      `Your copy couldn't be brought up to ${up}: ${first(e)}. Your files are as they were${kept.length ? `, and your own edits stay: ${kept.join(", ")}` : ""}.`,
     );
     return 1;
   }
   io.out(
-    `Brought in what merged on ${up}${tidied ? ` (${tidied} file${tidied === 1 ? "" : "s"} were already the same)` : ""}.`,
+    `Brought in what merged on ${up}${done.length ? ` (${done.length} file${done.length === 1 ? "" : "s"} were already the same)` : ""}.`,
   );
   if (kept.length) io.out(`Your own edits stay as they were: ${kept.join(", ")}.`);
   return 0;
