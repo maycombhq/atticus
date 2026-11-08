@@ -3,6 +3,8 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { MockGitHost } from "@maycombhq/adapters";
+import { MockRuntime } from "@maycombhq/ai";
+import { runTask } from "@maycombhq/taskrun";
 import { Api } from "@maycombhq/core";
 import { startServer } from "@maycombhq/server";
 import { uiRoutes } from "../src/ui-api.js";
@@ -79,6 +81,54 @@ describe("a task's run on the Task board, and its PR from the app", () => {
       expect(early.status).toBe(422);
       expect(JSON.stringify(await early.json())).toContain("Task 1.2 hasn't been drafted yet");
       expect((await call(`/api/changes/${CHANGE}/tasks/9.9/pr`, "POST")).status).toBe(404);
+    } finally {
+      await srv.close();
+    }
+  }, 120_000);
+
+  it("says a PR that couldn't be opened (422), keeps the task built with why, and raises it on the next click", async () => {
+    const { root } = await speckitRoot({ repos: ["forge-ledger"] });
+    const now = () => new Date("2026-11-08T09:00:00Z");
+    const file = "src/main/java/forge/ledger/TransferLimits.java";
+    await runTask(root, CHANGE, "1.2", {
+      level: "draft",
+      by: "dev",
+      runtime: new MockRuntime(
+        () =>
+          `Done.\n\n=== file: ${file}\npackage forge.ledger;\n\nclass TransferLimits { boolean ok; }\n=== end file\n`,
+        { now },
+      ),
+      git,
+      now,
+      commands: async () => ({ exitCode: 0, stdout: "ok", stderr: "" }),
+    });
+    const host = new MockGitHost([{ repo: "forge-ledger" }]);
+    host.failNext("unavailable", "createPullRequest");
+    const srv = await startServer({
+      root,
+      port: 0,
+      user: "pat",
+      extend: (r, ctx) => uiRoutes(r, ctx, { gitHost: host, taskRun: { git } }),
+    });
+    const call = (path: string, method = "GET") =>
+      fetch(`${srv.url}${path}`, {
+        method,
+        headers: { "X-Atticus-Token": srv.token, "Content-Type": "application/json" },
+        ...(method === "POST" ? { body: "{}" } : {}),
+      });
+    try {
+      const failed = await call(`/api/changes/${CHANGE}/tasks/1.2/pr`, "POST");
+      expect(failed.status).toBe(422);
+      expect(JSON.stringify(await failed.json())).toContain("The PR wasn't raised:");
+      const tasks = z
+        .array(Api.Task)
+        .parse(await (await call(`/api/changes/${CHANGE}/tasks`)).json());
+      const t = tasks.find((x) => x.id === "1.2")!;
+      expect(t.taskRun?.state).toBe("built");
+      expect(t.taskRun?.notes.at(-1)).toMatch(/^The PR wasn't raised: .*raise the task's PR again/);
+      const raised = await call(`/api/changes/${CHANGE}/tasks/1.2/pr`, "POST");
+      expect(raised.status).toBe(201);
+      expect(Api.Task.parse(await raised.json()).taskRun).toMatchObject({ state: "pr-open" });
     } finally {
       await srv.close();
     }

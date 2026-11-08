@@ -69,6 +69,12 @@ function fail(io: Output, e: unknown): number {
 
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
 
+/** 1 when a person has a step: a failed run, one for a person, or a pr-level run whose PR wasn't raised (it stays built, so it can be raised again). */
+const exitOf = (r: TaskRunRecord): number =>
+  r.state === "failed" || r.state === "needs-person" || (r.level === "pr" && r.state === "built")
+    ? 1
+    : 0;
+
 export function describeRun(root: string, r: TaskRunRecord, io: Output): number {
   const what: Record<TaskRunRecord["state"], string> = {
     planned: `Wrote the plan for task ${r.task}: ${changesRelOf(root)}/${r.change}/tasks/${r.task}/plan.md.`,
@@ -86,7 +92,7 @@ export function describeRun(root: string, r: TaskRunRecord, io: Output): number 
   const reason = r.state === "failed" ? r.notes.at(-1) : undefined;
   io.out(reason ? `The run for task ${r.task} failed: ${reason}` : what[r.state]);
   for (const n of reason ? r.notes.slice(0, -1) : r.notes) io.out(`  ${n}`);
-  return r.state === "failed" || r.state === "needs-person" ? 1 : 0;
+  return exitOf(r);
 }
 
 /** atticus task run <change> <task> [--level plan|draft|pr] [--mode <mode>] [--by <you>] [--approve] [--json] */
@@ -193,7 +199,7 @@ export async function taskRun(
     });
     if (o.json) {
       io.out(JSON.stringify(r, null, 2));
-      return r.state === "failed" || r.state === "needs-person" ? 1 : 0;
+      return exitOf(r);
     }
     return describeRun(root, r, io);
   } catch (e) {

@@ -56,3 +56,10 @@ Round 26 settled two more points:
 
 - **After the answer is validated, a failure is a person's task.** Committing, checking against the design and opening the PR all run after the answer is validated. A failure in any of them (a pre-commit hook, signing, a refused push, a protected branch) records the task as needs-person with what it said, and the run ends. A task can't be left waiting on a validated run that no Done, Cancel or new run could move. A record left so by an earlier Atticus doesn't hold the task either.
 - **A run's files are this machine's.** `.atticus/.runs` is kept per machine. A task waiting on a run whose files aren't here (a teammate's pull, a cleaned folder, runs pruned after 30 days) doesn't hold the task. Done says the run isn't on this machine, and the app's Cancel ends the wait.
+
+Round 42 (task PRs) refined that for the PR:
+
+- **A push or PR that fails keeps the build.** Once the commit is made and its build passed, a refused push or a Git host that fails leaves the task built, with a note that starts "The PR wasn't raised:" and says why, so the person raises its PR again once that is fixed. A protected branch is still a refusal.
+- **The change branch is the host's once it is there.** Raising a task's PR pushes the change branch only when the host hasn't got it, together with the task branch (`--atomic`), and never over it: merged task PRs move it on the host.
+- **Only what was built is raised.** A task branch with commits after the passing build is refused, with nothing changed.
+- **An open PR holds its task.** A task whose PR is open isn't run again until the Git host says the PR is merged or closed.

@@ -2767,6 +2767,9 @@ export const COPY = {
     raiseTaskPr: "Raise the task's PR",
     raisingTaskPr: "Raising the PR…",
     raiseTaskPrWhy: "Your click is your approval to push the task's branch and open its PR.",
+    /** Review round 42: the push or the Git host failed; the build stands, so it is raised again. */
+    taskPrNotRaised:
+      "Its PR wasn't raised. The build still passes: raise it again once this is fixed.",
     taskPrRaised: (task: string) =>
       `Task ${task}'s PR is raised into the change branch. A person reviews and merges it on the Git host.`,
     taskPrManual: (task: string) =>

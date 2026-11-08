@@ -23,6 +23,13 @@ export const isManualLink = (url: string | undefined): boolean =>
 /** The states in which a task has run and its next step is its PR, or its assistant's Done. */
 const PAST_THE_RUN = new Set(["built", "unverified", "pr-open", "waiting"]);
 
+/**
+ * Review round 42: a built task whose PR wasn't raised (the push or the Git host failed) keeps
+ * its build, and its last note, which says why, starts so (packages/taskrun run.ts).
+ */
+export const isPrNotRaised = (note: string | undefined): boolean =>
+  !!note && note.startsWith("The PR wasn't raised:");
+
 /** Whether Run with AI is still the task's step (it never ran, or it stopped). */
 export function runIsTheStep(t: Pick<Task, "done" | "taskRun">): boolean {
   return !t.done && !PAST_THE_RUN.has(t.taskRun?.state ?? "");
@@ -89,14 +96,13 @@ export function RaiseTaskPr(p: { change: string; task: string; onDone?: () => vo
           disabled={act.busy}
           onClick={() =>
             void act.run(
+              // A PR that wasn't raised (422) still changed the task's note: the board reloads
+              // either way, and offers Raise again with why.
               () =>
                 api<Task>(
                   `/api/changes/${encodeURIComponent(p.change)}/tasks/${encodeURIComponent(p.task)}/pr`,
                   { method: "POST", body: {} },
-                ).then((r) => {
-                  p.onDone?.();
-                  return r;
-                }),
+                ).finally(() => p.onDone?.()),
               (r) =>
                 isManualLink(r.taskRun?.pr?.url) ? T.taskPrManual(p.task) : T.taskPrRaised(p.task),
             )
@@ -118,19 +124,22 @@ export function TaskRunState(p: { change: string; task: Task; onDone?: () => voi
   const t = p.task;
   const tr = t.taskRun;
   if (!tr || t.done) return null;
-  const alert = tr.state === "needs-person" || tr.state === "failed";
   const last = tr.notes.at(-1);
+  const notRaised = tr.state === "built" && isPrNotRaised(last);
+  const stopped = tr.state === "needs-person" || tr.state === "failed";
+  const alert = stopped || notRaised;
   return (
     <div className="stack" style={{ gap: 4, fontSize: 12 }}>
       <span className="row" style={{ gap: 6, flexWrap: "wrap", alignItems: "center" }}>
         <span
-          className={`chip ${alert ? "blocking" : tr.state === "waiting" ? "ai" : tr.state === "unverified" ? "warn" : "done"}`}
+          className={`chip ${stopped ? "blocking" : tr.state === "waiting" ? "ai" : tr.state === "unverified" ? "warn" : "done"}`}
         >
           {T.taskState[tr.state] ?? tr.state.toUpperCase()}
         </span>
         {t.run && <a href={`#/runs?run=${encodeURIComponent(t.run)}`}>{T.openItsRun}</a>}
       </span>
       {tr.state === "built" && tr.commit && <span>{T.taskBuilt(tr.branch, tr.commit)}</span>}
+      {notRaised && <span>{T.taskPrNotRaised}</span>}
       {tr.state === "built" && <RaiseTaskPr change={p.change} task={t.id} onDone={p.onDone} />}
       {tr.state === "unverified" && (
         <span>{T.taskUnverified(t.repo, tr.branch, `change/${p.change}`)}</span>

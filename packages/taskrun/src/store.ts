@@ -16,13 +16,16 @@ export const TaskRunState = z.enum([
   "planned",
   /** Hand-off mode: the person's assistant is doing the step. */
   "waiting",
-  /** Draft finished with a passing build, committed on the task branch. */
+  /**
+   * Draft finished with a passing build, committed on the task branch. Also a PR that wasn't
+   * raised (the push or the Git host failed): its note says why, and it can be raised again.
+   */
   "built",
   /** Draft finished but the repo has no build command, so nothing was checked. */
   "unverified",
   /** The PR from the task branch to the change branch is open. */
   "pr-open",
-  /** The build still fails after the allowed fix rounds, or a PR can't be opened: a person takes over. */
+  /** The build still fails after the allowed fix rounds, or a step after it can't be done: a person takes over. */
   "needs-person",
   /** The AI run itself failed. */
   "failed",

@@ -6,6 +6,7 @@ import type { Task } from "../src/screens/Changes.js";
 import { CockpitView } from "../src/screens/work/Cockpit.js";
 import {
   isManualLink,
+  isPrNotRaised,
   runIsTheStep,
   TaskRunState,
   taskNext,
@@ -52,6 +53,24 @@ describe("a task that has run, on the Task board", () => {
     expect(html).toContain(esc(T.taskBuilt(`task/${CHANGE}/1.1`, "0123456")));
     expect(html).toContain(esc(T.raiseTaskPr));
     expect(html).toContain(esc(T.raiseTaskPrWhy));
+  });
+
+  it("built, its PR not raised (the push or the host failed): offers Raise again and says why", () => {
+    const why =
+      "The PR wasn't raised: git-host: injected unavailable on createPullRequest. The build still passes: fix that and raise the task's PR again (Raise the task's PR on the Task board), or push b and open its PR into change/x yourself.";
+    const t = built("1.1");
+    t.taskRun!.notes = ["Handed the task down first.", why];
+    const html = renderToStaticMarkup(<TaskRunState change={CHANGE} task={t} />);
+    expect(html).toContain(T.taskState.built!);
+    expect(html).toContain(esc(T.taskPrNotRaised));
+    expect(html).toContain(esc(T.raiseTaskPr));
+    expect(html).toContain(`role="alert"`);
+    expect(html).toContain(esc(why));
+    expect(isPrNotRaised(why)).toBe(true);
+    // A built task whose last note is anything else says nothing more.
+    const plain = renderToStaticMarkup(<TaskRunState change={CHANGE} task={built("1.2")} />);
+    expect(plain).not.toContain(`role="alert"`);
+    expect(plain).not.toContain(esc(T.taskPrNotRaised));
   });
 
   it("unverified: says why Atticus won't open its PR and what to do, with no Raise", () => {

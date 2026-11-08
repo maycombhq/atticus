@@ -617,8 +617,9 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
         const task = params.taskId!;
         if (!(await taskViews(root, change)).some((t) => t.id === task))
           throw notFound(`Change ${change} has no task ${task}.`);
+        let raised: Awaited<ReturnType<typeof raiseTaskPr>>;
         try {
-          await raiseTaskPr(root, change, task, {
+          raised = await raiseTaskPr(root, change, task, {
             approval: {
               by: user,
               at: (deps.now ? new Date(deps.now) : new Date()).toISOString(),
@@ -636,6 +637,14 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
           type: "file.changed",
           path: `${changesRelOf(root)}/${change}/tasks/${task}/task-run.yaml`,
         });
+        // Review round 42: a push or PR that failed leaves the task built with a note of why, so
+        // it can be raised again; 201 says the PR is raised, so this one is the refusal (422).
+        if (raised.state !== "pr-open")
+          throw refused({
+            code: 1,
+            out: [],
+            err: [raised.notes.at(-1) ?? "The PR wasn't raised."],
+          });
         return {
           status: 201,
           body: (await taskViews(root, change)).find((t) => t.id === task)!,
