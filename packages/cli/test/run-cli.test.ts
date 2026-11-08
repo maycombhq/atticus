@@ -183,6 +183,95 @@ describe("atticus task run --level pr without --approve", () => {
   );
 });
 
+describe("Done on a run whose task run needs a person", () => {
+  it(
+    "is refused with where to carry on, never marked done with nothing built",
+    async () => {
+      const { root } = await speckitRoot({ repos: ["forge-ledger"] });
+      let c = capture();
+      expect(
+        await taskRun(root, CHANGE, "1.3", { by: "dev", level: "draft", mode: "hand-off" }, c.io, {
+          git,
+          now,
+          commands: ok,
+        }),
+      ).toBe(0);
+      const runId = /atticus handoff done (run-[0-9a-z-]+)$/.exec(c.out[0]!)![1]!;
+      await writeFile(join(root, "openspec/changes", CHANGE, "tasks/1.3/report.md"), "Tried.\n");
+      const failing = async () => ({ exitCode: 1, stdout: "", stderr: "broken" });
+      for (let i = 0; i < 6 && (await isTaskRun(root, runId)); i++) {
+        c = capture();
+        await runDone(root, runId, { by: "pat" }, c.io, { git, now, commands: failing });
+      }
+      expect(await isTaskRun(root, runId)).toBe(false);
+      c = capture();
+      const code = await runDone(root, runId, { by: "pat" }, c.io, { git, now, commands: ok });
+      expect(code).toBe(1);
+      expect(c.err.join("\n")).toMatch(
+        new RegExp(
+          `^Run ${runId} is part of task 1.3's run, which needs a person now: carry on in workspace/.worktrees/`,
+        ),
+      );
+      expect(c.out.join("\n")).not.toMatch(/is valid/);
+    },
+    T,
+  );
+});
+
+describe("atticus task run's dry run", () => {
+  it(
+    "takes runtime.yaml's default level: a default pr without --approve is a dry run, not a refusal",
+    async () => {
+      const { root } = await speckitRoot({ repos: ["forge-ledger"] });
+      const rt = join(root, "org-pack/runtime.yaml");
+      await writeFile(
+        rt,
+        (await readFile(rt, "utf8")).replace("  default: draft\n", "  default: draft-and-pr\n"),
+      );
+      const c = capture();
+      expect(
+        await taskRun(root, CHANGE, "1.2", { by: "dev", json: true }, c.io, { git, now }),
+      ).toBe(0);
+      expect(JSON.parse(c.out.join("\n"))).toMatchObject({
+        dryRun: true,
+        level: "pr",
+        repo: "forge-ledger",
+        branch: "task/add-transfer-limit/1.2",
+      });
+      expect(
+        existsSync(join(root, "workspace/.worktrees", CHANGE, ".tasks/1.2/forge-ledger")),
+      ).toBe(false);
+    },
+    T,
+  );
+
+  it(
+    "makes the run's own checks first: a level past the repo's cap, a task that isn't there",
+    async () => {
+      const { root } = await speckitRoot({ repos: ["forge-ledger"] });
+      const rt = join(root, "org-pack/runtime.yaml");
+      await writeFile(
+        rt,
+        (await readFile(rt, "utf8")).replace(
+          "capPerRepo: { forge-gateway: plan-only,",
+          "capPerRepo: { forge-ledger: draft, forge-gateway: plan-only,",
+        ),
+      );
+      let c = capture();
+      expect(
+        await taskRun(root, CHANGE, "1.2", { by: "dev", level: "pr" }, c.io, { git, now }),
+      ).toBe(1);
+      expect(c.err.join("\n")).toMatch(/forge-ledger allows Run with AI up to draft/);
+      c = capture();
+      expect(
+        await taskRun(root, CHANGE, "1.2", { by: "dev", dryRun: true }, c.io, { git, now }),
+      ).toBe(0);
+      expect(c.out.at(-1)).toBe("Nothing was done: this was a dry run.");
+    },
+    T,
+  );
+});
+
 describe("Mark done in the app on a task run", () => {
   it(
     "builds and commits as atticus handoff done does, and pushes nothing",

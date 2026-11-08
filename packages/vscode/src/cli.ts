@@ -131,7 +131,16 @@ export function runCli(
     }
     const sub = token?.onCancellationRequested(() => {
       cancelled = true;
-      child.kill();
+      // Elsewhere SIGTERM reaches atticus, which stops its builds and its assistant's session
+      // and records the stop. Windows ends a process without telling it, and its children
+      // (a build, headless Claude Code) would keep going: the whole tree is ended there.
+      if (process.platform === "win32" && child.pid !== undefined) {
+        const k = spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], {
+          stdio: "ignore",
+          windowsHide: true,
+        });
+        k.on("error", () => child.kill());
+      } else child.kill();
     });
     // What the command reads on stdin (ADR 0110: history add); none closes it at once, so a
     // command that reads it never waits.

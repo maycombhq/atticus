@@ -436,3 +436,19 @@ export function presetFrom(cmd: CatalogCommand, rest: string[]): Answers {
     flags,
   };
 }
+
+/**
+ * The CLI's words when a run it was given turned out to need the person's yes (a task run at
+ * runtime.yaml's default pr level, with no --level said): it did nothing and said so.
+ */
+export const DRY_RUN_NEEDS_APPROVE = "Nothing was done: run it again with --approve";
+
+/** A command that writes only with one option came back as that option's dry run. */
+export function asksApproval(cmd: CatalogCommand, p: { code: number; lines: string[] }): boolean {
+  return (
+    !!cmd.approveWhen &&
+    !!cmd.approve &&
+    p.code === 0 &&
+    p.lines.some((l) => l.startsWith(DRY_RUN_NEEDS_APPROVE))
+  );
+}

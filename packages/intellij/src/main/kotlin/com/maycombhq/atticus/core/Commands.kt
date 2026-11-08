@@ -124,6 +124,14 @@ object Commands {
             else -> HowToRun.Capture
         }
 
+    /** The CLI's words when a run turned out to need the person's yes; it did nothing. */
+    const val DRY_RUN_NEEDS_APPROVE = "Nothing was done: run it again with --approve"
+
+    /** A command that writes only with one option (task run) came back as that option's dry run. */
+    fun asksApproval(cmd: CatalogCommand, code: Int, lines: List<String>): Boolean =
+        cmd.approveWhen != null && cmd.approve != null && code == 0 &&
+            lines.any { it.startsWith(DRY_RUN_NEEDS_APPROVE) }
+
     /** `--level pr` or `--level=pr` in the command line. */
     private fun hasOption(argv: List<String>, flag: String, value: String): Boolean =
         argv.indices.any { i -> argv[i] == "$flag=$value" || (argv[i] == flag && argv.getOrNull(i + 1) == value) }

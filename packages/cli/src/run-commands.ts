@@ -13,10 +13,13 @@ import { changesRelOf, loadOrgPack, orgPackDirOf, runsRelOf } from "@maycombhq/c
 import { driftCheck, handDown, handUp } from "@maycombhq/speckit";
 import {
   completeTaskHandoff,
+  findTaskRunOfRun,
   isTaskRun,
+  previewTaskRun,
   RunLevel,
   runTask,
   type CommandRunner,
+  type TaskRunPreview,
   type TaskRunRecord,
 } from "@maycombhq/taskrun";
 import type { GitRunner } from "@maycombhq/workspace";
@@ -85,7 +88,14 @@ export async function taskRun(
   root: string,
   changeId: string | undefined,
   taskId: string | undefined,
-  o: { level?: string; mode?: string; by?: string; approve?: boolean; json?: boolean },
+  o: {
+    level?: string;
+    mode?: string;
+    by?: string;
+    approve?: boolean;
+    dryRun?: boolean;
+    json?: boolean;
+  },
   io: Output,
   deps: RunDeps = {},
 ): Promise<number> {
@@ -116,16 +126,38 @@ export async function taskRun(
     io.err(`Unknown mode ${mode}. Use one of: hand-off, model, headless-claude-code, replay.`);
     return 2;
   }
-  // --level pr without --approve: what it would do, and nothing done (the editors' dry run before
-  // their "Approve and run"; a task run has no other dry run, since running it is the work).
-  if (o.level === "pr" && !o.approve) {
-    const what = [
-      `Task ${taskId} of ${changeId} at the pr level: drafted on task/${changeId}/${taskId} in its own worktree, built and committed, then the branch is pushed and a PR opened into change/${changeId}.`,
-      "Nothing was done: run it again with --approve to let it push and open the PR.",
-    ];
-    if (o.json) io.out(JSON.stringify({ dryRun: true, level: "pr", lines: what }, null, 2));
-    else for (const l of what) io.out(l);
-    return 0;
+  // --dry-run, or the pr level (asked for, or runtime.yaml's default) without --approve: what it
+  // would do after every check it would make, and nothing done. The editors' dry run before
+  // their Approve and run; a task run has no other dry run, since running it is the work.
+  if (o.dryRun || !o.approve) {
+    let p: TaskRunPreview;
+    try {
+      p = await previewTaskRun(root, changeId, taskId, {
+        ...(o.level ? { level: o.level as RunLevel } : {}),
+        ...(deps.gitHost ? { gitHost: deps.gitHost } : {}),
+      });
+    } catch (e) {
+      return fail(io, e);
+    }
+    if (o.dryRun || p.level === "pr") {
+      const what = [
+        p.level === "plan"
+          ? `Task ${p.task} of ${p.change} at the plan level: the plan is written to tasks/${p.task}/plan.md; no code changes.`
+          : `Task ${p.task} of ${p.change} at the ${p.level} level: drafted on ${p.branch} in its own worktree of ${p.repo}, built and committed${
+              p.level === "pr"
+                ? p.gitHost
+                  ? `, then the branch is pushed and a PR opened into change/${p.change}.`
+                  : `; no Git host is connected (runtime.yaml adapters.gitHost), so you push it and open the PR by hand.`
+                : "."
+            }`,
+        p.level === "pr" && !o.approve
+          ? "Nothing was done: run it again with --approve to let it push and open the PR."
+          : "Nothing was done: this was a dry run.",
+      ];
+      if (o.json) io.out(JSON.stringify({ dryRun: true, ...p, lines: what }, null, 2));
+      else for (const l of what) io.out(l);
+      return 0;
+    }
   }
   const now = deps.now ?? (() => new Date());
   try {
@@ -196,20 +228,43 @@ export async function taskHandoff(
 }
 
 /**
- * A hand-off's Done from the app (POST /api/runs/{runId}/done): a task run's goes through its
- * build, fix and commit as `atticus handoff done` does, never a push or PR (that takes the
- * person's --approve on the command line); any other run is checked as an artifact.
+ * A hand-off's Done (`atticus handoff done`, and POST /api/runs/{runId}/done): a task run's goes
+ * through its build, fix and commit, and its push and PR only with the person's --approve (the
+ * app never sends one); a run of a task run that no longer waits on it (it needs a person) is
+ * refused, never checked as a bare artifact; any other run is checked as an artifact.
  */
 export async function runDone(
   root: string,
   runId: string,
-  o: { by?: string },
+  o: { by?: string; approve?: boolean; json?: boolean; model?: string },
   io: Output,
   deps: RunDeps = {},
 ): Promise<number> {
   if (await isTaskRun(root, runId))
-    return taskHandoff(root, runId, { ...(o.by ? { by: o.by } : {}) }, io, deps);
-  return handoffDone(root, runId, io);
+    return taskHandoff(
+      root,
+      runId,
+      {
+        ...(o.by ? { by: o.by } : {}),
+        ...(o.approve ? { approve: true } : {}),
+        ...(o.json ? { json: true } : {}),
+      },
+      io,
+      deps,
+    );
+  const owner = await findTaskRunOfRun(root, runId);
+  if (owner) {
+    io.err(taskRunNotWaiting(runId, owner));
+    return 1;
+  }
+  return handoffDone(root, runId, io, o.model ? { model: o.model } : {});
+}
+
+/** Why a run of a task run can't be done or retried on its own any more. */
+export function taskRunNotWaiting(runId: string, r: TaskRunRecord): string {
+  return r.state === "needs-person"
+    ? `Run ${runId} is part of task ${r.task}'s run, which needs a person now: carry on in ${r.worktree}, or run atticus task run ${r.change} ${r.task} again.`
+    : `Run ${runId} is part of task ${r.task}'s run, which is ${r.state} and waits on no run.`;
 }
 
 /** atticus spec hand-down <change> <task> [--force] [--json] */

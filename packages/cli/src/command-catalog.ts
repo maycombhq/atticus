@@ -219,6 +219,7 @@ const APPROVE_FLAGS = ["--approve", "--send"];
  * Commands whose write to a shared system is one option's (round 22): `task run` runs the task
  * itself (a dry run would be the whole run), and only `--level pr` pushes and opens a PR.
  */
+const LOCAL_ALWAYS = new Set(["handoff done"]);
 const APPROVE_WHEN: Record<string, { flag: string; value: string }> = {
   "task run": { flag: "--level", value: "pr" },
   task: { flag: "--level", value: "pr" },
@@ -348,7 +349,11 @@ export function commandCatalog(help: string): CommandInfo[] {
     }
     seen.add(c.id);
     const area = AREA_BY_ID[c.id] ?? AREA_BY_WORD[c.words[0] ?? ""] ?? "";
-    const approve = APPROVE_FLAGS.find((f) => c.flags.some((x) => x.name === f));
+    // `handoff done --approve` is a pr-level task run's yes, asked for by the refusal that names
+    // it: Done itself checks and builds locally, so an editor runs it once, never a dry run first.
+    const approve = LOCAL_ALWAYS.has(c.id)
+      ? undefined
+      : APPROVE_FLAGS.find((f) => c.flags.some((x) => x.name === f));
     // `critic <change>` takes --handoff too (its lenses one at a time); `critic --resume` is a
     // person's way to read answers in, and `critic stats` reads. A new name (stories) runs as the
     // command it names (plan stories).

@@ -76,6 +76,18 @@ describe("Run with AI: a manual Git host", () => {
         join(root, "openspec/changes", CHANGE, "tasks/1.2/report.md"),
         "Added TransferLimits.\n",
       );
+      // Without the person's yes, Done refuses before anything is checked: the run still waits.
+      await expect(
+        completeTaskHandoff(root, w.waiting!, { git, now, commands: ok }),
+      ).rejects.toThrow(
+        `Task 1.2 runs at the pr level, which pushes task/${CHANGE}/1.2 and opens a PR: run atticus handoff done ${w.waiting} --approve.`,
+      );
+      const prompt = await readFile(join(root, ".runs", CHANGE, w.waiting!, "prompt.md"), "utf8");
+      expect(prompt.trimEnd()).toMatch(
+        new RegExp(
+          `ask the person to run: atticus handoff done ${w.waiting} --approve .*never you\\)$`,
+        ),
+      );
       const done = await completeTaskHandoff(root, w.waiting!, {
         approval: APPROVAL,
         git,

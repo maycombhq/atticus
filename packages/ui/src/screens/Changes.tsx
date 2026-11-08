@@ -787,6 +787,7 @@ function Detail({ id }: { id: string }) {
                       <button
                         type="button"
                         className="btn"
+                        disabled={runAct.busy}
                         onClick={() =>
                           void runAct.run(
                             () =>
@@ -804,6 +805,7 @@ function Detail({ id }: { id: string }) {
                       <button
                         type="button"
                         className="btn"
+                        disabled={runAct.busy}
                         onClick={() =>
                           void runAct.run(
                             () =>

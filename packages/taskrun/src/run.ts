@@ -21,7 +21,15 @@ import {
   type RuntimeMode,
 } from "@maycombhq/ai";
 import { writeFileAtomic, changeFolder } from "@maycombhq/changes";
-import { changeBranch, changesRelOf, runsDirOf, runsRelOf } from "@maycombhq/core";
+import {
+  acquireLock,
+  changeBranch,
+  changesRelOf,
+  LockHeldError,
+  runsDirOf,
+  runsRelOf,
+  taskBranch,
+} from "@maycombhq/core";
 import { writeQuarantineItems } from "@maycombhq/naysayer";
 import {
   buildEngineFor,
@@ -33,7 +41,13 @@ import {
 } from "@maycombhq/speckit";
 import { createGit, toRepoRelative, type GitRunner } from "@maycombhq/workspace";
 import { applyChanges, parseAnswer } from "./apply.js";
-import { shellCommandRunner, stopRequested, stopSignal, type CommandRunner } from "./commands.js";
+import {
+  holdSignals,
+  shellCommandRunner,
+  stopRequested,
+  stopSignal,
+  type CommandRunner,
+} from "./commands.js";
 import { conformAfterBuild } from "./conform.js";
 import { taskPack, taskRunnerAgent } from "./prompt.js";
 import {
@@ -191,7 +205,9 @@ function handoffPrompt(c: Ctx, run: Run): string {
     "",
     run.request.pack.prompt.trimEnd(),
     "",
-    `When you are done, run: atticus handoff done ${run.runId}`,
+    c.record.level === "pr"
+      ? `When you are done, stop and ask the person to run: atticus handoff done ${run.runId} --approve (it pushes the branch and opens a PR, so the person runs it, never you)`
+      : `When you are done, run: atticus handoff done ${run.runId}`,
     "",
   ].join("\n");
 }
@@ -432,7 +448,82 @@ async function done(c: Ctx): Promise<TaskRunRecord> {
   return saveTaskRun(c.root, c.record);
 }
 
+/** The level a run takes (asked for, else runtime.yaml's default), refused past the repo's cap. */
+function levelOf(t: TaskContext, asked: RunLevel | undefined): RunLevel {
+  const rt = t.ctx.orgPack.runtime;
+  const level = asked ?? AUTONOMY[rt.autonomy.default];
+  const cap = rt.autonomy.capPerRepo[t.repo.id];
+  if (cap && LEVEL_RANK[level] > LEVEL_RANK[AUTONOMY[cap]])
+    throw new TaskRunError(
+      "refused",
+      `${t.repo.id} allows Run with AI up to ${cap} (runtime.yaml autonomy.capPerRepo); ask for a lower level.`,
+    );
+  return level;
+}
+
+/** What a task run would do, with every check it would make first, and nothing done. */
+export interface TaskRunPreview {
+  change: string;
+  task: string;
+  repo: string;
+  level: RunLevel;
+  branch: string;
+  /** For the pr level: whether a Git host is connected to push and open the PR. */
+  gitHost: boolean;
+}
+
+/** `atticus task run --dry-run`: the task, its level (runtime.yaml's default when none is asked), the cap. */
+export async function previewTaskRun(
+  root: string,
+  changeId: string,
+  taskId: string,
+  o: { level?: RunLevel; gitHost?: GitHost } = {},
+): Promise<TaskRunPreview> {
+  const t = await loadTask(root, changeId, taskId);
+  const level = levelOf(t, o.level);
+  return {
+    change: t.change.id,
+    task: t.task.id,
+    repo: t.repo.id,
+    level,
+    branch: taskBranch(t.change.id, t.task.id),
+    gitHost: level === "pr" ? !!(o.gitHost ?? gitHostOf(root, t)) : false,
+  };
+}
+
+/** One run of a task at a time, here or in another window (two builds in one worktree collide). */
+async function holdTask(root: string, change: string, task: string) {
+  try {
+    return await acquireLock(
+      root,
+      `task-run-${change}-${task}`,
+      `run of task ${task} of ${change}`,
+    );
+  } catch (e) {
+    if (e instanceof LockHeldError) throw new TaskRunError("refused", e.message);
+    throw e;
+  }
+}
+
 export async function runTask(
+  root: string,
+  changeId: string,
+  taskId: string,
+  o: RunTaskOptions,
+): Promise<TaskRunRecord> {
+  const lock = await holdTask(root, changeId, taskId);
+  // A stop (Ctrl+C, the editor gone) during the model call or a build reaches the run, which
+  // records itself for a person before Atticus ends.
+  const release = holdSignals();
+  try {
+    return await runTaskHeld(root, changeId, taskId, o);
+  } finally {
+    release();
+    await lock.release();
+  }
+}
+
+async function runTaskHeld(
   root: string,
   changeId: string,
   taskId: string,
@@ -442,13 +533,7 @@ export async function runTask(
   const git = o.git ?? createGit();
   let t = await loadTask(root, changeId, taskId);
   const rt = t.ctx.orgPack.runtime;
-  const level = o.level ?? AUTONOMY[rt.autonomy.default];
-  const cap = rt.autonomy.capPerRepo[t.repo.id];
-  if (cap && LEVEL_RANK[level] > LEVEL_RANK[AUTONOMY[cap]])
-    throw new TaskRunError(
-      "refused",
-      `${t.repo.id} allows Run with AI up to ${cap} (runtime.yaml autonomy.capPerRepo); ask for a lower level.`,
-    );
+  const level = levelOf(t, o.level);
   if (level === "pr") {
     try {
       requireApproval("git-host", o.approval);
@@ -551,8 +636,34 @@ export async function completeTaskHandoff(
   runId: string,
   o: Omit<RunTaskOptions, "level" | "mode" | "by" | "runtime" | "runtimeOptions"> = {},
 ): Promise<TaskRunRecord> {
-  const record = await findWaitingTaskRun(root, runId);
-  if (!record) throw new TaskRunError("not-found", `No task run is waiting on ${runId}.`);
+  const waiting = await findWaitingTaskRun(root, runId);
+  if (!waiting) throw new TaskRunError("not-found", `No task run is waiting on ${runId}.`);
+  // The pr level pushes and opens a PR: without the person's yes, nothing is checked or built,
+  // so the run still waits and the same Done with --approve finishes it.
+  if (waiting.level === "pr" && !o.approval)
+    throw new TaskRunError(
+      "refused",
+      `Task ${waiting.task} runs at the pr level, which pushes ${waiting.branch} and opens a PR: run atticus handoff done ${runId} --approve.`,
+    );
+  const lock = await holdTask(root, waiting.change, waiting.task);
+  const release = holdSignals();
+  try {
+    // Read again under the lock: another Done may have finished it meanwhile.
+    const record = await findWaitingTaskRun(root, runId);
+    if (!record) throw new TaskRunError("not-found", `No task run is waiting on ${runId}.`);
+    return await completeHeld(root, runId, record, o);
+  } finally {
+    release();
+    await lock.release();
+  }
+}
+
+async function completeHeld(
+  root: string,
+  runId: string,
+  record: TaskRunRecord,
+  o: Omit<RunTaskOptions, "level" | "mode" | "by" | "runtime" | "runtimeOptions">,
+): Promise<TaskRunRecord> {
   const now = o.now ?? (() => new Date());
   const git = o.git ?? createGit();
   const t = await loadTask(root, record.change, record.task);

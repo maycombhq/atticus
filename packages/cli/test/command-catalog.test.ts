@@ -92,6 +92,9 @@ describe("the command catalogue (ADR 0096)", () => {
         approveWhen: { flag: "--level", value: "pr" },
       });
     expect(byId.get("ado sync")!.approveWhen).toBeUndefined();
+    // Done is checked and built here: run once, its --approve only a pr task run's yes.
+    expect(byId.get("handoff done")).toMatchObject({ runs: "local" });
+    expect(byId.get("handoff done")!.approve).toBeUndefined();
     // A required option is said as such: change new needs its type.
     expect(byId.get("change new")).toMatchObject({
       args: [{ name: "title", kind: "text" }],

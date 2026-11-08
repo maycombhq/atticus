@@ -79,6 +79,16 @@ class CommandsTest {
     }
 
     @Test
+    fun `asks for the yes when a task run at runtime yaml's pr level came back as its dry run`() {
+        val t = cmd("task run")
+        val dry = listOf("Task 1.2 of c at the pr level: …", "Nothing was done: run it again with --approve to let it push and open the PR.")
+        assertEquals(true, Commands.asksApproval(t, 0, dry))
+        assertEquals(false, Commands.asksApproval(t, 1, dry))
+        assertEquals(false, Commands.asksApproval(t, 0, listOf("Task 1.2 is drafted")))
+        assertEquals(false, Commands.asksApproval(cmd("change handoff"), 0, dry))
+    }
+
+    @Test
     fun `a task runs once, and asks first only for the pr level's push and PR`() {
         val t = cmd("task run")
         assertEquals(HowToRun.Capture, Commands.howToRun(t, listOf("task", "run", "c", "1.2")))

@@ -165,6 +165,36 @@ setTimeout(() => process.kill(process.pid, "SIGTERM"), 800);
     30_000,
   );
 
+  it.runIf(posix)(
+    "a stop during a held run (the model call) ends Atticus only once the run has recorded itself",
+    async () => {
+      const dir = await mkdtemp(join(tmpdir(), "atticus-cmd-"));
+      const script = join(dir, "parent.mjs");
+      const runner = JSON.stringify(pathToFileURL(join(HERE, "../dist/commands.js")).href);
+      const saved = join(dir, "saved");
+      // The run records itself 300 ms after the stop reaches it, then lets go.
+      await writeFile(
+        script,
+        `const fs = await import("node:fs");
+const { holdSignals, stopSignal } = await import(${runner});
+const release = holdSignals();
+stopSignal.addEventListener("abort", () =>
+  setTimeout(() => { fs.writeFileSync(${JSON.stringify(saved)}, "needs-person"); release(); }, 300),
+);
+setInterval(() => {}, 1000);
+setTimeout(() => process.kill(process.pid, "SIGTERM"), 300);
+`,
+      );
+      const p = spawn(process.execPath, [script], { cwd: join(HERE, ".."), stdio: "ignore" });
+      const code = await new Promise<number | null>((r) =>
+        p.on("exit", (c, sig) => r(sig ? -1 : c)),
+      );
+      expect(code).toBe(-1);
+      expect(existsSync(saved)).toBe(true);
+    },
+    30_000,
+  );
+
   it("stopAllBuilds stops what runs and says so in its result", async () => {
     // Its own module copy would share state with the other tests: run it in a child instead.
     const dir = await mkdtemp(join(tmpdir(), "atticus-cmd-"));

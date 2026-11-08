@@ -10,6 +10,7 @@ import {
   changeTypesFrom,
   commandsFor,
   howToRun,
+  asksApproval,
   lineOf,
   splitWords,
   matchCommand,
@@ -162,6 +163,27 @@ describe("every command, from the command line's own catalogue (ADR 0096)", () =
     expect(howToRun(cmd("ado sync"))).toEqual({ mode: "approve", flag: "--approve" });
     expect(howToRun(cmd("ui"))).toEqual({ mode: "terminal" });
     expect(howToRun(cmd("spec check"))).toEqual({ mode: "run" });
+  });
+
+  it("asks for the yes when a task run at runtime.yaml's pr level came back as its dry run", () => {
+    const t = cmd("task run");
+    const said = (lines: string[], code = 0) => ({ code, lines });
+    expect(
+      asksApproval(
+        t,
+        said([
+          "Task 1.2 of c at the pr level: …",
+          "Nothing was done: run it again with --approve to let it push and open the PR.",
+        ]),
+      ),
+    ).toBe(true);
+    expect(asksApproval(t, said(["Task 1.2 is drafted on task/c/1.2 and the build passes"]))).toBe(
+      false,
+    );
+    expect(asksApproval(t, said(["Nothing was done: run it again with --approve"], 1))).toBe(false);
+    expect(
+      asksApproval(cmd("ado sync"), said(["Nothing was done: run it again with --approve"])),
+    ).toBe(false);
   });
 
   it("runs a task once, and asks first only for the pr level's push and PR (no double run)", () => {

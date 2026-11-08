@@ -141,6 +141,21 @@ export async function taskRunOfRun(
   return undefined;
 }
 
+/** The task run a run is part of, in any change (for Done and Retry on a run it no longer waits on). */
+export async function findTaskRunOfRun(
+  root: string,
+  runId: string,
+): Promise<TaskRunRecord | undefined> {
+  const changes = changesDirOf(root);
+  for (const c of (await readdir(changes, { withFileTypes: true }).catch(() => [])).filter(
+    (d) => d.isDirectory() && d.name !== "archive",
+  )) {
+    const r = await taskRunOfRun(root, c.name, runId).catch(() => undefined);
+    if (r) return r;
+  }
+  return undefined;
+}
+
 /** The task run waiting on a hand-off run, if `runId` is one (for `atticus handoff done`). */
 export async function findWaitingTaskRun(
   root: string,

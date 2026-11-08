@@ -300,7 +300,15 @@ class CommandFlow(private val project: Project) {
             HowToRun.Ai -> aiStep(argv, Commands.slashFor(argv))
             is HowToRun.Approve -> approveAndRun(argv, how.flag)
             HowToRun.Console -> inConsole(cmd?.id ?: argv.take(2).joinToString(" "), argv)
-            HowToRun.Capture -> captured(argv) { r -> if (cmd?.id == "change new" && r.ok) openBrief(r) else said(argv, r) }
+            HowToRun.Capture ->
+                captured(argv) { r ->
+                    when {
+                        cmd?.id == "change new" && r.ok -> openBrief(r)
+                        // A task run at runtime.yaml's pr level came back as its dry run: ask, then run it.
+                        cmd != null && Commands.asksApproval(cmd, r.code, r.lines) -> approveAndRun(argv, cmd.approve!!)
+                        else -> said(argv, r)
+                    }
+                }
         }
     }
 

@@ -57,9 +57,10 @@ function stopTree(child: Child, signal: NodeJS.Signals = "SIGTERM") {
 }
 
 /**
- * The builds running now. A build runs in its own process group (so a timeout stops the whole
- * tree), so the terminal's Ctrl+C no longer reaches it: while any runs, one handler per signal
- * stops them all and then lets the signal end Atticus as it would have.
+ * The builds running now, and the runs holding on to a stop. A build runs in its own process
+ * group (so a timeout stops the whole tree), so the terminal's Ctrl+C no longer reaches it: while
+ * any build runs or a task run holds (holdSignals), one handler per signal stops them all, aborts
+ * the model call, and lets the signal end Atticus once the runs have recorded themselves.
  */
 const live = new Set<Child>();
 const SIGNALS: NodeJS.Signals[] = ["SIGINT", "SIGTERM", "SIGHUP"];
@@ -77,16 +78,37 @@ export function stopAllBuilds(): void {
   if (!stopper.signal.aborted) stopper.abort();
 }
 
+/** The runs between their start and their record saved. */
+let holds = 0;
+/** The signal that ends Atticus once nothing holds on (nobody else listened for it). */
+let pending: NodeJS.Signals | undefined;
+/** However long the runs take to record themselves, Atticus ends by the signal within this. */
+export const SIGNAL_GRACE_MS = 10_000;
+
 const onSignal = (sig: NodeJS.Signals) => {
   stopAllBuilds();
   // Put first (prependListener), this runs before any other listener, a `once` one still in
-  // place: what listens now is what hears it.
-  const heard = process.listenerCount(sig) > 1;
-  unhook();
-  // Nobody else listens (atticus task run): the signal ends Atticus as it would have. Someone
-  // does (atticus ui stops itself): they hear it next.
-  if (!heard) process.kill(process.pid, sig);
+  // place: what listens now is what hears it. Someone does (atticus ui stops itself): done here.
+  if (process.listenerCount(sig) > 1) return;
+  // Nobody else (atticus task run): the signal ends Atticus as it would have, once the runs
+  // have recorded the stop, or after the grace.
+  if (!pending) {
+    pending = sig;
+    setTimeout(raise, SIGNAL_GRACE_MS);
+  }
+  settle();
 };
+function raise() {
+  const sig = pending;
+  if (!sig) return;
+  unhook();
+  process.kill(process.pid, sig);
+}
+function settle() {
+  if (holds > 0 || live.size > 0) return;
+  if (pending) raise();
+  else unhook();
+}
 const onExit = () => {
   for (const c of live) stopTree(c, "SIGKILL");
 };
@@ -103,13 +125,30 @@ function unhook() {
   for (const s of SIGNALS) process.off(s, onSignal);
   process.off("exit", onExit);
 }
+
+/**
+ * Hold a stop for a task run, from its start until its record is saved: a signal meanwhile
+ * stops its builds and its model call, and Atticus ends only once it is released.
+ */
+export function holdSignals(): () => void {
+  holds++;
+  hook();
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    holds--;
+    settle();
+  };
+}
+
 const track = (c: Child) => {
   live.add(c);
-  if (process.platform !== "win32") hook();
+  hook();
 };
 const untrack = (c: Child) => {
   live.delete(c);
-  if (!live.size) unhook();
+  settle();
 };
 
 /** How long a timed-out tree gets to stop on SIGTERM before SIGKILL. */

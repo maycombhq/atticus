@@ -6,6 +6,7 @@ The Atticus extension for VS Code. The command line's own changes are in the rep
 
 - **Ships with Atticus 2.0.0-beta.21.** The app in its tab gains the canvas corrections (connect two boxes, owner, declared links, Undo), the canvas tools, faster pages with a loading bar, and Copilot runs started from the app with their Console. No change to the extension itself.
 
+- **Cancel stops the whole run.** Cancel on a running command ends Atticus and everything it started, a build or headless Claude Code included, on Windows too.
 - **Run a task runs it once.** Atticus: Run a command on `task run` (and Run with AI on a task) runs the task once; only `--level pr`, which pushes and opens a PR, shows what it would do first and asks your yes. Before, a "dry run" ran the whole task and Approve and run ran it again.
 
 ## 0.7.20 (pre-release, with Atticus 2.0.0-beta.20)

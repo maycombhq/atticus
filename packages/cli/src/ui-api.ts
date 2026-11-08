@@ -43,8 +43,8 @@ import { changeHandoff, changeNew, changeSync } from "./change-commands.js";
 import { critic, findingAction } from "./critic-commands.js";
 import { planStories } from "./plan-commands.js";
 import { reconcileCommand } from "./reconcile-commands.js";
-import { taskRunOfRun } from "@maycombhq/taskrun";
-import { runDone, taskRun } from "./run-commands.js";
+import { findTaskRunOfRun, taskRunOfRun } from "@maycombhq/taskrun";
+import { runDone, taskRun, taskRunNotWaiting } from "./run-commands.js";
 import { scanCommand } from "./scan-commands.js";
 import { workspaceOpen, workspaceSync } from "./workspace-commands.js";
 
@@ -58,6 +58,8 @@ export interface UiDeps {
   /** Tests inject a mock Git host; otherwise runtime.yaml decides. */
   gitHost?: GitHost;
   now?: string;
+  /** Tests: a task run's build and Git, for Done (otherwise the repo's build and real Git). */
+  taskRun?: Pick<import("./run-commands.js").RunDeps, "commands" | "git">;
 }
 
 interface Ran {
@@ -270,6 +272,8 @@ async function artifactPath(root: string, id: string, artifact: string): Promise
 
 export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Router {
   const { root, user, jobs } = ctx;
+  /** The runs whose Done is being checked now. */
+  const doneBusy = new Set<string>();
   const changeDeps = {
     ...(deps.gitHost ? { gitHost: deps.gitHost } : {}),
     ...(deps.now ? { now: deps.now } : {}),
@@ -586,16 +590,33 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
         const before = await findRun(root, params.runId!);
         if (before.state === "validated" || before.state === "cancelled")
           throw conflict(`Run ${params.runId} is already ${before.state}.`);
-        // A task run's Done builds, fixes and commits as atticus handoff done does (round 22).
-        const res = await run((io) => runDone(root, params.runId!, { by: user }, io));
+        // One Done at a time per run: a second click while the first builds is told so (two
+        // builds in one worktree collide, on Windows over locked files).
+        if (doneBusy.has(params.runId!))
+          throw conflict(`Done for ${params.runId} is already running; wait for it to finish.`);
+        doneBusy.add(params.runId!);
+        let res: Ran;
+        try {
+          // A task run's Done builds, fixes and commits as atticus handoff done does (round 22).
+          res = await run((io) => runDone(root, params.runId!, { by: user }, io, deps.taskRun));
+        } finally {
+          doneBusy.delete(params.runId!);
+        }
         const after = await findRun(root, params.runId!);
         ctx.events.publish({ type: "run.changed", runId: after.runId, state: after.state });
+        // The answer had problems, the build failed, or the task needs a person: said as such,
+        // with what the command printed, never as a success.
+        if (res.code !== 0) throw refused(res);
         return { status: 200, body: { ...after, lines: [...res.out, ...res.err] } };
       })
       .add("POST", "/api/runs/{runId}/retry", async ({ params }) => {
         const v = await findRun(root, params.runId!);
         if (v.state !== "failed")
           throw conflict(`Only a failed run can be retried; ${v.runId} is ${v.state}.`);
+        // A task run's own run is retried by its task run (Done, or the task run again), never
+        // on its own: it would then be marked done with nothing built.
+        const owner = await findTaskRunOfRun(root, v.runId);
+        if (owner && owner.waiting !== v.runId) throw conflict(taskRunNotWaiting(v.runId, owner));
         const file = join(runsDirOf(root), v.change, v.runId, "run.json");
         const was = await readFile(file, "utf8");
         const rec = JSON.parse(was);

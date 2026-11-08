@@ -8,6 +8,7 @@ import { MockRuntime, type AiRequest, type HeadlessInvocation } from "@maycombhq
 import { RunSummary } from "@maycombhq/core";
 import {
   completeTaskHandoff,
+  previewTaskRun,
   isTaskRun,
   parseAnswer,
   readTaskRun,
@@ -424,6 +425,61 @@ describe("Run with AI: hand-off and headless modes", () => {
       const again = await completeTaskHandoff(root, runId, { git, now, commands: fakeBuild() });
       expect(again.state).toBe("built");
       expect(again.attempts.map((a) => a.passed)).toEqual([true]);
+    },
+    T,
+  );
+
+  it(
+    "hand-off: two Dones at once build once; the other is refused while the first runs",
+    async () => {
+      const { root } = await speckitRoot({ repos: ["forge-ledger"] });
+      const r = await runTask(root, CHANGE, "1.2", {
+        level: "draft",
+        mode: "hand-off",
+        by: "dev",
+        git,
+        now,
+        commands: fakeBuild(),
+      });
+      const runId = r.waiting!;
+      await writeFile(join(paths(root).wt, FILE), "class TransferLimits { boolean ok; }\n");
+      await writeFile(paths(root).task("report.md"), "Added TransferLimits.\n");
+      let builds = 0;
+      const slow: CommandRunner = async (cmd, cwd, o) => {
+        builds++;
+        await new Promise((res) => setTimeout(res, 300));
+        return fakeBuild()(cmd, cwd, o);
+      };
+      const [a, b] = await Promise.allSettled([
+        completeTaskHandoff(root, runId, { git, now, commands: slow }),
+        completeTaskHandoff(root, runId, { git, now, commands: slow }),
+      ]);
+      expect(builds).toBe(1);
+      const ok = [a, b].filter((x) => x.status === "fulfilled");
+      const no = [a, b].filter((x) => x.status === "rejected") as PromiseRejectedResult[];
+      expect(ok).toHaveLength(1);
+      expect((ok[0] as PromiseFulfilledResult<{ state: string }>).value.state).toBe("built");
+      expect(String(no[0]!.reason)).toMatch(
+        /Another run of task 1.2 of add-transfer-limit is running/,
+      );
+    },
+    T,
+  );
+
+  it(
+    "says what a run would do without doing it: the default level from runtime.yaml, and the cap",
+    async () => {
+      const { root } = await speckitRoot({ repos: ["forge-ledger"] });
+      const p = await previewTaskRun(root, CHANGE, "1.2");
+      expect(p).toMatchObject({
+        change: CHANGE,
+        task: "1.2",
+        repo: "forge-ledger",
+        branch: "task/add-transfer-limit/1.2",
+      });
+      expect(["plan", "draft", "pr"]).toContain(p.level);
+      expect(existsSync(paths(root).wt)).toBe(false);
+      await expect(previewTaskRun(root, CHANGE, "9.9")).rejects.toThrow();
     },
     T,
   );

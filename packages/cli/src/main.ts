@@ -105,8 +105,6 @@ const orgPackValidate: typeof import("./commands.js").orgPackValidate = (...a) =
 const schemaExport: typeof import("./commands.js").schemaExport = (...a) =>
   loadCommands().then((m) => m.schemaExport(...a));
 const loadWorkspaceCommands = () => import("./workspace-commands.js");
-const handoffDone: typeof import("./workspace-commands.js").handoffDone = (...a) =>
-  loadWorkspaceCommands().then((m) => m.handoffDone(...a));
 const openspecCheck: typeof import("./workspace-commands.js").openspecCheck = (...a) =>
   loadWorkspaceCommands().then((m) => m.openspecCheck(...a));
 const openspecSetup: typeof import("./workspace-commands.js").openspecSetup = (...a) =>
@@ -201,8 +199,8 @@ const specHandDown: typeof import("./run-commands.js").specHandDown = (...a) =>
   loadRunCommands().then((m) => m.specHandDown(...a));
 const specHandUp: typeof import("./run-commands.js").specHandUp = (...a) =>
   loadRunCommands().then((m) => m.specHandUp(...a));
-const taskHandoff: typeof import("./run-commands.js").taskHandoff = (...a) =>
-  loadRunCommands().then((m) => m.taskHandoff(...a));
+const runDone: typeof import("./run-commands.js").runDone = (...a) =>
+  loadRunCommands().then((m) => m.runDone(...a));
 const taskRun: typeof import("./run-commands.js").taskRun = (...a) =>
   loadRunCommands().then((m) => m.taskRun(...a));
 const loadFeatureCommands = () => import("./feature-commands.js");
@@ -668,8 +666,8 @@ Usage:
   atticus feature spec <id>            Draft an OpenSpec capability spec from a confirmed feature
   atticus catalog migrate [--dry-run]  Rewrite catalog files to the current schema version
   atticus task context <change> <task> [--json|--markdown]  The task's context for an assistant: its story and criteria, the step it implements with today's code, what applies, the knowledge that applies to it (how-tos with their steps, standards, processes, decisions, each with its page, the pages that say the same and those that disagree), the files attached and the files likely to change
-  atticus task run <change> <task>     Run a task with AI [--level plan|draft|pr] [--mode m] [--approve]
-  atticus task <change> <task>         Run one task with your assistant, the same as task run [--level plan|draft|pr] [--mode m] [--approve]
+  atticus task run <change> <task>     Run a task with AI [--level plan|draft|pr] [--mode m] [--approve] [--dry-run]
+  atticus task <change> <task>         Run one task with your assistant, the same as task run [--level plan|draft|pr] [--mode m] [--approve] [--dry-run]
   atticus spec hand-down <change> <task>  Create the task's Spec Kit feature in its repo [--force]
   atticus spec hand-up <change> <task>  Read the Spec Kit feature back at the PR [--pr n --pr-url url]
   atticus drift <change> [--json]      Compare design, repo plans and code
@@ -766,7 +764,7 @@ Usage:
   atticus spec seed <repo> [--json]    Propose a repo's starting openspec/specs from its verified flows, as the change openspec/changes/seed-<repo>/: a requirement per flow, a scenario per path and error case, each citing its lines (ADR 0146)
   atticus spec accept <repo>           Accept the repo's seeded spec: OpenSpec validates it strictly, then archives it into openspec/specs/; the next change modifies it
   atticus openspec <args...>           Run the bundled OpenSpec CLI in the metarepo with these arguments (openspec isn't on PATH; it ships inside Atticus). status, instructions and show take --change from the only change open when you don't name one
-  atticus handoff done <run-id>        Tell Atticus a hand-off artifact is written; it validates it (a stage's draft: with the stage's checks, its problems listed with their lines until it is clean) [--model m: the model that wrote it, kept in the run record]
+  atticus handoff done <run-id>        Tell Atticus a hand-off artifact is written; it validates it (a stage's draft: with the stage's checks, its problems listed with their lines until it is clean) [--model m: the model that wrote it, kept in the run record] [--approve: a pr-level task run's push and PR]
   atticus stage check <change> <stage> <file>  Run a stage's checks on a draft's file and list its problems with their lines; writes nothing (a drafter checks its draft before it hands it in)
   atticus next [--all] [--json]        The next step to take, its command and slash command, and why; from the files only
           [--queue]                    The repos to read next, gateways and the repos others call first so links land early, each with its estimated cost, and what each read so far took (ADR 0141)
@@ -3036,6 +3034,7 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
         ...(str(values.mode) ? { mode: str(values.mode)! } : {}),
         by: who(),
         approve: values.approve === true,
+        dryRun: values["dry-run"] === true,
         json,
       },
       io,
@@ -3869,18 +3868,17 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
       );
       return 2;
     }
-    if (await (await import("@maycombhq/taskrun")).isTaskRun(root, arg))
-      return taskHandoff(
-        root,
-        arg,
-        {
-          by: who(),
-          approve: values.approve === true,
-          json,
-        },
-        io,
-      );
-    return handoffDone(root, arg, io, str(values.model) ? { model: str(values.model)! } : {});
+    return runDone(
+      root,
+      arg,
+      {
+        by: who(),
+        approve: values.approve === true,
+        json,
+        ...(str(values.model) ? { model: str(values.model)! } : {}),
+      },
+      io,
+    );
   }
   if (group === "openspec" && command === "setup") return openspecSetup(root, io);
   if (group === "openspec" && command === "check") return openspecCheck(root, io);

@@ -12,6 +12,7 @@ import {
   changeTypesFrom,
   commandsFor,
   howToRun,
+  asksApproval,
   listFor,
   lineOf,
   matchCommand,
@@ -885,9 +886,16 @@ export class CommandUi {
     } else {
       const p = await this.captured(root, argv);
       if (cmd.id === "change new" && p.code === 0) await this.afterNewChange(root, p);
+      else if (asksApproval(cmd, p)) await this.approveAfterDryRun(root, argv, cmd.approve!);
       else this.showPrinted(argv, p);
     }
     this.d.refreshAll();
+  }
+
+  /** A task run whose level came from runtime.yaml (pr) came back a dry run: ask, then run it. */
+  private async approveAfterDryRun(root: string, argv: string[], flag: string): Promise<void> {
+    const p = await this.approveAndRun(root, argv, flag);
+    if (p) this.showPrinted(argv, p);
   }
 
   /**
@@ -911,7 +919,12 @@ export class CommandUi {
         optional: !m!.command.flags.some((f) => f.name === how.flag && f.required),
       });
       if (p) this.showPrinted(args, p);
-    } else this.showPrinted(args, await this.captured(root, args));
+    } else {
+      const p = await this.captured(root, args);
+      if (m && asksApproval(m.command, p))
+        await this.approveAfterDryRun(root, args, m.command.approve!);
+      else this.showPrinted(args, p);
+    }
     this.d.refreshAll();
   }
 
