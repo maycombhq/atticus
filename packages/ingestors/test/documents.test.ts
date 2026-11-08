@@ -3,10 +3,24 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { deflateSync } from "node:zlib";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { parseRecord } from "@maycombhq/core";
 import { readDocument, type TextDocument } from "../src/documents.js";
 import { writeZip, zipFolder } from "./helpers/zip-writer.js";
+
+// Counts how often a stream of a given size is inflated, so "decoded once" is checked by count,
+// not by a clock that a loaded CI machine can't keep.
+const inflated = new Map<number, number>();
+vi.mock("node:zlib", async () => {
+  const z = await vi.importActual<typeof import("node:zlib")>("node:zlib");
+  return {
+    ...z,
+    inflateSync: (buf: Buffer, o?: object) => {
+      inflated.set(buf.length, (inflated.get(buf.length) ?? 0) + 1);
+      return z.inflateSync(buf, o);
+    },
+  };
+});
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FIX = join(HERE, "fixtures/documents");
@@ -292,9 +306,10 @@ describe("PDF (golden, best effort)", () => {
       ),
       Buffer.from("trailer << /Root 1 0 R >>\n%%EOF\n"),
     ]);
-    const t = Date.now();
+    inflated.clear();
     const r = readDocument("bomb.pdf", new Uint8Array(pdf));
-    expect(Date.now() - t).toBeLessThan(5000);
+    // Twenty pages, one stream: inflated once (a retry for an unterminated stream would be a second).
+    expect(inflated.get(bomb.length)).toBe(1);
     // Spaces carry no text: read, said so, never 20 times over.
     expect(r.notes.join(" ")).toMatch(/No text was found/);
     // Six streams of 64 MB would pass the per-stream cap; together they pass the file's budget.
